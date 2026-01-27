@@ -1,19 +1,276 @@
+'use client';
+
 import { AppLayout } from '@/components/layout/app-layout';
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { ChatHistoryCard } from '@/components/history/chat-history-card';
+import { VoiceHistoryCard } from '@/components/history/voice-history-card';
+import { ImageHistoryCard } from '@/components/history/image-history-card';
+import { mockHistory, type HistoryItem } from '@/components/history/mock-data';
+
+const tabs = [
+  { id: 'all', label: '全部' },
+  { id: 'chat', label: '对话' },
+  { id: 'voice', label: '语音' },
+  { id: 'image', label: '图片' },
+];
 
 export default function HistoryPage() {
+  const [activeTab, setActiveTab] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [previewItem, setPreviewItem] = useState<HistoryItem | null>(null);
+
+  const filteredHistory = mockHistory.filter((item) => {
+    const matchesTab = activeTab === 'all' || item.type === activeTab;
+    const matchesSearch =
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.preview.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
+
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-4 font-heading">
-            历史记录
-          </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">查看您的所有创作历史</p>
+      <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
+        {/* Header */}
+        <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between z-10 shadow-sm">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              生成历史
+              <span className="px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal">
+                对话视图
+              </span>
+            </h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
+              文档
+            </button>
+            <button className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
+              社区
+            </button>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+            </button>
+            <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        {/* Filter Bar */}
+        <div className="flex-none px-6 py-4 flex flex-col sm:flex-row gap-4 justify-between items-center sm:h-20">
+          {/* Tabs */}
+          <div className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full sm:w-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'px-6 py-2 rounded-lg text-sm font-bold transition-all flex-1 sm:flex-none',
+                  activeTab === tab.id
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search & Filter */}
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-80">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                placeholder={activeTab === 'image' ? '搜索 prompt...' : '搜索历史记录...'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+              />
+            </div>
+            <button className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+              <svg
+                className="w-4 h-4 text-slate-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                />
+              </svg>
+              筛选
+            </button>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-dark-card rounded-2xl p-8 shadow-sm border border-slate-200 dark:border-dark-border">
-          <p className="text-slate-600 dark:text-slate-400">历史记录功能开发中...</p>
+        {/* Content Grid */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
+          <div
+            className={cn(
+              'grid gap-6',
+              activeTab === 'image'
+                ? 'grid-cols-1 md:grid-cols-3 xl:grid-cols-3'
+                : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+            )}
+          >
+            {filteredHistory.map((item) => {
+              if (item.type === 'chat') {
+                return <ChatHistoryCard key={item.id} item={item} />;
+              } else if (item.type === 'voice') {
+                return <VoiceHistoryCard key={item.id} item={item} />;
+              } else if (item.type === 'image') {
+                return <ImageHistoryCard key={item.id} item={item} onPreview={setPreviewItem} />;
+              }
+              return null;
+            })}
+          </div>
+
+          {filteredHistory.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+              <svg
+                className="w-16 h-16 mb-4 opacity-20"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                />
+              </svg>
+              <p>没有找到相关历史记录</p>
+            </div>
+          )}
         </div>
+
+        {/* Preview Modal */}
+        {previewItem && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setPreviewItem(null)}
+          >
+            {/* Unified Floating Close Button */}
+            <button
+              onClick={() => setPreviewItem(null)}
+              className="absolute top-6 right-6 md:top-10 md:right-10 z-[60] p-2 md:p-3 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-xl border border-white/20 group hover:scale-110 active:scale-95 shadow-2xl"
+              title="关闭预览"
+            >
+              <svg
+                className="w-6 h-6 md:w-8 md:h-8 transform group-hover:rotate-90 transition-transform duration-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+
+            <div
+              className="relative max-w-5xl w-full max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transform animate-in zoom-in-95 duration-200 border border-white/10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Left: Image Container */}
+              <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden min-h-[300px] md:min-h-0">
+                <img
+                  src={previewItem.imageUrl}
+                  alt={previewItem.title}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+
+              {/* Right: Info Panel */}
+              <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg border border-blue-200 dark:border-blue-800/50">
+                      {previewItem.model}
+                    </span>
+                    <span className="text-xs text-slate-400 font-medium">{previewItem.date}</span>
+                  </div>
+
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 leading-tight">
+                    {previewItem.title || '生成图片'}
+                  </h2>
+
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mb-3">
+                        Prompt 描述
+                      </h3>
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 text-sm text-slate-600 dark:text-slate-300 rounded-2xl leading-relaxed italic">
+                        “{previewItem.preview}”
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+                  <button className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-750 transition-all active:scale-95 shadow-sm">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                      />
+                    </svg>
+                    下载
+                  </button>
+                  <button className="flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/25 active:scale-95">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
+                      />
+                    </svg>
+                    分享
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

@@ -1,20 +1,207 @@
+'use client';
+
 import { AppLayout } from '@/components/layout/app-layout';
+import { WaveformVisualizer } from '@/components/voice/waveform';
+import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
+import { RecordingLibrary } from '@/components/voice/recording-library';
+import { useState } from 'react';
+
+const mockSegments: TranscriptSegment[] = [
+  {
+    id: '1',
+    timestamp: '00:01',
+    speaker: 'Speaker A',
+    role: 'Speaker A',
+    text: '大家早上好，欢迎参加今天的 AI 产品周会。我们今天要讨论的主要议题是关于下一代语音交互模型的优化方案。',
+  },
+  {
+    id: '2',
+    timestamp: '00:15',
+    speaker: 'Speaker B (Product Mgr)',
+    role: 'Speaker B',
+    text: '谢谢。关于目前的模型，我们收到的用户反馈主要集中在噪音环境下的识别准确率。特别是在咖啡厅或者地铁这种背景噪音比较复杂的场景。',
+  },
+  {
+    id: '3',
+    timestamp: '00:32',
+    speaker: 'Speaker A',
+    role: 'Speaker A',
+    text: '确实，这也是我们技术团队最近攻克的重点。我们采用了新的降噪算法，也就是 "DeepClear" 技术...',
+    active: true,
+  },
+];
 
 export default function VoicePage() {
+  const [isRecording, setIsRecording] = useState(true);
+
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-4 font-heading">
-            语音转写
-          </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">
-            毫秒级低延迟，自动断句说话人并生成会议纪要
-          </p>
+      <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col h-full min-w-0 relative">
+          {/* Header */}
+          <header className="flex-none px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-10">
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                语音转写
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded-full font-bold">
+                  LIVE CAPTURE
+                </span>
+              </h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                实时将语音转换为高精度文本，支持多语言识别。
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm font-medium border border-red-100 dark:border-red-900/30 animate-pulse">
+                <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                正在录音 00:04:12
+              </div>
+              <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+            </div>
+          </header>
+
+          {/* Transcript Content Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-32">
+            <div className="max-w-4xl mx-auto">
+              {/* Visualization Card */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                      />
+                    </svg>
+                    Microphone Array (Active)
+                  </div>
+                  <span className="font-mono text-slate-400 text-xs tracking-widest">
+                    SESSION: 00:04:12.85
+                  </span>
+                </div>
+
+                <WaveformVisualizer />
+
+                {/* Decorative background blur */}
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              </div>
+
+              {/* Transcript List */}
+              <TranscriptList segments={mockSegments} />
+
+              {/* Loading State for next segment */}
+              <div className="mt-6 flex gap-4 px-4 opacity-50">
+                <div className="w-12 pt-1">
+                  <div className="h-3 w-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full animate-pulse"></div>
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-2/3 animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Floating Action Bar */}
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4">
+            <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 p-2 rounded-2xl shadow-2xl flex items-center justify-between">
+              {/* Record Control */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsRecording(!isRecording)}
+                  className={
+                    isRecording
+                      ? 'w-10 h-10 flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-colors'
+                      : 'w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-600/20'
+                  }
+                >
+                  {isRecording ? (
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  )}
+                </button>
+                <div className="px-3">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">状态</p>
+                  <p className="text-sm font-bold text-slate-800 dark:text-white min-w-[60px]">
+                    {isRecording ? '录音中' : '已暂停'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                <button className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors text-sm font-medium">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  复制文本
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors text-sm font-medium">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                    />
+                  </svg>
+                  导出
+                </button>
+              </div>
+
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
+
+              <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2 hover:scale-105 active:scale-95">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 10V3L4 14h7v7l9-11h-7z"
+                  />
+                </svg>
+                发送至 AI 对话
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white dark:bg-dark-card rounded-2xl p-8 shadow-sm border border-slate-200 dark:border-dark-border">
-          <p className="text-slate-600 dark:text-slate-400">语音转写功能开发中...</p>
+        {/* Right Sidebar: Recording Library - Hidden on mobile, visible on lg screens */}
+        <div className="hidden lg:block h-full shadow-xl z-20">
+          <RecordingLibrary />
         </div>
       </div>
     </AppLayout>
