@@ -2,13 +2,16 @@
 
 import { useTheme } from './theme-provider';
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   const { theme, toggleTheme } = useTheme();
 
   return (
     <button
       onClick={toggleTheme}
-      className="p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+      className={
+        className ||
+        'p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'
+      }
       aria-label={`切换到${theme === 'light' ? '暗色' : '亮色'}主题`}
     >
       {theme === 'light' ? (

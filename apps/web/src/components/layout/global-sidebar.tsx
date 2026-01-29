@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Settings, X, Check } from 'lucide-react';
+import { Sparkles, Plus, Settings, X, Check, Clock, FileText } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
@@ -101,7 +101,7 @@ export function GlobalSidebar() {
         </div>
 
         {/* Dynamic Nav Items */}
-        <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto no-scrollbar relative z-10">
+        <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible no-scrollbar relative z-10 pt-2">
           <AnimatePresence mode="popLayout">
             {pinnedApps.map((appId, index) => {
               const app = APP_CONFIGS.find((a) => a.id === appId);
@@ -128,18 +128,15 @@ export function GlobalSidebar() {
                   >
                     {/* Active Indicator */}
                     {active && (
-                      <motion.div
-                        layoutId="active-indicator"
-                        className="absolute left-[-12px] top-1/5 -translate-y-1/2 w-1 h-10 bg-blue-500 rounded-r-full"
-                      />
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-blue-500 rounded-r-full" />
                     )}
 
                     <div
                       className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                         active
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30'
-                          : 'text-slate-500 hover:bg-white hover:text-blue-600 hover:shadow-md hover:shadow-slate-200/50 dark:hover:bg-slate-800 dark:hover:text-blue-400'
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
+                          : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 active:scale-95'
                         // Landing Glow Effect (when flight completes and isJustAdded becomes false, we could trigger a class animation, but simpler to rely on css animation keyframes if needed)
                       )}
                     >
@@ -159,22 +156,33 @@ export function GlobalSidebar() {
           <motion.button
             layout
             onClick={() => setShowAppsModal(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:border-blue-400 hover:text-blue-500 dark:hover:border-blue-500 dark:hover:text-blue-400 transition-all duration-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 group mt-2 mx-auto"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-500 dark:hover:text-blue-400 hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
           </motion.button>
         </nav>
 
-        {/* Bottom */}
-        <div className="flex flex-col items-center gap-4 mt-auto w-full px-2 pt-4 relative z-20 bg-slate-50 dark:bg-slate-900">
-          <ThemeToggle />
+        {/* Bottom Icons */}
+        <div className="flex flex-col items-center gap-3 mt-auto w-full px-3 pt-4 pb-6 relative z-20 bg-slate-50 dark:bg-slate-900">
+          {/* History */}
+          <Link
+            href="/history"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300"
+          >
+            <Clock className="w-5 h-5" />
+          </Link>
 
-          <button className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+          {/* Theme Toggle */}
+          <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300" />
+
+          {/* Settings */}
+          <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300">
             <Settings className="w-5 h-5" />
           </button>
 
-          <div className="relative cursor-pointer group mb-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-400 to-rose-400 p-0.5 shadow-md">
+          {/* User Avatar */}
+          <div className="relative cursor-pointer group mt-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 p-0.5 shadow-md hover:shadow-lg transition-shadow">
               <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden">
                 <img
                   src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"

@@ -80,10 +80,7 @@ export function useConversations() {
             if (stored) {
                 const parsed = JSON.parse(stored) as Conversation[];
                 setConversations(parsed);
-                // 默认选中最新的对话
-                if (parsed.length > 0) {
-                    setCurrentConversationId(parsed[0].id);
-                }
+                // 不再默认选中最新的对话，由页面根据 URL 参数决定
             }
         } catch (error) {
             console.error('Failed to load conversations:', error);

@@ -131,60 +131,73 @@ export function HomeContent() {
           style={{ animationDelay: '2s' }}
         ></div>
 
-        <div className="max-w-6xl mx-auto px-12 py-16">
-          {/* Header */}
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold tracking-wider mb-6">
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              AI PRODUCTIVITY SUITE
+        <div className="max-w-[1400px] mx-auto px-8 py-10">
+          {/* Hero Section Card */}
+          {/* Hero Section Card with Premium Blending Effect */}
+          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl rounded-[48px] p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-16 relative overflow-hidden group/hero">
+            {/* Fading Border Overlay - creates the 'blending border' effect */}
+            <div className="absolute inset-0 rounded-[48px] border border-white/60 dark:border-white/10 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] pointer-events-none"></div>
+
+            {/* Top Shine/Highlight */}
+            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50"></div>
+
+            {/* Subtle inner highlight */}
+            <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent dark:from-white/5 pointer-events-none"></div>
+
+            {/* Header */}
+            <div className="text-center mb-16 relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold tracking-wider mb-6">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                AI PRODUCTIVITY SUITE
+              </div>
+
+              <h1 className="text-6xl font-black mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
+                开启您的 AI{' '}
+                <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
+                  创作宇宙
+                </span>
+              </h1>
+
+              <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+                集成尖端对话模型、高精度语音识别与艺术级图像生成，
+                <br />
+                为专业创作者打造的沉浸式智能工作空间。
+              </p>
             </div>
 
-            <h1 className="text-6xl font-black mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
-              开启您的 AI{' '}
-              <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
-                创作宇宙
-              </span>
-            </h1>
-
-            <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
-              集成尖端对话模型、高精度语音识别与艺术级图像生成，
-              <br />
-              为专业创作者打造的沉浸式智能工作空间。
-            </p>
-          </div>
-
-          {/* Main Feature Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
-            <FeatureCard
-              href="/chat"
-              title="智能对话"
-              description="深度逻辑推理，支持多轮复杂指令理解与代码生成。"
-              icon={MessageSquare}
-              color="text-blue-600"
-              gradient="from-blue-500/20 to-cyan-500/20"
-              buttonText="新建对话"
-              buttonIcon={Plus}
-            />
-            <FeatureCard
-              href="/voice"
-              title="语音转写"
-              description="毫秒级低延迟，自动识别说话人并生成智能纪要。"
-              icon={Mic}
-              color="text-purple-600"
-              gradient="from-purple-500/20 to-pink-500/20"
-              buttonText="开始会议纪要"
-              buttonIcon={ArrowRight}
-            />
-            <FeatureCard
-              href="/image"
-              title="灵感绘图"
-              description="超写实艺术渲染，将文字提示瞬间转化为视觉杰作。"
-              icon={ImageIcon}
-              color="text-pink-600"
-              gradient="from-pink-500/20 to-rose-500/20"
-              buttonText="开始创作"
-              buttonIcon={PenTool}
-            />
+            {/* Main Feature Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+              <FeatureCard
+                href="/chat?new=true"
+                title="智能对话"
+                description="深度逻辑推理，支持多轮复杂指令理解与代码生成。"
+                icon={MessageSquare}
+                color="text-blue-600"
+                gradient="from-blue-500/20 to-cyan-500/20"
+                buttonText="新建对话"
+                buttonIcon={Plus}
+              />
+              <FeatureCard
+                href="/voice"
+                title="语音转写"
+                description="毫秒级低延迟，自动识别说话人并生成智能纪要。"
+                icon={Mic}
+                color="text-purple-600"
+                gradient="from-purple-500/20 to-pink-500/20"
+                buttonText="开始会议纪要"
+                buttonIcon={ArrowRight}
+              />
+              <FeatureCard
+                href="/image"
+                title="灵感绘图"
+                description="超写实艺术渲染，将文字提示瞬间转化为视觉杰作。"
+                icon={ImageIcon}
+                color="text-pink-600"
+                gradient="from-pink-500/20 to-rose-500/20"
+                buttonText="开始创作"
+                buttonIcon={PenTool}
+              />
+            </div>
           </div>
 
           {/* Recent Creations Header */}

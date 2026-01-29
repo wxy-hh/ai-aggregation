@@ -168,6 +168,8 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-xl border-none shadow-2xl p-0 overflow-hidden max-h-[85vh] flex flex-col">
+        {/* Visually hidden title for accessibility */}
+        <DialogTitle className="sr-only">应用中心</DialogTitle>
         {/* Header with Search */}
         <div className="p-6 pb-2 flex items-center justify-center">
           <div className="relative w-2/3">

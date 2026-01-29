@@ -49,6 +49,7 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const modelSelectorRef = useRef<HTMLDivElement>(null);
+  const hasInitialized = useRef(false);
 
   // 对话历史管理
   const {
@@ -63,6 +64,33 @@ export default function ChatPage() {
     updateConversationSettings,
     deleteConversation,
   } = useConversations();
+
+  // 处理 URL 参数，决定是否创建新对话
+  useEffect(() => {
+    if (!isLoaded || hasInitialized.current) return;
+    hasInitialized.current = true;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isNewConversation = urlParams.get('new') === 'true';
+
+    if (isNewConversation) {
+      // 从首页"新建对话"按钮来的
+      // 先检查是否已有空对话（没有消息的对话），如果有就复用
+      const emptyConversation = conversations.find((c) => c.messages.length === 0);
+      if (emptyConversation) {
+        // 复用已有的空对话
+        switchConversation(emptyConversation.id);
+      } else {
+        // 没有空对话，创建新对话
+        createConversation();
+      }
+      // 清除 URL 参数，避免刷新时重复创建
+      window.history.replaceState({}, '', '/chat');
+    } else if (!currentConversationId && conversations.length > 0) {
+      // 没有选中对话且有历史记录，选中第一个
+      switchConversation(conversations[0].id);
+    }
+  }, [isLoaded, conversations, currentConversationId, createConversation, switchConversation]);
 
   // 获取当前对话的 provider 和 model
   const currentProvider = (currentConversation?.provider as ProviderName) || 'xunfei';
