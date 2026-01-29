@@ -2,6 +2,9 @@
 
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 const aspectRatios = [
   { id: '1:1', label: '1:1', title: 'Square' },
@@ -42,18 +45,18 @@ export function SettingsPanel() {
         </div>
         <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-lg">
           {aspectRatios.map((item) => (
-            <button
+            <Button
               key={item.id}
               onClick={() => setRatio(item.id)}
+              variant={ratio === item.id ? 'default' : 'ghost'}
               className={cn(
-                'text-xs py-1.5 rounded-md font-medium transition-all duration-200',
-                ratio === item.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                'text-xs h-8 font-medium transition-all duration-200',
+                ratio !== item.id &&
+                  'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
               )}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -64,13 +67,13 @@ export function SettingsPanel() {
           <span className="text-slate-500 dark:text-slate-400 font-medium">生成的质量 (Steps)</span>
           <span className="text-slate-900 dark:text-white font-mono">{steps}</span>
         </div>
-        <input
-          type="range"
-          min="10"
-          max="150"
-          value={steps}
-          onChange={(e) => setSteps(Number(e.target.value))}
-          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+        <Slider
+          defaultValue={[steps]}
+          max={150}
+          min={10}
+          step={1}
+          onValueChange={(vals) => setSteps(vals[0])}
+          className="py-4"
         />
       </div>
 
@@ -80,14 +83,13 @@ export function SettingsPanel() {
           <span className="text-slate-500 dark:text-slate-400 font-medium">提示词相关性 (CFG)</span>
           <span className="text-slate-900 dark:text-white font-mono">{cfg}</span>
         </div>
-        <input
-          type="range"
-          min="1"
-          max="20"
-          step="0.5"
-          value={cfg}
-          onChange={(e) => setCfg(Number(e.target.value))}
-          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+        <Slider
+          defaultValue={[cfg]}
+          max={20}
+          min={1}
+          step={0.5}
+          onValueChange={(vals) => setCfg(vals[0])}
+          className="py-4"
         />
       </div>
 
@@ -97,11 +99,11 @@ export function SettingsPanel() {
           种子 (Seed)
         </label>
         <div className="relative">
-          <input
+          <Input
             type="text"
             defaultValue=""
             placeholder="随机 (-1)"
-            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+            className="w-full h-9 px-3 py-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-xs font-mono focus-visible:ring-blue-500/20 focus-visible:border-blue-500"
           />
           <button className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-500 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

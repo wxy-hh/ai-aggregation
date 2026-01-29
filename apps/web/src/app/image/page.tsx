@@ -6,6 +6,9 @@ import { SettingsPanel } from '@/components/image/settings-panel';
 import { AssetSidebar } from '@/components/image/asset-sidebar';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 
 export default function ImagePage() {
   const [prompt, setPrompt] = useState(
@@ -40,19 +43,22 @@ export default function ImagePage() {
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 灵感绘图
-                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs rounded-md font-bold uppercase">
+                <Badge className="px-2 py-0.5 bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs rounded-md font-bold uppercase border-0 hover:bg-indigo-200 dark:hover:bg-indigo-900/70">
                   Engine v4.0
-                </span>
+                </Badge>
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 AI 正在根据您的描述构建画面。
               </p>
             </div>
             <div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-bold border border-green-100 dark:border-green-900/30">
+              <Badge
+                variant="outline"
+                className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-bold border-green-100 dark:border-green-900/30"
+              >
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
                 GPU 算力充足
-              </div>
+              </Badge>
             </div>
           </header>
 
@@ -85,10 +91,10 @@ export default function ImagePage() {
                     </button>
                   </div>
                   <div className="relative group">
-                    <textarea
+                    <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      className="w-full h-32 px-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl resize-none focus:border-blue-500 focus:ring-0 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:border-slate-300 dark:group-hover:border-slate-600"
+                      className="w-full h-32 px-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-blue-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:border-slate-300 dark:group-hover:border-slate-600"
                       placeholder="描述你想要生成的画面细节..."
                     />
                     <div className="absolute right-3 bottom-3 text-xs text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700 font-mono">
@@ -128,14 +134,14 @@ export default function ImagePage() {
 
               {/* Sticky Generate Button */}
               <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 z-10 pb-8">
-                <button
+                <Button
                   onClick={() => {
                     setIsGenerating(true);
                     setProgress(0);
                   }}
                   disabled={isGenerating}
                   className={cn(
-                    'w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-lg transition-all',
+                    'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-lg transition-all text-md',
                     isGenerating
                       ? 'bg-slate-800 dark:bg-slate-700 cursor-not-allowed opacity-90'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98]'
@@ -178,7 +184,7 @@ export default function ImagePage() {
                       立即生成
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 

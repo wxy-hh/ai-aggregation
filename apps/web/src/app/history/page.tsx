@@ -7,6 +7,9 @@ import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
 import { mockHistory, type HistoryItem } from '@/components/history/mock-data';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const tabs = [
   { id: 'all', label: '全部' },
@@ -36,20 +39,33 @@ export default function HistoryPage() {
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               生成历史
-              <span className="px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal">
+              <Badge
+                variant="secondary"
+                className="px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal hover:bg-blue-100 dark:hover:bg-blue-900/40 border-0"
+              >
                 对话视图
-              </span>
+              </Badge>
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <button className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
+            <Button
+              variant="ghost"
+              className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+            >
               文档
-            </button>
-            <button className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+            >
               社区
-            </button>
+            </Button>
             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-            <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -58,8 +74,12 @@ export default function HistoryPage() {
                   d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
                 />
               </svg>
-            </button>
-            <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -68,7 +88,7 @@ export default function HistoryPage() {
                   d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -77,18 +97,18 @@ export default function HistoryPage() {
           {/* Tabs */}
           <div className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full sm:w-auto">
             {tabs.map((tab) => (
-              <button
+              <Button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                variant={activeTab === tab.id ? 'default' : 'ghost'}
                 className={cn(
-                  'px-6 py-2 rounded-lg text-sm font-bold transition-all flex-1 sm:flex-none',
-                  activeTab === tab.id
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                  'px-6 py-2 rounded-lg text-sm font-bold transition-all flex-1 sm:flex-none h-9',
+                  activeTab !== tab.id &&
+                    'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
                 )}
               >
                 {tab.label}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -108,15 +128,18 @@ export default function HistoryPage() {
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
-              <input
+              <Input
                 type="text"
                 placeholder={activeTab === 'image' ? '搜索 prompt...' : '搜索历史记录...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px]"
               />
             </div>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
+            >
               <svg
                 className="w-4 h-4 text-slate-500"
                 fill="none"
@@ -131,7 +154,7 @@ export default function HistoryPage() {
                 />
               </svg>
               筛选
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -184,9 +207,11 @@ export default function HistoryPage() {
             onClick={() => setPreviewItem(null)}
           >
             {/* Unified Floating Close Button */}
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setPreviewItem(null)}
-              className="absolute top-6 right-6 md:top-10 md:right-10 z-[60] p-2 md:p-3 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-xl border border-white/20 group hover:scale-110 active:scale-95 shadow-2xl"
+              className="absolute top-6 right-6 md:top-10 md:right-10 z-[60] p-2 md:p-3 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-xl border border-white/20 group hover:scale-110 active:scale-95 shadow-2xl h-12 w-12"
               title="关闭预览"
             >
               <svg
@@ -202,7 +227,7 @@ export default function HistoryPage() {
                   d="M6 18L18 6M6 6l12 12"
                 />
               </svg>
-            </button>
+            </Button>
 
             <div
               className="relative max-w-5xl w-full max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transform animate-in zoom-in-95 duration-200 border border-white/10"
@@ -221,9 +246,12 @@ export default function HistoryPage() {
               <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800">
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg border border-blue-200 dark:border-blue-800/50">
+                    <Badge
+                      variant="outline"
+                      className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-lg border-blue-200 dark:border-blue-800/50"
+                    >
                       {previewItem.model}
-                    </span>
+                    </Badge>
                     <span className="text-xs text-slate-400 font-medium">{previewItem.date}</span>
                   </div>
 
@@ -244,7 +272,10 @@ export default function HistoryPage() {
                 </div>
 
                 <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
-                  <button className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-750 transition-all active:scale-95 shadow-sm">
+                  <Button
+                    variant="outline"
+                    className="gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-750 shadow-sm"
+                  >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
@@ -254,8 +285,8 @@ export default function HistoryPage() {
                       />
                     </svg>
                     下载
-                  </button>
-                  <button className="flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/25 active:scale-95">
+                  </Button>
+                  <Button className="gap-2 bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/25">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
@@ -265,7 +296,7 @@ export default function HistoryPage() {
                       />
                     </svg>
                     分享
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -7,13 +9,23 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const [input, setInput] = useState('');
+  const [isComposing, setIsComposing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // 如果正在使用输入法（如中文拼音输入），不触发发送
+    if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleCompositionStart = () => {
+    setIsComposing(true);
+  };
+
+  const handleCompositionEnd = () => {
+    setIsComposing(false);
   };
 
   const handleSend = () => {
@@ -34,19 +46,25 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   return (
     <div className="max-w-4xl mx-auto p-4">
       <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-2 transition-colors">
-        <textarea
+        <Textarea
           ref={textareaRef}
           rows={1}
           value={input}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           placeholder="输入消息..."
-          className="w-full px-4 py-3 bg-transparent border-0 focus:ring-0 resize-none max-h-[200px] text-slate-900 dark:text-white placeholder:text-slate-400"
+          className="w-full px-4 py-3 bg-transparent border-0 focus-visible:ring-0 resize-none min-h-[24px] max-h-[200px] text-slate-900 dark:text-white placeholder:text-slate-400 shadow-none text-base"
           disabled={isLoading}
         />
         <div className="flex justify-between items-center px-2 pb-1 mt-2">
-          <div className="flex items-center gap-2 text-slate-400">
-            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+          <div className="flex items-center gap-1 text-slate-400">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -55,10 +73,14 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
                 />
               </svg>
-            </button>
+            </Button>
           </div>
           <div className="flex items-center gap-2">
-            <button className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-400">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -67,11 +89,12 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                 />
               </svg>
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl transition-colors shadow-sm"
+              className="h-9 w-9 p-0 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl transition-colors shadow-sm"
+              size="icon"
             >
               {isLoading ? (
                 <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -99,12 +122,12 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   />
                 </svg>
               )}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
       <div className="text-center mt-3 text-xs text-slate-400">
-        AI 生成的内容可能不准确，请核头重要信息。
+        AI 生成的内容可能不准确，请核实重要信息。
       </div>
     </div>
   );

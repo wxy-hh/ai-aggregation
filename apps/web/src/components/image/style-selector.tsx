@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 const styles = [
   { id: '3d-render', name: '3D 渲染', icon: 'box' },
@@ -35,14 +36,15 @@ export function StyleSelector() {
       </div>
       <div className="grid grid-cols-2 gap-3">
         {styles.map((style) => (
-          <button
+          <Button
             key={style.id}
             onClick={() => setSelected(style.id)}
+            variant={selected === style.id ? 'secondary' : 'outline'}
             className={cn(
-              'relative p-4 rounded-xl border flex flex-col items-center gap-3 transition-all duration-200 group',
+              'h-auto relative p-4 flex flex-col items-center gap-3 transition-all duration-200 group',
               selected === style.id
                 ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-500 shadow-sm ring-1 ring-blue-500/20'
-                : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
+                : 'hover:border-blue-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
             )}
           >
             {/* Active Indication Dot */}
@@ -136,7 +138,7 @@ export function StyleSelector() {
             >
               {style.name}
             </span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>

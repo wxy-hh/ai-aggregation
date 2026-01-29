@@ -18,6 +18,7 @@ export interface Message {
 
 interface MessageItemProps {
   message: Message;
+  onRegenerate?: (messageId: string) => void;
 }
 
 // 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
@@ -30,76 +31,16 @@ const StreamingContent = memo(function StreamingContent({ content }: { content: 
   );
 });
 
-// 静态 Markdown 内容组件 - 只在非流式时渲染
-const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
-  // 使用 useMemo 缓存 components 配置，避免每次渲染都创建新对象
-  const components = useMemo(
-    () => ({
-      code({ node, inline, className, children, ...props }: any) {
-        const match = /language-(\w+)/.exec(className || '');
-
-        if (!inline && match) {
-          return (
-            <CodeBlock language={match[1]} className={className}>
-              {String(children).replace(/\n$/, '')}
-            </CodeBlock>
-          );
-        }
-
-        return (
-          <code
-            className={cn(
-              'bg-slate-100 dark:bg-slate-700/50 px-1.5 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-sm',
-              className
-            )}
-            {...props}
-          >
-            {children}
-          </code>
-        );
-      },
-    }),
-    []
-  );
-
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
-      components={components}
-    >
-      {content}
-    </ReactMarkdown>
-  );
-});
-
-// 用户头像组件
-const UserAvatar = memo(function UserAvatar() {
-  return (
-    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600">
-      <div className="text-slate-600 dark:text-slate-200 font-medium text-sm">U</div>
-    </div>
-  );
-});
-
-// AI 头像组件
-const AIAvatar = memo(function AIAvatar() {
-  return (
-    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm bg-gradient-to-br from-indigo-500 to-purple-600 border border-transparent">
-      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M13 10V3L4 14h7v7l9-11h-7z"
-        />
-      </svg>
-    </div>
-  );
-});
-
 // 操作按钮组件
-const ActionButtons = memo(function ActionButtons({ onCopy }: { onCopy: () => void }) {
+const ActionButtons = memo(function ActionButtons({
+  onCopy,
+  onRegenerate,
+  isUser,
+}: {
+  onCopy: () => void;
+  onRegenerate?: () => void;
+  isUser?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -109,11 +50,17 @@ const ActionButtons = memo(function ActionButtons({ onCopy }: { onCopy: () => vo
   }, [onCopy]);
 
   return (
-    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity px-1">
+    <div
+      className={cn(
+        'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity px-1',
+        isUser ? 'flex-row-reverse' : ''
+      )}
+    >
+      {/* 复制按钮 */}
       <button
         onClick={handleCopy}
         className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-        title="复制回答"
+        title="复制"
       >
         {copied ? (
           <svg
@@ -135,40 +82,184 @@ const ActionButtons = memo(function ActionButtons({ onCopy }: { onCopy: () => vo
           </svg>
         )}
       </button>
-      <button
-        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-        title="重新生成"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+
+      {/* 重新生成按钮 */}
+      {onRegenerate && (
+        <button
+          onClick={onRegenerate}
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          title="重新生成"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
+          </svg>
+        </button>
+      )}
+
+      {/* 赞按钮 - 只对 AI 显示 */}
+      {!isUser && (
+        <button
+          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          title="赞"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+});
+
+// 静态 Markdown 内容组件 - 只在非流式时渲染
+const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  // 使用 useMemo 缓存 components 配置，避免每次渲染都创建新对象
+  const components = useMemo(
+    () => ({
+      code({ node, inline, className, children, ...props }: any) {
+        const match = /language-(\w+)/.exec(className || '');
+
+        // 将 children 转换为字符串，过滤掉对象
+        const getTextContent = (child: any): string => {
+          if (typeof child === 'string') return child;
+          if (Array.isArray(child)) return child.map(getTextContent).join('');
+          if (child && typeof child === 'object' && child.props && child.props.children) {
+            return getTextContent(child.props.children);
+          }
+          return '';
+        };
+
+        const textContent = getTextContent(children);
+
+        if (!inline && match) {
+          return (
+            <CodeBlock language={match[1]} className={className}>
+              {textContent.replace(/\n$/, '')}
+            </CodeBlock>
+          );
+        }
+
+        return (
+          <code
+            className={cn(
+              'bg-slate-100 dark:bg-slate-700/50 px-1.5 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-sm',
+              className
+            )}
+            {...props}
+          >
+            {textContent}
+          </code>
+        );
+      },
+    }),
+    []
+  );
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={components}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+});
+
+// 用户头像组件
+const UserAvatar = memo(function UserAvatar() {
+  return (
+    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300">
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+        />
+      </svg>
+    </div>
+  );
+});
+
+// AI 头像组件
+const AIAvatar = memo(function AIAvatar() {
+  return (
+    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-md bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 border border-white/20 text-white ring-2 ring-white dark:ring-slate-800">
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M12 2L14.4 7.2L20 9.6L14.4 12L12 17.2L9.6 12L4 9.6L9.6 7.2L12 2Z"
+          fill="currentColor"
+          className="animate-pulse"
+        />
+        <path
+          d="M19 15L20 17L22 18L20 19L19 21L18 19L16 18L18 17L19 15Z"
+          fill="currentColor"
+          className="opacity-70"
+        />
+      </svg>
+    </div>
+  );
+});
+
+// 操作按钮组件
+
+// 思考过程骨架屏组件
+const ThinkingIndicator = memo(function ThinkingIndicator() {
+  return (
+    <div className="w-full max-w-[400px] space-y-3 py-1">
+      {/* 标题动画 */}
+      <div className="flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-blue-400 mb-4 animate-pulse">
+        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          ></circle>
           <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
         </svg>
-      </button>
-      <button
-        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-        title="赞"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"
-          />
-        </svg>
-      </button>
+        <span>AI 正在思考</span>
+        <span className="flex gap-0.5 ml-1">
+          <span className="animate-bounce delay-0">.</span>
+          <span className="animate-bounce delay-150">.</span>
+          <span className="animate-bounce delay-300">.</span>
+        </span>
+      </div>
+
+      {/* 骨架屏线条 */}
+      <div className="space-y-2.5">
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-md w-full animate-pulse" />
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-md w-[90%] animate-pulse delay-75" />
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-md w-[95%] animate-pulse delay-150" />
+        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-md w-[80%] animate-pulse delay-200" />
+      </div>
     </div>
   );
 });
 
 // 主消息组件
-export const MessageItem = memo(function MessageItem({ message }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, onRegenerate }: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
+  // 判断是否处于思考状态：是 AI 消息 + 正在流式传输 + 内容为空
+  const isThinking = !isUser && isStreaming && !message.content;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
@@ -194,7 +285,9 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
               isUser ? 'flex-row-reverse' : ''
             )}
           >
-            <span className="font-medium">{isUser ? '用户' : 'AI 助手'}</span>
+            <span className={cn('font-medium', isThinking ? 'text-blue-500 animate-pulse' : '')}>
+              {isUser ? '用户' : isThinking ? 'AI 思考中...' : 'AI 助手'}
+            </span>
           </div>
 
           {/* Message Bubble */}
@@ -203,15 +296,18 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
               'px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm w-fit max-w-full break-words',
               isUser
                 ? 'bg-blue-600 text-white rounded-tr-none'
-                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none text-slate-800 dark:text-slate-200'
+                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none text-slate-800 dark:text-slate-200',
+              // 思考状态下，气泡宽度设为更宽以容纳骨架屏
+              isThinking ? 'w-full max-w-[500px]' : ''
             )}
           >
             {isUser ? (
               <div className="whitespace-pre-wrap">{message.content}</div>
             ) : (
               <div className="markdown-body prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border prose-pre:border-slate-200 dark:prose-pre:border-slate-700 prose-pre:rounded-xl">
-                {/* 关键修复：流式时显示纯文本，完成后才渲染 Markdown */}
-                {isStreaming ? (
+                {isThinking ? (
+                  <ThinkingIndicator />
+                ) : isStreaming ? (
                   <StreamingContent content={message.content} />
                 ) : (
                   <MarkdownContent content={message.content} />
@@ -220,8 +316,14 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
             )}
           </div>
 
-          {/* Action buttons - only show when not streaming */}
-          {!isUser && !isStreaming && <ActionButtons onCopy={handleCopy} />}
+          {/* Action buttons - show for both user (if interactive) and AI, but not during streaming */}
+          {!isStreaming && !isThinking && (
+            <ActionButtons
+              onCopy={handleCopy}
+              onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+              isUser={isUser}
+            />
+          )}
         </div>
       </div>
     </div>

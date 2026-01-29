@@ -5,6 +5,8 @@ import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
 import { RecordingLibrary } from '@/components/voice/recording-library';
 import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 const mockSegments: TranscriptSegment[] = [
   {
@@ -44,20 +46,30 @@ export default function VoicePage() {
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 语音转写
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded-full font-bold">
+                <Badge
+                  variant="secondary"
+                  className="px-2 py-0.5 bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded-full font-bold border-0"
+                >
                   LIVE CAPTURE
-                </span>
+                </Badge>
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 实时将语音转换为高精度文本，支持多语言识别。
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm font-medium border border-red-100 dark:border-red-900/30 animate-pulse">
+              <Badge
+                variant="outline"
+                className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm font-medium border-red-100 dark:border-red-900/30 animate-pulse"
+              >
                 <span className="w-2 h-2 bg-red-500 rounded-full"></span>
                 正在录音 00:04:12
-              </div>
-              <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
+              </Badge>
+              <Button
+                variant="outline"
+                size="icon"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
@@ -72,7 +84,7 @@ export default function VoicePage() {
                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                   />
                 </svg>
-              </button>
+              </Button>
             </div>
           </header>
 
@@ -128,13 +140,15 @@ export default function VoicePage() {
             <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 p-2 rounded-2xl shadow-2xl flex items-center justify-between">
               {/* Record Control */}
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   onClick={() => setIsRecording(!isRecording)}
                   className={
                     isRecording
-                      ? 'w-10 h-10 flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-500 rounded-xl transition-colors'
-                      : 'w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg shadow-blue-600/20'
+                      ? 'w-10 h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500'
+                      : 'w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
                   }
+                  variant={isRecording ? 'secondary' : 'default'}
+                  size="icon"
                 >
                   {isRecording ? (
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -145,7 +159,7 @@ export default function VoicePage() {
                       <path d="M8 5v14l11-7z" />
                     </svg>
                   )}
-                </button>
+                </Button>
                 <div className="px-3">
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">状态</p>
                   <p className="text-sm font-bold text-slate-800 dark:text-white min-w-[60px]">
@@ -158,7 +172,7 @@ export default function VoicePage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors text-sm font-medium">
+                <Button variant="ghost" className="gap-2 text-slate-600 dark:text-slate-300">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
@@ -168,8 +182,8 @@ export default function VoicePage() {
                     />
                   </svg>
                   复制文本
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors text-sm font-medium">
+                </Button>
+                <Button variant="ghost" className="gap-2 text-slate-600 dark:text-slate-300">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
@@ -179,12 +193,12 @@ export default function VoicePage() {
                     />
                   </svg>
                   导出
-                </button>
+                </Button>
               </div>
 
               <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
 
-              <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2 hover:scale-105 active:scale-95">
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
@@ -194,7 +208,7 @@ export default function VoicePage() {
                   />
                 </svg>
                 发送至 AI 对话
-              </button>
+              </Button>
             </div>
           </div>
         </div>

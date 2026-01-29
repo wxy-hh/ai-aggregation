@@ -1,329 +1,396 @@
 'use client';
 
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import {
+  Search,
+  FileText,
+  PenTool,
+  Bookmark,
+  Zap,
+  Clock,
+  Mic,
+  MessageSquare,
+  Image as ImageIcon,
+  ArrowRight,
+  Plus,
+  MoreHorizontal,
+  Lightbulb,
+  File,
+} from 'lucide-react';
 
 export function HomeContent() {
   return (
-    <div className="relative h-full flex flex-col overflow-hidden">
-      {/* Gradient Background */}
-      <div className="fixed inset-0 bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-100 dark:from-slate-900 dark:via-blue-900 dark:to-indigo-900 -z-10"></div>
+    <div className="flex h-full w-full bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
+      {/* 
+        Secondary Sidebar (Discover) 
+        Based on "Image 1" description: Left sidebar with "Discover", search, tools, etc.
+      */}
+      <aside className="w-[280px] h-full flex flex-col p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-800/50 z-10 flex-shrink-0">
+        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">发现</h2>
 
-      {/* Animated gradient orbs */}
-      <div className="fixed inset-0 overflow-hidden -z-10">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-400/50 dark:bg-blue-500/30 rounded-full blur-3xl animate-pulse"></div>
+        {/* Search */}
+        <div className="relative mb-8">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="搜索功能、文档或指令..."
+            className="w-full bg-white dark:bg-slate-800 border-none rounded-xl py-3 pl-10 pr-4 text-sm text-slate-600 dark:text-slate-300 placeholder:text-slate-400 shadow-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+          />
+        </div>
+
+        {/* Common Tools */}
+        <div className="mb-8">
+          <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-wider">
+            常用工具
+          </h3>
+          <div className="space-y-1">
+            <ToolItem
+              icon={FileText}
+              label="会议纪要"
+              badge="关联语音"
+              badgeColor="text-blue-500 bg-blue-50 dark:bg-blue-900/20"
+              color="text-blue-600"
+            />
+            <ToolItem icon={PenTool} label="文案润色" color="text-purple-600" />
+            <ToolItem icon={Bookmark} label="收藏夹" color="text-amber-500" />
+          </div>
+        </div>
+
+        {/* Recommended Commands */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              推荐指令
+            </h3>
+            <Zap className="w-3 h-3 text-yellow-500 fill-current" />
+          </div>
+
+          <div className="space-y-3">
+            <CommandCard
+              icon={Mic}
+              iconColor="text-purple-500"
+              iconBg="bg-purple-100 dark:bg-purple-900/30"
+              actionIcon={MessageSquare}
+              actionColor="text-blue-500"
+              actionBg="bg-blue-100 dark:bg-blue-900/30"
+              label="将录音总结为文档"
+            />
+            <CommandCard
+              icon={MessageSquare}
+              iconColor="text-blue-500"
+              iconBg="bg-blue-100 dark:bg-blue-900/30"
+              actionIcon={ImageIcon}
+              actionColor="text-pink-500"
+              actionBg="bg-pink-100 dark:bg-pink-900/30"
+              label="优化提示词并绘图"
+            />
+          </div>
+        </div>
+
+        {/* Recent Files */}
+        <div className="flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              最近文件
+            </h3>
+            <ArrowRight className="w-3 h-3 text-slate-400 cursor-pointer hover:text-blue-500" />
+          </div>
+          <div className="space-y-3">
+            <FileItem name="未来城市概念设计.png" type="image" />
+            <FileItem name="Q3 业务复盘录音.mp3" type="audio" />
+            <FileItem name="产品发布营销文案.doc" type="doc" />
+          </div>
+        </div>
+
+        {/* Daily Inspiration */}
+        <div className="mt-4 p-4 bg-gradient-to-br from-white to-blue-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 shadow-sm relative overflow-hidden group cursor-pointer">
+          <div className="flex items-start gap-3 relative z-10">
+            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-500">
+              <Lightbulb className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm mb-1">每日灵感</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                尝试使用"生成一份周报大纲"来提高效率。
+              </p>
+            </div>
+          </div>
+          <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-blue-500/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-500"></div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 h-full overflow-y-auto custom-scrollbar relative">
+        {/* Background Elements */}
+        <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-blue-100/50 to-transparent dark:from-blue-900/10 dark:to-transparent -z-10 pointer-events-none"></div>
+        <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"></div>
         <div
-          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-400/50 dark:bg-purple-500/30 rounded-full blur-3xl animate-pulse"
-          style={{ animationDelay: '1s' }}
-        ></div>
-        <div
-          className="absolute top-1/2 left-1/2 w-96 h-96 bg-indigo-400/50 dark:bg-indigo-500/30 rounded-full blur-3xl animate-pulse"
+          className="absolute top-40 left-40 w-72 h-72 bg-blue-200/30 dark:bg-blue-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"
           style={{ animationDelay: '2s' }}
+        ></div>
+
+        <div className="max-w-6xl mx-auto px-12 py-16">
+          {/* Header */}
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold tracking-wider mb-6">
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+              AI PRODUCTIVITY SUITE
+            </div>
+
+            <h1 className="text-6xl font-black mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
+              开启您的 AI{' '}
+              <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
+                创作宇宙
+              </span>
+            </h1>
+
+            <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+              集成尖端对话模型、高精度语音识别与艺术级图像生成，
+              <br />
+              为专业创作者打造的沉浸式智能工作空间。
+            </p>
+          </div>
+
+          {/* Main Feature Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+            <FeatureCard
+              href="/chat"
+              title="智能对话"
+              description="深度逻辑推理，支持多轮复杂指令理解与代码生成。"
+              icon={MessageSquare}
+              color="text-blue-600"
+              gradient="from-blue-500/20 to-cyan-500/20"
+              buttonText="新建对话"
+              buttonIcon={Plus}
+            />
+            <FeatureCard
+              href="/voice"
+              title="语音转写"
+              description="毫秒级低延迟，自动识别说话人并生成智能纪要。"
+              icon={Mic}
+              color="text-purple-600"
+              gradient="from-purple-500/20 to-pink-500/20"
+              buttonText="开始会议纪要"
+              buttonIcon={ArrowRight}
+            />
+            <FeatureCard
+              href="/image"
+              title="灵感绘图"
+              description="超写实艺术渲染，将文字提示瞬间转化为视觉杰作。"
+              icon={ImageIcon}
+              color="text-pink-600"
+              gradient="from-pink-500/20 to-rose-500/20"
+              buttonText="开始创作"
+              buttonIcon={PenTool}
+            />
+          </div>
+
+          {/* Recent Creations Header */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              最近创作
+            </h2>
+            <Button
+              variant="ghost"
+              className="text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              asChild
+            >
+              <Link href="/history" className="flex items-center gap-1">
+                查看全部 <ArrowRight className="w-4 h-4" />
+              </Link>
+            </Button>
+          </div>
+
+          {/* Recent Creations Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <CreationCard
+              title="未来城市概念"
+              time="2小时前"
+              type="image"
+              gradient="from-slate-800 to-black"
+              status="completed"
+            />
+            <CreationCard
+              title="产品营销文案"
+              time="5小时前"
+              type="doc"
+              gradient="bg-white dark:bg-slate-800"
+              status="completed"
+            />
+            <CreationCard
+              title="Q3 业务复盘"
+              time="昨天"
+              type="audio"
+              gradient="bg-white dark:bg-slate-800"
+              status="processing"
+            />
+
+            {/* New Project Card */}
+            <div className="h-40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-300 dark:hover:border-blue-700 transition-all flex flex-col items-center justify-center cursor-pointer group">
+              <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-slate-400 group-hover:text-blue-500">
+                <Plus className="w-5 h-5" />
+              </div>
+              <span className="font-medium text-slate-500 group-hover:text-blue-600 dark:text-slate-400 dark:group-hover:text-blue-400 transition-colors">
+                新建项目
+              </span>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Sub-components
+
+function ToolItem({ icon: Icon, label, badge, badgeColor, color }: any) {
+  return (
+    <div className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group">
+      <div className="flex items-center gap-3">
+        <div
+          className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-800 group-hover:bg-white dark:group-hover:bg-slate-700 transition-colors ${color}`}
+        >
+          <Icon className="w-4 h-4" />
+        </div>
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
+      </div>
+      {badge && (
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeColor}`}>
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CommandCard({
+  icon: Icon,
+  iconColor,
+  iconBg,
+  actionIcon: ActionIcon,
+  actionColor,
+  actionBg,
+  label,
+}: any) {
+  return (
+    <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:shadow-md transition-shadow cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div
+          className={`w-6 h-6 rounded-md flex items-center justify-center ${iconBg} ${iconColor}`}
+        >
+          <Icon className="w-3.5 h-3.5" />
+        </div>
+        <div className="w-1 h-3 border-l border-dashed border-slate-300 dark:border-slate-600"></div>
+        <div
+          className={`w-6 h-6 rounded-md flex items-center justify-center ${actionBg} ${actionColor}`}
+        >
+          <ActionIcon className="w-3.5 h-3.5" />
+        </div>
+      </div>
+      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 line-clamp-1">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function FileItem({ name, type }: { name: string; type: 'image' | 'doc' | 'audio' }) {
+  let Icon = File;
+  let color = 'text-slate-500';
+  if (type === 'image') {
+    Icon = ImageIcon;
+    color = 'text-purple-500';
+  }
+  if (type === 'audio') {
+    Icon = Mic;
+    color = 'text-pink-500';
+  }
+  if (type === 'doc') {
+    Icon = FileText;
+    color = 'text-blue-500';
+  }
+
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors">
+      <Icon className={`w-4 h-4 ${color}`} />
+      <span className="text-sm text-slate-600 dark:text-slate-400 truncate">{name}</span>
+    </div>
+  );
+}
+
+function FeatureCard({
+  href,
+  title,
+  description,
+  icon: Icon,
+  color,
+  gradient,
+  buttonText,
+  buttonIcon: ButtonIcon,
+}: any) {
+  return (
+    <div className="relative overflow-hidden bg-white dark:bg-slate-900 rounded-[32px] p-8 shadow-xl hover:shadow-2xl transition-all duration-300 group border border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700">
+      {/* Gradient Blob Background */}
+      <div
+        className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${gradient} blur-3xl rounded-full translate-x-12 -translate-y-12 opacity-50 group-hover:opacity-100 transition-opacity duration-500`}
+      ></div>
+
+      <div
+        className={`w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300 ${color}`}
+      >
+        <Icon className="w-7 h-7" />
+      </div>
+
+      <h3 className="text-2xl font-bold mb-3">{title}</h3>
+      <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-8 min-h-[48px]">
+        {description}
+      </p>
+
+      <Link href={href}>
+        <div
+          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 font-semibold text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${color}`}
+        >
+          {buttonText}
+          <ButtonIcon className="w-4 h-4" />
+        </div>
+      </Link>
+    </div>
+  );
+}
+
+function CreationCard({ title, time, type, gradient, status }: any) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow border border-slate-100 dark:border-slate-800 cursor-pointer group">
+      <div
+        className={`aspect-[4/3] rounded-xl mb-4 overflow-hidden relative ${type === 'image' ? '' : 'bg-slate-50 dark:bg-slate-800 flex items-center justify-center'}`}
+      >
+        {type === 'image' ? (
+          <div
+            className={`absolute inset-0 bg-gradient-to-br ${gradient} group-hover:scale-105 transition-transform duration-500`}
+          >
+            <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center opacity-80 mix-blend-overlay"></div>
+          </div>
+        ) : (
+          <div className="text-slate-300 group-hover:text-blue-500 transition-colors">
+            {type === 'doc' ? <FileText className="w-10 h-10" /> : <Mic className="w-10 h-10" />}
+          </div>
+        )}
+
+        {/* Status Dot */}
+        <div
+          className={`absolute top-3 right-3 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 ${status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`}
         ></div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-full flex flex-col justify-center relative z-10 py-6 gap-8">
-        {/* Hero Section */}
-        <div className="text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/40 dark:bg-white/10 backdrop-blur-xl text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium mb-6 border border-white/60 dark:border-white/20 shadow-lg transition-colors duration-300">
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            NEXT-GEN AI PLATFORM
-          </div>
-          <h1 className="text-5xl sm:text-6xl font-bold mb-6 text-slate-900 dark:text-white font-heading transition-colors duration-300">
-            开启您的 AI{' '}
-            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 dark:from-blue-400 dark:via-indigo-400 dark:to-purple-400 bg-clip-text text-transparent animate-gradient drop-shadow-sm">
-              创作宇宙
-            </span>
-          </h1>
-          <p className="text-xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto leading-relaxed transition-colors duration-300">
-            集成尖端对话模型、高精度语音识别与艺术级图像生成，
-            <br />
-            为专业创作者打造的沉浸式智能工作空间。
-          </p>
-        </div>
-
-        {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link href="/chat" className="group cursor-pointer">
-            <div className="bg-white/70 dark:bg-white/10 backdrop-blur-2xl rounded-2xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 ease-out border border-white/60 dark:border-white/10 hover:border-blue-400/60 dark:hover:border-blue-400/40 hover:bg-white/80 dark:hover:bg-white/20">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-400/20 to-blue-500/30 dark:from-blue-400/30 dark:to-blue-500/40 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 border border-blue-300/50 dark:border-blue-400/30">
-                <svg
-                  className="w-8 h-8 text-blue-600 dark:text-blue-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3 font-heading transition-colors duration-300">
-                智能对话
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed transition-colors duration-300">
-                深度逻辑推理，支持多轮复杂对话与情境化代码生成。
-              </p>
-            </div>
-          </Link>
-
-          <Link href="/voice" className="group cursor-pointer">
-            <div className="bg-white/70 dark:bg-white/10 backdrop-blur-2xl rounded-2xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 ease-out border border-white/60 dark:border-white/10 hover:border-indigo-400/60 dark:hover:border-indigo-400/40 hover:bg-white/80 dark:hover:bg-white/20">
-              <div className="w-16 h-16 bg-gradient-to-br from-indigo-400/20 to-indigo-500/30 dark:from-indigo-400/30 dark:to-indigo-500/40 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 border border-indigo-300/50 dark:border-indigo-400/30">
-                <svg
-                  className="w-8 h-8 text-indigo-600 dark:text-indigo-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3 font-heading transition-colors duration-300">
-                语音转写
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed transition-colors duration-300">
-                毫秒级低延迟，自动断句说话人并生成会议纪要。
-              </p>
-            </div>
-          </Link>
-
-          <Link href="/image" className="group cursor-pointer">
-            <div className="bg-white/70 dark:bg-white/10 backdrop-blur-2xl rounded-2xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 ease-out border border-white/60 dark:border-white/10 hover:border-purple-400/60 dark:hover:border-purple-400/40 hover:bg-white/80 dark:hover:bg-white/20">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-400/20 to-purple-500/30 dark:from-purple-400/30 dark:to-purple-500/40 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-6 border border-purple-300/50 dark:border-purple-400/30">
-                <svg
-                  className="w-8 h-8 text-purple-600 dark:text-purple-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                  />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3 font-heading transition-colors duration-300">
-                灵感绘图
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed transition-colors duration-300">
-                超写实艺术渲染，将文字提示瞬间转化为视觉杰作。
-              </p>
-            </div>
-          </Link>
-        </div>
-
-        {/* Recent Activity */}
-        {/* Recent Activity */}
-        <div className="bg-white/70 dark:bg-white/10 backdrop-blur-2xl rounded-2xl p-8 shadow-2xl border border-white/60 dark:border-white/10 transition-colors duration-300">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <svg
-                className="w-6 h-6 text-blue-600 dark:text-blue-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white font-heading transition-colors duration-300">
-                最近活动
-              </h2>
-            </div>
-            <Link
-              href="/history"
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium flex items-center gap-2 cursor-pointer transition-colors duration-200"
-            >
-              查看全部历史
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Activity Card 1 - Futuristic City */}
-            <div className="group cursor-pointer">
-              <div className="aspect-video rounded-xl mb-4 overflow-hidden relative shadow-lg">
-                {/* Cyberpunk gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 dark:from-slate-800 dark:via-slate-900 dark:to-black"></div>
-
-                {/* Ambient glow at bottom */}
-                <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-orange-500/30 via-amber-500/20 to-transparent"></div>
-
-                {/* City skyline silhouettes */}
-                <div className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-1 px-4 pb-4 opacity-80">
-                  <div className="w-8 h-20 bg-gradient-to-t from-slate-900 to-slate-800 dark:from-black dark:to-slate-900 rounded-t-sm relative">
-                    <div className="absolute top-2 left-1 right-1 space-y-1">
-                      <div className="h-0.5 bg-cyan-400/40 rounded"></div>
-                      <div className="h-0.5 bg-cyan-400/30 rounded"></div>
-                      <div className="h-0.5 bg-cyan-400/40 rounded"></div>
-                    </div>
-                  </div>
-                  <div className="w-10 h-28 bg-gradient-to-t from-slate-900 to-slate-700 dark:from-black dark:to-slate-800 rounded-t-sm relative">
-                    <div className="absolute top-1 left-0 right-0 h-2 bg-gradient-to-b from-cyan-400/60 to-transparent rounded-t-sm"></div>
-                    <div className="absolute top-4 left-1 right-1 space-y-1">
-                      <div className="h-0.5 bg-blue-400/50 rounded"></div>
-                      <div className="h-0.5 bg-blue-400/40 rounded"></div>
-                      <div className="h-0.5 bg-cyan-400/50 rounded"></div>
-                      <div className="h-0.5 bg-blue-400/30 rounded"></div>
-                    </div>
-                  </div>
-                  <div className="w-7 h-24 bg-gradient-to-t from-slate-900 to-slate-800 dark:from-black dark:to-slate-900 rounded-t-sm relative">
-                    <div className="absolute top-3 left-1 right-1 space-y-1">
-                      <div className="h-0.5 bg-cyan-400/40 rounded"></div>
-                      <div className="h-0.5 bg-blue-400/30 rounded"></div>
-                    </div>
-                  </div>
-                  <div className="w-9 h-22 bg-gradient-to-t from-slate-900 to-slate-800 dark:from-black dark:to-slate-900 rounded-t-sm relative">
-                    <div className="absolute top-2 left-1 right-1 space-y-1">
-                      <div className="h-0.5 bg-cyan-400/50 rounded"></div>
-                      <div className="h-0.5 bg-blue-400/40 rounded"></div>
-                      <div className="h-0.5 bg-cyan-400/30 rounded"></div>
-                    </div>
-                  </div>
-                  <div className="w-6 h-18 bg-gradient-to-t from-slate-900 to-slate-800 dark:from-black dark:to-slate-900 rounded-t-sm relative">
-                    <div className="absolute top-2 left-1 right-1 space-y-1">
-                      <div className="h-0.5 bg-cyan-400/40 rounded"></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Fog/mist effect */}
-                <div className="absolute inset-0 bg-gradient-to-t from-transparent via-slate-500/10 to-slate-400/20 group-hover:via-slate-500/5 transition-all duration-300"></div>
-
-                {/* Scan line effect */}
-                <div className="absolute inset-0 opacity-20">
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-400/10 to-transparent animate-pulse"></div>
-                </div>
-
-                {/* Icon badge */}
-                <div className="absolute top-3 right-3 w-10 h-10 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-200">
-                  <svg
-                    className="w-6 h-6 text-blue-600 dark:text-blue-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                    />
-                  </svg>
-                </div>
-              </div>
-              <h4 className="font-semibold text-slate-900 dark:text-white mb-1 transition-colors duration-300">
-                未来城市概念设计
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
-                最后编辑: 2小时前
-              </p>
-            </div>
-
-            {/* Activity Card 2 */}
-            <div className="group cursor-pointer">
-              <div className="aspect-video bg-slate-50 dark:bg-dark-surface rounded-xl mb-4 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-dark-border group-hover:border-blue-300 dark:group-hover:border-blue-700 group-hover:bg-blue-50 dark:group-hover:bg-blue-950/20 transition-colors duration-200">
-                <svg
-                  className="w-12 h-12 text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors duration-200"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-              </div>
-              <h4 className="font-semibold text-slate-900 dark:text-white mb-1 transition-colors duration-300">
-                产品发布营销文案
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
-                最后编辑: 5小时前
-              </p>
-            </div>
-
-            {/* Activity Card 3 */}
-            <div className="group cursor-pointer">
-              <div className="aspect-video bg-slate-50 dark:bg-dark-surface rounded-xl mb-4 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-dark-border group-hover:border-blue-300 dark:group-hover:border-blue-700 group-hover:bg-blue-50 dark:group-hover:bg-blue-950/20 transition-colors duration-200">
-                <svg
-                  className="w-12 h-12 text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors duration-200"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                  />
-                </svg>
-              </div>
-              <h4 className="font-semibold text-slate-900 dark:text-white mb-1 transition-colors duration-300">
-                Q3 业务复盘录音
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
-                昨天
-              </p>
-            </div>
-
-            {/* New Project Card */}
-            <div className="group cursor-pointer">
-              <div className="aspect-video bg-slate-50 dark:bg-dark-surface rounded-xl mb-4 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-dark-border hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors duration-200">
-                <div className="text-center">
-                  <svg
-                    className="w-12 h-12 text-slate-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400 mx-auto mb-2 transition-colors duration-200"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                </div>
-              </div>
-              <h4 className="font-semibold text-slate-900 dark:text-white mb-1 transition-colors duration-300">
-                开启新创作
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300">
-                点击快捷创建
-              </p>
-            </div>
-          </div>
-        </div>
+      <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1">{title}</h4>
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <div
+          className={`w-1.5 h-1.5 rounded-full ${type === 'image' ? 'bg-purple-500' : type === 'doc' ? 'bg-blue-500' : 'bg-pink-500'}`}
+        ></div>
+        {time}
       </div>
     </div>
   );
