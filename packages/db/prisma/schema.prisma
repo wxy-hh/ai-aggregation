@@ -14,9 +14,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions ChatSession[]
-  tasks    Task[]
-  usage    UserUsage[]
+  sessions            ChatSession[]
+  tasks               Task[]
+  usage               UserUsage[]
+  voiceTranscriptions VoiceTranscription[]
 
   @@map("users")
 }
@@ -81,4 +82,27 @@ model UserUsage {
   @@unique([userId, period])
   @@index([userId])
   @@map("user_usage")
+}
+
+model VoiceTranscription {
+  id            String    @id @default(cuid())
+  userId        String
+  fileName      String
+  fileSize      Int
+  duration      Int?
+  format        String
+  model         String    @default("FunAudioLLM/SenseVoiceSmall")
+  status        String    @default("pending")
+  transcription String?   @db.Text
+  error         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  completedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("voice_transcriptions")
 }

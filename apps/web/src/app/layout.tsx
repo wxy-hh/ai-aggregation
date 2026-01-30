@@ -4,6 +4,7 @@ import './globals.css';
 import '@/styles/scrollbar.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
+import { QueryProvider } from '@/components/providers/query-provider';
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -69,7 +70,7 @@ export default function RootLayout({
       </head>
       <body className={dmSans.className}>
         <ThemeInitializer />
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   );

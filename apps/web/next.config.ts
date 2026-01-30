@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger'],
   experimental: {
     serverActions: {
-      bodySizeLimit: '10mb',
+      bodySizeLimit: '50mb',
     },
   },
 };
