@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Settings, X, Check, Clock, FileText } from 'lucide-react';
+import { Sparkles, Plus, Settings, X, Check, Clock, FileText, Home } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
@@ -107,6 +107,27 @@ export function GlobalSidebar() {
 
         {/* Dynamic Nav Items */}
         <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible no-scrollbar relative z-10 pt-2">
+          {/* Home Button - Permanent */}
+          <div className="w-full">
+            <Link href="/" className="flex flex-col items-center gap-1 group w-full relative">
+              {/* Active Indicator */}
+              {pathname === '/' && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-blue-500 rounded-r-full" />
+              )}
+
+              <div
+                className={cn(
+                  'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
+                  pathname === '/'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
+                    : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 active:scale-95'
+                )}
+              >
+                <Home className="w-5 h-5" strokeWidth={2} />
+              </div>
+            </Link>
+          </div>
+
           <AnimatePresence mode="popLayout">
             {pinnedApps.map((appId, index) => {
               const app = APP_CONFIGS.find((a) => a.id === appId);
