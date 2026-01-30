@@ -24,7 +24,7 @@ export default function ImagePage() {
           if (prev >= 99) {
             // clearInterval(interval);
             // setIsGenerating(false);
-            return 99; // Keep at 99 for demonstration
+            return 99; // 演示时保持在 99%
           }
           return prev + 1;
         });
@@ -36,9 +36,9 @@ export default function ImagePage() {
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
-        {/* Main Workspace */}
+        {/* 主工作区 */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-          {/* Header */}
+          {/* 头部 */}
           <header className="flex-none px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-10 shadow-sm">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -62,12 +62,12 @@ export default function ImagePage() {
             </div>
           </header>
 
-          {/* Content Area: Split View */}
+          {/* 内容区域：拆分视图 */}
           <div className="flex-1 flex overflow-hidden">
-            {/* Left Panel: Settings & Prompt */}
+            {/* 左侧面板：设置与提示词 */}
             <div className="w-80 md:w-96 flex-none flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 overflow-y-auto custom-scrollbar">
               <div className="p-6 space-y-8">
-                {/* Prompt Input */}
+                {/* 提示词输入 */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -102,7 +102,7 @@ export default function ImagePage() {
                     </div>
                   </div>
 
-                  {/* Negative Prompt Accordion */}
+                  {/* 反向提示词折叠面板 */}
                   <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                     <button className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                       <span>排除内容 (Negative)</span>
@@ -132,7 +132,7 @@ export default function ImagePage() {
                 <SettingsPanel />
               </div>
 
-              {/* Sticky Generate Button */}
+              {/* 吸底生成按钮 */}
               <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 z-10 pb-8">
                 <Button
                   onClick={() => {
@@ -188,9 +188,9 @@ export default function ImagePage() {
               </div>
             </div>
 
-            {/* Middle: Preview Area */}
+            {/* 中间：预览区域 */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center bg-slate-100 dark:bg-black relative">
-              {/* Background Grid Pattern */}
+              {/* 背景网格纹理 */}
               <div
                 className="absolute inset-0 opacity-[0.03] dark:opacity-[0.1]"
                 style={{
@@ -200,7 +200,7 @@ export default function ImagePage() {
               ></div>
 
               <div className="w-full max-w-2xl aspect-[9/16] md:aspect-[3/4] relative rounded-3xl overflow-hidden shadow-2xl border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group">
-                {/* Image Content (Blurred if generating) */}
+                {/* 图片内容（生成时模糊） */}
                 <div
                   className={cn(
                     'absolute inset-0 bg-cover bg-center transition-all duration-1000',
@@ -212,10 +212,10 @@ export default function ImagePage() {
                   }}
                 ></div>
 
-                {/* Generating Overlay */}
+                {/* 生成中遮罩 */}
                 {isGenerating && (
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/20 backdrop-blur-sm">
-                    {/* Progress Circle */}
+                    {/* 进度环 */}
                     <div className="relative w-40 h-40 mb-8">
                       <svg className="w-full h-full transform -rotate-90">
                         <circle
@@ -247,7 +247,7 @@ export default function ImagePage() {
                       </div>
                     </div>
 
-                    {/* Status Badge */}
+                    {/* 状态徽章 */}
                     <div className="flex items-center gap-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full shadow-xl border border-white/20">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
@@ -299,7 +299,7 @@ export default function ImagePage() {
                 )}
               </div>
 
-              {/* History Strip */}
+              {/* 历史记录条 */}
               <div className="mt-8 w-full max-w-2xl px-4">
                 <div className="flex items-center justify-between mb-4 text-xs font-bold text-slate-400 uppercase tracking-widest">
                   <span>历史版本 (Version History)</span>
@@ -329,7 +329,7 @@ export default function ImagePage() {
           </div>
         </div>
 
-        {/* Right Sidebar: Asset Dock - Hidden on mobile, visible on lg screens */}
+        {/* 右侧边栏：资产停靠区 - 移动端隐藏，lg 屏幕可见 */}
         <AssetSidebar />
       </div>
     </AppLayout>

@@ -56,7 +56,7 @@ export const useUIStore = create<UIState>()(
             },
         }),
         {
-            name: 'ai-app-ui-storage', // localStorage key
+            name: 'ai-app-ui-storage', // 本地存储键名
             storage: createJSONStorage(() => localStorage),
             // 只持久化 pinnedApps
             partialize: (state) => ({

@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
 const aspectRatios = [
-  { id: '1:1', label: '1:1', title: 'Square' },
-  { id: '4:3', label: '4:3', title: 'Portrait' },
-  { id: '16:9', label: '16:9', title: 'Landscape' },
+  { id: '1:1', label: '1:1', title: '正方形' },
+  { id: '4:3', label: '4:3', title: '竖屏' },
+  { id: '16:9', label: '16:9', title: '横屏' },
 ];
 
 export function SettingsPanel() {
@@ -19,7 +19,7 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Settings Header */}
+      {/* 参数设置头部 */}
       <div className="flex items-center gap-2 mb-2">
         <svg
           className="w-5 h-5 text-indigo-500"
@@ -37,7 +37,7 @@ export function SettingsPanel() {
         <h3 className="font-bold text-slate-800 dark:text-white">参数设置</h3>
       </div>
 
-      {/* Aspect Ratio */}
+      {/* 宽高比 */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-500 dark:text-slate-400 font-medium">宽高比例</span>
@@ -61,7 +61,7 @@ export function SettingsPanel() {
         </div>
       </div>
 
-      {/* Steps Slider */}
+      {/* 步数滑块 (质量) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-500 dark:text-slate-400 font-medium">生成的质量 (Steps)</span>
@@ -77,7 +77,7 @@ export function SettingsPanel() {
         />
       </div>
 
-      {/* CFG Slider */}
+      {/* CFG 滑块 (提示词相关性) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-500 dark:text-slate-400 font-medium">提示词相关性 (CFG)</span>
@@ -93,7 +93,7 @@ export function SettingsPanel() {
         />
       </div>
 
-      {/* Seed Input */}
+      {/* 种子输入 */}
       <div className="space-y-3">
         <label className="text-xs text-slate-500 dark:text-slate-400 font-medium">
           种子 (Seed)

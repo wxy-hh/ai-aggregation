@@ -205,7 +205,7 @@ export const useConversationsStore = create<ConversationsState>()(
             },
         }),
         {
-            name: 'ai-chat-conversations', // localStorage key (与原来保持一致)
+            name: 'ai-chat-conversations', // 本地存储键名 (与原来保持一致)
             storage: createJSONStorage(() => localStorage),
             // 只持久化 conversations，不持久化 currentConversationId 和 isLoaded
             partialize: (state) => ({

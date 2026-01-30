@@ -24,13 +24,13 @@ export function HomeContent() {
   return (
     <div className="flex h-full w-full bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
       {/* 
-        Secondary Sidebar (Discover) 
-        Based on "Image 1" description: Left sidebar with "Discover", search, tools, etc.
+        二级侧边栏（发现） 
+        基于 "Image 1" 描述：左侧侧边栏包含 “发现”、搜索、工具等。
       */}
       <aside className="w-[280px] h-full flex flex-col p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-800/50 z-10 flex-shrink-0">
         <h2 className="text-xl font-bold mb-6 flex items-center gap-2">发现</h2>
 
-        {/* Search */}
+        {/* 搜索 */}
         <div className="relative mb-8">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -40,7 +40,7 @@ export function HomeContent() {
           />
         </div>
 
-        {/* Common Tools */}
+        {/* 常用工具 */}
         <div className="mb-8">
           <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-wider">
             常用工具
@@ -58,7 +58,7 @@ export function HomeContent() {
           </div>
         </div>
 
-        {/* Recommended Commands */}
+        {/* 推荐指令 */}
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -89,7 +89,7 @@ export function HomeContent() {
           </div>
         </div>
 
-        {/* Recent Files */}
+        {/* 最近文件 */}
         <div className="flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -104,7 +104,7 @@ export function HomeContent() {
           </div>
         </div>
 
-        {/* Daily Inspiration */}
+        {/* 每日灵感 */}
         <div className="mt-4 p-4 bg-gradient-to-br from-white to-blue-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 shadow-sm relative overflow-hidden group cursor-pointer">
           <div className="flex items-start gap-3 relative z-10">
             <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-500">
@@ -121,9 +121,9 @@ export function HomeContent() {
         </div>
       </aside>
 
-      {/* Main Content */}
+      {/* 主内容 */}
       <main className="flex-1 h-full overflow-y-auto custom-scrollbar relative">
-        {/* Background Elements */}
+        {/* 背景元素 */}
         <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-blue-100/50 to-transparent dark:from-blue-900/10 dark:to-transparent -z-10 pointer-events-none"></div>
         <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"></div>
         <div
@@ -132,19 +132,18 @@ export function HomeContent() {
         ></div>
 
         <div className="max-w-[1400px] mx-auto px-8 py-10">
-          {/* Hero Section Card */}
-          {/* Hero Section Card with Premium Blending Effect */}
+          {/* 具有高级深色混合效果的主视觉区域卡片 */}
           <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl rounded-[48px] p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-16 relative overflow-hidden group/hero">
-            {/* Fading Border Overlay - creates the 'blending border' effect */}
+            {/* 渐变边框遮罩 - 创建“融合边缘”效果 */}
             <div className="absolute inset-0 rounded-[48px] border border-white/60 dark:border-white/10 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] pointer-events-none"></div>
 
-            {/* Top Shine/Highlight */}
+            {/* 顶部光波/高光 */}
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50"></div>
 
-            {/* Subtle inner highlight */}
+            {/* 细腻的内部高光 */}
             <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent dark:from-white/5 pointer-events-none"></div>
 
-            {/* Header */}
+            {/* 头部 */}
             <div className="text-center mb-16 relative z-10">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold tracking-wider mb-6">
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
@@ -165,7 +164,7 @@ export function HomeContent() {
               </p>
             </div>
 
-            {/* Main Feature Cards */}
+            {/* 主要功能卡片 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
               <FeatureCard
                 href="/chat?new=true"
@@ -200,7 +199,7 @@ export function HomeContent() {
             </div>
           </div>
 
-          {/* Recent Creations Header */}
+          {/* 最近创作头部 */}
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold flex items-center gap-2">
               <Clock className="w-5 h-5 text-blue-500" />
@@ -217,7 +216,7 @@ export function HomeContent() {
             </Button>
           </div>
 
-          {/* Recent Creations Grid */}
+          {/* 最近创作网格 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <CreationCard
               title="未来城市概念"
@@ -241,7 +240,7 @@ export function HomeContent() {
               status="processing"
             />
 
-            {/* New Project Card */}
+            {/* 新建项目卡片 */}
             <div className="h-40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-300 dark:hover:border-blue-700 transition-all flex flex-col items-center justify-center cursor-pointer group">
               <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-slate-400 group-hover:text-blue-500">
                 <Plus className="w-5 h-5" />
@@ -257,7 +256,7 @@ export function HomeContent() {
   );
 }
 
-// Sub-components
+// 子组件
 
 function ToolItem({ icon: Icon, label, badge, badgeColor, color }: any) {
   return (
@@ -346,7 +345,7 @@ function FeatureCard({
 }: any) {
   return (
     <div className="relative overflow-hidden bg-white dark:bg-slate-900 rounded-[32px] p-8 shadow-xl hover:shadow-2xl transition-all duration-300 group border border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700">
-      {/* Gradient Blob Background */}
+      {/* 渐变背景光圈 */}
       <div
         className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${gradient} blur-3xl rounded-full translate-x-12 -translate-y-12 opacity-50 group-hover:opacity-100 transition-opacity duration-500`}
       ></div>
@@ -392,7 +391,7 @@ function CreationCard({ title, time, type, gradient, status }: any) {
           </div>
         )}
 
-        {/* Status Dot */}
+        {/* 状态指示点 */}
         <div
           className={`absolute top-3 right-3 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 ${status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`}
         ></div>

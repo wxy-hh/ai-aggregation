@@ -47,7 +47,7 @@ export function StyleSelector() {
                 : 'hover:border-blue-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
             )}
           >
-            {/* Active Indication Dot */}
+            {/* 激活状态指示点 */}
             {selected === style.id && (
               <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm animate-pulse-slow"></div>
             )}
@@ -60,7 +60,7 @@ export function StyleSelector() {
                   : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200'
               )}
             >
-              {/* Simple Icons based on type */}
+              {/* 根据类型显示的简单图标 */}
               {style.icon === 'box' && (
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path

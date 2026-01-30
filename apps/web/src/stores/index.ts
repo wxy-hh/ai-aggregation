@@ -5,7 +5,7 @@
  * import { useConversationsStore, useSettingsStore } from '@/stores';
  */
 
-// Conversations Store
+// 会话存储 (Conversations Store)
 export {
     useConversationsStore,
     useConversations,
@@ -17,7 +17,7 @@ export {
     type ConversationGroup,
 } from './conversations-store';
 
-// Settings Store
+// 设置存储 (Settings Store)
 export {
     useSettingsStore,
     useTheme,
@@ -28,7 +28,7 @@ export {
     type SettingsState,
 } from './settings-store';
 
-// UI Store
+// UI 存储 (UI Store)
 export {
     useUIStore,
     usePinnedApps,
@@ -37,7 +37,7 @@ export {
     type UIState,
 } from './ui-store';
 
-// Chat Store
+// 聊天存储 (Chat Store)
 export {
     useChatStore,
     type ChatState,

@@ -1,4 +1,4 @@
-// AppLayout.tsx
+// 核心布局组件
 'use client';
 
 import { ReactNode } from 'react';

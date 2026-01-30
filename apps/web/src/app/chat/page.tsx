@@ -1,8 +1,8 @@
 'use client';
 
-import { AppLayout } from '@/components/layout/app-layout';
-import { MessageItem } from '@/components/chat/message-item';
-import { ChatInput } from '@/components/chat/chat-input';
+import { AppLayout } from '@/components/layout/app-layout'; // 应用布局组件
+import { MessageItem } from '@/components/chat/message-item'; // 消息项组件
+import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入组件
 import {
   useConversationsStore,
   useChatStore,
@@ -276,9 +276,9 @@ export default function ChatPage() {
   return (
     <AppLayout>
       <div className="flex w-full h-full">
-        {/* Chat History Sidebar */}
+        {/* 聊天历史侧边栏 */}
         <aside className="w-[280px] flex-shrink-0 flex flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
-          {/* New Chat Button */}
+          {/* 新建聊天按钮 */}
           <button
             onClick={handleNewConversation}
             className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white border border-blue-100 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-700 rounded-xl py-3 px-4 font-medium flex items-center justify-center gap-2 transition-all shadow-sm group hover:shadow-md"
@@ -287,7 +287,7 @@ export default function ChatPage() {
             新建对话
           </button>
 
-          {/* History List */}
+          {/* 历史列表 */}
           <div className="flex-1 overflow-y-auto -mx-2 px-2 space-y-6 custom-scrollbar">
             {filteredGroups.length === 0 ? (
               <div className="text-center text-slate-400 text-sm py-8">
@@ -338,7 +338,7 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* Search */}
+          {/* 搜索框 */}
           <div className="relative mt-auto pt-4 border-t border-slate-200 dark:border-slate-800">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 mt-4" />
             <input
@@ -351,10 +351,10 @@ export default function ChatPage() {
           </div>
         </aside>
 
-        {/* Main Chat Area */}
+        {/* 主聊天区域 */}
         <div className="flex-1 p-4 min-w-0 h-full">
           <div className="h-full flex flex-col bg-white dark:bg-slate-900 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
-            {/* Header */}
+            {/* 头部 */}
             <header className="flex-none px-6 py-4 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -366,7 +366,7 @@ export default function ChatPage() {
                       {currentTitle}
                     </h1>
                     <div className="flex items-center gap-2 mt-0.5">
-                      {/* Model Selector */}
+                      {/* 模型选择器 */}
                       <div className="relative" ref={modelSelectorRef}>
                         <button
                           onClick={() => setShowModelSelector(!showModelSelector)}
@@ -395,7 +395,7 @@ export default function ChatPage() {
                           </svg>
                         </button>
 
-                        {/* Dropdown */}
+                        {/* 下拉列表 */}
                         {showModelSelector && (
                           <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
                             {(
@@ -433,19 +433,19 @@ export default function ChatPage() {
                   </div>
                 </div>
 
-                {/* Header Actions */}
+                {/* 头部操作区 */}
                 <div className="flex items-center gap-1">{/* 可扩展更多操作 */}</div>
               </div>
             </header>
 
-            {/* Error Display */}
+            {/* 错误显示 */}
             {error && (
               <div className="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
                 <strong>错误：</strong> {error.message}
               </div>
             )}
 
-            {/* Message List */}
+            {/* 消息列表 */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-white dark:bg-slate-900">
               {displayMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -462,7 +462,7 @@ export default function ChatPage() {
               )}
             </div>
 
-            {/* Input Area */}
+            {/* 输入区域 */}
             <div className="flex-none z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur pb-2">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>

@@ -34,7 +34,7 @@ export default function HistoryPage() {
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
-        {/* Header */}
+        {/* 头部 */}
         <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between z-10 shadow-sm">
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -92,9 +92,9 @@ export default function HistoryPage() {
           </div>
         </header>
 
-        {/* Filter Bar */}
+        {/* 筛选栏 */}
         <div className="flex-none px-6 py-4 flex flex-col sm:flex-row gap-4 justify-between items-center sm:h-20">
-          {/* Tabs */}
+          {/* 选项卡 */}
           <div className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full sm:w-auto">
             {tabs.map((tab) => (
               <Button
@@ -112,7 +112,7 @@ export default function HistoryPage() {
             ))}
           </div>
 
-          {/* Search & Filter */}
+          {/* 搜索与筛选 */}
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <div className="relative flex-1 sm:w-80">
               <svg
@@ -158,7 +158,7 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* Content Grid */}
+        {/* 内容网格 */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
           <div
             className={cn(
@@ -200,13 +200,13 @@ export default function HistoryPage() {
           )}
         </div>
 
-        {/* Preview Modal */}
+        {/* 预览弹窗 */}
         {previewItem && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setPreviewItem(null)}
           >
-            {/* Unified Floating Close Button */}
+            {/* 统一的浮动关闭按钮 */}
             <Button
               variant="ghost"
               size="icon"
@@ -233,7 +233,7 @@ export default function HistoryPage() {
               className="relative max-w-5xl w-full max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transform animate-in zoom-in-95 duration-200 border border-white/10"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Left: Image Container */}
+              {/* 左侧：图片容器 */}
               <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden min-h-[300px] md:min-h-0">
                 <img
                   src={previewItem.imageUrl}
@@ -242,7 +242,7 @@ export default function HistoryPage() {
                 />
               </div>
 
-              {/* Right: Info Panel */}
+              {/* 右侧：信息面板 */}
               <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800">
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">

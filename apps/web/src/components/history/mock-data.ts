@@ -13,7 +13,7 @@ export interface HistoryItem {
 }
 
 export const mockHistory: HistoryItem[] = [
-    // Chat History
+    // 对话历史
     {
         id: 'c1',
         type: 'chat',
@@ -42,7 +42,7 @@ export const mockHistory: HistoryItem[] = [
         model: 'GPT-4'
     },
 
-    // Voice History
+    // 语音历史
     {
         id: 'v1',
         type: 'voice',
@@ -62,7 +62,7 @@ export const mockHistory: HistoryItem[] = [
         model: 'Nova-2'
     },
 
-    // Image History
+    // 图片历史
     {
         id: 'i1',
         type: 'image',

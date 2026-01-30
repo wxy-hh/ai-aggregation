@@ -40,7 +40,7 @@ interface AppConfig {
 }
 
 export const APP_CONFIGS: AppConfig[] = [
-  // Core
+  // 核心能力
   {
     id: 'chat',
     label: '智能对话',
@@ -68,7 +68,7 @@ export const APP_CONFIGS: AppConfig[] = [
     href: '/image',
     color: 'text-pink-500',
   },
-  // Productivity
+  // 生产力工具
   {
     id: 'ppt',
     label: 'PPT 制作',
@@ -105,7 +105,7 @@ export const APP_CONFIGS: AppConfig[] = [
     href: '/code',
     color: 'text-blue-600',
   },
-  // Creative
+  // 创意工具
   {
     id: 'video',
     label: '视频生成',
@@ -142,7 +142,7 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
     { id: 'creative', label: '创意实验室', color: 'bg-purple-500' },
   ];
 
-  // Fuzzy search: match label or description (case-insensitive)
+  // 模糊搜索：匹配标签或描述（不区分大小写）
   const filteredApps = APP_CONFIGS.filter((app) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -153,8 +153,8 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
     e.stopPropagation();
     const button = e.currentTarget;
 
-    // Find the icon element to start animation from
-    // Structure: flex-row -> [icon-container, button]
+    // 找到图标元素以开始动画
+    // 结构：flex-row -> [图标容器, 按钮]
     const cardHeader = button.parentElement;
     const iconContainer = cardHeader?.firstElementChild as HTMLElement;
 
@@ -168,9 +168,9 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-5xl bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-xl border-none shadow-2xl p-0 overflow-hidden max-h-[85vh] flex flex-col">
-        {/* Visually hidden title for accessibility */}
+        {/* 为了无障碍访问而视觉隐藏的标题 */}
         <DialogTitle className="sr-only">应用中心</DialogTitle>
-        {/* Header with Search */}
+        {/* 带有搜索框的头部 */}
         <div className="p-6 pb-2 flex items-center justify-center">
           <div className="relative w-2/3">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

@@ -14,7 +14,7 @@ import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
 export function GlobalSidebar() {
   const pathname = usePathname();
 
-  // Zustand Store
+  // Zustand 状态管理
   const pinnedApps = usePinnedApps();
   const showAppsModal = useShowAppsModal();
   const { addPinnedApp, removePinnedApp, setAppsModal } = useUIActions();
@@ -22,31 +22,31 @@ export function GlobalSidebar() {
   const [flyingIcons, setFlyingIcons] = useState<{ id: AppId; startRect: DOMRect; icon: any }[]>(
     []
   );
-  // Store the ref of the newly added item to measure target position
+  // 存储新添加项目的 ref 以测量目标位置
   const newItemRef = useRef<HTMLAnchorElement>(null);
   const [justAddedApp, setJustAddedApp] = useState<AppId | null>(null);
   const [showToast, setShowToast] = useState(false);
 
   const [landingApp, setLandingApp] = useState<AppId | null>(null);
 
-  // Simple route matching
+  // 简单的路由匹配逻辑
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
     return pathname.startsWith(path);
   };
 
   const handleTogglePin = (id: AppId, startRect?: DOMRect) => {
-    // If removing
+    // 如果是移除
     if (pinnedApps.includes(id)) {
       removePinnedApp(id);
       return;
     }
 
-    // If adding
+    // 如果是添加
     if (startRect) {
       const appConfig = APP_CONFIGS.find((a) => a.id === id);
 
-      // Serialize DOMRect to plain object to avoid state issues
+      // 将 DOMRect 序列化为普通对象以避免状态问题
       const plainRect = {
         top: startRect.top,
         left: startRect.left,
@@ -58,38 +58,38 @@ export function GlobalSidebar() {
         y: startRect.y,
       } as DOMRect;
 
-      // Trigger Flying Icon
+      // 触发飞行图标动画
       setFlyingIcons((prev) => [...prev, { id, startRect: plainRect, icon: appConfig?.icon }]);
 
-      // IMPORTANT: Backup timer to clear flying icon if animation hangs
+      // 重要：备份定时器，防止动画卡住时清理飞行图标
       setTimeout(() => {
         setFlyingIcons((prev) => prev.filter((item) => item.id !== id));
       }, 2000);
 
-      // Delay adding to list slightly to sync with flight?
-      // User asked for "elastic response... making space".
-      // We can add it immediately but styled invisible, or wait a bit.
-      // Let's wait 100ms (just to start flight) to make space
+      //稍微延迟添加到列表，以便与飞行同步
+      // 用户要求“弹性响应...腾出空间”。
+      // 我们可以立即添加但将其样式设为不可见，或者稍等片刻。
+      // 让我们等待 100 毫秒（仅仅为了开始飞行）来腾出空间
       setTimeout(() => {
         addPinnedApp(id);
         setJustAddedApp(id);
       }, 100);
     } else {
-      // Fallback if no rect
+      // 如果没有 rect 则回退
       addPinnedApp(id);
     }
   };
 
   const handleFlightComplete = (id: AppId) => {
     setFlyingIcons((prev) => prev.filter((item) => item.id !== id));
-    // Trigger "Landing" effects (glow, toast)
-    setJustAddedApp(null); // Clear "just added" state (which might be hiding the real icon)
+    // 触发“着陆”效果（发光、提示）
+    setJustAddedApp(null); // 清除“刚添加”状态（该状态可能隐藏了真实图标）
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
 
-    // Set landing state for wave effect
+    // 设置着陆状态以产生波浪效果
     setLandingApp(id);
-    setTimeout(() => setLandingApp(null), 2000); // Stop wave after 2s
+    setTimeout(() => setLandingApp(null), 2000); // 2秒后停止波浪
   };
 
   return (
@@ -105,12 +105,12 @@ export function GlobalSidebar() {
           </Link>
         </div>
 
-        {/* Dynamic Nav Items */}
+        {/* 动态导航项 */}
         <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible no-scrollbar relative z-10 pt-2">
-          {/* Home Button - Permanent */}
+          {/* 首页按钮 - 常驻 */}
           <div className="w-full">
             <Link href="/" className="flex flex-col items-center gap-1 group w-full relative">
-              {/* Active Indicator */}
+              {/* 激活状态指示器 */}
               {pathname === '/' && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-blue-500 rounded-r-full" />
               )}
@@ -152,7 +152,7 @@ export function GlobalSidebar() {
                     className="flex flex-col items-center gap-1 group w-full relative"
                     ref={isJustAdded ? newItemRef : null}
                   >
-                    {/* Active Indicator */}
+                    {/* 激活状态指示器 */}
                     {active && (
                       <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-blue-500 rounded-r-full" />
                     )}
@@ -163,7 +163,7 @@ export function GlobalSidebar() {
                         active
                           ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
                           : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 active:scale-95'
-                        // Landing Glow Effect (when flight completes and isJustAdded becomes false, we could trigger a class animation, but simpler to rely on css animation keyframes if needed)
+                        // 着陆发光效果（当飞行完成且 isJustAdded 变为 false 时，我们可以触发 class 动画，但如果需要，依赖 css 动画关键帧更简单）
                       )}
                     >
                       <app.icon className="w-5 h-5" strokeWidth={2} />
@@ -178,7 +178,7 @@ export function GlobalSidebar() {
             })}
           </AnimatePresence>
 
-          {/* Add Button */}
+          {/* 添加按钮 */}
           <motion.button
             layout
             onClick={() => setAppsModal(true)}
@@ -188,9 +188,9 @@ export function GlobalSidebar() {
           </motion.button>
         </nav>
 
-        {/* Bottom Icons */}
+        {/* 底部图标 */}
         <div className="flex flex-col items-center gap-3 mt-auto w-full px-3 pt-4 pb-6 relative z-20 bg-slate-50 dark:bg-slate-900">
-          {/* History */}
+          {/* 历史记录 */}
           <Link
             href="/history"
             className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300"
@@ -198,15 +198,15 @@ export function GlobalSidebar() {
             <Clock className="w-5 h-5" />
           </Link>
 
-          {/* Theme Toggle */}
+          {/* 主题切换 */}
           <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300" />
 
-          {/* Settings */}
+          {/* 设置 */}
           <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300">
             <Settings className="w-5 h-5" />
           </button>
 
-          {/* User Avatar */}
+          {/* 用户头像 */}
           <div className="relative cursor-pointer group mt-2">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 p-0.5 shadow-md hover:shadow-lg transition-shadow">
               <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden">
@@ -222,7 +222,7 @@ export function GlobalSidebar() {
         </div>
       </aside>
 
-      {/* Toast Notification - Fixed to top center */}
+      {/* Toast通知 - 固定在顶部中央 */}
       <AnimatePresence>
         {showToast && (
           <motion.div
@@ -248,13 +248,13 @@ export function GlobalSidebar() {
         onTogglePin={handleTogglePin}
       />
 
-      {/* Flying Icons Portal */}
+      {/* 飞行图标传送门 */}
       {flyingIcons.map((flight) => (
         <FlyingIcon
           key={flight.id}
           startRect={flight.startRect}
           icon={flight.icon}
-          targetSelector="#sidebar-bottom-marker" /* We can try to target a specific element, or use fixed coords */
+          targetSelector="#sidebar-bottom-marker" /* 我们可以尝试定位特定元素，或使用固定坐标 */
           onComplete={() => handleFlightComplete(flight.id)}
         />
       ))}
@@ -262,7 +262,7 @@ export function GlobalSidebar() {
   );
 }
 
-// Flying Icon Component
+// 飞行图标组件
 function FlyingIcon({
   startRect,
   icon: Icon,
@@ -279,9 +279,9 @@ function FlyingIcon({
     setIsMounted(true);
   }, []);
 
-  // Don't render on server or if Icon is undefined
+  // 不在服务端渲染或 Icon 为 undefined 时
   if (!isMounted || !Icon) {
-    // Still call onComplete after a delay to not block the flow
+    // 延迟调用 onComplete 以不阻塞流程
     setTimeout(onComplete, 100);
     return null;
   }
@@ -295,29 +295,29 @@ function FlyingIcon({
 function FlyingIconInner({ startRect, Icon, onComplete }: any) {
   const [animationState, setAnimationState] = useState<'initial' | 'flying' | 'done'>('initial');
 
-  // Calculate target position
-  const targetX = 20; // Center of 80px sidebar, minus half of icon width
-  const targetY = 200; // Approximate Y position in sidebar
+  // 计算目标位置
+  const targetX = 20; // 80px 侧边栏的中心，减去图标宽度的一半
+  const targetY = 200; // 侧边栏中大约的 Y 位置
 
-  // Calculate the arc peak (highest point of parabola)
-  const peakY = Math.min(startRect.top, targetY) - 120; // Go up 120px from the higher point
+  // 计算弧线峰值（抛物线的最高点）
+  const peakY = Math.min(startRect.top, targetY) - 120; // 从较高点向上 120px
 
   useEffect(() => {
-    // Start flying immediately
+    // 立即开始飞行
     requestAnimationFrame(() => {
       setAnimationState('flying');
     });
 
-    // Complete after animation duration
+    // 动画时长结束后完成
     const timer = setTimeout(() => {
       setAnimationState('done');
       onComplete();
-    }, 700); // Slightly longer for parabola effect
+    }, 700); // 稍微长一点以适应抛物线效果
 
     return () => clearTimeout(timer);
   }, [onComplete]);
 
-  // Calculate intermediate styles for the parabolic path
+  // 计算抛物线路径的中间样式
   const getStyles = () => {
     if (animationState === 'initial') {
       return {
@@ -327,7 +327,7 @@ function FlyingIconInner({ startRect, Icon, onComplete }: any) {
         scale: 1,
       };
     }
-    // Flying state - target position
+    // 飞行状态 - 目标位置
     return {
       left: targetX,
       top: targetY,
@@ -338,7 +338,7 @@ function FlyingIconInner({ startRect, Icon, onComplete }: any) {
 
   const styles = getStyles();
 
-  // Use CSS custom properties for the animation
+  // 使用 CSS 自定义属性进行动画
   const cssVars = {
     '--start-x': `${startRect.left}px`,
     '--start-y': `${startRect.top}px`,
@@ -349,7 +349,7 @@ function FlyingIconInner({ startRect, Icon, onComplete }: any) {
 
   return (
     <>
-      {/* Inject keyframes */}
+      {/* 注入关键帧 */}
       <style>{`
         @keyframes flyParabola {
           0% {
@@ -407,7 +407,7 @@ function FlyingIconInner({ startRect, Icon, onComplete }: any) {
   );
 }
 
-// Easing function for smooth animation
+// 平滑动画的缓动函数
 const easeInOutCubic = (t: number): number => {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 };
@@ -426,15 +426,15 @@ function FlyingIconInnerNew({ startRect, Icon, onComplete }: any) {
   useEffect(() => {
     let startTime: number | null = null;
     let animationFrameId: number;
-    const duration = 1500; // Slow down to 1.5s for longer visibility
+    const duration = 1500; // 减慢至 1.5 秒以获得更长的可见性
 
-    // Target configuration
+    // 目标配置
     const targetX = 20;
     const targetY = 200;
 
-    // Parabola configuration
+    // 抛物线配置
     const distanceX = Math.abs(startRect.left - targetX);
-    // Increase amplitude for a more dramatic arc
+    // 增加振幅以获得更戏剧性的弧线
     const amplitude = Math.min(400, Math.max(200, distanceX * 0.4));
 
     const animate = (timestamp: number) => {
@@ -443,19 +443,19 @@ function FlyingIconInnerNew({ startRect, Icon, onComplete }: any) {
 
       const t = easeInOutCubic(progress);
 
-      // Linear interpolation
+      // 线性插值
       const currentX = startRect.left + (targetX - startRect.left) * t;
       const baseY = startRect.top + (targetY - startRect.top) * t;
 
-      // Arc
+      // 弧线
       const arcY = -amplitude * Math.sin(progress * Math.PI);
       const currentY = baseY + arcY;
 
-      // Effects
-      const currentScale = 1 - 0.5 * t; // Ends at 0.5
-      // Keep opacity full until the last 15% of flight
+      // 效果
+      const currentScale = 1 - 0.5 * t; // 结束时缩放为 0.5
+      // 保持完全不透明直到飞行的最后 15%
       const currentOpacity = progress > 0.85 ? 1 - (progress - 0.85) * 6.6 : 1;
-      const rotation = -60 * Math.sin(progress * Math.PI); // More rotation
+      const rotation = -60 * Math.sin(progress * Math.PI); // 更多旋转
 
       setStyles((prev) => ({
         ...prev,

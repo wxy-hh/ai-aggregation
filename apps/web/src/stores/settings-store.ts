@@ -110,7 +110,7 @@ export const useSettingsStore = create<SettingsState>()(
             },
         }),
         {
-            name: 'ai-app-settings', // localStorage key
+            name: 'ai-app-settings', // 本地存储键名
             storage: createJSONStorage(() => localStorage),
             // 只持久化用户设置，不持久化 resolvedTheme
             partialize: (state) => ({

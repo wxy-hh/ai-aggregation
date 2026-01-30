@@ -268,17 +268,17 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   return (
     <div className={cn('flex w-full mb-6', isUser ? 'justify-end' : 'justify-start')}>
       <div className={cn('flex max-w-4xl w-full gap-4', isUser ? 'flex-row-reverse' : 'flex-row')}>
-        {/* Avatar */}
+        {/* 头像 */}
         {isUser ? <UserAvatar /> : <AIAvatar />}
 
-        {/* Content */}
+        {/* 内容 */}
         <div
           className={cn(
             'relative group flex flex-col',
             isUser ? 'items-end max-w-[80%]' : 'flex-1 max-w-full'
           )}
         >
-          {/* Name */}
+          {/* 用户名/角色 */}
           <div
             className={cn(
               'flex items-center gap-2 mb-1.5 px-1 text-xs text-slate-400 dark:text-slate-500',
@@ -316,7 +316,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             )}
           </div>
 
-          {/* Action buttons - show for both user (if interactive) and AI, but not during streaming */}
+          {/* 操作按钮 - 同时显示给用户和 AI，但在流式传输期间不显示 */}
           {!isStreaming && !isThinking && (
             <ActionButtons
               onCopy={handleCopy}
