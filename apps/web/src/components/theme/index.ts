@@ -1,3 +1,3 @@
-export { ThemeProvider } from './theme-provider';
 export { ThemeToggle } from './theme-toggle';
-export { useTheme } from './theme-provider';
+export { ThemeInitializer } from './theme-initializer';
+export { useTheme } from '@/stores';

@@ -3,7 +3,7 @@ import { DM_Sans, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import '@/styles/scrollbar.css';
 import 'highlight.js/styles/github-dark.css';
-import { ThemeProvider } from '@/components/theme/theme-provider';
+import { ThemeInitializer } from '@/components/theme/theme-initializer';
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -40,16 +40,36 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const theme = localStorage.getItem('theme') || 
-                  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-                document.documentElement.classList.toggle('dark', theme === 'dark');
+                // 读取 Zustand 存储的设置
+                const storedSettings = localStorage.getItem('ai-app-settings');
+                let theme = 'light';
+                
+                if (storedSettings) {
+                  const parsed = JSON.parse(storedSettings);
+                  // 优先使用 resolvedTheme，如果是 system 则回退到系统偏好
+                  theme = parsed.state?.resolvedTheme || 'light';
+                  if (parsed.state?.theme === 'system') {
+                    theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                  }
+                } else {
+                  // 回退到旧的 key 或系统偏好
+                  theme = localStorage.getItem('theme') || 
+                    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                }
+                
+                if (theme === 'dark') {
+                  document.documentElement.classList.add('dark');
+                } else {
+                  document.documentElement.classList.remove('dark');
+                }
               } catch (e) {}
             `,
           }}
         />
       </head>
       <body className={dmSans.className}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeInitializer />
+        {children}
       </body>
     </html>
   );

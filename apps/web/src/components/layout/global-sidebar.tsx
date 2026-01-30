@@ -9,11 +9,16 @@ import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion';
 import { createPortal } from 'react-dom';
+import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
 
 export function GlobalSidebar() {
   const pathname = usePathname();
-  const [showAppsModal, setShowAppsModal] = useState(false);
-  const [pinnedApps, setPinnedApps] = useState<AppId[]>(['chat', 'voice', 'image']);
+
+  // Zustand Store
+  const pinnedApps = usePinnedApps();
+  const showAppsModal = useShowAppsModal();
+  const { addPinnedApp, removePinnedApp, setAppsModal } = useUIActions();
+
   const [flyingIcons, setFlyingIcons] = useState<{ id: AppId; startRect: DOMRect; icon: any }[]>(
     []
   );
@@ -33,7 +38,7 @@ export function GlobalSidebar() {
   const handleTogglePin = (id: AppId, startRect?: DOMRect) => {
     // If removing
     if (pinnedApps.includes(id)) {
-      setPinnedApps((prev) => prev.filter((appId) => appId !== id));
+      removePinnedApp(id);
       return;
     }
 
@@ -66,12 +71,12 @@ export function GlobalSidebar() {
       // We can add it immediately but styled invisible, or wait a bit.
       // Let's wait 100ms (just to start flight) to make space
       setTimeout(() => {
-        setPinnedApps((prev) => [...prev, id]);
+        addPinnedApp(id);
         setJustAddedApp(id);
       }, 100);
     } else {
       // Fallback if no rect
-      setPinnedApps((prev) => [...prev, id]);
+      addPinnedApp(id);
     }
   };
 
@@ -155,7 +160,7 @@ export function GlobalSidebar() {
           {/* Add Button */}
           <motion.button
             layout
-            onClick={() => setShowAppsModal(true)}
+            onClick={() => setAppsModal(true)}
             className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-500 dark:hover:text-blue-400 hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
@@ -217,7 +222,7 @@ export function GlobalSidebar() {
 
       <AppsModal
         isOpen={showAppsModal}
-        onClose={() => setShowAppsModal(false)}
+        onClose={() => setAppsModal(false)}
         pinnedApps={pinnedApps}
         onTogglePin={handleTogglePin}
       />

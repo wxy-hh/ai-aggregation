@@ -11,7 +11,7 @@ import { CodeBlock } from './code-block';
 // 消息接口定义
 export interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   isStreaming?: boolean;
 }

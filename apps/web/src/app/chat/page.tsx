@@ -1,13 +1,19 @@
 'use client';
 
 import { AppLayout } from '@/components/layout/app-layout';
-import { MessageItem, type Message } from '@/components/chat/message-item';
+import { MessageItem } from '@/components/chat/message-item';
 import { ChatInput } from '@/components/chat/chat-input';
-import { useChat, type ProviderName, type Message as ChatMessage } from '@/hooks/use-chat';
-import { useConversations, type ChatMessage as ConvMessage } from '@/hooks/use-conversations';
+import {
+  useConversationsStore,
+  useChatStore,
+  type ProviderName,
+  type Message,
+  type ChatMessage as ConvMessage,
+} from '@/stores';
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { Plus, Search, MessageSquare, BarChart2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useShallow } from 'zustand/react/shallow';
 
 // 模型配置
 const MODELS: Record<ProviderName, { name: string; models: { id: string; label: string }[] }> = {
@@ -51,21 +57,65 @@ export default function ChatPage() {
   const modelSelectorRef = useRef<HTMLDivElement>(null);
   const hasInitialized = useRef(false);
 
-  // 对话历史管理
+  // Conversations Store
+  const conversations = useConversationsStore((state) => state.conversations);
+  const currentConversationId = useConversationsStore((state) => state.currentConversationId);
+  const isLoaded = useConversationsStore((state) => state.isLoaded);
+
   const {
-    conversations,
-    currentConversation,
-    currentConversationId,
-    groupedConversations,
-    isLoaded,
     createConversation,
     switchConversation,
-    updateMessages,
-    updateConversationSettings,
     deleteConversation,
-  } = useConversations();
+    findEmptyConversation,
+    getGroupedConversations,
+    getCurrentConversation,
+    updateConversationSettings,
+  } = useConversationsStore(
+    useShallow((state) => ({
+      createConversation: state.createConversation,
+      switchConversation: state.switchConversation,
+      deleteConversation: state.deleteConversation,
+      findEmptyConversation: state.findEmptyConversation,
+      getGroupedConversations: state.getGroupedConversations,
+      getCurrentConversation: state.getCurrentConversation,
+      updateConversationSettings: state.updateConversationSettings,
+    }))
+  );
 
-  // 处理 URL 参数，决定是否创建新对话
+  // Chat Store
+  const {
+    messages,
+    isLoading,
+    error,
+    provider,
+    model,
+    activeConversationId,
+    sendMessage,
+    reload,
+    loadConversation,
+    switchProvider,
+    reset,
+  } = useChatStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      isLoading: state.isLoading,
+      error: state.error,
+      provider: state.provider,
+      model: state.model,
+      activeConversationId: state.activeConversationId,
+      sendMessage: state.sendMessage,
+      reload: state.reload,
+      loadConversation: state.loadConversation,
+      switchProvider: state.switchProvider,
+      reset: state.reset,
+    }))
+  );
+
+  // 计算属性
+  const currentConversation = getCurrentConversation();
+  const groupedConversations = getGroupedConversations();
+
+  // URL 参数处理
   useEffect(() => {
     if (!isLoaded || hasInitialized.current) return;
     hasInitialized.current = true;
@@ -74,112 +124,54 @@ export default function ChatPage() {
     const isNewConversation = urlParams.get('new') === 'true';
 
     if (isNewConversation) {
-      // 从首页"新建对话"按钮来的
-      // 先检查是否已有空对话（没有消息的对话），如果有就复用
-      const emptyConversation = conversations.find((c) => c.messages.length === 0);
+      const emptyConversation = findEmptyConversation();
       if (emptyConversation) {
-        // 复用已有的空对话
         switchConversation(emptyConversation.id);
       } else {
-        // 没有空对话，创建新对话
         createConversation();
       }
-      // 清除 URL 参数，避免刷新时重复创建
       window.history.replaceState({}, '', '/chat');
     } else if (!currentConversationId && conversations.length > 0) {
-      // 没有选中对话且有历史记录，选中第一个
       switchConversation(conversations[0].id);
     }
-  }, [isLoaded, conversations, currentConversationId, createConversation, switchConversation]);
+  }, [
+    isLoaded,
+    conversations,
+    currentConversationId,
+    createConversation,
+    switchConversation,
+    findEmptyConversation,
+  ]);
 
-  // 获取当前对话的 provider 和 model
-  const currentProvider = (currentConversation?.provider as ProviderName) || 'xunfei';
-  const currentModel = currentConversation?.model || 'lite';
-
-  // 消息变化时同步到对话历史
-  const handleMessagesChange = useCallback(
-    (msgs: ChatMessage[]) => {
-      console.log('handleMessagesChange 被调用:', {
-        currentConversationId,
-        messagesCount: msgs.length,
-        messages: msgs,
-      });
-      if (currentConversationId) {
-        updateMessages(
-          currentConversationId,
-          msgs.map((m) => ({
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            createdAt: Date.now(),
-          }))
-        );
-      }
-    },
-    [currentConversationId, updateMessages]
-  );
-
-  // 聊天 Hook
-  const {
-    messages,
-    handleSubmit,
-    isLoading,
-    error,
-    provider,
-    model,
-    switchProvider,
-    reload,
-    setMessages,
-  } = useChat({
-    provider: currentProvider,
-    model: currentModel,
-    initialMessages: currentConversation?.messages || [],
-    onMessagesChange: handleMessagesChange,
-  });
-
-  // 当切换对话时，加载对应的消息
-  // 使用 ref 存储最新的 conversations，避免闭包问题
-  const conversationsRef = useRef(conversations);
-  conversationsRef.current = conversations;
-
-  // 用于标记是否正在创建新对话（避免竞态条件）
-  const isCreatingConversationRef = useRef(false);
+  // 对话 ID 变化时，加载消息到 Chat Store
+  // 使用 ref 来防止重复加载
+  const loadedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 如果正在创建新对话，跳过加载消息的逻辑
-    if (isCreatingConversationRef.current) {
-      console.log('正在创建新对话，跳过加载消息');
-      isCreatingConversationRef.current = false;
-      return;
-    }
+    // 如果 ID 没变，或者是空（表示清空了），或者还没从 storage 加载完
+    if (!isLoaded) return;
 
     if (!currentConversationId) {
-      setMessages([]);
+      if (loadedIdRef.current) {
+        reset();
+        loadedIdRef.current = null;
+      }
       return;
     }
 
-    // 使用 ref 获取最新的 conversations
-    const targetConversation = conversationsRef.current.find((c) => c.id === currentConversationId);
-
-    console.log('切换对话:', {
-      targetId: currentConversationId,
-      found: !!targetConversation,
-      messageCount: targetConversation?.messages?.length || 0,
-    });
-
-    if (targetConversation && targetConversation.messages.length > 0) {
-      setMessages(
-        targetConversation.messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-        }))
-      );
+    if (currentConversationId !== loadedIdRef.current) {
+      const conv = conversations.find((c) => c.id === currentConversationId);
+      if (conv) {
+        // 加载新对话
+        // 映射消息类型：ConvMessage -> Message (role 兼容)
+        loadConversation(conv.id, conv.messages as Message[], conv.provider, conv.model);
+        loadedIdRef.current = currentConversationId;
+      }
     } else {
-      // 切换到空对话时清空消息
-      setMessages([]);
+      // ID 相同，也要检查 provider/model 及其它变更?
+      // 主要逻辑在 chat-store 内部处理，不需要每次都 load
     }
-  }, [currentConversationId, setMessages]);
+  }, [currentConversationId, conversations, isLoaded, loadConversation, reset]);
 
   // 点击外部关闭模型选择器
   useEffect(() => {
@@ -197,91 +189,48 @@ export default function ChatPage() {
     };
   }, [showModelSelector]);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
+  // 自动滚动到底部
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]); // 消息增加或正在加载时滚动
 
-  // 转换消息格式
-  const displayMessages: Message[] = messages.map((msg: any) => ({
-    id: msg.id,
-    role: msg.role as 'user' | 'assistant',
-    content: msg.content,
+  // 消息展示处理
+  const displayMessages: Message[] = messages.map((msg) => ({
+    ...msg,
+    // 如果正在加载，且是最后一条 assistant 消息，则视为 streaming（其实 store 里已经有 isStreaming 标记了，这里可以简化）
     isStreaming:
       msg.isStreaming ??
       (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
   }));
 
-  // 发送消息
+  // 发送消息处理
   const handleSend = useCallback(
     (content: string) => {
-      console.log('handleSend 被调用:', { content, currentConversationId });
-      // 如果没有当前对话，先创建一个
       if (!currentConversationId) {
-        console.log('没有当前对话，创建新对话');
-        isCreatingConversationRef.current = true; // 标记正在创建
-        createConversation(currentProvider, currentModel);
+        // 创建新对话
+        const newId = createConversation(provider, model); // 使用当前 UI 选中的 model（如果有）
+        // 立即加载并发送
+        loadConversation(newId, [], provider, model || 'lite'); // 确保有默认值
+        loadedIdRef.current = newId; // 更新 ref 防止 effect 重复加载
+        sendMessage(content);
+      } else {
+        sendMessage(content);
       }
-      console.log('调用 handleSubmit');
-      handleSubmit(new Event('submit') as unknown as React.FormEvent<HTMLFormElement>, {
-        data: { content },
-      });
     },
-    [currentConversationId, createConversation, currentProvider, currentModel, handleSubmit]
+    [currentConversationId, createConversation, provider, model, loadConversation, sendMessage]
   );
 
   // 新建对话
   const handleNewConversation = useCallback(() => {
-    // 先检查是否已存在空对话（没有消息的对话）
-    const emptyConversation = conversations.find((c) => c.messages.length === 0);
-
+    const emptyConversation = findEmptyConversation();
     if (emptyConversation) {
-      // 如果已有空对话，直接切换到那个对话
-      console.log('已有空对话，直接切换:', emptyConversation.id);
-      setMessages([]);
       switchConversation(emptyConversation.id);
     } else {
-      // 没有空对话，创建新对话
-      console.log('新建对话');
-      isCreatingConversationRef.current = true;
-      setMessages([]);
-      createConversation(currentProvider, currentModel);
+      createConversation(provider, model);
     }
-  }, [
-    conversations,
-    createConversation,
-    currentProvider,
-    currentModel,
-    setMessages,
-    switchConversation,
-  ]);
+  }, [findEmptyConversation, switchConversation, createConversation, provider, model]);
 
-  // 切换对话（用户点击历史记录）
-  const handleSwitchConversation = useCallback(
-    (id: string) => {
-      console.log('切换到对话:', id);
-      // 先查找目标对话的消息
-      const targetConv = conversations.find((c) => c.id === id);
-      if (targetConv && targetConv.messages.length > 0) {
-        setMessages(
-          targetConv.messages.map((m) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-          }))
-        );
-      } else {
-        setMessages([]);
-      }
-      switchConversation(id);
-    },
-    [conversations, setMessages, switchConversation]
-  );
-
-  // 切换 Provider/Model
+  // 切换 Provider
   const handleSwitchProvider = useCallback(
     (newProvider: ProviderName, newModel: string) => {
       switchProvider(newProvider, newModel);
@@ -292,11 +241,9 @@ export default function ChatPage() {
     [switchProvider, currentConversationId, updateConversationSettings]
   );
 
-  // 根据搜索过滤对话
+  // 搜索过滤
   const filteredGroups = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return groupedConversations;
-    }
+    if (!searchQuery.trim()) return groupedConversations;
     const lowerQuery = searchQuery.toLowerCase();
     return groupedConversations
       .map((group) => ({
@@ -306,7 +253,7 @@ export default function ChatPage() {
       .filter((group) => group.items.length > 0);
   }, [groupedConversations, searchQuery]);
 
-  // 获取当前模型标签
+  // 当前模型显示
   const currentModelConfig = MODELS[provider];
   const currentModelLabel =
     currentModelConfig?.models.find((m) => m.id === model)?.label ||
@@ -314,10 +261,8 @@ export default function ChatPage() {
     currentModelConfig?.models[0]?.label ||
     '未知模型';
 
-  // 获取当前对话标题
   const currentTitle = currentConversation?.title || '新对话';
 
-  // 等待数据加载
   if (!isLoaded) {
     return (
       <AppLayout>
@@ -364,7 +309,7 @@ export default function ChatPage() {
                               ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm font-medium border border-slate-100 dark:border-slate-700'
                               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
                           )}
-                          onClick={() => handleSwitchConversation(item.id)}
+                          onClick={() => switchConversation(item.id)}
                         >
                           <MessageSquare
                             className={cn(
@@ -375,7 +320,6 @@ export default function ChatPage() {
                             )}
                           />
                           <span className="truncate flex-1">{item.title}</span>
-                          {/* Delete Button */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -407,7 +351,7 @@ export default function ChatPage() {
           </div>
         </aside>
 
-        {/* Main Chat Area Container */}
+        {/* Main Chat Area */}
         <div className="flex-1 p-4 min-w-0 h-full">
           <div className="h-full flex flex-col bg-white dark:bg-slate-900 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
             {/* Header */}
@@ -489,28 +433,8 @@ export default function ChatPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                      />
-                    </svg>
-                  </button>
-                  <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
-                      />
-                    </svg>
-                  </button>
-                </div>
+                {/* Header Actions */}
+                <div className="flex items-center gap-1">{/* 可扩展更多操作 */}</div>
               </div>
             </header>
 

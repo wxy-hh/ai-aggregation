@@ -1,9 +1,9 @@
 'use client';
 
-import { useTheme } from './theme-provider';
+import { useTheme } from '@/stores';
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, toggleTheme } = useTheme();
+  const { resolvedTheme: theme, toggleTheme } = useTheme();
 
   return (
     <button
