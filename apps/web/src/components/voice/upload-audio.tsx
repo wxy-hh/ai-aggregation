@@ -1,20 +1,32 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUploadVoice } from '@/hooks/use-voice-transcriptions';
 import { TranscriptionResult } from './transcription-result';
+import { translateText } from '@/lib/api/translation';
 
 interface UploadAudioProps {
   onFileSelect?: (file: File) => void;
   onTranscriptionComplete?: (transcription: string) => void;
+  onStateChange?: (state: {
+    hasUploadedFile: boolean;
+    isProcessing: boolean;
+    showResult: boolean;
+  }) => void; // 新增：状态变化回调
 }
 
-// 模拟的转录片段数据（实际应该从 API 返回）
-// TODO: 后续需要从 API 返回真实的分段数据和翻译
-const createMockSegments = (transcriptionText: string) => {
-  // 将转录文本分成段落（简单按句号分割）
+/**
+ * 创建转录片段数据
+ * 根据音频总时长和文本长度智能分配时间戳
+ */
+const createSegments = (
+  transcriptionText: string,
+  translationTexts?: string[], // 改为数组，每个元素对应一个句子的翻译
+  audioDuration?: number // 音频总时长（秒）
+) => {
+  // 将转录文本分成段落（按中文句号、感叹号、问号分割）
   const sentences = transcriptionText.split(/[。！？]/).filter((text) => text.trim().length > 0);
 
   // 如果文本太短，直接返回一个片段
@@ -26,17 +38,55 @@ const createMockSegments = (transcriptionText: string) => {
         speaker: 'Speaker A',
         speakerLabel: 'Speaker A' as const,
         originalText: transcriptionText,
-        translatedText: 'Translation in progress... (翻译功能开发中)',
+        translatedText: translationTexts?.[0] || 'Translation in progress...',
         startTime: 0,
-        endTime: 10,
+        endTime: audioDuration || 10,
       },
     ];
   }
 
-  // 创建多个片段（显示所有片段，不限制数量）
+  // 检查句子数量是否匹配
+  if (translationTexts && translationTexts.length !== sentences.length) {
+    console.warn('⚠ 中英文句子数量不匹配:');
+    console.warn(`  中文: ${sentences.length} 句`);
+    console.warn(`  英文: ${translationTexts.length} 句`);
+  }
+
+  // 🔧 核心修复：根据文本长度智能分配时间
+  const charCounts = sentences.map((s) => s.length);
+  const totalChars = charCounts.reduce((sum, count) => sum + count, 0);
+
+  // 如果没有音频时长，估算（平均每个字0.5秒）
+  const estimatedDuration = audioDuration || totalChars * 0.5;
+
+  let currentTime = 0;
+
+  // 为每个句子创建片段
   return sentences.map((sentence, index) => {
-    const minutes = Math.floor((index * 5) / 60);
-    const seconds = (index * 5) % 60;
+    // 根据字符数比例分配时间（长句子分配更多时间）
+    const charRatio = charCounts[index] / totalChars;
+    const duration = estimatedDuration * charRatio;
+
+    const startTime = currentTime;
+    const endTime = currentTime + duration;
+    currentTime = endTime;
+
+    // 格式化时间戳
+    const minutes = Math.floor(startTime / 60);
+    const seconds = Math.floor(startTime % 60);
+
+    // 获取对应的翻译
+    let translatedText: string;
+    if (!translationTexts) {
+      translatedText = 'Translation in progress...';
+    } else if (translationTexts[index] === null) {
+      // null 表示正在翻译中
+      translatedText = 'translating'; // 特殊标记，用于显示 loading
+    } else if (translationTexts[index]) {
+      translatedText = translationTexts[index];
+    } else {
+      translatedText = '(Translation not available)';
+    }
 
     return {
       id: String(index + 1),
@@ -48,22 +98,49 @@ const createMockSegments = (transcriptionText: string) => {
           ? 'Speaker B'
           : 'Speaker C') as const,
       originalText: sentence.trim() + '。',
-      translatedText: 'Translation in progress... (翻译功能开发中)',
-      startTime: index * 5,
-      endTime: (index + 1) * 5,
+      translatedText,
+      startTime,
+      endTime,
     };
   });
 };
 
-export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAudioProps) {
+export function UploadAudio({
+  onFileSelect,
+  onTranscriptionComplete,
+  onStateChange,
+}: UploadAudioProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [transcriptionResult, setTranscriptionResult] = useState<string | null>(null);
+  const [translationResults, setTranslationResults] = useState<string[] | null>(null); // 改为数组
+  const [isTranslating, setIsTranslating] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useUploadVoice();
+
+  // 🔧 监听状态变化，通知父组件
+  useEffect(() => {
+    if (onStateChange) {
+      const hasUploadedFile = selectedFile !== null;
+      const isProcessing = uploadMutation.isPending || isTranslating;
+
+      onStateChange({
+        hasUploadedFile,
+        isProcessing,
+        showResult,
+      });
+
+      console.log('📊 上传状态变化:', {
+        hasUploadedFile,
+        isProcessing,
+        showResult,
+      });
+    }
+  }, [selectedFile, uploadMutation.isPending, isTranslating, showResult, onStateChange]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -96,41 +173,120 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
       return;
     }
 
-    // 验证文件大小 (最大 50MB)
+    // 验证文件大小（最大 50MB）
     const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
       alert('文件大小不能超过 50MB');
       return;
     }
 
+    // 🔧 重要修改：如果已经在结果界面，保持 showResult 为 true
+    // 这样重新上传时不会返回上传界面，而是在结果界面显示 loading
+    const wasShowingResult = showResult;
+
     setSelectedFile(file);
     setTranscriptionResult(null);
-    setShowResult(false);
+    setTranslationResults(null);
+    setAudioDuration(undefined);
+    // 不修改 showResult，保持当前状态
     onFileSelect?.(file);
 
-    // 创建音频 URL 用于播放
+    // 创建音频 URL 用于播放器
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
 
+    // 🔧 获取音频时长
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', () => {
+      const duration = audio.duration;
+      console.log('✓ 音频时长:', duration.toFixed(2), '秒');
+      setAudioDuration(duration);
+    });
+
     console.log('开始上传文件:', file.name);
 
-    // 上传并转录
+    // 开始上传并转录
     try {
       const result = await uploadMutation.mutateAsync({ file });
       console.log('转录结果:', result);
 
       const transcriptionText = result.transcription || '';
+
+      // 🔍 添加详细调试日志
+      console.log('=== 转录结果详情 ===');
+      console.log('文本长度:', transcriptionText.length, '字符');
+      console.log(
+        '句子数量:',
+        transcriptionText.split(/[。！？]/).filter((s) => s.trim()).length,
+        '句'
+      );
+      console.log('音频时长:', audioDuration?.toFixed(2) || '未知', '秒');
+      console.log('完整文本:', transcriptionText);
+      console.log('==================');
+
       setTranscriptionResult(transcriptionText);
       onTranscriptionComplete?.(transcriptionText);
 
-      // 转录成功后显示结果界面
-      // 即使转录结果为空也显示界面（使用 mock 数据演示）
+      // 转录成功后立即显示结果界面
       console.log('设置 showResult 为 true');
       setShowResult(true);
-    } catch (error) {
-      console.error('Upload error:', error);
 
-      // 显示详细的错误信息
+      // 自动开始翻译流程 - 按句子分别翻译，渐进式显示
+      if (transcriptionText.trim().length > 0) {
+        console.log('→ 开始翻译...');
+        setIsTranslating(true);
+
+        try {
+          // 按标点分割成句子
+          const sentences = transcriptionText
+            .split(/[。！？]/)
+            .filter((text) => text.trim().length > 0);
+
+          console.log(`  共 ${sentences.length} 句需要翻译`);
+
+          // 初始化翻译结果数组（全部设为 null，表示未翻译）
+          const translatedSentences: (string | null)[] = new Array(sentences.length).fill(null);
+          setTranslationResults(translatedSentences as string[]); // 立即显示，显示 loading
+
+          // 逐句翻译，每翻译完一句就更新显示
+          for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i].trim();
+            console.log(`  翻译第 ${i + 1}/${sentences.length} 句...`);
+
+            try {
+              const result = await translateText({
+                text: sentence,
+                sourceLanguage: 'Chinese',
+                targetLanguage: 'English',
+              });
+
+              // 更新当前句子的翻译
+              translatedSentences[i] = result.translatedText.trim();
+
+              // 立即更新状态，触发重新渲染
+              setTranslationResults([...translatedSentences] as string[]);
+
+              console.log(`  ✓ 第 ${i + 1} 句翻译完成`);
+            } catch (error) {
+              console.error(`  第 ${i + 1} 句翻译失败:`, error);
+              translatedSentences[i] = '(Translation failed)';
+              setTranslationResults([...translatedSentences] as string[]);
+            }
+          }
+
+          console.log('✓ 全部翻译完成，共', sentences.length, '句');
+        } catch (translationError) {
+          console.error('翻译错误:', translationError);
+          // 翻译失败不影响转录结果的显示
+          alert('翻译失败，但转录结果已保存');
+        } finally {
+          setIsTranslating(false);
+        }
+      }
+    } catch (error) {
+      console.error('上传错误:', error);
+
+      // 显示详细的错误信息给用户
       let errorMessage = '上传失败，请重试';
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -155,10 +311,40 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
     fileInputRef.current?.click();
   };
 
+  // 重新上传：直接触发文件选择器
+  const handleReupload = () => {
+    console.log('=== handleReupload 调试信息 ===');
+    console.log('1. handleReupload 被调用');
+    console.log('2. fileInputRef:', fileInputRef);
+    console.log('3. fileInputRef.current:', fileInputRef.current);
+    console.log('4. showResult:', showResult);
+    console.log('5. selectedFile:', selectedFile?.name);
+
+    // 使用 setTimeout 确保 DOM 已经渲染
+    setTimeout(() => {
+      console.log('6. [延迟检查] fileInputRef.current:', fileInputRef.current);
+
+      if (fileInputRef.current) {
+        console.log('✓ 文件选择器存在，准备触发点击');
+        fileInputRef.current.click();
+        console.log('✓ 文件选择器已触发');
+      } else {
+        console.error('✗ fileInputRef.current 仍然为 null');
+        console.error('请检查：');
+        console.error('  - 文件输入框是否已渲染到 DOM');
+        console.error('  - ref 是否正确绑定');
+        console.error('  - 是否有其他组件覆盖了 ref');
+      }
+    }, 0);
+  };
+
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setTranscriptionResult(null);
+    setTranslationResults(null);
+    setIsTranslating(false);
     setShowResult(false);
+    setAudioDuration(undefined);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
@@ -168,12 +354,22 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
     }
   };
 
-  // 如果显示结果界面，渲染 TranscriptionResult 组件
+  // 如果需要显示结果界面，渲染 TranscriptionResult 组件
   if (showResult && selectedFile) {
     console.log('渲染 TranscriptionResult 组件');
+    console.log('翻译状态:', isTranslating ? '翻译中...' : '已完成');
+    console.log('转录结果:', transcriptionResult ? '有内容' : '无内容（处理中）');
 
-    // 使用真实的转录文本创建片段
-    const segments = createMockSegments(transcriptionResult || '转录结果为空');
+    // 🔧 如果正在处理且没有转录结果，显示占位内容
+    const displayText = transcriptionResult || '正在处理音频，请稍候...';
+    const isProcessingNewFile = uploadMutation.isPending || (!transcriptionResult && showResult);
+
+    // 使用真实的转录文本和翻译文本创建显示片段
+    const segments = createSegments(
+      displayText,
+      transcriptionResult ? translationResults || undefined : undefined, // 只有转录完成才显示翻译
+      audioDuration // 传入真实音频时长
+    );
 
     return (
       <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -183,6 +379,22 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
           targetLanguage="English"
           segments={segments}
           audioUrl={audioUrl || undefined}
+          isTranslating={isTranslating}
+          isProcessing={isProcessingNewFile} // 传递处理状态（包括重新上传）
+          onReupload={handleReupload} // 使用新的重新上传函数
+        />
+
+        {/* 隐藏的文件输入框 - 必须保留以支持重新上传 */}
+        <input
+          ref={(el) => {
+            fileInputRef.current = el;
+            console.log('文件输入框 ref 回调被调用:', el);
+          }}
+          type="file"
+          accept=".mp3,.wav,.aac,audio/mpeg,audio/wav,audio/aac"
+          onChange={handleFileInputChange}
+          className="hidden"
+          data-testid="reupload-file-input"
         />
       </div>
     );
@@ -239,11 +451,11 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
               选择文件
             </Button>
 
-            {/* 测试按钮 - 直接显示结果界面 */}
+            {/* 开发环境测试按钮 - 直接显示结果界面 */}
             {process.env.NODE_ENV === 'development' && (
               <Button
                 onClick={() => {
-                  // 创建一个假文件用于测试
+                  // 创建测试文件用于开发调试
                   const testFile = new File(['test'], 'test-audio.mp3', { type: 'audio/mpeg' });
                   setSelectedFile(testFile);
                   setAudioUrl('/assets/voice/人保律师-2510291614.mp3');
@@ -267,11 +479,11 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
           </div>
         </div>
 
-        {/* Selected File Display */}
+        {/* 已选文件显示 */}
         {selectedFile && (
           <div className="mt-6 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center gap-4">
-              {/* File Icon */}
+              {/* 文件图标 */}
               <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
                 <svg
                   className="w-6 h-6 text-blue-600 dark:text-blue-400"
@@ -301,6 +513,14 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
                     <>
                       <span className="text-xs text-slate-400">•</span>
                       <span className="text-xs text-blue-600 dark:text-blue-400">转录中...</span>
+                    </>
+                  )}
+                  {isTranslating && (
+                    <>
+                      <span className="text-xs text-slate-400">•</span>
+                      <span className="text-xs text-purple-600 dark:text-purple-400">
+                        翻译中...
+                      </span>
                     </>
                   )}
                   {uploadMutation.isSuccess && (
@@ -347,7 +567,7 @@ export function UploadAudio({ onFileSelect, onTranscriptionComplete }: UploadAud
           </div>
         )}
 
-        {/* Transcription Result */}
+        {/* 转录结果显示 */}
         {transcriptionResult && (
           <div className="mt-6 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-4">

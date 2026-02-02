@@ -5,7 +5,7 @@ import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
 import { RecordingLibrary } from '@/components/voice/recording-library';
 import { UploadAudio } from '@/components/voice/upload-audio';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -41,6 +41,23 @@ type VoiceMode = 'realtime' | 'upload';
 export default function VoicePage() {
   const [isRecording, setIsRecording] = useState(true);
   const [mode, setMode] = useState<VoiceMode>('realtime');
+
+  // 🔧 保持上传音频的状态，即使切换到实时录音模式
+  // 这样切换回来时可以恢复之前的状态
+  const [uploadState, setUploadState] = useState({
+    hasUploadedFile: false, // 是否已上传文件
+    isProcessing: false, // 是否正在处理
+    showResult: false, // 是否显示结果
+  });
+
+  // 🔧 使用 useCallback 优化状态更新回调
+  const handleUploadStateChange = useCallback(
+    (state: { hasUploadedFile: boolean; isProcessing: boolean; showResult: boolean }) => {
+      console.log('📊 父组件收到状态更新:', state);
+      setUploadState(state);
+    },
+    []
+  );
 
   return (
     <AppLayout>
@@ -131,7 +148,7 @@ export default function VoicePage() {
                 <TabsTrigger
                   value="upload"
                   className={cn(
-                    'rounded-md text-sm font-medium transition-all',
+                    'rounded-md text-sm font-medium transition-all relative',
                     mode === 'upload'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -151,66 +168,89 @@ export default function VoicePage() {
                     />
                   </svg>
                   上传音频
+                  {/* 🔧 显示处理状态指示器 */}
+                  {uploadState.isProcessing && mode !== 'upload' && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </span>
+                  )}
+                  {uploadState.showResult && !uploadState.isProcessing && mode !== 'upload' && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                  )}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
           </header>
 
           {/* Content Area */}
-          {mode === 'upload' ? (
-            <UploadAudio onFileSelect={(file) => console.log('Selected file:', file)} />
-          ) : (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-32">
-              <div className="max-w-4xl mx-auto">
-                {/* Visualization Card */}
-                <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+          {/* 🔧 使用 CSS 隐藏而不是条件渲染，保持组件状态 */}
+          {/* 上传音频界面 */}
+          <div
+            className={mode === 'upload' ? 'flex-1 flex flex-col h-full' : 'hidden'}
+            style={{ display: mode === 'upload' ? 'flex' : 'none' }}
+          >
+            <UploadAudio
+              onFileSelect={(file) => console.log('Selected file:', file)}
+              onStateChange={handleUploadStateChange}
+            />
+          </div>
 
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                        />
-                      </svg>
-                      Microphone Array (Active)
-                    </div>
-                    <span className="font-mono text-slate-400 text-xs tracking-widest">
-                      SESSION: 00:04:12.85
-                    </span>
+          {/* 实时录音界面 */}
+          <div
+            className={
+              mode === 'realtime'
+                ? 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-32'
+                : 'hidden'
+            }
+            style={{ display: mode === 'realtime' ? 'block' : 'none' }}
+          >
+            <div className="max-w-4xl mx-auto">
+              {/* Visualization Card */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
+
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                      />
+                    </svg>
+                    Microphone Array (Active)
                   </div>
-
-                  <WaveformVisualizer />
-
-                  {/* Decorative background blur */}
-                  <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                  <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                  <span className="font-mono text-slate-400 text-xs tracking-widest">
+                    SESSION: 00:04:12.85
+                  </span>
                 </div>
 
-                {/* Transcript List */}
-                <TranscriptList segments={mockSegments} />
+                <WaveformVisualizer />
 
-                {/* Loading State for next segment */}
-                <div className="mt-6 flex gap-4 px-4 opacity-50">
-                  <div className="w-12 pt-1">
-                    <div className="h-3 w-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full animate-pulse"></div>
-                    <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-2/3 animate-pulse"></div>
-                  </div>
+                {/* Decorative background blur */}
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              </div>
+
+              {/* Transcript List */}
+              <TranscriptList segments={mockSegments} />
+
+              {/* Loading State for next segment */}
+              <div className="mt-6 flex gap-4 px-4 opacity-50">
+                <div className="w-12 pt-1">
+                  <div className="h-3 w-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full animate-pulse"></div>
+                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-2/3 animate-pulse"></div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Floating Action Bar - Only show in realtime mode */}
           {mode === 'realtime' && (

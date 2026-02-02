@@ -8,6 +8,11 @@ export interface TranscribeResult {
   text: string;
 }
 
+export interface TranscribeWithTranslationResult {
+  text: string;
+  translation?: string;
+}
+
 // 创建 multipart/form-data
 function createFormData(filePath: string, model: string) {
   const boundary = '----Boundary' + Date.now();
