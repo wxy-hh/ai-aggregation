@@ -5,6 +5,7 @@ import '@/styles/scrollbar.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';
+import { Toaster } from '@/components/ui/toaster';
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -71,6 +72,7 @@ export default function RootLayout({
       <body className={dmSans.className}>
         <ThemeInitializer />
         <QueryProvider>{children}</QueryProvider>
+        <Toaster />
       </body>
     </html>
   );

@@ -5,11 +5,12 @@ import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
 import { RecordingLibrary } from '@/components/voice/recording-library';
 import { UploadAudio } from '@/components/voice/upload-audio';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { AudioHistoryItem } from '@/types/audio-history';
 
 const mockSegments: TranscriptSegment[] = [
   {
@@ -41,6 +42,7 @@ type VoiceMode = 'realtime' | 'upload';
 export default function VoicePage() {
   const [isRecording, setIsRecording] = useState(true);
   const [mode, setMode] = useState<VoiceMode>('realtime');
+  const [restoredHistoryItem, setRestoredHistoryItem] = useState<AudioHistoryItem | null>(null);
 
   // 🔧 保持上传音频的状态，即使切换到实时录音模式
   // 这样切换回来时可以恢复之前的状态
@@ -58,6 +60,24 @@ export default function VoicePage() {
     },
     []
   );
+
+  // 🔧 处理历史记录点击
+  const handleHistoryItemClick = useCallback((item: AudioHistoryItem) => {
+    console.log('[VoicePage] History item clicked:', item);
+
+    // 切换到上传音频模式
+    setMode('upload');
+
+    // 设置要恢复的历史记录项
+    setRestoredHistoryItem(item);
+  }, []);
+
+  // 🔧 历史记录恢复完成后的回调
+  const handleHistoryRestored = useCallback(() => {
+    console.log('[VoicePage] History restored, clearing restored item');
+    // 清除恢复状态，避免重复恢复
+    setRestoredHistoryItem(null);
+  }, []);
 
   return (
     <AppLayout>
@@ -195,6 +215,8 @@ export default function VoicePage() {
             <UploadAudio
               onFileSelect={(file) => console.log('Selected file:', file)}
               onStateChange={handleUploadStateChange}
+              restoredHistoryItem={restoredHistoryItem}
+              onHistoryRestored={handleHistoryRestored}
             />
           </div>
 
@@ -334,7 +356,7 @@ export default function VoicePage() {
 
         {/* Right Sidebar: Recording Library - Hidden on mobile, visible on lg screens */}
         <div className="hidden lg:block h-full shadow-xl z-20">
-          <RecordingLibrary />
+          <RecordingLibrary onHistoryItemClick={handleHistoryItemClick} />
         </div>
       </div>
     </AppLayout>

@@ -321,7 +321,7 @@ export function TranscriptionResult({
       </header>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 pb-32 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         <div className="max-w-7xl mx-auto">
           {viewMode === 'bilingual' ? (
             // 双栏对照模式 - 使用 grid 自动对齐高度
@@ -347,7 +347,6 @@ export function TranscriptionResult({
                     原文 (Chinese)
                   </h2>
                 </div>
-
                 {/* 右栏标题 - 译文 */}
                 <div className="flex items-center gap-2">
                   <svg
@@ -369,17 +368,13 @@ export function TranscriptionResult({
                 </div>
               </div>
 
-              {/* 内容行 - 每行包含原文和译文，自动对齐高度 */}
+              {/* 内容行 */}
               {segments.map((segment) => (
                 <div
                   key={segment.id}
                   className="grid grid-cols-2 gap-6 items-start"
-                  onClick={(e) => {
-                    // 阻止父元素的点击事件
-                    e.stopPropagation();
-                  }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {/* 左栏 - 原文 */}
                   <SegmentBlock
                     segment={segment}
                     isActive={activeSegmentId === segment.id}
@@ -390,15 +385,9 @@ export function TranscriptionResult({
                       setActiveSegmentId(segment.id);
                       setUserClickedSegment(true); // 标记用户点击
                       handleSeek(segment.startTime);
-
-                      // 3秒后恢复自动更新
-                      setTimeout(() => {
-                        setUserClickedSegment(false);
-                      }, 3000);
+                      setTimeout(() => setUserClickedSegment(false), 3000);
                     }}
                   />
-
-                  {/* 右栏 - 译文 */}
                   <SegmentBlock
                     segment={segment}
                     isActive={activeSegmentId === segment.id}
@@ -409,11 +398,7 @@ export function TranscriptionResult({
                       setActiveSegmentId(segment.id);
                       setUserClickedSegment(true); // 标记用户点击
                       handleSeek(segment.startTime);
-
-                      // 3秒后恢复自动更新
-                      setTimeout(() => {
-                        setUserClickedSegment(false);
-                      }, 3000);
+                      setTimeout(() => setUserClickedSegment(false), 3000);
                     }}
                   />
                 </div>
@@ -433,78 +418,136 @@ export function TranscriptionResult({
               ))}
             </div>
           )}
+
+          {/* 底部占位符，防止浮动播放器遮挡内容 */}
+          <div className="h-60 w-full flex-shrink-0" aria-hidden="true" />
         </div>
       </div>
 
-      {/* Audio Player */}
-      {audioUrl && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-4xl px-6 z-30">
-          <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 rounded-2xl shadow-2xl p-4">
-            <div className="flex items-center gap-4">
-              {/* Play Button */}
-              <button
-                onClick={togglePlay}
-                className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/30 transition-all"
-              >
-                {isPlaying ? (
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                  </svg>
-                ) : (
-                  <svg
-                    className="w-5 h-5 text-white ml-0.5"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Progress Bar */}
-              <div className="flex-1">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
-                  <span className="font-mono">{formatTime(currentTime)}</span>
-                  <span className="font-mono">{formatTime(duration)}</span>
+      {/* Audio Player - 固定在底部 */}
+      {audioUrl ? (
+        <div className="absolute bottom-6 left-0 right-0 px-6 z-30 pointer-events-none">
+          <div className="max-w-3xl mx-auto pointer-events-auto transition-transform duration-300 hover:scale-[1.01]">
+            <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border-0 rounded-full shadow-[0_24px_48px_-12px_rgba(0,0,0,0.18)] dark:shadow-[0_24px_48px_-12px_rgba(0,0,0,0.4)] px-6 py-3 ring-1 ring-black/5 dark:ring-white/10">
+              {audioUrl === 'unavailable' ? (
+                // 音频不可用提示
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                    <svg
+                      className="w-6 h-6 text-slate-400 dark:text-slate-500"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                      />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      音频文件不可用
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      历史记录中未保存音频文件，但转录和翻译结果已保留
+                    </p>
+                  </div>
+                  {onReupload && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onReupload}
+                      className="gap-2 border-slate-200 dark:border-slate-700"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                        />
+                      </svg>
+                      重新上传
+                    </Button>
+                  )}
                 </div>
-                <div className="relative h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden cursor-pointer group">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all"
-                    style={{ width: `${(currentTime / duration) * 100}%` }}
-                  />
-                  <div
-                    className="absolute inset-y-0 right-0 bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-50 transition-opacity"
-                    style={{ width: `${100 - (currentTime / duration) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Speed Control */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">1.0x</span>
-                <button className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors">
-                  <svg
-                    className="w-4 h-4 text-slate-600 dark:text-slate-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+              ) : (
+                // 正常的音频播放器
+                <div className="flex items-center gap-4">
+                  {/* Play Button */}
+                  <button
+                    onClick={togglePlay}
+                    className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/30 transition-all"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 012.828 2.828"
-                    />
-                  </svg>
-                </button>
-              </div>
+                    {isPlaying ? (
+                      <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="w-5 h-5 text-white ml-0.5"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Progress Bar */}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      <span className="font-mono">{formatTime(currentTime)}</span>
+                      <span className="font-mono">{formatTime(duration)}</span>
+                    </div>
+                    <div className="relative h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden cursor-pointer group">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all"
+                        style={{ width: `${(currentTime / duration) * 100}%` }}
+                      />
+                      <div
+                        className="absolute inset-y-0 right-0 bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-50 transition-opacity"
+                        style={{ width: `${100 - (currentTime / duration) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Speed Control */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">1.0x</span>
+                    <button className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors">
+                      <svg
+                        className="w-4 h-4 text-slate-600 dark:text-slate-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 012.828 2.828"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Hidden Audio Element */}
-      {audioUrl && <audio ref={audioRef} src={audioUrl} />}
+      {audioUrl && audioUrl !== 'unavailable' && <audio ref={audioRef} src={audioUrl} />}
 
       {/* Loading 遮罩 - 重新上传时显示 */}
       {isProcessing && (

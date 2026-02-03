@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 import { useUploadVoice } from '@/hooks/use-voice-transcriptions';
 import { TranscriptionResult } from './transcription-result';
 import { translateText } from '@/lib/api/translation';
+import { useHistoryActions, useHistoryInitialized } from '@/stores/audio-history-store';
+import { AudioHistoryItem } from '@/types/audio-history';
+import { withRetry, formatErrorMessage, RetryProgressTracker } from '@/lib/api/error-handler';
 
 interface UploadAudioProps {
   onFileSelect?: (file: File) => void;
@@ -15,6 +18,9 @@ interface UploadAudioProps {
     isProcessing: boolean;
     showResult: boolean;
   }) => void; // 新增：状态变化回调
+  // 历史记录恢复相关
+  restoredHistoryItem?: AudioHistoryItem | null;
+  onHistoryRestored?: () => void;
 }
 
 /**
@@ -36,7 +42,7 @@ const createSegments = (
         id: '1',
         timestamp: '00:00:00',
         speaker: 'Speaker A',
-        speakerLabel: 'Speaker A' as const,
+        speakerLabel: 'Speaker A' as 'Speaker A' | 'Speaker B' | 'Speaker C',
         originalText: transcriptionText,
         translatedText: translationTexts?.[0] || 'Translation in progress...',
         startTime: 0,
@@ -96,7 +102,7 @@ const createSegments = (
         ? 'Speaker A'
         : index % 3 === 1
           ? 'Speaker B'
-          : 'Speaker C') as const,
+          : 'Speaker C') as 'Speaker A' | 'Speaker B' | 'Speaker C',
       originalText: sentence.trim() + '。',
       translatedText,
       startTime,
@@ -109,6 +115,8 @@ export function UploadAudio({
   onFileSelect,
   onTranscriptionComplete,
   onStateChange,
+  restoredHistoryItem,
+  onHistoryRestored,
 }: UploadAudioProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -118,9 +126,86 @@ export function UploadAudio({
   const [showResult, setShowResult] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioDuration, setAudioDuration] = useState<number | undefined>(undefined);
+  const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null); // 保存历史记录 ID
+  const [retryProgress, setRetryProgress] = useState<{
+    attempt: number;
+    maxAttempts: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useUploadVoice();
+
+  // 获取历史记录 store 的 actions - 使用 selector hook 避免无限循环
+  const { createItem, updateItem, updateProcessingStatus, initializeService } = useHistoryActions();
+  const isInitialized = useHistoryInitialized();
+
+  // 初始化历史记录服务
+  useEffect(() => {
+    if (!isInitialized) {
+      initializeService().catch((error) => {
+        console.error('[UploadAudio] Failed to initialize history service:', error);
+        // 不影响主要功能，只记录错误
+      });
+    }
+  }, [isInitialized, initializeService]);
+
+  // 🔧 处理历史记录恢复
+  useEffect(() => {
+    if (!restoredHistoryItem) return;
+
+    console.log('[UploadAudio] Restoring history item:', restoredHistoryItem);
+
+    // 创建占位符文件对象（用于显示文件信息）
+    const placeholderFile = new File([''], restoredHistoryItem.fileName, {
+      type: restoredHistoryItem.fileMimeType,
+    });
+
+    // 设置文件大小（通过 Object.defineProperty）
+    Object.defineProperty(placeholderFile, 'size', {
+      value: restoredHistoryItem.fileSize,
+      writable: false,
+    });
+
+    // 恢复状态
+    setSelectedFile(placeholderFile);
+    setTranscriptionResult(restoredHistoryItem.transcriptionText || null);
+    setAudioDuration(restoredHistoryItem.duration);
+    setCurrentHistoryId(restoredHistoryItem.id);
+    setShowResult(true);
+
+    // 解析翻译结果
+    if (restoredHistoryItem.translationText) {
+      // 假设翻译文本是按句子分隔的（与转录文本对应）
+      const transcriptionSentences = (restoredHistoryItem.transcriptionText || '')
+        .split(/[。！？]/)
+        .filter((s) => s.trim());
+
+      // 简单处理：将翻译文本按句号分割
+      const translationSentences = restoredHistoryItem.translationText
+        .split(/\.\s+/)
+        .filter((s) => s.trim());
+
+      setTranslationResults(translationSentences);
+    } else {
+      setTranslationResults(null);
+    }
+
+    // 音频 URL 处理：历史记录中没有保存音频文件
+    // 但我们可以尝试从原始文件路径恢复（如果有的话）
+    // 或者显示一个占位符，提示用户音频不可用
+    if (restoredHistoryItem.audioUrl) {
+      // 如果历史记录中保存了音频URL（未来可能支持）
+      setAudioUrl(restoredHistoryItem.audioUrl);
+    } else {
+      // 音频文件不可用，设置为特殊标记
+      setAudioUrl('unavailable');
+    }
+
+    // 通知父组件恢复完成
+    onHistoryRestored?.();
+
+    console.log('[UploadAudio] History item restored successfully');
+  }, [restoredHistoryItem, onHistoryRestored]);
 
   // 🔧 监听状态变化，通知父组件
   useEffect(() => {
@@ -188,6 +273,7 @@ export function UploadAudio({
     setTranscriptionResult(null);
     setTranslationResults(null);
     setAudioDuration(undefined);
+    setCurrentHistoryId(null); // 重置历史记录 ID
     // 不修改 showResult，保持当前状态
     onFileSelect?.(file);
 
@@ -205,9 +291,33 @@ export function UploadAudio({
 
     console.log('开始上传文件:', file.name);
 
+    // 🔧 创建历史记录（在开始转录前）
+    let historyId: string | null = null;
+    try {
+      if (isInitialized) {
+        const historyItem = await createItem(file);
+        historyId = historyItem.id;
+        setCurrentHistoryId(historyId);
+        console.log('✓ 历史记录已创建:', historyId);
+      }
+    } catch (error) {
+      console.error('[UploadAudio] Failed to create history record:', error);
+      // 不影响主要转录流程，继续执行
+    }
+
     // 开始上传并转录
     try {
-      const result = await uploadMutation.mutateAsync({ file });
+      // 使用 withRetry 包装转录请求
+      const result = await withRetry(() => uploadMutation.mutateAsync({ file }), {
+        maxRetries: 3,
+        initialDelay: 1000,
+        onRetry: (attempt, error) => {
+          console.log(`转录重试 ${attempt}/3:`, error.message);
+          setRetryProgress({ attempt, maxAttempts: 3 });
+        },
+      });
+
+      setRetryProgress(null); // 清除重试进度
       console.log('转录结果:', result);
 
       const transcriptionText = result.transcription || '';
@@ -231,6 +341,19 @@ export function UploadAudio({
       console.log('设置 showResult 为 true');
       setShowResult(true);
 
+      // 🔧 更新历史记录 - 转录完成
+      if (historyId && isInitialized) {
+        try {
+          await updateProcessingStatus(historyId, 'translating', {
+            transcriptionText,
+          });
+          console.log('✓ 历史记录已更新（转录完成）');
+        } catch (error) {
+          console.error('[UploadAudio] Failed to update history after transcription:', error);
+          // 不影响主要流程
+        }
+      }
+
       // 自动开始翻译流程 - 按句子分别翻译，渐进式显示
       if (transcriptionText.trim().length > 0) {
         console.log('→ 开始翻译...');
@@ -249,16 +372,28 @@ export function UploadAudio({
           setTranslationResults(translatedSentences as string[]); // 立即显示，显示 loading
 
           // 逐句翻译，每翻译完一句就更新显示
+          let translationErrors = 0;
           for (let i = 0; i < sentences.length; i++) {
             const sentence = sentences[i].trim();
             console.log(`  翻译第 ${i + 1}/${sentences.length} 句...`);
 
             try {
-              const result = await translateText({
-                text: sentence,
-                sourceLanguage: 'Chinese',
-                targetLanguage: 'English',
-              });
+              // 使用 withRetry 包装翻译请求
+              const result = await withRetry(
+                () =>
+                  translateText({
+                    text: sentence,
+                    sourceLanguage: 'Chinese',
+                    targetLanguage: 'English',
+                  }),
+                {
+                  maxRetries: 3,
+                  initialDelay: 500,
+                  onRetry: (attempt, error) => {
+                    console.log(`  翻译第 ${i + 1} 句重试 ${attempt}/3:`, error.message);
+                  },
+                }
+              );
 
               // 更新当前句子的翻译
               translatedSentences[i] = result.translatedText.trim();
@@ -270,33 +405,97 @@ export function UploadAudio({
             } catch (error) {
               console.error(`  第 ${i + 1} 句翻译失败:`, error);
               translatedSentences[i] = '(Translation failed)';
+              translationErrors++;
               setTranslationResults([...translatedSentences] as string[]);
             }
           }
 
           console.log('✓ 全部翻译完成，共', sentences.length, '句');
+
+          // 🔧 更新历史记录 - 翻译完成
+          if (historyId && isInitialized) {
+            try {
+              const translationText = translatedSentences
+                .map((t, i) => (t && t !== '(Translation failed)' ? t : ''))
+                .filter((t) => t)
+                .join(' ');
+
+              // 如果有翻译错误，记录在 errorMessage 中
+              const errorMessage =
+                translationErrors > 0
+                  ? `部分翻译失败 (${translationErrors}/${sentences.length})`
+                  : undefined;
+
+              await updateProcessingStatus(historyId, 'completed', {
+                translationText: translationText || undefined,
+                errorMessage,
+              });
+              console.log('✓ 历史记录已更新（翻译完成）');
+            } catch (error) {
+              console.error('[UploadAudio] Failed to update history after translation:', error);
+              // 不影响主要流程
+            }
+          }
+
+          // 如果所有翻译都失败，显示提示
+          if (translationErrors === sentences.length) {
+            alert('翻译失败，但转录结果已保存');
+          } else if (translationErrors > 0) {
+            alert(`部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`);
+          }
         } catch (translationError) {
           console.error('翻译错误:', translationError);
+
+          // 🔧 翻译失败时更新历史记录状态
+          if (historyId && isInitialized) {
+            try {
+              await updateProcessingStatus(historyId, 'completed', {
+                errorMessage: '翻译失败',
+              });
+            } catch (error) {
+              console.error(
+                '[UploadAudio] Failed to update history after translation error:',
+                error
+              );
+            }
+          }
+
           // 翻译失败不影响转录结果的显示
           alert('翻译失败，但转录结果已保存');
         } finally {
           setIsTranslating(false);
         }
+      } else {
+        // 没有翻译内容，直接标记为完成
+        if (historyId && isInitialized) {
+          try {
+            await updateProcessingStatus(historyId, 'completed');
+            console.log('✓ 历史记录已更新（无翻译内容）');
+          } catch (error) {
+            console.error('[UploadAudio] Failed to update history status:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('上传错误:', error);
+      setRetryProgress(null); // 清除重试进度
 
-      // 显示详细的错误信息给用户
-      let errorMessage = '上传失败，请重试';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null && 'message' in error) {
-        errorMessage = String((error as any).message);
+      // 🔧 转录失败时更新历史记录状态
+      if (historyId && isInitialized) {
+        try {
+          const errorMessage = error instanceof Error ? error.message : '转录失败';
+          await updateProcessingStatus(historyId, 'error', {
+            errorMessage,
+          });
+          console.log('✓ 历史记录已更新（转录失败）');
+        } catch (updateError) {
+          console.error('[UploadAudio] Failed to update history after error:', updateError);
+        }
       }
 
-      alert(
-        `转录失败\n\n错误信息：${errorMessage}\n\n请检查：\n1. 文件格式是否正确（MP3/WAV/AAC）\n2. 文件大小是否超过 50MB\n3. API Key 是否配置正确\n4. 网络连接是否正常`
-      );
+      // 使用格式化的错误消息
+      const errorMessage = formatErrorMessage(error, '转录');
+      alert(errorMessage);
     }
   };
 
@@ -345,6 +544,7 @@ export function UploadAudio({
     setIsTranslating(false);
     setShowResult(false);
     setAudioDuration(undefined);
+    setCurrentHistoryId(null); // 重置历史记录 ID
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
@@ -372,13 +572,13 @@ export function UploadAudio({
     );
 
     return (
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col h-full">
         <TranscriptionResult
           fileName={selectedFile.name}
           language="中文"
           targetLanguage="English"
           segments={segments}
-          audioUrl={audioUrl || undefined}
+          audioUrl={audioUrl ?? undefined}
           isTranslating={isTranslating}
           isProcessing={isProcessingNewFile} // 传递处理状态（包括重新上传）
           onReupload={handleReupload} // 使用新的重新上传函数
@@ -512,7 +712,11 @@ export function UploadAudio({
                   {uploadMutation.isPending && (
                     <>
                       <span className="text-xs text-slate-400">•</span>
-                      <span className="text-xs text-blue-600 dark:text-blue-400">转录中...</span>
+                      <span className="text-xs text-blue-600 dark:text-blue-400">
+                        {retryProgress
+                          ? `转录中... (重试 ${retryProgress.attempt}/${retryProgress.maxAttempts})`
+                          : '转录中...'}
+                      </span>
                     </>
                   )}
                   {isTranslating && (
