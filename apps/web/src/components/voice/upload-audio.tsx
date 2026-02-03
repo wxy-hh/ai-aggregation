@@ -614,160 +614,189 @@ export function UploadAudio({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar">
-      <div className="max-w-4xl mx-auto">
-        {/* Upload Area */}
-        <div
-          className={cn(
-            'relative bg-white dark:bg-slate-900 rounded-2xl p-8 border-2 border-dashed transition-all duration-200',
-            isDragging
-              ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10'
-              : 'border-slate-200 dark:border-slate-700'
-          )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="flex flex-col items-center justify-center py-12">
-            {/* Upload Icon */}
-            <div className="w-16 h-16 mb-6 rounded-2xl bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <svg
-                className="w-8 h-8 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                />
-              </svg>
-            </div>
+    <div className="flex-1 h-full flex flex-col relative overflow-hidden">
+      {/* Ambient Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
-            {/* Title */}
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
-              点击或拖拽本地 MP3/WAV 文件至此
-            </h3>
-
-            {/* Subtitle */}
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-              支持格式: MP3, WAV, AAC (最大 50MB)
-            </p>
-
-            {/* Select Button */}
-            <Button
-              onClick={handleSelectFile}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-semibold shadow-lg shadow-blue-600/20 transition-all duration-200 hover:shadow-xl hover:shadow-blue-600/30"
-            >
-              选择文件
-            </Button>
-
-            {/* 开发环境测试按钮 - 直接显示结果界面 */}
-            {process.env.NODE_ENV === 'development' && (
-              <Button
-                onClick={() => {
-                  // 创建测试文件用于开发调试
-                  const testFile = new File(['test'], 'test-audio.mp3', { type: 'audio/mpeg' });
-                  setSelectedFile(testFile);
-                  setAudioUrl('/assets/voice/人保律师-2510291614.mp3');
-                  setShowResult(true);
-                }}
-                variant="outline"
-                className="mt-4"
-              >
-                测试：直接显示结果界面
-              </Button>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar flex flex-col items-center justify-center min-h-[500px]">
+        <div className="max-w-2xl w-full mx-auto relative z-10 animate-in fade-in zoom-in-95 duration-500">
+          {/* Main Upload Card */}
+          <div
+            className={cn(
+              'relative bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-[2rem] p-10 border transition-all duration-300 group',
+              isDragging
+                ? 'border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] scale-[1.02]'
+                : 'border-white/60 dark:border-slate-700/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.05)] hover:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.08)]'
             )}
-
-            {/* Hidden File Input */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".mp3,.wav,.aac,audio/mpeg,audio/wav,audio/aac"
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-          </div>
-        </div>
-
-        {/* 已选文件显示 */}
-        {selectedFile && (
-          <div className="mt-6 bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center gap-4">
-              {/* 文件图标 */}
-              <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
-                <svg
-                  className="w-6 h-6 text-blue-600 dark:text-blue-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                  />
-                </svg>
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="flex flex-col items-center justify-center text-center">
+              {/* Animated Upload Icon */}
+              <div className="relative w-20 h-20 mb-8 group-hover:scale-110 transition-transform duration-300 ease-out">
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl opacity-20 blur-xl group-hover:opacity-30 transition-opacity" />
+                <div className="absolute inset-0 bg-gradient-to-tr from-blue-100 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-3xl border border-white/50 dark:border-white/10 flex items-center justify-center shadow-inner">
+                  <svg
+                    className={cn(
+                      'w-10 h-10 text-blue-600 dark:text-blue-400 transition-transform duration-500',
+                      isDragging ? 'scale-125 -translate-y-1' : 'translate-y-0'
+                    )}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                    />
+                  </svg>
+                </div>
               </div>
 
-              {/* File Info */}
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                  {selectedFile.name}
-                </h4>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
-                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                  </span>
+              {/* Title & Desc */}
+              <h3 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white mb-3">
+                {isDragging ? '释放以上传文件' : '点击或拖拽音频文件至此'}
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-sm mx-auto leading-relaxed">
+                支持 MP3, WAV, AAC 等常见格式
+                <br />
+                <span className="text-xs opacity-70">单文件最大支持 50MB，自动识别语言</span>
+              </p>
+
+              {/* Action Button */}
+              <div className="relative group/btn">
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl blur opacity-25 group-hover/btn:opacity-50 transition duration-200" />
+                <Button
+                  onClick={handleSelectFile}
+                  className="relative bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-6 h-auto rounded-xl font-semibold shadow-lg transition-all duration-200 active:scale-95 text-base"
+                >
+                  选择音频文件
+                </Button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".mp3,.wav,.aac,audio/mpeg,audio/wav,audio/aac"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
+            </div>
+          </div>
+
+          {/* Selected File Card - Premium Style */}
+          {selectedFile && (
+            <div className="mt-8 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md rounded-2xl p-5 border border-white/50 dark:border-slate-700/50 shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex items-center gap-5">
+                {/* File Icon */}
+                <div className="relative w-14 h-14 flex-shrink-0">
+                  <div className="absolute inset-0 bg-blue-500/20 rounded-xl blur-sm" />
+                  <div className="relative w-full h-full bg-gradient-to-br from-blue-50 to-white dark:from-slate-800 dark:to-slate-900 rounded-xl flex items-center justify-center border border-blue-100 dark:border-blue-900/30">
+                    <svg
+                      className="w-7 h-7 text-blue-600 dark:text-blue-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                      />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* File Info */}
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white truncate mb-1">
+                    {selectedFile.name}
+                  </h4>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 dark:text-slate-400">
+                      {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                    </span>
+
+                    {/* Status Indicators */}
+                    <div className="flex items-center gap-2">
+                      {uploadMutation.isPending && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20">
+                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                            {retryProgress
+                              ? `转录中 (重试 ${retryProgress.attempt})`
+                              : '正在转录...'}
+                          </span>
+                        </div>
+                      )}
+                      {isTranslating && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20">
+                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" />
+                          <span className="text-xs font-medium text-purple-600 dark:text-purple-400">
+                            翻译中...
+                          </span>
+                        </div>
+                      )}
+                      {uploadMutation.isSuccess && !isTranslating && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 dark:bg-green-900/20">
+                          <svg
+                            className="w-3 h-3 text-green-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={3}
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                          <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                            处理完成
+                          </span>
+                        </div>
+                      )}
+                      {uploadMutation.isError && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/20">
+                          <svg
+                            className="w-3 h-3 text-red-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={3}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                          <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                            失败
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
                   {uploadMutation.isPending && (
-                    <>
-                      <span className="text-xs text-slate-400">•</span>
-                      <span className="text-xs text-blue-600 dark:text-blue-400">
-                        {retryProgress
-                          ? `转录中... (重试 ${retryProgress.attempt}/${retryProgress.maxAttempts})`
-                          : '转录中...'}
-                      </span>
-                    </>
-                  )}
-                  {isTranslating && (
-                    <>
-                      <span className="text-xs text-slate-400">•</span>
-                      <span className="text-xs text-purple-600 dark:text-purple-400">
-                        翻译中...
-                      </span>
-                    </>
-                  )}
-                  {uploadMutation.isSuccess && (
-                    <>
-                      <span className="text-xs text-slate-400">•</span>
-                      <span className="text-xs text-green-600 dark:text-green-400">完成</span>
-                    </>
-                  )}
-                  {uploadMutation.isError && (
-                    <>
-                      <span className="text-xs text-slate-400">•</span>
-                      <span className="text-xs text-red-600 dark:text-red-400">失败</span>
-                    </>
+                    <div className="mt-3 w-full bg-slate-100 dark:bg-slate-700/50 rounded-full h-1 overflow-hidden">
+                      <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full animate-[loading_1.5s_ease-in-out_infinite] w-full origin-left" />
+                    </div>
                   )}
                 </div>
 
-                {/* Progress Bar */}
-                {uploadMutation.isPending && (
-                  <div className="mt-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-blue-500 h-full rounded-full animate-pulse w-full" />
-                  </div>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2">
+                {/* Delete Action */}
                 <button
                   onClick={handleRemoveFile}
-                  className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                  title="删除"
+                  className="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all duration-200"
+                  title="移除文件"
                   disabled={uploadMutation.isPending}
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -775,35 +804,44 @@ export function UploadAudio({
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                     />
                   </svg>
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 转录结果显示 */}
-        {transcriptionResult && (
-          <div className="mt-6 bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">转录结果</h3>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(transcriptionResult);
-                  alert('已复制到剪贴板');
-                }}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                复制文本
-              </button>
+          {/* Result Preview (Optional/Duplicate of TransriptionResult but simple) */}
+          {transcriptionResult && !showResult && (
+            <div className="mt-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md rounded-2xl p-6 border border-white/50 dark:border-slate-700/50 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <svg
+                    className="w-4 h-4 text-green-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  转录成功
+                </h3>
+                <button className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 transition-colors">
+                  查看完整结果 &rarr;
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed">
+                {transcriptionResult}
+              </p>
             </div>
-            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
-              {transcriptionResult}
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

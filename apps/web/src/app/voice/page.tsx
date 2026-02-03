@@ -81,7 +81,7 @@ export default function VoicePage() {
 
   return (
     <AppLayout>
-      <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+      <div className="flex w-full h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-blue-900/10 overflow-hidden">
         {/* Main Content */}
         <div className="flex-1 flex flex-col h-full min-w-0 relative">
           {/* Header */}

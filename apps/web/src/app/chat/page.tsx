@@ -11,7 +11,20 @@ import {
   type ChatMessage as ConvMessage,
 } from '@/stores';
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { Plus, Search, MessageSquare, BarChart2, Trash2 } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  MessageSquare,
+  BarChart2,
+  Trash2,
+  Sparkles,
+  FileText,
+  Code2,
+  Lightbulb,
+  ShieldCheck,
+  Globe,
+  FileEdit,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -353,7 +366,7 @@ export default function ChatPage() {
 
         {/* 主聊天区域 */}
         <div className="flex-1 p-4 min-w-0 h-full">
-          <div className="h-full flex flex-col bg-white dark:bg-slate-900 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
+          <div className="h-full flex flex-col bg-gradient-to-br from-[#eff6ff] to-white dark:from-slate-900 dark:to-slate-950 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
             {/* 头部 */}
             <header className="flex-none px-6 py-4 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
               <div className="flex items-center justify-between">
@@ -446,11 +459,119 @@ export default function ChatPage() {
             )}
 
             {/* 消息列表 */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-white dark:bg-slate-900">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-transparent">
               {displayMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                  <MessageSquare className="w-12 h-12 mb-4 opacity-30" />
-                  <p className="text-sm">开始一个新对话吧</p>
+                <div className="flex flex-col items-center justify-center h-full px-4 relative z-0">
+                  {/* Ambient Background Glow */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-[100px] -z-10 pointer-events-none" />
+
+                  <div className="max-w-3xl w-full bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2rem] p-8 md:p-12 border border-white/60 dark:border-slate-700/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.05)]">
+                    {/* Logo & Greeting */}
+                    <div className="flex flex-col items-center text-center mb-10">
+                      <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6 rotate-3 hover:rotate-6 transition-transform">
+                        <Sparkles className="w-8 h-8 text-white" />
+                      </div>
+                      <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">
+                        你好，我是您的智能助手
+                      </h2>
+                      <p className="text-slate-500 dark:text-slate-400 max-w-lg">
+                        我可以协助您完成写作、编程、分析等任务，让工作更高效。
+                      </p>
+                    </div>
+
+                    {/* Capability Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mb-10">
+                      <button
+                        onClick={() => handleSend('帮我写一封周报，总结本周工作重点与计划')}
+                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                          <FileEdit className="w-6 h-6 text-orange-500" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            写一封周报
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            总结本周工作重点与计划
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => handleSend('请帮我润色以下代码，优化逻辑与代码风格：\n')}
+                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                          <Code2 className="w-6 h-6 text-blue-500" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            润色代码
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            优化逻辑与代码风格
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => handleSend('请帮我总结这篇文章的核心观点：\n')}
+                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                          <FileText className="w-6 h-6 text-purple-500" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            总结长文
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            快速提取文章核心观点
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => handleSend('我需要一些图片设计的创意灵感，关于...')}
+                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
+                      >
+                        <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                          <Lightbulb className="w-6 h-6 text-emerald-500" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                            图片创意建议
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            为设计项目寻找灵感
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Features Footer */}
+                    <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12 pt-6 border-t border-slate-200/50 dark:border-white/5">
+                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                          <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        支持长文本分析
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                          <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        实时联网搜索
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                          <ShieldCheck className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        企业级数据安全
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="max-w-4xl mx-auto flex flex-col pt-4">
@@ -463,7 +584,7 @@ export default function ChatPage() {
             </div>
 
             {/* 输入区域 */}
-            <div className="flex-none z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur pb-2">
+            <div className="flex-none z-10 bg-transparent pb-2">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>
           </div>
