@@ -30,6 +30,11 @@ class AudioHistoryDB extends Dexie {
       audioHistory: '++id, fileName, uploadTime, processingStatus, tags, title, createdAt',
     });
 
+    // Schema version 2: Add audioBlob support
+    this.version(2).stores({
+      audioHistory: '++id, fileName, uploadTime, processingStatus, tags, title, createdAt',
+    });
+
     // Add hooks for data transformation
     this.audioHistory.hook('creating', (primKey, obj, trans) => {
       // Ensure dates are properly stored
@@ -91,6 +96,10 @@ export class IndexedDBStorage implements StorageAdapter {
       }
 
       await this.db.audioHistory.add(newItem);
+
+      // Clean up old audio blobs after adding new item
+      await this.cleanupOldAudioBlobs();
+
       return newItem;
     } catch (error) {
       throw new Error(
@@ -110,6 +119,37 @@ export class IndexedDBStorage implements StorageAdapter {
       throw new Error(
         `Failed to get audio history item: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+    }
+  }
+
+  /**
+   * Clean up old audio blobs (keep only the most recent 10)
+   */
+  private async cleanupOldAudioBlobs(): Promise<void> {
+    try {
+      const allItems = await this.db.audioHistory.orderBy('createdAt').reverse().toArray();
+
+      // Keep audio blobs for the most recent 10 items
+      const KEEP_AUDIO_COUNT = 10;
+
+      if (allItems.length > KEEP_AUDIO_COUNT) {
+        const itemsToCleanup = allItems.slice(KEEP_AUDIO_COUNT);
+
+        for (const item of itemsToCleanup) {
+          if (item.audioBlob) {
+            // Remove audioBlob but keep the text data
+            await this.db.audioHistory.update(item.id, { audioBlob: undefined });
+            console.log(
+              `[IndexedDBStorage] Removed audio blob from item ${item.id} (${item.fileName})`
+            );
+          }
+        }
+
+        console.log(`[IndexedDBStorage] Cleaned up ${itemsToCleanup.length} old audio blobs`);
+      }
+    } catch (error) {
+      console.error('[IndexedDBStorage] Error cleaning up old audio blobs:', error);
+      // Don't throw - this is a background cleanup operation
     }
   }
 

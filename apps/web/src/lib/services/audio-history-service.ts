@@ -113,6 +113,9 @@ export class AudioHistoryService {
     try {
       const duration = await this.getAudioDuration(file);
 
+      // Convert File to Blob for storage
+      const audioBlob = new Blob([file], { type: file.type });
+
       const item = await ErrorHandler.withRetry(
         () =>
           this.storage.create({
@@ -126,6 +129,7 @@ export class AudioHistoryService {
             tags: [],
             title: this.generateDefaultTitle(file.name),
             duration,
+            audioBlob, // Save audio blob (will be kept for recent 10 items only)
           }),
         this.maxRetries,
         this.retryDelay

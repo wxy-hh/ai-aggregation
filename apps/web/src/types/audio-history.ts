@@ -25,6 +25,7 @@ export interface AudioHistoryItem {
   title: string; // 用户自定义标题
   duration?: number; // 音频时长（秒）
   audioUrl?: string; // 音频文件URL（可选，历史记录中通常不保存）
+  audioBlob?: Blob; // 音频文件二进制数据（仅最近10条保存）
   errorMessage?: string; // 错误信息
   createdAt: Date; // 创建时间
   updatedAt: Date; // 更新时间

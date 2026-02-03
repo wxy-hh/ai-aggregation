@@ -190,21 +190,34 @@ export function UploadAudio({
       setTranslationResults(null);
     }
 
-    // 音频 URL 处理：历史记录中没有保存音频文件
-    // 但我们可以尝试从原始文件路径恢复（如果有的话）
-    // 或者显示一个占位符，提示用户音频不可用
-    if (restoredHistoryItem.audioUrl) {
+    // 🔧 音频 URL 处理：优先使用 audioBlob
+    if (restoredHistoryItem.audioBlob) {
+      // 从 Blob 创建 URL
+      const blobUrl = URL.createObjectURL(restoredHistoryItem.audioBlob);
+      setAudioUrl(blobUrl);
+      console.log('[UploadAudio] Audio restored from blob');
+    } else if (restoredHistoryItem.audioUrl) {
       // 如果历史记录中保存了音频URL（未来可能支持）
       setAudioUrl(restoredHistoryItem.audioUrl);
+      console.log('[UploadAudio] Audio restored from URL');
     } else {
       // 音频文件不可用，设置为特殊标记
       setAudioUrl('unavailable');
+      console.log('[UploadAudio] Audio not available for this history item');
     }
 
     // 通知父组件恢复完成
     onHistoryRestored?.();
 
     console.log('[UploadAudio] History item restored successfully');
+
+    // 清理函数：当组件卸载或切换到其他历史记录时，释放 Blob URL
+    return () => {
+      if (restoredHistoryItem.audioBlob && audioUrl && audioUrl !== 'unavailable') {
+        URL.revokeObjectURL(audioUrl);
+        console.log('[UploadAudio] Blob URL revoked');
+      }
+    };
   }, [restoredHistoryItem, onHistoryRestored]);
 
   // 🔧 监听状态变化，通知父组件
