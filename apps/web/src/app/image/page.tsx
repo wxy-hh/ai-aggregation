@@ -4,183 +4,273 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
 import { AssetSidebar } from '@/components/image/asset-sidebar';
-import { useState, useEffect } from 'react';
+import { NegativePrompt } from '@/components/image/negative-prompt';
+import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { generateKolorsImage, downloadImage } from '@/lib/api/kolors';
+import {
+  DEFAULT_PARAMS,
+  ASPECT_RATIO_TO_SIZE,
+  STYLE_PROMPTS,
+  PROMPT_TEMPLATES,
+} from '@/lib/constants/image-generation';
+import {
+  Sparkles,
+  Wand2,
+  Download,
+  Image as ImageIcon,
+  Loader2,
+  Zap,
+  Dice5,
+  Pencil,
+  Box,
+  Palette,
+} from 'lucide-react';
 
 export default function ImagePage() {
-  const [prompt, setPrompt] = useState(
-    '赛博格猫咪，霓虹灯雨夜，高耸的摩天大楼，反射光泽，8k 分辨率，电影质感...'
-  );
-  const [isGenerating, setIsGenerating] = useState(true);
-  const [progress, setProgress] = useState(0);
+  // Generation parameters
+  const [prompt, setPrompt] = useState<string>(PROMPT_TEMPLATES[0]);
+  const [negativePrompt, setNegativePrompt] = useState<string>('');
+  const [style, setStyle] = useState<string>(DEFAULT_PARAMS.style);
+  const [ratio, setRatio] = useState<string>(DEFAULT_PARAMS.aspectRatio);
+  const [steps, setSteps] = useState<number>(DEFAULT_PARAMS.steps);
+  const [cfg, setCfg] = useState<number>(DEFAULT_PARAMS.guidanceScale);
+  const [seed, setSeed] = useState<string>('');
+  const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
-  useEffect(() => {
-    if (isGenerating) {
-      const interval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 99) {
-            // clearInterval(interval);
-            // setIsGenerating(false);
-            return 99; // 演示时保持在 99%
-          }
-          return prev + 1;
-        });
-      }, 100);
-      return () => clearInterval(interval);
+  // Generation state
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState('');
+  const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // Handle generation
+  const handleGenerate = useCallback(async () => {
+    setIsGenerating(true);
+    setProgress(0);
+    setError(null);
+    setCurrentStep('准备生成...');
+
+    try {
+      // Build enhanced prompt with style
+      const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
+      const enhancedPrompt = styleConfig
+        ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
+        : prompt;
+
+      setCurrentStep('正在扩散生成...');
+      setProgress(10);
+
+      // Call API
+      const response = await generateKolorsImage({
+        prompt: enhancedPrompt,
+        negativePrompt: negativePrompt || styleConfig?.negativePrompt,
+        imageSize: ASPECT_RATIO_TO_SIZE[ratio],
+        steps,
+        guidanceScale: cfg,
+        batchSize,
+        seed: seed ? parseInt(seed) : undefined,
+        style,
+      });
+
+      setProgress(80);
+      setCurrentStep('下载图片...');
+
+      // Download images
+      const imageUrls = await Promise.all(
+        response.images.map(async (img) => {
+          const blob = await downloadImage(img.url);
+          return URL.createObjectURL(blob);
+        })
+      );
+
+      setProgress(100);
+      setCurrentStep('完成！');
+      setGeneratedImages(imageUrls);
+
+      // Reset after a delay
+      setTimeout(() => {
+        setIsGenerating(false);
+        setProgress(0);
+        setCurrentStep('');
+      }, 1000);
+    } catch (err) {
+      console.error('Generation error:', err);
+      setError(err instanceof Error ? err.message : '生成失败，请重试');
+      setIsGenerating(false);
+      setProgress(0);
+      setCurrentStep('');
     }
-  }, [isGenerating]);
+  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize]);
+
+  // Random inspiration
+  const handleRandomPrompt = () => {
+    const randomIndex = Math.floor(Math.random() * PROMPT_TEMPLATES.length);
+    setPrompt(PROMPT_TEMPLATES[randomIndex]);
+  };
+
+  // Get aspect ratio class based on selected ratio
+  const getAspectRatioClass = () => {
+    switch (ratio) {
+      case '1:1':
+        return 'aspect-square';
+      case '3:4':
+        return 'aspect-[3/4]';
+      case '4:3':
+        return 'aspect-[4/3]';
+      case '16:9':
+        return 'aspect-[16/9]';
+      case '9:16':
+        return 'aspect-[9/16]';
+      case '3:2':
+        return 'aspect-[3/2]';
+      default:
+        return 'aspect-[16/9]';
+    }
+  };
+
+  // Quick Start Actions
+  const quickStarts = [
+    {
+      label: '赛博朋克城市',
+      style: 'cyberpunk',
+      icon: <Zap className="w-4 h-4 text-purple-500" />,
+      prompt: '未来的赛博朋克城市街道，霓虹灯光，雨夜，高分辨率，电影质感',
+    },
+    {
+      label: '梵高风格星空',
+      style: 'oil-painting',
+      icon: <Palette className="w-4 h-4 text-orange-500" />,
+      prompt: '梵高风格的星空，旋转的星云，深蓝色的夜空，金黄色的星星，油画质感',
+    },
+    {
+      label: '极简 3D 渲染',
+      style: '3d-render',
+      icon: <Box className="w-4 h-4 text-blue-500" />,
+      prompt: '极简主义风格的3D几何图形，柔和的灯光，淡雅的色彩，高质量渲染',
+    },
+  ];
+
+  const handleQuickStart = (item: (typeof quickStarts)[0]) => {
+    setPrompt(item.prompt);
+    setStyle(item.style);
+  };
 
   return (
     <AppLayout>
-      <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+      <div className="flex w-full h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 overflow-hidden">
         {/* 主工作区 */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+          {/* 装饰性背景元素 */}
+          <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+            <div className="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] rounded-full bg-blue-400/10 blur-[100px]" />
+            <div className="absolute top-[40%] -left-[10%] w-[40%] h-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
+          </div>
+
           {/* 头部 */}
-          <header className="flex-none px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between z-10 shadow-sm">
+          <header className="flex-none px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                灵感绘图
-                <Badge className="px-2 py-0.5 bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs rounded-md font-bold uppercase border-0 hover:bg-indigo-200 dark:hover:bg-indigo-900/70">
-                  Engine v4.0
+                Ai 创作工坊
+                <Badge className="px-2 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-[10px] rounded-full font-bold uppercase border-0 shadow-lg shadow-indigo-500/20">
+                  READY
                 </Badge>
               </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                AI 正在根据您的描述构建画面。
-              </p>
             </div>
-            <div>
-              <Badge
-                variant="outline"
-                className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-full text-xs font-bold border-green-100 dark:border-green-900/30"
-              >
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                GPU 算力充足
-              </Badge>
+            <div className="flex items-center gap-4">
+              <div className="text-xs font-semibold text-orange-500 flex items-center gap-1.5 bg-orange-50 dark:bg-orange-950/30 px-3 py-1.5 rounded-full border border-orange-100 dark:border-orange-900/50">
+                <Box className="w-3.5 h-3.5" />
+                124 点数
+              </div>
             </div>
           </header>
 
           {/* 内容区域：拆分视图 */}
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden z-10">
             {/* 左侧面板：设置与提示词 */}
-            <div className="w-80 md:w-96 flex-none flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 overflow-y-auto custom-scrollbar">
+            <div className="w-80 md:w-96 flex-none flex flex-col border-r border-white/20 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl overflow-y-auto custom-scrollbar">
               <div className="p-6 space-y-8">
                 {/* 提示词输入 */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <svg
-                        className="w-5 h-5 text-purple-500"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 10V3L4 14h7v7l9-11h-7z"
-                        />
-                      </svg>
-                      <h3 className="font-bold text-slate-800 dark:text-white">创意描述</h3>
+                      <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">
+                        提示词 (PROMPT)
+                      </h3>
                     </div>
-                    <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium px-2 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-md">
-                      随机灵感
-                    </button>
                   </div>
                   <div className="relative group">
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      className="w-full h-32 px-4 py-3 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-blue-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:border-slate-300 dark:group-hover:border-slate-600"
-                      placeholder="描述你想要生成的画面细节..."
+                      className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
+                      placeholder="描述你想要生成的画面..."
                     />
-                    <div className="absolute right-3 bottom-3 text-xs text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700 font-mono">
-                      {prompt.length}/500
+                    <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={handleRandomPrompt}
+                        className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+                        title="随机灵感"
+                      >
+                        <Dice5 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* 反向提示词折叠面板 */}
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    <button className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                      <span>排除内容 (Negative)</span>
-                      <svg
-                        className="w-4 h-4 transform rotate-0 transition-transform"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+                  {/* 负面提示词 */}
+                  <NegativePrompt value={negativePrompt} onChange={setNegativePrompt} />
                 </div>
 
-                <div className="bg-slate-200 dark:bg-slate-800 h-px w-full"></div>
+                <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-                <StyleSelector />
+                <StyleSelector selected={style} onStyleChange={setStyle} />
 
-                <div className="bg-slate-200 dark:bg-slate-800 h-px w-full"></div>
+                <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-                <SettingsPanel />
+                <SettingsPanel
+                  ratio={ratio}
+                  steps={steps}
+                  cfg={cfg}
+                  seed={seed}
+                  batchSize={batchSize}
+                  onRatioChange={setRatio}
+                  onStepsChange={setSteps}
+                  onCfgChange={setCfg}
+                  onSeedChange={setSeed}
+                  onBatchSizeChange={setBatchSize}
+                />
               </div>
 
               {/* 吸底生成按钮 */}
-              <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 z-10 pb-8">
+              <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-gradient-to-t from-white/90 via-white/80 to-transparent dark:from-slate-900/90 dark:via-slate-900/80 dark:to-transparent backdrop-blur-sm z-10 pb-8">
+                {error && (
+                  <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
                 <Button
-                  onClick={() => {
-                    setIsGenerating(true);
-                    setProgress(0);
-                  }}
-                  disabled={isGenerating}
+                  onClick={handleGenerate}
+                  disabled={isGenerating || !prompt.trim()}
                   className={cn(
-                    'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-lg transition-all text-md',
-                    isGenerating
-                      ? 'bg-slate-800 dark:bg-slate-700 cursor-not-allowed opacity-90'
-                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98]'
+                    'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 transition-all text-md cursor-pointer border border-white/20',
+                    isGenerating || !prompt.trim()
+                      ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-90'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]'
                   )}
                 >
                   {isGenerating ? (
                     <>
-                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      生成中...
+                      <Loader2 className="w-5 h-5 animate-spin text-white/90" />
+                      生成中 {progress}%
                     </>
                   ) : (
                     <>
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                        />
-                      </svg>
+                      <Sparkles className="w-5 h-5 fill-white/20" />
                       立即生成
                     </>
                   )}
@@ -189,34 +279,106 @@ export default function ImagePage() {
             </div>
 
             {/* 中间：预览区域 */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center bg-slate-100 dark:bg-black relative">
-              {/* 背景网格纹理 */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center relative">
+              {/* 背景网格纹理 - 更淡 */}
               <div
-                className="absolute inset-0 opacity-[0.03] dark:opacity-[0.1]"
+                className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05] pointer-events-none"
                 style={{
                   backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)',
-                  backgroundSize: '24px 24px',
+                  backgroundSize: '32px 32px',
                 }}
               ></div>
 
-              <div className="w-full max-w-2xl aspect-[9/16] md:aspect-[3/4] relative rounded-3xl overflow-hidden shadow-2xl border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group">
-                {/* 图片内容（生成时模糊） */}
-                <div
-                  className={cn(
-                    'absolute inset-0 bg-cover bg-center transition-all duration-1000',
-                    isGenerating ? 'scale-110 blur-xl opacity-80' : 'scale-100 blur-0 opacity-100'
-                  )}
-                  style={{
-                    backgroundImage:
-                      "url('https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=1974&auto=format&fit=crop')",
-                  }}
-                ></div>
+              <div
+                className={cn(
+                  'relative transition-all duration-500 ease-in-out',
+                  generatedImages.length > 0 ? 'w-full max-w-4xl' : 'w-full max-w-lg'
+                )}
+              >
+                {generatedImages.length > 0 ? (
+                  <div
+                    className={cn(
+                      'relative rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300',
+                      getAspectRatioClass()
+                    )}
+                  >
+                    {/* 图片内容 */}
+                    <div
+                      className={cn(
+                        'absolute inset-0 bg-cover bg-center transition-all duration-1000',
+                        isGenerating
+                          ? 'scale-110 blur-xl opacity-80'
+                          : 'scale-100 blur-0 opacity-100'
+                      )}
+                      style={{
+                        backgroundImage: `url('${generatedImages[0]}')`,
+                      }}
+                    ></div>
+
+                    {/* 下载按钮 */}
+                    {!isGenerating && (
+                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <button
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = generatedImages[0];
+                            link.download = `kolors-${Date.now()}.png`;
+                            link.click();
+                          }}
+                          className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
+                          title="下载图片"
+                        >
+                          <Download className="w-5 h-5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  // 空状态 - 准备好开始创作了吗？
+                  <div
+                    className={cn(
+                      'flex flex-col items-center justify-center text-center py-20 px-8 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300',
+                      getAspectRatioClass()
+                    )}
+                  >
+                    <div className="w-24 h-24 mb-6 rounded-3xl bg-white dark:bg-slate-800 shadow-xl shadow-blue-500/10 flex items-center justify-center relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Sparkles className="w-10 h-10 text-indigo-500" />
+                      <div className="absolute -top-1 -right-1 w-8 h-8 bg-blue-500/20 blur-xl rounded-full" />
+                    </div>
+
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
+                      准备好开始创作了吗？
+                    </h2>
+                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
+                      在左侧输入提示词，选择风格并点击"立即生成"开始您的艺术之旅。
+                    </p>
+
+                    <div className="flex flex-wrap justify-center gap-3">
+                      {quickStarts.map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleQuickStart(item)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                        >
+                          {item.icon}
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            {item.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 生成中遮罩 */}
                 {isGenerating && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/20 backdrop-blur-sm">
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-3xl overflow-hidden">
+                    {/* 背景模糊 */}
+                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-md" />
+
                     {/* 进度环 */}
-                    <div className="relative w-40 h-40 mb-8">
+                    <div className="relative z-10 w-40 h-40 mb-8">
                       <svg className="w-full h-full transform -rotate-90">
                         <circle
                           className="text-white/20"
@@ -228,7 +390,7 @@ export default function ImagePage() {
                           cy="80"
                         ></circle>
                         <circle
-                          className="text-blue-500"
+                          className="text-indigo-500 filter drop-shadow-[0_0_10px_rgba(99,102,241,0.5)]"
                           strokeWidth="6"
                           strokeDasharray={440}
                           strokeDashoffset={440 - (440 * progress) / 100}
@@ -241,90 +403,60 @@ export default function ImagePage() {
                         ></circle>
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-4xl font-bold text-white tracking-tighter">
+                        <span className="text-4xl font-bold text-white tracking-tighter drop-shadow-lg">
                           {progress}%
                         </span>
                       </div>
                     </div>
 
                     {/* 状态徽章 */}
-                    <div className="flex items-center gap-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full shadow-xl border border-white/20">
+                    <div className="relative z-10 flex items-center gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl px-6 py-3 rounded-full shadow-2xl border border-white/20 ring-1 ring-black/5">
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                        <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.8)]"></span>
                         <span className="font-bold text-slate-800 dark:text-white text-sm">
-                          正在扩散生成中...
+                          {currentStep || '正在扩散生成中...'}
                         </span>
                       </div>
-                      <div className="w-px h-4 bg-slate-300 dark:bg-slate-600"></div>
-                      <span className="font-mono text-sm text-blue-600 dark:text-blue-400 font-bold">
-                        Step 22/50
+                      <div className="w-px h-4 bg-slate-200 dark:bg-slate-700"></div>
+                      <span className="font-mono text-sm text-indigo-600 dark:text-indigo-400 font-bold">
+                        {progress}%
                       </span>
                     </div>
-                  </div>
-                )}
-
-                {!isGenerating && (
-                  <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <button className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors">
-                      <svg
-                        className="w-6 h-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                    </button>
-                    <button className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors">
-                      <svg
-                        className="w-6 h-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-                        />
-                      </svg>
-                    </button>
                   </div>
                 )}
               </div>
 
               {/* 历史记录条 */}
-              <div className="mt-8 w-full max-w-2xl px-4">
-                <div className="flex items-center justify-between mb-4 text-xs font-bold text-slate-400 uppercase tracking-widest">
-                  <span>历史版本 (Version History)</span>
-                  <button className="hover:text-blue-500 transition-colors">查看全部</button>
-                </div>
-                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="w-24 h-24 rounded-2xl bg-slate-300 dark:bg-slate-800 shrink-0 overflow-hidden border-2 border-transparent hover:border-blue-500 transition-all cursor-pointer shadow-sm hover:shadow-lg relative grayscale hover:grayscale-0"
-                    >
+              {generatedImages.length > 0 && (
+                <div className="mt-8 w-full max-w-2xl px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center justify-between mb-4">
+                    {/* 缩略图留空，或者加点简单的装饰 */}
+                  </div>
+                  <div className="flex lg:flex-wrap gap-4 justify-center overflow-x-auto pb-4 custom-scrollbar">
+                    {generatedImages.map((img, i) => (
                       <div
+                        key={i}
+                        onClick={() => {
+                          const newImages = [...generatedImages];
+                          [newImages[0], newImages[i]] = [newImages[i], newImages[0]];
+                          setGeneratedImages(newImages);
+                        }}
                         className={cn(
-                          'absolute inset-0 bg-cover bg-center',
-                          i === 1
-                            ? 'bg-gradient-to-br from-indigo-500 to-purple-500'
-                            : i === 2
-                              ? 'bg-gradient-to-br from-blue-500 to-cyan-500'
-                              : 'bg-gradient-to-br from-pink-500 to-rose-500'
+                          'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
+                          i === 0
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/20 ring-offset-2 dark:ring-offset-slate-950'
+                            : 'border-white dark:border-slate-700 bg-slate-200 dark:bg-slate-800'
                         )}
-                      ></div>
-                    </div>
-                  ))}
+                        style={{
+                          backgroundImage: `url('${img}')`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

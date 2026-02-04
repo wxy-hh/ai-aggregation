@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { FolderOpen, Quote, Eye, Cpu } from 'lucide-react';
 
 interface AssetSidebarProps {
   className?: string;
@@ -17,26 +18,14 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
   return (
     <div
       className={cn(
-        'hidden lg:flex flex-col h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 w-80 shrink-0',
+        'hidden lg:flex flex-col h-full bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-l border-white/20 dark:border-white/5 w-80 shrink-0',
         className
       )}
     >
       {/* 头部 */}
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+      <div className="p-4 border-b border-white/20 dark:border-white/5">
         <div className="flex items-center gap-2 mb-1">
-          <svg
-            className="w-4 h-4 text-blue-500"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
-            />
-          </svg>
+          <FolderOpen className="w-4 h-4 text-blue-500" />
           <h2 className="text-xs font-bold text-slate-500 tracking-wider uppercase">资产中心</h2>
         </div>
         <div className="text-[10px] text-slate-400">ASSET DOCK & CROSS-MODULE</div>
@@ -46,18 +35,18 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         {/* 活跃引用卡片 */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
             <h3 className="text-xs font-bold text-blue-600 dark:text-blue-400">
               正在引用 (ACTIVE REF)
             </h3>
           </div>
 
-          <div className="relative group p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl hover:shadow-md transition-all cursor-pointer">
+          <div className="relative group p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl hover:shadow-md transition-all cursor-pointer backdrop-blur-sm">
             <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-blue-500 rounded-r-full"></div>
 
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-800 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-300">
-                <span className="text-lg font-serif">"</span>
+                <Quote className="w-4 h-4" />
               </div>
               <div>
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white mb-1">
@@ -82,7 +71,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         <div>
           <div className="flex items-center justify-between mb-3 text-xs">
             <h3 className="font-bold text-slate-500 dark:text-slate-400">最近生成的素材</h3>
-            <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded text-[10px]">
+            <span className="px-1.5 py-0.5 bg-white/50 dark:bg-slate-800/50 text-slate-500 rounded text-[10px] border border-slate-100 dark:border-slate-800">
               24张
             </span>
           </div>
@@ -91,28 +80,15 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
             {historyImages.map((img) => (
               <div
                 key={img.id}
-                className="aspect-square rounded-xl overflow-hidden relative group cursor-pointer"
+                className="aspect-square rounded-xl overflow-hidden relative group cursor-pointer shadow-sm hover:shadow-md transition-all border border-black/5 dark:border-white/5"
               >
                 {/* 渐变占位图 */}
                 <div className={cn('absolute inset-0 bg-gradient-to-br', img.gradient)}></div>
 
                 {/* 遮罩层 */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <button className="p-1.5 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/30 transition-colors">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                      />
-                    </svg>
+                  <button className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/30 transition-colors shadow-lg">
+                    <Eye className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -122,14 +98,17 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
       </div>
 
       {/* 页脚：GPU 额度 */}
-      <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-bold text-blue-600 dark:text-blue-400 mb-2">
-            <span>算力配额</span>
-            <span>1275 / 2000</span>
+      <div className="p-4 border-t border-white/20 dark:border-white/5 bg-white/20 dark:bg-slate-900/20 backdrop-blur-md">
+        <div className="bg-white/50 dark:bg-slate-800/50 border border-white/50 dark:border-white/10 rounded-xl p-3 shadow-sm backdrop-blur-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <Cpu className="w-3.5 h-3.5 text-blue-500" />
+            <div className="flex items-center justify-between flex-1 text-xs font-bold text-blue-600 dark:text-blue-400">
+              <span>算力配额</span>
+              <span>1275 / 2000</span>
+            </div>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-full h-1.5 overflow-hidden mb-2">
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full w-[65%]"></div>
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full w-[65%] shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
           </div>
           <div className="text-[10px] text-slate-400">本月剩余额度 (消耗中...)</div>
         </div>

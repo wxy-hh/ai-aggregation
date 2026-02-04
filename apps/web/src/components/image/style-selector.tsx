@@ -1,144 +1,134 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Box, Camera, Sparkles, Mountain, Zap, Palette } from 'lucide-react';
 
 const styles = [
-  { id: '3d-render', name: '3D 渲染', icon: 'box' },
-  { id: 'realistic', name: '超写实', icon: 'camera' },
-  { id: 'cyberpunk', name: '赛博朋克', icon: 'cube' },
-  { id: 'anime', name: '动漫插画', icon: 'pen' },
-  { id: 'watercolor', name: '水彩画', icon: 'drop' },
-  { id: 'sketch', name: '素描', icon: 'pencil' },
+  {
+    id: '3d-render',
+    name: '3D 渲染',
+    icon: <Box className="w-5 h-5" />,
+    color: 'text-blue-500',
+    gradient: 'from-blue-50/50 to-blue-100/50 dark:from-blue-900/10 dark:to-blue-900/30',
+    activeGradient: 'from-blue-100 to-blue-200 dark:from-blue-900/40 dark:to-blue-800/60',
+    borderColor: 'border-blue-200 dark:border-blue-800',
+    shadowColor: 'shadow-blue-500/10',
+  },
+  {
+    id: 'realistic',
+    name: '超写实',
+    icon: <Camera className="w-5 h-5" />,
+    color: 'text-emerald-500',
+    gradient:
+      'from-emerald-50/50 to-emerald-100/50 dark:from-emerald-900/10 dark:to-emerald-900/30',
+    activeGradient:
+      'from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/60',
+    borderColor: 'border-emerald-200 dark:border-emerald-800',
+    shadowColor: 'shadow-emerald-500/10',
+  },
+  {
+    id: 'cyberpunk',
+    name: '赛博朋克',
+    icon: <Zap className="w-5 h-5" />,
+    color: 'text-purple-500',
+    gradient: 'from-purple-50/50 to-purple-100/50 dark:from-purple-900/10 dark:to-purple-900/30',
+    activeGradient: 'from-purple-100 to-purple-200 dark:from-purple-900/40 dark:to-purple-800/60',
+    borderColor: 'border-purple-200 dark:border-purple-800',
+    shadowColor: 'shadow-purple-500/10',
+  },
+  {
+    id: 'oil-painting',
+    name: '油画',
+    icon: <Palette className="w-5 h-5" />,
+    color: 'text-orange-500',
+    gradient: 'from-orange-50/50 to-orange-100/50 dark:from-orange-900/10 dark:to-orange-900/30',
+    activeGradient: 'from-orange-100 to-orange-200 dark:from-orange-900/40 dark:to-orange-800/60',
+    borderColor: 'border-orange-200 dark:border-orange-800',
+    shadowColor: 'shadow-orange-500/10',
+  },
+  {
+    id: 'anime',
+    name: '动漫',
+    icon: <Sparkles className="w-5 h-5" />,
+    color: 'text-pink-500',
+    gradient: 'from-pink-50/50 to-pink-100/50 dark:from-pink-900/10 dark:to-pink-900/30',
+    activeGradient: 'from-pink-100 to-pink-200 dark:from-pink-900/40 dark:to-pink-800/60',
+    borderColor: 'border-pink-200 dark:border-pink-800',
+    shadowColor: 'shadow-pink-500/10',
+  },
+  {
+    id: 'landscape',
+    name: '风景',
+    icon: <Mountain className="w-5 h-5" />,
+    color: 'text-cyan-500',
+    gradient: 'from-cyan-50/50 to-cyan-100/50 dark:from-cyan-900/10 dark:to-cyan-900/30',
+    activeGradient: 'from-cyan-100 to-cyan-200 dark:from-cyan-900/40 dark:to-cyan-800/60',
+    borderColor: 'border-cyan-200 dark:border-cyan-800',
+    shadowColor: 'shadow-cyan-500/10',
+  },
 ];
 
-export function StyleSelector() {
-  const [selected, setSelected] = useState('3d-render');
+export interface StyleSelectorProps {
+  selected: string;
+  onStyleChange: (style: string) => void;
+}
 
+export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-2">
-        <svg
-          className="w-5 h-5 text-purple-500"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
-          />
-        </svg>
-        <h3 className="font-bold text-slate-800 dark:text-white">风格艺术</h3>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+          风格预设
+        </h3>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-2">
         {styles.map((style) => (
-          <Button
+          <button
             key={style.id}
-            onClick={() => setSelected(style.id)}
-            variant={selected === style.id ? 'secondary' : 'outline'}
+            onClick={() => onStyleChange(style.id)}
             className={cn(
-              'h-auto relative p-4 flex flex-col items-center gap-3 transition-all duration-200 group',
+              'relative p-2.5 rounded-xl transition-all duration-300 cursor-pointer group flex flex-col items-center gap-2',
+              'border backdrop-blur-sm bg-gradient-to-br',
               selected === style.id
-                ? 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-500 shadow-sm ring-1 ring-blue-500/20'
-                : 'hover:border-blue-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? `${style.activeGradient} ${style.borderColor} shadow-lg ${style.shadowColor} scale-[1.02] ring-1 ring-inset ring-white/20`
+                : `${style.gradient} border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:shadow-md hover:-translate-y-0.5`
             )}
           >
-            {/* 激活状态指示点 */}
-            {selected === style.id && (
-              <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm animate-pulse-slow"></div>
-            )}
-
+            {/* 图标容器 */}
             <div
               className={cn(
-                'w-10 h-10 rounded-lg flex items-center justify-center transition-colors',
+                'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shadow-sm',
+                'bg-white dark:bg-slate-800',
                 selected === style.id
-                  ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200'
+                  ? 'scale-110 shadow-md ring-2 ring-white/50'
+                  : 'group-hover:scale-110'
               )}
             >
-              {/* 根据类型显示的简单图标 */}
-              {style.icon === 'box' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                  />
-                </svg>
-              )}
-              {style.icon === 'camera' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                </svg>
-              )}
-              {style.icon === 'cube' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"
-                  />
-                </svg>
-              )}
-              {style.icon === 'pen' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                  />
-                </svg>
-              )}
-              {style.icon === 'drop' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                  />
-                </svg>
-              )}
-              {style.icon === 'pencil' && (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                  />
-                </svg>
-              )}
+              <div className={cn('transition-colors duration-300', style.color)}>{style.icon}</div>
             </div>
+
+            {/* 文字标签 */}
             <span
               className={cn(
-                'text-xs font-medium',
+                'text-[10px] font-bold transition-colors',
                 selected === style.id
-                  ? 'text-blue-600 dark:text-white'
+                  ? 'text-slate-900 dark:text-white'
                   : 'text-slate-600 dark:text-slate-400'
               )}
             >
               {style.name}
             </span>
-          </Button>
+
+            {/* 选中指示光点 */}
+            {selected === style.id && (
+              <div
+                className={cn(
+                  'absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full shadow-sm animate-pulse',
+                  style.color.replace('text-', 'bg-')
+                )}
+              />
+            )}
+          </button>
         ))}
       </div>
     </div>
