@@ -28,6 +28,7 @@ import {
   Pencil,
   Box,
   Palette,
+  Trash2,
 } from 'lucide-react';
 
 export default function ImagePage() {
@@ -210,6 +211,13 @@ export default function ImagePage() {
                       placeholder="描述你想要生成的画面..."
                     />
                     <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setPrompt('')}
+                        className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+                        title="清空提示词"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={handleRandomPrompt}
                         className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"

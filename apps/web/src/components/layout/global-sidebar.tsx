@@ -59,11 +59,16 @@ export function GlobalSidebar() {
       } as DOMRect;
 
       // 触发飞行图标动画
-      setFlyingIcons((prev) => [...prev, { id, startRect: plainRect, icon: appConfig?.icon }]);
+      setFlyingIcons((prev: { id: AppId; startRect: DOMRect; icon: any }[]) => [
+        ...prev,
+        { id, startRect: plainRect, icon: appConfig?.icon },
+      ]);
 
       // 重要：备份定时器，防止动画卡住时清理飞行图标
       setTimeout(() => {
-        setFlyingIcons((prev) => prev.filter((item) => item.id !== id));
+        setFlyingIcons((prev: { id: AppId; startRect: DOMRect; icon: any }[]) =>
+          prev.filter((item: { id: AppId }) => item.id !== id)
+        );
       }, 2000);
 
       //稍微延迟添加到列表，以便与飞行同步
@@ -81,7 +86,9 @@ export function GlobalSidebar() {
   };
 
   const handleFlightComplete = (id: AppId) => {
-    setFlyingIcons((prev) => prev.filter((item) => item.id !== id));
+    setFlyingIcons((prev: { id: AppId; startRect: DOMRect; icon: any }[]) =>
+      prev.filter((item: { id: AppId }) => item.id !== id)
+    );
     // 触发“着陆”效果（发光、提示）
     setJustAddedApp(null); // 清除“刚添加”状态（该状态可能隐藏了真实图标）
     setShowToast(true);
@@ -125,11 +132,21 @@ export function GlobalSidebar() {
               >
                 <Home className="w-5 h-5" strokeWidth={2} />
               </div>
+              <span
+                className={cn(
+                  'text-[10px] font-medium transition-colors duration-300',
+                  pathname === '/'
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                )}
+              >
+                首页
+              </span>
             </Link>
           </div>
 
           <AnimatePresence mode="popLayout">
-            {pinnedApps.map((appId, index) => {
+            {pinnedApps.map((appId: AppId, index: number) => {
               const app = APP_CONFIGS.find((a) => a.id === appId);
               if (!app) return null;
 
@@ -172,6 +189,17 @@ export function GlobalSidebar() {
                         <span className="absolute inset-0 rounded-xl ring-2 ring-blue-400 ring-offset-2 animate-ping opacity-75"></span>
                       )}
                     </div>
+
+                    <span
+                      className={cn(
+                        'text-[10px] font-medium transition-colors duration-300 text-center leading-tight px-1 line-clamp-1',
+                        active
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                      )}
+                    >
+                      {app.label}
+                    </span>
                   </Link>
                 </motion.div>
               );
@@ -249,7 +277,7 @@ export function GlobalSidebar() {
       />
 
       {/* 飞行图标传送门 */}
-      {flyingIcons.map((flight) => (
+      {flyingIcons.map((flight: { id: AppId; startRect: DOMRect; icon: any }) => (
         <FlyingIcon
           key={flight.id}
           startRect={flight.startRect}
@@ -457,7 +485,7 @@ function FlyingIconInnerNew({ startRect, Icon, onComplete }: any) {
       const currentOpacity = progress > 0.85 ? 1 - (progress - 0.85) * 6.6 : 1;
       const rotation = -60 * Math.sin(progress * Math.PI); // 更多旋转
 
-      setStyles((prev) => ({
+      setStyles((prev: React.CSSProperties) => ({
         ...prev,
         transform: `translate(${currentX}px, ${currentY}px) scale(${currentScale}) rotate(${rotation}deg)`,
         opacity: currentOpacity,

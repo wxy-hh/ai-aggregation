@@ -82,12 +82,12 @@ export function SettingsPanel({
         </div>
       </div>
 
-      {/* 图片质量 */}
+      {/* 图片质量 (Steps) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">图片质量</span>
-          <span className="text-slate-900 dark:text-white font-mono font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[10px]">
-            {steps <= 25 ? '快速' : steps <= 35 ? 'Standard' : 'High Quality'}
+          <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
+          <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
+            {steps}
           </span>
         </div>
         <div className="px-1">
@@ -101,27 +101,9 @@ export function SettingsPanel({
           />
         </div>
         <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-          <span>Speed</span>
-          <span>Quality</span>
+          <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
+          <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
         </div>
-      </div>
-
-      {/* 生成步数 (STEPS) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">生成步数 (STEPS)</span>
-          <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
-            {steps}
-          </span>
-        </div>
-        <Slider
-          value={[steps]}
-          max={PARAM_CONSTRAINTS.steps.max}
-          min={PARAM_CONSTRAINTS.steps.min}
-          step={PARAM_CONSTRAINTS.steps.step}
-          onValueChange={(vals) => onStepsChange(vals[0])}
-          className="py-2"
-        />
       </div>
 
       {/* 批量生成 */}
