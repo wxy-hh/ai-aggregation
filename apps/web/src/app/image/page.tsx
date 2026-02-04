@@ -3,7 +3,7 @@
 import { AppLayout } from '@/components/layout/app-layout';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
-import { AssetSidebar } from '@/components/image/asset-sidebar';
+import { CreativeCockpit } from '@/components/image/creative-cockpit';
 import { NegativePrompt } from '@/components/image/negative-prompt';
 import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
@@ -46,6 +46,7 @@ export default function ImagePage() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
   // Handle generation
@@ -91,6 +92,7 @@ export default function ImagePage() {
       setProgress(100);
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
+      setActiveImageIndex(0);
 
       // Reset after a delay
       setTimeout(() => {
@@ -181,12 +183,6 @@ export default function ImagePage() {
                 </Badge>
               </h1>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-xs font-semibold text-orange-500 flex items-center gap-1.5 bg-orange-50 dark:bg-orange-950/30 px-3 py-1.5 rounded-full border border-orange-100 dark:border-orange-900/50">
-                <Box className="w-3.5 h-3.5" />
-                124 点数
-              </div>
-            </div>
           </header>
 
           {/* 内容区域：拆分视图 */}
@@ -207,7 +203,9 @@ export default function ImagePage() {
                   <div className="relative group">
                     <Textarea
                       value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                        setPrompt(e.target.value)
+                      }
                       className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
                       placeholder="描述你想要生成的画面..."
                     />
@@ -311,7 +309,7 @@ export default function ImagePage() {
                           : 'scale-100 blur-0 opacity-100'
                       )}
                       style={{
-                        backgroundImage: `url('${generatedImages[0]}')`,
+                        backgroundImage: `url('${generatedImages[activeImageIndex]}')`,
                       }}
                     ></div>
 
@@ -321,7 +319,7 @@ export default function ImagePage() {
                         <button
                           onClick={() => {
                             const link = document.createElement('a');
-                            link.href = generatedImages[0];
+                            link.href = generatedImages[activeImageIndex];
                             link.download = `kolors-${Date.now()}.png`;
                             link.click();
                           }}
@@ -433,17 +431,13 @@ export default function ImagePage() {
                     {/* 缩略图留空，或者加点简单的装饰 */}
                   </div>
                   <div className="flex lg:flex-wrap gap-4 justify-center overflow-x-auto pb-4 custom-scrollbar">
-                    {generatedImages.map((img, i) => (
+                    {generatedImages.map((img: string, i: number) => (
                       <div
                         key={i}
-                        onClick={() => {
-                          const newImages = [...generatedImages];
-                          [newImages[0], newImages[i]] = [newImages[i], newImages[0]];
-                          setGeneratedImages(newImages);
-                        }}
+                        onClick={() => setActiveImageIndex(i)}
                         className={cn(
                           'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
-                          i === 0
+                          i === activeImageIndex
                             ? 'border-indigo-500 ring-2 ring-indigo-500/20 ring-offset-2 dark:ring-offset-slate-950'
                             : 'border-white dark:border-slate-700 bg-slate-200 dark:bg-slate-800'
                         )}
@@ -461,8 +455,20 @@ export default function ImagePage() {
           </div>
         </div>
 
-        {/* 右侧边栏：资产停靠区 - 移动端隐藏，lg 屏幕可见 */}
-        <AssetSidebar />
+        {/* 右侧边栏：创作灵感舱 */}
+        <CreativeCockpit
+          onPromptAppend={(text) => {
+            const newPrompt = prompt ? `${prompt}, ${text}` : text;
+            setPrompt(newPrompt);
+          }}
+          onStyleApply={(params) => {
+            if (params.ratio) setRatio(params.ratio);
+            if (params.steps) setSteps(params.steps);
+            if (params.style) setStyle(params.style);
+            if (params.cfg) setCfg(params.cfg);
+            // Optionally show a toast here
+          }}
+        />
       </div>
     </AppLayout>
   );
