@@ -18,6 +18,9 @@ model User {
   tasks               Task[]
   usage               UserUsage[]
   voiceTranscriptions VoiceTranscription[]
+  chatHistory         ChatHistory[]        @relation("ChatHistoryToUser")
+  imageHistory        ImageHistory[]       @relation("ImageHistoryToUser")
+  voiceHistory        VoiceHistory[]       @relation("VoiceHistoryToUser")
 
   @@map("users")
 }
@@ -105,4 +108,64 @@ model VoiceTranscription {
   @@index([status])
   @@index([createdAt])
   @@map("voice_transcriptions")
+}
+
+model ChatHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  preview   String   @db.Text
+  model     String
+  provider  String
+  messages  Json
+  tags      String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, name: "ChatHistoryToUser")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("chat_history")
+}
+
+model ImageHistory {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String?
+  prompt        String   @db.Text
+  negativePrompt String?  @db.Text
+  model         String
+  style         String?
+  aspectRatio   String?
+  imageUrl      String
+  parameters    Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, name: "ImageHistoryToUser")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("image_history")
+}
+
+model VoiceHistory {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String
+  preview       String   @db.Text
+  model         String
+  duration      String
+  fileName      String
+  fileSize      Int
+  transcription String   @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, name: "VoiceHistoryToUser")
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("voice_history")
 }

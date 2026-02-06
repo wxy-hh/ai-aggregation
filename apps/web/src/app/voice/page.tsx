@@ -5,12 +5,15 @@ import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
 import { RecordingLibrary } from '@/components/voice/recording-library';
 import { UploadAudio } from '@/components/voice/upload-audio';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { AudioHistoryItem } from '@/types/audio-history';
+import { useHistoryStore } from '@/stores/history-store';
+import { VoiceHistoryItem } from '@/types/history';
 
 const mockSegments: TranscriptSegment[] = [
   {
@@ -40,9 +43,15 @@ const mockSegments: TranscriptSegment[] = [
 type VoiceMode = 'realtime' | 'upload';
 
 export default function VoicePage() {
+  const searchParams = useSearchParams();
+  const historyId = searchParams.get('historyId');
+
   const [isRecording, setIsRecording] = useState(true);
   const [mode, setMode] = useState<VoiceMode>('realtime');
   const [restoredHistoryItem, setRestoredHistoryItem] = useState<AudioHistoryItem | null>(null);
+
+  // 从统一历史记录 store 获取数据
+  const getItemById = useHistoryStore((state) => state.getItemById);
 
   // 🔧 保持上传音频的状态，即使切换到实时录音模式
   // 这样切换回来时可以恢复之前的状态
@@ -51,6 +60,42 @@ export default function VoicePage() {
     isProcessing: false, // 是否正在处理
     showResult: false, // 是否显示结果
   });
+
+  // 🔧 从 URL 参数加载历史记录
+  useEffect(() => {
+    if (historyId) {
+      console.log('[VoicePage] Loading history from URL param:', historyId);
+      const historyItem = getItemById(historyId);
+
+      if (historyItem && historyItem.type === 'voice') {
+        const voiceItem = historyItem as VoiceHistoryItem;
+        console.log('[VoicePage] Found voice history item:', voiceItem);
+
+        // 转换为 AudioHistoryItem 格式
+        const audioHistoryItem: AudioHistoryItem = {
+          id: voiceItem.id,
+          fileName: voiceItem.fileName,
+          fileSize: voiceItem.fileSize,
+          fileMimeType: 'audio/mpeg', // 默认类型
+          uploadTime: new Date(voiceItem.createdAt), // 上传时间
+          duration: parseFloat(voiceItem.duration.replace(':', '.')) * 60 || 0,
+          transcriptionText: voiceItem.transcription,
+          translationText: undefined,
+          processingStatus: 'completed',
+          tags: [], // 标签
+          title: voiceItem.title, // 标题
+          createdAt: new Date(voiceItem.createdAt),
+          updatedAt: new Date(voiceItem.updatedAt),
+        };
+
+        // 切换到上传模式并恢复历史记录
+        setMode('upload');
+        setRestoredHistoryItem(audioHistoryItem);
+      } else {
+        console.warn('[VoicePage] History item not found or not voice type:', historyId);
+      }
+    }
+  }, [historyId, getItemById]);
 
   // 🔧 使用 useCallback 优化状态更新回调
   const handleUploadStateChange = useCallback(

@@ -1,15 +1,50 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { HistoryItem } from './mock-data';
+import { VoiceHistoryItem } from '@/types/history';
+import { Trash2 } from 'lucide-react';
 
 interface VoiceHistoryCardProps {
-  item: HistoryItem;
+  item: VoiceHistoryItem;
+  onDelete?: (id: string) => void;
 }
 
-export function VoiceHistoryCard({ item }: VoiceHistoryCardProps) {
+/**
+ * 语音历史记录卡片组件
+ * 点击后跳转到语音转写页面查看详细内容
+ */
+export function VoiceHistoryCard({ item, onDelete }: VoiceHistoryCardProps) {
+  const router = useRouter();
+
+  // 处理卡片点击，跳转到语音页面
+  const handleClick = () => {
+    // 使用 historyId 参数跳转到语音页面
+    router.push(`/voice?historyId=${item.id}`);
+  };
+
+  // 处理删除
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete(item.id);
+    }
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full">
+    <div
+      onClick={handleClick}
+      className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+    >
+      {/* 删除按钮 */}
+      <button
+        onClick={handleDelete}
+        className="absolute top-4 right-4 p-1.5 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all opacity-0 group-hover:opacity-100"
+        title="删除"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
@@ -24,7 +59,7 @@ export function VoiceHistoryCard({ item }: VoiceHistoryCardProps) {
           </div>
           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item.model}</span>
         </div>
-        <span className="text-xs text-slate-400">{item.date}</span>
+        <span className="text-xs text-slate-400 mr-8">{item.date}</span>
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -44,15 +79,19 @@ export function VoiceHistoryCard({ item }: VoiceHistoryCardProps) {
         </span>
       </div>
 
-      {/* Waveform Visualization Placeholder */}
+      {/* 波形可视化占位符 - 使用确定性高度避免 Hydration 错误 */}
       <div className="h-8 w-full flex items-end gap-0.5 mb-4 opacity-50 group-hover:opacity-100 transition-opacity">
-        {Array.from({ length: 30 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex-1 bg-blue-500 rounded-full"
-            style={{ height: `${Math.max(20, Math.random() * 100)}%` }}
-          ></div>
-        ))}
+        {Array.from({ length: 30 }).map((_, i) => {
+          // 使用确定性的伪随机高度，基于索引计算
+          const height = 20 + ((i * 17 + 7) % 80);
+          return (
+            <div
+              key={i}
+              className="flex-1 bg-blue-500 rounded-full"
+              style={{ height: `${height}%` }}
+            ></div>
+          );
+        })}
       </div>
 
       <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 flex-1 mb-4">

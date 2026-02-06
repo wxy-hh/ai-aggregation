@@ -43,14 +43,25 @@ export { useChatStore, type ChatState, type ProviderName, type Message } from '.
 // 音频历史记录存储 (Audio History Store)
 export {
   useAudioHistoryStore,
-  useHistoryItems,
+  useHistoryItems as useAudioHistoryItems,
   useCurrentHistoryItem,
+  useHistoryLoading as useAudioHistoryLoading,
+  useHistoryError as useAudioHistoryError,
+  useSelectedHistoryIds,
+  useHistoryStats as useAudioHistoryStats,
+  useHistoryFilter as useAudioHistoryFilter,
+  useHistoryInitialized as useAudioHistoryInitialized,
+  useHistoryActions as useAudioHistoryActions,
+  type AudioHistoryState,
+} from './audio-history-store';
+
+// 统一历史记录存储 (Unified History Store)
+export {
+  useHistoryStore,
+  useHistoryItems,
   useHistoryLoading,
   useHistoryError,
-  useSelectedHistoryIds,
-  useHistoryStats,
   useHistoryFilter,
   useHistoryInitialized,
   useHistoryActions,
-  type AudioHistoryState,
-} from './audio-history-store';
+} from './history-store';

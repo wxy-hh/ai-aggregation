@@ -1,15 +1,50 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { HistoryItem } from './mock-data';
+import { ChatHistoryItem } from '@/types/history';
+import { Trash2 } from 'lucide-react';
 
 interface ChatHistoryCardProps {
-  item: HistoryItem;
+  item: ChatHistoryItem;
+  onDelete?: (id: string) => void;
 }
 
-export function ChatHistoryCard({ item }: ChatHistoryCardProps) {
+/**
+ * 对话历史记录卡片组件
+ * 点击后跳转到对话页面查看详细内容
+ */
+export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
+  const router = useRouter();
+
+  // 处理卡片点击，跳转到对话页面
+  const handleClick = () => {
+    // 使用 historyId 参数跳转到对话页面
+    router.push(`/chat?historyId=${item.id}`);
+  };
+
+  // 处理删除
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete(item.id);
+    }
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full">
+    <div
+      onClick={handleClick}
+      className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+    >
+      {/* 删除按钮 */}
+      <button
+        onClick={handleDelete}
+        className="absolute top-4 right-4 p-1.5 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all opacity-0 group-hover:opacity-100"
+        title="删除"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
@@ -24,7 +59,7 @@ export function ChatHistoryCard({ item }: ChatHistoryCardProps) {
           </div>
           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item.model}</span>
         </div>
-        <span className="text-xs text-slate-400">{item.date}</span>
+        <span className="text-xs text-slate-400 mr-8">{item.date}</span>
       </div>
 
       <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1">

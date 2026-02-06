@@ -5,9 +5,51 @@ import { useTheme } from '@/stores';
 export function ThemeToggle({ className }: { className?: string }) {
   const { resolvedTheme: theme, toggleTheme } = useTheme();
 
+  const handleToggle = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Check if View Transitions API is supported
+    if (
+      !document.startViewTransition ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      toggleTheme();
+      return;
+    }
+
+    const button = e.currentTarget;
+    const rect = button.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+
+    const endRadius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+
+    const transition = document.startViewTransition(async () => {
+      await toggleTheme();
+    });
+
+    transition.ready.then(() => {
+      const clipPath = [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`];
+
+      const isDark = theme === 'light'; // Next state will be dark if current is light?
+      // Actually resolvedTheme is the CURRENT theme before toggle.
+      // If current is 'light', we are switching TO 'dark'.
+      // However, usually we want the NEW theme to grow over the OLD one.
+
+      document.documentElement.animate(
+        {
+          clipPath: isDark ? clipPath : [...clipPath].reverse(),
+        },
+        {
+          duration: 500,
+          easing: 'ease-out',
+          pseudoElement: isDark ? '::view-transition-new(root)' : '::view-transition-old(root)',
+        }
+      );
+    });
+  };
+
   return (
     <button
-      onClick={toggleTheme}
+      onClick={handleToggle}
       className={
         className ||
         'p-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors'

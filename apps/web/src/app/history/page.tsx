@@ -1,15 +1,25 @@
 'use client';
 
 import { AppLayout } from '@/components/layout/app-layout';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
-import { mockHistory, type HistoryItem } from '@/components/history/mock-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useHistoryStore } from '@/stores/history-store';
+import type { HistoryItem, HistoryType, ImageHistoryItem } from '@/types/history';
+import { Download, Share2, X } from 'lucide-react';
 
 const tabs = [
   { id: 'all', label: '全部' },
@@ -19,17 +29,68 @@ const tabs = [
 ];
 
 export default function HistoryPage() {
-  const [activeTab, setActiveTab] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [previewItem, setPreviewItem] = useState<HistoryItem | null>(null);
+  const [previewItem, setPreviewItem] = useState<ImageHistoryItem | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  const filteredHistory = mockHistory.filter((item) => {
-    const matchesTab = activeTab === 'all' || item.type === activeTab;
-    const matchesSearch =
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.preview.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesSearch;
-  });
+  // 从 store 获取状态和操作
+  const filter = useHistoryStore((state) => state.filter);
+  const isLoading = useHistoryStore((state) => state.isLoading);
+  const setFilter = useHistoryStore((state) => state.setFilter);
+  const getFilteredItems = useHistoryStore((state) => state.getFilteredItems);
+  const getStats = useHistoryStore((state) => state.getStats);
+  const deleteItem = useHistoryStore((state) => state.deleteItem);
+
+  const activeTab = filter.type || 'all';
+  const searchQuery = filter.search || '';
+
+  const setActiveTab = (type: string) => {
+    setFilter({ type: type as HistoryType | 'all' });
+  };
+
+  const setSearchQuery = (search: string) => {
+    setFilter({ search });
+  };
+
+  const filteredHistory = getFilteredItems();
+  const stats = getStats();
+
+  // 处理删除历史记录
+  const handleDeleteItem = useCallback((id: string) => {
+    setDeleteId(id);
+    setIsDeleteDialogOpen(true);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    if (deleteId) {
+      deleteItem(deleteId);
+      setIsDeleteDialogOpen(false);
+      setDeleteId(null);
+    }
+  }, [deleteId, deleteItem]);
+
+  // 处理图片下载
+  const handleDownloadImage = useCallback(async (item: ImageHistoryItem) => {
+    try {
+      // 获取图片数据
+      const response = await fetch(item.imageUrl);
+      const blob = await response.blob();
+
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${item.title || 'image'}-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('下载图片失败:', error);
+      // 备用方案：直接打开新窗口
+      window.open(item.imageUrl, '_blank');
+    }
+  }, []);
 
   return (
     <AppLayout>
@@ -43,7 +104,7 @@ export default function HistoryPage() {
                 variant="secondary"
                 className="px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal hover:bg-blue-100 dark:hover:bg-blue-900/40 border-0"
               >
-                对话视图
+                {stats.total} 条记录
               </Badge>
             </h1>
           </div>
@@ -108,6 +169,11 @@ export default function HistoryPage() {
                 )}
               >
                 {tab.label}
+                {tab.id !== 'all' && (
+                  <span className="ml-1.5 text-xs opacity-60">
+                    ({stats[tab.id as keyof typeof stats]})
+                  </span>
+                )}
               </Button>
             ))}
           </div>
@@ -160,27 +226,40 @@ export default function HistoryPage() {
 
         {/* 内容网格 */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
-          <div
-            className={cn(
-              'grid gap-6',
-              activeTab === 'image'
-                ? 'grid-cols-1 md:grid-cols-3 xl:grid-cols-3'
-                : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
-            )}
-          >
-            {filteredHistory.map((item) => {
-              if (item.type === 'chat') {
-                return <ChatHistoryCard key={item.id} item={item} />;
-              } else if (item.type === 'voice') {
-                return <VoiceHistoryCard key={item.id} item={item} />;
-              } else if (item.type === 'image') {
-                return <ImageHistoryCard key={item.id} item={item} onPreview={setPreviewItem} />;
-              }
-              return null;
-            })}
-          </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <div
+              className={cn(
+                'grid gap-6',
+                activeTab === 'image'
+                  ? 'grid-cols-1 md:grid-cols-3 xl:grid-cols-3'
+                  : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+              )}
+            >
+              {filteredHistory.map((item) => {
+                if (item.type === 'chat') {
+                  return <ChatHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                } else if (item.type === 'voice') {
+                  return <VoiceHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                } else if (item.type === 'image') {
+                  return (
+                    <ImageHistoryCard
+                      key={item.id}
+                      item={item}
+                      onPreview={setPreviewItem}
+                      onDelete={handleDeleteItem}
+                    />
+                  );
+                }
+                return null;
+              })}
+            </div>
+          )}
 
-          {filteredHistory.length === 0 && (
+          {!isLoading && filteredHistory.length === 0 && (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <svg
                 className="w-16 h-16 mb-4 opacity-20"
@@ -196,6 +275,7 @@ export default function HistoryPage() {
                 />
               </svg>
               <p>没有找到相关历史记录</p>
+              <p className="text-sm mt-2">开始使用 AI 功能来创建您的第一条记录</p>
             </div>
           )}
         </div>
@@ -265,7 +345,7 @@ export default function HistoryPage() {
                         Prompt 描述
                       </h3>
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 text-sm text-slate-600 dark:text-slate-300 rounded-2xl leading-relaxed italic">
-                        “{previewItem.preview}”
+                        “{previewItem.prompt}”
                       </div>
                     </div>
                   </div>
@@ -274,6 +354,7 @@ export default function HistoryPage() {
                 <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
                   <Button
                     variant="outline"
+                    onClick={() => handleDownloadImage(previewItem)}
                     className="gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-750 shadow-sm"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -302,6 +383,25 @@ export default function HistoryPage() {
             </div>
           </div>
         )}
+        {/* 删除确认弹窗 */}
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>确认删除</DialogTitle>
+              <DialogDescription>
+                此操作无法撤销。这将永久删除该历史记录，如果您之前没有备份，数据将无法找回。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+                取消
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

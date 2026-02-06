@@ -135,8 +135,47 @@ export default function ChatPage() {
 
     const urlParams = new URLSearchParams(window.location.search);
     const isNewConversation = urlParams.get('new') === 'true';
+    const historyId = urlParams.get('historyId');
 
-    if (isNewConversation) {
+    if (historyId) {
+      // 从统一历史记录加载对话
+      console.log('[ChatPage] Loading from history:', historyId);
+
+      // 动态导入 history-store 以获取历史记录
+      import('@/stores/history-store').then(({ useHistoryStore }) => {
+        const historyItem = useHistoryStore.getState().getItemById(historyId);
+
+        if (historyItem && historyItem.type === 'chat') {
+          console.log('[ChatPage] Found chat history item:', historyItem);
+
+          // 创建新对话并加载历史消息
+          const chatItem = historyItem as import('@/types/history').ChatHistoryItem;
+          const newProvider = (chatItem.provider || 'xunfei') as ProviderName;
+          const newModel = chatItem.model || 'lite';
+
+          // 创建新对话
+          const newConvId = createConversation(newProvider, newModel);
+
+          // 将历史消息转换为对话消息格式
+          const historyMessages: Message[] = chatItem.messages.map((msg, index) => ({
+            id: `${newConvId}-msg-${index}`,
+            role: msg.role,
+            content: msg.content,
+          }));
+
+          // 加载对话
+          loadConversation(newConvId, historyMessages, newProvider, newModel);
+          loadedIdRef.current = newConvId;
+
+          console.log('[ChatPage] Loaded history conversation:', newConvId);
+        } else {
+          console.warn('[ChatPage] History item not found or not chat type:', historyId);
+        }
+      });
+
+      // 清除 URL 参数
+      window.history.replaceState({}, '', '/chat');
+    } else if (isNewConversation) {
       const emptyConversation = findEmptyConversation();
       if (emptyConversation) {
         switchConversation(emptyConversation.id);
@@ -154,6 +193,7 @@ export default function ChatPage() {
     createConversation,
     switchConversation,
     findEmptyConversation,
+    loadConversation,
   ]);
 
   // 对话 ID 变化时，加载消息到 Chat Store

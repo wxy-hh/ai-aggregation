@@ -101,15 +101,18 @@ export function GlobalSidebar() {
 
   return (
     <>
-      <aside className="w-[80px] bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-300 relative">
-        {/* Logo */}
-        <div className="mb-8 p-1 relative z-20">
-          <Link
-            href="/"
-            className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105 transition-all duration-300"
-          >
-            <Sparkles className="w-5 h-5" />
-          </Link>
+      <aside className="w-[85px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
+        {/* Logo Area */}
+        <div className="mb-10 px-2 flex flex-col items-center gap-1 group cursor-pointer">
+          <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-110 transition-transform">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div className="flex flex-col items-center mt-2">
+            <span className="text-[10px] font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
+              AI Studio
+            </span>
+            <span className="text-[8px] font-bold text-blue-500/80 leading-none mt-0.5">V2.0</span>
+          </div>
         </div>
 
         {/* 动态导航项 */}

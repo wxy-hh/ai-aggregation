@@ -30,8 +30,13 @@ import {
   Palette,
   Trash2,
 } from 'lucide-react';
+import { useHistoryStore } from '@/stores/history-store';
+import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 
 export default function ImagePage() {
+  // History store
+  const addHistoryItem = useHistoryStore((state) => state.addItem);
+
   // Generation parameters
   const [prompt, setPrompt] = useState<string>(PROMPT_TEMPLATES[0]);
   const [negativePrompt, setNegativePrompt] = useState<string>('');
@@ -94,6 +99,22 @@ export default function ImagePage() {
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
       setActiveImageIndex(0);
+
+      // 保存到历史记录
+      if (imageUrls.length > 0) {
+        const historyItem = {
+          id: `image-${Date.now()}`,
+          ...createImageHistoryItem(prompt, imageUrls[0], 'Kolors', {
+            negativePrompt,
+            style,
+            aspectRatio: ratio,
+            parameters: { steps, cfg, seed: seed || 'random', batchSize },
+          }),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        addHistoryItem(historyItem);
+      }
 
       // Reset after a delay
       setTimeout(() => {
