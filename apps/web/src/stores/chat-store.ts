@@ -53,7 +53,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     input: '',
     isLoading: false,
     error: null,
-    provider: 'zhipu',
+    provider: 'xunfei',
     model: undefined,
     activeConversationId: null,
 

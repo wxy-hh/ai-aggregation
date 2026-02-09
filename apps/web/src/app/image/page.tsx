@@ -196,7 +196,7 @@ export default function ImagePage() {
           </div>
 
           {/* 头部 */}
-          <header className="flex-none px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
+          <header className="flex-none w-80 px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊
