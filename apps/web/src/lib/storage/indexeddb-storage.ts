@@ -15,6 +15,7 @@ import {
   ProcessingStatus,
 } from '../../types/audio-history';
 import { validateAudioHistoryItem } from './data-validation';
+import { generateUUID } from '../utils/uuid';
 
 /**
  * Dexie Database Schema
@@ -79,7 +80,7 @@ export class IndexedDBStorage implements StorageAdapter {
       const now = new Date();
       const newItem: AudioHistoryItem = {
         ...item,
-        id: crypto.randomUUID(), // Generate unique ID
+        id: generateUUID(), // Generate unique ID with fallback support
         createdAt: now,
         updatedAt: now,
       };

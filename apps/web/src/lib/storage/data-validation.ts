@@ -6,6 +6,7 @@
  */
 
 import { AudioHistoryItem, ProcessingStatus, isProcessingStatus } from '../../types/audio-history';
+import { generateUUID } from '../utils/uuid';
 
 /**
  * Validation result for a single item
@@ -258,7 +259,7 @@ export function migrateItem(item: any, fromVersion: number): AudioHistoryItem | 
       const now = new Date();
 
       return {
-        id: item.id || crypto.randomUUID(),
+        id: item.id || generateUUID(),
         fileName: item.fileName || 'unknown.mp3',
         fileSize: item.fileSize || 0,
         fileMimeType: item.fileMimeType || 'audio/mpeg',
