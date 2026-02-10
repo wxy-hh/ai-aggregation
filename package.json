@@ -19,7 +19,8 @@
     "db:generate": "pnpm --filter @repo/db generate",
     "db:migrate": "pnpm --filter @repo/db migrate",
     "db:seed": "pnpm --filter @repo/db seed",
-    "clean": "turbo clean && rm -rf node_modules"
+    "clean": "turbo clean && rm -rf node_modules",
+    "postinstall": "pnpm db:generate"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
