@@ -3,6 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { translateText } from '@/lib/api/translation';
+import { exportToWord } from '@/lib/utils/export-docx';
+import { useToast } from '@/hooks/use-toast';
+import { ToastContainer } from '@/components/ui/toast';
 
 type ViewMode = 'original' | 'translation' | 'bilingual';
 
@@ -15,6 +19,8 @@ interface TranscriptSegment {
   translatedText: string;
   startTime: number; // 秒
   endTime: number; // 秒
+  isEditing?: boolean; // 是否正在编辑
+  isRetranslating?: boolean; // 是否正在重新翻译
 }
 
 interface TranscriptionResultProps {
@@ -32,7 +38,7 @@ export function TranscriptionResult({
   fileName,
   language,
   targetLanguage,
-  segments,
+  segments: initialSegments,
   audioUrl,
   isTranslating = false,
   isProcessing = false,
@@ -45,6 +51,20 @@ export function TranscriptionResult({
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [userClickedSegment, setUserClickedSegment] = useState(false); // 标记用户是否点击了片段
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Edit state management
+  const [segments, setSegments] = useState<TranscriptSegment[]>(initialSegments);
+  const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
+  const [editedText, setEditedText] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Toast notifications
+  const { toasts, removeToast, success, error } = useToast();
+
+  // Update segments when initialSegments changes
+  useEffect(() => {
+    setSegments(initialSegments);
+  }, [initialSegments]);
 
   // 音频播放控制
   useEffect(() => {
@@ -108,15 +128,39 @@ export function TranscriptionResult({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleCopyTranslation = () => {
-    const text = segments.map((seg) => seg.translatedText).join('\n\n');
-    navigator.clipboard.writeText(text);
-    alert('译文已复制到剪贴板');
+  const handleCopyTranslation = async () => {
+    try {
+      const text = segments.map((seg) => seg.translatedText).join('\n\n');
+      await navigator.clipboard.writeText(text);
+      success('译文已复制到剪贴板');
+    } catch (err) {
+      console.error('复制失败:', err);
+      error('复制失败，请重试');
+    }
   };
 
-  const handleExport = () => {
-    // TODO: 实现导出功能
-    alert('导出功能开发中');
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      await exportToWord({
+        fileName,
+        language,
+        targetLanguage,
+        segments,
+        mode: viewMode,
+      });
+      const modeText = {
+        original: '原文',
+        translation: '译文',
+        bilingual: '双语对照',
+      }[viewMode];
+      success(`${modeText}文档导出成功！`);
+    } catch (err) {
+      console.error('导出失败:', err);
+      error('导出失败，请重试');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSendToChat = () => {
@@ -124,8 +168,68 @@ export function TranscriptionResult({
     alert('发送到对话功能开发中');
   };
 
+  // Edit handlers
+  const handleStartEdit = (segmentId: string, originalText: string) => {
+    setEditingSegmentId(segmentId);
+    setEditedText(originalText);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSegmentId(null);
+    setEditedText('');
+  };
+
+  const handleSaveEdit = async (segmentId: string) => {
+    if (!editedText.trim()) {
+      error('内容不能为空');
+      return;
+    }
+
+    try {
+      // Mark segment as retranslating
+      setSegments((prev) =>
+        prev.map((seg) =>
+          seg.id === segmentId ? { ...seg, originalText: editedText, isRetranslating: true } : seg
+        )
+      );
+
+      // Clear editing state
+      setEditingSegmentId(null);
+      setEditedText('');
+
+      // Call translation API
+      const result = await translateText({
+        text: editedText,
+        sourceLanguage: language,
+        targetLanguage: targetLanguage,
+      });
+
+      // Update translation
+      setSegments((prev) =>
+        prev.map((seg) =>
+          seg.id === segmentId
+            ? { ...seg, translatedText: result.translatedText, isRetranslating: false }
+            : seg
+        )
+      );
+
+      success('编辑成功，翻译已更新');
+    } catch (err) {
+      console.error('重新翻译失败:', err);
+      error('重新翻译失败，请重试');
+
+      // Revert retranslating state
+      setSegments((prev) =>
+        prev.map((seg) => (seg.id === segmentId ? { ...seg, isRetranslating: false } : seg))
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
       {/* Header */}
       <header className="flex-none px-6 py-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
         <div className="flex items-center justify-between">
@@ -247,17 +351,36 @@ export function TranscriptionResult({
               variant="ghost"
               size="sm"
               onClick={handleExport}
-              className="gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+              disabled={isExporting}
+              className="gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
-              导出
+              {isExporting ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+              )}
+              {isExporting ? '导出中...' : '导出'}
             </Button>
             <Button
               size="sm"
@@ -387,6 +510,12 @@ export function TranscriptionResult({
                       handleSeek(segment.startTime);
                       setTimeout(() => setUserClickedSegment(false), 3000);
                     }}
+                    isEditing={editingSegmentId === segment.id}
+                    editedText={editedText}
+                    onStartEdit={handleStartEdit}
+                    onSaveEdit={handleSaveEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onEditTextChange={setEditedText}
                   />
                   <SegmentBlock
                     segment={segment}
@@ -400,6 +529,12 @@ export function TranscriptionResult({
                       handleSeek(segment.startTime);
                       setTimeout(() => setUserClickedSegment(false), 3000);
                     }}
+                    isEditing={editingSegmentId === segment.id}
+                    editedText={editedText}
+                    onStartEdit={handleStartEdit}
+                    onSaveEdit={handleSaveEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onEditTextChange={setEditedText}
                   />
                 </div>
               ))}
@@ -414,6 +549,12 @@ export function TranscriptionResult({
                   isActive={activeSegmentId === segment.id}
                   showTranslation={viewMode === 'translation'}
                   onSeek={handleSeek}
+                  isEditing={editingSegmentId === segment.id}
+                  editedText={editedText}
+                  onStartEdit={handleStartEdit}
+                  onSaveEdit={handleSaveEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onEditTextChange={setEditedText}
                 />
               ))}
             </div>
@@ -609,14 +750,27 @@ function SegmentBlock({
   showTranslation,
   onSeek,
   onClick,
+  isEditing = false,
+  editedText = '',
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onEditTextChange,
 }: {
   segment: TranscriptSegment;
   isActive: boolean;
   showTranslation: boolean;
   onSeek: (time: number) => void;
   onClick?: (e: React.MouseEvent) => void;
+  isEditing?: boolean;
+  editedText?: string;
+  onStartEdit?: (segmentId: string, originalText: string) => void;
+  onSaveEdit?: (segmentId: string) => void;
+  onCancelEdit?: () => void;
+  onEditTextChange?: (text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const speakerColors = {
     'Speaker A': 'from-blue-500 to-blue-600',
@@ -642,15 +796,39 @@ function SegmentBlock({
     }
   };
 
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onStartEdit && !showTranslation) {
+      onStartEdit(segment.id, segment.originalText);
+    }
+  };
+
+  const handleSaveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onSaveEdit) {
+      onSaveEdit(segment.id);
+    }
+  };
+
+  const handleCancelClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onCancelEdit) {
+      onCancelEdit();
+    }
+  };
+
   return (
     <div
       className={cn(
-        'group relative p-4 rounded-xl border transition-all duration-300 cursor-pointer h-full',
+        'group relative p-4 rounded-xl border transition-all duration-300 h-full',
+        isEditing ? 'cursor-default' : 'cursor-pointer',
         isActive
           ? 'bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-300 dark:border-blue-700 shadow-lg shadow-blue-500/10 ring-2 ring-blue-400/20'
           : 'bg-white/60 dark:bg-slate-800/60 border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md'
       )}
-      onClick={onClick || (() => onSeek(segment.startTime))}
+      onClick={isEditing ? undefined : onClick || (() => onSeek(segment.startTime))}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Active Indicator */}
       {isActive && (
@@ -680,78 +858,160 @@ function SegmentBlock({
       </div>
 
       {/* Content */}
-      <p
-        className={cn(
-          'text-sm leading-relaxed transition-all',
-          isActive
-            ? 'text-slate-900 dark:text-white font-medium'
-            : 'text-slate-700 dark:text-slate-300'
-        )}
-      >
-        {showTranslation &&
-        (segment.translatedText === 'translating' ||
-          segment.translatedText === 'Translation in progress...') ? (
-          // Loading 效果
-          <span className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
-            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span className="animate-pulse">Translating...</span>
-          </span>
-        ) : showTranslation ? (
-          segment.translatedText
-        ) : (
-          segment.originalText
-        )}
-      </p>
+      {isEditing && !showTranslation ? (
+        // Edit mode
+        <div className="space-y-3">
+          <textarea
+            value={editedText}
+            onChange={(e) => onEditTextChange?.(e.target.value)}
+            className="w-full min-h-[100px] p-3 text-sm leading-relaxed rounded-lg border-2 border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none transition-all"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSaveClick}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-medium shadow-lg shadow-blue-500/30 transition-all duration-200 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              保存并重新翻译
+            </button>
+            <button
+              onClick={handleCancelClick}
+              className="px-4 py-2 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium transition-all duration-200"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : (
+        // Display mode
+        <>
+          <p
+            className={cn(
+              'text-sm leading-relaxed transition-all',
+              isActive
+                ? 'text-slate-900 dark:text-white font-medium'
+                : 'text-slate-700 dark:text-slate-300'
+            )}
+          >
+            {segment.isRetranslating ? (
+              // Retranslating loading effect
+              <span className="flex items-center gap-2 text-blue-500 dark:text-blue-400">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span className="animate-pulse">正在重新翻译...</span>
+              </span>
+            ) : showTranslation &&
+              (segment.translatedText === 'translating' ||
+                segment.translatedText === 'Translation in progress...') ? (
+              // Initial translation loading effect
+              <span className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span className="animate-pulse">Translating...</span>
+              </span>
+            ) : showTranslation ? (
+              segment.translatedText
+            ) : (
+              segment.originalText
+            )}
+          </p>
 
-      {/* Hover Actions */}
-      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={handleCopy}
-          className={cn(
-            'w-8 h-8 rounded-md shadow-sm flex items-center justify-center transition-all',
-            copied
-              ? 'bg-green-500 text-white'
-              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400'
-          )}
-          title={copied ? '已复制' : '复制'}
-        >
-          {copied ? (
-            // 复制成功图标（对勾）
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          ) : (
-            // 复制图标
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-          )}
-        </button>
-      </div>
+          {/* Hover Actions */}
+          <div
+            className={cn(
+              'absolute top-2 right-2 flex items-center gap-1 transition-opacity duration-200',
+              isHovered && !isEditing ? 'opacity-100' : 'opacity-0'
+            )}
+          >
+            {/* Edit button - only show for original text */}
+            {!showTranslation && onStartEdit && (
+              <button
+                onClick={handleEditClick}
+                className="w-8 h-8 rounded-lg bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
+                title="编辑"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                  />
+                </svg>
+              </button>
+            )}
+
+            {/* Copy button */}
+            <button
+              onClick={handleCopy}
+              className={cn(
+                'w-8 h-8 rounded-lg shadow-sm flex items-center justify-center transition-all duration-200',
+                copied
+                  ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30'
+                  : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
+              )}
+              title={copied ? '已复制' : '复制'}
+            >
+              {copied ? (
+                // Success checkmark
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              ) : (
+                // Copy icon
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
