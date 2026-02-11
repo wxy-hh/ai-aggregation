@@ -113,13 +113,36 @@ export function ConfigPanel({
   const [isOptimizing, setIsOptimizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleOptimize = () => {
+  const handleOptimize = async () => {
     if (!prompt.trim()) return;
+
     setIsOptimizing(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/video/optimize-prompt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          aspectRatio: config.aspectRatio,
+          duration: config.duration,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('优化失败');
+      }
+
+      const result = await response.json();
+      setPrompt(result.optimizedPrompt);
+    } catch (error) {
+      console.error('Prompt optimization error:', error);
+      // 如果优化失败，使用简单的后缀增强
       setPrompt(prompt + '，8K超清画质，电影级调色，流畅的镜头运动，自然光影效果');
+    } finally {
       setIsOptimizing(false);
-    }, 1500);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

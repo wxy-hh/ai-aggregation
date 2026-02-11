@@ -14,6 +14,16 @@ import { cn } from '@/lib/utils';
 import { AudioHistoryItem } from '@/types/audio-history';
 import { useHistoryStore } from '@/stores/history-store';
 import { VoiceHistoryItem } from '@/types/history';
+import { useRtasrRealtime } from '@/hooks/use-rtasr-realtime';
+import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
+import { toast } from 'sonner';
+
+function formatElapsed(ms: number) {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 const mockSegments: TranscriptSegment[] = [
   {
@@ -46,9 +56,17 @@ export default function VoicePage() {
   const searchParams = useSearchParams();
   const historyId = searchParams.get('historyId');
 
-  const [isRecording, setIsRecording] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<VoiceMode>('realtime');
   const [restoredHistoryItem, setRestoredHistoryItem] = useState<AudioHistoryItem | null>(null);
+
+  const rtasr = useRtasrRealtime();
+
+  const addHistoryItem = useHistoryStore((state) => state.addItem);
+
+  useEffect(() => {
+    setIsRecording(rtasr.status === 'running');
+  }, [rtasr.status]);
 
   // 从统一历史记录 store 获取数据
   const getItemById = useHistoryStore((state) => state.getItemById);
@@ -124,6 +142,43 @@ export default function VoicePage() {
     setRestoredHistoryItem(null);
   }, []);
 
+  const handleStopAndSave = useCallback(async () => {
+    const transcription = rtasr.segments
+      .map((s) => s.text)
+      .join('\n')
+      .trim();
+
+    await rtasr.stop();
+
+    if (!transcription) {
+      toast.info('本次录音没有识别到内容，未保存');
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const duration = formatElapsed(rtasr.elapsedMs);
+      const fileName = `Realtime-${now.toISOString().slice(0, 19).replaceAll(':', '-')}.pcm`;
+      const fileSize = 0;
+      const model = 'iFlytek/RTASR';
+
+      const base = createVoiceHistoryItem(fileName, fileSize, duration, transcription, model);
+      const item: VoiceHistoryItem = {
+        ...base,
+        id:
+          globalThis.crypto?.randomUUID?.() ??
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+
+      addHistoryItem(item);
+      toast.success('已保存到历史记录');
+    } catch (e) {
+      toast.error('保存失败，请重试');
+    }
+  }, [addHistoryItem, rtasr]);
+
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-blue-900/10 overflow-hidden">
@@ -157,7 +212,13 @@ export default function VoicePage() {
                     className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm font-medium border-red-100 dark:border-red-900/30 animate-pulse"
                   >
                     <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                    正在录音 00:04:12
+                    {rtasr.status === 'running'
+                      ? `正在录音 ${formatElapsed(rtasr.elapsedMs)}`
+                      : rtasr.status === 'paused'
+                        ? `已暂停 ${formatElapsed(rtasr.elapsedMs)}`
+                        : rtasr.status === 'connecting'
+                          ? '连接中...'
+                          : '待开始'}
                   </Badge>
                 )}
                 <Button
@@ -292,11 +353,11 @@ export default function VoicePage() {
                     Microphone Array (Active)
                   </div>
                   <span className="font-mono text-slate-400 text-xs tracking-widest">
-                    SESSION: 00:04:12.85
+                    SESSION: {formatElapsed(rtasr.elapsedMs)}
                   </span>
                 </div>
 
-                <WaveformVisualizer />
+                <WaveformVisualizer level={rtasr.level} />
 
                 {/* Decorative background blur */}
                 <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -304,7 +365,9 @@ export default function VoicePage() {
               </div>
 
               {/* Transcript List */}
-              <TranscriptList segments={mockSegments} />
+              <TranscriptList
+                segments={rtasr.segments.length > 0 ? rtasr.segments : mockSegments}
+              />
 
               {/* Loading State for next segment */}
               <div className="mt-6 flex gap-4 px-4 opacity-50">
@@ -326,16 +389,32 @@ export default function VoicePage() {
                 {/* Record Control */}
                 <div className="flex items-center gap-2">
                   <Button
-                    onClick={() => setIsRecording(!isRecording)}
+                    onClick={async () => {
+                      if (
+                        rtasr.status === 'idle' ||
+                        rtasr.status === 'stopped' ||
+                        rtasr.status === 'error'
+                      ) {
+                        await rtasr.start();
+                        return;
+                      }
+                      if (rtasr.status === 'running') {
+                        await rtasr.pause();
+                        return;
+                      }
+                      if (rtasr.status === 'paused') {
+                        await rtasr.resume();
+                      }
+                    }}
                     className={
-                      isRecording
+                      rtasr.status === 'running'
                         ? 'w-10 h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500'
                         : 'w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
                     }
-                    variant={isRecording ? 'secondary' : 'default'}
+                    variant={rtasr.status === 'running' ? 'secondary' : 'default'}
                     size="icon"
                   >
-                    {isRecording ? (
+                    {rtasr.status === 'running' ? (
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                         <rect x="6" y="6" width="12" height="12" rx="2" />
                       </svg>
@@ -348,7 +427,13 @@ export default function VoicePage() {
                   <div className="px-3">
                     <p className="text-xs font-medium text-slate-500 dark:text-slate-400">状态</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-white min-w-[60px]">
-                      {isRecording ? '录音中' : '已暂停'}
+                      {rtasr.status === 'running'
+                        ? '录音中'
+                        : rtasr.status === 'paused'
+                          ? '已暂停'
+                          : rtasr.status === 'connecting'
+                            ? '连接中'
+                            : '未开始'}
                     </p>
                   </div>
                 </div>
@@ -383,7 +468,12 @@ export default function VoicePage() {
 
                 <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
 
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2">
+                <Button
+                  onClick={async () => {
+                    await handleStopAndSave();
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2"
+                >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
@@ -392,7 +482,7 @@ export default function VoicePage() {
                       d="M13 10V3L4 14h7v7l9-11h-7z"
                     />
                   </svg>
-                  发送至 AI 对话
+                  停止并保存
                 </Button>
               </div>
             </div>

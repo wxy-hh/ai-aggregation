@@ -18,8 +18,19 @@ export interface AudioHistoryItem {
   fileSize: number; // 文件大小（字节）
   fileMimeType: string; // 文件MIME类型
   uploadTime: Date; // 上传时间
-  transcriptionText?: string; // 转录文本
-  translationText?: string; // 翻译文本
+  transcriptionText?: string; // 转录文本（完整文本，用于搜索）
+  translationText?: string; // 翻译文本（完整文本，用于搜索）
+  segments?: Array<{
+    // 新增：保存完整的 segments 数据
+    id: string;
+    timestamp: string;
+    speaker: string;
+    speakerLabel: 'Speaker A' | 'Speaker B' | 'Speaker C';
+    originalText: string;
+    translatedText: string;
+    startTime: number;
+    endTime: number;
+  }>;
   processingStatus: ProcessingStatus; // 处理状态
   tags: string[]; // 用户标签
   title: string; // 用户自定义标题

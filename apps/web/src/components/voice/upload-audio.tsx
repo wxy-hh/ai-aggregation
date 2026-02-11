@@ -178,14 +178,18 @@ export function UploadAudio({
     setCurrentHistoryId(restoredHistoryItem.id);
     setShowResult(true);
 
-    // 解析翻译结果
-    if (restoredHistoryItem.translationText) {
-      // 假设翻译文本是按句子分隔的（与转录文本对应）
+    // 🔧 优先使用保存的 segments 数据
+    if (restoredHistoryItem.segments && restoredHistoryItem.segments.length > 0) {
+      // 直接使用保存的 segments
+      console.log('[UploadAudio] Restoring from saved segments');
+      // segments 会在渲染时使用，这里不需要额外处理
+    } else if (restoredHistoryItem.translationText) {
+      // 降级方案：解析翻译结果
+      console.log('[UploadAudio] Restoring from text (legacy format)');
       const transcriptionSentences = (restoredHistoryItem.transcriptionText || '')
         .split(/[。！？]/)
         .filter((s) => s.trim());
 
-      // 简单处理：将翻译文本按句号分割
       const translationSentences = restoredHistoryItem.translationText
         .split(/\.\s+/)
         .filter((s) => s.trim());
@@ -477,11 +481,19 @@ export function UploadAudio({
                   ? `部分翻译失败 (${translationErrors}/${sentences.length})`
                   : undefined;
 
+              // 🔧 创建完整的 segments 数据用于保存
+              const segmentsToSave = createSegments(
+                transcriptionText,
+                translatedSentences as string[],
+                audioDuration
+              );
+
               await updateProcessingStatus(historyId, 'completed', {
                 translationText: translationText || undefined,
+                segments: segmentsToSave, // 保存完整的 segments
                 errorMessage,
               });
-              console.log('✓ 历史记录已更新（翻译完成）');
+              console.log('✓ 历史记录已更新（翻译完成，包含 segments）');
             } catch (error) {
               console.error('[UploadAudio] Failed to update history after translation:', error);
               // 不影响主要流程
@@ -615,12 +627,21 @@ export function UploadAudio({
     const displayText = transcriptionResult || '正在处理音频，请稍候...';
     const isProcessingNewFile = uploadMutation.isPending || (!transcriptionResult && showResult);
 
-    // 使用真实的转录文本和翻译文本创建显示片段
-    const segments = createSegments(
-      displayText,
-      transcriptionResult ? translationResults || undefined : undefined, // 只有转录完成才显示翻译
-      audioDuration // 传入真实音频时长
-    );
+    // 🔧 优先使用历史记录中保存的 segments
+    let segments;
+    if (restoredHistoryItem?.segments && restoredHistoryItem.segments.length > 0) {
+      // 使用保存的 segments
+      segments = restoredHistoryItem.segments;
+      console.log('[UploadAudio] Using saved segments:', segments.length);
+    } else {
+      // 使用真实的转录文本和翻译文本创建显示片段
+      segments = createSegments(
+        displayText,
+        transcriptionResult ? translationResults || undefined : undefined, // 只有转录完成才显示翻译
+        audioDuration // 传入真实音频时长
+      );
+      console.log('[UploadAudio] Created segments from text:', segments.length);
+    }
 
     return (
       <div className="flex-1 flex flex-col h-full">
