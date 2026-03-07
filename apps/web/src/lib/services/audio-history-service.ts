@@ -151,6 +151,7 @@ export class AudioHistoryService {
     data?: {
       transcriptionText?: string;
       translationText?: string;
+      segments?: AudioHistoryItem['segments'];
       errorMessage?: string;
     }
   ): Promise<AudioHistoryItem> {

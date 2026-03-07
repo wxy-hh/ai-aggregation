@@ -48,6 +48,7 @@ export interface AudioHistoryState {
     data?: {
       transcriptionText?: string;
       translationText?: string;
+      segments?: AudioHistoryItem['segments'];
       errorMessage?: string;
     }
   ) => Promise<void>;
@@ -247,6 +248,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         data?: {
           transcriptionText?: string;
           translationText?: string;
+          segments?: AudioHistoryItem['segments'];
           errorMessage?: string;
         }
       ) => {

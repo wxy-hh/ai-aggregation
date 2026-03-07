@@ -1,0 +1,356 @@
+/**
+ * 简历打印样式
+ * 
+ * 用于 PDF 导出时的样式优化
+ * 确保打印输出与预览视口保持一致
+ */
+
+@media print {
+  /* 强制隐藏不需要打印的元素 - 使用 !important 提高优先级 */
+  .no-print,
+  .edit-panel,
+  .ai-panel,
+  .mobile-tabs,
+  .ai-drawer,
+  .ai-drawer-trigger,
+  nav,
+  header,
+  footer,
+  aside,
+  button:not(.resume-preview-container button),
+  .sidebar,
+  .toolbar,
+  /* 隐藏侧边栏和导航 */
+  [role="complementary"],
+  [role="navigation"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+  }
+
+  /* 确保桌面端布局容器不影响打印 */
+  .lg\:flex,
+  .hidden.lg\:flex {
+    display: block !important;
+  }
+
+  /* 隐藏所有带有 hidden 类的元素 */
+  .hidden:not(.resume-preview-container):not(.a4-paper) {
+    display: none !important;
+  }
+
+  /* 强制隐藏左侧编辑区域的所有子元素 */
+  .edit-panel *,
+  .ai-panel * {
+    display: none !important;
+  }
+
+  /* 页面设置 */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  /* 重置页面样式 */
+  html,
+  body {
+    width: 210mm;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+    font-size: 12pt;
+    overflow: visible;
+  }
+
+  /* 确保主容器可见 */
+  body > div,
+  #__next,
+  main {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 确保预览区域可见并占据整个页面 */
+  .resume-preview-container,
+  .a4-paper {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+  }
+
+  /* 预览容器样式 */
+  .resume-preview-container {
+    width: 210mm !important;
+    height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* A4 纸张容器 */
+  .a4-paper {
+    width: 210mm !important;
+    height: auto !important; /* 允许内容自动扩展 */
+    min-height: 297mm !important;
+    margin: 0 !important;
+    padding: 20mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    page-break-after: auto;
+    page-break-inside: auto;
+  }
+
+  /* 移除所有阴影和边框 */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* 确保文本颜色正确 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  span,
+  div {
+    color: black !important;
+  }
+
+  /* 链接样式 */
+  a {
+    color: black !important;
+    text-decoration: none !important;
+  }
+
+  /* 分页策略 */
+  .resume-section {
+    page-break-inside: avoid;
+  }
+
+  /* 确保各个区块不被分页截断 */
+  section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 工作经历、教育背景、项目经历的每一项不被截断 */
+  section > div > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 标题与内容保持在一起 */
+  h1,
+  h2,
+  h3 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* 如果内容过长需要分页，在合适的位置分页 */
+  .space-y-6 > *,
+  .space-y-4 > * {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 图片优化 */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+
+  /* 移除动画和过渡效果 */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* 确保背景色正确 */
+  .bg-gradient-to-br,
+  .backdrop-blur-\[28px\],
+  .bg-white\/90,
+  .bg-slate-50 {
+    background: white !important;
+    backdrop-filter: none !important;
+  }
+
+  /* 移除玻璃态效果 */
+  .backdrop-blur-\[20px\],
+  .backdrop-blur-\[28px\] {
+    backdrop-filter: none !important;
+    background: white !important;
+  }
+
+  /* 确保边框可见 */
+  .border {
+    border-color: #e5e7eb !important;
+  }
+
+  /* 优化间距 - 确保与预览视口一致 */
+  .space-y-4 > * + * {
+    margin-top: 1rem !important;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 1.5rem !important;
+  }
+
+  .space-y-3 > * + * {
+    margin-top: 0.75rem !important;
+  }
+
+  .space-y-2 > * + * {
+    margin-top: 0.5rem !important;
+  }
+
+  .space-y-1 > * + * {
+    margin-top: 0.25rem !important;
+  }
+
+  /* 确保内边距与预览一致 */
+  .p-12 {
+    padding: 3rem !important;
+  }
+
+  /* 确保字体大小合适 - 优化 rem 到 pt 的映射以减少偏差 */
+  .text-xs {
+    font-size: 10pt !important;
+  }
+  .text-sm {
+    font-size: 10.5pt !important; /* 14px ≈ 10.5pt */
+  }
+  .text-base {
+    font-size: 12pt !important; /* 16px = 12pt */
+  }
+  .text-lg {
+    font-size: 13.5pt !important; /* 18px ≈ 13.5pt */
+  }
+  .text-xl {
+    font-size: 15pt !important; /* 20px ≈ 15pt */
+  }
+  .text-2xl {
+    font-size: 18pt !important;
+  }
+  .text-3xl {
+    font-size: 22pt !important; /* 30px ≈ 22pt (29.33px)，偏差 0.67px < 2px */
+  }
+
+  /* 确保行高合适 */
+  p,
+  div,
+  span {
+    line-height: 1.5 !important;
+  }
+
+  /* 优化列表样式 */
+  ul,
+  ol {
+    margin-left: 1.5em !important;
+  }
+
+  li {
+    margin-bottom: 0.5em !important;
+  }
+
+  /* 确保表格正确显示 */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th,
+  td {
+    padding: 0.5em !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  /* 移除不必要的内边距 */
+  .p-6 {
+    padding: 1.5rem !important;
+  }
+
+  .p-8 {
+    padding: 2rem !important;
+  }
+
+  /* 确保 flex 布局的间距一致 */
+  .gap-2 {
+    gap: 0.5rem !important;
+  }
+
+  .gap-4 {
+    gap: 1rem !important;
+  }
+
+  /* 确保网格布局正确 */
+  .grid {
+    display: grid !important;
+  }
+
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* 确保弹性布局正确 */
+  .flex {
+    display: flex !important;
+  }
+
+  .items-center {
+    align-items: center !important;
+  }
+
+  .justify-between {
+    justify-content: space-between !important;
+  }
+
+  /* 移除圆角（可选） */
+  .rounded-xl,
+  .rounded-2xl,
+  .rounded-lg {
+    border-radius: 0 !important;
+  }
+
+  /* 确保内容可见 */
+  .overflow-hidden {
+    overflow: visible !important;
+  }
+
+  /* 打印时显示预览内容 */
+  .preview-viewport {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* 隐藏滚动条 */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* 确保所有内容都在一页内 */
+  body {
+    overflow: visible !important;
+  }
+}

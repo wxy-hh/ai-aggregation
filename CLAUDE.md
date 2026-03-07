@@ -22,7 +22,7 @@
 - **pnpm**：10.x
 - **Docker**：用于本地 PostgreSQL / Redis / MinIO（可选，但推荐）
 
-### 2) 安装依赖
+### 2) 安装依赖使用 pnpm
 
 ```bash
 pnpm i
