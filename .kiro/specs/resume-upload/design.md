@@ -50,10 +50,10 @@
 
 1. **左侧编辑面板（约 25% 宽度）**
    - 顶部标题："解析内容" + "塌陷/展开"按钮
-   - 模块列表：
-     - 个人信息（姓名输入框）
-     - 专业经历（工作经历卡片，可展开/折叠）
-     - 教育背景（教育经历卡片）
+   - 模块列表为动态结构：
+     - 示例可能包含个人信息、专业经历、教育背景
+     - 也可能包含证书资质、语言能力、获奖经历、自我评价或用户自定义模块
+     - 实际展示顺序必须由上传文档解析结果决定，而不是固定写死
    - 底部："+ 添加新模块"按钮（虚线边框）
    - 使用白色卡片背景，圆角设计
    - 模块之间有清晰的分隔
@@ -62,10 +62,10 @@
    - 顶部工具栏：缩放按钮、导出按钮
    - A4 尺寸的简历预览
    - 实时渲染用户编辑的内容
-   - 包含完整的简历布局：
-     - 个人信息区（姓名、职位、联系方式）
-     - 工作经历区（公司、职位、时间、描述）
-     - 教育背景区（学校、专业、时间）
+   - 内容区为动态章节渲染：
+     - 示例可能包含个人信息区、工作经历区、教育背景区
+     - 但必须允许根据上传文档生成任意数量和类型的章节
+     - 不得因为视觉参考图而回退为固定模板结构
    - 使用白色背景，带有阴影效果
 
 3. **右侧 AI 诊断面板（约 25% 宽度）**
@@ -97,6 +97,8 @@
 - 移动端（<1024px）：全局左侧边栏可收起 + 标签页切换（编辑/预览/诊断）
 
 **重要说明**：三栏布局是指在保留现有全局左侧边栏的基础上，主内容区域内的三栏结构。全局左侧边栏包含应用导航、用户信息等全局功能，不应被移除或替换。
+
+**动态内容约束**：本节仅定义视觉壳层和交互层级，不定义固定内容结构。上传还原模式中的左侧模块树和中间预览内容必须由 `ImportedResumeDocument.sections` 动态驱动。
 
 **动画与交互**
 
@@ -171,11 +173,17 @@ graph TD
 - `GET /resume/upload`
   - 上传还原模式主页面。
 - `POST /api/resume/upload`
-  - 接收文件并启动上传解析。
+  - 接收文件并创建导入任务。
+- `GET /api/resume/import-jobs/:jobId`
+  - 获取导入任务当前状态、进度百分比和步骤状态。
+- `GET /api/resume/import-jobs/:jobId/stream`
+  - 通过 SSE 推送任务步骤更新、进度变化和错误事件。
 - `GET /api/resume/imports/:id`
   - 获取某次导入的完整结果。
 - `PATCH /api/resume/imports/:id`
   - 保存编辑后的导入文档。
+- `DELETE /api/resume/imports/:id`
+  - 删除导入记录，并触发关联文件与缓存清理。
 - `POST /api/resume/imports/:id/diagnose`
   - 对当前导入文档执行诊断。
 - `POST /api/resume/imports/:id/convert-to-template`
@@ -194,6 +202,130 @@ graph TD
 - `apps/web/src/app/resume/upload/_components/imported-ai-drawer.tsx`
 
 页面壳层可以参考模板页的布局逻辑，但内容区域需要替换成上传模式专用组件。
+
+### 入口集成设计
+
+除 `/resume` 入口页外，还需要在现有编辑路径中提供上传模式入口：
+
+1. 在简历编辑器顶部提供“上传简历”按钮，点击后进入 `/resume/upload`。
+2. 在空白简历状态下显示“上传现有简历”引导卡片，作为显式入口。
+3. 当编辑器已有内容时，从顶部入口发起上传必须先弹出覆盖确认提示。
+
+这些入口只负责跳转和确认，不改变“上传模式”和“通用模板模式”相互独立的设计边界。
+
+### 导入任务与进度协议设计
+
+为满足“实时进度百分比 + 步骤状态”的需求，上传解析流程必须拆分为 `Import Job` 与 `Import Result` 两类资源：
+
+- `Import Job`
+  - 表示一次上传解析任务。
+  - 生命周期短，负责进度、步骤状态、错误原因。
+- `Import Result`
+  - 表示任务产出的导入简历文档。
+  - 生命周期长，负责编辑、保存、恢复、诊断、转换。
+
+建议接口：
+
+```ts
+interface ResumeImportJob {
+  id: string;
+  userId: string;
+  status:
+    | 'queued'
+    | 'uploading'
+    | 'extracting'
+    | 'structuring'
+    | 'mapping'
+    | 'completed'
+    | 'partial'
+    | 'failed'
+    | 'timeout';
+  progress: number; // 0-100
+  currentStep: 'upload' | 'extract' | 'structure' | 'map' | 'preview';
+  steps: Array<{
+    key: 'upload' | 'extract' | 'structure' | 'map' | 'preview';
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    message?: string;
+  }>;
+  importId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+前端策略：
+
+1. 上传文件后先拿到 `jobId`。
+2. 优先使用 `GET /api/resume/import-jobs/:jobId/stream` 订阅实时进度。
+3. 如果 SSE 不可用，降级到轮询 `GET /api/resume/import-jobs/:jobId`。
+4. 当任务状态进入 `completed` 或 `partial` 时，再请求 `/api/resume/imports/:id` 拉取完整导入文档。
+
+服务端策略：
+
+1. `POST /api/resume/upload` 只负责校验、落盘、创建 `Import Job`，不阻塞等待解析完成。
+2. 解析器每完成一个阶段就更新 `progress`、`currentStep` 和 `steps`。
+3. 超时统一写入 `timeout` 状态，前端据此显示“重新上传”与“手动创建”入口。
+
+### 服务端持久化模型
+
+`importId` 不能只停留在前端内存或 localStorage，必须对应后端真实资源。
+
+建议拆分三层存储：
+
+1. **任务层**
+   - `resume_import_jobs`
+   - 保存任务状态、进度、错误信息、超时信息
+2. **结果层**
+   - `resume_imports`
+   - 保存 `ImportedResumeDocument`、布局线索、解析元数据、当前编辑结果
+3. **文件层**
+   - 原始上传文件、OCR 中间产物、抽取文本
+   - 使用对象存储或服务端受控文件目录
+
+建议数据库模型：
+
+```prisma
+model ResumeImportJob {
+  id           String   @id @default(cuid())
+  userId       String
+  status       String
+  progress     Int      @default(0)
+  currentStep  String?
+  importId     String?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model ResumeImport {
+  id             String   @id @default(cuid())
+  userId         String
+  sourceFileName String
+  sourceMimeType String
+  sourceFileKey  String?
+  parseStatus    String
+  documentJson   Json
+  layoutJson     Json?
+  parseMetaJson  Json?
+  latestJobId    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+```
+
+持久化边界：
+
+1. 服务端 `resume_imports` 是跨刷新、跨请求的真相来源。
+2. localStorage 只作为草稿缓存和离线兜底，不能替代服务端资源。
+3. `PATCH /api/resume/imports/:id` 更新服务端记录，并可选择同步更新本地缓存。
 
 ## 数据模型设计
 
@@ -331,13 +463,15 @@ interface SourceAnchor {
 1. 前端选择文件
 2. 客户端执行格式/大小校验
 3. 上传至 /api/resume/upload
-4. 服务端保存临时文件
-5. 根据 MIME 类型选择提取器
-6. 文本提取 / OCR
-7. 章节识别与阅读顺序恢复
-8. 字段映射与块级建模
-9. 生成 ImportedResumeDocument
-10. 返回导入结果 ID 与初始文档
+4. 服务端保存临时文件并创建 `Import Job`
+5. 立即返回 `jobId`
+6. 前端通过 SSE 或轮询跟踪任务状态
+7. 后台根据 MIME 类型选择提取器
+8. 执行文本提取 / OCR
+9. 执行章节识别与阅读顺序恢复
+10. 执行字段映射与块级建模
+11. 生成 ImportedResumeDocument 并落库
+12. 任务完成后前端通过 `importId` 拉取完整导入文档
 ```
 
 ### 提取器策略
@@ -374,9 +508,12 @@ idle
  -> uploading
  -> parsing
  -> ready
+ -> replacing_existing_content
  -> saving
  -> saved
  -> partial_failure
+ -> timeout
+ -> manual_create_fallback
  -> fatal_error
 ```
 
@@ -392,6 +529,8 @@ Store 结构建议：
 ```ts
 interface ImportedResumeState {
   document: ImportedResumeDocument | null;
+  importId: string | null;
+  jobId: string | null;
   activeSectionId: string | null;
   selectedBlockId: string | null;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
@@ -400,8 +539,11 @@ interface ImportedResumeState {
   suggestions: ResumeSuggestion[];
   uploadProgress: number;
   parseStep: 'upload' | 'extract' | 'structure' | 'map' | 'preview';
+  parseWarnings: string[];
+  replaceConfirmOpen: boolean;
 
   setDocument: (doc: ImportedResumeDocument) => void;
+  setImportContext: (payload: { importId: string; jobId: string | null }) => void;
   updateSection: (sectionId: string, updater: Partial<ImportedSection>) => void;
   updateBlock: (sectionId: string, blockId: string, payload: unknown) => void;
   reorderSections: (from: number, to: number) => void;
@@ -425,6 +567,23 @@ interface ImportedResumeState {
    - `ListBlockEditor`
 4. 支持拖拽排序章节。
 5. 低置信度字段显示警示标记，但不阻止用户编辑。
+
+### 重新上传与覆盖确认设计
+
+当工作区中已经存在导入内容或手动编辑内容时，再次上传新简历必须先进入覆盖确认流程。
+
+交互规则：
+
+1. 用户点击“重新上传”或顶部上传入口。
+2. 如果当前 `document` 非空，则弹出覆盖确认对话框。
+3. 对话框需明确提示：
+   - 上传新简历将替换当前导入内容
+   - 已保存版本仍可从服务端导入记录中恢复
+4. 用户确认后：
+   - 清理当前 `jobId`
+   - 创建新的 `Import Job`
+   - 页面状态进入 `replacing_existing_content -> uploading`
+5. 用户取消后保留当前工作区，不产生任何数据覆盖。
 
 ### 添加模块交互设计
 
@@ -597,6 +756,31 @@ function useDocumentAutoSave<T>({
 
 模板模式和上传模式各自传入不同的文档类型和存储 key。
 
+### 安全与生命周期策略
+
+简历内容属于敏感个人数据，持久化设计必须补充安全边界。
+
+1. **访问控制**
+   - 所有 `/api/resume/import-jobs/*` 和 `/api/resume/imports/*` 接口都必须绑定当前登录用户。
+   - 服务端读取 `importId` 或 `jobId` 时必须校验 `userId`，禁止跨用户访问。
+2. **原始文件保留**
+   - 原始上传文件仅用于解析和必要的重新处理。
+   - 默认保留 24 小时，解析完成后进入待清理队列。
+3. **解析产物保留**
+   - OCR 文本、中间结构化结果默认跟随 `resume_imports` 保存。
+   - 若仅用于调试，应区分生产和开发环境的保留策略。
+4. **本地缓存保留**
+   - `resume-import-editor:v1:${importId}` 在用户删除导入记录、主动清空草稿或超过 30 天未访问后清理。
+5. **删除策略**
+   - 用户删除导入记录时，服务端需级联删除：
+     - `resume_imports`
+     - 关联的原始文件引用
+     - OCR 中间产物
+     - 前端 localStorage 草稿
+6. **诊断数据**
+   - AI 诊断缓存不得包含超出诊断必要范围的原始附件信息。
+   - 对联系方式等敏感字段继续遵循现有隐私选项控制。
+
 ## AI 诊断集成设计
 
 ### 设计原则
@@ -621,6 +805,12 @@ interface DiagnosePayload {
 ```
 
 该转换只用于 AI 分析，不改变前端主文档。
+
+### AI 诊断数据边界
+
+1. 诊断 API 默认只接收文本归一化结果，不接收原始文件二进制。
+2. 联系方式、住址等敏感字段默认脱敏后再发送，除非用户显式授权。
+3. 诊断结果缓存仅与当前 `importId` 绑定，不可跨用户共享。
 
 ## 模式切换设计
 
@@ -662,6 +852,42 @@ interface DiagnosePayload {
 3. 页级坐标缺失时回退到顺序流式布局。
 4. AI 诊断失败不影响编辑和导出。
 
+### 异常与恢复流程闭环
+
+#### 解析超时
+
+1. 当 `Import Job` 超过 30 秒未完成，服务端将任务置为 `timeout`。
+2. 前端展示超时提示，并提供：
+   - `重新上传`
+   - `手动创建`
+   - `返回入口`
+3. 若任务已产出部分结果，可进入 `partial_failure` 状态并允许用户继续编辑已识别内容。
+
+#### 重新上传
+
+1. 用户在 `fatal_error`、`timeout` 或 `partial_failure` 状态下点击 `重新上传`。
+2. 若当前工作区已有内容，先执行覆盖确认。
+3. 确认后创建新 `Import Job`，重新进入上传解析流程。
+
+#### 手动创建
+
+1. 用户在解析失败、超时或对结果不满意时可选择 `手动创建`。
+2. 系统创建一个空的 `ImportedResumeDocument`，初始 `sections` 为空数组。
+3. 页面保持在上传还原模式，不自动跳转到通用模板模式。
+4. 用户可通过“添加新模块”逐步构建自己的内容结构。
+
+#### 部分成功
+
+1. 当解析成功但存在未识别块时，状态进入 `partial_failure`。
+2. 前端展示警告条和低置信度标记。
+3. 已识别内容可编辑，未识别内容以 `rich-text` 或 `custom` 模块形式呈现。
+
+#### 覆盖当前内容
+
+1. 在已有文档时再次上传新文件，必须弹出覆盖确认。
+2. 确认后保留服务端旧版本记录，但当前工作区切换为新 `importId`。
+3. 取消则不发起新上传。
+
 ## 与现有代码的集成边界
 
 ### 可直接复用
@@ -671,6 +897,7 @@ interface DiagnosePayload {
 - `AIDrawer` 的布局思想
 - `MobileTabs` 的响应式导航模式
 - 基础输入组件 `ResumeInput`、`ResumeTextarea`
+- 现有入口页的双入口路由结构
 
 ### 需要新建
 
@@ -679,6 +906,7 @@ interface DiagnosePayload {
 - 上传模式专用编辑面板
 - 上传模式专用预览渲染器
 - 上传解析 API
+- 导入任务查询与 SSE API
 
 ### 不应直接复用为核心模型
 
