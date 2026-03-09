@@ -32,7 +32,7 @@ async function main() {
     logger.info('所有 Workers 已启动');
   } catch (error) {
     isRunning = false;
-    logger.error('Worker 启动失败', error);
+    logger.error('Worker 启动失败', error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
 

@@ -1,6 +1,6 @@
 ---
 name: pptx 演示文稿处理
-description: "演示文稿文件全能处理技能。当 .pptx 文件以任何方式涉及时使用——作为输入、输出或两者兼有。包括：创建幻灯片、演示文稿或路演文档；从任何 .pptx 文件读取、解析或提取文本（即使提取的内容将用于其他地方，如电子邮件或摘要）；编辑、修改或更新现有演示文稿；合并或拆分幻灯片文件；处理模板、布局、演讲者备注或评论。当用户提到"幻灯片"、"演示文稿"或引用 .pptx 文件名时触发，无论他们之后计划如何处理内容。如果需要打开、创建或处理 .pptx 文件，请使用此技能。"
+description: 演示文稿文件全能处理技能。当 .pptx 文件以任何方式涉及时使用——作为输入、输出或两者兼有。包括：创建幻灯片、演示文稿或路演文档；从任何 .pptx 文件读取、解析或提取文本（即使提取的内容将用于其他地方，如电子邮件或摘要）；编辑、修改或更新现有演示文稿；合并或拆分幻灯片文件；处理模板、布局、演讲者备注或评论。当用户提到"幻灯片"、"演示文稿"或引用 .pptx 文件名时触发，无论他们之后计划如何处理内容。如果需要打开、创建或处理 .pptx 文件，请使用此技能。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -8,11 +8,11 @@ license: Proprietary. LICENSE.txt has complete terms
 
 ## Quick Reference
 
-| Task | Guide |
-|------|-------|
-| Read/analyze content | `python -m markitdown presentation.pptx` |
-| Edit or create from template | Read [editing.md](editing.md) |
-| Create from scratch | Read [pptxgenjs.md](pptxgenjs.md) |
+| Task                         | Guide                                    |
+| ---------------------------- | ---------------------------------------- |
+| Read/analyze content         | `python -m markitdown presentation.pptx` |
+| Edit or create from template | Read [editing.md](editing.md)            |
+| Create from scratch          | Read [pptxgenjs.md](pptxgenjs.md)        |
 
 ---
 
@@ -63,35 +63,38 @@ Use when no template or reference presentation is available.
 
 Choose colors that match your topic — don't default to generic blue. Use these palettes as inspiration:
 
-| Theme | Primary | Secondary | Accent |
-|-------|---------|-----------|--------|
-| **Midnight Executive** | `1E2761` (navy) | `CADCFC` (ice blue) | `FFFFFF` (white) |
-| **Forest & Moss** | `2C5F2D` (forest) | `97BC62` (moss) | `F5F5F5` (cream) |
-| **Coral Energy** | `F96167` (coral) | `F9E795` (gold) | `2F3C7E` (navy) |
-| **Warm Terracotta** | `B85042` (terracotta) | `E7E8D1` (sand) | `A7BEAE` (sage) |
-| **Ocean Gradient** | `065A82` (deep blue) | `1C7293` (teal) | `21295C` (midnight) |
-| **Charcoal Minimal** | `36454F` (charcoal) | `F2F2F2` (off-white) | `212121` (black) |
-| **Teal Trust** | `028090` (teal) | `00A896` (seafoam) | `02C39A` (mint) |
-| **Berry & Cream** | `6D2E46` (berry) | `A26769` (dusty rose) | `ECE2D0` (cream) |
-| **Sage Calm** | `84B59F` (sage) | `69A297` (eucalyptus) | `50808E` (slate) |
-| **Cherry Bold** | `990011` (cherry) | `FCF6F5` (off-white) | `2F3C7E` (navy) |
+| Theme                  | Primary               | Secondary             | Accent              |
+| ---------------------- | --------------------- | --------------------- | ------------------- |
+| **Midnight Executive** | `1E2761` (navy)       | `CADCFC` (ice blue)   | `FFFFFF` (white)    |
+| **Forest & Moss**      | `2C5F2D` (forest)     | `97BC62` (moss)       | `F5F5F5` (cream)    |
+| **Coral Energy**       | `F96167` (coral)      | `F9E795` (gold)       | `2F3C7E` (navy)     |
+| **Warm Terracotta**    | `B85042` (terracotta) | `E7E8D1` (sand)       | `A7BEAE` (sage)     |
+| **Ocean Gradient**     | `065A82` (deep blue)  | `1C7293` (teal)       | `21295C` (midnight) |
+| **Charcoal Minimal**   | `36454F` (charcoal)   | `F2F2F2` (off-white)  | `212121` (black)    |
+| **Teal Trust**         | `028090` (teal)       | `00A896` (seafoam)    | `02C39A` (mint)     |
+| **Berry & Cream**      | `6D2E46` (berry)      | `A26769` (dusty rose) | `ECE2D0` (cream)    |
+| **Sage Calm**          | `84B59F` (sage)       | `69A297` (eucalyptus) | `50808E` (slate)    |
+| **Cherry Bold**        | `990011` (cherry)     | `FCF6F5` (off-white)  | `2F3C7E` (navy)     |
 
 ### For Each Slide
 
 **Every slide needs a visual element** — image, chart, icon, or shape. Text-only slides are forgettable.
 
 **Layout options:**
+
 - Two-column (text left, illustration on right)
 - Icon + text rows (icon in colored circle, bold header, description below)
 - 2x2 or 2x3 grid (image on one side, grid of content blocks on other)
 - Half-bleed image (full left or right side) with content overlay
 
 **Data display:**
+
 - Large stat callouts (big numbers 60-72pt with small labels below)
 - Comparison columns (before/after, pros/cons, side-by-side options)
 - Timeline or process flow (numbered steps, arrows)
 
 **Visual polish:**
+
 - Icons in small colored circles next to section headers
 - Italic accent text for key stats or taglines
 
@@ -99,23 +102,23 @@ Choose colors that match your topic — don't default to generic blue. Use these
 
 **Choose an interesting font pairing** — don't default to Arial. Pick a header font with personality and pair it with a clean body font.
 
-| Header Font | Body Font |
-|-------------|-----------|
-| Georgia | Calibri |
-| Arial Black | Arial |
-| Calibri | Calibri Light |
-| Cambria | Calibri |
-| Trebuchet MS | Calibri |
-| Impact | Arial |
-| Palatino | Garamond |
-| Consolas | Calibri |
+| Header Font  | Body Font     |
+| ------------ | ------------- |
+| Georgia      | Calibri       |
+| Arial Black  | Arial         |
+| Calibri      | Calibri Light |
+| Cambria      | Calibri       |
+| Trebuchet MS | Calibri       |
+| Impact       | Arial         |
+| Palatino     | Garamond      |
+| Consolas     | Calibri       |
 
-| Element | Size |
-|---------|------|
-| Slide title | 36-44pt bold |
-| Section header | 20-24pt bold |
-| Body text | 14-16pt |
-| Captions | 10-12pt muted |
+| Element        | Size          |
+| -------------- | ------------- |
+| Slide title    | 36-44pt bold  |
+| Section header | 20-24pt bold  |
+| Body text      | 14-16pt       |
+| Captions       | 10-12pt muted |
 
 ### Spacing
 

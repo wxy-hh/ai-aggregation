@@ -13,7 +13,8 @@ export default function ResumeEntryPage() {
   };
 
   const handleUploadResume = () => {
-    router.push('/resume/upload');
+    // 上传功能暂未实现
+    console.log('上传功能开发中...');
   };
 
   return (
@@ -52,33 +53,44 @@ export default function ResumeEntryPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-cyan-400/20 rounded-3xl blur-2xl group-hover:blur-3xl transition-all duration-500" />
 
-              <div className="relative bg-white/70 dark:bg-slate-800/70 backdrop-blur-[32px] rounded-3xl p-12 border border-white/60 dark:border-slate-700/60 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-500 hover:-translate-y-1">
+              <div
+                onClick={handleUseTemplate}
+                className="relative h-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-[32px] rounded-3xl p-10 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col"
+              >
                 {/* 图标 */}
-                <div className="mb-8 flex justify-center">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                    <FileText className="w-10 h-10 text-white" strokeWidth={1.5} />
+                <div className="mb-6 flex justify-center">
+                  <div className="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center transition-all duration-300 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 group-hover:scale-110">
+                    <FileText className="w-8 h-8 text-blue-500" strokeWidth={2} />
                   </div>
                 </div>
 
                 {/* 标题 */}
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4 text-center">
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3 text-center">
                   使用通用模板
                 </h2>
 
                 {/* 描述 */}
-                <p className="text-slate-600 dark:text-slate-400 text-center mb-8 leading-relaxed">
-                  从精选的专业设计模板中挑选，只需填写信息，AI 自动
-                  <br />
-                  帮您生成排版。
+                <p className="text-slate-600 dark:text-slate-400 text-center mb-4 leading-relaxed">
+                  从精选的专业设计模板中挑选，只需填写信息
                 </p>
 
-                {/* 按钮 */}
-                <button
-                  onClick={handleUseTemplate}
-                  className="w-full py-4 px-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-2xl font-medium shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 hover:scale-[1.02]"
-                >
-                  立即开始
-                </button>
+                {/* 特性说明 */}
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-500 mb-2">
+                  <FileText className="w-4 h-4" />
+                  <span>AI 自动帮您生成排版</span>
+                </div>
+
+                {/* 占位空间 */}
+                <p className="text-xs text-slate-400 dark:text-slate-600 mb-6 text-center">
+                  多种专业模板可选
+                </p>
+
+                {/* 提示信息 */}
+                <div className="mt-auto p-3.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm text-blue-800 dark:text-blue-300 text-center">
+                    ✨ 快速创建专业简历
+                  </p>
+                </div>
               </div>
             </motion.div>
 
@@ -91,33 +103,44 @@ export default function ResumeEntryPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-3xl blur-2xl group-hover:blur-3xl transition-all duration-500" />
 
-              <div className="relative bg-white/70 dark:bg-slate-800/70 backdrop-blur-[32px] rounded-3xl p-12 border border-white/60 dark:border-slate-700/60 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-500 hover:-translate-y-1">
+              <div
+                onClick={handleUploadResume}
+                className="relative h-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-[32px] rounded-3xl p-10 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col"
+              >
                 {/* 图标 */}
-                <div className="mb-8 flex justify-center">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
-                    <Upload className="w-10 h-10 text-white" strokeWidth={1.5} />
+                <div className="mb-6 flex justify-center">
+                  <div className="w-16 h-16 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center transition-all duration-300 group-hover:bg-purple-100 dark:group-hover:bg-purple-900/30 group-hover:scale-110">
+                    <Upload className="w-8 h-8 text-purple-500" strokeWidth={2} />
                   </div>
                 </div>
 
                 {/* 标题 */}
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4 text-center">
-                  上传已有简历
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3 text-center">
+                  上传您的简历
                 </h2>
 
                 {/* 描述 */}
-                <p className="text-slate-600 dark:text-slate-400 text-center mb-8 leading-relaxed">
-                  智能解析您现有的 PDF 或 DOCX 文件，针对查询岗位进
-                  <br />
-                  行精准优化。
+                <p className="text-slate-600 dark:text-slate-400 text-center mb-4 leading-relaxed">
+                  点击选择文件或拖拽文件到此区域
                 </p>
 
-                {/* 按钮 */}
-                <button
-                  onClick={handleUploadResume}
-                  className="w-full py-4 px-6 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-2xl font-medium border-2 border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all duration-300 hover:scale-[1.02]"
-                >
-                  上传文件
-                </button>
+                {/* 支持格式 */}
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-500 mb-2">
+                  <FileText className="w-4 h-4" />
+                  <span>支持 PDF、Word(.docx)、图片格式</span>
+                </div>
+
+                {/* 文件大小限制 */}
+                <p className="flex items-center justify-center text-xs text-slate-400 dark:text-slate-600 mb-6">
+                  文件大小不超过 10MB
+                </p>
+
+                {/* 提示信息 */}
+                <div className="mt-auto p-3.5 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                  <p className="text-sm text-purple-800 dark:text-purple-300 text-center">
+                    💡 保留原始内容、结构和顺序
+                  </p>
+                </div>
               </div>
             </motion.div>
           </div>
