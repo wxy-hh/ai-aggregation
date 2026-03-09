@@ -7,7 +7,7 @@ import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 
 // ==================== 类型定义 ====================
 
-export type ProviderName = 'zhipu' | 'deepseek' | 'dashscope' | 'xunfei';
+export type ProviderName = 'xunfei' | 'doubao';
 
 export interface Message {
   id: string;

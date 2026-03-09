@@ -38,27 +38,17 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
       { id: '4.0Ultra', label: 'Spark 4.0 Ultra' },
     ],
   },
-  zhipu: {
-    name: '智谱 AI',
+  doubao: {
+    name: '豆包',
     models: [
-      { id: 'glm-4-flash', label: 'GLM-4 Flash (免费)' },
-      { id: 'glm-4', label: 'GLM-4' },
-      { id: 'glm-4-plus', label: 'GLM-4 Plus' },
-    ],
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    models: [
-      { id: 'deepseek-chat', label: 'DeepSeek Chat' },
-      { id: 'deepseek-coder', label: 'DeepSeek Coder' },
-    ],
-  },
-  dashscope: {
-    name: '通义千问',
-    models: [
-      { id: 'qwen-turbo', label: 'Qwen Turbo' },
-      { id: 'qwen-plus', label: 'Qwen Plus' },
-      { id: 'qwen-max', label: 'Qwen Max' },
+      { id: 'doubao-seed-2.0-lite', label: 'Doubao Lite (轻量级)' },
+      { id: 'doubao-seed-2.0-pro', label: 'Doubao Pro (专业级)' },
+      { id: 'doubao-seed-2.0-code', label: 'Doubao Code (代码专用)' },
+      { id: 'doubao-seed-code', label: 'Doubao Code 基础版' },
+      { id: 'minimax-m2.5', label: 'MiniMax M2.5' },
+      { id: 'glm-4.7', label: 'GLM 4.7' },
+      { id: 'deepseek-v3.2', label: 'DeepSeek V3.2' },
+      { id: 'kimi-k2.5', label: 'Kimi K2.5' },
     ],
   },
 };
