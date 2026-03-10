@@ -7,34 +7,32 @@ Doubao-Seed-2.0-lite:doubao-seed-2-0-lite-260215
 
 #图片理解--本地图片上传（Base64编码）
 # Curl示例
-BASE64_IMAGE=$(base64 < demo.png) && curl https://ark.cn-beijing.volces.com/api/v3/responses \
-   -H "Content-Type: application/json" \
-   -H "Authorization: Bearer $ARK_API_KEY" \
-   -d @- <<EOF
-   {
-    "model": "doubao-seed-1-6-251015",
+curl https://ark.cn-beijing.volces.com/api/v3/responses \
+-H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H 'Content-Type: application/json' \
+-d '{
+    "model": "doubao-seed-2-0-lite-260215",
     "input": [
-      {
-        "role": "user",
-        "content": [
-          {
-            "type": "input_image",
-            "image_url": "data:image/png;base64,$BASE64_IMAGE"
-          },
-          {
-            "type": "input_text",
-            "text": "Which model series supports image input?"
-          }
-        ]
-      }
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,{base64编码字符串}"
+                },
+                {
+                    "type": "input_text",
+                    "text": "你看见了什么？"
+                }
+            ]
+        }
     ]
-  }
-EOF
+}'
 
 #上传文件
 # 1. 上传PDF文件获取File ID
 curl https://ark.cn-beijing.volces.com/api/v3/files \
--H "Authorization: Bearer $ARK_API_KEY" \
+-H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
 -F 'purpose=user_data' \
 -F 'file=@/Users/doc/demo.pdf'
 #文件上传的返回格式
@@ -57,10 +55,10 @@ curl https://ark.cn-beijing.volces.com/api/v3/files \
 
 # 2. 在Responses API中引用File ID(data.id)
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer $ARK_API_KEY" \
+-H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
 -H 'Content-Type: application/json' \
 -d '{
-    "model": "doubao-seed-1-6-251015",
+    "model": "Doubao-Seed-2.0-lite",
     "input": [
         {
             "role": "user",
@@ -80,10 +78,10 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 #视频URL传入
 # Curl示例
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer $ARK_API_KEY" \
+-H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
 -H 'Content-Type: application/json' \
 -d '{
-    "model": "doubao-seed-1-6-251015",
+    "model": "Doubao-Seed-2.0-lite",
     "input": [
         {
             "role": "user",
