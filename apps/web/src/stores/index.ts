@@ -38,7 +38,14 @@ export {
 } from './ui-store';
 
 // 聊天存储 (Chat Store)
-export { useChatStore, type ChatState, type ProviderName, type Message } from './chat-store';
+export {
+  useChatStore,
+  type ChatState,
+  type ProviderName,
+  type Message,
+  type MessageContent,
+  type Attachment,
+} from './chat-store';
 
 // 音频历史记录存储 (Audio History Store)
 export {

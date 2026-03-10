@@ -7,6 +7,19 @@ import {
   type XunfeiMessage,
 } from '@repo/providers';
 
+// 导入扩展的消息类型
+interface MessageContent {
+  type: 'input_text' | 'input_image' | 'input_file';
+  text?: string;
+  image_url?: string;
+  file_id?: string;
+}
+
+interface ExtendedMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string | MessageContent[];
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -15,7 +28,7 @@ export async function POST(req: Request) {
       model,
       provider = 'xunfei',
     } = body as {
-      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+      messages: ExtendedMessage[];
       model?: string;
       provider?: ProviderName;
     };
@@ -71,19 +84,31 @@ export async function POST(req: Request) {
         modelName,
       });
 
-      // 将消息转换为 Responses API 格式
-      // Responses API 的 input 可以是字符串或消息数组
-      // 单条消息时使用字符串，多条消息时使用数组
-      let input: string | Array<{ role: string; content: string }>;
+      // 将消息转换为豆包 Responses API 格式
+      // 支持混合内容消息（文本 + 图片 + 文件）
+      let input: string | Array<{ role: string; content: string | any[] }>;
 
       if (messages.length === 1 && messages[0].role === 'user') {
-        // 单条用户消息，直接使用字符串
-        input = messages[0].content;
+        const message = messages[0];
+
+        // 检查是否为混合内容消息
+        if (typeof message.content === 'string') {
+          // 纯文本消息
+          input = message.content;
+        } else {
+          // 混合内容消息，使用数组格式
+          input = [
+            {
+              role: message.role,
+              content: message.content, // 直接传递 MessageContent 数组
+            },
+          ];
+        }
       } else {
-        // 多条消息或包含系统消息，使用数组格式
+        // 多条消息，使用数组格式
         input = messages.map((msg) => ({
           role: msg.role,
-          content: msg.content,
+          content: typeof msg.content === 'string' ? msg.content : msg.content,
         }));
       }
 

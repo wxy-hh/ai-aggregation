@@ -7,13 +7,16 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
+import { MultimediaMessage } from './multimedia-message';
+import type { Message, Attachment, MessageContent } from '@/stores/chat-store';
 
-// 消息接口定义
+// 消息接口定义（使用扩展的类型）
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | MessageContent[];
   isStreaming?: boolean;
+  attachments?: Attachment[];
 }
 
 interface MessageItemProps {
@@ -262,7 +265,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const isThinking = !isUser && isStreaming && !message.content;
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(message.content);
+    let textToCopy = '';
+
+    if (typeof message.content === 'string') {
+      textToCopy = message.content;
+    } else {
+      // 提取文本内容
+      textToCopy = message.content
+        .filter((item) => item.type === 'input_text')
+        .map((item) => item.text)
+        .join('\n');
+    }
+
+    navigator.clipboard.writeText(textToCopy);
   }, [message.content]);
 
   return (
@@ -302,15 +317,23 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             )}
           >
             {isUser ? (
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <MultimediaMessage
+                content={message.content}
+                attachments={message.attachments}
+                className="whitespace-pre-wrap"
+              />
             ) : (
               <div className="markdown-body prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border prose-pre:border-slate-200 dark:prose-pre:border-slate-700 prose-pre:rounded-xl">
                 {isThinking ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (
-                  <StreamingContent content={message.content} />
+                  <StreamingContent
+                    content={typeof message.content === 'string' ? message.content : ''}
+                  />
                 ) : (
-                  <MarkdownContent content={message.content} />
+                  <MarkdownContent
+                    content={typeof message.content === 'string' ? message.content : ''}
+                  />
                 )}
               </div>
             )}

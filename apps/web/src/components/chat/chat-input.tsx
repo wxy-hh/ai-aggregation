@@ -1,15 +1,20 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { FileUpload } from './file-upload';
+import { Paperclip } from 'lucide-react';
+import type { Attachment } from '@/stores/chat-store';
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: Attachment[]) => void;
   isLoading?: boolean;
 }
 
 export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [isComposing, setIsComposing] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [showFileUpload, setShowFileUpload] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -29,9 +34,27 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   };
 
   const handleSend = () => {
-    if (!input.trim() || isLoading) return;
-    onSend(input);
+    if ((!input.trim() && attachments.length === 0) || isLoading) return;
+
+    // 检查是否有上传中的文件
+    const hasUploadingFiles = attachments.some((att) => att.uploadStatus === 'uploading');
+    if (hasUploadingFiles) {
+      alert('请等待文件上传完成');
+      return;
+    }
+
+    // 检查是否有上传失败的文件
+    const hasFailedFiles = attachments.some((att) => att.uploadStatus === 'error');
+    if (hasFailedFiles) {
+      alert('请移除上传失败的文件或重新上传');
+      return;
+    }
+
+    onSend(input, attachments.length > 0 ? attachments : undefined);
     setInput('');
+    setAttachments([]);
+    setShowFileUpload(false);
+
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -43,8 +66,42 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   };
 
+  // 处理文件选择
+  const handleFilesSelected = (newAttachments: Attachment[]) => {
+    setAttachments((prev) => [...prev, ...newAttachments]);
+  };
+
+  // 移除附件
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const attachment = prev.find((att) => att.id === id);
+      // 清理图片预览URL
+      if (attachment?.url) {
+        URL.revokeObjectURL(attachment.url);
+      }
+      return prev.filter((att) => att.id !== id);
+    });
+  };
+
+  // 切换文件上传面板
+  const toggleFileUpload = () => {
+    setShowFileUpload(!showFileUpload);
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4">
+      {/* 文件上传面板 */}
+      {showFileUpload && (
+        <div className="mb-4">
+          <FileUpload
+            onFilesSelected={handleFilesSelected}
+            attachments={attachments}
+            onRemoveAttachment={handleRemoveAttachment}
+            disabled={isLoading}
+          />
+        </div>
+      )}
+
       <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-2 transition-colors">
         <Textarea
           ref={textareaRef}
@@ -63,19 +120,15 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              onClick={toggleFileUpload}
+              className={`h-9 w-9 transition-colors rounded-lg ${
+                showFileUpload || attachments.length > 0
+                  ? 'text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950 dark:hover:bg-blue-900'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                />
-              </svg>
+              <Paperclip className="w-5 h-5" />
             </Button>
-          </div>
-          <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -90,9 +143,19 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                 />
               </svg>
             </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* 附件数量指示器 */}
+            {attachments.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-950 rounded-md">
+                <Paperclip className="w-3 h-3 text-blue-600" />
+                <span className="text-xs text-blue-600 font-medium">{attachments.length}</span>
+              </div>
+            )}
+
             <Button
               onClick={handleSend}
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && attachments.length === 0) || isLoading}
               className="h-9 w-9 p-0 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl transition-colors shadow-sm"
               size="icon"
             >

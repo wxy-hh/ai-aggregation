@@ -242,16 +242,16 @@ export default function ChatPage() {
 
   // 发送消息处理
   const handleSend = useCallback(
-    (content: string) => {
+    (content: string, attachments?: Attachment[]) => {
       if (!currentConversationId) {
         // 创建新对话
         const newId = createConversation(provider, model); // 使用当前 UI 选中的 model（如果有）
         // 立即加载并发送
         loadConversation(newId, [], provider, model || 'lite'); // 确保有默认值
         loadedIdRef.current = newId; // 更新 ref 防止 effect 重复加载
-        sendMessage(content);
+        sendMessage(content, attachments);
       } else {
-        sendMessage(content);
+        sendMessage(content, attachments);
       }
     },
     [currentConversationId, createConversation, provider, model, loadConversation, sendMessage]

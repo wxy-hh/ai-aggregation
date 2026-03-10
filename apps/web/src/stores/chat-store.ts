@@ -9,11 +9,35 @@ import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 
 export type ProviderName = 'xunfei' | 'doubao';
 
+// 消息内容类型 - 支持豆包的混合内容格式
+export interface MessageContent {
+  type: 'input_text' | 'input_image' | 'input_file';
+  text?: string;
+  image_url?: string; // base64格式的图片数据
+  file_id?: string; // 豆包文件ID
+}
+
+// 附件信息 - 用于UI展示
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  type: 'image' | 'document' | 'code';
+  mimeType: string;
+  url?: string; // 预览URL（本地blob URL）
+  fileId?: string; // 豆包文件ID
+  uploadProgress?: number; // 上传进度 0-100
+  uploadStatus?: 'uploading' | 'success' | 'error';
+  errorMessage?: string; // 上传错误信息
+}
+
+// 扩展消息接口支持多媒体内容
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | MessageContent[]; // 支持混合内容
   isStreaming?: boolean;
+  attachments?: Attachment[]; // 附件信息（用于UI展示）
 }
 
 export interface ChatState {
@@ -32,7 +56,7 @@ export interface ChatState {
   switchProvider: (provider: ProviderName, model?: string) => void;
 
   // 核心交互
-  sendMessage: (content?: string) => Promise<void>;
+  sendMessage: (content?: string, attachments?: Attachment[]) => Promise<void>;
   reload: (msgId?: string) => Promise<void>;
   stop: () => void;
 
@@ -111,11 +135,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     // 发送消息
-    sendMessage: async (contentOverrides) => {
+    sendMessage: async (contentOverrides, attachments) => {
       const { input, messages, provider, model, isLoading, activeConversationId } = get();
       const content = contentOverrides || input;
 
-      if (!content.trim() || isLoading) return;
+      if ((!content.trim() && (!attachments || attachments.length === 0)) || isLoading) return;
 
       // 1. 中断之前的请求
       if (abortController) {
@@ -124,10 +148,58 @@ export const useChatStore = create<ChatState>((set, get) => {
       abortController = new AbortController();
 
       // 2. 构造消息对象
+      let messageContent: string | MessageContent[];
+
+      if (attachments && attachments.length > 0) {
+        // 有附件的情况，构造混合内容消息
+        messageContent = [];
+
+        // 添加文本内容（如果有）
+        if (content.trim()) {
+          messageContent.push({
+            type: 'input_text',
+            text: content.trim(),
+          });
+        }
+
+        // 添加附件内容
+        for (const attachment of attachments) {
+          if (attachment.type === 'image' && attachment.url) {
+            // 图片转换为base64
+            try {
+              const response = await fetch(attachment.url);
+              const blob = await response.blob();
+              const base64 = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+              });
+
+              messageContent.push({
+                type: 'input_image',
+                image_url: base64,
+              });
+            } catch (error) {
+              console.error('图片转换base64失败:', error);
+            }
+          } else if (attachment.fileId) {
+            // 文件使用file_id引用
+            messageContent.push({
+              type: 'input_file',
+              file_id: attachment.fileId,
+            });
+          }
+        }
+      } else {
+        // 纯文本消息
+        messageContent = content;
+      }
+
       const userMessage: Message = {
         id: `user-${Date.now()}`,
         role: 'user',
-        content,
+        content: messageContent,
+        attachments: attachments, // 保存附件信息用于UI展示
       };
 
       const assistantMessage: Message = {
@@ -159,7 +231,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           body: JSON.stringify({
             messages: [...messages, userMessage].map((m) => ({
               role: m.role,
-              content: m.content,
+              content: m.content, // 直接传递，可能是string或MessageContent[]
             })),
             provider,
             model,
