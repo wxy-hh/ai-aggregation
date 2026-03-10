@@ -43,10 +43,8 @@ export async function POST(req: Request) {
 
     // 检查环境变量
     const arkApiKey = process.env.ARK_API_KEY;
-    // CodingPlan 套餐专用 Base URL（重要：使用此 URL 才会消耗 CodingPlan 额度）
-    // 注意：必须使用 /api/coding/v3 路径，而不是 /api/v3
-    const arkBaseUrl =
-      process.env.ARK_BASE_URL || 'https://ark-code.cn-beijing.volces.com/api/coding/v3';
+    // 豆包 Responses API Base URL
+    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
     // 使用 Lite 轻量模型（更快，成本更低）
     const arkModel = process.env.ARK_MODEL || 'doubao-seed-2.0-lite';
 
@@ -62,12 +60,12 @@ export async function POST(req: Request) {
     const systemPrompt = buildSystemPrompt(style, language);
     const userPrompt = buildUserPrompt(text, context, target);
 
-    // 调用 ARK API
+    // 调用 ARK Responses API
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
 
     try {
-      const response = await fetch(`${arkBaseUrl}/chat/completions`, {
+      const response = await fetch(`${arkBaseUrl}/responses`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${arkApiKey}`,
@@ -75,14 +73,14 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: arkModel,
-          messages: [
+          input: [
             {
               role: 'system',
-              content: [{ type: 'text', text: systemPrompt }],
+              content: systemPrompt,
             },
             {
               role: 'user',
-              content: [{ type: 'text', text: userPrompt }],
+              content: userPrompt,
             },
           ],
           max_output_tokens: 800, // 限制输出长度
@@ -240,30 +238,22 @@ function buildUserPrompt(
 
 /**
  * 从 ARK 响应中提取优化后的文本
- * 支持 /chat/completions 端点的标准 OpenAI 格式
+ * 支持 /responses 端点格式
  */
 function extractOptimizedText(result: any): string {
   console.log('🔍 开始解析 ARK 响应');
   console.log('📦 响应顶层键:', Object.keys(result));
 
-  // 格式 1: choices[0].message.content (标准 OpenAI 格式，/chat/completions 端点)
-  if (result.choices?.[0]?.message?.content) {
-    const content = result.choices[0].message.content.trim();
-    console.log('✅ 成功：使用 choices[0].message.content 路径');
-    console.log('📝 提取的内容:', content);
-    return content;
-  }
-
-  // 格式 2: output 是数组 (/responses 端点格式或混合格式)
+  // Responses API 格式: output 是数组
   if (Array.isArray(result.output)) {
     console.log('✓ output 是数组，长度:', result.output.length);
 
-    // 优先查找 type='message' 的元素（这是最终答案）
+    // 查找 type='message' 的元素（这是最终答案）
     for (let i = 0; i < result.output.length; i++) {
       const outputItem = result.output[i];
       console.log(`📦 output[${i}] 的 type:`, outputItem.type);
 
-      // 优先处理 message 类型（最终答案）
+      // 处理 message 类型（最终答案）
       if (outputItem.type === 'message') {
         console.log(`✅ 找到 message 类型的输出`);
 

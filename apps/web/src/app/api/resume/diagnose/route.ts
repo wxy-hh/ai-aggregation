@@ -8,8 +8,11 @@ import { ZodError } from 'zod';
  */
 
 export async function POST(req: Request) {
+  console.log('🔍 收到简历诊断请求');
+
   try {
     const body = await req.json();
+    console.log('📄 请求体:', JSON.stringify(body, null, 2));
 
     // 使用 Zod schema 校验请求体
     const validationResult = DiagnoseRequestSchema.safeParse(body);
@@ -19,6 +22,8 @@ export async function POST(req: Request) {
         path: err.path.join('.'),
         message: err.message,
       }));
+
+      console.error('❌ 请求参数校验失败:', errors);
 
       return new Response(
         JSON.stringify({
@@ -40,11 +45,9 @@ export async function POST(req: Request) {
 
     // 检查环境变量
     const arkApiKey = process.env.ARK_API_KEY;
-    // CodingPlan 套餐专用 Base URL（重要：使用此 URL 才会消耗 CodingPlan 额度）
-    // 注意：必须使用 /api/coding/v3 路径，而不是 /api/v3
-    const arkBaseUrl =
-      process.env.ARK_BASE_URL || 'https://ark-code.cn-beijing.volces.com/api/coding/v3';
-    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2.0-lite';
+    // 豆包 Responses API Base URL
+    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260215';
 
     if (!arkApiKey) {
       console.error('ARK_API_KEY 未配置');
@@ -60,8 +63,23 @@ export async function POST(req: Request) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时（诊断需要更长时间）
 
+    console.log('🚀 开始调用豆包 API:', {
+      url: `${arkBaseUrl}/responses`,
+      model: arkModel,
+      systemPromptLength: systemPrompt.length,
+      userPromptLength: userPrompt.length,
+    });
+
     try {
-      const response = await fetch(`${arkBaseUrl}/chat/completions`, {
+      console.log('🚀 调用豆包 API:', {
+        url: `${arkBaseUrl}/responses`,
+        model: arkModel,
+        systemPromptLength: systemPrompt.length,
+        userPromptLength: userPrompt.length,
+        max_output_tokens: 2000,
+      });
+
+      const response = await fetch(`${arkBaseUrl}/responses`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${arkApiKey}`,
@@ -69,32 +87,47 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           model: arkModel,
-          messages: [
+          input: [
             {
               role: 'system',
-              content: [{ type: 'text', text: systemPrompt }],
+              content: systemPrompt,
             },
             {
               role: 'user',
-              content: [{ type: 'text', text: userPrompt }],
+              content: userPrompt,
             },
           ],
-          max_output_tokens: 2000, // 诊断需要更多输出
+          max_output_tokens: 2000,
           temperature: 0.7,
           top_p: 0.9,
-          // 关键：禁用推理，直接输出结果
-          reasoning: {
-            effort: 'minimal', // minimal = 不思考，直接输出
-          },
         }),
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
+      console.log('📥 豆包 API 响应状态:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('ARK API 错误:', response.status, errorText);
+        let errorText = '';
+        try {
+          errorText = await response.text();
+        } catch (e) {
+          errorText = '无法读取错误响应体';
+        }
+
+        console.error('❌ ARK API 错误:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText,
+          url: `${arkBaseUrl}/responses`,
+          headers: Object.fromEntries(response.headers.entries()),
+        });
 
         if (response.status === 429) {
           return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
@@ -104,6 +137,7 @@ export async function POST(req: Request) {
         }
 
         // 回退到规则引擎
+        console.log('🔄 回退到规则引擎诊断');
         return await fallbackDiagnose(resume);
       }
 
@@ -133,11 +167,22 @@ export async function POST(req: Request) {
       throw fetchError;
     }
   } catch (error) {
-    console.error('Diagnose API 错误:', error);
-    return new Response(JSON.stringify({ error: '服务器内部错误' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
+    console.error('❌ Diagnose API 错误:', {
+      message: error instanceof Error ? error.message : '未知错误',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : 'UnknownError',
+      timestamp: new Date().toISOString(),
     });
+    return new Response(
+      JSON.stringify({
+        error: '服务器内部错误',
+        details: error instanceof Error ? error.message : '未知错误',
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 }
 
@@ -149,12 +194,6 @@ function buildSystemPrompt(): string {
 
 你的任务是分析简历并输出固定的 JSON 结构，包含评分和优化建议。
 
-数据结构说明：
-- personalInfo.summary：存储"专业技能"内容（不是个人简介）
-- skills 数组：保留字段，但当前未使用，不要建议移除或填充
-- 所有技能信息都应该在 personalInfo.summary 中
-- 不要建议"移除空 skills 数组"或"填充 skills 数组"
-
 评分维度（总分100）：
 1. completeness（完整度）：30% - 评估必填字段、工作经历、教育背景、专业技能的完整性
 2. impact（量化成果）：30% - 评估是否包含具体数据、指标、成果
@@ -163,10 +202,8 @@ function buildSystemPrompt(): string {
 
 建议生成规则：
 1. 如果 personalInfo.summary 为空或过短（<20字），建议补充专业技能
-2. 如果 personalInfo.summary 已有内容，不要再建议填写技能
-3. 不要建议操作 skills 数组（它是保留字段）
-4. 关注工作经历的量化成果、项目经历的完整性
-5. 检查个人信息的联系方式是否完整
+2. 关注工作经历的量化成果、项目经历的完整性
+3. 检查个人信息的联系方式是否完整
 
 输出要求：
 1. 必须输出有效的 JSON 格式，不包含任何其他文本
@@ -174,25 +211,10 @@ function buildSystemPrompt(): string {
 3. 每条建议必须包含 targetPath 字段，指向具体的数据路径
 4. 不得输出或回显用户的敏感信息（电话、邮箱等）
 
-输出格式示例：
-{
-  "score": 82,
-  "dimensions": {
-    "completeness": 80,
-    "impact": 75,
-    "keywordMatch": 85,
-    "readability": 88
-  },
-  "suggestions": [
-    {
-      "id": "s1",
-      "priority": "high",
-      "title": "补充工作经历量化成果",
-      "description": "在第一段工作经历中补充具体的数据指标，例如性能提升百分比、用户增长数量等",
-      "targetPath": "workExperiences[0].description"
-    }
-  ]
-}`;
+输出JSON结构：
+- score: 数字类型，总分
+- dimensions: 对象，包含四个维度的分数
+- suggestions: 数组，包含优化建议，每个建议包含id、priority、title、description、targetPath字段`;
 }
 
 /**
@@ -232,24 +254,20 @@ function sanitizeResume(resume: any, privacy?: { allowContactFields?: boolean })
 
 /**
  * 从 ARK 响应中提取诊断结果
- * 支持 /chat/completions 和 /responses 两种端点格式
+ * 支持 /responses 端点格式
  */
 function extractDiagnosisResult(result: any): any {
   let jsonText = '';
 
   console.log('🔍 开始解析诊断响应');
   console.log('📦 响应顶层键:', Object.keys(result));
+  console.log('📦 响应状态:', result.status);
 
-  // 格式 1: choices[0].message.content (标准 OpenAI 格式，/chat/completions 端点)
-  if (result.choices?.[0]?.message?.content) {
-    jsonText = result.choices[0].message.content.trim();
-    console.log('✅ 使用 choices[0].message.content 路径');
-  }
-  // 格式 2: output 是数组 (/responses 端点格式)
-  else if (Array.isArray(result.output)) {
+  // Responses API 格式: output 是数组
+  if (Array.isArray(result.output)) {
     console.log('✓ output 是数组，长度:', result.output.length);
 
-    // 优先查找 type='message' 的元素
+    // 查找 type='message' 的元素
     for (let i = 0; i < result.output.length; i++) {
       const outputItem = result.output[i];
       console.log(`📦 output[${i}] 的 type:`, outputItem.type);
@@ -262,8 +280,20 @@ function extractDiagnosisResult(result: any): any {
 
       // 处理 message 类型
       if (outputItem.type === 'message' && Array.isArray(outputItem.content)) {
-        for (const contentItem of outputItem.content) {
-          if (contentItem.type === 'text' && contentItem.text) {
+        console.log(`📦 message content 长度:`, outputItem.content.length);
+
+        for (let j = 0; j < outputItem.content.length; j++) {
+          const contentItem = outputItem.content[j];
+          console.log(`📦 content[${j}] 的 type:`, contentItem.type);
+
+          // 处理 output_text 类型
+          if (contentItem.type === 'output_text' && contentItem.text) {
+            jsonText = contentItem.text.trim();
+            console.log('✅ 使用 output[message].content[output_text] 路径');
+            break;
+          }
+          // 处理 text 类型（兼容旧格式）
+          else if (contentItem.type === 'text' && contentItem.text) {
             jsonText = contentItem.text.trim();
             console.log('✅ 使用 output[message].content[text] 路径');
             break;
@@ -291,6 +321,7 @@ function extractDiagnosisResult(result: any): any {
 
   if (!jsonText) {
     console.error('❌ 未能提取到文本内容');
+    console.error('❌ 完整响应:', JSON.stringify(result, null, 2));
     throw new Error('响应内容为空');
   }
 

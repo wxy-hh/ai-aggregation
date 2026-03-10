@@ -3,10 +3,7 @@ import { createHmac, createHash } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '@repo/logger';
 
-type ClientControlMessage =
-  | { type: 'start'; pd?: string }
-  | { type: 'end' }
-  | { type: 'ping' };
+type ClientControlMessage = { type: 'start'; pd?: string } | { type: 'end' } | { type: 'ping' };
 
 type GatewayEvent =
   | { type: 'status'; status: 'connected' | 'started' | 'stopped' }
@@ -38,7 +35,13 @@ function formatTime(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function extractCnText(data: any): { text: string; segId?: number; bg?: number; ed?: number; isEnd?: boolean } {
+function extractCnText(data: any): {
+  text: string;
+  segId?: number;
+  bg?: number;
+  ed?: number;
+  isEnd?: boolean;
+} {
   const cn = data?.cn;
   const st = cn?.st;
   const segId = typeof data?.seg_id === 'number' ? data.seg_id : undefined;
@@ -141,7 +144,11 @@ wss.on('connection', (client) => {
               });
             }
           } else if (payload?.action === 'error') {
-            safeSend(client, { type: 'error', message: payload?.desc || 'Upstream error', raw: payload });
+            safeSend(client, {
+              type: 'error',
+              message: payload?.desc || 'Upstream error',
+              raw: payload,
+            });
           }
         } catch (err) {
           safeSend(client, { type: 'error', message: 'Failed to parse upstream message' });
@@ -156,10 +163,16 @@ wss.on('connection', (client) => {
       });
 
       upstream.on('error', (err) => {
-        safeSend(client, { type: 'error', message: err instanceof Error ? err.message : 'Upstream error' });
+        safeSend(client, {
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Upstream error',
+        });
       });
     } catch (err) {
-      safeSend(client, { type: 'error', message: err instanceof Error ? err.message : 'Failed to connect upstream' });
+      safeSend(client, {
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to connect upstream',
+      });
     }
   };
 
@@ -217,7 +230,55 @@ wss.on('connection', (client) => {
   });
 });
 
-const port = Number(process.env.PORT || 8787);
-server.listen(port, () => {
-  logger.info(`RTASR gateway listening on :${port}`);
+const startServer = async (basePort: number, maxAttempts: number = 10) => {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const currentPort = basePort + attempt;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: any) => {
+          if (error.code === 'EADDRINUSE') {
+            logger.warn(`端口 ${currentPort} 被占用，尝试端口 ${currentPort + 1}...`);
+            server.close();
+            reject(new Error(`PORT_IN_USE:${currentPort}`));
+          } else {
+            reject(error);
+          }
+        };
+
+        server.once('error', onError);
+
+        server.listen(currentPort, () => {
+          server.off('error', onError);
+          logger.info(`RTASR gateway 监听端口 :${currentPort}`);
+          resolve();
+        });
+      });
+
+      // 成功启动，返回
+      return;
+    } catch (error: any) {
+      if (error.message.startsWith('PORT_IN_USE:')) {
+        // 端口被占用，继续尝试下一个端口
+        if (attempt === maxAttempts - 1) {
+          // 最后一次尝试也失败了
+          throw new Error(
+            `尝试了 ${maxAttempts} 个端口 (${basePort}-${basePort + maxAttempts - 1}) 都已被占用`
+          );
+        }
+        // 继续循环，尝试下一个端口
+        continue;
+      }
+      // 其他错误，直接抛出
+      throw error;
+    }
+  }
+
+  throw new Error(`无法启动服务器，所有端口都被占用`);
+};
+
+const basePort = Number(process.env.PORT || 8787);
+startServer(basePort).catch((error) => {
+  logger.error(`启动服务器失败:`, error);
+  process.exit(1);
 });

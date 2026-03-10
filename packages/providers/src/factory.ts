@@ -8,7 +8,7 @@ const providerConfigs: Record<ProviderName, { baseURL: string; envKey: string }>
     envKey: 'XUNFEI_API_PASSWORD',
   },
   doubao: {
-    baseURL: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
     envKey: 'ARK_API_KEY',
   },
 };
@@ -53,7 +53,7 @@ export function getDefaultModel(providerName: ProviderName): string {
     case 'xunfei':
       return 'lite'; // 讯飞星火 Lite 免费模型
     case 'doubao':
-      return 'doubao-seed-2.0-lite'; // 豆包轻量级模型
+      return 'doubao-seed-2-0-lite-260215'; // 豆包轻量级模型
     default:
       return 'lite';
   }

@@ -41,14 +41,8 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
   doubao: {
     name: '豆包',
     models: [
-      { id: 'doubao-seed-2.0-lite', label: 'Doubao Lite (轻量级)' },
-      { id: 'doubao-seed-2.0-pro', label: 'Doubao Pro (专业级)' },
-      { id: 'doubao-seed-2.0-code', label: 'Doubao Code (代码专用)' },
-      { id: 'doubao-seed-code', label: 'Doubao Code 基础版' },
-      { id: 'minimax-m2.5', label: 'MiniMax M2.5' },
-      { id: 'glm-4.7', label: 'GLM 4.7' },
-      { id: 'deepseek-v3.2', label: 'DeepSeek V3.2' },
-      { id: 'kimi-k2.5', label: 'Kimi K2.5' },
+      { id: 'doubao-seed-2-0-lite-260215', label: 'Doubao Lite (轻量级)' },
+      { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' },
     ],
   },
 };

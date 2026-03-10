@@ -53,6 +53,8 @@ export function AIAssistantPanel() {
     setAIStatus('diagnosing');
 
     try {
+      console.log('🔍 开始调用诊断 API，简历数据:', doc);
+
       const response = await fetch('/api/resume/diagnose', {
         method: 'POST',
         headers: {
@@ -66,18 +68,45 @@ export function AIAssistantPanel() {
         }),
       });
 
+      console.log('📊 诊断 API 响应状态:', response.status, response.statusText);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '诊断失败');
+        let errorText = '';
+        try {
+          errorText = await response.text();
+        } catch (e) {
+          errorText = '无法读取错误响应体';
+        }
+
+        console.error('❌ 诊断 API 错误:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText,
+          url: '/api/resume/diagnose',
+        });
+
+        let errorMessage = '诊断失败';
+        try {
+          if (errorText) {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.error || errorData.details || errorMessage;
+          }
+        } catch (e) {
+          // 如果无法解析 JSON，使用原始文本
+          errorMessage = errorText || errorMessage;
+        }
+
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
+      console.log('✅ 诊断 API 成功响应:', data);
 
       // 更新评分和建议
       setScoreAndSuggestions(data.score, data.suggestions);
       setAIStatus('idle');
     } catch (error) {
-      console.error('AI 诊断失败:', error);
+      console.error('❌ AI 诊断失败:', error);
       setAIStatus('error');
 
       // 失败后重置为初始状态

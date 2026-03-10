@@ -7,21 +7,6 @@ import {
   type XunfeiMessage,
 } from '@repo/providers';
 
-// 豆包消息格式转换
-interface DoubaoMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: Array<{ type: 'text'; text: string }>;
-}
-
-function convertToDoubaoMessages(
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
-): DoubaoMessage[] {
-  return messages.map((msg) => ({
-    role: msg.role,
-    content: [{ type: 'text', text: msg.content }],
-  }));
-}
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -70,12 +55,9 @@ export async function POST(req: Request) {
 
     // 豆包需要特殊的消息格式处理
     if (provider === 'doubao') {
-      const doubaoMessages = convertToDoubaoMessages(messages);
-
-      // 直接使用 fetch 调用豆包 API
+      // 直接使用 fetch 调用豆包 Responses API
       const arkApiKey = process.env.ARK_API_KEY;
-      const arkBaseUrl =
-        process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/coding/v3';
+      const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
       if (!arkApiKey) {
         return new Response(JSON.stringify({ error: 'Missing ARK_API_KEY' }), {
@@ -84,24 +66,46 @@ export async function POST(req: Request) {
         });
       }
 
+      console.log('🔍 豆包 API 配置:', {
+        arkBaseUrl,
+        modelName,
+      });
+
+      // 将消息转换为 Responses API 格式
+      // Responses API 的 input 可以是字符串或消息数组
+      // 单条消息时使用字符串，多条消息时使用数组
+      let input: string | Array<{ role: string; content: string }>;
+
+      if (messages.length === 1 && messages[0].role === 'user') {
+        // 单条用户消息，直接使用字符串
+        input = messages[0].content;
+      } else {
+        // 多条消息或包含系统消息，使用数组格式
+        input = messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+      }
+
       // 添加日志以调试
       const requestBody = {
         model: modelName,
-        messages: doubaoMessages,
+        input: input,
         stream: true,
         max_output_tokens: 2000,
         temperature: 0.7,
         top_p: 0.9,
       };
 
-      console.log('Doubao API 调用参数:', {
+      console.log('Doubao Responses API 调用参数:', {
         model: modelName,
-        messagesCount: doubaoMessages.length,
-        url: `${arkBaseUrl}/chat/completions`,
+        messagesCount: messages.length,
+        inputType: typeof input === 'string' ? 'string' : 'array',
+        url: `${arkBaseUrl}/responses`,
       });
       console.log('完整请求体:', JSON.stringify(requestBody, null, 2));
 
-      const response = await fetch(`${arkBaseUrl}/chat/completions`, {
+      const response = await fetch(`${arkBaseUrl}/responses`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,7 +116,13 @@ export async function POST(req: Request) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Doubao API error:', errorText);
+        console.error('❌ Doubao API 错误响应:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText,
+          requestUrl: `${arkBaseUrl}/responses`,
+          requestBody: JSON.stringify(requestBody, null, 2),
+        });
         return new Response(JSON.stringify({ error: `Doubao API error: ${response.status}` }), {
           status: response.status,
           headers: { 'Content-Type': 'application/json' },
@@ -126,7 +136,7 @@ export async function POST(req: Request) {
         });
       }
 
-      // 转换豆包的 SSE 流为纯文本流
+      // 转换豆包 Responses API 的 SSE 流为纯文本流
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
@@ -146,17 +156,25 @@ export async function POST(req: Request) {
 
               for (const line of lines) {
                 const trimmedLine = line.trim();
-                if (!trimmedLine || trimmedLine === 'data: [DONE]') continue;
+                if (!trimmedLine) continue;
 
+                // Responses API 使用 event: 和 data: 格式
                 if (trimmedLine.startsWith('data: ')) {
                   try {
                     const jsonStr = trimmedLine.slice(6);
                     const data = JSON.parse(jsonStr);
 
-                    // 提取内容
-                    if (data.choices && data.choices[0]?.delta?.content) {
-                      const content = data.choices[0].delta.content;
-                      controller.enqueue(encoder.encode(content));
+                    // 处理文本增量事件
+                    if (data.type === 'response.output_text.delta') {
+                      const content = data.delta;
+                      if (content) {
+                        controller.enqueue(encoder.encode(content));
+                      }
+                    }
+                    // 处理完成事件
+                    else if (data.type === 'response.done') {
+                      // 流结束
+                      break;
                     }
                   } catch (e) {
                     console.error('Failed to parse SSE data:', e);
