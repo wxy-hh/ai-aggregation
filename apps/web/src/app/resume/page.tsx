@@ -20,9 +20,6 @@ export default function ResumeEntryPage() {
   return (
     <AppLayout>
       <div className="flex-1 relative overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-slate-900 dark:via-blue-950/30 dark:to-purple-950/20">
-        {/* 珍珠白网格渐变背景 */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#1a1a1a_1px,transparent_1px),linear-gradient(to_bottom,#1a1a1a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)]" />
-
         {/* 主内容区 */}
         <div className="relative z-10 flex flex-col items-center justify-center px-8 py-20 min-h-full">
           {/* 标题区域 */}

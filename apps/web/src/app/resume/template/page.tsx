@@ -30,11 +30,8 @@ export default function ResumeTemplatePage() {
 
   return (
     <AppLayout>
-      {/* 珍珠白网格渐变背景 */}
+      {/* 简洁纯色背景 */}
       <div className="flex-1 relative overflow-hidden bg-[#F6F8FF] dark:bg-slate-900">
-        {/* 网格背景 */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:2rem_2rem]" />
-
         {/* 保存状态指示器 - 固定在右上角 */}
         <div className="no-print absolute top-4 right-4 z-50 lg:top-4 lg:right-4">
           <SaveStatusIndicator
