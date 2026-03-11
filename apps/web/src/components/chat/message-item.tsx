@@ -7,19 +7,70 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
-
-// 消息接口定义
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  isStreaming?: boolean;
-}
+import type { Attachment, Message } from '@/stores/chat-store';
 
 interface MessageItemProps {
   message: Message;
   onRegenerate?: (messageId: string) => void;
 }
+
+// 附件预览组件
+const AttachmentPreview = memo(function AttachmentPreview({ attachment }: { attachment: Attachment }) {
+  if (attachment.type === 'image' && attachment.imageUrl) {
+    return (
+      <div className="relative group mb-2">
+        <img
+          src={attachment.imageUrl}
+          alt={attachment.name}
+          className="max-w-[300px] max-h-[200px] rounded-lg object-cover border border-white/20"
+        />
+        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
+          {attachment.name}
+        </div>
+      </div>
+    );
+  }
+
+  if (attachment.type === 'file') {
+    return (
+      <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-2">
+        <div className="w-8 h-8 rounded bg-red-500/20 flex items-center justify-center">
+          <svg className="w-4 h-4 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+            />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{attachment.name}</p>
+          {attachment.size && (
+            <p className="text-xs opacity-70">
+              {(attachment.size / 1024).toFixed(1)} KB
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+});
+
+// 附件列表组件
+const AttachmentList = memo(function AttachmentList({ attachments }: { attachments?: Attachment[] }) {
+  if (!attachments || attachments.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {attachments.map((attachment) => (
+        <AttachmentPreview key={attachment.id} attachment={attachment} />
+      ))}
+    </div>
+  );
+});
 
 // 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
@@ -212,8 +263,6 @@ const AIAvatar = memo(function AIAvatar() {
   );
 });
 
-// 操作按钮组件
-
 // 思考过程骨架屏组件
 const ThinkingIndicator = memo(function ThinkingIndicator() {
   return (
@@ -260,6 +309,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const isStreaming = message.isStreaming ?? false;
   // 判断是否处于思考状态：是 AI 消息 + 正在流式传输 + 内容为空
   const isThinking = !isUser && isStreaming && !message.content;
+  const hasAttachments = message.attachments && message.attachments.length > 0;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
@@ -302,7 +352,11 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             )}
           >
             {isUser ? (
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <>
+                {/* 用户消息：先显示附件，再显示文本 */}
+                {hasAttachments && <AttachmentList attachments={message.attachments} />}
+                {message.content && <div className="whitespace-pre-wrap">{message.content}</div>}
+              </>
             ) : (
               <div className="markdown-body prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border prose-pre:border-slate-200 dark:prose-pre:border-slate-700 prose-pre:rounded-xl">
                 {isThinking ? (

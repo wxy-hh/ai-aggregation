@@ -61,7 +61,7 @@ export function createErrorResponse(
   message: string,
   code: ErrorCodeType,
   status: number,
-  details?: unknown
+  details?: Record<string, unknown>
 ): NextResponse<ErrorResponse> {
   return NextResponse.json(
     {
@@ -105,12 +105,12 @@ export const ApiError = {
   badRequest: (
     message: string,
     code: ErrorCodeType = ErrorCode.INVALID_REQUEST,
-    details?: unknown
+    details?: Record<string, unknown>
   ) => createErrorResponse(message, code, 400, details),
 
   serviceUnavailable: (message = '服务暂时不可用') =>
     createErrorResponse(message, ErrorCode.SERVICE_UNAVAILABLE, 503),
 
-  internalError: (message = '服务器内部错误', details?: unknown) =>
+  internalError: (message = '服务器内部错误', details?: Record<string, unknown>) =>
     createErrorResponse(message, ErrorCode.INTERNAL_ERROR, 500, details),
 };

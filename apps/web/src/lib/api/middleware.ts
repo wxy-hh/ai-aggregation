@@ -88,7 +88,7 @@ export async function parseJsonBody<T = unknown>(
       response: ApiError.badRequest(
         '请求体格式错误',
         'INVALID_REQUEST_BODY',
-        error instanceof Error ? error.message : '未知错误'
+        { error: error instanceof Error ? error.message : '未知错误' }
       ),
     };
   }
@@ -107,7 +107,7 @@ export async function withErrorHandling(
     console.error(`✗ ${context} 处理失败:`, error);
     return ApiError.internalError(
       '服务器内部错误',
-      error instanceof Error ? error.message : '未知错误'
+      { error: error instanceof Error ? error.message : '未知错误' }
     );
   }
 }

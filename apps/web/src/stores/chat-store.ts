@@ -9,11 +9,32 @@ import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 
 export type ProviderName = 'xunfei' | 'doubao';
 
+// 附件上传状态
+export type AttachmentStatus = 'uploading' | 'ready' | 'error';
+
+// 附件类型
+export interface Attachment {
+  id: string;
+  type: 'image' | 'file';
+  name: string;
+  size?: number;
+  // 图片: base64 数据 URL
+  imageUrl?: string;
+  // 文件: 上传后的 file_id
+  fileId?: string;
+  // 上传状态
+  status: AttachmentStatus;
+  // 错误信息
+  error?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   isStreaming?: boolean;
+  // 附件列表
+  attachments?: Attachment[];
 }
 
 export interface ChatState {
@@ -25,11 +46,14 @@ export interface ChatState {
   provider: ProviderName;
   model: string | undefined;
   activeConversationId: string | null;
+  // 当前附件（单文件模式）
+  attachment: Attachment | null;
 
   // Actions
   setInput: (value: string) => void;
   setMessages: (messages: Message[]) => void;
   switchProvider: (provider: ProviderName, model?: string) => void;
+  setAttachment: (attachment: Attachment | null) => void;
 
   // 核心交互
   sendMessage: (content?: string) => Promise<void>;
@@ -56,6 +80,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     provider: 'xunfei',
     model: undefined,
     activeConversationId: null,
+    attachment: null,
 
     // 设置输入
     setInput: (value) => set({ input: value }),
@@ -63,8 +88,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 设置消息
     setMessages: (messages) => set({ messages }),
 
+    // 设置附件
+    setAttachment: (attachment) => set({ attachment }),
+
     // 切换模型
-    switchProvider: (provider, model) => set({ provider, model }),
+    switchProvider: (provider, model) => set({ provider, model, attachment: null }),
 
     // 加载对话
     loadConversation: (id, messages, provider, model) => {
@@ -112,10 +140,23 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 发送消息
     sendMessage: async (contentOverrides) => {
-      const { input, messages, provider, model, isLoading, activeConversationId } = get();
+      const { input, messages, provider, model, isLoading, activeConversationId, attachment } = get();
       const content = contentOverrides || input;
 
-      if (!content.trim() || isLoading) return;
+      // 有附件时允许空文本，否则需要文本内容
+      if ((!content.trim() && !attachment) || isLoading) return;
+
+      // 附件只能在豆包 provider 下使用
+      if (attachment && provider !== 'doubao') {
+        set({ error: new Error('附件功能仅支持豆包模型') });
+        return;
+      }
+
+      // 附件必须准备就绪
+      if (attachment && attachment.status !== 'ready') {
+        set({ error: new Error('附件尚未准备就绪') });
+        return;
+      }
 
       // 1. 中断之前的请求
       if (abortController) {
@@ -128,6 +169,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         id: `user-${Date.now()}`,
         role: 'user',
         content,
+        // 包含附件
+        attachments: attachment ? [attachment] : undefined,
       };
 
       const assistantMessage: Message = {
@@ -144,6 +187,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         input: '',
         isLoading: true,
         error: null,
+        // 清空附件
+        attachment: null,
       });
 
       // 同步到历史记录
@@ -160,6 +205,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             messages: [...messages, userMessage].map((m) => ({
               role: m.role,
               content: m.content,
+              attachments: m.attachments,
             })),
             provider,
             model,

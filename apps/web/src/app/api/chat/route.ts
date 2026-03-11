@@ -6,6 +6,93 @@ import {
   createXunfeiStreamResponse,
   type XunfeiMessage,
 } from '@repo/providers';
+import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
+
+// 豆包多模态内容类型
+type DoubaoContentPart = 
+  | { type: 'input_text'; text: string }
+  | { type: 'input_image'; image_url: string }
+  | { type: 'input_file'; file_id: string };
+
+// 解析豆包 API 错误信息
+function parseDoubaoError(errorText: string): string {
+  try {
+    const errorData = JSON.parse(errorText);
+    const errorMessage = errorData?.error?.message || '';
+    
+    // 文件还在处理中
+    if (errorMessage.includes('invalid state: processing')) {
+      return '文件正在处理中，请等待几秒钟后重试。大文件需要更长的处理时间。';
+    }
+    
+    // 图片像素超限（豆包 API 将 PDF 当作图片处理，限制总像素数）
+    if (errorMessage.includes('exceeds the maximum allowed total pixels')) {
+      // 尝试提取当前像素和最大像素
+      const currentMatch = errorMessage.match(/Current dimensions:.*?=\s*(\d+)\s*pixels/);
+      const maxMatch = errorMessage.match(/Maximum allowed:\s*(\d+)\s*pixels/);
+      
+      if (currentMatch && maxMatch) {
+        const currentPixels = parseInt(currentMatch[1]);
+        const maxPixels = parseInt(maxMatch[1]);
+        return `豆包 API 限制：PDF 总像素数超限（当前 ${(currentPixels / 1000000).toFixed(1)}MP，最大 ${(maxPixels / 1000000).toFixed(1)}MP）。请尝试：1) 减少 PDF 页数 2) 压缩 PDF 分辨率 3) 分批上传`;
+      }
+      
+      return '豆包 API 限制：PDF 总像素数超限（最大支持 3600 万像素）。请尝试减少 PDF 页数或压缩分辨率后重试。';
+    }
+    
+    // 文件类型不支持
+    if (errorMessage.includes('file type not supported')) {
+      return '不支持的文件类型。目前仅支持 PDF 格式的文件。';
+    }
+    
+    // 其他错误
+    if (errorMessage) {
+      return `处理失败: ${errorMessage}`;
+    }
+    
+    return `请求失败，请稍后重试`;
+  } catch {
+    return `请求失败，请稍后重试`;
+  }
+}
+
+// 等待文件处理就绪
+// 豆包文档说明：status 为 active 时才能在 Responses API 中使用
+async function waitForFileReady(
+  fileId: string,
+  arkApiKey: string,
+  arkBaseUrl: string,
+  maxWaitTime: number = 10000
+): Promise<boolean> {
+  const startTime = Date.now();
+  const pollInterval = 500;
+  
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      const response = await fetch(`${arkBaseUrl}/files/${fileId}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${arkApiKey}` },
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        // 豆包文档：status 为 active 时表示文件处理完成可用
+        if (result.status === 'active') {
+          return true;
+        }
+        if (result.status === 'error' || result.status === 'failed') {
+          return false;
+        }
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+  }
+  
+  return false;
+}
 
 export async function POST(req: Request) {
   try {
@@ -15,7 +102,7 @@ export async function POST(req: Request) {
       model,
       provider = 'xunfei',
     } = body as {
-      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+      messages: ChatMessage[];
       model?: string;
       provider?: ProviderName;
     };
@@ -71,21 +158,82 @@ export async function POST(req: Request) {
         modelName,
       });
 
-      // 将消息转换为 Responses API 格式
-      // Responses API 的 input 可以是字符串或消息数组
-      // 单条消息时使用字符串，多条消息时使用数组
-      let input: string | Array<{ role: string; content: string }>;
+      // 辅助函数：将消息转换为豆包多模态格式
+      const convertToDoubaoInput = (msgs: ChatMessage[]): Array<{ role: string; content: string | DoubaoContentPart[] }> => {
+        return msgs.map((msg) => {
+          // 如果有附件，使用多模态格式
+          if (msg.attachments && msg.attachments.length > 0) {
+            const contentParts: DoubaoContentPart[] = [];
+            
+            // 先添加附件
+            for (const attachment of msg.attachments) {
+              if (attachment.type === 'image' && attachment.imageUrl) {
+                contentParts.push({
+                  type: 'input_image',
+                  image_url: attachment.imageUrl,
+                });
+              } else if (attachment.type === 'file' && attachment.fileId) {
+                contentParts.push({
+                  type: 'input_file',
+                  file_id: attachment.fileId,
+                });
+              }
+            }
+            
+            // 再添加文本
+            if (msg.content.trim()) {
+              contentParts.push({
+                type: 'input_text',
+                text: msg.content,
+              });
+            }
+            
+            return {
+              role: msg.role,
+              content: contentParts,
+            };
+          }
+          
+          // 没有附件，使用纯文本格式
+          return {
+            role: msg.role,
+            content: msg.content,
+          };
+        });
+      };
 
-      if (messages.length === 1 && messages[0].role === 'user') {
-        // 单条用户消息，直接使用字符串
-        input = messages[0].content;
-      } else {
-        // 多条消息或包含系统消息，使用数组格式
-        input = messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
+      // 检查并等待所有文件附件就绪
+      const fileAttachments = messages
+        .flatMap(m => m.attachments || [])
+        .filter(a => a.type === 'file' && a.fileId);
+      
+      if (fileAttachments.length > 0) {
+        console.log(`[Chat API] 等待 ${fileAttachments.length} 个文件处理就绪...`);
+        
+        for (const attachment of fileAttachments) {
+          if (attachment.fileId) {
+            const isReady = await waitForFileReady(
+              attachment.fileId,
+              arkApiKey,
+              arkBaseUrl,
+              8000 // 最多等待 8 秒
+            );
+            
+            if (!isReady) {
+              console.warn(`[Chat API] 文件 ${attachment.fileId} 未在超时时间内就绪`);
+              return new Response(
+                JSON.stringify({ error: '文件正在处理中，请稍后重试。大文件需要更长的处理时间。' }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+        }
+        
+        console.log('[Chat API] 所有文件已就绪');
       }
+
+      // 将消息转换为 Responses API 格式
+      const input = convertToDoubaoInput(messages);
 
       // 添加日志以调试
       const requestBody = {
@@ -100,10 +248,9 @@ export async function POST(req: Request) {
       console.log('Doubao Responses API 调用参数:', {
         model: modelName,
         messagesCount: messages.length,
-        inputType: typeof input === 'string' ? 'string' : 'array',
+        hasAttachments: messages.some(m => m.attachments && m.attachments.length > 0),
         url: `${arkBaseUrl}/responses`,
       });
-      console.log('完整请求体:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(`${arkBaseUrl}/responses`, {
         method: 'POST',
@@ -123,7 +270,10 @@ export async function POST(req: Request) {
           requestUrl: `${arkBaseUrl}/responses`,
           requestBody: JSON.stringify(requestBody, null, 2),
         });
-        return new Response(JSON.stringify({ error: `Doubao API error: ${response.status}` }), {
+        
+        // 解析并返回更友好的错误信息
+        const friendlyError = parseDoubaoError(errorText);
+        return new Response(JSON.stringify({ error: friendlyError }), {
           status: response.status,
           headers: { 'Content-Type': 'application/json' },
         });
@@ -162,6 +312,12 @@ export async function POST(req: Request) {
                 if (trimmedLine.startsWith('data: ')) {
                   try {
                     const jsonStr = trimmedLine.slice(6);
+                    
+                    // 处理 [DONE] 标记
+                    if (jsonStr === '[DONE]') {
+                      continue;
+                    }
+                    
                     const data = JSON.parse(jsonStr);
 
                     // 处理文本增量事件
@@ -177,6 +333,10 @@ export async function POST(req: Request) {
                       break;
                     }
                   } catch (e) {
+                    // 忽略解析错误，继续处理
+                    if (e instanceof SyntaxError) {
+                      continue;
+                    }
                     console.error('Failed to parse SSE data:', e);
                   }
                 }
