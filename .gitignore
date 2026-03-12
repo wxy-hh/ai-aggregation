@@ -32,6 +32,9 @@ yarn-error.log*
 # Turbo
 .turbo
 
+# TypeScript
+*.tsbuildinfo
+
 # Prisma
 *.db
 *.db-journal

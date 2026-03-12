@@ -267,10 +267,10 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
 
           // 保存到历史记录
-          if (finalMessages.length >= 2) {
-            // 至少有一轮对话
+          if (finalMessages.length >= 2 && activeConversationId) {
+            // 至少有一轮对话，使用对话 ID 作为历史记录 ID，便于同步删除
             const historyItem = {
-              id: `chat-${activeConversationId || Date.now()}`,
+              id: activeConversationId, // 直接使用对话 ID，不添加前缀
               ...createChatHistoryItem(
                 finalMessages.map((m) => ({ role: m.role, content: m.content })),
                 provider,

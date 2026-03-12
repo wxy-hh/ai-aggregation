@@ -87,7 +87,7 @@ interface ConversationsState {
     switchConversation: (id: string) => void;
     updateMessages: (id: string, messages: ChatMessage[]) => void;
     updateConversationSettings: (id: string, provider: string, model: string) => void;
-    deleteConversation: (id: string) => void;
+    deleteConversation: (id: string, _isSyncDelete?: boolean) => void;
 
     // 新增：查找空对话
     findEmptyConversation: () => Conversation | undefined;
@@ -190,7 +190,7 @@ export const useConversationsStore = create<ConversationsState>()(
             },
 
             // 删除对话
-            deleteConversation: (id) => {
+            deleteConversation: (id, _isSyncDelete = false) => {
                 set(state => {
                     const updated = state.conversations.filter(conv => conv.id !== id);
                     const newCurrentId = id === state.currentConversationId
@@ -202,6 +202,19 @@ export const useConversationsStore = create<ConversationsState>()(
                         currentConversationId: newCurrentId,
                     };
                 });
+
+                // 同步删除 history-store 中的对应记录（避免循环调用）
+                if (!_isSyncDelete) {
+                    try {
+                        const { useHistoryStore } = require('./history-store');
+                        const historyStore = useHistoryStore.getState();
+                        // 直接删除，ID 现在是一致的
+                        historyStore.deleteItem(id, true); // 传入 true 表示是同步删除
+                    } catch (e) {
+                        // history-store 可能未初始化，忽略错误
+                        console.warn('Failed to sync delete with history store:', e);
+                    }
+                }
             },
         }),
         {

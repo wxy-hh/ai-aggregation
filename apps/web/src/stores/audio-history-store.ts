@@ -296,6 +296,15 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
             selectedIds: state.selectedIds.filter((selectedId) => selectedId !== id),
           }));
 
+          // 同步删除 history-store 中的对应记录
+          try {
+            const { useHistoryStore } = require('./history-store');
+            const historyStore = useHistoryStore.getState();
+            historyStore.deleteItem(id, true); // 传入 true 表示是同步删除，避免循环
+          } catch (e) {
+            console.warn('Failed to sync delete with history store:', e);
+          }
+
           // 更新统计信息
           get().loadStats();
         } catch (error) {
@@ -319,16 +328,28 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
           return;
         }
 
+        // 保存 selectedIds 的副本，因为 set 后会清空
+        const idsToDelete = [...selectedIds];
+
         try {
-          await service.deleteMultiple(selectedIds);
+          await service.deleteMultiple(idsToDelete);
 
           set((state) => ({
-            items: state.items.filter((item) => !selectedIds.includes(item.id)),
-            currentItem: selectedIds.includes(state.currentItem?.id || '')
+            items: state.items.filter((item) => !idsToDelete.includes(item.id)),
+            currentItem: idsToDelete.includes(state.currentItem?.id || '')
               ? null
               : state.currentItem,
             selectedIds: [],
           }));
+
+          // 同步删除 history-store 中的对应记录
+          try {
+            const { useHistoryStore } = require('./history-store');
+            const historyStore = useHistoryStore.getState();
+            historyStore.deleteItems(idsToDelete, true); // 传入 true 表示是同步删除，避免循环
+          } catch (e) {
+            console.warn('Failed to sync batch delete with history store:', e);
+          }
 
           // 更新统计信息
           get().loadStats();
@@ -423,6 +444,9 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
           return;
         }
 
+        // 获取所有 ID 用于同步删除
+        const allIds = get().items.map((item) => item.id);
+
         try {
           set({ isLoading: true, error: null });
 
@@ -440,6 +464,17 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
             },
             isLoading: false,
           });
+
+          // 同步删除 history-store 中的 voice 类型记录
+          if (allIds.length > 0) {
+            try {
+              const { useHistoryStore } = require('./history-store');
+              const historyStore = useHistoryStore.getState();
+              historyStore.deleteItems(allIds, true); // 传入 true 表示是同步删除，避免循环
+            } catch (e) {
+              console.warn('Failed to sync clear all with history store:', e);
+            }
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '清除历史记录失败';
           console.error('[AudioHistoryStore] Clear all error:', error);

@@ -18,8 +18,8 @@ interface HistoryState {
   setFilter: (filter: Partial<HistoryFilter>) => void;
   addItem: (item: HistoryItem) => void;
   updateItem: (id: string, updates: Partial<HistoryItem>) => void;
-  deleteItem: (id: string) => void;
-  deleteItems: (ids: string[]) => void;
+  deleteItem: (id: string, _isSyncDelete?: boolean) => void;
+  deleteItems: (ids: string[], _isSyncDelete?: boolean) => void;
   clearHistory: (type?: HistoryType) => void;
   fetchHistory: () => Promise<void>;
 
@@ -121,27 +121,125 @@ export const useHistoryStore = create<HistoryState>()(
       },
 
       // 删除单个历史记录
-      deleteItem: (id) => {
+      deleteItem: (id, _isSyncDelete = false) => {
+        // 先获取要删除的项，用于判断类型
+        const itemToDelete = get().items.find((item) => item.id === id);
+
         set((state) => ({
           items: state.items.filter((item) => item.id !== id),
         }));
+
+        // 避免循环调用
+        if (!_isSyncDelete) {
+          // 同步删除 conversations-store 中的对应对话（chat 类型）
+          try {
+            const { useConversationsStore } = require('./conversations-store');
+            const conversationsStore = useConversationsStore.getState();
+            const conversation = conversationsStore.conversations.find((c: {id: string}) => c.id === id);
+            if (conversation) {
+              conversationsStore.deleteConversation(id, true);
+            }
+          } catch (e) {
+            console.warn('Failed to sync delete with conversations store:', e);
+          }
+
+          // 同步删除 audio-history-store 中的记录（voice 类型）
+          if (itemToDelete?.type === 'voice') {
+            try {
+              const { useAudioHistoryStore } = require('./audio-history-store');
+              const audioHistoryStore = useAudioHistoryStore.getState();
+              audioHistoryStore.deleteItem(id);
+            } catch (e) {
+              console.warn('Failed to sync delete with audio history store:', e);
+            }
+          }
+        }
       },
 
       // 批量删除历史记录
-      deleteItems: (ids) => {
+      deleteItems: (ids, _isSyncDelete = false) => {
+        // 先获取要删除的项，用于判断类型
+        const itemsToDelete = get().items.filter((item) => ids.includes(item.id));
+        const voiceIdsToDelete = itemsToDelete.filter((item) => item.type === 'voice').map((item) => item.id);
+
         set((state) => ({
           items: state.items.filter((item) => !ids.includes(item.id)),
         }));
+
+        // 避免循环调用
+        if (!_isSyncDelete) {
+          // 同步删除 conversations-store 中的对应对话（chat 类型）
+          try {
+            const { useConversationsStore } = require('./conversations-store');
+            const conversationsStore = useConversationsStore.getState();
+            ids.forEach((id) => {
+              const conversation = conversationsStore.conversations.find((c: {id: string}) => c.id === id);
+              if (conversation) {
+                conversationsStore.deleteConversation(id, true);
+              }
+            });
+          } catch (e) {
+            console.warn('Failed to sync batch delete with conversations store:', e);
+          }
+
+          // 同步删除 audio-history-store 中的记录（voice 类型）
+          if (voiceIdsToDelete.length > 0) {
+            try {
+              const { useAudioHistoryStore } = require('./audio-history-store');
+              const audioHistoryStore = useAudioHistoryStore.getState();
+              voiceIdsToDelete.forEach((id) => {
+                audioHistoryStore.deleteItem(id);
+              });
+            } catch (e) {
+              console.warn('Failed to sync batch delete with audio history store:', e);
+            }
+          }
+        }
       },
 
       // 清空历史记录
       clearHistory: (type) => {
+        // 获取要被删除的记录 ID，用于同步删除
+        const state = get();
+        const chatIdsToDelete = type === 'chat' || !type
+          ? state.items.filter((item) => (type ? item.type === type : item.type === 'chat')).map((item) => item.id)
+          : [];
+        const voiceIdsToDelete = type === 'voice' || !type
+          ? state.items.filter((item) => (type ? item.type === type : item.type === 'voice')).map((item) => item.id)
+          : [];
+
         if (type) {
           set((state) => ({
             items: state.items.filter((item) => item.type !== type),
           }));
         } else {
           set({ items: [] });
+        }
+
+        // 同步清空 conversations-store 中的对应对话（chat 类型）
+        if (chatIdsToDelete.length > 0) {
+          try {
+            const { useConversationsStore } = require('./conversations-store');
+            const conversationsStore = useConversationsStore.getState();
+            chatIdsToDelete.forEach((id) => {
+              conversationsStore.deleteConversation(id, true);
+            });
+          } catch (e) {
+            console.warn('Failed to sync clear history with conversations store:', e);
+          }
+        }
+
+        // 同步清空 audio-history-store 中的记录（voice 类型）
+        if (voiceIdsToDelete.length > 0) {
+          try {
+            const { useAudioHistoryStore } = require('./audio-history-store');
+            const audioHistoryStore = useAudioHistoryStore.getState();
+            voiceIdsToDelete.forEach((id) => {
+              audioHistoryStore.deleteItem(id);
+            });
+          } catch (e) {
+            console.warn('Failed to sync clear history with audio history store:', e);
+          }
         }
       },
 

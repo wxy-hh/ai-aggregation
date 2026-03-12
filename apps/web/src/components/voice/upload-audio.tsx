@@ -382,7 +382,7 @@ export function UploadAudio({
                 : '00:00';
 
             const unifiedHistoryItem = {
-              id: `voice-${historyId}`,
+              id: historyId, // 使用相同的 ID，不添加前缀，便于同步删除
               ...createVoiceHistoryItem(
                 file.name,
                 file.size,
