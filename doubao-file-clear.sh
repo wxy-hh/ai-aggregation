@@ -3,7 +3,14 @@
 # 豆包文件清理脚本
 # 使用方法: ./cleanup_doubao_files.sh
 
-API_KEY="3a04b704-6445-4f3e-a127-bcb711461706"
+# 从环境变量读取 API Key
+API_KEY="${ARK_API_KEY:-}"
+
+if [ -z "$API_KEY" ]; then
+    echo "❌ 错误: 请设置 ARK_API_KEY 环境变量"
+    echo "使用方法: export ARK_API_KEY='your-api-key'"
+    exit 1
+fi
 BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
 
 echo "正在获取文件列表..."

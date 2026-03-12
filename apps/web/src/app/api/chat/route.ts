@@ -1,4 +1,5 @@
 import { streamText } from 'ai';
+import { v4 as uuidv4 } from 'uuid';
 import {
   createProvider,
   getDefaultModel,
@@ -6,50 +7,62 @@ import {
   createXunfeiStreamResponse,
   type XunfeiMessage,
 } from '@repo/providers';
+import { getRateLimiter, getQuotaManager } from '@repo/shared';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 
 // 豆包多模态内容类型
-type DoubaoContentPart = 
+type DoubaoContentPart =
   | { type: 'input_text'; text: string }
   | { type: 'input_image'; image_url: string }
   | { type: 'input_file'; file_id: string };
+
+// 获取用户 ID (临时实现，实际应从 session 获取)
+async function getUserId(req: Request): Promise<string> {
+  // TODO: 从 session 或 JWT token 中获取真实用户 ID
+  // 临时使用 IP 地址作为标识
+  const forwardedFor = req.headers.get('x-forwarded-for');
+  const realIp = req.headers.get('x-real-ip');
+  const remoteAddr = req.headers.get('x-remote-addr') || 'unknown';
+
+  return forwardedFor || realIp || remoteAddr;
+}
 
 // 解析豆包 API 错误信息
 function parseDoubaoError(errorText: string): string {
   try {
     const errorData = JSON.parse(errorText);
     const errorMessage = errorData?.error?.message || '';
-    
+
     // 文件还在处理中
     if (errorMessage.includes('invalid state: processing')) {
       return '文件正在处理中，请等待几秒钟后重试。大文件需要更长的处理时间。';
     }
-    
+
     // 图片像素超限（豆包 API 将 PDF 当作图片处理，限制总像素数）
     if (errorMessage.includes('exceeds the maximum allowed total pixels')) {
       // 尝试提取当前像素和最大像素
       const currentMatch = errorMessage.match(/Current dimensions:.*?=\s*(\d+)\s*pixels/);
       const maxMatch = errorMessage.match(/Maximum allowed:\s*(\d+)\s*pixels/);
-      
+
       if (currentMatch && maxMatch) {
         const currentPixels = parseInt(currentMatch[1]);
         const maxPixels = parseInt(maxMatch[1]);
         return `豆包 API 限制：PDF 总像素数超限（当前 ${(currentPixels / 1000000).toFixed(1)}MP，最大 ${(maxPixels / 1000000).toFixed(1)}MP）。请尝试：1) 减少 PDF 页数 2) 压缩 PDF 分辨率 3) 分批上传`;
       }
-      
+
       return '豆包 API 限制：PDF 总像素数超限（最大支持 3600 万像素）。请尝试减少 PDF 页数或压缩分辨率后重试。';
     }
-    
+
     // 文件类型不支持
     if (errorMessage.includes('file type not supported')) {
       return '不支持的文件类型。目前仅支持 PDF 格式的文件。';
     }
-    
+
     // 其他错误
     if (errorMessage) {
       return `处理失败: ${errorMessage}`;
     }
-    
+
     return `请求失败，请稍后重试`;
   } catch {
     return `请求失败，请稍后重试`;
@@ -66,14 +79,14 @@ async function waitForFileReady(
 ): Promise<boolean> {
   const startTime = Date.now();
   const pollInterval = 500;
-  
+
   while (Date.now() - startTime < maxWaitTime) {
     try {
       const response = await fetch(`${arkBaseUrl}/files/${fileId}`, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${arkApiKey}` },
+        headers: { Authorization: `Bearer ${arkApiKey}` },
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         // 豆包文档：status 为 active 时表示文件处理完成可用
@@ -84,18 +97,69 @@ async function waitForFileReady(
           return false;
         }
       }
-      
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
     } catch {
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
   }
-  
+
   return false;
 }
 
 export async function POST(req: Request) {
+  const errorId = uuidv4();
+  const startTime = Date.now();
+
   try {
+    // 1. 限流检查
+    const userId = await getUserId(req);
+    const rateLimiter = getRateLimiter();
+    const quotaManager = getQuotaManager();
+
+    // 检查 API 限流
+    const rateLimitResult = await rateLimiter.check(userId);
+    if (!rateLimitResult.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: '请求过于频繁，请稍后再试',
+          errorId,
+          retryAfter: 60,
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Remaining': String(rateLimitResult.remaining),
+            'X-RateLimit-Reset': String(rateLimitResult.reset),
+            'Retry-After': '60',
+          },
+        }
+      );
+    }
+
+    // 检查用户配额
+    const quotaResult = await quotaManager.checkQuota(userId, 'requests');
+    if (!quotaResult.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: '今日请求次数已达上限',
+          errorId,
+          remaining: quotaResult.remaining,
+          quota: quotaResult.quota,
+        }),
+        {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Quota-Remaining': String(quotaResult.remaining),
+            'X-Quota-Limit': String(quotaResult.quota),
+          },
+        }
+      );
+    }
+
+    // 2. 解析请求体
     const body = await req.json();
     const {
       messages,
@@ -132,6 +196,24 @@ export async function POST(req: Request) {
         stream: true,
       });
 
+      // 记录讯飞请求成功并更新配额
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+
+      console.log('讯飞 API 请求成功:', {
+        userId,
+        provider: 'xunfei',
+        model: modelName,
+        messagesCount: messages.length,
+        duration: `${duration}ms`,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 异步更新配额使用量
+      quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
+        console.error('更新配额失败:', err);
+      });
+
       return new Response(stream, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
@@ -159,12 +241,14 @@ export async function POST(req: Request) {
       });
 
       // 辅助函数：将消息转换为豆包多模态格式
-      const convertToDoubaoInput = (msgs: ChatMessage[]): Array<{ role: string; content: string | DoubaoContentPart[] }> => {
+      const convertToDoubaoInput = (
+        msgs: ChatMessage[]
+      ): Array<{ role: string; content: string | DoubaoContentPart[] }> => {
         return msgs.map((msg) => {
           // 如果有附件，使用多模态格式
           if (msg.attachments && msg.attachments.length > 0) {
             const contentParts: DoubaoContentPart[] = [];
-            
+
             // 先添加附件
             for (const attachment of msg.attachments) {
               if (attachment.type === 'image' && attachment.imageUrl) {
@@ -179,7 +263,7 @@ export async function POST(req: Request) {
                 });
               }
             }
-            
+
             // 再添加文本
             if (msg.content.trim()) {
               contentParts.push({
@@ -187,13 +271,13 @@ export async function POST(req: Request) {
                 text: msg.content,
               });
             }
-            
+
             return {
               role: msg.role,
               content: contentParts,
             };
           }
-          
+
           // 没有附件，使用纯文本格式
           return {
             role: msg.role,
@@ -204,12 +288,12 @@ export async function POST(req: Request) {
 
       // 检查并等待所有文件附件就绪
       const fileAttachments = messages
-        .flatMap(m => m.attachments || [])
-        .filter(a => a.type === 'file' && a.fileId);
-      
+        .flatMap((m) => m.attachments || [])
+        .filter((a) => a.type === 'file' && a.fileId);
+
       if (fileAttachments.length > 0) {
         console.log(`[Chat API] 等待 ${fileAttachments.length} 个文件处理就绪...`);
-        
+
         for (const attachment of fileAttachments) {
           if (attachment.fileId) {
             const isReady = await waitForFileReady(
@@ -218,7 +302,7 @@ export async function POST(req: Request) {
               arkBaseUrl,
               8000 // 最多等待 8 秒
             );
-            
+
             if (!isReady) {
               console.warn(`[Chat API] 文件 ${attachment.fileId} 未在超时时间内就绪`);
               return new Response(
@@ -228,7 +312,7 @@ export async function POST(req: Request) {
             }
           }
         }
-        
+
         console.log('[Chat API] 所有文件已就绪');
       }
 
@@ -248,7 +332,7 @@ export async function POST(req: Request) {
       console.log('Doubao Responses API 调用参数:', {
         model: modelName,
         messagesCount: messages.length,
-        hasAttachments: messages.some(m => m.attachments && m.attachments.length > 0),
+        hasAttachments: messages.some((m) => m.attachments && m.attachments.length > 0),
         url: `${arkBaseUrl}/responses`,
       });
 
@@ -270,7 +354,7 @@ export async function POST(req: Request) {
           requestUrl: `${arkBaseUrl}/responses`,
           requestBody: JSON.stringify(requestBody, null, 2),
         });
-        
+
         // 解析并返回更友好的错误信息
         const friendlyError = parseDoubaoError(errorText);
         return new Response(JSON.stringify({ error: friendlyError }), {
@@ -312,12 +396,12 @@ export async function POST(req: Request) {
                 if (trimmedLine.startsWith('data: ')) {
                   try {
                     const jsonStr = trimmedLine.slice(6);
-                    
+
                     // 处理 [DONE] 标记
                     if (jsonStr === '[DONE]') {
                       continue;
                     }
-                    
+
                     const data = JSON.parse(jsonStr);
 
                     // 处理文本增量事件
@@ -351,6 +435,25 @@ export async function POST(req: Request) {
         },
       });
 
+      // 记录豆包请求成功并更新配额
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+
+      console.log('豆包 API 请求成功:', {
+        userId,
+        provider: 'doubao',
+        model: modelName,
+        messagesCount: messages.length,
+        hasAttachments: messages.some((m) => m.attachments && m.attachments.length > 0),
+        duration: `${duration}ms`,
+        timestamp: new Date().toISOString(),
+      });
+
+      // 异步更新配额使用量
+      quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
+        console.error('更新配额失败:', err);
+      });
+
       return new Response(stream, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
@@ -366,20 +469,108 @@ export async function POST(req: Request) {
       messages,
     });
 
+    // 记录成功请求并更新配额
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    console.log('Chat API 请求成功:', {
+      userId,
+      provider,
+      model: modelName,
+      messagesCount: messages.length,
+      duration: `${duration}ms`,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 异步更新配额使用量
+    quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
+      console.error('更新配额失败:', err);
+    });
+
     return result.toTextStreamResponse();
   } catch (error) {
-    console.error('Chat API error:', error);
+    const endTime = Date.now();
+    const duration = endTime - startTime;
 
-    if (error instanceof Error && error.message.includes('Missing')) {
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    console.error('Chat API 错误:', {
+      errorId,
+      duration: `${duration}ms`,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 根据错误类型返回不同的状态码
+    if (error instanceof Error) {
+      // 配置错误
+      if (error.message.includes('Missing') || error.message.includes('未设置')) {
+        return new Response(
+          JSON.stringify({
+            error: '服务配置错误，请联系管理员',
+            errorId,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Error-ID': errorId,
+            },
+          }
+        );
+      }
+
+      // 超时错误
+      if (error.message.includes('timeout') || error.message.includes('超时')) {
+        return new Response(
+          JSON.stringify({
+            error: '请求超时，请稍后重试',
+            errorId,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 504,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Error-ID': errorId,
+            },
+          }
+        );
+      }
+
+      // 网络错误
+      if (error.message.includes('fetch') || error.message.includes('network')) {
+        return new Response(
+          JSON.stringify({
+            error: '网络连接失败，请检查网络后重试',
+            errorId,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 503,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Error-ID': errorId,
+            },
+          }
+        );
+      }
     }
 
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    // 未知错误
+    return new Response(
+      JSON.stringify({
+        error: '服务暂时不可用，请稍后重试',
+        errorId,
+        timestamp: new Date().toISOString(),
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Error-ID': errorId,
+        },
+      }
+    );
   }
 }

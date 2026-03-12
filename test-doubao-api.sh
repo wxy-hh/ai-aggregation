@@ -6,7 +6,14 @@
 # 官方文档: https://www.volcengine.com/docs/82379/1569618
 # ============================================
 
-ARK_API_KEY="3a04b704-6445-4f3e-a127-bcb711461706"
+# 从环境变量读取 API Key
+ARK_API_KEY="${ARK_API_KEY:-}"
+
+if [ -z "$ARK_API_KEY" ]; then
+    echo "❌ 错误: 请设置 ARK_API_KEY 环境变量"
+    echo "使用方法: export ARK_API_KEY='your-api-key'"
+    exit 1
+fi
 
 # ============================================
 # 模型列表
@@ -32,7 +39,7 @@ ARK_API_KEY="3a04b704-6445-4f3e-a127-bcb711461706"
 # - stop: 停止词列表 (可选)
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
-  -H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+  -H "Authorization: Bearer ${ARK_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
       "model": "doubao-seed-2-0-lite-260215",
@@ -50,7 +57,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 # role可选值: system(系统提示), user(用户), assistant(助手)
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
-  -H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+  -H "Authorization: Bearer ${ARK_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
       "model": "doubao-seed-2-0-pro-260215",
@@ -75,7 +82,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 # content数组可以混合文本和图片
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H "Authorization: Bearer ${ARK_API_KEY}" \
 -H 'Content-Type: application/json' \
 -d '{
     "model": "doubao-seed-2-0-lite-260215",
@@ -106,7 +113,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 # purpose参数: user_data (用户数据)
 
 curl https://ark.cn-beijing.volces.com/api/v3/files \
--H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H "Authorization: Bearer ${ARK_API_KEY}" \
 -F 'purpose=user_data' \
 -F 'file=@/Users/doc/demo.pdf'
 
@@ -132,7 +139,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/files \
 # 使用返回的data[0].id作为file_id
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H "Authorization: Bearer ${ARK_API_KEY}" \
 -H 'Content-Type: application/json' \
 -d '{
     "model": "doubao-seed-2-0-pro-260215",
@@ -161,7 +168,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 # fps参数: 视频采样帧率，控制分析精度
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H "Authorization: Bearer ${ARK_API_KEY}" \
 -H 'Content-Type: application/json' \
 -d '{
     "model": "doubao-seed-2-0-pro-260215",
@@ -192,7 +199,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 # type可选值: json_object, json_schema
 
 curl https://ark.cn-beijing.volces.com/api/v3/responses \
--H "Authorization: Bearer 3a04b704-6445-4f3e-a127-bcb711461706" \
+-H "Authorization: Bearer ${ARK_API_KEY}" \
 -H 'Content-Type: application/json' \
 -d '{
     "model": "doubao-seed-2-0-pro-260215",
