@@ -19,16 +19,14 @@ function usePrefersReducedMotion() {
   }, []);
 }
 
-export function StarDecodeOverlay({ open, onDone }: { open: boolean; onDone: () => void }) {
+export function StarDecodeOverlay({ open }: { open: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const startedAtRef = useRef<number>(0);
-  const doneRef = useRef(false);
   const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     if (!open) return;
-    doneRef.current = false;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -64,7 +62,7 @@ export function StarDecodeOverlay({ open, onDone }: { open: boolean; onDone: () 
 
     startedAtRef.current = performance.now();
 
-    const loop = (t: number) => {
+    const drawFrame = (t: number) => {
       const elapsed = t - startedAtRef.current;
       const progress = Math.min(1, elapsed / 2600);
 
@@ -94,28 +92,28 @@ export function StarDecodeOverlay({ open, onDone }: { open: boolean; onDone: () 
         ctx.fillStyle = `rgba(255,255,255,${p.alpha})`;
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
-      }
 
-      if (progress >= 1) {
-        if (!doneRef.current) {
-          doneRef.current = true;
-          onDone();
+        // 粒子靠近中心后回收到外圈，保证动效持续
+        if (dist < 22) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 260 + Math.random() * 520;
+          p.x = center.x + Math.cos(angle) * radius;
+          p.y = center.y + Math.sin(angle) * radius;
+          p.vx = 0;
+          p.vy = 0;
         }
-        return;
       }
+    };
+
+    const loop = (t: number) => {
+      drawFrame(t);
       rafRef.current = requestAnimationFrame(loop);
     };
 
     if (reducedMotion) {
-      const timeout = window.setTimeout(() => {
-        if (!doneRef.current) {
-          doneRef.current = true;
-          onDone();
-        }
-      }, 700);
+      drawFrame(startedAtRef.current);
       return () => {
         window.removeEventListener('resize', resize);
-        window.clearTimeout(timeout);
       };
     }
 
@@ -125,7 +123,7 @@ export function StarDecodeOverlay({ open, onDone }: { open: boolean; onDone: () 
       window.removeEventListener('resize', resize);
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [open, onDone, reducedMotion]);
+  }, [open, reducedMotion]);
 
   if (!open) return null;
 
@@ -166,4 +164,3 @@ export function StarDecodeOverlay({ open, onDone }: { open: boolean; onDone: () 
     </div>
   );
 }
-

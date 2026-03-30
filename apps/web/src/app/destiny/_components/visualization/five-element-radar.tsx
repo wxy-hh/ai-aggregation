@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
-import type { FiveElementKey } from '../reports/mock';
+import type { FiveElementKey } from '../types';
 
 const ReactECharts = dynamic(() => import('echarts-for-react'), { ssr: false });
 
@@ -80,4 +80,3 @@ export function FiveElementRadar({ data }: { data: ElementPoint[] }) {
 
   return <ReactECharts option={option} style={{ height: 240, width: '100%' }} />;
 }
-

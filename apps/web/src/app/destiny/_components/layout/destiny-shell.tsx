@@ -3,12 +3,18 @@
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
-import type { DestinyReport } from '../reports/mock';
+import type { DestinyReport } from '../types';
 import { LeftNav } from './left-nav';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 
-export function DestinyShell({ report }: { report: DestinyReport }) {
+export function DestinyShell({
+  report,
+  onRecalculate,
+}: {
+  report: DestinyReport | null;
+  onRecalculate?: () => void;
+}) {
   const subtitle = useMemo(() => {
     if (!report?.profile) return '深度学习驱动的东方易理智能解析系统';
     const { name, genderLabel, birthText, locationText } = report.profile;
@@ -61,6 +67,7 @@ export function DestinyShell({ report }: { report: DestinyReport }) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={onRecalculate}
                   className={cn(
                     'h-10 px-4 rounded-full text-sm font-bold',
                     'bg-[#2F6BFF] text-white shadow-lg shadow-blue-500/25',
@@ -72,18 +79,34 @@ export function DestinyShell({ report }: { report: DestinyReport }) {
               </div>
             </header>
 
-            <ChartCenterPanel report={report} className="flex-1 min-h-0" />
+            {report ? (
+              <ChartCenterPanel report={report} className="flex-1 min-h-0" />
+            ) : (
+              <GlassCard className="flex-1 min-h-0 p-8 flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-xl font-black text-slate-900">等待开始测算</div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    请先填写生辰信息，AI 将基于真实模型生成完整命理解读。
+                  </p>
+                </div>
+              </GlassCard>
+            )}
           </div>
         </section>
 
         {/* 右侧：报告与时间轴 + AI */}
         <aside className="hidden lg:flex w-[380px] shrink-0">
           <GlassCard className="h-full w-full p-4">
-            <ReportRightRail report={report} />
+            {report ? (
+              <ReportRightRail report={report} />
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-slate-500">
+                完成测算后可查看深度报告
+              </div>
+            )}
           </GlassCard>
         </aside>
       </div>
     </div>
   );
 }
-

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { Calendar, Clock, MapPin, Search, User, Users } from 'lucide-react';
+import { Calendar, Clock, MapPin, Search, User, Users, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type OnboardingInput = {
@@ -49,10 +49,14 @@ function defaultValueFrom(input?: OnboardingInput): OnboardingInput {
 export function OnboardingModal({
   open,
   defaultValue,
+  canCancel = false,
+  onCancelAction,
   onStartAction,
 }: {
   open: boolean;
   defaultValue?: OnboardingInput;
+  canCancel?: boolean;
+  onCancelAction?: () => void;
   onStartAction: (input: OnboardingInput) => void;
 }) {
   const [value, setValue] = useState<OnboardingInput>(() => defaultValueFrom(defaultValue));
@@ -109,6 +113,22 @@ export function OnboardingModal({
                   'linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.30))',
               }}
             />
+            {canCancel && onCancelAction && (
+              <div className="absolute right-6 top-6 z-10">
+                <button
+                  type="button"
+                  onClick={onCancelAction}
+                  className={cn(
+                    'rounded-xl p-2 text-slate-400/90 hover:text-slate-600 hover:bg-white/45',
+                    'transition-colors duration-200',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/25'
+                  )}
+                >
+                  <X className="h-5 w-5" />
+                  <span className="sr-only">取消</span>
+                </button>
+              </div>
+            )}
             <div className="px-10 pt-10 pb-8">
               <div className="text-center">
                 <div className="text-[28px] leading-tight font-black tracking-tight text-black drop-shadow-[0_1px_0_rgba(255,255,255,0.65)]">

@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { DestinyReport, FiveElementKey } from '../reports/mock';
+import type { DestinyReport, FiveElementKey } from '../types';
 import { GlassCard } from '../layout/glass-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { FiveElementRadar } from './five-element-radar';
@@ -175,4 +175,3 @@ function LegendDot({ label }: { label: string }) {
     </div>
   );
 }
-

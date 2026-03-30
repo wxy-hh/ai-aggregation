@@ -13,13 +13,6 @@ const groups = [
       { key: 'flower', label: '桃花易数预测', icon: TrendingUp },
     ],
   },
-  {
-    title: '历史档案',
-    items: [
-      { key: 'h-1', label: '2024-05-20 乾造：甲子 丙寅…', icon: Sparkles },
-      { key: 'h-2', label: '2024-05-18 坤造：乙丑 丁卯…', icon: Sparkles },
-    ],
-  },
 ];
 
 export function LeftNav() {
@@ -52,8 +45,7 @@ export function LeftNav() {
                     className={cn(
                       'w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition',
                       'border border-transparent hover:border-white/60 hover:bg-white/45',
-                      active &&
-                        'bg-[#2F6BFF]/10 border-[#2F6BFF]/25 shadow-sm text-slate-900'
+                      active && 'bg-[#2F6BFF]/10 border-[#2F6BFF]/25 shadow-sm text-slate-900'
                     )}
                   >
                     <div
@@ -67,7 +59,9 @@ export function LeftNav() {
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className={cn('text-sm font-bold truncate', !active && 'text-slate-700')}>
+                      <div
+                        className={cn('text-sm font-bold truncate', !active && 'text-slate-700')}
+                      >
                         {item.label}
                       </div>
                       {g.title === '命理分析类别' && (
@@ -84,4 +78,3 @@ export function LeftNav() {
     </div>
   );
 }
-

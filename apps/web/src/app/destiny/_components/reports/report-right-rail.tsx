@@ -2,19 +2,18 @@
 
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { DestinyReport } from './mock';
+import type { DestinyReport } from '../types';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { AICoPilotPanel } from '../chat/ai-copilot-panel';
-import { KnowledgeHubDrawer } from '../knowledge/knowledge-hub-drawer';
+import { AICoPilotDrawer } from '../chat/ai-copilot-drawer';
 
 type TabKey = 'career' | 'love' | 'wealth' | 'health';
 
 export function ReportRightRail({ report }: { report: DestinyReport }) {
   const [tab, setTab] = useState<TabKey>('career');
   const [year, setYear] = useState<number>(report.timeline[0]?.year ?? new Date().getFullYear());
-  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const module = useMemo(() => {
     const m = report.modules;
@@ -31,11 +30,6 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
     return '健康';
   }, [tab]);
 
-  const selected = useMemo(() => report.timeline.find((t) => t.year === year) ?? report.timeline[0], [
-    report.timeline,
-    year,
-  ]);
-
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <div className="flex items-center gap-2">
@@ -43,18 +37,6 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
           <div className="text-sm font-extrabold text-slate-900">深度报告</div>
           <div className="text-xs text-slate-500 truncate">卡片化结构 · 可追问 · 可验证</div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setKnowledgeOpen(true)}
-          className={cn(
-            'rounded-full bg-white/55 border-white/50 hover:bg-white/70',
-            'text-slate-700 font-bold'
-          )}
-        >
-          知识库
-        </Button>
       </div>
 
       {/* 模块 Tab */}
@@ -79,6 +61,11 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
         <div className="mt-4 rounded-2xl border border-white/40 bg-white/55 p-4">
           <div className="text-sm font-extrabold text-slate-900">{moduleLabel}</div>
           <div className="mt-2 text-sm text-slate-600 leading-relaxed">{module.summary}</div>
+          {(tab === 'wealth' || tab === 'health') && (
+            <div className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-xs font-semibold text-amber-700">
+              仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
+            </div>
+          )}
 
           <div className="mt-4 rounded-2xl border border-white/35 bg-white/45 p-4">
             <div className="text-xs font-extrabold text-[#2F6BFF]">AI 核心建议</div>
@@ -98,7 +85,22 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
       <div className="shrink-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-4 shadow-sm max-h-[340px] overflow-hidden">
         <div className="flex items-center justify-between">
           <div className="text-sm font-extrabold text-slate-900">流年运势走向</div>
-          <div className="text-xs font-bold text-slate-400">点击年份查看详细建议</div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-bold text-slate-400">点击年份查看详细建议</div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setCopilotOpen(true)}
+              className={cn(
+                'h-7 rounded-full px-3 text-xs font-bold',
+                'bg-white/65 border-slate-200/80 text-slate-700 hover:bg-white/80',
+                'focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/25 focus-visible:ring-offset-0'
+              )}
+            >
+              AI 追问
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 space-y-3 max-h-[268px] overflow-y-auto pr-1 custom-scrollbar">
@@ -137,8 +139,11 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
                 </PopoverTrigger>
                 <PopoverContent
                   className={cn(
-                    'w-[360px] rounded-2xl border border-white/35 bg-white/55 backdrop-blur-[32px]',
-                    'shadow-[0_25px_60px_-35px_rgba(15,23,42,0.35)]'
+                    'w-[360px] rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
+                    'ring-1 ring-[#2F6BFF]/12',
+                    'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
+                    'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+                    'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
                   )}
                   side="left"
                 >
@@ -157,20 +162,15 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
         </div>
       </div>
 
-      {/* AI Co-Pilot */}
-      <div className="flex-1 min-h-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] shadow-sm overflow-hidden">
-        <AICoPilotPanel report={report} />
-      </div>
-
-      <KnowledgeHubDrawer open={knowledgeOpen} onOpenChange={setKnowledgeOpen} />
+      <AICoPilotDrawer open={copilotOpen} onOpenChange={setCopilotOpen} report={report} />
     </div>
   );
 }
 
 function DetailBlock({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="rounded-2xl border border-white/35 bg-white/45 p-3">
-      <div className="text-xs font-extrabold text-slate-700">{title}</div>
+    <div className="rounded-2xl border border-slate-200/90 bg-slate-50/75 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+      <div className="text-xs font-extrabold tracking-wide text-slate-700">{title}</div>
       <ul className="mt-2 space-y-1.5 text-sm text-slate-600">
         {items.map((it) => (
           <li key={it} className="flex gap-2">
@@ -182,4 +182,3 @@ function DetailBlock({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
-
