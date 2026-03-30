@@ -1,5 +1,4 @@
 import { streamText } from 'ai';
-import { v4 as uuidv4 } from 'uuid';
 import {
   createProvider,
   getDefaultModel,
@@ -9,6 +8,12 @@ import {
 } from '@repo/providers';
 import { getRateLimiter, getQuotaManager } from '@repo/shared';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
+
+function createErrorId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+}
 
 // 豆包多模态内容类型
 type DoubaoContentPart =
@@ -108,7 +113,7 @@ async function waitForFileReady(
 }
 
 export async function POST(req: Request) {
-  const errorId = uuidv4();
+  const errorId = createErrorId();
   const startTime = Date.now();
 
   try {

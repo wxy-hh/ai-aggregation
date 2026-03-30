@@ -277,7 +277,7 @@ export function createRedisClient(): Redis {
     host,
     port,
     password,
-    retryStrategy: (times) => {
+    retryStrategy: (times: number) => {
       const delay = Math.min(times * 50, 2000);
       return delay;
     },

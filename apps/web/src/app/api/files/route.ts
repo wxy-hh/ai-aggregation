@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import {
   validateFile,
   validateFileNameSafe,
@@ -23,6 +22,12 @@ import { getRateLimiter, getQuotaManager } from '@repo/shared';
 const MAX_POLLING_TIME = 15000; // 15s
 const POLLING_INTERVAL = 500; // 500ms
 
+function createErrorId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+}
+
 // 获取用户 ID (临时实现，实际应从 session 获取)
 async function getUserId(req: NextRequest): Promise<string> {
   // TODO: 从 session 或 JWT token 中获取真实用户 ID
@@ -35,12 +40,13 @@ async function getUserId(req: NextRequest): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
-  const errorId = uuidv4();
+  const errorId = createErrorId();
   const startTime = Date.now();
+  let userId: string = 'unknown';
 
   try {
     // 1. 限流和配额检查
-    const userId = await getUserId(request);
+    userId = await getUserId(request);
     const rateLimiter = getRateLimiter();
     const quotaManager = getQuotaManager();
 
@@ -434,7 +440,7 @@ export async function DELETE(request: NextRequest) {
       fileId: result.id || fileId,
     });
   } catch (error) {
-    const errorId = uuidv4();
+    const errorId = createErrorId();
 
     console.error('[Files API] 删除文件出错:', {
       errorId,

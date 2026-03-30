@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 import {
   Bot,
   AudioWaveform,
@@ -13,6 +14,7 @@ import {
   Code,
   Video,
   Box,
+  Sparkles,
   Pin,
   X,
   Plus,
@@ -22,6 +24,7 @@ export type AppId =
   | 'chat'
   | 'voice'
   | 'image'
+  | 'destiny'
   | 'ppt'
   | 'resume'
   | 'legal'
@@ -67,6 +70,15 @@ export const APP_CONFIGS: AppConfig[] = [
     category: 'core',
     href: '/image',
     color: 'text-pink-500',
+  },
+  {
+    id: 'destiny',
+    label: 'AI 命理大师',
+    description: '可视化排盘 + 深度报告 + 专属 AI 顾问。',
+    icon: Sparkles,
+    category: 'core',
+    href: '/destiny',
+    color: 'text-blue-600',
   },
   // 生产力工具
   {
@@ -135,6 +147,7 @@ interface AppsModalProps {
 
 export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
 
   const sections = [
     { id: 'core', label: '核心原子能力', color: 'bg-blue-500' },
@@ -220,6 +233,19 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
                       return (
                         <div
                           key={app.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            router.push(app.href);
+                            onClose();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              router.push(app.href);
+                              onClose();
+                            }
+                          }}
                           className="group relative bg-white dark:bg-slate-800 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50 hover:border-blue-200 dark:hover:border-blue-800 cursor-pointer"
                         >
                           <div className="flex items-start justify-between mb-3">

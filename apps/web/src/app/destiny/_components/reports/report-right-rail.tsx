@@ -1,0 +1,185 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
+import type { DestinyReport } from './mock';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { AICoPilotPanel } from '../chat/ai-copilot-panel';
+import { KnowledgeHubDrawer } from '../knowledge/knowledge-hub-drawer';
+
+type TabKey = 'career' | 'love' | 'wealth' | 'health';
+
+export function ReportRightRail({ report }: { report: DestinyReport }) {
+  const [tab, setTab] = useState<TabKey>('career');
+  const [year, setYear] = useState<number>(report.timeline[0]?.year ?? new Date().getFullYear());
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+
+  const module = useMemo(() => {
+    const m = report.modules;
+    if (tab === 'career') return m.career;
+    if (tab === 'love') return m.love;
+    if (tab === 'wealth') return m.wealth;
+    return m.health;
+  }, [report.modules, tab]);
+
+  const moduleLabel = useMemo(() => {
+    if (tab === 'career') return '事业';
+    if (tab === 'love') return '感情';
+    if (tab === 'wealth') return '财运';
+    return '健康';
+  }, [tab]);
+
+  const selected = useMemo(() => report.timeline.find((t) => t.year === year) ?? report.timeline[0], [
+    report.timeline,
+    year,
+  ]);
+
+  return (
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-extrabold text-slate-900">深度报告</div>
+          <div className="text-xs text-slate-500 truncate">卡片化结构 · 可追问 · 可验证</div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setKnowledgeOpen(true)}
+          className={cn(
+            'rounded-full bg-white/55 border-white/50 hover:bg-white/70',
+            'text-slate-700 font-bold'
+          )}
+        >
+          知识库
+        </Button>
+      </div>
+
+      {/* 模块 Tab */}
+      <div className="rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-3 shadow-sm">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+          <TabsList className="grid grid-cols-4 bg-white/55 border border-white/50 rounded-2xl p-1 h-10">
+            <TabsTrigger value="career" className="rounded-xl text-xs font-extrabold">
+              事业
+            </TabsTrigger>
+            <TabsTrigger value="love" className="rounded-xl text-xs font-extrabold">
+              感情
+            </TabsTrigger>
+            <TabsTrigger value="wealth" className="rounded-xl text-xs font-extrabold">
+              财运
+            </TabsTrigger>
+            <TabsTrigger value="health" className="rounded-xl text-xs font-extrabold">
+              健康
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="mt-4 rounded-2xl border border-white/40 bg-white/55 p-4">
+          <div className="text-sm font-extrabold text-slate-900">{moduleLabel}</div>
+          <div className="mt-2 text-sm text-slate-600 leading-relaxed">{module.summary}</div>
+
+          <div className="mt-4 rounded-2xl border border-white/35 bg-white/45 p-4">
+            <div className="text-xs font-extrabold text-[#2F6BFF]">AI 核心建议</div>
+            <ul className="mt-2 space-y-2 text-sm text-slate-700">
+              {module.bullets.map((b) => (
+                <li key={b} className="flex gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#2F6BFF]/70" />
+                  <span className="leading-relaxed">{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* 流年时间轴 */}
+      <div className="shrink-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-4 shadow-sm max-h-[340px] overflow-hidden">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-extrabold text-slate-900">流年运势走向</div>
+          <div className="text-xs font-bold text-slate-400">点击年份查看详细建议</div>
+        </div>
+
+        <div className="mt-4 space-y-3 max-h-[268px] overflow-y-auto pr-1 custom-scrollbar">
+          {report.timeline.map((t, idx) => {
+            const active = t.year === year;
+            return (
+              <Popover key={t.year}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setYear(t.year)}
+                    className={cn(
+                      'w-full rounded-2xl border px-4 py-3 text-left transition shadow-sm',
+                      'bg-white/55 border-white/45 hover:bg-white/70',
+                      active && 'border-[#2F6BFF]/35 bg-[#2F6BFF]/10'
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          'mt-1 h-2 w-2 rounded-full',
+                          active ? 'bg-[#2F6BFF]' : 'bg-slate-300'
+                        )}
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-400">
+                          {idx === 0 ? 'CURRENT YEAR' : `NEXT YEAR +${idx}`}
+                        </div>
+                        <div className="mt-1 text-sm font-extrabold text-slate-900">
+                          {t.year} · {t.title}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">{t.summary}</div>
+                      </div>
+                    </div>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className={cn(
+                    'w-[360px] rounded-2xl border border-white/35 bg-white/55 backdrop-blur-[32px]',
+                    'shadow-[0_25px_60px_-35px_rgba(15,23,42,0.35)]'
+                  )}
+                  side="left"
+                >
+                  <div className="text-sm font-extrabold text-slate-900">
+                    {t.year} · 流年详细建议
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    <DetailBlock title="机会" items={t.detail.opportunities} />
+                    <DetailBlock title="风险" items={t.detail.risks} />
+                    <DetailBlock title="行动" items={t.detail.actions} />
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* AI Co-Pilot */}
+      <div className="flex-1 min-h-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] shadow-sm overflow-hidden">
+        <AICoPilotPanel report={report} />
+      </div>
+
+      <KnowledgeHubDrawer open={knowledgeOpen} onOpenChange={setKnowledgeOpen} />
+    </div>
+  );
+}
+
+function DetailBlock({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-2xl border border-white/35 bg-white/45 p-3">
+      <div className="text-xs font-extrabold text-slate-700">{title}</div>
+      <ul className="mt-2 space-y-1.5 text-sm text-slate-600">
+        {items.map((it) => (
+          <li key={it} className="flex gap-2">
+            <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#2F6BFF]/70" />
+            <span className="leading-relaxed">{it}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
