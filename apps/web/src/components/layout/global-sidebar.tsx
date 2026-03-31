@@ -101,7 +101,7 @@ export function GlobalSidebar() {
 
   return (
     <>
-      <aside className="w-[85px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
+      <aside className="w-[100px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
         {/* Logo Area */}
         <div className="mb-10 px-2 flex flex-col items-center gap-1 group cursor-pointer">
           <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-110 transition-transform">

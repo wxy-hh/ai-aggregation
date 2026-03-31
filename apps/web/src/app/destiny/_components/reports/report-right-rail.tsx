@@ -43,16 +43,52 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
       <div className="rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-3 shadow-sm">
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
           <TabsList className="grid grid-cols-4 bg-white/55 border border-white/50 rounded-2xl p-1 h-10">
-            <TabsTrigger value="career" className="rounded-xl text-xs font-extrabold">
+            <TabsTrigger
+              value="career"
+              className={cn(
+                'rounded-xl text-xs font-extrabold transition-all',
+                'data-[state=active]:bg-white/90 data-[state=active]:text-[#2F6BFF]',
+                'data-[state=active]:shadow-[0_2px_8px_-2px_rgba(47,107,255,0.25)]',
+                'data-[state=active]:border data-[state=active]:border-[#2F6BFF]/20',
+                'data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-slate-700'
+              )}
+            >
               事业
             </TabsTrigger>
-            <TabsTrigger value="love" className="rounded-xl text-xs font-extrabold">
+            <TabsTrigger
+              value="love"
+              className={cn(
+                'rounded-xl text-xs font-extrabold transition-all',
+                'data-[state=active]:bg-white/90 data-[state=active]:text-[#2F6BFF]',
+                'data-[state=active]:shadow-[0_2px_8px_-2px_rgba(47,107,255,0.25)]',
+                'data-[state=active]:border data-[state=active]:border-[#2F6BFF]/20',
+                'data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-slate-700'
+              )}
+            >
               感情
             </TabsTrigger>
-            <TabsTrigger value="wealth" className="rounded-xl text-xs font-extrabold">
+            <TabsTrigger
+              value="wealth"
+              className={cn(
+                'rounded-xl text-xs font-extrabold transition-all',
+                'data-[state=active]:bg-white/90 data-[state=active]:text-[#2F6BFF]',
+                'data-[state=active]:shadow-[0_2px_8px_-2px_rgba(47,107,255,0.25)]',
+                'data-[state=active]:border data-[state=active]:border-[#2F6BFF]/20',
+                'data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-slate-700'
+              )}
+            >
               财运
             </TabsTrigger>
-            <TabsTrigger value="health" className="rounded-xl text-xs font-extrabold">
+            <TabsTrigger
+              value="health"
+              className={cn(
+                'rounded-xl text-xs font-extrabold transition-all',
+                'data-[state=active]:bg-white/90 data-[state=active]:text-[#2F6BFF]',
+                'data-[state=active]:shadow-[0_2px_8px_-2px_rgba(47,107,255,0.25)]',
+                'data-[state=active]:border data-[state=active]:border-[#2F6BFF]/20',
+                'data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-slate-700'
+              )}
+            >
               健康
             </TabsTrigger>
           </TabsList>
@@ -82,8 +118,8 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
       </div>
 
       {/* 流年时间轴 */}
-      <div className="shrink-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-4 shadow-sm max-h-[340px] overflow-hidden">
-        <div className="flex items-center justify-between">
+      <div className="shrink-0 rounded-3xl border border-white/35 bg-white/40 backdrop-blur-[32px] p-4 shadow-sm max-h-[400px] flex flex-col">
+        <div className="flex items-center justify-between shrink-0">
           <div className="text-sm font-extrabold text-slate-900">流年运势走向</div>
           <div className="flex items-center gap-2">
             <div className="text-xs font-bold text-slate-400">点击年份查看详细建议</div>
@@ -103,7 +139,7 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
           </div>
         </div>
 
-        <div className="mt-4 space-y-3 max-h-[268px] overflow-y-auto pr-1 custom-scrollbar">
+        <div className="mt-4 space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1 min-h-0">
           {report.timeline.map((t, idx) => {
             const active = t.year === year;
             return (

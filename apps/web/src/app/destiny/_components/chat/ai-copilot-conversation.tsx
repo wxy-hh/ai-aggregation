@@ -5,8 +5,16 @@ import { cn } from '@/lib/utils';
 import type { DestinyCopilotResponse, DestinyReport } from '../types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { ThinkingParticles } from './thinking-particles';
 
-type Msg = { id: string; role: 'user' | 'assistant'; content: string };
+type MsgStatus = 'complete' | 'thinking' | 'typing';
+type Msg = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status?: MsgStatus;
+  displayedContent?: string;
+};
 
 export type QueuedQuestion = {
   id: number;
@@ -23,7 +31,7 @@ export function buildCopilotContext(report: DestinyReport) {
 }
 
 function initialMessages(): Msg[] {
-  return [{ id: 'm0', role: 'assistant', content: WELCOME_MESSAGE }];
+  return [{ id: 'm0', role: 'assistant', content: WELCOME_MESSAGE, status: 'complete' }];
 }
 
 export function AICoPilotConversation({
@@ -47,6 +55,7 @@ export function AICoPilotConversation({
   const [messages, setMessages] = useState<Msg[]>(() => initialMessages());
   const sendingRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const canSend = input.trim().length > 0;
   const ctxSummary = useMemo(() => buildCopilotContext(report), [report]);
@@ -70,6 +79,46 @@ export function AICoPilotConversation({
     );
   };
 
+  // 打字机效果
+  const startTypingEffect = (msgId: string, fullContent: string) => {
+    let charIndex = 0;
+    const typeNextChar = () => {
+      if (charIndex < fullContent.length) {
+        charIndex++;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? { ...m, displayedContent: fullContent.slice(0, charIndex), status: 'typing' }
+              : m
+          )
+        );
+        scrollToBottom();
+        typingTimerRef.current = setTimeout(typeNextChar, 25); // 25ms/字符
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId ? { ...m, displayedContent: fullContent, status: 'complete' } : m
+          )
+        );
+        scrollToBottom();
+      }
+    };
+    typeNextChar();
+  };
+
+  // 跳过打字机动画
+  const skipTyping = (msgId: string) => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, displayedContent: m.content, status: 'complete' } : m
+      )
+    );
+  };
+
   const sendQuestion = async (rawQuestion?: string) => {
     const q = (rawQuestion ?? input).trim();
     if (!q || sendingRef.current) return;
@@ -79,9 +128,16 @@ export function AICoPilotConversation({
     setSending(true);
     sendingRef.current = true;
 
-    const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: q };
-    const nextMessages = [...messages, userMsg];
+    const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: q, status: 'complete' };
+    const thinkingMsg: Msg = {
+      id: `a-${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      status: 'thinking',
+    };
+    const nextMessages = [...messages, userMsg, thinkingMsg];
     setMessages(nextMessages);
+    scrollToBottom();
 
     try {
       const response = await fetch('/api/destiny/copilot', {
@@ -89,7 +145,10 @@ export function AICoPilotConversation({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportSummary: buildCopilotContext(report),
-          messages: nextMessages.slice(1).map((m) => ({ role: m.role, content: m.content })),
+          messages: nextMessages
+            .filter((m) => m.status === 'complete')
+            .slice(1)
+            .map((m) => ({ role: m.role, content: m.content })),
           question: q,
         }),
       });
@@ -99,27 +158,44 @@ export function AICoPilotConversation({
         throw new Error(('error' in json && json.error) || '追问失败，请稍后重试');
       }
 
-      setMessages((prev) => [
-        ...prev,
-        { id: `a-${Date.now()}`, role: 'assistant', content: json.answer },
-      ]);
+      // 更新消息内容并开始打字机效果
+      setMessages((prev) =>
+        prev.map((m) => (m.id === thinkingMsg.id ? { ...m, content: json.answer } : m))
+      );
+
+      // 延迟 800ms 后开始打字机效果
+      setTimeout(() => {
+        startTypingEffect(thinkingMsg.id, json.answer);
+      }, 800);
     } catch (err) {
       const message = err instanceof Error ? err.message : '追问失败，请稍后重试';
       setError(message);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-err-${Date.now()}`,
-          role: 'assistant',
-          content: `本次追问暂时失败：${message}`,
-        },
-      ]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === thinkingMsg.id
+            ? {
+                ...m,
+                content: `本次追问暂时失败：${message}`,
+                displayedContent: `本次追问暂时失败：${message}`,
+                status: 'complete',
+              }
+            : m
+        )
+      );
     } finally {
       setSending(false);
       sendingRef.current = false;
       scrollToBottom();
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!queuedQuestion) return;
@@ -135,17 +211,39 @@ export function AICoPilotConversation({
         ref={listRef}
         className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 custom-scrollbar"
       >
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={cn('max-w-[92%] rounded-2xl border p-3 text-sm leading-relaxed shadow-sm', {
-              'ml-auto bg-[#2F6BFF]/10 border-[#2F6BFF]/20 text-slate-800': m.role === 'user',
-              'mr-auto bg-white/65 border-slate-200/70 text-slate-700': m.role === 'assistant',
-            })}
-          >
-            <pre className="whitespace-pre-wrap break-words font-sans">{m.content}</pre>
-          </div>
-        ))}
+        {messages.map((m) => {
+          const isUser = m.role === 'user';
+          const isThinking = m.status === 'thinking';
+          const isTyping = m.status === 'typing';
+          const displayContent = m.displayedContent ?? m.content;
+
+          return (
+            <div
+              key={m.id}
+              className={cn('max-w-[92%] rounded-2xl border shadow-sm', {
+                'ml-auto bg-[#2F6BFF]/10 border-[#2F6BFF]/20': isUser,
+                'mr-auto bg-white/65 border-slate-200/70': !isUser,
+              })}
+            >
+              {isThinking ? (
+                <ThinkingParticles />
+              ) : (
+                <div className="p-3 text-sm leading-relaxed text-slate-700">
+                  <pre className="whitespace-pre-wrap break-words font-sans">{displayContent}</pre>
+                  {isTyping && (
+                    <button
+                      type="button"
+                      onClick={() => skipTyping(m.id)}
+                      className="mt-2 text-xs text-slate-400 hover:text-slate-600 underline"
+                    >
+                      立即显示全部
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="p-4 border-t border-slate-200/60 bg-white/55">

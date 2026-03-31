@@ -34,25 +34,32 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
     if (!ctx) return;
 
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    // 使用 ref 存储动态尺寸和中心点
+    const dimensions = { width: 0, height: 0, centerX: 0, centerY: 0 };
+
     const resize = () => {
       const { width, height } = canvas.getBoundingClientRect();
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // 更新尺寸和中心点
+      dimensions.width = width;
+      dimensions.height = height;
+      dimensions.centerX = width / 2;
+      dimensions.centerY = height / 2;
     };
 
     resize();
     window.addEventListener('resize', resize);
 
-    const { width, height } = canvas.getBoundingClientRect();
-    const center = { x: width / 2, y: height / 2 };
-
     const particles: Particle[] = Array.from({ length: 220 }, () => {
       const angle = Math.random() * Math.PI * 2;
       const radius = 260 + Math.random() * 520;
       return {
-        x: center.x + Math.cos(angle) * radius,
-        y: center.y + Math.sin(angle) * radius,
+        x: dimensions.centerX + Math.cos(angle) * radius,
+        y: dimensions.centerY + Math.sin(angle) * radius,
         vx: 0,
         vy: 0,
         alpha: 0.15 + Math.random() * 0.55,
@@ -66,20 +73,27 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
       const elapsed = t - startedAtRef.current;
       const progress = Math.min(1, elapsed / 2600);
 
-      ctx.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, dimensions.width, dimensions.height);
 
-      // 背景柔光
-      const bg = ctx.createRadialGradient(center.x, center.y, 20, center.x, center.y, 520);
+      // 背景柔光 - 使用动态中心点
+      const bg = ctx.createRadialGradient(
+        dimensions.centerX,
+        dimensions.centerY,
+        20,
+        dimensions.centerX,
+        dimensions.centerY,
+        520
+      );
       bg.addColorStop(0, 'rgba(47,107,255,0.18)');
       bg.addColorStop(0.45, 'rgba(99,102,241,0.12)');
       bg.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-      // 粒子汇聚（向中心吸引）
+      // 粒子汇聚（向中心吸引）- 使用动态中心点
       for (const p of particles) {
-        const dx = center.x - p.x;
-        const dy = center.y - p.y;
+        const dx = dimensions.centerX - p.x;
+        const dy = dimensions.centerY - p.y;
         const dist = Math.max(18, Math.hypot(dx, dy));
         const ax = (dx / dist) * (0.18 + progress * 0.65);
         const ay = (dy / dist) * (0.18 + progress * 0.65);
@@ -93,12 +107,12 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
 
-        // 粒子靠近中心后回收到外圈，保证动效持续
+        // 粒子靠近中心后回收到外圈，保证动效持续 - 使用动态中心点
         if (dist < 22) {
           const angle = Math.random() * Math.PI * 2;
           const radius = 260 + Math.random() * 520;
-          p.x = center.x + Math.cos(angle) * radius;
-          p.y = center.y + Math.sin(angle) * radius;
+          p.x = dimensions.centerX + Math.cos(angle) * radius;
+          p.y = dimensions.centerY + Math.sin(angle) * radius;
           p.vx = 0;
           p.vy = 0;
         }
@@ -146,9 +160,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
             <div className="h-[340px] w-[340px] rounded-full border border-white/55 bg-white/25 backdrop-blur-[32px] shadow-[0_30px_80px_-30px_rgba(47,107,255,0.45)]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center px-6">
-                <div className="text-sm font-bold tracking-[0.18em] text-slate-600">
-                  星空解码中
-                </div>
+                <div className="text-sm font-bold tracking-[0.18em] text-slate-600">星空解码中</div>
                 <div className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">
                   提取命运密码
                 </div>

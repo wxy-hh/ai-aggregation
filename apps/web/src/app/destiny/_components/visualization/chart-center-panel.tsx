@@ -31,7 +31,9 @@ export function ChartCenterPanel({
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold bg-white/60 border border-white/50 text-slate-700">
                 {report.profile.genderLabel}
               </span>
-              <div className="text-lg font-extrabold text-slate-900 truncate">{report.profile.name}</div>
+              <div className="text-lg font-extrabold text-slate-900 truncate">
+                {report.profile.name}
+              </div>
             </div>
             <div className="mt-2 text-sm text-slate-500">{report.profile.birthText}</div>
           </div>
@@ -70,16 +72,25 @@ export function ChartCenterPanel({
                       </div>
                     </div>
                     <div className={cn('mt-3 text-xs font-bold', style.text)}>
-                      {p.stem}{p.branch}（{elementLabel(p.element)}）
+                      {p.stem}
+                      {p.branch}（{elementLabel(p.element)}）
                     </div>
                     <div className={cn('absolute inset-0 rounded-3xl ring-1', style.ring)} />
-                    <div className={cn('absolute inset-0 rounded-3xl -z-10 blur-2xl opacity-40', style.bg)} />
+                    <div
+                      className={cn(
+                        'absolute inset-0 rounded-3xl -z-10 blur-2xl opacity-40',
+                        style.bg
+                      )}
+                    />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent
                   className={cn(
-                    'w-72 rounded-2xl border border-white/35 bg-white/55 backdrop-blur-[32px]',
-                    'shadow-[0_25px_60px_-35px_rgba(15,23,42,0.35)]'
+                    'w-72 rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
+                    'ring-1 ring-[#2F6BFF]/12',
+                    'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
+                    'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+                    'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
                   )}
                   side="top"
                 >
@@ -135,8 +146,11 @@ export function ChartCenterPanel({
                 </PopoverTrigger>
                 <PopoverContent
                   className={cn(
-                    'w-80 rounded-2xl border border-white/35 bg-white/55 backdrop-blur-[32px]',
-                    'shadow-[0_25px_60px_-35px_rgba(15,23,42,0.35)]'
+                    'w-80 rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
+                    'ring-1 ring-[#2F6BFF]/12',
+                    'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
+                    'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+                    'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
                   )}
                   side="left"
                 >
