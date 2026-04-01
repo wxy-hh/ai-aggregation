@@ -28,6 +28,18 @@ const REPORT_TIMEOUT_MS = 90000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2400;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
+class UpstreamModelError extends Error {
+  status: number;
+  details?: string;
+
+  constructor(message: string, status = 502, details?: string) {
+    super(message);
+    this.name = 'UpstreamModelError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -114,7 +126,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const text = extractArkOutputText(payload);
+    let text: string;
+    try {
+      text = extractArkOutputText(payload);
+    } catch (error) {
+      throw new UpstreamModelError(
+        '模型返回格式不合法，请稍后重试',
+        502,
+        error instanceof Error ? error.message : undefined
+      );
+    }
     const report = normalizeDestinyReport(parseModelJson(text), input, currentYear);
 
     return NextResponse.json(
@@ -135,6 +156,16 @@ export async function POST(req: Request) {
 
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: '模型返回内容不可解析，请稍后重试' }, { status: 502 });
+    }
+
+    if (error instanceof UpstreamModelError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        },
+        { status: error.status }
+      );
     }
 
     return NextResponse.json(
@@ -251,7 +282,7 @@ async function retryWithCompactPrompt({
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`重试解析失败: ${text.slice(0, 200)}`);
+    throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 200));
   }
 
   return response.json();

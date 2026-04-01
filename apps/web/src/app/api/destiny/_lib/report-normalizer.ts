@@ -10,72 +10,52 @@ import type {
 const fiveElementTuple = ['metal', 'wood', 'water', 'fire', 'earth'] as const;
 const fiveElementOrder: FiveElementKey[] = [...fiveElementTuple];
 
-const ReportSchema = z.object({
-  profile: z
+const ProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  genderLabel: z.string().min(1).optional(),
+  birthText: z.string().min(1).optional(),
+  locationText: z.string().min(1).optional(),
+});
+
+const PillarSchema = z.object({
+  stem: z.string().min(1),
+  branch: z.string().min(1),
+  label: z.string().min(1),
+  element: z.enum(fiveElementTuple),
+  tooltip: z.string().min(1),
+});
+
+const ElementSchema = z.object({
+  key: z.enum(fiveElementTuple),
+  label: z.string().min(1).optional(),
+  value: z.number(),
+});
+
+const TenGodSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.number(),
+  tooltip: z.string().min(1).optional(),
+});
+
+const ModuleSchema = z.object({
+  title: z.string(),
+  summary: z.string(),
+  bullets: z.array(z.string()),
+});
+
+const TimelineItemSchema = z.object({
+  year: z.number().optional(),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  detail: z
     .object({
-      name: z.string().min(1).optional(),
-      genderLabel: z.string().min(1).optional(),
-      birthText: z.string().min(1).optional(),
-      locationText: z.string().min(1).optional(),
+      opportunities: z.array(z.string()).optional(),
+      risks: z.array(z.string()).optional(),
+      actions: z.array(z.string()).optional(),
     })
-    .optional(),
-  pillars: z
-    .array(
-      z.object({
-        stem: z.string().min(1),
-        branch: z.string().min(1),
-        label: z.string().min(1),
-        element: z.enum(fiveElementTuple),
-        tooltip: z.string().min(1),
-      })
-    )
-    .optional(),
-  elements: z
-    .array(
-      z.object({
-        key: z.enum(fiveElementTuple),
-        label: z.string().min(1).optional(),
-        value: z.number(),
-      })
-    )
-    .optional(),
-  tenGods: z
-    .array(
-      z.object({
-        key: z.string().min(1),
-        label: z.string().min(1),
-        value: z.number(),
-        tooltip: z.string().min(1).optional(),
-      })
-    )
-    .optional(),
-  modules: z
-    .object({
-      career: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }).optional(),
-      love: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }).optional(),
-      wealth: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }).optional(),
-      health: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }).optional(),
-      personality: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }).optional(),
-    })
-    .optional(),
-  timeline: z
-    .array(
-      z.object({
-        year: z.number().optional(),
-        title: z.string().min(1),
-        summary: z.string().min(1),
-        detail: z
-          .object({
-            opportunities: z.array(z.string()).optional(),
-            risks: z.array(z.string()).optional(),
-            actions: z.array(z.string()).optional(),
-          })
-          .optional(),
-      })
-    )
     .optional(),
 });
-type ParsedReport = z.infer<typeof ReportSchema>;
 
 function convertLooseRaw(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
@@ -348,8 +328,21 @@ export function normalizeDestinyReport(
   currentYear: number
 ): DestinyReport {
   const adapted = convertLooseRaw(raw);
-  const safeResult = ReportSchema.safeParse(adapted);
-  const parsed: Partial<ParsedReport> = safeResult.success ? safeResult.data : {};
+  const source = adapted && typeof adapted === 'object' ? (adapted as Record<string, unknown>) : {};
+  const profile = ProfileSchema.safeParse(source.profile);
+  const pillars = z.array(PillarSchema).safeParse(source.pillars);
+  const elements = z.array(ElementSchema).safeParse(source.elements);
+  const tenGods = z.array(TenGodSchema).safeParse(source.tenGods);
+  const timeline = z.array(TimelineItemSchema).safeParse(source.timeline);
+  const modulesSource =
+    source.modules && typeof source.modules === 'object' ? (source.modules as Record<string, unknown>) : {};
+  const modules = {
+    career: ModuleSchema.safeParse(modulesSource.career),
+    love: ModuleSchema.safeParse(modulesSource.love),
+    wealth: ModuleSchema.safeParse(modulesSource.wealth),
+    health: ModuleSchema.safeParse(modulesSource.health),
+    personality: ModuleSchema.safeParse(modulesSource.personality),
+  };
 
   const locationText =
     input.location.name && input.location.lat != null && input.location.lon != null
@@ -363,13 +356,13 @@ export function normalizeDestinyReport(
     locationText,
   };
 
-  const pillars = (parsed.pillars ?? []).slice(0, 4);
-  const normalizedPillars = (pillars.length === 4 ? pillars : defaultPillars()).map((item, index) => ({
+  const safePillars = (pillars.success ? pillars.data : []).slice(0, 4);
+  const normalizedPillars = (safePillars.length === 4 ? safePillars : defaultPillars()).map((item, index) => ({
     ...item,
     label: ['年柱', '月柱', '日柱', '时柱'][index],
   }));
 
-  const tenGods = (parsed.tenGods ?? [])
+  const safeTenGods = (tenGods.success ? tenGods.data : [])
     .slice(0, 4)
     .map((item, index) => ({
       key: item.key || `ten-god-${index + 1}`,
@@ -379,8 +372,8 @@ export function normalizeDestinyReport(
     }));
 
   const normalizedTenGods =
-    tenGods.length > 0
-      ? tenGods
+    safeTenGods.length > 0
+      ? safeTenGods
       : [
           { key: 'piancai', label: '偏财', value: 25, tooltip: '偏财代表机会型资源与整合能力。' },
           { key: 'zhengcai', label: '正财', value: 25, tooltip: '正财代表稳健收入与长期积累。' },
@@ -390,22 +383,29 @@ export function normalizeDestinyReport(
 
   return {
     profile: {
-      name: parsed.profile?.name?.trim() || defaultProfile.name,
-      genderLabel: parsed.profile?.genderLabel?.trim() || defaultProfile.genderLabel,
-      birthText: parsed.profile?.birthText?.trim() || defaultProfile.birthText,
-      locationText: parsed.profile?.locationText?.trim() || defaultProfile.locationText,
+      name: profile.success ? profile.data.name?.trim() || defaultProfile.name : defaultProfile.name,
+      genderLabel: profile.success
+        ? profile.data.genderLabel?.trim() || defaultProfile.genderLabel
+        : defaultProfile.genderLabel,
+      birthText: profile.success ? profile.data.birthText?.trim() || defaultProfile.birthText : defaultProfile.birthText,
+      locationText: profile.success
+        ? profile.data.locationText?.trim() || defaultProfile.locationText
+        : defaultProfile.locationText,
     },
     pillars: normalizedPillars,
-    elements: normalizeElements(parsed.elements),
+    elements: normalizeElements(elements.success ? elements.data : undefined),
     tenGods: normalizedTenGods,
     modules: {
-      career: safeModule(parsed.modules?.career, '事业发展潜力解析'),
-      love: safeModule(parsed.modules?.love, '感情模式与关系建议'),
-      wealth: safeModule(parsed.modules?.wealth, '财运结构与风险节奏'),
-      health: safeModule(parsed.modules?.health, '健康关注点与作息建议'),
-      personality: safeModule(parsed.modules?.personality, '性格底色与优势'),
+      career: safeModule(modules.career.success ? modules.career.data : undefined, '事业发展潜力解析'),
+      love: safeModule(modules.love.success ? modules.love.data : undefined, '感情模式与关系建议'),
+      wealth: safeModule(modules.wealth.success ? modules.wealth.data : undefined, '财运结构与风险节奏'),
+      health: safeModule(modules.health.success ? modules.health.data : undefined, '健康关注点与作息建议'),
+      personality: safeModule(
+        modules.personality.success ? modules.personality.data : undefined,
+        '性格底色与优势'
+      ),
     },
-    timeline: normalizeTimeline(parsed.timeline, currentYear),
+    timeline: normalizeTimeline(timeline.success ? timeline.data : undefined, currentYear),
   };
 }
 

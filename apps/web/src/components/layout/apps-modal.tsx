@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { SVGProps } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
@@ -14,11 +15,52 @@ import {
   Code,
   Video,
   Box,
-  Sparkles,
   Pin,
   X,
   Plus,
 } from 'lucide-react';
+
+function BaguaIcon({ className, strokeWidth = 1.9, ...props }: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="8.5" opacity="0.2" />
+      <circle cx="12" cy="12" r="6.1" opacity="0.3" />
+      <path d="M12 3.5v1.55" />
+      <path d="M12 18.95v1.55" />
+      <path d="M3.5 12h1.55" />
+      <path d="M18.95 12h1.55" />
+      <path d="M6.05 6.05l1.15 1.15" />
+      <path d="M16.8 16.8l1.15 1.15" />
+      <path d="M17.95 6.05l-1.15 1.15" />
+      <path d="M7.2 16.8l-1.15 1.15" />
+      <path d="M12 6.4v11.2" opacity="0.5" />
+      <path d="M6.4 12h11.2" opacity="0.5" />
+      <path d="M8.25 8.25h1.55" />
+      <path d="M14.2 8.25h1.55" />
+      <path d="M8.25 15.75h1.55" />
+      <path d="M14.2 15.75h1.55" />
+      <path d="M8.15 10.1h1.65" />
+      <path d="M14.2 10.1h1.65" />
+      <path d="M8.15 13.9h1.65" />
+      <path d="M14.2 13.9h1.65" />
+      <circle cx="12" cy="12" r="1.75" />
+      <path d="M12 8.9l1.55 1.55" />
+      <path d="M13.55 13.55L12 15.1" />
+      <path d="M10.45 13.55L8.9 12" />
+      <path d="M10.45 10.45L12 8.9" />
+    </svg>
+  );
+}
 
 export type AppId =
   | 'chat'
@@ -75,7 +117,7 @@ export const APP_CONFIGS: AppConfig[] = [
     id: 'destiny',
     label: 'AI 命理大师',
     description: '可视化排盘 + 深度报告 + 专属 AI 顾问。',
-    icon: Sparkles,
+    icon: BaguaIcon,
     category: 'core',
     href: '/destiny',
     color: 'text-blue-600',

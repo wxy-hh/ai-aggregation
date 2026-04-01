@@ -45,4 +45,54 @@ describe('normalizeDestinyReport', () => {
     expect(report.tenGods[0]?.value).toBeLessThanOrEqual(100);
     expect(report.elements).toHaveLength(5);
   });
+
+  it('should preserve valid sections when one field shape is invalid', () => {
+    const report = normalizeDestinyReport(
+      {
+        profile: {
+          name: '位笑雨',
+          genderLabel: '乾造（男命）',
+          birthText: '1997年4月19日 12:30',
+          locationText: '周口市鹿邑县',
+        },
+        pillars: [
+          { stem: '丁', branch: '丑', label: '丁丑', element: 'fire', tooltip: '年柱说明' },
+          { stem: '甲', branch: '辰', label: '甲辰', element: 'wood', tooltip: '月柱说明' },
+          { stem: '壬', branch: '戌', label: '壬戌', element: 'water', tooltip: '日柱说明' },
+          { stem: '丙', branch: '午', label: '丙午', element: 'fire', tooltip: '时柱说明' },
+        ],
+        elements: { metal: 12, wood: 35, water: 28, fire: 46, earth: 31 },
+        tenGods: [
+          { key: 'zhengguan', label: '正官', value: 66, tooltip: '事业规则' },
+          { key: 'zhengcai', label: '正财', value: 57, tooltip: '稳定收入' },
+        ],
+        modules: {
+          career: { title: '事业', summary: '事业总结', bullets: '不是数组' },
+          love: { title: '感情', summary: '感情总结', bullets: ['主动表达'] },
+        },
+        timeline: [
+          {
+            year: 2026,
+            title: '2026年运势',
+            summary: '整体稳中有进。',
+            detail: {
+              opportunities: ['贵人支持'],
+              risks: ['情绪波动'],
+              actions: ['稳步推进'],
+            },
+          },
+        ],
+      },
+      input,
+      2026
+    );
+
+    expect(report.profile.name).toBe('位笑雨');
+    expect(report.pillars[0]).toMatchObject({ stem: '丁', branch: '丑' });
+    expect(report.elements.find((item) => item.key === 'fire')?.value).toBe(46);
+    expect(report.tenGods[0]).toMatchObject({ key: 'zhengguan', value: 66 });
+    expect(report.modules.love.summary).toBe('感情总结');
+    expect(report.timeline[0]?.summary).toBe('整体稳中有进。');
+    expect(report.modules.career.summary).toBe('暂无分析，请重试后获取更完整解读。');
+  });
 });
