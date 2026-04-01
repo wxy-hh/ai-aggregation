@@ -12,11 +12,6 @@ export default function ResumeEntryPage() {
     router.push('/resume/template');
   };
 
-  const handleUploadResume = () => {
-    // 上传功能暂未实现
-    console.log('上传功能开发中...');
-  };
-
   return (
     <AppLayout>
       <div className="flex-1 relative overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-slate-900 dark:via-blue-950/30 dark:to-purple-950/20">
@@ -96,46 +91,46 @@ export default function ResumeEntryPage() {
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="group relative"
+              className="relative"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-3xl blur-2xl group-hover:blur-3xl transition-all duration-500" />
+              <div className="absolute inset-0 rounded-3xl bg-slate-300/20 blur-2xl" />
 
               <div
-                onClick={handleUploadResume}
-                className="relative h-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-[32px] rounded-3xl p-10 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-purple-400 dark:hover:border-purple-500 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col"
+                aria-disabled="true"
+                className="relative h-full cursor-not-allowed rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/90 p-10 opacity-65 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-[16px] dark:border-slate-700 dark:bg-slate-800/70 dark:opacity-60 flex flex-col"
               >
                 {/* 图标 */}
                 <div className="mb-6 flex justify-center">
-                  <div className="w-16 h-16 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center transition-all duration-300 group-hover:bg-purple-100 dark:group-hover:bg-purple-900/30 group-hover:scale-110">
-                    <Upload className="w-8 h-8 text-purple-500" strokeWidth={2} />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-200/70 dark:bg-slate-700/60">
+                    <Upload className="h-8 w-8 text-slate-400 dark:text-slate-500" strokeWidth={2} />
                   </div>
                 </div>
 
                 {/* 标题 */}
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3 text-center">
+                <h2 className="mb-3 text-center text-2xl font-bold text-slate-700 dark:text-slate-300">
                   上传您的简历
                 </h2>
 
                 {/* 描述 */}
-                <p className="text-slate-600 dark:text-slate-400 text-center mb-4 leading-relaxed">
+                <p className="mb-4 text-center leading-relaxed text-slate-500 dark:text-slate-400">
                   点击选择文件或拖拽文件到此区域
                 </p>
 
                 {/* 支持格式 */}
-                <div className="flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-500 mb-2">
-                  <FileText className="w-4 h-4" />
+                <div className="mb-2 flex items-center justify-center gap-2 text-sm text-slate-400 dark:text-slate-500">
+                  <FileText className="h-4 w-4" />
                   <span>支持 PDF、Word(.docx)、图片格式</span>
                 </div>
 
                 {/* 文件大小限制 */}
-                <p className="flex items-center justify-center text-xs text-slate-400 dark:text-slate-600 mb-6">
+                <p className="mb-6 flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">
                   文件大小不超过 10MB
                 </p>
 
                 {/* 提示信息 */}
-                <div className="mt-auto p-3.5 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
-                  <p className="text-sm text-purple-800 dark:text-purple-300 text-center">
-                    💡 保留原始内容、结构和顺序
+                <div className="mt-auto rounded-xl border border-slate-200 bg-slate-100/90 p-3.5 dark:border-slate-700 dark:bg-slate-800/80">
+                  <p className="text-center text-sm text-slate-500 dark:text-slate-400">
+                    该功能暂未开放，敬请期待
                   </p>
                 </div>
               </div>

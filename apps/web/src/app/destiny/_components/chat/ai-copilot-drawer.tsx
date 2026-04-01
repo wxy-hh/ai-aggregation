@@ -65,10 +65,7 @@ export function AICoPilotDrawer({
         className={cn(
           'left-auto right-0 top-0 h-[100dvh] w-[min(560px,calc(100vw-88px))] max-w-[560px]',
           'translate-x-0 translate-y-0 p-0 border-0 bg-transparent shadow-none',
-          'rounded-none data-[state=open]:animate-none data-[state=closed]:animate-none',
-          'transition-[opacity,transform] duration-300 ease-out',
-          'data-[state=open]:opacity-100 data-[state=closed]:opacity-0',
-          'data-[state=open]:translate-x-0 data-[state=closed]:translate-x-10',
+          'rounded-none',
           'data-[state=closed]:pointer-events-none',
           'motion-reduce:transition-none motion-reduce:data-[state=closed]:translate-x-0'
         )}

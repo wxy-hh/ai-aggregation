@@ -81,10 +81,16 @@ export function OnboardingModal({
   const canStart = nameOk && locationOk;
 
   return (
-    <Dialog open={open}>
+    <Dialog open={open} modal={false}>
       <DialogContent
         showClose={false}
-        overlayClassName="left-[85px] right-0 top-0 bottom-0 bg-slate-900/20 backdrop-blur-[2px]"
+        hideOverlay
+        customOverlay={
+          <div
+            aria-hidden
+            className="fixed bottom-0 left-[100px] right-0 top-0 z-40 bg-slate-900/20 backdrop-blur-[2px] pointer-events-none"
+          />
+        }
         className={cn(
           'max-w-[720px] p-0 overflow-hidden border-0 bg-transparent shadow-none',
           'sm:rounded-[36px]'

@@ -34,10 +34,17 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     showClose?: boolean;
     overlayClassName?: string;
+    hideOverlay?: boolean;
+    customOverlay?: React.ReactNode;
   }
->(({ className, children, showClose = true, overlayClassName, ...props }, ref) => (
+>(
+  (
+    { className, children, showClose = true, overlayClassName, hideOverlay = false, customOverlay, ...props },
+    ref
+  ) => (
   <DialogPortal>
-    <DialogOverlay className={overlayClassName} />
+    {customOverlay}
+    {!hideOverlay && <DialogOverlay className={overlayClassName} />}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
@@ -55,7 +62,8 @@ const DialogContent = React.forwardRef<
       )}
     </DialogPrimitive.Content>
   </DialogPortal>
-));
+)
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
