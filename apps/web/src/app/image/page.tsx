@@ -487,8 +487,7 @@ export default function ImagePage() {
         {/* 右侧边栏：创作灵感舱 */}
         <CreativeCockpit
           onPromptAppend={(text) => {
-            const newPrompt = prompt ? `${prompt}, ${text}` : text;
-            setPrompt(newPrompt);
+            setPrompt(text);
           }}
           onStyleApply={(params) => {
             if (params.ratio) setRatio(params.ratio);
