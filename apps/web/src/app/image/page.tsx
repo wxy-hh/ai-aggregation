@@ -32,12 +32,13 @@ import {
 } from 'lucide-react';
 import { useHistoryStore } from '@/stores/history-store';
 import { createImageHistoryItem } from '@/lib/utils/history-helpers';
+import { blobToDataUrl } from '@/lib/utils/image-url';
 
 export default function ImagePage() {
-  // History store
+  // 历史记录状态
   const addHistoryItem = useHistoryStore((state) => state.addItem);
 
-  // Generation parameters
+  // 生成参数
   const [prompt, setPrompt] = useState<string>(PROMPT_TEMPLATES[0]);
   const [negativePrompt, setNegativePrompt] = useState<string>('');
   const [style, setStyle] = useState<string>(DEFAULT_PARAMS.style);
@@ -47,7 +48,7 @@ export default function ImagePage() {
   const [seed, setSeed] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
-  // Generation state
+  // 生成状态
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
@@ -55,7 +56,7 @@ export default function ImagePage() {
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Handle generation
+  // 处理图片生成
   const handleGenerate = useCallback(async () => {
     setIsGenerating(true);
     setProgress(0);
@@ -63,7 +64,7 @@ export default function ImagePage() {
     setCurrentStep('准备生成...');
 
     try {
-      // Build enhanced prompt with style
+      // 根据风格补全提示词
       const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
       const enhancedPrompt = styleConfig
         ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
@@ -72,7 +73,7 @@ export default function ImagePage() {
       setCurrentStep('正在扩散生成...');
       setProgress(10);
 
-      // Call API
+      // 调用生成接口
       const response = await generateKolorsImage({
         prompt: enhancedPrompt,
         negativePrompt: negativePrompt || styleConfig?.negativePrompt,
@@ -87,13 +88,17 @@ export default function ImagePage() {
       setProgress(80);
       setCurrentStep('下载图片...');
 
-      // Download images
-      const imageUrls = await Promise.all(
+      // 下载图片并分别生成页面预览地址与可持久化历史地址
+      const images = await Promise.all(
         response.images.map(async (img) => {
           const blob = await downloadImage(img.url);
-          return URL.createObjectURL(blob);
+          return {
+            previewUrl: URL.createObjectURL(blob),
+            historyUrl: await blobToDataUrl(blob),
+          };
         })
       );
+      const imageUrls = images.map((item) => item.previewUrl);
 
       setProgress(100);
       setCurrentStep('完成！');
@@ -101,10 +106,10 @@ export default function ImagePage() {
       setActiveImageIndex(0);
 
       // 保存到历史记录
-      if (imageUrls.length > 0) {
+      if (images.length > 0) {
         const historyItem = {
           id: `image-${Date.now()}`,
-          ...createImageHistoryItem(prompt, imageUrls[0], 'Kolors', {
+          ...createImageHistoryItem(prompt, images[0].historyUrl, 'Kolors', {
             negativePrompt,
             style,
             aspectRatio: ratio,
@@ -116,7 +121,7 @@ export default function ImagePage() {
         addHistoryItem(historyItem);
       }
 
-      // Reset after a delay
+      // 稍后重置生成状态
       setTimeout(() => {
         setIsGenerating(false);
         setProgress(0);
@@ -131,13 +136,13 @@ export default function ImagePage() {
     }
   }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize]);
 
-  // Random inspiration
+  // 随机灵感提示词
   const handleRandomPrompt = () => {
     const randomIndex = Math.floor(Math.random() * PROMPT_TEMPLATES.length);
     setPrompt(PROMPT_TEMPLATES[randomIndex]);
   };
 
-  // Get aspect ratio class based on selected ratio
+  // 根据当前比例返回预览区域样式
   const getAspectRatioClass = () => {
     switch (ratio) {
       case '1:1':
