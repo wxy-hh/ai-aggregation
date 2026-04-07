@@ -3,7 +3,12 @@
 import { cn } from '@/lib/utils';
 import { BookOpen, Compass, LayoutGrid, Sparkles, TrendingUp } from 'lucide-react';
 
-const groups = [
+export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen' | 'flower';
+
+const groups: Array<{
+  title: string;
+  items: Array<{ key: DestinyModuleKey; label: string; icon: typeof LayoutGrid }>;
+}> = [
   {
     title: '命理分析类别',
     items: [
@@ -15,7 +20,13 @@ const groups = [
   },
 ];
 
-export function LeftNav() {
+export function LeftNav({
+  activeModule = 'bazi',
+  onModuleChange,
+}: {
+  activeModule?: DestinyModuleKey;
+  onModuleChange?: (key: DestinyModuleKey) => void;
+}) {
   return (
     <div className="h-full flex flex-col gap-6">
       <div className="flex items-center gap-2">
@@ -35,13 +46,14 @@ export function LeftNav() {
               {g.title}
             </div>
             <div className="space-y-2">
-              {g.items.map((item, idx) => {
+              {g.items.map((item) => {
                 const Icon = item.icon;
-                const active = g.title === '命理分析类别' && idx === 0;
+                const active = item.key === activeModule;
                 return (
                   <button
                     key={item.key}
                     type="button"
+                    onClick={() => onModuleChange?.(item.key)}
                     className={cn(
                       'w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition',
                       'border border-transparent hover:border-white/60 hover:bg-white/45',

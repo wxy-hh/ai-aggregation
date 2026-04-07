@@ -5,6 +5,13 @@ export type DestinyProfile = {
   genderLabel: string;
   birthText: string;
   locationText: string;
+  lunarText?: string;
+};
+
+export type ZiweiCenterInfo = {
+  chartTitle: string;
+  mingZhu: string;
+  shenZhu: string;
 };
 
 export type BaZiPillar = {
@@ -28,6 +35,16 @@ export type DestinyTimelineItem = {
   detail: { opportunities: string[]; risks: string[]; actions: string[] };
 };
 
+export type ZiweiPalace = {
+  key: string;
+  label: string;
+  branch: string;
+  stars: string[];
+  summary: string;
+  suggestions: string[];
+  dominant?: string;
+};
+
 export type DestinyReport = {
   profile: DestinyProfile;
   pillars: BaZiPillar[];
@@ -41,6 +58,8 @@ export type DestinyReport = {
     personality: DestinyModule;
   };
   timeline: DestinyTimelineItem[];
+  ziweiPalaces?: ZiweiPalace[];
+  ziweiCenter?: ZiweiCenterInfo;
 };
 
 export type DestinyReportRequest = {

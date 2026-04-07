@@ -5,6 +5,8 @@ import type {
   DestinyReportRequest,
   DestinyTimelineItem,
   FiveElementKey,
+  ZiweiCenterInfo,
+  ZiweiPalace,
 } from '@/app/destiny/_components/types';
 
 const fiveElementTuple = ['metal', 'wood', 'water', 'fire', 'earth'] as const;
@@ -14,6 +16,7 @@ const ProfileSchema = z.object({
   name: z.string().min(1).optional(),
   genderLabel: z.string().min(1).optional(),
   birthText: z.string().min(1).optional(),
+  lunarText: z.string().min(1).optional(),
   locationText: z.string().min(1).optional(),
 });
 
@@ -55,6 +58,22 @@ const TimelineItemSchema = z.object({
       actions: z.array(z.string()).optional(),
     })
     .optional(),
+});
+
+const ZiweiPalaceSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  branch: z.string().min(1).optional(),
+  stars: z.array(z.string()).optional(),
+  summary: z.string().min(1).optional(),
+  suggestions: z.array(z.string()).optional(),
+  dominant: z.string().min(1).optional(),
+});
+
+const ZiweiCenterSchema = z.object({
+  chartTitle: z.string().min(1).optional(),
+  mingZhu: z.string().min(1).optional(),
+  shenZhu: z.string().min(1).optional(),
 });
 
 function convertLooseRaw(raw: unknown): unknown {
@@ -334,6 +353,8 @@ export function normalizeDestinyReport(
   const elements = z.array(ElementSchema).safeParse(source.elements);
   const tenGods = z.array(TenGodSchema).safeParse(source.tenGods);
   const timeline = z.array(TimelineItemSchema).safeParse(source.timeline);
+  const ziweiPalaces = z.array(ZiweiPalaceSchema).safeParse(source.ziweiPalaces);
+  const ziweiCenter = ZiweiCenterSchema.safeParse(source.ziweiCenter);
   const modulesSource =
     source.modules && typeof source.modules === 'object' ? (source.modules as Record<string, unknown>) : {};
   const modules = {
@@ -381,6 +402,31 @@ export function normalizeDestinyReport(
           { key: 'shishen', label: '食神', value: 25, tooltip: '食神代表表达、输出与创造。' },
         ];
 
+  const normalizedTimeline = normalizeTimeline(timeline.success ? timeline.data : undefined, currentYear);
+
+  const defaultZiweiPalaces = buildDefaultZiweiPalaces({
+    normalizedPillars,
+    normalizedTenGods,
+    modules: {
+      personality: safeModule(modules.personality.success ? modules.personality.data : undefined, '性格底色与优势'),
+      career: safeModule(modules.career.success ? modules.career.data : undefined, '事业发展潜力解析'),
+      love: safeModule(modules.love.success ? modules.love.data : undefined, '感情模式与关系建议'),
+      wealth: safeModule(modules.wealth.success ? modules.wealth.data : undefined, '财运结构与风险节奏'),
+      health: safeModule(modules.health.success ? modules.health.data : undefined, '健康关注点与作息建议'),
+    },
+  });
+
+  const normalizedZiweiPalaces = normalizeZiweiPalaces(
+    ziweiPalaces.success ? ziweiPalaces.data : undefined,
+    defaultZiweiPalaces
+  );
+
+  const normalizedZiweiCenter = normalizeZiweiCenter(
+    ziweiCenter.success ? ziweiCenter.data : undefined,
+    input,
+    normalizedZiweiPalaces
+  );
+
   return {
     profile: {
       name: profile.success ? profile.data.name?.trim() || defaultProfile.name : defaultProfile.name,
@@ -388,6 +434,7 @@ export function normalizeDestinyReport(
         ? profile.data.genderLabel?.trim() || defaultProfile.genderLabel
         : defaultProfile.genderLabel,
       birthText: profile.success ? profile.data.birthText?.trim() || defaultProfile.birthText : defaultProfile.birthText,
+      lunarText: profile.success ? profile.data.lunarText?.trim() || undefined : undefined,
       locationText: profile.success
         ? profile.data.locationText?.trim() || defaultProfile.locationText
         : defaultProfile.locationText,
@@ -405,7 +452,117 @@ export function normalizeDestinyReport(
         '性格底色与优势'
       ),
     },
-    timeline: normalizeTimeline(timeline.success ? timeline.data : undefined, currentYear),
+    timeline: normalizedTimeline,
+    ziweiPalaces: normalizedZiweiPalaces,
+    ziweiCenter: normalizedZiweiCenter,
+  };
+}
+
+function buildDefaultZiweiPalaces({
+  normalizedPillars,
+  normalizedTenGods,
+  modules,
+}: {
+  normalizedPillars: Array<{ stem: string; branch: string; label: string; element: FiveElementKey; tooltip: string }>;
+  normalizedTenGods: Array<{ key: string; label: string; value: number; tooltip: string }>;
+  modules: {
+    personality: DestinyModule;
+    career: DestinyModule;
+    love: DestinyModule;
+    wealth: DestinyModule;
+    health: DestinyModule;
+  };
+}): ZiweiPalace[] {
+  const palaceLabels = [
+    '命宫',
+    '兄弟宫',
+    '夫妻宫',
+    '子女宫',
+    '财帛宫',
+    '疾厄宫',
+    '迁移宫',
+    '奴仆宫',
+    '官禄宫',
+    '田宅宫',
+    '福德宫',
+    '父母宫',
+  ];
+
+  const moduleMap: Record<string, DestinyModule> = {
+    命宫: modules.personality,
+    兄弟宫: modules.love,
+    夫妻宫: modules.love,
+    子女宫: modules.love,
+    财帛宫: modules.wealth,
+    疾厄宫: modules.health,
+    迁移宫: modules.career,
+    奴仆宫: modules.career,
+    官禄宫: modules.career,
+    田宅宫: modules.wealth,
+    福德宫: modules.personality,
+    父母宫: modules.personality,
+  };
+
+  return palaceLabels.map((label, index) => {
+    const pillar = normalizedPillars[index % Math.max(normalizedPillars.length, 1)];
+    const starA = normalizedTenGods[index % Math.max(normalizedTenGods.length, 1)]?.label ?? '主星';
+    const starB = normalizedTenGods[(index + 2) % Math.max(normalizedTenGods.length, 1)]?.label ?? '';
+    const sourceModule = moduleMap[label] ?? modules.personality;
+
+    return {
+      key: `palace-${index + 1}`,
+      label,
+      branch: pillar?.branch ?? '子',
+      stars: [starA, starB].filter(Boolean),
+      dominant: starA,
+      summary: sourceModule.summary,
+      suggestions: sourceModule.bullets.slice(0, 3),
+    };
+  });
+}
+
+function normalizeZiweiPalaces(input: unknown, fallback: ZiweiPalace[]): ZiweiPalace[] {
+  if (!Array.isArray(input) || input.length === 0) return fallback;
+
+  const list = (input as Array<z.infer<typeof ZiweiPalaceSchema>>).slice(0, 12);
+  const normalized = list.map((item, index) => {
+    const fb = fallback[index] ?? fallback[0];
+    const stars = (item.stars ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+    return {
+      key: item.key?.trim() || fb.key,
+      label: item.label?.trim() || fb.label,
+      branch: item.branch?.trim() || fb.branch,
+      stars,
+      dominant: item.dominant?.trim() || stars[0] || fb.dominant,
+      summary: item.summary?.trim() || fb.summary,
+      suggestions: (item.suggestions ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 4),
+    };
+  });
+
+  if (normalized.length < 12) {
+    return [...normalized, ...fallback.slice(normalized.length, 12)];
+  }
+
+  return normalized;
+}
+
+function normalizeZiweiCenter(
+  input: { chartTitle?: string; mingZhu?: string; shenZhu?: string } | undefined,
+  request: DestinyReportRequest,
+  palaces: ZiweiPalace[]
+): ZiweiCenterInfo {
+  const yearStemMap = ['庚', '辛', '壬', '癸', '甲', '乙', '丙', '丁', '戊', '己'];
+  const yearBranchMap = ['申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未'];
+  const stem = yearStemMap[request.birthDate.year % 10] ?? '甲';
+  const branch = yearBranchMap[request.birthDate.year % 12] ?? '子';
+
+  const mingPalace = palaces.find((p) => p.label === '命宫') ?? palaces[0];
+  const shenPalace = palaces.find((p) => p.label === '迁移宫') ?? palaces[1] ?? mingPalace;
+
+  return {
+    chartTitle: input?.chartTitle?.trim() || `${stem}${branch}年生`,
+    mingZhu: input?.mingZhu?.trim() || mingPalace?.dominant || mingPalace?.stars?.[0] || '紫微',
+    shenZhu: input?.shenZhu?.trim() || shenPalace?.dominant || shenPalace?.stars?.[0] || '天相',
   };
 }
 

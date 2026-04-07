@@ -25,7 +25,7 @@ const RequestSchema = z.object({
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
 const REPORT_TIMEOUT_MS = 90000;
-const PRIMARY_MAX_OUTPUT_TOKENS = 2400;
+const PRIMARY_MAX_OUTPUT_TOKENS = 2800;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
 class UpstreamModelError extends Error {
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
               content: buildUserPrompt(input),
             },
           ],
-          temperature: 0.3,
+          temperature: 0.35,
           max_output_tokens: PRIMARY_MAX_OUTPUT_TOKENS,
           reasoning: { effort: 'low' },
           text: { format: { type: 'json_object' } },
@@ -136,7 +136,17 @@ export async function POST(req: Request) {
         error instanceof Error ? error.message : undefined
       );
     }
-    const report = normalizeDestinyReport(parseModelJson(text), input, currentYear);
+
+    const modelJson = parseModelJson(text);
+    const strictError = validateZiweiModelPayload(modelJson);
+    if (strictError) {
+      return NextResponse.json(
+        { error: `紫微测算结果不完整：${strictError}，请重试` },
+        { status: 502 }
+      );
+    }
+
+    const report = normalizeDestinyReport(modelJson, input, currentYear);
 
     return NextResponse.json(
       {
@@ -190,7 +200,7 @@ function buildUserPrompt(input: DestinyReportRequest): string {
       : input.location.name;
 
   return [
-    '请基于以下用户信息生成完整命理报告（中文）：',
+    '请基于以下用户信息生成紫微斗数排盘分析（中文）：',
     '重要：以下出生日期与出生时间均为农历（阴历）口径，不是公历（阳历）。',
     `姓名：${input.name}`,
     `性别：${input.gender === 'female' ? '女' : '男'}`,
@@ -202,21 +212,25 @@ function buildUserPrompt(input: DestinyReportRequest): string {
 
 function buildSystemPrompt(currentYear: number): string {
   return `
-你是专业命理分析助手。必须严格输出 JSON 对象，禁止输出任何额外文字。
+你是专业紫微斗数分析助手。必须严格输出 JSON 对象，禁止输出任何额外文字。
 不要输出思考过程，不要解释，只返回最终 JSON。
-用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行命理推演，不要按公历换算理解。
+用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行紫微斗数推演，不要按公历换算理解。
 
 字段要求：
-1. profile：name, genderLabel, birthText, locationText
+1. profile：name, genderLabel, birthText, lunarText, locationText
 2. pillars：长度4，按年柱/月柱/日柱/时柱，包含 stem, branch, label, element, tooltip
 3. elements：必须含 metal/wood/water/fire/earth 五项，value 为 0-100 数字
 4. tenGods：返回 4 项，包含 key, label, value(0-100), tooltip
 5. modules：包含 personality/career/love/wealth/health，每项有 title/summary/bullets(2-4条)
 6. timeline：必须返回 3 项，年份依次是 ${currentYear}, ${currentYear + 1}, ${currentYear + 2}，每项含 title/summary/detail，
    detail 里有 opportunities/risks/actions 三个数组，每个数组 2-3 条
+7. ziweiCenter：包含 chartTitle, mingZhu, shenZhu
+8. ziweiPalaces：必须返回 12 项（父母宫/福德宫/田宅宫/官禄宫/命宫/兄弟宫/奴仆宫/夫妻宫/迁移宫/子女宫/财帛宫/疾厄宫），每项包含 key,label,branch,stars(1-3),dominant,summary,suggestions(2-4)
+7. ziweiPalaces：长度12，按宫位输出对象数组；每项含 key,label,branch,stars(1-3个),summary,suggestions(2-4条)
 
 输出风格：
-- 内容要可执行，避免空泛措辞
+- 聚焦紫微斗数语境，强调宫位、主星结构与流年建议
+- 内容可执行，避免空泛措辞
 - 语气稳健，不夸大确定性
 - 使用中文简体
 - 控制篇幅：summary 每项 50-90 字，bullet/action 每条 18 字以内
@@ -227,15 +241,17 @@ function buildSystemPrompt(currentYear: number): string {
 function buildCompactSystemPrompt(currentYear: number): string {
   return `
 仅返回合法 JSON。不要输出其他文字。
-用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行命理推演，不要按公历换算理解。
+用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行紫微斗数推演，不要按公历换算理解。
 返回字段：
-profile(name,genderLabel,birthText,locationText)
+profile(name,genderLabel,birthText,lunarText,locationText)
 pillars(4项: stem,branch,label,element,tooltip)
 elements(5项: key=metal/wood/water/fire/earth, value=0-100)
 tenGods(4项: key,label,value,tooltip)
 modules(personality/career/love/wealth/health，每项 title/summary/bullets[2-3条])
 timeline(3项，年份固定 ${currentYear}/${currentYear + 1}/${currentYear + 2}，每项 title/summary/detail，detail含 opportunities/risks/actions)
-内容尽量简短。
+ziweiCenter(chartTitle,mingZhu,shenZhu)
+ziweiPalaces(12项: key,label,branch,stars,dominant,summary,suggestions)
+内容尽量简短，保持紫微斗数表述。
   `.trim();
 }
 
@@ -306,4 +322,37 @@ function parseModelJson(text: string): unknown {
     }
     throw new SyntaxError('模型 JSON 解析失败');
   }
+}
+
+function validateZiweiModelPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return '返回体为空';
+  const source = payload as Record<string, unknown>;
+
+  if (!source.ziweiPalaces || !Array.isArray(source.ziweiPalaces) || source.ziweiPalaces.length < 12) {
+    return '缺少 12 宫位数据';
+  }
+
+  const firstTimeline = Array.isArray(source.timeline) ? source.timeline[0] : null;
+  const firstDetail = firstTimeline && typeof firstTimeline === 'object'
+    ? (firstTimeline as Record<string, unknown>).detail
+    : null;
+  if (!firstDetail || typeof firstDetail !== 'object') {
+    return '缺少流年 detail';
+  }
+
+  const detailObj = firstDetail as Record<string, unknown>;
+  if (!Array.isArray(detailObj.opportunities) || !Array.isArray(detailObj.risks) || !Array.isArray(detailObj.actions)) {
+    return '流年 detail 结构不完整';
+  }
+
+  const modules = source.modules;
+  if (!modules || typeof modules !== 'object') {
+    return '缺少 modules';
+  }
+  const moduleObj = modules as Record<string, unknown>;
+  if (!moduleObj.love || !moduleObj.personality) {
+    return '缺少六亲/总论模块';
+  }
+
+  return null;
 }

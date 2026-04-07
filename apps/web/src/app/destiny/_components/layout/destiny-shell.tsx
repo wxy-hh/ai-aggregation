@@ -4,15 +4,23 @@ import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
 import type { DestinyReport } from '../types';
-import { LeftNav } from './left-nav';
+import { LeftNav, type DestinyModuleKey } from './left-nav';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 
 export function DestinyShell({
   report,
+  activeModule = 'bazi',
+  title = 'AI 命理大师',
+  subtitleTag = '专业分析视图',
+  onModuleChange,
   onRecalculate,
 }: {
   report: DestinyReport | null;
+  activeModule?: DestinyModuleKey;
+  title?: string;
+  subtitleTag?: string;
+  onModuleChange?: (key: DestinyModuleKey) => void;
   onRecalculate?: () => void;
 }) {
   const subtitle = useMemo(() => {
@@ -46,7 +54,7 @@ export function DestinyShell({
         {/* 左侧：导航与历史 */}
         <aside className="hidden xl:flex w-[280px] shrink-0">
           <GlassCard className="h-full w-full p-4">
-            <LeftNav />
+            <LeftNav activeModule={activeModule} onModuleChange={onModuleChange} />
           </GlassCard>
         </aside>
 
@@ -57,9 +65,9 @@ export function DestinyShell({
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
-                    AI 命理大师
+                    {title}
                   </h1>
-                  <span className="text-sm font-semibold text-slate-500">专业分析视图</span>
+                  <span className="text-sm font-semibold text-slate-500">{subtitleTag}</span>
                 </div>
                 <p className="mt-2 text-sm text-slate-600 truncate">{subtitle}</p>
               </div>

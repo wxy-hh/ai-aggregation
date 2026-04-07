@@ -34,14 +34,13 @@ const mockCities: City[] = [
 ];
 
 function defaultValueFrom(input?: OnboardingInput): OnboardingInput {
-  const now = new Date();
   return (
     input ?? {
-      name: '',
+      name: '位笑雨',
       gender: 'male',
-      birthDate: { year: 1995, month: 6, day: 18 },
+      birthDate: { year: 1998, month: 5, day: 25 },
       birthTime: { hour: '12', minute: '30' },
-      location: { name: '', lat: null, lon: null },
+      location: { name: '鹿邑县任集乡', lat: null, lon: null },
     }
   );
 }
