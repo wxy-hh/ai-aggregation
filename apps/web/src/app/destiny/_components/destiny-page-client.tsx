@@ -8,6 +8,7 @@ import type { DestinyReport, DestinyReportResponse } from './types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ZiweiWorkspace } from './ziwei-workspace';
+import { QimenWorkspace } from './qimen-workspace';
 import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 
 type Stage = 'onboarding' | 'decoding' | 'report' | 'error';
@@ -44,8 +45,9 @@ function ComingSoonWorkspace({
 }
 
 export function DestinyPageClient() {
-  const [activeModule, setActiveModule] = useState<DestinyModuleKey>('ziwei');
+  const [activeModule, setActiveModule] = useState<DestinyModuleKey>('qimen');
   const isZiweiModule = activeModule === 'ziwei';
+  const supportsOnboarding = activeModule === 'bazi' || activeModule === 'ziwei';
   const [stage, setStage] = useState<Stage>('onboarding');
   const [input, setInput] = useState<OnboardingInput | null>(null);
   const [report, setReport] = useState<DestinyReport | null>(null);
@@ -55,6 +57,7 @@ export function DestinyPageClient() {
   const [ziweiReport, setZiweiReport] = useState<DestinyReport | null>(null);
   const [ziweiStatus, setZiweiStatus] = useState<AnalysisStatus>('idle');
   const [ziweiError, setZiweiError] = useState<string | null>(null);
+  const [qimenLoading, setQimenLoading] = useState(false);
 
   const requestIdRef = useRef(0);
   const ziweiRequestIdRef = useRef(0);
@@ -263,12 +266,25 @@ export function DestinyPageClient() {
             : 'opacity-0 translate-y-2 pointer-events-none'
         )}
       >
-        <ComingSoonWorkspace
-          title="奇门遁甲演化"
-          subtitle="正在建设奇门九宫推演与时空策略分析视图，后续将支持局势推演、行动窗口与风险规避建议。"
-          activeModule={activeModule}
-          onModuleChange={setActiveModule}
-        />
+        <div className="relative h-full w-full">
+          <div
+            className={cn(
+              'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
+              qimenLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
+            )}
+          >
+            <div className="h-full w-full rounded-3xl border border-white/70 bg-white/55 backdrop-blur-xl p-4 shadow-sm">
+              <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
+            </div>
+          </div>
+
+          <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
+            <QimenWorkspace
+              onRecalculate={() => setStage('onboarding')}
+              onLoadingChange={setQimenLoading}
+            />
+          </div>
+        </div>
       </div>
 
       <div
@@ -288,7 +304,7 @@ export function DestinyPageClient() {
       </div>
 
       <OnboardingModal
-        open={stage === 'onboarding'}
+        open={supportsOnboarding && stage === 'onboarding'}
         defaultValue={input ?? undefined}
         canCancel={Boolean(isZiweiModule ? ziweiReport : report)}
         onCancelAction={() => {
