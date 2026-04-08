@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
-import { QimenLoadingAnimation } from './qimen-loading-animation';
 import { createDefaultQimenFormData, mapFormToQimenRequest } from './qimen-mappers';
 import type { QimenAnalyzeResponse, QimenAnalyzeResult, QimenFormData } from './qimen-types';
 
@@ -148,20 +148,23 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
                 同页分步流程：先录入问题，再查看 AI 推演结果
               </p>
             </div>
+
+            {step === 'result' && (
+              <Button
+                type="button"
+                className="rounded-full bg-[#2F6BFF] text-white hover:brightness-110"
+                disabled={submitting}
+                onClick={() => {
+                  void submit();
+                }}
+              >
+                重新排盘
+              </Button>
+            )}
           </header>
 
-          <div
-            className={
-              submitting
-                ? 'mt-6 min-h-0 flex-1'
-                : 'mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]'
-            }
-          >
-            {submitting ? (
-              <div className="h-full w-full">
-                <QimenLoadingAnimation />
-              </div>
-            ) : step === 'form' ? (
+          <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+            {step === 'form' ? (
               <QimenInputForm
                 value={formData}
                 submitting={submitting}

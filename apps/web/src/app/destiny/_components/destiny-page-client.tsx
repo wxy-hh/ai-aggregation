@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
+import { QimenLoadingAnimation } from './qimen-loading-animation';
 import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 
 type Stage = 'onboarding' | 'decoding' | 'report' | 'error';
@@ -284,6 +285,14 @@ export function DestinyPageClient() {
               onLoadingChange={setQimenLoading}
             />
           </div>
+
+          {qimenLoading && (
+            <div className="absolute inset-0 z-[35] xl:left-[320px]">
+              <div className="h-full w-full backdrop-blur-[12px] bg-[linear-gradient(135deg,rgba(255,255,255,0.68)_0%,rgba(245,247,255,0.58)_42%,rgba(235,240,255,0.5)_100%)]">
+                <QimenLoadingAnimation />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
