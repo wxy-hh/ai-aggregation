@@ -14,6 +14,27 @@ type ZiweiWorkspaceProps = {
 
 type PanelTab = 'overview' | 'timeline' | 'relations';
 
+type PalaceViewModel = {
+  key: string;
+  label: string;
+  branch: string;
+  stars: string[];
+  dominant: string;
+  summary: string;
+  suggestions: string[];
+};
+
+type TimelineItemViewModel = {
+  year: string | number;
+  title: string;
+  summary: string;
+  detail: {
+    opportunities: string[];
+    risks: string[];
+    actions: string[];
+  };
+};
+
 const tabOptions: Array<{ key: PanelTab; label: string }> = [
   { key: 'overview', label: '命理总论' },
   { key: 'timeline', label: '大限流年' },
@@ -123,7 +144,7 @@ export function ZiweiWorkspace({
   const [tab, setTab] = useState<PanelTab>('overview');
   const [activePalaceLabel, setActivePalaceLabel] = useState<string>('命宫');
 
-  const palaceData = useMemo(() => {
+  const palaceData = useMemo<PalaceViewModel[]>(() => {
     if (!report?.ziweiPalaces?.length) return [];
 
     const byLabel = new Map(report.ziweiPalaces.map((item) => [item.label, item]));
@@ -142,10 +163,10 @@ export function ZiweiWorkspace({
           suggestions: palace.suggestions?.slice(0, 4) ?? [],
         };
       })
-      .filter(Boolean);
+      .filter((item): item is PalaceViewModel => item != null);
   }, [report]);
 
-  const timeline = report?.timeline ?? [];
+  const timeline: TimelineItemViewModel[] = report?.timeline ?? [];
   const activePalace = palaceData.find((item) => item.label === activePalaceLabel) ?? palaceData[0];
 
   const overviewOpportunities = activePalace?.suggestions?.slice(0, 3) ?? [];

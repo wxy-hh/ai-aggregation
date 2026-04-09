@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -80,6 +80,7 @@ export function QimenInputForm({
   onReset,
 }: QimenInputFormProps) {
   const [copied, setCopied] = useState(false);
+  const copyResetTimerRef = useRef<number | null>(null);
   const descriptionLength = value.description.trim().length;
 
   const templateText = `测算人：小王
@@ -87,11 +88,27 @@ export function QimenInputForm({
 现在情况：还未决定，正在纠结。
 最想知道：①这份工作能不能长久稳定？②发展前景好不好，是否利于我？③薪资待遇和现在相比怎么样？`;
 
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current != null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleCopyTemplate = async () => {
     try {
       await navigator.clipboard.writeText(templateText);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+
+      if (copyResetTimerRef.current != null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyResetTimerRef.current = null;
+      }, 1600);
     } catch {
       setCopied(false);
     }

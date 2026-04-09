@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 type Particle = {
@@ -13,10 +13,26 @@ type Particle = {
 };
 
 function usePrefersReducedMotion() {
-  return useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange);
+    };
   }, []);
+
+  return prefersReducedMotion;
 }
 
 export function StarDecodeOverlay({ open }: { open: boolean }) {
@@ -119,22 +135,48 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
       }
     };
 
+    let isPageVisible = document.visibilityState === 'visible';
+
     const loop = (t: number) => {
       drawFrame(t);
-      rafRef.current = requestAnimationFrame(loop);
+      if (isPageVisible) {
+        rafRef.current = requestAnimationFrame(loop);
+      } else {
+        rafRef.current = null;
+      }
     };
+
+    const handleVisibilityChange = () => {
+      isPageVisible = document.visibilityState === 'visible';
+
+      if (!isPageVisible && rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+        return;
+      }
+
+      if (isPageVisible && !reducedMotion && rafRef.current == null) {
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     if (reducedMotion) {
       drawFrame(startedAtRef.current);
       return () => {
         window.removeEventListener('resize', resize);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
     }
 
-    rafRef.current = requestAnimationFrame(loop);
+    if (isPageVisible) {
+      rafRef.current = requestAnimationFrame(loop);
+    }
 
     return () => {
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
   }, [open, reducedMotion]);
