@@ -202,7 +202,6 @@ export function AICoPilotConversation({
     void sendQuestion(queuedQuestion.text);
     onQueuedQuestionHandled?.(queuedQuestion.id);
     // sessionKey 变化会重置会话后再消费新的快捷问题
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedQuestion?.id, sessionKey]);
 
   return (

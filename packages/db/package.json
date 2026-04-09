@@ -12,6 +12,7 @@
     }
   },
   "scripts": {
+    "lint": "eslint .",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
@@ -22,6 +23,7 @@
     "@prisma/client": "^6.19.2"
   },
   "devDependencies": {
+    "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "prisma": "^6.19.2",
     "tsx": "^4.19.2",
