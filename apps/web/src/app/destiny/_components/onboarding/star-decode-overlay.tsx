@@ -145,21 +145,26 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
     <div
       className={cn(
         'absolute inset-0 z-50 flex items-center justify-center',
-        'bg-white/25 backdrop-blur-[18px]',
+        'bg-white/14 backdrop-blur-[12px]',
         'animate-in fade-in duration-200'
       )}
       role="dialog"
       aria-label="星空解码中"
     >
-      <div className="relative w-full h-full">
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-[320px] bg-white/6 backdrop-blur-[3px] xl:block" />
+      <div className="pointer-events-none absolute inset-y-0 left-[300px] hidden w-20 bg-gradient-to-r from-white/8 via-white/4 to-transparent xl:block" />
+
+      <div className="relative h-full w-full">
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(116,149,214,0.14),rgba(116,149,214,0)_62%)]" />
 
         {/* 玻璃圆环 + 中心文案 */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="relative">
-            <div className="h-[340px] w-[340px] rounded-full border border-white/55 bg-white/25 backdrop-blur-[32px] shadow-[0_30px_80px_-30px_rgba(47,107,255,0.45)]" />
+            <div className="h-[340px] w-[340px] rounded-full border border-white/50 bg-white/14 backdrop-blur-[18px] shadow-[0_30px_80px_-30px_rgba(47,107,255,0.38)]" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center px-6">
+              <div className="px-6 text-center">
                 <div className="text-sm font-bold tracking-[0.18em] text-slate-600">星空解码中</div>
                 <div className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">
                   提取命运密码
@@ -169,7 +174,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
                 </div>
               </div>
             </div>
-            <div className="pointer-events-none absolute -inset-6 rounded-full border border-white/35 opacity-70" />
+            <div className="pointer-events-none absolute -inset-6 rounded-full border border-white/28 opacity-65" />
           </div>
         </div>
       </div>

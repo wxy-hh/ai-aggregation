@@ -15,36 +15,6 @@ import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 type Stage = 'onboarding' | 'decoding' | 'report' | 'error';
 type AnalysisStatus = 'idle' | 'loading' | 'success' | 'error';
 
-function ComingSoonWorkspace({
-  title,
-  subtitle,
-  activeModule,
-  onModuleChange,
-}: {
-  title: string;
-  subtitle: string;
-  activeModule: DestinyModuleKey;
-  onModuleChange: (key: DestinyModuleKey) => void;
-}) {
-  return (
-    <div className="relative h-full w-full">
-      <div className="absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20">
-        <div className="h-full w-full rounded-3xl border border-white/70 bg-white/55 backdrop-blur-xl p-4 shadow-sm">
-          <LeftNav activeModule={activeModule} onModuleChange={onModuleChange} />
-        </div>
-      </div>
-
-      <div className="h-full w-full overflow-y-auto p-6 xl:pl-[320px]">
-        <div className="rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-10">
-          <div className="text-2xl font-bold text-slate-900">{title}</div>
-          <p className="mt-3 text-sm text-slate-600">{subtitle}</p>
-          <p className="mt-6 text-xs text-slate-500">该模块正在打磨中，当前可完整体验「八字格局精批」与「紫微斗数排盘」。</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DestinyPageClient() {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>('qimen');
   const isZiweiModule = activeModule === 'ziwei';
@@ -287,30 +257,19 @@ export function DestinyPageClient() {
           </div>
 
           {qimenLoading && (
-            <div className="absolute inset-0 z-[35] xl:left-[320px]">
-              <div className="h-full w-full backdrop-blur-[12px] bg-[linear-gradient(135deg,rgba(255,255,255,0.68)_0%,rgba(245,247,255,0.58)_42%,rgba(235,240,255,0.5)_100%)]">
-                <QimenLoadingAnimation />
+            <div className="absolute inset-0 z-[35]">
+              <div className="h-full w-full bg-white/14 backdrop-blur-[12px]">
+                <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-[320px] bg-white/6 backdrop-blur-[3px] xl:block" />
+                <div className="pointer-events-none absolute inset-y-0 left-[300px] hidden w-20 bg-gradient-to-r from-white/8 via-white/4 to-transparent xl:block" />
+                <div className="relative h-full w-full xl:pl-[320px]">
+                  <QimenLoadingAnimation />
+                </div>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      <div
-        className={cn(
-          'absolute inset-0 transition-opacity duration-[120ms]',
-          activeModule === 'flower'
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-2 pointer-events-none'
-        )}
-      >
-        <ComingSoonWorkspace
-          title="桃花易数预测"
-          subtitle="正在建设梅花易数快速起卦与关系走势预测模块，后续将支持事件驱动推断与多情境建议。"
-          activeModule={activeModule}
-          onModuleChange={setActiveModule}
-        />
-      </div>
 
       <OnboardingModal
         open={supportsOnboarding && stage === 'onboarding'}

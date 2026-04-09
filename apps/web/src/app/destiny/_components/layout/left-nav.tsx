@@ -1,9 +1,9 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { BookOpen, Compass, LayoutGrid, Sparkles, TrendingUp } from 'lucide-react';
+import { BookOpen, Compass, LayoutGrid, Sparkles } from 'lucide-react';
 
-export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen' | 'flower';
+export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen';
 
 const groups: Array<{
   title: string;
@@ -15,7 +15,6 @@ const groups: Array<{
       { key: 'bazi', label: '八字格局精批', icon: LayoutGrid },
       { key: 'ziwei', label: '紫微斗数排盘', icon: Sparkles },
       { key: 'qimen', label: '奇门遁甲演化', icon: Compass },
-      { key: 'flower', label: '桃花易数预测', icon: TrendingUp },
     ],
   },
 ];

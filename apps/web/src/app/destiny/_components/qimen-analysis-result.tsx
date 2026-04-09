@@ -15,7 +15,17 @@ type QimenAnalysisResultProps = {
   onRetry: () => void;
 };
 
-const palaceOrder = ['巽四宫', '离九宫', '坤二宫', '震三宫', '中五宫', '兑七宫', '艮八宫', '坎一宫', '乾六宫'];
+const palaceOrder = [
+  '巽四宫',
+  '离九宫',
+  '坤二宫',
+  '震三宫',
+  '中五宫',
+  '兑七宫',
+  '艮八宫',
+  '坎一宫',
+  '乾六宫',
+];
 
 const palaceLogicMap: Record<string, string> = {
   离九宫: '离九宫属火，主名声与外显势能。景门与天英同宫时，利曝光表达与创意输出，忌情绪化决断。',
@@ -66,7 +76,6 @@ function palaceMarkerList(cell: QimenBoardCell) {
   ].filter(Boolean) as string[];
 }
 
-
 export function QimenAnalysisResult({
   result,
   loading,
@@ -100,7 +109,12 @@ export function QimenAnalysisResult({
       <div className="rounded-3xl border border-white/70 bg-white/75 p-8 shadow-sm">
         <div className="text-lg font-bold text-slate-800">暂无分析结果</div>
         <p className="mt-2 text-sm text-slate-500">请先返回输入信息并发起一次分析。</p>
-        <Button type="button" variant="outline" className="mt-4 rounded-full" onClick={onBackToForm}>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-4 rounded-full"
+          onClick={onBackToForm}
+        >
           返回信息输入
         </Button>
       </div>
@@ -118,14 +132,20 @@ export function QimenAnalysisResult({
       <div className="rounded-[28px] border border-white/75 bg-white/55 p-5 md:p-6 backdrop-blur-2xl shadow-[0_18px_40px_rgba(75,92,150,0.15)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-[30px] font-black tracking-tight text-[#121F5A]">{result.chartTitle}</h2>
-            <p className="mt-1 text-sm text-slate-600">三奇六仪，八门九星，运筹帷幄之中，决胜千里之外</p>
+            <h2 className="text-[30px] font-black tracking-tight text-[#121F5A]">
+              {result.chartTitle}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              三奇六仪，八门九星，运筹帷幄之中，决胜千里之外
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold text-slate-700">
               {result.chartMeta.dun} · {result.chartMeta.ju}
             </span>
-            <span className="rounded-full bg-[#2E4FDF] px-3 py-1 text-xs font-semibold text-white">Step 2 / 2</span>
+            <span className="rounded-full bg-[#2E4FDF] px-3 py-1 text-xs font-semibold text-white">
+              Step 2 / 2
+            </span>
           </div>
         </div>
 
@@ -140,9 +160,7 @@ export function QimenAnalysisResult({
               {boardCells.map((cell, index) => (
                 <article
                   key={`${cell.palace}-${index}`}
-                  onClick={() =>
-                    setActiveTooltipIndex((prev) => (prev === index ? null : index))
-                  }
+                  onClick={() => setActiveTooltipIndex((prev) => (prev === index ? null : index))}
                   className={cn(
                     'group relative rounded-2xl p-3 min-h-[168px] flex flex-col transition-transform duration-150 hover:-translate-y-0.5 cursor-pointer',
                     activeTooltipIndex === index && 'ring-2 ring-[#4F6FFF]/35',
@@ -161,10 +179,20 @@ export function QimenAnalysisResult({
                   </div>
 
                   <div className="mt-3 text-center">
-                    <div className={cn('text-[46px] leading-none font-black tracking-tight', getStarColor(cell.star))}>
+                    <div
+                      className={cn(
+                        'text-[46px] leading-none font-black tracking-tight',
+                        getStarColor(cell.star)
+                      )}
+                    >
                       {cell.star}
                     </div>
-                    <div className={cn('mt-1 text-[30px] leading-none font-bold tracking-tight', getDoorColor(cell.door))}>
+                    <div
+                      className={cn(
+                        'mt-1 text-[30px] leading-none font-bold tracking-tight',
+                        getDoorColor(cell.door)
+                      )}
+                    >
                       {cell.door}
                     </div>
                   </div>
@@ -196,14 +224,12 @@ export function QimenAnalysisResult({
                       </span>
                     )}
                   </div>
-
-
                 </article>
               ))}
             </div>
 
             {activeCell && (
-              <div className="mb-4 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-3 shadow-md">
+              <div className="mt-4 mb-4 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-3 shadow-md">
                 <div className="text-[11px] font-semibold text-slate-500">排盘逻辑标注</div>
                 <div className="mt-1 text-xs text-slate-700 leading-relaxed">
                   宫位：{activeCell.palace}（洛书{activeCell.luoshu}，{activeCell.direction}）
@@ -220,22 +246,27 @@ export function QimenAnalysisResult({
                   </div>
                 )}
                 <div className="mt-2 text-[11px] leading-relaxed text-slate-600">
-                  {palaceLogicMap[activeCell.palace] ?? '该宫位需结合全局动静、旺衰与问事主题综合判断。'}
+                  {palaceLogicMap[activeCell.palace] ??
+                    '该宫位需结合全局动静、旺衰与问事主题综合判断。'}
                 </div>
               </div>
             )}
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/75 bg-white/70 p-4">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 rounded-2xl border border-slate-200/90">
+              <div className="rounded-2xl border  border-white/75 bg-white/70 p-4">
                 <div className="text-xs font-semibold text-slate-500">空亡与马星</div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <div>
                     <div className="text-[11px] text-slate-400">旬空</div>
-                    <div className="text-base font-bold text-[#131D56]">{result.chartMeta.jiaziXunkong}</div>
+                    <div className="text-base font-bold text-[#131D56]">
+                      {result.chartMeta.jiaziXunkong}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-slate-400">马星</div>
-                    <div className="text-base font-bold text-[#131D56]">{result.chartMeta.horsePosition}</div>
+                    <div className="text-base font-bold text-[#131D56]">
+                      {result.chartMeta.horsePosition}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -244,11 +275,15 @@ export function QimenAnalysisResult({
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
                     <div className="text-[11px] text-indigo-500">值符</div>
-                    <div className="text-base font-bold text-indigo-900">{result.chartMeta.valueSymbol}</div>
+                    <div className="text-base font-bold text-indigo-900">
+                      {result.chartMeta.valueSymbol}
+                    </div>
                   </div>
                   <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
                     <div className="text-[11px] text-indigo-500">值使</div>
-                    <div className="text-base font-bold text-indigo-900">{result.chartMeta.valueDoor}</div>
+                    <div className="text-base font-bold text-indigo-900">
+                      {result.chartMeta.valueDoor}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -264,7 +299,9 @@ export function QimenAnalysisResult({
 
             <section className="mt-4 rounded-2xl border border-white/75 bg-white/70 p-3.5">
               <div className="text-xs font-semibold text-slate-500">综合格局评估</div>
-              <div className="mt-2 text-sm leading-relaxed text-slate-700">{result.overallAssessment}</div>
+              <div className="mt-2 text-sm leading-relaxed text-slate-700">
+                {result.overallAssessment}
+              </div>
             </section>
 
             <section className="mt-4">
@@ -326,7 +363,10 @@ export function QimenAnalysisResult({
           </div>
           <div className="mt-2 space-y-2">
             {result.timingWindows.map((item, index) => (
-              <div key={`window-${index}`} className="rounded-xl border border-violet-100 bg-violet-50/55 px-3 py-2.5">
+              <div
+                key={`window-${index}`}
+                className="rounded-xl border border-violet-100 bg-violet-50/55 px-3 py-2.5"
+              >
                 <div className="text-sm font-bold text-violet-800">{item.period}</div>
                 <div className="mt-1 text-sm text-violet-900/90">{item.guidance}</div>
               </div>
@@ -348,7 +388,11 @@ export function QimenAnalysisResult({
             <Button type="button" variant="outline" className="rounded-full" onClick={onBackToForm}>
               返回修改参数
             </Button>
-            <Button type="button" className="rounded-full bg-[#2F6BFF] text-white" onClick={onRetry}>
+            <Button
+              type="button"
+              className="rounded-full bg-[#2F6BFF] text-white"
+              onClick={onRetry}
+            >
               重新演化分析
             </Button>
           </div>

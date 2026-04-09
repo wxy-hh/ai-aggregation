@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,14 +79,32 @@ export function QimenInputForm({
   onSubmit,
   onReset,
 }: QimenInputFormProps) {
+  const [copied, setCopied] = useState(false);
   const descriptionLength = value.description.trim().length;
+
+  const templateText = `测算人：小王
+测何事：目前有一份稳定的工作，犹豫要不要跳槽，想测这份工作发展前景、薪资、稳定度、是否适合长期做。
+现在情况：还未决定，正在纠结。
+最想知道：①这份工作能不能长久稳定？②发展前景好不好，是否利于我？③薪资待遇和现在相比怎么样？`;
+
+  const handleCopyTemplate = async () => {
+    try {
+      await navigator.clipboard.writeText(templateText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   return (
     <div className="rounded-[30px] border border-white/70 bg-white/50 p-5 md:p-7 backdrop-blur-2xl shadow-[0_20px_60px_rgba(73,86,130,0.15)]">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[22px] font-black tracking-tight text-[#1A245B]">信息输入表单</h2>
-          <p className="mt-1.5 text-sm text-slate-600">已自动填入当前时间，按实际问题补充地点与目标即可。</p>
+          <p className="mt-1.5 text-sm text-slate-600">
+            已自动填入当前时间，按实际问题补充地点与目标即可。
+          </p>
         </div>
         <span className="rounded-full border border-white/80 bg-white/65 px-3 py-1 text-xs font-bold text-[#4B63D9] shadow-sm">
           Step 1 / 2
@@ -107,7 +126,9 @@ export function QimenInputForm({
                 onChange={(event) => onChange('datetime', event.target.value)}
                 className={inputClass}
               />
-              {fieldErrors.datetime && <p className="text-xs text-rose-600">{fieldErrors.datetime}</p>}
+              {fieldErrors.datetime && (
+                <p className="text-xs text-rose-600">{fieldErrors.datetime}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -153,9 +174,21 @@ export function QimenInputForm({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="qimen-description" className={labelClass}>
-                问题描述
-              </Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="qimen-description" className={labelClass}>
+                  问题描述
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 rounded-full border-[#C9D4FF] bg-[#EEF2FF] px-3 text-[11px] font-semibold text-[#3D58D7] hover:bg-[#E3E9FF]"
+                  onClick={handleCopyTemplate}
+                  disabled={submitting}
+                >
+                  {copied ? '已复制模板' : '复制模板'}
+                </Button>
+              </div>
               <Textarea
                 id="qimen-description"
                 value={value.description}
@@ -200,7 +233,10 @@ export function QimenInputForm({
 
             <div className="space-y-2">
               <Label className={labelClass}>分析侧重</Label>
-              <Select value={value.focus} onValueChange={(next) => onChange('focus', next as QimenAnalysisFocus)}>
+              <Select
+                value={value.focus}
+                onValueChange={(next) => onChange('focus', next as QimenAnalysisFocus)}
+              >
                 <SelectTrigger className={cn(inputClass, 'h-10')}>
                   <SelectValue />
                 </SelectTrigger>
