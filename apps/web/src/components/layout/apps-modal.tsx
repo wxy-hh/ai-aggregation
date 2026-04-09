@@ -81,7 +81,8 @@ interface AppConfig {
   icon: React.ElementType;
   category: 'core' | 'productivity' | 'creative';
   href: string;
-  color: string;
+  iconColor: string;
+  iconBg: string;
 }
 
 export const APP_CONFIGS: AppConfig[] = [
@@ -93,7 +94,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Bot,
     category: 'core',
     href: '/chat',
-    color: 'text-blue-500',
+    iconColor: 'text-indigo-500',
+    iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
   },
   {
     id: 'voice',
@@ -102,7 +104,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: AudioWaveform,
     category: 'core',
     href: '/voice',
-    color: 'text-purple-500',
+    iconColor: 'text-violet-500',
+    iconBg: 'bg-violet-100 dark:bg-violet-900/30',
   },
   {
     id: 'image',
@@ -111,7 +114,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: PenTool,
     category: 'core',
     href: '/image',
-    color: 'text-pink-500',
+    iconColor: 'text-fuchsia-500',
+    iconBg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30',
   },
   {
     id: 'destiny',
@@ -120,7 +124,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: BaguaIcon,
     category: 'core',
     href: '/destiny',
-    color: 'text-blue-600',
+    iconColor: 'text-indigo-600',
+    iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
   },
   // 生产力工具
   {
@@ -130,7 +135,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Presentation,
     category: 'productivity',
     href: '/ppt',
-    color: 'text-orange-500',
+    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
   },
   {
     id: 'resume',
@@ -139,7 +145,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: FileText,
     category: 'productivity',
     href: '/resume',
-    color: 'text-green-500',
+    iconColor: 'text-emerald-500',
+    iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
   },
   {
     id: 'legal',
@@ -148,7 +155,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Scale,
     category: 'productivity',
     href: '/legal',
-    color: 'text-slate-500',
+    iconColor: 'text-slate-500',
+    iconBg: 'bg-slate-100 dark:bg-slate-700/60',
   },
   {
     id: 'code',
@@ -157,7 +165,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Code,
     category: 'productivity',
     href: '/code',
-    color: 'text-blue-600',
+    iconColor: 'text-blue-600',
+    iconBg: 'bg-blue-100 dark:bg-blue-900/30',
   },
   // 创意工具
   {
@@ -167,7 +176,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Video,
     category: 'creative',
     href: '/video',
-    color: 'text-indigo-500',
+    iconColor: 'text-indigo-500',
+    iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
   },
   {
     id: '3d',
@@ -176,7 +186,8 @@ export const APP_CONFIGS: AppConfig[] = [
     icon: Box,
     category: 'creative',
     href: '/3d',
-    color: 'text-cyan-500',
+    iconColor: 'text-cyan-500',
+    iconBg: 'bg-cyan-100 dark:bg-cyan-900/30',
   },
 ];
 
@@ -192,9 +203,9 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
   const router = useRouter();
 
   const sections = [
-    { id: 'core', label: '核心原子能力', color: 'bg-blue-500' },
-    { id: 'productivity', label: '专业生产力', color: 'bg-orange-500' },
-    { id: 'creative', label: '创意实验室', color: 'bg-purple-500' },
+    { id: 'core', label: '核心原子能力', color: 'bg-[#6E84FA]' },
+    { id: 'productivity', label: '专业生产力', color: 'bg-[#8295FF]' },
+    { id: 'creative', label: '创意实验室', color: 'bg-[#9BAAFF]' },
   ];
 
   // 模糊搜索：匹配标签或描述（不区分大小写）
@@ -236,7 +247,7 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索您的 AI 创作工具..."
-              className="w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-800 rounded-2xl border-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 shadow-sm transition-shadow duration-300 hover:shadow-md"
+              className="w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-800 rounded-2xl border-none focus:ring-2 focus:ring-[#7E91FF]/30 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 shadow-sm transition-shadow duration-300 hover:shadow-md"
             />
             {searchQuery && (
               <button
@@ -288,27 +299,24 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
                               onClose();
                             }
                           }}
-                          className="group relative bg-white dark:bg-slate-800 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50 hover:border-blue-200 dark:hover:border-blue-800 cursor-pointer"
+                          className="group relative bg-white/95 dark:bg-slate-800 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50 hover:border-[#CDD7FF] dark:hover:border-[#6277E8] cursor-pointer"
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div
                               className={cn(
-                                'w-12 h-12 rounded-xl flex items-center justify-center bg-slate-50 dark:bg-slate-900 group-hover:scale-105 transition-transform duration-300',
-                                app.color
-                                  .replace('text-', 'bg-')
-                                  .replace('500', '100')
-                                  .replace('600', '100')
+                                'w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform duration-300',
+                                app.iconBg
                               )}
                             >
-                              <app.icon className={cn('w-6 h-6', app.color)} />
+                              <app.icon className={cn('w-6 h-6', app.iconColor)} />
                             </div>
                             <button
                               onClick={(e) => handlePinClick(e, app.id)}
                               className={cn(
                                 'p-1.5 rounded-lg transition-all duration-200',
                                 isPinned
-                                  ? 'text-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                                  : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                  ? 'text-[#5D7CFA] bg-[#EAF0FF] dark:bg-[#34428A]/40'
+                                  : 'text-slate-300 hover:text-[#5D7CFA] hover:bg-[#F0F4FF] dark:hover:bg-slate-700'
                               )}
                             >
                               <Pin className={cn('w-4 h-4', isPinned && 'fill-current')} />

@@ -104,14 +104,14 @@ export function GlobalSidebar() {
       <aside className="w-[100px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
         {/* Logo Area */}
         <div className="mb-10 px-2 flex flex-col items-center gap-1 group cursor-pointer">
-          <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-500/20 group-hover:scale-110 transition-transform">
+          <div className="w-12 h-12 bg-gradient-to-tr from-[#5D7CFA] to-[#8794FF] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-500/25 group-hover:scale-110 transition-transform">
             <Sparkles className="w-6 h-6" />
           </div>
           <div className="flex flex-col items-center mt-2">
             <span className="text-[10px] font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
               AI Studio
             </span>
-            <span className="text-[8px] font-bold text-blue-500/80 leading-none mt-0.5">V2.0</span>
+            <span className="text-[8px] font-bold text-[#6B7FF2] leading-none mt-0.5">V2.0</span>
           </div>
         </div>
 
@@ -122,15 +122,15 @@ export function GlobalSidebar() {
             <Link href="/" className="flex flex-col items-center gap-1 group w-full relative">
               {/* 激活状态指示器 */}
               {pathname === '/' && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-blue-500 rounded-r-full" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-[#6B83FA] rounded-r-full" />
               )}
 
               <div
                 className={cn(
                   'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                   pathname === '/'
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
-                    : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 active:scale-95'
+                    ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
+                    : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                 )}
               >
                 <Home className="w-5 h-5" strokeWidth={2} />
@@ -139,8 +139,8 @@ export function GlobalSidebar() {
                 className={cn(
                   'text-[10px] font-medium transition-colors duration-300',
                   pathname === '/'
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                    ? 'text-[#4E67E6] dark:text-[#9BADFF]'
+                    : 'text-slate-500 dark:text-slate-400 group-hover:text-[#5D7CFA] dark:group-hover:text-[#9BADFF]'
                 )}
               >
                 首页
@@ -181,15 +181,15 @@ export function GlobalSidebar() {
                       className={cn(
                         'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                         active
-                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/40 scale-105'
-                          : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-600 dark:hover:text-blue-400 hover:scale-105 active:scale-95'
+                          ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
+                          : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                         // 着陆发光效果（当飞行完成且 isJustAdded 变为 false 时，我们可以触发 class 动画，但如果需要，依赖 css 动画关键帧更简单）
                       )}
                     >
                       <app.icon className="w-5 h-5" strokeWidth={2} />
 
                       {!active && isLanding && (
-                        <span className="absolute inset-0 rounded-xl ring-2 ring-blue-400 ring-offset-2 animate-ping opacity-75"></span>
+                        <span className="absolute inset-0 rounded-xl ring-2 ring-[#8EA3FF] ring-offset-2 animate-ping opacity-75"></span>
                       )}
                     </div>
 
@@ -197,8 +197,8 @@ export function GlobalSidebar() {
                       className={cn(
                         'text-[10px] font-medium transition-colors duration-300 text-center leading-tight px-1 line-clamp-1',
                         active
-                          ? 'text-blue-600 dark:text-blue-400'
-                          : 'text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                          ? 'text-[#4E67E6] dark:text-[#9BADFF]'
+                          : 'text-slate-500 dark:text-slate-400 group-hover:text-[#5D7CFA] dark:group-hover:text-[#9BADFF]'
                       )}
                     >
                       {app.label}
@@ -213,7 +213,7 @@ export function GlobalSidebar() {
           <motion.button
             layout
             onClick={() => setAppsModal(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-blue-500 dark:hover:text-blue-400 hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
           </motion.button>
@@ -224,22 +224,22 @@ export function GlobalSidebar() {
           {/* 历史记录 */}
           <Link
             href="/history"
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300"
           >
             <Clock className="w-5 h-5" />
           </Link>
 
           {/* 主题切换 */}
-          <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300" />
+          <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300" />
 
           {/* 设置 */}
-          <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md border border-white/20 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-200/50 dark:hover:shadow-black/50 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105 active:scale-95 transition-all duration-300">
+          <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300">
             <Settings className="w-5 h-5" />
           </button>
 
           {/* 用户头像 */}
           <div className="relative cursor-pointer group mt-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 p-0.5 shadow-md hover:shadow-lg transition-shadow">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7D91FF] to-[#9CAEFF] p-0.5 shadow-md shadow-indigo-400/35 hover:shadow-lg transition-shadow">
               <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden">
                 <img
                   src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
@@ -248,7 +248,7 @@ export function GlobalSidebar() {
                 />
               </div>
             </div>
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full" />
+            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#6D86FF] border-2 border-white dark:border-slate-900 rounded-full" />
           </div>
         </div>
       </aside>
@@ -262,7 +262,7 @@ export function GlobalSidebar() {
             exit={{ opacity: 0, y: -30 }}
             className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-5 py-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-white/30 dark:border-slate-700 shadow-2xl rounded-2xl whitespace-nowrap"
           >
-            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white">
+            <div className="w-5 h-5 rounded-full bg-[#6D86FF] flex items-center justify-center text-white">
               <Check className="w-3 h-3" strokeWidth={3} />
             </div>
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">

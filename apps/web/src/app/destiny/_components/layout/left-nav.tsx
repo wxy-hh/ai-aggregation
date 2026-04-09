@@ -55,7 +55,8 @@ export function LeftNav({
                     onClick={() => onModuleChange?.(item.key)}
                     className={cn(
                       'w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition',
-                      'border border-transparent hover:border-white/60 hover:bg-white/45',
+                      'border border-transparent',
+                      !active && 'hover:border-white/60 hover:bg-white/45',
                       active && 'bg-[#2F6BFF]/10 border-[#2F6BFF]/25 shadow-sm text-slate-900'
                     )}
                   >

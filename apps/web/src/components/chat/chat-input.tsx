@@ -8,8 +8,8 @@ import { toast } from 'sonner';
 
 // 文件上传常量
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_FILE_SIZE = 5 * 1024 * 1024;   // 5MB
-const UPLOAD_TIMEOUT = 20000;            // 20s
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const UPLOAD_TIMEOUT = 20000; // 20s
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -49,10 +49,10 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const handleSend = () => {
     // 有附件时允许空文本，否则需要文本内容
     if ((!input.trim() && !attachment) || isLoading) return;
-    
+
     // 附件必须在 ready 状态
     if (attachment && attachment.status !== 'ready') return;
-    
+
     onSend(input);
     setInput('');
     if (textareaRef.current) {
@@ -67,392 +67,433 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   };
 
   // 图片上传处理
-  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    
-    // 立即关闭 popover，无论是否成功
-    setIsPopoverOpen(false);
-    
-    if (!file) return;
+  const handleImageSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
 
-    // 验证文件类型
-    if (!file.type.startsWith('image/')) {
-      toast.custom(
-        (t) => (
-          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}>
-            {/* 背景层 */}
-            <div
-              className="absolute inset-0 backdrop-blur-xl"
-              style={{
-                background: 'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
-              }}
-            />
-            {/* 内边框 */}
-            <div className="absolute inset-0 rounded-2xl border border-white/60" />
-            
-            {/* 光效 */}
-            <div 
-              className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)' }}
-            />
-            <div 
-              className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full blur-2xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}
-            />
-            
-            {/* 内容 */}
-            <div className="relative p-4 flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
-                  <Image className="h-6 w-6 text-blue-600" strokeWidth={2} />
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
-                  请选择图片文件
-                </h3>
-                <p className="text-sm text-slate-500">
-                  支持 JPG、PNG、GIF、WebP 格式
-                </p>
-              </div>
-              <button
-                onClick={() => toast.dismiss(t)}
-                className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
-              >
-                <X className="h-4 w-4 text-slate-500" />
-              </button>
-            </div>
-          </div>
-        ),
-        { duration: 3000, position: 'top-center' }
-      );
-      e.target.value = '';
-      return;
-    }
+      // 立即关闭 popover，无论是否成功
+      setIsPopoverOpen(false);
 
-    // 验证文件大小
-    if (file.size > MAX_IMAGE_SIZE) {
-      const currentSize = (file.size / (1024 * 1024)).toFixed(1);
-      toast.custom(
-        (t) => (
-          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}>
-            {/* 背景层 */}
+      if (!file) return;
+
+      // 验证文件类型
+      if (!file.type.startsWith('image/')) {
+        toast.custom(
+          (t) => (
             <div
-              className="absolute inset-0 backdrop-blur-xl"
-              style={{
-                background: 'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
-              }}
-            />
-            {/* 内边框 */}
-            <div className="absolute inset-0 rounded-2xl border border-white/60" />
-            
-            {/* 光效 */}
-            <div 
-              className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)' }}
-            />
-            <div 
-              className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full blur-2xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}
-            />
-            
-            {/* 内容 */}
-            <div className="relative p-4 flex items-start gap-4 pb-5">
-              <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
-                  <Image className="h-6 w-6 text-blue-600" strokeWidth={2} />
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
-                  图片大小超出限制
-                </h3>
-                <div className="space-y-1">
-                  <p className="text-sm text-slate-500">
-                    当前图片: <span className="font-medium text-slate-700">{currentSize} MB</span>
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    限制大小: <span className="font-medium text-slate-700">10 MB</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => toast.dismiss(t)}
-                className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
-              >
-                <X className="h-4 w-4 text-slate-500" />
-              </button>
-            </div>
-            
-            {/* 进度条 */}
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/40">
-              <div 
-                className="h-full bg-blue-400/70 rounded-full"
-                style={{ width: `${Math.min((parseFloat(currentSize) / 10) * 100, 100)}%` }}
+              className="relative rounded-2xl shadow-2xl overflow-hidden"
+              style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}
+            >
+              {/* 背景层 */}
+              <div
+                className="absolute inset-0 backdrop-blur-xl"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
+                }}
               />
+              {/* 内边框 */}
+              <div className="absolute inset-0 rounded-2xl border border-white/60" />
+
+              {/* 光效 */}
+              <div
+                className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)',
+                }}
+              />
+              <div
+                className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full blur-2xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)',
+                }}
+              />
+
+              {/* 内容 */}
+              <div className="relative p-4 flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
+                    <Image className="h-6 w-6 text-blue-600" strokeWidth={2} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
+                    请选择图片文件
+                  </h3>
+                  <p className="text-sm text-slate-500">支持 JPG、PNG、GIF、WebP 格式</p>
+                </div>
+                <button
+                  onClick={() => toast.dismiss(t)}
+                  className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
+                >
+                  <X className="h-4 w-4 text-slate-500" />
+                </button>
+              </div>
             </div>
-          </div>
-        ),
-        { duration: 4000, position: 'top-center' }
-      );
-      e.target.value = '';
-      return;
-    }
+          ),
+          { duration: 3000, position: 'top-center' }
+        );
+        e.target.value = '';
+        return;
+      }
 
-    // 创建临时附件对象
-    const tempAttachment: Attachment = {
-      id: `img-${Date.now()}`,
-      type: 'image',
-      name: file.name,
-      size: file.size,
-      status: 'uploading',
-    };
-    setAttachment(tempAttachment);
+      // 验证文件大小
+      if (file.size > MAX_IMAGE_SIZE) {
+        const currentSize = (file.size / (1024 * 1024)).toFixed(1);
+        toast.custom(
+          (t) => (
+            <div
+              className="relative rounded-2xl shadow-2xl overflow-hidden"
+              style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}
+            >
+              {/* 背景层 */}
+              <div
+                className="absolute inset-0 backdrop-blur-xl"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
+                }}
+              />
+              {/* 内边框 */}
+              <div className="absolute inset-0 rounded-2xl border border-white/60" />
 
-    try {
-      // 转换为 base64
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = reader.result as string;
-        setAttachment({
-          ...tempAttachment,
-          imageUrl: base64,
-          status: 'ready',
-        });
+              {/* 光效 */}
+              <div
+                className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)',
+                }}
+              />
+              <div
+                className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full blur-2xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)',
+                }}
+              />
+
+              {/* 内容 */}
+              <div className="relative p-4 flex items-start gap-4 pb-5">
+                <div className="flex-shrink-0">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
+                    <Image className="h-6 w-6 text-blue-600" strokeWidth={2} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
+                    图片大小超出限制
+                  </h3>
+                  <div className="space-y-1">
+                    <p className="text-sm text-slate-500">
+                      当前图片: <span className="font-medium text-slate-700">{currentSize} MB</span>
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      限制大小: <span className="font-medium text-slate-700">10 MB</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toast.dismiss(t)}
+                  className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
+                >
+                  <X className="h-4 w-4 text-slate-500" />
+                </button>
+              </div>
+
+              {/* 进度条 */}
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/40">
+                <div
+                  className="h-full bg-blue-400/70 rounded-full"
+                  style={{ width: `${Math.min((parseFloat(currentSize) / 10) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          ),
+          { duration: 4000, position: 'top-center' }
+        );
+        e.target.value = '';
+        return;
+      }
+
+      // 创建临时附件对象
+      const tempAttachment: Attachment = {
+        id: `img-${Date.now()}`,
+        type: 'image',
+        name: file.name,
+        size: file.size,
+        status: 'uploading',
       };
-      reader.onerror = () => {
+      setAttachment(tempAttachment);
+
+      try {
+        // 转换为 base64
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          setAttachment({
+            ...tempAttachment,
+            imageUrl: base64,
+            status: 'ready',
+          });
+        };
+        reader.onerror = () => {
+          setAttachment({
+            ...tempAttachment,
+            status: 'error',
+            error: '图片读取失败',
+          });
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
         setAttachment({
           ...tempAttachment,
           status: 'error',
-          error: '图片读取失败',
+          error: error instanceof Error ? error.message : '未知错误',
         });
-      };
-      reader.readAsDataURL(file);
-    } catch (error) {
-      setAttachment({
-        ...tempAttachment,
-        status: 'error',
-        error: error instanceof Error ? error.message : '未知错误',
-      });
-    }
+      }
 
-    // 清空 input
-    e.target.value = '';
-  }, [setAttachment]);
-
-  // 文件上传处理
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    
-    // 立即关闭 popover，无论是否成功
-    setIsPopoverOpen(false);
-    
-    if (!file) return;
-
-    // 验证文件类型 - 只支持 PDF
-    const allowedTypes = ['application/pdf'];
-    if (!allowedTypes.includes(file.type)) {
-      toast.custom(
-        (t) => (
-          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}>
-            {/* 背景层 */}
-            <div
-              className="absolute inset-0 backdrop-blur-xl"
-              style={{
-                background: 'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
-              }}
-            />
-            {/* 内边框 */}
-            <div className="absolute inset-0 rounded-2xl border border-white/60" />
-            
-            {/* 光效 */}
-            <div 
-              className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)' }}
-            />
-            <div 
-              className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full blur-2xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}
-            />
-            
-            {/* 内容 */}
-            <div className="relative p-4 flex items-start gap-4">
-              <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
-                  <AlertCircle className="h-6 w-6 text-blue-600" strokeWidth={2} />
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
-                  不支持的文件格式
-                </h3>
-                <p className="text-sm text-slate-500">
-                  请选择 <span className="font-medium text-slate-700">PDF</span> 格式的文档
-                </p>
-              </div>
-              <button
-                onClick={() => toast.dismiss(t)}
-                className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
-              >
-                <X className="h-4 w-4 text-slate-500" />
-              </button>
-            </div>
-          </div>
-        ),
-        {
-          duration: 4000,
-          position: 'top-center',
-        }
-      );
-      
-      e.target.value = '';
-      return;
-    }
-
-    // 验证文件大小
-    if (file.size > MAX_FILE_SIZE) {
-      const currentSize = (file.size / (1024 * 1024)).toFixed(1);
-      
-      // 自定义磨玻璃渐变主题 toast
-      toast.custom(
-        (t) => (
-          <div className="relative rounded-2xl shadow-2xl overflow-hidden" style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}>
-            {/* 背景层 */}
-            <div
-              className="absolute inset-0 backdrop-blur-xl"
-              style={{
-                background: 'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
-              }}
-            />
-            {/* 内边框 */}
-            <div className="absolute inset-0 rounded-2xl border border-white/60" />
-            
-            {/* 光效 */}
-            <div 
-              className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)' }}
-            />
-            <div 
-              className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full blur-2xl pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}
-            />
-            
-            {/* 内容 */}
-            <div className="relative p-4 flex items-start gap-4 pb-5">
-              <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
-                  <FileWarning className="h-6 w-6 text-blue-600" strokeWidth={2} />
-                </div>
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
-                  文件大小超出限制
-                </h3>
-                <div className="space-y-1">
-                  <p className="text-sm text-slate-500">
-                    当前文件: <span className="font-medium text-slate-700">{currentSize} MB</span>
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    限制大小: <span className="font-medium text-slate-700">5 MB</span>
-                  </p>
-                </div>
-                <p className="mt-2 text-xs text-slate-400">
-                  请压缩文件或选择较小的文档
-                </p>
-              </div>
-              
-              <button
-                onClick={() => toast.dismiss(t)}
-                className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
-              >
-                <X className="h-4 w-4 text-slate-500" />
-              </button>
-            </div>
-            
-            {/* 进度条 - 基于 5MB 限制计算 */}
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/40">
-              <div 
-                className="h-full bg-blue-400/70 rounded-full"
-                style={{ width: `${Math.min((parseFloat(currentSize) / 5) * 100, 100)}%` }}
-              />
-            </div>
-          </div>
-        ),
-        {
-          duration: 5000,
-          position: 'top-center',
-        }
-      );
-      
       // 清空 input
       e.target.value = '';
-      return;
-    }
+    },
+    [setAttachment]
+  );
 
-    // 创建临时附件对象
-    const tempAttachment: Attachment = {
-      id: `file-${Date.now()}`,
-      type: 'file',
-      name: file.name,
-      size: file.size,
-      status: 'uploading',
-    };
-    setAttachment(tempAttachment);
+  // 文件上传处理
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
 
-    try {
-      // 上传到服务器
-      const formData = new FormData();
-      formData.append('file', file);
+      // 立即关闭 popover，无论是否成功
+      setIsPopoverOpen(false);
 
-      // 创建 AbortController 用于超时控制
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT);
+      if (!file) return;
 
-      const response = await fetch('/api/files', {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
+      // 验证文件类型 - 只支持 PDF
+      const allowedTypes = ['application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        toast.custom(
+          (t) => (
+            <div
+              className="relative rounded-2xl shadow-2xl overflow-hidden"
+              style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}
+            >
+              {/* 背景层 */}
+              <div
+                className="absolute inset-0 backdrop-blur-xl"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
+                }}
+              />
+              {/* 内边框 */}
+              <div className="absolute inset-0 rounded-2xl border border-white/60" />
 
-      const result = await response.json();
+              {/* 光效 */}
+              <div
+                className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)',
+                }}
+              />
+              <div
+                className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full blur-2xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)',
+                }}
+              />
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || '上传失败');
+              {/* 内容 */}
+              <div className="relative p-4 flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
+                    <AlertCircle className="h-6 w-6 text-blue-600" strokeWidth={2} />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
+                    不支持的文件格式
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    请选择 <span className="font-medium text-slate-700">PDF</span> 格式的文档
+                  </p>
+                </div>
+                <button
+                  onClick={() => toast.dismiss(t)}
+                  className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
+                >
+                  <X className="h-4 w-4 text-slate-500" />
+                </button>
+              </div>
+            </div>
+          ),
+          {
+            duration: 4000,
+            position: 'top-center',
+          }
+        );
+
+        e.target.value = '';
+        return;
       }
 
-      setAttachment({
-        ...tempAttachment,
-        fileId: result.fileId,
-        status: 'ready',
-      });
-    } catch (error) {
-      let displayError = '上传失败';
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          displayError = '上传超时，请检查网络连接或稍后重试';
-        } else if (error.message.includes('processing') || error.message.includes('timeout') || error.message.includes('超时')) {
-          displayError = '文件处理中，请稍后重试。大文件需要更长的处理时间。';
-        } else if (error.message.includes('InvalidParameter') || error.message.includes('file type')) {
-          displayError = '文件格式不支持，请上传 PDF 文档。';
-        } else {
-          displayError = error.message;
+      // 验证文件大小
+      if (file.size > MAX_FILE_SIZE) {
+        const currentSize = (file.size / (1024 * 1024)).toFixed(1);
+
+        // 自定义磨玻璃渐变主题 toast
+        toast.custom(
+          (t) => (
+            <div
+              className="relative rounded-2xl shadow-2xl overflow-hidden"
+              style={{ boxShadow: '0 25px 50px -12px rgba(59, 130, 246, 0.12)' }}
+            >
+              {/* 背景层 */}
+              <div
+                className="absolute inset-0 backdrop-blur-xl"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(219, 234, 254, 0.6) 0%, rgba(191, 219, 254, 0.55) 50%, rgba(147, 197, 253, 0.6) 100%)',
+                }}
+              />
+              {/* 内边框 */}
+              <div className="absolute inset-0 rounded-2xl border border-white/60" />
+
+              {/* 光效 */}
+              <div
+                className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)',
+                }}
+              />
+              <div
+                className="absolute -bottom-8 -left-8 w-24 h-24 rounded-full blur-2xl pointer-events-none"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)',
+                }}
+              />
+
+              {/* 内容 */}
+              <div className="relative p-4 flex items-start gap-4 pb-5">
+                <div className="flex-shrink-0">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/40 backdrop-blur-sm border border-white/50 shadow-sm">
+                    <FileWarning className="h-6 w-6 text-blue-600" strokeWidth={2} />
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-slate-700 mb-1 tracking-tight">
+                    文件大小超出限制
+                  </h3>
+                  <div className="space-y-1">
+                    <p className="text-sm text-slate-500">
+                      当前文件: <span className="font-medium text-slate-700">{currentSize} MB</span>
+                    </p>
+                    <p className="text-sm text-slate-500">
+                      限制大小: <span className="font-medium text-slate-700">5 MB</span>
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-400">请压缩文件或选择较小的文档</p>
+                </div>
+
+                <button
+                  onClick={() => toast.dismiss(t)}
+                  className="flex-shrink-0 p-1.5 rounded-lg bg-white/30 hover:bg-white/50 transition-colors border border-white/40"
+                >
+                  <X className="h-4 w-4 text-slate-500" />
+                </button>
+              </div>
+
+              {/* 进度条 - 基于 5MB 限制计算 */}
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/40">
+                <div
+                  className="h-full bg-blue-400/70 rounded-full"
+                  style={{ width: `${Math.min((parseFloat(currentSize) / 5) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+          ),
+          {
+            duration: 5000,
+            position: 'top-center',
+          }
+        );
+
+        // 清空 input
+        e.target.value = '';
+        return;
+      }
+
+      // 创建临时附件对象
+      const tempAttachment: Attachment = {
+        id: `file-${Date.now()}`,
+        type: 'file',
+        name: file.name,
+        size: file.size,
+        status: 'uploading',
+      };
+      setAttachment(tempAttachment);
+
+      try {
+        // 上传到服务器
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // 创建 AbortController 用于超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT);
+
+        const response = await fetch('/api/files', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || '上传失败');
         }
-      }
-      
-      setAttachment({
-        ...tempAttachment,
-        status: 'error',
-        error: displayError,
-      });
-    }
 
-    // 清空 input
-    e.target.value = '';
-  }, [setAttachment]);
+        setAttachment({
+          ...tempAttachment,
+          fileId: result.fileId,
+          status: 'ready',
+        });
+      } catch (error) {
+        let displayError = '上传失败';
+
+        if (error instanceof Error) {
+          if (error.name === 'AbortError') {
+            displayError = '上传超时，请检查网络连接或稍后重试';
+          } else if (
+            error.message.includes('processing') ||
+            error.message.includes('timeout') ||
+            error.message.includes('超时')
+          ) {
+            displayError = '文件处理中，请稍后重试。大文件需要更长的处理时间。';
+          } else if (
+            error.message.includes('InvalidParameter') ||
+            error.message.includes('file type')
+          ) {
+            displayError = '文件格式不支持，请上传 PDF 文档。';
+          } else {
+            displayError = error.message;
+          }
+        }
+
+        setAttachment({
+          ...tempAttachment,
+          status: 'error',
+          error: displayError,
+        });
+      }
+
+      // 清空 input
+      e.target.value = '';
+    },
+    [setAttachment]
+  );
 
   // 删除附件（同时删除远程云端文件）
   const handleRemoveAttachment = useCallback(async () => {
@@ -463,7 +504,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         const response = await fetch(`/api/files?fileId=${encodeURIComponent(attachment.fileId)}`, {
           method: 'DELETE',
         });
-        
+
         if (response.ok) {
           console.log('[ChatInput] 远程文件删除成功');
         } else {
@@ -474,7 +515,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         console.error('[ChatInput] 删除远程文件出错:', error);
       }
     }
-    
+
     // 清除本地附件状态
     setAttachment(null);
   }, [attachment, setAttachment]);
@@ -514,9 +555,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   {attachment.name}
                 </span>
                 {attachment.size && (
-                  <span className="text-xs text-slate-400">
-                    {formatFileSize(attachment.size)}
-                  </span>
+                  <span className="text-xs text-slate-400">{formatFileSize(attachment.size)}</span>
                 )}
               </div>
               {(attachment.status === 'ready' || attachment.status === 'error') && (
@@ -529,7 +568,10 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                 </button>
               )}
               {attachment.status === 'error' && (
-                <span className="text-xs text-red-500 ml-2 max-w-[120px] truncate" title={attachment.error}>
+                <span
+                  className="text-xs text-red-500 ml-2 max-w-[120px] truncate"
+                  title={attachment.error}
+                >
                   {attachment.error || '上传失败'}
                 </span>
               )}
@@ -545,8 +587,8 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          placeholder={attachment ? "添加消息（可选）..." : "输入消息..."}
-          className="w-full px-4 py-3 bg-transparent border-0 focus-visible:ring-0 resize-none min-h-[24px] max-h-[200px] text-slate-900 dark:text-white placeholder:text-slate-400 shadow-none text-base"
+          placeholder={attachment ? '添加消息（可选）...' : '输入消息...'}
+          className="w-full px-4 py-3 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none outline-none resize-none min-h-[24px] max-h-[200px] text-slate-900 dark:text-white placeholder:text-slate-400 shadow-none text-base"
           disabled={isLoading}
         />
         <div className="flex justify-between items-center px-2 pb-1 mt-2">
@@ -643,7 +685,9 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
             </Button>
             <Button
               onClick={handleSend}
-              disabled={(!input.trim() && !attachment) || isLoading || (attachment?.status === 'uploading')}
+              disabled={
+                (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
+              }
               className="h-9 w-9 p-0 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl transition-colors shadow-sm"
               size="icon"
             >

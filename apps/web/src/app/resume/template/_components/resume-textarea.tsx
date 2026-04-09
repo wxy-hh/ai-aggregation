@@ -110,18 +110,17 @@ const ResumeTextarea = React.forwardRef<HTMLTextAreaElement, ResumeTextareaProps
             // 文字样式
             'text-slate-900 dark:text-slate-100',
             'placeholder:text-slate-400 dark:placeholder:text-slate-500',
-            // 聚焦状态 - 内发光效果(使用 box-shadow inset) + 2px 科技蓝外框
+            // 聚焦状态 - 轻量高亮效果
             'focus:outline-none',
-            'focus:border-[#2F6BFF]',
-            'focus:shadow-[inset_0_0_0_1px_#2F6BFF,inset_0_2px_8px_rgba(47,107,255,0.2)]',
-            'focus:ring-2 focus:ring-[#2F6BFF] focus:ring-offset-0',
+            'focus:border-[#2F6BFF]/60',
+            'focus:shadow-[0_0_0_1px_rgba(47,107,255,0.3)]',
             // 150ms 过渡动画
             'transition-all duration-150 ease-in-out',
             // 禁用状态
             'disabled:cursor-not-allowed disabled:opacity-50',
             // 错误状态或超出长度限制
             (error || isOverLimit) &&
-              'border-red-400 focus:border-red-500 focus:shadow-[inset_0_0_0_1px_#ef4444,inset_0_2px_8px_rgba(239,68,68,0.2)] focus:ring-red-500',
+              'border-red-400 focus:border-red-500/60 focus:shadow-[0_0_0_1px_rgba(239,68,68,0.3)]',
             // 调整大小
             'resize-y',
             className

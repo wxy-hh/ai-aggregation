@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
 import type { DestinyReport } from '../types';
@@ -30,7 +30,7 @@ export function DestinyShell({
   }, [report]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    <div className="relative h-full w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
       {/* 背景：珍珠白 + 网格 + 柔和渐变 */}
       <div
         className="absolute inset-0 -z-10"
@@ -49,6 +49,17 @@ export function DestinyShell({
           backgroundPosition: 'center, center, center, center, center',
         }}
       />
+      <div
+        className="absolute inset-0 -z-10 hidden dark:block"
+        aria-hidden
+        style={{
+          backgroundImage:
+            'radial-gradient(980px 520px at 78% 20%, rgba(37,99,235,0.20) 0%, rgba(37,99,235,0.08) 35%, rgba(37,99,235,0) 65%), radial-gradient(900px 540px at 82% 88%, rgba(124,58,237,0.18) 0%, rgba(124,58,237,0.08) 38%, rgba(124,58,237,0) 62%), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)',
+          backgroundRepeat: 'no-repeat, no-repeat, repeat, repeat',
+          backgroundSize: 'cover, cover, 80px 80px, 80px 80px',
+          backgroundPosition: 'center, center, center, center',
+        }}
+      />
 
       <div className="flex h-full w-full gap-6 p-6">
         {/* 左侧：导航与历史 */}
@@ -64,12 +75,12 @@ export function DestinyShell({
             <header className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
+                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                     {title}
                   </h1>
-                  <span className="text-sm font-semibold text-slate-500">{subtitleTag}</span>
+                  <span className="text-sm font-semibold text-slate-500 dark:text-slate-300">{subtitleTag}</span>
                 </div>
-                <p className="mt-2 text-sm text-slate-600 truncate">{subtitle}</p>
+                <p className="mt-2 text-sm text-slate-600 truncate dark:text-slate-300">{subtitle}</p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -77,9 +88,9 @@ export function DestinyShell({
                   type="button"
                   onClick={onRecalculate}
                   className={cn(
-                    'h-10 px-4 rounded-full text-sm font-bold',
-                    'bg-[#2F6BFF] text-white shadow-lg shadow-blue-500/25',
-                    'hover:brightness-110 active:brightness-95 transition'
+                    'h-10 px-5 rounded-full text-sm font-bold transition-all duration-200',
+                    'bg-gradient-to-r from-[#5D7CFA] to-[#778BFF] text-white shadow-[0_10px_24px_rgba(93,124,250,0.36)]',
+                    'hover:brightness-105 hover:shadow-[0_14px_30px_rgba(93,124,250,0.42)] active:scale-[0.98]'
                   )}
                 >
                   重新排盘
@@ -92,8 +103,8 @@ export function DestinyShell({
             ) : (
               <GlassCard className="flex-1 min-h-0 p-8 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="text-xl font-black text-slate-900">等待开始测算</div>
-                  <p className="mt-2 text-sm text-slate-500">
+                  <div className="text-xl font-black text-slate-900 dark:text-slate-100">等待开始测算</div>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
                     请先填写生辰信息，AI 将基于真实模型生成完整命理解读。
                   </p>
                 </div>
@@ -108,7 +119,7 @@ export function DestinyShell({
             {report ? (
               <ReportRightRail report={report} />
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-slate-500">
+              <div className="h-full flex items-center justify-center text-sm text-slate-500 dark:text-slate-300">
                 完成测算后可查看深度报告
               </div>
             )}
