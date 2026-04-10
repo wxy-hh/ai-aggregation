@@ -63,12 +63,11 @@ const outputLengthOptions: Array<{ value: QimenOutputLength; label: string }> = 
   { value: 'detailed', label: '详版（完整建议）' },
 ];
 
-const panelClass =
-  'rounded-[24px] border border-white/75 bg-white/52 backdrop-blur-xl px-5 py-5 shadow-[0_12px_34px_rgba(93,124,250,0.10),inset_1px_1px_0_rgba(255,255,255,0.86)] dark:border-slate-700/60 dark:bg-slate-900/55 dark:shadow-[0_16px_40px_rgba(0,0,0,0.45)]';
+const panelClass = 'relative rounded-[28px] backdrop-blur-[24px] px-6 py-6 overflow-hidden';
 
-const labelClass = 'text-[13px] font-semibold text-[#425394] dark:text-slate-300';
+const labelClass = 'text-[13px] font-semibold text-[#425394]/90 dark:text-slate-300';
 const inputClass =
-  'bg-white/72 border-white/70 rounded-xl text-slate-700 shadow-[inset_2px_2px_5px_rgba(160,175,205,0.16),inset_-2px_-2px_6px_rgba(255,255,255,0.92)] focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/35 focus-visible:border-[#9BAEFF] dark:bg-slate-900/70 dark:border-slate-700/70 dark:text-slate-100 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] dark:placeholder:text-slate-400';
+  'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 rounded-[14px] text-slate-700 dark:text-slate-100 shadow-[0_2px_8px_rgba(93,124,250,0.06),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.2)] focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/25 dark:focus-visible:ring-indigo-500/25 focus-visible:border-[#9BAEFF]/60 dark:focus-visible:border-indigo-500/60 focus-visible:bg-white/80 dark:focus-visible:bg-slate-800/80 transition-all duration-200 dark:placeholder:text-slate-400';
 
 export function QimenInputForm({
   value,
@@ -115,21 +114,61 @@ export function QimenInputForm({
   };
 
   return (
-    <div className="rounded-[30px] border border-white/70 bg-white/50 p-5 md:p-7 backdrop-blur-2xl shadow-[0_20px_60px_rgba(73,86,130,0.15)] dark:border-slate-700/60 dark:bg-slate-900/55 dark:shadow-[0_24px_70px_rgba(2,6,23,0.55)]">
-      <div className="flex items-start justify-between gap-4">
+    <div
+      className="relative rounded-[32px] p-6 md:p-8 backdrop-blur-[32px] overflow-hidden bg-white/25 dark:bg-slate-900/40"
+      style={{
+        boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 24px 64px rgba(73,86,130,0.08)',
+      }}
+    >
+      {/* 顶部边框高光 */}
+      <div
+        className="absolute inset-x-0 top-0 h-px"
+        style={{
+          background:
+            'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.6) 50%, transparent 100%)',
+        }}
+      />
+
+      {/* 侧边框 - 仅上半部分 */}
+      <div
+        className="absolute inset-y-0 left-0 w-px"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.15) 60%, transparent 100%)',
+        }}
+      />
+      <div
+        className="absolute inset-y-0 right-0 w-px"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.15) 60%, transparent 100%)',
+        }}
+      />
+
+      <div className="relative flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[22px] font-black tracking-tight text-[#1A245B] dark:text-slate-100">信息输入表单</h2>
-          <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300">
+          <h2 className="text-[22px] font-black tracking-tight text-[#1A245B] dark:text-slate-100">
+            信息输入表单
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-600/80 dark:text-slate-300/80">
             已自动填入当前时间，按实际问题补充地点与目标即可。
           </p>
         </div>
-        <span className="rounded-full border border-white/80 bg-white/65 px-3 py-1 text-xs font-bold text-[#4B63D9] shadow-sm dark:border-slate-700/70 dark:bg-slate-800/70 dark:text-slate-200">
+        <span className="rounded-full border border-white/60 bg-white/40 backdrop-blur-sm px-3 py-1 text-xs font-bold text-[#4B63D9] shadow-[0_2px_8px_rgba(75,99,217,0.15)] dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-200">
           Step 1 / 2
         </span>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
-        <section className={panelClass}>
+      <div className="relative mt-6 grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+        <section
+          className={cn(
+            panelClass,
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+          )}
+          style={{
+            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
+          }}
+        >
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">基础时空信息</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -162,13 +201,23 @@ export function QimenInputForm({
               {fieldErrors.location ? (
                 <p className="text-xs text-rose-600">{fieldErrors.location}</p>
               ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-400">地点用于辅助判断环境变量与行动半径</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  地点用于辅助判断环境变量与行动半径
+                </p>
               )}
             </div>
           </div>
         </section>
 
-        <section className={panelClass}>
+        <section
+          className={cn(
+            panelClass,
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+          )}
+          style={{
+            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
+          }}
+        >
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">问题信息</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -199,7 +248,7 @@ export function QimenInputForm({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 rounded-full border-[#CFD9FF] bg-gradient-to-r from-[#F0F4FF] to-[#EEF1FF] px-3 text-[11px] font-semibold text-[#445ECC] hover:from-[#E7EDFF] hover:to-[#E8ECFF]"
+                  className="h-7 rounded-full border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm px-3 text-[11px] font-semibold text-[#445ECC] dark:text-indigo-400 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:border-white/80 dark:hover:border-white/20 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)]"
                   onClick={handleCopyTemplate}
                   disabled={submitting}
                 >
@@ -218,15 +267,27 @@ export function QimenInputForm({
                 {fieldErrors.description ? (
                   <p className="text-xs text-rose-600">{fieldErrors.description}</p>
                 ) : (
-                  <span className="text-xs text-slate-500 dark:text-slate-400">建议写清时间范围与决策目标</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    建议写清时间范围与决策目标
+                  </span>
                 )}
-                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">{descriptionLength}/300</span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                  {descriptionLength}/300
+                </span>
               </div>
             </div>
           </div>
         </section>
 
-        <section className={panelClass}>
+        <section
+          className={cn(
+            panelClass,
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+          )}
+          style={{
+            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
+          }}
+        >
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">排盘参数</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -269,7 +330,15 @@ export function QimenInputForm({
           </div>
         </section>
 
-        <section className={panelClass}>
+        <section
+          className={cn(
+            panelClass,
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+          )}
+          style={{
+            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
+          }}
+        >
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">输出偏好</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -314,7 +383,7 @@ export function QimenInputForm({
       </div>
 
       {error && (
-        <div className="mt-5 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 backdrop-blur-sm">
+        <div className="mt-5 rounded-[20px] border border-rose-200/50 bg-gradient-to-br from-rose-50/60 via-rose-50/40 to-transparent backdrop-blur-sm px-4 py-3 text-sm text-rose-700 shadow-[0_4px_16px_rgba(244,63,94,0.08)]">
           {error}
         </div>
       )}
@@ -322,7 +391,7 @@ export function QimenInputForm({
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <Button
           type="button"
-          className="rounded-full bg-gradient-to-r from-[#5D7CFA] via-[#6F87FF] to-[#8190FF] px-5 text-white shadow-[0_10px_28px_rgba(93,124,250,0.38)] hover:brightness-105"
+          className="rounded-full bg-gradient-to-r from-[#5D7CFA] via-[#6F87FF] to-[#8190FF] px-6 py-2.5 text-white shadow-[0_8px_24px_rgba(93,124,250,0.28),0_1px_0_rgba(255,255,255,0.2)_inset] hover:shadow-[0_12px_32px_rgba(93,124,250,0.35)] hover:brightness-105 transition-all duration-300"
           onClick={onSubmit}
           disabled={submitting}
         >
@@ -331,7 +400,7 @@ export function QimenInputForm({
         <Button
           type="button"
           variant="outline"
-          className="rounded-full border-white/85 bg-white/70 text-[#4B5D9F] hover:bg-white/85"
+          className="rounded-full border-white/60 bg-white/40 backdrop-blur-sm text-[#4B5D9F] hover:bg-white/60 hover:border-white/80 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)]"
           onClick={onReset}
           disabled={submitting}
         >

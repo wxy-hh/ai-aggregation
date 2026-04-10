@@ -128,23 +128,15 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   };
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
-      <div
-        className="absolute inset-0 -z-10"
-        aria-hidden
-        style={{
-          backgroundColor: '#F8F8FC',
-          backgroundImage:
-            'radial-gradient(at 0% 0%, #f8f8fc 0%, transparent 50%), radial-gradient(at 100% 0%, #8cb1f1 0%, transparent 50%), radial-gradient(at 100% 100%, #c4bfea 0%, transparent 50%), radial-gradient(at 0% 100%, #ffffff 0%, transparent 50%)',
-        }}
-      />
-
+    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
       <div className="h-full w-full xl:pl-[320px]">
         <div className="flex h-full flex-col p-6">
           <header className="shrink-0 flex justify-between items-center gap-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-[#08134D]">{pageTitle}</h1>
-              <p className="text-sm text-slate-500 mt-1">
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
+                {pageTitle}
+              </h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 同页分步流程：先录入问题，再查看 AI 推演结果
               </p>
             </div>
