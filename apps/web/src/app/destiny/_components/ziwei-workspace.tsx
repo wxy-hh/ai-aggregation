@@ -249,7 +249,7 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full w-full xl:pl-[320px]">
+      <div className="h-full w-full xl:pl-[304px]">
         {step === 'form' ? (
           <div className="flex h-full flex-col p-6">
             <header className="shrink-0 flex justify-between items-center gap-4">

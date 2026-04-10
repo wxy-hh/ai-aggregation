@@ -460,10 +460,10 @@ export function QimenLoadingAnimation({
   }, [intensity, variant]);
 
   return (
-    <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[28px] border border-white/20 bg-[linear-gradient(145deg,rgba(246,248,255,0.16)_0%,rgba(231,238,252,0.12)_45%,rgba(220,230,248,0.1)_100%)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.28),0_12px_48px_rgba(68,96,138,0.16)]">
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-transparent">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(153,184,234,0.14),rgba(153,184,234,0)_62%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/22 via-white/8 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-white/20 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/14 via-white/5 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-white/5 via-white/2 to-transparent" />
 
       <div ref={hostRef} className="relative flex h-full min-h-[420px] w-full items-center justify-center px-3 py-8 md:px-5">
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />

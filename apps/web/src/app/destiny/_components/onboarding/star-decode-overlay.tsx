@@ -193,8 +193,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
       role="dialog"
       aria-label="星空解码中"
     >
-      <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-[320px] bg-white/6 backdrop-blur-[3px] xl:block" />
-      <div className="pointer-events-none absolute inset-y-0 left-[300px] hidden w-20 bg-gradient-to-r from-white/8 via-white/4 to-transparent xl:block" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-[520px] bg-gradient-to-r from-white/22 via-white/10 to-transparent xl:block" />
 
       <div className="relative h-full w-full">
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />

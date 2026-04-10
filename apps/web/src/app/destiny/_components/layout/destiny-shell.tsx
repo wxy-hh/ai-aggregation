@@ -31,33 +31,32 @@ export function DestinyShell({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
-      {/* 背景：珍珠白 + 网格 + 柔和渐变 */}
+      {/* 背景：珍珠白 + 柔和渐变（移除网格线） */}
       <div
         className="absolute inset-0 -z-10"
         aria-hidden
         style={{
           backgroundColor: '#F6F8FF',
-          // 主题底图（网格/雾化/光晕）+ 轻量叠加蓝/紫雾层
+          // 主题底图 + 轻量叠加蓝/紫雾层（移除网格线以避免明显竖线）
           backgroundImage:
             "url('/主题色.png')," +
-            "radial-gradient(980px 520px at 78% 20%, rgba(47,107,255,0.22) 0%, rgba(47,107,255,0.10) 35%, rgba(47,107,255,0.0) 65%)," +
-            "radial-gradient(900px 540px at 82% 88%, rgba(147,51,234,0.18) 0%, rgba(147,51,234,0.08) 38%, rgba(147,51,234,0.0) 62%)," +
-            "linear-gradient(to right, rgba(15,23,42,0.012) 1px, transparent 1px)," +
-            "linear-gradient(to bottom, rgba(15,23,42,0.012) 1px, transparent 1px)",
-          backgroundRepeat: 'no-repeat, no-repeat, no-repeat, repeat, repeat',
-          backgroundSize: 'cover, cover, cover, 80px 80px, 80px 80px',
-          backgroundPosition: 'center, center, center, center, center',
+            'radial-gradient(980px 520px at 78% 20%, rgba(47,107,255,0.22) 0%, rgba(47,107,255,0.10) 35%, rgba(47,107,255,0.0) 65%),' +
+            'radial-gradient(900px 540px at 82% 88%, rgba(147,51,234,0.18) 0%, rgba(147,51,234,0.08) 38%, rgba(147,51,234,0.0) 62%)',
+          backgroundRepeat: 'no-repeat, no-repeat, no-repeat',
+          backgroundSize: 'cover, cover, cover',
+          backgroundPosition: 'center, center, center',
         }}
       />
       <div
         className="absolute inset-0 -z-10 hidden dark:block"
         aria-hidden
         style={{
+          // 暗色模式背景（移除网格线）
           backgroundImage:
-            'radial-gradient(980px 520px at 78% 20%, rgba(37,99,235,0.20) 0%, rgba(37,99,235,0.08) 35%, rgba(37,99,235,0) 65%), radial-gradient(900px 540px at 82% 88%, rgba(124,58,237,0.18) 0%, rgba(124,58,237,0.08) 38%, rgba(124,58,237,0) 62%), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)',
-          backgroundRepeat: 'no-repeat, no-repeat, repeat, repeat',
-          backgroundSize: 'cover, cover, 80px 80px, 80px 80px',
-          backgroundPosition: 'center, center, center, center',
+            'radial-gradient(980px 520px at 78% 20%, rgba(37,99,235,0.20) 0%, rgba(37,99,235,0.08) 35%, rgba(37,99,235,0) 65%), radial-gradient(900px 540px at 82% 88%, rgba(124,58,237,0.18) 0%, rgba(124,58,237,0.08) 38%, rgba(124,58,237,0) 62%)',
+          backgroundRepeat: 'no-repeat, no-repeat',
+          backgroundSize: 'cover, cover',
+          backgroundPosition: 'center, center',
         }}
       />
 
@@ -78,9 +77,13 @@ export function DestinyShell({
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                     {title}
                   </h1>
-                  <span className="text-sm font-semibold text-slate-500 dark:text-slate-300">{subtitleTag}</span>
+                  <span className="text-sm font-semibold text-slate-500 dark:text-slate-300">
+                    {subtitleTag}
+                  </span>
                 </div>
-                <p className="mt-2 text-sm text-slate-600 truncate dark:text-slate-300">{subtitle}</p>
+                <p className="mt-2 text-sm text-slate-600 truncate dark:text-slate-300">
+                  {subtitle}
+                </p>
               </div>
 
               <div className="flex items-center gap-2">
@@ -103,7 +106,9 @@ export function DestinyShell({
             ) : (
               <GlassCard className="flex-1 min-h-0 p-8 flex items-center justify-center">
                 <div className="text-center">
-                  <div className="text-xl font-black text-slate-900 dark:text-slate-100">等待开始测算</div>
+                  <div className="text-xl font-black text-slate-900 dark:text-slate-100">
+                    等待开始测算
+                  </div>
                   <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
                     请先填写生辰信息，AI 将基于真实模型生成完整命理解读。
                   </p>

@@ -129,21 +129,6 @@ export function QimenInputForm({
         }}
       />
 
-      {/* 侧边框 - 仅上半部分 */}
-      <div
-        className="absolute inset-y-0 left-0 w-px"
-        style={{
-          background:
-            'linear-gradient(to bottom, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.15) 60%, transparent 100%)',
-        }}
-      />
-      <div
-        className="absolute inset-y-0 right-0 w-px"
-        style={{
-          background:
-            'linear-gradient(to bottom, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.15) 60%, transparent 100%)',
-        }}
-      />
 
       <div className="relative flex items-start justify-between gap-4">
         <div>
