@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>讯飞实时语音转写 - WebSocket 测试</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 20px;
+      }
+      .status {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        font-weight: bold;
+      }
+      .status.disconnected {
+        background: #fee;
+        color: #c00;
+      }
+      .status.connecting {
+        background: #ffc;
+        color: #880;
+      }
+      .status.connected {
+        background: #efe;
+        color: #080;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      button.primary {
+        background: #007bff;
+        color: white;
+      }
+      button.danger {
+        background: #dc3545;
+        color: white;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .log {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        max-height: 400px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        margin-top: 20px;
+      }
+      .log-entry {
+        margin: 5px 0;
+        padding: 5px;
+        border-left: 3px solid #ccc;
+        padding-left: 10px;
+      }
+      .log-entry.info {
+        border-color: #17a2b8;
+      }
+      .log-entry.success {
+        border-color: #28a745;
+      }
+      .log-entry.error {
+        border-color: #dc3545;
+      }
+      .log-entry.result {
+        border-color: #ffc107;
+        background: #fffbf0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎤 讯飞实时语音转写 - WebSocket 测试</h1>
+
+      <div id="status" class="status disconnected">状态: 未连接</div>
+
+      <div>
+        <button id="connectBtn" class="primary" onclick="connect()">连接</button>
+        <button id="startBtn" class="primary" onclick="startRecording()" disabled>开始录音</button>
+        <button id="stopBtn" class="danger" onclick="stopRecording()" disabled>停止录音</button>
+        <button onclick="clearLog()">清空日志</button>
+      </div>
+
+      <div class="log" id="log"></div>
+    </div>
+
+    <script>
+      let ws = null;
+      let mediaStream = null;
+      let audioContext = null;
+      let isRecording = false;
+
+      const statusEl = document.getElementById('status');
+      const connectBtn = document.getElementById('connectBtn');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const logEl = document.getElementById('log');
+
+      function updateStatus(text, state) {
+        statusEl.textContent = `状态: ${text}`;
+        statusEl.className = `status ${state}`;
+      }
+
+      function log(message, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logEl.appendChild(entry);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function clearLog() {
+        logEl.innerHTML = '';
+      }
+
+      function connect() {
+        if (ws) {
+          log('已经连接', 'error');
+          return;
+        }
+
+        updateStatus('连接中...', 'connecting');
+        log('正在连接到 WebSocket 网关...', 'info');
+
+        ws = new WebSocket('ws://localhost:8787');
+
+        ws.onopen = () => {
+          updateStatus('已连接', 'connected');
+          log('✓ WebSocket 连接成功', 'success');
+          connectBtn.disabled = true;
+          startBtn.disabled = false;
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'status') {
+              log(`状态更新: ${data.status}`, 'info');
+            } else if (data.type === 'result') {
+              log(`识别结果 [${data.segId}]: ${data.text}`, 'result');
+            } else if (data.type === 'error') {
+              log(`错误: ${data.message}`, 'error');
+            }
+          } catch (err) {
+            log(`解析消息失败: ${err.message}`, 'error');
+          }
+        };
+
+        ws.onerror = (error) => {
+          log(`WebSocket 错误: ${error}`, 'error');
+        };
+
+        ws.onclose = () => {
+          updateStatus('已断开', 'disconnected');
+          log('WebSocket 连接已关闭', 'info');
+          ws = null;
+          connectBtn.disabled = false;
+          startBtn.disabled = true;
+          stopBtn.disabled = true;
+
+          if (isRecording) {
+            stopRecording();
+          }
+        };
+      }
+
+      async function startRecording() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          log('请先连接 WebSocket', 'error');
+          return;
+        }
+
+        try {
+          log('请求麦克风权限...', 'info');
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+          log('✓ 麦克风权限已授予', 'success');
+          log('发送启动命令...', 'info');
+
+          // 发送启动命令
+          ws.send(JSON.stringify({ type: 'start' }));
+
+          // 创建音频上下文
+          audioContext = new AudioContext({ sampleRate: 16000 });
+          const source = audioContext.createMediaStreamSource(mediaStream);
+
+          // 创建音频处理器
+          await audioContext.audioWorklet.addModule('/worklets/pcm-capture-processor.js');
+          const workletNode = new AudioWorkletNode(audioContext, 'pcm-capture-processor');
+
+          workletNode.port.onmessage = (e) => {
+            if (e.data.type === 'pcm' && e.data.buffer) {
+              // 发送音频数据
+              ws.send(e.data.buffer);
+            }
+          };
+
+          source.connect(workletNode);
+          workletNode.connect(audioContext.destination);
+
+          isRecording = true;
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+
+          log('✓ 录音已开始', 'success');
+        } catch (err) {
+          log(`启动录音失败: ${err.message}`, 'error');
+        }
+      }
+
+      function stopRecording() {
+        if (!isRecording) return;
+
+        log('停止录音...', 'info');
+
+        // 发送结束命令
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'end' }));
+        }
+
+        // 停止音频流
+        if (mediaStream) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          mediaStream = null;
+        }
+
+        // 关闭音频上下文
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+
+        isRecording = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+
+        log('✓ 录音已停止', 'success');
+      }
+    </script>
+  </body>
+</html>

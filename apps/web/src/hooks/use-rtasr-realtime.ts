@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from '@/components/voice/transcript-list';
 
-export type RtasrStatus = 'idle' | 'connecting' | 'running' | 'paused' | 'stopped' | 'error';
+export type RtasrStatus =
+  | 'idle'
+  | 'connecting'
+  | 'running'
+  | 'paused'
+  | 'stopping'
+  | 'stopped'
+  | 'error';
 
 export interface UseRtasrRealtimeResult {
   status: RtasrStatus;
@@ -14,7 +21,7 @@ export interface UseRtasrRealtimeResult {
   start: (opts?: { pd?: string }) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
-  stop: () => Promise<void>;
+  stop: () => Promise<TranscriptSegment[]>;
 }
 
 type GatewayEvent =
@@ -24,9 +31,15 @@ type GatewayEvent =
 
 type ControlMessage = { type: 'start'; pd?: string } | { type: 'end' } | { type: 'ping' };
 
+interface StopWaiter {
+  promise: Promise<TranscriptSegment[]>;
+  resolve: (segments: TranscriptSegment[]) => void;
+}
+
 const TARGET_SAMPLE_RATE = 16000;
 const FRAME_MS = 40;
-const FRAME_SAMPLES = (TARGET_SAMPLE_RATE * FRAME_MS) / 1000; // 640
+const FRAME_SAMPLES = (TARGET_SAMPLE_RATE * FRAME_MS) / 1000;
+const STOP_TIMEOUT_MS = 5000;
 
 function formatTimeFromMs(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000));
@@ -56,10 +69,42 @@ function resampleLinear(input: Float32Array, inputRate: number, outputRate: numb
 function floatToInt16LE(input: Float32Array): Int16Array {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
-    const s = Math.max(-1, Math.min(1, input[i]));
-    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    const sample = Math.max(-1, Math.min(1, input[i]));
+    out[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
   }
   return out;
+}
+
+function buildNextSegments(
+  previous: TranscriptSegment[],
+  evt: Extract<GatewayEvent, { type: 'result' }>,
+  timestamp: string
+): TranscriptSegment[] {
+  const segId = evt.segId ?? null;
+  const next = previous.map((segment) => ({ ...segment, active: false }));
+  const id = segId !== null ? String(segId) : String(next.length + 1);
+  const last = next[next.length - 1];
+
+  if (last && last.id === id) {
+    next[next.length - 1] = {
+      ...last,
+      text: evt.text,
+      timestamp,
+      active: true,
+    };
+    return next;
+  }
+
+  next.push({
+    id,
+    timestamp,
+    speaker: 'Speaker A',
+    role: 'Speaker A',
+    text: evt.text,
+    active: true,
+  });
+
+  return next;
 }
 
 export function useRtasrRealtime(): UseRtasrRealtimeResult {
@@ -70,6 +115,7 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
   const [elapsedMs, setElapsedMs] = useState<number>(0);
 
   const statusRef = useRef<RtasrStatus>('idle');
+  const segmentsRef = useRef<TranscriptSegment[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -78,69 +124,120 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
 
   const startedAtRef = useRef<number>(0);
   const pausedElapsedRef = useRef<number>(0);
-  const lastSegIdRef = useRef<number | null>(null);
 
   const pcmQueueRef = useRef<Int16Array[]>([]);
   const queuedSamplesRef = useRef<number>(0);
   const sendTimerRef = useRef<number | null>(null);
+
+  const stopWaiterRef = useRef<StopWaiter | null>(null);
+  const stopTimeoutRef = useRef<number | null>(null);
 
   const gatewayUrl = useMemo(() => {
     const envUrl = process.env.NEXT_PUBLIC_RTASR_GATEWAY_URL;
     return envUrl || 'ws://localhost:8787';
   }, []);
 
+  const setStatusSafe = useCallback((nextStatus: RtasrStatus) => {
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }, []);
+
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
+  useEffect(() => {
+    segmentsRef.current = segments;
+  }, [segments]);
+
+  const clearStopTimeout = useCallback(() => {
+    if (stopTimeoutRef.current !== null) {
+      window.clearTimeout(stopTimeoutRef.current);
+      stopTimeoutRef.current = null;
+    }
+  }, []);
+
   const reset = useCallback(() => {
+    clearStopTimeout();
+    stopWaiterRef.current = null;
     pcmQueueRef.current = [];
     queuedSamplesRef.current = 0;
-    lastSegIdRef.current = null;
     setSegments([]);
     setError(null);
     setLevel(0);
     setElapsedMs(0);
     pausedElapsedRef.current = 0;
-  }, []);
+  }, [clearStopTimeout]);
 
   const stopTimers = useCallback(() => {
-    if (sendTimerRef.current) {
+    if (sendTimerRef.current !== null) {
       window.clearInterval(sendTimerRef.current);
       sendTimerRef.current = null;
     }
   }, []);
 
+  const resolveStopWaiter = useCallback(
+    (finalSegments: TranscriptSegment[] = segmentsRef.current) => {
+      clearStopTimeout();
+      const waiter = stopWaiterRef.current;
+      stopWaiterRef.current = null;
+      waiter?.resolve(finalSegments);
+    },
+    [clearStopTimeout]
+  );
+
+  const teardownMedia = useCallback(async () => {
+    stopTimers();
+    setLevel(0);
+
+    try {
+      workletNodeRef.current?.disconnect();
+    } catch { }
+    workletNodeRef.current = null;
+
+    try {
+      await audioContextRef.current?.close();
+    } catch { }
+    audioContextRef.current = null;
+
+    try {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    } catch { }
+    mediaStreamRef.current = null;
+  }, [stopTimers]);
+
+  const closeSocket = useCallback((sendEnd: boolean) => {
+    const ws = wsRef.current;
+    wsRef.current = null;
+
+    if (ws && ws.readyState === WebSocket.OPEN && sendEnd) {
+      const msg: ControlMessage = { type: 'end' };
+      ws.send(JSON.stringify(msg));
+    }
+
+    try {
+      ws?.close();
+    } catch { }
+  }, []);
+
   const closeAll = useCallback(
     async (sendEnd: boolean) => {
-      stopTimers();
-
-      const ws = wsRef.current;
-      wsRef.current = null;
-      if (ws && ws.readyState === WebSocket.OPEN && sendEnd) {
-        const msg: ControlMessage = { type: 'end' };
-        ws.send(JSON.stringify(msg));
-      }
-      try {
-        ws?.close();
-      } catch { }
-
-      try {
-        workletNodeRef.current?.disconnect();
-      } catch { }
-      workletNodeRef.current = null;
-
-      try {
-        audioContextRef.current?.close();
-      } catch { }
-      audioContextRef.current = null;
-
-      try {
-        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch { }
-      mediaStreamRef.current = null;
+      clearStopTimeout();
+      resolveStopWaiter();
+      await teardownMedia();
+      closeSocket(sendEnd);
     },
-    [stopTimers]
+    [clearStopTimeout, closeSocket, resolveStopWaiter, teardownMedia]
+  );
+
+  const finalizeStop = useCallback(
+    async (finalSegments: TranscriptSegment[] = segmentsRef.current) => {
+      await teardownMedia();
+      setStatusSafe('stopped');
+      closeSocket(false);
+      resolveStopWaiter(finalSegments);
+    },
+    [closeSocket, resolveStopWaiter, setStatusSafe, teardownMedia]
   );
 
   useEffect(() => {
@@ -187,71 +284,97 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
     return frame;
   }, []);
 
+  const flushQueuedAudio = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    let frame = pullFrame();
+    while (frame) {
+      ws.send(frame.buffer);
+      frame = pullFrame();
+    }
+
+    if (queuedSamplesRef.current <= 0) {
+      return;
+    }
+
+    const remaining = new Int16Array(queuedSamplesRef.current);
+    let offset = 0;
+
+    while (pcmQueueRef.current.length > 0) {
+      const chunk = pcmQueueRef.current.shift();
+      if (!chunk) continue;
+      remaining.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    pcmQueueRef.current = [];
+    queuedSamplesRef.current = 0;
+
+    if (remaining.length > 0) {
+      ws.send(remaining.buffer);
+    }
+  }, [pullFrame]);
+
   const startSending = useCallback(() => {
-    if (sendTimerRef.current) return;
+    if (sendTimerRef.current !== null) return;
 
     sendTimerRef.current = window.setInterval(() => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      if (status !== 'running') return;
+      if (statusRef.current !== 'running') return;
 
       const frame = pullFrame();
       if (!frame) return;
 
       ws.send(frame.buffer);
     }, FRAME_MS);
-  }, [pullFrame, status]);
+  }, [pullFrame]);
 
-  const onGatewayEvent = useCallback((evt: GatewayEvent) => {
-    if (evt.type === 'error') {
-      setError(evt.message || '网关错误');
-      setStatus('error');
-      return;
-    }
+  const updateSegments = useCallback((evt: Extract<GatewayEvent, { type: 'result' }>) => {
+    const now = Date.now();
+    const timestamp = startedAtRef.current ? formatTimeFromMs(now - startedAtRef.current) : '00:00';
+    const nextSegments = buildNextSegments(segmentsRef.current, evt, timestamp);
+    segmentsRef.current = nextSegments;
+    setSegments(nextSegments);
+    return nextSegments;
+  }, []);
 
-    if (evt.type === 'result') {
-      const segId = evt.segId ?? null;
-      const now = Date.now();
-      const ts = startedAtRef.current ? formatTimeFromMs(now - startedAtRef.current) : '00:00';
+  const onGatewayEvent = useCallback(
+    (evt: GatewayEvent) => {
+      if (evt.type === 'error') {
+        setError(evt.message || '网关错误');
 
-      setSegments((prev) => {
-        const next = prev.map((s) => ({ ...s, active: false }));
-
-        const id = segId !== null ? String(segId) : String(next.length + 1);
-        const last = next[next.length - 1];
-
-        if (last && last.id === id) {
-          next[next.length - 1] = {
-            ...last,
-            text: evt.text,
-            timestamp: ts,
-            active: true,
-          };
-          return next;
+        if (statusRef.current === 'stopping') {
+          void finalizeStop();
+          return;
         }
 
-        next.push({
-          id,
-          timestamp: ts,
-          speaker: 'Speaker A',
-          role: 'Speaker A',
-          text: evt.text,
-          active: true,
-        });
+        setStatusSafe('error');
+        return;
+      }
 
-        return next;
-      });
+      if (evt.type === 'status') {
+        if (evt.status === 'stopped' && statusRef.current === 'stopping') {
+          void finalizeStop();
+        }
+        return;
+      }
 
-      lastSegIdRef.current = segId;
-    }
-  }, []);
+      const nextSegments = updateSegments(evt);
+      if (evt.isEnd && statusRef.current === 'stopping') {
+        void finalizeStop(nextSegments);
+      }
+    },
+    [finalizeStop, updateSegments]
+  );
 
   const start = useCallback(
     async (opts?: { pd?: string }) => {
-      if (status === 'connecting' || status === 'running') return;
+      if (statusRef.current === 'connecting' || statusRef.current === 'running') return;
 
       reset();
-      setStatus('connecting');
+      setStatusSafe('connecting');
 
       try {
         const ws = new WebSocket(gatewayUrl);
@@ -277,24 +400,23 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
           const node = new AudioWorkletNode(ctx, 'pcm-capture-processor');
           workletNodeRef.current = node;
 
-          node.port.onmessage = (e) => {
-            const { type, sampleRate, buffer } = e.data || {};
+          node.port.onmessage = (event) => {
+            const { type, sampleRate, buffer } = event.data || {};
             if (type !== 'pcm' || !buffer) return;
 
             const floats = new Float32Array(buffer);
 
-            // Level meter (RMS)
             let sum = 0;
-            for (let i = 0; i < floats.length; i++) sum += floats[i] * floats[i];
+            for (let i = 0; i < floats.length; i++) {
+              sum += floats[i] * floats[i];
+            }
             const rms = Math.sqrt(sum / floats.length);
             setLevel(Math.min(1, rms * 3));
 
             const resampled = resampleLinear(floats, sampleRate, TARGET_SAMPLE_RATE);
-            const int16 = floatToInt16LE(resampled);
-            enqueuePcm(int16);
+            enqueuePcm(floatToInt16LE(resampled));
           };
 
-          // Keep the audio graph alive. No need to connect to destination to avoid feedback.
           const zeroGain = ctx.createGain();
           zeroGain.gain.value = 0;
 
@@ -302,76 +424,122 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
           node.connect(zeroGain);
           zeroGain.connect(ctx.destination);
 
-          setStatus('running');
+          setStatusSafe('running');
           startSending();
         };
 
-        ws.onmessage = (e) => {
+        ws.onmessage = (event) => {
           try {
-            const payload = JSON.parse(String(e.data)) as GatewayEvent;
+            const payload = JSON.parse(String(event.data)) as GatewayEvent;
             onGatewayEvent(payload);
           } catch {
-            // ignore
+            // 网关可能发送了非 JSON 内容，这里忽略即可
           }
         };
 
         ws.onerror = () => {
           setError('WebSocket 连接失败');
-          setStatus('error');
+          if (statusRef.current === 'stopping') {
+            void finalizeStop();
+            return;
+          }
+          setStatusSafe('error');
         };
 
         ws.onclose = () => {
           stopTimers();
+          if (statusRef.current === 'stopping') {
+            void finalizeStop();
+            return;
+          }
+
           setStatus((prev) => {
             const current = statusRef.current;
-            if (current === 'running' || current === 'connecting') return 'stopped';
+            if (current === 'running' || current === 'connecting' || current === 'paused') {
+              return 'stopped';
+            }
             return prev;
           });
         };
       } catch (err) {
         setError(err instanceof Error ? err.message : '启动失败');
-        setStatus('error');
+        setStatusSafe('error');
         await closeAll(false);
       }
     },
     [
       closeAll,
       enqueuePcm,
+      finalizeStop,
       gatewayUrl,
       onGatewayEvent,
       reset,
+      setStatusSafe,
       startSending,
-      status,
       stopTimers,
     ]
   );
 
   const pause = useCallback(async () => {
-    if (status !== 'running') return;
+    if (statusRef.current !== 'running') return;
     if (startedAtRef.current) {
       pausedElapsedRef.current = Date.now() - startedAtRef.current;
       setElapsedMs(pausedElapsedRef.current);
     }
-    setStatus('paused');
+    setStatusSafe('paused');
     try {
       await audioContextRef.current?.suspend();
     } catch { }
-  }, [status]);
+  }, [setStatusSafe]);
 
   const resume = useCallback(async () => {
-    if (status !== 'paused') return;
+    if (statusRef.current !== 'paused') return;
     startedAtRef.current = Date.now() - pausedElapsedRef.current;
-    setStatus('running');
+    setStatusSafe('running');
     try {
       await audioContextRef.current?.resume();
     } catch { }
-  }, [status]);
+  }, [setStatusSafe]);
 
-  const stop = useCallback(async () => {
-    if (status === 'idle' || status === 'stopped') return;
-    setStatus('stopped');
-    await closeAll(true);
-  }, [closeAll, status]);
+  const stop = useCallback(async (): Promise<TranscriptSegment[]> => {
+    if (statusRef.current === 'idle' || statusRef.current === 'stopped') {
+      return segmentsRef.current;
+    }
+
+    if (stopWaiterRef.current) {
+      return stopWaiterRef.current.promise;
+    }
+
+    await teardownMedia();
+    flushQueuedAudio();
+
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      await finalizeStop();
+      return segmentsRef.current;
+    }
+
+    setStatusSafe('stopping');
+
+    const waiter: StopWaiter = {
+      promise: Promise.resolve([] as TranscriptSegment[]),
+      resolve: () => {},
+    };
+
+    waiter.promise = new Promise<TranscriptSegment[]>((resolve) => {
+      waiter.resolve = resolve;
+    });
+    stopWaiterRef.current = waiter;
+
+    stopTimeoutRef.current = window.setTimeout(() => {
+      void finalizeStop();
+    }, STOP_TIMEOUT_MS);
+
+    const msg: ControlMessage = { type: 'end' };
+    ws.send(JSON.stringify(msg));
+
+    return waiter.promise;
+  }, [finalizeStop, flushQueuedAudio, setStatusSafe, teardownMedia]);
 
   useEffect(() => {
     return () => {
