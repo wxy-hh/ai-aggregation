@@ -1,0 +1,8 @@
+{
+  "buildCommand": "pnpm turbo build --filter=@repo/web",
+  "devCommand": "pnpm turbo dev --filter=@repo/web",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "apps/web/.next",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD ./apps/web ./packages"
+}
