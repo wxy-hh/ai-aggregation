@@ -17,7 +17,7 @@ import {
   MessageSquare,
   BarChart2,
   Trash2,
-  Sparkles,
+  Bot,
   FileText,
   Code2,
   Lightbulb,
@@ -493,7 +493,7 @@ export default function ChatPage() {
                     {/* Logo & Greeting */}
                     <div className="flex flex-col items-center text-center mb-10">
                       <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6 rotate-3 hover:rotate-6 transition-transform">
-                        <Sparkles className="w-8 h-8 text-white" />
+                        <Bot className="w-8 h-8 text-white" />
                       </div>
                       <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">
                         你好，我是您的智能助手

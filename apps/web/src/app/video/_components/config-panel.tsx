@@ -39,13 +39,13 @@ const MODELS = [
     description: '免费快速',
     credits: 0,
   },
-  {
-    id: 'cogvideox-2' as const,
-    name: 'CogVideoX-2',
-    icon: Crown,
-    description: '高质量',
-    credits: 35,
-  },
+  // {
+  //   id: 'cogvideox-2' as const,
+  //   name: 'CogVideoX-2',
+  //   icon: Crown,
+  //   description: '高质量',
+  //   credits: 35,
+  // },
 ];
 
 // 画面比例配置

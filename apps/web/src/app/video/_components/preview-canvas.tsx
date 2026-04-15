@@ -114,13 +114,13 @@ export function PreviewCanvas({
                   <ImageIcon className="w-5 h-5" />
                   上传参考图
                 </Button>
-                <Button
+                {/* <Button
                   variant="outline"
                   className="h-14 px-8 rounded-2xl gap-3 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 font-bold transition-all"
                 >
                   <LayoutGrid className="w-5 h-5" />
                   浏览模板
-                </Button>
+                </Button> */}
               </div>
             </motion.div>
           )}

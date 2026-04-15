@@ -28,7 +28,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       // 初始状态
-      pinnedApps: ['chat', 'voice', 'image', 'video'],
+      pinnedApps: ['chat', 'voice', 'image', 'video', 'resume', 'destiny'],
       showAppsModal: false,
 
       // Actions

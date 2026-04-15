@@ -233,12 +233,12 @@ export function GlobalSidebar() {
           <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300" />
 
           {/* 设置 */}
-          <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300">
+          {/* <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300">
             <Settings className="w-5 h-5" />
-          </button>
+          </button> */}
 
           {/* 用户头像 */}
-          <div className="relative cursor-pointer group mt-2">
+          {/* <div className="relative cursor-pointer group mt-2">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7D91FF] to-[#9CAEFF] p-0.5 shadow-md shadow-indigo-400/35 hover:shadow-lg transition-shadow">
               <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden">
                 <img
@@ -249,7 +249,7 @@ export function GlobalSidebar() {
               </div>
             </div>
             <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#6D86FF] border-2 border-white dark:border-slate-900 rounded-full" />
-          </div>
+          </div> */}
         </div>
       </aside>
 

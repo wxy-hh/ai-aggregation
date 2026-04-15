@@ -6,7 +6,7 @@ import { Folder, Search, Grid, Plus, ChevronLeft, ChevronRight } from 'lucide-re
 import { cn } from '@/lib/utils';
 
 export function AssetsSidebar() {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="flex h-full">
