@@ -1,0 +1,83 @@
+# ============================================
+# Vercel 部署环境变量配置
+# ============================================
+# 复制以下内容到 Vercel Dashboard 的 Environment Variables 中
+# 注意：DATABASE_URL 会在创建 Vercel Postgres 后自动生成，无需手动添加
+
+# ============================================
+# Redis 配置（Upstash）
+# ============================================
+UPSTASH_REDIS_REST_URL=https://fleet-pelican-68904.upstash.io
+UPSTASH_REDIS_REST_TOKEN=gQAAAAAAAQ0oAAIncDIzMWRmNWVlNmZlZmE0MzRmYjM1NjljNTBjNzgzMzllOXAyNjg5MDQ
+
+# 传统 Redis 连接（如果需要）
+REDIS_HOST=fleet-pelican-68904.upstash.io
+REDIS_PORT=6379
+REDIS_PASSWORD=AcqgAAIjcGIzMWRmNWVlNmZlZmE0MzRmYjM1NjljNTBjNzgzMzllOXAyNjg5MDQ=
+
+# ============================================
+# AI 服务商 API Keys
+# ============================================
+
+# 硅基流动（Kolors 图像生成 + 语音转写）
+SILICONFLOW_API_KEY=sk-kphdbudlrvuaotsptthedzrdsmdqchoegrsfwmrxjobjtjwh
+SILICONFLOW_API_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_DEFAULT_MODEL=FunAudioLLM/SenseVoiceSmall
+
+# 讯飞星火（语音转写）
+XUNFEI_API_PASSWORD=UwNOOlcwenyPLxcygUKn:xMBXuSGpUOkxPcobSryl
+XUNFEI_APP_ID=290f4fa9
+XUNFEI_API_KEY=9bf315f669cd77f7cc91a023c0a36f8b
+XUNFEI_API_SECRET=M2FlNmIzMmRmYzdmYjFjOTU3YzQ4ZjA4
+
+# 豆包（火山方舟）
+ARK_API_KEY=3a04b704-6445-4f3e-a127-bcb711461706
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_MODEL=doubao-seed-2-0-lite-260215
+
+# 通义千问（如果有的话，暂时留空）
+DASHSCOPE_API_KEY=
+
+# 智谱 GLM（如果有的话，暂时留空）
+ZHIPU_API_KEY=
+
+# DeepSeek（如果有的话，暂时留空）
+DEEPSEEK_API_KEY=
+
+# ============================================
+# 应用配置
+# ============================================
+
+# Next.js 应用 URL（部署后需要更新为实际域名）
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+
+# 身份认证密钥
+AUTH_SECRET=8jLxSzDvwnDdJBNvBnWWJQPk0v+D7m9CJ1lUV2V/IYg=
+NEXTAUTH_URL=https://your-app.vercel.app
+
+# ============================================
+# 文件上传配置（可选）
+# ============================================
+MAX_FILE_SIZE=52428800
+ALLOWED_FILE_TYPES=audio/mpeg,audio/wav,audio/aac
+
+# ============================================
+# 对象存储（可选，暂时不配置）
+# ============================================
+# S3_ENDPOINT=
+# S3_ACCESS_KEY=
+# S3_SECRET_KEY=
+# S3_BUCKET=
+
+# ============================================
+# 实时语音转写网关（可选，后续配置）
+# ============================================
+# NEXT_PUBLIC_RTASR_GATEWAY_URL=
+
+# ============================================
+# 注意事项
+# ============================================
+# 1. DATABASE_URL 会在创建 Vercel Postgres 后自动添加
+# 2. NEXT_PUBLIC_APP_URL 和 NEXTAUTH_URL 需要在部署后更新为实际域名
+# 3. 空值的 API Keys 可以后续在 Vercel Dashboard 中添加
+# 4. 所有 NEXT_PUBLIC_* 开头的变量会暴露到客户端
