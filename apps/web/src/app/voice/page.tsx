@@ -5,7 +5,7 @@ import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
 import { RecordingLibrary } from '@/components/voice/recording-library';
 import { UploadAudio } from '@/components/voice/upload-audio';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,7 +52,7 @@ const mockSegments: TranscriptSegment[] = [
 
 type VoiceMode = 'realtime' | 'upload';
 
-export default function VoicePage() {
+function VoicePageContent() {
   const searchParams = useSearchParams();
   const historyId = searchParams.get('historyId');
 
@@ -144,7 +144,10 @@ export default function VoicePage() {
 
   const handleStopAndSave = useCallback(async () => {
     const finalSegments = await rtasr.stop();
-    const transcription = finalSegments.map((segment) => segment.text).join('\n').trim();
+    const transcription = finalSegments
+      .map((segment) => segment.text)
+      .join('\n')
+      .trim();
 
     if (!transcription) {
       toast.info('本次录音没有识别到内容，未保存');
@@ -214,9 +217,9 @@ export default function VoicePage() {
                         ? `已暂停 ${formatElapsed(rtasr.elapsedMs)}`
                         : rtasr.status === 'stopping'
                           ? '收尾中...'
-                        : rtasr.status === 'connecting'
-                          ? '连接中...'
-                          : '待开始'}
+                          : rtasr.status === 'connecting'
+                            ? '连接中...'
+                            : '待开始'}
                   </Badge>
                 )}
                 <Button
@@ -431,9 +434,9 @@ export default function VoicePage() {
                           ? '已暂停'
                           : rtasr.status === 'stopping'
                             ? '收尾中'
-                          : rtasr.status === 'connecting'
-                            ? '连接中'
-                            : '未开始'}
+                            : rtasr.status === 'connecting'
+                              ? '连接中'
+                              : '未开始'}
                     </p>
                   </div>
                 </div>
@@ -496,5 +499,13 @@ export default function VoicePage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function VoicePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">加载中...</div>}>
+      <VoicePageContent />
+    </Suspense>
   );
 }
