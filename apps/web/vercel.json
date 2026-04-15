@@ -2,5 +2,10 @@
   "regions": ["hkg1"],
   "buildCommand": "cd ../.. && pnpm turbo build --filter=@repo/web",
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "functions": {
+    "app/api/destiny/**/*.ts": {
+      "maxDuration": 300
+    }
+  }
 }

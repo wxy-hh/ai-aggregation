@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { extractArkOutputText, extractJsonBlock } from '../../_lib/ark-response';
 
-// 使用 Edge Runtime，没有 10 秒超时限制
-export const runtime = 'edge';
+// 使用 Node.js Runtime（Edge Runtime 有超时限制）
+export const runtime = 'nodejs';
+// Vercel Pro 支持最长 300 秒（5 分钟）
+export const maxDuration = 300;
 
 const RequestSchema = z.object({
   context: z.object({
@@ -67,8 +69,8 @@ type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-// Edge Runtime 没有超时限制，设置 150 秒（2.5 分钟）
-const REPORT_TIMEOUT_MS = 150000;
+// 设置 5 分钟超时（300 秒）
+const REPORT_TIMEOUT_MS = 300000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2600;
 const RETRY_MAX_OUTPUT_TOKENS = 4600;
 

@@ -4,8 +4,10 @@ import type { DestinyReportRequest } from '@/app/destiny/_components/types';
 import { extractArkOutputText, extractJsonBlock } from '../_lib/ark-response';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 
-// 使用 Edge Runtime，没有 10 秒超时限制
-export const runtime = 'edge';
+// 使用 Node.js Runtime（Edge Runtime 有超时限制）
+export const runtime = 'nodejs';
+// Vercel Pro 支持最长 300 秒（5 分钟）
+export const maxDuration = 300;
 
 const RequestSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空'),
@@ -27,8 +29,8 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-// Edge Runtime 没有超时限制，设置 150 秒（2.5 分钟）
-const REPORT_TIMEOUT_MS = 150000;
+// 设置 5 分钟超时（300 秒）
+const REPORT_TIMEOUT_MS = 300000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2400;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
