@@ -2,7 +2,10 @@
   "mcpServers": {
     "filesystem": {
       "command": "uvx",
-      "args": ["mcp-server-filesystem", "/Users/weixiaoyu/Desktop/practice/AI-aggregation"],
+      "args": [
+        "mcp-server-filesystem",
+        "/Users/weixiaoyu/Desktop/practice/AI-aggregation"
+      ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
@@ -11,7 +14,10 @@
     },
     "postgres": {
       "command": "uvx",
-      "args": ["mcp-server-postgres", "postgresql://localhost:5432/ai_aggregation"],
+      "args": [
+        "mcp-server-postgres",
+        "postgresql://localhost:5432/ai_aggregation"
+      ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
@@ -29,7 +35,9 @@
         "FASTMCP_LOG_LEVEL": "ERROR"
       },
       "disabled": false,
-      "autoApprove": []
+      "autoApprove": [
+        "git_add"
+      ]
     }
   }
 }
