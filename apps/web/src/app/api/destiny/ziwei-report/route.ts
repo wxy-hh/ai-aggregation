@@ -4,6 +4,9 @@ import type { DestinyReportRequest } from '@/app/destiny/_components/types';
 import { extractArkOutputText, extractJsonBlock } from '../_lib/ark-response';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 
+// 使用 Edge Runtime，没有 10 秒超时限制
+export const runtime = 'edge';
+
 const RequestSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空'),
   gender: z.enum(['male', 'female']),
@@ -24,8 +27,8 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-// Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
-const REPORT_TIMEOUT_MS = 8000;
+// Edge Runtime 没有超时限制，设置 150 秒（2.5 分钟）
+const REPORT_TIMEOUT_MS = 150000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2800;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
