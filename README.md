@@ -2,6 +2,8 @@
 
 基于 pnpm workspace + Turborepo 的 AI 聚合平台，包含 Web 前端、API 服务和异步 Worker。
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/wxy-hh/ai-aggregation)
+
 ## 技术栈
 
 - **运行时**: Node.js 22.x LTS
