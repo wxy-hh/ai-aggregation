@@ -61,7 +61,8 @@ export async function POST(req: Request) {
 
     // 调用 ARK API
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时（诊断需要更长时间）
+    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     console.log('🚀 开始调用豆包 API:', {
       url: `${arkBaseUrl}/responses`,

@@ -62,7 +62,8 @@ export async function POST(req: Request) {
 
     // 调用 ARK Responses API
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
+    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     try {
       const response = await fetch(`${arkBaseUrl}/responses`, {

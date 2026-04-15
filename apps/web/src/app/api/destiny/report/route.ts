@@ -24,7 +24,8 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-const REPORT_TIMEOUT_MS = 90000;
+// Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+const REPORT_TIMEOUT_MS = 8000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2400;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
@@ -151,7 +152,10 @@ export async function POST(req: Request) {
     }
 
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: '模型返回格式不合法', details: error.issues }, { status: 502 });
+      return NextResponse.json(
+        { error: '模型返回格式不合法', details: error.issues },
+        { status: 502 }
+      );
     }
 
     if (error instanceof SyntaxError) {

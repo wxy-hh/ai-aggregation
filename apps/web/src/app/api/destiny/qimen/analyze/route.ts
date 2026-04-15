@@ -64,7 +64,8 @@ type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-const REPORT_TIMEOUT_MS = 90000;
+// Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+const REPORT_TIMEOUT_MS = 8000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2600;
 const RETRY_MAX_OUTPUT_TOKENS = 4600;
 
@@ -112,15 +113,100 @@ const PALACE_ORDER = [
 ] as const;
 
 const FALLBACK_BOARD = [
-  { palace: '巽四宫', luoshu: 4, direction: '东南', god: '螣蛇', star: '天辅', door: '杜门', heavenStem: '壬', earthStem: '丙' },
-  { palace: '离九宫', luoshu: 9, direction: '正南', god: '九天', star: '天英', door: '景门', heavenStem: '丙', earthStem: '戊' },
-  { palace: '坤二宫', luoshu: 2, direction: '西南', god: '九地', star: '天芮', door: '死门', heavenStem: '丁', earthStem: '己' },
-  { palace: '震三宫', luoshu: 3, direction: '正东', god: '值符', star: '天冲', door: '伤门', heavenStem: '癸', earthStem: '乙', isValueSymbol: true, isValueDoor: true, isVoid: true },
-  { palace: '中五宫', luoshu: 5, direction: '中宫', god: '-', star: '天禽', door: '-', heavenStem: '戊', earthStem: '戊' },
-  { palace: '兑七宫', luoshu: 7, direction: '正西', god: '六合', star: '天柱', door: '惊门', heavenStem: '辛', earthStem: '丁' },
-  { palace: '艮八宫', luoshu: 8, direction: '东北', god: '勾陈', star: '天任', door: '生门', heavenStem: '己', earthStem: '庚', isVoid: true },
-  { palace: '坎一宫', luoshu: 1, direction: '正北', god: '朱雀', star: '天蓬', door: '休门', heavenStem: '乙', earthStem: '癸' },
-  { palace: '乾六宫', luoshu: 6, direction: '西北', god: '太阴', star: '天心', door: '开门', heavenStem: '庚', earthStem: '壬' },
+  {
+    palace: '巽四宫',
+    luoshu: 4,
+    direction: '东南',
+    god: '螣蛇',
+    star: '天辅',
+    door: '杜门',
+    heavenStem: '壬',
+    earthStem: '丙',
+  },
+  {
+    palace: '离九宫',
+    luoshu: 9,
+    direction: '正南',
+    god: '九天',
+    star: '天英',
+    door: '景门',
+    heavenStem: '丙',
+    earthStem: '戊',
+  },
+  {
+    palace: '坤二宫',
+    luoshu: 2,
+    direction: '西南',
+    god: '九地',
+    star: '天芮',
+    door: '死门',
+    heavenStem: '丁',
+    earthStem: '己',
+  },
+  {
+    palace: '震三宫',
+    luoshu: 3,
+    direction: '正东',
+    god: '值符',
+    star: '天冲',
+    door: '伤门',
+    heavenStem: '癸',
+    earthStem: '乙',
+    isValueSymbol: true,
+    isValueDoor: true,
+    isVoid: true,
+  },
+  {
+    palace: '中五宫',
+    luoshu: 5,
+    direction: '中宫',
+    god: '-',
+    star: '天禽',
+    door: '-',
+    heavenStem: '戊',
+    earthStem: '戊',
+  },
+  {
+    palace: '兑七宫',
+    luoshu: 7,
+    direction: '正西',
+    god: '六合',
+    star: '天柱',
+    door: '惊门',
+    heavenStem: '辛',
+    earthStem: '丁',
+  },
+  {
+    palace: '艮八宫',
+    luoshu: 8,
+    direction: '东北',
+    god: '勾陈',
+    star: '天任',
+    door: '生门',
+    heavenStem: '己',
+    earthStem: '庚',
+    isVoid: true,
+  },
+  {
+    palace: '坎一宫',
+    luoshu: 1,
+    direction: '正北',
+    god: '朱雀',
+    star: '天蓬',
+    door: '休门',
+    heavenStem: '乙',
+    earthStem: '癸',
+  },
+  {
+    palace: '乾六宫',
+    luoshu: 6,
+    direction: '西北',
+    god: '太阴',
+    star: '天心',
+    door: '开门',
+    heavenStem: '庚',
+    earthStem: '壬',
+  },
 ] as const;
 
 class UpstreamModelError extends Error {
@@ -409,10 +495,9 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
     });
   }
 
-  const raw = (payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}) as Record<
-    string,
-    unknown
-  >;
+  const raw = (
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+  ) as Record<string, unknown>;
 
   const chartMetaRaw =
     raw.chartMeta && typeof raw.chartMeta === 'object'
@@ -480,11 +565,21 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
         guidance: sanitizeText(typeof row.guidance === 'string' ? row.guidance : '', 120),
       };
     })
-    .filter((item): item is { period: string; guidance: string } => Boolean(item?.period && item?.guidance))
+    .filter((item): item is { period: string; guidance: string } =>
+      Boolean(item?.period && item?.guidance)
+    )
     .slice(0, input.question.outputLength === 'brief' ? 2 : 4);
 
-  const fallbackRisk = ['注意信息不完整导致误判', '避免情绪驱动下做不可逆决策', '重要协同节点需预留缓冲'];
-  const fallbackAction = ['先做小范围验证再扩大投入', '聚焦单一目标推进主线', '以周为单位复盘并调整策略'];
+  const fallbackRisk = [
+    '注意信息不完整导致误判',
+    '避免情绪驱动下做不可逆决策',
+    '重要协同节点需预留缓冲',
+  ];
+  const fallbackAction = [
+    '先做小范围验证再扩大投入',
+    '聚焦单一目标推进主线',
+    '以周为单位复盘并调整策略',
+  ];
 
   return {
     chartTitle: sanitizeText(
@@ -492,14 +587,8 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
       32
     ),
     chartMeta: {
-      dun: sanitizeText(
-        typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '阳遁',
-        12
-      ),
-      ju: sanitizeText(
-        typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '三局',
-        12
-      ),
+      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '阳遁', 12),
+      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '三局', 12),
       jiaziXunkong: sanitizeText(
         typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '甲辰旬 寅卯空',
         20
@@ -519,7 +608,9 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
     },
     board: normalizedBoard,
     chartSummary: sanitizeText(
-      typeof raw.chartSummary === 'string' ? raw.chartSummary : '当前盘局显示先稳后进为宜，需重视节奏控制与信息验证。',
+      typeof raw.chartSummary === 'string'
+        ? raw.chartSummary
+        : '当前盘局显示先稳后进为宜，需重视节奏控制与信息验证。',
       260
     ),
     overallAssessment: sanitizeText(
@@ -544,18 +635,10 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
       timingWindows.length >= 2
         ? timingWindows
         : buildFallbackTimingWindows(input.question.outputLength),
-    score: Math.max(
-      40,
-      Math.min(
-        95,
-        Math.round(typeof raw.score === 'number' ? raw.score : 78)
-      )
-    ),
+    score: Math.max(40, Math.min(95, Math.round(typeof raw.score === 'number' ? raw.score : 78))),
     disclaimer:
-      sanitizeText(
-        typeof raw.disclaimer === 'string' ? raw.disclaimer : '',
-        120
-      ) || '本排盘与分析仅供传统民俗文化研究和策略参考，不构成任何现实决策承诺。',
+      sanitizeText(typeof raw.disclaimer === 'string' ? raw.disclaimer : '', 120) ||
+      '本排盘与分析仅供传统民俗文化研究和策略参考，不构成任何现实决策承诺。',
   };
 }
 
@@ -565,7 +648,9 @@ function normalizeStringList(
   maxLen: number,
   fallback: string[] = []
 ): string[] {
-  const deduped = Array.from(new Set(items.map((item) => sanitizeText(item, maxLen)).filter(Boolean)));
+  const deduped = Array.from(
+    new Set(items.map((item) => sanitizeText(item, maxLen)).filter(Boolean))
+  );
   if (deduped.length === 0) {
     return fallback.slice(0, maxCount).map((item) => sanitizeText(item, maxLen));
   }

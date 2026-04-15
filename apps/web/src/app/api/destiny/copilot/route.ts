@@ -47,7 +47,8 @@ export async function POST(req: Request) {
     }));
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     let response: Response;
     try {

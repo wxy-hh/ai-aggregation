@@ -24,7 +24,8 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-const REPORT_TIMEOUT_MS = 90000;
+// Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
+const REPORT_TIMEOUT_MS = 8000;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2800;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
@@ -161,7 +162,10 @@ export async function POST(req: Request) {
     }
 
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: '模型返回格式不合法', details: error.issues }, { status: 502 });
+      return NextResponse.json(
+        { error: '模型返回格式不合法', details: error.issues },
+        { status: 502 }
+      );
     }
 
     if (error instanceof SyntaxError) {
@@ -328,20 +332,29 @@ function validateZiweiModelPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return '返回体为空';
   const source = payload as Record<string, unknown>;
 
-  if (!source.ziweiPalaces || !Array.isArray(source.ziweiPalaces) || source.ziweiPalaces.length < 12) {
+  if (
+    !source.ziweiPalaces ||
+    !Array.isArray(source.ziweiPalaces) ||
+    source.ziweiPalaces.length < 12
+  ) {
     return '缺少 12 宫位数据';
   }
 
   const firstTimeline = Array.isArray(source.timeline) ? source.timeline[0] : null;
-  const firstDetail = firstTimeline && typeof firstTimeline === 'object'
-    ? (firstTimeline as Record<string, unknown>).detail
-    : null;
+  const firstDetail =
+    firstTimeline && typeof firstTimeline === 'object'
+      ? (firstTimeline as Record<string, unknown>).detail
+      : null;
   if (!firstDetail || typeof firstDetail !== 'object') {
     return '缺少流年 detail';
   }
 
   const detailObj = firstDetail as Record<string, unknown>;
-  if (!Array.isArray(detailObj.opportunities) || !Array.isArray(detailObj.risks) || !Array.isArray(detailObj.actions)) {
+  if (
+    !Array.isArray(detailObj.opportunities) ||
+    !Array.isArray(detailObj.risks) ||
+    !Array.isArray(detailObj.actions)
+  ) {
     return '流年 detail 结构不完整';
   }
 
