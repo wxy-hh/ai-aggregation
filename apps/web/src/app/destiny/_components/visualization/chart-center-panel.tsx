@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { DestinyReport, FiveElementKey } from '../types';
+import type { FiveElementKey, PartialDestinyReport } from '../types';
 import { GlassCard } from '../layout/glass-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { FiveElementRadar } from './five-element-radar';
@@ -16,11 +16,18 @@ const elementStyles: Record<FiveElementKey, { bg: string; text: string; ring: st
 
 export function ChartCenterPanel({
   report,
+  streaming = false,
   className,
 }: {
-  report: DestinyReport;
+  report: PartialDestinyReport;
+  streaming?: boolean;
   className?: string;
 }) {
+  const profile = report.profile;
+  const pillars = report.pillars ?? [];
+  const elements = report.elements ?? [];
+  const tenGods = report.tenGods ?? [];
+
   return (
     <div className={cn('flex flex-col gap-6 min-h-0', className)}>
       {/* 排盘卡 */}
@@ -29,13 +36,15 @@ export function ChartCenterPanel({
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold bg-white/60 border border-white/50 text-slate-700">
-                {report.profile.genderLabel}
+                {profile?.genderLabel ?? '命盘生成中'}
               </span>
               <div className="text-lg font-extrabold text-slate-900 truncate">
-                {report.profile.name}
+                {profile?.name ?? '基础信息整理中'}
               </div>
             </div>
-            <div className="mt-2 text-sm text-slate-500">{report.profile.birthText}</div>
+            <div className="mt-2 text-sm text-slate-500">
+              {profile?.birthText ?? '正在整理生辰信息与首批分析'}
+            </div>
           </div>
 
           <div className="text-right">
@@ -47,7 +56,19 @@ export function ChartCenterPanel({
         </div>
 
         <div className="mt-6 grid grid-cols-4 gap-4">
-          {report.pillars.map((p, idx) => {
+          {(pillars.length > 0 ? pillars : Array.from({ length: 4 }).map((_, idx) => ({ label: ['年柱', '月柱', '日柱', '时柱'][idx] }))).map((p, idx) => {
+            if (!('stem' in p)) {
+              return (
+                <div
+                  key={p.label}
+                  className="rounded-3xl border border-white/50 bg-white/55 px-4 py-4 shadow-sm"
+                >
+                  <div className="text-xs font-bold text-slate-400">{p.label}</div>
+                  <div className="mt-3 h-8 w-16 animate-pulse rounded bg-slate-200/70" />
+                  <div className="mt-3 h-3 w-24 animate-pulse rounded bg-slate-200/70" />
+                </div>
+              );
+            }
             const style = elementStyles[p.element];
             const isFocus = idx === 2;
             return (
@@ -114,14 +135,26 @@ export function ChartCenterPanel({
         <GlassCard className="p-6 min-h-[260px]">
           <div className="text-sm font-extrabold text-slate-900">五行能量雷达</div>
           <div className="mt-4">
-            <FiveElementRadar data={report.elements} />
+            {elements.length > 0 ? (
+              <FiveElementRadar data={elements} />
+            ) : (
+              <div className="h-[220px] animate-pulse rounded-2xl bg-slate-100/80" />
+            )}
           </div>
         </GlassCard>
 
         <GlassCard className="p-6 min-h-[260px]">
           <div className="text-sm font-extrabold text-slate-900">十神分布图</div>
           <div className="mt-3 space-y-3">
-            {report.tenGods.map((t) => (
+            {(tenGods.length > 0
+              ? tenGods
+              : Array.from({ length: 4 }).map((_, index) => ({
+                  key: `ten-god-skeleton-${index}`,
+                  label: '十神解析生成中',
+                  value: 0,
+                  tooltip: '',
+                }))
+            ).map((t) => (
               <Popover key={t.key}>
                 <PopoverTrigger asChild>
                   <button
@@ -145,6 +178,7 @@ export function ChartCenterPanel({
                   </button>
                 </PopoverTrigger>
                 <PopoverContent
+                  hidden={!t.tooltip}
                   className={cn(
                     'w-80 rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
                     'ring-1 ring-[#2F6BFF]/12',

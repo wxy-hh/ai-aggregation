@@ -1,15 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle, CircleDot, Clock3, ShieldAlert, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { QimenAnalyzeResult, QimenBoardCell } from './qimen-types';
+import type {
+  QimenAnalyzeResult,
+  QimenBoardCell,
+  QimenLockedSections,
+  QimenStreamStatus,
+} from './qimen-types';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 
 type QimenAnalysisResultProps = {
   result: QimenAnalyzeResult | null;
+  sections: QimenLockedSections;
   loading: boolean;
+  streaming: boolean;
+  streamStatus: QimenStreamStatus | null;
   error: string | null;
   onBackToForm: () => void;
   onRetry: () => void;
@@ -76,18 +84,51 @@ function palaceMarkerList(cell: QimenBoardCell) {
   ].filter(Boolean) as string[];
 }
 
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-xl bg-slate-200/70', className)} />;
+}
+
+function statusLabel(status: QimenStreamStatus | null) {
+  switch (status) {
+    case 'queued':
+      return '请求已创建，正在进入排盘流程';
+    case 'charting':
+      return '正在整理盘局与首批结论';
+    case 'analyzing':
+      return '正在补全完整盘局与策略分析';
+    case 'finalizing':
+      return '正在整理最终结果';
+    default:
+      return null;
+  }
+}
+
 export function QimenAnalysisResult({
   result,
+  sections,
   loading,
+  streaming,
+  streamStatus,
   error,
   onBackToForm,
   onRetry,
 }: QimenAnalysisResultProps) {
+  const [activeTooltipIndex, setActiveTooltipIndex] = useState<number | null>(null);
+
+  const hasPartialContent =
+    Boolean(result) ||
+    Boolean(sections.overallAssessment) ||
+    Boolean(sections.chartSummary) ||
+    Boolean(sections.riskAlerts?.length) ||
+    Boolean(sections.actionSuggestions?.length) ||
+    Boolean(sections.timingWindows?.length);
+  const progressLabel = statusLabel(streamStatus);
+
   if (loading) {
     return <QimenLoadingAnimation />;
   }
 
-  if (error) {
+  if (!result && !hasPartialContent && error) {
     return (
       <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6">
         <div className="text-lg font-bold text-rose-700">演化分析失败</div>
@@ -104,7 +145,7 @@ export function QimenAnalysisResult({
     );
   }
 
-  if (!result) {
+  if (!result && !hasPartialContent) {
     return (
       <div className="rounded-3xl border border-white/70 bg-white/75 p-8 shadow-sm">
         <div className="text-lg font-bold text-slate-800">暂无分析结果</div>
@@ -121,171 +162,217 @@ export function QimenAnalysisResult({
     );
   }
 
-  const boardCells = palaceOrder.map(
-    (palace) => result.board.find((item) => item.palace === palace) ?? result.board[0]
-  );
-  const [activeTooltipIndex, setActiveTooltipIndex] = useState<number | null>(null);
+  const boardCells = result
+    ? palaceOrder.map((palace) => result.board.find((item) => item.palace === palace) ?? result.board[0])
+    : [];
   const activeCell = activeTooltipIndex != null ? boardCells[activeTooltipIndex] : null;
+  const meta = result?.chartMeta;
+  const summary = sections.chartSummary ?? result?.chartSummary ?? null;
+  const overallAssessment = sections.overallAssessment ?? result?.overallAssessment ?? null;
+  const riskAlerts = sections.riskAlerts ?? result?.riskAlerts ?? [];
+  const actionSuggestions = sections.actionSuggestions ?? result?.actionSuggestions ?? [];
+  const timingWindows = sections.timingWindows ?? result?.timingWindows ?? [];
 
   return (
     <div className="space-y-5">
       <div className="rounded-[28px] border border-white/75 bg-white/55 p-5 md:p-6 backdrop-blur-2xl shadow-[0_18px_40px_rgba(75,92,150,0.15)]">
+        {error && (
+          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-[30px] font-black tracking-tight text-[#121F5A]">
-              {result.chartTitle}
+              {result?.chartTitle ?? '奇门遁甲排盘生成中'}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              三奇六仪，八门九星，运筹帷幄之中，决胜千里之外
+              {progressLabel ?? '三奇六仪，八门九星，运筹帷幄之中，决胜千里之外'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold text-slate-700">
-              {result.chartMeta.dun} · {result.chartMeta.ju}
-            </span>
+            {meta ? (
+              <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold text-slate-700">
+                {meta.dun} · {meta.ju}
+              </span>
+            ) : (
+              <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold text-slate-500">
+                盘局整理中
+              </span>
+            )}
             <span className="rounded-full bg-[#2E4FDF] px-3 py-1 text-xs font-semibold text-white">
-              Step 2 / 2
+              {streaming ? '结果流式生成中' : 'Step 2 / 2'}
             </span>
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 xl:grid-cols-[1.65fr_0.95fr] gap-4">
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_0.95fr]">
           <div className="relative z-30 rounded-[24px] border border-white/70 bg-white/45 p-4 md:p-5 shadow-[inset_1px_1px_0_rgba(255,255,255,0.85)]">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-bold tracking-wide text-[#1D2B70]">洛书九宫盘</h3>
-              <span className="text-[11px] text-slate-500">点击宫位可查看排盘依据</span>
+              <span className="text-[11px] text-slate-500">
+                {result ? '点击宫位可查看排盘依据' : '完整盘局完成后展示'}
+              </span>
             </div>
 
-            <div className="relative z-40 grid grid-cols-3 gap-3 overflow-visible">
-              {boardCells.map((cell, index) => (
-                <article
-                  key={`${cell.palace}-${index}`}
-                  onClick={() => setActiveTooltipIndex((prev) => (prev === index ? null : index))}
-                  className={cn(
-                    'group relative rounded-2xl p-3 min-h-[168px] flex flex-col transition-transform duration-150 hover:-translate-y-0.5 cursor-pointer',
-                    activeTooltipIndex === index && 'ring-2 ring-[#4F6FFF]/35',
-                    getCellStyle(cell)
-                  )}
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">{cell.palace}</span>
-                    <span className="rounded bg-white/70 px-1 py-[1px] text-[10px] font-semibold text-[#2E4FDF]">
-                      {cell.god}
-                    </span>
-                  </div>
-
-                  <div className="absolute right-2.5 top-7 rounded bg-white/70 px-1 py-[1px] text-[10px] text-slate-500">
-                    {cell.direction}
-                  </div>
-
-                  <div className="mt-3 text-center">
-                    <div
+            {result ? (
+              <>
+                <div className="relative z-40 grid grid-cols-3 gap-3 overflow-visible">
+                  {boardCells.map((cell, index) => (
+                    <article
+                      key={`${cell.palace}-${index}`}
+                      onClick={() => setActiveTooltipIndex((prev) => (prev === index ? null : index))}
                       className={cn(
-                        'text-[46px] leading-none font-black tracking-tight',
-                        getStarColor(cell.star)
+                        'group relative flex min-h-[168px] cursor-pointer flex-col rounded-2xl p-3 transition-transform duration-150 hover:-translate-y-0.5',
+                        activeTooltipIndex === index && 'ring-2 ring-[#4F6FFF]/35',
+                        getCellStyle(cell)
                       )}
                     >
-                      {cell.star}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500">{cell.palace}</span>
+                        <span className="rounded bg-white/70 px-1 py-[1px] text-[10px] font-semibold text-[#2E4FDF]">
+                          {cell.god}
+                        </span>
+                      </div>
+
+                      <div className="absolute right-2.5 top-7 rounded bg-white/70 px-1 py-[1px] text-[10px] text-slate-500">
+                        {cell.direction}
+                      </div>
+
+                      <div className="mt-3 text-center">
+                        <div
+                          className={cn(
+                            'text-[46px] font-black leading-none tracking-tight',
+                            getStarColor(cell.star)
+                          )}
+                        >
+                          {cell.star}
+                        </div>
+                        <div
+                          className={cn(
+                            'mt-1 text-[30px] font-bold leading-none tracking-tight',
+                            getDoorColor(cell.door)
+                          )}
+                        >
+                          {cell.door}
+                        </div>
+                      </div>
+
+                      <div className="mt-auto flex items-center justify-between text-[24px] font-bold">
+                        <span className="text-slate-500">{cell.earthStem}</span>
+                        <span className="text-[#C5583A]">{cell.heavenStem}</span>
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {cell.isValueSymbol && (
+                          <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            值符
+                          </span>
+                        )}
+                        {cell.isValueDoor && (
+                          <span className="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                            值使
+                          </span>
+                        )}
+                        {cell.isVoid && (
+                          <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                            空亡
+                          </span>
+                        )}
+                        {cell.isHorse && (
+                          <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                            驿马
+                          </span>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                {activeCell && (
+                  <div className="mb-4 mt-4 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-3 shadow-md">
+                    <div className="text-[11px] font-semibold text-slate-500">排盘逻辑标注</div>
+                    <div className="mt-1 text-xs leading-relaxed text-slate-700">
+                      宫位：{activeCell.palace}（洛书{activeCell.luoshu}，{activeCell.direction}）
                     </div>
-                    <div
-                      className={cn(
-                        'mt-1 text-[30px] leading-none font-bold tracking-tight',
-                        getDoorColor(cell.door)
-                      )}
-                    >
-                      {cell.door}
+                    <div className="mt-1 text-xs leading-relaxed text-slate-700">
+                      八神：{activeCell.god} ｜ 九星：{activeCell.star} ｜ 八门：{activeCell.door}
                     </div>
-                  </div>
-
-                  <div className="mt-auto flex items-center justify-between text-[24px] font-bold">
-                    <span className="text-slate-500">{cell.earthStem}</span>
-                    <span className="text-[#C5583A]">{cell.heavenStem}</span>
-                  </div>
-
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {cell.isValueSymbol && (
-                      <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                        值符
-                      </span>
+                    <div className="mt-1 text-xs leading-relaxed text-slate-700">
+                      天盘干：{activeCell.heavenStem} ｜ 地盘干：{activeCell.earthStem}
+                    </div>
+                    {palaceMarkerList(activeCell).length > 0 && (
+                      <div className="mt-2 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+                        标记：{palaceMarkerList(activeCell).join('；')}
+                      </div>
                     )}
-                    {cell.isValueDoor && (
-                      <span className="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
-                        值使
-                      </span>
-                    )}
-                    {cell.isVoid && (
-                      <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
-                        空亡
-                      </span>
-                    )}
-                    {cell.isHorse && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
-                        驿马
-                      </span>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            {activeCell && (
-              <div className="mt-4 mb-4 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-3 shadow-md">
-                <div className="text-[11px] font-semibold text-slate-500">排盘逻辑标注</div>
-                <div className="mt-1 text-xs text-slate-700 leading-relaxed">
-                  宫位：{activeCell.palace}（洛书{activeCell.luoshu}，{activeCell.direction}）
-                </div>
-                <div className="mt-1 text-xs text-slate-700 leading-relaxed">
-                  八神：{activeCell.god} ｜ 九星：{activeCell.star} ｜ 八门：{activeCell.door}
-                </div>
-                <div className="mt-1 text-xs text-slate-700 leading-relaxed">
-                  天盘干：{activeCell.heavenStem} ｜ 地盘干：{activeCell.earthStem}
-                </div>
-                {palaceMarkerList(activeCell).length > 0 && (
-                  <div className="mt-2 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
-                    标记：{palaceMarkerList(activeCell).join('；')}
+                    <div className="mt-2 text-[11px] leading-relaxed text-slate-600">
+                      {palaceLogicMap[activeCell.palace] ??
+                        '该宫位需结合全局动静、旺衰与问事主题综合判断。'}
+                    </div>
                   </div>
                 )}
-                <div className="mt-2 text-[11px] leading-relaxed text-slate-600">
-                  {palaceLogicMap[activeCell.palace] ??
-                    '该宫位需结合全局动静、旺衰与问事主题综合判断。'}
-                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {Array.from({ length: 9 }).map((_, index) => (
+                  <div
+                    key={`board-skeleton-${index}`}
+                    className="rounded-2xl border border-slate-200/80 bg-white/70 p-3"
+                  >
+                    <SkeletonBlock className="h-3 w-16" />
+                    <SkeletonBlock className="mt-6 h-12 w-16" />
+                    <SkeletonBlock className="mt-2 h-8 w-14" />
+                    <div className="mt-6 flex justify-between">
+                      <SkeletonBlock className="h-6 w-6" />
+                      <SkeletonBlock className="h-6 w-6" />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 rounded-2xl border border-slate-200/90">
-              <div className="rounded-2xl border  border-white/75 bg-white/70 p-4">
+            <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200/90 md:grid-cols-2">
+              <div className="rounded-2xl border border-white/75 bg-white/70 p-4">
                 <div className="text-xs font-semibold text-slate-500">空亡与马星</div>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-[11px] text-slate-400">旬空</div>
-                    <div className="text-base font-bold text-[#131D56]">
-                      {result.chartMeta.jiaziXunkong}
+                {meta ? (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[11px] text-slate-400">旬空</div>
+                      <div className="text-base font-bold text-[#131D56]">{meta.jiaziXunkong}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-slate-400">马星</div>
+                      <div className="text-base font-bold text-[#131D56]">{meta.horsePosition}</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-[11px] text-slate-400">马星</div>
-                    <div className="text-base font-bold text-[#131D56]">
-                      {result.chartMeta.horsePosition}
-                    </div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <SkeletonBlock className="h-12 w-full" />
+                    <SkeletonBlock className="h-12 w-full" />
                   </div>
-                </div>
+                )}
               </div>
               <div className="rounded-2xl border border-white/75 bg-white/70 p-4">
                 <div className="text-xs font-semibold text-slate-500">值符值使</div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
-                    <div className="text-[11px] text-indigo-500">值符</div>
-                    <div className="text-base font-bold text-indigo-900">
-                      {result.chartMeta.valueSymbol}
+                {meta ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
+                      <div className="text-[11px] text-indigo-500">值符</div>
+                      <div className="text-base font-bold text-indigo-900">{meta.valueSymbol}</div>
+                    </div>
+                    <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
+                      <div className="text-[11px] text-indigo-500">值使</div>
+                      <div className="text-base font-bold text-indigo-900">{meta.valueDoor}</div>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 px-3 py-2">
-                    <div className="text-[11px] text-indigo-500">值使</div>
-                    <div className="text-base font-bold text-indigo-900">
-                      {result.chartMeta.valueDoor}
-                    </div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <SkeletonBlock className="h-14 w-full" />
+                    <SkeletonBlock className="h-14 w-full" />
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -299,9 +386,15 @@ export function QimenAnalysisResult({
 
             <section className="mt-4 rounded-2xl border border-white/75 bg-white/70 p-3.5">
               <div className="text-xs font-semibold text-slate-500">综合格局评估</div>
-              <div className="mt-2 text-sm leading-relaxed text-slate-700">
-                {result.overallAssessment}
-              </div>
+              {overallAssessment ? (
+                <div className="mt-2 text-sm leading-relaxed text-slate-700">{overallAssessment}</div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <SkeletonBlock className="h-4 w-full" />
+                  <SkeletonBlock className="h-4 w-5/6" />
+                  <SkeletonBlock className="h-4 w-4/6" />
+                </div>
+              )}
             </section>
 
             <section className="mt-4">
@@ -309,16 +402,24 @@ export function QimenAnalysisResult({
                 <ShieldAlert className="h-4 w-4" />
                 风险预警 (RISK ASSESSMENT)
               </div>
-              <ul className="mt-2 space-y-2">
-                {result.riskAlerts.map((risk, idx) => (
-                  <li
-                    key={`risk-${idx}`}
-                    className="rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2 text-sm text-rose-800"
-                  >
-                    {risk}
-                  </li>
-                ))}
-              </ul>
+              {riskAlerts.length > 0 ? (
+                <ul className="mt-2 space-y-2">
+                  {riskAlerts.map((risk, idx) => (
+                    <li
+                      key={`risk-${idx}`}
+                      className="rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2 text-sm text-rose-800"
+                    >
+                      {risk}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <SkeletonBlock className="h-12 w-full" />
+                  <SkeletonBlock className="h-12 w-full" />
+                  <SkeletonBlock className="h-12 w-5/6" />
+                </div>
+              )}
             </section>
 
             <section className="mt-4">
@@ -326,31 +427,47 @@ export function QimenAnalysisResult({
                 <Sparkles className="h-4 w-4" />
                 AI 决策建议
               </div>
-              <ol className="mt-2 space-y-2">
-                {result.actionSuggestions.map((advice, idx) => (
-                  <li
-                    key={`advice-${idx}`}
-                    className="flex gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-sm text-indigo-900"
-                  >
-                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-200/80 text-[11px] font-bold text-indigo-800">
-                      {idx + 1}
-                    </span>
-                    <span>{advice}</span>
-                  </li>
-                ))}
-              </ol>
+              {actionSuggestions.length > 0 ? (
+                <ol className="mt-2 space-y-2">
+                  {actionSuggestions.map((advice, idx) => (
+                    <li
+                      key={`advice-${idx}`}
+                      className="flex gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-sm text-indigo-900"
+                    >
+                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-200/80 text-[11px] font-bold text-indigo-800">
+                        {idx + 1}
+                      </span>
+                      <span>{advice}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <SkeletonBlock className="h-12 w-full" />
+                  <SkeletonBlock className="h-12 w-full" />
+                  <SkeletonBlock className="h-12 w-5/6" />
+                </div>
+              )}
             </section>
 
             <section className="mt-4 rounded-2xl border border-indigo-100 bg-white/75 p-3.5">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold text-indigo-700">决策胜算指数</div>
-                <div className="text-2xl font-black text-indigo-700">{result.score}%</div>
+                {typeof result?.score === 'number' ? (
+                  <div className="text-2xl font-black text-indigo-700">{result.score}%</div>
+                ) : (
+                  <SkeletonBlock className="h-8 w-16" />
+                )}
               </div>
               <div className="mt-2 h-2 w-full rounded-full bg-indigo-100">
-                <div
-                  className="h-2 rounded-full bg-gradient-to-r from-[#3F60FF] to-[#67A2FF]"
-                  style={{ width: `${result.score}%` }}
-                />
+                {typeof result?.score === 'number' ? (
+                  <div
+                    className="h-2 rounded-full bg-gradient-to-r from-[#3F60FF] to-[#67A2FF]"
+                    style={{ width: `${result.score}%` }}
+                  />
+                ) : (
+                  <div className="h-2 rounded-full bg-indigo-200/70" style={{ width: '35%' }} />
+                )}
               </div>
             </section>
           </aside>
@@ -361,28 +478,43 @@ export function QimenAnalysisResult({
             <Clock3 className="h-4 w-4" />
             关键时间窗口
           </div>
-          <div className="mt-2 space-y-2">
-            {result.timingWindows.map((item, index) => (
-              <div
-                key={`window-${index}`}
-                className="rounded-xl border border-violet-100 bg-violet-50/55 px-3 py-2.5"
-              >
-                <div className="text-sm font-bold text-violet-800">{item.period}</div>
-                <div className="mt-1 text-sm text-violet-900/90">{item.guidance}</div>
-              </div>
-            ))}
-          </div>
+          {timingWindows.length > 0 ? (
+            <div className="mt-2 space-y-2">
+              {timingWindows.map((item, index) => (
+                <div
+                  key={`window-${index}`}
+                  className="rounded-xl border border-violet-100 bg-violet-50/55 px-3 py-2.5"
+                >
+                  <div className="text-sm font-bold text-violet-800">{item.period}</div>
+                  <div className="mt-1 text-sm text-violet-900/90">{item.guidance}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <SkeletonBlock className="h-14 w-full" />
+              <SkeletonBlock className="h-14 w-5/6" />
+            </div>
+          )}
         </section>
 
         <section className="mt-4 rounded-2xl border border-slate-200/80 bg-white/60 p-4">
           <div className="text-xs font-semibold text-slate-500">盘局摘要</div>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{result.chartSummary}</p>
+          {summary ? (
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{summary}</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <SkeletonBlock className="h-4 w-full" />
+              <SkeletonBlock className="h-4 w-11/12" />
+              <SkeletonBlock className="h-4 w-3/4" />
+            </div>
+          )}
         </section>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-slate-500 flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 text-xs text-slate-500">
             <AlertTriangle className="h-3.5 w-3.5" />
-            {result.disclaimer}
+            {result?.disclaimer ?? '完整排盘完成后会补充免责声明与盘局细节。'}
           </p>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" className="rounded-full" onClick={onBackToForm}>
@@ -392,8 +524,9 @@ export function QimenAnalysisResult({
               type="button"
               className="rounded-full bg-[#2F6BFF] text-white"
               onClick={onRetry}
+              disabled={streaming}
             >
-              重新演化分析
+              {streaming ? '分析生成中...' : '重新演化分析'}
             </Button>
           </div>
         </div>

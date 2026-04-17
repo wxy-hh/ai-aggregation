@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import type {
+  QimenLockedSections,
+  QimenSectionKey,
+  QimenStreamEvent,
+} from '@/app/destiny/_components/qimen-types';
 import { extractArkOutputText, extractJsonBlock } from '../../_lib/ark-response';
 
-// 使用 Node.js Runtime（Edge Runtime 有超时限制）
 export const runtime = 'nodejs';
-// Vercel Pro 支持最长 300 秒（5 分钟）
 export const maxDuration = 300;
 
 const RequestSchema = z.object({
@@ -65,12 +68,31 @@ const QimenModelSchema = z.object({
   disclaimer: z.string().trim().min(1),
 });
 
+const QuickSectionSchema = z.object({
+  overallAssessment: z.string().trim().min(1).optional(),
+  riskAlerts: z.array(z.string().trim().min(1)).min(1).max(6).optional(),
+  actionSuggestions: z.array(z.string().trim().min(1)).min(1).max(6).optional(),
+  timingWindows: z
+    .array(
+      z.object({
+        period: z.string().trim().min(1),
+        guidance: z.string().trim().min(1),
+      })
+    )
+    .min(1)
+    .max(4)
+    .optional(),
+  chartSummary: z.string().trim().min(1).optional(),
+});
+
 type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-// 设置 5 分钟超时（300 秒）
-const REPORT_TIMEOUT_MS = 300000;
+const QUICK_STAGE_TIMEOUT_MS = 20000;
+const FULL_STAGE_TIMEOUT_MS = 300000;
+const QUICK_MAX_OUTPUT_TOKENS = 1400;
+const QUICK_RETRY_MAX_OUTPUT_TOKENS = 1800;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2600;
 const RETRY_MAX_OUTPUT_TOKENS = 4600;
 
@@ -104,6 +126,14 @@ const outputLengthLabelMap = {
   brief: '简版',
   detailed: '详版',
 } as const;
+
+const SECTION_ORDER: QimenSectionKey[] = [
+  'overallAssessment',
+  'riskAlerts',
+  'actionSuggestions',
+  'timingWindows',
+  'chartSummary',
+];
 
 const PALACE_ORDER = [
   '巽四宫',
@@ -251,114 +281,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Missing ARK_API_KEY' }, { status: 500 });
     }
 
-    const input = parsed.data;
+    const stream = createQimenStream({
+      input: parsed.data,
+      arkApiKey,
+      arkBaseUrl,
+    });
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
-
-    let response: Response;
-    try {
-      response = await fetch(`${arkBaseUrl}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${arkApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: ARK_MODEL,
-          input: [
-            { role: 'system', content: buildSystemPrompt() },
-            { role: 'user', content: buildUserPrompt(input) },
-          ],
-          temperature: 0.25,
-          max_output_tokens: PRIMARY_MAX_OUTPUT_TOKENS,
-          reasoning: { effort: 'low' },
-          text: { format: { type: 'json_object' } },
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      return NextResponse.json(
-        {
-          success: false,
-          error: mapArkError(response.status),
-          details: text.slice(0, 400),
-        },
-        { status: response.status }
-      );
-    }
-
-    let payload = await response.json();
-    if (isLengthIncomplete(payload)) {
-      payload = await retryWithCompactPrompt({ arkApiKey, arkBaseUrl, input });
-      if (isLengthIncomplete(payload)) {
-        return NextResponse.json(
-          { success: false, error: '模型输出被截断（长度限制），请重试一次' },
-          { status: 502 }
-        );
-      }
-    }
-
-    let text: string;
-    try {
-      text = extractArkOutputText(payload);
-    } catch (error) {
-      throw new UpstreamModelError(
-        '模型返回格式不合法，请稍后重试',
-        502,
-        error instanceof Error ? error.message : undefined
-      );
-    }
-
-    const parsedModel = parseModelJson(text);
-    const normalized = normalizeQimenResult(parsedModel, input);
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: normalized,
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
       },
-      { status: 200 }
-    );
+    });
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json({ success: false, error: '测算超时，请稍后重试' }, { status: 504 });
-    }
-
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: '模型返回格式不合法，请稍后重试',
-          details: error.issues,
-        },
-        { status: 502 }
-      );
-    }
-
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { success: false, error: '模型返回内容不可解析，请稍后重试' },
-        { status: 502 }
-      );
-    }
-
-    if (error instanceof UpstreamModelError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-          ...(error.details ? { details: error.details } : {}),
-        },
-        { status: error.status }
-      );
-    }
-
     return NextResponse.json(
       {
         success: false,
@@ -367,6 +303,319 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function createQimenStream({
+  input,
+  arkApiKey,
+  arkBaseUrl,
+}: {
+  input: QimenAnalyzeInput;
+  arkApiKey: string;
+  arkBaseUrl: string;
+}) {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      const emittedSections = new Set<QimenSectionKey>();
+      const lockedSections: QimenLockedSections = {};
+
+      const send = (event: QimenStreamEvent) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+
+      try {
+        send({ type: 'status', status: 'queued' });
+        send({ type: 'status', status: 'charting' });
+
+        const quickSections = await generateQuickSections({
+          arkApiKey,
+          arkBaseUrl,
+          input,
+        });
+
+        emitSectionEvents({
+          quickSections,
+          emittedSections,
+          lockedSections,
+          send,
+        });
+
+        send({ type: 'status', status: 'analyzing' });
+
+        const fullResult = await generateFullResult({
+          arkApiKey,
+          arkBaseUrl,
+          input,
+        });
+
+        emitSectionEvents({
+          quickSections: extractSectionsFromResult(fullResult),
+          emittedSections,
+          lockedSections,
+          send,
+        });
+
+        const mergedResult = mergeLockedSectionsIntoResult(fullResult, lockedSections);
+
+        send({ type: 'status', status: 'finalizing' });
+        send({
+          type: 'complete',
+          result: mergedResult,
+        });
+      } catch (error) {
+        send({
+          type: 'error',
+          error: mapStreamError(error),
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+}
+
+function emitSectionEvents({
+  quickSections,
+  emittedSections,
+  lockedSections,
+  send,
+}: {
+  quickSections: QimenLockedSections;
+  emittedSections: Set<QimenSectionKey>;
+  lockedSections: QimenLockedSections;
+  send: (event: QimenStreamEvent) => void;
+}) {
+  for (const sectionKey of SECTION_ORDER) {
+    if (emittedSections.has(sectionKey)) continue;
+
+    const payload = quickSections[sectionKey];
+    if (!isRenderableSection(sectionKey, payload)) continue;
+
+    emittedSections.add(sectionKey);
+    setLockedSection(lockedSections, sectionKey, payload);
+    send({
+      type: 'section-final',
+      sectionKey,
+      payload,
+    } as QimenStreamEvent);
+  }
+}
+
+function isRenderableSection(
+  sectionKey: QimenSectionKey,
+  payload: QimenLockedSections[QimenSectionKey]
+): payload is NonNullable<QimenLockedSections[QimenSectionKey]> {
+  if (!payload) return false;
+
+  if (sectionKey === 'overallAssessment' || sectionKey === 'chartSummary') {
+    return typeof payload === 'string' && payload.trim().length > 0;
+  }
+
+  if (sectionKey === 'riskAlerts' || sectionKey === 'actionSuggestions') {
+    return Array.isArray(payload) && payload.length > 0;
+  }
+
+  if (sectionKey === 'timingWindows') {
+    return Array.isArray(payload) && payload.length > 0;
+  }
+
+  return false;
+}
+
+function setLockedSection(
+  target: QimenLockedSections,
+  sectionKey: QimenSectionKey,
+  payload: NonNullable<QimenLockedSections[QimenSectionKey]>
+) {
+  (target as Record<QimenSectionKey, QimenLockedSections[QimenSectionKey]>)[sectionKey] = payload;
+}
+
+async function generateQuickSections({
+  arkApiKey,
+  arkBaseUrl,
+  input,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  input: QimenAnalyzeInput;
+}): Promise<QimenLockedSections> {
+  try {
+    const primaryPayload = await requestArkPayload({
+      arkApiKey,
+      arkBaseUrl,
+      input: [
+        { role: 'system', content: buildQuickSectionSystemPrompt(input) },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
+      temperature: 0.2,
+      timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+    });
+
+    const primaryText = extractArkOutputText(primaryPayload);
+    const primarySections = normalizeQuickSections(parseModelJson(primaryText), input);
+    if (hasRenderableQuickSections(primarySections)) {
+      return primarySections;
+    }
+
+    const retryPayload = await requestArkPayload({
+      arkApiKey,
+      arkBaseUrl,
+      input: [
+        { role: 'system', content: buildQuickSectionRetryPrompt(input) },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxOutputTokens: QUICK_RETRY_MAX_OUTPUT_TOKENS,
+      temperature: 0.15,
+      timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+    });
+
+    const retryText = extractArkOutputText(retryPayload);
+    return normalizeQuickSections(parseModelJson(retryText), input);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {};
+    }
+
+    console.warn('[qimen/analyze] quick stage skipped', {
+      message: error instanceof Error ? error.message : 'unknown quick stage error',
+    });
+    return {};
+  }
+}
+
+async function generateFullResult({
+  arkApiKey,
+  arkBaseUrl,
+  input,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  input: QimenAnalyzeInput;
+}) {
+  let payload = await requestArkPayload({
+    arkApiKey,
+    arkBaseUrl,
+    input: [
+      { role: 'system', content: buildSystemPrompt() },
+      { role: 'user', content: buildUserPrompt(input) },
+    ],
+    maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
+    temperature: 0.25,
+    timeoutMs: FULL_STAGE_TIMEOUT_MS,
+  });
+
+  if (isLengthIncomplete(payload)) {
+    payload = await requestArkPayload({
+      arkApiKey,
+      arkBaseUrl,
+      input: [
+        { role: 'system', content: buildCompactSystemPrompt() },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
+      temperature: 0.15,
+      timeoutMs: FULL_STAGE_TIMEOUT_MS,
+    });
+
+    if (isLengthIncomplete(payload)) {
+      throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
+    }
+  }
+
+  let text: string;
+  try {
+    text = extractArkOutputText(payload);
+  } catch (error) {
+    throw new UpstreamModelError(
+      '模型返回格式不合法，请稍后重试',
+      502,
+      error instanceof Error ? error.message : undefined
+    );
+  }
+
+  const parsedModel = parseModelJson(text);
+  return normalizeQimenResult(parsedModel, input);
+}
+
+async function requestArkPayload({
+  arkApiKey,
+  arkBaseUrl,
+  input,
+  maxOutputTokens,
+  temperature,
+  timeoutMs,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  input: Array<{ role: 'system' | 'user'; content: string }>;
+  maxOutputTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${arkBaseUrl}/responses`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${arkApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: ARK_MODEL,
+        input,
+        temperature,
+        max_output_tokens: maxOutputTokens,
+        reasoning: { effort: 'low' },
+        text: { format: { type: 'json_object' } },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function mergeLockedSectionsIntoResult(result: QimenAnalyzeResult, lockedSections: QimenLockedSections) {
+  return {
+    ...result,
+    overallAssessment: lockedSections.overallAssessment ?? result.overallAssessment,
+    riskAlerts: lockedSections.riskAlerts ?? result.riskAlerts,
+    actionSuggestions: lockedSections.actionSuggestions ?? result.actionSuggestions,
+    timingWindows: lockedSections.timingWindows ?? result.timingWindows,
+    chartSummary: lockedSections.chartSummary ?? result.chartSummary,
+  };
+}
+
+function mapStreamError(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') {
+    return '测算超时，请稍后重试';
+  }
+
+  if (error instanceof z.ZodError) {
+    return '模型返回格式不合法，请稍后重试';
+  }
+
+  if (error instanceof SyntaxError) {
+    return '模型返回内容不可解析，请稍后重试';
+  }
+
+  if (error instanceof UpstreamModelError) {
+    return error.message;
+  }
+
+  return error instanceof Error ? error.message : '服务暂时不可用，请稍后重试';
 }
 
 function mapArkError(status: number): string {
@@ -387,6 +636,73 @@ function buildUserPrompt(input: QimenAnalyzeInput): string {
     `语言风格：${outputStyleLabelMap[input.question.outputStyle]}`,
     `结果长度：${outputLengthLabelMap[input.question.outputLength]}`,
   ].join('\n');
+}
+
+function buildQuickSectionSystemPrompt(input: QimenAnalyzeInput): string {
+  const maxListCount = input.question.outputLength === 'brief' ? 3 : 5;
+  const maxTimingCount = input.question.outputLength === 'brief' ? 2 : 4;
+
+  return `
+你是专业奇门遁甲分析助手。必须仅返回合法 JSON 对象，禁止输出任何额外文字、解释和 markdown。
+禁止输出思考过程。
+
+你的任务是先给前端可直接展示的“定稿区块”。必须一次性返回以下 5 个字段，缺一不可：
+- overallAssessment: 一段完整综合判断，1-2 句
+- riskAlerts: ${maxListCount} 条风险提醒
+- actionSuggestions: ${maxListCount} 条行动建议
+- timingWindows: ${maxTimingCount} 项时间窗口，每项包含 period 和 guidance
+- chartSummary: 一段完整盘局摘要，1-2 句
+
+约束：
+1. 每个字段都必须是可直接展示的最终文案，不要半句，不要续写占位
+2. 不要输出九宫盘、chartMeta、score、disclaimer
+3. 风格与用户选择一致，内容简洁但判断完整
+4. 不允许省略字段，不允许返回 null、空数组、空字符串
+5. riskAlerts 和 actionSuggestions 必须逐条独立，不要合并成长段
+
+严格按以下 JSON 结构返回：
+{
+  "overallAssessment": "string",
+  "riskAlerts": ["string"],
+  "actionSuggestions": ["string"],
+  "timingWindows": [
+    { "period": "string", "guidance": "string" }
+  ],
+  "chartSummary": "string"
+}
+`.trim();
+}
+
+function buildQuickSectionRetryPrompt(input: QimenAnalyzeInput): string {
+  const maxListCount = input.question.outputLength === 'brief' ? 3 : 5;
+  const maxTimingCount = input.question.outputLength === 'brief' ? 2 : 4;
+
+  return `
+仅返回合法 JSON，禁止任何额外文字。
+为前端生成 5 个可直接展示的定稿区块，必须包含且仅包含：
+- overallAssessment
+- riskAlerts（${maxListCount} 条）
+- actionSuggestions（${maxListCount} 条）
+- timingWindows（${maxTimingCount} 项，字段为 period/guidance）
+- chartSummary
+
+要求：
+1. 五个字段全部必填
+2. 全部内容必须完整可展示，不能留空
+3. 不要输出 board、chartMeta、score、disclaimer
+4. 使用中文简体
+
+返回格式：
+{
+  "overallAssessment": "完整句子",
+  "riskAlerts": ["完整句子"],
+  "actionSuggestions": ["完整句子"],
+  "timingWindows": [
+    { "period": "完整时间段", "guidance": "完整建议" }
+  ],
+  "chartSummary": "完整句子"
+}
+`.trim();
 }
 
 function buildSystemPrompt(): string {
@@ -455,40 +771,76 @@ function isLengthIncomplete(payload: unknown): boolean {
   return (incomplete as Record<string, unknown>).reason === 'length';
 }
 
-async function retryWithCompactPrompt({
-  arkApiKey,
-  arkBaseUrl,
-  input,
-}: {
-  arkApiKey: string;
-  arkBaseUrl: string;
-  input: QimenAnalyzeInput;
-}) {
-  const response = await fetch(`${arkBaseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${arkApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: ARK_MODEL,
-      input: [
-        { role: 'system', content: buildCompactSystemPrompt() },
-        { role: 'user', content: buildUserPrompt(input) },
-      ],
-      temperature: 0.15,
-      max_output_tokens: RETRY_MAX_OUTPUT_TOKENS,
-      reasoning: { effort: 'low' },
-      text: { format: { type: 'json_object' } },
-    }),
-  });
+function normalizeQuickSections(payload: unknown, input: QimenAnalyzeInput): QimenLockedSections {
+  const parsed = QuickSectionSchema.safeParse(payload);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 200));
+  if (!parsed.success) {
+    console.warn('[qimen/analyze] quick stage schema mismatch', {
+      issues: parsed.error.issues.slice(0, 5),
+    });
   }
 
-  return response.json();
+  const raw =
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+
+  const riskAlertsRaw = Array.isArray(raw.riskAlerts) ? raw.riskAlerts : [];
+  const actionSuggestionsRaw = Array.isArray(raw.actionSuggestions) ? raw.actionSuggestions : [];
+  const timingWindowsRaw = Array.isArray(raw.timingWindows) ? raw.timingWindows : [];
+
+  const timingWindows = timingWindowsRaw
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const row = item as Record<string, unknown>;
+      return {
+        period: sanitizeText(typeof row.period === 'string' ? row.period : '', 44),
+        guidance: sanitizeText(typeof row.guidance === 'string' ? row.guidance : '', 120),
+      };
+    })
+    .filter((item): item is { period: string; guidance: string } =>
+      Boolean(item?.period && item?.guidance)
+    )
+    .slice(0, input.question.outputLength === 'brief' ? 2 : 4);
+
+  const overallAssessment = sanitizeText(
+    typeof raw.overallAssessment === 'string' ? raw.overallAssessment : '',
+    260
+  );
+  const chartSummary = sanitizeText(
+    typeof raw.chartSummary === 'string' ? raw.chartSummary : '',
+    260
+  );
+  const riskAlerts = normalizeOptionalStringList(
+    riskAlertsRaw.filter((item): item is string => typeof item === 'string'),
+    input.question.outputLength === 'brief' ? 3 : 5,
+    78
+  );
+  const actionSuggestions = normalizeOptionalStringList(
+    actionSuggestionsRaw.filter((item): item is string => typeof item === 'string'),
+    input.question.outputLength === 'brief' ? 3 : 5,
+    78
+  );
+
+  return {
+    ...(overallAssessment ? { overallAssessment } : {}),
+    ...(riskAlerts ? { riskAlerts } : {}),
+    ...(actionSuggestions ? { actionSuggestions } : {}),
+    ...(timingWindows.length >= 1 ? { timingWindows } : {}),
+    ...(chartSummary ? { chartSummary } : {}),
+  };
+}
+
+function hasRenderableQuickSections(sections: QimenLockedSections) {
+  return SECTION_ORDER.some((sectionKey) => isRenderableSection(sectionKey, sections[sectionKey]));
+}
+
+function extractSectionsFromResult(result: QimenAnalyzeResult): QimenLockedSections {
+  return {
+    overallAssessment: result.overallAssessment,
+    riskAlerts: result.riskAlerts,
+    actionSuggestions: result.actionSuggestions,
+    timingWindows: result.timingWindows,
+    chartSummary: result.chartSummary,
+  };
 }
 
 function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): QimenAnalyzeResult {
@@ -660,6 +1012,13 @@ function normalizeStringList(
     return fallback.slice(0, maxCount).map((item) => sanitizeText(item, maxLen));
   }
   return deduped.slice(0, maxCount);
+}
+
+function normalizeOptionalStringList(items: string[], maxCount: number, maxLen: number) {
+  const deduped = Array.from(
+    new Set(items.map((item) => sanitizeText(item, maxLen)).filter(Boolean))
+  );
+  return deduped.length > 0 ? deduped.slice(0, maxCount) : undefined;
 }
 
 function buildFallbackTimingWindows(outputLength: QimenAnalyzeInput['question']['outputLength']) {

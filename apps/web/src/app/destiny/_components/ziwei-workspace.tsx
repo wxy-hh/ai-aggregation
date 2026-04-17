@@ -1,12 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { BaziInputForm } from './bazi-input-form';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { createDefaultBaziFormData, mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
-import type { DestinyReport, DestinyReportResponse } from './types';
+import type {
+  DestinyReport,
+  DestinyStreamStatus,
+  PartialDestinyReport,
+  ZiweiLockedSections,
+  ZiweiSectionKey,
+  ZiweiStreamEvent,
+} from './types';
 
 type Step = 'form' | 'result';
 type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
@@ -37,6 +44,13 @@ type TimelineItemViewModel = {
     risks: string[];
     actions: string[];
   };
+};
+
+type RelationSection = {
+  summary: string;
+  opportunities: string[];
+  risks: string[];
+  actions: string[];
 };
 
 const tabOptions: Array<{ key: PanelTab; label: string }> = [
@@ -173,15 +187,112 @@ function toDisplayError(kind: ZiweiErrorKind, fallback?: string): string {
   }
 }
 
+function parseStreamBlock(block: string): ZiweiStreamEvent | null {
+  const data = block
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => line.slice(6))
+    .join('\n')
+    .trim();
+
+  if (!data) return null;
+  return JSON.parse(data) as ZiweiStreamEvent;
+}
+
+async function consumeStream(
+  response: Response,
+  onEvent: (event: ZiweiStreamEvent) => void
+) {
+  if (!response.body) throw new Error('响应体为空');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex !== -1) {
+      const block = buffer.slice(0, separatorIndex).trim();
+      buffer = buffer.slice(separatorIndex + 2);
+      const event = block ? parseStreamBlock(block) : null;
+      if (event) onEvent(event);
+      separatorIndex = buffer.indexOf('\n\n');
+    }
+  }
+
+  const tail = `${buffer}${decoder.decode()}`.trim();
+  const event = tail ? parseStreamBlock(tail) : null;
+  if (event) onEvent(event);
+}
+
+function buildPartialReport(sections: ZiweiLockedSections): PartialDestinyReport {
+  const partial: PartialDestinyReport = {};
+
+  if (sections.profileOverview) partial.profile = sections.profileOverview;
+  if (sections.overviewModules) partial.modules = sections.overviewModules;
+  if (sections.timeline) partial.timeline = sections.timeline;
+  if (sections.ziweiCenter) partial.ziweiCenter = sections.ziweiCenter;
+  if (sections.ziweiPalaces) partial.ziweiPalaces = sections.ziweiPalaces;
+
+  return partial;
+}
+
+function mergeLockedSectionsIntoReport(
+  nextReport: DestinyReport,
+  sections: ZiweiLockedSections
+): DestinyReport {
+  return {
+    ...nextReport,
+    profile: sections.profileOverview ?? nextReport.profile,
+    modules: {
+      ...nextReport.modules,
+      ...sections.overviewModules,
+    },
+    timeline: sections.timeline ?? nextReport.timeline,
+    ziweiCenter: sections.ziweiCenter ?? nextReport.ziweiCenter,
+    ziweiPalaces: sections.ziweiPalaces ?? nextReport.ziweiPalaces,
+  };
+}
+
+function buildRelationSection(
+  sections: ZiweiLockedSections,
+  report: DestinyReport | null
+): RelationSection {
+  if (sections.relations) return sections.relations;
+
+  return {
+    summary: report?.modules.love.summary ?? '',
+    opportunities: report?.modules.love.bullets.slice(0, 3) ?? [],
+    risks: report?.modules.health.bullets.slice(0, 3) ?? [],
+    actions: report?.modules.personality.bullets.slice(0, 3) ?? [],
+  };
+}
+
+function setLockedSection(
+  target: ZiweiLockedSections,
+  sectionKey: ZiweiSectionKey,
+  payload: ZiweiLockedSections[ZiweiSectionKey]
+) {
+  (target as Record<ZiweiSectionKey, ZiweiLockedSections[ZiweiSectionKey]>)[sectionKey] = payload;
+}
+
 export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspaceProps) {
   const [step, setStep] = useState<Step>('form');
   const [formData, setFormData] = useState<BaziFormData>(() => createDefaultBaziFormData());
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof BaziFormData, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [blockingLoading, setBlockingLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DestinyReport | null>(null);
+  const [lockedSections, setLockedSections] = useState<ZiweiLockedSections>({});
+  const [streamStatus, setStreamStatus] = useState<DestinyStreamStatus | null>(null);
   const [tab, setTab] = useState<PanelTab>('overview');
   const [activePalaceLabel, setActivePalaceLabel] = useState<string>('命宫');
+  const abortRef = useRef<AbortController | null>(null);
 
   const pageTitle = useMemo(
     () => (step === 'form' ? '紫微斗数排盘 · 信息输入' : 'AI 紫微斗数 · 星盘全景视图'),
@@ -189,12 +300,27 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
   );
 
   useEffect(() => {
-    onLoadingChange?.(submitting);
-  }, [onLoadingChange, submitting]);
+    onLoadingChange?.(blockingLoading);
+  }, [blockingLoading, onLoadingChange]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const onChange = <K extends keyof BaziFormData>(key: K, next: BaziFormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: next }));
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
+  const readErrorMessage = async (response: Response) => {
+    try {
+      const json = (await response.json()) as { error?: string };
+      return json.error;
+    } catch {
+      return undefined;
+    }
   };
 
   const submit = async () => {
@@ -205,8 +331,18 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
       return;
     }
 
-    setSubmitting(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setBlockingLoading(true);
+    setStreaming(true);
     setError(null);
+    setReport(null);
+    setLockedSections({});
+    setStreamStatus('queued');
+    setTab('overview');
+    setActivePalaceLabel('命宫');
 
     let currentErrorKind: ZiweiErrorKind = 'unknown';
 
@@ -215,37 +351,105 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mapFormToBaziRequest(formData)),
+        signal: controller.signal,
       });
 
-      const json = (await response.json()) as DestinyReportResponse | { error?: string };
-
-      if (!response.ok || !('report' in json)) {
+      if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
-        throw new Error(toDisplayError(currentErrorKind, 'error' in json ? json.error : undefined));
+        throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
-      setReport(json.report);
-      setStep('result');
+      const receivedSections: ZiweiLockedSections = {};
+      let sawComplete = false;
+
+      await consumeStream(response, (event) => {
+        if (event.type === 'status') {
+          setStreamStatus(event.status);
+          return;
+        }
+
+        if (event.type === 'section-final') {
+          if (receivedSections[event.sectionKey]) return;
+          setLockedSection(receivedSections, event.sectionKey, event.payload);
+          setLockedSections((prev) =>
+            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
+          );
+          setStep('result');
+          setBlockingLoading(false);
+          if (event.sectionKey === 'ziweiPalaces' && event.payload[0]?.label) {
+            setActivePalaceLabel(event.payload[0].label);
+          }
+          return;
+        }
+
+        if (event.type === 'complete') {
+          sawComplete = true;
+          setReport(mergeLockedSectionsIntoReport(event.report, receivedSections));
+          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
+          setStep('result');
+          setBlockingLoading(false);
+          setStreaming(false);
+          setStreamStatus(null);
+          return;
+        }
+
+        if (event.type === 'error') {
+          throw new Error(event.error);
+        }
+      });
+
+      if (!sawComplete) {
+        throw new Error('分析连接已中断，请稍后重试。');
+      }
     } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === 'AbortError') {
+        return;
+      }
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
       setError(toDisplayError(currentErrorKind, rawMessage));
     } finally {
-      setSubmitting(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      setBlockingLoading(false);
+      setStreaming(false);
     }
   };
 
   const reset = () => {
+    abortRef.current?.abort();
     setFormData(createDefaultBaziFormData());
     setFieldErrors({});
+    setBlockingLoading(false);
+    setStreaming(false);
     setError(null);
+    setReport(null);
+    setLockedSections({});
+    setStreamStatus(null);
+    setTab('overview');
+    setActivePalaceLabel('命宫');
+    setStep('form');
   };
 
   const handleRecalculate = () => {
+    abortRef.current?.abort();
     setStep('form');
     setReport(null);
+    setLockedSections({});
+    setBlockingLoading(false);
+    setStreaming(false);
+    setStreamStatus(null);
     setError(null);
+    setTab('overview');
+    setActivePalaceLabel('命宫');
     onRecalculate();
   };
+
+  const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
+  const relationSection = useMemo(
+    () => buildRelationSection(lockedSections, report),
+    [lockedSections, report]
+  );
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
@@ -266,7 +470,7 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
             <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
               <BaziInputForm
                 value={formData}
-                submitting={submitting}
+                submitting={blockingLoading || streaming}
                 error={error}
                 fieldErrors={fieldErrors}
                 onChange={onChange}
@@ -279,7 +483,11 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
           </div>
         ) : (
           <ZiweiResultView
-            report={report}
+            report={report ?? partialReport}
+            relationSection={relationSection}
+            streaming={streaming}
+            streamStatus={streamStatus}
+            lockedSections={lockedSections}
             tab={tab}
             activePalaceLabel={activePalaceLabel}
             onTabChange={setTab}
@@ -290,14 +498,17 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
       </div>
 
       {/* Loading 动画 */}
-      <StarDecodeOverlay open={submitting} />
+      <StarDecodeOverlay open={blockingLoading} />
     </div>
   );
 }
 
-// 紫微结果展示组件
 type ZiweiResultViewProps = {
-  report: DestinyReport | null;
+  report: PartialDestinyReport | null;
+  relationSection: RelationSection;
+  streaming: boolean;
+  streamStatus: DestinyStreamStatus | null;
+  lockedSections: ZiweiLockedSections;
   tab: PanelTab;
   activePalaceLabel: string;
   onTabChange: (tab: PanelTab) => void;
@@ -307,6 +518,10 @@ type ZiweiResultViewProps = {
 
 function ZiweiResultView({
   report,
+  relationSection,
+  streaming,
+  streamStatus,
+  lockedSections,
   tab,
   activePalaceLabel,
   onTabChange,
@@ -348,9 +563,13 @@ function ZiweiResultView({
     '每周复盘一次进度并修正执行节奏。',
   ];
 
-  const relationOpportunities = report?.modules.love.bullets.slice(0, 3) ?? [];
-  const relationRisks = report?.modules.health.bullets.slice(0, 3) ?? [];
-  const relationActions = report?.modules.personality.bullets.slice(0, 3) ?? [];
+  const relationOpportunities = relationSection.opportunities;
+  const relationRisks = relationSection.risks;
+  const relationActions = relationSection.actions;
+  const progressText =
+    streaming && Object.keys(lockedSections).length > 0
+      ? `紫微分析正在分区定稿${streamStatus ? ` · ${streamStatus}` : ''}`
+      : '基于十四主星与宫位逻辑的深度人生轨迹预测';
 
   return (
     <div className="h-full w-full overflow-y-auto p-6">
@@ -363,9 +582,7 @@ function ZiweiResultView({
                 星盘全景视图
               </span>
             </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              基于十四主星与宫位逻辑的深度人生轨迹预测
-            </p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{progressText}</p>
           </div>
           <Button
             type="button"
@@ -390,56 +607,72 @@ function ZiweiResultView({
             <div className="col-span-12 xl:col-span-8 flex flex-col gap-6">
               <div className="rounded-3xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 p-5 backdrop-blur-xl shadow-lg">
                 <div className="grid grid-cols-4 grid-rows-4 gap-3 aspect-square">
-                  {palaceData.map((palace, index) => {
-                    const isActive = palace.label === activePalaceLabel;
-                    const toneClass = palaceToneClasses[index % palaceToneClasses.length];
-                    const labelToneClass =
-                      palaceLabelToneClasses[index % palaceLabelToneClasses.length];
-                    const dominantColorClass = getStarColorClass(
-                      palace.dominant || palace.stars[0]
-                    );
-                    return (
-                      <button
-                        key={palace.key}
-                        type="button"
-                        onClick={() => onPalaceLabelChange(palace.label)}
-                        className={[
-                          palaceGridAreas[index],
-                          'rounded-2xl p-3.5 flex flex-col justify-between text-left transition border shadow-[0_6px_18px_-14px_rgba(30,41,59,0.45),inset_0_1px_0_rgba(255,255,255,0.75)]',
-                          toneClass,
-                          isActive
-                            ? 'ring-2 ring-[#4A63EE]/35 border-[#4A63EE]/45 shadow-[0_10px_26px_-14px_rgba(59,91,246,0.46),inset_0_1px_0_rgba(255,255,255,0.84)]'
-                            : 'hover:border-[#5D74EA]/35 hover:shadow-[0_12px_30px_-18px_rgba(59,91,246,0.35),inset_0_1px_0_rgba(255,255,255,0.84)]',
-                        ].join(' ')}
-                      >
-                        <div>
-                          <div className={`text-[11px] font-extrabold ${labelToneClass}`}>
-                            {palace.label}
-                          </div>
-                          <div
-                            className={`mt-1 text-xl font-black tracking-tight ${dominantColorClass}`}
+                  {palaceData.length > 0
+                    ? palaceData.map((palace, index) => {
+                        const isActive = palace.label === activePalaceLabel;
+                        const toneClass = palaceToneClasses[index % palaceToneClasses.length];
+                        const labelToneClass =
+                          palaceLabelToneClasses[index % palaceLabelToneClasses.length];
+                        const dominantColorClass = getStarColorClass(
+                          palace.dominant || palace.stars[0]
+                        );
+                        return (
+                          <button
+                            key={palace.key}
+                            type="button"
+                            onClick={() => onPalaceLabelChange(palace.label)}
+                            className={[
+                              palaceGridAreas[index],
+                              'rounded-2xl p-3.5 flex flex-col justify-between text-left transition border shadow-[0_6px_18px_-14px_rgba(30,41,59,0.45),inset_0_1px_0_rgba(255,255,255,0.75)]',
+                              toneClass,
+                              isActive
+                                ? 'ring-2 ring-[#4A63EE]/35 border-[#4A63EE]/45 shadow-[0_10px_26px_-14px_rgba(59,91,246,0.46),inset_0_1px_0_rgba(255,255,255,0.84)]'
+                                : 'hover:border-[#5D74EA]/35 hover:shadow-[0_12px_30px_-18px_rgba(59,91,246,0.35),inset_0_1px_0_rgba(255,255,255,0.84)]',
+                            ].join(' ')}
                           >
-                            {palace.dominant || palace.stars[0] || '主星'}
-                          </div>
-                          {palace.stars.length > 1 && (
-                            <div className="mt-1 text-[11px] text-slate-500">
-                              {palace.stars.slice(1).join(' · ')}
+                            <div>
+                              <div className={`text-[11px] font-extrabold ${labelToneClass}`}>
+                                {palace.label}
+                              </div>
+                              <div
+                                className={`mt-1 text-xl font-black tracking-tight ${dominantColorClass}`}
+                              >
+                                {palace.dominant || palace.stars[0] || '主星'}
+                              </div>
+                              {palace.stars.length > 1 && (
+                                <div className="mt-1 text-[11px] text-slate-500">
+                                  {palace.stars.slice(1).join(' · ')}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <div className="mt-2 flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-slate-400">{palace.branch}</span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    : Array.from({ length: 12 }).map((_, index) => (
+                        <div
+                          key={`palace-skeleton-${index}`}
+                          className={[
+                            palaceGridAreas[index],
+                            'rounded-2xl border border-slate-200/60 bg-white/88 p-3.5 shadow-sm',
+                          ].join(' ')}
+                        >
+                          <div className="h-3 w-14 animate-pulse rounded bg-slate-200/70" />
+                          <div className="mt-3 h-6 w-20 animate-pulse rounded bg-slate-200/70" />
+                          <div className="mt-2 h-3 w-16 animate-pulse rounded bg-slate-200/70" />
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-slate-400">{palace.branch}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                      ))}
 
                   <div className="col-start-2 col-span-2 row-start-2 row-span-2 rounded-3xl border border-slate-200/60 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center shadow-lg">
                     <div className="text-[42px] leading-none font-black text-slate-900 dark:text-white">
-                      {report.ziweiCenter?.chartTitle ?? report.profile.name}
+                      {report.ziweiCenter?.chartTitle ?? report.profile?.name ?? '紫微排盘生成中'}
                     </div>
                     <div className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                      {report.profile.lunarText || report.profile.birthText}
+                      {report.profile?.lunarText ||
+                        report.profile?.birthText ||
+                        '正在整理命盘基础信息'}
                     </div>
                     <div className="mt-4 flex items-center gap-3">
                       <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-2">
@@ -447,7 +680,7 @@ function ZiweiResultView({
                           命主
                         </div>
                         <div className="text-2xl font-black text-blue-900 dark:text-blue-100 mt-0.5">
-                          {report.ziweiCenter?.mingZhu ?? '紫微'}
+                          {report.ziweiCenter?.mingZhu ?? '待定稿'}
                         </div>
                       </div>
                       <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-2">
@@ -455,7 +688,7 @@ function ZiweiResultView({
                           身主
                         </div>
                         <div className="text-2xl font-black text-amber-900 dark:text-amber-100 mt-0.5">
-                          {report.ziweiCenter?.shenZhu ?? '天相'}
+                          {report.ziweiCenter?.shenZhu ?? '待定稿'}
                         </div>
                       </div>
                     </div>
@@ -464,30 +697,45 @@ function ZiweiResultView({
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {[report.modules.personality, report.modules.career, report.modules.wealth].map(
+                {[report.modules?.personality, report.modules?.career, report.modules?.wealth].map(
                   (module, index) => {
                     const toneClass = moduleCardToneClasses[index % moduleCardToneClasses.length];
                     return (
                       <div
-                        key={module.title}
-                        className="rounded-2xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-5 transition-shadow hover:shadow-lg"
+                        key={module?.title ?? `module-skeleton-${index}`}
+                        className={`rounded-2xl border p-5 transition-shadow hover:shadow-lg ${toneClass}`}
                       >
-                        <div className="text-sm font-bold text-slate-900 dark:text-white">
-                          {module.title}
-                        </div>
-                        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                          {module.summary}
-                        </p>
-                        <ul className="mt-3 space-y-1.5">
-                          {module.bullets.slice(0, 3).map((item, i) => (
-                            <li
-                              key={`${module.title}-${i}`}
-                              className="text-xs text-slate-500 dark:text-slate-400 list-disc ml-4"
-                            >
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
+                        {module ? (
+                          <>
+                            <div className="text-sm font-bold text-slate-900 dark:text-white">
+                              {module.title}
+                            </div>
+                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                              {module.summary}
+                            </p>
+                            <ul className="mt-3 space-y-1.5">
+                              {module.bullets.slice(0, 3).map((item, i) => (
+                                <li
+                                  key={`${module.title}-${i}`}
+                                  className="text-xs text-slate-500 dark:text-slate-400 list-disc ml-4"
+                                >
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <>
+                            <div className="h-4 w-24 animate-pulse rounded bg-slate-200/70" />
+                            <div className="mt-3 h-3 w-full animate-pulse rounded bg-slate-200/70" />
+                            <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-200/70" />
+                            <div className="mt-3 space-y-2">
+                              <div className="h-3 w-full animate-pulse rounded bg-slate-200/70" />
+                              <div className="h-3 w-4/5 animate-pulse rounded bg-slate-200/70" />
+                              <div className="h-3 w-3/5 animate-pulse rounded bg-slate-200/70" />
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   }
@@ -525,7 +773,9 @@ function ZiweiResultView({
                         AI 紫微格局深度解析
                       </div>
                       <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                        {activePalace?.summary || report.modules.personality.summary}
+                        {activePalace?.summary ||
+                          report.modules?.personality?.summary ||
+                          '对应宫位区块定稿后将在此显示稳定结论。'}
                       </p>
 
                       <details
@@ -536,14 +786,20 @@ function ZiweiResultView({
                           机会建议
                         </summary>
                         <ul className="mt-2 space-y-1">
-                          {overviewOpportunities.map((item, i) => (
-                            <li
-                              key={`ov-op-${i}`}
-                              className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4"
-                            >
-                              {item}
+                          {overviewOpportunities.length > 0 ? (
+                            overviewOpportunities.map((item, i) => (
+                              <li
+                                key={`ov-op-${i}`}
+                                className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4"
+                              >
+                                {item}
+                              </li>
+                            ))
+                          ) : (
+                            <li className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4">
+                              宫位建议定稿后将在此显示。
                             </li>
-                          ))}
+                          )}
                         </ul>
                       </details>
 
@@ -589,74 +845,85 @@ function ZiweiResultView({
 
                   {tab === 'timeline' && (
                     <div className="space-y-3">
-                      {timeline.map((item) => (
-                        <details
-                          key={item.year}
-                          open
-                          className="rounded-xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-800/60 backdrop-blur-sm p-3"
-                        >
-                          <summary className="cursor-pointer">
-                            <div className="text-xs text-slate-400 dark:text-slate-500">
-                              {item.year}
-                            </div>
-                            <div className="text-sm font-bold text-slate-900 dark:text-white mt-1">
-                              {item.title}
-                            </div>
-                            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                              {item.summary}
-                            </p>
-                          </summary>
-                          <div className="mt-3 grid grid-cols-1 gap-2">
-                            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 p-2">
-                              <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-                                机会
-                              </div>
-                              <ul className="mt-1 space-y-1">
-                                {item.detail.opportunities.map((x, i) => (
-                                  <li
-                                    key={`t-op-${item.year}-${i}`}
-                                    className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4"
-                                  >
-                                    {x}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                      {timeline.length > 0
+                        ? timeline.map((item) => (
+                            <details
+                              key={item.year}
+                              open
+                              className="rounded-xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-800/60 backdrop-blur-sm p-3"
+                            >
+                              <summary className="cursor-pointer">
+                                <div className="text-xs text-slate-400 dark:text-slate-500">
+                                  {item.year}
+                                </div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                                  {item.title}
+                                </div>
+                                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                  {item.summary}
+                                </p>
+                              </summary>
+                              <div className="mt-3 grid grid-cols-1 gap-2">
+                                <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 p-2">
+                                  <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                    机会
+                                  </div>
+                                  <ul className="mt-1 space-y-1">
+                                    {item.detail.opportunities.map((x, i) => (
+                                      <li
+                                        key={`t-op-${item.year}-${i}`}
+                                        className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4"
+                                      >
+                                        {x}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
 
-                            <div className="rounded-lg bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 p-2">
-                              <div className="text-[11px] font-bold text-rose-700 dark:text-rose-400">
-                                风险
-                              </div>
-                              <ul className="mt-1 space-y-1">
-                                {item.detail.risks.map((x, i) => (
-                                  <li
-                                    key={`t-risk-${item.year}-${i}`}
-                                    className="text-xs text-rose-700 dark:text-rose-300 list-disc ml-4"
-                                  >
-                                    {x}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                                <div className="rounded-lg bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 p-2">
+                                  <div className="text-[11px] font-bold text-rose-700 dark:text-rose-400">
+                                    风险
+                                  </div>
+                                  <ul className="mt-1 space-y-1">
+                                    {item.detail.risks.map((x, i) => (
+                                      <li
+                                        key={`t-risk-${item.year}-${i}`}
+                                        className="text-xs text-rose-700 dark:text-rose-300 list-disc ml-4"
+                                      >
+                                        {x}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
 
-                            <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-2">
-                              <div className="text-[11px] font-bold text-blue-700 dark:text-blue-400">
-                                行动
+                                <div className="rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-2">
+                                  <div className="text-[11px] font-bold text-blue-700 dark:text-blue-400">
+                                    行动
+                                  </div>
+                                  <ul className="mt-1 space-y-1">
+                                    {item.detail.actions.map((x, i) => (
+                                      <li
+                                        key={`t-action-${item.year}-${i}`}
+                                        className="text-xs text-blue-700 dark:text-blue-300 list-disc ml-4"
+                                      >
+                                        {x}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </div>
-                              <ul className="mt-1 space-y-1">
-                                {item.detail.actions.map((x, i) => (
-                                  <li
-                                    key={`t-action-${item.year}-${i}`}
-                                    className="text-xs text-blue-700 dark:text-blue-300 list-disc ml-4"
-                                  >
-                                    {x}
-                                  </li>
-                                ))}
-                              </ul>
+                            </details>
+                          ))
+                        : Array.from({ length: 3 }).map((_, index) => (
+                            <div
+                              key={`timeline-skeleton-${index}`}
+                              className="rounded-xl border border-slate-200/60 bg-white/90 p-3"
+                            >
+                              <div className="h-3 w-16 animate-pulse rounded bg-slate-200/70" />
+                              <div className="mt-2 h-4 w-28 animate-pulse rounded bg-slate-200/70" />
+                              <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70" />
                             </div>
-                          </div>
-                        </details>
-                      ))}
+                          ))}
                     </div>
                   )}
 
@@ -666,7 +933,7 @@ function ZiweiResultView({
                         六亲关系建议
                       </div>
                       <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                        {report.modules.love.summary}
+                        {relationSection.summary || '关系分区定稿后将在此显示。'}
                       </p>
 
                       <details
@@ -677,7 +944,10 @@ function ZiweiResultView({
                           机会建议
                         </summary>
                         <ul className="mt-2 space-y-1">
-                          {relationOpportunities.map((item, i) => (
+                          {(relationOpportunities.length > 0
+                            ? relationOpportunities
+                            : ['关系区块定稿后将在此显示机会建议。']
+                          ).map((item, i) => (
                             <li
                               key={`rel-op-${i}`}
                               className="text-xs text-emerald-700 dark:text-emerald-300 list-disc ml-4"
@@ -696,7 +966,10 @@ function ZiweiResultView({
                           风险预警
                         </summary>
                         <ul className="mt-2 space-y-1">
-                          {relationRisks.map((item, i) => (
+                          {(relationRisks.length > 0
+                            ? relationRisks
+                            : ['关系区块定稿后将在此显示风险提醒。']
+                          ).map((item, i) => (
                             <li
                               key={`rel-risk-${i}`}
                               className="text-xs text-rose-700 dark:text-rose-300 list-disc ml-4"
@@ -715,7 +988,10 @@ function ZiweiResultView({
                           行动清单
                         </summary>
                         <ul className="mt-2 space-y-1">
-                          {relationActions.map((item, i) => (
+                          {(relationActions.length > 0
+                            ? relationActions
+                            : ['关系区块定稿后将在此显示行动建议。']
+                          ).map((item, i) => (
                             <li
                               key={`rel-action-${i}`}
                               className="text-xs text-blue-700 dark:text-blue-300 list-disc ml-4"
@@ -731,7 +1007,10 @@ function ZiweiResultView({
                           宫位联动建议 · {activePalace?.label ?? '命宫'}
                         </summary>
                         <ul className="mt-2 space-y-1">
-                          {(activePalace?.suggestions ?? []).map((item, i) => (
+                          {(activePalace?.suggestions?.length
+                            ? activePalace.suggestions
+                            : ['宫位结构定稿后将在此显示联动建议。']
+                          ).map((item, i) => (
                             <li
                               key={`palace-link-${i}`}
                               className="text-xs text-violet-700 dark:text-violet-300 list-disc ml-4"

@@ -1,11 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
 import { createDefaultQimenFormData, mapFormToQimenRequest } from './qimen-mappers';
-import type { QimenAnalyzeResponse, QimenAnalyzeResult, QimenFormData } from './qimen-types';
+import type {
+  QimenAnalyzeResult,
+  QimenFormData,
+  QimenLockedSections,
+  QimenSectionKey,
+  QimenStreamEvent,
+  QimenStreamStatus,
+} from './qimen-types';
 
 type Step = 'form' | 'result';
 type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
@@ -61,10 +68,14 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   const [step, setStep] = useState<Step>('form');
   const [formData, setFormData] = useState<QimenFormData>(() => createDefaultQimenFormData());
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof QimenFormData, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [blockingLoading, setBlockingLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<QimenErrorKind | null>(null);
   const [resultData, setResultData] = useState<QimenAnalyzeResult | null>(null);
+  const [lockedSections, setLockedSections] = useState<QimenLockedSections>({});
+  const [streamStatus, setStreamStatus] = useState<QimenStreamStatus | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const pageTitle = useMemo(
     () => (step === 'form' ? '奇门遁甲演化 · 信息输入' : '奇门遁甲演化 · AI 分析结果'),
@@ -72,12 +83,101 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   );
 
   useEffect(() => {
-    onLoadingChange?.(submitting);
-  }, [onLoadingChange, submitting]);
+    onLoadingChange?.(blockingLoading);
+  }, [blockingLoading, onLoadingChange]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const onChange = <K extends keyof QimenFormData>(key: K, next: QimenFormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: next }));
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
+  const mergeLockedSectionsIntoResult = (
+    result: QimenAnalyzeResult,
+    sections: QimenLockedSections
+  ): QimenAnalyzeResult => ({
+    ...result,
+    overallAssessment: sections.overallAssessment ?? result.overallAssessment,
+    riskAlerts: sections.riskAlerts ?? result.riskAlerts,
+    actionSuggestions: sections.actionSuggestions ?? result.actionSuggestions,
+    timingWindows: sections.timingWindows ?? result.timingWindows,
+    chartSummary: sections.chartSummary ?? result.chartSummary,
+  });
+
+  const setLockedSection = (
+    target: QimenLockedSections,
+    sectionKey: QimenSectionKey,
+    payload: QimenLockedSections[QimenSectionKey]
+  ) => {
+    (
+      target as Record<QimenSectionKey, QimenLockedSections[QimenSectionKey]>
+    )[sectionKey] = payload;
+  };
+
+  const parseStreamBlock = (
+    block: string,
+    onEvent: (event: QimenStreamEvent) => void
+  ) => {
+    const data = block
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => line.slice(6))
+      .join('\n')
+      .trim();
+
+    if (!data) return;
+    onEvent(JSON.parse(data) as QimenStreamEvent);
+  };
+
+  const consumeQimenStream = async (
+    response: Response,
+    onEvent: (event: QimenStreamEvent) => void
+  ) => {
+    if (!response.body) {
+      throw new Error('响应体为空');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let separatorIndex = buffer.indexOf('\n\n');
+      while (separatorIndex !== -1) {
+        const block = buffer.slice(0, separatorIndex).trim();
+        buffer = buffer.slice(separatorIndex + 2);
+
+        if (block) {
+          parseStreamBlock(block, onEvent);
+        }
+
+        separatorIndex = buffer.indexOf('\n\n');
+      }
+    }
+
+    const tail = `${buffer}${decoder.decode()}`.trim();
+    if (tail) {
+      parseStreamBlock(tail, onEvent);
+    }
+  };
+
+  const readErrorMessage = async (response: Response) => {
+    try {
+      const json = (await response.json()) as { error?: string };
+      return json.error;
+    } catch {
+      return undefined;
+    }
   };
 
   const submit = async () => {
@@ -89,10 +189,18 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       return;
     }
 
-    setSubmitting(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setBlockingLoading(true);
+    setStreaming(true);
     setError(null);
     setErrorKind(null);
     setStep('result');
+    setResultData(null);
+    setLockedSections({});
+    setStreamStatus('queued');
 
     let currentErrorKind: QimenErrorKind = 'unknown';
 
@@ -101,30 +209,82 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mapFormToQimenRequest(formData)),
+        signal: controller.signal,
       });
 
-      const json = (await response.json()) as QimenAnalyzeResponse;
-      if (!response.ok || !json.success || !json.data) {
+      if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
         setErrorKind(currentErrorKind);
-        throw new Error(toDisplayError(currentErrorKind, json.error));
+        throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
-      setResultData(json.data);
-      setStep('result');
+      const receivedSections: QimenLockedSections = {};
+      let sawComplete = false;
+
+      await consumeQimenStream(response, (event) => {
+        if (event.type === 'status') {
+          setStreamStatus(event.status);
+          return;
+        }
+
+        if (event.type === 'section-final') {
+          if (receivedSections[event.sectionKey]) return;
+
+          setLockedSection(receivedSections, event.sectionKey, event.payload);
+          setLockedSections((prev) =>
+            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
+          );
+          setBlockingLoading(false);
+          return;
+        }
+
+        if (event.type === 'complete') {
+          sawComplete = true;
+          setResultData(mergeLockedSectionsIntoResult(event.result, receivedSections));
+          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
+          setBlockingLoading(false);
+          setStreaming(false);
+          setStreamStatus(null);
+          return;
+        }
+
+        if (event.type === 'error') {
+          throw new Error(event.error);
+        }
+      });
+
+      if (!sawComplete) {
+        throw new Error('分析连接已中断，请稍后重试。');
+      }
     } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === 'AbortError') {
+        return;
+      }
+
       setErrorKind(currentErrorKind);
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
       setError(toDisplayError(currentErrorKind, rawMessage));
     } finally {
-      setSubmitting(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      setBlockingLoading(false);
+      setStreaming(false);
     }
   };
 
   const reset = () => {
+    abortRef.current?.abort();
     setFormData(createDefaultQimenFormData());
     setFieldErrors({});
     setError(null);
+    setErrorKind(null);
+    setResultData(null);
+    setLockedSections({});
+    setStreamStatus(null);
+    setBlockingLoading(false);
+    setStreaming(false);
+    setStep('form');
   };
 
   return (
@@ -145,7 +305,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
               <Button
                 type="button"
                 className="rounded-full bg-[#2F6BFF] text-white hover:brightness-110"
-                disabled={submitting}
+                disabled={blockingLoading || streaming}
                 onClick={() => {
                   void submit();
                 }}
@@ -159,7 +319,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
             {step === 'form' ? (
               <QimenInputForm
                 value={formData}
-                submitting={submitting}
+                submitting={blockingLoading || streaming}
                 error={error}
                 fieldErrors={fieldErrors}
                 onChange={onChange}
@@ -171,7 +331,10 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
             ) : (
               <QimenAnalysisResult
                 result={resultData}
+                sections={lockedSections}
                 loading={false}
+                streaming={streaming}
+                streamStatus={streamStatus}
                 error={error}
                 onBackToForm={() => setStep('form')}
                 onRetry={() => {

@@ -62,6 +62,17 @@ export type DestinyReport = {
   ziweiCenter?: ZiweiCenterInfo;
 };
 
+export type PartialDestinyReport = {
+  profile?: DestinyReport['profile'];
+  pillars?: DestinyReport['pillars'];
+  tenGods?: DestinyReport['tenGods'];
+  elements?: DestinyReport['elements'];
+  modules?: Partial<DestinyReport['modules']>;
+  timeline?: DestinyReport['timeline'];
+  ziweiPalaces?: DestinyReport['ziweiPalaces'];
+  ziweiCenter?: DestinyReport['ziweiCenter'];
+};
+
 export type DestinyReportRequest = {
   name: string;
   gender: 'male' | 'female';
@@ -74,6 +85,75 @@ export type DestinyReportResponse = {
   report: DestinyReport;
   generatedAt: string;
 };
+
+export type DestinyStreamStatus = 'queued' | 'charting' | 'analyzing' | 'finalizing';
+
+export type BaziSectionKey =
+  | 'profileOverview'
+  | 'pillars'
+  | 'elementsAndTenGods'
+  | 'modulesOverview'
+  | 'timeline';
+
+export type ZiweiSectionKey =
+  | 'profileOverview'
+  | 'ziweiCenter'
+  | 'overviewModules'
+  | 'timeline'
+  | 'relations'
+  | 'ziweiPalaces';
+
+export type BaziSectionPayloadMap = {
+  profileOverview: DestinyReport['profile'];
+  pillars: DestinyReport['pillars'];
+  elementsAndTenGods: {
+    elements: DestinyReport['elements'];
+    tenGods: DestinyReport['tenGods'];
+  };
+  modulesOverview: DestinyReport['modules'];
+  timeline: DestinyReport['timeline'];
+};
+
+export type ZiweiSectionPayloadMap = {
+  profileOverview: DestinyReport['profile'];
+  ziweiCenter: NonNullable<DestinyReport['ziweiCenter']>;
+  overviewModules: Pick<DestinyReport['modules'], 'personality' | 'career' | 'wealth'>;
+  timeline: DestinyReport['timeline'];
+  relations: {
+    summary: string;
+    opportunities: string[];
+    risks: string[];
+    actions: string[];
+  };
+  ziweiPalaces: NonNullable<DestinyReport['ziweiPalaces']>;
+};
+
+export type BaziLockedSections = Partial<BaziSectionPayloadMap>;
+export type ZiweiLockedSections = Partial<ZiweiSectionPayloadMap>;
+
+export type BaziStreamEvent =
+  | { type: 'status'; status: DestinyStreamStatus }
+  | {
+      [K in BaziSectionKey]: {
+        type: 'section-final';
+        sectionKey: K;
+        payload: BaziSectionPayloadMap[K];
+      };
+    }[BaziSectionKey]
+  | { type: 'complete'; report: DestinyReport }
+  | { type: 'error'; error: string };
+
+export type ZiweiStreamEvent =
+  | { type: 'status'; status: DestinyStreamStatus }
+  | {
+      [K in ZiweiSectionKey]: {
+        type: 'section-final';
+        sectionKey: K;
+        payload: ZiweiSectionPayloadMap[K];
+      };
+    }[ZiweiSectionKey]
+  | { type: 'complete'; report: DestinyReport }
+  | { type: 'error'; error: string };
 
 export type DestinyCopilotMessage = {
   role: 'user' | 'assistant';

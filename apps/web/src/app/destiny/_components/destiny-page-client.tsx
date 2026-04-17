@@ -9,7 +9,7 @@ import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 import { cn } from '@/lib/utils';
 
 export function DestinyPageClient() {
-  const [activeModule, setActiveModule] = useState<DestinyModuleKey>('qimen');
+  const [activeModule, setActiveModule] = useState<DestinyModuleKey>('bazi');
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);

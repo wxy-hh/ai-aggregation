@@ -1,0 +1,19 @@
+data: {"type":"status","status":"queued"}
+
+data: {"type":"status","status":"charting"}
+
+data: {"type":"section-final","sectionKey":"overallAssessment","payload":"整体盘局不利于仓促跳槽，当前工作稳定度和长期收益更优，新机会隐含较多组织与兑现风险。"}
+
+data: {"type":"section-final","sectionKey":"riskAlerts","payload":["新岗位实际权责与招聘描述可能不符","新单位组织稳定性不足，存在岗位波动风险","薪资福利承诺可能存在缩水空间"]}
+
+data: {"type":"section-final","sectionKey":"actionSuggestions","payload":["短期内先不要仓促签署新 Offer","要求对方将核心承诺落实为书面条款","优先核实现岗位与新岗位的真实成长空间"]}
+
+data: {"type":"section-final","sectionKey":"timingWindows","payload":[{"period":"未来 1-3 个月","guidance":"宜核实信息、保留选择，不宜立刻跳槽。"},{"period":"年底前后","guidance":"若新机会核心条件全部书面落实，可再做二次评估。"}]}
+
+data: {"type":"section-final","sectionKey":"chartSummary","payload":"盘局伏吟，问事人当前心态摇摆；现有工作落生门得吉，新机会落伤门惊门带险，短期变动性价比偏低。"}
+
+data: {"type":"status","status":"analyzing"}
+
+data: {"type":"status","status":"finalizing"}
+
+data: {"type":"complete","result":{"chartTitle":"时家奇门阳遁五局未时测小王跳槽职业决策盘","chartMeta":{"dun":"阳遁","ju":"三局","jiaziXunkong":"甲辰旬 寅卯空","horsePosition":"马星在巳","valueSymbol":"天冲星","valueDoor":"伤门"},"board":[{"palace":"巽四宫","luoshu":4,"direction":"东南","god":"螣蛇","star":"天辅","door":"杜门","heavenStem":"壬","earthStem":"丙","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"离九宫","luoshu":9,"direction":"正南","god":"九天","star":"天英","door":"景门","heavenStem":"丙","earthStem":"戊","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"坤二宫","luoshu":2,"direction":"西南","god":"九地","star":"天芮","door":"死门","heavenStem":"丁","earthStem":"己","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"震三宫","luoshu":3,"direction":"正东","god":"值符","star":"天冲","door":"伤门","heavenStem":"癸","earthStem":"乙","isValueSymbol":true,"isValueDoor":true,"isVoid":true,"isHorse":false},{"palace":"中五宫","luoshu":5,"direction":"中宫","god":"-","star":"天禽","door":"-","heavenStem":"戊","earthStem":"戊","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"兑七宫","luoshu":7,"direction":"正西","god":"六合","star":"天柱","door":"惊门","heavenStem":"辛","earthStem":"丁","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"艮八宫","luoshu":8,"direction":"东北","god":"勾陈","star":"天任","door":"生门","heavenStem":"己","earthStem":"庚","isValueSymbol":false,"isValueDoor":false,"isVoid":true,"isHorse":false},{"palace":"坎一宫","luoshu":1,"direction":"正北","god":"朱雀","star":"天蓬","door":"休门","heavenStem":"乙","earthStem":"癸","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false},{"palace":"乾六宫","luoshu":6,"direction":"西北","god":"太阴","star":"天心","door":"开门","heavenStem":"庚","earthStem":"壬","isValueSymbol":false,"isValueDoor":false,"isVoid":false,"isHorse":false}],"chartSummary":"盘局伏吟，问事人当前心态摇摆；现有工作落生门得吉，新机会落伤门惊门带险，短期变动性价比偏低。","overallAssessment":"整体盘局不利于仓促跳槽，当前工作稳定度和长期收益更优，新机会隐含较多组织与兑现风险。","riskAlerts":["新岗位实际权责与招聘描述可能不符","新单位组织稳定性不足，存在岗位波动风险","薪资福利承诺可能存在缩水空间"],"actionSuggestions":["短期内先不要仓促签署新 Offer","要求对方将核心承诺落实为书面条款","优先核实现岗位与新岗位的真实成长空间"],"timingWindows":[{"period":"未来 1-3 个月","guidance":"宜核实信息、保留选择，不宜立刻跳槽。"},{"period":"年底前后","guidance":"若新机会核心条件全部书面落实，可再做二次评估。"}],"score":45,"disclaimer":"本分析为传统奇门遁甲趋势参考，仅提供决策辅助，不构成正式职业建议，最终决策请结合自身实际情况与客观信息判断。"}}

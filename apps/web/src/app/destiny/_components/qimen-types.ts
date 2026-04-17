@@ -68,6 +68,46 @@ export type QimenAnalyzeResult = {
   disclaimer: string;
 };
 
+export type QimenStreamStatus = 'queued' | 'charting' | 'analyzing' | 'finalizing';
+
+export type QimenSectionKey =
+  | 'overallAssessment'
+  | 'riskAlerts'
+  | 'actionSuggestions'
+  | 'timingWindows'
+  | 'chartSummary';
+
+export type QimenSectionPayloadMap = {
+  overallAssessment: QimenAnalyzeResult['overallAssessment'];
+  riskAlerts: QimenAnalyzeResult['riskAlerts'];
+  actionSuggestions: QimenAnalyzeResult['actionSuggestions'];
+  timingWindows: QimenAnalyzeResult['timingWindows'];
+  chartSummary: QimenAnalyzeResult['chartSummary'];
+};
+
+export type QimenLockedSections = Partial<QimenSectionPayloadMap>;
+
+export type QimenStreamEvent =
+  | {
+      type: 'status';
+      status: QimenStreamStatus;
+    }
+  | {
+      [K in QimenSectionKey]: {
+        type: 'section-final';
+        sectionKey: K;
+        payload: QimenSectionPayloadMap[K];
+      };
+    }[QimenSectionKey]
+  | {
+      type: 'complete';
+      result: QimenAnalyzeResult;
+    }
+  | {
+      type: 'error';
+      error: string;
+    };
+
 export type QimenAnalyzeResponse = {
   success: boolean;
   data?: QimenAnalyzeResult;

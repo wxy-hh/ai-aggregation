@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { DestinyReport } from '../types';
+import type {
+  BaziLockedSections,
+  DestinyStreamStatus,
+  PartialDestinyReport,
+} from '../types';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -10,13 +14,24 @@ import { AICoPilotDrawer } from '../chat/ai-copilot-drawer';
 
 type TabKey = 'career' | 'love' | 'wealth' | 'health';
 
-export function ReportRightRail({ report }: { report: DestinyReport }) {
+export function ReportRightRail({
+  report,
+  streaming = false,
+  lockedSections,
+  streamStatus,
+}: {
+  report: PartialDestinyReport;
+  streaming?: boolean;
+  lockedSections?: BaziLockedSections;
+  streamStatus?: DestinyStreamStatus | null;
+}) {
   const [tab, setTab] = useState<TabKey>('career');
-  const [year, setYear] = useState<number>(report.timeline[0]?.year ?? new Date().getFullYear());
+  const [year, setYear] = useState<number>(report.timeline?.[0]?.year ?? new Date().getFullYear());
   const [copilotOpen, setCopilotOpen] = useState(false);
 
   const module = useMemo(() => {
     const m = report.modules;
+    if (!m) return null;
     if (tab === 'career') return m.career;
     if (tab === 'love') return m.love;
     if (tab === 'wealth') return m.wealth;
@@ -30,12 +45,18 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
     return '健康';
   }, [tab]);
 
+  const timeline = report.timeline ?? [];
+
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-extrabold text-slate-900">深度报告</div>
-          <div className="text-xs text-slate-500 truncate">卡片化结构 · 可追问 · 可验证</div>
+        <div className="text-sm font-extrabold text-slate-900">深度报告</div>
+          <div className="text-xs text-slate-500 truncate">
+            {streaming && !lockedSections?.timeline
+              ? `正在生成首批报告区块${streamStatus ? ` · ${streamStatus}` : ''}`
+              : '卡片化结构 · 可追问 · 可验证'}
+          </div>
         </div>
       </div>
 
@@ -96,8 +117,10 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
 
         <div className="mt-4 rounded-2xl border border-white/40 bg-white/55 p-4">
           <div className="text-sm font-extrabold text-slate-900">{moduleLabel}</div>
-          <div className="mt-2 text-sm text-slate-600 leading-relaxed">{module.summary}</div>
-          {(tab === 'wealth' || tab === 'health') && (
+          <div className="mt-2 text-sm text-slate-600 leading-relaxed">
+            {module?.summary ?? '对应模块分析生成中，将在区块定稿后展示。'}
+          </div>
+          {module && (tab === 'wealth' || tab === 'health') && (
             <div className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-xs font-semibold text-amber-700">
               仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
             </div>
@@ -105,14 +128,22 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
 
           <div className="mt-4 rounded-2xl border border-white/35 bg-white/45 p-4">
             <div className="text-xs font-extrabold text-[#2F6BFF]">AI 核心建议</div>
-            <ul className="mt-2 space-y-2 text-sm text-slate-700">
-              {module.bullets.map((b) => (
-                <li key={b} className="flex gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#2F6BFF]/70" />
-                  <span className="leading-relaxed">{b}</span>
-                </li>
-              ))}
-            </ul>
+            {module?.bullets?.length ? (
+              <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                {module.bullets.map((b) => (
+                  <li key={b} className="flex gap-2">
+                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#2F6BFF]/70" />
+                    <span className="leading-relaxed">{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <div className="h-4 animate-pulse rounded bg-slate-200/70" />
+                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70" />
+                <div className="h-4 w-4/6 animate-pulse rounded bg-slate-200/70" />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -140,7 +171,8 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
         </div>
 
         <div className="mt-4 space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1 min-h-0">
-          {report.timeline.map((t, idx) => {
+          {timeline.length > 0
+            ? timeline.map((t, idx) => {
             const active = t.year === year;
             return (
               <Popover key={t.year}>
@@ -194,11 +226,23 @@ export function ReportRightRail({ report }: { report: DestinyReport }) {
                 </PopoverContent>
               </Popover>
             );
-          })}
+            })
+            : Array.from({ length: 3 }).map((_, idx) => (
+                <div
+                  key={`timeline-skeleton-${idx}`}
+                  className="rounded-2xl border border-white/45 bg-white/55 px-4 py-4"
+                >
+                  <div className="h-3 w-20 animate-pulse rounded bg-slate-200/70" />
+                  <div className="mt-2 h-4 w-40 animate-pulse rounded bg-slate-200/70" />
+                  <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70" />
+                </div>
+              ))}
         </div>
       </div>
 
-      <AICoPilotDrawer open={copilotOpen} onOpenChange={setCopilotOpen} report={report} />
+      {report.profile && report.pillars && report.elements && report.timeline ? (
+        <AICoPilotDrawer open={copilotOpen} onOpenChange={setCopilotOpen} report={report as never} />
+      ) : null}
     </div>
   );
 }

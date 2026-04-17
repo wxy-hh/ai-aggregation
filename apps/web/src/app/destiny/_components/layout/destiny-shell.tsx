@@ -1,15 +1,24 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
-import type { DestinyReport } from '../types';
-import { LeftNav, type DestinyModuleKey } from './left-nav';
+import type {
+  BaziLockedSections,
+  DestinyReport,
+  DestinyStreamStatus,
+  PartialDestinyReport,
+} from '../types';
+import type { DestinyModuleKey } from './left-nav';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 
 export function DestinyShell({
   report,
+  partialReport,
+  streaming = false,
+  streamStatus = null,
+  lockedSections,
   activeModule = 'bazi',
   title = 'AI 命理大师',
   subtitleTag = '专业分析视图',
@@ -17,17 +26,22 @@ export function DestinyShell({
   onRecalculate,
 }: {
   report: DestinyReport | null;
+  partialReport?: PartialDestinyReport | null;
+  streaming?: boolean;
+  streamStatus?: DestinyStreamStatus | null;
+  lockedSections?: BaziLockedSections;
   activeModule?: DestinyModuleKey;
   title?: string;
   subtitleTag?: string;
   onModuleChange?: (key: DestinyModuleKey) => void;
   onRecalculate?: () => void;
 }) {
+  const displayReport = report ?? partialReport ?? null;
   const subtitle = useMemo(() => {
-    if (!report?.profile) return '深度学习驱动的东方易理智能解析系统';
-    const { name, genderLabel, birthText, locationText } = report.profile;
+    if (!displayReport?.profile) return '深度学习驱动的东方易理智能解析系统';
+    const { name, genderLabel, birthText, locationText } = displayReport.profile;
     return `${name} · ${genderLabel} · ${birthText} · ${locationText}`;
-  }, [report]);
+  }, [displayReport]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
@@ -61,13 +75,6 @@ export function DestinyShell({
       />
 
       <div className="flex h-full w-full gap-6 p-6">
-        {/* 左侧：导航与历史 */}
-        <aside className="hidden xl:flex w-[280px] shrink-0">
-          <GlassCard className="h-full w-full p-4">
-            <LeftNav activeModule={activeModule} onModuleChange={onModuleChange} />
-          </GlassCard>
-        </aside>
-
         {/* 中间：排盘主视图 */}
         <section className="flex-1 min-w-0">
           <div className="flex flex-col gap-6 h-full">
@@ -101,8 +108,12 @@ export function DestinyShell({
               </div>
             </header>
 
-            {report ? (
-              <ChartCenterPanel report={report} className="flex-1 min-h-0" />
+            {displayReport ? (
+              <ChartCenterPanel
+                report={displayReport}
+                streaming={streaming}
+                className="flex-1 min-h-0"
+              />
             ) : (
               <GlassCard className="flex-1 min-h-0 p-8 flex items-center justify-center">
                 <div className="text-center">
@@ -121,8 +132,13 @@ export function DestinyShell({
         {/* 右侧：报告与时间轴 + AI */}
         <aside className="hidden lg:flex w-[380px] shrink-0">
           <GlassCard className="h-full w-full p-4">
-            {report ? (
-              <ReportRightRail report={report} />
+            {displayReport ? (
+              <ReportRightRail
+                report={displayReport}
+                streaming={streaming}
+                lockedSections={lockedSections}
+                streamStatus={streamStatus}
+              />
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-slate-500 dark:text-slate-300">
                 完成测算后可查看深度报告

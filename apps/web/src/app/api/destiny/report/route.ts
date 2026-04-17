@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import type { DestinyReportRequest } from '@/app/destiny/_components/types';
+import type {
+  BaziLockedSections,
+  BaziSectionKey,
+  BaziSectionPayloadMap,
+  BaziStreamEvent,
+  DestinyReport,
+  DestinyReportRequest,
+  DestinyStreamStatus,
+} from '@/app/destiny/_components/types';
 import { extractArkOutputText, extractJsonBlock } from '../_lib/ark-response';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 
-// 使用 Node.js Runtime（Edge Runtime 有超时限制）
 export const runtime = 'nodejs';
-// Vercel Pro 支持最长 300 秒（5 分钟）
 export const maxDuration = 300;
 
 const RequestSchema = z.object({
@@ -29,10 +35,74 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-// 设置 5 分钟超时（300 秒）
+const QUICK_STAGE_TIMEOUT_MS = 20000;
 const REPORT_TIMEOUT_MS = 300000;
+const QUICK_MAX_OUTPUT_TOKENS = 1600;
 const PRIMARY_MAX_OUTPUT_TOKENS = 2400;
 const RETRY_MAX_OUTPUT_TOKENS = 5000;
+
+const BAZI_SECTION_ORDER: BaziSectionKey[] = [
+  'profileOverview',
+  'modulesOverview',
+  'timeline',
+  'pillars',
+  'elementsAndTenGods',
+];
+
+const QuickBaziSectionSchema = z.object({
+  profileOverview: z
+    .object({
+      name: z.string().min(1),
+      genderLabel: z.string().min(1),
+      birthText: z.string().min(1),
+      locationText: z.string().min(1),
+    })
+    .optional(),
+  modulesOverview: z
+    .object({
+      personality: z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+      }),
+      career: z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+      }),
+      love: z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+      }),
+      wealth: z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+      }),
+      health: z.object({
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        bullets: z.array(z.string().min(1)).min(1),
+      }),
+    })
+    .optional(),
+  timeline: z
+    .array(
+      z.object({
+        year: z.number(),
+        title: z.string().min(1),
+        summary: z.string().min(1),
+        detail: z.object({
+          opportunities: z.array(z.string().min(1)).min(1),
+          risks: z.array(z.string().min(1)).min(1),
+          actions: z.array(z.string().min(1)).min(1),
+        }),
+      })
+    )
+    .min(1)
+    .optional(),
+});
 
 class UpstreamModelError extends Error {
   status: number;
@@ -70,113 +140,22 @@ export async function POST(req: Request) {
     }
 
     const input: DestinyReportRequest = parsed.data;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
     const currentYear = new Date().getFullYear();
+    const stream = createBaziStream({
+      input,
+      currentYear,
+      arkApiKey,
+      arkBaseUrl,
+    });
 
-    let response: Response;
-    try {
-      response = await fetch(`${arkBaseUrl}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${arkApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: ARK_MODEL,
-          input: [
-            {
-              role: 'system',
-              content: buildSystemPrompt(currentYear),
-            },
-            {
-              role: 'user',
-              content: buildUserPrompt(input),
-            },
-          ],
-          temperature: 0.3,
-          max_output_tokens: PRIMARY_MAX_OUTPUT_TOKENS,
-          reasoning: { effort: 'low' },
-          text: { format: { type: 'json_object' } },
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      return NextResponse.json(
-        {
-          error: mapArkError(response.status),
-          details: text.slice(0, 400),
-        },
-        { status: response.status }
-      );
-    }
-
-    let payload = await response.json();
-    if (isLengthIncomplete(payload)) {
-      payload = await retryWithCompactPrompt({
-        arkApiKey,
-        arkBaseUrl,
-        input,
-        currentYear,
-      });
-      if (isLengthIncomplete(payload)) {
-        return NextResponse.json(
-          { error: '模型输出被截断（长度限制），请重试一次' },
-          { status: 502 }
-        );
-      }
-    }
-
-    let text: string;
-    try {
-      text = extractArkOutputText(payload);
-    } catch (error) {
-      throw new UpstreamModelError(
-        '模型返回格式不合法，请稍后重试',
-        502,
-        error instanceof Error ? error.message : undefined
-      );
-    }
-    const report = normalizeDestinyReport(parseModelJson(text), input, currentYear);
-
-    return NextResponse.json(
-      {
-        report,
-        generatedAt: new Date().toISOString(),
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
       },
-      { status: 200 }
-    );
+    });
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json({ error: '测算超时，请稍后重试' }, { status: 504 });
-    }
-
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: '模型返回格式不合法', details: error.issues },
-        { status: 502 }
-      );
-    }
-
-    if (error instanceof SyntaxError) {
-      return NextResponse.json({ error: '模型返回内容不可解析，请稍后重试' }, { status: 502 });
-    }
-
-    if (error instanceof UpstreamModelError) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          ...(error.details ? { details: error.details } : {}),
-        },
-        { status: error.status }
-      );
-    }
-
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : '测算失败，请稍后重试',
@@ -186,10 +165,311 @@ export async function POST(req: Request) {
   }
 }
 
+function createBaziStream({
+  input,
+  currentYear,
+  arkApiKey,
+  arkBaseUrl,
+}: {
+  input: DestinyReportRequest;
+  currentYear: number;
+  arkApiKey: string;
+  arkBaseUrl: string;
+}) {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      const emittedSections = new Set<BaziSectionKey>();
+      const lockedSections: BaziLockedSections = {};
+
+      const send = (event: BaziStreamEvent) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+
+      try {
+        send({ type: 'status', status: 'queued' });
+        send({ type: 'status', status: 'charting' });
+
+        const quickSections = await generateQuickBaziSections({
+          arkApiKey,
+          arkBaseUrl,
+          input,
+          currentYear,
+        });
+
+        emitBaziSectionEvents({
+          sections: quickSections,
+          emittedSections,
+          lockedSections,
+          send,
+        });
+
+        send({ type: 'status', status: 'analyzing' });
+
+        const fullReport = await generateFullBaziReport({
+          arkApiKey,
+          arkBaseUrl,
+          input,
+          currentYear,
+        });
+
+        emitBaziSectionEvents({
+          sections: extractBaziSectionsFromReport(fullReport),
+          emittedSections,
+          lockedSections,
+          send,
+        });
+
+        send({ type: 'status', status: 'finalizing' });
+        send({
+          type: 'complete',
+          report: mergeBaziSectionsIntoReport(fullReport, lockedSections),
+        });
+      } catch (error) {
+        send({
+          type: 'error',
+          error: mapStreamError(error),
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+}
+
+async function generateQuickBaziSections({
+  arkApiKey,
+  arkBaseUrl,
+  input,
+  currentYear,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  input: DestinyReportRequest;
+  currentYear: number;
+}) {
+  try {
+    const payload = await requestArkPayload({
+      arkApiKey,
+      arkBaseUrl,
+      inputMessages: [
+        { role: 'system', content: buildQuickBaziSystemPrompt(currentYear) },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
+      temperature: 0.2,
+      timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+    });
+
+    const text = extractArkOutputText(payload);
+    return normalizeQuickBaziSections(parseModelJson(text));
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {};
+    }
+    console.warn('[destiny/report] quick stage skipped', {
+      message: error instanceof Error ? error.message : 'unknown quick stage error',
+    });
+    return {};
+  }
+}
+
+async function generateFullBaziReport({
+  arkApiKey,
+  arkBaseUrl,
+  input,
+  currentYear,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  input: DestinyReportRequest;
+  currentYear: number;
+}) {
+  let payload = await requestArkPayload({
+    arkApiKey,
+    arkBaseUrl,
+    inputMessages: [
+      { role: 'system', content: buildSystemPrompt(currentYear) },
+      { role: 'user', content: buildUserPrompt(input) },
+    ],
+    maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
+    temperature: 0.3,
+    timeoutMs: REPORT_TIMEOUT_MS,
+  });
+
+  if (isLengthIncomplete(payload)) {
+    payload = await requestArkPayload({
+      arkApiKey,
+      arkBaseUrl,
+      inputMessages: [
+        { role: 'system', content: buildCompactSystemPrompt(currentYear) },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+      maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
+      temperature: 0.2,
+      timeoutMs: REPORT_TIMEOUT_MS,
+    });
+
+    if (isLengthIncomplete(payload)) {
+      throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
+    }
+  }
+
+  const text = extractArkOutputText(payload);
+  return normalizeDestinyReport(parseModelJson(text), input, currentYear);
+}
+
+async function requestArkPayload({
+  arkApiKey,
+  arkBaseUrl,
+  inputMessages,
+  maxOutputTokens,
+  temperature,
+  timeoutMs,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  inputMessages: Array<{ role: 'system' | 'user'; content: string }>;
+  maxOutputTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${arkBaseUrl}/responses`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${arkApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: ARK_MODEL,
+        input: inputMessages,
+        temperature,
+        max_output_tokens: maxOutputTokens,
+        reasoning: { effort: 'low' },
+        text: { format: { type: 'json_object' } },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function emitBaziSectionEvents({
+  sections,
+  emittedSections,
+  lockedSections,
+  send,
+}: {
+  sections: BaziLockedSections;
+  emittedSections: Set<BaziSectionKey>;
+  lockedSections: BaziLockedSections;
+  send: (event: BaziStreamEvent) => void;
+}) {
+  for (const sectionKey of BAZI_SECTION_ORDER) {
+    if (emittedSections.has(sectionKey)) continue;
+
+    const payload = sections[sectionKey];
+    if (!isRenderableBaziSection(sectionKey, payload)) continue;
+
+    emittedSections.add(sectionKey);
+    (lockedSections as Record<BaziSectionKey, BaziLockedSections[BaziSectionKey]>)[sectionKey] = payload;
+    send({
+      type: 'section-final',
+      sectionKey,
+      payload,
+    } as BaziStreamEvent);
+  }
+}
+
+function isRenderableBaziSection(
+  sectionKey: BaziSectionKey,
+  payload: BaziLockedSections[BaziSectionKey]
+): payload is NonNullable<BaziLockedSections[BaziSectionKey]> {
+  if (!payload) return false;
+  if (sectionKey === 'profileOverview') return typeof payload === 'object';
+  if (sectionKey === 'pillars') return Array.isArray(payload) && payload.length === 4;
+  if (sectionKey === 'elementsAndTenGods') {
+    const structuredPayload = payload as BaziSectionPayloadMap['elementsAndTenGods'];
+    return (
+      typeof structuredPayload === 'object' &&
+      Array.isArray(structuredPayload.elements) &&
+      structuredPayload.elements.length > 0 &&
+      Array.isArray(structuredPayload.tenGods) &&
+      structuredPayload.tenGods.length > 0
+    );
+  }
+  if (sectionKey === 'modulesOverview') return typeof payload === 'object';
+  if (sectionKey === 'timeline') return Array.isArray(payload) && payload.length > 0;
+  return false;
+}
+
+function extractBaziSectionsFromReport(report: DestinyReport): BaziLockedSections {
+  return {
+    profileOverview: report.profile,
+    pillars: report.pillars,
+    elementsAndTenGods: {
+      elements: report.elements,
+      tenGods: report.tenGods,
+    },
+    modulesOverview: report.modules,
+    timeline: report.timeline,
+  };
+}
+
+function mergeBaziSectionsIntoReport(report: DestinyReport, lockedSections: BaziLockedSections): DestinyReport {
+  return {
+    ...report,
+    profile: lockedSections.profileOverview ?? report.profile,
+    pillars: lockedSections.pillars ?? report.pillars,
+    elements: lockedSections.elementsAndTenGods?.elements ?? report.elements,
+    tenGods: lockedSections.elementsAndTenGods?.tenGods ?? report.tenGods,
+    modules: lockedSections.modulesOverview ?? report.modules,
+    timeline: lockedSections.timeline ?? report.timeline,
+  };
+}
+
+function normalizeQuickBaziSections(payload: unknown): BaziLockedSections {
+  const parsed = QuickBaziSectionSchema.safeParse(payload);
+  if (!parsed.success) {
+    return {};
+  }
+
+  return parsed.data;
+}
+
 function mapArkError(status: number): string {
   if (status === 429) return '请求过于频繁，请稍后重试';
   if (status >= 500) return '模型服务暂时不可用，请稍后重试';
   return '模型调用失败，请稍后重试';
+}
+
+function mapStreamError(error: unknown): string {
+  if (error instanceof Error && error.name === 'AbortError') {
+    return '测算超时，请稍后重试';
+  }
+  if (error instanceof z.ZodError) {
+    return '模型返回格式不合法，请稍后重试';
+  }
+  if (error instanceof SyntaxError) {
+    return '模型返回内容不可解析，请稍后重试';
+  }
+  if (error instanceof UpstreamModelError) {
+    return error.message;
+  }
+  return error instanceof Error ? error.message : '测算失败，请稍后重试';
 }
 
 function buildUserPrompt(input: DestinyReportRequest): string {
@@ -207,6 +487,22 @@ function buildUserPrompt(input: DestinyReportRequest): string {
     `出生时间：${input.birthTime.hour}:${input.birthTime.minute}`,
     `出生地：${location}`,
   ].join('\n');
+}
+
+function buildQuickBaziSystemPrompt(currentYear: number) {
+  return `
+你是专业八字分析助手。必须严格返回合法 JSON，禁止额外文字。
+只返回首屏可直接展示的 3 个区块：
+- profileOverview: name, genderLabel, birthText, locationText
+- modulesOverview: personality/career/love/wealth/health，每项含 title/summary/bullets
+- timeline: 至少 1 项，年份优先从 ${currentYear} 开始，每项含 title/summary/detail(opportunities/risks/actions)
+
+要求：
+1. 所有字段必须完整可直接展示
+2. 不要输出 pillars、elements、tenGods、ziweiPalaces、ziweiCenter
+3. summary 保持简洁，bullets 2-3 条
+4. 严格只返回 JSON 对象
+`.trim();
 }
 
 function buildSystemPrompt(currentYear: number): string {
@@ -254,50 +550,6 @@ function isLengthIncomplete(payload: unknown): boolean {
   const incomplete = data.incomplete_details;
   if (!incomplete || typeof incomplete !== 'object') return false;
   return (incomplete as Record<string, unknown>).reason === 'length';
-}
-
-async function retryWithCompactPrompt({
-  arkApiKey,
-  arkBaseUrl,
-  input,
-  currentYear,
-}: {
-  arkApiKey: string;
-  arkBaseUrl: string;
-  input: DestinyReportRequest;
-  currentYear: number;
-}) {
-  const response = await fetch(`${arkBaseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${arkApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: ARK_MODEL,
-      input: [
-        {
-          role: 'system',
-          content: buildCompactSystemPrompt(currentYear),
-        },
-        {
-          role: 'user',
-          content: buildUserPrompt(input),
-        },
-      ],
-      temperature: 0.2,
-      max_output_tokens: RETRY_MAX_OUTPUT_TOKENS,
-      reasoning: { effort: 'low' },
-      text: { format: { type: 'json_object' } },
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 200));
-  }
-
-  return response.json();
 }
 
 function parseModelJson(text: string): unknown {

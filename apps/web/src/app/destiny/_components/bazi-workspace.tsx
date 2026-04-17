@@ -1,13 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { createDefaultBaziFormData, mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
-import type { DestinyReport, DestinyReportResponse } from './types';
+import type {
+  BaziLockedSections,
+  BaziSectionKey,
+  BaziStreamEvent,
+  DestinyReport,
+  DestinyStreamStatus,
+  PartialDestinyReport,
+} from './types';
 import type { DestinyModuleKey } from './layout/left-nav';
 
 type Step = 'form' | 'result';
@@ -64,10 +71,14 @@ export function BaziWorkspace({
   const [step, setStep] = useState<Step>('form');
   const [formData, setFormData] = useState<BaziFormData>(() => createDefaultBaziFormData());
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof BaziFormData, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [blockingLoading, setBlockingLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<BaziErrorKind | null>(null);
   const [report, setReport] = useState<DestinyReport | null>(null);
+  const [lockedSections, setLockedSections] = useState<BaziLockedSections>({});
+  const [streamStatus, setStreamStatus] = useState<DestinyStreamStatus | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const pageTitle = useMemo(
     () => (step === 'form' ? '八字格局精批 · 信息输入' : '八字格局精批 · AI 分析结果'),
@@ -75,12 +86,106 @@ export function BaziWorkspace({
   );
 
   useEffect(() => {
-    onLoadingChange?.(submitting);
-  }, [onLoadingChange, submitting]);
+    onLoadingChange?.(blockingLoading);
+  }, [blockingLoading, onLoadingChange]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const onChange = <K extends keyof BaziFormData>(key: K, next: BaziFormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: next }));
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
+  const setLockedSection = (
+    target: BaziLockedSections,
+    sectionKey: BaziSectionKey,
+    payload: BaziLockedSections[BaziSectionKey]
+  ) => {
+    (target as Record<BaziSectionKey, BaziLockedSections[BaziSectionKey]>)[sectionKey] = payload;
+  };
+
+  const buildPartialReport = (sections: BaziLockedSections): PartialDestinyReport => {
+    const partial: PartialDestinyReport = {};
+    if (sections.profileOverview) partial.profile = sections.profileOverview;
+    if (sections.pillars) partial.pillars = sections.pillars;
+    if (sections.elementsAndTenGods) {
+      partial.elements = sections.elementsAndTenGods.elements;
+      partial.tenGods = sections.elementsAndTenGods.tenGods;
+    }
+    if (sections.modulesOverview) partial.modules = sections.modulesOverview;
+    if (sections.timeline) partial.timeline = sections.timeline;
+    return partial;
+  };
+
+  const mergeLockedSectionsIntoReport = (
+    nextReport: DestinyReport,
+    sections: BaziLockedSections
+  ): DestinyReport => ({
+    ...nextReport,
+    profile: sections.profileOverview ?? nextReport.profile,
+    pillars: sections.pillars ?? nextReport.pillars,
+    elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
+    tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
+    modules: sections.modulesOverview ?? nextReport.modules,
+    timeline: sections.timeline ?? nextReport.timeline,
+  });
+
+  const parseStreamBlock = (
+    block: string,
+    onEvent: (event: BaziStreamEvent) => void
+  ) => {
+    const data = block
+      .split('\n')
+      .filter((line) => line.startsWith('data: '))
+      .map((line) => line.slice(6))
+      .join('\n')
+      .trim();
+
+    if (!data) return;
+    onEvent(JSON.parse(data) as BaziStreamEvent);
+  };
+
+  const consumeStream = async (
+    response: Response,
+    onEvent: (event: BaziStreamEvent) => void
+  ) => {
+    if (!response.body) throw new Error('响应体为空');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      let separatorIndex = buffer.indexOf('\n\n');
+      while (separatorIndex !== -1) {
+        const block = buffer.slice(0, separatorIndex).trim();
+        buffer = buffer.slice(separatorIndex + 2);
+        if (block) parseStreamBlock(block, onEvent);
+        separatorIndex = buffer.indexOf('\n\n');
+      }
+    }
+
+    const tail = `${buffer}${decoder.decode()}`.trim();
+    if (tail) {
+      parseStreamBlock(tail, onEvent);
+    }
+  };
+
+  const readErrorMessage = async (response: Response) => {
+    try {
+      const json = (await response.json()) as { error?: string };
+      return json.error;
+    } catch {
+      return undefined;
+    }
   };
 
   const submit = async () => {
@@ -92,9 +197,17 @@ export function BaziWorkspace({
       return;
     }
 
-    setSubmitting(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setBlockingLoading(true);
+    setStreaming(true);
     setError(null);
     setErrorKind(null);
+    setLockedSections({});
+    setReport(null);
+    setStreamStatus('queued');
 
     let currentErrorKind: BaziErrorKind = 'unknown';
 
@@ -103,39 +216,93 @@ export function BaziWorkspace({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mapFormToBaziRequest(formData)),
+        signal: controller.signal,
       });
 
-      const json = (await response.json()) as DestinyReportResponse | { error?: string };
-
-      if (!response.ok || !('report' in json)) {
+      if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
         setErrorKind(currentErrorKind);
-        throw new Error(toDisplayError(currentErrorKind, 'error' in json ? json.error : undefined));
+        throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
-      setReport(json.report);
-      setStep('result');
+      const receivedSections: BaziLockedSections = {};
+      let sawComplete = false;
+
+      await consumeStream(response, (event) => {
+        if (event.type === 'status') {
+          setStreamStatus(event.status);
+          return;
+        }
+
+        if (event.type === 'section-final') {
+          if (receivedSections[event.sectionKey]) return;
+          setLockedSection(receivedSections, event.sectionKey, event.payload);
+          setLockedSections((prev) =>
+            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
+          );
+          setStep('result');
+          setBlockingLoading(false);
+          return;
+        }
+
+        if (event.type === 'complete') {
+          sawComplete = true;
+          setReport(mergeLockedSectionsIntoReport(event.report, receivedSections));
+          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
+          setStep('result');
+          setBlockingLoading(false);
+          setStreaming(false);
+          setStreamStatus(null);
+          return;
+        }
+
+        if (event.type === 'error') {
+          throw new Error(event.error);
+        }
+      });
+
+      if (!sawComplete) {
+        throw new Error('分析连接已中断，请稍后重试。');
+      }
     } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === 'AbortError') {
+        return;
+      }
       setErrorKind(currentErrorKind);
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
       setError(toDisplayError(currentErrorKind, rawMessage));
     } finally {
-      setSubmitting(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      setBlockingLoading(false);
+      setStreaming(false);
     }
   };
 
   const reset = () => {
+    abortRef.current?.abort();
     setFormData(createDefaultBaziFormData());
     setFieldErrors({});
     setError(null);
+    setErrorKind(null);
+    setReport(null);
+    setLockedSections({});
+    setBlockingLoading(false);
+    setStreaming(false);
+    setStreamStatus(null);
+    setStep('form');
   };
 
   const handleRecalculate = () => {
     setStep('form');
     setReport(null);
     setError(null);
+    setLockedSections({});
     onRecalculate();
   };
+
+  const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
@@ -156,7 +323,7 @@ export function BaziWorkspace({
             <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
               <BaziInputForm
                 value={formData}
-                submitting={submitting}
+                submitting={blockingLoading || streaming}
                 error={error}
                 fieldErrors={fieldErrors}
                 onChange={onChange}
@@ -170,6 +337,10 @@ export function BaziWorkspace({
         ) : (
           <DestinyShell
             report={report}
+            partialReport={partialReport}
+            streaming={streaming}
+            streamStatus={streamStatus}
+            lockedSections={lockedSections}
             activeModule={activeModule}
             title="AI 命理大师"
             subtitleTag="八字格局精批"
@@ -180,7 +351,7 @@ export function BaziWorkspace({
       </div>
 
       {/* Loading 动画 */}
-      <StarDecodeOverlay open={submitting} />
+      <StarDecodeOverlay open={blockingLoading} />
     </div>
   );
 }

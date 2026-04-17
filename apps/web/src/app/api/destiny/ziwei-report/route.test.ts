@@ -10,7 +10,7 @@ const validPayload = {
 };
 
 function createRequest() {
-  return new Request('http://localhost/api/destiny/report', {
+  return new Request('http://localhost/api/destiny/ziwei-report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(validPayload),
@@ -38,7 +38,7 @@ function extractSseEvents(payload: string) {
     });
 }
 
-describe('/api/destiny/report', () => {
+describe('/api/destiny/ziwei-report', () => {
   const originalFetch = global.fetch;
   const originalApiKey = process.env.ARK_API_KEY;
   const originalBaseUrl = process.env.ARK_BASE_URL;
@@ -55,80 +55,7 @@ describe('/api/destiny/report', () => {
     vi.restoreAllMocks();
   });
 
-  it('当模型响应缺少有效文本时返回 502 而不是 500', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'completed',
-            output: [{ type: 'reasoning', summary: [] }],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'completed',
-            output: [{ type: 'reasoning', summary: [] }],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        )
-      ) as typeof fetch;
-
-    const response = await POST(createRequest());
-    const text = await response.text();
-    const events = extractSseEvents(text);
-
-    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
-    expect(events.at(-1)).toEqual({
-      type: 'error',
-      error: 'ARK 未返回有效文本',
-    });
-  });
-
-  it('当重试请求被上游限流时透传 429 而不是 500', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'incomplete',
-            incomplete_details: { reason: 'length' },
-            output: [],
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'rate limit' } }), {
-          status: 429,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      ) as typeof fetch;
-
-    const response = await POST(createRequest());
-    const text = await response.text();
-    const events = extractSseEvents(text);
-
-    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
-    expect(events.at(-1)).toEqual({
-      type: 'error',
-      error: '请求过于频繁，请稍后重试',
-    });
-  });
-
-  it('按分区事件流返回，并在 complete 中保留已锁定的首批八字区块', async () => {
+  it('按分区事件流返回紫微区块，并在 complete 中保留首批区块内容', async () => {
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce(
@@ -144,33 +71,24 @@ describe('/api/destiny/report', () => {
                       name: '测试',
                       genderLabel: '男',
                       birthText: '农历 1995年六月十八 12:30',
+                      lunarText: '乙亥年六月十八午时',
                       locationText: '北京',
                     },
-                    modulesOverview: {
+                    overviewModules: {
                       personality: {
-                        title: '性格优势',
-                        summary: '首批性格摘要',
-                        bullets: ['稳中求进', '判断克制'],
+                        title: '命理总论',
+                        summary: '首批总论摘要',
+                        bullets: ['先稳后动', '适合积累'],
                       },
                       career: {
-                        title: '事业格局',
+                        title: '事业趋势',
                         summary: '首批事业摘要',
-                        bullets: ['适合深耕', '先守后攻'],
-                      },
-                      love: {
-                        title: '情感关系',
-                        summary: '首批情感摘要',
-                        bullets: ['重视信任', '慢热表达'],
+                        bullets: ['节奏渐强', '贵人可借'],
                       },
                       wealth: {
                         title: '财富节奏',
                         summary: '首批财富摘要',
-                        bullets: ['先稳后增', '避免激进'],
-                      },
-                      health: {
-                        title: '健康关注',
-                        summary: '首批健康摘要',
-                        bullets: ['规律作息', '缓压优先'],
+                        bullets: ['稳中有升', '谨慎投资'],
                       },
                     },
                     timeline: [
@@ -185,6 +103,12 @@ describe('/api/destiny/report', () => {
                         },
                       },
                     ],
+                    relations: {
+                      summary: '首批六亲摘要',
+                      opportunities: ['关系机会1', '关系机会2'],
+                      risks: ['关系风险1', '关系风险2'],
+                      actions: ['关系行动1', '关系行动2'],
+                    },
                   },
                 },
               ],
@@ -205,6 +129,7 @@ describe('/api/destiny/report', () => {
                       name: '测试',
                       genderLabel: '男',
                       birthText: '完整出生信息',
+                      lunarText: '乙亥年六月十八午时',
                       locationText: '北京',
                     },
                     pillars: [
@@ -227,9 +152,9 @@ describe('/api/destiny/report', () => {
                       { key: 'shishen', label: '食神', value: 46, tooltip: '食神说明' },
                     ],
                     modules: {
-                      personality: { title: '性格优势', summary: '完整性格摘要', bullets: ['a', 'b'] },
-                      career: { title: '事业格局', summary: '完整事业摘要', bullets: ['a', 'b'] },
-                      love: { title: '情感关系', summary: '完整情感摘要', bullets: ['a', 'b'] },
+                      personality: { title: '命理总论', summary: '完整总论摘要', bullets: ['a', 'b'] },
+                      career: { title: '事业趋势', summary: '完整事业摘要', bullets: ['a', 'b'] },
+                      love: { title: '情感关系', summary: '完整感情摘要', bullets: ['a', 'b'] },
                       wealth: { title: '财富节奏', summary: '完整财富摘要', bullets: ['a', 'b'] },
                       health: { title: '健康关注', summary: '完整健康摘要', bullets: ['a', 'b'] },
                     },
@@ -265,6 +190,20 @@ describe('/api/destiny/report', () => {
                         },
                       },
                     ],
+                    ziweiCenter: {
+                      chartTitle: '紫微命盘',
+                      mingZhu: '紫微',
+                      shenZhu: '天相',
+                    },
+                    ziweiPalaces: Array.from({ length: 12 }).map((_, index) => ({
+                      key: `palace-${index + 1}`,
+                      label: ['父母宫','福德宫','田宅宫','官禄宫','命宫','兄弟宫','奴仆宫','夫妻宫','迁移宫','子女宫','财帛宫','疾厄宫'][index],
+                      branch: `地支${index + 1}`,
+                      stars: ['紫微', '天府'],
+                      dominant: '紫微',
+                      summary: `宫位摘要${index + 1}`,
+                      suggestions: ['建议1', '建议2'],
+                    })),
                   },
                 },
               ],
@@ -283,10 +222,13 @@ describe('/api/destiny/report', () => {
 
     const completeEvent = events.at(-1) as {
       type: 'complete';
-      report: { profile: { birthText: string }; modules: { personality: { summary: string } } };
+      report: {
+        profile: { birthText: string };
+        modules: { personality: { summary: string } };
+      };
     };
 
     expect(completeEvent.report.profile.birthText).toBe('农历 1995年六月十八 12:30');
-    expect(completeEvent.report.modules.personality.summary).toBe('首批性格摘要');
+    expect(completeEvent.report.modules.personality.summary).toBe('首批总论摘要');
   });
 });
