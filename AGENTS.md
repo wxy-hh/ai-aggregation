@@ -331,3 +331,138 @@ docker-compose -f infra/docker/docker-compose.yml up -d
 - `apps/web/src/app/api/**`：对外 API 入口（BFF）
 - `packages/providers/**`：第三方 AI 服务商的适配层
 - `packages/shared/**`：跨 app 共享类型/Schema/常量
+
+---
+
+## AI Agent 开发注意事项
+
+### 文件写入问题与解决方案
+
+#### 问题描述
+
+在使用 `fsWrite` 工具创建文件时，可能会遇到 `aborted` 错误，特别是在以下情况：
+
+1. **文件名包含中文字符**
+2. **文件内容较大**（超过几百行）
+3. **内容包含特殊字符或复杂格式**
+
+**错误示例**：
+
+```
+Error(s) while creating 智能对话功能设计文档.md
+aborted. The agent has seen this error and will try a different approach to write the file if needed.
+```
+
+#### 根本原因
+
+- `fsWrite` 工具在处理大文件或特殊字符时存在限制
+- 这不是权限问题，而是工具本身的约束
+- 工具可能在传输过程中被中断
+
+#### 解决方案
+
+**方案 1：使用 bash 命令创建文件（推荐）**
+
+```bash
+# 使用 heredoc 创建文件
+cat > path/to/file.md << 'EOF'
+文件内容...
+EOF
+
+# 追加内容
+cat >> path/to/file.md << 'EOF'
+更多内容...
+EOF
+```
+
+**方案 2：分批写入**
+
+```bash
+# 第一部分
+cat > file.md << 'EOF'
+第一部分内容...
+EOF
+
+# 第二部分（追加）
+cat >> file.md << 'EOF'
+第二部分内容...
+EOF
+
+# 第三部分（追加）
+cat >> file.md << 'EOF'
+第三部分内容...
+EOF
+```
+
+**方案 3：使用英文文件名**
+
+```bash
+# 避免使用中文文件名
+# ❌ 智能对话功能设计文档.md
+# ✅ chat-feature-design.md
+```
+
+#### 最佳实践
+
+1. **优先使用 bash 命令**：对于大文件或复杂内容，直接使用 `cat` 命令
+2. **文件名使用英文**：避免中文、空格等特殊字符
+3. **分批写入**：超过 500 行的文件建议分批写入
+4. **验证写入**：写入后使用 `wc -l` 或 `head` 验证文件是否创建成功
+
+#### 示例代码
+
+```bash
+# 创建大型文档的完整流程
+# 1. 创建目录
+mkdir -p docs
+
+# 2. 写入第一部分
+cat > docs/feature-design.md << 'EOF'
+# 标题
+## 第一章节
+内容...
+EOF
+
+# 3. 追加第二部分
+cat >> docs/feature-design.md << 'EOF'
+## 第二章节
+更多内容...
+EOF
+
+# 4. 验证文件
+echo "文件创建完成！"
+wc -l docs/feature-design.md
+head -20 docs/feature-design.md
+```
+
+#### 何时使用 fsWrite
+
+`fsWrite` 适用于：
+
+- 小文件（< 200 行）
+- 简单内容（纯文本、简单代码）
+- 文件名为英文
+
+`fsWrite` 不适用于：
+
+- 大文件（> 500 行）
+- 复杂格式（大量代码块、特殊字符）
+- 中文文件名
+
+#### 错误处理流程
+
+```
+遇到 fsWrite aborted 错误
+    ↓
+不要重试 fsWrite
+    ↓
+立即切换到 bash 命令
+    ↓
+使用 cat + heredoc 创建文件
+    ↓
+分批写入大内容
+    ↓
+验证文件创建成功
+```
+
+---
