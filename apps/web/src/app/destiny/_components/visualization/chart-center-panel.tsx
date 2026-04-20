@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { FiveElementKey, PartialDestinyReport } from '../types';
+import type { FiveElementKey, PartialDestinyReport, BaZiPillar } from '../types';
 import { GlassCard } from '../layout/glass-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { FiveElementRadar } from './five-element-radar';
@@ -56,7 +56,13 @@ export function ChartCenterPanel({
         </div>
 
         <div className="mt-6 grid grid-cols-4 gap-4">
-          {(pillars.length > 0 ? pillars : Array.from({ length: 4 }).map((_, idx) => ({ label: ['年柱', '月柱', '日柱', '时柱'][idx] }))).map((p, idx) => {
+          {(pillars.length > 0
+            ? pillars
+            : Array.from({ length: 4 }).map((_, idx) => ({
+                label: ['年柱', '月柱', '日柱', '时柱'][idx],
+              }))
+          ).map((p, idx) => {
+            // 类型守卫：检查是否是完整的 BaZiPillar 对象
             if (!('stem' in p)) {
               return (
                 <div
@@ -69,10 +75,12 @@ export function ChartCenterPanel({
                 </div>
               );
             }
-            const style = elementStyles[p.element];
+            // 此时 p 是 BaZiPillar 类型，有 element 属性
+            const pillar = p as BaZiPillar;
+            const style = elementStyles[pillar.element];
             const isFocus = idx === 2;
             return (
-              <Popover key={p.label}>
+              <Popover key={pillar.label}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
@@ -83,18 +91,18 @@ export function ChartCenterPanel({
                       isFocus && 'ring-2 ring-[#2F6BFF]/60 shadow-lg'
                     )}
                   >
-                    <div className="text-xs font-bold text-slate-400">{p.label}</div>
+                    <div className="text-xs font-bold text-slate-400">{pillar.label}</div>
                     <div className="mt-3 flex items-center justify-between">
                       <div className={cn('text-3xl font-black tracking-tight', style.text)}>
-                        {p.stem}
+                        {pillar.stem}
                       </div>
                       <div className={cn('text-3xl font-black tracking-tight', style.text)}>
-                        {p.branch}
+                        {pillar.branch}
                       </div>
                     </div>
                     <div className={cn('mt-3 text-xs font-bold', style.text)}>
-                      {p.stem}
-                      {p.branch}（{elementLabel(p.element)}）
+                      {pillar.stem}
+                      {pillar.branch}（{elementLabel(pillar.element)}）
                     </div>
                     <div className={cn('absolute inset-0 rounded-3xl ring-1', style.ring)} />
                     <div
@@ -115,8 +123,10 @@ export function ChartCenterPanel({
                   )}
                   side="top"
                 >
-                  <div className="text-sm font-extrabold text-slate-900">{p.label}含义</div>
-                  <div className="mt-2 text-sm text-slate-600 leading-relaxed">{p.tooltip}</div>
+                  <div className="text-sm font-extrabold text-slate-900">{pillar.label}含义</div>
+                  <div className="mt-2 text-sm text-slate-600 leading-relaxed">
+                    {pillar.tooltip}
+                  </div>
                 </PopoverContent>
               </Popover>
             );
