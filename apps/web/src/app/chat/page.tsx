@@ -1,72 +1,129 @@
+// 标记为客户端组件（Next.js 15 App Router 特性）
+// 这意味着这个组件会在浏览器中运行，可以使用 React Hooks 和浏览器 API
 'use client';
 
-import { AppLayout } from '@/components/layout/app-layout'; // 应用布局组件
-import { MessageItem } from '@/components/chat/message-item'; // 消息项组件
-import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入组件
-import {
-  useConversationsStore,
-  useChatStore,
-  type ProviderName,
-  type Message,
-  type ChatMessage as ConvMessage,
-} from '@/stores';
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import {
-  Plus,
-  Search,
-  MessageSquare,
-  BarChart2,
-  Trash2,
-  Bot,
-  FileText,
-  Code2,
-  Lightbulb,
-  ShieldCheck,
-  Globe,
-  FileEdit,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useShallow } from 'zustand/react/shallow';
+// ============ 导入外部组件 ============
+import { AppLayout } from '@/components/layout/app-layout'; // 应用的整体布局组件（包含侧边栏、头部等）
+import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
+import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
 
-// 模型配置
+// ============ 导入状态管理 Store ============
+import {
+  useConversationsStore, // 对话列表管理 Store（管理多个对话的创建、删除、切换）
+  useChatStore, // 当前对话的消息管理 Store（管理当前对话的消息、发送、加载状态）
+  type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
+  type Message, // 消息类型定义
+  type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
+} from '@/stores';
+
+// ============ 导入 React Hooks ============
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+// useRef: 用于引用 DOM 元素或保存不触发重渲染的值
+// useEffect: 用于处理副作用（如数据加载、订阅等）
+// useCallback: 用于缓存函数，避免不必要的重新创建
+// useState: 用于管理组件内部状态
+// useMemo: 用于缓存计算结果，避免重复计算
+
+// ============ 导入图标组件 ============
+import {
+  Plus, // 加号图标（新建对话按钮）
+  Search, // 搜索图标（搜索历史对话）
+  MessageSquare, // 消息方框图标（对话列表项）
+  BarChart2, // 柱状图图标（页面标题）
+  Trash2, // 垃圾桶图标（删除对话）
+  Bot, // 机器人图标（欢迎页面）
+  FileText, // 文件图标（功能卡片）
+  Code2, // 代码图标（功能卡片）
+  Lightbulb, // 灯泡图标（功能卡片）
+  ShieldCheck, // 盾牌图标（功能说明）
+  Globe, // 地球图标（功能说明）
+  FileEdit, // 编辑图标（功能卡片）
+} from 'lucide-react';
+
+// ============ 导入工具函数 ============
+import { cn } from '@/lib/utils'; // 用于合并 CSS 类名的工具函数
+import { useShallow } from 'zustand/react/shallow'; // Zustand 的浅比较 Hook，用于优化性能
+
+// ============ 模型配置常量 ============
+// 定义所有支持的 AI 模型及其配置信息
+// Record<ProviderName, ...> 表示这是一个对象，键是 ProviderName 类型
 const MODELS: Record<ProviderName, { name: string; models: { id: string; label: string }[] }> = {
+  // 讯飞星火模型配置
   xunfei: {
-    name: '讯飞星火',
+    name: '讯飞星火', // 显示名称
     models: [
-      { id: 'lite', label: 'Spark Lite (免费)' },
-      { id: 'generalv3.5', label: 'Spark Max' },
-      { id: '4.0Ultra', label: 'Spark 4.0 Ultra' },
+      { id: 'lite', label: 'Spark Lite (免费)' }, // 免费版本
+      { id: 'generalv3.5', label: 'Spark Max' }, // 标准版本
+      { id: '4.0Ultra', label: 'Spark 4.0 Ultra' }, // 高级版本
     ],
   },
+  // 豆包模型配置
   doubao: {
-    name: '豆包',
+    name: '豆包', // 显示名称
     models: [
-      { id: 'doubao-seed-2-0-lite-260215', label: 'Doubao Lite (轻量级)' },
-      { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' },
+      { id: 'doubao-seed-2-0-lite-260215', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
+      { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
     ],
   },
 };
 
+// ============ 聊天页面主组件 ============
+// 这是整个聊天页面的核心组件，负责：
+// 1. 管理对话列表（左侧边栏）
+// 2. 显示当前对话的消息（中间区域）
+// 3. 处理用户输入和发送消息（底部输入框）
+// 4. 切换 AI 模型和对话
 export default function ChatPage() {
+  // ============ 组件内部状态 ============
+
+  // 控制模型选择器的显示/隐藏状态
+  // showModelSelector 为 true 时，显示模型下拉列表
   const [showModelSelector, setShowModelSelector] = useState(false);
+
+  // 搜索框的输入内容
+  // 用于过滤左侧的历史对话列表
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ============ Refs（引用） ============
+
+  // 指向消息列表底部的 DOM 元素
+  // 用于实现自动滚动到最新消息的功能
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 指向模型选择器的 DOM 元素
+  // 用于检测点击外部区域时关闭下拉列表
   const modelSelectorRef = useRef<HTMLDivElement>(null);
+
+  // 标记页面是否已经初始化
+  // 防止 useEffect 重复执行初始化逻辑
   const hasInitialized = useRef(false);
 
-  // Conversations Store
+  // ============ 从 Conversations Store 获取状态和方法 ============
+  // Conversations Store 负责管理所有对话的列表、创建、删除、切换等操作
+
+  // 获取所有对话列表（数组）
+  // 每个对话包含：id、标题、消息列表、创建时间等信息
   const conversations = useConversationsStore((state) => state.conversations);
+
+  // 获取当前激活的对话 ID
+  // 用于高亮显示左侧列表中的当前对话
   const currentConversationId = useConversationsStore((state) => state.currentConversationId);
+
+  // 获取数据是否已从本地存储加载完成的标志
+  // 在数据加载完成前，显示加载动画
   const isLoaded = useConversationsStore((state) => state.isLoaded);
 
+  // 使用 useShallow 批量获取 Store 中的方法
+  // useShallow 会进行浅比较，只有当这些方法引用变化时才重新渲染
+  // 这样可以避免不必要的组件重渲染，提升性能
   const {
-    createConversation,
-    switchConversation,
-    deleteConversation,
-    findEmptyConversation,
-    getGroupedConversations,
-    getCurrentConversation,
-    updateConversationSettings,
+    createConversation, // 创建新对话的方法
+    switchConversation, // 切换到指定对话的方法
+    deleteConversation, // 删除指定对话的方法
+    findEmptyConversation, // 查找空对话（没有消息的对话）的方法
+    getGroupedConversations, // 获取按时间分组的对话列表（今天、昨天、更早等）
+    getCurrentConversation, // 获取当前激活的对话对象
+    updateConversationSettings, // 更新对话设置（如切换模型）的方法
   } = useConversationsStore(
     useShallow((state) => ({
       createConversation: state.createConversation,
@@ -79,19 +136,20 @@ export default function ChatPage() {
     }))
   );
 
-  // Chat Store
+  // ============ 从 Chat Store 获取状态和方法 ============
+  // Chat Store 负责管理当前对话的消息、发送、加载状态等
   const {
-    messages,
-    isLoading,
-    error,
-    provider,
-    model,
-    activeConversationId,
-    sendMessage,
-    reload,
-    loadConversation,
-    switchProvider,
-    reset,
+    messages, // 当前对话的所有消息列表（数组）
+    isLoading, // 是否正在等待 AI 回复（显示加载动画）
+    error, // 错误信息对象（如果发生错误）
+    provider, // 当前使用的 AI 服务提供商（如 'xunfei'、'doubao'）
+    model, // 当前使用的具体模型 ID（如 'lite'、'generalv3.5'）
+    activeConversationId, // Chat Store 中当前激活的对话 ID
+    sendMessage, // 发送消息的方法（会调用 API 并更新消息列表）
+    reload, // 重新生成最后一条 AI 回复的方法
+    loadConversation, // 加载指定对话的消息到 Chat Store 的方法
+    switchProvider, // 切换 AI 服务提供商和模型的方法
+    reset, // 重置 Chat Store 状态的方法（清空消息等）
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -108,107 +166,159 @@ export default function ChatPage() {
     }))
   );
 
-  // 计算属性
+  // ============ 计算属性（派生状态） ============
+  // 这些值是从 Store 中的数据计算得出的，不需要单独存储
+
+  // 获取当前激活的对话对象（包含完整信息）
   const currentConversation = getCurrentConversation();
+
+  // 获取按时间分组的对话列表
+  // 返回格式：[{ title: '今天', items: [...] }, { title: '昨天', items: [...] }, ...]
   const groupedConversations = getGroupedConversations();
 
-  // URL 参数处理
+  // ============ URL 参数处理（页面初始化逻辑） ============
+  // 这个 useEffect 在页面首次加载时执行，处理 URL 中的参数
+  // 例如：/chat?new=true（创建新对话）或 /chat?historyId=xxx（加载历史对话）
   useEffect(() => {
+    // 如果数据还没加载完成，或者已经初始化过了，就不执行
     if (!isLoaded || hasInitialized.current) return;
+
+    // 标记为已初始化，防止重复执行
     hasInitialized.current = true;
 
+    // 解析 URL 中的查询参数
     const urlParams = new URLSearchParams(window.location.search);
+
+    // 检查是否是创建新对话的请求（URL 中有 ?new=true）
     const isNewConversation = urlParams.get('new') === 'true';
+
+    // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
     const historyId = urlParams.get('historyId');
 
     if (historyId) {
-      // 从统一历史记录加载对话
+      // ============ 场景1：从历史记录加载对话 ============
+      // 用户从历史记录页面点击某条聊天记录，跳转到这里
       console.log('[ChatPage] Loading from history:', historyId);
 
-      // 动态导入 history-store 以获取历史记录
+      // 动态导入 history-store（按需加载，减少初始包体积）
       import('@/stores/history-store').then(({ useHistoryStore }) => {
+        // 从历史记录 Store 中查找指定 ID 的记录
         const historyItem = useHistoryStore.getState().getItemById(historyId);
 
+        // 检查是否找到了对应的聊天历史记录
         if (historyItem && historyItem.type === 'chat') {
           console.log('[ChatPage] Found chat history item:', historyItem);
 
-          // 创建新对话并加载历史消息
+          // 将历史记录转换为聊天记录类型
           const chatItem = historyItem as import('@/types/history').ChatHistoryItem;
+
+          // 获取历史记录中使用的 AI 提供商和模型（如果没有则使用默认值）
           const newProvider = (chatItem.provider || 'xunfei') as ProviderName;
           const newModel = chatItem.model || 'lite';
 
-          // 创建新对话
+          // 创建一个新的对话（用于承载历史消息）
           const newConvId = createConversation(newProvider, newModel);
 
-          // 将历史消息转换为对话消息格式
+          // 将历史消息转换为当前系统的消息格式
+          // 每条消息需要有唯一的 id、角色（user/assistant）和内容
           const historyMessages: Message[] = chatItem.messages.map((msg, index) => ({
-            id: `${newConvId}-msg-${index}`,
-            role: msg.role,
-            content: msg.content,
+            id: `${newConvId}-msg-${index}`, // 生成唯一 ID
+            role: msg.role, // 'user' 或 'assistant'
+            content: msg.content, // 消息内容
           }));
 
-          // 加载对话
+          // 将历史消息加载到 Chat Store 中
           loadConversation(newConvId, historyMessages, newProvider, newModel);
+
+          // 记录已加载的对话 ID，防止重复加载
           loadedIdRef.current = newConvId;
 
           console.log('[ChatPage] Loaded history conversation:', newConvId);
         } else {
+          // 如果没找到或类型不对，输出警告
           console.warn('[ChatPage] History item not found or not chat type:', historyId);
         }
       });
 
-      // 清除 URL 参数
+      // 清除 URL 中的参数，保持 URL 干净
+      // 使用 replaceState 不会触发页面刷新
       window.history.replaceState({}, '', '/chat');
     } else if (isNewConversation) {
+      // ============ 场景2：创建新对话 ============
+      // 用户点击了"新建对话"按钮，URL 中有 ?new=true
+
+      // 先查找是否已经有空对话（没有消息的对话）
       const emptyConversation = findEmptyConversation();
+
       if (emptyConversation) {
+        // 如果有空对话，直接切换到它（避免创建太多空对话）
         switchConversation(emptyConversation.id);
       } else {
+        // 如果没有空对话，创建一个新的
         createConversation();
       }
+
+      // 清除 URL 参数
       window.history.replaceState({}, '', '/chat');
     } else if (!currentConversationId && conversations.length > 0) {
+      // ============ 场景3：默认加载第一个对话 ============
+      // 如果没有当前对话，但有历史对话列表，就加载第一个
       switchConversation(conversations[0].id);
     }
   }, [
-    isLoaded,
-    conversations,
-    currentConversationId,
-    createConversation,
-    switchConversation,
-    findEmptyConversation,
-    loadConversation,
+    // 依赖项列表：当这些值变化时，useEffect 会重新执行
+    isLoaded, // 数据加载状态
+    conversations, // 对话列表
+    currentConversationId, // 当前对话 ID
+    createConversation, // 创建对话方法
+    switchConversation, // 切换对话方法
+    findEmptyConversation, // 查找空对话方法
+    loadConversation, // 加载对话方法
   ]);
 
-  // 对话 ID 变化时，加载消息到 Chat Store
-  // 使用 ref 来防止重复加载
+  // ============ 对话切换时加载消息 ============
+  // 当用户切换到不同的对话时，需要将该对话的消息加载到 Chat Store 中
+
+  // 使用 ref 记录当前已加载的对话 ID，防止重复加载
   const loadedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 如果 ID 没变，或者是空（表示清空了），或者还没从 storage 加载完
+    // 如果数据还没加载完成，不执行
     if (!isLoaded) return;
 
+    // 如果当前没有选中任何对话
     if (!currentConversationId) {
+      // 如果之前有加载过对话，需要重置 Chat Store
       if (loadedIdRef.current) {
-        reset();
-        loadedIdRef.current = null;
+        reset(); // 清空消息列表等状态
+        loadedIdRef.current = null; // 清空已加载标记
       }
       return;
     }
 
+    // 如果当前对话 ID 和已加载的 ID 不同，说明需要加载新对话
     if (currentConversationId !== loadedIdRef.current) {
+      // 从对话列表中找到当前对话的完整信息
       const conv = conversations.find((c) => c.id === currentConversationId);
+
       if (conv) {
-        // 加载新对话
-        // 映射消息类型：ConvMessage -> Message (role 兼容)
+        // 将对话的消息加载到 Chat Store
+        // 需要传入：对话 ID、消息列表、AI 提供商、模型
         loadConversation(conv.id, conv.messages as Message[], conv.provider, conv.model);
+
+        // 更新已加载标记，防止重复加载
         loadedIdRef.current = currentConversationId;
       }
-    } else {
-      // ID 相同，也要检查 provider/model 及其它变更?
-      // 主要逻辑在 chat-store 内部处理，不需要每次都 load
     }
-  }, [currentConversationId, conversations, isLoaded, loadConversation, reset]);
+    // 如果 ID 相同，说明已经加载过了，不需要重复加载
+    // Chat Store 内部会处理消息的更新
+  }, [
+    currentConversationId, // 当前对话 ID 变化时触发
+    conversations, // 对话列表变化时触发（可能有新消息）
+    isLoaded, // 数据加载状态
+    loadConversation, // 加载对话方法
+    reset, // 重置方法
+  ]);
 
   // 点击外部关闭模型选择器
   useEffect(() => {
@@ -226,51 +336,83 @@ export default function ChatPage() {
     };
   }, [showModelSelector]);
 
-  // 自动滚动到底部
+  // ============ 自动滚动到最新消息 ============
+  // 当有新消息或 AI 正在回复时，自动滚动到消息列表底部
   useEffect(() => {
+    // scrollIntoView 会将元素滚动到可见区域
+    // behavior: 'smooth' 表示平滑滚动（有动画效果）
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]); // 消息增加或正在加载时滚动
+  }, [messages, isLoading]); // 依赖项：消息列表变化或加载状态变化时触发
 
-  // 消息展示处理
+  // ============ 消息展示处理 ============
+  // 为每条消息添加流式输出状态标记
+  // 流式输出：AI 的回复是逐字显示的，而不是一次性显示完整内容
   const displayMessages: Message[] = messages.map((msg) => ({
-    ...msg,
-    // 如果正在加载，且是最后一条 assistant 消息，则视为 streaming（其实 store 里已经有 isStreaming 标记了，这里可以简化）
+    ...msg, // 保留消息的所有原有属性
+    // 判断是否正在流式输出：
+    // 1. 如果消息本身有 isStreaming 标记，使用它
+    // 2. 否则，如果当前正在加载 && 是 AI 消息 && 是最后一条消息，则标记为流式输出
     isStreaming:
       msg.isStreaming ??
       (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
   }));
 
-  // 发送消息处理
+  // ============ 发送消息处理函数 ============
+  // useCallback 用于缓存函数，避免每次渲染都创建新函数
+  // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
     (content: string) => {
+      // 检查是否有当前对话
       if (!currentConversationId) {
-        // 创建新对话
-        const newId = createConversation(provider, model); // 使用当前 UI 选中的 model（如果有）
-        // 立即加载并发送
-        loadConversation(newId, [], provider, model || 'lite'); // 确保有默认值
-        loadedIdRef.current = newId; // 更新 ref 防止 effect 重复加载
+        // 如果没有当前对话，需要先创建一个新对话
+        // 使用当前选中的 AI 提供商和模型
+        const newId = createConversation(provider, model);
+
+        // 立即加载这个新对话到 Chat Store
+        // 传入空消息列表 []，因为是新对话
+        loadConversation(newId, [], provider, model || 'lite'); // 确保 model 有默认值
+
+        // 更新已加载标记，防止 useEffect 重复加载
+        loadedIdRef.current = newId;
+
+        // 发送用户输入的消息
         sendMessage(content);
       } else {
+        // 如果已经有当前对话，直接发送消息
         sendMessage(content);
       }
     },
+    // 依赖项列表：这些值变化时，函数会重新创建
     [currentConversationId, createConversation, provider, model, loadConversation, sendMessage]
   );
 
-  // 新建对话
+  // ============ 新建对话处理函数 ============
+  // 用户点击"新建对话"按钮时调用
   const handleNewConversation = useCallback(() => {
+    // 先查找是否已经有空对话（没有消息的对话）
     const emptyConversation = findEmptyConversation();
+
     if (emptyConversation) {
+      // 如果有空对话，直接切换到它
+      // 这样可以避免创建太多空对话，节省存储空间
       switchConversation(emptyConversation.id);
     } else {
+      // 如果没有空对话，创建一个新的
+      // 使用当前选中的 AI 提供商和模型
       createConversation(provider, model);
     }
   }, [findEmptyConversation, switchConversation, createConversation, provider, model]);
 
-  // 切换 Provider
+  // ============ 切换 AI 提供商和模型 ============
+  // 用户在模型选择器中选择不同的模型时调用
   const handleSwitchProvider = useCallback(
     (newProvider: ProviderName, newModel: string) => {
+      // 1. 更新 Chat Store 中的提供商和模型
+      //    这会影响后续发送的消息使用哪个 AI 模型
       switchProvider(newProvider, newModel);
+
+      // 2. 如果有当前对话，也要更新对话的设置
+      //    这样下次加载这个对话时，会使用正确的模型
       if (currentConversationId) {
         updateConversationSettings(currentConversationId, newProvider, newModel);
       }
@@ -278,32 +420,56 @@ export default function ChatPage() {
     [switchProvider, currentConversationId, updateConversationSettings]
   );
 
-  // 搜索过滤
+  // ============ 搜索过滤逻辑 ============
+  // useMemo 用于缓存计算结果，避免每次渲染都重新计算
+  // 只有当 groupedConversations 或 searchQuery 变化时，才会重新计算
   const filteredGroups = useMemo(() => {
+    // 如果搜索框为空，直接返回所有分组
     if (!searchQuery.trim()) return groupedConversations;
+
+    // 将搜索关键词转为小写，实现不区分大小写的搜索
     const lowerQuery = searchQuery.toLowerCase();
-    return groupedConversations
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => item.title.toLowerCase().includes(lowerQuery)),
-      }))
-      .filter((group) => group.items.length > 0);
-  }, [groupedConversations, searchQuery]);
 
-  // 当前模型显示
+    // 过滤逻辑：
+    return (
+      groupedConversations
+        .map((group) => ({
+          ...group, // 保留分组的其他属性（如 title）
+          // 过滤每个分组中的对话项
+          // 只保留标题包含搜索关键词的对话
+          items: group.items.filter((item) => item.title.toLowerCase().includes(lowerQuery)),
+        }))
+        // 过滤掉没有对话项的分组
+        // 例如："今天"分组中没有匹配的对话，就不显示这个分组
+        .filter((group) => group.items.length > 0)
+    );
+  }, [groupedConversations, searchQuery]); // 依赖项：对话列表或搜索关键词变化时重新计算
+
+  // ============ 当前模型显示名称 ============
+  // 根据当前选中的 provider 和 model，获取要显示的模型名称
+
+  // 1. 获取当前提供商的配置信息
   const currentModelConfig = MODELS[provider];
-  const currentModelLabel =
-    currentModelConfig?.models.find((m) => m.id === model)?.label ||
-    model ||
-    currentModelConfig?.models[0]?.label ||
-    '未知模型';
 
+  // 2. 查找当前模型的显示标签
+  //    如果找不到，依次尝试：当前 model ID -> 第一个模型的标签 -> '未知模型'
+  const currentModelLabel =
+    currentModelConfig?.models.find((m) => m.id === model)?.label || // 查找匹配的模型标签
+    model || // 如果找不到，使用 model ID
+    currentModelConfig?.models[0]?.label || // 如果还找不到，使用第一个模型的标签
+    '未知模型'; // 最后的兜底值
+
+  // 3. 获取当前对话的标题
+  //    如果没有对话或对话没有标题，显示"新对话"
   const currentTitle = currentConversation?.title || '新对话';
 
+  // ============ 加载状态显示 ============
+  // 如果数据还没从本地存储加载完成，显示加载动画
   if (!isLoaded) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center w-full h-full">
+          {/* 旋转的加载动画 */}
           <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
         </div>
       </AppLayout>
