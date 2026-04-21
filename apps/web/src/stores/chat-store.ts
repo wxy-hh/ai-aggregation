@@ -261,7 +261,6 @@ export const useChatStore = create<ChatState>((set, get) => {
           // ===== 7. 实时更新UI =====
           // 每次收到新数据就更新消息列表
           set((state) => {
-            console.log(`state -->`, state);
             const updatedMessages = state.messages.map((msg) =>
               // 找到AI消息并更新其内容
               msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
