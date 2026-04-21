@@ -162,8 +162,8 @@ sendMessage: async (contentOverrides) => {
     if (!response.body) throw new Error('响应体为空');
 
     // 6. 处理流式响应
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    const reader = response.body.getReader();// 获取流读取器
+    const decoder = new TextDecoder();// 创建一个 TextDecoder 实例
     let accumulatedContent = '';  // 累积的内容
 
     while (true) {
@@ -871,6 +871,7 @@ try {
 ```
 
 ---
+
 ## 状态管理
 
 ### Zustand Store 架构
@@ -879,14 +880,14 @@ try {
 // ============ Chat Store 结构 ============
 interface ChatState {
   // 状态
-  messages: Message[];              // 当前对话的消息列表
-  input: string;                    // 输入框内容
-  isLoading: boolean;               // 是否正在加载
-  error: Error | null;              // 错误信息
-  provider: ProviderName;           // AI 提供商
-  model: string | undefined;        // 模型名称
-  activeConversationId: string | null;  // 当前对话 ID
-  attachment: Attachment | null;    // 当前附件
+  messages: Message[]; // 当前对话的消息列表
+  input: string; // 输入框内容
+  isLoading: boolean; // 是否正在加载
+  error: Error | null; // 错误信息
+  provider: ProviderName; // AI 提供商
+  model: string | undefined; // 模型名称
+  activeConversationId: string | null; // 当前对话 ID
+  attachment: Attachment | null; // 当前附件
 
   // Actions
   setInput: (value: string) => void;
@@ -914,11 +915,11 @@ export const useConversationsStore = create<ConversationsState>()(
       conversations: [],
       currentConversationId: null,
       isLoaded: false,
-      
+
       // ... actions
     }),
     {
-      name: 'conversations-storage',  // localStorage key
+      name: 'conversations-storage', // localStorage key
       onRehydrateStorage: () => (state) => {
         // 数据加载完成后的回调
         if (state) {
@@ -939,10 +940,7 @@ sendMessage: async (content) => {
 
   // 同步消息到对话列表
   if (activeConversationId) {
-    useConversationsStore.getState().updateMessages(
-      activeConversationId, 
-      newMessages
-    );
+    useConversationsStore.getState().updateMessages(activeConversationId, newMessages);
   }
 
   // 保存到历史记录
@@ -953,7 +951,7 @@ sendMessage: async (content) => {
     provider,
     model,
   });
-}
+};
 ```
 
 ---
@@ -966,141 +964,147 @@ sendMessage: async (content) => {
 
 ```typescript
 // ============ 图片上传处理 ============
-const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+const handleImageSelect = useCallback(
+  async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // 1. 验证文件类型
-  if (!file.type.startsWith('image/')) {
-    toast.error('请选择图片文件');
-    return;
-  }
+    // 1. 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件');
+      return;
+    }
 
-  // 2. 验证文件大小（10MB）
-  if (file.size > 10 * 1024 * 1024) {
-    toast.error('图片大小不能超过 10MB');
-    return;
-  }
+    // 2. 验证文件大小（10MB）
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('图片大小不能超过 10MB');
+      return;
+    }
 
-  // 3. 创建临时附件对象
-  const tempAttachment: Attachment = {
-    id: `img-${Date.now()}`,
-    type: 'image',
-    name: file.name,
-    size: file.size,
-    status: 'uploading',
-  };
-  setAttachment(tempAttachment);
-
-  try {
-    // 4. 转换为 base64
-    const reader = new FileReader();
-    
-    reader.onload = () => {
-      const base64 = reader.result as string;
-      setAttachment({
-        ...tempAttachment,
-        imageUrl: base64,  // 保存 base64 数据
-        status: 'ready',
-      });
+    // 3. 创建临时附件对象
+    const tempAttachment: Attachment = {
+      id: `img-${Date.now()}`,
+      type: 'image',
+      name: file.name,
+      size: file.size,
+      status: 'uploading',
     };
-    
-    reader.onerror = () => {
+    setAttachment(tempAttachment);
+
+    try {
+      // 4. 转换为 base64
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        setAttachment({
+          ...tempAttachment,
+          imageUrl: base64, // 保存 base64 数据
+          status: 'ready',
+        });
+      };
+
+      reader.onerror = () => {
+        setAttachment({
+          ...tempAttachment,
+          status: 'error',
+          error: '图片读取失败',
+        });
+      };
+
+      reader.readAsDataURL(file); // 开始读取
+    } catch (error) {
       setAttachment({
         ...tempAttachment,
         status: 'error',
-        error: '图片读取失败',
+        error: error instanceof Error ? error.message : '未知错误',
       });
-    };
-    
-    reader.readAsDataURL(file);  // 开始读取
-  } catch (error) {
-    setAttachment({
-      ...tempAttachment,
-      status: 'error',
-      error: error instanceof Error ? error.message : '未知错误',
-    });
-  }
-}, [setAttachment]);
+    }
+  },
+  [setAttachment]
+);
 ```
 
 ### 文件上传（服务器）
 
 ```typescript
 // ============ PDF 文件上传处理 ============
-const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+const handleFileSelect = useCallback(
+  async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // 1. 验证文件类型（仅 PDF）
-  if (file.type !== 'application/pdf') {
-    toast.error('仅支持 PDF 格式');
-    return;
-  }
-
-  // 2. 验证文件大小（5MB）
-  if (file.size > 5 * 1024 * 1024) {
-    toast.error('文件大小不能超过 5MB');
-    return;
-  }
-
-  // 3. 创建临时附件对象
-  const tempAttachment: Attachment = {
-    id: `file-${Date.now()}`,
-    type: 'file',
-    name: file.name,
-    size: file.size,
-    status: 'uploading',
-  };
-  setAttachment(tempAttachment);
-
-  try {
-    // 4. 上传到服务器
-    const formData = new FormData();
-    formData.append('file', file);
-
-    // 设置超时控制
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-    const response = await fetch('/api/files', {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    const result = await response.json();
-
-    if (!response.ok || !result.success) {
-      throw new Error(result.error || '上传失败');
+    // 1. 验证文件类型（仅 PDF）
+    if (file.type !== 'application/pdf') {
+      toast.error('仅支持 PDF 格式');
+      return;
     }
 
-    // 5. 更新附件状态
-    setAttachment({
-      ...tempAttachment,
-      fileId: result.fileId,  // 保存服务器返回的文件 ID
-      status: 'ready',
-    });
-  } catch (error) {
-    let displayError = '上传失败';
+    // 2. 验证文件大小（5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('文件大小不能超过 5MB');
+      return;
+    }
 
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        displayError = '上传超时，请检查网络连接';
-      } else {
-        displayError = error.message;
+    // 3. 创建临时附件对象
+    const tempAttachment: Attachment = {
+      id: `file-${Date.now()}`,
+      type: 'file',
+      name: file.name,
+      size: file.size,
+      status: 'uploading',
+    };
+    setAttachment(tempAttachment);
+
+    try {
+      // 4. 上传到服务器
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // 设置超时控制
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      const response = await fetch('/api/files', {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '上传失败');
       }
-    }
 
-    setAttachment({
-      ...tempAttachment,
-      status: 'error',
-      error: displayError,
-    });
-  }
-}, [setAttachment]);
+      // 5. 更新附件状态
+      setAttachment({
+        ...tempAttachment,
+        fileId: result.fileId, // 保存服务器返回的文件 ID
+        status: 'ready',
+      });
+    } catch (error) {
+      let displayError = '上传失败';
+
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          displayError = '上传超时，请检查网络连接';
+        } else {
+          displayError = error.message;
+        }
+      }
+
+      setAttachment({
+        ...tempAttachment,
+        status: 'error',
+        error: displayError,
+      });
+    }
+  },
+  [setAttachment]
+);
 ```
 
 ### 文件上传 API
@@ -1139,7 +1143,7 @@ export async function POST(req: Request) {
     const response = await fetch(`${arkBaseUrl}/files`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${arkApiKey}`,
+        Authorization: `Bearer ${arkApiKey}`,
       },
       body: uploadFormData,
     });
@@ -1153,7 +1157,7 @@ export async function POST(req: Request) {
 
     return Response.json({
       success: true,
-      fileId: result.id,  // 返回文件 ID
+      fileId: result.id, // 返回文件 ID
       filename: result.filename,
       bytes: result.bytes,
     });
@@ -1182,7 +1186,7 @@ export async function DELETE(req: Request) {
     const response = await fetch(`${arkBaseUrl}/files/${fileId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${arkApiKey}`,
+        Authorization: `Bearer ${arkApiKey}`,
       },
     });
 
@@ -1205,10 +1209,10 @@ export async function DELETE(req: Request) {
 
 ```typescript
 // ============ 附件预览组件 ============
-const AttachmentPreview = memo(function AttachmentPreview({ 
-  attachment 
-}: { 
-  attachment: Attachment 
+const AttachmentPreview = memo(function AttachmentPreview({
+  attachment
+}: {
+  attachment: Attachment
 }) {
   // 图片预览
   if (attachment.type === 'image' && attachment.imageUrl) {
@@ -1368,11 +1372,11 @@ sendMessage: async () => {
   abortController = new AbortController();
 
   const response = await fetch('/api/chat', {
-    signal: abortController.signal,  // 传入 signal
+    signal: abortController.signal, // 传入 signal
   });
 
   // ...
-}
+};
 
 // 组件卸载时清理
 useEffect(() => {
@@ -1437,7 +1441,7 @@ useEffect(() => {
 ```typescript
 // 等待文件处理就绪
 async function waitForFileReady(fileId: string): Promise<boolean> {
-  const maxWaitTime = 10000;  // 最多等待 10 秒
+  const maxWaitTime = 10000; // 最多等待 10 秒
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitTime) {
@@ -1445,13 +1449,13 @@ async function waitForFileReady(fileId: string): Promise<boolean> {
     const result = await response.json();
 
     if (result.status === 'active') {
-      return true;  // 文件就绪
+      return true; // 文件就绪
     }
 
-    await new Promise(resolve => setTimeout(resolve, 500));  // 等待 500ms
+    await new Promise((resolve) => setTimeout(resolve, 500)); // 等待 500ms
   }
 
-  return false;  // 超时
+  return false; // 超时
 }
 
 // 在发送消息前检查
@@ -1490,4 +1494,3 @@ if (attachment?.fileId) {
 - [highlight.js 文档](https://highlightjs.org/)
 - [Fetch API - MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)
 - [ReadableStream - MDN](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream)
-
