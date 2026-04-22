@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { resolveRedisConnectionOptions } from './redis-config';
 
 /**
  * 限流配置
@@ -269,20 +270,7 @@ export class QuotaManager {
  * 创建 Redis 客户端
  */
 export function createRedisClient(): Redis {
-  const host = process.env.REDIS_HOST || 'localhost';
-  const port = parseInt(process.env.REDIS_PORT || '6379', 10);
-  const password = process.env.REDIS_PASSWORD;
-
-  return new Redis({
-    host,
-    port,
-    password,
-    retryStrategy: (times: number) => {
-      const delay = Math.min(times * 50, 2000);
-      return delay;
-    },
-    maxRetriesPerRequest: 3,
-  });
+  return new Redis(resolveRedisConnectionOptions(process.env));
 }
 
 /**

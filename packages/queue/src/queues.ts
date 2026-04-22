@@ -1,11 +1,15 @@
 import { Queue, QueueOptions } from 'bullmq';
-import { STTJobData, PPTJobData, ImageJobData } from './jobs';
+import { resolveRedisConnectionOptions } from '@repo/shared';
+import {
+  STTJobData,
+  PPTJobData,
+  ImageJobData,
+  QimenBaseJobData,
+  QimenSectionJobData,
+} from './jobs';
 
 const defaultQueueOptions: QueueOptions = {
-  connection: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-  },
+  connection: resolveRedisConnectionOptions(process.env),
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -26,3 +30,5 @@ const defaultQueueOptions: QueueOptions = {
 export const sttQueue = new Queue<STTJobData>('stt', defaultQueueOptions);
 export const pptQueue = new Queue<PPTJobData>('ppt', defaultQueueOptions);
 export const imageQueue = new Queue<ImageJobData>('image', defaultQueueOptions);
+export const qimenBaseQueue = new Queue<QimenBaseJobData>('qimen-base', defaultQueueOptions);
+export const qimenSectionQueue = new Queue<QimenSectionJobData>('qimen-section', defaultQueueOptions);

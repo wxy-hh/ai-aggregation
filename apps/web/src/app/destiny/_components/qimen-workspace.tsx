@@ -6,12 +6,16 @@ import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
 import { createDefaultQimenFormData, mapFormToQimenRequest } from './qimen-mappers';
 import type {
-  QimenAnalyzeResult,
+  QimenAnalysisBaseResult,
+  QimenBaseSectionResponse,
+  QimenBaseStatus,
+  QimenAnalysisStartResponse,
+  QimenAsyncSectionKey,
+  QimenAsyncSections,
   QimenFormData,
-  QimenLockedSections,
-  QimenSectionKey,
-  QimenStreamEvent,
-  QimenStreamStatus,
+  QimenSectionResponse,
+  QimenSectionResponseMap,
+  QimenSectionStatus,
 } from './qimen-types';
 
 type Step = 'form' | 'result';
@@ -69,13 +73,26 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   const [formData, setFormData] = useState<QimenFormData>(() => createDefaultQimenFormData());
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof QimenFormData, string>>>({});
   const [blockingLoading, setBlockingLoading] = useState(false);
-  const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<QimenErrorKind | null>(null);
-  const [resultData, setResultData] = useState<QimenAnalyzeResult | null>(null);
-  const [lockedSections, setLockedSections] = useState<QimenLockedSections>({});
-  const [streamStatus, setStreamStatus] = useState<QimenStreamStatus | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [baseResult, setBaseResult] = useState<QimenAnalysisBaseResult | null>(null);
+  const [baseStatus, setBaseStatus] = useState<QimenBaseStatus>('idle');
+  const [baseError, setBaseError] = useState<string | null>(null);
+  const [sections, setSections] = useState<QimenAsyncSections>({});
+  const [sectionStatuses, setSectionStatuses] = useState<
+    Record<QimenAsyncSectionKey, QimenSectionStatus>
+  >({
+    strategyOverview: 'idle',
+    timingWindows: 'idle',
+    chartSummary: 'idle',
+  });
+  const [sectionErrors, setSectionErrors] = useState<Partial<Record<QimenAsyncSectionKey, string>>>(
+    {}
+  );
   const abortRef = useRef<AbortController | null>(null);
+  const sectionTimeoutsRef = useRef<number[]>([]);
+  const runIdRef = useRef(0);
 
   const pageTitle = useMemo(
     () => (step === 'form' ? '奇门遁甲演化 · 信息输入' : '奇门遁甲演化 · AI 分析结果'),
@@ -89,6 +106,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      clearSectionTimeouts();
     };
   }, []);
 
@@ -97,78 +115,9 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
-  const mergeLockedSectionsIntoResult = (
-    result: QimenAnalyzeResult,
-    sections: QimenLockedSections
-  ): QimenAnalyzeResult => ({
-    ...result,
-    overallAssessment: sections.overallAssessment ?? result.overallAssessment,
-    riskAlerts: sections.riskAlerts ?? result.riskAlerts,
-    actionSuggestions: sections.actionSuggestions ?? result.actionSuggestions,
-    timingWindows: sections.timingWindows ?? result.timingWindows,
-    chartSummary: sections.chartSummary ?? result.chartSummary,
-  });
-
-  const setLockedSection = (
-    target: QimenLockedSections,
-    sectionKey: QimenSectionKey,
-    payload: QimenLockedSections[QimenSectionKey]
-  ) => {
-    (
-      target as Record<QimenSectionKey, QimenLockedSections[QimenSectionKey]>
-    )[sectionKey] = payload;
-  };
-
-  const parseStreamBlock = (
-    block: string,
-    onEvent: (event: QimenStreamEvent) => void
-  ) => {
-    const data = block
-      .split('\n')
-      .filter((line) => line.startsWith('data: '))
-      .map((line) => line.slice(6))
-      .join('\n')
-      .trim();
-
-    if (!data) return;
-    onEvent(JSON.parse(data) as QimenStreamEvent);
-  };
-
-  const consumeQimenStream = async (
-    response: Response,
-    onEvent: (event: QimenStreamEvent) => void
-  ) => {
-    if (!response.body) {
-      throw new Error('响应体为空');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      let separatorIndex = buffer.indexOf('\n\n');
-      while (separatorIndex !== -1) {
-        const block = buffer.slice(0, separatorIndex).trim();
-        buffer = buffer.slice(separatorIndex + 2);
-
-        if (block) {
-          parseStreamBlock(block, onEvent);
-        }
-
-        separatorIndex = buffer.indexOf('\n\n');
-      }
-    }
-
-    const tail = `${buffer}${decoder.decode()}`.trim();
-    if (tail) {
-      parseStreamBlock(tail, onEvent);
-    }
+  const clearSectionTimeouts = () => {
+    sectionTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    sectionTimeoutsRef.current = [];
   };
 
   const readErrorMessage = async (response: Response) => {
@@ -177,6 +126,154 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       return json.error;
     } catch {
       return undefined;
+    }
+  };
+
+  const scheduleSectionRetry = (
+    sectionKey: QimenAsyncSectionKey,
+    nextAnalysisId: string,
+    runId: number
+  ) => {
+    const timeoutId = window.setTimeout(() => {
+      void requestSection(sectionKey, nextAnalysisId, runId);
+    }, 1500);
+
+    sectionTimeoutsRef.current.push(timeoutId);
+  };
+
+  const scheduleBaseRetry = (nextAnalysisId: string, runId: number) => {
+    const timeoutId = window.setTimeout(() => {
+      void requestBaseResult(nextAnalysisId, runId);
+    }, 1500);
+
+    sectionTimeoutsRef.current.push(timeoutId);
+  };
+
+  const requestBaseResult = async (nextAnalysisId: string, runId: number) => {
+    if (runIdRef.current !== runId) return;
+
+    setBaseStatus('loading');
+    setBaseError(null);
+
+    try {
+      const response = await fetch(
+        `/api/destiny/qimen/analyze/sections/baseResult?analysisId=${encodeURIComponent(nextAnalysisId)}`,
+        {
+          signal: abortRef.current?.signal,
+        }
+      );
+
+      const json = (await response.json()) as QimenBaseSectionResponse;
+      if (runIdRef.current !== runId) return;
+
+      if (response.status === 202 || json.status === 'pending') {
+        scheduleBaseRetry(nextAnalysisId, runId);
+        return;
+      }
+
+      if (json.success && json.data) {
+        setBaseResult(json.data);
+        setBaseStatus('completed');
+        setSectionStatuses({
+          strategyOverview: 'loading',
+          timingWindows: 'loading',
+          chartSummary: 'loading',
+        });
+        const sectionKeys: QimenAsyncSectionKey[] = [
+          'strategyOverview',
+          'timingWindows',
+          'chartSummary',
+        ];
+        void Promise.all(
+          sectionKeys.map((sectionKey) => requestSection(sectionKey, nextAnalysisId, runId))
+        );
+        return;
+      }
+
+      if (json.status === 'failed') {
+        setBaseStatus('failed');
+        setBaseError(json.error ?? '基础盘面生成失败');
+        setErrorKind('timeout');
+        setError(json.error ?? '基础盘面生成失败');
+        return;
+      }
+
+      setBaseStatus('failed');
+      setBaseError(json.error ?? '基础盘面请求失败');
+      setErrorKind('unknown');
+      setError(json.error ?? '基础盘面请求失败');
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === 'AbortError') {
+        return;
+      }
+
+      if (runIdRef.current !== runId) return;
+
+      const message = nextError instanceof Error ? nextError.message : '基础盘面请求失败';
+      setBaseStatus('failed');
+      setBaseError(message);
+      setErrorKind('unknown');
+      setError(message);
+    }
+  };
+
+  const requestSection = async (
+    sectionKey: QimenAsyncSectionKey,
+    nextAnalysisId: string,
+    runId: number
+  ) => {
+    if (runIdRef.current !== runId) return;
+
+    setSectionStatuses((prev) =>
+      prev[sectionKey] === 'completed' ? prev : { ...prev, [sectionKey]: 'loading' }
+    );
+    setSectionErrors((prev) => ({ ...prev, [sectionKey]: undefined }));
+
+    try {
+      const response = await fetch(
+        `/api/destiny/qimen/analyze/sections/${sectionKey}?analysisId=${encodeURIComponent(nextAnalysisId)}`,
+        {
+          signal: abortRef.current?.signal,
+        }
+      );
+
+      const json = (await response.json()) as QimenSectionResponse<typeof sectionKey>;
+      if (runIdRef.current !== runId) return;
+
+      if (response.status === 202 || json.status === 'pending') {
+        setSectionStatuses((prev) =>
+          prev[sectionKey] === 'completed' ? prev : { ...prev, [sectionKey]: 'loading' }
+        );
+        scheduleSectionRetry(sectionKey, nextAnalysisId, runId);
+        return;
+      }
+
+      if (json.success && json.data) {
+        setSections((prev) => (sectionKey in prev ? prev : { ...prev, [sectionKey]: json.data }));
+        setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'completed' }));
+        return;
+      }
+
+      if (json.status === 'failed') {
+        setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+        setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块生成失败' }));
+        return;
+      }
+
+      setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+      setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块请求失败' }));
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === 'AbortError') {
+        return;
+      }
+
+      if (runIdRef.current !== runId) return;
+
+      setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+      setSectionErrors((prev) => ({
+        ...prev,
+        [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
+      }));
     }
   };
 
@@ -192,20 +289,30 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    clearSectionTimeouts();
+    runIdRef.current += 1;
+    const runId = runIdRef.current;
 
     setBlockingLoading(true);
-    setStreaming(true);
     setError(null);
     setErrorKind(null);
     setStep('result');
-    setResultData(null);
-    setLockedSections({});
-    setStreamStatus('queued');
+    setAnalysisId(null);
+    setBaseResult(null);
+    setBaseStatus('loading');
+    setBaseError(null);
+    setSections({});
+    setSectionErrors({});
+    setSectionStatuses({
+      strategyOverview: 'idle',
+      timingWindows: 'idle',
+      chartSummary: 'idle',
+    });
 
     let currentErrorKind: QimenErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/qimen/analyze', {
+      const response = await fetch('/api/destiny/qimen/analyze/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(mapFormToQimenRequest(formData)),
@@ -218,44 +325,13 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
         throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
-      const receivedSections: QimenLockedSections = {};
-      let sawComplete = false;
-
-      await consumeQimenStream(response, (event) => {
-        if (event.type === 'status') {
-          setStreamStatus(event.status);
-          return;
-        }
-
-        if (event.type === 'section-final') {
-          if (receivedSections[event.sectionKey]) return;
-
-          setLockedSection(receivedSections, event.sectionKey, event.payload);
-          setLockedSections((prev) =>
-            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
-          );
-          setBlockingLoading(false);
-          return;
-        }
-
-        if (event.type === 'complete') {
-          sawComplete = true;
-          setResultData(mergeLockedSectionsIntoResult(event.result, receivedSections));
-          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
-          setBlockingLoading(false);
-          setStreaming(false);
-          setStreamStatus(null);
-          return;
-        }
-
-        if (event.type === 'error') {
-          throw new Error(event.error);
-        }
-      });
-
-      if (!sawComplete) {
-        throw new Error('分析连接已中断，请稍后重试。');
+      const json = (await response.json()) as QimenAnalysisStartResponse;
+      if (!json.success || !json.analysisId) {
+        throw new Error(json.error || '分析任务创建失败，请稍后重试。');
       }
+
+      setAnalysisId(json.analysisId);
+      void requestBaseResult(json.analysisId, runId);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
@@ -269,21 +345,29 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
         abortRef.current = null;
       }
       setBlockingLoading(false);
-      setStreaming(false);
     }
   };
 
   const reset = () => {
     abortRef.current?.abort();
+    clearSectionTimeouts();
+    runIdRef.current += 1;
     setFormData(createDefaultQimenFormData());
     setFieldErrors({});
     setError(null);
     setErrorKind(null);
-    setResultData(null);
-    setLockedSections({});
-    setStreamStatus(null);
+    setAnalysisId(null);
+    setBaseResult(null);
+    setBaseStatus('idle');
+    setBaseError(null);
+    setSections({});
+    setSectionErrors({});
+    setSectionStatuses({
+      strategyOverview: 'idle',
+      timingWindows: 'idle',
+      chartSummary: 'idle',
+    });
     setBlockingLoading(false);
-    setStreaming(false);
     setStep('form');
   };
 
@@ -305,7 +389,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
               <Button
                 type="button"
                 className="rounded-full bg-[#2F6BFF] text-white hover:brightness-110"
-                disabled={blockingLoading || streaming}
+                disabled={blockingLoading}
                 onClick={() => {
                   void submit();
                 }}
@@ -319,7 +403,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
             {step === 'form' ? (
               <QimenInputForm
                 value={formData}
-                submitting={blockingLoading || streaming}
+                submitting={blockingLoading}
                 error={error}
                 fieldErrors={fieldErrors}
                 onChange={onChange}
@@ -330,11 +414,13 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
               />
             ) : (
               <QimenAnalysisResult
-                result={resultData}
-                sections={lockedSections}
-                loading={false}
-                streaming={streaming}
-                streamStatus={streamStatus}
+                analysisId={analysisId}
+                baseResult={baseResult}
+                baseStatus={baseStatus}
+                baseError={baseError}
+                sections={sections}
+                sectionStatuses={sectionStatuses}
+                sectionErrors={sectionErrors}
                 error={error}
                 onBackToForm={() => setStep('form')}
                 onRetry={() => {

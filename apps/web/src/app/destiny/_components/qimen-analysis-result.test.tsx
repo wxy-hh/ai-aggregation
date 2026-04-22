@@ -13,11 +13,17 @@ describe('QimenAnalysisResult', () => {
 
     const { rerender } = render(
       <QimenAnalysisResult
-        result={null}
+        analysisId={null}
+        baseResult={null}
+        baseStatus="loading"
+        baseError={null}
         sections={{}}
-        loading={false}
-        streaming={true}
-        streamStatus="queued"
+        sectionStatuses={{
+          strategyOverview: 'loading',
+          timingWindows: 'loading',
+          chartSummary: 'loading',
+        }}
+        sectionErrors={{}}
         error={null}
         onBackToForm={() => {}}
         onRetry={() => {}}
@@ -26,11 +32,23 @@ describe('QimenAnalysisResult', () => {
 
     rerender(
       <QimenAnalysisResult
-        result={null}
-        sections={{ overallAssessment: '局势先稳后动，暂不宜贸然跳槽。' }}
-        loading={false}
-        streaming={true}
-        streamStatus="charting"
+        analysisId="analysis-1"
+        baseResult={null}
+        baseStatus="loading"
+        baseError={null}
+        sections={{
+          strategyOverview: {
+            overallAssessment: '局势先稳后动，暂不宜贸然跳槽。',
+            riskAlerts: ['风险 1', '风险 2', '风险 3'],
+            actionSuggestions: ['建议 1', '建议 2', '建议 3'],
+          },
+        }}
+        sectionStatuses={{
+          strategyOverview: 'completed',
+          timingWindows: 'loading',
+          chartSummary: 'loading',
+        }}
+        sectionErrors={{}}
         error={null}
         onBackToForm={() => {}}
         onRetry={() => {}}

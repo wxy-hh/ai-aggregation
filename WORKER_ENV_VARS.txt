@@ -1,0 +1,90 @@
+# ============================================
+# apps/worker 部署环境变量配置
+# 适用于 Railway / Render
+# ============================================
+# 用法：
+# 1. 这份文件只给 apps/worker 使用
+# 2. Worker 必须与 Vercel 上的 apps/web 使用同一套数据库 / Redis / 模型密钥
+# 3. 直接复制到 Railway / Render 的环境变量配置面板中即可
+
+# ============================================
+# 运行环境
+# ============================================
+NODE_ENV=production
+
+# ============================================
+# 数据库
+# ============================================
+# 必须与 Vercel 上的 DATABASE_URL 指向同一个生产数据库
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# ============================================
+# Redis（推荐优先使用 REDIS_URL）
+# ============================================
+# 必须与 Vercel 上使用同一套 Redis
+REDIS_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
+REDIS_TLS=true
+
+# 传统 Redis 连接（兼容旧配置）
+REDIS_HOST=discrete-cockatoo-104386.upstash.io
+REDIS_PORT=6379
+REDIS_PASSWORD="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
+
+# Upstash 自动生成的其余变量（可保留）
+REDIS_KV_REST_API_URL="https://discrete-cockatoo-104386.upstash.io"
+REDIS_KV_REST_API_TOKEN="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
+REDIS_KV_REST_API_READ_ONLY_TOKEN="ggAAAAAAAZfCAAIgcDEEqvuIMYukBY68TACC_eNPJ06Jg-zr9vfPMc2HdMMlqQ"
+REDIS_KV_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
+
+# 可选调优项
+# REDIS_DB=0
+# REDIS_CONNECT_TIMEOUT=10000
+# REDIS_MAX_RETRIES_PER_REQUEST=3
+# REDIS_LAZY_CONNECT=false
+# REDIS_DISABLE_READY_CHECK=false
+
+# ============================================
+# 奇门 / 命理分析模型
+# ============================================
+ARK_API_KEY=3a04b704-6445-4f3e-a127-bcb711461706
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+ARK_MODEL=doubao-seed-2-0-lite-260215
+
+# 其他供应商（按需）
+DASHSCOPE_API_KEY=
+ZHIPU_API_KEY=
+DEEPSEEK_API_KEY=
+
+# ============================================
+# 图像 / 语音 / 其他异步任务（按需）
+# ============================================
+SILICONFLOW_API_KEY=sk-kphdbudlrvuaotsptthedzrdsmdqchoegrsfwmrxjobjtjwh
+SILICONFLOW_API_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_DEFAULT_MODEL=FunAudioLLM/SenseVoiceSmall
+
+XUNFEI_API_PASSWORD=UwNOOlcwenyPLxcygUKn:xMBXuSGpUOkxPcobSryl
+XUNFEI_APP_ID=290f4fa9
+XUNFEI_API_KEY=9bf315f669cd77f7cc91a023c0a36f8b
+XUNFEI_API_SECRET=M2FlNmIzMmRmYzdmYjFjOTU3YzQ4ZjA4
+
+# ============================================
+# 对象存储（如果 Worker 有上传职责再配置）
+# ============================================
+# S3_ENDPOINT=
+# S3_ACCESS_KEY=
+# S3_SECRET_KEY=
+# S3_BUCKET=
+
+# 或 OSS
+# OSS_ACCESS_KEY_ID=
+# OSS_ACCESS_KEY_SECRET=
+# OSS_BUCKET=
+# OSS_REGION=
+
+# ============================================
+# 部署提醒
+# ============================================
+# 1. Worker 启动命令使用：pnpm --filter @repo/worker start
+# 2. Worker 启动成功后会自动写入 Redis 心跳
+# 3. 如果 Worker 未启动或没连上同一个 Redis，Vercel 上的奇门入口会直接返回 503
+# 4. Railway / Render 部署步骤见 apps/worker/DEPLOY.md

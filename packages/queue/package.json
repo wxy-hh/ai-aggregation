@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@repo/shared": "workspace:*",
     "bullmq": "^5.28.2"
   },
   "devDependencies": {

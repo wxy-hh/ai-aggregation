@@ -1,3 +1,12 @@
+import type {
+  QimenAnalyzeRequest as SharedQimenAnalyzeRequest,
+  QimenAnalysisBaseResult as SharedQimenAnalysisBaseResult,
+  QimenBoardCell as SharedQimenBoardCell,
+  QimenSectionResponseMap as SharedQimenSectionResponseMap,
+  QimenSectionTaskStatus as SharedQimenSectionTaskStatus,
+  QimenStrategyOverview as SharedQimenStrategyOverview,
+} from '@repo/shared';
+
 export type QimenQuestionCategory =
   | 'career'
   | 'wealth'
@@ -15,34 +24,22 @@ export type QimenOutputStyle = 'professional' | 'plain';
 
 export type QimenOutputLength = 'brief' | 'detailed';
 
-export type QimenAnalyzeRequest = {
-  context: {
-    datetime: string;
-    location: string;
-    chartMethod: QimenChartMethod;
-  };
-  question: {
-    category: QimenQuestionCategory;
-    description: string;
-    focus: QimenAnalysisFocus;
-    outputStyle: QimenOutputStyle;
-    outputLength: QimenOutputLength;
-  };
-};
-
-export type QimenBoardCell = {
-  palace: string;
-  luoshu: number;
-  direction: string;
-  god: string;
-  star: string;
-  door: string;
-  heavenStem: string;
-  earthStem: string;
-  isValueSymbol?: boolean;
-  isValueDoor?: boolean;
-  isVoid?: boolean;
-  isHorse?: boolean;
+export type QimenAnalyzeRequest = SharedQimenAnalyzeRequest;
+export type QimenBoardCell = SharedQimenBoardCell;
+export type QimenAnalysisBaseResult = SharedQimenAnalysisBaseResult;
+export type QimenStrategyOverview = SharedQimenStrategyOverview;
+export type QimenSectionResponseMap = SharedQimenSectionResponseMap;
+export type QimenSectionTaskStatus = SharedQimenSectionTaskStatus;
+export type QimenAsyncSectionKey = 'strategyOverview' | 'timingWindows' | 'chartSummary';
+export type QimenSectionStatus = 'idle' | 'loading' | 'completed' | 'failed';
+export type QimenBaseStatus = QimenSectionStatus;
+export type QimenAsyncSections = Partial<
+  Pick<QimenSectionResponseMap, 'strategyOverview' | 'timingWindows' | 'chartSummary'>
+>;
+export type QimenAnalysisStartResponse = {
+  success: boolean;
+  analysisId: string;
+  error?: string;
 };
 
 export type QimenAnalyzeResult = {
@@ -111,6 +108,24 @@ export type QimenStreamEvent =
 export type QimenAnalyzeResponse = {
   success: boolean;
   data?: QimenAnalyzeResult;
+  error?: string;
+};
+
+export type QimenSectionResponse<K extends QimenAsyncSectionKey> = {
+  success: boolean;
+  analysisId: string;
+  sectionKey: K;
+  status: QimenSectionTaskStatus | 'pending';
+  data?: QimenSectionResponseMap[K];
+  error?: string;
+};
+
+export type QimenBaseSectionResponse = {
+  success: boolean;
+  analysisId: string;
+  sectionKey: 'baseResult';
+  status: QimenSectionTaskStatus | 'pending';
+  data?: QimenAnalysisBaseResult;
   error?: string;
 };
 

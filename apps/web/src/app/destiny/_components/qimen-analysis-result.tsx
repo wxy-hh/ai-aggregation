@@ -4,20 +4,24 @@ import React, { useState } from 'react';
 import { AlertTriangle, CircleDot, Clock3, ShieldAlert, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type {
-  QimenAnalyzeResult,
-  QimenBoardCell,
-  QimenLockedSections,
-  QimenStreamStatus,
-} from './qimen-types';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
+import type {
+  QimenAnalysisBaseResult,
+  QimenAsyncSectionKey,
+  QimenAsyncSections,
+  QimenBaseStatus,
+  QimenBoardCell,
+  QimenSectionStatus,
+} from './qimen-types';
 
 type QimenAnalysisResultProps = {
-  result: QimenAnalyzeResult | null;
-  sections: QimenLockedSections;
-  loading: boolean;
-  streaming: boolean;
-  streamStatus: QimenStreamStatus | null;
+  analysisId: string | null;
+  baseResult: QimenAnalysisBaseResult | null;
+  baseStatus: QimenBaseStatus;
+  baseError: string | null;
+  sections: QimenAsyncSections;
+  sectionStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus>;
+  sectionErrors: Partial<Record<QimenAsyncSectionKey, string>>;
   error: string | null;
   onBackToForm: () => void;
   onRetry: () => void;
@@ -88,27 +92,43 @@ function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn('animate-pulse rounded-xl bg-slate-200/70', className)} />;
 }
 
-function statusLabel(status: QimenStreamStatus | null) {
-  switch (status) {
-    case 'queued':
-      return '请求已创建，正在进入排盘流程';
-    case 'charting':
-      return '正在整理盘局与首批结论';
-    case 'analyzing':
-      return '正在补全完整盘局与策略分析';
-    case 'finalizing':
-      return '正在整理最终结果';
-    default:
-      return null;
+function statusLabel(
+  baseStatus: QimenBaseStatus,
+  sectionStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus>
+) {
+  if (baseStatus === 'loading') {
+    return '正在生成基础盘面，通常需要 10-30 秒';
   }
+
+  if (baseStatus === 'failed') {
+    return '基础盘面生成失败，可稍后重试';
+  }
+
+  const statuses = Object.values(sectionStatuses);
+
+  if (statuses.every((status) => status === 'completed')) {
+    return '各区块结果已全部定稿';
+  }
+
+  if (statuses.some((status) => status === 'loading')) {
+    return '正在并行整理各区块最终结果';
+  }
+
+  if (statuses.some((status) => status === 'failed')) {
+    return '部分区块生成失败，可稍后重试';
+  }
+
+  return '基础盘面已就绪，分块结果待返回';
 }
 
 export function QimenAnalysisResult({
-  result,
+  analysisId,
+  baseResult,
+  baseStatus,
+  baseError,
   sections,
-  loading,
-  streaming,
-  streamStatus,
+  sectionStatuses,
+  sectionErrors,
   error,
   onBackToForm,
   onRetry,
@@ -116,23 +136,19 @@ export function QimenAnalysisResult({
   const [activeTooltipIndex, setActiveTooltipIndex] = useState<number | null>(null);
 
   const hasPartialContent =
-    Boolean(result) ||
-    Boolean(sections.overallAssessment) ||
+    Boolean(baseResult) ||
     Boolean(sections.chartSummary) ||
-    Boolean(sections.riskAlerts?.length) ||
-    Boolean(sections.actionSuggestions?.length) ||
+    Boolean(sections.strategyOverview?.overallAssessment) ||
+    Boolean(sections.strategyOverview?.riskAlerts?.length) ||
+    Boolean(sections.strategyOverview?.actionSuggestions?.length) ||
     Boolean(sections.timingWindows?.length);
-  const progressLabel = statusLabel(streamStatus);
+  const progressLabel = statusLabel(baseStatus, sectionStatuses);
 
-  if (loading) {
-    return <QimenLoadingAnimation />;
-  }
-
-  if (!result && !hasPartialContent && error) {
+  if ((baseStatus === 'failed' || error) && !baseResult && !hasPartialContent) {
     return (
       <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6">
         <div className="text-lg font-bold text-rose-700">演化分析失败</div>
-        <p className="mt-2 text-sm text-rose-600">{error}</p>
+        <p className="mt-2 text-sm text-rose-600">{baseError ?? error}</p>
         <div className="mt-4 flex items-center gap-3">
           <Button type="button" className="rounded-full" onClick={onRetry}>
             重试分析
@@ -145,7 +161,21 @@ export function QimenAnalysisResult({
     );
   }
 
-  if (!result && !hasPartialContent) {
+  if (baseStatus === 'loading' && !baseResult && !hasPartialContent) {
+    return (
+      <div className="h-[calc(100vh-220px)] min-h-[520px] overflow-hidden rounded-3xl border border-white/70 bg-white/75 shadow-sm">
+        <QimenLoadingAnimation
+          variant="immersive"
+          intensity="medium"
+          showProgressHint
+          message="基础盘面生成中"
+          subMessage="已创建分析任务，正在排出基础盘面。该阶段通常需要 10-30 秒；若超过 45 秒仍未返回，系统会按失败处理并显示错误原因。"
+        />
+      </div>
+    );
+  }
+
+  if (!baseResult && !hasPartialContent) {
     return (
       <div className="rounded-3xl border border-white/70 bg-white/75 p-8 shadow-sm">
         <div className="text-lg font-bold text-slate-800">暂无分析结果</div>
@@ -162,33 +192,36 @@ export function QimenAnalysisResult({
     );
   }
 
-  const boardCells = result
-    ? palaceOrder.map((palace) => result.board.find((item) => item.palace === palace) ?? result.board[0])
+  const boardCells = baseResult
+    ? palaceOrder.map(
+        (palace) => baseResult.board.find((item) => item.palace === palace) ?? baseResult.board[0]
+      )
     : [];
   const activeCell = activeTooltipIndex != null ? boardCells[activeTooltipIndex] : null;
-  const meta = result?.chartMeta;
-  const summary = sections.chartSummary ?? result?.chartSummary ?? null;
-  const overallAssessment = sections.overallAssessment ?? result?.overallAssessment ?? null;
-  const riskAlerts = sections.riskAlerts ?? result?.riskAlerts ?? [];
-  const actionSuggestions = sections.actionSuggestions ?? result?.actionSuggestions ?? [];
-  const timingWindows = sections.timingWindows ?? result?.timingWindows ?? [];
+  const meta = baseResult?.chartMeta;
+  const summary = sections.chartSummary ?? null;
+  const overallAssessment = sections.strategyOverview?.overallAssessment ?? null;
+  const riskAlerts = sections.strategyOverview?.riskAlerts ?? [];
+  const actionSuggestions = sections.strategyOverview?.actionSuggestions ?? [];
+  const timingWindows = sections.timingWindows ?? [];
+  const allCompleted = Object.values(sectionStatuses).every((status) => status === 'completed');
 
   return (
     <div className="space-y-5">
       <div className="rounded-[28px] border border-white/75 bg-white/55 p-5 md:p-6 backdrop-blur-2xl shadow-[0_18px_40px_rgba(75,92,150,0.15)]">
         {error && (
           <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700">
-            {error}
+            {baseError ?? error}
           </div>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-[30px] font-black tracking-tight text-[#121F5A]">
-              {result?.chartTitle ?? '奇门遁甲排盘生成中'}
+              {baseResult?.chartTitle ?? '奇门遁甲排盘生成中'}
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              {progressLabel ?? '三奇六仪，八门九星，运筹帷幄之中，决胜千里之外'}
+              {progressLabel}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -202,21 +235,45 @@ export function QimenAnalysisResult({
               </span>
             )}
             <span className="rounded-full bg-[#2E4FDF] px-3 py-1 text-xs font-semibold text-white">
-              {streaming ? '结果流式生成中' : 'Step 2 / 2'}
+              {allCompleted ? 'Step 2 / 2' : '分块结果生成中'}
             </span>
+            {analysisId ? (
+              <span className="rounded-full bg-white/75 px-3 py-1 text-xs font-semibold text-slate-500">
+                ID: {analysisId.slice(0, 8)}
+              </span>
+            ) : null}
+            {Object.values(sectionStatuses).some((status) => status === 'failed') ? (
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600">
+                部分区块失败
+              </span>
+            ) : null}
+            {allCompleted ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+                全部分块已锁定
+              </span>
+            ) : null}
           </div>
         </div>
+
+        {Object.entries(sectionErrors).some(([, value]) => Boolean(value)) ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
+            {Object.entries(sectionErrors)
+              .filter(([, value]) => Boolean(value))
+              .map(([key, value]) => `${key}：${value}`)
+              .join('；')}
+          </div>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_0.95fr]">
           <div className="relative z-30 rounded-[24px] border border-white/70 bg-white/45 p-4 md:p-5 shadow-[inset_1px_1px_0_rgba(255,255,255,0.85)]">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-bold tracking-wide text-[#1D2B70]">洛书九宫盘</h3>
               <span className="text-[11px] text-slate-500">
-                {result ? '点击宫位可查看排盘依据' : '完整盘局完成后展示'}
+                {baseResult ? '点击宫位可查看排盘依据' : '完整盘局完成后展示'}
               </span>
             </div>
 
-            {result ? (
+            {baseResult ? (
               <>
                 <div className="relative z-40 grid grid-cols-3 gap-3 overflow-visible">
                   {boardCells.map((cell, index) => (
@@ -388,6 +445,8 @@ export function QimenAnalysisResult({
               <div className="text-xs font-semibold text-slate-500">综合格局评估</div>
               {overallAssessment ? (
                 <div className="mt-2 text-sm leading-relaxed text-slate-700">{overallAssessment}</div>
+              ) : sectionStatuses.strategyOverview === 'failed' ? (
+                <div className="mt-2 text-sm text-rose-600">该区块生成失败，请重新分析后再试。</div>
               ) : (
                 <div className="mt-2 space-y-2">
                   <SkeletonBlock className="h-4 w-full" />
@@ -413,6 +472,8 @@ export function QimenAnalysisResult({
                     </li>
                   ))}
                 </ul>
+              ) : sectionStatuses.strategyOverview === 'failed' ? (
+                <div className="mt-2 text-sm text-rose-600">风险预警暂未生成成功。</div>
               ) : (
                 <div className="mt-2 space-y-2">
                   <SkeletonBlock className="h-12 w-full" />
@@ -441,6 +502,8 @@ export function QimenAnalysisResult({
                     </li>
                   ))}
                 </ol>
+              ) : sectionStatuses.strategyOverview === 'failed' ? (
+                <div className="mt-2 text-sm text-rose-600">行动建议暂未生成成功。</div>
               ) : (
                 <div className="mt-2 space-y-2">
                   <SkeletonBlock className="h-12 w-full" />
@@ -453,17 +516,17 @@ export function QimenAnalysisResult({
             <section className="mt-4 rounded-2xl border border-indigo-100 bg-white/75 p-3.5">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold text-indigo-700">决策胜算指数</div>
-                {typeof result?.score === 'number' ? (
-                  <div className="text-2xl font-black text-indigo-700">{result.score}%</div>
+                {typeof baseResult?.score === 'number' ? (
+                  <div className="text-2xl font-black text-indigo-700">{baseResult?.score}%</div>
                 ) : (
                   <SkeletonBlock className="h-8 w-16" />
                 )}
               </div>
               <div className="mt-2 h-2 w-full rounded-full bg-indigo-100">
-                {typeof result?.score === 'number' ? (
+                {typeof baseResult?.score === 'number' ? (
                   <div
                     className="h-2 rounded-full bg-gradient-to-r from-[#3F60FF] to-[#67A2FF]"
-                    style={{ width: `${result.score}%` }}
+                    style={{ width: `${baseResult.score}%` }}
                   />
                 ) : (
                   <div className="h-2 rounded-full bg-indigo-200/70" style={{ width: '35%' }} />
@@ -490,6 +553,8 @@ export function QimenAnalysisResult({
                 </div>
               ))}
             </div>
+          ) : sectionStatuses.timingWindows === 'failed' ? (
+            <div className="mt-2 text-sm text-rose-600">关键时间窗口暂未生成成功。</div>
           ) : (
             <div className="mt-2 space-y-2">
               <SkeletonBlock className="h-14 w-full" />
@@ -502,6 +567,8 @@ export function QimenAnalysisResult({
           <div className="text-xs font-semibold text-slate-500">盘局摘要</div>
           {summary ? (
             <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{summary}</p>
+          ) : sectionStatuses.chartSummary === 'failed' ? (
+            <div className="mt-2 text-sm text-rose-600">盘局摘要暂未生成成功。</div>
           ) : (
             <div className="mt-2 space-y-2">
               <SkeletonBlock className="h-4 w-full" />
@@ -514,7 +581,7 @@ export function QimenAnalysisResult({
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-1.5 text-xs text-slate-500">
             <AlertTriangle className="h-3.5 w-3.5" />
-            {result?.disclaimer ?? '完整排盘完成后会补充免责声明与盘局细节。'}
+            {baseResult?.disclaimer ?? '完整排盘完成后会补充免责声明与盘局细节。'}
           </p>
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" className="rounded-full" onClick={onBackToForm}>
@@ -524,9 +591,8 @@ export function QimenAnalysisResult({
               type="button"
               className="rounded-full bg-[#2F6BFF] text-white"
               onClick={onRetry}
-              disabled={streaming}
             >
-              {streaming ? '分析生成中...' : '重新演化分析'}
+              重新演化分析
             </Button>
           </div>
         </div>

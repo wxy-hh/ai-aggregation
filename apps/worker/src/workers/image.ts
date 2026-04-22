@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
+import { resolveRedisConnectionOptions } from '@repo/shared';
 import type { ImageJobData } from '@repo/queue';
 
 export const imageWorker = new Worker<ImageJobData>(
@@ -39,10 +40,8 @@ export const imageWorker = new Worker<ImageJobData>(
     }
   },
   {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    autorun: false,
+    connection: resolveRedisConnectionOptions(process.env),
     concurrency: 3,
   }
 );

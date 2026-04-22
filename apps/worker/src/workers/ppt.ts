@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
+import { resolveRedisConnectionOptions } from '@repo/shared';
 import type { PPTJobData } from '@repo/queue';
 import PptxGenJS from 'pptxgenjs';
 
@@ -43,10 +44,8 @@ export const pptWorker = new Worker<PPTJobData>(
     }
   },
   {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-    },
+    autorun: false,
+    connection: resolveRedisConnectionOptions(process.env),
     concurrency: 3,
   }
 );

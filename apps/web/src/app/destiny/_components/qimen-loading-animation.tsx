@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 type LoadingIntensity = 'low' | 'medium' | 'high';
 type LoadingVariant = 'inline' | 'immersive';

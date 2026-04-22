@@ -2,18 +2,33 @@
 # Vercel 部署环境变量配置
 # ============================================
 # 复制以下内容到 Vercel Dashboard 的 Environment Variables 中
-# 注意：DATABASE_URL 会在创建 Vercel Postgres 后自动生成，无需手动添加
+# 注意：
+# 1. 这份文件只给 Vercel 上的 apps/web 使用
+# 2. apps/worker 不部署在 Vercel，需要在 Railway / Render 单独配置同一套数据库 / Redis / 模型密钥
+# 3. 如果只部署 Vercel Web、没有独立 Worker，奇门异步入口会直接返回 503
 
 # ============================================
-# Redis 配置（Upstash）
+# 数据库
 # ============================================
-UPSTASH_REDIS_REST_URL=https://fleet-pelican-68904.upstash.io
-UPSTASH_REDIS_REST_TOKEN=gQAAAAAAAQ0oAAIncDIzMWRmNWVlNmZlZmE0MzRmYjM1NjljNTBjNzgzMzllOXAyNjg5MDQ
+# DATABASE_URL 会在创建 Vercel Postgres 后自动生成；如果你使用外部数据库，请改成真实值
+DATABASE_URL=postgresql://user:password@host:5432/dbname
 
-# 传统 Redis 连接（如果需要）
-REDIS_HOST=fleet-pelican-68904.upstash.io
+# ============================================
+# Redis 配置（推荐优先使用 REDIS_URL）
+# ============================================
+REDIS_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
+REDIS_TLS=true
+
+# 传统 Redis 连接（兼容旧配置）
+REDIS_HOST=discrete-cockatoo-104386.upstash.io
 REDIS_PORT=6379
-REDIS_PASSWORD=AcqgAAIjcGIzMWRmNWVlNmZlZmE0MzRmYjM1NjljNTBjNzgzMzllOXAyNjg5MDQ=
+REDIS_PASSWORD="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
+
+# 如果你有用到 Upstash REST，也可以一起保留
+REDIS_KV_REST_API_URL="https://discrete-cockatoo-104386.upstash.io"
+REDIS_KV_REST_API_TOKEN="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
+REDIS_KV_REST_API_READ_ONLY_TOKEN="ggAAAAAAAZfCAAIgcDEEqvuIMYukBY68TACC_eNPJ06Jg-zr9vfPMc2HdMMlqQ"
+REDIS_KV_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
 
 # ============================================
 # AI 服务商 API Keys
@@ -35,13 +50,9 @@ ARK_API_KEY=3a04b704-6445-4f3e-a127-bcb711461706
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL=doubao-seed-2-0-lite-260215
 
-# 通义千问（如果有的话，暂时留空）
+# 其他供应商（按需）
 DASHSCOPE_API_KEY=
-
-# 智谱 GLM（如果有的话，暂时留空）
 ZHIPU_API_KEY=
-
-# DeepSeek（如果有的话，暂时留空）
 DEEPSEEK_API_KEY=
 
 # ============================================
@@ -50,10 +61,10 @@ DEEPSEEK_API_KEY=
 
 # Next.js 应用 URL（部署后需要更新为实际域名）
 NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
+NEXTAUTH_URL=https://your-app.vercel.app
 
 # 身份认证密钥
 AUTH_SECRET=8jLxSzDvwnDdJBNvBnWWJQPk0v+D7m9CJ1lUV2V/IYg=
-NEXTAUTH_URL=https://your-app.vercel.app
 
 # ============================================
 # 文件上传配置（可选）
@@ -69,15 +80,21 @@ ALLOWED_FILE_TYPES=audio/mpeg,audio/wav,audio/aac
 # S3_SECRET_KEY=
 # S3_BUCKET=
 
+# OSS（如果启用）
+# OSS_ACCESS_KEY_ID=
+# OSS_ACCESS_KEY_SECRET=
+# OSS_BUCKET=
+# OSS_REGION=
+
 # ============================================
-# 实时语音转写网关（可选，后续配置）
+# 实时语音转写网关（可选）
 # ============================================
 # NEXT_PUBLIC_RTASR_GATEWAY_URL=
 
 # ============================================
-# 注意事项
+# 部署提醒
 # ============================================
-# 1. DATABASE_URL 会在创建 Vercel Postgres 后自动添加
+# 1. DATABASE_URL 如果不是 Vercel Postgres，请改成真实生产库
 # 2. NEXT_PUBLIC_APP_URL 和 NEXTAUTH_URL 需要在部署后更新为实际域名
-# 3. 空值的 API Keys 可以后续在 Vercel Dashboard 中添加
-# 4. 所有 NEXT_PUBLIC_* 开头的变量会暴露到客户端
+# 3. 这份文件只覆盖 Vercel Web；Worker 需要单独部署并配置同样的 DATABASE_URL / REDIS_* / ARK_*
+# 4. Worker 的 Railway / Render 部署说明见 apps/worker/DEPLOY.md

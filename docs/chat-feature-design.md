@@ -243,28 +243,31 @@ if (provider === 'doubao') {
   });
 
   // 转换豆包 SSE 流为纯文本流
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
+  const reader = response.body.getReader(); // 获取流读取器
+  const decoder = new TextDecoder(); // 创建一个 TextDecoder 实例
+  const encoder = new TextEncoder(); // 创建一个 TextEncoder 实例
 
   const stream = new ReadableStream({
+    // 创建一个可读流
     async start(controller) {
       let buffer = '';
 
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const { done, value } = await reader.read(); // 读取数据
+        if (done) break; // 流结束
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        buffer += decoder.decode(value, { stream: true }); // 解码当前块
+        const lines = buffer.split('\n'); // 按行分割
+        buffer = lines.pop() || ''; // 保存最后一行
 
         for (const line of lines) {
+          // 处理每一行
           if (line.startsWith('data: ')) {
-            const jsonStr = line.slice(6);
-            if (jsonStr === '[DONE]') continue;
+            // 判断是否为数据块
+            const jsonStr = line.slice(6); // 去除前缀
+            if (jsonStr === '[DONE]') continue; // 结束标记
 
-            const data = JSON.parse(jsonStr);
+            const data = JSON.parse(jsonStr); // 解析 JSON
 
             // 提取文本增量
             if (data.type === 'response.output_text.delta') {

@@ -45,14 +45,17 @@
 - pnpm 10.x (`corepack enable`)
 - Docker Desktop（可选，推荐）
 
-### 方式 1: 使用 Docker（推荐）
+### 方式 1: 使用 Docker（团队推荐）
 
 ```bash
 # 一键初始化
 bash tooling/scripts/init.sh
 
-# 启动开发服务
-pnpm dev
+# 启动基础设施
+pnpm infra:up
+
+# 启动 Web + Worker 开发服务
+pnpm dev:docker
 ```
 
 ### 方式 2: 不使用 Docker
@@ -68,7 +71,7 @@ bash tooling/scripts/init-no-docker.sh
 pnpm db:generate
 pnpm db:migrate
 
-# 启动开发服务
+# 启动开发服务（会自动检查 Redis，并为 Web / Worker 注入共享环境）
 pnpm dev
 ```
 
@@ -121,7 +124,15 @@ pnpm dev
 ## 常用命令
 
 ```bash
-pnpm dev          # 启动开发服务
+pnpm dev          # 智能启动开发服务（清理旧进程 + 共享环境注入）
+pnpm dev:docker   # 使用 Docker 基础设施启动 Web + Worker
+pnpm dev:web      # 仅启动 Web
+pnpm dev:worker   # 仅启动 BullMQ Worker
+pnpm dev:rtasr    # 仅启动实时语音网关
+pnpm qimen:check  # 奇门链路本地自检
+pnpm infra:up     # 启动 Redis / Postgres / MinIO
+pnpm infra:down   # 停止基础设施
+pnpm infra:logs   # 查看基础设施日志
 pnpm build        # 构建所有应用
 pnpm lint         # 代码检查
 pnpm typecheck    # 类型检查
@@ -132,3 +143,16 @@ pnpm test:e2e     # 运行 E2E 测试
 ## 文档
 
 详细技术文档请参考 `docs/monorepo-techstack.md`
+
+## 部署建议
+
+- 本地个人开发：优先 `pnpm dev`，兼容本地 Redis、Homebrew Redis 和 Docker Redis
+  - `pnpm dev` 会优先加载 `apps/web/.env.local` 作为共享环境
+  - `pnpm dev` 会在启动前清理旧的 `turbo dev` / `worker` 进程，避免多套进程抢任务
+  - 不建议并行手工执行多套 `pnpm dev:web` / `pnpm dev:worker`
+- 团队协作：优先 `pnpm dev:docker`，保证 Redis / Postgres / MinIO 环境一致
+- 生产环境：优先容器化部署或托管服务
+  - Web 与 Worker 建议拆开部署
+  - Redis 建议使用托管 Redis（如 Upstash / Redis Cloud）
+  - PostgreSQL 建议使用托管数据库（如 Supabase / Neon）
+  - 不建议生产环境依赖某台机器上的本地 brew 服务
