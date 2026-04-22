@@ -7,6 +7,14 @@ function parseBoolean(value: string | undefined) {
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
+function parseMaxRetriesPerRequest(value: string | undefined): number | null {
+  if (!value) return null;
+  if (value.toLowerCase() === 'null') return null;
+
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function parseRedisUrl(url: string): RedisOptions {
   const parsed = new URL(url);
   const port = parsed.port ? parseInt(parsed.port, 10) : 6379;
@@ -43,9 +51,7 @@ export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
     port: Number.isNaN(base.port ?? 0) ? 6379 : base.port,
     tls: shouldUseTls ? {} : undefined,
     lazyConnect: parseBoolean(env.REDIS_LAZY_CONNECT),
-    maxRetriesPerRequest: env.REDIS_MAX_RETRIES_PER_REQUEST
-      ? parseInt(env.REDIS_MAX_RETRIES_PER_REQUEST, 10)
-      : 3,
+    maxRetriesPerRequest: parseMaxRetriesPerRequest(env.REDIS_MAX_RETRIES_PER_REQUEST),
     connectTimeout: env.REDIS_CONNECT_TIMEOUT
       ? parseInt(env.REDIS_CONNECT_TIMEOUT, 10)
       : 10000,

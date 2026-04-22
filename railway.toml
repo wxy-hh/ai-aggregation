@@ -1,0 +1,17 @@
+[build]
+builder = "RAILPACK"
+buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @repo/worker build"
+watchPatterns = [
+  "/apps/worker/**",
+  "/packages/**",
+  "/package.json",
+  "/pnpm-lock.yaml",
+  "/pnpm-workspace.yaml",
+  "/turbo.json",
+  "/railway.toml",
+]
+
+[deploy]
+startCommand = "pnpm --filter @repo/worker start"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
