@@ -8,6 +8,7 @@ import { qimenSectionWorker } from './workers/qimen-section';
 
 let isRunning = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let isShuttingDown = false;
 
 async function main() {
   if (isRunning) {
@@ -22,10 +23,30 @@ async function main() {
   });
   isRunning = true;
   const heartbeatStore = new WorkerHeartbeatStore();
+  const workers = [sttWorker, pptWorker, imageWorker, qimenBaseWorker, qimenSectionWorker];
+
+  const shutdown = async (exitCode = 0) => {
+    if (isShuttingDown) {
+      return;
+    }
+
+    isShuttingDown = true;
+    logger.info('收到关闭信号，开始关闭...');
+
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+
+    await Promise.allSettled(workers.map((worker) => worker.close()));
+    await heartbeatStore.disconnect();
+    isRunning = false;
+    isShuttingDown = false;
+    process.exit(exitCode);
+  };
 
   try {
     // 检查 Worker 是否已经在运行（开发模式热重载场景）
-    const workers = [sttWorker, pptWorker, imageWorker, qimenBaseWorker, qimenSectionWorker];
     const runningWorkers = workers.filter((w) => w.isRunning());
 
     if (runningWorkers.length > 0) {
@@ -35,14 +56,16 @@ async function main() {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    // 启动所有 workers
-    await Promise.all([
-      sttWorker.run(),
-      pptWorker.run(),
-      imageWorker.run(),
-      qimenBaseWorker.run(),
-      qimenSectionWorker.run(),
-    ]);
+    // BullMQ 的 run 会持续阻塞到 worker 关闭，所以这里改为后台启动，
+    // 再单独等待连接 ready，确保能继续写入心跳。
+    for (const worker of workers) {
+      worker.run().catch((error) => {
+        logger.error('Worker 运行失败', error as Error, { queueName: worker.name });
+        void shutdown(1);
+      });
+    }
+
+    await Promise.all(workers.map((worker) => worker.waitUntilReady()));
 
     logger.info('所有 Workers 已启动');
     await heartbeatStore.beat('apps-worker');
@@ -60,27 +83,8 @@ async function main() {
     throw error;
   }
 
-  // 优雅关闭
-  const shutdown = async () => {
-    logger.info('收到关闭信号，开始关闭...');
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    }
-    await Promise.all([
-      sttWorker.close(),
-      pptWorker.close(),
-      imageWorker.close(),
-      qimenBaseWorker.close(),
-      qimenSectionWorker.close(),
-    ]);
-    await heartbeatStore.disconnect();
-    isRunning = false;
-    process.exit(0);
-  };
-
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', () => void shutdown(0));
+  process.on('SIGINT', () => void shutdown(0));
 }
 
 main().catch((error) => {
