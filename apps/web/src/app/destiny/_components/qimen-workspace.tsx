@@ -120,6 +120,17 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     sectionTimeoutsRef.current = [];
   };
 
+  const revealResultIfReady = (nextStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus>) => {
+    const allSettled = Object.values(nextStatuses).every(
+      (status) => status === 'completed' || status === 'failed'
+    );
+
+    if (!allSettled) return;
+
+    setBlockingLoading(false);
+    setStep('result');
+  };
+
   const readErrorMessage = async (response: Response) => {
     try {
       const json = (await response.json()) as { error?: string };
@@ -195,6 +206,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
         setBaseError(json.error ?? '基础盘面生成失败');
         setErrorKind('timeout');
         setError(json.error ?? '基础盘面生成失败');
+        setBlockingLoading(false);
         return;
       }
 
@@ -202,6 +214,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       setBaseError(json.error ?? '基础盘面请求失败');
       setErrorKind('unknown');
       setError(json.error ?? '基础盘面请求失败');
+      setBlockingLoading(false);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
@@ -214,6 +227,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       setBaseError(message);
       setErrorKind('unknown');
       setError(message);
+      setBlockingLoading(false);
     }
   };
 
@@ -250,17 +264,29 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
 
       if (json.success && json.data) {
         setSections((prev) => (sectionKey in prev ? prev : { ...prev, [sectionKey]: json.data }));
-        setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'completed' }));
+        setSectionStatuses((prev) => {
+          const nextStatuses = { ...prev, [sectionKey]: 'completed' as const };
+          revealResultIfReady(nextStatuses);
+          return nextStatuses;
+        });
         return;
       }
 
       if (json.status === 'failed') {
-        setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+        setSectionStatuses((prev) => {
+          const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+          revealResultIfReady(nextStatuses);
+          return nextStatuses;
+        });
         setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块生成失败' }));
         return;
       }
 
-      setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+      setSectionStatuses((prev) => {
+        const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+        revealResultIfReady(nextStatuses);
+        return nextStatuses;
+      });
       setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块请求失败' }));
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
@@ -269,7 +295,11 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
 
       if (runIdRef.current !== runId) return;
 
-      setSectionStatuses((prev) => ({ ...prev, [sectionKey]: 'failed' }));
+      setSectionStatuses((prev) => {
+        const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+        revealResultIfReady(nextStatuses);
+        return nextStatuses;
+      });
       setSectionErrors((prev) => ({
         ...prev,
         [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
@@ -296,7 +326,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     setBlockingLoading(true);
     setError(null);
     setErrorKind(null);
-    setStep('result');
+    setStep('form');
     setAnalysisId(null);
     setBaseResult(null);
     setBaseStatus('loading');
@@ -344,7 +374,6 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
-      setBlockingLoading(false);
     }
   };
 

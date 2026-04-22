@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { AlertTriangle, CircleDot, Clock3, ShieldAlert, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type {
   QimenAnalysisBaseResult,
   QimenAsyncSectionKey,
@@ -157,20 +156,6 @@ export function QimenAnalysisResult({
             返回修改参数
           </Button>
         </div>
-      </div>
-    );
-  }
-
-  if (baseStatus === 'loading' && !baseResult && !hasPartialContent) {
-    return (
-      <div className="h-[calc(100vh-220px)] min-h-[520px] overflow-hidden rounded-3xl border border-white/70 bg-white/75 shadow-sm">
-        <QimenLoadingAnimation
-          variant="immersive"
-          intensity="medium"
-          showProgressHint
-          message="基础盘面生成中"
-          subMessage="已创建分析任务，正在排出基础盘面。该阶段通常需要 10-30 秒；若超过 45 秒仍未返回，系统会按失败处理并显示错误原因。"
-        />
       </div>
     );
   }
