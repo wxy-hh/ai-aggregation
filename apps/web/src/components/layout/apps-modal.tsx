@@ -78,11 +78,20 @@ interface AppConfig {
   id: AppId;
   label: string;
   description: string;
+  disabledDescription?: string;
   icon: React.ElementType;
   category: 'core' | 'productivity' | 'creative';
   href: string;
   iconColor: string;
   iconBg: string;
+  disabled?: boolean;
+  sidebarPinEnabled?: boolean;
+}
+
+export const DISABLED_APP_IDS: AppId[] = ['legal', 'code', '3d'];
+
+export function isSidebarPinAllowed(appId: AppId) {
+  return !DISABLED_APP_IDS.includes(appId);
 }
 
 export const APP_CONFIGS: AppConfig[] = [
@@ -152,21 +161,27 @@ export const APP_CONFIGS: AppConfig[] = [
     id: 'legal',
     label: '法律顾问',
     description: '合同审查与法律咨询。',
+    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
     icon: Scale,
     category: 'productivity',
     href: '/legal',
     iconColor: 'text-slate-500',
     iconBg: 'bg-slate-100 dark:bg-slate-700/60',
+    disabled: true,
+    sidebarPinEnabled: false,
   },
   {
     id: 'code',
     label: '代码助手',
     description: '代码解释、生成与重构。',
+    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
     icon: Code,
     category: 'productivity',
     href: '/code',
     iconColor: 'text-blue-600',
     iconBg: 'bg-blue-100 dark:bg-blue-900/30',
+    disabled: true,
+    sidebarPinEnabled: false,
   },
   // 创意工具
   {
@@ -183,11 +198,14 @@ export const APP_CONFIGS: AppConfig[] = [
     id: '3d',
     label: '3D 模型',
     description: '快速生成 3D 资产。',
+    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
     icon: Box,
     category: 'creative',
     href: '/3d',
     iconColor: 'text-cyan-500',
     iconBg: 'bg-cyan-100 dark:bg-cyan-900/30',
+    disabled: true,
+    sidebarPinEnabled: false,
   },
 ];
 
@@ -283,37 +301,63 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {sectionApps.map((app) => {
                       const isPinned = pinnedApps.includes(app.id);
+                      const isDisabled = app.disabled === true;
                       return (
                         <div
                           key={app.id}
-                          role="button"
-                          tabIndex={0}
+                          role={isDisabled ? undefined : 'button'}
+                          tabIndex={isDisabled ? -1 : 0}
+                          aria-disabled={isDisabled}
                           onClick={() => {
+                            if (isDisabled) return;
                             router.push(app.href);
                             onClose();
                           }}
                           onKeyDown={(e) => {
+                            if (isDisabled) return;
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
                               router.push(app.href);
                               onClose();
                             }
                           }}
-                          className="group relative bg-white/95 dark:bg-slate-800 rounded-2xl p-5 hover:shadow-lg transition-all duration-300 border border-slate-100 dark:border-slate-700/50 hover:border-[#CDD7FF] dark:hover:border-[#6277E8] cursor-pointer"
+                          className={cn(
+                            'group relative rounded-2xl p-5 transition-all duration-300 border',
+                            isDisabled
+                              ? 'bg-slate-50/95 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700/50 opacity-70 cursor-not-allowed'
+                              : 'bg-white/95 dark:bg-slate-800 border-slate-100 dark:border-slate-700/50 hover:shadow-lg hover:border-[#CDD7FF] dark:hover:border-[#6277E8] cursor-pointer'
+                          )}
                         >
+                          {isDisabled && (
+                            <span className="absolute right-5 top-5 rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                              开发中
+                            </span>
+                          )}
                           <div className="flex items-start justify-between mb-3">
                             <div
                               className={cn(
-                                'w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform duration-300',
+                                'w-12 h-12 rounded-xl flex items-center justify-center transition-transform duration-300',
+                                !isDisabled && 'group-hover:scale-105',
                                 app.iconBg
                               )}
                             >
-                              <app.icon className={cn('w-6 h-6', app.iconColor)} />
+                              <app.icon
+                                className={cn(
+                                  'w-6 h-6',
+                                  isDisabled ? 'text-slate-400 dark:text-slate-500' : app.iconColor
+                                )}
+                              />
                             </div>
                             <button
                               onClick={(e) => handlePinClick(e, app.id)}
+                              disabled={isDisabled || app.sidebarPinEnabled === false}
+                              aria-label={
+                                isDisabled ? `${app.label}功能开发中，暂不支持添加到左侧导航` : undefined
+                              }
                               className={cn(
                                 'p-1.5 rounded-lg transition-all duration-200',
+                                (isDisabled || app.sidebarPinEnabled === false) &&
+                                  'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-transparent',
                                 isPinned
                                   ? 'text-[#5D7CFA] bg-[#EAF0FF] dark:bg-[#34428A]/40'
                                   : 'text-slate-300 hover:text-[#5D7CFA] hover:bg-[#F0F4FF] dark:hover:bg-slate-700'
@@ -328,6 +372,11 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
                           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
                             {app.description}
                           </p>
+                          {isDisabled && (
+                            <p className="mt-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                              {app.disabledDescription}
+                            </p>
+                          )}
                         </div>
                       );
                     })}
