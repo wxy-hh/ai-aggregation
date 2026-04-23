@@ -51,3 +51,10 @@ yarn-error.log*
 # Claude AI
 .claude/
 .claude.md
+
+# 本地产物
+.pnpm-store/
+.codefree/
+downcode/
+infra/worker-rtasr/.wrangler/
+apps/web/ark-response-debug.json

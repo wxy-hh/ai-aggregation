@@ -399,7 +399,7 @@ EOF
 ```bash
 # 避免使用中文文件名
 # ❌ 智能对话功能设计文档.md
-# ✅ chat-feature-design.md
+# ✅ feature-design.md
 ```
 
 #### 最佳实践

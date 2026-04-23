@@ -58,6 +58,6 @@ NEXT_PUBLIC_RTASR_GATEWAY_URL=https://your-worker.workers.dev
 **问题**: 无识别结果  
 **解决**: 检查麦克风权限和 API 密钥
 
-## 📚 完整文档
+## 📚 更多说明
 
-查看项目根目录的 `VOICE_REALTIME_GUIDE.md`
+如需了解整体项目启动方式和环境变量配置，请优先查看项目根目录的 `README.md`
