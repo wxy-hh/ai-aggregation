@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
+import { consumeChatResponse } from '@/lib/utils/chat-stream';
 
 // ==================== 类型定义 ====================
 
@@ -35,6 +36,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'; // 消息角色：用户 | AI助手 | 系统
   content: string; // 消息文本内容
   isStreaming?: boolean; // 是否正在流式传输（AI回复时为true）
+  truncationWarning?: string; // 回答可能被截断时的提示
   // 附件列表（可选）
   attachments?: Attachment[];
 }
@@ -236,41 +238,31 @@ export const useChatStore = create<ChatState>((set, get) => {
           throw new Error(errorData.error || `请求失败: ${response.status}`);
         }
 
-        // 检查响应体
-        if (!response.body) throw new Error('响应体为空');
-
-        // ===== 6. 处理流式响应 =====
-        const reader = response.body.getReader(); // 获取流读取器
-        const decoder = new TextDecoder(); // 用于解码二进制数据
         let accumulatedContent = ''; // 累积的AI回复内容
 
-        // 循环读取流数据
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break; // 流结束
-
-          // 解码当前数据块
-          const chunk = decoder.decode(value, { stream: true });
-          // 累加到总内容
-          if (typeof chunk === 'string') {
+        // ===== 6. 处理流式响应 =====
+        await consumeChatResponse(
+          response,
+          (chunk) => {
             accumulatedContent += chunk;
-          } else {
-            accumulatedContent += String(chunk);
+            // ===== 7. 实时更新UI =====
+            // 每次收到新数据就更新消息列表
+            set((state) => {
+              const updatedMessages = state.messages.map((msg) =>
+                // 找到AI消息并更新其内容
+                msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
+              );
+              return { messages: updatedMessages };
+            });
+          },
+          (warning) => {
+            set((state) => ({
+              messages: state.messages.map((msg) =>
+                msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
+              ),
+            }));
           }
-
-          // ===== 7. 实时更新UI =====
-          // 每次收到新数据就更新消息列表
-          set((state) => {
-            const updatedMessages = state.messages.map((msg) =>
-              // 找到AI消息并更新其内容
-              msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
-            );
-            return { messages: updatedMessages };
-          });
-
-          // 注意：频繁更新 localStorage 可能影响性能
-          // 这里每次都更新，后续可以考虑节流优化
-        }
+        );
 
         // ===== 8. 流式传输完成 =====
         set((state) => {
@@ -402,24 +394,26 @@ export const useChatStore = create<ChatState>((set, get) => {
           throw new Error(errorData.error || `请求失败: ${response.status}`);
         }
 
-        if (!response.body) throw new Error('响应体为空');
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
         let accumulatedContent = '';
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          accumulatedContent += typeof chunk === 'string' ? chunk : String(chunk);
-
-          set((state) => ({
-            messages: state.messages.map((msg) =>
-              msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
-            ),
-          }));
-        }
+        await consumeChatResponse(
+          response,
+          (chunk) => {
+            accumulatedContent += chunk;
+            set((state) => ({
+              messages: state.messages.map((msg) =>
+                msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
+              ),
+            }));
+          },
+          (warning) => {
+            set((state) => ({
+              messages: state.messages.map((msg) =>
+                msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
+              ),
+            }));
+          }
+        );
 
         // 完成
         set((state) => {

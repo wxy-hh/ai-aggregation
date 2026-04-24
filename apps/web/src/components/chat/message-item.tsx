@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useState, useCallback, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,7 +16,11 @@ interface MessageItemProps {
 }
 
 // 附件预览组件
-const AttachmentPreview = memo(function AttachmentPreview({ attachment }: { attachment: Attachment }) {
+const AttachmentPreview = memo(function AttachmentPreview({
+  attachment,
+}: {
+  attachment: Attachment;
+}) {
   if (attachment.type === 'image' && attachment.imageUrl) {
     return (
       <div className="relative group mb-2">
@@ -35,7 +40,12 @@ const AttachmentPreview = memo(function AttachmentPreview({ attachment }: { atta
     return (
       <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-2">
         <div className="w-8 h-8 rounded bg-red-500/20 flex items-center justify-center">
-          <svg className="w-4 h-4 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg
+            className="w-4 h-4 text-red-300"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -47,9 +57,7 @@ const AttachmentPreview = memo(function AttachmentPreview({ attachment }: { atta
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{attachment.name}</p>
           {attachment.size && (
-            <p className="text-xs opacity-70">
-              {(attachment.size / 1024).toFixed(1)} KB
-            </p>
+            <p className="text-xs opacity-70">{(attachment.size / 1024).toFixed(1)} KB</p>
           )}
         </div>
       </div>
@@ -60,7 +68,11 @@ const AttachmentPreview = memo(function AttachmentPreview({ attachment }: { atta
 });
 
 // 附件列表组件
-const AttachmentList = memo(function AttachmentList({ attachments }: { attachments?: Attachment[] }) {
+const AttachmentList = memo(function AttachmentList({
+  attachments,
+}: {
+  attachments?: Attachment[];
+}) {
   if (!attachments || attachments.length === 0) return null;
 
   return (
@@ -364,7 +376,14 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                 ) : isStreaming ? (
                   <StreamingContent content={message.content} />
                 ) : (
-                  <MarkdownContent content={message.content} />
+                  <>
+                    <MarkdownContent content={message.content} />
+                    {message.truncationWarning && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                        {message.truncationWarning}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

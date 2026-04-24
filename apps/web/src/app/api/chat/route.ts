@@ -8,6 +8,7 @@ import {
 } from '@repo/providers';
 import { getRateLimiter, getQuotaManager } from '@repo/shared';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
+import { getDoubaoIncompleteWarning } from './doubao-warning';
 
 function createErrorId() {
   return (
@@ -20,6 +21,58 @@ type DoubaoContentPart =
   | { type: 'input_text'; text: string }
   | { type: 'input_image'; image_url: string }
   | { type: 'input_file'; file_id: string };
+
+const sseEncoder = new TextEncoder();
+const SSE_HEADERS = {
+  'Content-Type': 'text/event-stream; charset=utf-8',
+  'Cache-Control': 'no-cache, no-transform',
+  Connection: 'keep-alive',
+  'X-Accel-Buffering': 'no',
+};
+
+function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
+  return sseEncoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function createSseResponse(stream: ReadableStream<Uint8Array>) {
+  return new Response(stream, {
+    headers: SSE_HEADERS,
+  });
+}
+
+function createSseStreamFromTextStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = source.getReader();
+  const decoder = new TextDecoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            const rest = decoder.decode();
+            if (rest) {
+              controller.enqueue(encodeSseEvent({ type: 'text-delta', text: rest }));
+            }
+            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          if (chunk) {
+            controller.enqueue(encodeSseEvent({ type: 'text-delta', text: chunk }));
+          }
+        }
+
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
 
 // 获取用户 ID (临时实现，实际应从 session 获取)
 async function getUserId(req: Request): Promise<string> {
@@ -219,12 +272,7 @@ export async function POST(req: Request) {
         console.error('更新配额失败:', err);
       });
 
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Transfer-Encoding': 'chunked',
-        },
-      });
+      return createSseResponse(createSseStreamFromTextStream(stream));
     }
 
     // 豆包需要特殊的消息格式处理
@@ -329,7 +377,6 @@ export async function POST(req: Request) {
         model: modelName,
         input: input,
         stream: true,
-        max_output_tokens: 2000,
         temperature: 0.7,
         top_p: 0.9,
       };
@@ -375,67 +422,82 @@ export async function POST(req: Request) {
         });
       }
 
-      // 转换豆包 Responses API 的 SSE 流为纯文本流
+      // 转换豆包 Responses API 的 SSE 流为标准 SSE 文本增量事件
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      const encoder = new TextEncoder();
 
       const stream = new ReadableStream({
         async start(controller) {
           try {
             let buffer = '';
+            let hasSentDone = false;
 
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
 
               buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
+              const blocks = buffer.split('\n\n');
+              buffer = blocks.pop() || '';
 
-              for (const line of lines) {
-                const trimmedLine = line.trim();
-                if (!trimmedLine) continue;
+              for (const block of blocks) {
+                const lines = block
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean);
 
-                // Responses API 使用 event: 和 data: 格式
-                if (trimmedLine.startsWith('data: ')) {
-                  try {
-                    const jsonStr = trimmedLine.slice(6);
-
-                    // 处理 [DONE] 标记
-                    if (jsonStr === '[DONE]') {
-                      continue;
-                    }
-
-                    const data = JSON.parse(jsonStr);
-
-                    // 处理文本增量事件
-                    if (data.type === 'response.output_text.delta') {
-                      const content = data.delta;
-                      if (content) {
-                        controller.enqueue(encoder.encode(content));
-                      }
-                    }
-                    // 处理完成事件
-                    else if (data.type === 'response.done') {
-                      // 流结束
-                      break;
-                    }
-                  } catch (e) {
-                    // 忽略解析错误，继续处理
-                    if (e instanceof SyntaxError) {
-                      continue;
-                    }
-                    console.error('Failed to parse SSE data:', e);
-                  }
+                const dataLine = lines.find((line) => line.startsWith('data: '));
+                if (!dataLine) {
+                  continue;
                 }
+
+                try {
+                  const jsonStr = dataLine.slice(6);
+
+                  if (jsonStr === '[DONE]') {
+                    hasSentDone = true;
+                    controller.enqueue(encodeSseEvent({ type: 'done' }));
+                    break;
+                  }
+
+                  const data = JSON.parse(jsonStr);
+
+                  if (data.type === 'response.output_text.delta') {
+                    const content = data.delta;
+                    if (content) {
+                      controller.enqueue(encodeSseEvent({ type: 'text-delta', text: content }));
+                    }
+                  } else if (data.type === 'response.done') {
+                    hasSentDone = true;
+                    const warning = getDoubaoIncompleteWarning(data);
+                    if (warning) {
+                      controller.enqueue(encodeSseEvent({ type: 'warning', warning }));
+                    }
+                    controller.enqueue(encodeSseEvent({ type: 'done' }));
+                    break;
+                  }
+                } catch (e) {
+                  if (e instanceof SyntaxError) {
+                    continue;
+                  }
+                  console.error('Failed to parse SSE data:', e);
+                }
+              }
+
+              if (hasSentDone) {
+                break;
               }
             }
 
+            if (!hasSentDone) {
+              controller.enqueue(encodeSseEvent({ type: 'done' }));
+            }
             controller.close();
           } catch (error) {
             console.error('Stream error:', error);
             controller.error(error);
+          } finally {
+            reader.releaseLock();
           }
         },
       });
@@ -459,12 +521,7 @@ export async function POST(req: Request) {
         console.error('更新配额失败:', err);
       });
 
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Transfer-Encoding': 'chunked',
-        },
-      });
+      return createSseResponse(stream);
     }
 
     // 其他 provider 使用 Vercel AI SDK
@@ -492,7 +549,12 @@ export async function POST(req: Request) {
       console.error('更新配额失败:', err);
     });
 
-    return result.toTextStreamResponse();
+    const textResponse = result.toTextStreamResponse();
+    if (!textResponse.body) {
+      throw new Error('上游未返回流式响应体');
+    }
+
+    return createSseResponse(createSseStreamFromTextStream(textResponse.body));
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;

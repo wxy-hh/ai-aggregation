@@ -786,7 +786,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button
+            {/* <Button
               variant="ghost"
               size="icon"
               className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
@@ -799,7 +799,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
                 />
               </svg>
-            </Button>
+            </Button> */}
             <Button
               onClick={handleSend}
               disabled={
