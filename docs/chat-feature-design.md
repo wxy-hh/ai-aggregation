@@ -14,6 +14,7 @@
 8. [接口封装](#接口封装)
 9. [状态管理](#状态管理)
 10. [附件上传](#附件上传)
+11. [聊天流处理工具](#聊天流处理工具)
 
 ---
 
@@ -342,7 +343,7 @@ return (
 
 ### 优化建议
 
-```typescript
+``typescript
 // 使用 IntersectionObserver 优化性能
 // 只在用户滚动到底部附近时才自动滚动
 const [isNearBottom, setIsNearBottom] = useState(true);
@@ -412,7 +413,7 @@ export const MessageItem = memo(function MessageItem({ message }: MessageItemPro
 
 当 AI 还没开始输出时，显示"思考中"动画：
 
-```typescript
+``typescript
 // ============ 思考指示器组件 ============
 const ThinkingIndicator = memo(function ThinkingIndicator() {
   return (
@@ -460,7 +461,7 @@ return (
 
 ### CSS 动画配置
 
-```css
+```
 /* Tailwind 配置 */
 @keyframes pulse {
   0%,
@@ -571,7 +572,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
 
 ### 支持的 Markdown 语法
 
-```markdown
+```
 # 标题 1
 
 ## 标题 2
@@ -604,9 +605,9 @@ console.log('Hello');
 
 ### Markdown 样式配置
 
-```typescript
+```
 // Tailwind Typography 插件配置
-<div className="markdown-body prose dark:prose-invert max-w-none
+<div className="prose dark:prose-invert max-w-none
   prose-p:leading-relaxed
   prose-pre:p-0
   prose-pre:border
@@ -624,7 +625,7 @@ console.log('Hello');
 
 **位置**：`apps/web/src/components/chat/code-block.tsx`
 
-```typescript
+```
 'use client';
 
 import { useState, useCallback, memo } from 'react';
@@ -693,7 +694,7 @@ export const CodeBlock = memo(function CodeBlock({
 
 ### highlight.js 配置
 
-```typescript
+```
 // 导入 highlight.js 样式
 import 'highlight.js/styles/github-dark.css';
 
@@ -841,7 +842,7 @@ export async function createDoubaoStreamResponse(options: {
 
 ### 错误处理
 
-```typescript
+```
 // ============ 统一错误处理 ============
 try {
   const response = await fetch('/api/chat', {
@@ -879,7 +880,7 @@ try {
 
 ### Zustand Store 架构
 
-```typescript
+```
 // ============ Chat Store 结构 ============
 interface ChatState {
   // 状态
@@ -907,7 +908,7 @@ interface ChatState {
 
 ### 持久化配置
 
-```typescript
+```
 // ============ Conversations Store（持久化） ============
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -936,7 +937,7 @@ export const useConversationsStore = create<ConversationsState>()(
 
 ### Store 之间的通信
 
-```typescript
+```
 // ============ Chat Store 更新 Conversations Store ============
 sendMessage: async (content) => {
   // ... 发送逻辑
@@ -965,7 +966,7 @@ sendMessage: async (content) => {
 
 **位置**：`apps/web/src/components/chat/chat-input.tsx`
 
-```typescript
+```
 // ============ 图片上传处理 ============
 const handleImageSelect = useCallback(
   async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1030,7 +1031,7 @@ const handleImageSelect = useCallback(
 
 ### 文件上传（服务器）
 
-```typescript
+```
 // ============ PDF 文件上传处理 ============
 const handleFileSelect = useCallback(
   async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1114,7 +1115,7 @@ const handleFileSelect = useCallback(
 
 **位置**：`apps/web/src/app/api/files/route.ts`
 
-```typescript
+```
 // ============ 文件上传 API ============
 export async function POST(req: Request) {
   try {
@@ -1210,7 +1211,7 @@ export async function DELETE(req: Request) {
 
 ### 附件预览组件
 
-```typescript
+```
 // ============ 附件预览组件 ============
 const AttachmentPreview = memo(function AttachmentPreview({
   attachment
@@ -1262,7 +1263,7 @@ const AttachmentPreview = memo(function AttachmentPreview({
 
 ### 1. 组件 Memo 化
 
-```typescript
+```
 // 使用 React.memo 避免不必要的重渲染
 export const MessageItem = memo(function MessageItem({ message }: MessageItemProps) {
   // ...
@@ -1279,7 +1280,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
 
 ### 2. useMemo 缓存计算
 
-```typescript
+```
 // 缓存 Markdown components 配置
 const components = useMemo(
   () => ({
@@ -1299,7 +1300,7 @@ const filteredGroups = useMemo(() => {
 
 ### 3. useCallback 缓存函数
 
-```typescript
+```
 // 缓存事件处理函数
 const handleSend = useCallback(
   (content: string) => {
@@ -1317,7 +1318,7 @@ const handleCopy = useCallback(() => {
 
 对于超长对话，可以使用虚拟滚动优化性能：
 
-```typescript
+```
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 function MessageList({ messages }: { messages: Message[] }) {
@@ -1363,7 +1364,7 @@ function MessageList({ messages }: { messages: Message[] }) {
 
 **解决方案**：
 
-```typescript
+```
 // 使用 AbortController
 let abortController: AbortController | null = null;
 
@@ -1397,7 +1398,7 @@ useEffect(() => {
 
 **解决方案**：
 
-```typescript
+```
 // 1. 只在流式结束后才渲染 Markdown
 {isStreaming ? (
   <StreamingContent content={message.content} />  // 纯文本
@@ -1420,7 +1421,7 @@ const components = useMemo(() => ({ /* ... */ }), []);
 
 **解决方案**：
 
-```typescript
+```
 // 使用 requestAnimationFrame 节流
 let scrollPending = false;
 
@@ -1441,7 +1442,7 @@ useEffect(() => {
 
 **解决方案**：
 
-```typescript
+```
 // 等待文件处理就绪
 async function waitForFileReady(fileId: string): Promise<boolean> {
   const maxWaitTime = 10000; // 最多等待 10 秒
