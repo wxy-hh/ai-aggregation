@@ -1,11 +1,12 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { APP_CONFIGS } from './apps-modal';
-import { Clock3, FileStack, FileText } from 'lucide-react';
+import { Clock3, FileText } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 
 interface MobileAppDrawerProps {
   open: boolean;
@@ -29,9 +30,11 @@ const QUICK_LINKS = [
   },
 ];
 
-const drawerApps = APP_CONFIGS.filter((app) => !app.disabled && !PRIMARY_APP_IDS.has(app.id));
+const drawerApps = APP_CONFIGS.filter((app) => !PRIMARY_APP_IDS.has(app.id));
 
 export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
+  const router = useRouter();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -55,30 +58,56 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
             <section className="space-y-3">
               <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">应用入口</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {drawerApps.map((app) => (
-                  <Link
-                    key={app.id}
-                    href={app.href}
-                    onClick={() => onOpenChange(false)}
-                    className="rounded-2xl border border-slate-200/80 bg-slate-50 px-3 py-3 transition-colors dark:border-slate-800 dark:bg-slate-900/80"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${app.iconBg} ${app.iconColor}`}
-                      >
-                        <app.icon className="h-5 w-5" />
+                {drawerApps.map((app) => {
+                  const isDisabled = app.disabled === true;
+
+                  return (
+                    <button
+                      key={app.id}
+                      type="button"
+                      disabled={isDisabled}
+                      aria-disabled={isDisabled}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        router.push(app.href);
+                        onOpenChange(false);
+                      }}
+                      className={cn(
+                        'relative rounded-2xl border px-3 py-3 text-left transition-colors dark:border-slate-800 dark:bg-slate-900/80',
+                        isDisabled
+                          ? 'cursor-not-allowed border-slate-200/80 bg-slate-50/90 opacity-70'
+                          : 'border-slate-200/80 bg-slate-50'
+                      )}
+                    >
+                      {isDisabled ? (
+                        <span className="absolute right-3 top-3 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                          开发中
+                        </span>
+                      ) : null}
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl',
+                            app.iconBg,
+                            isDisabled ? 'text-slate-400 dark:text-slate-500' : app.iconColor
+                          )}
+                        >
+                          <app.icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {app.label}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            {isDisabled
+                              ? app.disabledDescription ?? app.description
+                              : app.description}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {app.label}
-                        </p>
-                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                          {app.description}
-                        </p>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </section>
 
@@ -86,10 +115,13 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
               <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">常用入口</h3>
               <div className="space-y-2">
                 {QUICK_LINKS.map((item) => (
-                  <Link
+                  <button
                     key={item.href}
-                    href={item.href}
-                    onClick={() => onOpenChange(false)}
+                    type="button"
+                    onClick={() => {
+                      router.push(item.href);
+                      onOpenChange(false);
+                    }}
                     className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80"
                   >
                     <div className="flex min-w-0 items-center gap-3">
@@ -105,7 +137,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
                         </p>
                       </div>
                     </div>
-                  </Link>
+                  </button>
                 ))}
 
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">

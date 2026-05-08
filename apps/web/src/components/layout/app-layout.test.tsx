@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppLayout } from './app-layout';
 
 const mockUsePathname = vi.fn();
+const mockPush = vi.fn();
 
 vi.mock('next/link', () => ({
   default: ({
@@ -19,6 +20,9 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => mockUsePathname(),
+  useRouter: () => ({
+    push: mockPush,
+  }),
 }));
 
 vi.mock('./global-sidebar', () => ({
@@ -109,6 +113,8 @@ describe('AppLayout', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       expect(screen.getByText('更多应用')).toBeInTheDocument();
       expect(screen.getByText('视频生成')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /PPT 制作/i })).toBeDisabled();
+      expect(screen.getByText('功能开发中，暂不支持访问。')).toBeInTheDocument();
       expect(screen.getAllByText('主题切换').length).toBeGreaterThan(0);
     });
   });

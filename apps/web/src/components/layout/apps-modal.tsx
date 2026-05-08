@@ -89,7 +89,7 @@ interface AppConfig {
   sidebarPinEnabled?: boolean;
 }
 
-export const DISABLED_APP_IDS: AppId[] = ['legal', 'code', '3d'];
+export const DISABLED_APP_IDS: AppId[] = ['ppt', 'legal', 'code', '3d'];
 
 export function isSidebarPinAllowed(appId: AppId) {
   return !DISABLED_APP_IDS.includes(appId);
@@ -142,11 +142,14 @@ export const APP_CONFIGS: AppConfig[] = [
     id: 'ppt',
     label: 'PPT 制作',
     description: '一键生成演示文稿。',
+    disabledDescription: '功能开发中，暂不支持访问。',
     icon: Presentation,
     category: 'productivity',
     href: '/ppt',
     iconColor: 'text-amber-500',
     iconBg: 'bg-amber-100 dark:bg-amber-900/30',
+    disabled: true,
+    sidebarPinEnabled: false,
   },
   {
     id: 'resume',
