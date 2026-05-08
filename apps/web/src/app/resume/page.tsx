@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -16,18 +17,18 @@ export default function ResumeEntryPage() {
     <AppLayout>
       <div className="flex-1 relative overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-slate-900 dark:via-blue-950/30 dark:to-purple-950/20">
         {/* 主内容区 */}
-        <div className="relative z-10 flex flex-col items-center justify-center px-8 py-20 min-h-full">
+        <div className="relative z-10 flex flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20 min-h-full">
           {/* 标题区域 */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-16"
+            className="text-center mb-10 lg:mb-16"
           >
-            <h1 className="text-6xl font-bold text-slate-900 dark:text-slate-100 mb-6 tracking-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-slate-900 dark:text-slate-100 mb-4 lg:mb-6 tracking-tight">
               开启您的职业新篇章
             </h1>
-            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-sm sm:text-base lg:text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
               利用前沿 AI 工智能技术，为您打造一份脱颖而出的专业简历。选择一种方式
               <br />
               开始您的旅程。
@@ -35,7 +36,7 @@ export default function ResumeEntryPage() {
           </motion.div>
 
           {/* 卡片区域 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl w-full">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 lg:gap-8 max-w-5xl w-full">
             {/* 使用通用模板卡片 */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
@@ -47,7 +48,7 @@ export default function ResumeEntryPage() {
 
               <div
                 onClick={handleUseTemplate}
-                className="relative h-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-[32px] rounded-3xl p-10 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col"
+                className="relative h-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-[32px] rounded-3xl p-6 sm:p-8 lg:p-10 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-blue-400 dark:hover:border-blue-500 shadow-[0_8px_32px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_16px_48px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col"
               >
                 {/* 图标 */}
                 <div className="mb-6 flex justify-center">
@@ -57,7 +58,7 @@ export default function ResumeEntryPage() {
                 </div>
 
                 {/* 标题 */}
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3 text-center">
+                <h2 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3 text-center">
                   使用通用模板
                 </h2>
 
@@ -97,7 +98,7 @@ export default function ResumeEntryPage() {
 
               <div
                 aria-disabled="true"
-                className="relative h-full cursor-not-allowed rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/90 p-10 opacity-65 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-[16px] dark:border-slate-700 dark:bg-slate-800/70 dark:opacity-60 flex flex-col"
+                className="relative h-full cursor-not-allowed rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/90 p-6 sm:p-8 lg:p-10 opacity-65 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-[16px] dark:border-slate-700 dark:bg-slate-800/70 dark:opacity-60 flex flex-col"
               >
                 {/* 图标 */}
                 <div className="mb-6 flex justify-center">
@@ -107,7 +108,7 @@ export default function ResumeEntryPage() {
                 </div>
 
                 {/* 标题 */}
-                <h2 className="mb-3 text-center text-2xl font-bold text-slate-700 dark:text-slate-300">
+                <h2 className="mb-3 text-center text-xl lg:text-2xl font-bold text-slate-700 dark:text-slate-300">
                   上传您的简历
                 </h2>
 
@@ -142,7 +143,7 @@ export default function ResumeEntryPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.5 }}
-            className="mt-16 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400"
+            className="mt-10 lg:mt-16 flex items-start sm:items-center gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path

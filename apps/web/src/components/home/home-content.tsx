@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -239,12 +240,12 @@ export function HomeContent() {
   }, [createConversation, router]);
 
   return (
-    <div className="flex h-full w-full bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-full w-full flex-col lg:flex-row bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden font-sans">
       {/* 
         二级侧边栏（发现） 
         基于 "Image 1" 描述：左侧侧边栏包含 "发现"、搜索、工具等。
       */}
-      <aside className="w-[280px] h-full flex flex-col p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-r border-slate-200/50 dark:border-slate-800/50 z-10 flex-shrink-0">
+      <aside className="w-full lg:w-[280px] h-auto lg:h-full flex flex-col p-4 lg:p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-slate-200/50 dark:border-slate-800/50 z-10 flex-shrink-0">
         <h2 className="text-xl font-bold mb-6 flex items-center gap-2">发现</h2>
 
         {/* 搜索 */}
@@ -322,7 +323,7 @@ export function HomeContent() {
         </div>
 
         {/* 最近文件 */}
-        <div className="flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
+        <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               最近文件
@@ -372,7 +373,7 @@ export function HomeContent() {
       </aside>
 
       {/* 主内容 */}
-      <main className="flex-1 h-full overflow-y-auto custom-scrollbar relative">
+      <main className="flex-1 h-auto lg:h-full overflow-y-auto custom-scrollbar relative">
         {/* 背景元素 */}
         <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-blue-100/50 to-transparent dark:from-blue-900/10 dark:to-transparent -z-10 pointer-events-none"></div>
         <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"></div>
@@ -381,9 +382,9 @@ export function HomeContent() {
           style={{ animationDelay: '2s' }}
         ></div>
 
-        <div className="max-w-[1400px] mx-auto px-8 py-10">
+        <div className="max-w-[1400px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
           {/* 具有高级深色混合效果的主视觉区域卡片 */}
-          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl rounded-[48px] p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-16 relative overflow-hidden group/hero">
+          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl rounded-[28px] lg:rounded-[48px] p-6 sm:p-8 lg:p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-10 lg:mb-16 relative overflow-hidden group/hero">
             {/* 渐变边框遮罩 - 创建“融合边缘”效果 */}
             <div className="absolute inset-0 rounded-[48px] border border-white/60 dark:border-white/10 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] pointer-events-none"></div>
 
@@ -400,14 +401,14 @@ export function HomeContent() {
                 AI PRODUCTIVITY SUITE
               </div>
 
-              <h1 className="text-6xl font-black mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black mb-4 lg:mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
                 开启您的 AI{' '}
                 <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
                   创作宇宙
                 </span>
               </h1>
 
-              <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+              <p className="text-sm sm:text-base lg:text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
                 集成尖端对话模型、高精度语音识别与艺术级图像生成，
                 <br />
                 为专业创作者打造的沉浸式智能工作空间。
@@ -415,7 +416,7 @@ export function HomeContent() {
             </div>
 
             {/* 主要功能卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+            <div data-testid="home-feature-grid" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20">
               <FeatureCard
                 href="/chat?new=true"
                 title="智能对话"
@@ -467,7 +468,7 @@ export function HomeContent() {
           </div>
 
           {/* 最近创作网格 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
             {/* 使用动态数据，如果没有则显示示例 */}
             {recentCreations.length > 0 ? (
               recentCreations.map((creation) => (

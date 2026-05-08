@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { cn } from '@/lib/utils';
 import type { FiveElementKey, PartialDestinyReport, BaZiPillar } from '../types';
 import { GlassCard } from '../layout/glass-card';
@@ -31,23 +32,23 @@ export function ChartCenterPanel({
   return (
     <div className={cn('flex flex-col gap-6 min-h-0', className)}>
       {/* 排盘卡 */}
-      <GlassCard className="p-6">
+      <GlassCard className="p-4 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold bg-white/60 border border-white/50 text-slate-700">
                 {profile?.genderLabel ?? '命盘生成中'}
               </span>
-              <div className="text-lg font-extrabold text-slate-900 truncate">
+              <div className="min-w-0 text-base font-extrabold text-slate-900 sm:text-lg truncate">
                 {profile?.name ?? '基础信息整理中'}
               </div>
             </div>
-            <div className="mt-2 text-sm text-slate-500">
+            <div className="mt-2 text-xs leading-6 text-slate-500 sm:text-sm">
               {profile?.birthText ?? '正在整理生辰信息与首批分析'}
             </div>
           </div>
 
-          <div className="text-right">
+          <div className="shrink-0 text-right">
             <div className="text-xs text-slate-400 font-bold tracking-[0.18em] uppercase">
               命局偏强
             </div>
@@ -55,7 +56,7 @@ export function ChartCenterPanel({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-4 gap-4">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
           {(pillars.length > 0
             ? pillars
             : Array.from({ length: 4 }).map((_, idx) => ({
@@ -67,7 +68,7 @@ export function ChartCenterPanel({
               return (
                 <div
                   key={p.label}
-                  className="rounded-3xl border border-white/50 bg-white/55 px-4 py-4 shadow-sm"
+                  className="rounded-3xl border border-white/50 bg-white/55 px-3 py-4 shadow-sm sm:px-4"
                 >
                   <div className="text-xs font-bold text-slate-400">{p.label}</div>
                   <div className="mt-3 h-8 w-16 animate-pulse rounded bg-slate-200/70" />
@@ -86,21 +87,21 @@ export function ChartCenterPanel({
                     type="button"
                     className={cn(
                       'relative rounded-3xl border border-white/50 bg-white/55 backdrop-blur-[18px]',
-                      'px-4 py-4 text-left shadow-sm transition',
+                      'px-3 py-4 text-left shadow-sm transition sm:px-4',
                       'hover:bg-white/70 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30',
                       isFocus && 'ring-2 ring-[#2F6BFF]/60 shadow-lg'
                     )}
                   >
                     <div className="text-xs font-bold text-slate-400">{pillar.label}</div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className={cn('text-3xl font-black tracking-tight', style.text)}>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <div className={cn('text-[2rem] font-black tracking-tight sm:text-3xl', style.text)}>
                         {pillar.stem}
                       </div>
-                      <div className={cn('text-3xl font-black tracking-tight', style.text)}>
+                      <div className={cn('text-[2rem] font-black tracking-tight sm:text-3xl', style.text)}>
                         {pillar.branch}
                       </div>
                     </div>
-                    <div className={cn('mt-3 text-xs font-bold', style.text)}>
+                    <div className={cn('mt-3 text-[11px] font-bold leading-5 sm:text-xs', style.text)}>
                       {pillar.stem}
                       {pillar.branch}（{elementLabel(pillar.element)}）
                     </div>
@@ -133,7 +134,7 @@ export function ChartCenterPanel({
           })}
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-6 text-xs font-semibold text-slate-500">
+        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-500">
           <LegendDot label="伤官配印" />
           <LegendDot label="偏印夺食" />
           <LegendDot label="甲子辰三合水局" />

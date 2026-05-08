@@ -83,6 +83,29 @@ function matchesFilter(item: HistoryItem, filter: HistoryFilter): boolean {
   return true;
 }
 
+function getItemTimestamp(item: HistoryItem): number {
+  const updatedAt = new Date(item.updatedAt).getTime();
+  if (!Number.isNaN(updatedAt)) {
+    return updatedAt;
+  }
+
+  const createdAt = new Date(item.createdAt).getTime();
+  return Number.isNaN(createdAt) ? 0 : createdAt;
+}
+
+function dedupeHistoryItems(items: HistoryItem[]): HistoryItem[] {
+  const latestItemMap = new Map<string, HistoryItem>();
+
+  items.forEach((item) => {
+    const existing = latestItemMap.get(item.id);
+    if (!existing || getItemTimestamp(item) >= getItemTimestamp(existing)) {
+      latestItemMap.set(item.id, item);
+    }
+  });
+
+  return Array.from(latestItemMap.values());
+}
+
 // ==================== Store 实现 ====================
 
 export const useHistoryStore = create<HistoryState>()(
@@ -105,7 +128,8 @@ export const useHistoryStore = create<HistoryState>()(
       // 添加历史记录
       addItem: (item) => {
         set((state) => ({
-          items: [item, ...state.items],
+          // 同一条记录重复写入时按最新内容覆盖，避免出现重复 key
+          items: [item, ...state.items.filter((historyItem) => historyItem.id !== item.id)],
         }));
       },
 
@@ -267,14 +291,14 @@ export const useHistoryStore = create<HistoryState>()(
       // 获取过滤后的项目
       getFilteredItems: () => {
         const { items, filter } = get();
-        return items
+        return dedupeHistoryItems(items)
           .filter((item) => matchesFilter(item, filter))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          .sort((a, b) => getItemTimestamp(b) - getItemTimestamp(a));
       },
 
       // 获取统计信息
       getStats: () => {
-        const { items } = get();
+        const items = dedupeHistoryItems(get().items);
         return {
           total: items.length,
           chat: items.filter((item) => item.type === 'chat').length,
@@ -285,7 +309,7 @@ export const useHistoryStore = create<HistoryState>()(
 
       // 根据 ID 获取项目
       getItemById: (id) => {
-        const { items } = get();
+        const items = dedupeHistoryItems(get().items);
         return items.find((item) => item.id === id);
       },
     }),

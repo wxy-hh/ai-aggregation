@@ -143,4 +143,17 @@ describe('useRtasrRealtime', () => {
     expect(result.current.status).toBe('stopped');
     expect(finalSegments.map((segment) => segment.text)).toEqual(['前半句', '收尾句']);
   });
+
+  it('浏览器不支持 getUserMedia 时返回可读错误而不是抛出未捕获异常', async () => {
+    vi.stubGlobal('navigator', {});
+
+    const { result } = renderHook(() => useRtasrRealtime());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toContain('不支持麦克风采集');
+  });
 });

@@ -1,10 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
+import {
+  useDestinyWorkspaceStore,
+  type ZiweiErrorKind,
+} from '@/stores/destiny-workspace-store';
 import { BaziInputForm } from './bazi-input-form';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
-import { createDefaultBaziFormData, mapFormToBaziRequest } from './bazi-mappers';
+import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
 import type {
   DestinyReport,
@@ -14,12 +20,10 @@ import type {
   ZiweiSectionKey,
   ZiweiStreamEvent,
 } from './types';
-
-type Step = 'form' | 'result';
-type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 
 type ZiweiWorkspaceProps = {
-  onRecalculate: () => void;
+  isActive: boolean;
   onLoadingChange?: (loading: boolean) => void;
 };
 
@@ -280,18 +284,32 @@ function setLockedSection(
   (target as Record<ZiweiSectionKey, ZiweiLockedSections[ZiweiSectionKey]>)[sectionKey] = payload;
 }
 
-export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspaceProps) {
-  const [step, setStep] = useState<Step>('form');
-  const [formData, setFormData] = useState<BaziFormData>(() => createDefaultBaziFormData());
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof BaziFormData, string>>>({});
-  const [blockingLoading, setBlockingLoading] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<DestinyReport | null>(null);
-  const [lockedSections, setLockedSections] = useState<ZiweiLockedSections>({});
-  const [streamStatus, setStreamStatus] = useState<DestinyStreamStatus | null>(null);
-  const [tab, setTab] = useState<PanelTab>('overview');
-  const [activePalaceLabel, setActivePalaceLabel] = useState<string>('命宫');
+export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProps) {
+  const {
+    step,
+    formData,
+    fieldErrors,
+    blockingLoading,
+    streaming,
+    error,
+    report,
+    lockedSections,
+    streamStatus,
+    tab,
+    activePalaceLabel,
+    setWorkspaceState,
+    resetWorkspace,
+    restoreWorkspace,
+    markResultReady,
+  } = useDestinyWorkspaceStore(
+    useShallow((state) => ({
+      ...state.ziwei,
+      setWorkspaceState: state.setWorkspaceState,
+      resetWorkspace: state.resetWorkspace,
+      restoreWorkspace: state.restoreWorkspace,
+      markResultReady: state.markResultReady,
+    }))
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   const pageTitle = useMemo(
@@ -304,14 +322,22 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
   }, [blockingLoading, onLoadingChange]);
 
   useEffect(() => {
+    if (isActive) {
+      restoreWorkspace('ziwei');
+    }
+  }, [isActive, restoreWorkspace]);
+
+  useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
 
   const onChange = <K extends keyof BaziFormData>(key: K, next: BaziFormData[K]) => {
-    setFormData((prev) => ({ ...prev, [key]: next }));
-    setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+    setWorkspaceState('ziwei', (current) => ({
+      formData: { ...current.formData, [key]: next },
+      fieldErrors: { ...current.fieldErrors, [key]: undefined },
+    }));
   };
 
   const readErrorMessage = async (response: Response) => {
@@ -325,9 +351,12 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
 
   const submit = async () => {
     const errors = validateForm(formData);
-    setFieldErrors(errors);
+    setWorkspaceState('ziwei', { fieldErrors: errors });
     if (Object.keys(errors).length > 0) {
-      setError('参数错误：请先完善表单信息后再开始分析');
+      setWorkspaceState('ziwei', {
+        errorKind: 'validation',
+        error: '参数错误：请先完善表单信息后再开始分析',
+      });
       return;
     }
 
@@ -335,14 +364,20 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setBlockingLoading(true);
-    setStreaming(true);
-    setError(null);
-    setReport(null);
-    setLockedSections({});
-    setStreamStatus('queued');
-    setTab('overview');
-    setActivePalaceLabel('命宫');
+    setWorkspaceState('ziwei', {
+      step: 'form',
+      lastView: 'form',
+      hasResult: false,
+      blockingLoading: true,
+      streaming: true,
+      error: null,
+      errorKind: null,
+      report: null,
+      lockedSections: {},
+      streamStatus: 'queued',
+      tab: 'overview',
+      activePalaceLabel: '命宫',
+    });
 
     let currentErrorKind: ZiweiErrorKind = 'unknown';
 
@@ -364,32 +399,40 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
 
       await consumeStream(response, (event) => {
         if (event.type === 'status') {
-          setStreamStatus(event.status);
+          setWorkspaceState('ziwei', { streamStatus: event.status });
           return;
         }
 
         if (event.type === 'section-final') {
           if (receivedSections[event.sectionKey]) return;
           setLockedSection(receivedSections, event.sectionKey, event.payload);
-          setLockedSections((prev) =>
-            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
-          );
-          setStep('result');
-          setBlockingLoading(false);
+          setWorkspaceState('ziwei', (current) => ({
+            lockedSections: current.lockedSections[event.sectionKey]
+              ? current.lockedSections
+              : { ...current.lockedSections, [event.sectionKey]: event.payload },
+            blockingLoading: false,
+            activePalaceLabel:
+              event.sectionKey === 'ziweiPalaces' && event.payload[0]?.label
+                ? event.payload[0].label
+                : current.activePalaceLabel,
+          }));
+          markResultReady('ziwei');
           if (event.sectionKey === 'ziweiPalaces' && event.payload[0]?.label) {
-            setActivePalaceLabel(event.payload[0].label);
+            setWorkspaceState('ziwei', { activePalaceLabel: event.payload[0].label });
           }
           return;
         }
 
         if (event.type === 'complete') {
           sawComplete = true;
-          setReport(mergeLockedSectionsIntoReport(event.report, receivedSections));
-          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
-          setStep('result');
-          setBlockingLoading(false);
-          setStreaming(false);
-          setStreamStatus(null);
+          setWorkspaceState('ziwei', (current) => ({
+            report: mergeLockedSectionsIntoReport(event.report, receivedSections),
+            lockedSections: { ...receivedSections, ...current.lockedSections },
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+          }));
+          markResultReady('ziwei');
           return;
         }
 
@@ -406,43 +449,29 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
         return;
       }
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
-      setError(toDisplayError(currentErrorKind, rawMessage));
+      setWorkspaceState('ziwei', {
+        errorKind: currentErrorKind,
+        error: toDisplayError(currentErrorKind, rawMessage),
+      });
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
-      setBlockingLoading(false);
-      setStreaming(false);
+      setWorkspaceState('ziwei', {
+        blockingLoading: false,
+        streaming: false,
+      });
     }
   };
 
   const reset = () => {
     abortRef.current?.abort();
-    setFormData(createDefaultBaziFormData());
-    setFieldErrors({});
-    setBlockingLoading(false);
-    setStreaming(false);
-    setError(null);
-    setReport(null);
-    setLockedSections({});
-    setStreamStatus(null);
-    setTab('overview');
-    setActivePalaceLabel('命宫');
-    setStep('form');
+    resetWorkspace('ziwei');
   };
 
   const handleRecalculate = () => {
     abortRef.current?.abort();
-    setStep('form');
-    setReport(null);
-    setLockedSections({});
-    setBlockingLoading(false);
-    setStreaming(false);
-    setStreamStatus(null);
-    setError(null);
-    setTab('overview');
-    setActivePalaceLabel('命宫');
-    onRecalculate();
+    resetWorkspace('ziwei');
   };
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
@@ -452,11 +481,11 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
   );
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+    <div className="relative h-auto min-h-full w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 lg:h-full lg:overflow-hidden">
       <div className="h-full w-full xl:pl-[304px]">
         {step === 'form' ? (
           <div className="flex h-full flex-col p-6">
-            <header className="shrink-0 flex justify-between items-center gap-4">
+            <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
                   {pageTitle}
@@ -467,7 +496,7 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
               </div>
             </header>
 
-            <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}
@@ -490,8 +519,10 @@ export function ZiweiWorkspace({ onRecalculate, onLoadingChange }: ZiweiWorkspac
             lockedSections={lockedSections}
             tab={tab}
             activePalaceLabel={activePalaceLabel}
-            onTabChange={setTab}
-            onPalaceLabelChange={setActivePalaceLabel}
+            onTabChange={(nextTab) => setWorkspaceState('ziwei', { tab: nextTab })}
+            onPalaceLabelChange={(label) =>
+              setWorkspaceState('ziwei', { activePalaceLabel: label })
+            }
             onRecalculate={handleRecalculate}
           />
         )}
@@ -528,6 +559,7 @@ function ZiweiResultView({
   onPalaceLabelChange,
   onRecalculate,
 }: ZiweiResultViewProps) {
+  const isMobile = useIsMobile();
   const palaceData = useMemo<PalaceViewModel[]>(() => {
     if (!report?.ziweiPalaces?.length) return [];
 
@@ -572,13 +604,13 @@ function ZiweiResultView({
       : '基于十四主星与宫位逻辑的深度人生轨迹预测';
 
   return (
-    <div className="h-full w-full overflow-y-auto p-6">
-      <div className="flex flex-col gap-6">
-        <header className="flex justify-between items-center gap-4">
+    <div className="h-full w-full overflow-y-auto p-4 sm:p-6">
+      <div className="flex flex-col gap-4 sm:gap-6">
+        <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">
+            <h1 className="text-2xl md:text-3xl font-bold leading-tight text-slate-900 dark:text-white">
               AI 紫微斗数{' '}
-              <span className="text-base text-[#394FE6] dark:text-indigo-400 font-medium">
+              <span className="block text-base font-medium text-[#394FE6] dark:text-indigo-400 sm:inline">
                 星盘全景视图
               </span>
             </h1>
@@ -587,7 +619,7 @@ function ZiweiResultView({
           <Button
             type="button"
             onClick={onRecalculate}
-            className="rounded-full bg-[#394FE6] text-white hover:brightness-110"
+            className="self-start rounded-full bg-[#394FE6] text-white hover:brightness-110 sm:self-auto"
           >
             重新排盘
           </Button>
@@ -603,10 +635,10 @@ function ZiweiResultView({
         )}
 
         {report && (
-          <div className="grid grid-cols-12 gap-6">
+          <div className="grid grid-cols-12 gap-4 sm:gap-6">
             <div className="col-span-12 xl:col-span-8 flex flex-col gap-6">
-              <div className="rounded-3xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 p-5 backdrop-blur-xl shadow-lg">
-                <div className="grid grid-cols-4 grid-rows-4 gap-3 aspect-square">
+              <div className="rounded-3xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 p-4 sm:p-5 backdrop-blur-xl shadow-lg">
+                <div className="grid grid-cols-2 auto-rows-[minmax(132px,auto)] gap-3 sm:grid-cols-4 sm:grid-rows-4 sm:auto-rows-auto sm:aspect-square">
                   {palaceData.length > 0
                     ? palaceData.map((palace, index) => {
                         const isActive = palace.label === activePalaceLabel;
@@ -622,8 +654,8 @@ function ZiweiResultView({
                             type="button"
                             onClick={() => onPalaceLabelChange(palace.label)}
                             className={[
-                              palaceGridAreas[index],
-                              'rounded-2xl p-3.5 flex flex-col justify-between text-left transition border shadow-[0_6px_18px_-14px_rgba(30,41,59,0.45),inset_0_1px_0_rgba(255,255,255,0.75)]',
+                              !isMobile && palaceGridAreas[index],
+                              'min-h-[132px] rounded-2xl p-3 flex flex-col justify-between text-left transition border shadow-[0_6px_18px_-14px_rgba(30,41,59,0.45),inset_0_1px_0_rgba(255,255,255,0.75)] sm:min-h-0 sm:p-3.5',
                               toneClass,
                               isActive
                                 ? 'ring-2 ring-[#4A63EE]/35 border-[#4A63EE]/45 shadow-[0_10px_26px_-14px_rgba(59,91,246,0.46),inset_0_1px_0_rgba(255,255,255,0.84)]'
@@ -631,22 +663,22 @@ function ZiweiResultView({
                             ].join(' ')}
                           >
                             <div>
-                              <div className={`text-[11px] font-extrabold ${labelToneClass}`}>
+                              <div className={`text-xs font-extrabold ${labelToneClass}`}>
                                 {palace.label}
                               </div>
                               <div
-                                className={`mt-1 text-xl font-black tracking-tight ${dominantColorClass}`}
+                                className={`mt-2 text-[2rem] leading-none font-black tracking-tight break-words sm:mt-1 sm:text-xl ${dominantColorClass}`}
                               >
                                 {palace.dominant || palace.stars[0] || '主星'}
                               </div>
                               {palace.stars.length > 1 && (
-                                <div className="mt-1 text-[11px] text-slate-500">
+                                <div className="mt-2 text-xs leading-5 text-slate-500 break-words sm:mt-1 sm:text-[11px] sm:leading-normal">
                                   {palace.stars.slice(1).join(' · ')}
                                 </div>
                               )}
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-2">
-                              <span className="text-[11px] text-slate-400">{palace.branch}</span>
+                              <span className="text-xs text-slate-400 sm:text-[11px]">{palace.branch}</span>
                             </div>
                           </button>
                         );
@@ -655,8 +687,8 @@ function ZiweiResultView({
                         <div
                           key={`palace-skeleton-${index}`}
                           className={[
-                            palaceGridAreas[index],
-                            'rounded-2xl border border-slate-200/60 bg-white/88 p-3.5 shadow-sm',
+                            !isMobile && palaceGridAreas[index],
+                            'min-h-[132px] rounded-2xl border border-slate-200/60 bg-white/88 p-3 shadow-sm sm:min-h-0 sm:p-3.5',
                           ].join(' ')}
                         >
                           <div className="h-3 w-14 animate-pulse rounded bg-slate-200/70" />
@@ -665,29 +697,29 @@ function ZiweiResultView({
                         </div>
                       ))}
 
-                  <div className="col-start-2 col-span-2 row-start-2 row-span-2 rounded-3xl border border-slate-200/60 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center shadow-lg">
-                    <div className="text-[42px] leading-none font-black text-slate-900 dark:text-white">
+                  <div className="order-first col-span-2 rounded-3xl border border-slate-200/60 dark:border-white/10 bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center shadow-lg sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2">
+                    <div className="text-[2.25rem] leading-tight font-black text-slate-900 break-words dark:text-white sm:text-[42px] sm:leading-none">
                       {report.ziweiCenter?.chartTitle ?? report.profile?.name ?? '紫微排盘生成中'}
                     </div>
-                    <div className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                    <div className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                       {report.profile?.lunarText ||
                         report.profile?.birthText ||
                         '正在整理命盘基础信息'}
                     </div>
-                    <div className="mt-4 flex items-center gap-3">
-                      <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-2">
+                    <div className="mt-4 grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:items-center">
+                      <div className="rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-3 py-2 sm:px-4">
                         <div className="text-xs font-bold text-blue-600 dark:text-blue-400">
                           命主
                         </div>
-                        <div className="text-2xl font-black text-blue-900 dark:text-blue-100 mt-0.5">
+                        <div className="mt-1 text-xl font-black text-blue-900 break-words dark:text-blue-100 sm:text-2xl sm:mt-0.5">
                           {report.ziweiCenter?.mingZhu ?? '待定稿'}
                         </div>
                       </div>
-                      <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-4 py-2">
+                      <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-3 py-2 sm:px-4">
                         <div className="text-xs font-bold text-amber-600 dark:text-amber-400">
                           身主
                         </div>
-                        <div className="text-2xl font-black text-amber-900 dark:text-amber-100 mt-0.5">
+                        <div className="mt-1 text-xl font-black text-amber-900 break-words dark:text-amber-100 sm:text-2xl sm:mt-0.5">
                           {report.ziweiCenter?.shenZhu ?? '待定稿'}
                         </div>
                       </div>

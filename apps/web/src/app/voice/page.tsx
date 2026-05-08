@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { WaveformVisualizer } from '@/components/voice/waveform';
 import { TranscriptList, type TranscriptSegment } from '@/components/voice/transcript-list';
@@ -17,6 +18,7 @@ import { VoiceHistoryItem } from '@/types/history';
 import { useRtasrRealtime } from '@/hooks/use-rtasr-realtime';
 import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 function formatElapsed(ms: number) {
   const sec = Math.max(0, Math.floor(ms / 1000));
@@ -59,6 +61,7 @@ function VoicePageContent() {
   const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<VoiceMode>('realtime');
   const [restoredHistoryItem, setRestoredHistoryItem] = useState<AudioHistoryItem | null>(null);
+  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
 
   const rtasr = useRtasrRealtime();
 
@@ -133,6 +136,7 @@ function VoicePageContent() {
 
     // 设置要恢复的历史记录项
     setRestoredHistoryItem(item);
+    setShowHistoryDrawer(false);
   }, []);
 
   // 🔧 历史记录恢复完成后的回调
@@ -178,16 +182,27 @@ function VoicePageContent() {
     }
   }, [addHistoryItem, rtasr]);
 
+  const primaryActionLabel =
+    rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error'
+      ? '开始录音'
+      : rtasr.status === 'running'
+        ? '暂停录音'
+        : rtasr.status === 'paused'
+          ? '继续录音'
+          : rtasr.status === 'connecting'
+            ? '连接中...'
+            : '停止并保存';
+
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-blue-900/10 overflow-hidden">
         {/* Main Content */}
         <div className="flex-1 flex flex-col h-full min-w-0 relative">
           {/* Header */}
-          <header className="flex-none px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <header className="flex-none bg-white px-4 py-4 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10 md:px-6">
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0 flex-1">
+                <h1 className="flex flex-wrap items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
                   语音转写
                   {mode === 'realtime' && (
                     <Badge
@@ -198,50 +213,41 @@ function VoicePageContent() {
                     </Badge>
                   )}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {mode === 'realtime'
                     ? '实时将语音转换为高精度文本，支持多语言识别。'
                     : '支持本地音频文件上传转写，自动识别语言。'}
                 </p>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-2 md:max-w-[50%] md:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowHistoryDrawer(true)}
+                  aria-label="打开历史记录"
+                  className="h-11 shrink-0 px-4 lg:hidden text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  历史记录
+                </Button>
                 {mode === 'realtime' && (
                   <Badge
                     variant="outline"
-                    className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm font-medium border-red-100 dark:border-red-900/30 animate-pulse"
+                    className="min-h-11 max-w-full gap-2 rounded-2xl border-red-100 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 animate-pulse dark:border-red-900/30 dark:bg-red-900/20 dark:text-red-400 whitespace-normal break-words leading-5"
                   >
-                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                    {rtasr.status === 'running'
-                      ? `正在录音 ${formatElapsed(rtasr.elapsedMs)}`
-                      : rtasr.status === 'paused'
-                        ? `已暂停 ${formatElapsed(rtasr.elapsedMs)}`
-                        : rtasr.status === 'stopping'
-                          ? '收尾中...'
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
+                    <span className="min-w-0">
+                      {rtasr.status === 'running'
+                        ? `正在录音 ${formatElapsed(rtasr.elapsedMs)}`
+                        : rtasr.status === 'paused'
+                          ? `已暂停 ${formatElapsed(rtasr.elapsedMs)}`
+                          : rtasr.status === 'stopping'
+                            ? '收尾中...'
                           : rtasr.status === 'connecting'
-                            ? '连接中...'
+                              ? '连接中...'
                             : '待开始'}
+                    </span>
                   </Badge>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                    />
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                </Button>
               </div>
             </div>
 
@@ -331,12 +337,17 @@ function VoicePageContent() {
           <div
             className={
               mode === 'realtime'
-                ? 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-32'
+                ? 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-[calc(env(safe-area-inset-bottom)+18rem)] sm:pb-40'
                 : 'hidden'
             }
             style={{ display: mode === 'realtime' ? 'block' : 'none' }}
           >
             <div className="max-w-4xl mx-auto">
+              {rtasr.error && (
+                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
+                  {rtasr.error}
+                </div>
+              )}
               {/* Visualization Card */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
@@ -385,8 +396,8 @@ function VoicePageContent() {
 
           {/* Floating Action Bar - Only show in realtime mode */}
           {mode === 'realtime' && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4">
-              <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 p-2 rounded-2xl shadow-2xl flex items-center justify-between">
+            <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4">
+              <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 p-2 rounded-2xl shadow-2xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 {/* Record Control */}
                 <div className="flex items-center gap-2">
                   <Button
@@ -407,6 +418,7 @@ function VoicePageContent() {
                         await rtasr.resume();
                       }
                     }}
+                    aria-label={primaryActionLabel}
                     className={
                       rtasr.status === 'running'
                         ? 'w-10 h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500'
@@ -436,16 +448,21 @@ function VoicePageContent() {
                             ? '收尾中'
                             : rtasr.status === 'connecting'
                               ? '连接中'
-                              : '未开始'}
+                              : rtasr.status === 'error'
+                                ? '连接失败'
+                                : '未开始'}
                     </p>
                   </div>
                 </div>
 
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
+                <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 sm:block"></div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" className="gap-2 text-slate-600 dark:text-slate-300">
+                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+                  <Button
+                    variant="ghost"
+                    className="gap-2 justify-center text-slate-600 dark:text-slate-300"
+                  >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
@@ -456,7 +473,10 @@ function VoicePageContent() {
                     </svg>
                     复制文本
                   </Button>
-                  <Button variant="ghost" className="gap-2 text-slate-600 dark:text-slate-300">
+                  <Button
+                    variant="ghost"
+                    className="gap-2 justify-center text-slate-600 dark:text-slate-300"
+                  >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
@@ -469,14 +489,30 @@ function VoicePageContent() {
                   </Button>
                 </div>
 
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
+                <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 sm:block"></div>
 
                 <Button
                   onClick={async () => {
+                    if (
+                      rtasr.status === 'idle' ||
+                      rtasr.status === 'stopped' ||
+                      rtasr.status === 'error'
+                    ) {
+                      await rtasr.start();
+                      return;
+                    }
+                    if (rtasr.status === 'running') {
+                      await rtasr.pause();
+                      return;
+                    }
+                    if (rtasr.status === 'paused') {
+                      await rtasr.resume();
+                      return;
+                    }
                     await handleStopAndSave();
                   }}
-                  disabled={rtasr.status === 'stopping'}
-                  className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2"
+                  disabled={rtasr.status === 'connecting' || rtasr.status === 'stopping'}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -486,7 +522,7 @@ function VoicePageContent() {
                       d="M13 10V3L4 14h7v7l9-11h-7z"
                     />
                   </svg>
-                  {rtasr.status === 'stopping' ? '收尾中...' : '停止并保存'}
+                  {rtasr.status === 'stopping' ? '收尾中...' : primaryActionLabel}
                 </Button>
               </div>
             </div>
@@ -498,6 +534,22 @@ function VoicePageContent() {
           <RecordingLibrary onHistoryItemClick={handleHistoryItemClick} />
         </div>
       </div>
+
+      <Dialog open={showHistoryDrawer} onOpenChange={setShowHistoryDrawer}>
+        <DialogContent className="left-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              历史记录
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              查看上传音频历史并恢复转写结果
+            </DialogDescription>
+          </div>
+          <div className="max-h-[78vh] overflow-y-auto p-4">
+            <RecordingLibrary onHistoryItemClick={handleHistoryItemClick} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

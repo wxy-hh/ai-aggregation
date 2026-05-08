@@ -128,6 +128,8 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
   const pcmQueueRef = useRef<Int16Array[]>([]);
   const queuedSamplesRef = useRef<number>(0);
   const sendTimerRef = useRef<number | null>(null);
+  const levelFrameRef = useRef<number | null>(null);
+  const levelPendingRef = useRef<number>(0);
 
   const stopWaiterRef = useRef<StopWaiter | null>(null);
   const stopTimeoutRef = useRef<number | null>(null);
@@ -162,6 +164,11 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
     stopWaiterRef.current = null;
     pcmQueueRef.current = [];
     queuedSamplesRef.current = 0;
+    if (levelFrameRef.current !== null) {
+      window.cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
+    levelPendingRef.current = 0;
     setSegments([]);
     setError(null);
     setLevel(0);
@@ -176,6 +183,17 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
     }
   }, []);
 
+  const scheduleLevelUpdate = useCallback((nextLevel: number) => {
+    levelPendingRef.current = nextLevel;
+
+    if (levelFrameRef.current !== null) return;
+
+    levelFrameRef.current = window.requestAnimationFrame(() => {
+      levelFrameRef.current = null;
+      setLevel(levelPendingRef.current);
+    });
+  }, []);
+
   const resolveStopWaiter = useCallback(
     (finalSegments: TranscriptSegment[] = segmentsRef.current) => {
       clearStopTimeout();
@@ -188,6 +206,10 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
 
   const teardownMedia = useCallback(async () => {
     stopTimers();
+    if (levelFrameRef.current !== null) {
+      window.cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
     setLevel(0);
 
     try {
@@ -340,6 +362,10 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
     return nextSegments;
   }, []);
 
+  const hasMediaDevices = useCallback(() => {
+    return typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+  }, []);
+
   const onGatewayEvent = useCallback(
     (evt: GatewayEvent) => {
       if (evt.type === 'error') {
@@ -375,6 +401,11 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
 
       reset();
       setStatusSafe('connecting');
+      if (!hasMediaDevices()) {
+        setError('当前浏览器环境不支持麦克风采集，请使用支持录音权限的浏览器或 HTTPS/localhost 环境。');
+        setStatusSafe('error');
+        return;
+      }
 
       try {
         const ws = new WebSocket(gatewayUrl);
@@ -382,50 +413,62 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
         wsRef.current = ws;
 
         ws.onopen = async () => {
-          const msg: ControlMessage = { type: 'start', pd: opts?.pd };
-          ws.send(JSON.stringify(msg));
-
-          startedAtRef.current = Date.now();
-          pausedElapsedRef.current = 0;
-
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaStreamRef.current = stream;
-
-          const ctx = new AudioContext();
-          audioContextRef.current = ctx;
-
-          await ctx.audioWorklet.addModule('/worklets/pcm-capture-processor.js');
-
-          const source = ctx.createMediaStreamSource(stream);
-          const node = new AudioWorkletNode(ctx, 'pcm-capture-processor');
-          workletNodeRef.current = node;
-
-          node.port.onmessage = (event) => {
-            const { type, sampleRate, buffer } = event.data || {};
-            if (type !== 'pcm' || !buffer) return;
-
-            const floats = new Float32Array(buffer);
-
-            let sum = 0;
-            for (let i = 0; i < floats.length; i++) {
-              sum += floats[i] * floats[i];
+          try {
+            if (!hasMediaDevices()) {
+              throw new Error(
+                '当前浏览器环境不支持麦克风采集，请使用支持录音权限的浏览器或 HTTPS/localhost 环境。'
+              );
             }
-            const rms = Math.sqrt(sum / floats.length);
-            setLevel(Math.min(1, rms * 3));
 
-            const resampled = resampleLinear(floats, sampleRate, TARGET_SAMPLE_RATE);
-            enqueuePcm(floatToInt16LE(resampled));
-          };
+            const msg: ControlMessage = { type: 'start', pd: opts?.pd };
+            ws.send(JSON.stringify(msg));
 
-          const zeroGain = ctx.createGain();
-          zeroGain.gain.value = 0;
+            startedAtRef.current = Date.now();
+            pausedElapsedRef.current = 0;
 
-          source.connect(node);
-          node.connect(zeroGain);
-          zeroGain.connect(ctx.destination);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaStreamRef.current = stream;
 
-          setStatusSafe('running');
-          startSending();
+            const ctx = new AudioContext();
+            audioContextRef.current = ctx;
+
+            await ctx.audioWorklet.addModule('/worklets/pcm-capture-processor.js');
+
+            const source = ctx.createMediaStreamSource(stream);
+            const node = new AudioWorkletNode(ctx, 'pcm-capture-processor');
+            workletNodeRef.current = node;
+
+            node.port.onmessage = (event) => {
+              const { type, sampleRate, buffer } = event.data || {};
+              if (type !== 'pcm' || !buffer) return;
+
+              const floats = new Float32Array(buffer);
+
+              let sum = 0;
+              for (let i = 0; i < floats.length; i++) {
+                sum += floats[i] * floats[i];
+              }
+              const rms = Math.sqrt(sum / floats.length);
+              scheduleLevelUpdate(Math.min(1, rms * 3));
+
+              const resampled = resampleLinear(floats, sampleRate, TARGET_SAMPLE_RATE);
+              enqueuePcm(floatToInt16LE(resampled));
+            };
+
+            const zeroGain = ctx.createGain();
+            zeroGain.gain.value = 0;
+
+            source.connect(node);
+            node.connect(zeroGain);
+            zeroGain.connect(ctx.destination);
+
+            setStatusSafe('running');
+            startSending();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : '麦克风启动失败');
+            setStatusSafe('error');
+            await closeAll(false);
+          }
         };
 
         ws.onmessage = (event) => {
@@ -468,10 +511,12 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
       }
     },
     [
+      hasMediaDevices,
       closeAll,
       enqueuePcm,
       finalizeStop,
       gatewayUrl,
+      scheduleLevelUpdate,
       onGatewayEvent,
       reset,
       setStatusSafe,

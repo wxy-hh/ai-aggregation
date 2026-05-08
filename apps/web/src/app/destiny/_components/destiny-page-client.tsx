@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
@@ -7,6 +8,7 @@ import { QimenWorkspace } from './qimen-workspace';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 import { cn } from '@/lib/utils';
+import { useBreakpoint } from '@/hooks/use-breakpoint';
 
 export function DestinyPageClient() {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>('bazi');
@@ -16,6 +18,8 @@ export function DestinyPageClient() {
 
   const scrollByModuleRef = useRef<Partial<Record<DestinyModuleKey, number>>>({});
   const lastActiveModuleRef = useRef<DestinyModuleKey>(activeModule);
+  const breakpoint = useBreakpoint();
+  const isCompactLayout = breakpoint !== 'desktop';
 
   // 滚动位置管理
   useEffect(() => {
@@ -40,6 +44,72 @@ export function DestinyPageClient() {
 
     lastActiveModuleRef.current = activeModule;
   }, [activeModule]);
+
+  const renderWorkspace = (module: DestinyModuleKey) => {
+    if (module === 'bazi') {
+      return (
+        <BaziWorkspace
+          isActive={activeModule === 'bazi'}
+          activeModule={activeModule}
+          onModuleChange={setActiveModule}
+          onLoadingChange={setBaziLoading}
+        />
+      );
+    }
+
+    if (module === 'ziwei') {
+      return (
+        <ZiweiWorkspace
+          isActive={activeModule === 'ziwei'}
+          onLoadingChange={setZiweiLoading}
+        />
+      );
+    }
+
+    return (
+      <QimenWorkspace
+        isActive={activeModule === 'qimen'}
+        onLoadingChange={setQimenLoading}
+      />
+    );
+  };
+
+  if (isCompactLayout) {
+    const mobileTabs = [
+      { key: 'bazi' as const, label: '八字' },
+      { key: 'ziwei' as const, label: '紫微' },
+      { key: 'qimen' as const, label: '奇门' },
+    ];
+
+    return (
+      <div className="relative flex min-h-full flex-1 flex-col overflow-y-auto overflow-x-hidden bg-[#F6F8FF] dark:bg-slate-950">
+        <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/88 px-4 py-2 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/88">
+          <div className="grid grid-cols-3 gap-2">
+            {mobileTabs.map((tab) => {
+              const active = activeModule === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveModule(tab.key)}
+                  className={cn(
+                    'rounded-2xl px-3 py-2 text-sm font-semibold transition-colors',
+                    active
+                      ? 'bg-[#EEF2FF] text-[#4E67E6] dark:bg-slate-800 dark:text-[#9BADFF]'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1">{renderWorkspace(activeModule)}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex-1 h-full overflow-hidden">
@@ -66,11 +136,9 @@ export function DestinyPageClient() {
 
           <div className="h-full w-full">
             <BaziWorkspace
+              isActive={activeModule === 'bazi'}
               activeModule={activeModule}
               onModuleChange={setActiveModule}
-              onRecalculate={() => {
-                // 重新排盘逻辑由 BaziWorkspace 内部处理
-              }}
               onLoadingChange={setBaziLoading}
             />
           </div>
@@ -100,9 +168,7 @@ export function DestinyPageClient() {
 
           <div className="h-full w-full">
             <ZiweiWorkspace
-              onRecalculate={() => {
-                // 重新排盘逻辑由 ZiweiWorkspace 内部处理
-              }}
+              isActive={activeModule === 'ziwei'}
               onLoadingChange={setZiweiLoading}
             />
           </div>
@@ -132,9 +198,7 @@ export function DestinyPageClient() {
 
           <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
             <QimenWorkspace
-              onRecalculate={() => {
-                // 重新排盘逻辑由 QimenWorkspace 内部处理
-              }}
+              isActive={activeModule === 'qimen'}
               onLoadingChange={setQimenLoading}
             />
           </div>

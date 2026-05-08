@@ -145,6 +145,7 @@ async function runTurboDev() {
     'dev',
     '--filter=@repo/web',
     '--filter=@repo/worker',
+    '--filter=@repo/worker-rtasr',
     '--output-logs=full',
   ]);
 }
@@ -152,7 +153,7 @@ async function runTurboDev() {
 async function cleanupExistingDevProcesses() {
   const currentPid = process.pid;
   const result = await execCapture(
-    `pgrep -af "turbo run dev --filter=@repo/web --filter=@repo/worker|tsx.*src/index.ts" || true`
+    `pgrep -af "turbo run dev --filter=@repo/web --filter=@repo/worker --filter=@repo/worker-rtasr|turbo run dev --filter=@repo/web --filter=@repo/worker|tsx.*src/index.ts|wrangler dev" || true`
   );
   const lines = result
     .split('\n')
@@ -176,12 +177,20 @@ async function cleanupExistingDevProcesses() {
     const pid = match[1];
     const command = match[2];
 
-    if (command.includes('turbo run dev --filter=@repo/web --filter=@repo/worker')) {
+    if (
+      command.includes(
+        'turbo run dev --filter=@repo/web --filter=@repo/worker --filter=@repo/worker-rtasr'
+      ) ||
+      command.includes('turbo run dev --filter=@repo/web --filter=@repo/worker')
+    ) {
       turboPids.push(pid);
       continue;
     }
 
-    if (command.includes('tsx') && command.includes('src/index.ts')) {
+    if (
+      (command.includes('tsx') && command.includes('src/index.ts')) ||
+      command.includes('wrangler dev')
+    ) {
       workerPids.push(pid);
     }
   }

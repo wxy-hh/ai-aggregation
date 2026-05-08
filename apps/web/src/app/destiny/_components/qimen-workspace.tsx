@@ -1,28 +1,26 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
+import {
+  useDestinyWorkspaceStore,
+  type QimenErrorKind,
+} from '@/stores/destiny-workspace-store';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
-import { createDefaultQimenFormData, mapFormToQimenRequest } from './qimen-mappers';
+import { mapFormToQimenRequest } from './qimen-mappers';
 import type {
-  QimenAnalysisBaseResult,
   QimenBaseSectionResponse,
-  QimenBaseStatus,
   QimenAnalysisStartResponse,
   QimenAsyncSectionKey,
-  QimenAsyncSections,
   QimenFormData,
   QimenSectionResponse,
-  QimenSectionResponseMap,
   QimenSectionStatus,
 } from './qimen-types';
 
-type Step = 'form' | 'result';
-type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
-
 type QimenWorkspaceProps = {
-  onRecalculate: () => void;
+  isActive: boolean;
   onLoadingChange?: (loading: boolean) => void;
 };
 
@@ -68,27 +66,32 @@ function toDisplayError(kind: QimenErrorKind, fallback?: string): string {
   }
 }
 
-export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspaceProps) {
-  const [step, setStep] = useState<Step>('form');
-  const [formData, setFormData] = useState<QimenFormData>(() => createDefaultQimenFormData());
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof QimenFormData, string>>>({});
-  const [blockingLoading, setBlockingLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<QimenErrorKind | null>(null);
-  const [analysisId, setAnalysisId] = useState<string | null>(null);
-  const [baseResult, setBaseResult] = useState<QimenAnalysisBaseResult | null>(null);
-  const [baseStatus, setBaseStatus] = useState<QimenBaseStatus>('idle');
-  const [baseError, setBaseError] = useState<string | null>(null);
-  const [sections, setSections] = useState<QimenAsyncSections>({});
-  const [sectionStatuses, setSectionStatuses] = useState<
-    Record<QimenAsyncSectionKey, QimenSectionStatus>
-  >({
-    strategyOverview: 'idle',
-    timingWindows: 'idle',
-    chartSummary: 'idle',
-  });
-  const [sectionErrors, setSectionErrors] = useState<Partial<Record<QimenAsyncSectionKey, string>>>(
-    {}
+export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProps) {
+  const {
+    step,
+    formData,
+    fieldErrors,
+    blockingLoading,
+    error,
+    analysisId,
+    baseResult,
+    baseStatus,
+    baseError,
+    sections,
+    sectionStatuses,
+    sectionErrors,
+    setWorkspaceState,
+    resetWorkspace,
+    restoreWorkspace,
+    markResultReady,
+  } = useDestinyWorkspaceStore(
+    useShallow((state) => ({
+      ...state.qimen,
+      setWorkspaceState: state.setWorkspaceState,
+      resetWorkspace: state.resetWorkspace,
+      restoreWorkspace: state.restoreWorkspace,
+      markResultReady: state.markResultReady,
+    }))
   );
   const abortRef = useRef<AbortController | null>(null);
   const sectionTimeoutsRef = useRef<number[]>([]);
@@ -104,6 +107,12 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   }, [blockingLoading, onLoadingChange]);
 
   useEffect(() => {
+    if (isActive) {
+      restoreWorkspace('qimen');
+    }
+  }, [isActive, restoreWorkspace]);
+
+  useEffect(() => {
     return () => {
       abortRef.current?.abort();
       clearSectionTimeouts();
@@ -111,8 +120,10 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   }, []);
 
   const onChange = <K extends keyof QimenFormData>(key: K, next: QimenFormData[K]) => {
-    setFormData((prev) => ({ ...prev, [key]: next }));
-    setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+    setWorkspaceState('qimen', (current) => ({
+      formData: { ...current.formData, [key]: next },
+      fieldErrors: { ...current.fieldErrors, [key]: undefined },
+    }));
   };
 
   const clearSectionTimeouts = () => {
@@ -127,8 +138,10 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
 
     if (!allSettled) return;
 
-    setBlockingLoading(false);
-    setStep('result');
+    setWorkspaceState('qimen', {
+      blockingLoading: false,
+    });
+    markResultReady('qimen');
   };
 
   const readErrorMessage = async (response: Response) => {
@@ -163,8 +176,10 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   const requestBaseResult = async (nextAnalysisId: string, runId: number) => {
     if (runIdRef.current !== runId) return;
 
-    setBaseStatus('loading');
-    setBaseError(null);
+    setWorkspaceState('qimen', {
+      baseStatus: 'loading',
+      baseError: null,
+    });
 
     try {
       const response = await fetch(
@@ -183,12 +198,14 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       }
 
       if (json.success && json.data) {
-        setBaseResult(json.data);
-        setBaseStatus('completed');
-        setSectionStatuses({
-          strategyOverview: 'loading',
-          timingWindows: 'loading',
-          chartSummary: 'loading',
+        setWorkspaceState('qimen', {
+          baseResult: json.data,
+          baseStatus: 'completed',
+          sectionStatuses: {
+            strategyOverview: 'loading',
+            timingWindows: 'loading',
+            chartSummary: 'loading',
+          },
         });
         const sectionKeys: QimenAsyncSectionKey[] = [
           'strategyOverview',
@@ -202,19 +219,23 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       }
 
       if (json.status === 'failed') {
-        setBaseStatus('failed');
-        setBaseError(json.error ?? '基础盘面生成失败');
-        setErrorKind('timeout');
-        setError(json.error ?? '基础盘面生成失败');
-        setBlockingLoading(false);
+        setWorkspaceState('qimen', {
+          baseStatus: 'failed',
+          baseError: json.error ?? '基础盘面生成失败',
+          errorKind: 'timeout',
+          error: json.error ?? '基础盘面生成失败',
+          blockingLoading: false,
+        });
         return;
       }
 
-      setBaseStatus('failed');
-      setBaseError(json.error ?? '基础盘面请求失败');
-      setErrorKind('unknown');
-      setError(json.error ?? '基础盘面请求失败');
-      setBlockingLoading(false);
+      setWorkspaceState('qimen', {
+        baseStatus: 'failed',
+        baseError: json.error ?? '基础盘面请求失败',
+        errorKind: 'unknown',
+        error: json.error ?? '基础盘面请求失败',
+        blockingLoading: false,
+      });
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
@@ -223,11 +244,13 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       if (runIdRef.current !== runId) return;
 
       const message = nextError instanceof Error ? nextError.message : '基础盘面请求失败';
-      setBaseStatus('failed');
-      setBaseError(message);
-      setErrorKind('unknown');
-      setError(message);
-      setBlockingLoading(false);
+      setWorkspaceState('qimen', {
+        baseStatus: 'failed',
+        baseError: message,
+        errorKind: 'unknown',
+        error: message,
+        blockingLoading: false,
+      });
     }
   };
 
@@ -238,10 +261,13 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
   ) => {
     if (runIdRef.current !== runId) return;
 
-    setSectionStatuses((prev) =>
-      prev[sectionKey] === 'completed' ? prev : { ...prev, [sectionKey]: 'loading' }
-    );
-    setSectionErrors((prev) => ({ ...prev, [sectionKey]: undefined }));
+    setWorkspaceState('qimen', (current) => ({
+      sectionStatuses:
+        current.sectionStatuses[sectionKey] === 'completed'
+          ? current.sectionStatuses
+          : { ...current.sectionStatuses, [sectionKey]: 'loading' },
+      sectionErrors: { ...current.sectionErrors, [sectionKey]: undefined },
+    }));
 
     try {
       const response = await fetch(
@@ -255,39 +281,48 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
       if (runIdRef.current !== runId) return;
 
       if (response.status === 202 || json.status === 'pending') {
-        setSectionStatuses((prev) =>
-          prev[sectionKey] === 'completed' ? prev : { ...prev, [sectionKey]: 'loading' }
-        );
+        setWorkspaceState('qimen', (current) => ({
+          sectionStatuses:
+            current.sectionStatuses[sectionKey] === 'completed'
+              ? current.sectionStatuses
+              : { ...current.sectionStatuses, [sectionKey]: 'loading' },
+        }));
         scheduleSectionRetry(sectionKey, nextAnalysisId, runId);
         return;
       }
 
       if (json.success && json.data) {
-        setSections((prev) => (sectionKey in prev ? prev : { ...prev, [sectionKey]: json.data }));
-        setSectionStatuses((prev) => {
-          const nextStatuses = { ...prev, [sectionKey]: 'completed' as const };
+        setWorkspaceState('qimen', (current) => ({
+          sections: sectionKey in current.sections ? current.sections : { ...current.sections, [sectionKey]: json.data },
+        }));
+        setWorkspaceState('qimen', (current) => {
+          const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'completed' as const };
           revealResultIfReady(nextStatuses);
-          return nextStatuses;
+          return { sectionStatuses: nextStatuses };
         });
         return;
       }
 
       if (json.status === 'failed') {
-        setSectionStatuses((prev) => {
-          const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+        setWorkspaceState('qimen', (current) => {
+          const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
           revealResultIfReady(nextStatuses);
-          return nextStatuses;
+          return { sectionStatuses: nextStatuses };
         });
-        setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块生成失败' }));
+        setWorkspaceState('qimen', (current) => ({
+          sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块生成失败' },
+        }));
         return;
       }
 
-      setSectionStatuses((prev) => {
-        const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+      setWorkspaceState('qimen', (current) => {
+        const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
         revealResultIfReady(nextStatuses);
-        return nextStatuses;
+        return { sectionStatuses: nextStatuses };
       });
-      setSectionErrors((prev) => ({ ...prev, [sectionKey]: json.error ?? '区块请求失败' }));
+      setWorkspaceState('qimen', (current) => ({
+        sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块请求失败' },
+      }));
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
@@ -295,24 +330,28 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
 
       if (runIdRef.current !== runId) return;
 
-      setSectionStatuses((prev) => {
-        const nextStatuses = { ...prev, [sectionKey]: 'failed' as const };
+      setWorkspaceState('qimen', (current) => {
+        const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
         revealResultIfReady(nextStatuses);
-        return nextStatuses;
+        return { sectionStatuses: nextStatuses };
       });
-      setSectionErrors((prev) => ({
-        ...prev,
-        [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
+      setWorkspaceState('qimen', (current) => ({
+        sectionErrors: {
+          ...current.sectionErrors,
+          [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
+        },
       }));
     }
   };
 
   const submit = async () => {
     const errors = validateForm(formData);
-    setFieldErrors(errors);
+    setWorkspaceState('qimen', { fieldErrors: errors });
     if (Object.keys(errors).length > 0) {
-      setErrorKind('validation');
-      setError('参数错误：请先完善表单信息后再开始分析');
+      setWorkspaceState('qimen', {
+        errorKind: 'validation',
+        error: '参数错误：请先完善表单信息后再开始分析',
+      });
       return;
     }
 
@@ -323,20 +362,24 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     runIdRef.current += 1;
     const runId = runIdRef.current;
 
-    setBlockingLoading(true);
-    setError(null);
-    setErrorKind(null);
-    setStep('form');
-    setAnalysisId(null);
-    setBaseResult(null);
-    setBaseStatus('loading');
-    setBaseError(null);
-    setSections({});
-    setSectionErrors({});
-    setSectionStatuses({
-      strategyOverview: 'idle',
-      timingWindows: 'idle',
-      chartSummary: 'idle',
+    setWorkspaceState('qimen', {
+      step: 'form',
+      lastView: 'form',
+      hasResult: false,
+      blockingLoading: true,
+      error: null,
+      errorKind: null,
+      analysisId: null,
+      baseResult: null,
+      baseStatus: 'loading',
+      baseError: null,
+      sections: {},
+      sectionErrors: {},
+      sectionStatuses: {
+        strategyOverview: 'idle',
+        timingWindows: 'idle',
+        chartSummary: 'idle',
+      },
     });
 
     let currentErrorKind: QimenErrorKind = 'unknown';
@@ -351,7 +394,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
 
       if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
-        setErrorKind(currentErrorKind);
+        setWorkspaceState('qimen', { errorKind: currentErrorKind });
         throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
@@ -360,16 +403,18 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
         throw new Error(json.error || '分析任务创建失败，请稍后重试。');
       }
 
-      setAnalysisId(json.analysisId);
+      setWorkspaceState('qimen', { analysisId: json.analysisId });
       void requestBaseResult(json.analysisId, runId);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
       }
 
-      setErrorKind(currentErrorKind);
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
-      setError(toDisplayError(currentErrorKind, rawMessage));
+      setWorkspaceState('qimen', {
+        errorKind: currentErrorKind,
+        error: toDisplayError(currentErrorKind, rawMessage),
+      });
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -381,30 +426,14 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
     abortRef.current?.abort();
     clearSectionTimeouts();
     runIdRef.current += 1;
-    setFormData(createDefaultQimenFormData());
-    setFieldErrors({});
-    setError(null);
-    setErrorKind(null);
-    setAnalysisId(null);
-    setBaseResult(null);
-    setBaseStatus('idle');
-    setBaseError(null);
-    setSections({});
-    setSectionErrors({});
-    setSectionStatuses({
-      strategyOverview: 'idle',
-      timingWindows: 'idle',
-      chartSummary: 'idle',
-    });
-    setBlockingLoading(false);
-    setStep('form');
+    resetWorkspace('qimen');
   };
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+    <div className="relative h-auto min-h-full w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 lg:h-full lg:overflow-hidden">
       <div className="h-full w-full xl:pl-[304px]">
         <div className="flex h-full flex-col p-6">
-          <header className="shrink-0 flex justify-between items-center gap-4">
+          <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
                 {pageTitle}
@@ -428,7 +457,7 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
             )}
           </header>
 
-          <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+          <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
             {step === 'form' ? (
               <QimenInputForm
                 value={formData}
@@ -451,7 +480,12 @@ export function QimenWorkspace({ onRecalculate, onLoadingChange }: QimenWorkspac
                 sectionStatuses={sectionStatuses}
                 sectionErrors={sectionErrors}
                 error={error}
-                onBackToForm={() => setStep('form')}
+                onBackToForm={() =>
+                  setWorkspaceState('qimen', {
+                    step: 'form',
+                    lastView: 'form',
+                  })
+                }
                 onRetry={() => {
                   void submit();
                 }}

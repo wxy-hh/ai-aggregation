@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { motion } from 'framer-motion';
 import { Edit3, Eye, Sparkles } from 'lucide-react';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
@@ -21,7 +22,7 @@ export function MobileTabs({ activeTab, onTabChange }: MobileTabsProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
-    <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-[20px] border-b border-gray-200/50 dark:border-slate-700/50">
+    <div className="lg:hidden fixed left-0 right-0 top-[calc(env(safe-area-inset-top)+4.5rem)] z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-[20px] border-b border-gray-200/50 dark:border-slate-700/50">
       <div className="flex items-center justify-around h-14">
         {tabs.map((tab) => {
           const Icon = tab.icon;

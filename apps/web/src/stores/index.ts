@@ -65,3 +65,13 @@ export {
   useHistoryInitialized,
   useHistoryActions,
 } from './history-store';
+
+// 命理工作区会话缓存
+export {
+  useDestinyWorkspaceStore,
+  createDefaultDestinyWorkspaceState,
+  type DestinyWorkspaceCacheState,
+  type BaziWorkspaceCache,
+  type ZiweiWorkspaceCache,
+  type QimenWorkspaceCache,
+} from './destiny-workspace-store';

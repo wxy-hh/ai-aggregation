@@ -28,6 +28,7 @@ interface ConfigPanelProps {
   onGenerate: () => void;
   isGenerating: boolean;
   loadingStep: string;
+  showGenerateButton?: boolean;
 }
 
 // 模型配置 - 根据智谱 API 支持
@@ -108,6 +109,7 @@ export function ConfigPanel({
   onGenerate,
   isGenerating,
   loadingStep,
+  showGenerateButton = true,
 }: ConfigPanelProps) {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -430,38 +432,40 @@ export function ConfigPanel({
       </div>
 
       {/* 底部生成按钮 */}
-      <div className="p-6 border-t border-slate-100 dark:border-slate-800/50 bg-white/80 dark:bg-[#111218]/80 backdrop-blur-xl">
-        <Button
-          onClick={onGenerate}
-          disabled={isGenerating || !prompt.trim()}
-          className={cn(
-            'w-full h-14 rounded-2xl text-base font-bold transition-all',
-            'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/20 active:scale-[0.98]',
-            'disabled:opacity-50 disabled:grayscale disabled:scale-100 disabled:cursor-not-allowed',
-            'relative overflow-hidden group'
-          )}
-        >
-          {isGenerating ? (
-            <div className="flex items-center gap-3">
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>{loadingStep || '正在创作...'}</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center gap-2">
-              <Sparkles className="w-5 h-5" />
-              <span>生成视频</span>
-              {selectedModel.credits > 0 && (
-                <div className="ml-2 pl-3 border-l border-white/20 flex flex-col items-start leading-none gap-0.5">
-                  <span className="text-[10px] opacity-70">CREDITS</span>
-                  <span className="text-xs">{selectedModel.credits}</span>
-                </div>
-              )}
-            </div>
-          )}
-          {/* 光效扫过 */}
-          <div className="absolute inset-x-0 top-0 h-full w-full transition-all duration-700 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-[25deg]" />
-        </Button>
-      </div>
+      {showGenerateButton ? (
+        <div className="p-6 border-t border-slate-100 dark:border-slate-800/50 bg-white/80 dark:bg-[#111218]/80 backdrop-blur-xl">
+          <Button
+            onClick={onGenerate}
+            disabled={isGenerating || !prompt.trim()}
+            className={cn(
+              'w-full h-14 rounded-2xl text-base font-bold transition-all',
+              'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/20 active:scale-[0.98]',
+              'disabled:opacity-50 disabled:grayscale disabled:scale-100 disabled:cursor-not-allowed',
+              'relative overflow-hidden group'
+            )}
+          >
+            {isGenerating ? (
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{loadingStep || '正在创作...'}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                <span>生成视频</span>
+                {selectedModel.credits > 0 && (
+                  <div className="ml-2 pl-3 border-l border-white/20 flex flex-col items-start leading-none gap-0.5">
+                    <span className="text-[10px] opacity-70">CREDITS</span>
+                    <span className="text-xs">{selectedModel.credits}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* 光效扫过 */}
+            <div className="absolute inset-x-0 top-0 h-full w-full transition-all duration-700 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-[25deg]" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

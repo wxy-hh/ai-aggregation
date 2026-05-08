@@ -1,7 +1,8 @@
 'use client';
 
+import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
@@ -18,8 +19,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
-import type { HistoryItem, HistoryType, ImageHistoryItem } from '@/types/history';
-import { Download, Share2, X } from 'lucide-react';
+import type { HistoryType, ImageHistoryItem } from '@/types/history';
 
 const tabs = [
   { id: 'all', label: '全部' },
@@ -32,6 +32,7 @@ export default function HistoryPage() {
   const [previewItem, setPreviewItem] = useState<ImageHistoryItem | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // 从 store 获取状态和操作
   const filter = useHistoryStore((state) => state.filter);
@@ -52,8 +53,19 @@ export default function HistoryPage() {
     setFilter({ search });
   };
 
-  const filteredHistory = getFilteredItems();
-  const stats = getStats();
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  const filteredHistory = isHydrated ? getFilteredItems() : [];
+  const stats = isHydrated
+    ? getStats()
+    : {
+        total: 0,
+        chat: 0,
+        voice: 0,
+        image: 0,
+      };
 
   // 处理删除历史记录
   const handleDeleteItem = useCallback((id: string) => {
@@ -96,9 +108,9 @@ export default function HistoryPage() {
     <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
         {/* 头部 */}
-        <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between z-10 shadow-sm">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+        <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-4 md:px-6 md:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10 shadow-sm">
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
               生成历史
               <Badge
                 variant="secondary"
@@ -108,20 +120,20 @@ export default function HistoryPage() {
               </Badge>
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-2 sm:gap-3">
             <Button
               variant="ghost"
-              className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+              className="hidden md:inline-flex text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
             >
               文档
             </Button>
             <Button
               variant="ghost"
-              className="text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
+              className="hidden md:inline-flex text-sm font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
             >
               社区
             </Button>
-            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            <div className="hidden md:block h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
             <Button
               variant="ghost"
               size="icon"
@@ -154,16 +166,19 @@ export default function HistoryPage() {
         </header>
 
         {/* 筛选栏 */}
-        <div className="flex-none px-6 py-4 flex flex-col sm:flex-row gap-4 justify-between items-center sm:h-20">
+        <div className="flex-none px-4 py-4 md:px-6 md:py-4 flex flex-col gap-3 md:gap-4 md:justify-between md:h-auto">
           {/* 选项卡 */}
-          <div className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full sm:w-auto">
+          <div
+            data-testid="history-tabs"
+            className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full overflow-x-auto"
+          >
             {tabs.map((tab) => (
               <Button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 variant={activeTab === tab.id ? 'default' : 'ghost'}
                 className={cn(
-                  'px-6 py-2 rounded-lg text-sm font-bold transition-all flex-1 sm:flex-none h-9',
+                  'px-4 md:px-6 py-2 rounded-lg text-sm font-bold transition-all shrink-0 flex-1 sm:flex-none h-9',
                   activeTab !== tab.id &&
                     'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
                 )}
@@ -179,7 +194,7 @@ export default function HistoryPage() {
           </div>
 
           {/* 搜索与筛选 */}
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
             <div className="relative flex-1 sm:w-80">
               <svg
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
@@ -204,7 +219,7 @@ export default function HistoryPage() {
             </div>
             <Button
               variant="outline"
-              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
             >
               <svg
                 className="w-4 h-4 text-slate-500"
@@ -225,18 +240,19 @@ export default function HistoryPage() {
         </div>
 
         {/* 内容网格 */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 custom-scrollbar">
-          {isLoading ? (
+        <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6 custom-scrollbar">
+          {!isHydrated || isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
           ) : (
             <div
+              data-testid="history-grid"
               className={cn(
                 'grid gap-6',
                 activeTab === 'image'
-                  ? 'grid-cols-1 md:grid-cols-3 xl:grid-cols-3'
-                  : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                  ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
+                  : 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
               )}
             >
               {filteredHistory.map((item) => {
@@ -283,6 +299,7 @@ export default function HistoryPage() {
         {/* 预览弹窗 */}
         {previewItem && (
           <div
+            data-testid="history-preview-overlay"
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
             onClick={() => setPreviewItem(null)}
           >
@@ -310,7 +327,7 @@ export default function HistoryPage() {
             </Button>
 
             <div
-              className="relative max-w-5xl w-full max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transform animate-in zoom-in-95 duration-200 border border-white/10"
+              className="relative w-full h-[100dvh] max-w-none max-h-[100dvh] bg-white dark:bg-slate-900 rounded-none overflow-hidden shadow-2xl flex flex-col md:max-w-5xl md:max-h-[90vh] md:h-auto md:flex-row md:rounded-3xl transform animate-in zoom-in-95 duration-200 border border-white/10"
               onClick={(e) => e.stopPropagation()}
             >
               {/* 左侧：图片容器 */}
@@ -323,8 +340,8 @@ export default function HistoryPage() {
               </div>
 
               {/* 右侧：信息面板 */}
-              <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-l border-slate-100 dark:border-slate-800">
-                <div className="p-6">
+              <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800">
+                <div className="p-4 md:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <Badge
                       variant="outline"
@@ -351,7 +368,7 @@ export default function HistoryPage() {
                   </div>
                 </div>
 
-                <div className="mt-auto p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+                <div className="mt-auto p-4 md:p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadImage(previewItem)}

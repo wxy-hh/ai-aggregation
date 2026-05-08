@@ -231,11 +231,11 @@ export function TranscriptionResult({
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       {/* Header */}
-      <header className="flex-none px-6 py-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
-        <div className="flex items-center justify-between">
+      <header className="flex-none px-4 py-4 sm:px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           {/* File Info */}
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <svg
                 className="w-5 h-5 text-white"
                 fill="none"
@@ -250,9 +250,11 @@ export function TranscriptionResult({
                 />
               </svg>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white">{fileName}</h1>
-              <div className="flex items-center gap-3 mt-1">
+            <div className="min-w-0 flex-1">
+              <h1 className="break-all text-lg font-bold text-slate-900 dark:text-white">
+                {fileName}
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 sm:gap-3">
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -305,7 +307,7 @@ export function TranscriptionResult({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
             {/* 重新上传按钮 */}
             {onReupload && (
               <Button
@@ -335,7 +337,7 @@ export function TranscriptionResult({
               variant="ghost"
               size="sm"
               onClick={handleCopyTranslation}
-              className="gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+              className="gap-2 px-3 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -352,7 +354,7 @@ export function TranscriptionResult({
               size="sm"
               onClick={handleExport}
               disabled={isExporting}
-              className="gap-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+              className="gap-2 px-3 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
             >
               {isExporting ? (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -385,7 +387,7 @@ export function TranscriptionResult({
             <Button
               size="sm"
               onClick={handleSendToChat}
-              className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/20"
+              className="gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/20"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -401,15 +403,15 @@ export function TranscriptionResult({
         </div>
 
         {/* View Mode Tabs */}
-        <div className="flex items-center gap-2 mt-4">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 mr-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
             显示模式:
           </span>
-          <div className="inline-flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+          <div className="inline-flex w-full bg-slate-100 dark:bg-slate-800 p-1 rounded-lg sm:w-auto">
             <button
               onClick={() => setViewMode('original')}
               className={cn(
-                'px-4 py-1.5 text-xs font-medium rounded-md transition-all',
+                'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all sm:flex-none sm:px-4',
                 viewMode === 'original'
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -420,7 +422,7 @@ export function TranscriptionResult({
             <button
               onClick={() => setViewMode('translation')}
               className={cn(
-                'px-4 py-1.5 text-xs font-medium rounded-md transition-all',
+                'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all sm:flex-none sm:px-4',
                 viewMode === 'translation'
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -431,7 +433,7 @@ export function TranscriptionResult({
             <button
               onClick={() => setViewMode('bilingual')}
               className={cn(
-                'px-4 py-1.5 text-xs font-medium rounded-md transition-all',
+                'flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all sm:flex-none sm:px-4',
                 viewMode === 'bilingual'
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'

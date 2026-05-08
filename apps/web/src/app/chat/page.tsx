@@ -3,9 +3,11 @@
 'use client';
 
 // ============ 导入外部组件 ============
+import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 // ============ 导入状态管理 Store ============
 import {
@@ -38,6 +40,8 @@ import {
   ShieldCheck, // 盾牌图标（功能说明）
   Globe, // 地球图标（功能说明）
   FileEdit, // 编辑图标（功能卡片）
+  PanelLeft,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -79,6 +83,8 @@ export default function ChatPage() {
   // 控制模型选择器的显示/隐藏状态
   // showModelSelector 为 true 时，显示模型下拉列表
   const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showConversationDrawer, setShowConversationDrawer] = useState(false);
+  const [showMobileModelDrawer, setShowMobileModelDrawer] = useState(false);
 
   // 搜索框的输入内容
   // 用于过滤左侧的历史对话列表
@@ -463,6 +469,107 @@ export default function ChatPage() {
   //    如果没有对话或对话没有标题，显示"新对话"
   const currentTitle = currentConversation?.title || '新对话';
 
+  const renderConversationList = (onSelect?: () => void) => (
+    <>
+      <button
+        onClick={handleNewConversation}
+        className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white border border-blue-100 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-700 rounded-xl py-3 px-4 font-medium flex items-center justify-center gap-2 transition-all shadow-sm group hover:shadow-md"
+      >
+        <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+        新建对话
+      </button>
+
+      <div className="flex-1 overflow-y-auto -mx-2 px-2 space-y-6 custom-scrollbar">
+        {filteredGroups.length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-8">
+            {searchQuery ? '未找到匹配的对话' : '暂无对话记录'}
+          </div>
+        ) : (
+          filteredGroups.map((group) => (
+            <div key={group.title}>
+              <div className="text-xs font-medium text-slate-400 mb-3 px-2">{group.title}</div>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const isActive = item.id === currentConversationId;
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-3 group cursor-pointer',
+                        isActive
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm font-medium border border-slate-100 dark:border-slate-700'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                      )}
+                      onClick={() => {
+                        switchConversation(item.id);
+                        onSelect?.();
+                      }}
+                    >
+                      <MessageSquare
+                        className={cn(
+                          'w-4 h-4 flex-shrink-0',
+                          isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
+                        )}
+                      />
+                      <span className="truncate flex-1">{item.title}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteConversation(item.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="relative mt-auto pt-4 border-t border-slate-200 dark:border-slate-800">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 mt-4" />
+        <input
+          type="text"
+          placeholder="搜索历史..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full bg-white dark:bg-slate-800 border-none rounded-xl py-2.5 pl-9 pr-4 text-sm text-slate-600 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/10 shadow-sm mt-4"
+        />
+      </div>
+    </>
+  );
+
+  const renderModelOptions = (onSelect?: () => void) =>
+    (
+      Object.entries(MODELS) as [ProviderName, (typeof MODELS)[ProviderName]][]
+    ).map(([providerKey, config]) => (
+      <div key={providerKey} className="px-2 py-1">
+        <div className="text-xs text-slate-400 font-medium px-2 py-1">{config.name}</div>
+        {config.models.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => {
+              handleSwitchProvider(providerKey, m.id);
+              setShowModelSelector(false);
+              onSelect?.();
+            }}
+            className={cn(
+              'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
+              provider === providerKey && model === m.id
+                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+    ));
+
   // ============ 加载状态显示 ============
   // 如果数据还没从本地存储加载完成，显示加载动画
   if (!isLoaded) {
@@ -480,95 +587,25 @@ export default function ChatPage() {
     <AppLayout>
       <div className="flex w-full h-full">
         {/* 聊天历史侧边栏 */}
-        <aside className="w-[280px] flex-shrink-0 flex flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
-          {/* 新建聊天按钮 */}
-          <button
-            onClick={handleNewConversation}
-            className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white border border-blue-100 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-700 rounded-xl py-3 px-4 font-medium flex items-center justify-center gap-2 transition-all shadow-sm group hover:shadow-md"
-          >
-            <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            新建对话
-          </button>
-
-          {/* 历史列表 */}
-          <div className="flex-1 overflow-y-auto -mx-2 px-2 space-y-6 custom-scrollbar">
-            {filteredGroups.length === 0 ? (
-              <div className="text-center text-slate-400 text-sm py-8">
-                {searchQuery ? '未找到匹配的对话' : '暂无对话记录'}
-              </div>
-            ) : (
-              filteredGroups.map((group) => (
-                <div key={group.title}>
-                  <div className="text-xs font-medium text-slate-400 mb-3 px-2">{group.title}</div>
-                  <div className="space-y-1">
-                    {group.items.map((item) => {
-                      const isActive = item.id === currentConversationId;
-                      return (
-                        <div
-                          key={item.id}
-                          className={cn(
-                            'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-3 group cursor-pointer',
-                            isActive
-                              ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm font-medium border border-slate-100 dark:border-slate-700'
-                              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
-                          )}
-                          onClick={() => switchConversation(item.id)}
-                        >
-                          <MessageSquare
-                            className={cn(
-                              'w-4 h-4 flex-shrink-0',
-                              isActive
-                                ? 'text-blue-500'
-                                : 'text-slate-400 group-hover:text-slate-500'
-                            )}
-                          />
-                          <span className="truncate flex-1">{item.title}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteConversation(item.id);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 transition-all"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* 搜索框 */}
-          <div className="relative mt-auto pt-4 border-t border-slate-200 dark:border-slate-800">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 mt-4" />
-            <input
-              type="text"
-              placeholder="搜索历史..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white dark:bg-slate-800 border-none rounded-xl py-2.5 pl-9 pr-4 text-sm text-slate-600 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/10 shadow-sm mt-4"
-            />
-          </div>
+        <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
+          {renderConversationList()}
         </aside>
 
         {/* 主聊天区域 */}
         <div className="flex-1 p-4 min-w-0 h-full">
           <div className="h-full flex flex-col bg-gradient-to-br from-[#eff6ff] to-white dark:from-slate-900 dark:to-slate-950 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
             {/* 头部 */}
-            <header className="flex-none px-6 py-4 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+            <header className="flex-none px-4 py-4 sm:px-6 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400">
                     <BarChart2 className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h1 className="text-base font-bold text-slate-900 dark:text-white">
+                  <div className="min-w-0 flex-1">
+                    <h1 className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
                       {currentTitle}
                     </h1>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="mt-0.5 hidden lg:flex lg:items-center lg:gap-2">
                       {/* 模型选择器 */}
                       <div className="relative" ref={modelSelectorRef}>
                         <button
@@ -637,7 +674,25 @@ export default function ChatPage() {
                 </div>
 
                 {/* 头部操作区 */}
-                <div className="flex items-center gap-1">{/* 可扩展更多操作 */}</div>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    aria-label="打开会话列表"
+                    onClick={() => setShowConversationDrawer(true)}
+                    className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <PanelLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="打开模型选择"
+                    onClick={() => setShowMobileModelDrawer(true)}
+                    className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    <span className="max-w-[88px] truncate">{currentModelLabel}</span>
+                  </button>
+                </div>
               </div>
             </header>
 
@@ -764,7 +819,7 @@ export default function ChatPage() {
                   </div>
                 </div>
               ) : (
-                <div className="max-w-4xl mx-auto flex flex-col pt-4">
+                <div className="max-w-4xl mx-auto flex flex-col pt-4 pb-[calc(env(safe-area-inset-bottom)+8.5rem)] lg:pb-6">
                   {displayMessages.map((msg) => (
                     <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
                   ))}
@@ -774,12 +829,44 @@ export default function ChatPage() {
             </div>
 
             {/* 输入区域 */}
-            <div className="flex-none z-10 bg-transparent pb-2">
+            <div className="sticky bottom-0 flex-none z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:static lg:bg-transparent lg:pb-2">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>
           </div>
         </div>
       </div>
+
+      <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
+        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              对话列表
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              在移动端快速切换历史会话
+            </DialogDescription>
+          </div>
+          <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
+            {renderConversationList(() => setShowConversationDrawer(false))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMobileModelDrawer} onOpenChange={setShowMobileModelDrawer}>
+        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              模型选择
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              选择当前对话使用的模型与提供商
+            </DialogDescription>
+          </div>
+          <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
+            {renderModelOptions(() => setShowMobileModelDrawer(false))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

@@ -1,29 +1,30 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
+import {
+  useDestinyWorkspaceStore,
+  type BaziErrorKind,
+} from '@/stores/destiny-workspace-store';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
-import { createDefaultBaziFormData, mapFormToBaziRequest } from './bazi-mappers';
+import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
 import type {
   BaziLockedSections,
   BaziSectionKey,
   BaziStreamEvent,
   DestinyReport,
-  DestinyStreamStatus,
   PartialDestinyReport,
 } from './types';
 import type { DestinyModuleKey } from './layout/left-nav';
 
-type Step = 'form' | 'result';
-type BaziErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
-
 type BaziWorkspaceProps = {
+  isActive: boolean;
   activeModule: DestinyModuleKey;
   onModuleChange?: (key: DestinyModuleKey) => void;
-  onRecalculate: () => void;
   onLoadingChange?: (loading: boolean) => void;
 };
 
@@ -63,21 +64,34 @@ function toDisplayError(kind: BaziErrorKind, fallback?: string): string {
 }
 
 export function BaziWorkspace({
+  isActive,
   activeModule,
   onModuleChange,
-  onRecalculate,
   onLoadingChange,
 }: BaziWorkspaceProps) {
-  const [step, setStep] = useState<Step>('form');
-  const [formData, setFormData] = useState<BaziFormData>(() => createDefaultBaziFormData());
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof BaziFormData, string>>>({});
-  const [blockingLoading, setBlockingLoading] = useState(false);
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorKind, setErrorKind] = useState<BaziErrorKind | null>(null);
-  const [report, setReport] = useState<DestinyReport | null>(null);
-  const [lockedSections, setLockedSections] = useState<BaziLockedSections>({});
-  const [streamStatus, setStreamStatus] = useState<DestinyStreamStatus | null>(null);
+  const {
+    step,
+    formData,
+    fieldErrors,
+    blockingLoading,
+    streaming,
+    error,
+    report,
+    lockedSections,
+    streamStatus,
+    setWorkspaceState,
+    resetWorkspace,
+    restoreWorkspace,
+    markResultReady,
+  } = useDestinyWorkspaceStore(
+    useShallow((state) => ({
+      ...state.bazi,
+      setWorkspaceState: state.setWorkspaceState,
+      resetWorkspace: state.resetWorkspace,
+      restoreWorkspace: state.restoreWorkspace,
+      markResultReady: state.markResultReady,
+    }))
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   const pageTitle = useMemo(
@@ -90,14 +104,22 @@ export function BaziWorkspace({
   }, [blockingLoading, onLoadingChange]);
 
   useEffect(() => {
+    if (isActive) {
+      restoreWorkspace('bazi');
+    }
+  }, [isActive, restoreWorkspace]);
+
+  useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
 
   const onChange = <K extends keyof BaziFormData>(key: K, next: BaziFormData[K]) => {
-    setFormData((prev) => ({ ...prev, [key]: next }));
-    setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+    setWorkspaceState('bazi', (current) => ({
+      formData: { ...current.formData, [key]: next },
+      fieldErrors: { ...current.fieldErrors, [key]: undefined },
+    }));
   };
 
   const setLockedSection = (
@@ -190,10 +212,12 @@ export function BaziWorkspace({
 
   const submit = async () => {
     const errors = validateForm(formData);
-    setFieldErrors(errors);
+    setWorkspaceState('bazi', { fieldErrors: errors });
     if (Object.keys(errors).length > 0) {
-      setErrorKind('validation');
-      setError('参数错误：请先完善表单信息后再开始分析');
+      setWorkspaceState('bazi', {
+        errorKind: 'validation',
+        error: '参数错误：请先完善表单信息后再开始分析',
+      });
       return;
     }
 
@@ -201,13 +225,18 @@ export function BaziWorkspace({
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setBlockingLoading(true);
-    setStreaming(true);
-    setError(null);
-    setErrorKind(null);
-    setLockedSections({});
-    setReport(null);
-    setStreamStatus('queued');
+    setWorkspaceState('bazi', {
+      step: 'form',
+      lastView: 'form',
+      hasResult: false,
+      blockingLoading: true,
+      streaming: true,
+      error: null,
+      errorKind: null,
+      lockedSections: {},
+      report: null,
+      streamStatus: 'queued',
+    });
 
     let currentErrorKind: BaziErrorKind = 'unknown';
 
@@ -221,7 +250,7 @@ export function BaziWorkspace({
 
       if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
-        setErrorKind(currentErrorKind);
+        setWorkspaceState('bazi', { errorKind: currentErrorKind });
         throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
       }
 
@@ -230,29 +259,33 @@ export function BaziWorkspace({
 
       await consumeStream(response, (event) => {
         if (event.type === 'status') {
-          setStreamStatus(event.status);
+          setWorkspaceState('bazi', { streamStatus: event.status });
           return;
         }
 
         if (event.type === 'section-final') {
           if (receivedSections[event.sectionKey]) return;
           setLockedSection(receivedSections, event.sectionKey, event.payload);
-          setLockedSections((prev) =>
-            prev[event.sectionKey] ? prev : { ...prev, [event.sectionKey]: event.payload }
-          );
-          setStep('result');
-          setBlockingLoading(false);
+          setWorkspaceState('bazi', (current) => ({
+            lockedSections: current.lockedSections[event.sectionKey]
+              ? current.lockedSections
+              : { ...current.lockedSections, [event.sectionKey]: event.payload },
+            blockingLoading: false,
+          }));
+          markResultReady('bazi');
           return;
         }
 
         if (event.type === 'complete') {
           sawComplete = true;
-          setReport(mergeLockedSectionsIntoReport(event.report, receivedSections));
-          setLockedSections((prev) => ({ ...receivedSections, ...prev }));
-          setStep('result');
-          setBlockingLoading(false);
-          setStreaming(false);
-          setStreamStatus(null);
+          setWorkspaceState('bazi', (current) => ({
+            report: mergeLockedSectionsIntoReport(event.report, receivedSections),
+            lockedSections: { ...receivedSections, ...current.lockedSections },
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+          }));
+          markResultReady('bazi');
           return;
         }
 
@@ -268,48 +301,40 @@ export function BaziWorkspace({
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
       }
-      setErrorKind(currentErrorKind);
       const rawMessage = nextError instanceof Error ? nextError.message : undefined;
-      setError(toDisplayError(currentErrorKind, rawMessage));
+      setWorkspaceState('bazi', {
+        errorKind: currentErrorKind,
+        error: toDisplayError(currentErrorKind, rawMessage),
+      });
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
-      setBlockingLoading(false);
-      setStreaming(false);
+      setWorkspaceState('bazi', {
+        blockingLoading: false,
+        streaming: false,
+      });
     }
   };
 
   const reset = () => {
     abortRef.current?.abort();
-    setFormData(createDefaultBaziFormData());
-    setFieldErrors({});
-    setError(null);
-    setErrorKind(null);
-    setReport(null);
-    setLockedSections({});
-    setBlockingLoading(false);
-    setStreaming(false);
-    setStreamStatus(null);
-    setStep('form');
+    resetWorkspace('bazi');
   };
 
   const handleRecalculate = () => {
-    setStep('form');
-    setReport(null);
-    setError(null);
-    setLockedSections({});
-    onRecalculate();
+    abortRef.current?.abort();
+    resetWorkspace('bazi');
   };
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full w-full xl:pl-[304px]">
+    <div className="relative h-auto min-h-full w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 lg:h-full lg:overflow-hidden">
+      <div className="h-auto min-h-full w-full xl:h-full xl:pl-[304px]">
         {step === 'form' ? (
           <div className="flex h-full flex-col p-6">
-            <header className="shrink-0 flex justify-between items-center gap-4">
+            <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
                   {pageTitle}
@@ -320,7 +345,7 @@ export function BaziWorkspace({
               </div>
             </header>
 
-            <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}

@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type {
@@ -11,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AICoPilotDrawer } from '../chat/ai-copilot-drawer';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 
 type TabKey = 'career' | 'love' | 'wealth' | 'health';
 
@@ -28,6 +30,7 @@ export function ReportRightRail({
   const [tab, setTab] = useState<TabKey>('career');
   const [year, setYear] = useState<number>(report.timeline?.[0]?.year ?? new Date().getFullYear());
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const module = useMemo(() => {
     const m = report.modules;
@@ -49,9 +52,9 @@ export function ReportRightRail({
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-        <div className="text-sm font-extrabold text-slate-900">深度报告</div>
+          <div className="text-sm font-extrabold text-slate-900">深度报告</div>
           <div className="text-xs text-slate-500 truncate">
             {streaming && !lockedSections?.timeline
               ? `正在生成首批报告区块${streamStatus ? ` · ${streamStatus}` : ''}`
@@ -153,7 +156,9 @@ export function ReportRightRail({
         <div className="flex items-center justify-between shrink-0">
           <div className="text-sm font-extrabold text-slate-900">流年运势走向</div>
           <div className="flex items-center gap-2">
-            <div className="text-xs font-bold text-slate-400">点击年份查看详细建议</div>
+            <div className="hidden sm:block text-xs font-bold text-slate-400">
+              点击年份查看详细建议
+            </div>
             <Button
               type="button"
               size="sm"
@@ -173,10 +178,8 @@ export function ReportRightRail({
         <div className="mt-4 space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1 min-h-0">
           {timeline.length > 0
             ? timeline.map((t, idx) => {
-            const active = t.year === year;
-            return (
-              <Popover key={t.year}>
-                <PopoverTrigger asChild>
+                const active = t.year === year;
+                const trigger = (
                   <button
                     type="button"
                     onClick={() => setYear(t.year)}
@@ -204,29 +207,53 @@ export function ReportRightRail({
                       </div>
                     </div>
                   </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className={cn(
-                    'w-[360px] rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
-                    'ring-1 ring-[#2F6BFF]/12',
-                    'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
-                    'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
-                    'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
-                  )}
-                  side="left"
-                >
-                  <div className="text-sm font-extrabold text-slate-900">
-                    {t.year} · 流年详细建议
-                  </div>
-                  <div className="mt-3 grid gap-3">
-                    <DetailBlock title="机会" items={t.detail.opportunities} />
-                    <DetailBlock title="风险" items={t.detail.risks} />
-                    <DetailBlock title="行动" items={t.detail.actions} />
-                  </div>
-                </PopoverContent>
-              </Popover>
-            );
-            })
+                );
+
+                if (isMobile) {
+                  return (
+                    <div key={t.year} className="space-y-3">
+                      {trigger}
+                      {active ? (
+                        <div className="rounded-2xl border border-[#2F6BFF]/20 bg-white/82 p-3 shadow-sm">
+                          <div className="text-sm font-extrabold text-slate-900">
+                            {t.year} · 流年详细建议
+                          </div>
+                          <div className="mt-3 grid gap-3">
+                            <DetailBlock title="机会" items={t.detail.opportunities} />
+                            <DetailBlock title="风险" items={t.detail.risks} />
+                            <DetailBlock title="行动" items={t.detail.actions} />
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }
+
+                return (
+                  <Popover key={t.year}>
+                    <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+                    <PopoverContent
+                      className={cn(
+                        'w-[360px] rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
+                        'ring-1 ring-[#2F6BFF]/12',
+                        'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
+                        'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+                        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
+                      )}
+                      side="left"
+                    >
+                      <div className="text-sm font-extrabold text-slate-900">
+                        {t.year} · 流年详细建议
+                      </div>
+                      <div className="mt-3 grid gap-3">
+                        <DetailBlock title="机会" items={t.detail.opportunities} />
+                        <DetailBlock title="风险" items={t.detail.risks} />
+                        <DetailBlock title="行动" items={t.detail.actions} />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                );
+              })
             : Array.from({ length: 3 }).map((_, idx) => (
                 <div
                   key={`timeline-skeleton-${idx}`}

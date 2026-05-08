@@ -1,6 +1,7 @@
 'use client';
 
 import './print.css';
+import React from 'react';
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { ContentPanel } from './_components/content-panel';
@@ -31,9 +32,9 @@ export default function ResumeTemplatePage() {
   return (
     <AppLayout>
       {/* 简洁纯色背景 */}
-      <div className="flex-1 relative overflow-hidden bg-[#F6F8FF] dark:bg-slate-900">
+      <div className="flex-1 relative overflow-hidden bg-[#F6F8FF] dark:bg-slate-900 pb-[env(safe-area-inset-bottom)]">
         {/* 保存状态指示器 - 固定在右上角 */}
-        <div className="no-print absolute top-4 right-4 z-50 lg:top-4 lg:right-4">
+        <div className="no-print absolute top-16 right-4 z-50 lg:top-4 lg:right-4">
           <SaveStatusIndicator
             status={saveStatus}
             lastSavedAt={lastSavedAt ? new Date(lastSavedAt) : undefined}

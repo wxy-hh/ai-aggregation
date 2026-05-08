@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 export function WaveformVisualizer({ level }: { level?: number }) {
   const [bars, setBars] = useState<number[]>([]);
+  const levelRef = useRef<number | undefined>(level);
+
+  useEffect(() => {
+    levelRef.current = level;
+  }, [level]);
 
   useEffect(() => {
     // 生成初始静态条柱
@@ -16,7 +21,10 @@ export function WaveformVisualizer({ level }: { level?: number }) {
       setBars((prev) =>
         prev.map(() => {
           const base = Math.max(0.2, Math.min(1.0, Math.random() * 0.8 + 0.1));
-          const l = typeof level === 'number' ? Math.max(0, Math.min(1, level)) : null;
+          const l =
+            typeof levelRef.current === 'number'
+              ? Math.max(0, Math.min(1, levelRef.current))
+              : null;
           if (l === null) return base;
           return Math.max(0.15, Math.min(1.0, base * (0.55 + l * 1.25)));
         })
@@ -24,7 +32,7 @@ export function WaveformVisualizer({ level }: { level?: number }) {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [level]);
+  }, []);
 
   return (
     <div className="w-full h-32 flex items-center justify-center gap-1">

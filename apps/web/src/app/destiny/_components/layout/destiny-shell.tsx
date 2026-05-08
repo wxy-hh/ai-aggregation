@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import React from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
 import type {
@@ -12,6 +13,9 @@ import type {
 import type { DestinyModuleKey } from './left-nav';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { PanelRightOpen } from 'lucide-react';
 
 export function DestinyShell({
   report,
@@ -42,6 +46,7 @@ export function DestinyShell({
     const { name, genderLabel, birthText, locationText } = displayReport.profile;
     return `${name} · ${genderLabel} · ${birthText} · ${locationText}`;
   }, [displayReport]);
+  const [isReportDrawerOpen, setIsReportDrawerOpen] = useState(false);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
@@ -74,11 +79,11 @@ export function DestinyShell({
         }}
       />
 
-      <div className="flex h-full w-full gap-6 p-6">
+      <div className="flex h-full w-full gap-4 lg:gap-6 p-4 lg:p-6">
         {/* 中间：排盘主视图 */}
         <section className="flex-1 min-w-0">
           <div className="flex flex-col gap-6 h-full">
-            <header className="flex items-start justify-between gap-4">
+            <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
@@ -94,6 +99,15 @@ export function DestinyShell({
               </div>
 
               <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsReportDrawerOpen(true)}
+                  className="lg:hidden rounded-full"
+                >
+                  <PanelRightOpen className="mr-2 h-4 w-4" />
+                  查看报告
+                </Button>
                 <button
                   type="button"
                   onClick={onRecalculate}
@@ -147,6 +161,35 @@ export function DestinyShell({
           </GlassCard>
         </aside>
       </div>
+
+      <Dialog open={isReportDrawerOpen} onOpenChange={setIsReportDrawerOpen}>
+        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              深度报告
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              在移动端查看测算报告、流年趋势和 AI 追问入口
+            </DialogDescription>
+          </div>
+          <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
+            <GlassCard className="w-full p-4">
+              {displayReport ? (
+                <ReportRightRail
+                  report={displayReport}
+                  streaming={streaming}
+                  lockedSections={lockedSections}
+                  streamStatus={streamStatus}
+                />
+              ) : (
+                <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-300">
+                  完成测算后可查看深度报告
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

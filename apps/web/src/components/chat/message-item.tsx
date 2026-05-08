@@ -329,7 +329,12 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
 
   return (
     <div className={cn('flex w-full mb-6', isUser ? 'justify-end' : 'justify-start')}>
-      <div className={cn('flex max-w-4xl w-full gap-4', isUser ? 'flex-row-reverse' : 'flex-row')}>
+      <div
+        className={cn(
+          'flex max-w-4xl w-full flex-col gap-2 md:gap-4',
+          isUser ? 'items-end md:items-start md:flex-row-reverse' : 'items-start md:flex-row'
+        )}
+      >
         {/* 头像 */}
         {isUser ? <UserAvatar /> : <AIAvatar />}
 
@@ -337,14 +342,14 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
         <div
           className={cn(
             'relative group flex flex-col',
-            isUser ? 'items-end max-w-[80%]' : 'flex-1 max-w-full'
+            isUser ? 'items-end w-full md:max-w-[80%]' : 'w-full flex-1 max-w-full'
           )}
         >
           {/* 用户名/角色 */}
           <div
             className={cn(
               'flex items-center gap-2 mb-1.5 px-1 text-xs text-slate-400 dark:text-slate-500',
-              isUser ? 'flex-row-reverse' : ''
+              isUser ? 'self-end md:flex-row-reverse' : 'self-start'
             )}
           >
             <span className={cn('font-medium', isThinking ? 'text-blue-500 animate-pulse' : '')}>
@@ -355,9 +360,9 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
           {/* Message Bubble */}
           <div
             className={cn(
-              'px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm w-fit max-w-full break-words',
+              'px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm max-w-full break-words',
               isUser
-                ? 'bg-blue-600 text-white rounded-tr-none'
+                ? 'w-full md:w-fit bg-blue-600 text-white rounded-tr-none'
                 : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none text-slate-800 dark:text-slate-200',
               // 思考状态下，气泡宽度设为更宽以容纳骨架屏
               isThinking ? 'w-full max-w-[500px]' : ''

@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
@@ -33,6 +34,7 @@ import {
 import { useHistoryStore } from '@/stores/history-store';
 import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 import { blobToDataUrl } from '@/lib/utils/image-url';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 export default function ImagePage() {
   // 历史记录状态
@@ -55,6 +57,7 @@ export default function ImagePage() {
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [showMobileSettings, setShowMobileSettings] = useState(false);
 
   // 处理图片生成
   const handleGenerate = useCallback(async () => {
@@ -189,6 +192,64 @@ export default function ImagePage() {
     setStyle(item.style);
   };
 
+  const renderParameterPanel = () => (
+    <>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+            <h3 className="font-bold text-slate-800 dark:text-white text-sm">提示词 (PROMPT)</h3>
+          </div>
+        </div>
+        <div className="relative group">
+          <Textarea
+            value={prompt}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
+            className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
+            placeholder="描述你想要生成的画面..."
+          />
+          <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => setPrompt('')}
+              className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+              title="清空提示词"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleRandomPrompt}
+              className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+              title="随机灵感"
+            >
+              <Dice5 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <NegativePrompt value={negativePrompt} onChange={setNegativePrompt} />
+      </div>
+
+      <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
+
+      <StyleSelector selected={style} onStyleChange={setStyle} />
+
+      <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
+
+      <SettingsPanel
+        ratio={ratio}
+        steps={steps}
+        cfg={cfg}
+        seed={seed}
+        batchSize={batchSize}
+        onRatioChange={setRatio}
+        onStepsChange={setSteps}
+        onCfgChange={setCfg}
+        onSeedChange={setSeed}
+        onBatchSizeChange={setBatchSize}
+      />
+    </>
+  );
+
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 overflow-hidden">
@@ -201,7 +262,7 @@ export default function ImagePage() {
           </div>
 
           {/* 头部 */}
-          <header className="flex-none w-80 px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
+          <header className="flex-none px-4 md:px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊
@@ -210,72 +271,24 @@ export default function ImagePage() {
                 </Badge>
               </h1>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label="打开参数面板"
+              onClick={() => setShowMobileSettings(true)}
+              className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+            >
+              <Pencil className="w-4 h-4 mr-2" />
+              参数设置
+            </Button>
           </header>
 
           {/* 内容区域：拆分视图 */}
           <div className="flex-1 flex overflow-hidden z-10">
             {/* 左侧面板：设置与提示词 */}
-            <div className="w-80 md:w-96 flex-none flex flex-col border-r border-white/20 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl overflow-y-auto custom-scrollbar">
+            <div className="hidden lg:flex w-80 md:w-96 flex-none flex-col border-r border-white/20 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl overflow-y-auto custom-scrollbar">
               <div className="p-6 space-y-8">
-                {/* 提示词输入 */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">
-                        提示词 (PROMPT)
-                      </h3>
-                    </div>
-                  </div>
-                  <div className="relative group">
-                    <Textarea
-                      value={prompt}
-                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                        setPrompt(e.target.value)
-                      }
-                      className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
-                      placeholder="描述你想要生成的画面..."
-                    />
-                    <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => setPrompt('')}
-                        className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
-                        title="清空提示词"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={handleRandomPrompt}
-                        className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
-                        title="随机灵感"
-                      >
-                        <Dice5 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 负面提示词 */}
-                  <NegativePrompt value={negativePrompt} onChange={setNegativePrompt} />
-                </div>
-
-                <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
-
-                <StyleSelector selected={style} onStyleChange={setStyle} />
-
-                <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
-
-                <SettingsPanel
-                  ratio={ratio}
-                  steps={steps}
-                  cfg={cfg}
-                  seed={seed}
-                  batchSize={batchSize}
-                  onRatioChange={setRatio}
-                  onStepsChange={setSteps}
-                  onCfgChange={setCfg}
-                  onSeedChange={setSeed}
-                  onBatchSizeChange={setBatchSize}
-                />
+                {renderParameterPanel()}
               </div>
 
               {/* 吸底生成按钮 */}
@@ -311,7 +324,7 @@ export default function ImagePage() {
             </div>
 
             {/* 中间：预览区域 */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center relative">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center relative">
               {/* 背景网格纹理 - 更淡 */}
               <div
                 className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05] pointer-events-none"
@@ -320,6 +333,54 @@ export default function ImagePage() {
                   backgroundSize: '32px 32px',
                 }}
               ></div>
+
+              <div className="w-full max-w-3xl lg:hidden mb-6 relative z-10">
+                <div className="space-y-4 rounded-3xl border border-white/40 bg-white/70 p-4 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-slate-900/70">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      <h2 className="text-sm font-bold text-slate-800 dark:text-white">提示词</h2>
+                    </div>
+                    <Textarea
+                      value={prompt}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                        setPrompt(e.target.value)
+                      }
+                      className="w-full min-h-[112px] px-4 py-3 bg-white/80 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 text-sm leading-relaxed text-slate-700 dark:text-slate-200"
+                      placeholder="描述你想要生成的画面..."
+                    />
+                  </div>
+
+                  {error ? (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={isGenerating || !prompt.trim()}
+                    className={cn(
+                      'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 transition-all text-md cursor-pointer border border-white/20',
+                      isGenerating || !prompt.trim()
+                        ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-90'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40'
+                    )}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin text-white/90" />
+                        生成中 {progress}%
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 fill-white/20" />
+                        立即生成
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
 
               <div
                 className={cn(
@@ -490,19 +551,35 @@ export default function ImagePage() {
         </div>
 
         {/* 右侧边栏：创作灵感舱 */}
-        <CreativeCockpit
-          onPromptAppend={(text) => {
-            setPrompt(text);
-          }}
-          onStyleApply={(params) => {
-            if (params.ratio) setRatio(params.ratio);
-            if (params.steps) setSteps(params.steps);
-            if (params.style) setStyle(params.style);
-            if (params.cfg) setCfg(params.cfg);
-            // Optionally show a toast here
-          }}
-        />
+        <div className="hidden xl:block">
+          <CreativeCockpit
+            onPromptAppend={(text) => {
+              setPrompt(text);
+            }}
+            onStyleApply={(params) => {
+              if (params.ratio) setRatio(params.ratio);
+              if (params.steps) setSteps(params.steps);
+              if (params.style) setStyle(params.style);
+              if (params.cfg) setCfg(params.cfg);
+              // Optionally show a toast here
+            }}
+          />
+        </div>
       </div>
+
+      <Dialog open={showMobileSettings} onOpenChange={setShowMobileSettings}>
+        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+              参数设置
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+              调整风格、排除内容和生成参数
+            </DialogDescription>
+          </div>
+          <div className="max-h-[78vh] overflow-y-auto p-4 space-y-6">{renderParameterPanel()}</div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

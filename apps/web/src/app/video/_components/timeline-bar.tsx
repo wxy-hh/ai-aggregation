@@ -114,14 +114,15 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
   const hasVideo = !!videoUrl;
 
   return (
-    <div className="w-full flex flex-col gap-4">
+    <div className="w-full overflow-x-auto pb-1">
+      <div className="flex min-w-[720px] flex-col gap-4 md:min-w-0">
       {/* 主控制条 */}
-      <div
-        className={cn(
-          'flex items-center gap-6 bg-white dark:bg-[#111218] px-6 h-16 rounded-[24px] border border-slate-200 dark:border-slate-800/50 shadow-[0_8px_24px_rgba(0,0,0,0.02)]',
-          !hasVideo && 'opacity-50'
-        )}
-      >
+        <div
+          className={cn(
+            'flex items-center gap-6 bg-white dark:bg-[#111218] px-6 h-16 rounded-[24px] border border-slate-200 dark:border-slate-800/50 shadow-[0_8px_24px_rgba(0,0,0,0.02)]',
+            !hasVideo && 'opacity-50'
+          )}
+        >
         {/* 播放控制按钮 */}
         <div className="flex items-center gap-2">
           <button
@@ -201,40 +202,41 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
             <ChevronUp className="w-4 h-4" />
           </motion.div>
         </button>
-      </div>
+        </div>
 
-      {/* 展开的时间轴轨道视图 */}
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="p-4 bg-white/50 dark:bg-[#111218]/50 rounded-[32px] border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md">
-              <div className="h-20 flex items-center gap-1 overflow-x-auto no-scrollbar">
-                {hasVideo ? (
-                  // 实际帧预览（占位）
-                  [...Array(24)].map((_, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        'flex-shrink-0 w-20 h-14 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:scale-105 transition-transform cursor-pointer',
-                        i === Math.floor((progress / 100) * 24) && 'ring-2 ring-blue-500'
-                      )}
-                    />
-                  ))
-                ) : (
-                  <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                    生成视频后将显示帧预览
-                  </div>
-                )}
+        {/* 展开的时间轴轨道视图 */}
+        <AnimatePresence>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="p-4 bg-white/50 dark:bg-[#111218]/50 rounded-[32px] border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md">
+                <div className="h-20 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                  {hasVideo ? (
+                    // 实际帧预览（占位）
+                    [...Array(24)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          'flex-shrink-0 w-20 h-14 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:scale-105 transition-transform cursor-pointer',
+                          i === Math.floor((progress / 100) * 24) && 'ring-2 ring-blue-500'
+                        )}
+                      />
+                    ))
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+                      生成视频后将显示帧预览
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

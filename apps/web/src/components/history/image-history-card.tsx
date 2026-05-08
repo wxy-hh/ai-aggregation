@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { cn } from '@/lib/utils';
+import React, { useState } from 'react';
 import { ImageHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
 
@@ -55,7 +54,7 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
       {/* 删除按钮 */}
       <button
         onClick={handleDelete}
-        className="absolute top-3 right-12 z-10 p-1.5 bg-black/40 backdrop-blur-md rounded-lg text-white/70 hover:text-red-400 hover:bg-red-500/30 transition-all opacity-0 group-hover:opacity-100"
+        className="absolute top-3 right-12 z-10 p-1.5 bg-black/40 backdrop-blur-md rounded-lg text-white/70 hover:text-red-400 hover:bg-red-500/30 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
         title="删除"
       >
         <Trash2 className="w-3.5 h-3.5" />
@@ -90,7 +89,7 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
         )}
 
         {/* 悬浮操作栏 */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 md:p-4">
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownload}
@@ -153,7 +152,7 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
         </div>
 
         {/* 日期标签 */}
-        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute top-3 right-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
           <span className="text-[10px] text-white/80 bg-black/40 backdrop-blur-md px-1.5 py-0.5 rounded">
             {item.date}
           </span>
