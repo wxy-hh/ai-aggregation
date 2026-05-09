@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 
 type Particle = {
   x: number;
@@ -40,6 +41,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
   const rafRef = useRef<number | null>(null);
   const startedAtRef = useRef<number>(0);
   const reducedMotion = usePrefersReducedMotion();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!open) return;
@@ -186,10 +188,22 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
   return (
     <div
       className={cn(
-        'absolute inset-0 z-50 flex items-center justify-center',
+        'z-50 flex items-center justify-center',
         'bg-white/14 backdrop-blur-[12px]',
-        'animate-in fade-in duration-200'
+        'animate-in fade-in duration-200',
+        // 桌面端：相对于工作区定位
+        'lg:absolute lg:inset-0',
+        // 移动端：相对于视口固定定位，铺满可视区域
+        isMobile && 'fixed inset-x-0'
       )}
+      style={
+        isMobile
+          ? {
+              top: 'calc(env(safe-area-inset-top) + 4.5rem)',
+              bottom: 'calc(env(safe-area-inset-bottom) + 5.5rem)',
+            }
+          : undefined
+      }
       role="dialog"
       aria-label="星空解码中"
     >

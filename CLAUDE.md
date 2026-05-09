@@ -58,26 +58,41 @@ pnpm dev
 ## 常用命令
 
 ```bash
-# 启动所有服务（开发模式）
-pnpm dev
+pnpm dev           # 智能启动（自动加载共享环境、清理旧进程、确保 Redis 可用）
+pnpm dev:docker    # 使用 Docker 基础设施启动 Web + Worker
+pnpm dev:web       # 仅启动 Web（Next.js，端口 3030）
+pnpm dev:worker    # 仅启动 BullMQ Worker
+pnpm dev:rtasr     # 仅启动实时语音网关（infra/worker-rtasr）
 
-# 构建所有包
-pnpm build
+pnpm infra:up      # 启动 Redis / Postgres / MinIO（Docker）
+pnpm infra:down    # 停止基础设施
+pnpm infra:logs    # 查看基础设施日志
 
-# 代码检查
-pnpm lint
+pnpm qimen:check   # 奇门链路本地自检
 
-# 类型检查
-pnpm typecheck
+pnpm build         # 构建所有包
+pnpm lint          # 代码检查（turbo lint）
+pnpm format        # 代码格式化（turbo format）
+pnpm typecheck     # 类型检查（turbo typecheck）
 
-# 数据库操作
+pnpm test          # 运行测试（turbo test）
+pnpm test:e2e      # 运行 E2E 测试
+
 pnpm db:generate   # 生成 Prisma Client
 pnpm db:migrate    # 执行数据库迁移
 pnpm db:seed       # 填充初始数据
 
-# 清理
-pnpm clean
+pnpm clean         # 清理构建产物 + node_modules
 ```
+
+### `pnpm dev` 启动流程
+
+`pnpm dev` 实际上执行的是 `tooling/scripts/dev.mjs`，会自动完成以下步骤：
+
+1. 从 `apps/web/.env.local` 加载共享环境变量
+2. 检测 Redis 是否可用（本地 redis-server → Homebrew Redis → Docker Redis）
+3. 清理旧的 turbo / worker / wrangler 进程，避免多套进程抢任务
+4. 启动 `turbo dev` 运行 `@repo/web`、`@repo/worker`、`@repo/worker-rtasr`
 
 ---
 
@@ -98,7 +113,8 @@ ai-aggregation/
 │   ├── config-typescript/    # 共享 TypeScript 配置
 │   └── config-eslint/        # 共享 ESLint 配置
 ├── infra/
-│   └── docker/               # 本地开发 docker-compose（PostgreSQL + Redis + MinIO）
+│   ├── docker/               # 本地开发 docker-compose（PostgreSQL + Redis + MinIO）
+│   └── worker-rtasr/         # 实时语音转写网关（Cloudflare Workers 部署）
 ├── tooling/
 │   └── scripts/              # 初始化、清理脚本
 └── docs/                     # 技术文档
@@ -169,13 +185,20 @@ lib/
 
 ## 技术栈
 
-**前端**
+**前端（关键库）**
 
 - Next.js 15 + React 19 + TypeScript 5.6+
 - Tailwind CSS + shadcn/ui（基于 Radix UI）
 - Zustand（状态管理）
-- React Query（数据获取，部分场景）
+- React Query（服务端数据获取与缓存）
 - React Hook Form + Zod（表单验证）
+- Vercel AI SDK（`ai` 包，流式对话）
+- react-markdown + remark-gfm + rehype-highlight（Markdown 渲染与代码高亮）
+- ECharts（图表可视化）
+- Dexie.js（IndexedDB 客户端存储）
+- Framer Motion（动画）
+- react-window（长列表虚拟化）
+- Sonner（Toast 通知）
 
 **后端**
 
@@ -183,6 +206,7 @@ lib/
 - BullMQ 5.x + Redis 7.x（异步任务队列）
 - PostgreSQL 16 + Prisma 6（数据库）
 - 阿里云 OSS / MinIO（对象存储）
+- pptxgenjs（PPT 生成，在 Worker 中使用）
 
 **AI 服务**
 
@@ -234,9 +258,16 @@ SILICONFLOW_API_KEY=       # 硅基流动（Kolors 图像生成）
 
 ## 开发规范
 
+### 语言使用规范
+
+- **全局提问和回答必须使用中文**
+- 所有用户界面文本、提示信息、错误消息等必须使用中文
+- 代码注释和文档必须使用中文
+- 仅在必要的技术术语或 API 调用时使用英文
+
 ### 代码注释
 
-- **所有注释必须使用中文**（用户规则强制要求）
+- **所有注释必须使用中文**
 - 修改文件时，需同步翻译文件中已有的英文注释
 
 ### 组件结构
@@ -267,6 +298,20 @@ SILICONFLOW_API_KEY=       # 硅基流动（Kolors 图像生成）
 - 重量级组件使用 `next/dynamic` 动态导入
 - 使用 `React.cache()` 做请求级别的去重缓存
 
+### 移动端优先设计
+
+- **默认按移动端优先设计**：新增页面和组件时，先完成手机端布局，再逐步增强到平板和桌面端
+- **优先保证核心链路单手可操作**：对话发送、模型切换、图片生成、语音录制、历史查看等高频操作放在拇指易触达区域
+- **底部区域优先级高于侧边栏**：移动端使用底部导航、底部抽屉、底部操作栏，不直接复用桌面端侧边栏交互
+- **控制首屏信息密度**：移动端首屏只保留当前任务最关键的输入、结果和操作，弱化说明性内容
+- **表单和配置面板分层展示**：图像/视频参数、语音设置、模型配置等复杂选项放入抽屉、弹层或分步区域
+- **安全区适配必须完整**：底部输入框、录音按钮、悬浮操作按钮、弹层操作区要兼容 iPhone 安全区
+- **点击热区必须足够大**：按钮、分段控制器、列表操作项的可点击区域不小于 `44x44`
+- **减少悬停依赖**：移动端不能依赖 hover 提示暴露关键信息
+- **空状态和异常状态要可操作**：无记录、生成失败、网络错误、权限拒绝等场景须直接提供下一步操作
+- **响应式实现方式**：使用 Tailwind 断点、`min-h`/`max-h`、`overflow`、`sticky`、`safe-area` 等解决布局问题，避免为移动端单独复制页面
+- **改动前检查移动端影响**：涉及 AppLayout、底部输入区、消息列表、历史列表、媒体预览、弹层抽屉的修改时，须同时评估窄屏表现
+
 ---
 
 ## 基础设施（本地开发）
@@ -293,8 +338,13 @@ docker-compose -f infra/docker/docker-compose.yml up -d
 
 ### Worker（`apps/worker`）
 
-- 处理耗时任务：视频生成、转写等异步任务
+- 处理耗时异步任务：视频生成（CogVideoX）、PPT 生成、语音转写（STT）、图像生成
 - 与 Web 通过 BullMQ + Redis 解耦
+
+### Worker-RTASR（`infra/worker-rtasr`）
+
+- 实时语音转写网关，基于 Cloudflare Workers 部署
+- 用于实时语音识别场景的低延迟推送
 
 ---
 
@@ -322,3 +372,25 @@ docker-compose -f infra/docker/docker-compose.yml up -d
 - `apps/web/src/app/api/**`：对外 API 入口（BFF）
 - `packages/providers/**`：第三方 AI 服务商的适配层
 - `packages/shared/**`：跨 app 共享类型/Schema/常量
+
+---
+
+## 文件创建注意事项
+
+在创建大文件（>500 行）或包含中文的特殊文件时，优先使用 `cat` heredoc 方式而非直接写入：
+
+```bash
+# 创建文件
+cat > path/to/file.md << 'EOF'
+文件内容...
+EOF
+
+# 追加内容
+cat >> path/to/file.md << 'EOF'
+更多内容...
+EOF
+```
+
+- 文件名使用英文，避免中文字符
+- 超过 500 行的文件分批写入
+- 写入后使用 `wc -l` 或 `head` 验证内容完整性
