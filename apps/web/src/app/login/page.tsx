@@ -1,6 +1,6 @@
 import React from 'react';
 import { StaticLoginPage } from '@/components/login/static-login-page';
 
-export default function HomePage() {
+export default function LoginPage() {
   return <StaticLoginPage />;
 }
