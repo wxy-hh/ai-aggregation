@@ -481,10 +481,10 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   );
 
   return (
-    <div className="relative h-auto min-h-full w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 lg:h-full lg:overflow-hidden">
-      <div className="h-full w-full xl:pl-[304px]">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+      <div className="h-full min-h-0 w-full xl:pl-[304px]">
         {step === 'form' ? (
-          <div className="flex h-full flex-col p-6">
+          <div className="flex h-full min-h-0 flex-col p-6">
             <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">

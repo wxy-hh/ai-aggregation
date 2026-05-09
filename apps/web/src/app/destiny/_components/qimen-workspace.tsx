@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import {
@@ -83,14 +83,12 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     setWorkspaceState,
     resetWorkspace,
     restoreWorkspace,
-    markResultReady,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.qimen,
       setWorkspaceState: state.setWorkspaceState,
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
-      markResultReady: state.markResultReady,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
@@ -131,17 +129,21 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     sectionTimeoutsRef.current = [];
   };
 
-  const revealResultIfReady = (nextStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus>) => {
+  const getResultReadyPatch = (nextStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus>) => {
     const allSettled = Object.values(nextStatuses).every(
       (status) => status === 'completed' || status === 'failed'
     );
 
-    if (!allSettled) return;
+    if (!allSettled) {
+      return {};
+    }
 
-    setWorkspaceState('qimen', {
+    return {
       blockingLoading: false,
-    });
-    markResultReady('qimen');
+      hasResult: true,
+      step: 'result' as const,
+      lastView: 'result' as const,
+    };
   };
 
   const readErrorMessage = async (response: Response) => {
@@ -292,13 +294,13 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       }
 
       if (json.success && json.data) {
-        setWorkspaceState('qimen', (current) => ({
-          sections: sectionKey in current.sections ? current.sections : { ...current.sections, [sectionKey]: json.data },
-        }));
         setWorkspaceState('qimen', (current) => {
           const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'completed' as const };
-          revealResultIfReady(nextStatuses);
-          return { sectionStatuses: nextStatuses };
+          return {
+            sections: { ...current.sections, [sectionKey]: json.data },
+            sectionStatuses: nextStatuses,
+            ...getResultReadyPatch(nextStatuses),
+          };
         });
         return;
       }
@@ -306,23 +308,23 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       if (json.status === 'failed') {
         setWorkspaceState('qimen', (current) => {
           const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
-          revealResultIfReady(nextStatuses);
-          return { sectionStatuses: nextStatuses };
+          return {
+            sectionStatuses: nextStatuses,
+            sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块生成失败' },
+            ...getResultReadyPatch(nextStatuses),
+          };
         });
-        setWorkspaceState('qimen', (current) => ({
-          sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块生成失败' },
-        }));
         return;
       }
 
       setWorkspaceState('qimen', (current) => {
         const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
-        revealResultIfReady(nextStatuses);
-        return { sectionStatuses: nextStatuses };
+        return {
+          sectionStatuses: nextStatuses,
+          sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块请求失败' },
+          ...getResultReadyPatch(nextStatuses),
+        };
       });
-      setWorkspaceState('qimen', (current) => ({
-        sectionErrors: { ...current.sectionErrors, [sectionKey]: json.error ?? '区块请求失败' },
-      }));
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
         return;
@@ -332,15 +334,15 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
 
       setWorkspaceState('qimen', (current) => {
         const nextStatuses = { ...current.sectionStatuses, [sectionKey]: 'failed' as const };
-        revealResultIfReady(nextStatuses);
-        return { sectionStatuses: nextStatuses };
+        return {
+          sectionStatuses: nextStatuses,
+          sectionErrors: {
+            ...current.sectionErrors,
+            [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
+          },
+          ...getResultReadyPatch(nextStatuses),
+        };
       });
-      setWorkspaceState('qimen', (current) => ({
-        sectionErrors: {
-          ...current.sectionErrors,
-          [sectionKey]: nextError instanceof Error ? nextError.message : '区块请求失败',
-        },
-      }));
     }
   };
 
@@ -430,9 +432,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   };
 
   return (
-    <div className="relative h-auto min-h-full w-full overflow-x-hidden overflow-y-auto bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 lg:h-full lg:overflow-hidden">
-      <div className="h-full w-full xl:pl-[304px]">
-        <div className="flex h-full flex-col p-6">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+      <div className="h-full min-h-0 w-full xl:pl-[304px]">
+        <div className="flex h-full min-h-0 flex-col p-6">
           <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">

@@ -82,7 +82,7 @@ export function DestinyPageClient() {
     ];
 
     return (
-      <div className="relative flex min-h-full flex-1 flex-col overflow-y-auto overflow-x-hidden bg-[#F6F8FF] dark:bg-slate-950">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
         <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/88 px-4 py-2 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/88">
           <div className="grid grid-cols-3 gap-2">
             {mobileTabs.map((tab) => {
@@ -106,7 +106,21 @@ export function DestinyPageClient() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1">{renderWorkspace(activeModule)}</div>
+        <div className="relative min-h-0 flex-1 overflow-hidden">
+          {renderWorkspace(activeModule)}
+
+          {activeModule === 'qimen' && qimenLoading ? (
+            <div className="absolute inset-0 z-10 overflow-hidden bg-white/70 backdrop-blur-[10px] dark:bg-slate-950/70">
+              <div className="relative h-full w-full">
+                <QimenLoadingAnimation
+                  variant="inline"
+                  intensity="low"
+                  subMessage="按九宫、八门与九星节奏推进推演"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }

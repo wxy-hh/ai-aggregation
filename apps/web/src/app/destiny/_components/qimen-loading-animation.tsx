@@ -359,7 +359,7 @@ export function QimenLoadingAnimation({
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const cx = width / 2;
-      const cy = height / 2 - (variant === 'immersive' ? 26 : 8);
+      const cy = height / 2 - (variant === 'immersive' ? 26 : 44);
       const base = Math.min(width, height) * (variant === 'immersive' ? 0.17 : 0.15);
       const scale = getIntensityScale(intensity);
 
@@ -465,10 +465,19 @@ export function QimenLoadingAnimation({
       <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/14 via-white/5 to-transparent" />
       <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-white/5 via-white/2 to-transparent" />
 
-      <div ref={hostRef} className="relative flex h-full min-h-[420px] w-full items-center justify-center px-3 py-8 md:px-5">
+      <div
+        ref={hostRef}
+        className={`relative flex h-full w-full items-center justify-center px-3 md:px-5 ${
+          variant === 'inline' ? 'min-h-[360px] py-6 md:min-h-[400px] md:py-8' : 'min-h-[420px] py-8'
+        }`}
+      >
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
 
-        <div className="pointer-events-none absolute bottom-8 z-10 flex flex-col items-center gap-2 text-center md:bottom-10">
+        <div
+          className={`pointer-events-none absolute z-10 flex flex-col items-center gap-2 text-center ${
+            variant === 'inline' ? 'bottom-5 md:bottom-8' : 'bottom-8 md:bottom-10'
+          }`}
+        >
           <p className="text-[16px] font-medium text-[#8fb1ea] md:text-[17px]">{message}</p>
           <p className="max-w-[560px] text-[13px] text-[#afbfdf] md:text-[14px]">{subMessage}</p>
 
