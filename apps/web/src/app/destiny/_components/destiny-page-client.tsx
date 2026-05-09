@@ -110,8 +110,14 @@ export function DestinyPageClient() {
           {renderWorkspace(activeModule)}
 
           {activeModule === 'qimen' && qimenLoading ? (
-            <div className="absolute inset-0 z-10 overflow-hidden bg-white/70 backdrop-blur-[10px] dark:bg-slate-950/70">
-              <div className="relative h-full w-full">
+            <div
+              className="fixed inset-x-0 z-10 overflow-hidden bg-white/70 backdrop-blur-[10px] dark:bg-slate-950/70"
+              style={{
+                top: 'calc(env(safe-area-inset-top) + 4.5rem)',
+                bottom: 'calc(env(safe-area-inset-bottom) + 5.5rem)',
+              }}
+            >
+              <div className="h-full w-full">
                 <QimenLoadingAnimation
                   variant="inline"
                   intensity="low"
