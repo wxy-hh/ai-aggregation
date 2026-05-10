@@ -9,6 +9,7 @@ import {
 import { getRateLimiter, getQuotaManager } from '@repo/shared';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 function createErrorId() {
   return (
@@ -74,16 +75,6 @@ function createSseStreamFromTextStream(source: ReadableStream<Uint8Array>): Read
   });
 }
 
-// 获取用户 ID (临时实现，实际应从 session 获取)
-async function getUserId(req: Request): Promise<string> {
-  // TODO: 从 session 或 JWT token 中获取真实用户 ID
-  // 临时使用 IP 地址作为标识
-  const forwardedFor = req.headers.get('x-forwarded-for');
-  const realIp = req.headers.get('x-real-ip');
-  const remoteAddr = req.headers.get('x-remote-addr') || 'unknown';
-
-  return forwardedFor || realIp || remoteAddr;
-}
 
 // 解析豆包 API 错误信息
 function parseDoubaoError(errorText: string): string {
@@ -171,7 +162,7 @@ export async function POST(req: Request) {
 
   try {
     // 1. 限流检查
-    const userId = await getUserId(req);
+    const userId = await requireAuth(req);
     const rateLimiter = getRateLimiter();
     const quotaManager = getQuotaManager();
 
@@ -567,8 +558,29 @@ export async function POST(req: Request) {
       timestamp: new Date().toISOString(),
     });
 
-    // 根据错误类型返回不同的状态码
+    // 认证错误
     if (error instanceof Error) {
+      if (
+        error.message === '缺少认证令牌' ||
+        error.message.includes('jwt expired') ||
+        error.message.includes('invalid signature') ||
+        error.message.includes('jwt malformed')
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: '请先登录',
+            errorId,
+          }),
+          {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Error-ID': errorId,
+            },
+          }
+        );
+      }
+
       // 配置错误
       if (error.message.includes('Missing') || error.message.includes('未设置')) {
         return new Response(

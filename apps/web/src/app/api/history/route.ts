@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HistoryType, HistoryItem } from '@/types/history';
-
-// Mock user ID for now (in production, get from auth session)
-const MOCK_USER_ID = 'user-1';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 /**
  * GET /api/history
@@ -10,6 +8,7 @@ const MOCK_USER_ID = 'user-1';
  */
 export async function GET(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as HistoryType | 'all' | null;
     const search = searchParams.get('search');
@@ -37,6 +36,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const body = await request.json();
     const { type, data } = body;
 
@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const ids = searchParams.get('ids')?.split(',') || [];
 

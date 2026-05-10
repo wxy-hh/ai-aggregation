@@ -261,7 +261,7 @@ export function HomeContent() {
         </div>
 
         {/* 常用工具 */}
-        <div className="mb-8">
+        <div className="mb-4">
           <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-wider">
             常用工具
           </h3>
@@ -290,7 +290,7 @@ export function HomeContent() {
         </div>
 
         {/* 推荐指令 */}
-        <div className="mb-8">
+        <div>
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               推荐指令
@@ -324,7 +324,7 @@ export function HomeContent() {
 
         {/* 最近文件 */}
         <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 mt-1">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               最近文件
             </h3>
@@ -416,7 +416,10 @@ export function HomeContent() {
             </div>
 
             {/* 主要功能卡片 */}
-            <div data-testid="home-feature-grid" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20">
+            <div
+              data-testid="home-feature-grid"
+              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20"
+            >
               <FeatureCard
                 href="/chat?new=true"
                 title="智能对话"
@@ -548,7 +551,7 @@ interface ToolItemProps {
 function ToolItem({ icon: Icon, label, badge, badgeColor, color, onClick }: ToolItemProps) {
   return (
     <div
-      className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group"
+      className="flex items-center justify-between p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group"
       onClick={onClick}
     >
       <div className="flex items-center gap-3">

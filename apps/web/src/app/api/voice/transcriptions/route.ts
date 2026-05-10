@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@repo/db';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,8 +10,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status');
     const search = searchParams.get('search');
 
-    // TODO: 从 session 获取真实的 userId
-    const userId = 'temp-user-id';
+    const userId = await requireAuth(req);
 
     // 构建查询条件
     const where: any = { userId };

@@ -4,6 +4,12 @@ import type {
   VoiceTranscription,
   FetchTranscriptionsParams,
 } from '@/types/voice';
+import { getAccessToken } from '@/lib/api/client';
+
+function authHeaders(): HeadersInit {
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export async function uploadVoiceFile(file: File, model?: string): Promise<TranscribeResponse> {
   const formData = new FormData();
@@ -14,6 +20,7 @@ export async function uploadVoiceFile(file: File, model?: string): Promise<Trans
 
   const response = await fetch('/api/voice/transcribe', {
     method: 'POST',
+    headers: authHeaders(),
     body: formData,
   });
 
@@ -36,7 +43,7 @@ export async function fetchTranscriptions(
   if (params?.status) searchParams.set('status', params.status);
   if (params?.search) searchParams.set('search', params.search);
 
-  const response = await fetch(`/api/voice/transcriptions?${searchParams}`);
+  const response = await fetch(`/api/voice/transcriptions?${searchParams}`, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error('获取记录失败');
@@ -46,7 +53,7 @@ export async function fetchTranscriptions(
 }
 
 export async function fetchTranscription(id: string): Promise<VoiceTranscription> {
-  const response = await fetch(`/api/voice/transcriptions/${id}`);
+  const response = await fetch(`/api/voice/transcriptions/${id}`, { headers: authHeaders() });
 
   if (!response.ok) {
     throw new Error('获取记录失败');
@@ -58,6 +65,7 @@ export async function fetchTranscription(id: string): Promise<VoiceTranscription
 export async function deleteTranscription(id: string): Promise<void> {
   const response = await fetch(`/api/voice/transcriptions/${id}`, {
     method: 'DELETE',
+    headers: authHeaders(),
   });
 
   if (!response.ok) {

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Settings, X, Check, Clock, FileText, Home } from 'lucide-react';
+import { Sparkles, Plus, Settings, X, Check, Clock, FileText, Home, LogOut } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
@@ -13,6 +13,11 @@ import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
 
 export function GlobalSidebar() {
   const pathname = usePathname();
+
+  const handleLogout = () => {
+    // 全页面导航到登出接口，由服务端清除 Cookie 后重定向到 /login
+    window.location.href = '/api/auth/logout';
+  };
 
   // Zustand 状态管理
   const pinnedApps = usePinnedApps();
@@ -119,9 +124,9 @@ export function GlobalSidebar() {
         <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible no-scrollbar relative z-10 pt-2">
           {/* 首页按钮 - 常驻 */}
           <div className="w-full">
-            <Link href="/" className="flex flex-col items-center gap-1 group w-full relative">
+            <Link href="/home" className="flex flex-col items-center gap-1 group w-full relative">
               {/* 激活状态指示器 */}
-              {pathname === '/' && (
+              {pathname === '/home' && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 w-1 h-10 bg-[#6B83FA] rounded-r-full" />
               )}
 
@@ -231,6 +236,14 @@ export function GlobalSidebar() {
 
           {/* 主题切换 */}
           <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300" />
+
+          {/* 退出登录 */}
+          <button
+            onClick={handleLogout}
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-200 dark:hover:border-red-800/30 hover:text-red-500 dark:hover:text-red-400 hover:shadow-lg hover:shadow-red-200/40 dark:hover:shadow-red-900/30 hover:scale-105 active:scale-95 transition-all duration-300"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
 
           {/* 设置 */}
           {/* <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300">

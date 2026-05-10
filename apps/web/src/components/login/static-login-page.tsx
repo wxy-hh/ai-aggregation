@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Mail, Sparkles } from 'lucide-react';
 import qqIcon from '@/assets/image/QQ.svg';
@@ -10,18 +11,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
+import { toast } from 'sonner';
 
 /**
- * 静态登录页，仅提供展示与轻交互，不承载真实登录逻辑。
+ * 登录页，支持账号密码登录和微信/QQ OAuth 登录。
  */
 export function StaticLoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const login = useAuthStore((s) => s.login);
   const prefersReducedMotion = Boolean(useReducedMotion());
   const heroRef = useRef<HTMLDivElement>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-  const [email, setEmail] = useState('demo@ai-aggregation.cn');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [activeField, setActiveField] = useState<'email' | 'password' | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [oauthConfig, setOauthConfig] = useState<{ wechat: boolean; qq: boolean } | null>(null);
+  const [oauthRedirecting, setOauthRedirecting] = useState<string | null>(null);
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [hasManualLeftPanelPreference, setHasManualLeftPanelPreference] = useState(false);
@@ -95,6 +104,29 @@ export function StaticLoginPage() {
       window.removeEventListener('touchmove', handleTouchMove);
     };
   }, [prefersReducedMotion]);
+
+  // 检测 OAuth 配置
+  useEffect(() => {
+    fetch('/api/auth/oauth/config')
+      .then((res) => res.json())
+      .then((data) => setOauthConfig(data.data ?? { wechat: false, qq: false }))
+      .catch(() => setOauthConfig({ wechat: false, qq: false }));
+  }, []);
+
+  // 处理 OAuth 回调错误
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      setOauthRedirecting(null);
+      if (error === 'oauth_state_mismatch') {
+        toast.error('OAuth 验证失败，请重试');
+      } else if (error === 'oauth_failed') {
+        toast.error('第三方登录失败，请重试');
+      } else if (error === 'no_code') {
+        toast.error('授权已取消');
+      }
+    }
+  }, [searchParams]);
 
   const isTypingEmail = activeField === 'email';
   const isTypingPassword = activeField === 'password';
@@ -381,8 +413,24 @@ export function StaticLoginPage() {
               <div className="relative rounded-[calc(2rem-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.82)_100%)] px-6 py-7 backdrop-blur-[24px] sm:px-10 sm:py-8 lg:py-6">
                 <form
                   className="space-y-5"
-                  onSubmit={(event) => {
+                  onSubmit={async (event) => {
                     event.preventDefault();
+
+                    if (!email.trim() || !password) {
+                      toast.error('请输入邮箱和密码');
+                      return;
+                    }
+
+                    setSubmitting(true);
+                    try {
+                      await login(email.trim(), password);
+                      toast.success('登录成功');
+                      router.push('/home');
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : '登录失败，请重试');
+                    } finally {
+                      setSubmitting(false);
+                    }
                   }}
                 >
                   <div className="space-y-2.5">
@@ -448,7 +496,7 @@ export function StaticLoginPage() {
                       <span className="sr-only">继续使用</span>
                     </label>
                     <Link
-                      href="#"
+                      href="/forgot-password"
                       className="text-base font-medium text-[#3c6df3] hover:text-[#2455db]"
                     >
                       忘记密码？
@@ -459,46 +507,69 @@ export function StaticLoginPage() {
                     <Button
                       type="submit"
                       variant="default"
+                      disabled={submitting}
                       className="h-14 w-full rounded-2xl bg-[#3b6df1] text-base font-semibold text-white shadow-[0_18px_36px_rgba(59,109,241,0.30)] transition-all hover:bg-[#2f62eb] hover:shadow-[0_22px_42px_rgba(59,109,241,0.34)]"
                     >
-                      立即进入
-                      <span aria-hidden="true" className="ml-2 text-lg">
-                        →
-                      </span>
+                      {submitting ? '登录中...' : '立即进入'}
+                      {!submitting && (
+                        <span aria-hidden="true" className="ml-2 text-lg">
+                          →
+                        </span>
+                      )}
                     </Button>
 
                     <div className="space-y-3">
-                      <div className="flex items-center gap-4 text-sm text-[#a1adbf]">
-                        <span className="h-px flex-1 bg-[#d9e3f2]" />
-                        <span>其他登录方式</span>
-                        <span className="h-px flex-1 bg-[#d9e3f2]" />
-                      </div>
+                        <div className="flex items-center gap-4 text-sm text-[#a1adbf]">
+                          <span className="h-px flex-1 bg-[#d9e3f2]" />
+                          <span>其他登录方式</span>
+                          <span className="h-px flex-1 bg-[#d9e3f2]" />
+                        </div>
 
                       <div className="flex items-center justify-center gap-5">
                         <button
-                          type="button"
-                          aria-label="使用微信登录"
-                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white"
-                        >
-                          <img
-                            src={typeof weixinIcon === 'string' ? weixinIcon : weixinIcon.src}
-                            alt=""
-                            aria-hidden="true"
-                            className="h-6 w-6 object-contain"
-                          />
-                        </button>
+                            type="button"
+                            aria-label="使用微信登录"
+                            disabled={oauthRedirecting !== null}
+                            className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                            onClick={() => {
+                              if (!oauthConfig?.wechat) {
+                                toast.error('微信登录未配置，请联系管理员');
+                                return;
+                              }
+                              setOauthRedirecting('wechat');
+                              toast.info('正在跳转到微信登录...');
+                              window.location.href = '/api/auth/oauth/wechat';
+                            }}
+                          >
+                            <img
+                              src={typeof weixinIcon === 'string' ? weixinIcon : weixinIcon.src}
+                              alt=""
+                              aria-hidden="true"
+                              className="h-6 w-6 object-contain"
+                            />
+                          </button>
                         <button
-                          type="button"
-                          aria-label="使用 QQ 登录"
-                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white"
-                        >
-                          <img
-                            src={typeof qqIcon === 'string' ? qqIcon : qqIcon.src}
-                            alt=""
-                            aria-hidden="true"
-                            className="h-6 w-6 object-contain"
-                          />
-                        </button>
+                            type="button"
+                            aria-label="使用 QQ 登录"
+                            disabled={oauthRedirecting !== null}
+                            className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                            onClick={() => {
+                              if (!oauthConfig?.qq) {
+                                toast.error('QQ 登录未配置，请联系管理员');
+                                return;
+                              }
+                              setOauthRedirecting('qq');
+                              toast.info('正在跳转到 QQ 登录...');
+                              window.location.href = '/api/auth/oauth/qq';
+                            }}
+                          >
+                            <img
+                              src={typeof qqIcon === 'string' ? qqIcon : qqIcon.src}
+                              alt=""
+                              aria-hidden="true"
+                              className="h-6 w-6 object-contain"
+                            />
+                          </button>
                       </div>
                     </div>
                   </div>
@@ -506,8 +577,8 @@ export function StaticLoginPage() {
 
                 <p className="mt-4 text-center text-sm text-slate-500 lg:mt-3">
                   还没有账号？
-                  <Link href="#" className="ml-1 font-semibold text-slate-900 hover:text-[#3c6df3]">
-                    申请试用
+                  <Link href="/register" className="ml-1 font-semibold text-slate-900 hover:text-[#3c6df3]">
+                    立即注册
                   </Link>
                 </p>
               </div>

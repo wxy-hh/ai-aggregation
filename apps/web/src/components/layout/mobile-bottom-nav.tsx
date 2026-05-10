@@ -11,7 +11,7 @@ interface MobileBottomNavProps {
 }
 
 const PRIMARY_NAV_ITEMS = [
-  { href: '/', label: '首页', icon: Home },
+  { href: '/home', label: '首页', icon: Home },
   { href: '/chat', label: '对话', icon: Bot },
   { href: '/image', label: '图像', icon: PenTool },
   { href: '/voice', label: '语音', icon: AudioWaveform },

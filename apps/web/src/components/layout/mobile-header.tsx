@@ -9,7 +9,7 @@ interface MobileHeaderProps {
 }
 
 const PAGE_TITLES: Record<string, string> = {
-  '/': '首页',
+  '/home': '首页',
   '/history': '历史记录',
 };
 
@@ -31,7 +31,9 @@ export function MobileHeader({ pathname }: MobileHeaderProps) {
           <Sparkles className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">{getPageTitle(pathname)}</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+            {getPageTitle(pathname)}
+          </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">AI 聚合工作台</p>
         </div>
       </div>

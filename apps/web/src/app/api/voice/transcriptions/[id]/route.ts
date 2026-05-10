@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@repo/db';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    // TODO: 从 session 获取真实的 userId
-    const userId = 'temp-user-id';
+    const userId = await requireAuth(req);
 
     const transcription = await prisma.voiceTranscription.findFirst({
       where: {
@@ -28,8 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    // TODO: 从 session 获取真实的 userId
-    const userId = 'temp-user-id';
+    const userId = await requireAuth(req);
 
     // 先查询记录是否存在且属于当前用户
     const transcription = await prisma.voiceTranscription.findFirst({

@@ -9,6 +9,7 @@ import {
   FILE_SIZE_LIMITS,
 } from '@repo/shared';
 import { getRateLimiter, getQuotaManager } from '@repo/shared';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 /**
  * 文件上传 API
@@ -28,17 +29,6 @@ function createErrorId() {
   );
 }
 
-// 获取用户 ID (临时实现，实际应从 session 获取)
-async function getUserId(req: NextRequest): Promise<string> {
-  // TODO: 从 session 或 JWT token 中获取真实用户 ID
-  // 临时使用 IP 地址作为标识
-  const forwardedFor = req.headers.get('x-forwarded-for');
-  const realIp = req.headers.get('x-real-ip');
-  const remoteAddr = req.headers.get('x-remote-addr') || 'unknown';
-
-  return forwardedFor || realIp || remoteAddr;
-}
-
 export async function POST(request: NextRequest) {
   const errorId = createErrorId();
   const startTime = Date.now();
@@ -46,7 +36,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 1. 限流和配额检查
-    userId = await getUserId(request);
+    userId = await requireAuth(request);
     const rateLimiter = getRateLimiter();
     const quotaManager = getQuotaManager();
 
@@ -391,6 +381,8 @@ export async function POST(request: NextRequest) {
 // DELETE: 删除远程文件
 export async function DELETE(request: NextRequest) {
   try {
+    await requireAuth(request);
+
     const arkApiKey = process.env.ARK_API_KEY;
     const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 

@@ -19,6 +19,11 @@ export const ErrorCode = {
   RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
   IMPORT_NOT_FOUND: 'IMPORT_NOT_FOUND',
 
+  // 认证业务错误
+  EMAIL_EXISTS: 'EMAIL_EXISTS',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+
   // 请求相关
   INVALID_REQUEST: 'INVALID_REQUEST',
   INVALID_REQUEST_BODY: 'INVALID_REQUEST_BODY',
@@ -41,6 +46,7 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
  * 错误响应接口
  */
 interface ErrorResponse {
+  success: false;
   error: string;
   errorCode: ErrorCodeType;
   details?: unknown;
@@ -50,6 +56,7 @@ interface ErrorResponse {
  * 成功响应接口
  */
 interface SuccessResponse<T = unknown> {
+  success: true;
   data?: T;
   message?: string;
 }
@@ -65,6 +72,7 @@ export function createErrorResponse(
 ): NextResponse<ErrorResponse> {
   return NextResponse.json(
     {
+      success: false as const,
       error: message,
       errorCode: code,
       ...(details && { details }),
@@ -83,6 +91,7 @@ export function createSuccessResponse<T = unknown>(
 ): NextResponse<SuccessResponse<T>> {
   return NextResponse.json(
     {
+      success: true as const,
       ...(data !== undefined && { data }),
       ...(message && { message }),
     },

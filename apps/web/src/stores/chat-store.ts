@@ -5,6 +5,7 @@ import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { consumeChatResponse } from '@/lib/utils/chat-stream';
+import { authHeaders } from '@/lib/api/client';
 
 // ==================== 类型定义 ====================
 
@@ -218,7 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         // ===== 5. 发起流式请求 =====
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({
             // 发送历史消息 + 新用户消息
             messages: [...messages, userMessage].map((m) => ({
@@ -377,7 +378,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         // 为了减少代码重复，可以将 fetch 逻辑抽离，但这里直接写吧
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({
             messages: [...history, userMessage].map((m) => ({
               role: m.role,

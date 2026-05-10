@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
+import { authHeaders } from '@/lib/api/client';
 // useChatStore: 聊天状态管理 Store
 // Attachment: 附件类型定义（图片或文件）
 
@@ -549,6 +550,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
 
         const response = await fetch('/api/files', {
           method: 'POST',
+          headers: authHeaders(undefined, null),
           body: formData,
           signal: controller.signal,
         });
@@ -613,6 +615,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         // 调用删除 API
         const response = await fetch(`/api/files?fileId=${encodeURIComponent(attachment.fileId)}`, {
           method: 'DELETE',
+          headers: authHeaders(),
         });
 
         if (response.ok) {

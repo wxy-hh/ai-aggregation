@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { transcribeAudio } from '@/lib/siliconflow';
 import { saveUploadedFile, deleteFile, validateFile } from '@/lib/file-upload';
+import { requireAuth } from '@/lib/auth/require-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 最大 60 秒
@@ -47,12 +48,14 @@ export async function POST(req: NextRequest) {
 
     let transcriptionId = 'temp-id';
 
-    // 4. 创建数据库记录（如果数据库可用）
+    // 4. 认证（无论数据库是否可用都需要）
+    const userId = await requireAuth(req);
+
+    // 5. 创建数据库记录（如果数据库可用）
     if (isDatabaseAvailable) {
       console.log('→ 尝试创建数据库记录...');
       try {
         const { prisma } = await import('@repo/db');
-        const userId = 'temp-user-id';
 
         const transcription = await prisma.voiceTranscription.create({
           data: {
