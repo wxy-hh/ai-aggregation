@@ -1,6 +1,6 @@
 ---
 name: frontend-design 前端设计
-description: 创建独特的生产级前端界面，具有高设计质量。当用户要求构建 Web 组件、页面、作品、海报或应用程序时使用此技能（示例包括网站、落地页、仪表板、React 组件、HTML/CSS 布局，或美化任何 Web UI）。生成富有创意、精致的代码和 UI 设计，避免通用的 AI 美学风格。
+description: 设计并实现高质量、可用于生产的前端界面；适用于网页、组件、仪表盘、应用和各类 Web UI 美化任务。
 license: Complete terms in LICENSE.txt
 ---
 

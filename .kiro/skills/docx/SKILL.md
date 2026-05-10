@@ -1,6 +1,6 @@
 ---
 name: docx Word 文档处理
-description: Word 文档全能处理技能。当用户想要创建、读取、编辑或操作 Word 文档（.docx 文件）时使用。触发条件包括：任何提及'Word 文档'、'.docx'，或要求生成带有目录、标题、页码或信头等格式的专业文档。也适用于从 .docx 文件提取或重组内容、在文档中插入或替换图像、在 Word 文件中执行查找替换、处理修订跟踪或评论，或将内容转换为精美的 Word 文档。如果用户要求生成'报告'、'备忘录'、'信函'、'模板'或类似的 Word 或 .docx 文件交付物，请使用此技能。不适用于 PDF、电子表格、Google Docs 或与文档生成无关的通用编码任务。
+description: 全面处理 .docx 文档；适用于创建、读取、编辑、批注、修订和格式化 Word 文件。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

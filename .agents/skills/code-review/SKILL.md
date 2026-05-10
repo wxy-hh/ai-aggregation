@@ -1,181 +1,436 @@
 ---
-name: code-review
-description: Skill for handling PR code reviews. Use when triggered by a PR review comment, review request, or when asked to review code changes. Provides workflow for reading review comments, understanding feedback, and iterating on changes.
+name: code-review 代码审查
+description: 进行全面且建设性的代码审查；适用于 PR 评审、质量检查、安全审计和性能分析。
+allowed-tools: Read Grep Glob
+metadata:
+  tags: code-review, code-quality, security, best-practices, PR-review
+  platforms: Claude, ChatGPT, Gemini
 ---
 
-# Code Review Skill
+# Code Review
 
-You are handling a PR code review interaction. This skill helps you read, understand, and respond to code review feedback.
+## When to use this skill
 
-## When This Skill Applies
+- Reviewing pull requests
+- Checking code quality
+- Providing feedback on implementations
+- Identifying potential bugs
+- Suggesting improvements
+- Security audits
+- Performance analysis
 
-- Triggered by `pull_request_review` or `pull_request_review_comment` events
-- User asks you to address review feedback
-- User requests a code review of their changes
+## Instructions
 
-## Reading Review Comments
+### Step 1: Understand the context
 
-### Get All Reviews on a PR
+**Read the PR description**:
 
-```bash
-# List all reviews (approved, changes requested, commented)
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/reviews
+- What is the goal of this change?
+- Which issues does it address?
+- Are there any special considerations?
 
-# Get a specific review's comments
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/reviews/<review_id>/comments
+**Check the scope**:
+
+- How many files changed?
+- What type of changes? (feature, bugfix, refactor)
+- Are tests included?
+
+### Step 2: High-level review
+
+**Architecture and design**:
+
+- Does the approach make sense?
+- Is it consistent with existing patterns?
+- Are there simpler alternatives?
+- Is the code in the right place?
+
+**Code organization**:
+
+- Clear separation of concerns?
+- Appropriate abstraction levels?
+- Logical file/folder structure?
+
+### Step 3: Detailed code review
+
+**Naming**:
+
+- [ ] Variables: descriptive, meaningful names
+- [ ] Functions: verb-based, clear purpose
+- [ ] Classes: noun-based, single responsibility
+- [ ] Constants: UPPER_CASE for true constants
+- [ ] Avoid abbreviations unless widely known
+
+**Functions**:
+
+- [ ] Single responsibility
+- [ ] Reasonable length (< 50 lines ideally)
+- [ ] Clear inputs and outputs
+- [ ] Minimal side effects
+- [ ] Proper error handling
+
+**Classes and objects**:
+
+- [ ] Single responsibility principle
+- [ ] Open/closed principle
+- [ ] Liskov substitution principle
+- [ ] Interface segregation
+- [ ] Dependency inversion
+
+**Error handling**:
+
+- [ ] All errors caught and handled
+- [ ] Meaningful error messages
+- [ ] Proper logging
+- [ ] No silent failures
+- [ ] User-friendly errors for UI
+
+**Code quality**:
+
+- [ ] No code duplication (DRY)
+- [ ] No dead code
+- [ ] No commented-out code
+- [ ] No magic numbers
+- [ ] Consistent formatting
+
+### Step 4: Security review
+
+**Input validation**:
+
+- [ ] All user inputs validated
+- [ ] Type checking
+- [ ] Range checking
+- [ ] Format validation
+
+**Authentication & Authorization**:
+
+- [ ] Proper authentication checks
+- [ ] Authorization for sensitive operations
+- [ ] Session management
+- [ ] Password handling (hashing, salting)
+
+**Data protection**:
+
+- [ ] No hardcoded secrets
+- [ ] Sensitive data encrypted
+- [ ] SQL injection prevention
+- [ ] XSS prevention
+- [ ] CSRF protection
+
+**Dependencies**:
+
+- [ ] No vulnerable packages
+- [ ] Dependencies up-to-date
+- [ ] Minimal dependency usage
+
+### Step 5: Performance review
+
+**Algorithms**:
+
+- [ ] Appropriate algorithm choice
+- [ ] Reasonable time complexity
+- [ ] Reasonable space complexity
+- [ ] No unnecessary loops
+
+**Database**:
+
+- [ ] Efficient queries
+- [ ] Proper indexing
+- [ ] N+1 query prevention
+- [ ] Connection pooling
+
+**Caching**:
+
+- [ ] Appropriate caching strategy
+- [ ] Cache invalidation handled
+- [ ] Memory usage reasonable
+
+**Resource management**:
+
+- [ ] Files properly closed
+- [ ] Connections released
+- [ ] Memory leaks prevented
+
+### Step 6: Testing review
+
+**Test coverage**:
+
+- [ ] Unit tests for new code
+- [ ] Integration tests if needed
+- [ ] Edge cases covered
+- [ ] Error cases tested
+
+**Test quality**:
+
+- [ ] Tests are readable
+- [ ] Tests are maintainable
+- [ ] Tests are deterministic
+- [ ] No test interdependencies
+- [ ] Proper test data setup/teardown
+
+**Test naming**:
+
+```python
+# Good
+def test_user_creation_with_valid_data_succeeds():
+    pass
+
+# Bad
+def test1():
+    pass
 ```
 
-### Get Review Comments (Line-Level Feedback)
+### Step 7: Documentation review
 
-```bash
-# All line-level review comments on the PR
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/comments
+**Code comments**:
 
-# Filter by specific path
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/comments | jq '.[] | select(.path == "src/example.ts")'
+- [ ] Complex logic explained
+- [ ] No obvious comments
+- [ ] TODOs have tickets
+- [ ] Comments are accurate
+
+**Function documentation**:
+
+```python
+def calculate_total(items: List[Item], tax_rate: float) -> Decimal:
+    """
+    Calculate the total price including tax.
+
+    Args:
+        items: List of items to calculate total for
+        tax_rate: Tax rate as decimal (e.g., 0.1 for 10%)
+
+    Returns:
+        Total price including tax
+
+    Raises:
+        ValueError: If tax_rate is negative
+    """
+    pass
 ```
 
-### Understanding Review Comment Structure
+**README/docs**:
 
-Key fields in review comments:
+- [ ] README updated if needed
+- [ ] API docs updated
+- [ ] Migration guide if breaking changes
 
-- `path`: File being commented on
-- `line` / `original_line`: Line number in the diff
-- `body`: The reviewer's comment text
-- `diff_hunk`: Code context around the comment
-- `in_reply_to_id`: If this is a reply to another comment
+### Step 8: Provide feedback
 
-## Responding to Review Feedback
+**Be constructive**:
 
-### Workflow for Addressing Feedback
+```
+✅ Good:
+"Consider extracting this logic into a separate function for better
+testability and reusability:
 
-1. **Read the review comments** to understand what changes are requested
-2. **Read the relevant files** using the paths from the comments
-3. **Make the requested changes** using Edit tool
-4. **Commit and push** to update the PR
-5. **Update your tracking comment** to summarize what was addressed
+def validate_email(email: str) -> bool:
+    return '@' in email and '.' in email.split('@')[1]
 
-### Replying to Review Comments
+This would make it easier to test and reuse across the codebase."
 
-```bash
-# Reply to a specific review comment
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/comments \
-  -X POST \
-  -f body="Fixed in the latest commit" \
-  -f in_reply_to=<comment_id>
+❌ Bad:
+"This is wrong. Rewrite it."
 ```
 
-### Marking Conversations as Resolved
+**Be specific**:
 
-After addressing feedback, the reviewer typically resolves the conversation. You can indicate you've addressed it by:
+```
+✅ Good:
+"On line 45, this query could cause N+1 problem. Consider using
+.select_related('author') to fetch related objects in a single query."
 
-1. Replying to the comment explaining what you changed
-2. Updating your tracking comment with a summary
-
-## Providing Code Review Feedback
-
-When asked to review code changes:
-
-### Quick Review Checklist
-
-- **Correctness**: Does the code do what it's supposed to?
-- **Security**: Are there any security vulnerabilities?
-- **Performance**: Are there obvious performance issues?
-- **Readability**: Is the code clear and maintainable?
-- **Tests**: Are changes tested appropriately?
-
-### Viewing PR Changes
-
-```bash
-# View the diff
-gh pr diff <number> --repo $GITHUB_REPOSITORY
-
-# View changed files list
-gh pr view <number> --repo $GITHUB_REPOSITORY --json files
-
-# Compare with base branch (use two dots for shallow clones in GitHub Actions)
-git diff origin/$BASE_BRANCH..HEAD
+❌ Bad:
+"Performance issues here."
 ```
 
-### Providing Feedback
+**Prioritize issues**:
 
-Post your review feedback to your tracking comment. Structure it clearly:
+- 🔴 Critical: Security, data loss, major bugs
+- 🟡 Important: Performance, maintainability
+- 🟢 Nice-to-have: Style, minor improvements
 
-- Group feedback by file
-- Reference specific line numbers
-- Distinguish between required changes and suggestions
-- Be constructive and specific
+**Acknowledge good work**:
 
-## Submitting Interactive Reviews
-
-Use `gh pr review` to submit formal GitHub reviews that appear in the PR's review UI.
-
-### Approve a PR
-
-```bash
-gh pr review <number> --approve --body "LGTM! Changes look good."
+```
+"Nice use of the strategy pattern here! This makes it easy to add
+new payment methods in the future."
 ```
 
-### Request Changes
+## Review checklist
 
-```bash
-gh pr review <number> --request-changes --body "Please address the following issues..."
+### Functionality
+
+- [ ] Code does what it's supposed to do
+- [ ] Edge cases handled
+- [ ] Error cases handled
+- [ ] No obvious bugs
+
+### Code Quality
+
+- [ ] Clear, descriptive naming
+- [ ] Functions are small and focused
+- [ ] No code duplication
+- [ ] Consistent with codebase style
+- [ ] No code smells
+
+### Security
+
+- [ ] Input validation
+- [ ] No hardcoded secrets
+- [ ] Authentication/authorization
+- [ ] No SQL injection vulnerabilities
+- [ ] No XSS vulnerabilities
+
+### Performance
+
+- [ ] No obvious bottlenecks
+- [ ] Efficient algorithms
+- [ ] Proper database queries
+- [ ] Resource management
+
+### Testing
+
+- [ ] Tests included
+- [ ] Good test coverage
+- [ ] Tests are maintainable
+- [ ] Edge cases tested
+
+### Documentation
+
+- [ ] Code is self-documenting
+- [ ] Comments where needed
+- [ ] Docs updated
+- [ ] Breaking changes documented
+
+## Common issues
+
+### Anti-patterns
+
+**God class**:
+
+```python
+# Bad: One class doing everything
+class UserManager:
+    def create_user(self): pass
+    def send_email(self): pass
+    def process_payment(self): pass
+    def generate_report(self): pass
 ```
 
-### Leave a Comment Review (without approval/rejection)
+**Magic numbers**:
 
-```bash
-gh pr review <number> --comment --body "Some observations about the code..."
+```python
+# Bad
+if user.age > 18:
+    pass
+
+# Good
+MINIMUM_AGE = 18
+if user.age > MINIMUM_AGE:
+    pass
 ```
 
-## Adding Line-Level Comments
+**Deep nesting**:
 
-To add comments on specific lines of code (shown inline in GitHub's diff view):
+```python
+# Bad
+if condition1:
+    if condition2:
+        if condition3:
+            if condition4:
+                # deeply nested code
 
-### Create a Review with Line Comments
-
-```bash
-# First, get the latest commit SHA
-COMMIT_SHA=$(gh pr view <number> --json headRefOid --jq '.headRefOid')
-
-# Create a review comment on a specific position in the diff
-# Note: position is the line number in the diff (not the file), starting from 1
-gh api repos/$GITHUB_REPOSITORY/pulls/<number>/comments \
-  -X POST \
-  -f body="Consider using a more descriptive variable name here" \
-  -f commit_id="$COMMIT_SHA" \
-  -f path="src/example.ts" \
-  -F position=10
+# Good (early returns)
+if not condition1:
+    return
+if not condition2:
+    return
+if not condition3:
+    return
+if not condition4:
+    return
+# flat code
 ```
 
-### Key Fields for Line Comments
+### Security vulnerabilities
 
-- `commit_id`: The SHA of the commit to comment on (use latest)
-- `path`: File path relative to repo root
-- `position`: Position in the diff (line number in the diff hunk, starting at 1)
-- `body`: Your comment text
+**SQL Injection**:
 
-**Note:** The `position` is the line number within the diff, not the line number in the file. Count lines from the start of the diff hunk.
+```python
+# Bad
+query = f"SELECT * FROM users WHERE id = {user_id}"
 
-## Iterating on Changes
-
-When you need to make additional changes after initial feedback:
-
-```bash
-# Ensure you're on the PR branch
-gh pr checkout <number>
-
-# Make changes, then commit
-git add <files>
-git commit -m "fix: address review feedback"
-
-# Push to update the PR
-git push origin HEAD
+# Good
+query = "SELECT * FROM users WHERE id = %s"
+cursor.execute(query, (user_id,))
 ```
 
-## Important Notes
+**XSS**:
 
-1. **Read before responding** - Always read the full review context before making changes
-2. **Address all comments** - Don't leave feedback unaddressed
-3. **Communicate clearly** - Update your tracking comment to show what you've addressed
-4. **Test your changes** - Run tests after making review-requested changes
+```javascript
+// Bad
+element.innerHTML = userInput;
+
+// Good
+element.textContent = userInput;
+```
+
+**Hardcoded secrets**:
+
+```python
+# Bad
+API_KEY = "sk-1234567890abcdef"
+
+# Good
+API_KEY = os.environ.get("API_KEY")
+```
+
+## Best practices
+
+1. **Review promptly**: Don't make authors wait
+2. **Be respectful**: Focus on code, not the person
+3. **Explain why**: Don't just say what's wrong
+4. **Suggest alternatives**: Show better approaches
+5. **Use examples**: Code examples clarify feedback
+6. **Pick your battles**: Focus on important issues
+7. **Acknowledge good work**: Positive feedback matters
+8. **Review your own code first**: Catch obvious issues
+9. **Use automated tools**: Let tools catch style issues
+10. **Be consistent**: Apply same standards to all code
+
+## Tools to use
+
+**Linters**:
+
+- Python: pylint, flake8, black
+- JavaScript: eslint, prettier
+- Go: golint, gofmt
+- Rust: clippy, rustfmt
+
+**Security**:
+
+- Bandit (Python)
+- npm audit (Node.js)
+- OWASP Dependency-Check
+
+**Code quality**:
+
+- SonarQube
+- CodeClimate
+- Codacy
+
+## References
+
+- [Google Code Review Guidelines](https://google.github.io/eng-practices/review/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [Clean Code by Robert C. Martin](https://www.amazon.com/Clean-Code-Handbook-Software-Craftsmanship/dp/0132350882)
+
+## Examples
+
+### Example 1: Basic usage
+
+<!-- Add example content here -->
+
+### Example 2: Advanced usage
+
+<!-- Add advanced example content here -->

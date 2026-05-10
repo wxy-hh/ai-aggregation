@@ -1,6 +1,6 @@
 ---
 name: brand-guidelines 品牌指南
-description: 将 Anthropic 官方品牌颜色和排版应用于任何可能受益于 Anthropic 外观和感觉的作品。当涉及品牌颜色或风格指南、视觉格式或公司设计标准时使用。
+description: 为产物应用 Anthropic 官方品牌色与字体规范；适用于需要品牌风格、视觉规范或公司设计标准的场景。
 license: Complete terms in LICENSE.txt
 ---
 

@@ -1,6 +1,6 @@
 ---
-name: internal-comms
-description: A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Codex should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).
+name: internal-comms 内部沟通
+description: 提供公司内部沟通常用写作资源与格式；适用于周报、汇报、公告、FAQ、事故复盘和项目更新等内部文案。
 license: Complete terms in LICENSE.txt
 ---
 

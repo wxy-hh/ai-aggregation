@@ -1,6 +1,6 @@
 ---
-name: doc-coauthoring
-description: Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.
+name: doc-coauthoring 文档协作
+description: 通过结构化流程协作文档写作；适用于文档、提案、技术方案、决策记录等内容的起草与迭代完善。
 ---
 
 # Doc Co-Authoring Workflow

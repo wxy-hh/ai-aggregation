@@ -1,6 +1,6 @@
 ---
 name: webapp-testing Web 应用测试
-description: 使用 Playwright 与本地 Web 应用程序交互和测试的工具包。支持验证前端功能、调试 UI 行为、捕获浏览器截图和查看浏览器日志。
+description: 基于 Playwright 的本地 Web 应用测试工具包；适用于功能验证、界面调试、截图和浏览器日志查看。
 license: Complete terms in LICENSE.txt
 ---
 

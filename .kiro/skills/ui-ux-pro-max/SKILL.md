@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max UI/UX 设计智库
-description: UI/UX 设计智能工具。包含 50 种样式、21 种配色方案、50 种字体配对、20 种图表类型、8 种技术栈（React、Next.js、Vue、Svelte、SwiftUI、React Native、Flutter、Tailwind）。支持操作：规划、构建、创建、设计、实现、审查、修复、改进、优化、增强、重构、检查 UI/UX 代码。适用项目：网站、落地页、仪表板、管理面板、电商、SaaS、作品集、博客、移动应用、.html、.tsx、.vue、.svelte。涵盖元素：按钮、模态框、导航栏、侧边栏、卡片、表格、表单、图表。设计风格：玻璃态、黏土态、极简主义、野兽派、新拟态、便当盒网格、暗黑模式、响应式、拟物化、扁平化。主题：配色方案、可访问性、动画、布局、排版、字体配对、间距、悬停效果、阴影、渐变。
+description: 全能型 UI/UX 设计技能；覆盖多种风格、配色、字体搭配与前端栈，适用于设计、实现、评审和优化各类界面。
 ---
 
 # UI/UX Pro Max - Design Intelligence

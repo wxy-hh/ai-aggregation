@@ -1,6 +1,6 @@
 ---
 name: mcp-builder MCP 服务器构建器
-description: 创建高质量 MCP（模型上下文协议）服务器的指南，使 LLM 能够通过精心设计的工具与外部服务交互。在构建 MCP 服务器以集成外部 API 或服务时使用，无论是使用 Python（FastMCP）还是 Node/TypeScript（MCP SDK）。
+description: 指导构建高质量 MCP 服务；适用于用 Python 或 Node/TypeScript 接入外部 API 与服务。
 license: Complete terms in LICENSE.txt
 ---
 
