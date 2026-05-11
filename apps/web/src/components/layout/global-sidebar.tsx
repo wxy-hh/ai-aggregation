@@ -1,23 +1,21 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Settings, X, Check, Clock, FileText, Home, LogOut } from 'lucide-react';
+import { Sparkles, Plus, Check, Clock, Home, User } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
-import { AnimatePresence, motion, useAnimationControls } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
+import { useAuthStore } from '@/stores/auth-store';
 
 export function GlobalSidebar() {
   const pathname = usePathname();
-
-  const handleLogout = () => {
-    // 全页面导航到登出接口，由服务端清除 Cookie 后重定向到 /login
-    window.location.href = '/api/auth/logout';
-  };
+  const user = useAuthStore((state) => state.user);
 
   // Zustand 状态管理
   const pinnedApps = usePinnedApps();
@@ -33,6 +31,8 @@ export function GlobalSidebar() {
   const [showToast, setShowToast] = useState(false);
 
   const [landingApp, setLandingApp] = useState<AppId | null>(null);
+  const displayName = user?.name?.trim() || '个人中心';
+  const avatarSrc = user?.avatar?.trim() || null;
 
   // 简单的路由匹配逻辑
   const isActive = (path: string) => {
@@ -237,32 +237,32 @@ export function GlobalSidebar() {
           {/* 主题切换 */}
           <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300" />
 
-          {/* 退出登录 */}
-          <button
-            onClick={handleLogout}
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-200 dark:hover:border-red-800/30 hover:text-red-500 dark:hover:text-red-400 hover:shadow-lg hover:shadow-red-200/40 dark:hover:shadow-red-900/30 hover:scale-105 active:scale-95 transition-all duration-300"
+          <Link
+            href="/profile"
+            aria-label="打开个人中心"
+            className="group relative mt-2 flex flex-col items-center gap-1"
           >
-            <LogOut className="w-5 h-5" />
-          </button>
-
-          {/* 设置 */}
-          {/* <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300">
-            <Settings className="w-5 h-5" />
-          </button> */}
-
-          {/* 用户头像 */}
-          {/* <div className="relative cursor-pointer group mt-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7D91FF] to-[#9CAEFF] p-0.5 shadow-md shadow-indigo-400/35 hover:shadow-lg transition-shadow">
-              <div className="w-full h-full rounded-full bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden">
-                <img
-                  src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
-                  alt="User"
-                  className="w-full h-full scale-110"
-                />
+            <div
+              className={cn(
+                'relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border p-[2px] transition-all duration-300',
+                pathname === '/profile'
+                  ? 'border-[#7E96FF] bg-gradient-to-br from-[#6A82FF] via-[#88A0FF] to-[#A8B8FF] shadow-[0_10px_28px_rgba(93,124,250,0.38)]'
+                  : 'border-white/70 bg-white/60 shadow-[0_8px_24px_rgba(102,119,174,0.18)] hover:scale-105 hover:shadow-[0_12px_28px_rgba(93,124,250,0.26)] dark:border-slate-700/70 dark:bg-slate-800/80'
+              )}
+            >
+              <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white text-xs font-semibold text-slate-700 dark:bg-[#111827] dark:text-slate-100">
+                {avatarSrc ? (
+                  <img
+                    src={avatarSrc}
+                    alt={`${displayName}头像`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <User className="h-4 w-4" />
+                )}
               </div>
             </div>
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#6D86FF] border-2 border-white dark:border-slate-900 rounded-full" />
-          </div> */}
+          </Link>
         </div>
       </aside>
 

@@ -3,6 +3,8 @@
  * SiliconFlow API integration for Kwai-Kolors/Kolors model
  */
 
+import { authFetch } from './client';
+
 export interface KolorsGenerateParams {
   prompt: string;
   negativePrompt?: string;
@@ -35,11 +37,8 @@ export interface KolorsError {
 export async function generateKolorsImage(
   params: KolorsGenerateParams
 ): Promise<KolorsGenerateResponse> {
-  const response = await fetch('/api/image/generate', {
+  const response = await authFetch('/api/image/generate', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({
       model: 'Kwai-Kolors/Kolors',
       prompt: params.prompt,
@@ -83,7 +82,7 @@ export async function uploadGeneratedImage(
   formData.append('file', blob, `${Date.now()}.png`);
   formData.append('userId', userId);
 
-  const response = await fetch('/api/image/upload', {
+  const response = await authFetch('/api/image/upload', {
     method: 'POST',
     body: formData,
   });

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 const SILICONFLOW_API_KEY = process.env.SILICONFLOW_API_KEY;
 const SILICONFLOW_API_URL = process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1';
@@ -9,6 +11,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'SILICONFLOW_API_KEY is not configured' }, { status: 500 });
     }
 
+    const userId = await getOptionalUserId(request);
     const body = await request.json();
 
     console.log('→ Generating image with Kolors...');
@@ -40,6 +43,24 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     console.log('← Generation successful, images:', data.images?.length || 0);
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'image',
+        action: 'image-generate',
+        provider: 'siliconflow',
+        model: typeof body.model === 'string' ? body.model : 'Kwai-Kolors/Kolors',
+        endpoint: '/api/image/generate',
+        usage: normalizeUsage(data.usage),
+        metadata: {
+          promptLength: typeof body.prompt === 'string' ? body.prompt.length : 0,
+          imageSize: body.image_size,
+          batchSize: body.batch_size,
+          imageCount: Array.isArray(data.images) ? data.images.length : 0,
+        },
+      });
+    }
 
     return NextResponse.json(data);
   } catch (error) {

@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 
 // ==================== 类型定义 ====================
 
@@ -272,7 +272,7 @@ export const useHistoryStore = create<HistoryState>()(
       fetchHistory: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/history', { headers: authHeaders() });
+          const response = await authFetch('/api/history');
           if (!response.ok) throw new Error('Failed to fetch history');
 
           const data = await response.json();

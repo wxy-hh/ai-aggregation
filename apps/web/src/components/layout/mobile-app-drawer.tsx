@@ -4,7 +4,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { APP_CONFIGS } from './apps-modal';
-import { Clock3, FileText } from 'lucide-react';
+import { CircleUserRound, Clock3, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -27,6 +27,12 @@ const QUICK_LINKS = [
     label: '简历',
     description: '快速进入简历制作工作区',
     icon: FileText,
+  },
+  {
+    href: '/profile',
+    label: '个人中心',
+    description: '查看资料、算力消耗与账户安全操作',
+    icon: CircleUserRound,
   },
 ];
 
@@ -122,7 +128,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
                       router.push(item.href);
                       onOpenChange(false);
                     }}
-                    className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80"
+                    className="flex w-full items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80"
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-200/80 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -140,7 +146,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
                   </button>
                 ))}
 
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
+                <div className="flex w-full items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">主题切换</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">

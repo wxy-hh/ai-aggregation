@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
       where: { id: userId },
       select: {
         id: true,
+        username: true,
         email: true,
         name: true,
         avatar: true,

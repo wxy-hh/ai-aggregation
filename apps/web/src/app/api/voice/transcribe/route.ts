@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { transcribeAudio } from '@/lib/siliconflow';
 import { saveUploadedFile, deleteFile, validateFile } from '@/lib/file-upload';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 最大 60 秒
@@ -88,6 +89,22 @@ export async function POST(req: NextRequest) {
       const result = await transcribeAudio(tempFilePath, model);
       console.log('✓ SiliconFlow API 调用成功');
       console.log('  转录文本长度:', result.text?.length || 0);
+
+      await safeRecordAiUsage({
+        userId,
+        feature: 'voice',
+        action: 'voice-transcribe',
+        provider: 'siliconflow',
+        model,
+        endpoint: '/api/voice/transcribe',
+        usage: normalizeUsage((result as { usage?: unknown }).usage),
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          transcriptionLength: result.text?.length ?? 0,
+        },
+      });
 
       // 6. 更新数据库记录（如果数据库可用）
       if (isDatabaseAvailable && transcriptionId !== 'temp-id') {

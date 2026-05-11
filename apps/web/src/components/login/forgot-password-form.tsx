@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Mail } from 'lucide-react';
+import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,23 +10,23 @@ import { authApi } from '@/lib/api/auth';
 import { toast } from 'sonner';
 
 export function ForgotPasswordForm() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email.trim()) {
-      toast.error('请输入邮箱');
+    if (!username.trim()) {
+      toast.error('请输入用户名');
       return;
     }
 
     setSubmitting(true);
     try {
-      await authApi.forgotPassword(email.trim());
+      await authApi.forgotPassword(username.trim());
       setSent(true);
-      toast.success('如该邮箱已注册，重置链接已发送');
+      toast.success('如该用户名已注册，重置链接已发送');
     } catch {
       toast.error('请求失败，请重试');
     } finally {
@@ -38,10 +38,10 @@ export function ForgotPasswordForm() {
     return (
       <div className="space-y-5 text-center">
         <div className="rounded-2xl bg-[#eef4ff] px-6 py-10">
-          <Mail className="mx-auto h-10 w-10 text-[#3c6df3]" />
-          <h2 className="mt-4 text-lg font-semibold text-slate-900">邮件已发送</h2>
+          <User className="mx-auto h-10 w-10 text-[#3c6df3]" />
+          <h2 className="mt-4 text-lg font-semibold text-slate-900">重置请求已提交</h2>
           <p className="mt-2 text-sm text-slate-500">
-            请检查邮箱 <span className="font-medium text-slate-700">{email}</span>，点击邮件中的链接重置密码。
+            如用户名 <span className="font-medium text-slate-700">{username}</span> 已注册，重置链接已发送（当前为预留流程）。
           </p>
         </div>
         <Link
@@ -57,17 +57,17 @@ export function ForgotPasswordForm() {
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-2.5">
-        <Label htmlFor="forgot-email" className="text-base font-semibold text-slate-900">
-          邮箱
+        <Label htmlFor="forgot-username" className="text-base font-semibold text-slate-900">
+          用户名
         </Label>
         <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
-          <Mail className="h-5 w-5 text-[#8ea0bc]" />
+          <User className="h-5 w-5 text-[#8ea0bc]" />
           <Input
-            id="forgot-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="your@email.com"
+            id="forgot-username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="your_username"
             className="h-auto border-0 bg-transparent px-0 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>

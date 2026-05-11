@@ -20,7 +20,8 @@
     "studio": "prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.2"
+    "@prisma/client": "^6.19.2",
+    "@repo/shared": "workspace:*"
   },
   "devDependencies": {
     "@repo/config-eslint": "workspace:*",

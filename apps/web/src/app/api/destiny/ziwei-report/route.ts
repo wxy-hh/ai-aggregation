@@ -7,8 +7,10 @@ import type {
   ZiweiSectionKey,
   ZiweiStreamEvent,
 } from '@/app/destiny/_components/types';
-import { extractArkOutputText, extractJsonBlock } from '../_lib/ark-response';
+import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -86,7 +88,7 @@ const QuickZiweiSectionSchema = z.object({
     .optional(),
 });
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const REPORT_TIMEOUT_MS = 300000;
 const QUICK_MAX_OUTPUT_TOKENS = 1800;
@@ -116,6 +118,7 @@ class UpstreamModelError extends Error {
 
 export async function POST(req: Request) {
   try {
+    const userId = await getOptionalUserId(req);
     const body = await req.json();
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -144,6 +147,7 @@ export async function POST(req: Request) {
       currentYear,
       arkApiKey,
       arkBaseUrl,
+      userId,
     });
 
     return new Response(stream, {
@@ -168,11 +172,13 @@ function createZiweiStream({
   currentYear,
   arkApiKey,
   arkBaseUrl,
+  userId,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   arkApiKey: string;
   arkBaseUrl: string;
+  userId: string | null;
 }) {
   const encoder = new TextEncoder();
 
@@ -194,6 +200,7 @@ function createZiweiStream({
           arkBaseUrl,
           input,
           currentYear,
+          userId,
         });
 
         emitZiweiSectionEvents({
@@ -210,6 +217,7 @@ function createZiweiStream({
           arkBaseUrl,
           input,
           currentYear,
+          userId,
         });
 
         emitZiweiSectionEvents({
@@ -241,11 +249,13 @@ async function generateQuickZiweiSections({
   arkBaseUrl,
   input,
   currentYear,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
   currentYear: number;
+  userId: string | null;
 }) {
   try {
     const payload = await requestArkPayload({
@@ -258,6 +268,9 @@ async function generateQuickZiweiSections({
       maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
       temperature: 0.25,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      action: 'destiny-ziwei-report',
+      metadata: { stage: 'quick', currentYear },
     });
 
     const text = extractArkOutputText(payload);
@@ -278,11 +291,13 @@ async function generateFullZiweiReport({
   arkBaseUrl,
   input,
   currentYear,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
   currentYear: number;
+  userId: string | null;
 }) {
   let payload = await requestArkPayload({
     arkApiKey,
@@ -294,6 +309,9 @@ async function generateFullZiweiReport({
     maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
     temperature: 0.35,
     timeoutMs: REPORT_TIMEOUT_MS,
+    userId,
+    action: 'destiny-ziwei-report',
+    metadata: { stage: 'primary', currentYear },
   });
 
   if (isLengthIncomplete(payload)) {
@@ -307,6 +325,9 @@ async function generateFullZiweiReport({
       maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       timeoutMs: REPORT_TIMEOUT_MS,
+      userId,
+      action: 'destiny-ziwei-report',
+      metadata: { stage: 'retry', currentYear },
     });
 
     if (isLengthIncomplete(payload)) {
@@ -331,6 +352,9 @@ async function requestArkPayload({
   maxOutputTokens,
   temperature,
   timeoutMs,
+  userId,
+  action,
+  metadata,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
@@ -338,6 +362,9 @@ async function requestArkPayload({
   maxOutputTokens: number;
   temperature: number;
   timeoutMs: number;
+  userId: string | null;
+  action: 'destiny-ziwei-report';
+  metadata?: Record<string, unknown>;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -365,7 +392,26 @@ async function requestArkPayload({
       throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
     }
 
-    return response.json();
+    const payload = await response.json();
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action,
+        provider: 'doubao',
+        model: ARK_MODEL,
+        endpoint: '/api/destiny/ziwei-report',
+        usage: normalizeUsage(extractArkUsage(payload)),
+        metadata: {
+          ...metadata,
+          maxOutputTokens,
+          messageCount: inputMessages.length,
+        },
+      });
+    }
+
+    return payload;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -439,41 +485,41 @@ function mergeZiweiSectionsIntoReport(report: DestinyReport, lockedSections: Ziw
     profile: lockedSections.profileOverview ?? report.profile,
     modules: lockedSections.overviewModules
       ? {
-          ...report.modules,
-          personality: lockedSections.overviewModules.personality,
-          career: lockedSections.overviewModules.career,
-          wealth: lockedSections.overviewModules.wealth,
-          love: lockedSections.relations
-            ? {
-                ...report.modules.love,
-                summary: lockedSections.relations.summary,
-                bullets: lockedSections.relations.opportunities,
-              }
-            : report.modules.love,
-          health: lockedSections.relations
-            ? {
-                ...report.modules.health,
-                bullets: lockedSections.relations.risks,
-              }
-            : report.modules.health,
-        }
+        ...report.modules,
+        personality: lockedSections.overviewModules.personality,
+        career: lockedSections.overviewModules.career,
+        wealth: lockedSections.overviewModules.wealth,
+        love: lockedSections.relations
+          ? {
+            ...report.modules.love,
+            summary: lockedSections.relations.summary,
+            bullets: lockedSections.relations.opportunities,
+          }
+          : report.modules.love,
+        health: lockedSections.relations
+          ? {
+            ...report.modules.health,
+            bullets: lockedSections.relations.risks,
+          }
+          : report.modules.health,
+      }
       : lockedSections.relations
         ? {
-            ...report.modules,
-            love: {
-              ...report.modules.love,
-              summary: lockedSections.relations.summary,
-              bullets: lockedSections.relations.opportunities,
-            },
-            health: {
-              ...report.modules.health,
-              bullets: lockedSections.relations.risks,
-            },
-            personality: {
-              ...report.modules.personality,
-              bullets: lockedSections.relations.actions,
-            },
-          }
+          ...report.modules,
+          love: {
+            ...report.modules.love,
+            summary: lockedSections.relations.summary,
+            bullets: lockedSections.relations.opportunities,
+          },
+          health: {
+            ...report.modules.health,
+            bullets: lockedSections.relations.risks,
+          },
+          personality: {
+            ...report.modules.personality,
+            bullets: lockedSections.relations.actions,
+          },
+        }
         : report.modules,
     timeline: lockedSections.timeline ?? report.timeline,
     ziweiCenter: lockedSections.ziweiCenter ?? report.ziweiCenter,

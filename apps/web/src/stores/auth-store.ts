@@ -6,7 +6,8 @@ import { authApi } from '@/lib/api/auth';
 
 interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string | null;
   avatar: string | null;
   emailVerified: string | null;
@@ -19,8 +20,8 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
 
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name?: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
   fetchUser: () => Promise<void>;
@@ -35,8 +36,8 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       isAuthenticated: false,
 
-      login: async (email, password) => {
-        const res = await authApi.login(email, password);
+      login: async (username, password) => {
+        const res = await authApi.login(username, password);
 
         if (!res.success || !res.data?.user || !res.data?.accessToken) {
           throw new Error(res.error || '登录失败');
@@ -45,8 +46,8 @@ export const useAuthStore = create<AuthState>()(
         set({ user: res.data.user, accessToken: res.data.accessToken, isAuthenticated: true, isLoading: false });
       },
 
-      register: async (email, password, name) => {
-        const res = await authApi.register(email, password, name);
+      register: async (username, password, name) => {
+        const res = await authApi.register(username, password, name);
 
         if (!res.success || !res.data?.user || !res.data?.accessToken) {
           throw new Error(res.error || '注册失败');
@@ -56,8 +57,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
-        set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
-        // 全页面导航到登出接口，确保服务端清除 httpOnly Cookie
+        // 清除持久化的登录数据，防止公共电脑上的残留
+        try {
+          localStorage.removeItem('ai-app-auth');
+        } catch {
+          // 忽略清除失败
+        }
         window.location.href = '/api/auth/logout';
       },
 
@@ -87,40 +92,56 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           const res = await authApi.getMe(get().accessToken!);
-
-          if (!res.success || !res.data?.user) {
-            // Token 过期，尝试刷新
-            const newToken = await refreshAccessToken();
-            if (!newToken) {
-              set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
-              return;
-            }
-            const retryRes = await authApi.getMe(newToken);
-            if (!retryRes.success || !retryRes.data?.user) {
-              set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
-              return;
-            }
-            set({ user: retryRes.data.user, isLoading: false });
+          if (res.success && res.data?.user) {
+            set({ user: res.data.user, isLoading: false });
             return;
           }
 
-          set({ user: res.data.user, isLoading: false });
-        } catch {
+          // getMe 返回失败，尝试刷新 token 后重试一次
+          const newToken = await refreshAccessToken();
+          if (!newToken) {
+            set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+            return;
+          }
+          const retryRes = await authApi.getMe(newToken);
+          if (retryRes.success && retryRes.data?.user) {
+            set({ user: retryRes.data.user, isLoading: false });
+            return;
+          }
           set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+        } catch {
+          // 网络错误等非预期异常，尝试刷新 token 后重试
+          try {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+              const retryRes = await authApi.getMe(newToken);
+              if (retryRes.success && retryRes.data?.user) {
+                set({ user: retryRes.data.user, isLoading: false });
+                return;
+              }
+            }
+          } catch {
+            // 刷新也失败，保持当前状态，不清除
+          }
+          // 网络错误不强制登出，保持现有登录状态
+          set({ isLoading: false });
         }
       },
 
       initialize: async () => {
         set({ isLoading: true });
 
-        const { accessToken, refreshAccessToken, fetchUser } = get();
+        const { refreshAccessToken, fetchUser } = get();
 
-        if (accessToken) {
+        // 优先通过 refresh token 获取新 token（避免使用 localStorage 中可能已过期的旧 token）
+        const newToken = await refreshAccessToken();
+
+        if (newToken) {
           await fetchUser();
         } else {
-          // 尝试通过 refresh token 恢复登录
-          const newToken = await refreshAccessToken();
-          if (newToken) {
+          // refresh token 不可用，尝试用 localStorage 中的旧 token
+          const { accessToken } = get();
+          if (accessToken) {
             await fetchUser();
           } else {
             set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });

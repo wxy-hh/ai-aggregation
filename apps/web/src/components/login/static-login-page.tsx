@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, Lock, Mail, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Lock, User, Sparkles } from 'lucide-react';
 import qqIcon from '@/assets/image/QQ.svg';
 import weixinIcon from '@/assets/image/weixin.svg';
 import { Button } from '@/components/ui/button';
@@ -24,10 +24,9 @@ export function StaticLoginPage() {
   const prefersReducedMotion = Boolean(useReducedMotion());
   const heroRef = useRef<HTMLDivElement>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [activeField, setActiveField] = useState<'email' | 'password' | null>(null);
+  const [activeField, setActiveField] = useState<'username' | 'password' | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [oauthConfig, setOauthConfig] = useState<{ wechat: boolean; qq: boolean } | null>(null);
   const [oauthRedirecting, setOauthRedirecting] = useState<string | null>(null);
@@ -128,11 +127,11 @@ export function StaticLoginPage() {
     }
   }, [searchParams]);
 
-  const isTypingEmail = activeField === 'email';
+  const isTypingUsername = activeField === 'username';
   const isTypingPassword = activeField === 'password';
   const isPasswordWatching = isTypingPassword && !showPassword;
   const isPasswordVisible = password.length > 0 && showPassword;
-  const isLookingAtEachOther = isTypingEmail;
+  const isLookingAtEachOther = isTypingUsername;
   const leftPanelContentMaxHeight = isLeftPanelExpanded ? (isDesktopViewport ? 1200 : 720) : 0;
   const isLeftPanelCollapsed = !isLeftPanelExpanded;
   const borderSweepTransition = prefersReducedMotion
@@ -298,7 +297,7 @@ export function StaticLoginPage() {
                     extraShiftX: isPasswordWatching ? 18 : 0,
                     overrideSkew: isPasswordVisible ? 0 : undefined,
                   })}
-                  stretch={isTypingEmail || isPasswordWatching ? 1.08 : 1}
+                  stretch={isTypingUsername || isPasswordWatching ? 1.08 : 1}
                 />
                 <AnimatedCharacter
                   className="left-[58%] top-[8%] z-20 h-[78%] w-[25%] rounded-[1.4rem] bg-[linear-gradient(180deg,#30c3e6_0%,#1ea8cf_100%)]"
@@ -416,14 +415,14 @@ export function StaticLoginPage() {
                   onSubmit={async (event) => {
                     event.preventDefault();
 
-                    if (!email.trim() || !password) {
-                      toast.error('请输入邮箱和密码');
+                    if (!username.trim() || !password) {
+                      toast.error('请输入用户名和密码');
                       return;
                     }
 
                     setSubmitting(true);
                     try {
-                      await login(email.trim(), password);
+                      await login(username.trim(), password);
                       toast.success('登录成功');
                       router.push('/home');
                     } catch (err) {
@@ -434,17 +433,17 @@ export function StaticLoginPage() {
                   }}
                 >
                   <div className="space-y-2.5">
-                    <Label htmlFor="login-email" className="text-base font-semibold text-slate-900">
-                      邮箱 / 账号
+                    <Label htmlFor="login-username" className="text-base font-semibold text-slate-900">
+                      用户名
                     </Label>
                     <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
-                      <Mail className="h-5 w-5 text-[#8ea0bc]" />
+                      <User className="h-5 w-5 text-[#8ea0bc]" />
                       <Input
-                        id="login-email"
-                        type="email"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        onFocus={() => setActiveField('email')}
+                        id="login-username"
+                        type="text"
+                        value={username}
+                        onChange={(event) => setUsername(event.target.value)}
+                        onFocus={() => setActiveField('username')}
                         onBlur={() => setActiveField(null)}
                         className="h-auto border-0 bg-transparent px-0 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                       />
@@ -484,17 +483,7 @@ export function StaticLoginPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                    <label className="inline-flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={() => setRememberMe((value) => !value)}
-                        className="h-5 w-5 rounded border-[#c8d6eb] text-[#3c6df3] focus:ring-[#3c6df3]/20"
-                      />
-                      <span className="text-base text-slate-700">30 天内记住我</span>
-                      <span className="sr-only">继续使用</span>
-                    </label>
+                  <div className="flex items-center justify-end text-sm text-slate-500">
                     <Link
                       href="/forgot-password"
                       className="text-base font-medium text-[#3c6df3] hover:text-[#2455db]"

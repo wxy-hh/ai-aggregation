@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { authHeaders } from '@/lib/api/client';
 import type { DestinyCopilotResponse, DestinyReport } from '../types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -142,7 +143,7 @@ export function AICoPilotConversation({
     try {
       const response = await fetch('/api/destiny/copilot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           reportSummary: buildCopilotContext(report),
           messages: nextMessages

@@ -73,7 +73,7 @@ REDIS_URL=rediss://default:password@host:6379
 
 ARK_API_KEY=your-ark-api-key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-ARK_MODEL=doubao-seed-2-0-lite-260215
+ARK_MODEL=doubao-seed-2-0-lite-260428
 
 DASHSCOPE_API_KEY=
 ZHIPU_API_KEY=
@@ -125,7 +125,7 @@ DATABASE_URL=postgresql://user:password@host:5432/dbname
 REDIS_URL=rediss://default:password@host:6379
 ARK_API_KEY=your-ark-api-key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-ARK_MODEL=doubao-seed-2-0-lite-260215
+ARK_MODEL=doubao-seed-2-0-lite-260428
 ```
 
 如果还有图像、语音、视频等异步任务，也要把对应 API Key 一并配上。

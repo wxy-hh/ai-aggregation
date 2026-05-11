@@ -58,6 +58,7 @@ export interface XunfeiChatOptions {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  onUsage?: (usage: XunfeiChatResult['usage']) => void;
 }
 
 export interface XunfeiChatResult {
@@ -110,10 +111,10 @@ export async function xunfeiChat(options: XunfeiChatOptions): Promise<XunfeiChat
     content: data.choices[0]?.message?.content || '',
     usage: data.usage
       ? {
-          promptTokens: data.usage.prompt_tokens,
-          completionTokens: data.usage.completion_tokens,
-          totalTokens: data.usage.total_tokens,
-        }
+        promptTokens: data.usage.prompt_tokens,
+        completionTokens: data.usage.completion_tokens,
+        totalTokens: data.usage.total_tokens,
+      }
       : undefined,
   };
 }
@@ -164,11 +165,8 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
 
       buffer += decoder.decode(value, { stream: true });
       // 使用 process.stdout.write 立即输出，不会被缓冲
-      process.stdout.write(`[Xunfei] buffer --> ${buffer}\n`);
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-      process.stdout.write(`[Xunfei] buffer222 --> ${buffer}\n`);
-
       for (const line of lines) {
         const trimmedLine = line.trim();
         if (!trimmedLine || !trimmedLine.startsWith('data:')) continue;
@@ -180,6 +178,14 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
           const data: XunfeiStreamResponse = JSON.parse(jsonStr);
           if (data.code !== 0) {
             throw new Error(`Xunfei stream error: ${data.code} - ${data.message}`);
+          }
+
+          if (data.usage) {
+            options.onUsage?.({
+              promptTokens: data.usage.prompt_tokens,
+              completionTokens: data.usage.completion_tokens,
+              totalTokens: data.usage.total_tokens,
+            });
           }
 
           const content = data.choices[0]?.delta?.content;

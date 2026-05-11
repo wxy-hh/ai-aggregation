@@ -9,8 +9,10 @@ import type {
   DestinyReportRequest,
   DestinyStreamStatus,
 } from '@/app/destiny/_components/types';
-import { extractArkOutputText, extractJsonBlock } from '../_lib/ark-response';
+import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -34,7 +36,7 @@ const RequestSchema = z.object({
   }),
 });
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const REPORT_TIMEOUT_MS = 300000;
 const QUICK_MAX_OUTPUT_TOKENS = 1600;
@@ -118,6 +120,7 @@ class UpstreamModelError extends Error {
 
 export async function POST(req: Request) {
   try {
+    const userId = await getOptionalUserId(req);
     const body = await req.json();
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -146,6 +149,7 @@ export async function POST(req: Request) {
       currentYear,
       arkApiKey,
       arkBaseUrl,
+      userId,
     });
 
     return new Response(stream, {
@@ -170,11 +174,13 @@ function createBaziStream({
   currentYear,
   arkApiKey,
   arkBaseUrl,
+  userId,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   arkApiKey: string;
   arkBaseUrl: string;
+  userId: string | null;
 }) {
   const encoder = new TextEncoder();
 
@@ -196,6 +202,7 @@ function createBaziStream({
           arkBaseUrl,
           input,
           currentYear,
+          userId,
         });
 
         emitBaziSectionEvents({
@@ -212,6 +219,7 @@ function createBaziStream({
           arkBaseUrl,
           input,
           currentYear,
+          userId,
         });
 
         emitBaziSectionEvents({
@@ -243,11 +251,13 @@ async function generateQuickBaziSections({
   arkBaseUrl,
   input,
   currentYear,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
   currentYear: number;
+  userId: string | null;
 }) {
   try {
     const payload = await requestArkPayload({
@@ -260,6 +270,9 @@ async function generateQuickBaziSections({
       maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      action: 'destiny-report',
+      metadata: { stage: 'quick', currentYear },
     });
 
     const text = extractArkOutputText(payload);
@@ -280,11 +293,13 @@ async function generateFullBaziReport({
   arkBaseUrl,
   input,
   currentYear,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
   currentYear: number;
+  userId: string | null;
 }) {
   let payload = await requestArkPayload({
     arkApiKey,
@@ -296,6 +311,9 @@ async function generateFullBaziReport({
     maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
     temperature: 0.3,
     timeoutMs: REPORT_TIMEOUT_MS,
+    userId,
+    action: 'destiny-report',
+    metadata: { stage: 'primary', currentYear },
   });
 
   if (isLengthIncomplete(payload)) {
@@ -309,6 +327,9 @@ async function generateFullBaziReport({
       maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       timeoutMs: REPORT_TIMEOUT_MS,
+      userId,
+      action: 'destiny-report',
+      metadata: { stage: 'retry', currentYear },
     });
 
     if (isLengthIncomplete(payload)) {
@@ -327,6 +348,9 @@ async function requestArkPayload({
   maxOutputTokens,
   temperature,
   timeoutMs,
+  userId,
+  action,
+  metadata,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
@@ -334,6 +358,9 @@ async function requestArkPayload({
   maxOutputTokens: number;
   temperature: number;
   timeoutMs: number;
+  userId: string | null;
+  action: 'destiny-report';
+  metadata?: Record<string, unknown>;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -361,7 +388,26 @@ async function requestArkPayload({
       throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
     }
 
-    return response.json();
+    const payload = await response.json();
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action,
+        provider: 'doubao',
+        model: ARK_MODEL,
+        endpoint: '/api/destiny/report',
+        usage: normalizeUsage(extractArkUsage(payload)),
+        metadata: {
+          ...metadata,
+          maxOutputTokens,
+          messageCount: inputMessages.length,
+        },
+      });
+    }
+
+    return payload;
   } finally {
     clearTimeout(timeoutId);
   }

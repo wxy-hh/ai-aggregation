@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
+import { authHeaders } from '@/lib/api/client';
 import {
   useDestinyWorkspaceStore,
   type QimenErrorKind,
@@ -389,7 +390,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     try {
       const response = await fetch('/api/destiny/qimen/analyze/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(mapFormToQimenRequest(formData)),
         signal: controller.signal,
       });

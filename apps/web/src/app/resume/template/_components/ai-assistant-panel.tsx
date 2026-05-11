@@ -6,6 +6,7 @@ import { Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ScoreRing } from './score-ring';
 import { useResumeEditorStore } from '@/stores/resume-editor-store';
 import type { EditModule } from '@/types/resume-editor';
+import { authHeaders } from '@/lib/api/client';
 
 /**
  * AI 助手面板组件
@@ -57,9 +58,7 @@ export function AIAssistantPanel() {
 
       const response = await fetch('/api/resume/diagnose', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders(),
         body: JSON.stringify({
           resume: doc,
           privacy: {

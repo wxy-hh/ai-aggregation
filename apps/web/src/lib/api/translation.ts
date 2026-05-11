@@ -3,6 +3,8 @@
  * 使用讯飞Lite模型进行中英文翻译
  */
 
+import { authFetch } from './client';
+
 export interface TranslateOptions {
   text: string;
   sourceLanguage?: string;
@@ -22,11 +24,8 @@ export async function translateText(options: TranslateOptions): Promise<Translat
   const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = options;
 
   try {
-    const response = await fetch('/api/voice/translate', {
+    const response = await authFetch('/api/voice/translate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         text,
         sourceLanguage,

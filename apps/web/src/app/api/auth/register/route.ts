@@ -16,18 +16,18 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { email, password, name } = parsed.data;
+    const { username, password, name } = parsed.data;
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({ where: { username } });
     if (existing) {
-      return ApiError.badRequest('该邮箱已被注册', 'EMAIL_EXISTS');
+      return ApiError.badRequest('该用户名已被注册', 'USERNAME_EXISTS');
     }
 
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { email, passwordHash, name },
-      select: { id: true, email: true, name: true, avatar: true },
+      data: { username, passwordHash, name },
+      select: { id: true, username: true, name: true, avatar: true },
     });
 
     const accessToken = signAccessToken(user.id);

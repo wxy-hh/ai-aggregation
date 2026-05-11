@@ -5,7 +5,9 @@ import type {
   QimenSectionKey,
   QimenStreamEvent,
 } from '@/app/destiny/_components/qimen-types';
-import { extractArkOutputText, extractJsonBlock } from '../../_lib/ark-response';
+import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../../_lib/ark-response';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -88,13 +90,14 @@ const QuickSectionSchema = z.object({
 type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const FULL_STAGE_TIMEOUT_MS = 300000;
-const QUICK_MAX_OUTPUT_TOKENS = 1400;
-const QUICK_RETRY_MAX_OUTPUT_TOKENS = 1800;
-const PRIMARY_MAX_OUTPUT_TOKENS = 2600;
-const RETRY_MAX_OUTPUT_TOKENS = 4600;
+// Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
+const QUICK_MAX_OUTPUT_TOKENS = 8192;
+const QUICK_RETRY_MAX_OUTPUT_TOKENS = 12288;
+const PRIMARY_MAX_OUTPUT_TOKENS = 16384;
+const RETRY_MAX_OUTPUT_TOKENS = 24576;
 
 const categoryLabelMap = {
   career: '事业发展',
@@ -258,6 +261,7 @@ class UpstreamModelError extends Error {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getOptionalUserId(request);
     const body = await request.json();
     const parsed = RequestSchema.safeParse(body);
 
@@ -285,6 +289,7 @@ export async function POST(request: Request) {
       input: parsed.data,
       arkApiKey,
       arkBaseUrl,
+      userId,
     });
 
     return new Response(stream, {
@@ -309,10 +314,12 @@ function createQimenStream({
   input,
   arkApiKey,
   arkBaseUrl,
+  userId,
 }: {
   input: QimenAnalyzeInput;
   arkApiKey: string;
   arkBaseUrl: string;
+  userId: string | null;
 }) {
   const encoder = new TextEncoder();
 
@@ -333,6 +340,7 @@ function createQimenStream({
           arkApiKey,
           arkBaseUrl,
           input,
+          userId,
         });
 
         emitSectionEvents({
@@ -348,6 +356,7 @@ function createQimenStream({
           arkApiKey,
           arkBaseUrl,
           input,
+          userId,
         });
 
         emitSectionEvents({
@@ -436,10 +445,12 @@ async function generateQuickSections({
   arkApiKey,
   arkBaseUrl,
   input,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: QimenAnalyzeInput;
+  userId: string | null;
 }): Promise<QimenLockedSections> {
   try {
     const primaryPayload = await requestArkPayload({
@@ -452,6 +463,9 @@ async function generateQuickSections({
       maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'quick-primary' },
     });
 
     const primaryText = extractArkOutputText(primaryPayload);
@@ -470,6 +484,9 @@ async function generateQuickSections({
       maxOutputTokens: QUICK_RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.15,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'quick-retry' },
     });
 
     const retryText = extractArkOutputText(retryPayload);
@@ -490,10 +507,12 @@ async function generateFullResult({
   arkApiKey,
   arkBaseUrl,
   input,
+  userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: QimenAnalyzeInput;
+  userId: string | null;
 }) {
   let payload = await requestArkPayload({
     arkApiKey,
@@ -505,6 +524,9 @@ async function generateFullResult({
     maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
     temperature: 0.25,
     timeoutMs: FULL_STAGE_TIMEOUT_MS,
+    userId,
+    action: 'destiny-qimen-analyze',
+    metadata: { stage: 'primary' },
   });
 
   if (isLengthIncomplete(payload)) {
@@ -518,6 +540,9 @@ async function generateFullResult({
       maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.15,
       timeoutMs: FULL_STAGE_TIMEOUT_MS,
+      userId,
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'retry' },
     });
 
     if (isLengthIncomplete(payload)) {
@@ -547,6 +572,9 @@ async function requestArkPayload({
   maxOutputTokens,
   temperature,
   timeoutMs,
+  userId,
+  action,
+  metadata,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
@@ -554,6 +582,9 @@ async function requestArkPayload({
   maxOutputTokens: number;
   temperature: number;
   timeoutMs: number;
+  userId: string | null;
+  action: 'destiny-qimen-analyze';
+  metadata?: Record<string, unknown>;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -581,7 +612,26 @@ async function requestArkPayload({
       throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
     }
 
-    return response.json();
+    const payload = await response.json();
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action,
+        provider: 'doubao',
+        model: ARK_MODEL,
+        endpoint: '/api/destiny/qimen/analyze',
+        usage: normalizeUsage(extractArkUsage(payload)),
+        metadata: {
+          ...metadata,
+          maxOutputTokens,
+          messageCount: input.length,
+        },
+      });
+    }
+
+    return payload;
   } finally {
     clearTimeout(timeoutId);
   }

@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
+import { normalizeUsage, recordAiUsage } from '@repo/db';
 import {
   QimenAnalysisStore,
   generateQimenBaseResult,
@@ -11,7 +12,7 @@ import type { QimenBaseJobData } from '@repo/queue';
 export const qimenBaseWorker = new Worker<QimenBaseJobData>(
   'qimen-base',
   async (job) => {
-    const { analysisId, input } = job.data;
+    const { analysisId, input, userId } = job.data;
     const store = new QimenAnalysisStore();
     const startedAt = Date.now();
 
@@ -22,7 +23,32 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
         stage: 'baseResult',
         hooks: {
           onRequestStart: (meta) => logger.info('奇门模型请求开始', meta),
-          onRequestSuccess: (meta) => logger.info('奇门模型请求完成', meta),
+          onRequestSuccess: async (meta) => {
+            logger.info('奇门模型请求完成', meta);
+            if (!userId) return;
+            try {
+              await recordAiUsage({
+                userId,
+                feature: 'destiny',
+                action: 'destiny-qimen-base',
+                provider: 'doubao',
+                model: 'doubao-seed-2-0-lite-260428',
+                endpoint: 'worker:qimen-base',
+                usage: normalizeUsage(
+                  ((meta as { payload?: unknown }).payload as Record<string, unknown>)?.usage
+                ),
+                metadata: {
+                  analysisId,
+                  stage: 'baseResult',
+                },
+              });
+            } catch (usageError) {
+              logger.warn('奇门基础盘面资源记录失败', {
+                analysisId,
+                error: usageError instanceof Error ? usageError.message : String(usageError),
+              });
+            }
+          },
           onRequestNonOk: (meta) => logger.warn('奇门模型请求返回非成功状态', meta),
           onRequestTimeout: (meta) => logger.warn('奇门模型请求超时', meta),
           onRequestError: (meta) =>

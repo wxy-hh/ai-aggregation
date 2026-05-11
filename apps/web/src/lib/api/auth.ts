@@ -2,7 +2,8 @@
 
 interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string | null;
   avatar: string | null;
   emailVerified: string | null;
@@ -45,17 +46,17 @@ function authHeaders(accessToken: string): HeadersInit {
 }
 
 export const authApi = {
-  async login(email: string, password: string) {
+  async login(username: string, password: string) {
     return request('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     });
   },
 
-  async register(email: string, password: string, name?: string) {
+  async register(username: string, password: string, name?: string) {
     return request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ username, password, name }),
     });
   },
 
@@ -75,10 +76,10 @@ export const authApi = {
     });
   },
 
-  async forgotPassword(email: string) {
+  async forgotPassword(username: string) {
     return request('/api/auth/forgot-password', {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ username }),
     });
   },
 

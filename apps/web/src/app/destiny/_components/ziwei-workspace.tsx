@@ -4,6 +4,7 @@ import React from 'react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
+import { authHeaders } from '@/lib/api/client';
 import {
   useDestinyWorkspaceStore,
   type ZiweiErrorKind,
@@ -384,7 +385,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     try {
       const response = await fetch('/api/destiny/ziwei-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify(mapFormToBaziRequest(formData)),
         signal: controller.signal,
       });

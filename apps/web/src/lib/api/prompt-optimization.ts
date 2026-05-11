@@ -1,3 +1,5 @@
+import { authFetch } from './client';
+
 /**
  * 提示词优化 API
  * 使用 AI 模型优化用户输入的视频描述提示词
@@ -24,11 +26,8 @@ export async function optimizePrompt(
   const { prompt, aspectRatio, duration } = options;
 
   try {
-    const response = await fetch('/api/video/optimize-prompt', {
+    const response = await authFetch('/api/video/optimize-prompt', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         prompt,
         aspectRatio,
