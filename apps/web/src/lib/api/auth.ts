@@ -6,6 +6,7 @@ interface User {
   email: string | null;
   name: string | null;
   avatar: string | null;
+  role: string;
   emailVerified: string | null;
   createdAt?: string;
 }

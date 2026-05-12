@@ -31,6 +31,7 @@ export function useAuth() {
     isAuthenticated,
     isLoading,
     accessToken,
+    isAdmin: user?.role === 'admin',
     login,
     register,
     logout,
