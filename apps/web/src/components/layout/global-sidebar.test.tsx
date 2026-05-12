@@ -45,7 +45,11 @@ vi.mock('@/stores', () => ({
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {
-    div: ({ children, layout: _layout, ...props }: React.HTMLAttributes<HTMLDivElement> & { layout?: boolean }) => (
+    div: ({
+      children,
+      layout: _layout,
+      ...props
+    }: React.HTMLAttributes<HTMLDivElement> & { layout?: boolean }) => (
       <div {...props}>{children}</div>
     ),
     button: ({
@@ -70,5 +74,12 @@ describe('GlobalSidebar', () => {
 
     const profileLink = screen.getByRole('link', { name: '打开个人中心' });
     expect(profileLink).toHaveAttribute('href', '/profile');
+  });
+
+  it('在底部渲染系统用户管理入口并跳转到管理页面', () => {
+    render(<GlobalSidebar />);
+
+    const adminLink = screen.getByRole('link', { name: '打开系统用户管理' });
+    expect(adminLink).toHaveAttribute('href', '/admin/users');
   });
 });

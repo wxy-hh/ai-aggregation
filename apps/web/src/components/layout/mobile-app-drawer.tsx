@@ -4,7 +4,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { APP_CONFIGS } from './apps-modal';
-import { CircleUserRound, Clock3, FileText } from 'lucide-react';
+import { CircleUserRound, Clock3, FileText, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -16,6 +16,12 @@ interface MobileAppDrawerProps {
 const PRIMARY_APP_IDS = new Set(['chat', 'image', 'voice']);
 
 const QUICK_LINKS = [
+  {
+    href: '/admin/users',
+    label: '系统用户管理',
+    description: '查看静态用户列表、角色与额度配置展示',
+    icon: Shield,
+  },
   {
     href: '/history',
     label: '历史',
@@ -106,7 +112,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
                           </p>
                           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                             {isDisabled
-                              ? app.disabledDescription ?? app.description
+                              ? (app.disabledDescription ?? app.description)
                               : app.description}
                           </p>
                         </div>

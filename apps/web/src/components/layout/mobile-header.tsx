@@ -12,6 +12,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/home': '首页',
   '/history': '历史记录',
   '/profile': '个人中心',
+  '/admin/users': '系统用户管理',
 };
 
 function getPageTitle(pathname: string) {

@@ -17,6 +17,7 @@ export function RegisterForm() {
   const register = useAuthStore((s) => s.register);
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,9 +75,7 @@ export function RegisterForm() {
             className="h-auto border-0 bg-transparent px-0 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>
-        <p className="text-xs text-slate-400">
-          3-30 个字符，仅支持英文字母、数字和下划线
-        </p>
+        <p className="text-xs text-slate-400">3-30 个字符，仅支持英文字母、数字和下划线</p>
       </div>
 
       <div className="space-y-2.5">

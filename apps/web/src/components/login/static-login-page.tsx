@@ -433,7 +433,10 @@ export function StaticLoginPage() {
                   }}
                 >
                   <div className="space-y-2.5">
-                    <Label htmlFor="login-username" className="text-base font-semibold text-slate-900">
+                    <Label
+                      htmlFor="login-username"
+                      className="text-base font-semibold text-slate-900"
+                    >
                       用户名
                     </Label>
                     <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
@@ -508,57 +511,57 @@ export function StaticLoginPage() {
                     </Button>
 
                     <div className="space-y-3">
-                        <div className="flex items-center gap-4 text-sm text-[#a1adbf]">
-                          <span className="h-px flex-1 bg-[#d9e3f2]" />
-                          <span>其他登录方式</span>
-                          <span className="h-px flex-1 bg-[#d9e3f2]" />
-                        </div>
+                      <div className="flex items-center gap-4 text-sm text-[#a1adbf]">
+                        <span className="h-px flex-1 bg-[#d9e3f2]" />
+                        <span>其他登录方式</span>
+                        <span className="h-px flex-1 bg-[#d9e3f2]" />
+                      </div>
 
                       <div className="flex items-center justify-center gap-5">
                         <button
-                            type="button"
-                            aria-label="使用微信登录"
-                            disabled={oauthRedirecting !== null}
-                            className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
-                            onClick={() => {
-                              if (!oauthConfig?.wechat) {
-                                toast.error('微信登录未配置，请联系管理员');
-                                return;
-                              }
-                              setOauthRedirecting('wechat');
-                              toast.info('正在跳转到微信登录...');
-                              window.location.href = '/api/auth/oauth/wechat';
-                            }}
-                          >
-                            <img
-                              src={typeof weixinIcon === 'string' ? weixinIcon : weixinIcon.src}
-                              alt=""
-                              aria-hidden="true"
-                              className="h-6 w-6 object-contain"
-                            />
-                          </button>
+                          type="button"
+                          aria-label="使用微信登录"
+                          disabled={oauthRedirecting !== null}
+                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                          onClick={() => {
+                            if (!oauthConfig?.wechat) {
+                              toast.error('微信登录未配置，请联系管理员');
+                              return;
+                            }
+                            setOauthRedirecting('wechat');
+                            toast.info('正在跳转到微信登录...');
+                            window.location.href = '/api/auth/oauth/wechat';
+                          }}
+                        >
+                          <img
+                            src={typeof weixinIcon === 'string' ? weixinIcon : weixinIcon.src}
+                            alt=""
+                            aria-hidden="true"
+                            className="h-6 w-6 object-contain"
+                          />
+                        </button>
                         <button
-                            type="button"
-                            aria-label="使用 QQ 登录"
-                            disabled={oauthRedirecting !== null}
-                            className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
-                            onClick={() => {
-                              if (!oauthConfig?.qq) {
-                                toast.error('QQ 登录未配置，请联系管理员');
-                                return;
-                              }
-                              setOauthRedirecting('qq');
-                              toast.info('正在跳转到 QQ 登录...');
-                              window.location.href = '/api/auth/oauth/qq';
-                            }}
-                          >
-                            <img
-                              src={typeof qqIcon === 'string' ? qqIcon : qqIcon.src}
-                              alt=""
-                              aria-hidden="true"
-                              className="h-6 w-6 object-contain"
-                            />
-                          </button>
+                          type="button"
+                          aria-label="使用 QQ 登录"
+                          disabled={oauthRedirecting !== null}
+                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                          onClick={() => {
+                            if (!oauthConfig?.qq) {
+                              toast.error('QQ 登录未配置，请联系管理员');
+                              return;
+                            }
+                            setOauthRedirecting('qq');
+                            toast.info('正在跳转到 QQ 登录...');
+                            window.location.href = '/api/auth/oauth/qq';
+                          }}
+                        >
+                          <img
+                            src={typeof qqIcon === 'string' ? qqIcon : qqIcon.src}
+                            alt=""
+                            aria-hidden="true"
+                            className="h-6 w-6 object-contain"
+                          />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -566,7 +569,10 @@ export function StaticLoginPage() {
 
                 <p className="mt-4 text-center text-sm text-slate-500 lg:mt-3">
                   还没有账号？
-                  <Link href="/register" className="ml-1 font-semibold text-slate-900 hover:text-[#3c6df3]">
+                  <Link
+                    href="/register"
+                    className="ml-1 font-semibold text-slate-900 hover:text-[#3c6df3]"
+                  >
                     立即注册
                   </Link>
                 </p>
