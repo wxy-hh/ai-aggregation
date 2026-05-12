@@ -7,7 +7,7 @@ beforeAll(() => {
 
 describe('signAccessToken', () => {
   it('应该生成有效的 JWT', () => {
-    const token = signAccessToken('user-123');
+    const token = signAccessToken('user-123', 'user');
     expect(token).toBeDefined();
     expect(typeof token).toBe('string');
     // JWT 格式: header.payload.signature
@@ -16,14 +16,15 @@ describe('signAccessToken', () => {
 });
 
 describe('verifyAccessToken', () => {
-  it('应能解码有效 Token 并返回 userId', () => {
-    const token = signAccessToken('user-456');
-    const { userId } = verifyAccessToken(token);
+  it('应能解码有效 Token 并返回 userId 和 role', () => {
+    const token = signAccessToken('user-456', 'admin');
+    const { userId, role } = verifyAccessToken(token);
     expect(userId).toBe('user-456');
+    expect(role).toBe('admin');
   });
 
   it('篡改的 Token 应抛出异常', () => {
-    const token = signAccessToken('user-789');
+    const token = signAccessToken('user-789', 'user');
     const tampered = token.slice(0, -3) + 'xxx';
     expect(() => verifyAccessToken(tampered)).toThrow();
   });

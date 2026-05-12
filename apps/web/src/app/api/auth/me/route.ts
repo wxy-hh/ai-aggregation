@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
         name: true,
         avatar: true,
         emailVerified: true,
+        role: true,
         createdAt: true,
       },
     });

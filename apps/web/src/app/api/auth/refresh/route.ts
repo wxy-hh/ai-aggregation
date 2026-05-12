@@ -11,7 +11,10 @@ export async function POST(_req: NextRequest) {
       return ApiError.unauthorized('缺少刷新令牌');
     }
 
-    const record = await prisma.refreshToken.findUnique({ where: { token } });
+    const record = await prisma.refreshToken.findUnique({
+      where: { token },
+      include: { user: { select: { role: true } } },
+    });
 
     if (!record || record.expiresAt < new Date()) {
       if (record) {
@@ -31,7 +34,7 @@ export async function POST(_req: NextRequest) {
       }),
     ]);
 
-    const accessToken = signAccessToken(record.userId);
+    const accessToken = signAccessToken(record.userId, record.user.role);
     await setRefreshTokenCookie(newRefreshToken, expiresAt);
 
     return Response.json({ accessToken });

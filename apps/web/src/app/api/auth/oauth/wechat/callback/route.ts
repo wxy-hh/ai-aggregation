@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const accessToken = signAccessToken(user!.id);
+    const accessToken = signAccessToken(user!.id, user!.role);
     const refreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 

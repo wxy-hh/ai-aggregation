@@ -27,10 +27,10 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.create({
       data: { username, passwordHash, name },
-      select: { id: true, username: true, name: true, avatar: true },
+      select: { id: true, username: true, name: true, avatar: true, role: true },
     });
 
-    const accessToken = signAccessToken(user.id);
+    const accessToken = signAccessToken(user.id, user.role);
     const refreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 

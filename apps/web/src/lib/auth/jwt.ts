@@ -15,19 +15,20 @@ const REFRESH_TOKEN_EXPIRES = Number(process.env.AUTH_REFRESH_TOKEN_EXPIRES) || 
 
 interface AccessTokenPayload {
   userId: string;
+  role: string;
 }
 
 /** 签发 Access Token（JWT），默认 15 分钟过期 */
-export function signAccessToken(userId: string): string {
-  return jwt.sign({ userId } satisfies AccessTokenPayload, getAuthSecret(), {
+export function signAccessToken(userId: string, role: string): string {
+  return jwt.sign({ userId, role } satisfies AccessTokenPayload, getAuthSecret(), {
     expiresIn: ACCESS_TOKEN_EXPIRES,
   });
 }
 
-/** 验证 Access Token，返回 userId；无效时抛出异常 */
-export function verifyAccessToken(token: string): { userId: string } {
+/** 验证 Access Token，返回 userId 和 role；无效时抛出异常 */
+export function verifyAccessToken(token: string): { userId: string; role: string } {
   const payload = jwt.verify(token, getAuthSecret()) as unknown as AccessTokenPayload;
-  return { userId: payload.userId };
+  return { userId: payload.userId, role: payload.role };
 }
 
 /** 生成加密安全的 Refresh Token */

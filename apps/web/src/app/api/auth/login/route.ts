@@ -28,7 +28,11 @@ export async function POST(req: NextRequest) {
       return ApiError.unauthorized('用户名或密码错误');
     }
 
-    const accessToken = signAccessToken(user.id);
+    if (user.status === 'disabled') {
+      return ApiError.forbidden('账号已被停用，请联系管理员');
+    }
+
+    const accessToken = signAccessToken(user.id, user.role);
     const refreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 
