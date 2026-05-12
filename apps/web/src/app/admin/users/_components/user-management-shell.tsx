@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,7 +11,23 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { adminApi } from '@/lib/api/admin-api';
+import { toast } from 'sonner';
 import { EditUserDialog, type AdminUserRecord } from './edit-user-dialog';
+import { CreateUserDialog } from './create-user-dialog';
+
+/** 与 admin-api.ts 中的 AdminUser 保持一致 */
+interface AdminUser {
+  id: string;
+  username: string;
+  email: string | null;
+  name: string | null;
+  avatar: string | null;
+  role: string;
+  status: string;
+  tokens: number;
+  createdAt: string;
+}
 
 const GLASS_PANEL =
   'relative overflow-hidden border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.76),rgba(255,255,255,0.30),transparent)] shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[24px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))]';
@@ -22,60 +38,7 @@ const GLASS_SURFACE =
 const ROW_SURFACE =
   'rounded-[24px] border border-[rgba(255,255,255,0.65)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.58))] shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_24px_32px_-24px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.58))]';
 
-const ADMIN_USERS: AdminUserRecord[] = [
-  {
-    id: 'USR-1029',
-    name: '张伟',
-    email: 'zhangwei@luminal.ai',
-    role: '普通用户',
-    tokens: '12,500 Tokens',
-    status: '正常',
-    avatar: '',
-    initials: 'Z',
-    avatarTone: 'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]',
-  },
-  {
-    id: 'USR-2281',
-    name: '李娜',
-    email: 'lina@luminal.ai',
-    role: '管理员',
-    tokens: '89,000 Tokens',
-    status: '正常',
-    avatar: '',
-    initials: 'L',
-    avatarTone: 'bg-gradient-to-br from-[#F0E1FF] to-[#DFC7FF] text-[#6A31D8]',
-  },
-  {
-    id: 'USR-4412',
-    name: '王强',
-    email: 'wangqiang@luminal.ai',
-    role: '普通用户',
-    tokens: '0 Tokens',
-    status: '耗尽',
-    avatar: '',
-    initials: 'W',
-    avatarTone: 'bg-gradient-to-br from-[#FFE7C5] to-[#FFD5A0] text-[#E45700]',
-  },
-  {
-    id: 'USR-9901',
-    name: '陈小明',
-    email: 'chenxiaoming@luminal.ai',
-    role: '普通用户',
-    tokens: '-',
-    status: '已禁用',
-    avatar: '',
-    initials: 'C',
-    avatarTone: 'bg-gradient-to-br from-[#E9EEF5] to-[#DCE3ED] text-[#79869A]',
-  },
-];
-
-const SUMMARY_CARDS = [
-  { label: '总用户数', value: '142', tone: 'text-slate-950 dark:text-white' },
-  { label: '管理员', value: '12', tone: 'text-[#255DFF] dark:text-[#BFD0FF]' },
-  { label: '异常账号', value: '5', tone: 'text-rose-500 dark:text-rose-300' },
-];
-
-function StatusBadge({ status }: { status: AdminUserRecord['status'] }) {
+function StatusBadge({ status }: { status: string }) {
   const styles =
     status === '正常'
       ? 'border-emerald-200/90 bg-emerald-50/90 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
@@ -96,7 +59,7 @@ function StatusBadge({ status }: { status: AdminUserRecord['status'] }) {
   );
 }
 
-function RoleBadge({ role }: { role: AdminUserRecord['role'] }) {
+function RoleBadge({ role }: { role: string }) {
   return (
     <span
       className={cn(
@@ -111,30 +74,137 @@ function RoleBadge({ role }: { role: AdminUserRecord['role'] }) {
   );
 }
 
-export function UserManagementShell() {
-  const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(ADMIN_USERS[0]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+/**
+ * 将 API 返回的 AdminUser 转换为 AdminUserRecord，供 EditUserDialog 直接使用。
+ */
+function toRecord(user: AdminUser): AdminUserRecord {
+  const displayName = user.name || user.username;
+  const displayStatus: AdminUserRecord['status'] =
+    user.status === 'disabled' ? '已禁用' : '正常';
+  const displayRole: AdminUserRecord['role'] =
+    user.role === 'admin' ? '管理员' : '普通用户';
 
-  const headerDescription = useMemo(
+  return {
+    id: user.id,
+    name: displayName,
+    email: user.email || '',
+    role: displayRole,
+    tokens: user.tokens.toLocaleString() + ' Tokens',
+    status: displayStatus,
+    avatar: user.avatar || '',
+    initials: displayName.charAt(0).toUpperCase(),
+    avatarTone: 'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]',
+  };
+}
+
+export function UserManagementShell() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
+  const PAGE_SIZE = 10;
+
+  const fetchUsers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await adminApi.listUsers({
+        search: searchQuery || undefined,
+        page,
+        limit: PAGE_SIZE,
+      });
+      if (res.success && res.data) {
+        setUsers(res.data.users);
+        setTotal(res.data.meta.total);
+      }
+    } catch {
+      toast.error('加载用户列表失败');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [searchQuery, page]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // 切换搜索关键词时回到第一页
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setPage(1);
+  };
+
+  const headlineDescription = useMemo(
     () => '超级管理员专属控制台：全局用户权限审核、算力额度分配与账户状态监控。',
     []
   );
 
-  // 根据搜索关键词过滤当前展示的用户列表。
-  const filteredUsers = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
+  const SUMMARY_CARDS = [
+    { label: '总用户数', value: String(total), tone: 'text-slate-950 dark:text-white' as const },
+    { label: '管理员', value: String(users.filter((u) => u.role === 'admin').length), tone: 'text-[#255DFF]' as const },
+    { label: '已停用', value: String(users.filter((u) => u.status === 'disabled').length), tone: 'text-rose-500' as const },
+  ];
 
-    if (!normalizedQuery) {
-      return ADMIN_USERS;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const handleDelete = async (userId: string) => {
+    if (!confirm('确认删除该用户？此操作不可撤销，将级联删除所有关联数据。')) return;
+    try {
+      await adminApi.deleteUser(userId);
+      toast.success('用户已删除');
+      fetchUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除失败');
     }
+  };
 
-    return ADMIN_USERS.filter((user) =>
-      [user.name, user.id, user.email, user.role, user.status].some((field) =>
-        field.toLowerCase().includes(normalizedQuery)
-      )
-    );
-  }, [searchQuery]);
+  const handleEdit = (record: AdminUserRecord) => {
+    setSelectedUser(record);
+    setEditDialogOpen(true);
+  };
+
+  // 分页按钮生成
+  const pageButtons = useMemo(() => {
+    const buttons: number[] = [];
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) buttons.push(i);
+    } else {
+      buttons.push(1);
+      if (page > 3) buttons.push(-1); // 省略号标记
+      const start = Math.max(2, page - 1);
+      const end = Math.min(totalPages - 1, page + 1);
+      for (let i = start; i <= end; i++) buttons.push(i);
+      if (page < totalPages - 2) buttons.push(-2); // 省略号标记
+      buttons.push(totalPages);
+    }
+    return buttons;
+  }, [page, totalPages]);
+
+  const footerText = `显示 ${(page - 1) * PAGE_SIZE + 1} 到 ${Math.min(page * PAGE_SIZE, total)}，共 ${total} 名用户`;
+
+  // 获取显示状态
+  const getDisplayStatus = (user: AdminUser): string => {
+    return user.status === 'disabled' ? '已禁用' : '正常';
+  };
+
+  // 获取显示角色
+  const getDisplayRole = (user: AdminUser): string => {
+    return user.role === 'admin' ? '管理员' : '普通用户';
+  };
+
+  // 获取显示名称
+  const getDisplayName = (user: AdminUser): string => {
+    return user.name || user.username;
+  };
+
+  // 格式化 tokens 显示
+  const formatTokens = (tokens: number): string => {
+    return tokens.toLocaleString();
+  };
 
   return (
     <>
@@ -183,7 +253,7 @@ export function UserManagementShell() {
                   系统用户管理
                 </h1>
                 <p className="mt-2 max-w-2xl text-[15px] leading-[1.5] text-[var(--home-color-text-tertiary)] dark:text-slate-300">
-                  {headerDescription}
+                  {headlineDescription}
                 </p>
               </div>
 
@@ -224,7 +294,7 @@ export function UserManagementShell() {
                     placeholder="搜索用户名、ID 或邮箱..."
                     className="h-[48px] w-full rounded-[12px] border-0 bg-[var(--home-color-surface)] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[var(--home-shadow-sm)] outline-none placeholder:text-[var(--home-color-text-quaternary)]"
                     value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onChange={(event) => handleSearchChange(event.target.value)}
                   />
                 </div>
 
@@ -240,7 +310,11 @@ export function UserManagementShell() {
                 </button>
               </div>
 
-              <Button type="button" className="h-[44px] rounded-[12px] px-5 text-[14px]">
+              <Button
+                type="button"
+                className="h-[44px] rounded-[12px] px-5 text-[14px]"
+                onClick={() => setCreateDialogOpen(true)}
+              >
                 <UserPlus className="mr-2 h-5 w-5" />
                 新增用户
               </Button>
@@ -256,7 +330,7 @@ export function UserManagementShell() {
               </div>
 
               <div className="mt-3 space-y-3">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <div
                     key={user.id}
                     className={cn(ROW_SURFACE, 'grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-6 py-5')}
@@ -265,44 +339,40 @@ export function UserManagementShell() {
                       <div
                         className={cn(
                           'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
-                          user.avatarTone
+                          'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]'
                         )}
                       >
-                        {user.initials}
+                        {getDisplayName(user).charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <p className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
-                          {user.name}
+                          {getDisplayName(user)}
                         </p>
                         <p className="text-[13px] text-slate-500 dark:text-slate-400">{user.id}</p>
                       </div>
                     </div>
 
-                    <RoleBadge role={user.role} />
+                    <RoleBadge role={getDisplayRole(user)} />
 
                     <div className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
-                      {user.tokens.split(' ')[0]}
-                      <span className="ml-1.5 text-[13px] font-medium text-slate-400">
-                        {user.tokens === '-' ? '' : 'Tokens'}
-                      </span>
+                      {formatTokens(user.tokens)}
+                      <span className="ml-1.5 text-[13px] font-medium text-slate-400">Tokens</span>
                     </div>
 
-                    <StatusBadge status={user.status} />
+                    <StatusBadge status={getDisplayStatus(user)} />
 
                     <div className="flex items-center justify-end gap-3 text-[13px] font-semibold">
                       <button
                         type="button"
                         className="text-[12px] text-[#255DFF]"
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setDialogOpen(true);
-                        }}
+                        onClick={() => handleEdit(toRecord(user))}
                       >
                         更新
                       </button>
                       <button
                         type="button"
                         className="inline-flex items-center gap-1 text-[12px] text-rose-500"
+                        onClick={() => handleDelete(user.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                         <span>删除</span>
@@ -312,7 +382,11 @@ export function UserManagementShell() {
                 ))}
               </div>
 
-              {filteredUsers.length === 0 ? (
+              {isLoading ? (
+                <div className={cn(GLASS_SURFACE, 'mt-3 rounded-[20px] px-6 py-8 text-center')}>
+                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">加载中...</p>
+                </div>
+              ) : users.length === 0 ? (
                 <div className={cn(GLASS_SURFACE, 'mt-3 rounded-[20px] px-6 py-8 text-center')}>
                   <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
                     没有找到匹配的用户，请调整搜索关键词。
@@ -321,8 +395,9 @@ export function UserManagementShell() {
               ) : null}
             </div>
 
+            {/* 移动端列表 */}
             <div className="relative mt-5 grid gap-4 lg:hidden">
-              {filteredUsers.map((user) => (
+              {users.map((user) => (
                 <article
                   key={user.id}
                   className={cn(ROW_SURFACE, 'p-4')}
@@ -333,21 +408,21 @@ export function UserManagementShell() {
                       <div
                         className={cn(
                           'flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
-                          user.avatarTone
+                          'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]'
                         )}
                       >
-                        {user.initials}
+                        {getDisplayName(user).charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h2 className="text-[15px] font-semibold text-slate-950 dark:text-white">
-                            {user.name}
+                            {getDisplayName(user)}
                           </h2>
-                          <RoleBadge role={user.role} />
+                          <RoleBadge role={getDisplayRole(user)} />
                         </div>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{user.id}</p>
                         <p className="mt-1 break-all text-sm text-slate-500 dark:text-slate-400">
-                          {user.email}
+                          {user.email || user.username}
                         </p>
                       </div>
                     </div>
@@ -356,13 +431,13 @@ export function UserManagementShell() {
                       <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
                         <p className="text-xs text-slate-500 dark:text-slate-400">代币余额</p>
                         <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
-                          {user.tokens}
+                          {formatTokens(user.tokens)} Tokens
                         </p>
                       </div>
                       <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
                         <p className="text-xs text-slate-500 dark:text-slate-400">账号状态</p>
                         <div className="mt-2">
-                          <StatusBadge status={user.status} />
+                          <StatusBadge status={getDisplayStatus(user)} />
                         </div>
                       </div>
                     </div>
@@ -372,14 +447,16 @@ export function UserManagementShell() {
                         type="button"
                         variant="outline"
                         className="h-11 flex-1 rounded-2xl text-sm"
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setDialogOpen(true);
-                        }}
+                        onClick={() => handleEdit(toRecord(user))}
                       >
                         更新
                       </Button>
-                      <Button type="button" variant="ghost" className="h-11 flex-1 rounded-2xl text-rose-500">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-11 flex-1 rounded-2xl text-rose-500"
+                        onClick={() => handleDelete(user.id)}
+                      >
                         删除
                       </Button>
                     </div>
@@ -387,7 +464,11 @@ export function UserManagementShell() {
                 </article>
               ))}
 
-              {filteredUsers.length === 0 ? (
+              {isLoading ? (
+                <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
+                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">加载中...</p>
+                </div>
+              ) : users.length === 0 ? (
                 <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
                   <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
                     没有找到匹配的用户，请调整搜索关键词。
@@ -396,48 +477,56 @@ export function UserManagementShell() {
               ) : null}
             </div>
 
+            {/* 分页 */}
             <div className="relative mt-6 flex flex-col gap-4 border-t border-[rgba(255,255,255,0.60)] pt-5 text-sm text-[var(--home-color-text-tertiary)] dark:border-white/10 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-              <p>显示 1 到 {Math.min(filteredUsers.length, 10)}，共 {filteredUsers.length} 名用户</p>
+              <p>{footerText}</p>
 
               <div className="flex items-center gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   aria-label="上一页"
+                  disabled={page <= 1}
                   className={cn(
                     GLASS_SURFACE,
-                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-tertiary)] hover:bg-white/90 dark:text-slate-300 dark:hover:bg-slate-800/55'
+                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-tertiary)] hover:bg-white/90 disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800/55'
                   )}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                {[1, 2, 3].map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    className={cn(
-                      'flex h-10 min-w-[40px] items-center justify-center rounded-[12px] px-3 text-[14px] font-semibold transition-all',
-                      page === 1
-                        ? 'bg-[rgba(59,130,246,0.12)] text-[var(--home-color-primary-600)] shadow-[0_8px_20px_rgba(76,95,154,0.08)]'
-                        : 'border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,255,255,0.62))] text-[var(--home-color-text-secondary)] shadow-[0_8px_20px_rgba(76,95,154,0.10)] hover:bg-white/90 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-200 dark:hover:bg-slate-800/55'
-                    )}
-                  >
-                    {page}
-                  </button>
-                ))}
-                <span className="px-1">...</span>
-                <button
-                  type="button"
-                  className="flex h-10 min-w-[40px] items-center justify-center rounded-[12px] px-3 text-[14px] font-semibold text-[var(--home-color-text-secondary)]"
-                >
-                  15
-                </button>
+                {pageButtons.map((btn, idx) => {
+                  if (btn < 0) {
+                    return (
+                      <span key={`ellipsis-${idx}`} className="px-1">
+                        ...
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      key={btn}
+                      type="button"
+                      onClick={() => setPage(btn)}
+                      className={cn(
+                        'flex h-10 min-w-[40px] items-center justify-center rounded-[12px] px-3 text-[14px] font-semibold transition-all',
+                        btn === page
+                          ? 'bg-[rgba(59,130,246,0.12)] text-[var(--home-color-primary-600)] shadow-[0_8px_20px_rgba(76,95,154,0.08)]'
+                          : 'border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,255,255,0.62))] text-[var(--home-color-text-secondary)] shadow-[0_8px_20px_rgba(76,95,154,0.10)] hover:bg-white/90 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-200 dark:hover:bg-slate-800/55'
+                      )}
+                    >
+                      {btn}
+                    </button>
+                  );
+                })}
                 <button
                   type="button"
                   aria-label="下一页"
+                  disabled={page >= totalPages}
                   className={cn(
                     GLASS_SURFACE,
-                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-secondary)] hover:bg-white/90 dark:text-slate-200 dark:hover:bg-slate-800/55'
+                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-secondary)] hover:bg-white/90 disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-800/55'
                   )}
+                  onClick={() => setPage((p) => p + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -447,7 +536,18 @@ export function UserManagementShell() {
         </div>
       </div>
 
-      <EditUserDialog open={dialogOpen} onOpenChange={setDialogOpen} user={selectedUser} />
+      <EditUserDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        user={selectedUser}
+        onSuccess={fetchUsers}
+      />
+
+      <CreateUserDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSuccess={fetchUsers}
+      />
     </>
   );
 }
