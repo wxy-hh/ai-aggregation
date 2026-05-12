@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { extractArkOutputText } from '../_lib/ark-response';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 const RequestSchema = z.object({
   reportSummary: z.string().trim().min(1, '报告摘要不能为空'),
@@ -16,10 +18,11 @@ const RequestSchema = z.object({
   question: z.string().trim().min(1, '问题不能为空').max(1000),
 });
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 
 export async function POST(req: Request) {
   try {
+    const userId = await getOptionalUserId(req);
     const body = await req.json();
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -98,6 +101,23 @@ export async function POST(req: Request) {
 
     const payload = await response.json();
     const answer = extractArkOutputText(payload);
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action: 'destiny-copilot',
+        provider: 'doubao',
+        model: ARK_MODEL,
+        endpoint: '/api/destiny/copilot',
+        usage: normalizeUsage(payload.usage ?? payload.response?.usage),
+        metadata: {
+          historyCount: history.length,
+          questionLength: parsed.data.question.length,
+        },
+      });
+    }
+
     return NextResponse.json({ answer }, { status: 200 });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {

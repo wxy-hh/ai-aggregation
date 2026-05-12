@@ -4,6 +4,7 @@ import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
 import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { getQQAccessToken, getQQOpenId, getQQUserInfo } from '@/lib/auth/oauth';
+import { generateOAuthUsername } from '@/lib/auth/oauth-username';
 
 const CLIENT_REDIRECT = '/home';
 
@@ -43,9 +44,11 @@ export async function GET(req: NextRequest) {
     let user = oauthAccount?.user;
 
     if (!oauthAccount) {
+      const username = await generateOAuthUsername('qq', userInfo.nickname);
+
       user = await prisma.user.create({
         data: {
-          email: `qq_${openId}@oauth.local`,
+          username,
           name: userInfo.nickname,
           avatar: userInfo.figureurl_qq_2,
           oauthAccounts: {

@@ -113,6 +113,8 @@ describe('AppLayout', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       expect(screen.getByText('更多应用')).toBeInTheDocument();
       expect(screen.getByText('视频生成')).toBeInTheDocument();
+      expect(screen.getByText('个人中心')).toBeInTheDocument();
+      expect(screen.getByText('系统用户管理')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /PPT 制作/i })).toBeDisabled();
       expect(screen.getByText('功能开发中，暂不支持访问。')).toBeInTheDocument();
       expect(screen.getAllByText('主题切换').length).toBeGreaterThan(0);

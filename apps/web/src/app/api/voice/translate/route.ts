@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { xunfeiChat } from '@repo/providers';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +15,7 @@ interface TranslateRequest {
 export async function POST(request: NextRequest) {
   try {
     console.log('=== 开始处理翻译请求 ===');
+    const userId = await getOptionalUserId(request);
 
     const body: TranslateRequest = await request.json();
     const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = body;
@@ -54,6 +57,23 @@ ${text}`;
     });
 
     console.log('✓ 翻译完成, 译文长度:', result.content.length);
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'voice',
+        action: 'voice-translate',
+        provider: 'xunfei',
+        model: 'lite',
+        endpoint: '/api/voice/translate',
+        usage: normalizeUsage(result.usage),
+        metadata: {
+          textLength: text.length,
+          sourceLanguage,
+          targetLanguage,
+        },
+      });
+    }
 
     return NextResponse.json({
       translatedText: result.content.trim(),

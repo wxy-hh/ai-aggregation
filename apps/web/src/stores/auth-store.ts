@@ -6,7 +6,8 @@ import { authApi } from '@/lib/api/auth';
 
 interface User {
   id: string;
-  email: string;
+  username: string;
+  email: string | null;
   name: string | null;
   avatar: string | null;
   emailVerified: string | null;
@@ -19,8 +20,8 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
 
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name?: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
   fetchUser: () => Promise<void>;
@@ -35,8 +36,8 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       isAuthenticated: false,
 
-      login: async (email, password) => {
-        const res = await authApi.login(email, password);
+      login: async (username, password) => {
+        const res = await authApi.login(username, password);
 
         if (!res.success || !res.data?.user || !res.data?.accessToken) {
           throw new Error(res.error || '登录失败');
@@ -45,8 +46,8 @@ export const useAuthStore = create<AuthState>()(
         set({ user: res.data.user, accessToken: res.data.accessToken, isAuthenticated: true, isLoading: false });
       },
 
-      register: async (email, password, name) => {
-        const res = await authApi.register(email, password, name);
+      register: async (username, password, name) => {
+        const res = await authApi.register(username, password, name);
 
         if (!res.success || !res.data?.user || !res.data?.accessToken) {
           throw new Error(res.error || '注册失败');
@@ -113,14 +114,17 @@ export const useAuthStore = create<AuthState>()(
       initialize: async () => {
         set({ isLoading: true });
 
-        const { accessToken, refreshAccessToken, fetchUser } = get();
+        const { refreshAccessToken, fetchUser } = get();
 
-        if (accessToken) {
+        // 优先通过 refresh token 获取新 token（避免使用 localStorage 中可能已过期的旧 token）
+        const newToken = await refreshAccessToken();
+
+        if (newToken) {
           await fetchUser();
         } else {
-          // 尝试通过 refresh token 恢复登录
-          const newToken = await refreshAccessToken();
-          if (newToken) {
+          // refresh token 不可用，尝试用 localStorage 中的旧 token
+          const { accessToken } = get();
+          if (accessToken) {
             await fetchUser();
           } else {
             set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });

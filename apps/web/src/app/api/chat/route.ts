@@ -10,6 +10,7 @@ import { getRateLimiter, getQuotaManager } from '@repo/shared';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 function createErrorId() {
   return (
@@ -41,7 +42,10 @@ function createSseResponse(stream: ReadableStream<Uint8Array>) {
   });
 }
 
-function createSseStreamFromTextStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+function createSseStreamFromTextStream(
+  source: ReadableStream<Uint8Array>,
+  onComplete?: () => Promise<void> | void
+): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   const decoder = new TextDecoder();
 
@@ -55,6 +59,7 @@ function createSseStreamFromTextStream(source: ReadableStream<Uint8Array>): Read
             if (rest) {
               controller.enqueue(encodeSseEvent({ type: 'text-delta', text: rest }));
             }
+            await onComplete?.();
             controller.enqueue(encodeSseEvent({ type: 'done' }));
             break;
           }
@@ -73,6 +78,13 @@ function createSseStreamFromTextStream(source: ReadableStream<Uint8Array>): Read
       }
     },
   });
+}
+
+function buildChatUsageMetadata(messages: ChatMessage[]) {
+  return {
+    messagesCount: messages.length,
+    attachmentCount: messages.reduce((count, message) => count + (message.attachments?.length ?? 0), 0),
+  };
 }
 
 
@@ -239,10 +251,14 @@ export async function POST(req: Request) {
 
     // 对于讯飞，使用自定义的流式处理
     if (provider === 'xunfei') {
+      let xunfeiUsage: ReturnType<typeof normalizeUsage> | null = null;
       const stream = createXunfeiStreamResponse({
         model: modelName,
         messages: messages as XunfeiMessage[],
         stream: true,
+        onUsage: (usage) => {
+          xunfeiUsage = normalizeUsage(usage);
+        },
       });
 
       // 记录讯飞请求成功并更新配额
@@ -263,7 +279,21 @@ export async function POST(req: Request) {
         console.error('更新配额失败:', err);
       });
 
-      return createSseResponse(createSseStreamFromTextStream(stream));
+      return createSseResponse(
+        createSseStreamFromTextStream(stream, async () => {
+          await safeRecordAiUsage({
+            userId,
+            feature: 'chat',
+            action: 'chat-stream',
+            provider: 'xunfei',
+            model: modelName,
+            endpoint: '/api/chat',
+            requestId: errorId,
+            usage: xunfeiUsage,
+            metadata: buildChatUsageMetadata(messages),
+          });
+        })
+      );
     }
 
     // 豆包需要特殊的消息格式处理
@@ -416,6 +446,7 @@ export async function POST(req: Request) {
       // 转换豆包 Responses API 的 SSE 流为标准 SSE 文本增量事件
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let doubaoUsage: ReturnType<typeof normalizeUsage> | null = null;
 
       const stream = new ReadableStream({
         async start(controller) {
@@ -458,7 +489,19 @@ export async function POST(req: Request) {
                     if (content) {
                       controller.enqueue(encodeSseEvent({ type: 'text-delta', text: content }));
                     }
-                  } else if (data.type === 'response.done') {
+                  } else if (
+                    data.type === 'response.done' ||
+                    data.type === 'response.completed' ||
+                    data.type === 'response.incomplete'
+                  ) {
+                    const usagePayload =
+                      data.response?.usage ??
+                      data.usage ??
+                      data.response?.metadata?.usage ??
+                      null;
+                    if (usagePayload) {
+                      doubaoUsage = normalizeUsage(usagePayload);
+                    }
                     hasSentDone = true;
                     const warning = getDoubaoIncompleteWarning(data);
                     if (warning) {
@@ -481,7 +524,30 @@ export async function POST(req: Request) {
             }
 
             if (!hasSentDone) {
+              await safeRecordAiUsage({
+                userId,
+                feature: 'chat',
+                action: 'chat-stream',
+                provider: 'doubao',
+                model: modelName,
+                endpoint: '/api/chat',
+                requestId: errorId,
+                usage: doubaoUsage,
+                metadata: buildChatUsageMetadata(messages),
+              });
               controller.enqueue(encodeSseEvent({ type: 'done' }));
+            } else {
+              await safeRecordAiUsage({
+                userId,
+                feature: 'chat',
+                action: 'chat-stream',
+                provider: 'doubao',
+                model: modelName,
+                endpoint: '/api/chat',
+                requestId: errorId,
+                usage: doubaoUsage,
+                metadata: buildChatUsageMetadata(messages),
+              });
             }
             controller.close();
           } catch (error) {
@@ -545,7 +611,26 @@ export async function POST(req: Request) {
       throw new Error('上游未返回流式响应体');
     }
 
-    return createSseResponse(createSseStreamFromTextStream(textResponse.body));
+    return createSseResponse(
+      createSseStreamFromTextStream(textResponse.body, async () => {
+        try {
+          const usage = await result.totalUsage;
+          await safeRecordAiUsage({
+            userId,
+            feature: 'chat',
+            action: 'chat-stream',
+            provider,
+            model: modelName,
+            endpoint: '/api/chat',
+            requestId: errorId,
+            usage: normalizeUsage(usage),
+            metadata: buildChatUsageMetadata(messages),
+          });
+        } catch (usageError) {
+          console.error('[chat] 读取 usage 失败:', usageError);
+        }
+      })
+    );
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;

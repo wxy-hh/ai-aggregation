@@ -53,7 +53,7 @@ export function getDefaultModel(providerName: ProviderName): string {
     case 'xunfei':
       return 'lite'; // 讯飞星火 Lite 免费模型
     case 'doubao':
-      return 'doubao-seed-2-0-lite-260215'; // 豆包轻量级模型
+      return 'doubao-seed-2-0-lite-260428'; // 豆包轻量级模型
     default:
       return 'lite';
   }

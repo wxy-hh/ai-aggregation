@@ -7,10 +7,10 @@ async function main() {
 
   // 创建测试用户
   const user = await prisma.user.upsert({
-    where: { email: 'test@example.com' },
+    where: { username: 'test_user' },
     update: {},
     create: {
-      email: 'test@example.com',
+      username: 'test_user',
       name: '测试用户',
     },
   });

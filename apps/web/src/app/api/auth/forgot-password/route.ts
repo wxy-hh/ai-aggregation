@@ -18,10 +18,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { email } = parsed.data;
+    const { username } = parsed.data;
 
-    // 始终返回相同消息，防止邮箱枚举攻击
-    const user = await prisma.user.findUnique({ where: { email } });
+    // 始终返回相同消息，防止用户枚举攻击
+    const user = await prisma.user.findUnique({ where: { username } });
 
     if (user) {
       const token = crypto.randomBytes(32).toString('hex');
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       // TODO: 后续集成邮件服务，将 token 通过邮件发送
     }
 
-    return createSuccessResponse(null, '如该邮箱已注册，重置链接已发送');
+    return createSuccessResponse(null, '如该用户名已注册，重置链接已发送');
   } catch (error) {
     console.error('忘记密码处理失败:', error);
     return ApiError.internalError('处理失败', {

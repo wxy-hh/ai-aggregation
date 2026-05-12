@@ -1,5 +1,7 @@
 import { DiagnoseRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 /**
  * POST /api/resume/diagnose
@@ -11,6 +13,7 @@ export async function POST(req: Request) {
   console.log('🔍 收到简历诊断请求');
 
   try {
+    const userId = await getOptionalUserId(req);
     const body = await req.json();
     console.log('📄 请求体:', JSON.stringify(body, null, 2));
 
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
     const arkApiKey = process.env.ARK_API_KEY;
     // 豆包 Responses API Base URL
     const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260215';
+    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260428';
 
     if (!arkApiKey) {
       console.error('ARK_API_KEY 未配置');
@@ -146,6 +149,24 @@ export async function POST(req: Request) {
 
       // 解析 ARK 响应
       const diagnosisResult = extractDiagnosisResult(result);
+
+      if (userId) {
+        await safeRecordAiUsage({
+          userId,
+          feature: 'resume',
+          action: 'resume-diagnose',
+          provider: 'doubao',
+          model: arkModel,
+          endpoint: '/api/resume/diagnose',
+          usage: normalizeUsage(result.usage ?? result.response?.usage),
+          metadata: {
+            hasJobDescription: Boolean(jobDescription?.trim()),
+            workExperienceCount: Array.isArray(resume.workExperiences)
+              ? resume.workExperiences.length
+              : 0,
+          },
+        });
+      }
 
       return new Response(
         JSON.stringify({
@@ -413,9 +434,9 @@ function calculateRuleBasedScore(resume: any): number {
   // 加权计算总分
   const score = Math.round(
     dimensions.completeness * 0.3 +
-      dimensions.impact * 0.3 +
-      dimensions.keywordMatch * 0.2 +
-      dimensions.readability * 0.2
+    dimensions.impact * 0.3 +
+    dimensions.keywordMatch * 0.2 +
+    dimensions.readability * 0.2
   );
 
   return Math.min(100, Math.max(0, score));
@@ -454,7 +475,7 @@ function calculateDimensions(resume: any): {
   const avgDescLength =
     workExperiences.length > 0
       ? workExperiences.reduce((sum: number, exp: any) => sum + (exp.description?.length || 0), 0) /
-        workExperiences.length
+      workExperiences.length
       : 0;
   if (avgDescLength > 100) impact += 20;
   if (avgDescLength > 200) impact += 20;

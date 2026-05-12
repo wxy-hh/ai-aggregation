@@ -16,16 +16,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { email, password } = parsed.data;
+    const { username, password } = parsed.data;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { username } });
     if (!user || !user.passwordHash) {
-      return ApiError.unauthorized('邮箱或密码错误');
+      return ApiError.unauthorized('用户名或密码错误');
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
-      return ApiError.unauthorized('邮箱或密码错误');
+      return ApiError.unauthorized('用户名或密码错误');
     }
 
     const accessToken = signAccessToken(user.id);
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     return createSuccessResponse({
       user: {
         id: user.id,
-        email: user.email,
+        username: user.username,
         name: user.name,
         avatar: user.avatar,
       },

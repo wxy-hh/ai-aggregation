@@ -7,6 +7,7 @@ import {
   type QimenSectionKey,
 } from '@repo/shared';
 import { qimenBaseQueue, qimenSectionQueue } from '@repo/queue';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   const heartbeatStore = new WorkerHeartbeatStore();
 
   try {
+    const userId = await getOptionalUserId(request);
     if (process.env.NODE_ENV === 'production') {
       const workerHealthy = await heartbeatStore.isHealthy('apps-worker');
 
@@ -64,6 +66,7 @@ export async function POST(request: Request) {
       analysisId,
       {
         analysisId,
+        userId: userId ?? undefined,
         input: parsed.data,
       },
       {
@@ -81,6 +84,7 @@ export async function POST(request: Request) {
         name: sectionKey,
         data: {
           analysisId,
+          userId: userId ?? undefined,
           sectionKey,
           input: parsed.data,
         },

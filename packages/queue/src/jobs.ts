@@ -52,11 +52,13 @@ type QimenAnalyzeRequest = {
 
 export interface QimenBaseJobData {
   analysisId: string;
+  userId?: string;
   input: QimenAnalyzeRequest;
 }
 
 export interface QimenSectionJobData {
   analysisId: string;
+  userId?: string;
   sectionKey: QimenSectionKey;
   input: QimenAnalyzeRequest;
 }

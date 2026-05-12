@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractArkOutputText, extractJsonBlock } from './ark-response';
+import { extractArkOutputText, extractArkUsage, extractJsonBlock } from './ark-response';
 
 describe('extractArkOutputText', () => {
   it('should extract output_text from response payload', () => {
@@ -39,5 +39,17 @@ describe('extractJsonBlock', () => {
   it('should return fenced json content', () => {
     const text = extractJsonBlock('```json\n{"hello":"world"}\n```');
     expect(text).toBe('{"hello":"world"}');
+  });
+});
+
+describe('extractArkUsage', () => {
+  it('should extract top-level usage payload', () => {
+    expect(extractArkUsage({ usage: { total_tokens: 12 } })).toEqual({ total_tokens: 12 });
+  });
+
+  it('should fallback to nested response usage payload', () => {
+    expect(extractArkUsage({ response: { usage: { input_tokens: 3 } } })).toEqual({
+      input_tokens: 3,
+    });
   });
 });

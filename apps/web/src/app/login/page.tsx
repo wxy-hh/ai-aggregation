@@ -5,14 +5,21 @@ import { useRouter } from 'next/navigation';
 import { StaticLoginPage } from '@/components/login/static-login-page';
 import { useAuthStore } from '@/stores/auth-store';
 
+function getAuthHydrated() {
+  return useAuthStore.persist?.hasHydrated?.() ?? true;
+}
+
 export default function LoginPage() {
   const router = useRouter();
-  const [hydrated, setHydrated] = useState(useAuthStore.persist.hasHydrated());
+  const [hydrated, setHydrated] = useState(getAuthHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   useEffect(() => {
-    if (hydrated) return;
-    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    const onFinishHydration = useAuthStore.persist?.onFinishHydration;
+
+    if (hydrated || !onFinishHydration) return;
+
+    const unsub = onFinishHydration(() => setHydrated(true));
     return unsub;
   }, [hydrated]);
 

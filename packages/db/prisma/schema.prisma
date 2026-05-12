@@ -9,7 +9,8 @@ datasource db {
 
 model User {
   id            String   @id @default(cuid())
-  email         String   @unique
+  username      String   @unique
+  email         String?
   name          String?
   passwordHash  String?
   emailVerified DateTime?
@@ -19,7 +20,7 @@ model User {
 
   sessions            ChatSession[]
   tasks               Task[]
-  usage               UserUsage[]
+  aiUsageRecords      AIUsageRecord[]
   voiceTranscriptions VoiceTranscription[]
   chatHistory         ChatHistory[]        @relation("ChatHistoryToUser")
   imageHistory        ImageHistory[]       @relation("ImageHistoryToUser")
@@ -107,20 +108,32 @@ model Task {
   @@map("tasks")
 }
 
-model UserUsage {
-  id        String   @id @default(cuid())
-  userId    String
-  tokens    Int      @default(0)
-  tasks     Int      @default(0)
-  period    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model AIUsageRecord {
+  id              String   @id @default(cuid())
+  userId          String
+  feature         String
+  action          String
+  provider        String?
+  model           String?
+  endpoint        String?
+  requestId       String?
+  inputTokens     Int?
+  outputTokens    Int?
+  totalTokens     Int?
+  cachedTokens    Int?
+  reasoningTokens Int?
+  taskCount       Int      @default(1)
+  status          String   @default("success")
+  rawUsage        Json?
+  metadata        Json?
+  createdAt       DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, period])
-  @@index([userId])
-  @@map("user_usage")
+  @@index([userId, createdAt])
+  @@index([userId, feature, createdAt])
+  @@index([provider, model])
+  @@map("ai_usage_records")
 }
 
 model VoiceTranscription {

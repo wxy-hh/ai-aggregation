@@ -4,6 +4,7 @@ import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
 import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { getWechatAccessToken, getWechatUserInfo } from '@/lib/auth/oauth';
+import { generateOAuthUsername } from '@/lib/auth/oauth-username';
 
 const CLIENT_REDIRECT = '/home';
 
@@ -50,9 +51,11 @@ export async function GET(req: NextRequest) {
 
     if (!oauthAccount) {
       // 创建新用户和 OAuth 关联
+      const username = await generateOAuthUsername('wechat', userInfo.nickname);
+
       user = await prisma.user.create({
         data: {
-          email: `wechat_${providerUserId}@oauth.local`,
+          username,
           name: userInfo.nickname,
           avatar: userInfo.headimgurl,
           oauthAccounts: {

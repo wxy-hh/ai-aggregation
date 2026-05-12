@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
+import { normalizeUsage, recordAiUsage } from '@repo/db';
 import {
   QimenAnalysisStore,
   generateQimenSectionResult,
@@ -11,7 +12,7 @@ import type { QimenSectionJobData } from '@repo/queue';
 export const qimenSectionWorker = new Worker<QimenSectionJobData>(
   'qimen-section',
   async (job) => {
-    const { analysisId, sectionKey, input } = job.data;
+    const { analysisId, sectionKey, input, userId } = job.data;
     const store = new QimenAnalysisStore();
     const startedAt = Date.now();
 
@@ -35,7 +36,38 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
           sectionKey,
           hooks: {
             onRequestStart: (meta) => logger.info('奇门模型请求开始', meta),
-            onRequestSuccess: (meta) => logger.info('奇门模型请求完成', meta),
+            onRequestSuccess: async (meta) => {
+              logger.info('奇门模型请求完成', meta);
+              if (!userId) return;
+              try {
+                await recordAiUsage({
+                  userId,
+                  feature: 'destiny',
+                  action:
+                    sectionKey === 'strategyOverview'
+                      ? 'destiny-qimen-strategy-overview'
+                      : sectionKey === 'timingWindows'
+                        ? 'destiny-qimen-timing-windows'
+                        : 'destiny-qimen-chart-summary',
+                  provider: 'doubao',
+                  model: 'doubao-seed-2-0-lite-260428',
+                  endpoint: 'worker:qimen-section',
+                  usage: normalizeUsage(
+                    ((meta as { payload?: unknown }).payload as Record<string, unknown>)?.usage
+                  ),
+                  metadata: {
+                    analysisId,
+                    sectionKey,
+                  },
+                });
+              } catch (usageError) {
+                logger.warn('奇门分块资源记录失败', {
+                  analysisId,
+                  sectionKey,
+                  error: usageError instanceof Error ? usageError.message : String(usageError),
+                });
+              }
+            },
             onRequestNonOk: (meta) => logger.warn('奇门模型请求返回非成功状态', meta),
             onRequestTimeout: (meta) => logger.warn('奇门模型请求超时', meta),
             onRequestError: (meta) =>

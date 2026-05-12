@@ -65,7 +65,7 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
   doubao: {
     name: '豆包', // 显示名称
     models: [
-      { id: 'doubao-seed-2-0-lite-260215', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
+      { id: 'doubao-seed-2-0-lite-260428', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
     ],
   },
@@ -544,31 +544,31 @@ export default function ChatPage() {
   );
 
   const renderModelOptions = (onSelect?: () => void) =>
-    (
-      Object.entries(MODELS) as [ProviderName, (typeof MODELS)[ProviderName]][]
-    ).map(([providerKey, config]) => (
-      <div key={providerKey} className="px-2 py-1">
-        <div className="text-xs text-slate-400 font-medium px-2 py-1">{config.name}</div>
-        {config.models.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => {
-              handleSwitchProvider(providerKey, m.id);
-              setShowModelSelector(false);
-              onSelect?.();
-            }}
-            className={cn(
-              'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
-              provider === providerKey && model === m.id
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-            )}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-    ));
+    (Object.entries(MODELS) as [ProviderName, (typeof MODELS)[ProviderName]][]).map(
+      ([providerKey, config]) => (
+        <div key={providerKey} className="px-2 py-1">
+          <div className="text-xs text-slate-400 font-medium px-2 py-1">{config.name}</div>
+          {config.models.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => {
+                handleSwitchProvider(providerKey, m.id);
+                setShowModelSelector(false);
+                onSelect?.();
+              }}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
+                provider === providerKey && model === m.id
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )
+    );
 
   // ============ 加载状态显示 ============
   // 如果数据还没从本地存储加载完成，显示加载动画

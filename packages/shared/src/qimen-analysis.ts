@@ -182,13 +182,14 @@ const outputLengthLabelMap = {
   detailed: '详版',
 } as const;
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const BASE_STAGE_TIMEOUT_MS = 45000;
 const SECTION_STAGE_TIMEOUT_MS = 40000;
-const BASE_MAX_OUTPUT_TOKENS = 1200;
-const STRATEGY_MAX_OUTPUT_TOKENS = 1400;
-const TIMING_MAX_OUTPUT_TOKENS = 900;
-const SUMMARY_MAX_OUTPUT_TOKENS = 600;
+// Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
+const BASE_MAX_OUTPUT_TOKENS = 8192;
+const STRATEGY_MAX_OUTPUT_TOKENS = 8192;
+const TIMING_MAX_OUTPUT_TOKENS = 4096;
+const SUMMARY_MAX_OUTPUT_TOKENS = 4096;
 
 const PALACE_ORDER = [
   '巽四宫',
@@ -502,6 +503,7 @@ async function requestArkPayload({
       sectionKey: trace?.sectionKey,
       status: response.status,
       durationMs: Date.now() - startedAt,
+      payload,
     });
     return payload;
   } catch (error) {

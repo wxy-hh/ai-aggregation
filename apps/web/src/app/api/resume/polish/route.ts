@@ -1,5 +1,7 @@
 import { PolishRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 /**
  * POST /api/resume/polish
@@ -9,6 +11,7 @@ import { ZodError } from 'zod';
 
 export async function POST(req: Request) {
   try {
+    const userId = await getOptionalUserId(req);
     const body = await req.json();
 
     // 使用 Zod schema 校验请求体
@@ -133,6 +136,24 @@ export async function POST(req: Request) {
       console.log('提取的优化文本:', optimizedText);
 
       const highlights = extractHighlights(optimizedText, text);
+
+      if (userId) {
+        await safeRecordAiUsage({
+          userId,
+          feature: 'resume',
+          action: 'resume-polish',
+          provider: 'doubao',
+          model: arkModel,
+          endpoint: '/api/resume/polish',
+          usage: normalizeUsage(result.usage ?? result.response?.usage),
+          metadata: {
+            target,
+            textLength: text.length,
+            style,
+            language,
+          },
+        });
+      }
 
       return new Response(
         JSON.stringify({
