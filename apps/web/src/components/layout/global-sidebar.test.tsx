@@ -42,6 +42,13 @@ vi.mock('@/stores', () => ({
   }),
 }));
 
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: (selector?: (state: unknown) => unknown) => {
+    const state = { user: { role: 'admin' } };
+    return selector ? selector(state) : state;
+  },
+}));
+
 vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: {

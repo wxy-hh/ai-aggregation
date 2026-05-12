@@ -9,6 +9,8 @@ const {
   requireAuth,
   normalizeUsage,
   safeRecordAiUsage,
+  prismaFindUnique,
+  prismaUpdate,
 } = vi.hoisted(() => ({
   createProvider: vi.fn(),
   getDefaultModel: vi.fn(),
@@ -18,6 +20,8 @@ const {
   requireAuth: vi.fn(),
   normalizeUsage: vi.fn(),
   safeRecordAiUsage: vi.fn(),
+  prismaFindUnique: vi.fn(),
+  prismaUpdate: vi.fn(),
 }));
 
 vi.mock('@repo/providers', () => ({
@@ -38,6 +42,15 @@ vi.mock('@/lib/auth/require-auth', () => ({
 vi.mock('@/lib/ai-usage', () => ({
   normalizeUsage,
   safeRecordAiUsage,
+}));
+
+vi.mock('@repo/db', () => ({
+  prisma: {
+    user: {
+      findUnique: prismaFindUnique,
+      update: prismaUpdate,
+    },
+  },
 }));
 
 describe('POST /api/chat', () => {
@@ -61,6 +74,8 @@ describe('POST /api/chat', () => {
       incrementQuota: vi.fn().mockResolvedValue(undefined),
     });
     normalizeUsage.mockReturnValue({ totalTokens: 42, taskCount: 1 });
+    prismaFindUnique.mockResolvedValue({ role: 'user', tokens: 100 });
+    prismaUpdate.mockResolvedValue({});
   });
 
   it('讯飞流式对话完成后写入 usage 记录', async () => {
