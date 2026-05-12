@@ -11,6 +11,7 @@ import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { requireAuth } from '@/lib/auth/require-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma } from '@repo/db';
 
 function createErrorId() {
   return (
@@ -175,6 +176,46 @@ export async function POST(req: Request) {
   try {
     // 1. 限流检查
     const userId = await requireAuth(req);
+
+    // 2. 获取用户信息用于配额检查
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, tokens: true },
+    });
+
+    if (!user) {
+      return new Response(JSON.stringify({ error: '用户不存在' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 非 admin 用户检查并扣除 tokens
+    if (user.role !== 'admin') {
+      if (user.tokens <= 0) {
+        return new Response(
+          JSON.stringify({
+            error: 'Token 额度不足，请联系管理员充值',
+            errorId,
+          }),
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      // 异步扣除 1 token，不阻塞响应流
+      prisma.user
+        .update({
+          where: { id: userId },
+          data: { tokens: { decrement: 1 } },
+        })
+        .catch((err) => {
+          console.error('扣除 tokens 失败:', err);
+        });
+    }
+
     const rateLimiter = getRateLimiter();
     const quotaManager = getQuotaManager();
 
@@ -220,7 +261,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. 解析请求体
+    // 3. 解析请求体
     const body = await req.json();
     const {
       messages,

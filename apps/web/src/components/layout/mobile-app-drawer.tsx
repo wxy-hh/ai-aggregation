@@ -7,6 +7,7 @@ import { APP_CONFIGS } from './apps-modal';
 import { CircleUserRound, Clock3, FileText, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/stores/auth-store';
 
 interface MobileAppDrawerProps {
   open: boolean;
@@ -46,6 +47,13 @@ const drawerApps = APP_CONFIGS.filter((app) => !PRIMARY_APP_IDS.has(app.id));
 
 export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === 'admin';
+
+  // 非管理员不显示管理入口
+  const filteredQuickLinks = QUICK_LINKS.filter(
+    (link) => link.href !== '/admin/users' || isAdmin
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -126,7 +134,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
             <section className="mt-5 space-y-3">
               <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400">常用入口</h3>
               <div className="space-y-2">
-                {QUICK_LINKS.map((item) => (
+                {filteredQuickLinks.map((item) => (
                   <button
                     key={item.href}
                     type="button"

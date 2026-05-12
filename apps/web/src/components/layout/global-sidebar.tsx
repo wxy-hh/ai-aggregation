@@ -226,18 +226,20 @@ export function GlobalSidebar() {
 
         {/* 底部图标 */}
         <div className="flex flex-col items-center gap-3 mt-auto w-full px-3 pt-4 pb-6 relative z-20 bg-slate-50 dark:bg-slate-900">
-          <Link
-            href="/admin/users"
-            aria-label="打开系统用户管理"
-            className={cn(
-              'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md border shadow-sm transition-all duration-300',
-              pathname === '/admin/users'
-                ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105'
-                : 'bg-white/45 dark:bg-slate-800/45 border-white/30 dark:border-slate-700/30 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
-            )}
-          >
-            <Shield className="w-5 h-5" />
-          </Link>
+          {user?.role === 'admin' && (
+            <Link
+              href="/admin/users"
+              aria-label="打开系统用户管理"
+              className={cn(
+                'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md border shadow-sm transition-all duration-300',
+                pathname === '/admin/users'
+                  ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105'
+                  : 'bg-white/45 dark:bg-slate-800/45 border-white/30 dark:border-slate-700/30 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
+              )}
+            >
+              <Shield className="w-5 h-5" />
+            </Link>
+          )}
 
           {/* 历史记录 */}
           <Link
