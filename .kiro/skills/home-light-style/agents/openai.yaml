@@ -1,0 +1,4 @@
+interface:
+  display_name: "Home 亮色风格"
+  short_description: "复用 /home 页亮色桌面视觉风格与已定稿组件规范"
+  default_prompt: "使用 $home-light-style 为目标页面复用 /home 的亮色桌面风格。"

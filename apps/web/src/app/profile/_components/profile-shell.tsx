@@ -99,7 +99,7 @@ function ProfileStatField({
 }) {
   return (
     <div className={cn('space-y-3', fullWidth ? 'md:col-span-2' : undefined)}>
-      <p className="text-sm font-semibold tracking-[0.02em] text-slate-600 dark:text-slate-300">
+      <p className="text-sm font-semibold tracking-[0.02em] text-[#64748B] dark:text-slate-300">
         {label}
       </p>
       <div className="relative flex min-h-[56px] items-center gap-3 overflow-hidden rounded-2xl border border-white/55 bg-gradient-to-b from-white/72 via-white/42 to-white/24 px-5 py-3.5 text-sm text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_18px_30px_-24px_rgba(59,130,246,0.24)] backdrop-blur-[18px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.52))] dark:text-slate-100">
@@ -120,10 +120,10 @@ function ResourceRing({ percent, label = '单项最高占比' }: { percent: numb
   const offset = circumference * (1 - percent / 100);
 
   return (
-    <div className="relative mx-auto h-[232px] w-[232px] overflow-hidden rounded-full bg-gradient-to-b from-white/52 via-white/20 to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_20px_36px_-28px_rgba(59,130,246,0.28)] backdrop-blur-[18px] dark:bg-transparent dark:shadow-none">
-      <div className="pointer-events-none absolute inset-0 rounded-full border border-white/50 dark:border-white/10" />
-      <div className="pointer-events-none absolute top-3 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
-      <div className="pointer-events-none absolute -right-2 top-3 h-16 w-16 rounded-full bg-blue-200/35 blur-2xl dark:hidden" />
+    <div className="relative mx-auto h-[232px] w-[232px] overflow-hidden rounded-full bg-gradient-to-b from-white/52 via-white/20 to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_20px_36px_-28px_rgba(59,130,246,0.28)] backdrop-blur-[16px] dark:bg-transparent dark:shadow-none">
+      <div className="pointer-events-none absolute inset-0 rounded-full border border-white/60 dark:border-white/10" />
+      <div className="pointer-events-none absolute top-3 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
+      <div className="pointer-events-none absolute -right-2 top-3 h-16 w-16 rounded-full bg-[rgba(219,234,254,0.50)] blur-2xl dark:hidden" />
       <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
         <defs>
           <linearGradient id="profile-usage-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -152,11 +152,11 @@ function ResourceRing({ percent, label = '单项最高占比' }: { percent: numb
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-[48px] font-bold leading-none tracking-tight text-slate-950 dark:text-white">
+        <p className="text-[48px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
           {percent.toFixed(1)}
           <span className="text-[24px]">%</span>
         </p>
-        <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
+        <p className="mt-2 text-xs font-semibold text-[#64748B] dark:text-slate-300">{label}</p>
       </div>
     </div>
   );
@@ -203,14 +203,14 @@ function EditProfileDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-        className="w-[calc(100vw-2rem)] max-w-[480px] gap-0 overflow-hidden rounded-[32px] bg-gradient-to-b from-white/72 via-white/32 to-transparent px-5 py-5 shadow-[0_28px_80px_-24px_rgba(59,130,246,0.2)] backdrop-blur-[28px] sm:px-10 sm:py-10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.74))] dark:shadow-[0_24px_64px_-24px_rgba(0,0,0,0.48)]"
+        className="w-[calc(100vw-2rem)] max-w-[480px] gap-0 overflow-hidden rounded-[32px] bg-gradient-to-b from-white/72 via-white/32 to-transparent px-5 py-5 shadow-[0_28px_80px_-24px_rgba(59,130,246,0.20)] backdrop-blur-[40px] sm:px-10 sm:py-10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.74))] dark:shadow-[0_24px_64px_-24px_rgba(0,0,0,0.48)]"
       >
         <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_32%,transparent_100%)] dark:border-white/10" />
-        <div className="pointer-events-none absolute top-0 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+        <div className="pointer-events-none absolute top-0 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/6 dark:via-transparent" />
-        <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-blue-200/35 blur-3xl dark:hidden" />
+        <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
         <DialogHeader className="space-y-0">
-          <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0B1B53] dark:text-white sm:text-[22px]">
+          <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[22px]">
             编辑个人资料
           </DialogTitle>
           <DialogDescription className="sr-only">修改用户名和昵称。</DialogDescription>
@@ -218,7 +218,7 @@ function EditProfileDialog({
 
         <div className="relative mt-8 grid gap-5">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+            <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">
               用户名
             </label>
             <Input
@@ -226,20 +226,20 @@ function EditProfileDialog({
               onChange={(event) =>
                 setDraft((current) => ({ ...current, username: event.target.value }))
               }
-              placeholder="your_username"
-              className="h-14 rounded-2xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_24px_-20px_rgba(90,128,198,0.26)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
+              placeholder="用户名"
+              className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
             />
-            <p className="text-xs text-slate-400">3-30 个字符，仅支持英文字母、数字和下划线</p>
+            <p className="text-xs text-[#94A3B8]">3-30 个字符，仅支持英文字母、数字和下划线</p>
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">昵称</label>
+            <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">昵称</label>
             <Input
               value={draft.fullName}
               onChange={(event) =>
                 setDraft((current) => ({ ...current, fullName: event.target.value }))
               }
               placeholder="你的昵称"
-              className="h-14 rounded-2xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_24px_-20px_rgba(90,128,198,0.26)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
+              className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
             />
           </div>
         </div>
@@ -250,7 +250,7 @@ function EditProfileDialog({
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={saving}
-            className="h-10 min-w-[96px] rounded-xl border-white/65 bg-white/68 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_-18px_rgba(90,128,198,0.24)] backdrop-blur-[14px] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-100"
+            className="h-10 min-w-[96px] rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-100"
           >
             取消
           </Button>
@@ -258,7 +258,7 @@ function EditProfileDialog({
             type="button"
             disabled={saving}
             onClick={handleSave}
-            className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_12px_28px_rgba(93,124,250,0.28)]"
+            className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
           >
             {saving ? '保存中...' : '保存修改'}
           </Button>
@@ -320,13 +320,13 @@ function AvatarEditor({
         role="button"
         tabIndex={0}
         aria-label="更换头像"
-        className="group relative cursor-pointer overflow-hidden rounded-[26px] border border-white/68 bg-[linear-gradient(180deg,rgba(255,255,255,0.8),rgba(255,255,255,0.54))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_18px_34px_-18px_rgba(90,128,198,0.3)] backdrop-blur-sm transition-all duration-300 hover:shadow-[0_22px_40px_-18px_rgba(90,128,198,0.42)] dark:border-white/10 dark:bg-slate-900/70"
+        className="group relative cursor-pointer overflow-hidden rounded-[24px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.8),rgba(255,255,255,0.54))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm transition-all duration-300 hover:shadow-[0_10px_24px_rgba(93,124,250,0.32)] dark:border-white/10 dark:bg-slate-900/70"
         onClick={() => fileInputRef.current?.click()}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
         }}
       >
-        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
         <img
           src={avatarSrc}
           alt="用户头像"
@@ -350,10 +350,10 @@ function AvatarEditor({
       <Dialog open={previewSrc !== null} onOpenChange={() => setPreviewSrc(null)}>
         <DialogContent
           overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-          className="w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(59,130,246,0.22)] backdrop-blur-[28px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.76))]"
+          className="w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(59,130,246,0.22)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.76))]"
         >
           <DialogHeader className="space-y-0">
-            <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0B1B53] dark:text-white">
+            <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0F172A] dark:text-white">
               预览头像
             </DialogTitle>
             <DialogDescription className="sr-only">确认裁剪区域后上传。</DialogDescription>
@@ -373,7 +373,7 @@ function AvatarEditor({
               variant="outline"
               onClick={() => setPreviewSrc(null)}
               disabled={uploading}
-              className="h-10 min-w-[96px] rounded-xl border-white/65 bg-white/68 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_-18px_rgba(90,128,198,0.24)] backdrop-blur-[14px]"
+              className="h-10 min-w-[96px] rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px]"
             >
               <X className="mr-1.5 h-4 w-4" />
               取消
@@ -382,7 +382,7 @@ function AvatarEditor({
               type="button"
               disabled={uploading}
               onClick={handleUpload}
-              className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_12px_28px_rgba(93,124,250,0.28)]"
+              className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
             >
               {uploading ? '上传中...' : '确认上传'}
             </Button>
@@ -421,26 +421,26 @@ function DeleteAccountDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-        className="w-[calc(100vw-2rem)] max-w-[520px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(244,114,91,0.22)] backdrop-blur-[28px] dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.88),rgba(15,23,42,0.76))]"
+        className="w-[calc(100vw-2rem)] max-w-[520px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(244,114,91,0.22)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.88),rgba(15,23,42,0.76))]"
       >
         <div className="pointer-events-none absolute inset-0 rounded-[30px] border border-red-200/62 [mask-image:linear-gradient(to_bottom,black_32%,transparent_100%)] dark:border-red-900/45" />
-        <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/15" />
+        <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/4 dark:via-transparent" />
         <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-200/38 blur-3xl dark:hidden" />
         <DialogHeader className="space-y-3 text-left">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-red-100/75 bg-gradient-to-b from-white/80 to-red-50/85 text-red-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_12px_22px_-18px_rgba(244,114,91,0.32)] dark:border-red-900/45 dark:bg-red-950/40 dark:text-red-300">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-red-100/75 bg-gradient-to-b from-white/80 to-red-50/85 text-red-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] dark:border-red-900/45 dark:bg-red-950/40 dark:text-red-300">
             <AlertTriangle className="h-6 w-6" />
           </div>
           <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold text-red-600 dark:text-red-300 sm:text-[22px]">
             注销账户确认
           </DialogTitle>
-          <DialogDescription className="text-sm leading-7 text-slate-600 dark:text-slate-300">
+          <DialogDescription className="text-sm leading-[1.625] text-[#64748B] dark:text-slate-300">
             此操作不可撤销，将永久删除您的账户及所有关联数据（对话记录、历史、使用统计等）。请输入密码确认。
           </DialogDescription>
         </DialogHeader>
 
         <div className="relative mt-6 space-y-2">
-          <label className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+          <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">
             密码确认
           </label>
           <Input
@@ -448,7 +448,7 @@ function DeleteAccountDialog({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="输入当前密码以确认注销"
-            className="h-14 rounded-2xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_24px_-20px_rgba(244,114,91,0.18)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
+            className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
           />
         </div>
 
@@ -456,7 +456,7 @@ function DeleteAccountDialog({
           <Button
             type="button"
             variant="outline"
-            className="h-10 rounded-2xl border-white/65 bg-white/68 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_20px_-18px_rgba(90,128,198,0.24)] backdrop-blur-[14px]"
+            className="h-10 rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px]"
             onClick={() => onOpenChange(false)}
             disabled={deleting}
           >
@@ -467,7 +467,7 @@ function DeleteAccountDialog({
             variant="destructive"
             disabled={deleting}
             onClick={handleDelete}
-            className="h-10 rounded-2xl text-sm shadow-[0_12px_28px_rgba(244,92,126,0.28)]"
+            className="h-10 rounded-xl text-sm shadow-[0_10px_24px_rgba(244,92,126,0.28)]"
           >
             {deleting ? '注销中...' : '确认注销'}
           </Button>
@@ -530,18 +530,18 @@ export function ProfileShell() {
   return (
     <>
       <div className="relative min-h-full w-full overflow-y-auto overflow-x-hidden bg-[#F3F5FA] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-10 lg:py-10">
+        {/* 背景光斑效果 - 对齐 home 规范 */}
         <div
           className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
           aria-hidden
           style={{
             backgroundColor: '#F3F5FA',
             backgroundImage:
-              'radial-gradient(980px 540px at 14% 8%, rgba(121,168,236,0.18) 0%, rgba(121,168,236,0.07) 34%, rgba(121,168,236,0) 72%),' +
-              'radial-gradient(1040px 580px at 84% 16%, rgba(129,146,255,0.13) 0%, rgba(129,146,255,0.05) 30%, rgba(129,146,255,0) 66%),' +
-              'linear-gradient(180deg, #FBFCFF 0%, #F7F9FE 40%, #F2F6FD 100%)',
-            backgroundRepeat: 'no-repeat, no-repeat, no-repeat',
-            backgroundSize: 'cover, cover, cover',
-            backgroundPosition: 'center, center, center',
+              'radial-gradient(980px 540px at 14% 8%, rgba(219,234,254,0.50) 0%, rgba(219,234,254,0.20) 40%, transparent 72%),' +
+              'radial-gradient(1040px 580px at 84% 16%, rgba(233,213,255,0.30) 0%, rgba(233,213,255,0.12) 35%, transparent 68%)',
+            backgroundRepeat: 'no-repeat, no-repeat',
+            backgroundSize: 'cover, cover',
+            backgroundPosition: 'center, center',
           }}
         />
         <div
@@ -556,49 +556,49 @@ export function ProfileShell() {
             backgroundPosition: 'center, center',
           }}
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/55 via-white/20 to-transparent dark:from-blue-500/8 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/40 via-white/15 to-transparent dark:from-blue-500/8 dark:via-transparent" />
 
         <div className="relative mx-auto flex w-full max-w-[1480px] flex-col">
-          <header className="relative overflow-hidden rounded-[28px] bg-gradient-to-b from-white/60 via-white/24 to-transparent px-5 py-5 shadow-[0_20px_60px_-22px_rgba(59,130,246,0.14)] backdrop-blur-[24px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.58))] dark:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.4)] sm:px-6 sm:py-6 lg:rounded-[32px] lg:px-8 lg:py-7">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/58 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10 lg:rounded-[32px]" />
-            <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+          <header className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/60 via-white/24 to-transparent px-5 py-5 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.58))] dark:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.4)] sm:px-6 sm:py-6 lg:px-8 lg:py-7">
+            <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
+            <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 dark:via-white/20" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-            <div className="pointer-events-none absolute -right-10 top-0 h-32 w-32 rounded-full bg-blue-200/30 blur-3xl dark:hidden" />
+            <div className="pointer-events-none absolute -right-10 top-0 h-32 w-32 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
             <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div className="mb-3 inline-flex items-center rounded-full border border-white/65 bg-white/58 px-3 py-1 text-xs font-semibold tracking-[0.08em] text-[#255DFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.76),0_10px_24px_-20px_rgba(59,130,246,0.32)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/70 dark:text-[#A8BAFF]">
+                <div className="mb-3 inline-flex items-center rounded-full border border-white/60 bg-white/60 px-3 py-1 text-xs font-bold tracking-[0.05em] text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/70 dark:text-[#A8BAFF]">
                   账户中心
                 </div>
-                <h1 className="font-[var(--font-space-grotesk)] text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-[30px]">
+                <h1 className="font-[var(--font-space-grotesk)] text-2xl font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[30px]">
                   个人设置
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-[15px]">
+                <p className="mt-2 max-w-2xl text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
                   统一管理您的数字身份、资源消耗与安全操作。
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:w-auto sm:grid-cols-3">
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_26px_-24px_rgba(59,130,246,0.3)] backdrop-blur-[14px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
+                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
                     账户状态
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+                  <div className="mt-2 text-sm font-semibold text-[#0F172A] dark:text-white">
                     已登录
                   </div>
                 </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_26px_-24px_rgba(59,130,246,0.3)] backdrop-blur-[14px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
+                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
                     统计周期
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-slate-950 dark:text-white">
+                  <div className="mt-2 text-sm font-semibold text-[#0F172A] dark:text-white">
                     {usage?.period || '本月'}
                   </div>
                 </div>
-                <div className="relative col-span-2 overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#255DFF]/10 via-white/70 to-white/40 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_18px_26px_-24px_rgba(37,93,255,0.35)] backdrop-blur-[14px] sm:col-span-1 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.58))]">
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <div className="relative col-span-2 overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/10 via-white/70 to-white/40 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] sm:col-span-1 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.58))]">
+                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
                     主力功能占比
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-[#1843E0] dark:text-[#C2D1FF]">
+                  <div className="mt-2 text-sm font-semibold text-[#2563EB] dark:text-[#C2D1FF]">
                     {usagePercent.toFixed(1)}%
                   </div>
                 </div>
@@ -608,22 +608,22 @@ export function ProfileShell() {
 
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.82fr)]">
             <section className="space-y-6">
-              <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-b from-white/66 via-white/24 to-transparent p-5 shadow-[0_24px_70px_-16px_rgba(59,130,246,0.14)] backdrop-blur-[30px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-6 lg:rounded-[32px] lg:p-8">
-                <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/58 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
-                <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/32 via-white/10 to-transparent dark:from-white/6 dark:via-transparent" />
-                <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-blue-200/35 blur-3xl dark:hidden" />
+              <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/60 via-white/24 to-transparent p-5 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-6 lg:p-8">
+                <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
+                <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 dark:via-white/20" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/6 dark:via-transparent" />
+                <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
                 <div className="pointer-events-none absolute bottom-0 left-8 h-24 w-48 rounded-full bg-white/30 blur-3xl dark:hidden" />
-                <div className="relative flex flex-col gap-4 border-b border-white/52 pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative flex flex-col gap-4 border-b border-white/60 pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/55 bg-white/52 text-[#1E49E2] shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_10px_20px_-16px_rgba(96,132,198,0.38)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
                       <User className="h-4 w-4" />
                     </div>
                     <div>
-                      <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+                      <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
                         基本信息
                       </h2>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-sm text-[#94A3B8] dark:text-slate-400">
                         展示头像、身份标识与账号归属信息
                       </p>
                     </div>
@@ -632,7 +632,7 @@ export function ProfileShell() {
                     type="button"
                     variant="secondary"
                     onClick={() => setIsEditOpen(true)}
-                    className="h-10 rounded-xl border-white/58 bg-white/42 px-4 text-sm font-semibold text-[#2048DC] shadow-[inset_0_1px_0_rgba(255,255,255,0.68),0_10px_22px_-18px_rgba(96,132,198,0.34)] backdrop-blur-sm hover:bg-white/58 dark:border-white/10 dark:bg-slate-800/65 dark:text-[#C2D1FF] dark:hover:bg-slate-800"
+                    className="h-10 rounded-xl border-white/60 bg-white/60 px-4 text-sm font-semibold text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/65 dark:text-[#C2D1FF] dark:hover:bg-slate-800"
                   >
                     <PencilLine className="mr-2 h-4 w-4" />
                     编辑资料
@@ -662,29 +662,29 @@ export function ProfileShell() {
               </div>
 
               <div className="grid gap-6 md:grid-cols-2">
-                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[26px] border border-slate-100/80 bg-white p-6 shadow-[0_24px_60px_-26px_rgba(59,130,246,0.22)] transition-all duration-300 hover:shadow-[0_28px_70px_-28px_rgba(59,130,246,0.28)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
-                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-slate-100/80 bg-white p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
+                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/52 to-transparent dark:from-white/5" />
-                  <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-blue-100/60 blur-3xl dark:hidden" />
-                  <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+                  <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
+                  <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
                     安全退出
                   </h3>
-                  <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-[15px]">
+                  <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
                     结束当前的会话并清除本地缓存。建议在公用设备上使用。
                   </p>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => void logout()}
-                    className="mt-auto h-11 w-full rounded-xl border-white/58 bg-white/44 text-sm font-semibold text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.68),0_10px_22px_-18px_rgba(96,132,198,0.28)] backdrop-blur-sm hover:bg-white/58 dark:border-white/10 dark:bg-slate-800/72 dark:text-slate-100 dark:hover:bg-slate-800"
+                    className="mt-auto h-11 w-full rounded-xl border-white/60 bg-white/60 text-sm font-semibold text-[#475569] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/72 dark:text-slate-100 dark:hover:bg-slate-800"
                   >
                     <LogOut className="mr-2 h-4 w-4" />
                     退出当前登录
                   </Button>
                 </div>
 
-                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[26px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-[0_24px_60px_-26px_rgba(244,114,91,0.22)] transition-all duration-300 hover:shadow-[0_28px_70px_-28px_rgba(244,114,91,0.28)] dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
-                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/15" />
+                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
+                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
                   <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-100/80 blur-3xl dark:hidden" />
                   <div className="flex items-center gap-3">
@@ -693,14 +693,14 @@ export function ProfileShell() {
                       危险区域
                     </h3>
                   </div>
-                  <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-[15px]">
+                  <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
                     永久注销您的账户。此操作将立即删除所有云端数据、积分且无法恢复。
                   </p>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setIsDeleteOpen(true)}
-                    className="mt-auto h-11 w-full rounded-xl border-red-200/75 bg-white/52 text-sm font-semibold text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.64),0_10px_20px_-18px_rgba(217,119,87,0.2)] backdrop-blur-sm hover:bg-red-50/75 dark:border-red-900/50 dark:bg-slate-800/72 dark:text-red-200 dark:hover:bg-red-950/24"
+                    className="mt-auto h-11 w-full rounded-xl border-red-200/75 bg-white/60 text-sm font-semibold text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-sm hover:bg-red-50/75 dark:border-red-900/50 dark:bg-slate-800/72 dark:text-red-200 dark:hover:bg-red-950/24"
                   >
                     申请注销账户
                   </Button>
@@ -708,17 +708,17 @@ export function ProfileShell() {
               </div>
             </section>
 
-            <aside className="relative overflow-hidden rounded-[28px] bg-gradient-to-b from-white/66 via-white/24 to-transparent p-6 shadow-[0_24px_70px_-16px_rgba(59,130,246,0.14)] backdrop-blur-[30px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-7 xl:sticky xl:top-8 xl:self-start">
-              <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/58 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
-              <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+            <aside className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/66 via-white/24 to-transparent p-6 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-7 xl:sticky xl:top-8 xl:self-start">
+              <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
+              <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/32 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-              <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-blue-200/35 blur-3xl dark:hidden" />
+              <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
               <div className="pointer-events-none absolute bottom-0 left-8 h-20 w-40 rounded-full bg-white/28 blur-3xl dark:hidden" />
-              <div className="relative flex items-center gap-3 border-b border-white/50 pb-4 dark:border-white/10">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/55 bg-white/52 text-[#1E49E2] shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_10px_20px_-16px_rgba(96,132,198,0.38)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
+              <div className="relative flex items-center gap-3 border-b border-white/60 pb-4 dark:border-white/10">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
                   <BarChart3 className="h-4 w-4" />
                 </div>
-                <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
+                <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
                   资源消耗
                 </h2>
               </div>
@@ -727,38 +727,38 @@ export function ProfileShell() {
                 <ResourceRing percent={usagePercent} />
               </div>
 
-              <p className="mt-1 text-center text-sm text-slate-600 dark:text-slate-300 sm:text-[15px]">
+              <p className="mt-1 text-center text-sm text-[#64748B] dark:text-slate-300 sm:text-[15px]">
                 {usageLoading ? '资源统计加载中...' : `当前统计周期：${usage?.period || '本月'}`}
               </p>
 
               <div className="mt-8 space-y-4 text-sm text-slate-600 dark:text-slate-300 sm:text-[15px]">
-                <div className="relative overflow-hidden rounded-2xl border border-white/50 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_16px_26px_-22px_rgba(59,130,246,0.22)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
+                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                   <div className="relative flex items-center justify-between gap-4">
                     <span>Token 总消耗</span>
-                    <strong className="text-lg text-slate-950 dark:text-white">
+                    <strong className="text-lg text-[#0F172A] dark:text-white">
                       {formatTokenCount(usage?.totalTokens ?? 0)}
                     </strong>
                   </div>
                 </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/50 bg-gradient-to-b from-[#255DFF]/8 via-white/72 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.78),0_16px_26px_-22px_rgba(59,130,246,0.26)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(34,78,212,0.22),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/8 via-white/72 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(34,78,212,0.22),rgba(15,23,42,0.52))]">
+                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                   <div className="relative flex items-center justify-between gap-4">
                     <span>调用总次数</span>
-                    <strong className="text-lg text-[#1843E0] dark:text-[#A8BAFF]">
+                    <strong className="text-lg text-[#2563EB] dark:text-[#A8BAFF]">
                       {formatTaskCount(usage?.totalTaskCount ?? 0)}
                     </strong>
                   </div>
                 </div>
               </div>
 
-              <div className="relative mt-7 border-t border-white/50 pt-7 dark:border-white/10">
+              <div className="relative mt-7 border-t border-white/60 pt-7 dark:border-white/10">
                 {usageError ? (
                   <div className="rounded-2xl border border-red-200/60 bg-red-50/70 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
                     {usageError}
                   </div>
                 ) : usageLoading ? (
-                  <div className="flex items-center justify-center rounded-2xl border border-white/46 bg-white/50 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
+                  <div className="flex items-center justify-center rounded-2xl border border-white/60 bg-white/60 px-4 py-6 text-sm text-[#94A3B8] dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     正在同步资源消耗
                   </div>
@@ -767,26 +767,26 @@ export function ProfileShell() {
                     {usage.features.map((item) => (
                       <div
                         key={item.feature}
-                        className="relative overflow-hidden rounded-2xl border border-white/46 bg-gradient-to-b from-white/56 to-white/26 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.76),0_14px_24px_-22px_rgba(59,130,246,0.2)] backdrop-blur-[14px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.68),rgba(15,23,42,0.5))]"
+                        className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/56 to-white/26 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.68),rgba(15,23,42,0.5))]"
                       >
-                        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/85 to-transparent opacity-80 dark:via-white/20" />
+                        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                         <div className="relative space-y-3">
                           <div className="flex items-center justify-between gap-4">
                             <div className="flex min-w-0 items-center gap-4">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/58 bg-white/52 text-[#1F48DF] shadow-[inset_0_1px_0_rgba(255,255,255,0.68),0_8px_18px_-14px_rgba(96,132,198,0.3)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/68 dark:text-[#A8BAFF]">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/68 dark:text-[#A8BAFF]">
                                 <UsageIcon feature={item.feature} />
                               </div>
                               <div className="min-w-0">
-                                <span className="block truncate text-base font-semibold text-slate-900 dark:text-slate-100">
+                                <span className="block truncate text-base font-semibold text-[#0F172A] dark:text-slate-100">
                                   {item.label}
                                 </span>
-                                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                <span className="block text-xs text-[#94A3B8] dark:text-slate-400">
                                   {item.hasTokenData ? '按 Token 统计' : '按调用次数统计'}
                                 </span>
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-3">
-                              <strong className="text-base text-slate-700 dark:text-slate-300">
+                              <strong className="text-base text-[#475569] dark:text-slate-300">
                                 {item.hasTokenData
                                   ? formatTokenCount(item.totalTokens)
                                   : formatTaskCount(item.taskCount)}
@@ -799,7 +799,7 @@ export function ProfileShell() {
                                     current === item.feature ? null : item.feature
                                   )
                                 }
-                                className="h-8 rounded-lg px-2 text-xs font-medium text-[#1843E0] hover:bg-white/50 dark:text-[#A8BAFF] dark:hover:bg-white/5"
+                                className="h-8 rounded-lg px-2 text-xs font-medium text-[#2563EB] hover:bg-white/50 dark:text-[#A8BAFF] dark:hover:bg-white/5"
                               >
                                 {expandedFeature === item.feature ? '收起明细' : '展开明细'}
                               </Button>
@@ -856,7 +856,7 @@ export function ProfileShell() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-white/46 bg-white/50 px-4 py-6 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
+                  <div className="rounded-2xl border border-white/60 bg-white/60 px-4 py-6 text-sm text-[#94A3B8] dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
                     暂无资源消耗记录
                   </div>
                 )}

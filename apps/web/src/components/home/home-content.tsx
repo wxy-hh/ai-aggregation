@@ -1,5 +1,18 @@
 'use client';
+/* 生成页面的提示词:
+底部固定的“工具底座” (Utility Dock)：
 
+在侧边栏的最下方，我们将“设置”、“主题切换”和“个人中心”聚合在一起。
+由于宽度变窄：不再采用横向的“文字 + 开关”模式，而是设计一个极简的圆形磨砂玻璃图标按钮（太阳/月亮图标）。
+这样设计即便侧边栏收缩，图标依然能完美适配，不会出现文字截断或乱码。
+交互反馈 (Micro-interactions)：
+
+悬停状态：当鼠标悬停在这个图标上时，它会散发出淡淡的科技蓝（Technology Blue）外发光，并弹出一个小巧的玻璃气泡提示（Tooltip），显示“切换至深色模式”。
+无缝切换：点击后，全站色彩通过 css mix-blend-mode 进行平滑过渡，而无需重新加载。
+高级感细节：
+
+将该按钮设计为“悬浮式（Floating）”感，略微脱离底部的侧边栏底色，使用更强的 backdrop-blur，使其在视觉上既属于导航栏，又是一个独立的功能触点。
+ */
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';

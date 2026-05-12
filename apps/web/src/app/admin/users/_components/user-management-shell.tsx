@@ -13,6 +13,15 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { EditUserDialog, type AdminUserRecord } from './edit-user-dialog';
 
+const GLASS_PANEL =
+  'relative overflow-hidden border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.76),rgba(255,255,255,0.30),transparent)] shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[24px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))]';
+
+const GLASS_SURFACE =
+  'border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,255,255,0.62))] shadow-[inset_0_1px_0_rgba(255,255,255,0.80),0_8px_20px_rgba(76,95,154,0.10)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))]';
+
+const ROW_SURFACE =
+  'rounded-[24px] border border-[rgba(255,255,255,0.65)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.58))] shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_24px_32px_-24px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.58))]';
+
 const ADMIN_USERS: AdminUserRecord[] = [
   {
     id: 'USR-1029',
@@ -105,24 +114,40 @@ function RoleBadge({ role }: { role: AdminUserRecord['role'] }) {
 export function UserManagementShell() {
   const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(ADMIN_USERS[0]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const headerDescription = useMemo(
     () => '超级管理员专属控制台：全局用户权限审核、算力额度分配与账户状态监控。',
     []
   );
 
+  // 根据搜索关键词过滤当前展示的用户列表。
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return ADMIN_USERS;
+    }
+
+    return ADMIN_USERS.filter((user) =>
+      [user.name, user.id, user.email, user.role, user.status].some((field) =>
+        field.toLowerCase().includes(normalizedQuery)
+      )
+    );
+  }, [searchQuery]);
+
   return (
     <>
-      <div className="relative min-h-full w-full overflow-y-auto overflow-x-hidden bg-[#F3F5FA] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-10 lg:py-10">
+      <div className="relative min-h-full w-full overflow-y-auto overflow-x-hidden bg-[var(--home-color-page-bg)] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-8 lg:py-10">
         <div
           className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
           aria-hidden
           style={{
-            backgroundColor: '#F3F5FA',
+            backgroundColor: 'var(--home-color-page-bg)',
             backgroundImage:
-              'radial-gradient(980px 540px at 14% 8%, rgba(121,168,236,0.18) 0%, rgba(121,168,236,0.07) 34%, rgba(121,168,236,0) 72%),' +
-              'radial-gradient(1040px 580px at 84% 16%, rgba(129,146,255,0.13) 0%, rgba(129,146,255,0.05) 30%, rgba(129,146,255,0) 66%),' +
-              'linear-gradient(180deg, #FBFCFF 0%, #F7F9FE 40%, #F2F6FD 100%)',
+              'radial-gradient(384px 384px at 14% 8%, rgba(219,234,254,0.50) 0%, rgba(219,234,254,0.18) 34%, rgba(219,234,254,0) 72%),' +
+              'radial-gradient(288px 288px at 84% 16%, rgba(233,213,255,0.30) 0%, rgba(233,213,255,0.10) 30%, rgba(233,213,255,0) 66%),' +
+              'linear-gradient(180deg, #FBFCFF 0%, #F7F9FE 42%, #F3F5FA 100%)',
           }}
         />
         <div
@@ -134,80 +159,95 @@ export function UserManagementShell() {
               'radial-gradient(960px 520px at 80% 18%, rgba(99,102,241,0.1) 0%, rgba(99,102,241,0.04) 30%, rgba(99,102,241,0) 62%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/55 via-white/20 to-transparent dark:from-blue-500/8 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#DBEAFE]/70 via-white/20 to-transparent dark:from-blue-500/8 dark:via-transparent" />
 
-        <div className="relative mx-auto flex w-full max-w-[1520px] flex-col">
-          <header className="relative overflow-hidden rounded-[28px] bg-gradient-to-b from-white/60 via-white/24 to-transparent px-5 py-5 shadow-[0_20px_60px_-22px_rgba(59,130,246,0.14)] backdrop-blur-[24px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.58))] dark:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.4)] sm:px-6 sm:py-6 lg:rounded-[32px] lg:px-8 lg:py-6">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/58 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10 lg:rounded-[32px]" />
+        <div className="relative mx-auto flex w-full max-w-[1400px] flex-col">
+          <header
+            className={cn(
+              GLASS_PANEL,
+              'rounded-[32px] px-5 py-4 sm:px-6 sm:py-5 lg:rounded-[40px] lg:px-8 lg:py-6'
+            )}
+          >
+            <div className="pointer-events-none absolute inset-0 rounded-[32px] [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] lg:rounded-[48px]" />
             <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-            <div className="pointer-events-none absolute -right-10 top-0 h-32 w-32 rounded-full bg-blue-200/30 blur-3xl dark:hidden" />
+            <div className="pointer-events-none absolute -right-10 top-0 h-32 w-32 rounded-full bg-[rgba(191,219,254,0.30)] blur-3xl dark:hidden" />
 
             <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="mb-2 inline-flex items-center rounded-full border border-white/65 bg-white/58 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#255DFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.76),0_10px_24px_-20px_rgba(59,130,246,0.32)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/70 dark:text-[#A8BAFF]">
+              <div className="max-w-3xl">
+                <div className="mb-3 inline-flex min-h-[24px] items-center gap-2 rounded-full bg-[rgba(59,130,246,0.10)] px-3 py-1 text-[12px] font-bold tracking-[0.05em] text-[var(--home-color-primary-600)]">
+                  <span className="h-2 w-2 rounded-full bg-[var(--home-color-primary-500)]" />
                   超级管理员控制台
                 </div>
-                <h1 className="font-[var(--font-space-grotesk)] text-[26px] font-bold tracking-tight text-slate-950 dark:text-white sm:text-[28px]">
+                <h1 className="text-[26px] font-black tracking-[-0.025em] text-[var(--home-color-text-primary)] dark:text-white sm:text-[30px] lg:text-[36px]">
                   系统用户管理
                 </h1>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                <p className="mt-2 max-w-2xl text-[15px] leading-[1.5] text-[var(--home-color-text-tertiary)] dark:text-slate-300">
                   {headerDescription}
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[360px]">
                 {SUMMARY_CARDS.map((card) => (
                   <div
                     key={card.label}
-                    className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_26px_-24px_rgba(59,130,246,0.3)] backdrop-blur-[14px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]"
+                    className={cn(
+                      GLASS_SURFACE,
+                      'relative overflow-hidden rounded-[20px] px-4 py-3'
+                    )}
                   >
-                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    <div className="text-[12px] font-medium text-[var(--home-color-text-tertiary)] dark:text-slate-400">
                       {card.label}
                     </div>
-                    <div className={cn('mt-1.5 text-sm font-semibold', card.tone)}>{card.value}</div>
+                    <div className={cn('mt-1.5 text-[16px] font-bold tracking-[-0.02em]', card.tone)}>
+                      {card.value}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           </header>
 
-          <section className="relative mt-6 overflow-hidden rounded-[28px] bg-gradient-to-b from-white/70 via-white/26 to-transparent px-4 py-4 shadow-[0_28px_72px_-24px_rgba(59,130,246,0.14)] backdrop-blur-[26px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] sm:px-6 sm:py-5 lg:rounded-[32px] lg:px-8 lg:py-7">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] border border-white/58 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10 lg:rounded-[32px]" />
+          <section className={cn(GLASS_PANEL, 'mt-6 rounded-[32px] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7')}>
+            <div className="pointer-events-none absolute inset-0 rounded-[32px] [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)]" />
             <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/28 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-            <div className="pointer-events-none absolute -left-8 bottom-4 h-32 w-32 rounded-full bg-purple-200/20 blur-3xl dark:hidden" />
+            <div className="pointer-events-none absolute -left-8 bottom-4 h-32 w-32 rounded-full bg-[rgba(233,213,255,0.24)] blur-3xl dark:hidden" />
 
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-1 flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <div className="home-search relative flex-1">
+                  <Search className="home-search-icon pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--home-color-text-quaternary)]" />
                   <input
                     type="text"
                     aria-label="搜索用户"
                     placeholder="搜索用户名、ID 或邮箱..."
-                    className="h-14 w-full rounded-2xl border border-white/70 bg-gradient-to-b from-white/84 to-white/64 pl-12 pr-4 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_30px_-24px_rgba(59,130,246,0.18)] outline-none backdrop-blur-[16px] placeholder:text-slate-400 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
-                    readOnly
+                    className="h-[48px] w-full rounded-[12px] border-0 bg-[var(--home-color-surface)] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[var(--home-shadow-sm)] outline-none placeholder:text-[var(--home-color-text-quaternary)]"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
                   />
                 </div>
 
                 <button
                   type="button"
                   aria-label="筛选用户"
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/70 bg-gradient-to-b from-white/84 to-white/64 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_30px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-300"
+                  className={cn(
+                    GLASS_SURFACE,
+                    'flex h-[48px] w-[48px] items-center justify-center rounded-[12px] text-[var(--home-color-text-tertiary)]'
+                  )}
                 >
                   <Filter className="h-5 w-5" />
                 </button>
               </div>
 
-              <Button type="button" className="h-14 rounded-2xl px-6 text-base">
+              <Button type="button" className="h-[44px] rounded-[12px] px-5 text-[14px]">
                 <UserPlus className="mr-2 h-5 w-5" />
                 新增用户
               </Button>
             </div>
 
             <div className="relative mt-5 hidden lg:block">
-              <div className="grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] gap-5 border-b border-white/58 px-4 pb-3 text-[11px] font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+              <div className="grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] gap-5 px-6 pb-3 text-[12px] font-semibold text-[var(--home-color-text-tertiary)] dark:text-slate-400">
                 <span>用户（头像 / 姓名 / ID）</span>
                 <span>角色权限</span>
                 <span>代币余额</span>
@@ -215,11 +255,11 @@ export function UserManagementShell() {
                 <span className="text-right">操作</span>
               </div>
 
-              <div className="divide-y divide-white/55 dark:divide-white/10">
-                {ADMIN_USERS.map((user) => (
+              <div className="mt-3 space-y-3">
+                {filteredUsers.map((user) => (
                   <div
                     key={user.id}
-                    className="grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-4 py-5"
+                    className={cn(ROW_SURFACE, 'grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-6 py-5')}
                   >
                     <div className="flex items-center gap-3.5">
                       <div
@@ -231,7 +271,7 @@ export function UserManagementShell() {
                         {user.initials}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-base font-semibold tracking-tight text-slate-950 dark:text-white">
+                        <p className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
                           {user.name}
                         </p>
                         <p className="text-[13px] text-slate-500 dark:text-slate-400">{user.id}</p>
@@ -240,7 +280,7 @@ export function UserManagementShell() {
 
                     <RoleBadge role={user.role} />
 
-                    <div className="text-base font-semibold tracking-tight text-slate-950 dark:text-white">
+                    <div className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
                       {user.tokens.split(' ')[0]}
                       <span className="ml-1.5 text-[13px] font-medium text-slate-400">
                         {user.tokens === '-' ? '' : 'Tokens'}
@@ -252,7 +292,7 @@ export function UserManagementShell() {
                     <div className="flex items-center justify-end gap-3 text-[13px] font-semibold">
                       <button
                         type="button"
-                        className="text-[#255DFF]"
+                        className="text-[12px] text-[#255DFF]"
                         onClick={() => {
                           setSelectedUser(user);
                           setDialogOpen(true);
@@ -260,7 +300,10 @@ export function UserManagementShell() {
                       >
                         更新
                       </button>
-                      <button type="button" className="inline-flex items-center gap-1 text-rose-500">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-[12px] text-rose-500"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                         <span>删除</span>
                       </button>
@@ -268,13 +311,21 @@ export function UserManagementShell() {
                   </div>
                 ))}
               </div>
+
+              {filteredUsers.length === 0 ? (
+                <div className={cn(GLASS_SURFACE, 'mt-3 rounded-[20px] px-6 py-8 text-center')}>
+                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
+                    没有找到匹配的用户，请调整搜索关键词。
+                  </p>
+                </div>
+              ) : null}
             </div>
 
             <div className="relative mt-5 grid gap-4 lg:hidden">
-              {ADMIN_USERS.map((user) => (
+              {filteredUsers.map((user) => (
                 <article
                   key={user.id}
-                  className="relative overflow-hidden rounded-[26px] border border-white/65 bg-gradient-to-b from-white/84 via-white/60 to-white/42 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.58))]"
+                  className={cn(ROW_SURFACE, 'p-4')}
                 >
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent dark:from-white/5" />
                   <div className="relative">
@@ -289,7 +340,7 @@ export function UserManagementShell() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-base font-semibold text-slate-950 dark:text-white">
+                          <h2 className="text-[15px] font-semibold text-slate-950 dark:text-white">
                             {user.name}
                           </h2>
                           <RoleBadge role={user.role} />
@@ -302,13 +353,13 @@ export function UserManagementShell() {
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-white/60 bg-white/72 px-4 py-3 dark:border-white/10 dark:bg-slate-900/72">
+                      <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
                         <p className="text-xs text-slate-500 dark:text-slate-400">代币余额</p>
                         <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
                           {user.tokens}
                         </p>
                       </div>
-                      <div className="rounded-2xl border border-white/60 bg-white/72 px-4 py-3 dark:border-white/10 dark:bg-slate-900/72">
+                      <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
                         <p className="text-xs text-slate-500 dark:text-slate-400">账号状态</p>
                         <div className="mt-2">
                           <StatusBadge status={user.status} />
@@ -335,16 +386,27 @@ export function UserManagementShell() {
                   </div>
                 </article>
               ))}
+
+              {filteredUsers.length === 0 ? (
+                <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
+                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
+                    没有找到匹配的用户，请调整搜索关键词。
+                  </p>
+                </div>
+              ) : null}
             </div>
 
-            <div className="relative mt-6 flex flex-col gap-4 border-t border-white/58 pt-5 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-              <p>显示 1 到 10，共 142 名用户</p>
+            <div className="relative mt-6 flex flex-col gap-4 border-t border-[rgba(255,255,255,0.60)] pt-5 text-sm text-[var(--home-color-text-tertiary)] dark:border-white/10 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <p>显示 1 到 {Math.min(filteredUsers.length, 10)}，共 {filteredUsers.length} 名用户</p>
 
               <div className="flex items-center gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   aria-label="上一页"
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-white/55 dark:text-slate-300 dark:hover:bg-slate-800/55"
+                  className={cn(
+                    GLASS_SURFACE,
+                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-tertiary)] hover:bg-white/90 dark:text-slate-300 dark:hover:bg-slate-800/55'
+                  )}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -353,23 +415,29 @@ export function UserManagementShell() {
                     key={page}
                     type="button"
                     className={cn(
-                      'flex h-11 min-w-[44px] items-center justify-center rounded-2xl px-3 text-base font-semibold transition-all',
+                      'flex h-10 min-w-[40px] items-center justify-center rounded-[12px] px-3 text-[14px] font-semibold transition-all',
                       page === 1
-                        ? 'bg-gradient-to-r from-[#255DFF] to-[#3D71FF] text-white shadow-[0_14px_28px_-16px_rgba(37,93,255,0.45)]'
-                        : 'text-slate-700 hover:bg-white/55 dark:text-slate-200 dark:hover:bg-slate-800/55'
+                        ? 'bg-[rgba(59,130,246,0.12)] text-[var(--home-color-primary-600)] shadow-[0_8px_20px_rgba(76,95,154,0.08)]'
+                        : 'border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,255,255,0.62))] text-[var(--home-color-text-secondary)] shadow-[0_8px_20px_rgba(76,95,154,0.10)] hover:bg-white/90 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-200 dark:hover:bg-slate-800/55'
                     )}
                   >
                     {page}
                   </button>
                 ))}
                 <span className="px-1">...</span>
-                <button type="button" className="flex h-11 min-w-[44px] items-center justify-center rounded-2xl px-3 text-base font-semibold">
+                <button
+                  type="button"
+                  className="flex h-10 min-w-[40px] items-center justify-center rounded-[12px] px-3 text-[14px] font-semibold text-[var(--home-color-text-secondary)]"
+                >
                   15
                 </button>
                 <button
                   type="button"
                   aria-label="下一页"
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-white/55 dark:text-slate-200 dark:hover:bg-slate-800/55"
+                  className={cn(
+                    GLASS_SURFACE,
+                    'flex h-10 w-10 items-center justify-center rounded-[12px] text-[var(--home-color-text-secondary)] hover:bg-white/90 dark:text-slate-200 dark:hover:bg-slate-800/55'
+                  )}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>

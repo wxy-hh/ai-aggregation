@@ -33,7 +33,7 @@ describe('AdminUsersPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
       expect(screen.getByText('编辑用户权限与额度')).toBeInTheDocument();
-      expect(screen.getByText('zhangwei@luminal.ai')).toBeInTheDocument();
+      expect(screen.getAllByText('zhangwei@luminal.ai').length).toBeGreaterThan(0);
       expect(screen.getByText('保存修改')).toBeInTheDocument();
     });
 
@@ -43,4 +43,16 @@ describe('AdminUsersPage', () => {
       expect(screen.queryByText('编辑用户权限与额度')).not.toBeInTheDocument();
     });
   });
-}
+
+  it('支持通过搜索框筛选用户列表', async () => {
+    render(<AdminUsersPage />);
+
+    const searchInput = screen.getByRole('textbox', { name: '搜索用户' });
+    fireEvent.change(searchInput, { target: { value: '李娜' } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('李娜').length).toBeGreaterThan(0);
+      expect(screen.queryByText('张伟')).not.toBeInTheDocument();
+    });
+  });
+});
