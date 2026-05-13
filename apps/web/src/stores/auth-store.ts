@@ -11,6 +11,7 @@ interface User {
   name: string | null;
   avatar: string | null;
   role: string;
+  tokens?: number;
   emailVerified: string | null;
   createdAt?: string;
 }
@@ -110,7 +111,15 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
           set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
-        } catch {
+        } catch (error) {
+          // 账号被禁用时立即登出，不做重试
+          if (
+            error instanceof Error &&
+            (error.message.includes('停用') || error.message.includes('FORBIDDEN'))
+          ) {
+            set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+            return;
+          }
           // 网络错误等非预期异常，尝试刷新 token 后重试
           try {
             const newToken = await refreshAccessToken();

@@ -217,7 +217,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
         {/* 玻璃圆环 + 中心文案 */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="relative">
-            <div className="h-[340px] w-[340px] rounded-full border border-white/50 bg-white/14 backdrop-blur-[18px] shadow-[0_30px_80px_-30px_rgba(47,107,255,0.38)]" />
+            <div className="h-[340px] w-[340px] rounded-full border border-[color:var(--ds-glass-stroke-light)] bg-[color:var(--ds-glass-white)] backdrop-blur-[20px] shadow-[var(--ds-shadow-3)]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="px-6 text-center">
                 <div className="text-sm font-bold tracking-[0.18em] text-slate-600">星空解码中</div>

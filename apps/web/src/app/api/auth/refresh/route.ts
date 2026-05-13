@@ -23,6 +23,17 @@ export async function POST(_req: NextRequest) {
       return ApiError.unauthorized('刷新令牌已过期，请重新登录');
     }
 
+    // 检查用户是否被禁用
+    const user = await prisma.user.findUnique({
+      where: { id: record.userId },
+      select: { status: true },
+    });
+
+    if (!user || user.status === 'disabled') {
+      await prisma.refreshToken.delete({ where: { id: record.id } });
+      return ApiError.forbidden('账号已被停用，请联系管理员');
+    }
+
     // 轮换：删除旧 Token，生成新 Token
     const newRefreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);

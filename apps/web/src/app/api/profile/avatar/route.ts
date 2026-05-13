@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
@@ -12,13 +13,10 @@ export async function POST(req: NextRequest) {
   try {
     userId = await requireAuth(req);
   } catch (authError) {
-    const message = authError instanceof Error ? authError.message : String(authError);
-    if (
-      message === '缺少认证令牌' ||
-      message.includes('jwt expired') ||
-      message.includes('invalid signature') ||
-      message.includes('jwt malformed')
-    ) {
+    if (authError instanceof AuthError) {
+      return ApiError.unauthorized(authError.message);
+    }
+    if (authError instanceof Error && authError.message.includes('jwt')) {
       return ApiError.unauthorized('请先登录');
     }
     return ApiError.unauthorized('请先登录');

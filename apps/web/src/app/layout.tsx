@@ -75,7 +75,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={dmSans.className}>
+      <body className={dmSans.className} suppressHydrationWarning>
         <ThemeInitializer />
         <QueryProvider>{children}</QueryProvider>
         <Toaster />

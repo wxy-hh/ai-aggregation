@@ -2,6 +2,7 @@ import { DiagnoseRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 /**
  * POST /api/resume/diagnose
@@ -10,10 +11,13 @@ import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
  */
 
 export async function POST(req: Request) {
+  let deducted = false;
+  let userId: string | null = null;
+
   console.log('🔍 收到简历诊断请求');
 
   try {
-    const userId = await getOptionalUserId(req);
+    userId = await getOptionalUserId(req);
     const body = await req.json();
     console.log('📄 请求体:', JSON.stringify(body, null, 2));
 
@@ -56,6 +60,24 @@ export async function POST(req: Request) {
       console.error('ARK_API_KEY 未配置');
       // 回退到规则引擎评分
       return await fallbackDiagnose(resume);
+    }
+
+    // 已认证的非 admin 用户预扣 1 token
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, tokens: true },
+      });
+      if (user && user.role !== 'admin') {
+        if (user.tokens <= 0) {
+          return new Response(JSON.stringify({ error: 'Token 额度不足，请联系管理员充值' }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        await deductTokens(userId, 1);
+        deducted = true;
+      }
     }
 
     // 构建提示词
@@ -189,6 +211,7 @@ export async function POST(req: Request) {
       throw fetchError;
     }
   } catch (error) {
+    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
     console.error('❌ Diagnose API 错误:', {
       message: error instanceof Error ? error.message : '未知错误',
       stack: error instanceof Error ? error.stack : undefined,

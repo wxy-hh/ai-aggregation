@@ -1,18 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 const SILICONFLOW_API_KEY = process.env.SILICONFLOW_API_KEY;
 const SILICONFLOW_API_URL = process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1';
 
 export async function POST(request: NextRequest) {
+  let deducted = false;
+  let userId: string | null = null;
+
   try {
     if (!SILICONFLOW_API_KEY) {
       return NextResponse.json({ error: 'SILICONFLOW_API_KEY is not configured' }, { status: 500 });
     }
 
-    const userId = await getOptionalUserId(request);
+    userId = await getOptionalUserId(request);
     const body = await request.json();
+
+    // 已认证的非 admin 用户预扣 1 token
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, tokens: true },
+      });
+      if (user && user.role !== 'admin') {
+        if (user.tokens <= 0) {
+          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+        }
+        await deductTokens(userId, 1);
+        deducted = true;
+      }
+    }
 
     console.log('→ Generating image with Kolors...');
     console.log('  Model:', body.model);
@@ -35,6 +54,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('← API Error:', errorText);
+      if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
       return NextResponse.json(
         { error: `SiliconFlow API error: ${errorText}` },
         { status: response.status }
@@ -64,6 +84,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
+    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
     console.error('Image generation error:', error);
     return NextResponse.json(
       {

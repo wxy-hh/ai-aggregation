@@ -2,6 +2,7 @@ import { PolishRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 /**
  * POST /api/resume/polish
@@ -10,8 +11,11 @@ import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
  */
 
 export async function POST(req: Request) {
+  let deducted = false;
+  let userId: string | null = null;
+
   try {
-    const userId = await getOptionalUserId(req);
+    userId = await getOptionalUserId(req);
     const body = await req.json();
 
     // 使用 Zod schema 校验请求体
@@ -57,6 +61,24 @@ export async function POST(req: Request) {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    // 已认证的非 admin 用户预扣 1 token
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, tokens: true },
+      });
+      if (user && user.role !== 'admin') {
+        if (user.tokens <= 0) {
+          return new Response(JSON.stringify({ error: 'Token 额度不足，请联系管理员充值' }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        await deductTokens(userId, 1);
+        deducted = true;
+      }
     }
 
     // 构建提示词
@@ -178,6 +200,7 @@ export async function POST(req: Request) {
       throw fetchError;
     }
   } catch (error) {
+    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
     console.error('Polish API 错误:', error);
     return new Response(JSON.stringify({ error: '服务器内部错误' }), {
       status: 500,

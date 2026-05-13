@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateZhipuToken } from '@/lib/zhipu-auth';
+import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
-// 智谱 API Key（生产环境应移至环境变量）
-const ZHIPU_API_KEY = 'cd133a5ad1384f45906dd1ffb2bcdc24.LBoY5QpaMDVjckLC';
+const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
 
 // API 端点
 const VIDEO_GENERATION_URL = 'https://open.bigmodel.cn/api/paas/v4/videos/generations';
@@ -10,12 +12,12 @@ const ASYNC_RESULT_URL = 'https://open.bigmodel.cn/api/paas/v4/async-result';
 
 /**
  * CogVideoX 视频生成 API
- * 
+ *
  * 支持的模型:
  * - cogvideox-flash: 免费快速模型，支持文生视频/图生视频
  * - cogvideox-2: 高质量模型，优化大幅度运动、画面稳定性
  * - cogvideox: 基础模型
- * 
+ *
  * 支持的参数:
  * - prompt: 视频描述文字 (必填)
  * - model: 模型名称 (默认 cogvideox)
@@ -36,7 +38,12 @@ interface VideoGenerationRequest {
 }
 
 export async function POST(req: NextRequest) {
+    let deducted = false;
+    let userId: string | null = null;
+
     try {
+        userId = await getOptionalUserId(req);
+
         const body: VideoGenerationRequest = await req.json();
         const {
             prompt,
@@ -61,6 +68,21 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // 已认证的非 admin 用户预扣 1 token
+        if (userId) {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { role: true, tokens: true },
+            });
+            if (user && user.role !== 'admin') {
+                if (user.tokens <= 0) {
+                    return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+                }
+                await deductTokens(userId, 1);
+                deducted = true;
+            }
+        }
+
         const token = generateZhipuToken({ apiKey: ZHIPU_API_KEY });
 
         // 构建请求体
@@ -83,15 +105,6 @@ export async function POST(req: NextRequest) {
             requestBody.fps = fps;
         }
 
-        console.log('[Video API] 开始生成视频:', {
-            model,
-            promptLength: prompt.length,
-            hasImage: !!imageUrl,
-            size,
-            duration,
-            fps
-        });
-
         const response = await fetch(VIDEO_GENERATION_URL, {
             method: 'POST',
             headers: {
@@ -105,13 +118,33 @@ export async function POST(req: NextRequest) {
 
         if (!response.ok) {
             console.error('[Video API] 生成请求失败:', data);
+            if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
             return NextResponse.json(
                 { error: { message: data.error?.message || '视频生成请求失败' } },
                 { status: response.status }
             );
         }
 
-        console.log('[Video API] 任务创建成功:', { taskId: data.id });
+        // 记录用量（无 Token 数据，按次数统计）
+        if (userId) {
+            await safeRecordAiUsage({
+                userId,
+                feature: 'video',
+                action: 'image-generate',
+                provider: 'zhipu',
+                model: model,
+                endpoint: '/api/video',
+                usage: normalizeUsage(null),
+                metadata: {
+                    promptLength: prompt.length,
+                    imageUrl: imageUrl || null,
+                    size: size || null,
+                    duration: duration || null,
+                    fps: fps || null,
+                    taskId: data.id,
+                },
+            });
+        }
 
         return NextResponse.json({
             id: data.id,
@@ -121,6 +154,7 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error: any) {
+        if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
         console.error('[Video API] 服务器错误:', error);
         return NextResponse.json(
             { error: { message: error.message || '服务器内部错误' } },

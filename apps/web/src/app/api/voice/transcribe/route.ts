@@ -3,6 +3,7 @@ import { transcribeAudio } from '@/lib/siliconflow';
 import { saveUploadedFile, deleteFile, validateFile } from '@/lib/file-upload';
 import { requireAuth } from '@/lib/auth/require-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 最大 60 秒
@@ -12,6 +13,8 @@ const isDatabaseAvailable = !!process.env.DATABASE_URL;
 
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
+  let deducted = false;
+  let userId = '';
 
   try {
     console.log('=== 开始处理转录请求 ===');
@@ -50,7 +53,21 @@ export async function POST(req: NextRequest) {
     let transcriptionId = 'temp-id';
 
     // 4. 认证（无论数据库是否可用都需要）
-    const userId = await requireAuth(req);
+    userId = await requireAuth(req);
+
+    // 4.1 非 admin 用户预扣 1 token
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, tokens: true },
+    });
+    if (user && user.role !== 'admin') {
+      if (user.tokens <= 0) {
+        if (tempFilePath) await deleteFile(tempFilePath);
+        return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+      }
+      await deductTokens(userId, 1);
+      deducted = true;
+    }
 
     // 5. 创建数据库记录（如果数据库可用）
     if (isDatabaseAvailable) {
@@ -168,6 +185,7 @@ export async function POST(req: NextRequest) {
       throw apiError;
     }
   } catch (error) {
+    if (deducted) { deducted = false; await refundTokens(userId, 1); }
     console.error('=== 转录请求处理失败 ===');
     console.error('错误类型:', error?.constructor?.name);
     console.error('错误信息:', error instanceof Error ? error.message : error);

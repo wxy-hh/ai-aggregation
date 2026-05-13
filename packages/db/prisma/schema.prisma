@@ -15,7 +15,7 @@ model User {
   passwordHash  String?
   role          String   @default("user")   // "user" | "admin"
   status        String   @default("active") // "active" | "disabled"
-  tokens        Int      @default(20000)    // AI 调用配额
+  tokens        Int      @default(20000)    // AI Token 剩余额度（每次调用按实际用量扣减）
   emailVerified DateTime?
   avatar        String?
   createdAt     DateTime @default(now())

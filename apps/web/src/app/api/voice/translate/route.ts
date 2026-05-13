@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { xunfeiChat } from '@repo/providers';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,9 +14,27 @@ interface TranslateRequest {
 }
 
 export async function POST(request: NextRequest) {
+  let deducted = false;
+  let userId: string | null = null;
+
   try {
     console.log('=== 开始处理翻译请求 ===');
-    const userId = await getOptionalUserId(request);
+    userId = await getOptionalUserId(request);
+
+    // 已认证的非 admin 用户预扣 1 token
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, tokens: true },
+      });
+      if (user && user.role !== 'admin') {
+        if (user.tokens <= 0) {
+          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+        }
+        await deductTokens(userId, 1);
+        deducted = true;
+      }
+    }
 
     const body: TranslateRequest = await request.json();
     const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = body;
@@ -82,6 +101,7 @@ ${text}`;
       usage: result.usage,
     });
   } catch (error) {
+    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
     console.error('=== 翻译失败 ===');
     console.error('错误类型:', error instanceof Error ? error.constructor.name : typeof error);
     console.error('错误信息:', error instanceof Error ? error.message : String(error));
@@ -92,8 +112,7 @@ ${text}`;
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Translation failed',
-        details: error instanceof Error ? error.stack : String(error),
+        error: '翻译失败，请稍后重试',
       },
       { status: 500 }
     );

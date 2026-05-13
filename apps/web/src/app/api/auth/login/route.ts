@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
         name: user.name,
         avatar: user.avatar,
         role: user.role,
+        tokens: user.tokens,
       },
       accessToken,
     });

@@ -60,6 +60,18 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        ds: {
+          'bg-black': 'var(--ds-bg-black)',
+          'bg-soft': 'var(--ds-bg-soft)',
+          'text-primary': 'var(--ds-text-primary)',
+          'text-inverse': 'var(--ds-text-inverse)',
+          'accent-blue': 'var(--ds-accent-blue)',
+          'link-blue': 'var(--ds-link-blue)',
+          'link-blue-dark': 'var(--ds-link-blue-dark)',
+          'glass-white-strong': 'var(--ds-glass-white-strong)',
+          'glass-white': 'var(--ds-glass-white)',
+          'glass-dark': 'var(--ds-glass-dark)',
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserPlus, Mail, KeyRound, UserRound } from 'lucide-react';
+import { UserPlus, KeyRound, UserRound } from 'lucide-react';
+import { usePasswordValidation, PasswordToggleButton } from '@/hooks/use-password-toggle';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,6 +16,7 @@ import {
 import { adminApi } from '@/lib/api/admin-api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { DIALOG_OVERLAY_CLASSES, EDIT_DIALOG_CONTENT_CLASSES } from './dialog-styles';
 
 interface CreateUserDialogProps {
   open: boolean;
@@ -24,16 +26,25 @@ interface CreateUserDialogProps {
 
 export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDialogProps) {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const {
+    password,
+    confirmPassword,
+    showPassword,
+    showConfirmPassword,
+    setPassword,
+    setConfirmPassword,
+    togglePassword,
+    toggleConfirmPassword,
+    isMatch,
+    reset,
+  } = usePasswordValidation();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
   // 重置表单状态
   const resetForm = () => {
     setUsername('');
-    setPassword('');
-    setName('');
+    reset();
     setError('');
     setIsSaving(false);
   };
@@ -58,6 +69,10 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
       setError('密码长度不能少于 6 位');
       return;
     }
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
+      return;
+    }
 
     setError('');
     setIsSaving(true);
@@ -66,7 +81,6 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
       await adminApi.createUser({
         username: username.trim(),
         password: password.trim(),
-        name: name.trim() || undefined,
       });
       toast.success('用户创建成功');
       resetForm();
@@ -83,8 +97,8 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showClose={false}
-        overlayClassName="bg-[rgba(222,230,246,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.72)]"
-        className="flex max-h-[min(88vh,820px)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden rounded-[24px] border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.48),transparent)] p-3 shadow-[0_20px_56px_-16px_rgba(59,130,246,0.14)] backdrop-blur-[24px] sm:rounded-[28px] sm:p-6 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.78))]"
+        overlayClassName={DIALOG_OVERLAY_CLASSES}
+        className={EDIT_DIALOG_CONTENT_CLASSES}
       >
         <div className="pointer-events-none absolute inset-0 rounded-[24px] [mask-image:linear-gradient(to_bottom,black_35%,transparent_100%)] sm:rounded-[28px]" />
         <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-85 dark:via-white/20" />
@@ -148,32 +162,55 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
                       <div className="relative">
                         <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <input
-                          type="password"
+                          type={showPassword ? 'text' : 'password'}
                           placeholder="请输入密码（至少 6 位）"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-4 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
+                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-12 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
                           disabled={isSaving}
+                        />
+                        <PasswordToggleButton
+                          show={showPassword}
+                          onToggle={togglePassword}
+                          className="absolute right-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[10px] text-slate-400 transition-colors hover:bg-[#eef4ff] hover:text-[#3c6df3] dark:hover:bg-slate-800 dark:hover:text-slate-200"
                         />
                       </div>
                     </div>
 
                     <div>
                       <label className="mb-1.5 block text-[13px] font-medium text-slate-700 dark:text-slate-300">
-                        姓名 <span className="text-slate-400">（选填）</span>
+                        确认密码 <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
-                        <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <input
-                          type="text"
-                          placeholder="请输入用户姓名"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-4 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          placeholder="请再次输入密码"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-12 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
                           disabled={isSaving}
                         />
+                        <PasswordToggleButton
+                          show={showConfirmPassword}
+                          onToggle={toggleConfirmPassword}
+                          className="absolute right-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[10px] text-slate-400 transition-colors hover:bg-[#eef4ff] hover:text-[#3c6df3] dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        />
                       </div>
+                      {isMatch !== null && (
+                        <p
+                          className={cn(
+                            'mt-1.5 text-[13px]',
+                            isMatch
+                              ? 'text-emerald-600'
+                              : 'text-rose-500'
+                          )}
+                        >
+                          {isMatch ? '✓ 两次密码输入一致' : '✗ 两次密码输入不一致'}
+                        </p>
+                      )}
                     </div>
+
                   </div>
                 </div>
               </div>

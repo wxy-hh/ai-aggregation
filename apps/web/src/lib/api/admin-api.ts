@@ -18,7 +18,7 @@ interface UsersListResponse {
   success: boolean;
   data?: {
     users: AdminUser[];
-    meta: { total: number; page: number; limit: number };
+    meta: { total: number; page: number; limit: number; adminCount: number; disabledCount: number };
   };
   error?: string;
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 
 export async function GET(req: NextRequest) {
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
         avatar: true,
         emailVerified: true,
         role: true,
+        tokens: true,
         createdAt: true,
       },
     });
@@ -27,13 +29,15 @@ export async function GET(req: NextRequest) {
 
     return createSuccessResponse({ user });
   } catch (error) {
-    if (error instanceof Error && error.message === '缺少认证令牌') {
-      return ApiError.unauthorized('缺少认证令牌');
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return ApiError.forbidden(error.message);
+      }
+      return ApiError.unauthorized(error.message);
     }
-    if (error instanceof Error && error.message === 'jwt expired') {
+    if (error instanceof Error && error.message.includes('jwt')) {
       return ApiError.unauthorized('登录已过期，请重新登录');
     }
-    console.error('获取用户信息失败:', error);
-    return ApiError.unauthorized('认证失败');
+    return ApiError.internalError('获取用户信息失败');
   }
 }

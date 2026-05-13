@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { hashPassword } from '@/lib/auth/password';
 import { requireAdmin } from '@/lib/auth/require-admin';
+import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 import { adminCreateUserSchema, adminUsersQuerySchema } from '@/schemas/auth.schema';
 
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
         }
       : {};
 
-    const [users, total] = await Promise.all([
+    const [users, total, adminCount, disabledCount] = await Promise.all([
       prisma.user.findMany({
         where,
         select: {
@@ -53,20 +54,20 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       prisma.user.count({ where }),
+      prisma.user.count({ where: { role: 'admin' } }),
+      prisma.user.count({ where: { status: 'disabled' } }),
     ]);
 
     return createSuccessResponse({
       users,
-      meta: { total, page, limit },
+      meta: { total, page, limit, adminCount, disabledCount },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === '缺少认证令牌') {
-      return ApiError.unauthorized('缺少认证令牌');
+    if (error instanceof AuthError) {
+      return error.code === 'UNAUTHORIZED'
+        ? ApiError.unauthorized(error.message)
+        : ApiError.forbidden(error.message);
     }
-    if (error instanceof Error && error.message === '无权访问：需要管理员权限') {
-      return ApiError.forbidden('无权访问：需要管理员权限');
-    }
-    console.error('获取用户列表失败:', error);
     return ApiError.internalError('获取用户列表失败');
   }
 }
@@ -119,13 +120,11 @@ export async function POST(req: NextRequest) {
 
     return createSuccessResponse({ user }, '用户创建成功', 201);
   } catch (error) {
-    if (error instanceof Error && error.message === '缺少认证令牌') {
-      return ApiError.unauthorized('缺少认证令牌');
+    if (error instanceof AuthError) {
+      return error.code === 'UNAUTHORIZED'
+        ? ApiError.unauthorized(error.message)
+        : ApiError.forbidden(error.message);
     }
-    if (error instanceof Error && error.message === '无权访问：需要管理员权限') {
-      return ApiError.forbidden('无权访问：需要管理员权限');
-    }
-    console.error('创建用户失败:', error);
     return ApiError.internalError('创建用户失败');
   }
 }

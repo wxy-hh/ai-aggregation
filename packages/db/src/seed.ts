@@ -3,11 +3,19 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+function requireEnv(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`环境变量 ${key} 未配置`);
+  }
+  return value;
+}
+
 async function main() {
   console.log('开始数据库种子数据...');
 
-  // 创建超管账号
-  const superAdminPasswordHash = await bcrypt.hash('woaini2244', 12);
+  const superAdminPassword = requireEnv('SEED_ADMIN_PASSWORD');
+  const superAdminPasswordHash = await bcrypt.hash(superAdminPassword, 12);
 
   const superAdmin = await prisma.user.upsert({
     where: { username: 'xkfy' },
@@ -27,12 +35,16 @@ async function main() {
 
   console.log('超管账号已就绪:', superAdmin.username, '(role:', superAdmin.role, ')');
 
-  // 创建测试用户（如已存在则跳过）
+  // 创建测试用户
+  const testPassword = process.env.SEED_TEST_PASSWORD || 'test123456';
+  const testPasswordHash = await bcrypt.hash(testPassword, 12);
+
   await prisma.user.upsert({
     where: { username: 'test_user' },
     update: {},
     create: {
       username: 'test_user',
+      passwordHash: testPasswordHash,
       name: '测试用户',
       role: 'user',
       status: 'active',

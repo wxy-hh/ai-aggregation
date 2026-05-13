@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Lock, User } from 'lucide-react';
+import { Lock, User } from 'lucide-react';
+import { usePasswordValidation, PasswordToggleButton } from '@/hooks/use-password-toggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,11 +16,20 @@ const USERNAME_REGEX = /^[a-z0-9_]+$/;
 export function RegisterForm() {
   const router = useRouter();
   const register = useAuthStore((s) => s.register);
-  const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const {
+    password,
+    confirmPassword,
+    showPassword,
+    showConfirmPassword,
+    setPassword,
+    setConfirmPassword,
+    togglePassword,
+    toggleConfirmPassword,
+    isMatch,
+  } = usePasswordValidation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +53,11 @@ export function RegisterForm() {
 
     if (password.length < 8) {
       toast.error('密码至少 8 位字符');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error('两次输入的密码不一致');
       return;
     }
 
@@ -92,15 +107,47 @@ export function RegisterForm() {
             placeholder="至少 8 位字符"
             className="h-auto border-0 bg-transparent px-0 pr-12 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
           />
-          <button
-            type="button"
-            aria-label={showPassword ? '隐藏密码' : '显示密码'}
+          <PasswordToggleButton
+            show={showPassword}
+            onToggle={togglePassword}
+            iconClassName="h-5 w-5"
             className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-[#97a7bf] transition-colors hover:bg-[#eef4ff] hover:text-[#3c6df3]"
-            onClick={() => setShowPassword((v) => !v)}
-          >
-            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-          </button>
+          />
         </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <Label htmlFor="register-confirm-password" className="text-base font-semibold text-slate-900">
+          确认密码
+        </Label>
+        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+          <Lock className="h-5 w-5 text-[#8ea0bc]" />
+          <Input
+            id="register-confirm-password"
+            type={showConfirmPassword ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="请再次输入密码"
+            className="h-auto border-0 bg-transparent px-0 pr-12 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          <PasswordToggleButton
+            show={showConfirmPassword}
+            onToggle={toggleConfirmPassword}
+            iconClassName="h-5 w-5"
+            className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-[#97a7bf] transition-colors hover:bg-[#eef4ff] hover:text-[#3c6df3]"
+          />
+        </div>
+        {isMatch !== null && (
+          <p
+            className={
+              isMatch
+                ? 'text-[13px] text-emerald-600'
+                : 'text-[13px] text-rose-500'
+            }
+          >
+            {isMatch ? '✓ 两次密码输入一致' : '✗ 两次密码输入不一致'}
+          </p>
+        )}
       </div>
 
       <Button

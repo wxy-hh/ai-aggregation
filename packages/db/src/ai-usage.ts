@@ -12,6 +12,7 @@ const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
   chat: '智能对话',
   voice: '语音',
   image: '图片生成',
+  video: '视频生成',
   destiny: 'AI 命理大师',
   resume: '简历制作',
 };
@@ -198,7 +199,6 @@ export async function getProfileUsageSummary(
       message.includes("Can't reach database server")
     ) {
       return {
-        period: 'all',
         totalTokens: 0,
         totalTaskCount: 0,
         features: [],
@@ -269,7 +269,6 @@ export async function getProfileUsageSummary(
   }));
 
   return {
-    period: 'all',
     totalTokens: features.reduce((sum, item) => sum + item.totalTokens, 0),
     totalTaskCount: features.reduce((sum, item) => sum + item.taskCount, 0),
     features: features.filter((item) => item.totalTokens > 0 || item.taskCount > 0),

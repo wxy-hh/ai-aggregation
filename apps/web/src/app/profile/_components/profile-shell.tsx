@@ -51,12 +51,11 @@ function formatTaskCount(value: number) {
 function buildProfileViewModel(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): ProfileViewModel {
-  const fullName = user?.name?.trim() || '';
   const username = user?.username || '';
   return {
     username,
-    fullName,
-    displayName: username || (fullName ? fullName.replace(/\s+/g, '_') : 'user_unknown'),
+    fullName: '',
+    displayName: username || 'user_unknown',
     email: user?.email || null,
     userId: user?.id ? `UID_${user.id.slice(0, 6).toUpperCase()}` : 'UID_8492015',
     timezone: '(GMT+08:00) 中国标准时间 - 北京',
@@ -114,49 +113,71 @@ function ProfileStatField({
   );
 }
 
-function ResourceRing({ percent, label = '单项最高占比' }: { percent: number; label?: string }) {
-  const radius = 76;
+function ResourceRing({
+  remaining,
+  consumed,
+  total,
+  isAdmin = false,
+}: {
+  remaining: number;
+  consumed: number;
+  total: number;
+  isAdmin?: boolean;
+}) {
+  const percent = total > 0 ? (consumed / total) * 100 : 0;
+  const radius = 82;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - percent / 100);
+  const offset = circumference * (1 - Math.min(percent, 100) / 100);
 
   return (
-    <div className="relative mx-auto h-[232px] w-[232px] overflow-hidden rounded-full bg-gradient-to-b from-white/52 via-white/20 to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_20px_36px_-28px_rgba(59,130,246,0.28)] backdrop-blur-[16px] dark:bg-transparent dark:shadow-none">
+    <div className="relative mx-auto h-[252px] w-[252px] overflow-hidden rounded-full bg-gradient-to-b from-white/52 via-white/20 to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_20px_36px_-28px_rgba(59,130,246,0.28)] backdrop-blur-[16px] dark:bg-transparent dark:shadow-none">
       <div className="pointer-events-none absolute inset-0 rounded-full border border-white/60 dark:border-white/10" />
       <div className="pointer-events-none absolute top-3 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
       <div className="pointer-events-none absolute -right-2 top-3 h-16 w-16 rounded-full bg-[rgba(219,234,254,0.50)] blur-2xl dark:hidden" />
       <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
         <defs>
           <linearGradient id="profile-usage-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#255DFF" />
-            <stop offset="100%" stopColor="#0E39D2" />
+            <stop offset="0%" stopColor={isAdmin ? '#A78BFA' : '#255DFF'} />
+            <stop offset="100%" stopColor={isAdmin ? '#7C3AED' : '#0E39D2'} />
           </linearGradient>
         </defs>
+        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(148,163,184,0.15)" strokeWidth="10" />
         <circle
-          cx="100"
-          cy="100"
-          r={radius}
-          fill="none"
-          stroke="rgba(148,163,184,0.18)"
-          strokeWidth="12"
-        />
-        <circle
-          cx="100"
-          cy="100"
-          r={radius}
-          fill="none"
-          stroke="url(#profile-usage-gradient)"
-          strokeWidth="12"
+          cx="100" cy="100" r={radius} fill="none"
+          stroke="url(#profile-usage-gradient)" strokeWidth="10"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-700 ease-out"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-[48px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
-          {percent.toFixed(1)}
-          <span className="text-[24px]">%</span>
-        </p>
-        <p className="mt-2 text-xs font-semibold text-[#64748B] dark:text-slate-300">{label}</p>
+        {isAdmin ? (
+          <>
+            <p className="font-[var(--font-space-grotesk)] text-[28px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
+              无限额度
+            </p>
+            <p className="mt-2 text-xs font-semibold text-[#64748B] dark:text-slate-300">
+              管理员 · 无配额限制
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#94A3B8]">
+              剩余额度
+            </p>
+            <p className="mt-1 font-[var(--font-space-grotesk)] text-[36px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
+              {remaining.toLocaleString()}
+            </p>
+            <div className="mt-3 flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-[#255DFF]" />
+              <span className="text-[13px] font-medium text-[#64748B] dark:text-slate-300">
+                已消耗 {consumed.toLocaleString()}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] text-[#94A3B8]">共 {total.toLocaleString()} Tokens</p>
+          </>
+        )}
       </div>
     </div>
   );
@@ -187,7 +208,6 @@ function EditProfileDialog({
     try {
       await updateProfile({
         username: draft.username,
-        name: draft.fullName || undefined,
       });
       await fetchUser();
       toast.success('个人资料已更新');
@@ -213,7 +233,7 @@ function EditProfileDialog({
           <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[22px]">
             编辑个人资料
           </DialogTitle>
-          <DialogDescription className="sr-only">修改用户名和昵称。</DialogDescription>
+          <DialogDescription className="sr-only">修改用户名。</DialogDescription>
         </DialogHeader>
 
         <div className="relative mt-8 grid gap-5">
@@ -230,17 +250,6 @@ function EditProfileDialog({
               className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
             />
             <p className="text-xs text-[#94A3B8]">3-30 个字符，仅支持英文字母、数字和下划线</p>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">昵称</label>
-            <Input
-              value={draft.fullName}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, fullName: event.target.value }))
-              }
-              placeholder="你的昵称"
-              className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
-            />
           </div>
         </div>
 
@@ -491,10 +500,13 @@ export function ProfileShell() {
   const [expandedFeature, setExpandedFeature] = useState<ProfileUsageItem['feature'] | null>(null);
 
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
-  const usagePercent = useMemo(() => {
-    if (!usage?.features.length) return 0;
-    return Number(usage.features.reduce((max, item) => Math.max(max, item.percent), 0).toFixed(1));
-  }, [usage]);
+  const isAdminUser = user?.role === 'admin';
+  // 剩余额度：来自 DB（每次调用已扣减），与管理员端一致
+  const tokenRemaining = isAdminUser ? Infinity : (usage?.tokenRemaining ?? user?.tokens ?? 0);
+  // 消耗：来自 AIUsageRecord（仅用于展示）
+  const tokenConsumed = usage?.totalTokens ?? 0;
+  // 总额 = 剩余 + 已消耗（自适应管理员调整配额）
+  const tokenTotal = isAdminUser ? 20000 : tokenRemaining + tokenConsumed;
 
   useEffect(() => {
     // 等待 auth 初始化完成，避免用过期 token 触发不必要的 401 刷新
@@ -586,20 +598,12 @@ export function ProfileShell() {
                     已登录
                   </div>
                 </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
-                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
-                    统计周期
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-[#0F172A] dark:text-white">
-                    {usage?.period || '本月'}
-                  </div>
-                </div>
                 <div className="relative col-span-2 overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/10 via-white/70 to-white/40 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] sm:col-span-1 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.58))]">
                   <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
-                    主力功能占比
+                    剩余额度
                   </div>
                   <div className="mt-2 text-sm font-semibold text-[#2563EB] dark:text-[#C2D1FF]">
-                    {usagePercent.toFixed(1)}%
+                    {isAdminUser ? '无限额度' : tokenRemaining.toLocaleString()}
                   </div>
                 </div>
               </div>
@@ -648,7 +652,6 @@ export function ProfileShell() {
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
-                    <ProfileStatField label="昵称" value={profile.fullName} />
                     <ProfileStatField label="用户 ID" value={profile.userId} />
                     <ProfileStatField
                       label="用户名"
@@ -724,11 +727,11 @@ export function ProfileShell() {
               </div>
 
               <div className="mt-5">
-                <ResourceRing percent={usagePercent} />
+                <ResourceRing remaining={tokenRemaining} consumed={tokenConsumed} total={tokenTotal} isAdmin={isAdminUser} />
               </div>
 
               <p className="mt-1 text-center text-sm text-[#64748B] dark:text-slate-300 sm:text-[15px]">
-                {usageLoading ? '资源统计加载中...' : `当前统计周期：${usage?.period || '本月'}`}
+                {usageLoading ? '资源统计加载中...' : '全部使用记录'}
               </p>
 
               <div className="mt-8 space-y-4 text-sm text-slate-600 dark:text-slate-300 sm:text-[15px]">

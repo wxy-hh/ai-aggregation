@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { requireAdmin } from '@/lib/auth/require-admin';
+import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 import { adminUpdateUserSchema } from '@/schemas/auth.schema';
 
@@ -32,9 +33,16 @@ export async function PATCH(
 
     const { name, role, status, tokens } = parsed.data;
 
-    // 不能将自己降级为非 admin
-    if (targetId === adminId && role && role !== 'admin') {
-      return ApiError.badRequest('不能移除自己的管理员权限', 'INVALID_REQUEST');
+    // 不能对自身进行降权或禁用操作
+    if (targetId === adminId) {
+      if ((role && role !== 'admin') || (status && status === 'disabled')) {
+        return ApiError.badRequest('不能限制自己的管理员权限', 'INVALID_REQUEST');
+      }
+    }
+
+    // 不能修改管理员的 Token 额度
+    if (targetUser.role === 'admin' && tokens !== undefined) {
+      return ApiError.badRequest('不能修改管理员的 Token 额度', 'INVALID_REQUEST');
     }
 
     const user = await prisma.user.update({
@@ -60,13 +68,11 @@ export async function PATCH(
 
     return createSuccessResponse({ user }, '更新成功');
   } catch (error) {
-    if (error instanceof Error && error.message === '缺少认证令牌') {
-      return ApiError.unauthorized('缺少认证令牌');
+    if (error instanceof AuthError) {
+      return error.code === 'UNAUTHORIZED'
+        ? ApiError.unauthorized(error.message)
+        : ApiError.forbidden(error.message);
     }
-    if (error instanceof Error && error.message === '无权访问：需要管理员权限') {
-      return ApiError.forbidden('无权访问：需要管理员权限');
-    }
-    console.error('更新用户失败:', error);
     return ApiError.internalError('更新用户失败');
   }
 }
@@ -79,7 +85,6 @@ export async function DELETE(
     const adminId = await requireAdmin(req);
     const { id: targetId } = await params;
 
-    // 不能删除自己
     if (targetId === adminId) {
       return ApiError.badRequest('不能删除自己的账号', 'INVALID_REQUEST');
     }
@@ -97,13 +102,11 @@ export async function DELETE(
 
     return createSuccessResponse(null, '用户已删除');
   } catch (error) {
-    if (error instanceof Error && error.message === '缺少认证令牌') {
-      return ApiError.unauthorized('缺少认证令牌');
+    if (error instanceof AuthError) {
+      return error.code === 'UNAUTHORIZED'
+        ? ApiError.unauthorized(error.message)
+        : ApiError.forbidden(error.message);
     }
-    if (error instanceof Error && error.message === '无权访问：需要管理员权限') {
-      return ApiError.forbidden('无权访问：需要管理员权限');
-    }
-    console.error('删除用户失败:', error);
     return ApiError.internalError('删除用户失败');
   }
 }

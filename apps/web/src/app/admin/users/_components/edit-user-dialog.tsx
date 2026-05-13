@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { adminApi } from '@/lib/api/admin-api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { DIALOG_OVERLAY_CLASSES, EDIT_DIALOG_CONTENT_CLASSES } from './dialog-styles';
 
 export interface AdminUserRecord {
   id: string;
@@ -127,19 +128,29 @@ function RoleOption({
 export function EditUserDialog({ open, onOpenChange, user, onSuccess }: EditUserDialogProps) {
   const [localRole, setLocalRole] = useState<'普通用户' | '管理员'>('普通用户');
   const [localStatus, setLocalStatus] = useState<'正常' | '已禁用'>('正常');
+  const [localTokens, setLocalTokens] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 从 tokens 字符串中解析数字（如 "12,500 Tokens" → 12500）
+  const parseTokens = (tokensStr: string): number => {
+    return parseInt(tokensStr.replace(/[^0-9]/g, '')) || 0;
+  };
 
   // 当外部传入的 user 变化时，同步本地状态
   useEffect(() => {
     if (user) {
       setLocalRole(user.role);
       setLocalStatus(user.status === '耗尽' ? '已禁用' : user.status);
+      setLocalTokens(parseTokens(user.tokens));
     }
   }, [user]);
 
   if (!user) return null;
 
+  const isAdmin = user.role === '管理员';
   const accountEnabled = localStatus !== '已禁用';
+  const initialTokens = parseTokens(user.tokens);
+  const tokensChanged = localTokens !== initialTokens;
 
   const handleSave = async () => {
     if (!user) return;
@@ -151,6 +162,9 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess }: EditUser
       }
       if (localStatus !== user.status) {
         data.status = localStatus === '已禁用' ? 'disabled' : 'active';
+      }
+      if (tokensChanged) {
+        data.tokens = localTokens;
       }
 
       await adminApi.updateUser(user.id, data);
@@ -164,25 +178,12 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess }: EditUser
     }
   };
 
-  const handleTokenAdjust = async (amount: number) => {
-    if (!user) return;
-    const currentTokens = parseInt(user.tokens.replace(/[^0-9]/g, '')) || 0;
-    const newTokens = Math.max(0, currentTokens + amount);
-    try {
-      await adminApi.updateUser(user.id, { tokens: newTokens });
-      toast.success('Token 额度已更新');
-      onSuccess();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '更新失败');
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showClose={false}
-        overlayClassName="bg-[rgba(222,230,246,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.72)]"
-        className="flex max-h-[min(88vh,820px)] w-[calc(100vw-1rem)] max-w-[640px] flex-col gap-0 overflow-hidden rounded-[24px] border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.48),transparent)] p-3 shadow-[0_20px_56px_-16px_rgba(59,130,246,0.14)] backdrop-blur-[24px] sm:rounded-[28px] sm:p-6 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.78))]"
+        overlayClassName={DIALOG_OVERLAY_CLASSES}
+        className={EDIT_DIALOG_CONTENT_CLASSES}
       >
         <div className="pointer-events-none absolute inset-0 rounded-[24px] [mask-image:linear-gradient(to_bottom,black_35%,transparent_100%)] sm:rounded-[28px]" />
         <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-85 dark:via-white/20" />
@@ -252,59 +253,71 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess }: EditUser
               </div>
             </SettingCard>
 
-            <SettingCard
-              icon={<WalletCards className="h-5 w-5" />}
-              title="Token 额度管理"
-              description="快速调整用户 Token 额度，增量立即生效。"
-            >
-              <div className="flex flex-col gap-3 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3 text-[#255DFF]">
-                  <WalletCards className="h-5 w-5" />
-                  <span className="text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white">
-                    {user.tokens}
-                  </span>
+            {!isAdmin && (
+              <SettingCard
+                icon={<WalletCards className="h-5 w-5" />}
+                title="Token 额度管理"
+                description="手动输入或使用快捷按钮调整额度，点击保存修改后生效。"
+              >
+                <div className="flex flex-col gap-3 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72">
+                  <div className="flex items-center gap-3 text-[#255DFF]">
+                    <WalletCards className="h-5 w-5 shrink-0" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={localTokens.toLocaleString()}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9]/g, '');
+                        setLocalTokens(raw ? parseInt(raw, 10) : 0);
+                      }}
+                      className="w-full min-w-0 bg-transparent text-[18px] font-semibold tracking-tight text-slate-950 outline-none dark:text-white"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-[#255DFF]">
+                    <button
+                      type="button"
+                      onClick={() => setLocalTokens((t) => t + 100000)}
+                      className="rounded-[10px] border border-[#D9E5FF] bg-[#F7FAFF] px-3 py-1.5 transition-colors hover:bg-[#EFF6FF]"
+                    >
+                      + 100k
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLocalTokens((t) => t + 500000)}
+                      className="rounded-[10px] border border-[#D9E5FF] bg-[#F7FAFF] px-3 py-1.5 transition-colors hover:bg-[#EFF6FF]"
+                    >
+                      + 500k
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-[#255DFF]">
-                  <button
-                    type="button"
-                    onClick={() => handleTokenAdjust(100000)}
-                    className="rounded-[10px] border border-[#D9E5FF] bg-[#F7FAFF] px-3 py-1.5 transition-colors hover:bg-[#EFF6FF]"
-                  >
-                    + 100k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTokenAdjust(500000)}
-                    className="rounded-[10px] border border-[#D9E5FF] bg-[#F7FAFF] px-3 py-1.5 transition-colors hover:bg-[#EFF6FF]"
-                  >
-                    + 500k
-                  </button>
-                </div>
-              </div>
-            </SettingCard>
+              </SettingCard>
+            )}
 
-            <SettingCard
-              icon={<Ban className="h-5 w-5" />}
-              title="账号状态"
-              description="禁用后用户将无法登录系统。"
-            >
-              <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72">
-                <div>
-                  <p className="text-[16px] font-semibold text-slate-950 dark:text-white">
-                    {accountEnabled ? '账号启用中' : '账号已禁用'}
-                  </p>
-                  <p className="mt-1 text-[14px] leading-[1.5] text-slate-500 dark:text-slate-400">
-                    {accountEnabled ? '当前用户可正常登录与使用系统。' : '用户不可登录系统。'}
-                  </p>
+            {!isAdmin && (
+              <SettingCard
+                icon={<Ban className="h-5 w-5" />}
+                title="账号状态"
+                description="禁用后用户将无法登录系统。"
+              >
+                <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72">
+                  <div>
+                    <p className="text-[16px] font-semibold text-slate-950 dark:text-white">
+                      {accountEnabled ? '账号启用中' : '账号已禁用'}
+                    </p>
+                    <p className="mt-1 text-[14px] leading-[1.5] text-slate-500 dark:text-slate-400">
+                      {accountEnabled ? '当前用户可正常登录与使用系统。' : '用户不可登录系统。'}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={accountEnabled}
+                    onCheckedChange={(checked) => setLocalStatus(checked ? '正常' : '已禁用')}
+                    aria-label="切换账号状态"
+                    className="h-7 w-12 border border-[rgba(226,232,240,0.9)] bg-slate-100 data-[state=checked]:border-[#BFDBFE] data-[state=checked]:bg-[#DCE8FF] data-[state=unchecked]:bg-slate-100 [&>span]:h-4.5 [&>span]:w-4.5 [&>span]:bg-white [&>span]:shadow-[0_2px_6px_rgba(15,23,42,0.12)] [&>span[data-state=checked]]:translate-x-[22px] dark:border-white/10 dark:data-[state=checked]:bg-[#1D4ED8] dark:data-[state=unchecked]:bg-slate-700"
+                  />
                 </div>
-                <Switch
-                  checked={accountEnabled}
-                  onCheckedChange={(checked) => setLocalStatus(checked ? '正常' : '已禁用')}
-                  aria-label="切换账号状态"
-                  className="h-7 w-12 border border-[rgba(226,232,240,0.9)] bg-slate-100 data-[state=checked]:border-[#BFDBFE] data-[state=checked]:bg-[#DCE8FF] data-[state=unchecked]:bg-slate-100 [&>span]:h-4.5 [&>span]:w-4.5 [&>span]:bg-white [&>span]:shadow-[0_2px_6px_rgba(15,23,42,0.12)] [&>span[data-state=checked]]:translate-x-[22px] dark:border-white/10 dark:data-[state=checked]:bg-[#1D4ED8] dark:data-[state=unchecked]:bg-slate-700"
-                />
-              </div>
-            </SettingCard>
+              </SettingCard>
+            )}
           </div>
         </div>
 

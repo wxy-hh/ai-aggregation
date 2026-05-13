@@ -129,7 +129,6 @@ export function QimenInputForm({
         }}
       />
 
-
       <div className="relative flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[22px] font-black tracking-tight text-[#1A245B] dark:text-slate-100">

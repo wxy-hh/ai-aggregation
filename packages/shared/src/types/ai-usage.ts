@@ -1,4 +1,4 @@
-export type AiUsageFeature = 'chat' | 'voice' | 'image' | 'destiny' | 'resume';
+export type AiUsageFeature = 'chat' | 'voice' | 'image' | 'video' | 'destiny' | 'resume';
 
 export type AiUsageAction =
   | 'chat-stream'
@@ -52,8 +52,8 @@ export interface ProfileUsageItem {
 }
 
 export interface ProfileUsageSummary {
-  period: string;
   totalTokens: number;
   totalTaskCount: number;
   features: ProfileUsageItem[];
+  tokenRemaining?: number | null;
 }

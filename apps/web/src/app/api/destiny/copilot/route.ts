@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { extractArkOutputText } from '../_lib/ark-response';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 const RequestSchema = z.object({
   reportSummary: z.string().trim().min(1, '报告摘要不能为空'),
@@ -21,8 +22,27 @@ const RequestSchema = z.object({
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 
 export async function POST(req: Request) {
+  let deducted = false;
+  let userId: string | null = null;
+
   try {
-    const userId = await getOptionalUserId(req);
+    userId = await getOptionalUserId(req);
+
+    // 已认证的非 admin 用户预扣 1 token
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true, tokens: true },
+      });
+      if (user && user.role !== 'admin') {
+        if (user.tokens <= 0) {
+          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+        }
+        await deductTokens(userId, 1);
+        deducted = true;
+      }
+    }
+
     const body = await req.json();
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -120,6 +140,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ answer }, { status: 200 });
   } catch (error) {
+    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json({ error: '追问超时，请稍后重试' }, { status: 504 });
     }

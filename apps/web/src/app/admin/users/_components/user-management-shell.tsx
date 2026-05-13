@@ -1,18 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-  Search,
-  Trash2,
-  UserPlus,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Search, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { adminApi } from '@/lib/api/admin-api';
 import { toast } from 'sonner';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { DeleteUserDialog } from './delete-user-dialog';
 import { EditUserDialog, type AdminUserRecord } from './edit-user-dialog';
 import { CreateUserDialog } from './create-user-dialog';
 
@@ -78,21 +73,18 @@ function RoleBadge({ role }: { role: string }) {
  * 将 API 返回的 AdminUser 转换为 AdminUserRecord，供 EditUserDialog 直接使用。
  */
 function toRecord(user: AdminUser): AdminUserRecord {
-  const displayName = user.name || user.username;
-  const displayStatus: AdminUserRecord['status'] =
-    user.status === 'disabled' ? '已禁用' : '正常';
-  const displayRole: AdminUserRecord['role'] =
-    user.role === 'admin' ? '管理员' : '普通用户';
+  const displayStatus: AdminUserRecord['status'] = user.status === 'disabled' ? '已禁用' : '正常';
+  const displayRole: AdminUserRecord['role'] = user.role === 'admin' ? '管理员' : '普通用户';
 
   return {
     id: user.id,
-    name: displayName,
+    name: user.username,
     email: user.email || '',
     role: displayRole,
-    tokens: user.tokens.toLocaleString() + ' Tokens',
+    tokens: user.role === 'admin' ? '无限额度' : user.tokens.toLocaleString() + ' Tokens',
     status: displayStatus,
     avatar: user.avatar || '',
-    initials: displayName.charAt(0).toUpperCase(),
+    initials: user.username.charAt(0).toUpperCase(),
     avatarTone: 'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]',
   };
 }
@@ -100,12 +92,17 @@ function toRecord(user: AdminUser): AdminUserRecord {
 export function UserManagementShell() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
+  const [adminCount, setAdminCount] = useState(0);
+  const [disabledCount, setDisabledCount] = useState(0);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteDialogUser, setDeleteDialogUser] = useState<{ id: string; username: string } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const PAGE_SIZE = 10;
 
@@ -113,20 +110,22 @@ export function UserManagementShell() {
     setIsLoading(true);
     try {
       const res = await adminApi.listUsers({
-        search: searchQuery || undefined,
+        search: debouncedSearch || undefined,
         page,
         limit: PAGE_SIZE,
       });
       if (res.success && res.data) {
         setUsers(res.data.users);
         setTotal(res.data.meta.total);
+        setAdminCount(res.data.meta.adminCount);
+        setDisabledCount(res.data.meta.disabledCount);
       }
     } catch {
       toast.error('加载用户列表失败');
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, page]);
+  }, [debouncedSearch, page]);
 
   useEffect(() => {
     fetchUsers();
@@ -145,21 +144,23 @@ export function UserManagementShell() {
 
   const SUMMARY_CARDS = [
     { label: '总用户数', value: String(total), tone: 'text-slate-950 dark:text-white' as const },
-    { label: '管理员', value: String(users.filter((u) => u.role === 'admin').length), tone: 'text-[#255DFF]' as const },
-    { label: '已停用', value: String(users.filter((u) => u.status === 'disabled').length), tone: 'text-rose-500' as const },
+    {
+      label: '管理员',
+      value: String(adminCount),
+      tone: 'text-[#255DFF]' as const,
+    },
+    {
+      label: '已停用',
+      value: String(disabledCount),
+      tone: 'text-rose-500' as const,
+    },
   ];
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const handleDelete = async (userId: string) => {
-    if (!confirm('确认删除该用户？此操作不可撤销，将级联删除所有关联数据。')) return;
-    try {
-      await adminApi.deleteUser(userId);
-      toast.success('用户已删除');
-      fetchUsers();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败');
-    }
+  const handleDelete = (user: AdminUser) => {
+    setDeleteDialogUser({ id: user.id, username: getDisplayName(user) });
+    setDeleteDialogOpen(true);
   };
 
   const handleEdit = (record: AdminUserRecord) => {
@@ -196,15 +197,39 @@ export function UserManagementShell() {
     return user.role === 'admin' ? '管理员' : '普通用户';
   };
 
-  // 获取显示名称
+  // 获取显示名称（统一使用用户名）
   const getDisplayName = (user: AdminUser): string => {
-    return user.name || user.username;
+    return user.username;
   };
 
-  // 格式化 tokens 显示
-  const formatTokens = (tokens: number): string => {
-    return tokens.toLocaleString();
+  // 格式化 tokens 显示，管理员显示无限额度
+  const formatTokens = (user: AdminUser): string => {
+    if (user.role === 'admin') return '无限额度';
+    return user.tokens.toLocaleString();
   };
+
+  const renderLoading = (
+    <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
+      <p className="text-[14px] text-[var(--home-color-text-tertiary)]">加载中...</p>
+    </div>
+  );
+
+  const renderEmpty = (
+    <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
+      <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
+        {searchQuery ? `没有找到与"${searchQuery}"匹配的用户。` : '暂无用户数据。'}
+      </p>
+      {searchQuery && (
+        <button
+          type="button"
+          className="mt-3 text-[13px] font-semibold text-[#255DFF] hover:underline"
+          onClick={() => handleSearchChange('')}
+        >
+          清除搜索条件
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -269,7 +294,9 @@ export function UserManagementShell() {
                     <div className="text-[12px] font-medium text-[var(--home-color-text-tertiary)] dark:text-slate-400">
                       {card.label}
                     </div>
-                    <div className={cn('mt-1.5 text-[16px] font-bold tracking-[-0.02em]', card.tone)}>
+                    <div
+                      className={cn('mt-1.5 text-[16px] font-bold tracking-[-0.02em]', card.tone)}
+                    >
                       {card.value}
                     </div>
                   </div>
@@ -278,7 +305,12 @@ export function UserManagementShell() {
             </div>
           </header>
 
-          <section className={cn(GLASS_PANEL, 'mt-6 rounded-[32px] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7')}>
+          <section
+            className={cn(
+              GLASS_PANEL,
+              'mt-6 rounded-[32px] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7'
+            )}
+          >
             <div className="pointer-events-none absolute inset-0 rounded-[32px] [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)]" />
             <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/28 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
@@ -297,17 +329,6 @@ export function UserManagementShell() {
                     onChange={(event) => handleSearchChange(event.target.value)}
                   />
                 </div>
-
-                <button
-                  type="button"
-                  aria-label="筛选用户"
-                  className={cn(
-                    GLASS_SURFACE,
-                    'flex h-[48px] w-[48px] items-center justify-center rounded-[12px] text-[var(--home-color-text-tertiary)]'
-                  )}
-                >
-                  <Filter className="h-5 w-5" />
-                </button>
               </div>
 
               <Button
@@ -322,9 +343,9 @@ export function UserManagementShell() {
 
             <div className="relative mt-5 hidden lg:block">
               <div className="grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] gap-5 px-6 pb-3 text-[12px] font-semibold text-[var(--home-color-text-tertiary)] dark:text-slate-400">
-                <span>用户（头像 / 姓名 / ID）</span>
+                <span>用户（头像 / 用户名 / ID）</span>
                 <span>角色权限</span>
-                <span>代币余额</span>
+                <span>Token 余额</span>
                 <span>状态</span>
                 <span className="text-right">操作</span>
               </div>
@@ -333,7 +354,10 @@ export function UserManagementShell() {
                 {users.map((user) => (
                   <div
                     key={user.id}
-                    className={cn(ROW_SURFACE, 'grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-6 py-5')}
+                    className={cn(
+                      ROW_SURFACE,
+                      'grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-6 py-5'
+                    )}
                   >
                     <div className="flex items-center gap-3.5">
                       <div
@@ -355,8 +379,10 @@ export function UserManagementShell() {
                     <RoleBadge role={getDisplayRole(user)} />
 
                     <div className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
-                      {formatTokens(user.tokens)}
-                      <span className="ml-1.5 text-[13px] font-medium text-slate-400">Tokens</span>
+                      {formatTokens(user)}
+                      <span className="ml-1.5 text-[13px] font-medium text-slate-400">
+                        {user.role === 'admin' ? '' : 'Tokens'}
+                      </span>
                     </div>
 
                     <StatusBadge status={getDisplayStatus(user)} />
@@ -369,39 +395,28 @@ export function UserManagementShell() {
                       >
                         更新
                       </button>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 text-[12px] text-rose-500"
-                        onClick={() => handleDelete(user.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>删除</span>
-                      </button>
+                      {user.role !== 'admin' && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[12px] text-rose-500"
+                          onClick={() => handleDelete(user)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>删除</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {isLoading ? (
-                <div className={cn(GLASS_SURFACE, 'mt-3 rounded-[20px] px-6 py-8 text-center')}>
-                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">加载中...</p>
-                </div>
-              ) : users.length === 0 ? (
-                <div className={cn(GLASS_SURFACE, 'mt-3 rounded-[20px] px-6 py-8 text-center')}>
-                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
-                    没有找到匹配的用户，请调整搜索关键词。
-                  </p>
-                </div>
-              ) : null}
+              {isLoading ? renderLoading : users.length === 0 ? renderEmpty : null}
             </div>
 
             {/* 移动端列表 */}
             <div className="relative mt-5 grid gap-4 lg:hidden">
               {users.map((user) => (
-                <article
-                  key={user.id}
-                  className={cn(ROW_SURFACE, 'p-4')}
-                >
+                <article key={user.id} className={cn(ROW_SURFACE, 'p-4')}>
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent dark:from-white/5" />
                   <div className="relative">
                     <div className="flex items-start gap-4">
@@ -429,9 +444,10 @@ export function UserManagementShell() {
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
                       <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">代币余额</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Token 余额</p>
                         <p className="mt-1 text-sm font-semibold text-slate-950 dark:text-white">
-                          {formatTokens(user.tokens)} Tokens
+                          {formatTokens(user)}
+                          {user.role !== 'admin' && ' Tokens'}
                         </p>
                       </div>
                       <div className={cn(GLASS_SURFACE, 'rounded-[16px] px-4 py-3')}>
@@ -451,30 +467,22 @@ export function UserManagementShell() {
                       >
                         更新
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="h-11 flex-1 rounded-2xl text-rose-500"
-                        onClick={() => handleDelete(user.id)}
-                      >
-                        删除
-                      </Button>
+                      {user.role !== 'admin' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-11 flex-1 rounded-2xl text-rose-500"
+                          onClick={() => handleDelete(user)}
+                        >
+                          删除
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </article>
               ))}
 
-              {isLoading ? (
-                <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
-                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">加载中...</p>
-                </div>
-              ) : users.length === 0 ? (
-                <div className={cn(GLASS_SURFACE, 'rounded-[20px] px-5 py-7 text-center')}>
-                  <p className="text-[14px] text-[var(--home-color-text-tertiary)]">
-                    没有找到匹配的用户，请调整搜索关键词。
-                  </p>
-                </div>
-              ) : null}
+              {isLoading ? renderLoading : users.length === 0 ? renderEmpty : null}
             </div>
 
             {/* 分页 */}
@@ -546,6 +554,16 @@ export function UserManagementShell() {
       <CreateUserDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        onSuccess={fetchUsers}
+      />
+
+      <DeleteUserDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteDialogUser(null);
+        }}
+        user={deleteDialogUser}
         onSuccess={fetchUsers}
       />
     </>

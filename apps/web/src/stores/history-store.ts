@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { createDexieStorage } from '@/lib/storage/zustand-dexie-storage';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
 import { authFetch } from '@/lib/api/client';
 
@@ -316,7 +317,7 @@ export const useHistoryStore = create<HistoryState>()(
     }),
     {
       name: 'ai-history-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createDexieStorage('ai-history-db')),
       partialize: (state) => ({
         items: state.items,
       }),

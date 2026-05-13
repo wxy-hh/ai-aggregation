@@ -11,7 +11,7 @@ import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { requireAuth } from '@/lib/auth/require-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma } from '@repo/db';
+import { prisma, deductTokens } from '@repo/db';
 
 function createErrorId() {
   return (
@@ -79,6 +79,19 @@ function createSseStreamFromTextStream(
       }
     },
   });
+}
+
+/**
+ * 非 admin 用户按实际用量扣减 Token。
+ */
+async function deductForNonAdmin(
+  userId: string,
+  userRole: string,
+  totalTokens?: number | null
+): Promise<void> {
+  if (userRole !== 'admin') {
+    await deductTokens(userId, totalTokens ?? 1);
+  }
 }
 
 function buildChatUsageMetadata(messages: ChatMessage[]) {
@@ -205,15 +218,6 @@ export async function POST(req: Request) {
         );
       }
 
-      // 异步扣除 1 token，不阻塞响应流
-      prisma.user
-        .update({
-          where: { id: userId },
-          data: { tokens: { decrement: 1 } },
-        })
-        .catch((err) => {
-          console.error('扣除 tokens 失败:', err);
-        });
     }
 
     const rateLimiter = getRateLimiter();
@@ -333,6 +337,9 @@ export async function POST(req: Request) {
             usage: xunfeiUsage,
             metadata: buildChatUsageMetadata(messages),
           });
+
+          // 调用完成后按实际用量扣减
+          await deductForNonAdmin(userId, user.role, xunfeiUsage?.totalTokens);
         })
       );
     }
@@ -576,6 +583,8 @@ export async function POST(req: Request) {
                 usage: doubaoUsage,
                 metadata: buildChatUsageMetadata(messages),
               });
+
+              await deductForNonAdmin(userId, user.role, doubaoUsage?.totalTokens);
               controller.enqueue(encodeSseEvent({ type: 'done' }));
             } else {
               await safeRecordAiUsage({
@@ -589,6 +598,8 @@ export async function POST(req: Request) {
                 usage: doubaoUsage,
                 metadata: buildChatUsageMetadata(messages),
               });
+
+              await deductForNonAdmin(userId, user.role, doubaoUsage?.totalTokens);
             }
             controller.close();
           } catch (error) {
@@ -656,6 +667,7 @@ export async function POST(req: Request) {
       createSseStreamFromTextStream(textResponse.body, async () => {
         try {
           const usage = await result.totalUsage;
+          const normalized = normalizeUsage(usage);
           await safeRecordAiUsage({
             userId,
             feature: 'chat',
@@ -664,9 +676,11 @@ export async function POST(req: Request) {
             model: modelName,
             endpoint: '/api/chat',
             requestId: errorId,
-            usage: normalizeUsage(usage),
+            usage: normalized,
             metadata: buildChatUsageMetadata(messages),
           });
+
+          await deductForNonAdmin(userId, user.role, normalized.totalTokens);
         } catch (usageError) {
           console.error('[chat] 读取 usage 失败:', usageError);
         }
