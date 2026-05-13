@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Aggregation Landing Page</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --background:#F1F5F9; --surface1:rgba(255,255,255,0.86); --surface2:#F8FAFC; --surface3:#F1F5F9; --border:#E2E8F0; --border-visible:#D5DAEB;
+      --text1:#0F172A; --text2:#475569; --text3:#64748B; --text4:#94A3B8; --accent:#5D7CFA; --accent-subtle:#F3F6FF;
+      --success:#22C55E; --warning:#F59E0B; --error:#E54350;
+      --font-display:"Space Grotesk",system-ui,sans-serif; --font-body:"DM Sans",system-ui,sans-serif;
+      --shadow-1:0 1px 2px rgba(15,23,42,0.06); --shadow-2:0 8px 20px rgba(76,95,154,0.10); --shadow-3:0 20px 60px -10px rgba(59,130,246,0.10);
+      --r2:12px; --r3:24px; --r4:32px; --r5:48px; --pill:999px;
+    }
+    [data-theme="dark"] {
+      --background:#111218; --surface1:rgba(30,41,59,0.84); --surface2:#182230; --surface3:#334155; --border:#334155; --border-visible:#475569;
+      --text1:#F8FAFC; --text2:#CBD5E1; --text3:#94A3B8; --text4:#64748B; --accent:#9BADFF; --accent-subtle:#1E2A55;
+      --shadow-1:0 2px 10px rgba(0,0,0,0.18); --shadow-2:0 14px 32px rgba(0,0,0,0.28); --shadow-3:0 24px 56px rgba(0,0,0,0.40);
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      font-family:var(--font-body);
+      background:var(--background);
+      color:var(--text1);
+    }
+    a { color:inherit; text-decoration:none; }
+    .container { width:100%; max-width:1120px; margin:0 auto; padding:0 24px; }
+    .lp-header {
+      position:sticky; top:0; z-index:50;
+      backdrop-filter: blur(18px);
+      background:rgba(255,255,255,0.54);
+      border-bottom:1px solid rgba(255,255,255,0.55);
+    }
+    [data-theme="dark"] .lp-header { background:rgba(17,18,24,0.58); border-bottom-color: rgba(71,85,105,0.8); }
+    .lp-header .container { display:flex; align-items:center; justify-content:space-between; gap:20px; min-height:72px; }
+    .brand { display:flex; align-items:center; gap:12px; font-weight:700; }
+    .mark {
+      width:40px; height:40px; border-radius:14px; display:grid; place-items:center; color:#fff;
+      background:linear-gradient(135deg,#5D7CFA,#8794FF); box-shadow:0 10px 28px rgba(93,124,250,0.35);
+    }
+    nav { display:flex; gap:18px; color:var(--text3); font-size:14px; }
+    .header-cta {
+      height:40px; padding:0 16px; border-radius:12px; border:none; background:linear-gradient(90deg,#4969E9,#7B8FFF); color:#fff; font:600 14px/1 var(--font-body);
+      box-shadow:0 10px 24px rgba(93,124,250,0.32);
+    }
+    .lp-hero {
+      position:relative; overflow:hidden;
+      padding:128px 0 96px;
+    }
+    .lp-hero::before, .lp-hero::after {
+      content:""; position:absolute; pointer-events:none;
+      border-radius:50%;
+      filter: blur(20px);
+      animation: pulse 6s ease-in-out infinite;
+    }
+    .lp-hero::before {
+      width:360px; height:360px; top:-80px; left:-60px; background:rgba(219,234,254,0.78);
+    }
+    .lp-hero::after {
+      width:280px; height:280px; top:40px; right:-40px; background:rgba(233,213,255,0.58);
+      animation-delay:1.2s;
+    }
+    @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.92; } 50% { transform: scale(1.06); opacity: 0.62; } }
+    .hero-shell {
+      width:100%;
+      position:relative;
+      padding:48px;
+      border-radius:var(--r5);
+      background:linear-gradient(180deg,rgba(255,255,255,0.60),rgba(255,255,255,0.20),transparent);
+      border:1px solid rgba(255,255,255,0.60);
+      box-shadow:var(--shadow-3);
+      backdrop-filter:blur(40px);
+    }
+    .hero-shell h1 {
+      margin:24px 0 20px;
+      font-family:var(--font-display);
+      font-size:clamp(42px,7vw,72px);
+      line-height:1.02;
+      letter-spacing:-0.03em;
+      max-width:10.5ch;
+    }
+    .hero-shell h1 span {
+      background:linear-gradient(90deg,#4969E9,#7D91FF,#06B6D4);
+      -webkit-background-clip:text; background-clip:text; color:transparent;
+    }
+    .hero-shell p { max-width:560px; color:var(--text3); font-size:18px; line-height:1.6; margin:0; }
+    .hero-actions { display:flex; gap:12px; margin-top:34px; flex-wrap:wrap; }
+    .btn-primary, .btn-secondary {
+      height:44px; border-radius:12px; padding:0 18px; font:600 14px/1 var(--font-body); border:none;
+    }
+    .btn-primary { background:linear-gradient(90deg,#4969E9,#7B8FFF); color:#fff; box-shadow:0 10px 24px rgba(93,124,250,0.32); }
+    .btn-secondary { background:rgba(255,255,255,0.72); color:var(--text2); border:1px solid rgba(255,255,255,0.75); }
+    .hero-grid {
+      margin-top:48px;
+      display:grid; grid-template-columns:1.3fr .9fr; gap:18px;
+    }
+    .hero-card, .feature-visual, .price-card, .quote-box, .cta-box {
+      border-radius:var(--r3);
+      border:1px solid rgba(255,255,255,0.60);
+      background:var(--surface1);
+      box-shadow:var(--shadow-2);
+      backdrop-filter:blur(24px);
+    }
+    .hero-card { padding:22px; }
+    .eyebrow {
+      display:inline-flex; align-items:center; gap:6px; line-height:1; padding:4px 10px; border-radius:var(--pill); background:var(--accent-subtle); color:var(--accent);
+      font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+    }
+    .hero-list { display:grid; gap:10px; margin-top:18px; }
+    .hero-row {
+      display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 16px; border-radius:16px; background:var(--surface2); border:1px solid var(--border);
+    }
+    .hero-row small { color:var(--text4); }
+    .lp-feature {
+      display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:center; padding:96px 0;
+    }
+    .lp-feature.reverse .lp-feature-text { order:2; }
+    .lp-feature.reverse .feature-visual { order:1; }
+    .lp-feature-text h2 {
+      margin:14px 0 16px; font-family:var(--font-display); font-size:40px; line-height:1.1; letter-spacing:-0.02em;
+    }
+    .lp-feature-text p { margin:0 0 18px; color:var(--text3); font-size:16px; line-height:1.65; }
+    .bullet-list { display:grid; gap:10px; padding:0; margin:0; list-style:none; }
+    .bullet-list li {
+      padding:12px 14px; border-radius:16px; background:var(--surface2); border:1px solid var(--border); color:var(--text2);
+    }
+    .feature-visual { padding:24px; min-height:300px; display:grid; align-content:start; gap:14px; }
+    .visual-pane {
+      padding:16px; border-radius:18px; background:var(--surface2); border:1px solid var(--border);
+    }
+    .lp-quote { padding:40px 0 96px; }
+    .quote-box { padding:36px; text-align:center; }
+    .quote-box blockquote {
+      margin:0; font-family:var(--font-display); font-size:32px; line-height:1.2; letter-spacing:-0.02em;
+    }
+    .quote-box cite { display:block; margin-top:16px; color:var(--text3); font-style:normal; }
+    .lp-pricing { padding:0 0 96px; }
+    .pricing-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .price-card { padding:24px; }
+    .price-card h3 { margin:18px 0 10px; font-family:var(--font-display); font-size:24px; }
+    .price-card .price { font-family:var(--font-display); font-size:40px; line-height:1; margin:14px 0; }
+    .price-card ul { margin:0; padding-left:18px; color:var(--text3); line-height:1.7; }
+    .lp-cta-block { padding:0 0 120px; }
+    .cta-box { padding:40px; text-align:center; }
+    .cta-box h2 { margin:18px auto 12px; max-width:12ch; font-family:var(--font-display); font-size:42px; line-height:1.08; }
+    .cta-box p { margin:0 auto 26px; max-width:520px; color:var(--text3); line-height:1.6; }
+    .lp-footer { border-top:1px solid var(--border); padding:24px 0 96px; color:var(--text3); }
+    .lp-footer .container { display:flex; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+    .floating-bar {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px;
+      background: var(--surface1); border: 1.5px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.12); backdrop-filter: blur(16px);
+    }
+    .mode-btn { height: 32px; border-radius: 999px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0 14px; font-family: var(--font-body); font-size: 12px; font-weight: 500; color: var(--text3); }
+    .mode-btn.active { background: var(--surface3); color: var(--text1); }
+    @media (max-width: 920px) {
+      .hero-grid, .lp-feature, .pricing-grid { grid-template-columns: 1fr; }
+      .hero-shell { padding:32px; }
+      .lp-feature.reverse .lp-feature-text, .lp-feature.reverse .feature-visual { order: initial; }
+      .hero-shell h1 { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="lp-header">
+    <div class="container">
+      <div class="brand"><span class="mark">AI</span><span>AI Aggregation</span></div>
+      <nav>
+        <a href="#capability">能力</a>
+        <a href="#workflow">工作流</a>
+        <a href="#pricing">方案</a>
+      </nav>
+      <button class="header-cta">进入工作台</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="lp-hero">
+      <div class="container">
+        <div class="hero-shell">
+          <span class="eyebrow">AI Workbench</span>
+          <h1>把多模型能力收拢到一个 <span>连续工作的桌面</span></h1>
+          <p>对话、出图、视频生成、语音转写和历史检索共享同一套操作语法。用户不需要在多个服务之间跳转，只需要专注当下任务。</p>
+          <div class="hero-actions">
+            <button class="btn-primary">开始新任务</button>
+            <button class="btn-secondary">浏览最近创作</button>
+          </div>
+          <div class="hero-grid">
+            <div class="hero-card">
+              <span class="eyebrow">今日概览</span>
+              <div class="hero-list">
+                <div class="hero-row"><strong>多模型对话</strong><small>6 个活跃会话</small></div>
+                <div class="hero-row"><strong>图像生成</strong><small>4 张结果已归档</small></div>
+                <div class="hero-row"><strong>语音转写</strong><small>2 份纪要待复查</small></div>
+              </div>
+            </div>
+            <div class="hero-card">
+              <span class="eyebrow">当前焦点</span>
+              <h3 style="margin:18px 0 8px;font-family:var(--font-display);font-size:24px;">保持主操作可见</h3>
+              <p style="margin:0;color:var(--text3);line-height:1.6;">玻璃层只做承载，蓝紫色只在真正需要点击或确认的地方出现。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="container lp-feature" id="capability">
+      <div class="lp-feature-text">
+        <span class="eyebrow">多模型分发</span>
+        <h2>不同能力共用一套界面语法</h2>
+        <p>聊天页、图像页、视频页与语音页的差异来自内容，不来自界面结构。统一的卡片、状态、标签和抽屉规则，让用户把注意力留给任务本身。</p>
+        <ul class="bullet-list">
+          <li>主任务始终占据首屏的最大视觉权重</li>
+          <li>次级配置退到抽屉、侧栏或浅色分组</li>
+          <li>历史记录与结果复用同一套标签与状态色</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="visual-pane">
+          <strong>聊天</strong>
+          <p style="margin:8px 0 0;color:var(--text3);">主消息流、模型切换、底部输入区保持稳定。</p>
+        </div>
+        <div class="visual-pane">
+          <strong>图像</strong>
+          <p style="margin:8px 0 0;color:var(--text3);">参数面板是辅助层，结果画面才是中心。</p>
+        </div>
+        <div class="visual-pane">
+          <strong>语音</strong>
+          <p style="margin:8px 0 0;color:var(--text3);">录音、上传、转写结果都回到同一张工作台。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="container lp-feature reverse" id="workflow">
+      <div class="lp-feature-text">
+        <span class="eyebrow">桌面气质</span>
+        <h2>先是可工作的结构，然后才是漂亮</h2>
+        <p>这套语言有玻璃、光团和渐变，但它们都服务于结构。用户应该先看见任务、状态与下一步，再感受到这套界面的细节和质感。</p>
+        <ul class="bullet-list">
+          <li>白面必须配细描边，避免玻璃层糊成一片</li>
+          <li>大圆角只留给英雄区和外层面板，不滥用</li>
+          <li>深色模式延续同样层级，而不是反相复制</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="visual-pane" style="min-height:84px;background:linear-gradient(90deg,#4969E9,#7B8FFF);color:#fff;">
+          <strong>主按钮</strong>
+          <p style="margin:8px 0 0;color:rgba(255,255,255,0.88);">只在真正的主动作上使用蓝紫渐变。</p>
+        </div>
+        <div class="visual-pane"><strong>次按钮</strong><p style="margin:8px 0 0;color:var(--text3);">半透明白面，永远别抢过主按钮。</p></div>
+        <div class="visual-pane"><strong>状态色</strong><p style="margin:8px 0 0;color:var(--text3);">绿色、橙色、红色只表达语义，不铺情绪。</p></div>
+      </div>
+    </section>
+
+    <section class="container lp-feature">
+      <div class="lp-feature-text">
+        <span class="eyebrow">移动端优先</span>
+        <h2>高频操作必须单手也能完成</h2>
+        <p>底部导航、底部抽屉、稳定输入区和安全区适配是这套系统的硬规则。移动端不是桌面缩略图，而是同一语言的另一种重排方式。</p>
+        <ul class="bullet-list">
+          <li>关键操作热区不小于 44 x 44</li>
+          <li>长内容场景避免嵌套滚动</li>
+          <li>媒体内容必须保持比例稳定，不得溢出横向滚动</li>
+        </ul>
+      </div>
+      <div class="feature-visual">
+        <div class="visual-pane">
+          <strong>底部导航</strong>
+          <p style="margin:8px 0 0;color:var(--text3);">移动端优先承接聊天、图像、视频、语音与历史入口。</p>
+        </div>
+        <div class="visual-pane">
+          <strong>输入区固定</strong>
+          <p style="margin:8px 0 0;color:var(--text3);">对话发送、录音与上传入口必须稳定，不随内容抖动。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-quote">
+      <div class="container">
+        <div class="quote-box">
+          <blockquote>真正的 AI 工作台不是“功能越多越像平台”，而是“切换越少越像工作”。</blockquote>
+          <cite>AI Aggregation Design Language</cite>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-pricing" id="pricing">
+      <div class="container pricing-grid">
+        <article class="price-card">
+          <span class="eyebrow">个人</span>
+          <h3>探索版</h3>
+          <div class="price">¥0</div>
+          <ul>
+            <li>基础对话与历史记录</li>
+            <li>有限图像与语音体验</li>
+            <li>适合快速试用与模型对比</li>
+          </ul>
+        </article>
+        <article class="price-card">
+          <span class="eyebrow">推荐</span>
+          <h3>工作台</h3>
+          <div class="price">¥59</div>
+          <ul>
+            <li>多模型任务统一调度</li>
+            <li>图像、语音、视频完整工作流</li>
+            <li>适合个人创作与高频办公</li>
+          </ul>
+        </article>
+        <article class="price-card">
+          <span class="eyebrow">团队</span>
+          <h3>协作版</h3>
+          <div class="price">定制</div>
+          <ul>
+            <li>团队空间与共享历史</li>
+            <li>角色权限与运营能力</li>
+            <li>适合统一管理多种 AI 能力</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="lp-cta-block">
+      <div class="container">
+        <div class="cta-box">
+          <span class="eyebrow">Ready</span>
+          <h2>把零散的 AI 能力，收回到一个顺手的界面里</h2>
+          <p>这套技能文件已经把颜色、字体、圆角、玻璃层和关键组件规则写死了。后续只要沿用它，新的页面就不会越长越散。</p>
+          <button class="btn-primary">进入设计系统</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <div class="container">
+      <div>AI Aggregation Design</div>
+      <div>多模型对话 · 图像生成 · 视频生成 · 语音转写</div>
+    </div>
+  </footer>
+
+  <div class="floating-bar">
+    <button class="mode-btn" data-mode="light" aria-label="Light mode">Light</button>
+    <button class="mode-btn" data-mode="dark" aria-label="Dark mode">Dark</button>
+  </div>
+
+  <script>
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.documentElement.dataset.theme = btn.dataset.mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+    document.querySelector(`.mode-btn[data-mode="${document.documentElement.dataset.theme}"]`)?.classList.add('active');
+    document.querySelectorAll('a').forEach(a => a.addEventListener('click', e => e.preventDefault()));
+  </script>
+</body>
+</html>

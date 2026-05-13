@@ -38,12 +38,21 @@ export async function POST(_req: NextRequest) {
     const newRefreshToken = generateRefreshToken();
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 
-    await prisma.$transaction([
-      prisma.refreshToken.delete({ where: { id: record.id } }),
-      prisma.refreshToken.create({
-        data: { userId: record.userId, token: newRefreshToken, expiresAt },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.refreshToken.delete({ where: { id: record.id } }),
+        prisma.refreshToken.create({
+          data: { userId: record.userId, token: newRefreshToken, expiresAt },
+        }),
+      ]);
+    } catch (txError: unknown) {
+      // P2025：记录已被并发请求删除（React StrictMode 或网络重试导致竞争条件）
+      const prismaError = txError as { code?: string };
+      if (prismaError.code === 'P2025') {
+        return ApiError.unauthorized('刷新令牌已过期，请重新登录');
+      }
+      throw txError;
+    }
 
     const accessToken = signAccessToken(record.userId, record.user.role);
     await setRefreshTokenCookie(newRefreshToken, expiresAt);

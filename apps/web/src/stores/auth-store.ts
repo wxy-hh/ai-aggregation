@@ -30,6 +30,9 @@ interface AuthState {
   initialize: () => Promise<void>;
 }
 
+// 防止并发初始化调用导致的竞争条件
+let initializePromise: Promise<void> | null = null;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -139,23 +142,34 @@ export const useAuthStore = create<AuthState>()(
       },
 
       initialize: async () => {
-        set({ isLoading: true });
+        // 防止并发调用（React StrictMode 会导致 useEffect 执行两次）
+        if (initializePromise) return initializePromise;
 
-        const { refreshAccessToken, fetchUser } = get();
+        initializePromise = (async () => {
+          set({ isLoading: true });
 
-        // 优先通过 refresh token 获取新 token（避免使用 localStorage 中可能已过期的旧 token）
-        const newToken = await refreshAccessToken();
+          const { refreshAccessToken, fetchUser } = get();
 
-        if (newToken) {
-          await fetchUser();
-        } else {
-          // refresh token 不可用，尝试用 localStorage 中的旧 token
-          const { accessToken } = get();
-          if (accessToken) {
+          // 优先通过 refresh token 获取新 token（避免使用 localStorage 中可能已过期的旧 token）
+          const newToken = await refreshAccessToken();
+
+          if (newToken) {
             await fetchUser();
           } else {
-            set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+            // refresh token 不可用，尝试用 localStorage 中的旧 token
+            const { accessToken } = get();
+            if (accessToken) {
+              await fetchUser();
+            } else {
+              set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
+            }
           }
+        })();
+
+        try {
+          await initializePromise;
+        } finally {
+          initializePromise = null;
         }
       },
     }),

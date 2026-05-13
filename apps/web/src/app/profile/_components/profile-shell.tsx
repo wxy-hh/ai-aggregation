@@ -498,6 +498,7 @@ export function ProfileShell() {
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [expandedFeature, setExpandedFeature] = useState<ProfileUsageItem['feature'] | null>(null);
+  const fetchingUsageRef = useRef(false);
 
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
   const isAdminUser = user?.role === 'admin';
@@ -516,6 +517,10 @@ export function ProfileShell() {
       return;
     }
 
+    // 防止并发请求（React StrictMode 会导致 useEffect 执行两次）
+    if (fetchingUsageRef.current) return;
+    fetchingUsageRef.current = true;
+
     let cancelled = false;
     setUsageLoading(true);
     setUsageError(null);
@@ -532,6 +537,7 @@ export function ProfileShell() {
       .finally(() => {
         if (cancelled) return;
         setUsageLoading(false);
+        fetchingUsageRef.current = false;
       });
 
     return () => {

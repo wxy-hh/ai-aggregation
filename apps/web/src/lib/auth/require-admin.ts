@@ -15,7 +15,16 @@ export async function requireAdmin(req: Request): Promise<string> {
   }
 
   const token = authHeader.slice(7);
-  const { userId, role } = verifyAccessToken(token);
+  let userId: string;
+  let role: string;
+
+  try {
+    const payload = verifyAccessToken(token);
+    userId = payload.userId;
+    role = payload.role;
+  } catch {
+    throw new AuthError('登录已过期，请重新登录', 'UNAUTHORIZED');
+  }
 
   if (role !== 'admin') {
     throw new AuthError('无权访问：需要管理员权限', 'FORBIDDEN');

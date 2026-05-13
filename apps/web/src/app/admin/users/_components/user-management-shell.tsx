@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Filter, Search, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { adminApi } from '@/lib/api/admin-api';
 import { toast } from 'sonner';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useAuthStore } from '@/stores/auth-store';
 import { DeleteUserDialog } from './delete-user-dialog';
 import { EditUserDialog, type AdminUserRecord } from './edit-user-dialog';
 import { CreateUserDialog } from './create-user-dialog';
@@ -32,6 +33,12 @@ const GLASS_SURFACE =
 
 const ROW_SURFACE =
   'rounded-[24px] border border-[rgba(255,255,255,0.65)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.58))] shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_24px_32px_-24px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.58))]';
+
+const SEARCH_INPUT_CLASSES =
+  'h-[48px] w-full rounded-[12px] border border-[rgba(255,255,255,0.72)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0.78))] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),var(--home-shadow-sm)] outline-none transition-[box-shadow,border-color,background-color] duration-200 placeholder:text-[var(--home-color-text-quaternary)] focus:border-[#BFDBFE] focus:bg-white focus:shadow-[0_0_0_2px_rgba(59,130,246,0.20),inset_0_1px_0_rgba(255,255,255,0.92),0_6px_16px_rgba(78,99,160,0.12)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.64))] dark:text-slate-200 dark:focus:border-[#3B82F6]/40 dark:focus:bg-slate-900/78';
+
+const TABLE_ACTION_BUTTON_CLASSES =
+  'inline-flex h-8 items-center rounded-[10px] border px-3 text-[12px] font-semibold transition-[background-color,box-shadow,color] duration-200';
 
 function StatusBadge({ status }: { status: string }) {
   const styles =
@@ -69,6 +76,22 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
+function UserMetaLine({ email, createdAt }: { email: string | null; createdAt: string }) {
+  const dateText = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(createdAt));
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500 dark:text-slate-400">
+      {email ? <span className="break-all">{email}</span> : <span>未填写邮箱</span>}
+      <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 sm:inline-block" />
+      <span>加入于 {dateText}</span>
+    </div>
+  );
+}
+
 /**
  * 将 API 返回的 AdminUser 转换为 AdminUserRecord，供 EditUserDialog 直接使用。
  */
@@ -90,6 +113,7 @@ function toRecord(user: AdminUser): AdminUserRecord {
 }
 
 export function UserManagementShell() {
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [adminCount, setAdminCount] = useState(0);
@@ -127,8 +151,11 @@ export function UserManagementShell() {
     }
   }, [debouncedSearch, page]);
 
+  // 用 setTimeout 延迟取数：避开 React Strict Mode（开发环境）的双次调用
+  // 以及 auth 初始化期间组件 mount/unmount 的 race condition
   useEffect(() => {
-    fetchUsers();
+    const timer = setTimeout(() => fetchUsers());
+    return () => clearTimeout(timer);
   }, [fetchUsers]);
 
   // 切换搜索关键词时回到第一页
@@ -324,7 +351,7 @@ export function UserManagementShell() {
                     type="text"
                     aria-label="搜索用户"
                     placeholder="搜索用户名、ID 或邮箱..."
-                    className="h-[48px] w-full rounded-[12px] border-0 bg-[var(--home-color-surface)] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[var(--home-shadow-sm)] outline-none placeholder:text-[var(--home-color-text-quaternary)]"
+                    className={SEARCH_INPUT_CLASSES}
                     value={searchQuery}
                     onChange={(event) => handleSearchChange(event.target.value)}
                   />
@@ -373,6 +400,7 @@ export function UserManagementShell() {
                           {getDisplayName(user)}
                         </p>
                         <p className="text-[13px] text-slate-500 dark:text-slate-400">{user.id}</p>
+                        <UserMetaLine email={user.email} createdAt={user.createdAt} />
                       </div>
                     </div>
 
@@ -390,7 +418,10 @@ export function UserManagementShell() {
                     <div className="flex items-center justify-end gap-3 text-[13px] font-semibold">
                       <button
                         type="button"
-                        className="text-[12px] text-[#255DFF]"
+                        className={cn(
+                          TABLE_ACTION_BUTTON_CLASSES,
+                          'border-[#D9E5FF] bg-[#F7FAFF] text-[#255DFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] hover:bg-[#EFF6FF] hover:shadow-[0_8px_18px_-16px_rgba(59,130,246,0.28)]'
+                        )}
                         onClick={() => handleEdit(toRecord(user))}
                       >
                         更新
@@ -398,7 +429,10 @@ export function UserManagementShell() {
                       {user.role !== 'admin' && (
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 text-[12px] text-rose-500"
+                          className={cn(
+                            TABLE_ACTION_BUTTON_CLASSES,
+                            'gap-1 border-rose-200/90 bg-rose-50/90 text-rose-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] hover:bg-rose-100/90 hover:shadow-[0_8px_18px_-16px_rgba(229,67,80,0.3)]'
+                          )}
                           onClick={() => handleDelete(user)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -438,6 +472,14 @@ export function UserManagementShell() {
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{user.id}</p>
                         <p className="mt-1 break-all text-sm text-slate-500 dark:text-slate-400">
                           {user.email || user.username}
+                        </p>
+                        <p className="mt-1 text-[12px] text-slate-400 dark:text-slate-500">
+                          加入于{' '}
+                          {new Intl.DateTimeFormat('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                          }).format(new Date(user.createdAt))}
                         </p>
                       </div>
                     </div>
@@ -549,6 +591,7 @@ export function UserManagementShell() {
         onOpenChange={setEditDialogOpen}
         user={selectedUser}
         onSuccess={fetchUsers}
+        currentUserId={currentUserId}
       />
 
       <CreateUserDialog

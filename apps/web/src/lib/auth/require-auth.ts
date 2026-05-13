@@ -15,7 +15,14 @@ export async function requireAuth(req: Request): Promise<string> {
   }
 
   const token = authHeader.slice(7);
-  const { userId } = verifyAccessToken(token);
+  let userId: string;
+
+  try {
+    const payload = verifyAccessToken(token);
+    userId = payload.userId;
+  } catch {
+    throw new AuthError('登录已过期，请重新登录', 'UNAUTHORIZED');
+  }
 
   // 检查用户是否存在及是否被禁用
   const user = await prisma.user.findUnique({

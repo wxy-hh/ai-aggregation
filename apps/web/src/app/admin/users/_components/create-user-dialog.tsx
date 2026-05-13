@@ -16,7 +16,13 @@ import {
 import { adminApi } from '@/lib/api/admin-api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { DIALOG_OVERLAY_CLASSES, EDIT_DIALOG_CONTENT_CLASSES } from './dialog-styles';
+import {
+  ADMIN_FIELD_ICON_CLASSES,
+  ADMIN_FIELD_INPUT_WITH_ICON_CLASSES,
+  ADMIN_FIELD_SHELL_CLASSES,
+  DIALOG_OVERLAY_CLASSES,
+  EDIT_DIALOG_CONTENT_CLASSES,
+} from './dialog-styles';
 
 interface CreateUserDialogProps {
   open: boolean;
@@ -142,14 +148,14 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
                       <label className="mb-1.5 block text-[13px] font-medium text-slate-700 dark:text-slate-300">
                         用户名 <span className="text-rose-500">*</span>
                       </label>
-                      <div className="relative">
-                        <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <div className={ADMIN_FIELD_SHELL_CLASSES}>
+                        <UserRound className={ADMIN_FIELD_ICON_CLASSES} />
                         <input
                           type="text"
                           placeholder="请输入用户名"
                           value={username}
                           onChange={(e) => setUsername(e.target.value)}
-                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-4 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
+                          className={ADMIN_FIELD_INPUT_WITH_ICON_CLASSES}
                           disabled={isSaving}
                         />
                       </div>
@@ -159,14 +165,14 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
                       <label className="mb-1.5 block text-[13px] font-medium text-slate-700 dark:text-slate-300">
                         密码 <span className="text-rose-500">*</span>
                       </label>
-                      <div className="relative">
-                        <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <div className={ADMIN_FIELD_SHELL_CLASSES}>
+                        <KeyRound className={ADMIN_FIELD_ICON_CLASSES} />
                         <input
                           type={showPassword ? 'text' : 'password'}
                           placeholder="请输入密码（至少 6 位）"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-12 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
+                          className={cn(ADMIN_FIELD_INPUT_WITH_ICON_CLASSES, 'pr-12')}
                           disabled={isSaving}
                         />
                         <PasswordToggleButton
@@ -181,14 +187,14 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
                       <label className="mb-1.5 block text-[13px] font-medium text-slate-700 dark:text-slate-300">
                         确认密码 <span className="text-rose-500">*</span>
                       </label>
-                      <div className="relative">
-                        <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <div className={ADMIN_FIELD_SHELL_CLASSES}>
+                        <KeyRound className={ADMIN_FIELD_ICON_CLASSES} />
                         <input
                           type={showConfirmPassword ? 'text' : 'password'}
                           placeholder="请再次输入密码"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
-                          className="h-[44px] w-full rounded-[12px] border border-[rgba(255,255,255,0.70)] bg-white/76 pl-10 pr-12 text-[14px] text-slate-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_8px_20px_rgba(76,95,154,0.08)] outline-none placeholder:text-slate-400 dark:border-white/10 dark:bg-slate-900/72 dark:text-white dark:placeholder:text-slate-500"
+                          className={cn(ADMIN_FIELD_INPUT_WITH_ICON_CLASSES, 'pr-12')}
                           disabled={isSaving}
                         />
                         <PasswordToggleButton
