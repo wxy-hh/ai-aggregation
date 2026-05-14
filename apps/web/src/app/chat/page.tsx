@@ -469,6 +469,39 @@ export default function ChatPage() {
   //    如果没有对话或对话没有标题，显示"新对话"
   const currentTitle = currentConversation?.title || '新对话';
 
+  // ============ 空状态快捷入口 ============
+  // 借首页的视觉语气，但保持聊天页自己的信息结构
+  const quickActions = [
+    {
+      title: '写一封周报',
+      description: '总结本周工作重点与计划',
+      prompt: '帮我写一封周报，总结本周工作重点与计划',
+      icon: FileEdit,
+      iconClassName: 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-300',
+    },
+    {
+      title: '润色代码',
+      description: '优化逻辑与代码风格',
+      prompt: '请帮我润色以下代码，优化逻辑与代码风格：\n',
+      icon: Code2,
+      iconClassName: 'bg-blue-100 text-blue-500 dark:bg-blue-900/30 dark:text-blue-300',
+    },
+    {
+      title: '总结长文',
+      description: '快速提取文章核心观点',
+      prompt: '请帮我总结这篇文章的核心观点：\n',
+      icon: FileText,
+      iconClassName: 'bg-violet-100 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300',
+    },
+    {
+      title: '图片创意建议',
+      description: '为设计项目寻找灵感',
+      prompt: '我需要一些图片设计的创意灵感，关于...',
+      icon: Lightbulb,
+      iconClassName: 'bg-emerald-100 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300',
+    },
+  ] as const;
+
   const renderConversationList = (onSelect?: () => void) => (
     <>
       <button
@@ -593,24 +626,33 @@ export default function ChatPage() {
 
         {/* 主聊天区域 */}
         <div className="flex-1 p-4 min-w-0 h-full">
-          <div className="h-full flex flex-col bg-gradient-to-br from-[#eff6ff] to-white dark:from-slate-900 dark:to-slate-950 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
+          <div className="relative h-full overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
+            <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
             {/* 头部 */}
-            <header className="flex-none px-4 py-4 sm:px-6 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
+            <header className="z-20 flex-none border-b border-slate-200/70 bg-white/72 px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/50 dark:border-slate-800/80 dark:bg-slate-900/70 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
                     <BarChart2 className="w-5 h-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h1 className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                        智能对话
+                      </span>
+                      <span className="hidden text-xs text-slate-400 dark:text-slate-500 sm:inline">
+                        当前会话
+                      </span>
+                    </div>
+                    <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
                       {currentTitle}
                     </h1>
-                    <div className="mt-0.5 hidden lg:flex lg:items-center lg:gap-2">
+                    <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
                       {/* 模型选择器 */}
                       <div className="relative" ref={modelSelectorRef}>
                         <button
                           onClick={() => setShowModelSelector(!showModelSelector)}
-                          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors py-0.5 px-1.5 -ml-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
+                          className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
                         >
                           <svg
                             className="w-3.5 h-3.5 text-blue-500"
@@ -637,7 +679,7 @@ export default function ChatPage() {
 
                         {/* 下拉列表 */}
                         {showModelSelector && (
-                          <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                          <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
                             {(
                               Object.entries(MODELS) as [
                                 ProviderName,
@@ -679,7 +721,7 @@ export default function ChatPage() {
                     type="button"
                     aria-label="打开会话列表"
                     onClick={() => setShowConversationDrawer(true)}
-                    className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                    className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
                   >
                     <PanelLeft className="w-4 h-4" />
                   </button>
@@ -687,7 +729,7 @@ export default function ChatPage() {
                     type="button"
                     aria-label="打开模型选择"
                     onClick={() => setShowMobileModelDrawer(true)}
-                    className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                    className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
                   >
                     <SlidersHorizontal className="w-4 h-4" />
                     <span className="max-w-[88px] truncate">{currentModelLabel}</span>
@@ -698,7 +740,7 @@ export default function ChatPage() {
 
             {/* 错误显示 */}
             {error && (
-              <div className="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+              <div className="mx-6 mt-4 rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
                 <strong>错误：</strong> {error.message}
               </div>
             )}
@@ -706,113 +748,61 @@ export default function ChatPage() {
             {/* 消息列表 */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-transparent">
               {displayMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full px-4 relative z-0">
-                  {/* Ambient Background Glow */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-[100px] -z-10 pointer-events-none" />
+                <div className="relative z-0 flex h-full flex-col items-center justify-center px-4">
+                  <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
-                  <div className="max-w-3xl w-full bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2rem] p-8 md:p-12 border border-white/60 dark:border-slate-700/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.05)]">
-                    {/* Logo & Greeting */}
-                    <div className="flex flex-col items-center text-center mb-10">
-                      <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6 rotate-3 hover:rotate-6 transition-transform">
-                        <Bot className="w-8 h-8 text-white" />
+                  <div className="relative w-full max-w-3xl rounded-[32px] border border-white/75 bg-white/72 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.1)] backdrop-blur-2xl dark:border-slate-700/70 dark:bg-slate-900/72 md:p-8">
+                    <div className="mb-8 flex flex-col items-center text-center">
+                      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                        <Bot className="h-8 w-8" />
                       </div>
-                      <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">
-                        你好，我是您的智能助手
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400 max-w-lg">
-                        我可以协助您完成写作、编程、分析等任务，让工作更高效。
-                      </p>
+                      <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                        智能对话助手
+                      </div>
                     </div>
 
-                    {/* Capability Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mb-10">
-                      <button
-                        onClick={() => handleSend('帮我写一封周报，总结本周工作重点与计划')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <FileEdit className="w-6 h-6 text-orange-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            写一封周报
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            总结本周工作重点与计划
-                          </div>
-                        </div>
-                      </button>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {quickActions.map((action) => {
+                        const ActionIcon = action.icon;
 
-                      <button
-                        onClick={() => handleSend('请帮我润色以下代码，优化逻辑与代码风格：\n')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <Code2 className="w-6 h-6 text-blue-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            润色代码
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            优化逻辑与代码风格
-                          </div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => handleSend('请帮我总结这篇文章的核心观点：\n')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <FileText className="w-6 h-6 text-purple-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            总结长文
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            快速提取文章核心观点
-                          </div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => handleSend('我需要一些图片设计的创意灵感，关于...')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <Lightbulb className="w-6 h-6 text-emerald-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            图片创意建议
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            为设计项目寻找灵感
-                          </div>
-                        </div>
-                      </button>
+                        return (
+                          <button
+                            key={action.title}
+                            onClick={() => handleSend(action.prompt)}
+                            className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                          >
+                            <div
+                              className={cn(
+                                'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                                action.iconClassName
+                              )}
+                            >
+                              <ActionIcon className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                {action.title}
+                              </div>
+                              <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                {action.description}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
 
-                    {/* Features Footer */}
-                    <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12 pt-6 border-t border-slate-200/50 dark:border-white/5">
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        </div>
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                        <FileText className="h-3.5 w-3.5 text-blue-500" />
                         支持长文本分析
                       </div>
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        </div>
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                        <Globe className="h-3.5 w-3.5 text-blue-500" />
                         实时联网搜索
                       </div>
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <ShieldCheck className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        </div>
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                        <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
                         企业级数据安全
                       </div>
                     </div>
@@ -829,7 +819,7 @@ export default function ChatPage() {
             </div>
 
             {/* 输入区域 */}
-            <div className="sticky bottom-0 flex-none z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:static lg:bg-transparent lg:pb-2">
+            <div className="sticky bottom-0 z-10 flex-none bg-transparent pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:static lg:pb-2">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>
           </div>

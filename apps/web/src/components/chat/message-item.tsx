@@ -27,9 +27,9 @@ const AttachmentPreview = memo(function AttachmentPreview({
         <img
           src={attachment.imageUrl}
           alt={attachment.name}
-          className="max-w-[300px] max-h-[200px] rounded-lg object-cover border border-white/20"
+          className="max-h-[200px] max-w-[300px] rounded-2xl border border-white/70 object-cover shadow-[0_10px_24px_rgba(76,95,154,0.1)]"
         />
-        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
+        <div className="absolute bottom-2 left-2 rounded-full border border-white/20 bg-slate-950/60 px-2.5 py-1 text-xs text-white backdrop-blur-sm">
           {attachment.name}
         </div>
       </div>
@@ -38,8 +38,8 @@ const AttachmentPreview = memo(function AttachmentPreview({
 
   if (attachment.type === 'file') {
     return (
-      <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-2">
-        <div className="w-8 h-8 rounded bg-red-500/20 flex items-center justify-center">
+      <div className="mb-2 flex items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2.5 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/72">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/12">
           <svg
             className="w-4 h-4 text-red-300"
             fill="none"
@@ -55,9 +55,11 @@ const AttachmentPreview = memo(function AttachmentPreview({
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{attachment.name}</p>
+          <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-100">
+            {attachment.name}
+          </p>
           {attachment.size && (
-            <p className="text-xs opacity-70">{(attachment.size / 1024).toFixed(1)} KB</p>
+            <p className="text-xs text-slate-400">{(attachment.size / 1024).toFixed(1)} KB</p>
           )}
         </div>
       </div>
@@ -87,9 +89,9 @@ const AttachmentList = memo(function AttachmentList({
 // 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
   return (
-    <div className="whitespace-pre-wrap">
+    <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700 dark:text-slate-200">
       {content}
-      <span className="inline-block w-2 h-5 ml-0.5 bg-blue-500 animate-pulse rounded-sm" />
+      <span className="ml-1 inline-block h-5 w-2 rounded-sm bg-blue-500 align-[-3px] animate-pulse" />
     </div>
   );
 });
@@ -115,14 +117,14 @@ const ActionButtons = memo(function ActionButtons({
   return (
     <div
       className={cn(
-        'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity px-1',
+        'mt-2 flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100',
         isUser ? 'flex-row-reverse' : ''
       )}
     >
       {/* 复制按钮 */}
       <button
         onClick={handleCopy}
-        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+        className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
         title="复制"
       >
         {copied ? (
@@ -150,7 +152,7 @@ const ActionButtons = memo(function ActionButtons({
       {onRegenerate && (
         <button
           onClick={onRegenerate}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
           title="重新生成"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -167,7 +169,7 @@ const ActionButtons = memo(function ActionButtons({
       {/* 赞按钮 - 只对 AI 显示 */}
       {!isUser && (
         <button
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
           title="赞"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -215,7 +217,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
         return (
           <code
             className={cn(
-              'bg-slate-100 dark:bg-slate-700/50 px-1.5 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-sm',
+              'rounded-md bg-[#F3F6FF] px-1.5 py-0.5 font-mono text-sm text-indigo-600 dark:bg-slate-800 dark:text-indigo-300',
               className
             )}
             {...props}
@@ -242,7 +244,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
 // 用户头像组件
 const UserAvatar = memo(function UserAvatar() {
   return (
-    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300">
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/88 text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/88 dark:text-slate-300">
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path
           strokeLinecap="round"
@@ -258,7 +260,7 @@ const UserAvatar = memo(function UserAvatar() {
 // AI 头像组件
 const AIAvatar = memo(function AIAvatar() {
   return (
-    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-md bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 border border-white/20 text-white ring-2 ring-white dark:ring-slate-800">
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_14px_28px_rgba(93,124,250,0.24)] ring-2 ring-white/80 dark:ring-slate-900">
       <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
           d="M12 2L14.4 7.2L20 9.6L14.4 12L12 17.2L9.6 12L4 9.6L9.6 7.2L12 2Z"
@@ -360,10 +362,10 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
           {/* Message Bubble */}
           <div
             className={cn(
-              'px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm max-w-full break-words',
+              'max-w-full break-words rounded-[24px] px-5 py-4 text-[15px] leading-relaxed shadow-[0_10px_26px_rgba(76,95,154,0.08)]',
               isUser
-                ? 'w-full md:w-fit bg-blue-600 text-white rounded-tr-none'
-                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none text-slate-800 dark:text-slate-200',
+                ? 'w-full rounded-tr-[10px] border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] text-white md:w-fit'
+                : 'rounded-tl-[10px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.78))] text-slate-800 dark:border-slate-700/80 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.92),rgba(15,23,42,0.82))] dark:text-slate-200',
               // 思考状态下，气泡宽度设为更宽以容纳骨架屏
               isThinking ? 'w-full max-w-[500px]' : ''
             )}
@@ -375,7 +377,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                 {message.content && <div className="whitespace-pre-wrap">{message.content}</div>}
               </>
             ) : (
-              <div className="markdown-body prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border prose-pre:border-slate-200 dark:prose-pre:border-slate-700 prose-pre:rounded-xl">
+              <div className="markdown-body prose max-w-none prose-p:leading-7 prose-p:text-slate-700 prose-headings:font-heading prose-headings:text-slate-900 prose-strong:text-slate-900 prose-pre:rounded-2xl prose-pre:border prose-pre:border-slate-200 prose-pre:p-0 dark:prose-invert dark:prose-p:text-slate-200 dark:prose-headings:text-white dark:prose-strong:text-white dark:prose-pre:border-slate-700">
                 {isThinking ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (

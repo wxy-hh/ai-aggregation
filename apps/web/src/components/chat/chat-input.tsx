@@ -612,9 +612,12 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
         console.log('[ChatInput] 删除远程文件:', attachment.fileId);
 
         // 调用删除 API
-        const response = await authFetch(`/api/files?fileId=${encodeURIComponent(attachment.fileId)}`, {
-          method: 'DELETE',
-        });
+        const response = await authFetch(
+          `/api/files?fileId=${encodeURIComponent(attachment.fileId)}`,
+          {
+            method: 'DELETE',
+          }
+        );
 
         if (response.ok) {
           console.log('[ChatInput] 远程文件删除成功');
@@ -647,16 +650,16 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 p-2 transition-colors">
+    <div className="mx-auto max-w-4xl p-4">
+      <div className="relative overflow-hidden rounded-[28px] border border-white/80 bg-white/92 p-2 shadow-[0_18px_40px_rgba(76,95,154,0.08)] backdrop-blur-2xl transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-blue-200 focus-within:shadow-[0_0_0_1px_rgba(168,184,255,0.55),0_18px_40px_rgba(76,95,154,0.1)] dark:border-slate-700/80 dark:bg-slate-900/92 dark:focus-within:border-blue-500/30 dark:focus-within:shadow-[0_0_0_1px_rgba(125,145,255,0.32),0_18px_40px_rgba(0,0,0,0.26)]">
         {/* 附件预览区域 */}
         {attachment && (
-          <div className="px-3 pt-2 pb-1">
-            <div className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg">
+          <div className="relative px-3 pb-1 pt-2">
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/84 px-3 py-2 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/84">
               {attachment.status === 'uploading' ? (
                 <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
               ) : attachment.type === 'image' ? (
-                <div className="w-10 h-10 rounded overflow-hidden bg-slate-200 dark:bg-slate-600">
+                <div className="h-10 w-10 overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-600">
                   {attachment.imageUrl && (
                     <img
                       src={attachment.imageUrl}
@@ -679,7 +682,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               {(attachment.status === 'ready' || attachment.status === 'error') && (
                 <button
                   onClick={handleRemoveAttachment}
-                  className="ml-2 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                  className="ml-2 rounded-full p-1 transition-colors hover:bg-slate-200 dark:hover:bg-slate-600"
                   title="删除附件"
                 >
                   <X className="w-4 h-4 text-slate-500" />
@@ -705,11 +708,11 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          placeholder={attachment ? '添加消息（可选）...' : '输入消息...'}
-          className="w-full px-4 py-3 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none outline-none resize-none min-h-[24px] max-h-[200px] text-slate-900 dark:text-white placeholder:text-slate-400 shadow-none text-base"
+          placeholder={attachment ? '继续补充说明，和附件一起发送...' : '输入消息，开始当前任务'}
+          className="min-h-[28px] max-h-[200px] w-full resize-none border-0 bg-transparent px-4 py-3 text-base text-slate-900 shadow-none outline-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none dark:text-white"
           disabled={isLoading}
         />
-        <div className="flex justify-between items-center px-2 pb-1 mt-2">
+        <div className="mt-2 flex items-center justify-between px-2 pb-1">
           <div className="flex items-center gap-1 text-slate-400">
             {/* 附件按钮 - 仅豆包显示 */}
             {showAttachment ? (
@@ -718,7 +721,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                    className="h-10 w-10 rounded-2xl border border-transparent text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/70 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
@@ -730,23 +733,26 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                     </svg>
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-48 p-2" align="start">
+                <PopoverContent
+                  className="w-52 rounded-3xl border-white/80 bg-white/90 p-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl dark:border-slate-700/80 dark:bg-slate-900/92"
+                  align="start"
+                >
                   <div className="flex flex-col gap-1">
                     <button
                       onClick={() => imageInputRef.current?.click()}
-                      className="flex items-center gap-3 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                      className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
                       <Image className="w-4 h-4 text-green-500" />
                       <span>上传图片</span>
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-3 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                      className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
                       <FileText className="w-4 h-4 text-blue-500" />
                       <span>上传文件</span>
                     </button>
-                    <div className="px-3 pt-2 text-xs text-slate-400 border-t border-slate-200 dark:border-slate-600 mt-1">
+                    <div className="mt-1 border-t border-slate-200 px-3 pt-2 text-xs text-slate-400 dark:border-slate-600">
                       <p>支持 PDF 文件，大小 ≤ 5MB</p>
                     </div>
                   </div>
@@ -756,7 +762,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 text-slate-300 dark:text-slate-600 cursor-not-allowed rounded-lg"
+                className="h-10 w-10 cursor-not-allowed rounded-2xl text-slate-300 dark:text-slate-600"
                 disabled
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -787,26 +793,15 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
             />
           </div>
           <div className="flex items-center gap-2">
-            {/* <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                />
-              </svg>
-            </Button> */}
+            <div className="hidden text-xs text-slate-400 sm:block">
+              {isLoading ? 'AI 正在处理中' : 'Enter 发送，Shift + Enter 换行'}
+            </div>
             <Button
               onClick={handleSend}
               disabled={
                 (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
               }
-              className="h-9 w-9 p-0 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl transition-colors shadow-sm"
+              className="h-11 w-11 rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] p-0 text-white shadow-[0_12px_28px_rgba(93,124,250,0.28)] transition duration-200 hover:brightness-105 disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:bg-slate-700"
               size="icon"
             >
               {isLoading ? (
@@ -839,7 +834,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           </div>
         </div>
       </div>
-      <div className="text-center mt-3 text-xs text-slate-400">
+      <div className="mt-3 text-center text-xs text-slate-400">
         AI 生成的内容可能不准确，请核实重要信息。
       </div>
     </div>
