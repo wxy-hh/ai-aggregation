@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Aggregation Component Library</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static/font/lucide.css">
+  <style>
+    :root {
+      --background: #F1F5F9;
+      --bg: var(--background);
+      --surface1: rgba(255,255,255,0.88);
+      --surface2: #F8FAFC;
+      --surface3: #F1F5F9;
+      --border: #E2E8F0;
+      --border-visible: #D5DAEB;
+      --text1: #0F172A;
+      --text2: #475569;
+      --text3: #64748B;
+      --text4: #94A3B8;
+      --accent: #5D7CFA;
+      --accent-subtle: #F3F6FF;
+      --success: #22C55E;
+      --success-bg: #F0FDF4;
+      --warning: #F59E0B;
+      --warning-bg: #FFFBEB;
+      --error: #E54350;
+      --error-bg: #FFF1F2;
+      --font-display: "Space Grotesk", system-ui, sans-serif;
+      --font-body: "DM Sans", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --shadow-2: 0 8px 20px rgba(76, 95, 154, 0.10);
+      --shadow-3: 0 20px 60px -10px rgba(59, 130, 246, 0.10);
+      --r1: 8px; --r2: 12px; --r3: 24px; --r4: 32px; --r-pill: 999px;
+    }
+    [data-theme="dark"] {
+      --background: #111218;
+      --bg: var(--background);
+      --surface1: rgba(30,41,59,0.86);
+      --surface2: #182230;
+      --surface3: #334155;
+      --border: #334155;
+      --border-visible: #475569;
+      --text1: #F8FAFC;
+      --text2: #CBD5E1;
+      --text3: #94A3B8;
+      --text4: #64748B;
+      --accent: #9BADFF;
+      --accent-subtle: #1E2A55;
+      --success: #22C55E;
+      --success-bg: rgba(34,197,94,0.14);
+      --warning: #F59E0B;
+      --warning-bg: rgba(245,158,11,0.14);
+      --error: #E54350;
+      --error-bg: rgba(229,67,80,0.14);
+      --shadow-1: 0 2px 10px rgba(0,0,0,0.18);
+      --shadow-2: 0 14px 32px rgba(0,0,0,0.28);
+      --shadow-3: 0 24px 56px rgba(0,0,0,0.40);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-body);
+      color: var(--text1);
+      background:
+        radial-gradient(circle at 12% 14%, rgba(219,234,254,0.72), transparent 26%),
+        radial-gradient(circle at 88% 8%, rgba(233,213,255,0.64), transparent 24%),
+        var(--bg);
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .toc {
+      width: 240px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 18px;
+      border-right: 1px solid var(--border);
+      background: rgba(255,255,255,0.58);
+      backdrop-filter: blur(22px);
+    }
+    .toc h1 {
+      margin: 0 0 18px;
+      font-family: var(--font-display);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+    .toc .view-links {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .toc .view-links a, .toc .cat-btn, .toc .toc-link {
+      color: var(--text2);
+      text-decoration: none;
+      background: transparent;
+      border: 0;
+      text-align: left;
+      cursor: pointer;
+      padding: 8px 10px;
+      border-radius: 12px;
+      font: inherit;
+      display: block;
+      width: 100%;
+    }
+    .toc .view-links a:hover, .toc .cat-btn:hover, .toc .toc-link:hover { background: var(--surface3); color: var(--text1); }
+    .toc .cat-btn {
+      margin-top: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text4);
+    }
+    .toc .toc-link.active, .toc .cat-btn.active { background: var(--accent-subtle); color: var(--accent); }
+    .toc-sub { display: grid; gap: 4px; padding-left: 6px; }
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 48px;
+      overflow-y: auto;
+      max-width: 980px;
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .component-group { margin-bottom: 64px; scroll-margin-top: 24px; }
+    .component-group h2 {
+      margin: 0 0 8px;
+      font-family: var(--font-display);
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    .component-group p.meta { margin: 0 0 18px; color: var(--text3); font-size: 14px; }
+    .canvas, table {
+      width: 100%;
+      border-radius: var(--r3);
+      border: 1px solid rgba(255,255,255,0.6);
+      background: var(--surface1);
+      box-shadow: var(--shadow-2);
+      backdrop-filter: blur(24px);
+    }
+    .canvas { padding: 24px; margin-bottom: 16px; }
+    table { border-collapse: collapse; overflow: hidden; }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 13px;
+      color: var(--text2);
+    }
+    th { color: var(--text1); background: var(--surface2); }
+    tr:last-child td { border-bottom: 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+    .stack { display: grid; gap: 12px; }
+    .btn {
+      height: 40px;
+      padding: 0 16px;
+      border-radius: var(--r2);
+      border: 1px solid transparent;
+      font: 600 14px/1 var(--font-body);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn.primary { color:#fff; background:linear-gradient(90deg,#4969E9,#7B8FFF); box-shadow:0 10px 24px rgba(93,124,250,0.32); }
+    .btn.secondary { color:var(--text2); background:rgba(255,255,255,0.72); border-color:rgba(255,255,255,0.75); box-shadow:var(--shadow-1); }
+    .btn.ghost { color:var(--text2); background:transparent; }
+    .btn.destructive { color:#fff; background:linear-gradient(90deg,#E54350,#F26E8C); }
+    .btn.is-hover { transform: translateY(-1px); filter: brightness(1.03); }
+    .btn.is-focus { box-shadow: 0 0 0 2px rgba(93,124,250,0.22), var(--shadow-1); }
+    .btn.is-disabled { opacity: 0.5; }
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: var(--r2); display:flex; align-items:center; justify-content:center;
+      background: rgba(255,255,255,0.45); border:1px solid rgba(255,255,255,0.30); box-shadow: var(--shadow-1);
+    }
+    .chip {
+      display:inline-flex; align-items:center; line-height:1; gap:6px; padding:4px 10px; border-radius: var(--r-pill); font-size:11px; font-weight:700;
+    }
+    .chip.info { background: var(--accent-subtle); color: var(--accent); }
+    .chip.success { background: var(--success-bg); color: var(--success); }
+    .chip.warning { background: var(--warning-bg); color: var(--warning); }
+    .chip.error { background: var(--error-bg); color: var(--error); }
+    .field {
+      height: 48px; display:flex; align-items:center; gap:10px; padding:0 14px; border-radius: var(--r2);
+      background:#fff; border:1px solid var(--border); color: var(--text2);
+    }
+    [data-theme="dark"] .field { background: var(--surface2); }
+    .field.is-focus { box-shadow: 0 0 0 2px rgba(93,124,250,0.22); border-color: transparent; }
+    .field.is-error { border-color: var(--error); }
+    .switch {
+      width: 44px; height: 24px; padding: 2px; border-radius: var(--r-pill); background: var(--surface3); position: relative;
+    }
+    .switch::after {
+      content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow: var(--shadow-1);
+    }
+    .switch.on { background: var(--accent); }
+    .switch.on::after { left:22px; }
+    .tabs {
+      display:inline-flex; padding:4px; border-radius: var(--r-pill); background: var(--surface3); gap:4px;
+    }
+    .tabs span { padding:8px 14px; border-radius: var(--r-pill); color: var(--text3); font-size: 13px; }
+    .tabs .active { background: var(--surface1); color: var(--text1); box-shadow: var(--shadow-1); }
+    .card-sample {
+      width: 240px; min-height: 150px; padding: 18px; border-radius: var(--r3); background: var(--surface1); border:1px solid rgba(255,255,255,0.60); box-shadow: var(--shadow-2);
+    }
+    .dialog-sample {
+      width: 360px; padding: 24px; border-radius: var(--r4); background: var(--surface1); border: 1px solid var(--border); box-shadow: var(--shadow-3);
+    }
+    .floating-bar {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 4px;
+      padding: 4px; border-radius: 999px; background: var(--surface1); border: 1.5px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.12); backdrop-filter: blur(16px);
+    }
+    .mode-btn {
+      height: 32px; border-radius: 999px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; gap: 6px;
+      padding: 0 14px; font-family: var(--font-body); font-size: 12px; font-weight: 500; color: var(--text3);
+    }
+    .mode-btn.active { background: var(--surface3); color: var(--text1); }
+    @media (max-width: 980px) {
+      .layout { display: block; }
+      .toc { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+      .main { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="toc">
+      <h1>AI Aggregation<br>Component Library</h1>
+      <div class="view-links">
+        <a href="./preview.html">Bento Preview</a>
+        <a href="./landing-page.html">Landing Page</a>
+        <a href="./app-screen.html">App Screen</a>
+      </div>
+      <button class="cat-btn active" data-panel="foundations">Foundations</button>
+      <div class="toc-sub">
+        <button class="toc-link active" data-panel="foundations" data-target="colors">Colors</button>
+        <button class="toc-link" data-panel="foundations" data-target="typography">Typography</button>
+        <button class="toc-link" data-panel="foundations" data-target="radii">Radii</button>
+      </div>
+      <button class="cat-btn" data-panel="actions">Actions</button>
+      <div class="toc-sub">
+        <button class="toc-link" data-panel="actions" data-target="buttons">Buttons</button>
+        <button class="toc-link" data-panel="actions" data-target="icon-buttons">Icon Buttons</button>
+      </div>
+      <button class="cat-btn" data-panel="inputs">Inputs</button>
+      <div class="toc-sub">
+        <button class="toc-link" data-panel="inputs" data-target="fields">Fields</button>
+        <button class="toc-link" data-panel="inputs" data-target="switches">Switches</button>
+        <button class="toc-link" data-panel="inputs" data-target="tabs">Tabs</button>
+      </div>
+      <button class="cat-btn" data-panel="surfaces">Surfaces</button>
+      <div class="toc-sub">
+        <button class="toc-link" data-panel="surfaces" data-target="cards">Cards</button>
+        <button class="toc-link" data-panel="surfaces" data-target="dialogs">Dialogs</button>
+        <button class="toc-link" data-panel="surfaces" data-target="badges">Badges</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="panel active" id="foundations">
+        <section class="component-group" id="colors">
+          <h2>Colors</h2>
+          <p class="meta">冷白底面、蓝紫信号色、低对比边框。颜色是分层工具，不是装饰。</p>
+          <div class="canvas row">
+            <div class="chip info">accent</div>
+            <div class="chip success">success</div>
+            <div class="chip warning">warning</div>
+            <div class="chip error">error</div>
+          </div>
+          <table>
+            <tr><th>Token</th><th>Value</th><th>Role</th></tr>
+            <tr><td>background</td><td>#F1F5F9</td><td>页面底色</td></tr>
+            <tr><td>surface1</td><td>#FFFFFF</td><td>主卡片</td></tr>
+            <tr><td>text1</td><td>#0F172A</td><td>主文本</td></tr>
+            <tr><td>accent</td><td>#5D7CFA</td><td>主操作与激活</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="typography">
+          <h2>Typography</h2>
+          <p class="meta">Display 负责张力，Body 负责密度。没有第三种主要字气。</p>
+          <div class="canvas stack">
+            <div style="font-family:var(--font-display);font-size:42px;line-height:1.1">Space Grotesk 42</div>
+            <div style="font-size:16px;line-height:1.5">DM Sans 16 负责大部分正文与控件文案。</div>
+            <div style="font-family:var(--font-mono);font-size:13px">JetBrains Mono 13 只做技术备用。</div>
+          </div>
+          <table>
+            <tr><th>Token</th><th>Font</th><th>Size</th><th>Weight</th></tr>
+            <tr><td>display</td><td>Space Grotesk</td><td>60px</td><td>700</td></tr>
+            <tr><td>h2</td><td>Space Grotesk</td><td>28px</td><td>700</td></tr>
+            <tr><td>body</td><td>DM Sans</td><td>16px</td><td>400</td></tr>
+            <tr><td>caption</td><td>DM Sans</td><td>12px</td><td>500</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="radii">
+          <h2>Radii</h2>
+          <p class="meta">小控件 12，大卡片 24，外层容器 32 或 48。层级越大，圆角越放松。</p>
+          <div class="canvas row">
+            <div style="width:76px;height:76px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)"></div>
+            <div style="width:76px;height:76px;border-radius:12px;background:var(--surface2);border:1px solid var(--border)"></div>
+            <div style="width:76px;height:76px;border-radius:24px;background:var(--surface2);border:1px solid var(--border)"></div>
+            <div style="width:76px;height:76px;border-radius:32px;background:var(--surface2);border:1px solid var(--border)"></div>
+          </div>
+          <table>
+            <tr><th>Token</th><th>Value</th><th>Use</th></tr>
+            <tr><td>element</td><td>8px</td><td>小色块、图标基座</td></tr>
+            <tr><td>control</td><td>12px</td><td>按钮、输入</td></tr>
+            <tr><td>component</td><td>24px</td><td>卡片</td></tr>
+            <tr><td>container</td><td>32px</td><td>弹层</td></tr>
+          </table>
+        </section>
+      </section>
+
+      <section class="panel" id="actions">
+        <section class="component-group" id="buttons">
+          <h2>Buttons</h2>
+          <p class="meta">主按钮必须亮，次按钮必须轻，所有按钮都只能轻微抬升。</p>
+          <div class="canvas stack">
+            <div class="row">
+              <button class="btn primary">主操作</button>
+              <button class="btn secondary">次操作</button>
+              <button class="btn ghost">文字按钮</button>
+              <button class="btn destructive">删除</button>
+            </div>
+            <div class="row">
+              <button class="btn primary is-hover">Hover</button>
+              <button class="btn secondary is-focus">Focus</button>
+              <button class="btn primary is-disabled">Disabled</button>
+            </div>
+          </div>
+          <table>
+            <tr><th>Variant</th><th>Background</th><th>Radius</th><th>Height</th></tr>
+            <tr><td>Primary</td><td>蓝紫渐变</td><td>12px</td><td>40px</td></tr>
+            <tr><td>Secondary</td><td>半透明白</td><td>12px</td><td>40px</td></tr>
+            <tr><td>Ghost</td><td>transparent</td><td>12px</td><td>40px</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="icon-buttons">
+          <h2>Icon Buttons</h2>
+          <p class="meta">图标按钮是侧栏和工具底座的基本砖块，尺寸固定，不因内容变化而抖动。</p>
+          <div class="canvas row">
+            <div class="icon-btn"><i class="icon icon-home"></i></div>
+            <div class="icon-btn"><i class="icon icon-image"></i></div>
+            <div class="icon-btn"><i class="icon icon-mic"></i></div>
+            <div class="icon-btn" style="background:linear-gradient(135deg,#5D7CFA,#7D91FF);color:#fff;border-color:transparent;"><i class="icon icon-sparkles"></i></div>
+          </div>
+          <table>
+            <tr><th>Property</th><th>Value</th><th>Role</th></tr>
+            <tr><td>Size</td><td>40 x 40</td><td>统一点击热区</td></tr>
+            <tr><td>Radius</td><td>12px</td><td>与按钮同系</td></tr>
+            <tr><td>Active</td><td>品牌渐变 + 白字</td><td>当前入口</td></tr>
+          </table>
+        </section>
+      </section>
+
+      <section class="panel" id="inputs">
+        <section class="component-group" id="fields">
+          <h2>Fields</h2>
+          <p class="meta">输入框不能漂浮；一定有白底、细边框和明确的 focus ring。</p>
+          <div class="canvas stack">
+            <div class="field"><i class="icon icon-search"></i> 搜索最近创作、会话或素材</div>
+            <div class="field is-focus"><i class="icon icon-search"></i> 当前正在输入...</div>
+            <div class="field is-error"><i class="icon icon-alert-circle"></i> 请输入更完整的提示词</div>
+          </div>
+          <table>
+            <tr><th>Property</th><th>Value</th><th>Role</th></tr>
+            <tr><td>Height</td><td>48px</td><td>桌面搜索与表单统一</td></tr>
+            <tr><td>Radius</td><td>12px</td><td>控件圆角</td></tr>
+            <tr><td>Focus Ring</td><td>品牌色 2px</td><td>键盘可见性</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="switches">
+          <h2>Switches</h2>
+          <p class="meta">开关只负责二元状态，不承担装饰任务。</p>
+          <div class="canvas row">
+            <div class="switch"></div>
+            <div class="switch on"></div>
+            <div class="switch on" style="opacity:.5"></div>
+          </div>
+          <table>
+            <tr><th>State</th><th>Track</th><th>Thumb</th></tr>
+            <tr><td>Off</td><td>surface3</td><td>白色圆点</td></tr>
+            <tr><td>On</td><td>accent</td><td>白色圆点</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="tabs">
+          <h2>Tabs</h2>
+          <p class="meta">分段控件应该像轻玻璃胶囊，而不是厚重导航条。</p>
+          <div class="canvas row">
+            <div class="tabs">
+              <span class="active">全部</span>
+              <span>对话</span>
+              <span>图像</span>
+              <span>语音</span>
+            </div>
+          </div>
+          <table>
+            <tr><th>Property</th><th>Value</th><th>Role</th></tr>
+            <tr><td>Container</td><td>surface3</td><td>承载多选项</td></tr>
+            <tr><td>Active</td><td>surface1 + shadow-1</td><td>当前分类</td></tr>
+          </table>
+        </section>
+      </section>
+
+      <section class="panel" id="surfaces">
+        <section class="component-group" id="cards">
+          <h2>Cards</h2>
+          <p class="meta">卡片是工作台里的模块，不是页面的替代品。每个卡片都要有任务含义。</p>
+          <div class="canvas row">
+            <div class="card-sample">
+              <div class="chip info">推荐工作流</div>
+              <h3 style="margin:14px 0 8px;font-family:var(--font-display);font-size:20px;">录音整理成纪要</h3>
+              <p style="margin:0;color:var(--text3);font-size:14px;">把会议录音转写、摘要并同步到历史记录。</p>
+            </div>
+            <div class="card-sample" style="transform:translateY(-2px);box-shadow:var(--shadow-3);">
+              <div class="chip success">已激活</div>
+              <h3 style="margin:14px 0 8px;font-family:var(--font-display);font-size:20px;">多模型对话</h3>
+              <p style="margin:0;color:var(--text3);font-size:14px;">同一工作台里切换通义、GLM 和 DeepSeek。</p>
+            </div>
+          </div>
+          <table>
+            <tr><th>Property</th><th>Value</th><th>Role</th></tr>
+            <tr><td>Radius</td><td>24px</td><td>标准模块面</td></tr>
+            <tr><td>Border</td><td>白色细描边或 neutral-300</td><td>玻璃分层</td></tr>
+            <tr><td>Shadow</td><td>shadow-2</td><td>轻浮层</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="dialogs">
+          <h2>Dialogs</h2>
+          <p class="meta">弹层要像被抬起的整块工作面，而不是黑盒子。</p>
+          <div class="canvas row">
+            <div class="dialog-sample">
+              <div class="chip info">批量操作</div>
+              <h3 style="margin:16px 0 8px;font-family:var(--font-display);font-size:20px;">确认移入历史分组</h3>
+              <p style="margin:0;color:var(--text3);font-size:14px;line-height:1.5;">将 3 条会话、2 个图像结果与 1 份转写记录合并到“五月提案”分组。</p>
+            </div>
+          </div>
+          <table>
+            <tr><th>Property</th><th>Value</th><th>Role</th></tr>
+            <tr><td>Radius</td><td>32px</td><td>容器级浮层</td></tr>
+            <tr><td>Shadow</td><td>shadow-3</td><td>高优先级浮起</td></tr>
+            <tr><td>Backdrop</td><td>深色透明遮罩</td><td>聚焦</td></tr>
+          </table>
+        </section>
+
+        <section class="component-group" id="badges">
+          <h2>Badges</h2>
+          <p class="meta">同一状态同一颜色，绝不为“有趣”而随意变体。</p>
+          <div class="canvas row">
+            <span class="chip info">推荐</span>
+            <span class="chip success">完成</span>
+            <span class="chip warning">处理中</span>
+            <span class="chip error">失败</span>
+          </div>
+          <table>
+            <tr><th>Status</th><th>Background</th><th>Foreground</th></tr>
+            <tr><td>推荐</td><td>accent-subtle</td><td>accent</td></tr>
+            <tr><td>完成</td><td>success-bg</td><td>success</td></tr>
+            <tr><td>处理中</td><td>warning-bg</td><td>warning</td></tr>
+            <tr><td>失败</td><td>error-bg</td><td>error</td></tr>
+          </table>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="floating-bar">
+    <button class="mode-btn" data-mode="light" aria-label="Light mode"><i class="icon icon-sun"></i> Light</button>
+    <button class="mode-btn" data-mode="dark" aria-label="Dark mode"><i class="icon icon-moon"></i> Dark</button>
+  </div>
+
+  <script>
+    const panels = document.querySelectorAll('.panel');
+    const catButtons = document.querySelectorAll('.cat-btn');
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const main = document.querySelector('.main');
+
+    function activatePanel(id) {
+      panels.forEach(panel => panel.classList.toggle('active', panel.id === id));
+      catButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.panel === id));
+    }
+
+    catButtons.forEach(btn => {
+      btn.addEventListener('click', () => activatePanel(btn.dataset.panel));
+    });
+
+    tocLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        activatePanel(link.dataset.panel);
+        tocLinks.forEach(item => item.classList.remove('active'));
+        link.classList.add('active');
+        document.getElementById(link.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.documentElement.dataset.theme = btn.dataset.mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+    document.querySelector(`.mode-btn[data-mode="${document.documentElement.dataset.theme}"]`)?.classList.add('active');
+    document.querySelectorAll('a').forEach(a => a.addEventListener('click', e => e.preventDefault()));
+
+    main.addEventListener('scroll', () => {
+      const visible = [...document.querySelectorAll('.panel.active .component-group')].find(section => {
+        const rect = section.getBoundingClientRect();
+        return rect.top >= 0 && rect.top < window.innerHeight * 0.45;
+      });
+      if (!visible) return;
+      tocLinks.forEach(link => link.classList.toggle('active', link.dataset.target === visible.id));
+    }, { passive: true });
+  </script>
+</body>
+</html>

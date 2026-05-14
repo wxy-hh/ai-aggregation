@@ -1,20 +1,79 @@
 'use client';
 
+import Image, { type StaticImageData } from 'next/image';
+import qimendunjiaIcon from '@/assets/image/qimendunjia.svg';
+import ziweiIcon from '@/assets/image/ziwei.svg';
 import { cn } from '@/lib/utils';
-import { BookOpen, Compass, LayoutGrid, Sparkles } from 'lucide-react';
+import type { ComponentType } from 'react';
+import { BookOpen, LayoutGrid } from 'lucide-react';
+
+type LeftNavIconProps = {
+  className?: string;
+  active?: boolean;
+};
+
+function AssetImageIcon({
+  className,
+  src,
+  active = false,
+}: {
+  className?: string;
+  src: StaticImageData;
+  active?: boolean;
+}) {
+  return (
+    <Image
+      src={src}
+      alt=""
+      aria-hidden="true"
+      className={cn(
+        className,
+        'select-none object-contain',
+        active
+          ? 'brightness-0 invert'
+          : 'opacity-88 [filter:brightness(0)_saturate(100%)_invert(36%)_sepia(16%)_saturate(610%)_hue-rotate(181deg)_brightness(93%)_contrast(88%)]'
+      )}
+    />
+  );
+}
+
+const ZiweiChartIcon: ComponentType<LeftNavIconProps> = ({ className, active }) => (
+  <AssetImageIcon src={ziweiIcon} className={className} active={active} />
+);
+
+const QimenJiugongIcon: ComponentType<LeftNavIconProps> = ({ className, active }) => (
+  <AssetImageIcon src={qimendunjiaIcon} className={className} active={active} />
+);
+
+const BaziGridIcon: ComponentType<LeftNavIconProps> = ({ className }) => <LayoutGrid className={className} />;
 
 export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen';
 
 const groups: Array<{
   title: string;
-  items: Array<{ key: DestinyModuleKey; label: string; icon: typeof LayoutGrid }>;
+  items: Array<{
+    key: DestinyModuleKey;
+    label: string;
+    icon: ComponentType<LeftNavIconProps>;
+    iconClassName?: string;
+  }>;
 }> = [
   {
     title: '命理分析类别',
     items: [
-      { key: 'bazi', label: '八字格局精批', icon: LayoutGrid },
-      { key: 'ziwei', label: '紫微斗数排盘', icon: Sparkles },
-      { key: 'qimen', label: '奇门遁甲演化', icon: Compass },
+      { key: 'bazi', label: '八字格局精批', icon: BaziGridIcon },
+      {
+        key: 'ziwei',
+        label: '紫微斗数排盘',
+        icon: ZiweiChartIcon,
+        iconClassName: 'h-[22px] w-[22px]',
+      },
+      {
+        key: 'qimen',
+        label: '奇门遁甲演化',
+        icon: QimenJiugongIcon,
+        iconClassName: 'h-[22px] w-[22px]',
+      },
     ],
   },
 ];
@@ -74,7 +133,7 @@ export function LeftNav({
                           : 'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 text-slate-600 dark:text-slate-300'
                       )}
                     >
-                      <Icon className="w-4 h-4" />
+                      <Icon className={item.iconClassName ?? 'h-4 w-4'} active={active} />
                     </div>
                     <div className="min-w-0">
                       <div

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Aggregation App Screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static/font/lucide.css">
+  <style>
+    :root {
+      --background:#F1F5F9; --surface1:rgba(255,255,255,0.88); --surface2:#F8FAFC; --surface3:#F1F5F9; --border:#E2E8F0; --border-visible:#D5DAEB;
+      --text1:#0F172A; --text2:#475569; --text3:#64748B; --text4:#94A3B8; --accent:#5D7CFA; --accent-subtle:#F3F6FF;
+      --success:#22C55E; --success-bg:#F0FDF4; --warning:#F59E0B; --warning-bg:#FFFBEB; --error:#E54350; --error-bg:#FFF1F2;
+      --font-display:"Space Grotesk",system-ui,sans-serif; --font-body:"DM Sans",system-ui,sans-serif; --font-mono:"JetBrains Mono",ui-monospace,monospace;
+      --shadow-1:0 1px 2px rgba(15,23,42,0.06); --shadow-2:0 8px 20px rgba(76,95,154,0.10); --shadow-3:0 20px 60px -10px rgba(59,130,246,0.10);
+      --r1:8px; --r2:12px; --r3:24px; --r4:32px; --pill:999px;
+    }
+    [data-theme="dark"] {
+      --background:#111218; --surface1:rgba(30,41,59,0.84); --surface2:#182230; --surface3:#334155; --border:#334155; --border-visible:#475569;
+      --text1:#F8FAFC; --text2:#CBD5E1; --text3:#94A3B8; --text4:#64748B; --accent:#9BADFF; --accent-subtle:#1E2A55;
+      --shadow-1:0 2px 10px rgba(0,0,0,0.18); --shadow-2:0 14px 32px rgba(0,0,0,0.28); --shadow-3:0 24px 56px rgba(0,0,0,0.40);
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; padding:28px; font-family:var(--font-body);
+      color:var(--text1);
+      background:
+        radial-gradient(circle at 14% 18%, rgba(219,234,254,0.9), transparent 28%),
+        radial-gradient(circle at 84% 10%, rgba(233,213,255,0.7), transparent 24%),
+        radial-gradient(circle at 76% 78%, rgba(191,219,254,0.55), transparent 26%),
+        var(--background);
+    }
+    .frame {
+      max-width: 1180px; margin: 0 auto; border-radius: 28px; overflow:hidden; border:1px solid rgba(255,255,255,0.65); box-shadow: var(--shadow-3);
+      background: var(--surface1); backdrop-filter: blur(24px);
+    }
+    .browser-top {
+      display:flex; align-items:center; gap:14px; padding:16px 18px; border-bottom:1px solid var(--border); background: rgba(255,255,255,0.65);
+    }
+    [data-theme="dark"] .browser-top { background: rgba(17,18,24,0.72); }
+    .lights { display:flex; gap:8px; }
+    .lights span { width:12px; height:12px; border-radius:50%; display:block; }
+    .lights span:nth-child(1) { background:#FF5F57; } .lights span:nth-child(2) { background:#FEBC2E; } .lights span:nth-child(3) { background:#28C840; }
+    .urlbar {
+      flex:1; min-width:0; height:40px; display:flex; align-items:center; gap:10px; padding:0 14px; border-radius:12px; background: var(--surface2); border:1px solid var(--border); color: var(--text3);
+      font-size:14px;
+    }
+    .viewport { display:grid; grid-template-columns: 260px 1fr; min-height: 760px; }
+    .sidebar {
+      border-right:1px solid var(--border); padding:24px 20px; background: rgba(255,255,255,0.36);
+    }
+    .brand {
+      display:flex; align-items:center; gap:12px; margin-bottom:24px;
+    }
+    .brand-mark {
+      width:44px; height:44px; border-radius:16px; display:grid; place-items:center; color:#fff;
+      background: linear-gradient(135deg,#5D7CFA,#8794FF); box-shadow: 0 10px 28px rgba(93,124,250,0.35);
+    }
+    .brand-text strong { display:block; font-family: var(--font-display); }
+    .brand-text small { color: var(--text4); }
+    .section-label {
+      margin: 22px 0 10px; color: var(--text4); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .nav-list { display:grid; gap:8px; }
+    .nav-item {
+      position:relative;
+      display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; border-radius:16px; color: var(--text2);
+      background: transparent;
+    }
+    .nav-item.active {
+      background: var(--accent-subtle);
+      color: var(--accent);
+      box-shadow: var(--shadow-1);
+    }
+    .nav-item.active::before {
+      content:""; position:absolute; left:-20px; top:10px; bottom:10px; width:4px; border-radius:999px; background: var(--accent);
+    }
+    .count {
+      padding:4px 8px; border-radius:var(--pill); background: var(--surface1); color: var(--text3); font-size: 11px; line-height:1;
+    }
+    .main {
+      padding:28px;
+      display:grid;
+      grid-template-rows:auto auto auto 1fr;
+      gap:20px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), transparent);
+    }
+    .topbar {
+      display:flex; align-items:center; justify-content:space-between; gap:20px;
+    }
+    .topbar h1 {
+      margin:0; font-family: var(--font-display); font-size: 32px; line-height:1.1;
+    }
+    .topbar p { margin:8px 0 0; color: var(--text3); }
+    .toolbar {
+      display:flex; gap:10px; align-items:center;
+    }
+    .btn {
+      height:40px; padding:0 14px; border-radius:12px; border:1px solid transparent; display:inline-flex; align-items:center; gap:8px; font:600 14px/1 var(--font-body);
+    }
+    .btn.primary { color:#fff; background:linear-gradient(90deg,#4969E9,#7B8FFF); box-shadow:0 10px 24px rgba(93,124,250,0.32); }
+    .btn.secondary { background:rgba(255,255,255,0.72); color:var(--text2); border-color:rgba(255,255,255,0.75); box-shadow:var(--shadow-1); }
+    .stats {
+      display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px;
+    }
+    .stat-card, .chart-card, .feed-card, .table-card {
+      border-radius:24px; border:1px solid rgba(255,255,255,0.60); background: var(--surface1); box-shadow: var(--shadow-2); backdrop-filter: blur(24px);
+    }
+    .stat-card { padding:22px; }
+    .stat-card small { color:var(--text4); text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+    .stat-card .value {
+      margin-top:12px; font-family: var(--font-display); font-size:42px; line-height:1; letter-spacing:-0.03em;
+    }
+    .stat-card .delta { margin-top:10px; color: var(--text3); font-size:13px; }
+    .grid-2 {
+      display:grid; grid-template-columns: 1.4fr 1fr; gap:16px;
+    }
+    .chart-card, .feed-card, .table-card { padding:22px; }
+    .chart-head, .feed-head, .table-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    .chart-title, .feed-title, .table-title { font-family:var(--font-display); font-size:22px; }
+    .line-chart {
+      position:relative; height:220px; border-radius:18px; background: var(--surface2); border:1px solid var(--border); overflow:hidden;
+    }
+    .line-chart .gridline { position:absolute; left:0; right:0; border-top:1px dashed var(--border); }
+    .line-chart .gridline:nth-child(1) { top:25%; } .line-chart .gridline:nth-child(2) { top:50%; } .line-chart .gridline:nth-child(3) { top:75%; }
+    .line {
+      position:absolute; inset:0;
+      background:
+        linear-gradient(180deg, rgba(93,124,250,0.20), transparent 68%),
+        radial-gradient(circle at 15% 62%, rgba(93,124,250,0.9) 0 5px, transparent 6px),
+        radial-gradient(circle at 32% 54%, rgba(93,124,250,0.9) 0 5px, transparent 6px),
+        radial-gradient(circle at 48% 44%, rgba(93,124,250,0.9) 0 5px, transparent 6px),
+        radial-gradient(circle at 62% 38%, rgba(93,124,250,0.9) 0 5px, transparent 6px),
+        radial-gradient(circle at 74% 36%, rgba(93,124,250,0.9) 0 5px, transparent 6px),
+        radial-gradient(circle at 88% 30%, rgba(93,124,250,0.9) 0 5px, transparent 6px);
+    }
+    .feed-list, .table-list { display:grid; gap:12px; }
+    .feed-row, .table-row {
+      display:grid; grid-template-columns: 1.2fr auto auto; align-items:center; gap:14px; padding:14px 16px; border-radius:16px; background: var(--surface2); border:1px solid var(--border);
+    }
+    .feed-row small, .table-row small { color: var(--text4); font-family: var(--font-mono); font-size: 12px; }
+    .badge {
+      display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; line-height:1;
+    }
+    .badge.info { background: var(--accent-subtle); color: var(--accent); }
+    .badge.success { background: var(--success-bg); color: var(--success); }
+    .badge.warning { background: var(--warning-bg); color: var(--warning); }
+    .cursor {
+      position:absolute; right:18px; bottom:18px; width:18px; height:24px;
+      clip-path: polygon(0 0, 0 100%, 28% 74%, 42% 100%, 58% 92%, 46% 68%, 100% 68%);
+      background:#10131A;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
+      transform: rotate(-8deg);
+    }
+    .floating-bar {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px;
+      background: var(--surface1); border: 1.5px solid var(--border); box-shadow: 0 8px 32px rgba(0,0,0,0.12); backdrop-filter: blur(16px);
+    }
+    .mode-btn { height: 32px; border-radius: 999px; border: none; background: transparent; cursor: pointer; display:flex; align-items:center; gap:6px; padding:0 14px; font-family: var(--font-body); font-size:12px; font-weight:500; color: var(--text3); }
+    .mode-btn.active { background: var(--surface3); color: var(--text1); }
+    @media (max-width: 1024px) {
+      .viewport, .grid-2, .stats { grid-template-columns:1fr; }
+      .frame { border-radius: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="browser-top">
+      <div class="lights"><span></span><span></span><span></span></div>
+      <div class="urlbar"><i class="icon icon-globe"></i> app.ai-aggregation.local/home</div>
+    </div>
+    <div class="viewport">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div class="brand-text">
+            <strong>AI Studio</strong>
+            <small>多模型工作台</small>
+          </div>
+        </div>
+        <div class="section-label">主入口</div>
+        <div class="nav-list">
+          <div class="nav-item active"><span>工作台</span><span class="count">Home</span></div>
+          <div class="nav-item"><span>对话</span><span class="count">12</span></div>
+          <div class="nav-item"><span>图像</span><span class="count">4</span></div>
+          <div class="nav-item"><span>视频</span><span class="count">2</span></div>
+          <div class="nav-item"><span>语音</span><span class="count">7</span></div>
+          <div class="nav-item"><span>历史</span><span class="count">26</span></div>
+        </div>
+        <div class="section-label">当前焦点</div>
+        <div class="nav-list">
+          <div class="nav-item"><span>五月提案整理</span><span class="count">进行中</span></div>
+          <div class="nav-item"><span>Kolors 海报探索</span><span class="count">完成</span></div>
+          <div class="nav-item"><span>周会纪要转写</span><span class="count">待复查</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <div>
+            <h1>今天要把四条工作流串顺</h1>
+            <p>主任务是连续性：同一套界面里完成对话、出图、转写和视频任务，不让用户跳走。</p>
+          </div>
+          <div class="toolbar">
+            <button class="btn secondary"><i class="icon icon-clock-3"></i> 最近历史</button>
+            <button class="btn primary"><i class="icon icon-sparkles"></i> 新建任务</button>
+          </div>
+        </div>
+
+        <section class="stats">
+          <article class="stat-card">
+            <small>活跃会话</small>
+            <div class="value">12</div>
+            <div class="delta">较昨日 +3，主要来自模型对比问答</div>
+          </article>
+          <article class="stat-card">
+            <small>今日出图</small>
+            <div class="value">18</div>
+            <div class="delta">4 张已收藏，2 张进入二次编辑</div>
+          </article>
+          <article class="stat-card">
+            <small>转写时长</small>
+            <div class="value">94m</div>
+            <div class="delta">会议录音自动摘要成功率 96%</div>
+          </article>
+        </section>
+
+        <section class="grid-2">
+          <article class="chart-card">
+            <div class="chart-head">
+              <div>
+                <div class="chart-title">任务吞吐</div>
+                <small style="color:var(--text4)">过去 7 小时</small>
+              </div>
+              <span class="badge info">主视图</span>
+            </div>
+            <div class="line-chart">
+              <div class="gridline"></div>
+              <div class="gridline"></div>
+              <div class="gridline"></div>
+              <div class="line"></div>
+            </div>
+          </article>
+
+          <article class="feed-card">
+            <div class="feed-head">
+              <div class="feed-title">最近动作</div>
+              <span class="badge success">同步正常</span>
+            </div>
+            <div class="feed-list">
+              <div class="feed-row"><div><strong>转写完成</strong><div style="color:var(--text3);font-size:13px;">市场周会自动生成摘要与待办</div></div><span class="badge success">完成</span><small>09:12</small></div>
+              <div class="feed-row"><div><strong>图像结果已归档</strong><div style="color:var(--text3);font-size:13px;">Kolors 海报探索加入历史列表</div></div><span class="badge info">归档</span><small>09:26</small></div>
+              <div class="feed-row"><div><strong>视频任务等待中</strong><div style="color:var(--text3);font-size:13px;">GLM 演示片段仍在渲染队列</div></div><span class="badge warning">排队</span><small>09:41</small></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="table-card" style="position:relative;">
+          <div class="table-head">
+            <div class="table-title">多模型任务面板</div>
+            <span class="badge info">当前筛选：全部</span>
+          </div>
+          <div class="table-list">
+            <div class="table-row"><div><strong>产品定位问答</strong><div style="color:var(--text3);font-size:13px;">通义千问 · 流式回复中</div></div><span class="badge success">进行中</span><small>llm-0021</small></div>
+            <div class="table-row"><div><strong>海报关键词优化</strong><div style="color:var(--text3);font-size:13px;">DeepSeek · 等待人工确认</div></div><span class="badge warning">待确认</span><small>img-0934</small></div>
+            <div class="table-row"><div><strong>会议录音纪要</strong><div style="color:var(--text3);font-size:13px;">语音转写 · 摘要已生成</div></div><span class="badge success">完成</span><small>asr-2104</small></div>
+            <div class="table-row"><div><strong>一分钟演示视频</strong><div style="color:var(--text3);font-size:13px;">GLM 视频 · 第三次渲染</div></div><span class="badge warning">排队中</span><small>vid-1178</small></div>
+            <div class="table-row"><div><strong>历史分组整理</strong><div style="color:var(--text3);font-size:13px;">本地缓存同步失败，需要重试</div></div><span class="badge" style="background:var(--error-bg);color:var(--error);">失败</span><small>hst-0048</small></div>
+            <div class="table-row"><div><strong>模型对比摘要</strong><div style="color:var(--text3);font-size:13px;">智谱 GLM / DeepSeek 对照输出</div></div><span class="badge info">待阅读</span><small>cmp-0064</small></div>
+            <div class="table-row"><div><strong>品牌文案润色</strong><div style="color:var(--text3);font-size:13px;">通义千问 · 已进入历史</div></div><span class="badge success">完成</span><small>txt-4410</small></div>
+            <div class="table-row"><div><strong>图片二次编辑</strong><div style="color:var(--text3);font-size:13px;">海报结果进入精修流程</div></div><span class="badge info">处理中</span><small>img-0939</small></div>
+          </div>
+          <div class="cursor"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="floating-bar">
+    <button class="mode-btn" data-mode="light" aria-label="Light mode"><i class="icon icon-sun"></i> Light</button>
+    <button class="mode-btn" data-mode="dark" aria-label="Dark mode"><i class="icon icon-moon"></i> Dark</button>
+  </div>
+
+  <script>
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.documentElement.dataset.theme = btn.dataset.mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+    document.querySelector(`.mode-btn[data-mode="${document.documentElement.dataset.theme}"]`)?.classList.add('active');
+    document.querySelectorAll('a').forEach(a => a.addEventListener('click', e => e.preventDefault()));
+  </script>
+</body>
+</html>

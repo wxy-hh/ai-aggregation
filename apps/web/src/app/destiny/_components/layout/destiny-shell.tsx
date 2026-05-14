@@ -106,7 +106,7 @@ export function DestinyShell({
                   className="lg:hidden rounded-full"
                 >
                   <PanelRightOpen className="mr-2 h-4 w-4" />
-                  查看报告
+                  深度报告
                 </Button>
                 <button
                   type="button"
@@ -169,7 +169,7 @@ export function DestinyShell({
               深度报告
             </DialogTitle>
             <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              在移动端查看测算报告、流年趋势和 AI 追问入口
+              查看测算报告、流年趋势和 AI 追问
             </DialogDescription>
           </div>
           <div className="max-h-[78vh] overflow-y-auto px-4 py-4">

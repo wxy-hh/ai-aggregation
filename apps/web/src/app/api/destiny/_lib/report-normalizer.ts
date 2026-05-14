@@ -108,6 +108,51 @@ function asString(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    const text = asString(value).trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function normalizeTimelineDetailList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asString(item).trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function buildTimelineSummary(source: {
+  summary?: unknown;
+  fortune?: unknown;
+  content?: unknown;
+  advice?: unknown;
+  overview?: unknown;
+  detail?: { opportunities?: unknown; risks?: unknown; actions?: unknown } | unknown;
+}): string {
+  const directSummary = firstNonEmptyString(
+    source.summary,
+    source.fortune,
+    source.content,
+    source.advice,
+    source.overview
+  );
+  if (directSummary) return directSummary;
+
+  const detail = source.detail && typeof source.detail === 'object'
+    ? (source.detail as Record<string, unknown>)
+    : undefined;
+  const firstDetailText = firstNonEmptyString(
+    normalizeTimelineDetailList(detail?.opportunities)[0],
+    normalizeTimelineDetailList(detail?.actions)[0],
+    normalizeTimelineDetailList(detail?.risks)[0]
+  );
+
+  return firstDetailText || '该年度建议以稳中求进为主，避免情绪化决策。';
+}
+
 function normalizeLoosePillars(raw: unknown) {
   if (!Array.isArray(raw)) return raw;
   if (raw.length === 0) return raw;
@@ -236,16 +281,34 @@ function normalizeLooseTimeline(raw: unknown) {
   return (raw as unknown[]).map((item) => {
     if (!item || typeof item !== 'object') return item;
     const row = item as Record<string, unknown>;
-    const fortune = asString(row.fortune);
-    if (!fortune) return item;
+    const summary = buildTimelineSummary({
+      summary: row.summary,
+      fortune: row.fortune,
+      content: row.content,
+      advice: row.advice,
+      overview: row.overview,
+      detail: row.detail,
+    });
     return {
       year: typeof row.year === 'number' ? row.year : undefined,
       title: `${typeof row.year === 'number' ? row.year : ''}年流年`,
-      summary: fortune,
+      summary,
       detail: {
-        opportunities: [fortune],
-        risks: [],
-        actions: ['将建议拆解为可执行的月度行动。'],
+        opportunities: normalizeTimelineDetailList(
+          row.detail && typeof row.detail === 'object'
+            ? (row.detail as Record<string, unknown>).opportunities
+            : undefined
+        ),
+        risks: normalizeTimelineDetailList(
+          row.detail && typeof row.detail === 'object'
+            ? (row.detail as Record<string, unknown>).risks
+            : undefined
+        ),
+        actions: normalizeTimelineDetailList(
+          row.detail && typeof row.detail === 'object'
+            ? (row.detail as Record<string, unknown>).actions
+            : undefined
+        ),
       },
     };
   });
@@ -297,20 +360,29 @@ function normalizeTimeline(raw: unknown, currentYear: number): DestinyTimelineIt
   const result: DestinyTimelineItem[] = [];
 
   for (let index = 0; index < 3; index += 1) {
-    const source = (list[index] ?? {}) as {
-      title?: string;
-      summary?: string;
-      detail?: { opportunities?: string[]; risks?: string[]; actions?: string[] };
-    };
-    const year = currentYear + index;
+    const source = (list[index] ?? {}) as Record<string, unknown>;
+    const sourceDetail =
+      source.detail && typeof source.detail === 'object'
+        ? (source.detail as Record<string, unknown>)
+        : undefined;
+    const year = typeof source.year === 'number' ? source.year : currentYear + index;
+    const summary = buildTimelineSummary({
+      summary: source.summary,
+      fortune: source.fortune,
+      content: source.content,
+      advice: source.advice,
+      overview: source.overview,
+      detail: sourceDetail,
+    });
+
     result.push({
       year,
-      title: source.title?.trim() || `${year}年运势`,
-      summary: source.summary?.trim() || '该年度建议以稳中求进为主，避免情绪化决策。',
+      title: firstNonEmptyString(source.title, source.name) || `${year}年运势`,
+      summary,
       detail: {
-        opportunities: (source.detail?.opportunities ?? []).filter(Boolean).slice(0, 3),
-        risks: (source.detail?.risks ?? []).filter(Boolean).slice(0, 3),
-        actions: (source.detail?.actions ?? []).filter(Boolean).slice(0, 3),
+        opportunities: normalizeTimelineDetailList(sourceDetail?.opportunities),
+        risks: normalizeTimelineDetailList(sourceDetail?.risks),
+        actions: normalizeTimelineDetailList(sourceDetail?.actions),
       },
     });
   }
@@ -402,7 +474,10 @@ export function normalizeDestinyReport(
           { key: 'shishen', label: '食神', value: 25, tooltip: '食神代表表达、输出与创造。' },
         ];
 
-  const normalizedTimeline = normalizeTimeline(timeline.success ? timeline.data : undefined, currentYear);
+  const normalizedTimeline = normalizeTimeline(
+    timeline.success ? timeline.data : source.timeline,
+    currentYear
+  );
 
   const defaultZiweiPalaces = buildDefaultZiweiPalaces({
     normalizedPillars,

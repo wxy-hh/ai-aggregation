@@ -1,7 +1,9 @@
 'use client';
 
+import mingliIcon from '@/assets/image/mingli.svg';
 import React from 'react';
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { SVGProps } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
@@ -20,6 +22,38 @@ import {
   X,
   Plus,
 } from 'lucide-react';
+
+function AssetAppIcon({
+  className,
+  src,
+}: {
+  className?: string;
+  src: { src: string };
+  strokeWidth?: number;
+}) {
+  const maskStyle = {
+    WebkitMaskImage: `url(${src.src})`,
+    maskImage: `url(${src.src})`,
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+  } satisfies CSSProperties;
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('block shrink-0 bg-current', className)}
+      style={maskStyle}
+    />
+  );
+}
+
+function MingliIcon({ className }: { className?: string; strokeWidth?: number }) {
+  return <AssetAppIcon src={mingliIcon} className={className} />;
+}
 
 function BaguaIcon({ className, strokeWidth = 1.9, ...props }: SVGProps<SVGSVGElement>) {
   return (
@@ -131,7 +165,7 @@ export const APP_CONFIGS: AppConfig[] = [
     id: 'destiny',
     label: 'AI 命理大师',
     description: '可视化排盘 + 深度报告 + 专属 AI 顾问。',
-    icon: BaguaIcon,
+    icon: MingliIcon,
     category: 'core',
     href: '/destiny',
     iconColor: 'text-indigo-600',

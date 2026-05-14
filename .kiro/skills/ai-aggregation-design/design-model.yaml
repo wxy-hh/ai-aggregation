@@ -1,0 +1,269 @@
+name: "AI Aggregation"
+philosophy: "浅色玻璃工作台，不做空泛营销页。界面像一张为高频 AI 操作准备好的桌面：冷白底、半透明层、蓝紫信号色、宽松但不松散的留白。它的张力来自两件事同时成立：基础层足够安静，关键动作又必须在一眼内被点亮。"
+primary_mode: "light"
+brand_domain: "AI aggregation / multi-model creative workspace"
+brand_type: "ui-rich"
+mono_for_code: false
+mono_for_metrics: false
+
+primitives:
+  colors:
+    neutral:
+      50: "#FFFFFF"
+      100: "#F8FAFC"
+      200: "#F1F5F9"
+      300: "#E2E8F0"
+      400: "#CBD5E1"
+      500: "#94A3B8"
+      600: "#64748B"
+      700: "#475569"
+      800: "#334155"
+      900: "#1E293B"
+      950: "#111218"
+    brand:
+      50: "#F3F6FF"
+      100: "#E7EDFF"
+      200: "#C9D4FF"
+      300: "#A8B8FF"
+      400: "#7D91FF"
+      500: "#5D7CFA"
+      600: "#4969E9"
+      700: "#3C58D8"
+      800: "#3144B7"
+      900: "#23318C"
+      950: "#18225E"
+    red:
+      50: "#FFF1F2"
+      500: "#E54350"
+      900: "#7F1D1D"
+    green:
+      50: "#F0FDF4"
+      500: "#22C55E"
+      900: "#14532D"
+    amber:
+      50: "#FFFBEB"
+      500: "#F59E0B"
+      900: "#78350F"
+  spacing: [0, 2, 4, 8, 12, 16, 24, 32, 40, 48, 64, 96]
+  radii: [0, 8, 12, 16, 24, 32, 48, 999]
+
+tokens:
+  colors:
+    light:
+      background: "{neutral.200}"
+      surface1: "{neutral.50}"
+      surface2: "{neutral.100}"
+      surface3: "{neutral.200}"
+      border: "{neutral.300}"
+      border_visible: "#D5DAEB"
+      text1: "#0F172A"
+      text2: "{neutral.700}"
+      text3: "{neutral.600}"
+      text4: "{neutral.500}"
+      accent: "{brand.500}"
+      accent_subtle: "{brand.50}"
+    dark:
+      background: "{neutral.950}"
+      surface1: "{neutral.900}"
+      surface2: "#182230"
+      surface3: "{neutral.800}"
+      border: "{neutral.800}"
+      border_visible: "{neutral.700}"
+      text1: "#F8FAFC"
+      text2: "#CBD5E1"
+      text3: "{neutral.500}"
+      text4: "{neutral.600}"
+      accent: "#9BADFF"
+      accent_subtle: "#1E2A55"
+    success: "{green.500}"
+    warning: "{amber.500}"
+    error: "{red.500}"
+  spacing:
+    2xs: 2
+    xs: 4
+    sm: 8
+    md: 16
+    lg: 24
+    xl: 32
+    2xl: 48
+    3xl: 64
+    4xl: 96
+  radii:
+    element: 8
+    control: 12
+    component: 24
+    container: 32
+    pill: 999
+  typography:
+    display:
+      family: "Space Grotesk"
+      size: "60px"
+      weight: 700
+      line_height: 1.08
+      letter_spacing: "-0.025em"
+    h1:
+      family: "Space Grotesk"
+      size: "42px"
+      weight: 700
+      line_height: 1.12
+      letter_spacing: "-0.02em"
+    h2:
+      family: "Space Grotesk"
+      size: "28px"
+      weight: 700
+      line_height: 1.2
+      letter_spacing: "-0.015em"
+    h3:
+      family: "DM Sans"
+      size: "20px"
+      weight: 700
+      line_height: 1.3
+      letter_spacing: "0"
+    body:
+      family: "DM Sans"
+      size: "16px"
+      weight: 400
+      line_height: 1.5
+      letter_spacing: "0"
+    body_sm:
+      family: "DM Sans"
+      size: "14px"
+      weight: 400
+      line_height: 1.5
+      letter_spacing: "0"
+    caption:
+      family: "DM Sans"
+      size: "12px"
+      weight: 500
+      line_height: 1.4
+      letter_spacing: "0"
+    label:
+      family: "DM Sans"
+      size: "11px"
+      weight: 700
+      line_height: 1.2
+      letter_spacing: "0.05em"
+    mono:
+      family: "JetBrains Mono"
+      size: "13px"
+      weight: 500
+      line_height: 1.4
+      letter_spacing: "0"
+  elevation:
+    strategy: "material"
+    level1_light: "0 1px 2px rgba(15, 23, 42, 0.06)"
+    level2_light: "0 8px 20px rgba(76, 95, 154, 0.10)"
+    level3_light: "0 20px 60px -10px rgba(59, 130, 246, 0.10)"
+    level1_dark: "0 2px 10px rgba(0, 0, 0, 0.18)"
+    level2_dark: "0 14px 32px rgba(0, 0, 0, 0.28)"
+    level3_dark: "0 24px 56px rgba(0, 0, 0, 0.40)"
+  motion:
+    personality: "smooth"
+    easing: "cubic-bezier(0.2, 0.8, 0.2, 1)"
+    duration_fast: "180ms"
+    duration_normal: "240ms"
+    duration_slow: "480ms"
+  hero_stage:
+    preset: null
+    observed_style:
+      description: "首页英雄区不是单独物体，而是一块大圆角玻璃工作台，背景里有浅蓝与浅紫的漫射光斑，强调“工具桌面”而不是“宣传海报”。"
+      where_used: ["home hero", "workspace background"]
+    background:
+      medium: "mesh"
+      color_mode: "palette"
+      saturation: "muted"
+      light_source: "ambient"
+      falloff: "soft"
+      vignette: "off"
+      texture: "clean"
+      motion: "pulse"
+      intensity: "subtle"
+      safe_zone: "masked-for-text"
+      color_palette: ["#DBEAFE", "#E9D5FF", "#BFDBFE", "#FFFFFF"]
+    hero:
+      subject: "none"
+    relation:
+      type: "flat"
+      bleed: 0
+    disclaimer: "预览用 CSS 玻璃层和柔光团块近似原站首页气质，不复刻真实业务文案与插图。"
+  iconography:
+    observed_style:
+      description: "站点主要使用细到中等笔画的线性图标，圆角端点，轮廓清楚，偏几何但不过冷。首页与侧栏中的功能图标统一、克制，明显是产品型图标语言。"
+      stroke_weight: "medium"
+      corner_treatment: "soft"
+      fill_style: "outline"
+      form_language: "geometric"
+      visual_density: "minimal"
+    fallback_kit:
+      name: "Lucide"
+      weight: "default (2px)"
+      match_score: "high"
+      match_reasoning: "Lucide 和站点当前实际使用的图标语言最接近：2px 左右轮廓、圆角端点、现代产品感、没有多余装饰。Tabler 也接近，但 Lucide 的几何感和留白更贴合这个工作台式界面。"
+      cdn: "https://unpkg.com/lucide-static/font/lucide.css"
+      icon_class_prefix: "icon-"
+    disclaimer: "预览中的图标使用 Lucide 作为近似回退；它与站点当前实际图标语言一致，但不代表未来所有页面都必须强绑定 Lucide。"
+
+components:
+  button_primary:
+    source: "observed"
+    background: "linear-gradient(90deg, #4969E9 0%, #7B8FFF 100%)"
+    color: "#FFFFFF"
+    padding: "0 16px"
+    radius: "{radii.control}"
+    font_weight: 600
+    hover: "亮度提高 3%，阴影从 0 10px 24px rgba(93,124,250,0.32) 增强到 0 14px 30px rgba(93,124,250,0.36)"
+  button_secondary:
+    source: "observed"
+    background: "rgba(255,255,255,0.72)"
+    color: "#475569"
+    border: "1px solid rgba(255,255,255,0.75)"
+    radius: "{radii.control}"
+  card_standard:
+    source: "observed"
+    background: "rgba(255,255,255,0.78)"
+    border: "1px solid rgba(255,255,255,0.60)"
+    radius: "{radii.component}"
+    backdrop_blur: "24px"
+  input_text:
+    source: "observed"
+    height: "48px"
+    background: "#FFFFFF"
+    border: "1px solid #E2E8F0"
+    focus_ring: "0 0 0 2px rgba(59,130,246,0.20)"
+    radius: "{radii.control}"
+  nav_icon_tile:
+    source: "observed"
+    size: "40px"
+    background: "rgba(255,255,255,0.45)"
+    radius: "{radii.control}"
+    active_background: "linear-gradient(135deg, #5D7CFA 0%, #7D91FF 100%)"
+  badge_status:
+    source: "observed"
+    height: "24px"
+    background: "{colors.light.accent_subtle}"
+    color: "#4E67E6"
+    radius: "{radii.pill}"
+  dialog_shell:
+    source: "observed"
+    background: "{colors.light.surface1}"
+    border: "1px solid #E2E8F0"
+    radius: "{radii.container}"
+  tabs_segment:
+    source: "observed"
+    background: "{colors.light.surface3}"
+    active_background: "{colors.light.surface1}"
+    radius: "{radii.element}"
+
+app_screen:
+  archetype: "dashboard"
+  frame: "browser"
+  frame_params:
+    url: "app.ai-aggregation.local/home"
+    title: "AI Studio - 多模型工作台"
+  content_seed: "一个 AI 聚合工作台：左侧是能力入口与历史，主区域展示今日对话、图像生成、语音转写和视频任务状态。界面要像正在被使用，而不是空白模板。"
+  required_tokens_checklist:
+    - "text1, text2, text3, text4"
+    - "surface1, surface2, surface3, border, border_visible"
+    - "accent, accent_subtle, success, warning, error"
+    - "display, h1, h2, h3, body, body_sm, caption, label"
+    - "component, control, pill"

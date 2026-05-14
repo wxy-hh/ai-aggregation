@@ -513,7 +513,9 @@ export function ProfileShell() {
     // 等待 auth 初始化完成，避免用过期 token 触发不必要的 401 刷新
     if (!accessToken || authLoading) {
       setUsage(null);
+      setUsageLoading(false);
       setUsageError(null);
+      fetchingUsageRef.current = false;
       return;
     }
 
@@ -542,8 +544,10 @@ export function ProfileShell() {
 
     return () => {
       cancelled = true;
+      // React StrictMode 会先清理再重新执行 effect，这里需要及时释放请求锁。
+      fetchingUsageRef.current = false;
     };
-  }, [accessToken]);
+  }, [accessToken, authLoading]);
 
   return (
     <>
@@ -670,7 +674,7 @@ export function ProfileShell() {
                 </div>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
+              <div className={`grid gap-6 ${isAdminUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
                 <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-slate-100/80 bg-white p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
                   <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/52 to-transparent dark:from-white/5" />
@@ -692,28 +696,30 @@ export function ProfileShell() {
                   </Button>
                 </div>
 
-                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
-                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
-                  <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-100/80 blur-3xl dark:hidden" />
-                  <div className="flex items-center gap-3">
-                    <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-300" />
-                    <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-red-600 dark:text-red-300 sm:text-2xl">
-                      危险区域
-                    </h3>
+                {!isAdminUser ? (
+                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
+                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
+                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-100/80 blur-3xl dark:hidden" />
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-300" />
+                      <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-red-600 dark:text-red-300 sm:text-2xl">
+                        危险区域
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                      永久注销您的账户。此操作将立即删除所有云端数据、积分且无法恢复。
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsDeleteOpen(true)}
+                      className="mt-auto h-11 w-full rounded-xl border-red-200/75 bg-white/60 text-sm font-semibold text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-sm hover:bg-red-50/75 dark:border-red-900/50 dark:bg-slate-800/72 dark:text-red-200 dark:hover:bg-red-950/24"
+                    >
+                      申请注销账户
+                    </Button>
                   </div>
-                  <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
-                    永久注销您的账户。此操作将立即删除所有云端数据、积分且无法恢复。
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsDeleteOpen(true)}
-                    className="mt-auto h-11 w-full rounded-xl border-red-200/75 bg-white/60 text-sm font-semibold text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-sm hover:bg-red-50/75 dark:border-red-900/50 dark:bg-slate-800/72 dark:text-red-200 dark:hover:bg-red-950/24"
-                  >
-                    申请注销账户
-                  </Button>
-                </div>
+                ) : null}
               </div>
             </section>
 
@@ -876,7 +882,9 @@ export function ProfileShell() {
       </div>
 
       <EditProfileDialog open={isEditOpen} onOpenChange={setIsEditOpen} value={profile} />
-      <DeleteAccountDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
+      {!isAdminUser ? (
+        <DeleteAccountDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
+      ) : null}
     </>
   );
 }

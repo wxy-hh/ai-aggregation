@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Filter, Search, Trash2, UserPlus } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Search, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { adminApi } from '@/lib/api/admin-api';
@@ -38,7 +38,7 @@ const SEARCH_INPUT_CLASSES =
   'h-[48px] w-full rounded-[12px] border border-[rgba(255,255,255,0.72)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0.78))] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),var(--home-shadow-sm)] outline-none transition-[box-shadow,border-color,background-color] duration-200 placeholder:text-[var(--home-color-text-quaternary)] focus:border-[#BFDBFE] focus:bg-white focus:shadow-[0_0_0_2px_rgba(59,130,246,0.20),inset_0_1px_0_rgba(255,255,255,0.92),0_6px_16px_rgba(78,99,160,0.12)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.64))] dark:text-slate-200 dark:focus:border-[#3B82F6]/40 dark:focus:bg-slate-900/78';
 
 const TABLE_ACTION_BUTTON_CLASSES =
-  'inline-flex h-8 items-center rounded-[10px] border px-3 text-[12px] font-semibold transition-[background-color,box-shadow,color] duration-200';
+  'inline-flex h-8 min-w-[56px] shrink-0 items-center justify-center whitespace-nowrap rounded-[10px] border px-3 text-[12px] font-semibold transition-[background-color,box-shadow,color] duration-200';
 
 function StatusBadge({ status }: { status: string }) {
   const styles =
@@ -51,7 +51,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold',
+        'inline-flex w-fit shrink-0 items-center gap-1.5 self-start whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold',
         styles
       )}
     >
@@ -76,18 +76,48 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-function UserMetaLine({ email, createdAt }: { email: string | null; createdAt: string }) {
-  const dateText = new Intl.DateTimeFormat('zh-CN', {
+function formatJoinDate(createdAt: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(new Date(createdAt));
+}
+
+function getDisplayName(user: AdminUser): string {
+  return user.username;
+}
+
+function UserAvatar({ user, size = 'md' }: { user: AdminUser; size?: 'md' | 'lg' }) {
+  const avatarSizeClass = size === 'lg' ? 'h-12 w-12 text-base' : 'h-11 w-11 text-base';
+
+  if (user.avatar) {
+    return (
+      <div
+        className={cn(
+          'relative shrink-0 overflow-hidden rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
+          avatarSizeClass
+        )}
+      >
+        {/* 管理后台优先展示用户已上传的真实头像，缺失时再回退到首字母占位。 */}
+        <img
+          src={user.avatar}
+          alt={`${getDisplayName(user)} 的头像`}
+          className="h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500 dark:text-slate-400">
-      {email ? <span className="break-all">{email}</span> : <span>未填写邮箱</span>}
-      <span className="hidden h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600 sm:inline-block" />
-      <span>加入于 {dateText}</span>
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full font-semibold text-[#3066FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
+        avatarSizeClass,
+        'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF]'
+      )}
+    >
+      {getDisplayName(user).charAt(0).toUpperCase()}
     </div>
   );
 }
@@ -224,11 +254,6 @@ export function UserManagementShell() {
     return user.role === 'admin' ? '管理员' : '普通用户';
   };
 
-  // 获取显示名称（统一使用用户名）
-  const getDisplayName = (user: AdminUser): string => {
-    return user.username;
-  };
-
   // 格式化 tokens 显示，管理员显示无限额度
   const formatTokens = (user: AdminUser): string => {
     if (user.role === 'admin') return '无限额度';
@@ -350,7 +375,7 @@ export function UserManagementShell() {
                   <input
                     type="text"
                     aria-label="搜索用户"
-                    placeholder="搜索用户名、ID 或邮箱..."
+                    placeholder="搜索用户名或 ID..."
                     className={SEARCH_INPUT_CLASSES}
                     value={searchQuery}
                     onChange={(event) => handleSearchChange(event.target.value)}
@@ -369,8 +394,9 @@ export function UserManagementShell() {
             </div>
 
             <div className="relative mt-5 hidden lg:block">
-              <div className="grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] gap-5 px-6 pb-3 text-[12px] font-semibold text-[var(--home-color-text-tertiary)] dark:text-slate-400">
+              <div className="grid grid-cols-[minmax(0,2.1fr)_0.8fr_0.95fr_1.05fr_120px_132px] gap-5 px-6 pb-3 text-[12px] font-semibold text-[var(--home-color-text-tertiary)] dark:text-slate-400">
                 <span>用户（头像 / 用户名 / ID）</span>
+                <span>加入时间</span>
                 <span>角色权限</span>
                 <span>Token 余额</span>
                 <span>状态</span>
@@ -383,25 +409,26 @@ export function UserManagementShell() {
                     key={user.id}
                     className={cn(
                       ROW_SURFACE,
-                      'grid grid-cols-[minmax(0,2.2fr)_0.95fr_1.1fr_1fr_0.7fr] items-center gap-5 px-6 py-5'
+                      'grid grid-cols-[minmax(0,2.1fr)_0.8fr_0.95fr_1.05fr_120px_132px] items-center gap-5 px-6 py-5'
                     )}
                   >
-                    <div className="flex items-center gap-3.5">
-                      <div
-                        className={cn(
-                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
-                          'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]'
-                        )}
-                      >
-                        {getDisplayName(user).charAt(0).toUpperCase()}
-                      </div>
+                    <div className="min-w-0 flex items-center gap-3.5">
+                      <UserAvatar user={user} />
                       <div className="min-w-0">
                         <p className="text-[15px] font-semibold tracking-tight text-slate-950 dark:text-white">
                           {getDisplayName(user)}
                         </p>
-                        <p className="text-[13px] text-slate-500 dark:text-slate-400">{user.id}</p>
-                        <UserMetaLine email={user.email} createdAt={user.createdAt} />
+                        <p
+                          className="truncate text-[13px] text-slate-500 dark:text-slate-400"
+                          title={user.id}
+                        >
+                          {user.id}
+                        </p>
                       </div>
+                    </div>
+
+                    <div className="text-[13px] font-medium text-slate-500 dark:text-slate-400">
+                      {formatJoinDate(user.createdAt)}
                     </div>
 
                     <RoleBadge role={getDisplayRole(user)} />
@@ -413,9 +440,11 @@ export function UserManagementShell() {
                       </span>
                     </div>
 
-                    <StatusBadge status={getDisplayStatus(user)} />
+                    <div className="justify-self-start">
+                      <StatusBadge status={getDisplayStatus(user)} />
+                    </div>
 
-                    <div className="flex items-center justify-end gap-3 text-[13px] font-semibold">
+                    <div className="flex items-center justify-end gap-2 text-[13px] font-semibold">
                       <button
                         type="button"
                         className={cn(
@@ -454,14 +483,7 @@ export function UserManagementShell() {
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/20 to-transparent dark:from-white/5" />
                   <div className="relative">
                     <div className="flex items-start gap-4">
-                      <div
-                        className={cn(
-                          'flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_18px_30px_-24px_rgba(59,130,246,0.2)]',
-                          'bg-gradient-to-br from-[#DCEBFF] to-[#BCD7FF] text-[#3066FF]'
-                        )}
-                      >
-                        {getDisplayName(user).charAt(0).toUpperCase()}
-                      </div>
+                      <UserAvatar user={user} size="lg" />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h2 className="text-[15px] font-semibold text-slate-950 dark:text-white">
@@ -470,16 +492,9 @@ export function UserManagementShell() {
                           <RoleBadge role={getDisplayRole(user)} />
                         </div>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{user.id}</p>
-                        <p className="mt-1 break-all text-sm text-slate-500 dark:text-slate-400">
-                          {user.email || user.username}
-                        </p>
                         <p className="mt-1 text-[12px] text-slate-400 dark:text-slate-500">
                           加入于{' '}
-                          {new Intl.DateTimeFormat('zh-CN', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                          }).format(new Date(user.createdAt))}
+                          {formatJoinDate(user.createdAt)}
                         </p>
                       </div>
                     </div>

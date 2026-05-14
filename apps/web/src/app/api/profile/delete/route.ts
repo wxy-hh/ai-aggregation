@@ -19,6 +19,10 @@ export async function DELETE(req: NextRequest) {
       return ApiError.unauthorized('用户不存在');
     }
 
+    if (user.role === 'admin') {
+      return ApiError.forbidden('管理员账号不支持自助注销');
+    }
+
     // 有密码的账号需要密码确认
     if (user.passwordHash) {
       if (!password) {

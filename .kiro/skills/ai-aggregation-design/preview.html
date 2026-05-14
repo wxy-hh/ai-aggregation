@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Aggregation Design Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static/font/lucide.css">
+  <style>
+    :root {
+      --background: #F1F5F9;
+      --bg: var(--background);
+      --surface1: rgba(255, 255, 255, 0.86);
+      --surface2: #F8FAFC;
+      --surface3: #F1F5F9;
+      --border: #E2E8F0;
+      --border-visible: #D5DAEB;
+      --text1: #0F172A;
+      --text2: #475569;
+      --text3: #64748B;
+      --text4: #94A3B8;
+      --accent: #5D7CFA;
+      --accent-subtle: #F3F6FF;
+      --success: #22C55E;
+      --success-bg: #F0FDF4;
+      --warning: #F59E0B;
+      --warning-bg: #FFFBEB;
+      --error: #E54350;
+      --error-bg: #FFF1F2;
+      --font-display: "Space Grotesk", system-ui, sans-serif;
+      --font-body: "DM Sans", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --shadow-2: 0 8px 20px rgba(76, 95, 154, 0.10);
+      --shadow-3: 0 20px 60px -10px rgba(59, 130, 246, 0.10);
+      --r1: 8px;
+      --r2: 12px;
+      --r3: 24px;
+      --r4: 32px;
+      --r-pill: 999px;
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    [data-theme="dark"] {
+      --background: #111218;
+      --bg: var(--background);
+      --surface1: rgba(30, 41, 59, 0.84);
+      --surface2: #182230;
+      --surface3: #334155;
+      --border: #334155;
+      --border-visible: #475569;
+      --text1: #F8FAFC;
+      --text2: #CBD5E1;
+      --text3: #94A3B8;
+      --text4: #64748B;
+      --accent: #9BADFF;
+      --accent-subtle: #1E2A55;
+      --success: #22C55E;
+      --success-bg: rgba(34, 197, 94, 0.14);
+      --warning: #F59E0B;
+      --warning-bg: rgba(245, 158, 11, 0.14);
+      --error: #E54350;
+      --error-bg: rgba(229, 67, 80, 0.14);
+      --shadow-1: 0 2px 10px rgba(0, 0, 0, 0.18);
+      --shadow-2: 0 14px 32px rgba(0, 0, 0, 0.28);
+      --shadow-3: 0 24px 56px rgba(0, 0, 0, 0.40);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 28px;
+      font-family: var(--font-body);
+      background:
+        radial-gradient(circle at 14% 18%, rgba(219, 234, 254, 0.9), transparent 28%),
+        radial-gradient(circle at 84% 10%, rgba(233, 213, 255, 0.7), transparent 24%),
+        radial-gradient(circle at 76% 78%, rgba(191, 219, 254, 0.55), transparent 26%),
+        var(--bg);
+      color: var(--text1);
+      transition: background 500ms ease, color 500ms ease;
+    }
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: 180px 220px 180px auto;
+      gap: 20px;
+    }
+    .card {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      padding: 24px;
+      border-radius: var(--r3);
+      border: 1px solid rgba(255,255,255,0.6);
+      background: var(--surface1);
+      box-shadow: var(--shadow-2);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+    .card h3, .card h2, .card p { margin: 0; }
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--r-pill);
+      background: var(--accent-subtle);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+    .hero {
+      grid-column: span 2;
+      padding: 28px;
+      border-radius: 32px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0.24) 60%, rgba(255,255,255,0.08) 100%);
+      box-shadow: var(--shadow-3);
+    }
+    .hero h1 {
+      margin-top: 18px;
+      font-family: var(--font-display);
+      font-size: 42px;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+    }
+    .hero h1 span {
+      background: linear-gradient(90deg, #4969E9, #7D91FF, #06B6D4);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p {
+      margin-top: 14px;
+      color: var(--text3);
+      font-size: 14px;
+      line-height: 1.55;
+      max-width: 36ch;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .btn {
+      height: 40px;
+      border: none;
+      border-radius: var(--r2);
+      padding: 0 16px;
+      font: 600 14px/1 var(--font-body);
+      cursor: default;
+    }
+    .btn.primary {
+      color: #fff;
+      background: linear-gradient(90deg, #4969E9 0%, #7B8FFF 100%);
+      box-shadow: 0 10px 24px rgba(93, 124, 250, 0.32);
+    }
+    .btn.secondary {
+      color: var(--text2);
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(255,255,255,0.75);
+      box-shadow: var(--shadow-1);
+    }
+    .metric-value {
+      margin-top: 16px;
+      font-family: var(--font-display);
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .metric-sub {
+      margin-top: 8px;
+      color: var(--text3);
+      font-size: 13px;
+    }
+    .mini-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .mini-row:first-of-type { margin-top: 16px; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: var(--r-pill);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .ok { background: var(--success-bg); color: var(--success); }
+    .warn { background: var(--warning-bg); color: var(--warning); }
+    .err { background: var(--error-bg); color: var(--error); }
+    .sparkline {
+      margin-top: 18px;
+      height: 74px;
+      display: flex;
+      align-items: end;
+      gap: 8px;
+    }
+    .sparkline span {
+      flex: 1;
+      border-radius: 999px 999px 6px 6px;
+      background: linear-gradient(180deg, rgba(93,124,250,0.9), rgba(93,124,250,0.18));
+    }
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .swatch {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text3);
+    }
+    .swatch i {
+      display: block;
+      height: 28px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .type-samples { display: grid; gap: 10px; margin-top: 16px; }
+    .type-display { font-family: var(--font-display); font-size: 26px; }
+    .type-body { font-size: 14px; }
+    .type-mono { font-family: var(--font-mono); font-size: 12px; }
+    .space-row { display: flex; align-items: end; gap: 8px; margin-top: 18px; }
+    .space-row span { background: var(--accent); border-radius: 8px 8px 0 0; }
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .timeline-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .timeline-item small {
+      color: var(--text4);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .progress {
+      margin-top: 18px;
+      height: 12px;
+      border-radius: var(--r-pill);
+      background: var(--surface3);
+      overflow: hidden;
+    }
+    .progress > span {
+      display: block;
+      width: 72%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #4969E9, #7D91FF);
+    }
+    .floating-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--surface1);
+      border: 1.5px solid var(--border);
+      box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.12);
+      transition: background 500ms ease, border-color 500ms ease;
+      backdrop-filter: blur(16px);
+    }
+    .mode-btn {
+      height: 32px;
+      border-radius: 999px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 14px;
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text3);
+      transition: background 200ms ease, color 200ms ease;
+      outline: none;
+    }
+    .mode-btn:hover { color: var(--text1); }
+    .mode-btn.active {
+      background: var(--surface3);
+      color: var(--text1);
+    }
+    .mode-btn i { font-size: 14px; }
+    @media (max-width: 980px) {
+      .shell { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; }
+      .hero, .span-2, .span-3 { grid-column: span 2; }
+    }
+    @media (max-width: 640px) {
+      body { padding: 18px; }
+      .shell { grid-template-columns: 1fr; }
+      .hero, .span-2, .span-3 { grid-column: span 1; }
+      .hero h1 { font-size: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="card hero">
+      <span class="label">AI Workspace</span>
+      <h1>把对话、出图、转写和视频放进同一张 <span>工作台</span></h1>
+      <p>这不是宣传海报，而是一套适合连续工作的 AI 聚合界面。主任务永远在视线中心，次要功能退回玻璃层和浅描边里。</p>
+      <div class="actions">
+        <button class="btn primary">开始新对话</button>
+        <button class="btn secondary">查看历史</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <span class="label">今日效率</span>
+      <div class="metric-value">14</div>
+      <p class="metric-sub">今日已完成的 AI 任务数</p>
+      <div class="progress"><span></span></div>
+    </section>
+
+    <section class="card">
+      <span class="label">Token Key</span>
+      <div class="token-grid">
+        <div class="swatch"><i style="background:#F1F5F9"></i>背景</div>
+        <div class="swatch"><i style="background:#FFFFFF"></i>表面</div>
+        <div class="swatch"><i style="background:#5D7CFA"></i>强调</div>
+        <div class="swatch"><i style="background:#22C55E"></i>成功</div>
+      </div>
+      <div class="type-samples">
+        <div class="type-display">Aa Display</div>
+        <div class="type-body">Aa Body - DM Sans 负责密集界面说明。</div>
+        <div class="type-mono">mono.disabled = false</div>
+      </div>
+      <div class="space-row">
+        <span style="width:8px;height:8px"></span>
+        <span style="width:16px;height:16px"></span>
+        <span style="width:24px;height:24px"></span>
+        <span style="width:32px;height:32px"></span>
+      </div>
+    </section>
+
+    <section class="card span-2">
+      <span class="label">模型分发</span>
+      <div class="sparkline">
+        <span style="height:32%"></span>
+        <span style="height:64%"></span>
+        <span style="height:48%"></span>
+        <span style="height:78%"></span>
+        <span style="height:58%"></span>
+        <span style="height:88%"></span>
+        <span style="height:68%"></span>
+      </div>
+      <div class="mini-row"><span>通义千问</span><strong>38%</strong></div>
+      <div class="mini-row"><span>智谱 GLM</span><strong>27%</strong></div>
+      <div class="mini-row"><span>DeepSeek</span><strong>21%</strong></div>
+      <div class="mini-row"><span>语音 / 图像</span><strong>14%</strong></div>
+    </section>
+
+    <section class="card">
+      <span class="label">系统状态</span>
+      <div class="mini-row"><span>对话流式</span><span class="status ok">正常</span></div>
+      <div class="mini-row"><span>图像队列</span><span class="status warn">排队 3</span></div>
+      <div class="mini-row"><span>视频生成</span><span class="status ok">稳定</span></div>
+      <div class="mini-row"><span>语音转写</span><span class="status err">重试中</span></div>
+    </section>
+
+    <section class="card span-3">
+      <span class="label">最近活动</span>
+      <div class="timeline">
+        <div class="timeline-item"><div><strong>会议录音已转写</strong><p class="metric-sub">营销周会 · 42 分钟 · 自动生成纪要</p></div><small>09:12</small></div>
+        <div class="timeline-item"><div><strong>Kolors 出图已完成</strong><p class="metric-sub">海报视觉探索 · 4 张结果 · 已加入历史</p></div><small>09:26</small></div>
+        <div class="timeline-item"><div><strong>GLM 视频任务已提交</strong><p class="metric-sub">产品演示镜头 · 仍在渲染队列</p></div><small>09:41</small></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <span class="label">快速动作</span>
+      <div class="timeline" style="margin-top:16px">
+        <div class="timeline-item"><span><i class="icon icon-message-square"></i> 新建对话</span></div>
+        <div class="timeline-item"><span><i class="icon icon-image"></i> 优化提示词并出图</span></div>
+        <div class="timeline-item"><span><i class="icon icon-mic"></i> 录音转纪要</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="floating-bar">
+    <button class="mode-btn" data-mode="light" aria-label="Light mode">
+      <i class="icon icon-sun"></i> Light
+    </button>
+    <button class="mode-btn" data-mode="dark" aria-label="Dark mode">
+      <i class="icon icon-moon"></i> Dark
+    </button>
+  </div>
+
+  <script>
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.documentElement.dataset.theme = btn.dataset.mode;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+    document.querySelector(`.mode-btn[data-mode="${document.documentElement.dataset.theme}"]`)?.classList.add('active');
+    document.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', e => e.preventDefault());
+    });
+  </script>
+</body>
+</html>
