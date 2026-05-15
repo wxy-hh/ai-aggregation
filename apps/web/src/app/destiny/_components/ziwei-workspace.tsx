@@ -5,10 +5,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import { authHeaders } from '@/lib/api/client';
-import {
-  useDestinyWorkspaceStore,
-  type ZiweiErrorKind,
-} from '@/stores/destiny-workspace-store';
+import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { BaziInputForm } from './bazi-input-form';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
@@ -204,10 +201,7 @@ function parseStreamBlock(block: string): ZiweiStreamEvent | null {
   return JSON.parse(data) as ZiweiStreamEvent;
 }
 
-async function consumeStream(
-  response: Response,
-  onEvent: (event: ZiweiStreamEvent) => void
-) {
+async function consumeStream(response: Response, onEvent: (event: ZiweiStreamEvent) => void) {
   if (!response.body) throw new Error('响应体为空');
 
   const reader = response.body.getReader();
@@ -482,22 +476,22 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   );
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-50/40 via-slate-50 to-indigo-50/30 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
       <div className="h-full min-h-0 w-full xl:pl-[304px]">
         {step === 'form' ? (
           <div className="flex h-full min-h-0 flex-col p-6">
             <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
+                <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
                   {pageTitle}
                 </h1>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  同页分步流程：先录入生辰信息，再查看 AI 推演结果
+                  同页分步流程:先录入生辰信息,再查看 AI 推演结果
                 </p>
               </div>
             </header>
 
-            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[32px]">
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}
@@ -607,11 +601,12 @@ function ZiweiResultView({
   return (
     <div className="h-full w-full overflow-y-auto p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:gap-6">
+        {/* 页面标题 - 使用设计系统字体 */}
         <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold leading-tight text-slate-900 dark:text-white">
+            <h1 className="font-display text-2xl md:text-3xl font-bold leading-tight text-slate-900 dark:text-white">
               AI 紫微斗数{' '}
-              <span className="block text-base font-medium text-[#394FE6] dark:text-indigo-400 sm:inline">
+              <span className="block text-base font-medium text-[#5D7CFA] dark:text-[#9BADFF] sm:inline">
                 星盘全景视图
               </span>
             </h1>
@@ -620,14 +615,15 @@ function ZiweiResultView({
           <Button
             type="button"
             onClick={onRecalculate}
-            className="self-start rounded-full bg-[#394FE6] text-white hover:brightness-110 sm:self-auto"
+            className="self-start rounded-[12px] bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white hover:brightness-110 transition-all duration-200 shadow-[0_8px_20px_rgba(93,124,250,0.32)] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] sm:self-auto"
+            style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
           >
             重新排盘
           </Button>
         </header>
 
         {!report && (
-          <div className="rounded-3xl border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 backdrop-blur-xl p-8 shadow-sm">
+          <div className="rounded-[24px] border border-slate-200/60 dark:border-white/5 bg-white/90 dark:bg-slate-900/70 backdrop-blur-[24px] p-8 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
             <div className="text-lg font-bold text-slate-800 dark:text-white">暂无紫微排盘数据</div>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               点击"重新排盘"可基于当前信息发起紫微斗数分析。
@@ -679,7 +675,9 @@ function ZiweiResultView({
                               )}
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-2">
-                              <span className="text-xs text-slate-400 sm:text-[11px]">{palace.branch}</span>
+                              <span className="text-xs text-slate-400 sm:text-[11px]">
+                                {palace.branch}
+                              </span>
                             </div>
                           </button>
                         );
@@ -799,7 +797,7 @@ function ZiweiResultView({
                 <div className="p-5 space-y-3 flex-1 min-h-[520px] overflow-y-auto custom-scrollbar">
                   {tab === 'overview' && (
                     <>
-                      <div className="text-xs font-bold text-[#394FE6] dark:text-indigo-400">
+                      <div className="text-xs font-bold text-[#5D7CFA] dark:text-[#9BADFF]">
                         当前宫位 · {activePalace?.label ?? '命宫'}
                       </div>
                       <div className="text-sm font-bold text-slate-900 dark:text-white">
@@ -813,7 +811,7 @@ function ZiweiResultView({
 
                       <details
                         open
-                        className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 p-3"
+                        className="rounded-[12px] border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 p-3"
                       >
                         <summary className="cursor-pointer text-xs font-bold text-emerald-700 dark:text-emerald-400">
                           机会建议
@@ -838,7 +836,7 @@ function ZiweiResultView({
 
                       <details
                         open
-                        className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950 p-3"
+                        className="rounded-[12px] border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950 p-3"
                       >
                         <summary className="cursor-pointer text-xs font-bold text-rose-700 dark:text-rose-400">
                           风险预警

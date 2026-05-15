@@ -59,19 +59,11 @@ export function DestinyPageClient() {
 
     if (module === 'ziwei') {
       return (
-        <ZiweiWorkspace
-          isActive={activeModule === 'ziwei'}
-          onLoadingChange={setZiweiLoading}
-        />
+        <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
       );
     }
 
-    return (
-      <QimenWorkspace
-        isActive={activeModule === 'qimen'}
-        onLoadingChange={setQimenLoading}
-      />
-    );
+    return <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />;
   };
 
   if (isCompactLayout) {
@@ -82,27 +74,30 @@ export function DestinyPageClient() {
     ];
 
     return (
-      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
-        <div className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/88 px-4 py-2 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/88">
-          <div className="grid grid-cols-3 gap-2">
-            {mobileTabs.map((tab) => {
-              const active = activeModule === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveModule(tab.key)}
-                  className={cn(
-                    'rounded-2xl px-3 py-2 text-sm font-semibold transition-colors',
-                    active
-                      ? 'bg-[#EEF2FF] text-[#4E67E6] dark:bg-slate-800 dark:text-[#9BADFF]'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
+        {/* 移动端分段控件 - 使用设计系统规范 */}
+        <div className="sticky top-0 z-20 border-b border-slate-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/90">
+          <div className="rounded-[999px] bg-slate-100/80 p-1 dark:bg-slate-800/80">
+            <div className="grid grid-cols-3 gap-1">
+              {mobileTabs.map((tab) => {
+                const active = activeModule === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveModule(tab.key)}
+                    className={cn(
+                      'rounded-[999px] px-4 py-2 text-sm font-semibold transition-all duration-200',
+                      active
+                        ? 'bg-white text-[#5D7CFA] shadow-sm dark:bg-slate-700 dark:text-[#9BADFF]'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -136,20 +131,22 @@ export function DestinyPageClient() {
       {/* 八字格局精批 */}
       <div
         className={cn(
-          'absolute inset-0 transition-all duration-[120ms] ease-out will-change-transform will-change-opacity',
+          'absolute inset-0 transition-all duration-[180ms] will-change-transform will-change-opacity',
           activeModule === 'bazi'
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-2 pointer-events-none'
         )}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
       >
         <div className="relative h-full w-full">
+          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
           <div
             className={cn(
               'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
               baziLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
             )}
           >
-            <div className="h-full w-full rounded-3xl border border-white/70 dark:border-white/10 bg-white/55 dark:bg-slate-900/90 backdrop-blur-xl p-4 shadow-sm">
+            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
               <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
             </div>
           </div>
@@ -168,29 +165,28 @@ export function DestinyPageClient() {
       {/* 紫微斗数排盘 */}
       <div
         className={cn(
-          'absolute inset-0 transition-opacity duration-[120ms]',
+          'absolute inset-0 transition-all duration-[180ms]',
           activeModule === 'ziwei'
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-2 pointer-events-none'
         )}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
       >
         <div className="relative h-full w-full">
+          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
           <div
             className={cn(
               'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
               ziweiLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
             )}
           >
-            <div className="h-full w-full rounded-3xl border border-white/70 dark:border-white/10 bg-white/55 dark:bg-slate-900/90 backdrop-blur-xl p-4 shadow-sm">
+            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
               <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
             </div>
           </div>
 
           <div className="h-full w-full">
-            <ZiweiWorkspace
-              isActive={activeModule === 'ziwei'}
-              onLoadingChange={setZiweiLoading}
-            />
+            <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
           </div>
         </div>
       </div>
@@ -198,29 +194,28 @@ export function DestinyPageClient() {
       {/* 奇门遁甲演化 */}
       <div
         className={cn(
-          'absolute inset-0 transition-opacity duration-[120ms]',
+          'absolute inset-0 transition-all duration-[180ms]',
           activeModule === 'qimen'
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-2 pointer-events-none'
         )}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
       >
         <div className="relative h-full w-full">
+          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
           <div
             className={cn(
               'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
               qimenLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
             )}
           >
-            <div className="h-full w-full rounded-3xl border border-white/70 dark:border-white/10 bg-white/55 dark:bg-slate-900/90 backdrop-blur-xl p-4 shadow-sm">
+            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
               <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
             </div>
           </div>
 
           <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
-            <QimenWorkspace
-              isActive={activeModule === 'qimen'}
-              onLoadingChange={setQimenLoading}
-            />
+            <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />
           </div>
 
           {qimenLoading && (

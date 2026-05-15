@@ -5,6 +5,9 @@ import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { prisma, deductTokens, refundTokens } from '@repo/db';
 
+export const runtime = 'nodejs';
+export const maxDuration = 30;
+
 const RequestSchema = z.object({
   reportSummary: z.string().trim().min(1, '报告摘要不能为空'),
   messages: z
@@ -20,6 +23,7 @@ const RequestSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const COPILOT_TIMEOUT_MS = 25000;
 
 export async function POST(req: Request) {
   let deducted = false;
@@ -70,8 +74,9 @@ export async function POST(req: Request) {
     }));
 
     const controller = new AbortController();
-    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    // 命理解读追问常会触发较长推理，8 秒会过早中断。
+    // 保持在 30 秒函数预算内，给模型更合理的响应窗口。
+    const timeoutId = setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
 
     let response: Response;
     try {

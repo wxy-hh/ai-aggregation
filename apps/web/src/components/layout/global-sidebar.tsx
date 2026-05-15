@@ -121,7 +121,7 @@ export function GlobalSidebar() {
         </div>
 
         {/* 动态导航项 */}
-        <nav className="flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible no-scrollbar relative z-10 pt-2">
+        <nav className="sidebar-scrollbar flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible relative z-10 pt-2">
           {/* 首页按钮 - 常驻 */}
           <div className="w-full">
             <Link href="/home" className="flex flex-col items-center gap-1 group w-full relative">

@@ -17,6 +17,51 @@
   background-color: rgba(156, 163, 175, 0.5);
 }
 
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 186, 0.34) transparent;
+  scrollbar-gutter: stable;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 8px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(145, 164, 255, 0.52), rgba(104, 126, 214, 0.34));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 36px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(125, 147, 255, 0.74), rgba(91, 110, 196, 0.48));
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .sidebar-scrollbar {
+  scrollbar-color: rgba(126, 150, 255, 0.42) transparent;
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(136, 160, 255, 0.55), rgba(92, 111, 196, 0.4));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(166, 184, 255, 0.72), rgba(110, 130, 220, 0.54));
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
 /* Hide scrollbar for clean look but keep functionality */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

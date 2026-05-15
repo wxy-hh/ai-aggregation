@@ -183,8 +183,10 @@ const outputLengthLabelMap = {
 } as const;
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
-const BASE_STAGE_TIMEOUT_MS = 45000;
-const SECTION_STAGE_TIMEOUT_MS = 40000;
+// 异步 worker 链路与页面直连链路需要保持一致的模型时间预算。
+// 当前奇门能力使用强推理模型，40-45s 在生产环境中会被频繁打断。
+const BASE_STAGE_TIMEOUT_MS = 300000;
+const SECTION_STAGE_TIMEOUT_MS = 300000;
 // Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
 const BASE_MAX_OUTPUT_TOKENS = 8192;
 const STRATEGY_MAX_OUTPUT_TOKENS = 8192;
