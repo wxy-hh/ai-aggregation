@@ -1,6 +1,6 @@
 ---
 name: skill-creator 技能创建器
-description: 指导创建、更新与评估技能；适用于新建 skill、优化触发描述和测试技能表现。
+description: 创建、改进并验证自定义技能。
 ---
 
 # Skill Creator

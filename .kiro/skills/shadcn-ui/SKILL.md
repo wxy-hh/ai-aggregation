@@ -1,6 +1,6 @@
 ---
 name: shadcn-ui shadcn/ui 组件
-description: 提供 shadcn/ui 组件集成与构建指导；适用于发现、安装、自定义和优化相关组件。
+description: 集成、定制并优化 shadcn/ui 组件。
 license: Apache 2.0
 ---
 

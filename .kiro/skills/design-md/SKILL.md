@@ -1,6 +1,6 @@
 ---
 name: design-md 设计文档
-description: 分析 Stitch 项目并生成 DESIGN.md；用语义化方式记录设计系统以提升后续生成效果。
+description: 为 Stitch 项目提炼并生成 DESIGN.md。
 license: Apache 2.0
 ---
 

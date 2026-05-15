@@ -1,6 +1,6 @@
 ---
 name: webapp-testing Web 应用测试
-description: 基于 Playwright 的本地 Web 应用测试工具包；适用于功能验证、界面调试、截图和浏览器日志查看。
+description: 用 Playwright 验证本地 Web 应用。
 license: Complete terms in LICENSE.txt
 ---
 

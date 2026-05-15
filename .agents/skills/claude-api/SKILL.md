@@ -1,6 +1,6 @@
 ---
 name: claude-api Claude API 开发
-description: 使用 Claude API 或 Anthropic SDK 构建应用；适用于 Anthropic 相关接口、SDK 与 Agent SDK 集成场景。
+description: 用 Claude API 与 SDK 构建智能应用。
 license: Complete terms in LICENSE.txt
 ---
 

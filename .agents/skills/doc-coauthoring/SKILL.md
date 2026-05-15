@@ -1,6 +1,6 @@
 ---
 name: doc-coauthoring 文档协作
-description: 通过结构化流程协作文档写作；适用于文档、提案、技术方案、决策记录等内容的起草与迭代完善。
+description: 协作起草、润色与迭代各类文档。
 ---
 
 # Doc Co-Authoring Workflow

@@ -1,6 +1,6 @@
 ---
 name: canvas-design 画布设计
-description: 创作高质量的 PNG 或 PDF 静态视觉作品；适用于海报、插画、设计稿等原创视觉设计任务。
+description: 生成海报、插画与设计稿等静态视觉作品。
 license: Complete terms in LICENSE.txt
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: xlsx 电子表格处理
-description: 全面处理电子表格文件；适用于创建、读取、编辑、清洗和转换 .xlsx、.xlsm、.csv 与 .tsv。
+description: 创建、清洗与分析电子表格。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: finishing-a-development-branch 完成开发分支
-description: 适用于实现完成且测试通过后，决定合并、提 PR 或清理分支等收尾操作。
+description: 完成功能收尾、提审与分支整理。
 ---
 
 # Finishing a Development Branch

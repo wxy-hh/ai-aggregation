@@ -1,6 +1,6 @@
 ---
 name: subagent-driven-development 子代理驱动开发
-description: 适用于在当前会话中执行包含独立子任务的实施计划。
+description: 用子代理拆分并推进实施任务。
 ---
 
 # Subagent-Driven Development

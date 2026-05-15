@@ -1,6 +1,6 @@
 ---
 name: internal-comms 内部沟通
-description: 提供公司内部沟通常用写作资源与格式；适用于周报、汇报、公告、FAQ、事故复盘和项目更新等内部文案。
+description: 撰写周报、公告、复盘等内部沟通内容。
 license: Complete terms in LICENSE.txt
 ---
 

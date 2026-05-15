@@ -1,6 +1,6 @@
 ---
 name: code-review 代码审查
-description: 进行全面且建设性的代码审查；适用于 PR 评审、质量检查、安全审计和性能分析。
+description: 进行代码审查，检查质量、风险与缺陷。
 allowed-tools: Read Grep Glob
 metadata:
   tags: code-review, code-quality, security, best-practices, PR-review

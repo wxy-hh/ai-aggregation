@@ -1,6 +1,6 @@
 ---
 name: enhance-prompt 提示词增强
-description: 将模糊的 UI 想法打磨为适配 Stitch 的高质量提示词；强化具体性、设计语境与输出结构。
+description: 把模糊想法打磨成高质量设计提示词。
 license: Apache 2.0
 ---
 

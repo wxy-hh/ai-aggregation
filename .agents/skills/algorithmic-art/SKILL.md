@@ -1,6 +1,6 @@
 ---
 name: algorithmic-art 算法艺术
-description: 使用 p5.js 创作算法艺术，支持种子随机与交互式参数探索；适用于生成艺术、流场和粒子系统创作。
+description: 用 p5.js 创作算法艺术与生成图形。
 license: Complete terms in LICENSE.txt
 ---
 

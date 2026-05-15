@@ -1,6 +1,6 @@
 ---
 name: remotion Remotion 视频
-description: 使用 Remotion 为 Stitch 项目生成演示视频；适用于带转场、缩放和字幕叠加的屏幕展示。
+description: 用 Remotion 生成演示视频与动效。
 license: Apache 2.0
 ---
 

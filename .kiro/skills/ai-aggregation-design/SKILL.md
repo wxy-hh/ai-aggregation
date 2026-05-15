@@ -1,6 +1,6 @@
 ---
 name: ai-aggregation-design
-description: "This skill should be used when the user explicitly says 'AI Aggregation style', 'AI Aggregation design', 'AI 聚合风格', '/ai-aggregation-design', or directly asks to reference/apply the AI Aggregation visual language. It is for borrowing the product's existing visual style and design cues, not for force-converting every page into the exact same AI workbench layout. NEVER trigger automatically for generic UI or design tasks."
+description: 复用 AI 聚合平台既有视觉风格与设计语言。
 version: 1.1.0
 allowed-tools: [Read, Write, Edit, Glob, Grep]
 ---

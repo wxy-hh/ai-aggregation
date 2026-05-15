@@ -1,6 +1,6 @@
 ---
 name: requesting-code-review 请求代码审查
-description: 适用于任务完成、重大功能落地后或合并前，请求代码评审以确认结果符合要求。
+description: 在关键改动后发起代码评审。
 ---
 
 # Requesting Code Review

@@ -1,6 +1,6 @@
 ---
 name: web-design-guidelines 网页设计规范
-description: Web 界面规范审查工具；适用于检查 UI 代码的设计质量、可访问性与最佳实践符合度。
+description: 审查 Web 界面的设计与可访问性。
 metadata:
   author: vercel
   version: "1.0.0"

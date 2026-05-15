@@ -1,6 +1,6 @@
 ---
 name: docx Word 文档处理
-description: 全面处理 .docx 文档；适用于创建、读取、编辑、批注、修订和格式化 Word 文件。
+description: 创建、编辑与批注 .docx 文档。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

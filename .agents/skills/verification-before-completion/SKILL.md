@@ -1,6 +1,6 @@
 ---
 name: verification-before-completion 完成前验证
-description: 适用于准备宣称工作完成、修复成功或测试通过前；先运行验证并确认结果，再下结论。
+description: 完成前先验证结果与关键链路。
 ---
 
 # Verification Before Completion

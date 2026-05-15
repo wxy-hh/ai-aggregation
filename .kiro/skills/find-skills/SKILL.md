@@ -1,6 +1,6 @@
 ---
 name: find-skills 技能发现
-description: 帮助用户发现并安装可用技能；适用于寻找某项能力、查询现成 skill 或扩展代理能力的场景。
+description: 查找、评估并安装合适的技能。
 ---
 
 # Find Skills

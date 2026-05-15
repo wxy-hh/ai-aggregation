@@ -1,6 +1,6 @@
 ---
 name: pptx 演示文稿处理
-description: 全面处理 .pptx 演示文稿；适用于创建、读取、编辑、拆合并和更新幻灯片文件。
+description: 创建、编辑与更新演示文稿。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

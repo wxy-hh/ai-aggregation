@@ -1,6 +1,6 @@
 ---
 name: writing-plans 编写计划
-description: 适用于面对多步骤任务且已有需求或规格时，先写实施计划再动代码。
+description: 把需求整理成可执行实施计划。
 ---
 
 # Writing Plans

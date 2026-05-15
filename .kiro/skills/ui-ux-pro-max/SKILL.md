@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max UI/UX 设计智库
-description: 全能型 UI/UX 设计技能；覆盖多种风格、配色、字体搭配与前端栈，适用于设计、实现、评审和优化各类界面。
+description: 统筹界面设计、评审与体验优化。
 ---
 
 # UI/UX Pro Max - Design Intelligence

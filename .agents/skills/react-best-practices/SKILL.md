@@ -1,6 +1,6 @@
 ---
 name: vercel-react-best-practices React 最佳实践
-description: 提供 React 与 Next.js 性能优化最佳实践；适用于编写、审查或重构相关代码时提升渲染与构建表现。
+description: 优化 React 与 Next.js 的性能和工程实践。
 license: MIT
 metadata:
   author: vercel

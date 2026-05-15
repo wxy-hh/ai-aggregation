@@ -1,6 +1,6 @@
 ---
 name: home-light-style
-description: 复用 AI 聚合平台 `/home` 页亮色桌面视觉风格、布局比例和已定稿组件规范。用于把其他页面做成与 `/home` 一致的浅色玻璃工作台风格，或在评审、重构、补样式时要求严格对齐 `docs/DESIGN.md` 与 `apps/web/src/styles/home-light-tokens.css` 的场景。
+description: 复用 `/home` 页的浅色玻璃工作台风格。
 ---
 
 # Home Light Style

@@ -1,6 +1,6 @@
 ---
 name: writing-skills 编写技能
-description: 适用于创建新技能、编辑现有技能，或在发布前验证技能是否可用。
+description: 编写、维护并测试技能包。
 ---
 
 # Writing Skills

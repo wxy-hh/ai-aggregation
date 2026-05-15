@@ -1,6 +1,6 @@
 ---
 name: stitch-design Stitch 设计
-description: Stitch 设计工作的统一入口；适用于提示词增强、设计系统合成与高保真屏幕生成编辑。
+description: 统一处理 Stitch 设计与生成工作。
 license: Apache 2.0
 ---
 

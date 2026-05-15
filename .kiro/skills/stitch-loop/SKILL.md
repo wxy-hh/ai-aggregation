@@ -1,6 +1,6 @@
 ---
 name: stitch-loop Stitch 循环
-description: 使用 Stitch 从单个提示词生成完整多页面网站；支持自动化文件组织与验证。
+description: 用 Stitch 批量生成多页面网站。
 license: Apache 2.0
 ---
 

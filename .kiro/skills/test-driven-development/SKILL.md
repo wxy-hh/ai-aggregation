@@ -1,6 +1,6 @@
 ---
 name: test-driven-development 测试驱动开发
-description: 适用于实现任何新功能或修复缺陷前，先按测试驱动开发流程推进。
+description: 先写测试，再实现功能与修复。
 ---
 
 # Test-Driven Development (TDD)

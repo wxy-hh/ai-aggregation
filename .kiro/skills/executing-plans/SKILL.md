@@ -1,6 +1,6 @@
 ---
 name: executing-plans 执行计划
-description: 适用于已有书面实施计划，并需在独立会话中按检查点执行的场景。
+description: 按既定实施计划逐项落地执行。
 ---
 
 # Executing Plans

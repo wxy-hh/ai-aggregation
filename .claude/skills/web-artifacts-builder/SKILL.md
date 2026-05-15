@@ -1,6 +1,6 @@
 ---
 name: web-artifacts-builder Web 作品构建器
-description: 使用 React、Tailwind CSS 与 shadcn/ui 构建复杂 HTML 产物；适用于需要状态管理、路由或多组件协作的页面。
+description: 用 React 与 Tailwind 构建复杂 Web 成品。
 license: Complete terms in LICENSE.txt
 ---
 

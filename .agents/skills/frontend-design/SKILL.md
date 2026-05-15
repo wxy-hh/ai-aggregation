@@ -1,6 +1,6 @@
 ---
 name: frontend-design 前端设计
-description: 设计并实现高质量、可用于生产的前端界面；适用于网页、组件、仪表盘、应用和各类 Web UI 美化任务。
+description: 设计并实现高质量前端界面。
 license: Complete terms in LICENSE.txt
 ---
 

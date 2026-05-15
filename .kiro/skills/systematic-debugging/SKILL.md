@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging 系统化调试
-description: 适用于遇到缺陷、测试失败或异常行为时，先系统排查再提出修复方案。
+description: 系统排查缺陷并收敛修复方案。
 ---
 
 # Systematic Debugging

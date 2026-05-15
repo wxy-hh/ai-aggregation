@@ -1,6 +1,6 @@
 ---
 name: using-git-worktrees 使用 Git 工作树
-description: 适用于需要与当前工作区隔离的功能开发，或执行实施计划前创建安全的 git worktree。
+description: 用 Git 工作树隔离开发环境。
 ---
 
 # Using Git Worktrees

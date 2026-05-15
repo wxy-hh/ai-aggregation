@@ -1,6 +1,6 @@
 ---
 name: react-components React 组件
-description: 将 Stitch 屏幕转换为 React 组件系统；强调自动化验证与设计令牌一致性。
+description: 把设计稿转换为可复用 React 组件。
 license: Apache 2.0
 ---
 

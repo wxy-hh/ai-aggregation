@@ -1,6 +1,6 @@
 ---
 name: theme-factory 主题工厂
-description: 主题样式工具包；适用于为幻灯片、文档、报告和网页作品应用或生成主题风格。
+description: 为网页、文档与演示应用统一主题风格。
 license: Complete terms in LICENSE.txt
 ---
 

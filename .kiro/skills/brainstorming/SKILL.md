@@ -1,6 +1,6 @@
 ---
 name: brainstorming 创意构思
-description: '在任何创意工作前使用；先梳理用户意图、需求与设计，再进入实现。'
+description: 先澄清需求并完成设计，再进入实现。
 ---
 
 # Brainstorming Ideas Into Designs

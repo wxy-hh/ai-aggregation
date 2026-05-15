@@ -1,6 +1,6 @@
 ---
 name: pdf PDF 文档处理
-description: 全面处理 PDF 文件；适用于读取、提取、合并、拆分、表单填写、OCR 与生成 PDF。
+description: 读取、编辑、拆并与生成 PDF 文件。
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: receiving-code-review 接收代码审查
-description: 适用于收到代码评审反馈后再动手修改前；强调先核实建议是否合理，再严谨落实。
+description: 核实评审意见后再严谨落实修改。
 ---
 
 # Code Review Reception

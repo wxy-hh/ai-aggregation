@@ -1,6 +1,6 @@
 ---
 name: dispatching-parallel-agents 并行调度代理
-description: 适用于处理两个及以上互不依赖、可并行推进的任务。
+description: 协调多个独立任务并行推进。
 ---
 
 # Dispatching Parallel Agents

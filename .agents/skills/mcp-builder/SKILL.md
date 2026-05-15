@@ -1,6 +1,6 @@
 ---
 name: mcp-builder MCP 服务器构建器
-description: 指导构建高质量 MCP 服务；适用于用 Python 或 Node/TypeScript 接入外部 API 与服务。
+description: 构建接入外部服务的 MCP 服务器。
 license: Complete terms in LICENSE.txt
 ---
 
