@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { authHeaders } from '@/lib/api/client';
-import type { DestinyCopilotResponse, DestinyReport } from '../types';
+import { consumeChatResponse } from '@/lib/utils/chat-stream';
+import type { DestinyReport } from '../types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ThinkingParticles } from './thinking-particles';
@@ -145,29 +146,46 @@ export function AICoPilotConversation({
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          reportSummary: buildCopilotContext(report),
-          messages: nextMessages
-            .filter((m) => m.status === 'complete')
-            .slice(1)
-            .map((m) => ({ role: m.role, content: m.content })),
+          report,
           question: q,
         }),
       });
 
-      const json = (await response.json()) as DestinyCopilotResponse | { error?: string };
-      if (!response.ok || !('answer' in json)) {
-        throw new Error(('error' in json && json.error) || '追问失败，请稍后重试');
+      if (!response.ok) {
+        const json = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(json?.error || '追问失败，请稍后重试');
       }
 
-      // 更新消息内容并开始打字机效果
-      setMessages((prev) =>
-        prev.map((m) => (m.id === thinkingMsg.id ? { ...m, content: json.answer } : m))
-      );
+      let streamedAnswer = '';
+      await consumeChatResponse(response, (chunk) => {
+        streamedAnswer += chunk;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === thinkingMsg.id
+              ? {
+                  ...m,
+                  content: streamedAnswer,
+                  displayedContent: streamedAnswer,
+                  status: 'typing',
+                }
+              : m
+          )
+        );
+        scrollToBottom();
+      });
 
-      // 延迟 800ms 后开始打字机效果
-      setTimeout(() => {
-        startTypingEffect(thinkingMsg.id, json.answer);
-      }, 800);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === thinkingMsg.id
+            ? {
+                ...m,
+                content: streamedAnswer || '本次追问没有返回内容，请稍后重试。',
+                displayedContent: streamedAnswer || '本次追问没有返回内容，请稍后重试。',
+                status: 'complete',
+              }
+            : m
+        )
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : '追问失败，请稍后重试';
       setError(message);
@@ -260,10 +278,12 @@ export function AICoPilotConversation({
               }
             }}
           />
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="min-w-0 text-xs leading-relaxed text-slate-500 break-words">
-              {error ?? `提示：追问时可引用年份或具体模块。${ctxSummary}`}
-            </div>
+          <div className="mt-3 flex items-center justify-end gap-3">
+            {error && (
+              <div className="min-w-0 flex-1 text-xs leading-relaxed text-red-500 break-words">
+                {error}
+              </div>
+            )}
             <Button
               type="button"
               onClick={() => void sendQuestion()}

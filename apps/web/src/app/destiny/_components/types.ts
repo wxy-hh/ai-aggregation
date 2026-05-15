@@ -92,7 +92,11 @@ export type BaziSectionKey =
   | 'profileOverview'
   | 'pillars'
   | 'elementsAndTenGods'
-  | 'modulesOverview'
+  | 'modulePersonality'
+  | 'moduleCareer'
+  | 'moduleLove'
+  | 'moduleWealth'
+  | 'moduleHealth'
   | 'timeline';
 
 export type ZiweiSectionKey =
@@ -110,7 +114,11 @@ export type BaziSectionPayloadMap = {
     elements: DestinyReport['elements'];
     tenGods: DestinyReport['tenGods'];
   };
-  modulesOverview: DestinyReport['modules'];
+  modulePersonality: DestinyReport['modules']['personality'];
+  moduleCareer: DestinyReport['modules']['career'];
+  moduleLove: DestinyReport['modules']['love'];
+  moduleWealth: DestinyReport['modules']['wealth'];
+  moduleHealth: DestinyReport['modules']['health'];
   timeline: DestinyReport['timeline'];
 };
 
@@ -161,8 +169,7 @@ export type DestinyCopilotMessage = {
 };
 
 export type DestinyCopilotRequest = {
-  reportSummary: string;
-  messages: DestinyCopilotMessage[];
+  report: DestinyReport;
   question: string;
 };
 

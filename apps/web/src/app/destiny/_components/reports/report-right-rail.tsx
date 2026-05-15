@@ -21,11 +21,13 @@ export function ReportRightRail({
   streaming = false,
   lockedSections,
   streamStatus,
+  streamError,
 }: {
   report: PartialDestinyReport;
   streaming?: boolean;
   lockedSections?: BaziLockedSections;
   streamStatus?: DestinyStreamStatus | null;
+  streamError?: string | null;
 }) {
   const [tab, setTab] = useState<TabKey>('career');
   const [year, setYear] = useState<number>(report.timeline?.[0]?.year ?? new Date().getFullYear());
@@ -49,17 +51,24 @@ export function ReportRightRail({
   }, [tab]);
 
   const timeline = report.timeline ?? [];
+  const statusLabel = useMemo(() => {
+    if (streamError) return `生成中断：${streamError}`;
+    if (!streaming) return '卡片化结构 · 可追问 · 可验证';
+    if (!lockedSections?.profileOverview || !lockedSections?.pillars || !lockedSections?.elementsAndTenGods) {
+      return `正在生成基础盘面${streamStatus ? ` · ${streamStatus}` : ''}`;
+    }
+    if (!lockedSections?.timeline) {
+      return `正在生成核心解读与年度趋势${streamStatus ? ` · ${streamStatus}` : ''}`;
+    }
+    return `正在收尾校验${streamStatus ? ` · ${streamStatus}` : ''}`;
+  }, [lockedSections, streamError, streamStatus, streaming]);
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="text-sm font-extrabold text-slate-900">深度报告</div>
-          <div className="text-xs text-slate-500 truncate">
-            {streaming && !lockedSections?.timeline
-              ? `正在生成首批报告区块${streamStatus ? ` · ${streamStatus}` : ''}`
-              : '卡片化结构 · 可追问 · 可验证'}
-          </div>
+          <div className="text-xs text-slate-500 truncate">{statusLabel}</div>
         </div>
       </div>
 
@@ -268,7 +277,11 @@ export function ReportRightRail({
       </div>
 
       {report.profile && report.pillars && report.elements && report.timeline ? (
-        <AICoPilotDrawer open={copilotOpen} onOpenChange={setCopilotOpen} report={report as never} />
+        <AICoPilotDrawer
+          open={copilotOpen}
+          onOpenChange={setCopilotOpen}
+          report={report as never}
+        />
       ) : null}
     </div>
   );

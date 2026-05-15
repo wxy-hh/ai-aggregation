@@ -22,6 +22,7 @@ export function DestinyShell({
   partialReport,
   streaming = false,
   streamStatus = null,
+  streamError = null,
   lockedSections,
   activeModule = 'bazi',
   title = 'AI 命理大师',
@@ -33,6 +34,7 @@ export function DestinyShell({
   partialReport?: PartialDestinyReport | null;
   streaming?: boolean;
   streamStatus?: DestinyStreamStatus | null;
+  streamError?: string | null;
   lockedSections?: BaziLockedSections;
   activeModule?: DestinyModuleKey;
   title?: string;
@@ -152,6 +154,7 @@ export function DestinyShell({
                 streaming={streaming}
                 lockedSections={lockedSections}
                 streamStatus={streamStatus}
+                streamError={streamError}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-slate-500 dark:text-slate-300">
@@ -180,6 +183,7 @@ export function DestinyShell({
                   streaming={streaming}
                   lockedSections={lockedSections}
                   streamStatus={streamStatus}
+                  streamError={streamError}
                 />
               ) : (
                 <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-300">

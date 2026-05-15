@@ -1,29 +1,83 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { extractArkOutputText } from '../_lib/ark-response';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { prisma, deductTokens, refundTokens } from '@repo/db';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
+export const maxDuration = 60;
+
+const ReportSchema = z.object({
+  profile: z.object({
+    name: z.string(),
+    genderLabel: z.string(),
+    birthText: z.string(),
+    locationText: z.string(),
+    lunarText: z.string().optional(),
+  }),
+  pillars: z.array(
+    z.object({
+      stem: z.string(),
+      branch: z.string(),
+      label: z.string(),
+      element: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
+      tooltip: z.string(),
+    })
+  ),
+  tenGods: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      value: z.number(),
+      tooltip: z.string(),
+    })
+  ),
+  elements: z.array(
+    z.object({
+      key: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
+      label: z.string(),
+      value: z.number(),
+    })
+  ),
+  modules: z.object({
+    career: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+    love: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+    wealth: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+    health: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+    personality: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+  }),
+  timeline: z.array(
+    z.object({
+      year: z.number(),
+      title: z.string(),
+      summary: z.string(),
+      detail: z.object({
+        opportunities: z.array(z.string()),
+        risks: z.array(z.string()),
+        actions: z.array(z.string()),
+      }),
+    })
+  ),
+  ziweiPalaces: z.any().optional(),
+  ziweiCenter: z.any().optional(),
+});
 
 const RequestSchema = z.object({
-  reportSummary: z.string().trim().min(1, '报告摘要不能为空'),
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(['user', 'assistant']),
-        content: z.string().trim().min(1),
-      })
-    )
-    .max(20)
-    .default([]),
+  report: ReportSchema,
   question: z.string().trim().min(1, '问题不能为空').max(1000),
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
-const COPILOT_TIMEOUT_MS = 25000;
+const COPILOT_TIMEOUT_MS = 55000;
+const SSE_HEADERS = {
+  'Content-Type': 'text/event-stream; charset=utf-8',
+  'Cache-Control': 'no-cache, no-transform',
+  Connection: 'keep-alive',
+};
+
+function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
 
 export async function POST(req: Request) {
   let deducted = false;
@@ -32,7 +86,6 @@ export async function POST(req: Request) {
   try {
     userId = await getOptionalUserId(req);
 
-    // 已认证的非 admin 用户预扣 1 token
     if (userId) {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -68,92 +121,288 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing ARK_API_KEY' }, { status: 500 });
     }
 
-    const history = parsed.data.messages.slice(-8).map((item) => ({
-      role: item.role,
-      content: item.content,
-    }));
+    const { response, timeoutId } = await requestArkStream({
+      arkApiKey,
+      arkBaseUrl,
+      report: parsed.data.report,
+      question: parsed.data.question,
+    });
 
-    const controller = new AbortController();
-    // 命理解读追问常会触发较长推理，8 秒会过早中断。
-    // 保持在 30 秒函数预算内，给模型更合理的响应窗口。
-    const timeoutId = setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
-
-    let response: Response;
-    try {
-      response = await fetch(`${arkBaseUrl}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${arkApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: ARK_MODEL,
-          input: [
-            {
-              role: 'system',
-              content:
-                '你是命理报告解读助手。基于提供的报告上下文回答用户问题，给出清晰可执行建议。避免绝对化结论，不输出医疗或投资承诺。',
-            },
-            {
-              role: 'user',
-              content: `当前报告摘要：${parsed.data.reportSummary}`,
-            },
-            ...history,
-            {
-              role: 'user',
-              content: parsed.data.question,
-            },
-          ],
-          temperature: 0.7,
-          max_output_tokens: 1800,
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      return NextResponse.json(
-        {
-          error: response.status === 429 ? '请求过于频繁，请稍后重试' : '追问失败，请稍后重试',
-          details: text.slice(0, 400),
-        },
-        { status: response.status }
-      );
-    }
-
-    const payload = await response.json();
-    const answer = extractArkOutputText(payload);
-
-    if (userId) {
-      await safeRecordAiUsage({
+    return new Response(
+      createCopilotStream({
+        response,
+        timeoutId,
         userId,
-        feature: 'destiny',
-        action: 'destiny-copilot',
-        provider: 'doubao',
-        model: ARK_MODEL,
-        endpoint: '/api/destiny/copilot',
-        usage: normalizeUsage(payload.usage ?? payload.response?.usage),
-        metadata: {
-          historyCount: history.length,
-          questionLength: parsed.data.question.length,
-        },
-      });
-    }
-
-    return NextResponse.json({ answer }, { status: 200 });
+        deducted,
+        questionLength: parsed.data.question.length,
+      }),
+      { headers: SSE_HEADERS }
+    );
   } catch (error) {
-    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
+    if (userId && deducted) {
+      await refundTokens(userId, 1);
+    }
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json({ error: '追问超时，请稍后重试' }, { status: 504 });
     }
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : '追问失败，请稍后重试',
-      },
+      { error: error instanceof Error ? error.message : '追问失败，请稍后重试' },
       { status: 500 }
     );
   }
+}
+
+async function requestArkStream({
+  arkApiKey,
+  arkBaseUrl,
+  report,
+  question,
+}: {
+  arkApiKey: string;
+  arkBaseUrl: string;
+  report: z.infer<typeof ReportSchema>;
+  question: string;
+}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
+  const context = buildCopilotPromptContext(report);
+  const scopedInsights = buildQuestionScopedInsights(report, question);
+
+  const response = await fetch(`${arkBaseUrl}/responses`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${arkApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: ARK_MODEL,
+      input: [
+        {
+          role: 'system',
+          content:
+            '你是命理报告解读助手。基于用户已经生成的八字分析结果回答追问，给出清晰、具体、可执行的建议。结合盘面、五行、十神和问题相关模块作答。答案控制在 300 字以内，直接回答，不展开长篇推演。避免绝对化判断，不做医疗或投资承诺。',
+        },
+        {
+          role: 'user',
+          content: `${context}\n${scopedInsights}\n\n用户追问：${question}`,
+        },
+      ],
+      stream: true,
+      temperature: 0.3,
+      max_output_tokens: 500,
+      reasoning: { effort: 'low' },
+    }),
+    signal: controller.signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    clearTimeout(timeoutId);
+    throw new Error(text || '追问失败，请稍后重试');
+  }
+
+  if (!response.body) {
+    clearTimeout(timeoutId);
+    throw new Error('追问响应体为空');
+  }
+
+  return { response, timeoutId };
+}
+
+function createCopilotStream({
+  response,
+  timeoutId,
+  userId,
+  deducted,
+  questionLength,
+}: {
+  response: Response;
+  timeoutId: ReturnType<typeof setTimeout>;
+  userId: string | null;
+  deducted: boolean;
+  questionLength: number;
+}) {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let usagePayload: unknown = null;
+  let didComplete = false;
+
+  const processArkChunk = (chunk: string, streamController: ReadableStreamDefaultController<Uint8Array>) => {
+    const lines = chunk
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const dataLine = lines.find((line) => line.startsWith('data: '));
+    if (!dataLine) return;
+
+    const raw = dataLine.slice(6);
+    if (!raw || raw === '[DONE]') {
+      didComplete = true;
+      streamController.enqueue(encodeSseEvent({ type: 'done' }));
+      return;
+    }
+
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    if (data.type === 'response.output_text.delta' && typeof data.delta === 'string') {
+      streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: data.delta }));
+      return;
+    }
+
+    if (
+      data.type === 'response.done' ||
+      data.type === 'response.completed' ||
+      data.type === 'response.incomplete'
+    ) {
+      const responseObject =
+        data.response && typeof data.response === 'object'
+          ? (data.response as Record<string, unknown>)
+          : null;
+      usagePayload = responseObject?.usage ?? data.usage ?? usagePayload;
+      didComplete = true;
+      streamController.enqueue(encodeSseEvent({ type: 'done' }));
+      return;
+    }
+
+    if (data.type === 'response.failed' || data.type === 'error') {
+      const errorMessage =
+        typeof data.error === 'string'
+          ? data.error
+          : data.error && typeof data.error === 'object'
+            ? ((data.error as Record<string, unknown>).message as string | undefined)
+            : null;
+      throw new Error(errorMessage || '追问失败，请稍后重试');
+    }
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async start(streamController) {
+      let buffer = '';
+
+      try {
+        while (!didComplete) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split('\n\n');
+          buffer = chunks.pop() || '';
+
+          for (const chunk of chunks) {
+            processArkChunk(chunk, streamController);
+            if (didComplete) break;
+          }
+        }
+
+        const rest = buffer + decoder.decode();
+        if (!didComplete && rest.trim()) {
+          processArkChunk(rest, streamController);
+        }
+
+        if (!didComplete) {
+          streamController.enqueue(encodeSseEvent({ type: 'done' }));
+        }
+
+        if (userId) {
+          await safeRecordAiUsage({
+            userId,
+            feature: 'destiny',
+            action: 'destiny-copilot',
+            provider: 'doubao',
+            model: ARK_MODEL,
+            endpoint: '/api/destiny/copilot',
+            usage: normalizeUsage(usagePayload),
+            metadata: {
+              questionLength,
+              stream: true,
+            },
+          });
+        }
+      } catch (error) {
+        if (userId && deducted) {
+          await refundTokens(userId, 1);
+        }
+        streamController.enqueue(
+          encodeSseEvent({
+            type: 'error',
+            error:
+              error instanceof Error && error.name === 'AbortError'
+                ? '追问超时，请稍后重试'
+                : error instanceof Error
+                  ? error.message
+                  : '追问失败，请稍后重试',
+          })
+        );
+      } finally {
+        clearTimeout(timeoutId);
+        reader.releaseLock();
+        streamController.close();
+      }
+    },
+  });
+}
+
+function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
+  const pillars = report.pillars
+    .map((pillar) => `${pillar.label}:${pillar.stem}${pillar.branch}(${pillar.tooltip})`)
+    .join('；');
+  const elements = report.elements.map((item) => `${item.label}${item.value}`).join('，');
+  const tenGods = report.tenGods.map((item) => `${item.label}${item.value}`).join('，');
+
+  return [
+    `用户信息：${report.profile.name}，${report.profile.genderLabel}，${report.profile.birthText}，出生地${report.profile.locationText}${
+      report.profile.lunarText ? `，农历${report.profile.lunarText}` : ''
+    }`,
+    `四柱：${pillars}`,
+    `五行：${elements}`,
+    `十神：${tenGods}`,
+  ].join('\n');
+}
+
+function buildQuestionScopedInsights(report: z.infer<typeof ReportSchema>, question: string) {
+  const q = question.toLowerCase();
+  const pickedModules: Array<{ label: string; summary: string; bullets: string[] }> = [];
+  const pushModule = (label: string, summary: string, bullets: string[]) => {
+    if (!pickedModules.some((item) => item.label === label)) {
+      pickedModules.push({ label, summary, bullets });
+    }
+  };
+
+  if (/事业|工作|职业|升职|跳槽|offer|career|job/.test(q)) {
+    pushModule('事业', report.modules.career.summary, report.modules.career.bullets);
+  }
+  if (/感情|爱情|婚|伴侣|恋爱|桃花|关系|love|relationship/.test(q)) {
+    pushModule('感情', report.modules.love.summary, report.modules.love.bullets);
+  }
+  if (/财|收入|钱|投资|副业|财富|wealth|money/.test(q)) {
+    pushModule('财运', report.modules.wealth.summary, report.modules.wealth.bullets);
+  }
+  if (/健康|睡眠|情绪|身体|medical|health/.test(q)) {
+    pushModule('健康', report.modules.health.summary, report.modules.health.bullets);
+  }
+  if (/性格|人际|沟通|自己|状态|personality/.test(q)) {
+    pushModule('性格', report.modules.personality.summary, report.modules.personality.bullets);
+  }
+
+  if (pickedModules.length === 0) {
+    pushModule('事业', report.modules.career.summary, report.modules.career.bullets);
+    pushModule('感情', report.modules.love.summary, report.modules.love.bullets);
+  }
+
+  const currentYear = new Date().getFullYear();
+  const timeline = [...report.timeline]
+    .sort((a, b) => Math.abs(a.year - currentYear) - Math.abs(b.year - currentYear))
+    .slice(0, 2)
+    .map((item) => `${item.year}年 ${item.title}：${item.summary}`)
+    .join('\n');
+
+  const modules = pickedModules
+    .slice(0, 2)
+    .map(
+      ({ label, summary, bullets }) =>
+        `${label}：${summary}；建议：${bullets.slice(0, 2).join('；')}`
+    )
+    .join('\n');
+
+  return [`相关模块：\n${modules}`, `相关流年：\n${timeline}`].join('\n');
 }

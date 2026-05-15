@@ -139,7 +139,13 @@ export function BaziWorkspace({
       partial.elements = sections.elementsAndTenGods.elements;
       partial.tenGods = sections.elementsAndTenGods.tenGods;
     }
-    if (sections.modulesOverview) partial.modules = sections.modulesOverview;
+    const partialModules: Partial<DestinyReport['modules']> = {};
+    if (sections.modulePersonality) partialModules.personality = sections.modulePersonality;
+    if (sections.moduleCareer) partialModules.career = sections.moduleCareer;
+    if (sections.moduleLove) partialModules.love = sections.moduleLove;
+    if (sections.moduleWealth) partialModules.wealth = sections.moduleWealth;
+    if (sections.moduleHealth) partialModules.health = sections.moduleHealth;
+    if (Object.keys(partialModules).length > 0) partial.modules = partialModules;
     if (sections.timeline) partial.timeline = sections.timeline;
     return partial;
   };
@@ -153,9 +159,18 @@ export function BaziWorkspace({
     pillars: sections.pillars ?? nextReport.pillars,
     elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
     tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
-    modules: sections.modulesOverview ?? nextReport.modules,
+    modules: {
+      personality: sections.modulePersonality ?? nextReport.modules.personality,
+      career: sections.moduleCareer ?? nextReport.modules.career,
+      love: sections.moduleLove ?? nextReport.modules.love,
+      wealth: sections.moduleWealth ?? nextReport.modules.wealth,
+      health: sections.moduleHealth ?? nextReport.modules.health,
+    },
     timeline: sections.timeline ?? nextReport.timeline,
   });
+
+  const hasAnyDisplayableSection = (sections: BaziLockedSections) =>
+    Object.keys(sections).length > 0;
 
   const parseStreamBlock = (
     block: string,
@@ -271,9 +286,16 @@ export function BaziWorkspace({
             lockedSections: current.lockedSections[event.sectionKey]
               ? current.lockedSections
               : { ...current.lockedSections, [event.sectionKey]: event.payload },
-            blockingLoading: false,
+            blockingLoading: hasAnyDisplayableSection({
+              ...receivedSections,
+              ...current.lockedSections,
+            })
+              ? false
+              : current.blockingLoading,
           }));
-          markResultReady('bazi');
+          if (hasAnyDisplayableSection(receivedSections)) {
+            markResultReady('bazi');
+          }
           return;
         }
 
@@ -366,6 +388,7 @@ export function BaziWorkspace({
             partialReport={partialReport}
             streaming={streaming}
             streamStatus={streamStatus}
+            streamError={error}
             lockedSections={lockedSections}
             activeModule={activeModule}
             title="AI 命理大师"
