@@ -91,6 +91,105 @@ type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+
+// JSON Schema 常量，用于 Doubao json_schema 结构化输出
+type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+
+const QIMEN_QUICK_SECTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+    chartSummary: { type: 'string' },
+  },
+  additionalProperties: false,
+} as const;
+
+const QIMEN_FULL_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartTitle: { type: 'string' },
+    chartMeta: {
+      type: 'object',
+      properties: {
+        dun: { type: 'string' },
+        ju: { type: 'string' },
+        jiaziXunkong: { type: 'string' },
+        horsePosition: { type: 'string' },
+        valueSymbol: { type: 'string' },
+        valueDoor: { type: 'string' },
+      },
+      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor'],
+      additionalProperties: false,
+    },
+    board: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          palace: { type: 'string' },
+          luoshu: { type: 'integer', minimum: 1, maximum: 9 },
+          direction: { type: 'string' },
+          god: { type: 'string' },
+          star: { type: 'string' },
+          door: { type: 'string' },
+          heavenStem: { type: 'string' },
+          earthStem: { type: 'string' },
+          isValueSymbol: { type: 'boolean' },
+          isValueDoor: { type: 'boolean' },
+          isVoid: { type: 'boolean' },
+          isHorse: { type: 'boolean' },
+        },
+        required: ['palace', 'luoshu', 'direction', 'god', 'star', 'door', 'heavenStem', 'earthStem'],
+        additionalProperties: false,
+      },
+    },
+    chartSummary: { type: 'string' },
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+    score: { type: 'integer', minimum: 40, maximum: 95 },
+    disclaimer: { type: 'string' },
+  },
+  required: [
+    'chartTitle',
+    'chartMeta',
+    'board',
+    'chartSummary',
+    'overallAssessment',
+    'riskAlerts',
+    'actionSuggestions',
+    'timingWindows',
+    'score',
+    'disclaimer',
+  ],
+  additionalProperties: false,
+} as const;
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const FULL_STAGE_TIMEOUT_MS = 300000;
 // Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
@@ -466,6 +565,7 @@ async function generateQuickSections({
       userId,
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'quick-primary' },
+      jsonSchema: { name: 'qimen_quick_sections', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
     const primaryText = extractArkOutputText(primaryPayload);
@@ -487,6 +587,7 @@ async function generateQuickSections({
       userId,
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'quick-retry' },
+      jsonSchema: { name: 'qimen_quick_sections_retry', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
     const retryText = extractArkOutputText(retryPayload);
@@ -527,6 +628,7 @@ async function generateFullResult({
     userId,
     action: 'destiny-qimen-analyze',
     metadata: { stage: 'primary' },
+    jsonSchema: { name: 'qimen_full_result', schema: QIMEN_FULL_RESULT_SCHEMA },
   });
 
   if (isLengthIncomplete(payload)) {
@@ -543,6 +645,7 @@ async function generateFullResult({
       userId,
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'retry' },
+      jsonSchema: { name: 'qimen_full_result_compact', schema: QIMEN_FULL_RESULT_SCHEMA },
     });
 
     if (isLengthIncomplete(payload)) {
@@ -575,6 +678,7 @@ async function requestArkPayload({
   userId,
   action,
   metadata,
+  jsonSchema,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
@@ -585,6 +689,7 @@ async function requestArkPayload({
   userId: string | null;
   action: 'destiny-qimen-analyze';
   metadata?: Record<string, unknown>;
+  jsonSchema?: JsonSchemaConfig;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -602,7 +707,9 @@ async function requestArkPayload({
         temperature,
         max_output_tokens: maxOutputTokens,
         reasoning: { effort: 'low' },
-        text: { format: { type: 'json_object' } },
+        text: jsonSchema
+          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
+          : { format: { type: 'json_object' } },
       }),
       signal: controller.signal,
     });

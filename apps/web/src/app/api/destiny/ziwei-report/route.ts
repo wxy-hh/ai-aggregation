@@ -89,6 +89,236 @@ const QuickZiweiSectionSchema = z.object({
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+
+// JSON Schema 常量，用于 Doubao json_schema 结构化输出
+type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+
+const ZIWEI_QUICK_SECTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    profileOverview: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        genderLabel: { type: 'string' },
+        birthText: { type: 'string' },
+        lunarText: { type: 'string' },
+        locationText: { type: 'string' },
+      },
+      required: ['name', 'genderLabel', 'birthText', 'lunarText', 'locationText'],
+      additionalProperties: false,
+    },
+    overviewModules: {
+      type: 'object',
+      properties: {
+        personality: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        career: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        wealth: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+      },
+      required: ['personality', 'career', 'wealth'],
+      additionalProperties: false,
+    },
+    timeline: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          year: { type: 'integer' },
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          detail: {
+            type: 'object',
+            properties: {
+              opportunities: { type: 'array', items: { type: 'string' } },
+              risks: { type: 'array', items: { type: 'string' } },
+              actions: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['opportunities', 'risks', 'actions'],
+            additionalProperties: false,
+          },
+        },
+        required: ['year', 'title', 'summary', 'detail'],
+        additionalProperties: false,
+      },
+    },
+    relations: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string' },
+        opportunities: { type: 'array', items: { type: 'string' } },
+        risks: { type: 'array', items: { type: 'string' } },
+        actions: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['summary', 'opportunities', 'risks', 'actions'],
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const ZIWEI_FULL_REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    profile: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        genderLabel: { type: 'string' },
+        birthText: { type: 'string' },
+        lunarText: { type: 'string' },
+        locationText: { type: 'string' },
+      },
+      required: ['name', 'genderLabel', 'birthText', 'lunarText', 'locationText'],
+      additionalProperties: false,
+    },
+    pillars: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          stem: { type: 'string' },
+          branch: { type: 'string' },
+          label: { type: 'string' },
+          element: { type: 'string' },
+          tooltip: { type: 'string' },
+        },
+        required: ['stem', 'branch', 'label', 'element', 'tooltip'],
+        additionalProperties: false,
+      },
+    },
+    elements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          label: { type: 'string' },
+          value: { type: 'integer' },
+        },
+        required: ['key', 'label', 'value'],
+        additionalProperties: false,
+      },
+    },
+    tenGods: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          label: { type: 'string' },
+          value: { type: 'integer' },
+          tooltip: { type: 'string' },
+        },
+        required: ['key', 'label', 'value', 'tooltip'],
+        additionalProperties: false,
+      },
+    },
+    modules: {
+      type: 'object',
+      properties: {
+        personality: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        career: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        love: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        wealth: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+        health: {
+          type: 'object',
+          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          required: ['title', 'summary', 'bullets'],
+          additionalProperties: false,
+        },
+      },
+      required: ['personality', 'career', 'love', 'wealth', 'health'],
+      additionalProperties: false,
+    },
+    timeline: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          year: { type: 'integer' },
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          detail: {
+            type: 'object',
+            properties: {
+              opportunities: { type: 'array', items: { type: 'string' } },
+              risks: { type: 'array', items: { type: 'string' } },
+              actions: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['opportunities', 'risks', 'actions'],
+            additionalProperties: false,
+          },
+        },
+        required: ['year', 'title', 'summary', 'detail'],
+        additionalProperties: false,
+      },
+    },
+    ziweiCenter: {
+      type: 'object',
+      properties: {
+        chartTitle: { type: 'string' },
+        mingZhu: { type: 'string' },
+        shenZhu: { type: 'string' },
+      },
+      required: ['chartTitle', 'mingZhu', 'shenZhu'],
+      additionalProperties: false,
+    },
+    ziweiPalaces: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          label: { type: 'string' },
+          branch: { type: 'string' },
+          stars: { type: 'array', items: { type: 'string' } },
+          dominant: { type: 'string' },
+          summary: { type: 'string' },
+          suggestions: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['key', 'label', 'branch', 'stars', 'summary', 'suggestions'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['profile', 'pillars', 'elements', 'tenGods', 'modules', 'timeline', 'ziweiCenter', 'ziweiPalaces'],
+  additionalProperties: false,
+} as const;
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const REPORT_TIMEOUT_MS = 300000;
 const QUICK_MAX_OUTPUT_TOKENS = 1800;
@@ -271,6 +501,7 @@ async function generateQuickZiweiSections({
       userId,
       action: 'destiny-ziwei-report',
       metadata: { stage: 'quick', currentYear },
+      jsonSchema: { name: 'ziwei_quick_sections', schema: ZIWEI_QUICK_SECTIONS_SCHEMA },
     });
 
     const text = extractArkOutputText(payload);
@@ -312,6 +543,7 @@ async function generateFullZiweiReport({
     userId,
     action: 'destiny-ziwei-report',
     metadata: { stage: 'primary', currentYear },
+    jsonSchema: { name: 'ziwei_full_report', schema: ZIWEI_FULL_REPORT_SCHEMA },
   });
 
   if (isLengthIncomplete(payload)) {
@@ -328,6 +560,7 @@ async function generateFullZiweiReport({
       userId,
       action: 'destiny-ziwei-report',
       metadata: { stage: 'retry', currentYear },
+      jsonSchema: { name: 'ziwei_full_report_compact', schema: ZIWEI_FULL_REPORT_SCHEMA },
     });
 
     if (isLengthIncomplete(payload)) {
@@ -355,6 +588,7 @@ async function requestArkPayload({
   userId,
   action,
   metadata,
+  jsonSchema,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
@@ -365,6 +599,7 @@ async function requestArkPayload({
   userId: string | null;
   action: 'destiny-ziwei-report';
   metadata?: Record<string, unknown>;
+  jsonSchema?: JsonSchemaConfig;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -382,7 +617,9 @@ async function requestArkPayload({
         temperature,
         max_output_tokens: maxOutputTokens,
         reasoning: { effort: 'low' },
-        text: { format: { type: 'json_object' } },
+        text: jsonSchema
+          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
+          : { format: { type: 'json_object' } },
       }),
       signal: controller.signal,
     });

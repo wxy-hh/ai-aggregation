@@ -182,6 +182,95 @@ const outputLengthLabelMap = {
   detailed: '详版',
 } as const;
 
+// JSON Schema 常量，用于 Doubao json_schema 结构化输出
+const QIMEN_BASE_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartTitle: { type: 'string' },
+    chartMeta: {
+      type: 'object',
+      properties: {
+        dun: { type: 'string' },
+        ju: { type: 'string' },
+        jiaziXunkong: { type: 'string' },
+        horsePosition: { type: 'string' },
+        valueSymbol: { type: 'string' },
+        valueDoor: { type: 'string' },
+      },
+      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor'],
+      additionalProperties: false,
+    },
+    board: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          palace: { type: 'string' },
+          luoshu: { type: 'integer', minimum: 1, maximum: 9 },
+          direction: { type: 'string' },
+          god: { type: 'string' },
+          star: { type: 'string' },
+          door: { type: 'string' },
+          heavenStem: { type: 'string' },
+          earthStem: { type: 'string' },
+          isValueSymbol: { type: 'boolean' },
+          isValueDoor: { type: 'boolean' },
+          isVoid: { type: 'boolean' },
+          isHorse: { type: 'boolean' },
+        },
+        required: ['palace', 'luoshu', 'direction', 'god', 'star', 'door', 'heavenStem', 'earthStem'],
+        additionalProperties: false,
+      },
+    },
+    score: { type: 'integer', minimum: 40, maximum: 95 },
+    disclaimer: { type: 'string' },
+  },
+  required: ['chartTitle', 'chartMeta', 'board', 'score', 'disclaimer'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_STRATEGY_OVERVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['overallAssessment', 'riskAlerts', 'actionSuggestions'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_TIMING_WINDOWS_SCHEMA = {
+  type: 'object',
+  properties: {
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['timingWindows'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_CHART_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartSummary: { type: 'string' },
+  },
+  required: ['chartSummary'],
+  additionalProperties: false,
+} as const;
+
+type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 // 异步 worker 链路与页面直连链路需要保持一致的模型时间预算。
 // 当前奇门能力使用强推理模型，40-45s 在生产环境中会被频繁打断。
@@ -359,6 +448,7 @@ export async function generateQimenBaseResult(
     temperature: 0.2,
     timeoutMs: BASE_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_base_result', schema: QIMEN_BASE_RESULT_SCHEMA },
   });
 
   return normalizeBaseResult(parseModelJson(extractArkOutputText(payload)));
@@ -395,6 +485,7 @@ async function generateStrategyOverview(
     temperature: 0.2,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_strategy_overview', schema: QIMEN_STRATEGY_OVERVIEW_SCHEMA },
   });
 
   return normalizeStrategyOverview(parseModelJson(extractArkOutputText(payload)), input);
@@ -415,6 +506,7 @@ async function generateTimingWindows(
     temperature: 0.15,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_timing_windows', schema: QIMEN_TIMING_WINDOWS_SCHEMA },
   });
 
   return normalizeTimingWindows(parseModelJson(extractArkOutputText(payload)), input);
@@ -435,6 +527,7 @@ async function generateChartSummary(
     temperature: 0.15,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_chart_summary', schema: QIMEN_CHART_SUMMARY_SCHEMA },
   });
 
   return normalizeChartSummary(parseModelJson(extractArkOutputText(payload)));
@@ -447,6 +540,7 @@ async function requestArkPayload({
   temperature,
   timeoutMs,
   trace,
+  jsonSchema,
 }: {
   config: ArkConfig;
   input: Array<{ role: 'system' | 'user'; content: string }>;
@@ -454,6 +548,7 @@ async function requestArkPayload({
   temperature: number;
   timeoutMs: number;
   trace?: QimenTraceContext;
+  jsonSchema?: JsonSchemaConfig;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -481,7 +576,9 @@ async function requestArkPayload({
         temperature,
         max_output_tokens: maxOutputTokens,
         reasoning: { effort: 'low' },
-        text: { format: { type: 'json_object' } },
+        text: jsonSchema
+          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
+          : { format: { type: 'json_object' } },
       }),
       signal: controller.signal,
     });
