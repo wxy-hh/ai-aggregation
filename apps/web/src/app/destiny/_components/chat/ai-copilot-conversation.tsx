@@ -29,7 +29,24 @@ const WELCOME_MESSAGE =
 export function buildCopilotContext(report: DestinyReport) {
   const pillars = report.pillars.map((p) => `${p.label}:${p.stem}${p.branch}`).join('，');
   const elements = report.elements.map((e) => `${e.label}${e.value}`).join('，');
-  return `盘面摘要：${report.profile.genderLabel}；四柱=${pillars}；五行能量=${elements}。`;
+  const lifeDimensions = report.lifeDimensions?.length
+    ? report.lifeDimensions.map((item) => `${item.label}${item.value}`).join('，')
+    : '';
+  const tenGodDomains = report.tenGodDomains?.length
+    ? report.tenGodDomains.map((item) => `${item.label}${item.value}`).join('，')
+    : '';
+  const highlights = report.lifeDimensionHighlights
+    ? `；优势点=${report.lifeDimensionHighlights.strength}；规避点=${report.lifeDimensionHighlights.caution}`
+    : '';
+
+  return [
+    `盘面摘要：${report.profile.genderLabel}；四柱=${pillars}`,
+    lifeDimensions ? `人生五维=${lifeDimensions}` : '',
+    tenGodDomains ? `十神五域=${tenGodDomains}` : '',
+    `五行能量=${elements}${highlights}。`,
+  ]
+    .filter(Boolean)
+    .join('；');
 }
 
 function initialMessages(): Msg[] {

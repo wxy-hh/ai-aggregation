@@ -1,4 +1,6 @@
 export type FiveElementKey = 'metal' | 'wood' | 'water' | 'fire' | 'earth';
+export type LifeDimensionKey = 'career' | 'wealth' | 'health' | 'love' | 'wisdom';
+export type TenGodDomainKey = 'self' | 'expression' | 'wealth' | 'order' | 'resource';
 
 export type DestinyProfile = {
   name: string;
@@ -6,6 +8,43 @@ export type DestinyProfile = {
   birthText: string;
   locationText: string;
   lunarText?: string;
+};
+
+export type DestinyCoreTone = {
+  tag: string;
+  chartSummary: string;
+  headline: string;
+  description: string;
+};
+
+export type DestinyBalanceInsight = {
+  title: string;
+  value: string;
+  tooltip: string;
+};
+
+export type DestinyPatternInsight = {
+  label: string;
+  tooltip: string;
+};
+
+export type DestinyLifeDimension = {
+  key: LifeDimensionKey;
+  label: string;
+  value: number;
+};
+
+export type DestinyLifeDimensionHighlights = {
+  strength: string;
+  caution: string;
+};
+
+export type DestinyTenGodDomain = {
+  key: TenGodDomainKey;
+  label: string;
+  technicalLabel: string;
+  value: number;
+  description: string;
 };
 
 export type ZiweiCenterInfo = {
@@ -47,9 +86,15 @@ export type ZiweiPalace = {
 
 export type DestinyReport = {
   profile: DestinyProfile;
+  coreTone: DestinyCoreTone;
   pillars: BaZiPillar[];
   tenGods: { key: string; label: string; value: number; tooltip: string }[];
   elements: { key: FiveElementKey; label: string; value: number }[];
+  balanceInsight: DestinyBalanceInsight;
+  patternHighlights: DestinyPatternInsight[];
+  lifeDimensions?: DestinyLifeDimension[];
+  lifeDimensionHighlights?: DestinyLifeDimensionHighlights;
+  tenGodDomains?: DestinyTenGodDomain[];
   modules: {
     career: DestinyModule;
     love: DestinyModule;
@@ -64,9 +109,15 @@ export type DestinyReport = {
 
 export type PartialDestinyReport = {
   profile?: DestinyReport['profile'];
+  coreTone?: DestinyReport['coreTone'];
   pillars?: DestinyReport['pillars'];
   tenGods?: DestinyReport['tenGods'];
   elements?: DestinyReport['elements'];
+  balanceInsight?: DestinyReport['balanceInsight'];
+  patternHighlights?: DestinyReport['patternHighlights'];
+  lifeDimensions?: DestinyReport['lifeDimensions'];
+  lifeDimensionHighlights?: DestinyReport['lifeDimensionHighlights'];
+  tenGodDomains?: DestinyReport['tenGodDomains'];
   modules?: Partial<DestinyReport['modules']>;
   timeline?: DestinyReport['timeline'];
   ziweiPalaces?: DestinyReport['ziweiPalaces'];
@@ -90,6 +141,7 @@ export type DestinyStreamStatus = 'queued' | 'charting' | 'analyzing' | 'finaliz
 
 export type BaziSectionKey =
   | 'profileOverview'
+  | 'coreDestinyTone'
   | 'pillars'
   | 'elementsAndTenGods'
   | 'modulePersonality'
@@ -109,10 +161,16 @@ export type ZiweiSectionKey =
 
 export type BaziSectionPayloadMap = {
   profileOverview: DestinyReport['profile'];
+  coreDestinyTone: DestinyReport['coreTone'];
   pillars: DestinyReport['pillars'];
   elementsAndTenGods: {
     elements: DestinyReport['elements'];
     tenGods: DestinyReport['tenGods'];
+    balanceInsight: DestinyReport['balanceInsight'];
+    patternHighlights: DestinyReport['patternHighlights'];
+    lifeDimensions?: DestinyReport['lifeDimensions'];
+    lifeDimensionHighlights?: DestinyReport['lifeDimensionHighlights'];
+    tenGodDomains?: DestinyReport['tenGodDomains'];
   };
   modulePersonality: DestinyReport['modules']['personality'];
   moduleCareer: DestinyReport['modules']['career'];

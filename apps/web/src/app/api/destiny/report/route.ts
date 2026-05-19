@@ -9,7 +9,11 @@ import type {
   DestinyReportRequest,
   DestinyStreamStatus,
 } from '@/app/destiny/_components/types';
-import { extractJsonBlock } from '../_lib/ark-response';
+import {
+  PRIMARY_SECTION_KEYS,
+  buildMissingRecoverableSections,
+  parseBaziSectionPayload,
+} from '../_lib/bazi-section-payload';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
@@ -38,84 +42,7 @@ const RequestSchema = z.object({
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const REPORT_TIMEOUT_MS = 300000;
-const REPORT_MAX_OUTPUT_TOKENS = 5200;
-
-const BAZI_SECTION_ORDER: BaziSectionKey[] = [
-  'profileOverview',
-  'pillars',
-  'elementsAndTenGods',
-  'modulePersonality',
-  'moduleCareer',
-  'moduleLove',
-  'moduleWealth',
-  'moduleHealth',
-  'timeline',
-];
-
-const PRIMARY_SECTION_KEYS: BaziSectionKey[] = [
-  'profileOverview',
-  'pillars',
-  'elementsAndTenGods',
-];
-
-const ProfileSectionSchema = z.object({
-  name: z.string().trim().min(1),
-  genderLabel: z.string().trim().min(1),
-  birthText: z.string().trim().min(1),
-  locationText: z.string().trim().min(1),
-  lunarText: z.string().trim().min(1).optional(),
-});
-
-const PillarSchema = z.object({
-  stem: z.string().trim().min(1),
-  branch: z.string().trim().min(1),
-  label: z.string().trim().min(1),
-  element: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
-  tooltip: z.string().trim().min(1),
-});
-
-const ElementsAndTenGodsSectionSchema = z.object({
-  elements: z
-    .array(
-      z.object({
-        key: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
-        label: z.string().trim().min(1).optional(),
-        value: z.number(),
-      })
-    )
-    .min(1),
-  tenGods: z
-    .array(
-      z.object({
-        key: z.string().trim().min(1),
-        label: z.string().trim().min(1),
-        value: z.number(),
-        tooltip: z.string().trim().min(1).optional(),
-      })
-    )
-    .min(1),
-});
-
-const ModuleSectionSchema = z.object({
-  title: z.string().trim().min(1),
-  summary: z.string().trim().min(1),
-  bullets: z.array(z.string().trim().min(1)).min(1),
-});
-
-const TimelineSectionSchema = z
-  .array(
-    z.object({
-      year: z.number(),
-      title: z.string().trim().min(1),
-      summary: z.string().trim().min(1),
-      detail: z.object({
-        opportunities: z.array(z.string().trim().min(1)).min(1),
-        risks: z.array(z.string().trim().min(1)).min(1),
-        actions: z.array(z.string().trim().min(1)).min(1),
-      }),
-    })
-  )
-  .min(1);
+const REPORT_MAX_OUTPUT_TOKENS = 6200;
 
 class UpstreamModelError extends Error {
   status: number;
@@ -287,7 +214,11 @@ async function streamBaziReport({
 
     if (!response.ok) {
       const text = await response.text();
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
+      throw new UpstreamModelError(
+        mapArkError(response.status),
+        response.status,
+        text.slice(0, 400)
+      );
     }
 
     if (!response.body) {
@@ -373,12 +304,35 @@ async function streamBaziReport({
       throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
     }
 
-    const missingSections = BAZI_SECTION_ORDER.filter((sectionKey) => !lockedSections[sectionKey]);
-    if (missingSections.length > 0) {
+    const missingPrimarySections = PRIMARY_SECTION_KEYS.filter(
+      (sectionKey) => !lockedSections[sectionKey]
+    );
+    if (missingPrimarySections.length > 0) {
       throw new UpstreamModelError(
-        `模型分区输出不完整：缺少 ${missingSections.join('、')}，请稍后重试`,
+        `模型分区输出不完整：缺少 ${missingPrimarySections.join('、')}，请稍后重试`,
         502
       );
+    }
+
+    for (const fallbackSection of buildMissingRecoverableSections(
+      lockedSections,
+      input,
+      currentYear
+    )) {
+      emittedSections.add(fallbackSection.sectionKey);
+      (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[
+        fallbackSection.sectionKey
+      ] = fallbackSection.payload;
+
+      console.warn('[Destiny Report] Missing non-core section, using fallback payload', {
+        sectionKey: fallbackSection.sectionKey,
+      });
+
+      send({
+        type: 'section-final',
+        sectionKey: fallbackSection.sectionKey,
+        payload: fallbackSection.payload,
+      } as BaziStreamEvent);
     }
 
     transitionStatus('finalizing');
@@ -439,7 +393,8 @@ function handleSectionBlock({
     currentYear,
   });
   emittedSections.add(sectionKey);
-  (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[sectionKey] = payload;
+  (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[sectionKey] =
+    payload;
 
   if (sectionKey === 'timeline') {
     transitionStatus('finalizing');
@@ -468,105 +423,28 @@ function parseSectionPayloadSafely<K extends BaziSectionKey>({
   currentYear: number;
 }): BaziSectionPayloadMap[K] {
   try {
-    return normalizeSectionPayload(sectionKey, parseModelJson(rawPayload), input, currentYear);
+    const result = parseBaziSectionPayload({
+      sectionKey,
+      rawPayload,
+      input,
+      currentYear,
+    });
+
+    if (result.recovery !== 'none') {
+      console.warn('[Destiny Report] Section parse drift recovered', {
+        sectionKey,
+        excerpt: rawPayload.slice(0, 240),
+      });
+    }
+
+    return result.payload;
   } catch (error) {
-    console.warn('[Destiny Report] Section parse failed, using fallback payload', {
+    console.warn('[Destiny Report] Section parse failed', {
       sectionKey,
       error: error instanceof Error ? error.message : String(error),
       excerpt: rawPayload.slice(0, 240),
     });
-    return buildFallbackSectionPayload(sectionKey, input, currentYear);
-  }
-}
-
-function buildFallbackSectionPayload<K extends BaziSectionKey>(
-  sectionKey: K,
-  input: DestinyReportRequest,
-  currentYear: number
-): BaziSectionPayloadMap[K] {
-  const fallback = normalizeDestinyReport({}, input, currentYear);
-
-  switch (sectionKey) {
-    case 'profileOverview':
-      return fallback.profile as BaziSectionPayloadMap[K];
-    case 'pillars':
-      return fallback.pillars as BaziSectionPayloadMap[K];
-    case 'elementsAndTenGods':
-      return {
-        elements: fallback.elements,
-        tenGods: fallback.tenGods,
-      } as BaziSectionPayloadMap[K];
-    case 'modulePersonality':
-      return fallback.modules.personality as BaziSectionPayloadMap[K];
-    case 'moduleCareer':
-      return fallback.modules.career as BaziSectionPayloadMap[K];
-    case 'moduleLove':
-      return fallback.modules.love as BaziSectionPayloadMap[K];
-    case 'moduleWealth':
-      return fallback.modules.wealth as BaziSectionPayloadMap[K];
-    case 'moduleHealth':
-      return fallback.modules.health as BaziSectionPayloadMap[K];
-    case 'timeline':
-      return fallback.timeline as BaziSectionPayloadMap[K];
-  }
-}
-
-function normalizeSectionPayload<K extends BaziSectionKey>(
-  sectionKey: K,
-  raw: unknown,
-  input: DestinyReportRequest,
-  currentYear: number
-): BaziSectionPayloadMap[K] {
-  switch (sectionKey) {
-    case 'profileOverview': {
-      const parsed = ProfileSectionSchema.parse(raw);
-      return normalizeDestinyReport({ profile: parsed }, input, currentYear).profile as BaziSectionPayloadMap[K];
-    }
-    case 'pillars': {
-      const parsed = z.array(PillarSchema).min(4).parse(raw);
-      return normalizeDestinyReport({ pillars: parsed }, input, currentYear).pillars as BaziSectionPayloadMap[K];
-    }
-    case 'elementsAndTenGods': {
-      const parsed = ElementsAndTenGodsSectionSchema.parse(raw);
-      const report = normalizeDestinyReport(
-        { elements: parsed.elements, tenGods: parsed.tenGods },
-        input,
-        currentYear
-      );
-      return {
-        elements: report.elements,
-        tenGods: report.tenGods,
-      } as BaziSectionPayloadMap[K];
-    }
-    case 'modulePersonality': {
-      const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { personality: parsed } }, input, currentYear).modules
-        .personality as BaziSectionPayloadMap[K];
-    }
-    case 'moduleCareer': {
-      const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { career: parsed } }, input, currentYear).modules
-        .career as BaziSectionPayloadMap[K];
-    }
-    case 'moduleLove': {
-      const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { love: parsed } }, input, currentYear).modules
-        .love as BaziSectionPayloadMap[K];
-    }
-    case 'moduleWealth': {
-      const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { wealth: parsed } }, input, currentYear).modules
-        .wealth as BaziSectionPayloadMap[K];
-    }
-    case 'moduleHealth': {
-      const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { health: parsed } }, input, currentYear).modules
-        .health as BaziSectionPayloadMap[K];
-    }
-    case 'timeline': {
-      const parsed = TimelineSectionSchema.parse(raw);
-      return normalizeDestinyReport({ timeline: parsed }, input, currentYear).timeline as BaziSectionPayloadMap[K];
-    }
+    throw new UpstreamModelError(`模型分区 ${sectionKey} 返回格式不完整，请重试`, 502);
   }
 }
 
@@ -578,9 +456,15 @@ function buildReportFromSections(
   return normalizeDestinyReport(
     {
       profile: sections.profileOverview,
+      coreTone: sections.coreDestinyTone,
       pillars: sections.pillars,
       elements: sections.elementsAndTenGods?.elements,
       tenGods: sections.elementsAndTenGods?.tenGods,
+      lifeDimensions: sections.elementsAndTenGods?.lifeDimensions,
+      lifeDimensionHighlights: sections.elementsAndTenGods?.lifeDimensionHighlights,
+      tenGodDomains: sections.elementsAndTenGods?.tenGodDomains,
+      balanceInsight: sections.elementsAndTenGods?.balanceInsight,
+      patternHighlights: sections.elementsAndTenGods?.patternHighlights,
       modules: {
         personality: sections.modulePersonality,
         career: sections.moduleCareer,
@@ -603,6 +487,8 @@ function toBaziSectionKey(rawKey: string): BaziSectionKey | null {
   switch (rawKey.trim()) {
     case 'profileOverview':
       return 'profileOverview';
+    case 'coreDestinyTone':
+      return 'coreDestinyTone';
     case 'pillars':
       return 'pillars';
     case 'elementsAndTenGods':
@@ -675,7 +561,11 @@ function getArkEventErrorMessage(event: unknown): string {
   if (!event || typeof event !== 'object') return '模型流式输出失败，请稍后重试';
   const payload = event as Record<string, unknown>;
   const error = payload.error;
-  if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string') {
+  if (
+    error &&
+    typeof error === 'object' &&
+    typeof (error as Record<string, unknown>).message === 'string'
+  ) {
     return (error as Record<string, unknown>).message as string;
   }
 
@@ -711,18 +601,21 @@ function buildUserPrompt(input: DestinyReportRequest): string {
 
 function buildStreamingSystemPrompt(currentYear: number): string {
   return `
-你是专业命理分析助手。请严格按指定顺序输出 9 个 SECTION 区块，每个区块一旦输出就必须是最终定稿。
+你是专业命理分析助手。请严格按指定顺序输出 10 个 SECTION 区块，每个区块一旦输出就必须是最终定稿。
 禁止输出 markdown、解释、前后缀说明、思考过程，禁止省略 SECTION 标签。
 
 输出格式必须严格如下：
 <SECTION key="profileOverview">
 {"name":"string","genderLabel":"string","birthText":"string","locationText":"string"}
 </SECTION>
+<SECTION key="coreDestinyTone">
+{"tag":"string","chartSummary":"string","headline":"string","description":"string"}
+</SECTION>
 <SECTION key="pillars">
 [{"stem":"string","branch":"string","label":"string","element":"metal|wood|water|fire|earth","tooltip":"string"}]
 </SECTION>
 <SECTION key="elementsAndTenGods">
-{"elements":[{"key":"metal|wood|water|fire|earth","label":"string","value":number}],"tenGods":[{"key":"string","label":"string","value":number,"tooltip":"string"}]}
+{"elements":[{"key":"metal|wood|water|fire|earth","label":"string","value":number}],"tenGods":[{"key":"string","label":"string","value":number,"tooltip":"string"}],"lifeDimensions":[{"key":"career|wealth|health|love|wisdom","label":"string","value":number}],"lifeDimensionHighlights":{"strength":"string","caution":"string"},"tenGodDomains":[{"key":"self|expression|wealth|order|resource","label":"string","technicalLabel":"string","value":number,"description":"string"}],"balanceInsight":{"title":"string","value":"string","tooltip":"string"},"patternHighlights":[{"label":"string","tooltip":"string"}]}
 </SECTION>
 <SECTION key="modulePersonality">
 {"title":"string","summary":"string","bullets":["string"]}
@@ -746,12 +639,25 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 要求：
 1. 必须严格按上面的顺序输出，不可调换顺序，不可合并区块。
 2. 每个 SECTION 内只放合法 JSON，不能有 markdown 代码块。
-3. pillars 必须 4 项，按年柱/月柱/日柱/时柱。
-4. elements 必须包含 metal/wood/water/fire/earth 五项；tenGods 返回 4 项。
-5. timeline 必须返回 3 项，年份依次是 ${currentYear}、${currentYear + 1}、${currentYear + 2}。
-6. 模块 summary 每项 50-90 字，bullets 2-4 条，每条 18 字以内。
-7. 语气稳健，内容具体可执行，避免夸大确定性。
-8. 用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行命理推演，不要按公历换算理解。
+3. pillars 必须 4 项，按年柱/月柱/日柱/时柱；每项 tooltip 控制在 55-110 个中文字符，固定写成 2 句。
+   第一句必须先解释“这根柱子代表什么”，优先使用下面这种句式：
+   - 年柱代表祖基、早年环境和家族底色
+   - 月柱代表提纲，主要看成长氛围、做事习惯和事业根基
+   - 日柱代表自己和夫妻宫，主要看核心性格、自我驱动力与亲密关系反应
+   - 时柱代表子女宫与晚景，主要看行动落点、后续发展方向和结果意识
+   第二句再结合这个用户当前四柱、五行旺衰或十神重心，明确写“这意味着你……”或“……意味着你……”，解释对他本人现实生活的影响。
+4. elements 必须包含 metal/wood/water/fire/earth 五项；tenGods 返回 4 项；lifeDimensions 返回 5 项，key 固定为 career/wealth/health/love/wisdom，对应 label 固定写成“事业”“财运”“健康”“感情”“智慧/创造”。
+5. lifeDimensionHighlights 必须返回 strength 和 caution 两句，分别对应“优势点”和“规避点”，每句控制在 28-60 个中文字符，直接说人话，不要写成术语堆砌。
+6. tenGodDomains 必须返回 5 项，key 固定为 self/expression/wealth/order/resource。label 必须分别对应“自我与社交 / 创造与表达 / 物质与掌控 / 秩序与责任 / 资源与守护”，technicalLabel 分别对应“比肩/劫财 / 食神/伤官 / 正财/偏财 / 正官/七杀 / 正印/偏印”。description 控制在 35-80 个中文字符，解释这一类能量落到现实性格与能力上的表现。
+7. balanceInsight 必须概括当前命局哪类五行更显，title 可写“命局偏强”或同类短语，value 类似“金、水”，tooltip 控制在 45-90 个中文字符，解释这种旺衰在现实性格与做事方式上的体现。
+8. patternHighlights 返回 2-4 个当前命局里最值得提示的术语或组合（如伤官配印、三合局等），每项 tooltip 控制在 35-80 个中文字符，用大白话解释术语是什么意思、会怎样影响现实表现。
+9. timeline 必须返回 3 项，年份依次是 ${currentYear}、${currentYear + 1}、${currentYear + 2}。
+10. 模块 summary 每项 50-90 字，bullets 2-4 条，每条 18 字以内。
+11. coreDestinyTone 的 tag 固定为“核心命理定调”；chartSummary 使用“乾造：甲子 丙寅 戊辰 庚申”或“坤造：...”格式。
+12. headline 必须写成一句凝练的人生底色总评，控制在 8-16 个中文字符，优先使用四字或六字节奏，像“外柔内定，后运渐丰”“先稳后发，厚积见成”这种短句。不要写成解释句，不要出现“人生”“命格”“底色”“类型”这类空泛收尾词。
+13. description 用通俗易懂的话承接 headline，控制在 55-90 个中文字符，最好 2 句，讲清命格主轴与运势走向，少堆术语，不要重复罗列四柱。
+14. 语气稳健，内容具体可执行，避免夸大确定性。
+15. 用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行命理推演，不要按公历换算理解。
 `.trim();
 }
 
@@ -775,30 +681,4 @@ function mapStreamError(error: unknown): string {
     return error.message;
   }
   return error instanceof Error ? error.message : '测算失败，请稍后重试';
-}
-
-function parseModelJson(text: string): unknown {
-  const source = extractJsonBlock(text).trim();
-
-  try {
-    return JSON.parse(source);
-  } catch {
-    const arrayMatch = source.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      const candidate = arrayMatch[0]
-        .replace(/,\s*([}\]])/g, '$1')
-        .replace(/[\u0000-\u001F]+/g, ' ');
-      return JSON.parse(candidate);
-    }
-
-    const objectMatch = source.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      const candidate = objectMatch[0]
-        .replace(/,\s*([}\]])/g, '$1')
-        .replace(/[\u0000-\u001F]+/g, ' ');
-      return JSON.parse(candidate);
-    }
-
-    throw new SyntaxError('模型 JSON 解析失败');
-  }
 }

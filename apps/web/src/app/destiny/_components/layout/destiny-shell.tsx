@@ -51,7 +51,7 @@ export function DestinyShell({
   const [isReportDrawerOpen, setIsReportDrawerOpen] = useState(false);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[#F6F8FF] dark:bg-slate-950">
       {/* 背景：珍珠白 + 柔和渐变（移除网格线） */}
       <div
         className="absolute inset-0 -z-10"
@@ -81,11 +81,11 @@ export function DestinyShell({
         }}
       />
 
-      <div className="flex h-full w-full gap-4 lg:gap-6 p-4 lg:p-6">
+      <div className="flex h-full min-h-0 w-full gap-4 p-4 lg:gap-6 lg:p-6">
         {/* 中间：排盘主视图 */}
-        <section className="flex-1 min-w-0">
-          <div className="flex flex-col gap-6 h-full">
-            <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col gap-6">
+            <header className="shrink-0 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
@@ -128,7 +128,7 @@ export function DestinyShell({
               <ChartCenterPanel
                 report={displayReport}
                 streaming={streaming}
-                className="flex-1 min-h-0"
+                className="flex-1 min-h-0 overflow-y-auto pr-1"
               />
             ) : (
               <GlassCard className="flex-1 min-h-0 p-8 flex items-center justify-center">
@@ -146,7 +146,7 @@ export function DestinyShell({
         </section>
 
         {/* 右侧：报告与时间轴 + AI */}
-        <aside className="hidden lg:flex w-[380px] shrink-0">
+        <aside className="hidden min-h-0 w-[380px] shrink-0 lg:flex">
           <GlassCard className="h-full w-full p-4">
             {displayReport ? (
               <ReportRightRail

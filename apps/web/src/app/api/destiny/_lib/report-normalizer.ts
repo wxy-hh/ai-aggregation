@@ -1,16 +1,26 @@
 import { z } from 'zod';
 import type {
+  DestinyCoreTone,
+  DestinyLifeDimension,
+  DestinyLifeDimensionHighlights,
   DestinyModule,
   DestinyReport,
   DestinyReportRequest,
+  DestinyTenGodDomain,
   DestinyTimelineItem,
   FiveElementKey,
+  LifeDimensionKey,
+  TenGodDomainKey,
   ZiweiCenterInfo,
   ZiweiPalace,
 } from '@/app/destiny/_components/types';
 
 const fiveElementTuple = ['metal', 'wood', 'water', 'fire', 'earth'] as const;
 const fiveElementOrder: FiveElementKey[] = [...fiveElementTuple];
+const lifeDimensionTuple = ['career', 'wealth', 'health', 'love', 'wisdom'] as const;
+const lifeDimensionOrder: LifeDimensionKey[] = [...lifeDimensionTuple];
+const tenGodDomainTuple = ['self', 'expression', 'wealth', 'order', 'resource'] as const;
+const tenGodDomainOrder: TenGodDomainKey[] = [...tenGodDomainTuple];
 
 const ProfileSchema = z.object({
   name: z.string().min(1).optional(),
@@ -18,6 +28,43 @@ const ProfileSchema = z.object({
   birthText: z.string().min(1).optional(),
   lunarText: z.string().min(1).optional(),
   locationText: z.string().min(1).optional(),
+});
+
+const CoreToneSchema = z.object({
+  tag: z.string().min(1).optional(),
+  chartSummary: z.string().min(1).optional(),
+  headline: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+});
+
+const BalanceInsightSchema = z.object({
+  title: z.string().min(1).optional(),
+  value: z.string().min(1).optional(),
+  tooltip: z.string().min(1).optional(),
+});
+
+const PatternInsightSchema = z.object({
+  label: z.string().min(1),
+  tooltip: z.string().min(1),
+});
+
+const LifeDimensionSchema = z.object({
+  key: z.enum(lifeDimensionTuple),
+  label: z.string().min(1).optional(),
+  value: z.number(),
+});
+
+const LifeDimensionHighlightsSchema = z.object({
+  strength: z.string().min(1).optional(),
+  caution: z.string().min(1).optional(),
+});
+
+const TenGodDomainSchema = z.object({
+  key: z.enum(tenGodDomainTuple),
+  label: z.string().min(1).optional(),
+  technicalLabel: z.string().min(1).optional(),
+  value: z.number(),
+  description: z.string().min(1).optional(),
 });
 
 const PillarSchema = z.object({
@@ -81,6 +128,7 @@ function convertLooseRaw(raw: unknown): unknown {
   const source = raw as Record<string, unknown>;
 
   const profileSource = (source.profile ?? {}) as Record<string, unknown>;
+  const coreToneSource = (source.coreTone ?? source.coreDestinyTone ?? {}) as Record<string, unknown>;
   const profile = {
     name: asString(profileSource.name),
     genderLabel: asString(profileSource.genderLabel) || asString(profileSource.gender),
@@ -96,6 +144,23 @@ function convertLooseRaw(raw: unknown): unknown {
 
   return {
     profile,
+    coreTone: {
+      tag: asString(coreToneSource.tag),
+      chartSummary:
+        asString(coreToneSource.chartSummary) ||
+        asString(coreToneSource.chart) ||
+        asString(coreToneSource.chart_text),
+      headline: asString(coreToneSource.headline) || asString(coreToneSource.title),
+      description:
+        asString(coreToneSource.description) ||
+        asString(coreToneSource.summary) ||
+        asString(coreToneSource.content),
+    },
+    balanceInsight: source.balanceInsight,
+    patternHighlights: source.patternHighlights,
+    lifeDimensions: source.lifeDimensions,
+    lifeDimensionHighlights: source.lifeDimensionHighlights,
+    tenGodDomains: source.tenGodDomains,
     pillars,
     elements,
     tenGods,
@@ -150,7 +215,7 @@ function buildTimelineSummary(source: {
     normalizeTimelineDetailList(detail?.risks)[0]
   );
 
-  return firstDetailText || '该年度建议以稳中求进为主，避免情绪化决策。';
+  return firstDetailText;
 }
 
 function normalizeLoosePillars(raw: unknown) {
@@ -161,31 +226,36 @@ function normalizeLoosePillars(raw: unknown) {
       .slice(0, 4)
       .map((item, index) => {
         const value = typeof item === 'string' ? item.trim() : '';
-        const stem = value[0] || defaultPillars()[index]?.stem || '甲';
-        const branch = value[1] || defaultPillars()[index]?.branch || '子';
+        const stem = value[0] || '';
+        const branch = value[1] || '';
+        if (!stem || !branch) return null;
         return {
           stem,
           branch,
           label: ['年柱', '月柱', '日柱', '时柱'][index],
           element: guessElementByStem(stem),
-          tooltip: `${['年柱', '月柱', '日柱', '时柱'][index]}命理解读`,
+          tooltip: '',
         };
       })
-      .filter((item) => item.stem && item.branch);
+      .filter(Boolean);
   }
   if (typeof raw[0] === 'object') {
-    return (raw as Array<Record<string, unknown>>).slice(0, 4).map((item, index) => {
-      const stem = asString(item.stem) || defaultPillars()[index]?.stem || '甲';
-      const branch = asString(item.branch) || defaultPillars()[index]?.branch || '子';
-      const elementFromField = mapLooseElement(asString(item.element));
-      return {
-        stem,
-        branch,
-        label: asString(item.label) || ['年柱', '月柱', '日柱', '时柱'][index],
-        element: elementFromField || guessElementByStem(stem),
-        tooltip: asString(item.tooltip) || `${['年柱', '月柱', '日柱', '时柱'][index]}命理解读`,
-      };
-    });
+    return (raw as Array<Record<string, unknown>>)
+      .slice(0, 4)
+      .map((item, index) => {
+        const stem = asString(item.stem);
+        const branch = asString(item.branch);
+        if (!stem || !branch) return null;
+        const elementFromField = mapLooseElement(asString(item.element));
+        return {
+          stem,
+          branch,
+          label: asString(item.label) || ['年柱', '月柱', '日柱', '时柱'][index],
+          element: elementFromField || guessElementByStem(stem),
+          tooltip: asString(item.tooltip),
+        };
+      })
+      .filter(Boolean);
   }
   return raw;
 }
@@ -227,29 +297,63 @@ function mapLooseElement(value: string): FiveElementKey | null {
   return null;
 }
 
-function normalizeLooseTenGods(raw: unknown) {
-  if (!Array.isArray(raw)) return raw;
-  if (raw.length === 0) return raw;
-  if (typeof raw[0] !== 'string') return raw;
-
-  const freq = new Map<string, number>();
-  for (const item of raw) {
-    if (typeof item !== 'string') continue;
-    const label = item.trim();
-    if (!label) continue;
-    freq.set(label, (freq.get(label) ?? 0) + 1);
+function lifeDimensionLabel(key: LifeDimensionKey): string {
+  switch (key) {
+    case 'career':
+      return '事业';
+    case 'wealth':
+      return '财运';
+    case 'health':
+      return '健康';
+    case 'love':
+      return '感情';
+    case 'wisdom':
+      return '智慧/创造';
   }
+}
 
-  const total = Array.from(freq.values()).reduce((a, b) => a + b, 0) || 1;
-  return Array.from(freq.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(([label, count], index) => ({
-      key: `ten-god-${index + 1}`,
-      label,
-      value: Math.round((count / total) * 100),
-      tooltip: `${label}在当前命局中的作用解读`,
-    }));
+function getTenGodDomainPreset(key: TenGodDomainKey) {
+  switch (key) {
+    case 'self':
+      return {
+        label: '自我与社交',
+        technicalLabel: '比肩/劫财',
+        description:
+          '这部分代表你的主见、竞争感与人际边界，数值越高，越容易在关系里坚持自我，也更敢主动争取位置。',
+      };
+    case 'expression':
+      return {
+        label: '创造与表达',
+        technicalLabel: '食神/伤官',
+        description:
+          '这部分反映你的输出欲、灵感与表达张力，数值越高，越容易靠创意、观点和行动感吸引机会。',
+      };
+    case 'wealth':
+      return {
+        label: '物质与掌控',
+        technicalLabel: '正财/偏财',
+        description:
+          '这部分对应资源感知、结果意识与财富掌控力，数值越高，越看重效率、回报与可落地的成果。',
+      };
+    case 'order':
+      return {
+        label: '秩序与责任',
+        technicalLabel: '正官/七杀',
+        description:
+          '这部分代表规则意识、责任阈值与抗压能力，数值越高，越容易以目标感和纪律感驱动自己前进。',
+      };
+    case 'resource':
+      return {
+        label: '资源与守护',
+        technicalLabel: '正印/偏印',
+        description:
+          '这部分对应学习吸收、贵人支持与自我修复力，数值越高，越擅长沉淀经验，也更容易被资源托住。',
+      };
+  }
+}
+
+function normalizeLooseTenGods(raw: unknown) {
+  return raw;
 }
 
 function normalizeLooseModules(raw: unknown) {
@@ -266,11 +370,11 @@ function normalizeLooseModules(raw: unknown) {
   list.slice(0, 5).forEach((item, index) => {
     const key = slots[index];
     const title = asString(item.name) || `${key}分析`;
-    const content = asString(item.content) || '暂无分析';
+    const content = asString(item.content);
     result[key] = {
       title,
       summary: content,
-      bullets: [content],
+      bullets: content ? [content] : [],
     };
   });
   return Object.keys(result).length > 0 ? result : raw;
@@ -327,9 +431,144 @@ function formatBirthText(input: DestinyReportRequest): string {
   return `${birthDate.year}年${birthDate.month}月${birthDate.day}日 ${birthTime.hour}:${birthTime.minute}`;
 }
 
+function buildDefaultCoreTone(): DestinyCoreTone {
+  return {
+    tag: '核心命理定调',
+    chartSummary: '',
+    headline: '',
+    description: '',
+  };
+}
+
+function normalizePillarTooltip(input: string | undefined, label: string): string {
+  const text = input?.trim();
+  if (!text) return '';
+  if (
+    text === `${label}命理解读` ||
+    /^(年柱：外在环境与早年基调。?|月柱：事业根基与社会关系。?|日柱：自我与核心驱动力。?|时柱：行动方式与未来趋势。?)$/.test(
+      text
+    )
+  ) {
+    return '';
+  }
+  return text;
+}
+
+function buildFallbackBalanceInsight() {
+  return {
+    title: '',
+    value: '',
+    tooltip: '',
+  };
+}
+
+function normalizeBalanceInsight(
+  input: Partial<DestinyReport['balanceInsight']> | undefined,
+  fallback: DestinyReport['balanceInsight']
+): DestinyReport['balanceInsight'] {
+  return {
+    title: input?.title?.trim() || fallback.title,
+    value: input?.value?.trim() || fallback.value,
+    tooltip: input?.tooltip?.trim() || fallback.tooltip,
+  };
+}
+
+function normalizePatternHighlights(
+  input: Array<Partial<DestinyReport['patternHighlights'][number]>> | undefined
+): DestinyReport['patternHighlights'] {
+  return (input ?? [])
+    .map((item) => ({
+      label: item.label?.trim() || '',
+      tooltip: item.tooltip?.trim() || '',
+    }))
+    .filter((item) => item.label && item.tooltip)
+    .slice(0, 4);
+}
+
+function normalizePercentValue(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeLifeDimensions(
+  raw: Array<{ key: LifeDimensionKey; label?: string; value: number }> | undefined
+): DestinyLifeDimension[] | undefined {
+  if (!raw?.length) return undefined;
+
+  const map = new Map<LifeDimensionKey, DestinyLifeDimension>();
+  for (const item of raw) {
+    map.set(item.key, {
+      key: item.key,
+      label: item.label?.trim() || lifeDimensionLabel(item.key),
+      value: normalizePercentValue(item.value),
+    });
+  }
+
+  if (lifeDimensionOrder.some((key) => !map.has(key))) {
+    return undefined;
+  }
+
+  return lifeDimensionOrder.map((key) => map.get(key)!);
+}
+
+function normalizeLifeDimensionHighlights(
+  input: Partial<DestinyLifeDimensionHighlights> | undefined
+): DestinyLifeDimensionHighlights | undefined {
+  const strength = input?.strength?.trim() || '';
+  const caution = input?.caution?.trim() || '';
+
+  if (!strength || !caution) {
+    return undefined;
+  }
+
+  return { strength, caution };
+}
+
+function normalizeTenGodDomains(
+  raw: Array<{
+    key: TenGodDomainKey;
+    label?: string;
+    technicalLabel?: string;
+    value: number;
+    description?: string;
+  }> | undefined
+): DestinyTenGodDomain[] | undefined {
+  if (!raw?.length) return undefined;
+
+  const fromRaw = new Map<TenGodDomainKey, DestinyTenGodDomain>();
+  for (const item of raw) {
+    const preset = getTenGodDomainPreset(item.key);
+    fromRaw.set(item.key, {
+      key: item.key,
+      label: item.label?.trim() || preset.label,
+      technicalLabel: item.technicalLabel?.trim() || preset.technicalLabel,
+      value: normalizePercentValue(item.value),
+      description: item.description?.trim() || '',
+    });
+  }
+
+  if (tenGodDomainOrder.some((key) => !fromRaw.has(key))) {
+    return undefined;
+  }
+
+  const normalized = tenGodDomainOrder.map((key) => fromRaw.get(key)!);
+  return normalized.every((item) => item.description.trim()) ? normalized : undefined;
+}
+
+function normalizeCoreTone(
+  input: Partial<DestinyCoreTone> | undefined,
+  fallback: DestinyCoreTone
+): DestinyCoreTone {
+  return {
+    tag: input?.tag?.trim() || fallback.tag,
+    chartSummary: input?.chartSummary?.trim() || fallback.chartSummary,
+    headline: input?.headline?.trim() || fallback.headline,
+    description: input?.description?.trim() || fallback.description,
+  };
+}
+
 function safeModule(input: Partial<DestinyModule> | undefined, fallbackTitle: string): DestinyModule {
   const title = input?.title?.trim() || fallbackTitle;
-  const summary = input?.summary?.trim() || '暂无分析，请重试后获取更完整解读。';
+  const summary = input?.summary?.trim() || '';
   const bullets = (input?.bullets ?? [])
     .map((item) => item.trim())
     .filter(Boolean)
@@ -338,64 +577,61 @@ function safeModule(input: Partial<DestinyModule> | undefined, fallbackTitle: st
   return {
     title,
     summary,
-    bullets: bullets.length > 0 ? bullets : ['建议结合现实目标分阶段执行。'],
+    bullets,
   };
 }
 
 function normalizeElements(raw: Array<{ key: FiveElementKey; label?: string; value: number }> | undefined) {
   const map = new Map<FiveElementKey, number>();
   for (const item of raw ?? []) {
-    map.set(item.key, Math.max(0, Math.min(100, Math.round(item.value))));
+    map.set(item.key, normalizePercentValue(item.value));
   }
 
-  return fiveElementOrder.map((key) => ({
-    key,
-    label: elementLabel(key),
-    value: map.get(key) ?? 20,
-  }));
+  return fiveElementOrder
+    .filter((key) => map.has(key))
+    .map((key) => ({
+      key,
+      label: elementLabel(key),
+      value: map.get(key) ?? 0,
+    }));
 }
 
-function normalizeTimeline(raw: unknown, currentYear: number): DestinyTimelineItem[] {
-  const list = Array.isArray(raw) ? raw.slice(0, 3) : [];
-  const result: DestinyTimelineItem[] = [];
+function normalizeTimeline(raw: unknown, _currentYear: number): DestinyTimelineItem[] {
+  if (!Array.isArray(raw)) return [];
 
-  for (let index = 0; index < 3; index += 1) {
-    const source = (list[index] ?? {}) as Record<string, unknown>;
-    const sourceDetail =
-      source.detail && typeof source.detail === 'object'
-        ? (source.detail as Record<string, unknown>)
-        : undefined;
-    const year = typeof source.year === 'number' ? source.year : currentYear + index;
-    const summary = buildTimelineSummary({
-      summary: source.summary,
-      fortune: source.fortune,
-      content: source.content,
-      advice: source.advice,
-      overview: source.overview,
-      detail: sourceDetail,
-    });
+  return raw
+    .slice(0, 3)
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const source = item as Record<string, unknown>;
+      const sourceDetail =
+        source.detail && typeof source.detail === 'object'
+          ? (source.detail as Record<string, unknown>)
+          : undefined;
+      const year = typeof source.year === 'number' ? source.year : undefined;
+      const title = firstNonEmptyString(source.title, source.name);
+      const summary = buildTimelineSummary({
+        summary: source.summary,
+        fortune: source.fortune,
+        content: source.content,
+        advice: source.advice,
+        overview: source.overview,
+        detail: sourceDetail,
+      });
+      if (!year || !title || !summary) return null;
 
-    result.push({
-      year,
-      title: firstNonEmptyString(source.title, source.name) || `${year}年运势`,
-      summary,
-      detail: {
-        opportunities: normalizeTimelineDetailList(sourceDetail?.opportunities),
-        risks: normalizeTimelineDetailList(sourceDetail?.risks),
-        actions: normalizeTimelineDetailList(sourceDetail?.actions),
-      },
-    });
-  }
-
-  return result.map((item) => ({
-    ...item,
-    detail: {
-      opportunities:
-        item.detail.opportunities.length > 0 ? item.detail.opportunities : ['聚焦一项关键机会进行突破。'],
-      risks: item.detail.risks.length > 0 ? item.detail.risks : ['避免高压周期内做高风险决定。'],
-      actions: item.detail.actions.length > 0 ? item.detail.actions : ['将年度目标拆解为季度里程碑。'],
-    },
-  }));
+      return {
+        year,
+        title,
+        summary,
+        detail: {
+          opportunities: normalizeTimelineDetailList(sourceDetail?.opportunities),
+          risks: normalizeTimelineDetailList(sourceDetail?.risks),
+          actions: normalizeTimelineDetailList(sourceDetail?.actions),
+        },
+      };
+    })
+    .filter((item): item is DestinyTimelineItem => Boolean(item));
 }
 
 function elementLabel(key: FiveElementKey): string {
@@ -421,6 +657,12 @@ export function normalizeDestinyReport(
   const adapted = convertLooseRaw(raw);
   const source = adapted && typeof adapted === 'object' ? (adapted as Record<string, unknown>) : {};
   const profile = ProfileSchema.safeParse(source.profile);
+  const coreTone = CoreToneSchema.safeParse(source.coreTone);
+  const balanceInsight = BalanceInsightSchema.safeParse(source.balanceInsight);
+  const patternHighlights = z.array(PatternInsightSchema).safeParse(source.patternHighlights);
+  const lifeDimensions = z.array(LifeDimensionSchema).safeParse(source.lifeDimensions);
+  const lifeDimensionHighlights = LifeDimensionHighlightsSchema.safeParse(source.lifeDimensionHighlights);
+  const tenGodDomains = z.array(TenGodDomainSchema).safeParse(source.tenGodDomains);
   const pillars = z.array(PillarSchema).safeParse(source.pillars);
   const elements = z.array(ElementSchema).safeParse(source.elements);
   const tenGods = z.array(TenGodSchema).safeParse(source.tenGods);
@@ -450,50 +692,51 @@ export function normalizeDestinyReport(
   };
 
   const safePillars = (pillars.success ? pillars.data : []).slice(0, 4);
-  const normalizedPillars = (safePillars.length === 4 ? safePillars : defaultPillars()).map((item, index) => ({
-    ...item,
-    label: ['年柱', '月柱', '日柱', '时柱'][index],
-  }));
+  const normalizedPillars =
+    safePillars.length === 4
+      ? safePillars.map((item, index) => ({
+          ...item,
+          label: ['年柱', '月柱', '日柱', '时柱'][index],
+        }))
+      : [];
 
   const safeTenGods = (tenGods.success ? tenGods.data : [])
     .slice(0, 4)
     .map((item, index) => ({
       key: item.key || `ten-god-${index + 1}`,
       label: item.label,
-      value: Math.max(0, Math.min(100, Math.round(item.value))),
-      tooltip: item.tooltip?.trim() || `${item.label}与当前命局关系说明`,
+      value: normalizePercentValue(item.value),
+      tooltip: item.tooltip?.trim() || '',
     }));
 
-  const normalizedTenGods =
-    safeTenGods.length > 0
-      ? safeTenGods
-      : [
-          { key: 'piancai', label: '偏财', value: 25, tooltip: '偏财代表机会型资源与整合能力。' },
-          { key: 'zhengcai', label: '正财', value: 25, tooltip: '正财代表稳健收入与长期积累。' },
-          { key: 'zhengguan', label: '正官', value: 25, tooltip: '正官代表秩序、责任与规则意识。' },
-          { key: 'shishen', label: '食神', value: 25, tooltip: '食神代表表达、输出与创造。' },
-        ];
+  const normalizedTenGods = safeTenGods;
 
-  const normalizedTimeline = normalizeTimeline(
-    timeline.success ? timeline.data : source.timeline,
-    currentYear
+  const normalizedTimeline = normalizeTimeline(timeline.success ? timeline.data : source.timeline, currentYear);
+  const normalizedElements = normalizeElements(elements.success ? elements.data : undefined);
+  const finalPillars = normalizedPillars.map((item) => ({
+    ...item,
+    tooltip: normalizePillarTooltip(item.tooltip, item.label),
+  }));
+  const finalBalanceInsight = normalizeBalanceInsight(
+    balanceInsight.success ? balanceInsight.data : undefined,
+    buildFallbackBalanceInsight()
   );
-
-  const defaultZiweiPalaces = buildDefaultZiweiPalaces({
-    normalizedPillars,
-    normalizedTenGods,
-    modules: {
-      personality: safeModule(modules.personality.success ? modules.personality.data : undefined, '性格底色与优势'),
-      career: safeModule(modules.career.success ? modules.career.data : undefined, '事业发展潜力解析'),
-      love: safeModule(modules.love.success ? modules.love.data : undefined, '感情模式与关系建议'),
-      wealth: safeModule(modules.wealth.success ? modules.wealth.data : undefined, '财运结构与风险节奏'),
-      health: safeModule(modules.health.success ? modules.health.data : undefined, '健康关注点与作息建议'),
-    },
-  });
+  const finalPatternHighlights = normalizePatternHighlights(
+    patternHighlights.success ? patternHighlights.data : undefined
+  );
+  const finalLifeDimensions = normalizeLifeDimensions(
+    lifeDimensions.success ? lifeDimensions.data : undefined
+  );
+  const finalLifeDimensionHighlights = normalizeLifeDimensionHighlights(
+    lifeDimensionHighlights.success ? lifeDimensionHighlights.data : undefined
+  );
+  const finalTenGodDomains = normalizeTenGodDomains(
+    tenGodDomains.success ? tenGodDomains.data : undefined
+  );
 
   const normalizedZiweiPalaces = normalizeZiweiPalaces(
     ziweiPalaces.success ? ziweiPalaces.data : undefined,
-    defaultZiweiPalaces
+    []
   );
 
   const normalizedZiweiCenter = normalizeZiweiCenter(
@@ -501,6 +744,7 @@ export function normalizeDestinyReport(
     input,
     normalizedZiweiPalaces
   );
+  const defaultCoreTone = buildDefaultCoreTone();
 
   return {
     profile: {
@@ -514,9 +758,15 @@ export function normalizeDestinyReport(
         ? profile.data.locationText?.trim() || defaultProfile.locationText
         : defaultProfile.locationText,
     },
-    pillars: normalizedPillars,
-    elements: normalizeElements(elements.success ? elements.data : undefined),
+    coreTone: normalizeCoreTone(coreTone.success ? coreTone.data : undefined, defaultCoreTone),
+    pillars: finalPillars,
+    elements: normalizedElements,
     tenGods: normalizedTenGods,
+    balanceInsight: finalBalanceInsight,
+    patternHighlights: finalPatternHighlights,
+    lifeDimensions: finalLifeDimensions,
+    lifeDimensionHighlights: finalLifeDimensionHighlights,
+    tenGodDomains: finalTenGodDomains,
     modules: {
       career: safeModule(modules.career.success ? modules.career.data : undefined, '事业发展潜力解析'),
       love: safeModule(modules.love.success ? modules.love.data : undefined, '感情模式与关系建议'),
@@ -528,88 +778,27 @@ export function normalizeDestinyReport(
       ),
     },
     timeline: normalizedTimeline,
-    ziweiPalaces: normalizedZiweiPalaces,
-    ziweiCenter: normalizedZiweiCenter,
+    ziweiPalaces: normalizedZiweiPalaces.length > 0 ? normalizedZiweiPalaces : undefined,
+    ziweiCenter:
+      normalizedZiweiCenter.chartTitle || normalizedZiweiCenter.mingZhu || normalizedZiweiCenter.shenZhu
+        ? normalizedZiweiCenter
+        : undefined,
   };
-}
-
-function buildDefaultZiweiPalaces({
-  normalizedPillars,
-  normalizedTenGods,
-  modules,
-}: {
-  normalizedPillars: Array<{ stem: string; branch: string; label: string; element: FiveElementKey; tooltip: string }>;
-  normalizedTenGods: Array<{ key: string; label: string; value: number; tooltip: string }>;
-  modules: {
-    personality: DestinyModule;
-    career: DestinyModule;
-    love: DestinyModule;
-    wealth: DestinyModule;
-    health: DestinyModule;
-  };
-}): ZiweiPalace[] {
-  const palaceLabels = [
-    '命宫',
-    '兄弟宫',
-    '夫妻宫',
-    '子女宫',
-    '财帛宫',
-    '疾厄宫',
-    '迁移宫',
-    '奴仆宫',
-    '官禄宫',
-    '田宅宫',
-    '福德宫',
-    '父母宫',
-  ];
-
-  const moduleMap: Record<string, DestinyModule> = {
-    命宫: modules.personality,
-    兄弟宫: modules.love,
-    夫妻宫: modules.love,
-    子女宫: modules.love,
-    财帛宫: modules.wealth,
-    疾厄宫: modules.health,
-    迁移宫: modules.career,
-    奴仆宫: modules.career,
-    官禄宫: modules.career,
-    田宅宫: modules.wealth,
-    福德宫: modules.personality,
-    父母宫: modules.personality,
-  };
-
-  return palaceLabels.map((label, index) => {
-    const pillar = normalizedPillars[index % Math.max(normalizedPillars.length, 1)];
-    const starA = normalizedTenGods[index % Math.max(normalizedTenGods.length, 1)]?.label ?? '主星';
-    const starB = normalizedTenGods[(index + 2) % Math.max(normalizedTenGods.length, 1)]?.label ?? '';
-    const sourceModule = moduleMap[label] ?? modules.personality;
-
-    return {
-      key: `palace-${index + 1}`,
-      label,
-      branch: pillar?.branch ?? '子',
-      stars: [starA, starB].filter(Boolean),
-      dominant: starA,
-      summary: sourceModule.summary,
-      suggestions: sourceModule.bullets.slice(0, 3),
-    };
-  });
 }
 
 function normalizeZiweiPalaces(input: unknown, fallback: ZiweiPalace[]): ZiweiPalace[] {
   if (!Array.isArray(input) || input.length === 0) return fallback;
 
   const list = (input as Array<z.infer<typeof ZiweiPalaceSchema>>).slice(0, 12);
-  const normalized = list.map((item, index) => {
-    const fb = fallback[index] ?? fallback[0];
+  const normalized = list.map((item) => {
     const stars = (item.stars ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 3);
     return {
-      key: item.key?.trim() || fb.key,
-      label: item.label?.trim() || fb.label,
-      branch: item.branch?.trim() || fb.branch,
+      key: item.key?.trim() || '',
+      label: item.label?.trim() || '',
+      branch: item.branch?.trim() || '',
       stars,
-      dominant: item.dominant?.trim() || stars[0] || fb.dominant,
-      summary: item.summary?.trim() || fb.summary,
+      dominant: item.dominant?.trim() || stars[0] || '',
+      summary: item.summary?.trim() || '',
       suggestions: (item.suggestions ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 4),
     };
   });
@@ -623,29 +812,12 @@ function normalizeZiweiPalaces(input: unknown, fallback: ZiweiPalace[]): ZiweiPa
 
 function normalizeZiweiCenter(
   input: { chartTitle?: string; mingZhu?: string; shenZhu?: string } | undefined,
-  request: DestinyReportRequest,
-  palaces: ZiweiPalace[]
+  _request: DestinyReportRequest,
+  _palaces: ZiweiPalace[]
 ): ZiweiCenterInfo {
-  const yearStemMap = ['庚', '辛', '壬', '癸', '甲', '乙', '丙', '丁', '戊', '己'];
-  const yearBranchMap = ['申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未'];
-  const stem = yearStemMap[request.birthDate.year % 10] ?? '甲';
-  const branch = yearBranchMap[request.birthDate.year % 12] ?? '子';
-
-  const mingPalace = palaces.find((p) => p.label === '命宫') ?? palaces[0];
-  const shenPalace = palaces.find((p) => p.label === '迁移宫') ?? palaces[1] ?? mingPalace;
-
   return {
-    chartTitle: input?.chartTitle?.trim() || `${stem}${branch}年生`,
-    mingZhu: input?.mingZhu?.trim() || mingPalace?.dominant || mingPalace?.stars?.[0] || '紫微',
-    shenZhu: input?.shenZhu?.trim() || shenPalace?.dominant || shenPalace?.stars?.[0] || '天相',
+    chartTitle: input?.chartTitle?.trim() || '',
+    mingZhu: input?.mingZhu?.trim() || '',
+    shenZhu: input?.shenZhu?.trim() || '',
   };
-}
-
-function defaultPillars() {
-  return [
-    { stem: '甲', branch: '子', label: '年柱', element: 'wood' as const, tooltip: '年柱：外在环境与早年基调。' },
-    { stem: '丙', branch: '寅', label: '月柱', element: 'fire' as const, tooltip: '月柱：事业根基与社会关系。' },
-    { stem: '戊', branch: '辰', label: '日柱', element: 'earth' as const, tooltip: '日柱：自我与核心驱动力。' },
-    { stem: '庚', branch: '申', label: '时柱', element: 'metal' as const, tooltip: '时柱：行动方式与未来趋势。' },
-  ];
 }

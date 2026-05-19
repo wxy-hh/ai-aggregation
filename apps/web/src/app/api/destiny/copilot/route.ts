@@ -32,6 +32,32 @@ const ReportSchema = z.object({
       tooltip: z.string(),
     })
   ),
+  lifeDimensions: z
+    .array(
+      z.object({
+        key: z.enum(['career', 'wealth', 'health', 'love', 'wisdom']),
+        label: z.string(),
+        value: z.number(),
+      })
+    )
+    .optional(),
+  lifeDimensionHighlights: z
+    .object({
+      strength: z.string(),
+      caution: z.string(),
+    })
+    .optional(),
+  tenGodDomains: z
+    .array(
+      z.object({
+        key: z.enum(['self', 'expression', 'wealth', 'order', 'resource']),
+        label: z.string(),
+        technicalLabel: z.string(),
+        value: z.number(),
+        description: z.string(),
+      })
+    )
+    .optional(),
   elements: z.array(
     z.object({
       key: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
@@ -180,7 +206,7 @@ async function requestArkStream({
         {
           role: 'system',
           content:
-            '你是命理报告解读助手。基于用户已经生成的八字分析结果回答追问，给出清晰、具体、可执行的建议。结合盘面、五行、十神和问题相关模块作答。答案控制在 300 字以内，直接回答，不展开长篇推演。避免绝对化判断，不做医疗或投资承诺。',
+            '你是命理报告解读助手。基于用户已经生成的八字分析结果回答追问，给出清晰、具体、可执行的建议。优先结合人生五维、十神五域、盘面、五行和问题相关模块作答。答案控制在 300 字以内，直接回答，不展开长篇推演。避免绝对化判断，不做医疗或投资承诺。',
         },
         {
           role: 'user',
@@ -348,15 +374,29 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
     .join('；');
   const elements = report.elements.map((item) => `${item.label}${item.value}`).join('，');
   const tenGods = report.tenGods.map((item) => `${item.label}${item.value}`).join('，');
+  const lifeDimensions = report.lifeDimensions?.length
+    ? report.lifeDimensions.map((item) => `${item.label}${item.value}`).join('，')
+    : '';
+  const tenGodDomains = report.tenGodDomains?.length
+    ? report.tenGodDomains.map((item) => `${item.label}(${item.technicalLabel})${item.value}`).join('，')
+    : '';
+  const highlights = report.lifeDimensionHighlights
+    ? `人生五维提示：优势点=${report.lifeDimensionHighlights.strength}；规避点=${report.lifeDimensionHighlights.caution}`
+    : '';
 
   return [
     `用户信息：${report.profile.name}，${report.profile.genderLabel}，${report.profile.birthText}，出生地${report.profile.locationText}${
       report.profile.lunarText ? `，农历${report.profile.lunarText}` : ''
     }`,
     `四柱：${pillars}`,
+    lifeDimensions ? `人生五维：${lifeDimensions}` : '',
+    highlights,
+    tenGodDomains ? `十神五域：${tenGodDomains}` : '',
     `五行：${elements}`,
     `十神：${tenGods}`,
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function buildQuestionScopedInsights(report: z.infer<typeof ReportSchema>, question: string) {

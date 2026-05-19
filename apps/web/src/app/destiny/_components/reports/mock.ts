@@ -3,6 +3,8 @@
 import type { OnboardingInput } from '../onboarding/onboarding-modal';
 
 export type FiveElementKey = 'metal' | 'wood' | 'water' | 'fire' | 'earth';
+export type LifeDimensionKey = 'career' | 'wealth' | 'health' | 'love' | 'wisdom';
+export type TenGodDomainKey = 'self' | 'expression' | 'wealth' | 'order' | 'resource';
 
 export type DestinyProfile = {
   name: string;
@@ -24,6 +26,15 @@ export type DestinyReport = {
   pillars: BaZiPillar[];
   tenGods: { key: string; label: string; value: number; tooltip: string }[];
   elements: { key: FiveElementKey; label: string; value: number }[];
+  lifeDimensions?: { key: LifeDimensionKey; label: string; value: number }[];
+  lifeDimensionHighlights?: { strength: string; caution: string };
+  tenGodDomains?: {
+    key: TenGodDomainKey;
+    label: string;
+    technicalLabel: string;
+    value: number;
+    description: string;
+  }[];
   modules: {
     career: { title: string; summary: string; bullets: string[] };
     love: { title: string; summary: string; bullets: string[] };
@@ -81,6 +92,54 @@ export function getMockDestinyReport(input: OnboardingInput | null): DestinyRepo
       { key: 'shishen', label: '食神/伤官', value: 25, tooltip: '食神/伤官：表达力与创造力' },
       { key: 'zhengcai', label: '正财/偏财', value: 20, tooltip: '正财：稳健收入与长期积累' },
       { key: 'zhengguan', label: '正官/七杀', value: 23, tooltip: '正官/七杀：规则、压力与目标感' },
+    ],
+    lifeDimensions: [
+      { key: 'career', label: '事业', value: 72 },
+      { key: 'wealth', label: '财运', value: 68 },
+      { key: 'health', label: '健康', value: 61 },
+      { key: 'love', label: '感情', value: 56 },
+      { key: 'wisdom', label: '智慧/创造', value: 74 },
+    ],
+    lifeDimensionHighlights: {
+      strength: '印星与官星配合得稳，做事抗风险、能沉住气，越到后期越容易靠积累见成效。',
+      caution: '木气偏旺时容易把压力憋在心里，情绪和作息一乱，健康与关系都容易一起受影响。',
+    },
+    tenGodDomains: [
+      {
+        key: 'self',
+        label: '自我与社交',
+        technicalLabel: '比肩/劫财',
+        value: 18,
+        description: '主见不弱，但更擅长在看清局势后再出手，不会为了争一时输赢过度消耗自己。',
+      },
+      {
+        key: 'expression',
+        label: '创造与表达',
+        technicalLabel: '食神/伤官',
+        value: 25,
+        description: '有想法也愿意表达，尤其在熟悉的领域里，往往能把复杂问题讲得更容易被理解。',
+      },
+      {
+        key: 'wealth',
+        label: '物质与掌控',
+        technicalLabel: '正财/偏财',
+        value: 52,
+        description: '对资源流向比较敏感，知道什么值得投、什么该收，做长期积累会比短线冲动更占优。',
+      },
+      {
+        key: 'order',
+        label: '秩序与责任',
+        technicalLabel: '正官/七杀',
+        value: 23,
+        description: '目标感和责任心在线，遇到关键节点时更愿意扛事，也比较在意事情有没有落到结果。',
+      },
+      {
+        key: 'resource',
+        label: '资源与守护',
+        technicalLabel: '正印/偏印',
+        value: 32,
+        description: '学习吸收和复盘能力不错，越是在高压环境里，越能靠经验和贵人支持把局面稳住。',
+      },
     ],
     modules: {
       personality: {
@@ -143,4 +202,3 @@ export function getMockDestinyReport(input: OnboardingInput | null): DestinyRepo
     ],
   };
 }
-

@@ -134,10 +134,16 @@ export function BaziWorkspace({
   const buildPartialReport = (sections: BaziLockedSections): PartialDestinyReport => {
     const partial: PartialDestinyReport = {};
     if (sections.profileOverview) partial.profile = sections.profileOverview;
+    if (sections.coreDestinyTone) partial.coreTone = sections.coreDestinyTone;
     if (sections.pillars) partial.pillars = sections.pillars;
     if (sections.elementsAndTenGods) {
       partial.elements = sections.elementsAndTenGods.elements;
       partial.tenGods = sections.elementsAndTenGods.tenGods;
+      partial.balanceInsight = sections.elementsAndTenGods.balanceInsight;
+      partial.patternHighlights = sections.elementsAndTenGods.patternHighlights;
+      partial.lifeDimensions = sections.elementsAndTenGods.lifeDimensions;
+      partial.lifeDimensionHighlights = sections.elementsAndTenGods.lifeDimensionHighlights;
+      partial.tenGodDomains = sections.elementsAndTenGods.tenGodDomains;
     }
     const partialModules: Partial<DestinyReport['modules']> = {};
     if (sections.modulePersonality) partialModules.personality = sections.modulePersonality;
@@ -156,9 +162,16 @@ export function BaziWorkspace({
   ): DestinyReport => ({
     ...nextReport,
     profile: sections.profileOverview ?? nextReport.profile,
+    coreTone: sections.coreDestinyTone ?? nextReport.coreTone,
     pillars: sections.pillars ?? nextReport.pillars,
     elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
     tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
+    balanceInsight: sections.elementsAndTenGods?.balanceInsight ?? nextReport.balanceInsight,
+    patternHighlights: sections.elementsAndTenGods?.patternHighlights ?? nextReport.patternHighlights,
+    lifeDimensions: sections.elementsAndTenGods?.lifeDimensions ?? nextReport.lifeDimensions,
+    lifeDimensionHighlights:
+      sections.elementsAndTenGods?.lifeDimensionHighlights ?? nextReport.lifeDimensionHighlights,
+    tenGodDomains: sections.elementsAndTenGods?.tenGodDomains ?? nextReport.tenGodDomains,
     modules: {
       personality: sections.modulePersonality ?? nextReport.modules.personality,
       career: sections.moduleCareer ?? nextReport.modules.career,
