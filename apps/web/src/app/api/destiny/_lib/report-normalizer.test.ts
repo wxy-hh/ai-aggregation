@@ -4,6 +4,7 @@ import { normalizeDestinyReport } from './report-normalizer';
 const request = {
   name: '测试用户',
   gender: 'male' as const,
+  calendarType: 'lunar' as const, // 农历
   birthDate: { year: 1993, month: 8, day: 16 },
   birthTime: { hour: '09', minute: '30' },
   location: { name: '杭州', lat: 30.27, lon: 120.15 },
@@ -129,10 +130,34 @@ describe('normalizeDestinyReport', () => {
     const report = normalizeDestinyReport(
       {
         pillars: [
-          { stem: '甲', branch: '子', label: '年柱', element: 'wood', tooltip: '年柱：外在环境与早年基调' },
-          { stem: '丙', branch: '寅', label: '月柱', element: 'fire', tooltip: '月柱：事业根基与社会关系' },
-          { stem: '戊', branch: '辰', label: '日柱', element: 'earth', tooltip: '日柱：自我与核心驱动力' },
-          { stem: '庚', branch: '申', label: '时柱', element: 'metal', tooltip: '时柱：行动方式与未来趋势' },
+          {
+            stem: '甲',
+            branch: '子',
+            label: '年柱',
+            element: 'wood',
+            tooltip: '年柱：外在环境与早年基调',
+          },
+          {
+            stem: '丙',
+            branch: '寅',
+            label: '月柱',
+            element: 'fire',
+            tooltip: '月柱：事业根基与社会关系',
+          },
+          {
+            stem: '戊',
+            branch: '辰',
+            label: '日柱',
+            element: 'earth',
+            tooltip: '日柱：自我与核心驱动力',
+          },
+          {
+            stem: '庚',
+            branch: '申',
+            label: '时柱',
+            element: 'metal',
+            tooltip: '时柱：行动方式与未来趋势',
+          },
         ],
         modules: {
           career: { title: '事业发展潜力解析', summary: '', bullets: [] },

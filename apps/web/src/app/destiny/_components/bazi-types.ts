@@ -2,7 +2,8 @@
 export type BaziFormData = {
   name: string;
   gender: 'male' | 'female';
-  birthDate: { year: number; month: number; day: number };
+  calendarType: 'lunar' | 'solar'; // 农历或阳历
+  birthDate: { year: number; month: number; day: number; isLeapMonth?: boolean };
   birthTime: { hour: string; minute: string };
   location: { name: string; lat: number | null; lon: number | null };
 };

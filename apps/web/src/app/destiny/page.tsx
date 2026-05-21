@@ -1,10 +1,10 @@
 import { AppLayout } from '@/components/layout/app-layout';
-import { DestinyPageClient } from './_components/destiny-page-client';
+import { ClientOnly } from './_components/client-only';
 
 export default function DestinyPage() {
   return (
     <AppLayout>
-      <DestinyPageClient />
+      <ClientOnly />
     </AppLayout>
   );
 }

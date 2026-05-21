@@ -1,3 +1,5 @@
+import type { BaziChartBasis } from '@repo/shared';
+
 export type FiveElementKey = 'metal' | 'wood' | 'water' | 'fire' | 'earth';
 export type LifeDimensionKey = 'career' | 'wealth' | 'health' | 'love' | 'wisdom';
 export type TenGodDomainKey = 'self' | 'expression' | 'wealth' | 'order' | 'resource';
@@ -87,6 +89,7 @@ export type ZiweiPalace = {
 export type DestinyReport = {
   profile: DestinyProfile;
   coreTone: DestinyCoreTone;
+  baziBasis?: BaziChartBasis;
   pillars: BaZiPillar[];
   tenGods: { key: string; label: string; value: number; tooltip: string }[];
   elements: { key: FiveElementKey; label: string; value: number }[];
@@ -110,6 +113,7 @@ export type DestinyReport = {
 export type PartialDestinyReport = {
   profile?: DestinyReport['profile'];
   coreTone?: DestinyReport['coreTone'];
+  baziBasis?: DestinyReport['baziBasis'];
   pillars?: DestinyReport['pillars'];
   tenGods?: DestinyReport['tenGods'];
   elements?: DestinyReport['elements'];
@@ -127,6 +131,7 @@ export type PartialDestinyReport = {
 export type DestinyReportRequest = {
   name: string;
   gender: 'male' | 'female';
+  calendarType: 'lunar' | 'solar'; // 农历或阳历
   birthDate: { year: number; month: number; day: number };
   birthTime: { hour: string; minute: string };
   location: { name: string; lat: number | null; lon: number | null };
@@ -140,6 +145,7 @@ export type DestinyReportResponse = {
 export type DestinyStreamStatus = 'queued' | 'charting' | 'analyzing' | 'finalizing';
 
 export type BaziSectionKey =
+  | 'baziBasis'
   | 'profileOverview'
   | 'coreDestinyTone'
   | 'pillars'
@@ -160,6 +166,7 @@ export type ZiweiSectionKey =
   | 'ziweiPalaces';
 
 export type BaziSectionPayloadMap = {
+  baziBasis: NonNullable<DestinyReport['baziBasis']>;
   profileOverview: DestinyReport['profile'];
   coreDestinyTone: DestinyReport['coreTone'];
   pillars: DestinyReport['pillars'];

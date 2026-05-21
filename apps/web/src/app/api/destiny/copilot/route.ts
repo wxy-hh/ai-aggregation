@@ -84,6 +84,7 @@ const ReportSchema = z.object({
       }),
     })
   ),
+  baziBasis: z.any().optional(),
   ziweiPalaces: z.any().optional(),
   ziweiCenter: z.any().optional(),
 });
@@ -369,6 +370,68 @@ function createCopilotStream({
 }
 
 function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
+  if (report.baziBasis && typeof report.baziBasis === 'object') {
+    const basis = report.baziBasis as {
+      profile?: {
+        name?: string;
+        genderLabel?: string;
+        birthText?: string;
+        locationText?: string;
+        lunarText?: string;
+        solarText?: string;
+      };
+      correction?: { summary?: string };
+      pillars?: Array<{
+        label?: string;
+        name?: string;
+        sound?: string;
+        hiddenStems?: Array<{ stem?: string; tenGod?: string }>;
+      }>;
+      elementStats?: Array<{ label?: string; value?: number }>;
+      tenGodStats?: Array<{ label?: string; value?: number }>;
+      annualCycles?: Array<{ year?: number; yearCycle?: string; decadeFortune?: string }>;
+    };
+
+    const basisPillars = basis.pillars?.length
+      ? basis.pillars
+          .map((pillar) => {
+            const hidden = pillar.hiddenStems?.length
+              ? `，藏干${pillar.hiddenStems
+                  .map((item) => `${item.stem ?? ''}${item.tenGod ?? ''}`)
+                  .join(' / ')}`
+              : '';
+            return `${pillar.label}:${pillar.name}${pillar.sound ? `（纳音${pillar.sound}）` : ''}${hidden}`;
+          })
+          .join('；')
+      : '';
+    const basisElements = basis.elementStats?.length
+      ? basis.elementStats.map((item) => `${item.label ?? ''}${item.value ?? 0}`).join('，')
+      : '';
+    const basisTenGods = basis.tenGodStats?.length
+      ? basis.tenGodStats.map((item) => `${item.label ?? ''}${item.value ?? 0}`).join('，')
+      : '';
+    const basisTimeline = basis.annualCycles?.length
+      ? basis.annualCycles
+          .map(
+            (item) =>
+              `${item.year ?? ''}年 ${item.yearCycle ?? ''}，处于${item.decadeFortune ?? ''}大运`
+          )
+          .join('；')
+      : '';
+
+    return [
+      `用户信息：${basis.profile?.name ?? report.profile.name}，${basis.profile?.genderLabel ?? report.profile.genderLabel}，${basis.profile?.birthText ?? report.profile.birthText}，出生地${basis.profile?.locationText ?? report.profile.locationText}${basis.profile?.lunarText ? `，${basis.profile.lunarText}` : ''}`,
+      basis.profile?.solarText ? `真太阳时：${basis.profile.solarText}` : '',
+      basis.correction?.summary ? `时差修正：${basis.correction.summary}` : '',
+      basisPillars ? `四柱：${basisPillars}` : '',
+      basisElements ? `五行：${basisElements}` : '',
+      basisTenGods ? `十神：${basisTenGods}` : '',
+      basisTimeline ? `未来三年：${basisTimeline}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
   const pillars = report.pillars
     .map((pillar) => `${pillar.label}:${pillar.stem}${pillar.branch}(${pillar.tooltip})`)
     .join('；');

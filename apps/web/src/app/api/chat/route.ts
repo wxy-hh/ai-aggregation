@@ -6,7 +6,7 @@ import {
   createXunfeiStreamResponse,
   type XunfeiMessage,
 } from '@repo/providers';
-import { getRateLimiter, getQuotaManager } from '@repo/shared';
+import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { requireAuth } from '@/lib/auth/require-auth';
@@ -97,10 +97,12 @@ async function deductForNonAdmin(
 function buildChatUsageMetadata(messages: ChatMessage[]) {
   return {
     messagesCount: messages.length,
-    attachmentCount: messages.reduce((count, message) => count + (message.attachments?.length ?? 0), 0),
+    attachmentCount: messages.reduce(
+      (count, message) => count + (message.attachments?.length ?? 0),
+      0
+    ),
   };
 }
-
 
 // 解析豆包 API 错误信息
 function parseDoubaoError(errorText: string): string {
@@ -217,7 +219,6 @@ export async function POST(req: Request) {
           }
         );
       }
-
     }
 
     const rateLimiter = getRateLimiter();
@@ -543,10 +544,7 @@ export async function POST(req: Request) {
                     data.type === 'response.incomplete'
                   ) {
                     const usagePayload =
-                      data.response?.usage ??
-                      data.usage ??
-                      data.response?.metadata?.usage ??
-                      null;
+                      data.response?.usage ?? data.usage ?? data.response?.metadata?.usage ?? null;
                     if (usagePayload) {
                       doubaoUsage = normalizeUsage(usagePayload);
                     }

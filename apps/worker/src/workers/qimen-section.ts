@@ -5,8 +5,8 @@ import {
   QimenAnalysisStore,
   generateQimenSectionResult,
   resolveArkConfig,
-  resolveRedisConnectionOptions,
 } from '@repo/shared';
+import { resolveRedisConnectionOptions } from '@repo/shared/server';
 import type { QimenSectionJobData } from '@repo/queue';
 
 export const qimenSectionWorker = new Worker<QimenSectionJobData>(

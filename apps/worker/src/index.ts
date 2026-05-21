@@ -1,5 +1,5 @@
 import { logger } from '@repo/logger';
-import { WorkerHeartbeatStore, getRedisConnectionSummary } from '@repo/shared';
+import { WorkerHeartbeatStore, getRedisConnectionSummary } from '@repo/shared/server';
 import { sttWorker } from './workers/stt';
 import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';

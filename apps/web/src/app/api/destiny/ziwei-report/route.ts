@@ -18,6 +18,7 @@ export const maxDuration = 300;
 const RequestSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空'),
   gender: z.enum(['male', 'female']),
+  calendarType: z.enum(['lunar', 'solar']).default('lunar'), // 默认农历
   birthDate: z.object({
     year: z.number().int().min(1900).max(2100),
     month: z.number().int().min(1).max(12),
@@ -113,19 +114,31 @@ const ZIWEI_QUICK_SECTIONS_SCHEMA = {
       properties: {
         personality: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         career: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         wealth: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
@@ -233,31 +246,51 @@ const ZIWEI_FULL_REPORT_SCHEMA = {
       properties: {
         personality: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         career: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         love: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         wealth: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
         health: {
           type: 'object',
-          properties: { title: { type: 'string' }, summary: { type: 'string' }, bullets: { type: 'array', items: { type: 'string' } } },
+          properties: {
+            title: { type: 'string' },
+            summary: { type: 'string' },
+            bullets: { type: 'array', items: { type: 'string' } },
+          },
           required: ['title', 'summary', 'bullets'],
           additionalProperties: false,
         },
@@ -316,7 +349,16 @@ const ZIWEI_FULL_REPORT_SCHEMA = {
       },
     },
   },
-  required: ['profile', 'pillars', 'elements', 'tenGods', 'modules', 'timeline', 'ziweiCenter', 'ziweiPalaces'],
+  required: [
+    'profile',
+    'pillars',
+    'elements',
+    'tenGods',
+    'modules',
+    'timeline',
+    'ziweiCenter',
+    'ziweiPalaces',
+  ],
   additionalProperties: false,
 } as const;
 const QUICK_STAGE_TIMEOUT_MS = 20000;
@@ -626,7 +668,11 @@ async function requestArkPayload({
 
     if (!response.ok) {
       const text = await response.text();
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
+      throw new UpstreamModelError(
+        mapArkError(response.status),
+        response.status,
+        text.slice(0, 400)
+      );
     }
 
     const payload = await response.json();
@@ -716,47 +762,50 @@ function extractZiweiSectionsFromReport(report: DestinyReport): ZiweiLockedSecti
   };
 }
 
-function mergeZiweiSectionsIntoReport(report: DestinyReport, lockedSections: ZiweiLockedSections): DestinyReport {
+function mergeZiweiSectionsIntoReport(
+  report: DestinyReport,
+  lockedSections: ZiweiLockedSections
+): DestinyReport {
   return {
     ...report,
     profile: lockedSections.profileOverview ?? report.profile,
     modules: lockedSections.overviewModules
       ? {
-        ...report.modules,
-        personality: lockedSections.overviewModules.personality,
-        career: lockedSections.overviewModules.career,
-        wealth: lockedSections.overviewModules.wealth,
-        love: lockedSections.relations
-          ? {
-            ...report.modules.love,
-            summary: lockedSections.relations.summary,
-            bullets: lockedSections.relations.opportunities,
-          }
-          : report.modules.love,
-        health: lockedSections.relations
-          ? {
-            ...report.modules.health,
-            bullets: lockedSections.relations.risks,
-          }
-          : report.modules.health,
-      }
+          ...report.modules,
+          personality: lockedSections.overviewModules.personality,
+          career: lockedSections.overviewModules.career,
+          wealth: lockedSections.overviewModules.wealth,
+          love: lockedSections.relations
+            ? {
+                ...report.modules.love,
+                summary: lockedSections.relations.summary,
+                bullets: lockedSections.relations.opportunities,
+              }
+            : report.modules.love,
+          health: lockedSections.relations
+            ? {
+                ...report.modules.health,
+                bullets: lockedSections.relations.risks,
+              }
+            : report.modules.health,
+        }
       : lockedSections.relations
         ? {
-          ...report.modules,
-          love: {
-            ...report.modules.love,
-            summary: lockedSections.relations.summary,
-            bullets: lockedSections.relations.opportunities,
-          },
-          health: {
-            ...report.modules.health,
-            bullets: lockedSections.relations.risks,
-          },
-          personality: {
-            ...report.modules.personality,
-            bullets: lockedSections.relations.actions,
-          },
-        }
+            ...report.modules,
+            love: {
+              ...report.modules.love,
+              summary: lockedSections.relations.summary,
+              bullets: lockedSections.relations.opportunities,
+            },
+            health: {
+              ...report.modules.health,
+              bullets: lockedSections.relations.risks,
+            },
+            personality: {
+              ...report.modules.personality,
+              bullets: lockedSections.relations.actions,
+            },
+          }
         : report.modules,
     timeline: lockedSections.timeline ?? report.timeline,
     ziweiCenter: lockedSections.ziweiCenter ?? report.ziweiCenter,

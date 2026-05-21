@@ -6,6 +6,7 @@ import { buildMissingRecoverableSections, parseBaziSectionPayload } from './bazi
 const request: DestinyReportRequest = {
   name: '测试用户',
   gender: 'male',
+  calendarType: 'lunar', // 农历
   birthDate: { year: 1993, month: 8, day: 16 },
   birthTime: { hour: '09', minute: '30' },
   location: { name: '杭州', lat: 30.27, lon: 120.15 },
@@ -159,16 +160,16 @@ describe('buildMissingRecoverableSections', () => {
       'moduleHealth',
       'timeline',
     ]);
-    const moduleCareer = recovered.find((item) => item.sectionKey === 'moduleCareer');
-    const moduleLove = recovered.find((item) => item.sectionKey === 'moduleLove');
+    const moduleCareer = recovered.find((item) => item.sectionKey === 'moduleCareer') as
+      | { payload: { title: string } }
+      | undefined;
+    const moduleLove = recovered.find((item) => item.sectionKey === 'moduleLove') as
+      | { payload: { title: string } }
+      | undefined;
     const timeline = recovered.find((item) => item.sectionKey === 'timeline');
 
-    expect(
-      moduleCareer && !Array.isArray(moduleCareer.payload) ? moduleCareer.payload.title : ''
-    ).toBe('事业发展潜力解析');
-    expect(moduleLove && !Array.isArray(moduleLove.payload) ? moduleLove.payload.title : '').toBe(
-      '感情模式与关系建议'
-    );
+    expect(moduleCareer?.payload.title ?? '').toBe('事业发展潜力解析');
+    expect(moduleLove?.payload.title ?? '').toBe('感情模式与关系建议');
     expect(timeline?.payload).toEqual([]);
   });
 });

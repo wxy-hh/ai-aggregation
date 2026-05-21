@@ -1,5 +1,5 @@
 import { Queue, QueueOptions } from 'bullmq';
-import { resolveRedisConnectionOptions } from '@repo/shared';
+import { resolveRedisConnectionOptions } from '@repo/shared/server';
 import {
   STTJobData,
   PPTJobData,

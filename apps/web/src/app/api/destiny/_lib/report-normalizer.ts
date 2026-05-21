@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { BaziChartBasis } from '@repo/shared';
 import type {
   DestinyCoreTone,
   DestinyLifeDimension,
@@ -31,10 +32,10 @@ const ProfileSchema = z.object({
 });
 
 const CoreToneSchema = z.object({
-  tag: z.string().min(1).optional(),
-  chartSummary: z.string().min(1).optional(),
-  headline: z.string().min(1).optional(),
-  description: z.string().min(1).optional(),
+  tag: z.string().optional(),
+  chartSummary: z.string().optional(),
+  headline: z.string().optional(),
+  description: z.string().optional(),
 });
 
 const BalanceInsightSchema = z.object({
@@ -596,42 +597,68 @@ function normalizeElements(raw: Array<{ key: FiveElementKey; label?: string; val
     }));
 }
 
-function normalizeTimeline(raw: unknown, _currentYear: number): DestinyTimelineItem[] {
-  if (!Array.isArray(raw)) return [];
+function normalizeTimeline(
+  raw: unknown,
+  _currentYear: number,
+  seedTimeline?: DestinyTimelineItem[]
+): DestinyTimelineItem[] {
+  const modelItems = Array.isArray(raw)
+    ? raw.slice(0, 3).map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const source = item as Record<string, unknown>;
+        const sourceDetail =
+          source.detail && typeof source.detail === 'object'
+            ? (source.detail as Record<string, unknown>)
+            : undefined;
+        const title = firstNonEmptyString(source.title, source.name);
+        const summary = buildTimelineSummary({
+          summary: source.summary,
+          fortune: source.fortune,
+          content: source.content,
+          advice: source.advice,
+          overview: source.overview,
+          detail: sourceDetail,
+        });
+        if (!title || !summary) return null;
 
-  return raw
-    .slice(0, 3)
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const source = item as Record<string, unknown>;
-      const sourceDetail =
-        source.detail && typeof source.detail === 'object'
-          ? (source.detail as Record<string, unknown>)
-          : undefined;
-      const year = typeof source.year === 'number' ? source.year : undefined;
-      const title = firstNonEmptyString(source.title, source.name);
-      const summary = buildTimelineSummary({
-        summary: source.summary,
-        fortune: source.fortune,
-        content: source.content,
-        advice: source.advice,
-        overview: source.overview,
-        detail: sourceDetail,
-      });
-      if (!year || !title || !summary) return null;
+        return {
+          title,
+          summary,
+          detail: {
+            opportunities: normalizeTimelineDetailList(sourceDetail?.opportunities),
+            risks: normalizeTimelineDetailList(sourceDetail?.risks),
+            actions: normalizeTimelineDetailList(sourceDetail?.actions),
+          },
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
 
+  // 用 seed 给每项补充 year，并做字段级合并
+  // 这样 Doubao 即使不返回 year 字段，也不丢失数据
+  if (seedTimeline?.length) {
+    return seedTimeline.map((seed, index) => {
+      const current = modelItems[index];
+      if (!current) return seed;
       return {
-        year,
-        title,
-        summary,
+        year: seed.year,
+        title: current.title || seed.title,
+        summary: current.summary || seed.summary,
         detail: {
-          opportunities: normalizeTimelineDetailList(sourceDetail?.opportunities),
-          risks: normalizeTimelineDetailList(sourceDetail?.risks),
-          actions: normalizeTimelineDetailList(sourceDetail?.actions),
+          opportunities: current.detail.opportunities.length
+            ? current.detail.opportunities
+            : seed.detail.opportunities,
+          risks: current.detail.risks.length ? current.detail.risks : seed.detail.risks,
+          actions: current.detail.actions.length ? current.detail.actions : seed.detail.actions,
         },
       };
-    })
-    .filter((item): item is DestinyTimelineItem => Boolean(item));
+    });
+  }
+
+  return modelItems.map((item, index) => ({
+    year: _currentYear + index,
+    ...item,
+  }));
 }
 
 function elementLabel(key: FiveElementKey): string {
@@ -652,8 +679,10 @@ function elementLabel(key: FiveElementKey): string {
 export function normalizeDestinyReport(
   raw: unknown,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  options: { basis?: BaziChartBasis } = {}
 ): DestinyReport {
+  const basis = options.basis;
   const adapted = convertLooseRaw(raw);
   const source = adapted && typeof adapted === 'object' ? (adapted as Record<string, unknown>) : {};
   const profile = ProfileSchema.safeParse(source.profile);
@@ -685,37 +714,50 @@ export function normalizeDestinyReport(
       : input.location.name || '出生地待确认';
 
   const defaultProfile = {
-    name: input.name.trim() || '命主',
-    genderLabel: input.gender === 'female' ? '坤造（女命）' : '乾造（男命）',
-    birthText: formatBirthText(input),
+    name: basis?.profile.name || input.name.trim() || '命主',
+    genderLabel: basis?.profile.genderLabel || (input.gender === 'female' ? '坤造（女命）' : '乾造（男命）'),
+    birthText: basis?.profile.birthText || formatBirthText(input),
+    lunarText: basis?.profile.lunarText,
     locationText,
   };
 
   const safePillars = (pillars.success ? pillars.data : []).slice(0, 4);
-  const normalizedPillars =
-    safePillars.length === 4
+  const normalizedPillars = basis?.reportSeed.pillars?.length
+    ? basis.reportSeed.pillars.map((item) => ({ ...item }))
+    : safePillars.length === 4
       ? safePillars.map((item, index) => ({
           ...item,
           label: ['年柱', '月柱', '日柱', '时柱'][index],
         }))
       : [];
 
-  const safeTenGods = (tenGods.success ? tenGods.data : [])
-    .slice(0, 4)
-    .map((item, index) => ({
-      key: item.key || `ten-god-${index + 1}`,
-      label: item.label,
-      value: normalizePercentValue(item.value),
-      tooltip: item.tooltip?.trim() || '',
-    }));
+  const safeTenGods = basis?.reportSeed.tenGods?.length
+    ? basis.reportSeed.tenGods.map((item) => ({ ...item }))
+    : (tenGods.success ? tenGods.data : [])
+        .slice(0, 4)
+        .map((item, index) => ({
+          key: item.key || `ten-god-${index + 1}`,
+          label: item.label,
+          value: normalizePercentValue(item.value),
+          tooltip: item.tooltip?.trim() || '',
+        }));
 
   const normalizedTenGods = safeTenGods;
 
-  const normalizedTimeline = normalizeTimeline(timeline.success ? timeline.data : source.timeline, currentYear);
-  const normalizedElements = normalizeElements(elements.success ? elements.data : undefined);
-  const finalPillars = normalizedPillars.map((item) => ({
+  const normalizedTimeline = normalizeTimeline(
+    timeline.success ? timeline.data : source.timeline,
+    currentYear,
+    basis?.reportSeed.timeline
+  );
+  const normalizedElements = basis?.reportSeed.elements?.length
+    ? basis.reportSeed.elements.map((item) => ({ ...item }))
+    : normalizeElements(elements.success ? elements.data : undefined);
+  const finalPillars = normalizedPillars.map((item, index) => ({
     ...item,
-    tooltip: normalizePillarTooltip(item.tooltip, item.label),
+    tooltip: normalizePillarTooltip(
+      safePillars[index]?.tooltip || item.tooltip,
+      item.label
+    ),
   }));
   const finalBalanceInsight = normalizeBalanceInsight(
     balanceInsight.success ? balanceInsight.data : undefined,
@@ -744,7 +786,10 @@ export function normalizeDestinyReport(
     input,
     normalizedZiweiPalaces
   );
-  const defaultCoreTone = buildDefaultCoreTone();
+  const defaultCoreTone = {
+    ...buildDefaultCoreTone(),
+    chartSummary: basis?.profile.chartSummary || '',
+  };
 
   return {
     profile: {
@@ -753,12 +798,13 @@ export function normalizeDestinyReport(
         ? profile.data.genderLabel?.trim() || defaultProfile.genderLabel
         : defaultProfile.genderLabel,
       birthText: profile.success ? profile.data.birthText?.trim() || defaultProfile.birthText : defaultProfile.birthText,
-      lunarText: profile.success ? profile.data.lunarText?.trim() || undefined : undefined,
+      lunarText: defaultProfile.lunarText || (profile.success ? profile.data.lunarText?.trim() || undefined : undefined),
       locationText: profile.success
         ? profile.data.locationText?.trim() || defaultProfile.locationText
         : defaultProfile.locationText,
     },
     coreTone: normalizeCoreTone(coreTone.success ? coreTone.data : undefined, defaultCoreTone),
+    baziBasis: basis,
     pillars: finalPillars,
     elements: normalizedElements,
     tenGods: normalizedTenGods,

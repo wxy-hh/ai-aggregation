@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { buildBaziPromptPayload, computeBaziChart } from '@repo/shared';
 import type {
   BaziLockedSections,
   BaziSectionKey,
@@ -10,7 +11,7 @@ import type {
   DestinyStreamStatus,
 } from '@/app/destiny/_components/types';
 import {
-  BAZI_SECTION_ORDER,
+  BAZI_MODEL_SECTION_ORDER,
   PRIMARY_SECTION_KEYS,
   buildMissingRecoverableSections,
   parseBaziSectionPayload,
@@ -26,9 +27,11 @@ export const maxDuration = 300;
 const RequestSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空'),
   gender: z.enum(['male', 'female']),
+  calendarType: z.enum(['lunar', 'solar']).default('lunar'), // 默认农历
   birthDate: z.object({
     year: z.number().int().min(1900).max(2100),
     month: z.number().int().min(1).max(12),
+    isLeapMonth: z.boolean().optional(),
     day: z.number().int().min(1).max(31),
   }),
   birthTime: z.object({
@@ -85,6 +88,7 @@ export async function POST(req: Request) {
     const input: DestinyReportRequest = {
       name: parsed.data.name,
       gender: parsed.data.gender,
+      calendarType: parsed.data.calendarType,
       birthDate: parsed.data.birthDate,
       birthTime: parsed.data.birthTime,
       location: parsed.data.location,
@@ -192,7 +196,24 @@ async function streamBaziReport({
   let incompleteReason: string | null = null;
 
   try {
+    const basis = computeBaziChart(input, { referenceYear: currentYear });
+    const deterministicReport = normalizeDestinyReport({}, input, currentYear, { basis });
     transitionStatus('charting');
+    emitLockedSection({
+      sectionKey: 'baziBasis',
+      payload: basis,
+      emittedSections,
+      lockedSections,
+      send,
+    });
+    emitLockedSection({
+      sectionKey: 'profileOverview',
+      payload: deterministicReport.profile,
+      emittedSections,
+      lockedSections,
+      send,
+    });
+    transitionStatus('analyzing');
 
     const response = await fetch(`${arkBaseUrl}/responses`, {
       method: 'POST',
@@ -204,7 +225,7 @@ async function streamBaziReport({
         model: ARK_MODEL,
         input: [
           { role: 'system', content: buildStreamingSystemPrompt(currentYear) },
-          { role: 'user', content: buildUserPrompt(input) },
+          { role: 'user', content: buildUserPrompt(input, basis) },
         ],
         stream: true,
         temperature: 0.25,
@@ -213,7 +234,7 @@ async function streamBaziReport({
         text: {
           format: {
             type: 'json_schema',
-            name: 'bazi_full_report',
+            name: 'bazi_interpretation_report',
             schema: BAZI_REPORT_JSON_SCHEMA,
           },
         },
@@ -237,10 +258,6 @@ async function streamBaziReport({
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
-    const processTextBuffer = () => {
-      // json_schema 模式下模型直接输出完整 JSON 对象，无需 SECTION 标签解析
-    };
-
     const processEvent = (event: unknown) => {
       const textDelta = extractArkTextDelta(event);
       if (textDelta) {
@@ -253,7 +270,6 @@ async function streamBaziReport({
         responseId = typeof responseObject?.id === 'string' ? responseObject.id : null;
         usagePayload = responseObject?.usage ?? null;
 
-        // 优先使用 delta 累积的 textBuffer，若为空则从 response output_text 兜底
         let rawJson = textBuffer.trim();
         if (!rawJson) {
           const fallbackText = extractCompletedOutputText(responseObject);
@@ -265,7 +281,7 @@ async function streamBaziReport({
         if (rawJson) {
           try {
             const fullData = JSON.parse(rawJson);
-            for (const sectionKey of BAZI_SECTION_ORDER) {
+            for (const sectionKey of BAZI_MODEL_SECTION_ORDER) {
               if (emittedSections.has(sectionKey)) continue;
               const rawValue = fullData[sectionKey];
               if (rawValue == null) continue;
@@ -275,29 +291,23 @@ async function streamBaziReport({
                 rawPayload: JSON.stringify(rawValue),
                 input,
                 currentYear,
+                basis,
               });
 
-              emittedSections.add(sectionKey);
-              (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[
-                sectionKey
-              ] = result;
-
-              send({
-                type: 'section-final',
+              emitLockedSection({
                 sectionKey,
                 payload: result,
-              } as BaziStreamEvent);
+                emittedSections,
+                lockedSections,
+                send,
+              });
 
               if (sectionKey === 'timeline') {
                 transitionStatus('finalizing');
               }
             }
-
-            if (arePrimarySectionsReady(lockedSections)) {
-              transitionStatus('analyzing');
-            }
           } catch {
-            // JSON 解析失败时等待 stream 结束后的 fallback 逻辑
+            // 等待 stream 结束后的 fallback 逻辑
           }
         }
       }
@@ -357,26 +367,24 @@ async function streamBaziReport({
     for (const fallbackSection of buildMissingRecoverableSections(
       lockedSections,
       input,
-      currentYear
+      currentYear,
+      { basis }
     )) {
-      emittedSections.add(fallbackSection.sectionKey);
-      (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[
-        fallbackSection.sectionKey
-      ] = fallbackSection.payload;
-
       console.warn('[Destiny Report] Missing non-core section, using fallback payload', {
         sectionKey: fallbackSection.sectionKey,
       });
 
-      send({
-        type: 'section-final',
+      emitLockedSection({
         sectionKey: fallbackSection.sectionKey,
         payload: fallbackSection.payload,
-      } as BaziStreamEvent);
+        emittedSections,
+        lockedSections,
+        send,
+      });
     }
 
     transitionStatus('finalizing');
-    const report = buildReportFromSections(lockedSections, input, currentYear);
+    const report = buildReportFromSections(lockedSections, input, currentYear, basis);
     send({
       type: 'complete',
       report,
@@ -404,16 +412,41 @@ async function streamBaziReport({
   }
 }
 
+function emitLockedSection<K extends BaziSectionKey>({
+  sectionKey,
+  payload,
+  emittedSections,
+  lockedSections,
+  send,
+}: {
+  sectionKey: K;
+  payload: BaziSectionPayloadMap[K];
+  emittedSections: Set<BaziSectionKey>;
+  lockedSections: BaziLockedSections;
+  send: (event: BaziStreamEvent) => void;
+}) {
+  emittedSections.add(sectionKey);
+  (lockedSections as Record<BaziSectionKey, BaziSectionPayloadMap[BaziSectionKey]>)[sectionKey] =
+    payload;
+  send({
+    type: 'section-final',
+    sectionKey,
+    payload,
+  } as BaziStreamEvent);
+}
+
 function parseSectionPayloadSafely<K extends BaziSectionKey>({
   sectionKey,
   rawPayload,
   input,
   currentYear,
+  basis,
 }: {
   sectionKey: K;
   rawPayload: string;
   input: DestinyReportRequest;
   currentYear: number;
+  basis: ReturnType<typeof computeBaziChart>;
 }): BaziSectionPayloadMap[K] {
   try {
     const result = parseBaziSectionPayload({
@@ -421,6 +454,7 @@ function parseSectionPayloadSafely<K extends BaziSectionKey>({
       rawPayload,
       input,
       currentYear,
+      basis,
     });
 
     if (result.recovery !== 'none') {
@@ -444,7 +478,8 @@ function parseSectionPayloadSafely<K extends BaziSectionKey>({
 function buildReportFromSections(
   sections: BaziLockedSections,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis: ReturnType<typeof computeBaziChart>
 ): DestinyReport {
   return normalizeDestinyReport(
     {
@@ -468,12 +503,9 @@ function buildReportFromSections(
       timeline: sections.timeline,
     },
     input,
-    currentYear
+    currentYear,
+    { basis }
   );
-}
-
-function arePrimarySectionsReady(sections: BaziLockedSections) {
-  return PRIMARY_SECTION_KEYS.every((sectionKey) => Boolean(sections[sectionKey]));
 }
 
 function parseArkSseChunk(chunk: string): unknown | null {
@@ -498,7 +530,11 @@ function extractCompletedOutputText(responseObject: Record<string, unknown> | nu
   const output = responseObject.output;
   if (!Array.isArray(output)) return '';
   for (const item of output) {
-    if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'output_text') {
+    if (
+      item &&
+      typeof item === 'object' &&
+      (item as Record<string, unknown>).type === 'output_text'
+    ) {
       const text = (item as Record<string, unknown>).text;
       if (typeof text === 'string') return text;
     }
@@ -561,62 +597,74 @@ function getArkEventErrorMessage(event: unknown): string {
   return '模型流式输出失败，请稍后重试';
 }
 
-function buildUserPrompt(input: DestinyReportRequest): string {
+function buildUserPrompt(
+  input: DestinyReportRequest,
+  basis: ReturnType<typeof computeBaziChart>
+): string {
   const location =
     input.location.lat != null && input.location.lon != null
       ? `${input.location.name}（${input.location.lat}, ${input.location.lon}）`
       : input.location.name;
+  const { deterministicFacts, litePromptPayload } = buildBaziPromptPayload(basis);
 
   return [
-    '请基于以下用户信息生成完整命理报告（中文）：',
-    '重要：以下出生日期与出生时间均为农历（阴历）口径，不是公历（阳历）。',
+    '请只基于以下已经完成的本地排盘真值撰写命理解读，不要重算、不要改写任何干支、五行、十神、节气、起运或流年年份。',
+    '用户原始信息（出生日期与出生时间均为农历口径，仅作背景）：',
     `姓名：${input.name}`,
     `性别：${input.gender === 'female' ? '女' : '男'}`,
     `出生日期：${input.birthDate.year}-${input.birthDate.month}-${input.birthDate.day}`,
     `出生时间：${input.birthTime.hour}:${input.birthTime.minute}`,
     `出生地：${location}`,
+    '',
+    'deterministicFacts（必须严格沿用）：',
+    JSON.stringify(deterministicFacts, null, 2),
+    '',
+    'litePromptPayload（便于快速把握主轴）：',
+    JSON.stringify(litePromptPayload, null, 2),
   ].join('\n');
 }
 
 function buildStreamingSystemPrompt(currentYear: number): string {
   return `
-你是专业命理分析助手。必须严格输出一个包含所有 10 个属性的完整 JSON 对象，禁止输出任何额外文字、markdown、解释或思考过程。
+你是深耕传统子平命理的文化学者，精通《渊海子平》《滴天髓》《穷通宝鉴》等经典，擅长以”以日为主、以月为提纲”的原则进行八字命理分析，熟练运用五行生克、十神格局、调候喜忌等理论。
 
-输出格式为单个 JSON 对象，包含以下 10 个属性：
+【合规声明】你提供的内容都是基于中国传统民俗文化的娱乐化解读，不得出现封建迷信表述，不得提及”改运””化解””注定””算命””占卜”等词汇，不得预测具体年份的事件，不制造焦虑，所有分析均为娱乐参考。
+
+你拿到的排盘、五行、十神、节气、起运与流年数据都已经由本地算法确定，你只能做解释，不能修改任何事实值。分析思路必须遵循以下原则顺序：
+1. 先看月令调候：elementStats 中 seasonalBonus 最高的即为月令当旺五行，结合日主五行判断是否需要调候
+2. 再看十神格局：根据 tenGodStats 中权重最高的十神结合日主关系判断主导格局
+3. 综合五行生克与藏干关系，确保解释有理论依据
+
+必须严格输出一个包含以下 9 个属性的完整 JSON 对象，禁止输出任何额外文字、markdown、解释或思考过程：
 
 {
-  "profileOverview": {"name":"string","genderLabel":"string","birthText":"string","locationText":"string","lunarText?":"string"},
-  "coreDestinyTone": {"tag":"string","chartSummary":"string","headline":"string","description":"string"},
-  "pillars": [{"stem":"string","branch":"string","label":"string","element":"metal|wood|water|fire|earth","tooltip":"string"}],
-  "elementsAndTenGods": {"elements":[...],"tenGods":[...],"lifeDimensions":[...],"lifeDimensionHighlights":{...},"tenGodDomains":[...],"balanceInsight":{...},"patternHighlights":[...]},
-  "modulePersonality": {"title":"string","summary":"string","bullets":["string"]},
-  "moduleCareer": {"title":"string","summary":"string","bullets":["string"]},
-  "moduleLove": {"title":"string","summary":"string","bullets":["string"]},
-  "moduleWealth": {"title":"string","summary":"string","bullets":["string"]},
-  "moduleHealth": {"title":"string","summary":"string","bullets":["string"]},
-  "timeline": [{"year":${currentYear},"title":"string","summary":"string","detail":{"opportunities":["string"],"risks":["string"],"actions":["string"]}}]
+  “coreDestinyTone”: {“headline”:”string”,”description”:”string”},
+  “pillars”: [{“label”:”string”,”tooltip”:”string”}],
+  “elementsAndTenGods”: {
+    “lifeDimensions”:[...],
+    “lifeDimensionHighlights”:{...},
+    “tenGodDomains”:[...],
+    “balanceInsight”:{...},
+    “patternHighlights”:[...]
+  },
+  “modulePersonality”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
+  “moduleCareer”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
+  “moduleLove”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
+  “moduleWealth”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
+  “moduleHealth”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
+  “timeline”: [{“title”:”string”,”summary”:”string”,”detail”:{“opportunities”:[“string”],”risks”:[“string”],”actions”:[“string”]}}]
 }
 
 要求：
-1. pillars 必须 4 项，按年柱/月柱/日柱/时柱；每项 tooltip 控制在 55-110 个中文字符，固定写成 2 句。
-   第一句必须先解释“这根柱子代表什么”，优先使用下面这种句式：
-   - 年柱代表祖基、早年环境和家族底色
-   - 月柱代表提纲，主要看成长氛围、做事习惯和事业根基
-   - 日柱代表自己和夫妻宫，主要看核心性格、自我驱动力与亲密关系反应
-   - 时柱代表子女宫与晚景，主要看行动落点、后续发展方向和结果意识
-   第二句再结合这个用户当前四柱、五行旺衰或十神重心，明确写“这意味着你……”或“……意味着你……”，解释对他本人现实生活的影响。
-2. elements 必须包含 metal/wood/water/fire/earth 五项；tenGods 返回 4 项；lifeDimensions 返回 5 项，key 固定为 career/wealth/health/love/wisdom，对应 label 固定写成“事业”“财运”“健康”“感情”“智慧/创造”。
-3. lifeDimensionHighlights 必须返回 strength 和 caution 两句，分别对应“优势点”和“规避点”，每句控制在 28-60 个中文字符，直接说人话，不要写成术语堆砌。
-4. tenGodDomains 必须返回 5 项，key 固定为 self/expression/wealth/order/resource。label 必须分别对应“自我与社交 / 创造与表达 / 物质与掌控 / 秩序与责任 / 资源与守护”，technicalLabel 分别对应“比肩/劫财 / 食神/伤官 / 正财/偏财 / 正官/七杀 / 正印/偏印”。description 控制在 35-80 个中文字符，解释这一类能量落到现实性格与能力上的表现。
-5. balanceInsight 必须概括当前命局哪类五行更显，title 可写“命局偏强”或同类短语，value 类似“金、水”，tooltip 控制在 45-90 个中文字符，解释这种旺衰在现实性格与做事方式上的体现。
-6. patternHighlights 返回 2-4 个当前命局里最值得提示的术语或组合（如伤官配印、三合局等），每项 tooltip 控制在 35-80 个中文字符，用大白话解释术语是什么意思、会怎样影响现实表现。
-7. timeline 必须返回 3 项，年份依次是 ${currentYear}、${currentYear + 1}、${currentYear + 2}。
-8. 模块 summary 每项 50-90 字，bullets 2-4 条，每条 18 字以内。
-9. coreDestinyTone 的 tag 固定为“核心命理定调”；chartSummary 使用“乾造：甲子 丙寅 戊辰 庚申”或“坤造：...”格式。
-10. headline 必须写成一句凝练的人生底色总评，控制在 8-16 个中文字符，优先使用四字或六字节奏，像“外柔内定，后运渐丰”“先稳后发，厚积见成”这种短句。不要写成解释句，不要出现“人生”“命格”“底色”“类型”这类空泛收尾词。
-11. description 用通俗易懂的话承接 headline，控制在 55-90 个中文字符，最好 2 句，讲清命格主轴与运势走向，少堆术语，不要重复罗列四柱。
-12. 语气稳健，内容具体可执行，避免夸大确定性。
-13. 用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行命理推演，不要按公历换算理解。
+1. coreDestinyTone 只写 headline 和 description。headline 8-16 个中文字符，描述命局基调，避免通用句式；description 55-90 个中文字符，2 句内，先概括格局特点再落到现实风格。
+2. pillars 必须 4 项，label 依次固定为年柱/月柱/日柱/时柱。tooltip 55-110 个中文字符，固定写成 2 句：第一句解释这根柱子代表什么；第二句结合已给出的该柱干支、藏干、十神或五行重心，明确写”这意味着你……”。四根柱子的解读应体现不同侧重点，避免四句结构雷同。
+3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项，key 固定 career/wealth/health/love/wisdom；tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。
+4. lifeDimensionHighlights 的 strength 和 caution 各 1 句，28-60 个中文字符，说人话，不堆术语。
+5. balanceInsight 用一句短标题 + 当前更显的五行 + 45-90 个中文字符的解释，重点讲现实做事风格。注意：必须结合月令五行（seasonalBonus 最高的元素）与日主的生克关系来分析，不要只堆数值或套话。
+6. patternHighlights 返回 2-4 项，用大白话解释已给出的术语或组合，不要虚构新的命理组合，每项要具体对应命盘特征。
+7. 五大模块 summary 各 50-90 字，bullets 2-4 条，每条 18 字以内，直接给建议。每个模块必须结合命盘格局、五行强弱或十神重心给出个性化解读，避免千篇一律的通用建议。
+8. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须围绕给定的流年干支与大运的相互作用来分析，结合命局喜忌给出趋势判断。
+9. 语气稳健、具体、克制，不夸大确定性，不要许愿式话术。整体输出要求个性化，每个模块都应体现命盘独特性，避免模板化表述。
 `.trim();
 }
 

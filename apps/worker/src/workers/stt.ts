@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
-import { resolveRedisConnectionOptions } from '@repo/shared';
+import { resolveRedisConnectionOptions } from '@repo/shared/server';
 import type { STTJobData } from '@repo/queue';
 
 export const sttWorker = new Worker<STTJobData>(

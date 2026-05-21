@@ -1,7 +1,7 @@
 'use client';
 
 import React, { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import baziIcon from '@/assets/image/bazi.svg';
 import renshengIcon from '@/assets/image/rensheng.svg';
 import xinggeIcon from '@/assets/image/xingge.svg';
@@ -38,6 +38,7 @@ export function ChartCenterPanel({
 }) {
   const profile = report.profile;
   const coreTone = report.coreTone;
+  const baziBasis = report.baziBasis;
   const pillars = report.pillars ?? [];
   const balanceInsight = report.balanceInsight;
   const patternHighlights = report.patternHighlights ?? [];
@@ -56,6 +57,13 @@ export function ChartCenterPanel({
     Boolean(lifeDimensionHighlights?.caution?.trim());
   const hasTenGodDomains =
     tenGodDomains.length === 5 && tenGodDomains.every((item) => Boolean(item.description?.trim()));
+  const [basisOpen, setBasisOpen] = useState(false);
+
+  useEffect(() => {
+    if (baziBasis && !coreTone?.headline) {
+      setBasisOpen(true);
+    }
+  }, [baziBasis, coreTone?.headline]);
 
   return (
     <div className={cn('flex flex-col gap-6 min-h-0', className)}>
@@ -242,6 +250,140 @@ export function ChartCenterPanel({
         ) : null}
       </GlassCard>
 
+      {baziBasis ? (
+        <GlassCard className="shrink-0 overflow-hidden p-4 sm:p-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-sm font-extrabold text-slate-900">排盘依据</div>
+                <div className="mt-1 text-sm text-slate-500">
+                  真太阳时、节气边界、四柱与岁运关系。
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBasisOpen((value) => !value)}
+                className={cn(
+                  'inline-flex items-center justify-center gap-2 self-start rounded-full border px-3 py-1.5 text-xs font-bold transition-colors',
+                  'border-white/60 bg-white/60 text-slate-600 hover:bg-white/75'
+                )}
+              >
+                <span>{basisOpen ? '收起依据' : '展开依据'}</span>
+                {basisOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-3">
+              <BasisSummaryCard
+                label="农历录入"
+                value={baziBasis.profile.birthText}
+                detail={baziBasis.profile.lunarText}
+              />
+              <BasisSummaryCard
+                label="真太阳时"
+                value={baziBasis.solarTime.corrected.text}
+                detail={baziBasis.correction.summary}
+              />
+              <BasisSummaryCard
+                label="日主与起运"
+                value={`${baziBasis.dayMaster.stem}${elementLabel(baziBasis.dayMaster.element)}日主`}
+                detail={`${baziBasis.childLimit.forward ? '顺排' : '逆排'}，${baziBasis.childLimit.startAge} 岁起运`}
+              />
+            </div>
+
+            {basisOpen ? (
+              <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                      四柱与藏干
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {baziBasis.pillars.map((pillar) => (
+                        <div
+                          key={pillar.label}
+                          className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm"
+                        >
+                          <div className="text-xs font-bold text-slate-400">{pillar.label}</div>
+                          <div className="mt-2 text-lg font-black text-slate-900">
+                            {pillar.name}
+                          </div>
+                          <div className="mt-1 text-xs font-semibold text-slate-500">
+                            纳音 {pillar.sound}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {pillar.hiddenStems.map((item) => (
+                              <span
+                                key={`${pillar.label}-${item.stem}-${item.type}`}
+                                className="rounded-full border border-white/60 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600"
+                              >
+                                {item.stem}
+                                {item.tenGod}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <BasisDistributionCard
+                      title="五行统计"
+                      items={baziBasis.elementStats.map((item) => ({
+                        key: item.key,
+                        label: item.label,
+                        value: item.value,
+                        detail: `${item.sources.stems}/${item.sources.branches}/${item.sources.hiddenStems}`,
+                      }))}
+                    />
+                    <BasisDistributionCard
+                      title="十神统计"
+                      items={baziBasis.tenGodStats.slice(0, 6).map((item) => ({
+                        key: item.key,
+                        label: item.label,
+                        value: item.value,
+                        detail: `${item.visibleStems}+${item.hiddenStems}`,
+                      }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <BasisMetaCard
+                    title="节气上下文"
+                    rows={[
+                      `上一节气：${baziBasis.solarTerms.previous.name} · ${baziBasis.solarTerms.previous.solarTime.text}`,
+                      `当前节气：${baziBasis.solarTerms.active.name} · ${baziBasis.solarTerms.active.solarTime.text}`,
+                      `下一节气：${baziBasis.solarTerms.next.name} · ${baziBasis.solarTerms.next.solarTime.text}`,
+                    ]}
+                  />
+                  <BasisMetaCard
+                    title="起运信息"
+                    rows={[
+                      `${baziBasis.childLimit.forward ? '顺排大运' : '逆排大运'}，${baziBasis.childLimit.startAge} 岁起运`,
+                      `起运时刻：${baziBasis.childLimit.endTime.text}`,
+                      `折算跨度：${formatDuration(baziBasis.childLimit.duration)}`,
+                    ]}
+                  />
+                  <BasisMetaCard
+                    title="未来三年岁运"
+                    rows={baziBasis.annualCycles.map(
+                      (item) =>
+                        `${item.year} · ${item.yearCycle} · ${item.decadeFortune}大运 · 流年 ${item.annualFortune}`
+                    )}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </GlassCard>
+      ) : null}
+
       {/* 下方五维摘要与十神仪表盘 */}
       <div className="grid shrink-0 grid-cols-1 gap-6 lg:grid-cols-2">
         <GlassCard className="p-6 min-h-[520px]">
@@ -411,6 +553,89 @@ function LegendDot({ label, tooltip }: { label: string; tooltip: string }) {
       </div>
     </HoverHint>
   );
+}
+
+function BasisSummaryCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
+      <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-extrabold text-slate-900">{value}</div>
+      <div className="mt-2 text-xs leading-6 text-slate-500">{detail}</div>
+    </div>
+  );
+}
+
+function BasisDistributionCard({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{ key: string; label: string; value: number; detail: string }>;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
+      <div className="text-sm font-extrabold text-slate-900">{title}</div>
+      <div className="mt-4 space-y-3">
+        {items.map((item) => (
+          <div key={item.key}>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-700">{item.label}</span>
+              <span className="font-black text-slate-900">{item.value}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-[#5D7CFA]"
+                style={{ width: `${Math.min(100, Math.max(0, item.value))}%` }}
+              />
+            </div>
+            <div className="mt-1 text-[11px] text-slate-400">{item.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BasisMetaCard({ title, rows }: { title: string; rows: string[] }) {
+  return (
+    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
+      <div className="text-sm font-extrabold text-slate-900">{title}</div>
+      <div className="mt-3 space-y-2">
+        {rows.map((row) => (
+          <div key={row} className="text-sm leading-6 text-slate-600">
+            {row}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(duration: {
+  years: number;
+  months: number;
+  days: number;
+  hours: number;
+  minutes: number;
+}) {
+  return [
+    duration.years ? `${duration.years}年` : '',
+    duration.months ? `${duration.months}月` : '',
+    duration.days ? `${duration.days}天` : '',
+    duration.hours ? `${duration.hours}小时` : '',
+    duration.minutes ? `${duration.minutes}分` : '',
+  ]
+    .filter(Boolean)
+    .join('')
+    .trim();
 }
 
 function HoverHint({

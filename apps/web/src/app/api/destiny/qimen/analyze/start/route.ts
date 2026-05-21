@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import { logger } from '@repo/logger';
 import {
   QimenAnalysisStore,
-  WorkerHeartbeatStore,
   qimenAnalyzeRequestSchema,
   type QimenSectionKey,
 } from '@repo/shared';
+import { WorkerHeartbeatStore } from '@repo/shared/server';
 import { qimenBaseQueue, qimenSectionQueue } from '@repo/queue';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 

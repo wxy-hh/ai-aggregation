@@ -2,27 +2,13 @@
 export const BAZI_REPORT_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    profileOverview: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        genderLabel: { type: 'string' },
-        birthText: { type: 'string' },
-        lunarText: { type: 'string' },
-        locationText: { type: 'string' },
-      },
-      required: ['name', 'genderLabel', 'birthText', 'locationText'],
-      additionalProperties: false,
-    },
     coreDestinyTone: {
       type: 'object',
       properties: {
-        tag: { type: 'string' },
-        chartSummary: { type: 'string' },
         headline: { type: 'string' },
         description: { type: 'string' },
       },
-      required: ['tag', 'chartSummary', 'headline', 'description'],
+      required: ['headline', 'description'],
       additionalProperties: false,
     },
     pillars: {
@@ -30,46 +16,16 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          stem: { type: 'string' },
-          branch: { type: 'string' },
           label: { type: 'string' },
-          element: { type: 'string', enum: ['metal', 'wood', 'water', 'fire', 'earth'] },
           tooltip: { type: 'string' },
         },
-        required: ['stem', 'branch', 'label', 'element', 'tooltip'],
+        required: ['label', 'tooltip'],
         additionalProperties: false,
       },
     },
     elementsAndTenGods: {
       type: 'object',
       properties: {
-        elements: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              key: { type: 'string', enum: ['metal', 'wood', 'water', 'fire', 'earth'] },
-              label: { type: 'string' },
-              value: { type: 'integer' },
-            },
-            required: ['key', 'label', 'value'],
-            additionalProperties: false,
-          },
-        },
-        tenGods: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              key: { type: 'string' },
-              label: { type: 'string' },
-              value: { type: 'integer' },
-              tooltip: { type: 'string' },
-            },
-            required: ['key', 'label', 'value', 'tooltip'],
-            additionalProperties: false,
-          },
-        },
         lifeDimensions: {
           type: 'array',
           items: {
@@ -133,7 +89,13 @@ export const BAZI_REPORT_JSON_SCHEMA = {
           },
         },
       },
-      required: ['elements', 'tenGods'],
+      required: [
+        'lifeDimensions',
+        'lifeDimensionHighlights',
+        'tenGodDomains',
+        'balanceInsight',
+        'patternHighlights',
+      ],
       additionalProperties: false,
     },
     modulePersonality: {
@@ -191,7 +153,6 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          year: { type: 'integer' },
           title: { type: 'string' },
           summary: { type: 'string' },
           detail: {
@@ -205,13 +166,12 @@ export const BAZI_REPORT_JSON_SCHEMA = {
             additionalProperties: false,
           },
         },
-        required: ['year', 'title', 'summary', 'detail'],
+        required: ['title', 'summary', 'detail'],
         additionalProperties: false,
       },
     },
   },
   required: [
-    'profileOverview',
     'coreDestinyTone',
     'pillars',
     'elementsAndTenGods',

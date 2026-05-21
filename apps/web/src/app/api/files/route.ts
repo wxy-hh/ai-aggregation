@@ -8,7 +8,7 @@ import {
   ALLOWED_MIME_TYPES,
   FILE_SIZE_LIMITS,
 } from '@repo/shared';
-import { getRateLimiter, getQuotaManager } from '@repo/shared';
+import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
 import { requireAuth } from '@/lib/auth/require-auth';
 
 /**

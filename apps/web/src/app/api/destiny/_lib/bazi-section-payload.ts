@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { BaziChartBasis } from '@repo/shared';
 import type {
   BaziLockedSections,
   BaziSectionKey,
@@ -11,7 +12,20 @@ import { extractJsonBlock } from './ark-response';
 import { normalizeDestinyReport } from './report-normalizer';
 
 export const BAZI_SECTION_ORDER = [
+  'baziBasis',
   'profileOverview',
+  'coreDestinyTone',
+  'pillars',
+  'elementsAndTenGods',
+  'modulePersonality',
+  'moduleCareer',
+  'moduleLove',
+  'moduleWealth',
+  'moduleHealth',
+  'timeline',
+] as const satisfies readonly BaziSectionKey[];
+
+export const BAZI_MODEL_SECTION_ORDER = [
   'coreDestinyTone',
   'pillars',
   'elementsAndTenGods',
@@ -57,8 +71,8 @@ const ProfileSectionSchema = z.object({
 });
 
 const CoreToneSectionSchema = z.object({
-  tag: z.string().trim().min(1),
-  chartSummary: z.string().trim().min(1),
+  tag: z.string().trim().min(1).optional(),
+  chartSummary: z.string().trim().min(1).optional(),
   headline: z.string().trim().min(1),
   description: z.string().trim().min(1),
 });
@@ -68,6 +82,11 @@ const PillarSchema = z.object({
   branch: z.string().trim().min(1),
   label: z.string().trim().min(1),
   element: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
+  tooltip: z.string().trim().min(1),
+});
+
+const PillarCommentarySchema = z.object({
+  label: z.string().trim().min(1),
   tooltip: z.string().trim().min(1),
 });
 
@@ -141,17 +160,17 @@ const ModuleSectionSchema = z.object({
 const TimelineSectionSchema = z
   .array(
     z.object({
-      year: z.number(),
+      year: z.number().optional(),
       title: z.string().trim().min(1),
       summary: z.string().trim().min(1),
       detail: z.object({
-        opportunities: z.array(z.string().trim().min(1)).min(1),
-        risks: z.array(z.string().trim().min(1)).min(1),
-        actions: z.array(z.string().trim().min(1)).min(1),
-      }),
+        opportunities: z.array(z.string().trim()).default([]),
+        risks: z.array(z.string().trim()).default([]),
+        actions: z.array(z.string().trim()).default([]),
+      }).default({ opportunities: [], risks: [], actions: [] }),
     })
   )
-  .length(3);
+  .min(1);
 
 export type BaziSectionParseResult<K extends BaziSectionKey> = {
   payload: BaziSectionPayloadMap[K];
@@ -163,15 +182,17 @@ export function parseBaziSectionPayload<K extends BaziSectionKey>({
   rawPayload,
   input,
   currentYear,
+  basis,
 }: {
   sectionKey: K;
   rawPayload: string;
   input: DestinyReportRequest;
   currentYear: number;
+  basis?: BaziChartBasis;
 }): BaziSectionParseResult<K> {
   try {
     return {
-      payload: normalizeSectionPayload(sectionKey, parseModelJson(rawPayload), input, currentYear),
+      payload: normalizeSectionPayload(sectionKey, parseModelJson(rawPayload), input, currentYear, basis),
       recovery: 'none',
     };
   } catch (error) {
@@ -184,7 +205,8 @@ export function parseBaziSectionPayload<K extends BaziSectionKey>({
         sectionKey,
         rawPayload,
         input,
-        currentYear
+        currentYear,
+        basis
       ) as BaziSectionPayloadMap[K],
       recovery: 'recovered',
     };
@@ -194,12 +216,13 @@ export function parseBaziSectionPayload<K extends BaziSectionKey>({
 export function buildMissingRecoverableSections(
   sections: BaziLockedSections,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  options: { basis?: BaziChartBasis } = {}
 ): Array<{
   sectionKey: RecoverableBaziSectionKey;
   payload: BaziSectionPayloadMap[RecoverableBaziSectionKey];
 }> {
-  const fallback = normalizeDestinyReport({}, input, currentYear);
+  const fallback = normalizeDestinyReport({}, input, currentYear, options);
 
   return BAZI_SECTION_ORDER.filter(
     (sectionKey): sectionKey is RecoverableBaziSectionKey =>
@@ -220,56 +243,63 @@ function normalizeSectionPayload<K extends BaziSectionKey>(
   sectionKey: K,
   raw: unknown,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis?: BaziChartBasis
 ): BaziSectionPayloadMap[K] {
   switch (sectionKey) {
+    case 'baziBasis': {
+      if (!basis) {
+        throw new Error('missing bazi basis');
+      }
+      return basis as BaziSectionPayloadMap[K];
+    }
     case 'profileOverview': {
       const parsed = ProfileSectionSchema.parse(raw);
-      return normalizeDestinyReport({ profile: parsed }, input, currentYear)
+      return normalizeDestinyReport({ profile: parsed }, input, currentYear, { basis })
         .profile as BaziSectionPayloadMap[K];
     }
     case 'coreDestinyTone': {
       const parsed = CoreToneSectionSchema.parse(raw);
-      return normalizeDestinyReport({ coreTone: parsed }, input, currentYear)
+      return normalizeDestinyReport({ coreTone: parsed }, input, currentYear, { basis })
         .coreTone as BaziSectionPayloadMap[K];
     }
     case 'pillars': {
-      const parsed = z.array(PillarSchema).length(4).parse(raw);
-      return normalizeDestinyReport({ pillars: parsed }, input, currentYear)
+      const parsed = normalizePillarsSection(raw, basis);
+      return normalizeDestinyReport({ pillars: parsed }, input, currentYear, { basis })
         .pillars as BaziSectionPayloadMap[K];
     }
     case 'elementsAndTenGods': {
-      const parsed = normalizeElementsAndTenGodsSection(raw, input, currentYear);
+      const parsed = normalizeElementsAndTenGodsSection(raw, input, currentYear, basis);
       return parsed as BaziSectionPayloadMap[K];
     }
     case 'modulePersonality': {
       const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { personality: parsed } }, input, currentYear)
+      return normalizeDestinyReport({ modules: { personality: parsed } }, input, currentYear, { basis })
         .modules.personality as BaziSectionPayloadMap[K];
     }
     case 'moduleCareer': {
       const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { career: parsed } }, input, currentYear).modules
+      return normalizeDestinyReport({ modules: { career: parsed } }, input, currentYear, { basis }).modules
         .career as BaziSectionPayloadMap[K];
     }
     case 'moduleLove': {
       const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { love: parsed } }, input, currentYear).modules
+      return normalizeDestinyReport({ modules: { love: parsed } }, input, currentYear, { basis }).modules
         .love as BaziSectionPayloadMap[K];
     }
     case 'moduleWealth': {
       const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { wealth: parsed } }, input, currentYear).modules
+      return normalizeDestinyReport({ modules: { wealth: parsed } }, input, currentYear, { basis }).modules
         .wealth as BaziSectionPayloadMap[K];
     }
     case 'moduleHealth': {
       const parsed = ModuleSectionSchema.parse(raw);
-      return normalizeDestinyReport({ modules: { health: parsed } }, input, currentYear).modules
+      return normalizeDestinyReport({ modules: { health: parsed } }, input, currentYear, { basis }).modules
         .health as BaziSectionPayloadMap[K];
     }
     case 'timeline': {
       const parsed = TimelineSectionSchema.parse(raw);
-      return normalizeDestinyReport({ timeline: parsed }, input, currentYear)
+      return normalizeDestinyReport({ timeline: parsed }, input, currentYear, { basis })
         .timeline as BaziSectionPayloadMap[K];
     }
   }
@@ -278,10 +308,16 @@ function normalizeSectionPayload<K extends BaziSectionKey>(
 function normalizeElementsAndTenGodsSection(
   raw: unknown,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis?: BaziChartBasis
 ): BaziSectionPayloadMap['elementsAndTenGods'] {
-  const parsedCore = ElementsAndTenGodsCoreSectionSchema.parse(raw);
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const parsedCore = basis
+    ? {
+        elements: basis.reportSeed.elements,
+        tenGods: basis.reportSeed.tenGods,
+      }
+    : ElementsAndTenGodsCoreSectionSchema.parse(raw);
   const lifeDimensions = z.array(LifeDimensionSchema).length(5).safeParse(source.lifeDimensions);
   const lifeDimensionHighlights = LifeDimensionHighlightsSchema.safeParse(
     source.lifeDimensionHighlights
@@ -307,7 +343,8 @@ function normalizeElementsAndTenGodsSection(
       patternHighlights: patternHighlights.success ? patternHighlights.data : undefined,
     },
     input,
-    currentYear
+    currentYear,
+    { basis }
   );
 
   return {
@@ -325,37 +362,47 @@ function recoverRecoverableSectionPayload(
   sectionKey: RecoverableBaziSectionKey,
   rawPayload: string,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis?: BaziChartBasis
 ): BaziSectionPayloadMap[RecoverableBaziSectionKey] {
   switch (sectionKey) {
     case 'timeline':
-      return recoverTimelinePayload(rawPayload, input, currentYear);
+      return recoverTimelinePayload(rawPayload, input, currentYear, basis);
     case 'modulePersonality':
     case 'moduleCareer':
     case 'moduleLove':
     case 'moduleWealth':
     case 'moduleHealth':
-      return recoverModulePayload(sectionKey, rawPayload, input, currentYear);
+      return recoverModulePayload(sectionKey, rawPayload, input, currentYear, basis);
   }
+
+  throw new Error(`Unsupported recoverable section: ${sectionKey}`);
 }
 
 function recoverTimelinePayload(
   rawPayload: string,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis?: BaziChartBasis
 ): DestinyReport['timeline'] {
   const parsed = tryParseModelJson(rawPayload);
-  const recovered = normalizeDestinyReport({ timeline: parsed ?? [] }, input, currentYear).timeline;
+  const recovered = normalizeDestinyReport({ timeline: parsed ?? [] }, input, currentYear, {
+    basis,
+  }).timeline;
   return recovered.length > 0
     ? recovered
-    : buildFallbackSectionPayload('timeline', normalizeDestinyReport({}, input, currentYear));
+    : buildFallbackSectionPayload(
+        'timeline',
+        normalizeDestinyReport({}, input, currentYear, { basis })
+      );
 }
 
 function recoverModulePayload(
   sectionKey: ModuleSectionKey,
   rawPayload: string,
   input: DestinyReportRequest,
-  currentYear: number
+  currentYear: number,
+  basis?: BaziChartBasis
 ): DestinyReport['modules'][ModuleSlot] {
   const parsed = tryParseModelJson(rawPayload);
   const recovered = normalizeLooseModule(parsed, rawPayload);
@@ -366,7 +413,8 @@ function recoverModulePayload(
       },
     },
     input,
-    currentYear
+    currentYear,
+    { basis }
   );
 
   switch (sectionKey) {
@@ -417,6 +465,19 @@ function normalizeLooseModule(raw: unknown, rawPayload: string): DestinyModule {
   };
 }
 
+function normalizePillarsSection(raw: unknown, basis?: BaziChartBasis) {
+  if (!basis) {
+    return z.array(PillarSchema).length(4).parse(raw);
+  }
+
+  const parsed = z.array(PillarCommentarySchema).length(4).parse(raw);
+  const byLabel = new Map(parsed.map((item) => [item.label, item.tooltip]));
+  return basis.reportSeed.pillars.map((pillar) => ({
+    ...pillar,
+    tooltip: byLabel.get(pillar.label) || '',
+  }));
+}
+
 function buildFallbackSectionPayload<K extends RecoverableBaziSectionKey>(
   sectionKey: K,
   fallback: DestinyReport
@@ -435,6 +496,8 @@ function buildFallbackSectionPayload<K extends RecoverableBaziSectionKey>(
     case 'timeline':
       return fallback.timeline as BaziSectionPayloadMap[K];
   }
+
+  throw new Error(`Unsupported fallback section: ${sectionKey}`);
 }
 
 function coerceBullets(value: unknown): string[] {

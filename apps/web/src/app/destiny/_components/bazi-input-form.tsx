@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +12,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { Calendar, Clock, MapPin, User, Users } from 'lucide-react';
+import { Calendar, Check, ChevronsUpDown, Clock, MapPin, User, Users } from 'lucide-react';
+import { searchCities, getPopularCities, getLunarLeapMonth } from '@repo/shared';
 import type { BaziFormData } from './bazi-types';
 
 type BaziInputFormProps = {
@@ -54,6 +57,38 @@ export function BaziInputForm({
   const canSubmit = useMemo(() => {
     return nameLength > 0 && locationLength > 0;
   }, [nameLength, locationLength]);
+
+  // 城市搜索：Popover 开关 + 搜索结果
+  const [cityPopoverOpen, setCityPopoverOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState(value.location.name);
+  const cityInputRef = useRef<HTMLInputElement>(null);
+
+  const cityResults = useMemo(() => {
+    const q = cityQuery.trim();
+    if (!q) {
+      // 空输入显示热门城市
+      return getPopularCities().slice(0, 8);
+    }
+    return searchCities(q, 20);
+  }, [cityQuery]);
+
+  const hasExactLocation = value.location.lat != null && value.location.lon != null;
+
+  // 农历闰月检测
+  const leapMonth = useMemo(() => {
+    if (value.calendarType !== 'lunar') return 0;
+    return getLunarLeapMonth(value.birthDate.year);
+  }, [value.calendarType, value.birthDate.year]);
+
+  // 切换年份时重置闰月状态
+  const handleMonthChange = useCallback(
+    (next: number) => {
+      // 如果选中了闰月但该月不是当前年份的闰月，取消闰月
+      const newLeap = leapMonth > 0 && next === leapMonth ? value.birthDate.isLeapMonth : false;
+      onChange('birthDate', { ...value.birthDate, month: next, isLeapMonth: newLeap });
+    },
+    [leapMonth, onChange, value.birthDate]
+  );
 
   return (
     <div
@@ -187,6 +222,42 @@ export function BaziInputForm({
             出生日期
           </h3>
           <div className="mt-4 space-y-4">
+            {/* 农历/阳历选择 */}
+            <div className="space-y-2">
+              <Label className={labelClass}>历法</Label>
+              <Tabs
+                value={value.calendarType}
+                onValueChange={(next) => onChange('calendarType', next as 'lunar' | 'solar')}
+              >
+                <TabsList className="grid grid-cols-2 h-10 rounded-xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-white/10 p-1 shadow-sm">
+                  <TabsTrigger
+                    value="lunar"
+                    disabled={submitting}
+                    className={cn(
+                      'rounded-lg font-bold transition-all',
+                      'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
+                      'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
+                      'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
+                    )}
+                  >
+                    农历（阴历）
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="solar"
+                    disabled={submitting}
+                    className={cn(
+                      'rounded-lg font-bold transition-all',
+                      'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
+                      'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
+                      'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
+                    )}
+                  >
+                    阳历（公历）
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label className={labelClass}>年</Label>
@@ -214,9 +285,7 @@ export function BaziInputForm({
                 <Label className={labelClass}>月</Label>
                 <Select
                   value={String(value.birthDate.month)}
-                  onValueChange={(next) =>
-                    onChange('birthDate', { ...value.birthDate, month: Number(next) })
-                  }
+                  onValueChange={(next) => handleMonthChange(Number(next))}
                   disabled={submitting}
                 >
                   <SelectTrigger className={cn(inputClass, 'h-10')}>
@@ -254,6 +323,27 @@ export function BaziInputForm({
                 </Select>
               </div>
             </div>
+
+            {/* 闰月开关 */}
+            {value.calendarType === 'lunar' && leapMonth > 0 && (
+              <div className="flex items-center gap-3 pt-1">
+                <Switch
+                  id="leap-month"
+                  checked={value.birthDate.isLeapMonth ?? false}
+                  onCheckedChange={(checked) =>
+                    onChange('birthDate', {
+                      ...value.birthDate,
+                      month: checked ? leapMonth : value.birthDate.month,
+                      isLeapMonth: checked,
+                    })
+                  }
+                  disabled={submitting}
+                />
+                <Label htmlFor="leap-month" className="text-sm font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+                  闰月（{leapMonth}月）
+                </Label>
+              </div>
+            )}
           </div>
         </section>
 
@@ -339,24 +429,90 @@ export function BaziInputForm({
           </h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="bazi-location" className={labelClass}>
-                城市或地区
-              </Label>
-              <Input
-                id="bazi-location"
-                value={value.location.name}
-                onChange={(e) =>
-                  onChange('location', { name: e.target.value, lat: null, lon: null })
-                }
-                placeholder="例如：北京市朝阳区"
-                className={inputClass}
-                disabled={submitting}
-              />
+              <Label className={labelClass}>城市或地区</Label>
+              <Popover open={cityPopoverOpen} onOpenChange={setCityPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={cityPopoverOpen}
+                    className={cn(
+                      'w-full justify-between h-10 font-normal',
+                      inputClass,
+                      !value.location.name && 'text-slate-400 dark:text-slate-500'
+                    )}
+                    disabled={submitting}
+                  >
+                    {hasExactLocation
+                      ? value.location.name
+                      : value.location.name || '搜索城市（越精确越好，如：北京朝阳区三里屯街道）'}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <div className="p-2">
+                    <Input
+                      ref={cityInputRef}
+                      value={cityQuery}
+                      onChange={(e) => {
+                        setCityQuery(e.target.value);
+                        // 输入变化时清除已选坐标
+                        if (hasExactLocation) {
+                          onChange('location', { name: e.target.value, lat: null, lon: null });
+                        }
+                      }}
+                      placeholder="输入城市或地区名称..."
+                      className="mb-2"
+                      autoFocus
+                    />
+                    <div className="max-h-56 overflow-y-auto">
+                      {cityResults.length > 0 ? (
+                        cityResults.map((city) => {
+                          const isSelected =
+                            hasExactLocation && value.location.lat === city.lat && value.location.lon === city.lon;
+                          return (
+                            <button
+                              key={city.id}
+                              type="button"
+                              className={cn(
+                                'w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2',
+                                isSelected
+                                  ? 'bg-[#5D7CFA]/10 text-[#3851D4] font-medium'
+                                  : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                              )}
+                              onClick={() => {
+                                onChange('location', {
+                                  name: city.fullName,
+                                  lat: city.lat,
+                                  lon: city.lon,
+                                });
+                                setCityQuery(city.fullName);
+                                setCityPopoverOpen(false);
+                              }}
+                            >
+                              {isSelected && (
+                                <Check className="h-4 w-4 shrink-0 text-[#5D7CFA]" />
+                              )}
+                              <span className={cn(!isSelected && 'ml-6')}>{city.fullName}</span>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <p className="px-3 py-6 text-center text-sm text-slate-400">
+                          未找到匹配的城市
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
               {fieldErrors.location ? (
                 <p className="text-xs text-rose-600">{fieldErrors.location}</p>
               ) : (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  出生地点用于真太阳时校准，影响排盘准确度
+                  {hasExactLocation
+                    ? `坐标 ${value.location.lat?.toFixed(2)}, ${value.location.lon?.toFixed(2)}，提交后会按经度修正真太阳时`
+                    : '输入城市名称搜索，选中的城市将用于真太阳时校准'}
                 </p>
               )}
             </div>
