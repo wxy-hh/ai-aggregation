@@ -496,9 +496,15 @@ describe('ChartCenterPanel', () => {
   it('存在 baziBasis 时渲染可展开的排盘依据面板', () => {
     render(<ChartCenterPanel report={{ ...createBaseReport(), baziBasis: createBaziBasis() }} />);
 
-    expect(screen.getByText('排盘依据')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /展开依据/ }));
+    // 默认折叠：显示摘要文本
+    expect(screen.getByText(/✅ 排盘依据/)).toBeInTheDocument();
+
+    // 点击摘要区域展开基本排盘信息
+    fireEvent.click(screen.getByText(/✅ 排盘依据/));
     expect(screen.getByText('节气上下文')).toBeInTheDocument();
+
+    // 点击"展开高级排盘数据"展开详细信息
+    fireEvent.click(screen.getByRole('button', { name: /展开高级排盘数据/ }));
     expect(screen.getByText('未来三年岁运')).toBeInTheDocument();
     expect(screen.getByText(/已按东八区标准经线 120E 做经度修正/)).toBeInTheDocument();
   });

@@ -265,13 +265,18 @@ async function streamBaziReport({
       }
 
       const eventType = getArkEventType(event);
-      if (eventType === 'response.completed') {
+      if (eventType === 'response.completed' || eventType === 'response.incomplete') {
         const responseObject = getArkResponseObject(event);
-        responseId = typeof responseObject?.id === 'string' ? responseObject.id : null;
-        usagePayload = responseObject?.usage ?? null;
+        responseId = responseId ?? (typeof responseObject?.id === 'string' ? responseObject.id : null);
+        usagePayload = usagePayload ?? responseObject?.usage ?? null;
+
+        if (eventType === 'response.incomplete') {
+          const reason = getIncompleteReason(responseObject);
+          incompleteReason = reason ?? 'unknown';
+        }
 
         let rawJson = textBuffer.trim();
-        if (!rawJson) {
+        if (!rawJson && eventType === 'response.completed') {
           const fallbackText = extractCompletedOutputText(responseObject);
           if (fallbackText) {
             rawJson = fallbackText;
@@ -312,12 +317,6 @@ async function streamBaziReport({
         }
       }
 
-      if (eventType === 'response.incomplete') {
-        const responseObject = getArkResponseObject(event);
-        const reason = getIncompleteReason(responseObject);
-        incompleteReason = reason ?? 'unknown';
-      }
-
       if (eventType === 'response.failed' || eventType === 'error') {
         throw new UpstreamModelError(getArkEventErrorMessage(event), 502);
       }
@@ -351,26 +350,19 @@ async function streamBaziReport({
     }
 
     if (incompleteReason === 'length') {
-      throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
+      console.warn('[Destiny Report] AI output was truncated (length limit), using available data with fallbacks');
     }
 
-    const missingPrimarySections = PRIMARY_SECTION_KEYS.filter(
-      (sectionKey) => !lockedSections[sectionKey]
-    );
-    if (missingPrimarySections.length > 0) {
-      throw new UpstreamModelError(
-        `模型分区输出不完整：缺少 ${missingPrimarySections.join('、')}，请稍后重试`,
-        502
-      );
-    }
+    // 补充缺失的分区：先尝试恢复（recoverable section），再用算法真值兜底（primary section）
 
+    // 先处理可恢复分区（module + timeline）
     for (const fallbackSection of buildMissingRecoverableSections(
       lockedSections,
       input,
       currentYear,
       { basis }
     )) {
-      console.warn('[Destiny Report] Missing non-core section, using fallback payload', {
+      console.warn('[Destiny Report] Missing recoverable section, using fallback payload', {
         sectionKey: fallbackSection.sectionKey,
       });
 
@@ -381,6 +373,33 @@ async function streamBaziReport({
         lockedSections,
         send,
       });
+    }
+
+    // 再处理核心分区缺失：使用算法真值兜底（不报错）
+    const stillMissingPrimary = PRIMARY_SECTION_KEYS.filter(
+      (sectionKey) => !lockedSections[sectionKey]
+    );
+    if (stillMissingPrimary.length > 0 && basis) {
+      console.warn('[Destiny Report] Missing primary sections, using basis fallback', {
+        sections: stillMissingPrimary,
+      });
+      const primaryFallback = normalizeDestinyReport({}, input, currentYear, { basis });
+      for (const sectionKey of stillMissingPrimary) {
+        const fallbackPayload = buildPrimaryFallbackPayload(sectionKey, primaryFallback);
+        emitLockedSection({
+          sectionKey,
+          payload: fallbackPayload,
+          emittedSections,
+          lockedSections,
+          send,
+        });
+      }
+    } else if (stillMissingPrimary.length > 0) {
+      // 连 basis 都没有才是真正的致命错误
+      throw new UpstreamModelError(
+        `模型分区输出不完整且缺少排盘依据：缺少 ${stillMissingPrimary.join('、')}，请稍后重试`,
+        502
+      );
     }
 
     transitionStatus('finalizing');
@@ -472,6 +491,32 @@ function parseSectionPayloadSafely<K extends BaziSectionKey>({
       excerpt: rawPayload.slice(0, 240),
     });
     throw new UpstreamModelError(`模型分区 ${sectionKey} 返回格式不完整，请重试`, 502);
+  }
+}
+
+type PrimarySectionKey = (typeof PRIMARY_SECTION_KEYS)[number];
+
+function buildPrimaryFallbackPayload(
+  sectionKey: PrimarySectionKey,
+  report: DestinyReport
+): BaziSectionPayloadMap[PrimarySectionKey] {
+  switch (sectionKey) {
+    case 'profileOverview':
+      return report.profile as BaziSectionPayloadMap['profileOverview'];
+    case 'coreDestinyTone':
+      return report.coreTone as BaziSectionPayloadMap['coreDestinyTone'];
+    case 'pillars':
+      return report.pillars as BaziSectionPayloadMap['pillars'];
+    case 'elementsAndTenGods':
+      return {
+        elements: report.elements,
+        tenGods: report.tenGods,
+        balanceInsight: report.balanceInsight,
+        patternHighlights: report.patternHighlights,
+        lifeDimensions: report.lifeDimensions,
+        lifeDimensionHighlights: report.lifeDimensionHighlights,
+        tenGodDomains: report.tenGodDomains,
+      } as BaziSectionPayloadMap['elementsAndTenGods'];
   }
 }
 
@@ -634,6 +679,8 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 1. 先看月令调候：elementStats 中 seasonalBonus 最高的即为月令当旺五行，结合日主五行判断是否需要调候
 2. 再看十神格局：根据 tenGodStats 中权重最高的十神结合日主关系判断主导格局
 3. 综合五行生克与藏干关系，确保解释有理论依据
+4. 纳音辅助：pillars 中每柱的 sound 字段为纳音（如"海中金""炉中火"），可用于辅助判断命局层次与五行气质
+5. 节气定位：solarTerms 提供了命主出生时的节气上下文（前一个、当前、下一个节气），可用于辅助判断月令深浅与五行进退
 
 必须严格输出一个包含以下 9 个属性的完整 JSON 对象，禁止输出任何额外文字、markdown、解释或思考过程：
 
@@ -657,13 +704,13 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 
 要求：
 1. coreDestinyTone 只写 headline 和 description。headline 8-16 个中文字符，描述命局基调，避免通用句式；description 55-90 个中文字符，2 句内，先概括格局特点再落到现实风格。
-2. pillars 必须 4 项，label 依次固定为年柱/月柱/日柱/时柱。tooltip 55-110 个中文字符，固定写成 2 句：第一句解释这根柱子代表什么；第二句结合已给出的该柱干支、藏干、十神或五行重心，明确写”这意味着你……”。四根柱子的解读应体现不同侧重点，避免四句结构雷同。
-3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项，key 固定 career/wealth/health/love/wisdom；tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。
+2. pillars 必须 4 项，label 依次固定为年柱/月柱/日柱/时柱。tooltip 60-120 个中文字符，固定写成 2-3 句：第一句解释这根柱子代表什么；第二句结合该柱的干支、纳音（sound 字段）与藏干（hiddenStems 字段）分析五行十神重心，明确写"这意味着你……"；如有必要可加第三句点出该柱与月令节气的关系。四根柱子的解读应体现不同侧重点，避免四句结构雷同。
+3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项；tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。每个 domain 的 positive 和 negative 各写 1 句直接针对用户的个性化描述（15-35 字）：positive 写该域在命局中的优势表现，negative 写需注意的倾向。不写领域定义式文案。
 4. lifeDimensionHighlights 的 strength 和 caution 各 1 句，28-60 个中文字符，说人话，不堆术语。
 5. balanceInsight 用一句短标题 + 当前更显的五行 + 45-90 个中文字符的解释，重点讲现实做事风格。注意：必须结合月令五行（seasonalBonus 最高的元素）与日主的生克关系来分析，不要只堆数值或套话。
 6. patternHighlights 返回 2-4 项，用大白话解释已给出的术语或组合，不要虚构新的命理组合，每项要具体对应命盘特征。
 7. 五大模块 summary 各 50-90 字，bullets 2-4 条，每条 18 字以内，直接给建议。每个模块必须结合命盘格局、五行强弱或十神重心给出个性化解读，避免千篇一律的通用建议。
-8. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须围绕给定的流年干支与大运的相互作用来分析，结合命局喜忌给出趋势判断。
+8. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须结合 litePromptPayload 中的 decadeFortunes（十年大运）与 annualCycles（流年岁运）来分析：先说明当前所在大运的干支与阶段特征，再结合流年干支判断该年的放大或缓冲效应，给出具体趋势判断。
 9. 语气稳健、具体、克制，不夸大确定性，不要许愿式话术。整体输出要求个性化，每个模块都应体现命盘独特性，避免模板化表述。
 `.trim();
 }

@@ -2,14 +2,12 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button } from '@/components/ui/button';
 import { authHeaders } from '@/lib/api/client';
-import {
-  useDestinyWorkspaceStore,
-  type BaziErrorKind,
-} from '@/stores/destiny-workspace-store';
+import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
+import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
+import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
@@ -169,7 +167,8 @@ export function BaziWorkspace({
     elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
     tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
     balanceInsight: sections.elementsAndTenGods?.balanceInsight ?? nextReport.balanceInsight,
-    patternHighlights: sections.elementsAndTenGods?.patternHighlights ?? nextReport.patternHighlights,
+    patternHighlights:
+      sections.elementsAndTenGods?.patternHighlights ?? nextReport.patternHighlights,
     lifeDimensions: sections.elementsAndTenGods?.lifeDimensions ?? nextReport.lifeDimensions,
     lifeDimensionHighlights:
       sections.elementsAndTenGods?.lifeDimensionHighlights ?? nextReport.lifeDimensionHighlights,
@@ -187,10 +186,7 @@ export function BaziWorkspace({
   const hasAnyDisplayableSection = (sections: BaziLockedSections) =>
     Object.keys(sections).length > 0;
 
-  const parseStreamBlock = (
-    block: string,
-    onEvent: (event: BaziStreamEvent) => void
-  ) => {
+  const parseStreamBlock = (block: string, onEvent: (event: BaziStreamEvent) => void) => {
     const data = block
       .split('\n')
       .filter((line) => line.startsWith('data: '))
@@ -202,10 +198,7 @@ export function BaziWorkspace({
     onEvent(JSON.parse(data) as BaziStreamEvent);
   };
 
-  const consumeStream = async (
-    response: Response,
-    onEvent: (event: BaziStreamEvent) => void
-  ) => {
+  const consumeStream = async (response: Response, onEvent: (event: BaziStreamEvent) => void) => {
     if (!response.body) throw new Error('响应体为空');
 
     const reader = response.body.getReader();
@@ -367,23 +360,40 @@ export function BaziWorkspace({
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
-  return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full min-h-0 w-full xl:h-full xl:pl-[304px]">
-        {step === 'form' ? (
-          <div className="flex h-full min-h-0 flex-col p-6">
-            <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                  {pageTitle}
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  同页分步流程：先录入生辰信息，再查看 AI 推演结果
-                </p>
-              </div>
-            </header>
+  const stepTransitionClass =
+    'transition-all duration-[180ms] motion-reduce:transition-opacity motion-reduce:duration-150';
+  const stepTransitionStyle = {
+    transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+  } as const;
 
-            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+  return (
+    <DestinyPageScaffold withNavOffset>
+      <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
+        {/* 表单步 */}
+        <div
+          className={cn(
+            'absolute inset-0 flex h-full min-h-0 flex-col p-4 sm:p-6',
+            stepTransitionClass,
+            step === 'form'
+              ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+              : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+          )}
+          style={stepTransitionStyle}
+          aria-hidden={step !== 'form'}
+        >
+          <header className="shrink-0 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <h1 className="font-display text-xl font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC] sm:text-2xl md:text-[28px]">
+                {pageTitle}
+              </h1>
+              <p className="mt-1 text-sm text-[#64748B] dark:text-[#94A3B8]">
+                同页分步流程：先录入生辰信息，再查看 AI 推演结果
+              </p>
+            </div>
+          </header>
+
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto md:mt-6">
+            <div className="rounded-[24px] border border-white/60 bg-white/80 shadow-[0_8px_20px_rgba(76,95,154,0.10)] backdrop-blur-[24px] transition-shadow duration-[240ms] hover:shadow-[0_14px_32px_rgba(76,95,154,0.14)] dark:border-white/[0.08] dark:bg-[#1E293B]/80 dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)] dark:hover:shadow-[0_20px_40px_rgba(0,0,0,0.36)]">
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}
@@ -397,7 +407,20 @@ export function BaziWorkspace({
               />
             </div>
           </div>
-        ) : (
+        </div>
+
+        {/* 结果步 */}
+        <div
+          className={cn(
+            'absolute inset-0 h-full min-h-0 w-full',
+            stepTransitionClass,
+            step === 'result'
+              ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+              : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+          )}
+          style={stepTransitionStyle}
+          aria-hidden={step !== 'result'}
+        >
           <DestinyShell
             report={report}
             partialReport={partialReport}
@@ -411,11 +434,10 @@ export function BaziWorkspace({
             onModuleChange={onModuleChange}
             onRecalculate={handleRecalculate}
           />
-        )}
+        </div>
       </div>
 
-      {/* Loading 动画 */}
       <StarDecodeOverlay open={blockingLoading} />
-    </div>
+    </DestinyPageScaffold>
   );
 }

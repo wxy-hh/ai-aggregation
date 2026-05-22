@@ -61,6 +61,8 @@ export const BAZI_REPORT_JSON_SCHEMA = {
               technicalLabel: { type: 'string' },
               value: { type: 'integer' },
               description: { type: 'string' },
+              positive: { type: 'string' },
+              negative: { type: 'string' },
             },
             required: ['key', 'label', 'technicalLabel', 'value', 'description'],
             additionalProperties: false,

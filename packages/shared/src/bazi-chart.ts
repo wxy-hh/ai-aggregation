@@ -432,6 +432,14 @@ export function buildBaziPromptPayload(basis: BaziChartBasis): BaziPromptPayload
         duration: basis.childLimit.duration,
       },
       annualCycles: basis.annualCycles,
+      decadeFortunes: basis.decadeFortunes.map((d) => ({
+        name: d.name,
+        startAge: d.startAge,
+        endAge: d.endAge,
+        startYear: d.startYear,
+        endYear: d.endYear,
+        active: d.active,
+      })),
     },
   };
 }
@@ -455,7 +463,7 @@ function buildReportSeed(
       label: item.label,
       value: item.value,
     })),
-    tenGods: tenGodStats.slice(0, 4).map((item) => ({
+    tenGods: tenGodStats.map((item) => ({
       key: item.key,
       label: item.label,
       value: item.value,

@@ -47,6 +47,8 @@ export type DestinyTenGodDomain = {
   technicalLabel: string;
   value: number;
   description: string;
+  positive?: string;
+  negative?: string;
 };
 
 export type ZiweiCenterInfo = {

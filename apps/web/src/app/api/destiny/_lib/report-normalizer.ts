@@ -66,6 +66,8 @@ const TenGodDomainSchema = z.object({
   technicalLabel: z.string().min(1).optional(),
   value: z.number(),
   description: z.string().min(1).optional(),
+  positive: z.string().min(1).optional(),
+  negative: z.string().min(1).optional(),
 });
 
 const PillarSchema = z.object({
@@ -531,6 +533,8 @@ function normalizeTenGodDomains(
     technicalLabel?: string;
     value: number;
     description?: string;
+    positive?: string;
+    negative?: string;
   }> | undefined
 ): DestinyTenGodDomain[] | undefined {
   if (!raw?.length) return undefined;
@@ -544,6 +548,8 @@ function normalizeTenGodDomains(
       technicalLabel: item.technicalLabel?.trim() || preset.technicalLabel,
       value: normalizePercentValue(item.value),
       description: item.description?.trim() || '',
+      positive: item.positive?.trim() || '',
+      negative: item.negative?.trim() || '',
     });
   }
 
@@ -676,6 +682,29 @@ function elementLabel(key: FiveElementKey): string {
   }
 }
 
+/** 从 tenGodStats 按 domain 聚合权重并归一化为百分比 */
+function computeDomainWeightsFromStats(
+  tenGodStats: Array<{ domain: TenGodDomainKey; weight: number }> | undefined
+): Record<TenGodDomainKey, number> | null {
+  if (!tenGodStats?.length) return null;
+
+  const domainTotals: Record<string, number> = {};
+  for (const stat of tenGodStats) {
+    domainTotals[stat.domain] = (domainTotals[stat.domain] ?? 0) + stat.weight;
+  }
+
+  const total = Object.values(domainTotals).reduce((s, v) => s + v, 0);
+  if (total <= 0) return null;
+
+  const result: Partial<Record<TenGodDomainKey, number>> = {};
+  for (const key of tenGodDomainOrder) {
+    const raw = domainTotals[key] ?? 0;
+    result[key] = normalizePercentValue((raw / total) * 100);
+  }
+
+  return result as Record<TenGodDomainKey, number>;
+}
+
 export function normalizeDestinyReport(
   raw: unknown,
   input: DestinyReportRequest,
@@ -772,9 +801,37 @@ export function normalizeDestinyReport(
   const finalLifeDimensionHighlights = normalizeLifeDimensionHighlights(
     lifeDimensionHighlights.success ? lifeDimensionHighlights.data : undefined
   );
-  const finalTenGodDomains = normalizeTenGodDomains(
+
+  // 十神领域：优先用 AI 的标签文案，但百分比必须来自算法真值
+  const domainWeights = basis ? computeDomainWeightsFromStats(basis.tenGodStats) : null;
+  const aiDomains = normalizeTenGodDomains(
     tenGodDomains.success ? tenGodDomains.data : undefined
   );
+
+  let finalTenGodDomains: DestinyTenGodDomain[] | undefined;
+  if (aiDomains && domainWeights) {
+    // AI 返回了数据：保留文案，覆盖百分比
+    finalTenGodDomains = aiDomains.map((item) => ({
+      ...item,
+      value: domainWeights[item.key] ?? item.value,
+    }));
+  } else if (domainWeights) {
+    // AI 未返回但算法有数据：用 preset 兜底 + 算法百分比
+    finalTenGodDomains = tenGodDomainOrder.map((key) => {
+      const preset = getTenGodDomainPreset(key);
+      return {
+        key,
+        label: preset.label,
+        technicalLabel: preset.technicalLabel,
+        value: domainWeights[key],
+        description: preset.description,
+        positive: '',
+        negative: '',
+      };
+    });
+  } else {
+    finalTenGodDomains = aiDomains;
+  }
 
   const normalizedZiweiPalaces = normalizeZiweiPalaces(
     ziweiPalaces.success ? ziweiPalaces.data : undefined,

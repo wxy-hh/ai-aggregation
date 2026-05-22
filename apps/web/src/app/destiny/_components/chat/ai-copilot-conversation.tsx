@@ -281,13 +281,27 @@ export function AICoPilotConversation({
         })}
       </div>
 
-      <div className="p-4 border-t border-slate-200/60 bg-white/55">
-        <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3">
+      <div className="shrink-0 border-t border-slate-200/60 bg-white/55 p-4">
+        {error ? (
+          <div className="mb-2 text-xs leading-relaxed text-red-500 break-words">{error}</div>
+        ) : null}
+        {/* 单行 flex：输入与发送同属一个圆角容器，避免 absolute 在侧栏里错位 */}
+        <div
+          className={cn(
+            'flex items-end gap-2 rounded-2xl border border-slate-200/80 bg-white/70 p-2 pl-3',
+            'focus-within:border-[#5D7CFA]/40 focus-within:ring-2 focus-within:ring-[#5D7CFA]/15'
+          )}
+        >
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="输入你的追问…（Enter 发送，Shift+Enter 换行）"
-            className="min-h-[84px] resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+            rows={3}
+            className={cn(
+              'block min-h-[72px] max-h-[140px] min-w-0 flex-1 resize-none',
+              'border-0 bg-transparent py-2 pr-1 shadow-none',
+              'focus-visible:ring-0 focus-visible:ring-offset-0'
+            )}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -295,24 +309,19 @@ export function AICoPilotConversation({
               }
             }}
           />
-          <div className="mt-3 flex items-center justify-end gap-3">
-            {error && (
-              <div className="min-w-0 flex-1 text-xs leading-relaxed text-red-500 break-words">
-                {error}
-              </div>
+          <Button
+            type="button"
+            onClick={() => void sendQuestion()}
+            disabled={!canSend || sending}
+            className={cn(
+              'mb-1 h-9 shrink-0 rounded-full px-4',
+              'bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-sm font-bold text-white',
+              'shadow-[0_6px_16px_rgba(93,124,250,0.28)]',
+              'hover:brightness-[1.03] active:scale-[0.98] disabled:opacity-50'
             )}
-            <Button
-              type="button"
-              onClick={() => void sendQuestion()}
-              disabled={!canSend || sending}
-              className={cn(
-                'rounded-full font-extrabold bg-[#2F6BFF] text-white',
-                'hover:brightness-110 active:brightness-95 transition'
-              )}
-            >
-              {sending ? '发送中...' : '发送'}
-            </Button>
-          </div>
+          >
+            {sending ? '发送中' : '发送'}
+          </Button>
         </div>
       </div>
     </div>

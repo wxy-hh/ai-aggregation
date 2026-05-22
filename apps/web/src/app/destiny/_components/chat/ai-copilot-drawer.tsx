@@ -38,8 +38,10 @@ const QUICK_ASKS = [
 function reportSessionKey(report: DestinyReport) {
   const pillars = report.pillars.map((p) => `${p.label}:${p.stem}${p.branch}`).join('|');
   const elements = report.elements.map((e) => `${e.key}:${e.value}`).join('|');
-  const lifeDimensions = report.lifeDimensions?.map((item) => `${item.key}:${item.value}`).join('|') || '';
-  const tenGodDomains = report.tenGodDomains?.map((item) => `${item.key}:${item.value}`).join('|') || '';
+  const lifeDimensions =
+    report.lifeDimensions?.map((item) => `${item.key}:${item.value}`).join('|') || '';
+  const tenGodDomains =
+    report.tenGodDomains?.map((item) => `${item.key}:${item.value}`).join('|') || '';
   return `${report.profile.birthText}|${report.profile.locationText}|${pillars}|${elements}|${lifeDimensions}|${tenGodDomains}`;
 }
 

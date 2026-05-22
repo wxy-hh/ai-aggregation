@@ -118,6 +118,8 @@ const TenGodDomainSchema = z.object({
   technicalLabel: z.string().trim().min(1),
   value: z.number(),
   description: z.string().trim().min(1),
+  positive: z.string().trim().optional(),
+  negative: z.string().trim().optional(),
 });
 
 const ElementsAndTenGodsCoreSectionSchema = z.object({
@@ -154,7 +156,7 @@ const ElementsAndTenGodsCoreSectionSchema = z.object({
 const ModuleSectionSchema = z.object({
   title: z.string().trim().min(1),
   summary: z.string().trim().min(1),
-  bullets: z.array(z.string().trim().min(1)).min(2).max(4),
+  bullets: z.array(z.string().trim().min(1)).max(4),
 });
 
 const TimelineSectionSchema = z
@@ -259,8 +261,11 @@ function normalizeSectionPayload<K extends BaziSectionKey>(
         .profile as BaziSectionPayloadMap[K];
     }
     case 'coreDestinyTone': {
-      const parsed = CoreToneSectionSchema.parse(raw);
-      return normalizeDestinyReport({ coreTone: parsed }, input, currentYear, { basis })
+      const parsed = CoreToneSectionSchema.safeParse(raw);
+      const coreTone = parsed.success
+        ? parsed.data
+        : { headline: '', description: '' };
+      return normalizeDestinyReport({ coreTone }, input, currentYear, { basis })
         .coreTone as BaziSectionPayloadMap[K];
     }
     case 'pillars': {
@@ -326,7 +331,6 @@ function normalizeElementsAndTenGodsSection(
   const balanceInsight = BalanceInsightSchema.safeParse(source.balanceInsight);
   const patternHighlights = z
     .array(PatternInsightSchema)
-    .min(2)
     .max(4)
     .safeParse(source.patternHighlights);
 
@@ -467,11 +471,14 @@ function normalizeLooseModule(raw: unknown, rawPayload: string): DestinyModule {
 
 function normalizePillarsSection(raw: unknown, basis?: BaziChartBasis) {
   if (!basis) {
-    return z.array(PillarSchema).length(4).parse(raw);
+    const parsed = z.array(PillarSchema).safeParse(raw);
+    return parsed.success ? parsed.data : [];
   }
 
-  const parsed = z.array(PillarCommentarySchema).length(4).parse(raw);
-  const byLabel = new Map(parsed.map((item) => [item.label, item.tooltip]));
+  const parsed = z.array(PillarCommentarySchema).safeParse(raw);
+  const byLabel = new Map(
+    parsed.success ? parsed.data.map((item) => [item.label, item.tooltip]) : []
+  );
   return basis.reportSeed.pillars.map((pillar) => ({
     ...pillar,
     tooltip: byLabel.get(pillar.label) || '',

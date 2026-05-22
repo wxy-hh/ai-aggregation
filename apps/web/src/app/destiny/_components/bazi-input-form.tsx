@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -62,6 +62,16 @@ export function BaziInputForm({
   const [cityPopoverOpen, setCityPopoverOpen] = useState(false);
   const [cityQuery, setCityQuery] = useState(value.location.name);
   const cityInputRef = useRef<HTMLInputElement>(null);
+
+  // 父组件重置表单后，同步清空城市搜索输入
+  // Popover 打开时不覆盖（用户正在自由输入）
+  useEffect(() => {
+    if (!cityPopoverOpen && value.location.name !== cityQuery) {
+      setCityQuery(value.location.name);
+    }
+    // 仅在外部 value 变化时同步
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.location.name]);
 
   const cityResults = useMemo(() => {
     const q = cityQuery.trim();
@@ -467,12 +477,12 @@ export function BaziInputForm({
                     />
                     <div className="max-h-56 overflow-y-auto">
                       {cityResults.length > 0 ? (
-                        cityResults.map((city) => {
+                        cityResults.map((city, idx) => {
                           const isSelected =
                             hasExactLocation && value.location.lat === city.lat && value.location.lon === city.lon;
                           return (
                             <button
-                              key={city.id}
+                              key={`${city.id}-${city.fullName}-${idx}`}
                               type="button"
                               className={cn(
                                 'w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2',

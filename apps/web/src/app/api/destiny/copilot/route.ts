@@ -207,7 +207,7 @@ async function requestArkStream({
         {
           role: 'system',
           content:
-            '你是命理报告解读助手。基于用户已经生成的八字分析结果回答追问，给出清晰、具体、可执行的建议。优先结合人生五维、十神五域、盘面、五行和问题相关模块作答。答案控制在 300 字以内，直接回答，不展开长篇推演。避免绝对化判断，不做医疗或投资承诺。',
+            '你是命理报告解读助手。基于用户已经生成的八字分析结果回答追问，给出清晰、具体、可执行的建议。优先结合人生五维、十神五域、四柱八字、五行和问题相关模块作答。每个问题回答控制在 2-3 段，说清楚即可，不需要刻意缩短。避免绝对化判断，不做医疗或投资承诺。',
         },
         {
           role: 'user',
@@ -216,7 +216,7 @@ async function requestArkStream({
       ],
       stream: true,
       temperature: 0.3,
-      max_output_tokens: 500,
+      max_output_tokens: 1200,
       reasoning: { effort: 'low' },
     }),
     signal: controller.signal,
