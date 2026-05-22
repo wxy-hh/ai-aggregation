@@ -89,7 +89,7 @@ export function LeftNav({
     <div className="h-full flex flex-col gap-6">
       <div className="flex items-center gap-2">
         <div className="w-10 h-10 rounded-2xl bg-white/70 dark:bg-slate-800/70 border border-white/40 dark:border-white/10 flex items-center justify-center shadow-sm">
-          <BookOpen className="w-5 h-5 text-[#2F6BFF] dark:text-indigo-400" />
+          <BookOpen className="w-5 h-5 text-[#4969E9] dark:text-indigo-400" />
         </div>
         <div className="min-w-0">
           <div className="text-sm font-extrabold text-slate-900 dark:text-white truncate">
@@ -122,14 +122,14 @@ export function LeftNav({
                       !active &&
                         'hover:border-white/60 dark:hover:border-white/10 hover:bg-white/45 dark:hover:bg-slate-800/45',
                       active &&
-                        'bg-[#2F6BFF]/10 dark:bg-indigo-500/10 border-[#2F6BFF]/25 dark:border-indigo-500/25 shadow-sm text-slate-900 dark:text-white'
+                        'bg-[#4969E9]/10 dark:bg-indigo-500/10 border-[#4969E9]/25 dark:border-indigo-500/25 shadow-sm text-slate-900 dark:text-white'
                     )}
                   >
                     <div
                       className={cn(
                         'w-9 h-9 rounded-xl flex items-center justify-center border',
                         active
-                          ? 'bg-[#2F6BFF] dark:bg-indigo-500 border-[#2F6BFF] dark:border-indigo-500 text-white shadow-lg shadow-blue-500/25 dark:shadow-indigo-500/25'
+                          ? 'bg-[#4969E9] dark:bg-indigo-500 border-[#4969E9] dark:border-indigo-500 text-white shadow-lg shadow-blue-500/25 dark:shadow-indigo-500/25'
                           : 'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 text-slate-600 dark:text-slate-300'
                       )}
                     >

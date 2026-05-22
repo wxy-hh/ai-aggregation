@@ -28,18 +28,18 @@ export function PersonalityDashboardCard({
     tenGodDomains.every((item) => Boolean(item.description?.trim()));
 
   return (
-    <GlassCard className={cn('p-6 min-h-[480px]', className)}>
+    <GlassCard className={cn('p-4 sm:p-6 min-h-0 sm:min-h-[480px]', className)}>
       <div className="flex items-center gap-2">
         <AssetToneIcon className="h-4 w-4 text-[#5D7CFA]" src={xinggeIcon} />
-        <div className="font-heading text-lg font-bold text-slate-900 dark:text-slate-100">
+        <div className="font-heading text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
           性格与潜能仪表盘
         </div>
       </div>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-[11px] sm:text-xs text-slate-400">
         百分比为该领域十神能量在命局中的相对占比，不代表能力高低
       </p>
 
-      <div className="mt-5 flex h-full min-h-[400px] flex-col gap-4">
+      <div className="mt-4 sm:mt-5 flex h-full min-h-0 sm:min-h-[400px] flex-col gap-3 sm:gap-4">
         {hasData ? (
           tenGodDomains!.map((item) => {
             const palette = tenGodDomainStyles[item.key];
@@ -53,20 +53,20 @@ export function PersonalityDashboardCard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-extrabold text-slate-700">
+                    <div className="text-xs sm:text-sm font-extrabold text-slate-700">
                       {item.label}
                       <span className="ml-1 text-slate-400">（{item.technicalLabel}）</span>
                     </div>
                   </div>
                   <div
-                    className="shrink-0 text-sm font-black"
+                    className="shrink-0 text-xs sm:text-sm font-black"
                     style={{ color: palette.color }}
                   >
                     {item.value}%
                   </div>
                 </div>
                 <div
-                  className="mt-3 h-3 overflow-hidden rounded-full shadow-inner"
+                  className="mt-2 sm:mt-3 h-2.5 sm:h-3 overflow-hidden rounded-full shadow-inner"
                   style={{ backgroundColor: palette.track }}
                 >
                   <div
@@ -78,18 +78,18 @@ export function PersonalityDashboardCard({
                   />
                 </div>
                 {item.positive && (
-                  <p className="mt-3 text-[11px] leading-5 text-emerald-600 font-medium">
+                  <p className="mt-2 sm:mt-3 text-[10px] sm:text-[11px] leading-5 text-emerald-600 font-medium">
                     优势：{item.positive}
                   </p>
                 )}
                 {item.negative && (
-                  <p className="mt-1 text-[11px] leading-5 text-amber-600">
+                  <p className="mt-1 text-[10px] sm:text-[11px] leading-5 text-amber-600">
                     规避：{item.negative}
                   </p>
                 )}
                 {/* 兜底：模型未返回 positive/negative 时显示 description */}
                 {!item.positive && !item.negative && item.description && (
-                  <p className="mt-3 text-[11px] leading-5 text-slate-400 transition-colors group-hover:text-slate-600">
+                  <p className="mt-2 sm:mt-3 text-[10px] sm:text-[11px] leading-5 text-slate-400 transition-colors group-hover:text-slate-600">
                     {item.description}
                   </p>
                 )}
@@ -97,7 +97,7 @@ export function PersonalityDashboardCard({
             );
           })
         ) : (
-          <div data-testid="ten-god-domains-skeleton" className="space-y-4">
+          <div data-testid="ten-god-domains-skeleton" className="space-y-3 sm:space-y-4">
             {Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={`ten-god-domain-skeleton-${index}`}

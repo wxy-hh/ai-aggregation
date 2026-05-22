@@ -172,7 +172,7 @@ export function FiveElementRadar({
         >
           <span className="text-[11px] font-bold text-slate-500 sm:text-xs">{vertex.label}</span>
           {showScores ? (
-            <span className="rounded-full bg-[#F3F6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#4E67E6] dark:bg-[#1E2A55] dark:text-[#9BADFF]">
+            <span className="rounded-full bg-[#F3F6FF] px-1.5 py-0.5 text-[10px] font-bold text-[#3C58D8] dark:bg-[#1E2A55] dark:text-[#9BADFF]">
               {vertex.value}
             </span>
           ) : null}

@@ -51,7 +51,7 @@ export function LifeSummaryCard({
   }, [hasHighlights, lifeDimensionHighlights, personalityModule]);
 
   return (
-    <GlassCard className={cn('p-6 min-h-[480px]', className)}>
+    <GlassCard className={cn('p-4 sm:p-6 min-h-0 sm:min-h-[480px]', className)}>
       <div className="flex items-start gap-2">
         <AssetToneIcon className="h-4 w-4 text-[#5D7CFA]" src={renshengIcon} />
         <div className="min-w-0">
@@ -68,23 +68,23 @@ export function LifeSummaryCard({
 
       {derivedDimensions ? (
         <>
-          <div className="mt-4 flex min-h-[288px] flex-col items-center justify-center gap-3">
+          <div className="mt-3 sm:mt-4 flex min-h-[240px] sm:min-h-[288px] flex-col items-center justify-center gap-3">
             <FiveElementRadar data={derivedDimensions} showScores />
           </div>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-4 sm:mt-6 space-y-3 sm:space-y-4">
             {/* 优势点：绿色 */}
-            <div className="flex items-start gap-3 rounded-2xl border border-emerald-200/70 bg-gradient-to-r from-emerald-50/60 to-emerald-50/20 px-4 py-3 shadow-sm">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-              <div className="text-sm leading-7 text-slate-600">
+            <div className="flex items-start gap-2.5 sm:gap-3 rounded-xl sm:rounded-2xl border border-emerald-200/70 bg-gradient-to-r from-emerald-50/60 to-emerald-50/20 px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 sm:h-5 sm:w-5 shrink-0 text-emerald-500" />
+              <div className="text-xs sm:text-sm leading-6 sm:leading-7 text-slate-600">
                 <span className="font-extrabold text-emerald-700">优势点：</span>
                 {strengthText}
               </div>
             </div>
             {/* 规避点：橙色 */}
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-200/70 bg-gradient-to-r from-amber-50/60 to-amber-50/20 px-4 py-3 shadow-sm">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-              <div className="text-sm leading-7 text-slate-600">
+            <div className="flex items-start gap-2.5 sm:gap-3 rounded-xl sm:rounded-2xl border border-amber-200/70 bg-gradient-to-r from-amber-50/60 to-amber-50/20 px-3 sm:px-4 py-2.5 sm:py-3 shadow-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 sm:h-5 sm:w-5 shrink-0 text-amber-500" />
+              <div className="text-xs sm:text-sm leading-6 sm:leading-7 text-slate-600">
                 <span className="font-extrabold text-amber-700">规避点：</span>
                 {cautionText}
               </div>
@@ -94,7 +94,7 @@ export function LifeSummaryCard({
       ) : (
         <div
           data-testid="life-dimensions-skeleton"
-          className="mt-6 flex min-h-[400px] flex-col justify-between"
+          className="mt-6 flex min-h-[240px] sm:min-h-[400px] flex-col justify-between"
         >
           <div className="mx-auto h-[288px] w-full max-w-[320px] animate-pulse rounded-[32px] bg-slate-100/80" />
           <div className="space-y-4">

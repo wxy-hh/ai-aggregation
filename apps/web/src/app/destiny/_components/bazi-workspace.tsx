@@ -93,11 +93,6 @@ export function BaziWorkspace({
   );
   const abortRef = useRef<AbortController | null>(null);
 
-  const pageTitle = useMemo(
-    () => (step === 'form' ? '八字格局精批 · 信息输入' : '八字格局精批 · AI 分析结果'),
-    [step]
-  );
-
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
@@ -361,9 +356,9 @@ export function BaziWorkspace({
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
   const stepTransitionClass =
-    'transition-all duration-[180ms] motion-reduce:transition-opacity motion-reduce:duration-150';
+    'transition-all duration-[240ms] motion-reduce:transition-opacity motion-reduce:duration-150';
   const stepTransitionStyle = {
-    transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+    transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
   } as const;
 
   return (
@@ -372,40 +367,27 @@ export function BaziWorkspace({
         {/* 表单步 */}
         <div
           className={cn(
-            'absolute inset-0 flex h-full min-h-0 flex-col p-4 sm:p-6',
+            'absolute inset-0 flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6',
             stepTransitionClass,
             step === 'form'
-              ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
-              : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              ? 'pointer-events-auto z-10 opacity-100 translate-y-0 scale-100'
+              : 'pointer-events-none z-0 opacity-0 translate-y-3 scale-[0.99] motion-reduce:translate-y-0 motion-reduce:scale-100'
           )}
           style={stepTransitionStyle}
           aria-hidden={step !== 'form'}
         >
-          <header className="shrink-0 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div className="min-w-0">
-              <h1 className="font-display text-xl font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC] sm:text-2xl md:text-[28px]">
-                {pageTitle}
-              </h1>
-              <p className="mt-1 text-sm text-[#64748B] dark:text-[#94A3B8]">
-                同页分步流程：先录入生辰信息，再查看 AI 推演结果
-              </p>
-            </div>
-          </header>
-
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto md:mt-6">
-            <div className="rounded-[24px] border border-white/60 bg-white/80 shadow-[0_8px_20px_rgba(76,95,154,0.10)] backdrop-blur-[24px] transition-shadow duration-[240ms] hover:shadow-[0_14px_32px_rgba(76,95,154,0.14)] dark:border-white/[0.08] dark:bg-[#1E293B]/80 dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)] dark:hover:shadow-[0_20px_40px_rgba(0,0,0,0.36)]">
-              <BaziInputForm
-                value={formData}
-                submitting={blockingLoading || streaming}
-                error={error}
-                fieldErrors={fieldErrors}
-                onChange={onChange}
-                onSubmit={() => {
-                  void submit();
-                }}
-                onReset={reset}
-              />
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <BaziInputForm
+              value={formData}
+              submitting={blockingLoading || streaming}
+              error={error}
+              fieldErrors={fieldErrors}
+              onChange={onChange}
+              onSubmit={() => {
+                void submit();
+              }}
+              onReset={reset}
+            />
           </div>
         </div>
 
@@ -415,8 +397,8 @@ export function BaziWorkspace({
             'absolute inset-0 h-full min-h-0 w-full',
             stepTransitionClass,
             step === 'result'
-              ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
-              : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              ? 'pointer-events-auto z-10 opacity-100 translate-y-0 scale-100'
+              : 'pointer-events-none z-0 opacity-0 translate-y-3 scale-[0.99] motion-reduce:translate-y-0 motion-reduce:scale-100'
           )}
           style={stepTransitionStyle}
           aria-hidden={step !== 'result'}

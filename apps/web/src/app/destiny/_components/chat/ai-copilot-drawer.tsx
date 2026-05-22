@@ -97,7 +97,7 @@ export function AICoPilotDrawer({
                 className={cn(
                   'rounded-xl p-2 text-slate-400/90 hover:text-slate-600 hover:bg-white/45',
                   'transition-colors duration-200',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/25'
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/25'
                 )}
               >
                 <X className="h-5 w-5" />
@@ -120,7 +120,7 @@ export function AICoPilotDrawer({
                     })
                   }
                   className={cn(
-                    'h-8 rounded-full px-3 text-xs font-bold',
+                    'h-9 min-h-[36px] rounded-full px-3 text-xs font-bold',
                     'bg-white/70 border-slate-200/80 text-slate-700 hover:bg-white'
                   )}
                 >

@@ -78,7 +78,7 @@ export function SectionReveal({
 /** 通用区块骨架 */
 export function SectionBlockSkeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="space-y-3 rounded-3xl border border-[#D5DAEB]/60 bg-white/60 p-6 dark:border-white/10 dark:bg-slate-900/50">
+    <div className="space-y-3 rounded-3xl border border-[#D5DAEB]/60 bg-white/60 p-4 sm:p-6 dark:border-white/10 dark:bg-slate-900/50">
       <div className="h-5 w-32 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/70" />
       {Array.from({ length: lines }).map((_, index) => (
         <div

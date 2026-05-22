@@ -74,7 +74,10 @@ export function DestinyPageClient() {
     ];
 
     return (
-      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950"
+        style={{ minHeight: '100dvh' }}
+      >
         {/* 移动端分段控件 - 使用设计系统规范 */}
         <div className="sticky top-0 z-20 border-b border-slate-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/90">
           <div className="rounded-[999px] bg-slate-100/80 p-1 dark:bg-slate-800/80">

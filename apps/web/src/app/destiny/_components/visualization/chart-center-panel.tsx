@@ -44,7 +44,7 @@ export function ChartCenterPanel({
     Boolean(personalityModule?.summary?.trim());
 
   return (
-    <div className={cn('flex min-h-0 flex-col gap-6', className)}>
+    <div className={cn('flex min-h-0 flex-col gap-4 sm:gap-6', className)}>
       <SectionReveal
         ready={hasCoreTone || Boolean(profile)}
         streaming={streaming}
@@ -120,7 +120,7 @@ export function ChartCenterPanel({
         />
       </SectionReveal>
 
-      <div className="px-4 py-3 text-center text-xs leading-5 text-slate-400">
+      <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-center text-[11px] sm:text-xs leading-5 text-slate-400">
         【娱乐声明】本内容基于中国传统民俗文化进行娱乐化解读，仅供休闲参考，
         不构成任何人生决策建议。命运掌握在自己手中，积极努力才是幸福生活的根本。
       </div>

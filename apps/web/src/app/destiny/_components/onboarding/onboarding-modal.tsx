@@ -126,7 +126,7 @@ export function OnboardingModal({
                   className={cn(
                     'rounded-xl p-2 text-slate-400/90 hover:text-slate-600 hover:bg-white/45',
                     'transition-colors duration-200',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/25'
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/25'
                   )}
                 >
                   <X className="h-5 w-5" />
@@ -158,7 +158,7 @@ export function OnboardingModal({
                       className={cn(
                         'h-12 rounded-full bg-white/80 border border-slate-200/40 shadow-sm',
                         'text-black placeholder:text-slate-400',
-                        'focus-visible:ring-0 focus-visible:border-[#2F6BFF]/55 focus-visible:bg-white'
+                        'focus-visible:ring-0 focus-visible:border-[#4969E9]/55 focus-visible:bg-white'
                       )}
                     />
                   </div>
@@ -182,9 +182,9 @@ export function OnboardingModal({
                         className={cn(
                           'rounded-full font-extrabold transition-all',
                           'text-black/65 hover:text-black/80',
-                          'data-[state=active]:text-[#2F6BFF]',
+                          'data-[state=active]:text-[#4969E9]',
                           'data-[state=active]:bg-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
-                          'data-[state=active]:ring-2 data-[state=active]:ring-[#2F6BFF]/55',
+                          'data-[state=active]:ring-2 data-[state=active]:ring-[#4969E9]/55',
                           'data-[state=active]:scale-[1.02]'
                         )}
                       >
@@ -195,9 +195,9 @@ export function OnboardingModal({
                         className={cn(
                           'rounded-full font-extrabold transition-all',
                           'text-black/65 hover:text-black/80',
-                          'data-[state=active]:text-[#2F6BFF]',
+                          'data-[state=active]:text-[#4969E9]',
                           'data-[state=active]:bg-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
-                          'data-[state=active]:ring-2 data-[state=active]:ring-[#2F6BFF]/55',
+                          'data-[state=active]:ring-2 data-[state=active]:ring-[#4969E9]/55',
                           'data-[state=active]:scale-[1.02]'
                         )}
                       >
@@ -290,7 +290,7 @@ export function OnboardingModal({
                       className={cn(
                         'h-12 rounded-full bg-white/80 border border-slate-200/40 shadow-sm',
                         'pl-11 text-black placeholder:text-slate-400',
-                        'focus-visible:ring-0 focus-visible:border-[#2F6BFF]/55 focus-visible:bg-white'
+                        'focus-visible:ring-0 focus-visible:border-[#4969E9]/55 focus-visible:bg-white'
                       )}
                     />
                   </div>
@@ -332,7 +332,7 @@ export function OnboardingModal({
 function FieldLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm font-black text-black drop-shadow-[0_1px_0_rgba(255,255,255,0.55)]">
-      <span className="text-[#2F6BFF]">{icon}</span>
+      <span className="text-[#4969E9]">{icon}</span>
       <span>{label}</span>
     </div>
   );
@@ -358,7 +358,7 @@ function SelectPill({
         className={cn(
           'h-12 w-full appearance-none rounded-full px-4 pr-10 text-sm font-bold',
           'bg-white/80 border border-slate-200/40 text-black shadow-sm',
-          'focus:outline-none focus:ring-2 focus:ring-[#2F6BFF]/10 focus:border-[#2F6BFF]/50'
+          'focus:outline-none focus:ring-2 focus:ring-[#4969E9]/10 focus:border-[#4969E9]/50'
         )}
       >
         {options.map((o) => (

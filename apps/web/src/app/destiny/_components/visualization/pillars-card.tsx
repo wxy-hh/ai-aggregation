@@ -30,7 +30,9 @@ export function PillarsCard({
   const balanceInsightTitle = balanceInsight?.title?.trim() || '';
   const balanceInsightValue = balanceInsight?.value?.trim() || '';
   const balanceInsightTooltip = balanceInsight?.tooltip?.trim() || '';
-  const hasBalanceInsight = Boolean(balanceInsightTitle && balanceInsightValue && balanceInsightTooltip);
+  const hasBalanceInsight = Boolean(
+    balanceInsightTitle && balanceInsightValue && balanceInsightTooltip
+  );
 
   return (
     <GlassCard className="shrink-0 p-4 sm:p-6">
@@ -70,22 +72,22 @@ export function PillarsCard({
         )}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+      <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
         {(pillars && pillars.length > 0
           ? pillars
           : Array.from({ length: 4 }).map((_, idx) => ({
-              label: ['年柱', '天柱', '日柱', '时柱'][idx],
+              label: ['年柱', '月柱', '日柱', '时柱'][idx],
             }))
         ).map((p, idx) => {
           if (!('stem' in p)) {
             return (
               <div
                 key={p.label}
-                className="rounded-3xl border border-white/50 bg-white/55 px-3 py-4 shadow-sm sm:px-4"
+                className="rounded-2xl sm:rounded-3xl border border-white/50 bg-white/55 px-3 py-3 sm:py-4 shadow-sm sm:px-4"
               >
-                <div className="text-xs font-bold text-slate-400">{p.label}</div>
-                <div className="mt-3 h-8 w-16 animate-pulse rounded bg-slate-200/70" />
-                <div className="mt-3 h-3 w-24 animate-pulse rounded bg-slate-200/70" />
+                <div className="text-[10px] sm:text-xs font-bold text-slate-400">{p.label}</div>
+                <div className="mt-2 sm:mt-3 h-6 sm:h-8 w-16 animate-pulse rounded bg-slate-200/70" />
+                <div className="mt-2 sm:mt-3 h-2.5 sm:h-3 w-24 animate-pulse rounded bg-slate-200/70" />
               </div>
             );
           }
@@ -99,44 +101,52 @@ export function PillarsCard({
           const pillarContent = (
             <div
               className={cn(
-                'relative rounded-3xl border border-white/50 backdrop-blur-[18px]',
-                'px-3 py-4 text-left shadow-sm transition sm:px-4',
+                'relative rounded-2xl sm:rounded-3xl border border-white/50 backdrop-blur-[18px]',
+                'px-3 py-3 sm:py-4 text-left shadow-sm transition sm:px-4',
                 pillar.tooltip ? 'hover:bg-white/70 hover:shadow-md' : 'cursor-default',
-                isFocus
-                  ? 'bg-[#5D7CFA]/6 ring-[3px] ring-[#5D7CFA]/75 shadow-lg'
-                  : 'bg-white/55'
+                isFocus ? 'bg-[#5D7CFA]/6 ring-[3px] ring-[#5D7CFA]/75 shadow-lg' : 'bg-white/55'
               )}
             >
               {/* 日主标签 */}
               {isFocus && (
-                <div className="absolute -top-2.5 -right-2.5 z-10 rounded-full bg-[#5D7CFA] px-2.5 py-0.5 text-[10px] font-extrabold text-white shadow-[0_4px_10px_-4px_rgba(47,107,255,0.6)]">
+                <div className="absolute -top-2 -right-2 sm:-top-2.5 sm:-right-2.5 z-10 rounded-full bg-[#5D7CFA] px-2 py-0.5 text-[10px] font-extrabold text-white shadow-[0_4px_10px_-4px_rgba(47,107,255,0.6)]">
                   日主
                 </div>
               )}
 
               {/* 十神标签移到顶部 */}
               {pillarTag && (
-                <div className="mb-2 flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/80 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                <div className="mb-1.5 sm:mb-2 flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/80 px-1.5 sm:px-2 py-0.5 text-[10px] font-bold text-slate-600">
                     <ElementDot element={pillar.element} />
                     {pillarTag}
                   </span>
                 </div>
               )}
 
-              <div className="text-xs font-bold text-slate-400">{pillar.label}</div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div className={cn('text-[1.8rem] font-black tracking-tight sm:text-3xl', style.text)}>
+              <div className="text-[10px] sm:text-xs font-bold text-slate-400">{pillar.label}</div>
+              <div className="mt-1.5 sm:mt-2 flex items-center justify-between gap-2">
+                <div
+                  className={cn('text-[1.4rem] font-black tracking-tight sm:text-3xl', style.text)}
+                >
                   {pillar.stem}
                 </div>
-                <div className={cn('text-[1.8rem] font-black tracking-tight sm:text-3xl', style.text)}>
+                <div
+                  className={cn('text-[1.4rem] font-black tracking-tight sm:text-3xl', style.text)}
+                >
                   {pillar.branch}
                 </div>
               </div>
 
               {/* 底部：五行标签 + 纳音 */}
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold', style.bg, style.text)}>
+              <div className="mt-2 sm:mt-3 flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-bold',
+                    style.bg,
+                    style.text
+                  )}
+                >
                   <ElementDot element={pillar.element} />
                   {elementLabel(pillar.element)}
                 </span>
@@ -151,8 +161,15 @@ export function PillarsCard({
                 })()}
               </div>
 
-              <div className={cn('absolute inset-0 rounded-3xl ring-1', style.ring)} />
-              <div className={cn('absolute inset-0 rounded-3xl -z-10 blur-2xl opacity-40', style.bg)} />
+              <div
+                className={cn('absolute inset-0 rounded-2xl sm:rounded-3xl ring-1', style.ring)}
+              />
+              <div
+                className={cn(
+                  'absolute inset-0 rounded-2xl sm:rounded-3xl -z-10 blur-2xl opacity-40',
+                  style.bg
+                )}
+              />
             </div>
           );
 
@@ -190,9 +207,7 @@ export function PillarsCard({
                     </span>
                   )}
                 </div>
-                <div className="mt-2 text-sm text-slate-600 leading-relaxed">
-                  {pillar.tooltip}
-                </div>
+                <div className="mt-2 text-sm text-slate-600 leading-relaxed">{pillar.tooltip}</div>
                 {(() => {
                   const chartPillar = baziBasis?.pillars?.find((bp) => bp.label === pillar.label);
                   if (!chartPillar?.hiddenStems?.length) return null;
@@ -220,7 +235,7 @@ export function PillarsCard({
       </div>
 
       {patternHighlights && patternHighlights.length > 0 && (
-        <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold text-slate-500">
+        <div className="mt-4 sm:mt-6 flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-2 text-[11px] sm:text-xs font-semibold text-slate-500">
           {patternHighlights.map((item) => (
             <LegendDot key={item.label} label={item.label} tooltip={item.tooltip} />
           ))}
@@ -243,11 +258,16 @@ function ElementDot({ element }: { element: FiveElementKey }) {
 
 function elementLabel(k: FiveElementKey) {
   switch (k) {
-    case 'metal': return '金';
-    case 'wood': return '木';
-    case 'water': return '水';
-    case 'fire': return '火';
-    case 'earth': return '土';
+    case 'metal':
+      return '金';
+    case 'wood':
+      return '木';
+    case 'water':
+      return '水';
+    case 'fire':
+      return '火';
+    case 'earth':
+      return '土';
   }
 }
 
@@ -255,9 +275,7 @@ function elementLabel(k: FiveElementKey) {
 function extractTenGodLabel(tooltip?: string): string {
   if (!tooltip) return '';
   // 尝试匹配常用十神关键词
-  const match = tooltip.match(
-    /([一-龥]{2,6}(?:助身|生身|帮身|克身|耗身|泄身|制身))/
-  );
+  const match = tooltip.match(/([一-龥]{2,6}(?:助身|生身|帮身|克身|耗身|泄身|制身))/);
   return match?.[1] ?? '';
 }
 

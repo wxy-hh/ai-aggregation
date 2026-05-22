@@ -39,7 +39,7 @@ export function CoreToneCard({
             <span
               className={cn(
                 'inline-flex w-fit items-center rounded-full bg-[#F3F6FF] px-2.5 py-0.5',
-                'text-[11px] font-bold text-[#4E67E6]',
+                'text-[11px] font-bold text-[#3C58D8]',
                 'border border-[#C9D4FF]/80 dark:bg-[#1E2A55] dark:text-[#9BADFF] dark:border-[#3144B7]/40'
               )}
             >

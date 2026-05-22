@@ -36,11 +36,11 @@ const dayOptions = Array.from({ length: 31 }, (_, i) => i + 1);
 const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 const minuteOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
-const panelClass = 'relative rounded-[28px] backdrop-blur-[24px] px-6 py-6 overflow-hidden';
+const panelClass = 'relative rounded-[24px] backdrop-blur-[24px] px-6 py-6 overflow-hidden';
 
-const labelClass = 'text-[13px] font-semibold text-[#425394]/90 dark:text-slate-300';
+const labelClass = 'text-[13px] font-semibold text-[#475569]/90 dark:text-slate-300';
 const inputClass =
-  'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 rounded-[14px] text-slate-700 dark:text-slate-100 shadow-[0_2px_8px_rgba(93,124,250,0.06),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.2)] focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/25 dark:focus-visible:ring-indigo-500/25 focus-visible:border-[#9BAEFF]/60 dark:focus-visible:border-indigo-500/60 focus-visible:bg-white/80 dark:focus-visible:bg-slate-800/80 transition-all duration-200 dark:placeholder:text-slate-400';
+  'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 rounded-[12px] text-slate-700 dark:text-slate-100 shadow-[0_2px_8px_rgba(93,124,250,0.06),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.2)] focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/25 dark:focus-visible:ring-indigo-500/25 focus-visible:border-[#9BAEFF]/60 dark:focus-visible:border-indigo-500/60 focus-visible:bg-white/80 dark:focus-visible:bg-slate-800/80 transition-all duration-200 dark:placeholder:text-slate-400';
 
 export function BaziInputForm({
   value,
@@ -102,7 +102,7 @@ export function BaziInputForm({
 
   return (
     <div
-      className="relative rounded-[32px] p-6 md:p-8 backdrop-blur-[32px] overflow-hidden bg-white/25 dark:bg-slate-900/40"
+      className="relative rounded-[24px] sm:rounded-[28px] md:rounded-[32px] p-4 sm:p-6 md:p-8 backdrop-blur-[32px] overflow-hidden bg-white/25 dark:bg-slate-900/40"
       style={{
         boxShadow: '0 1px 0 rgba(255,255,255,0.4) inset, 0 24px 64px rgba(73,86,130,0.08)',
       }}
@@ -132,38 +132,39 @@ export function BaziInputForm({
         }}
       />
 
-      <div className="relative flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[22px] font-black tracking-tight text-[#1A245B] dark:text-slate-100">
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg sm:text-[22px] font-heading font-black tracking-tight text-[#0F172A] dark:text-slate-100">
             生辰信息输入
           </h2>
-          <p className="mt-1.5 text-sm text-slate-600/80 dark:text-slate-300/80">
-            请准确填写您的出生信息，AI 将基于真实模型生成完整命理解读。
+          <p className="mt-1 text-xs sm:text-sm text-slate-600/80 dark:text-slate-300/80">
+            请准确填写出生信息，AI 将生成完整命理解读
           </p>
         </div>
-        <span className="rounded-full border border-white/60 bg-white/40 backdrop-blur-sm px-3 py-1 text-xs font-bold text-[#4B63D9] shadow-[0_2px_8px_rgba(75,99,217,0.15)] dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-200">
-          Step 1 / 2
+        <span className="shrink-0 rounded-full border border-white/60 bg-white/40 backdrop-blur-sm px-2.5 py-0.5 text-[10px] sm:text-xs font-bold text-[#4969E9] shadow-[0_2px_8px_rgba(75,99,217,0.15)] dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-200">
+          1/2
         </span>
       </div>
 
-      <div className="relative mt-6 grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+      <div className="relative mt-4 sm:mt-6 grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-5 items-stretch">
         {/* 基本信息 */}
         <section
           className={cn(
             panelClass,
-            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10',
+            'px-4 py-4 sm:px-6 sm:py-6'
           )}
           style={{
             boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
           }}
         >
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <User className="w-4 h-4 text-[#5D7CFA] dark:text-indigo-400" />
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#5D7CFA] dark:text-indigo-400" />
             基本信息
           </h3>
-          <div className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="bazi-name" className={labelClass}>
+          <div className="mt-3 sm:mt-4 space-y-3 sm:space-y-4">
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label htmlFor="bazi-name" className={cn(labelClass, 'text-xs sm:text-[13px]')}>
                 姓名
               </Label>
               <Input
@@ -171,27 +172,27 @@ export function BaziInputForm({
                 value={value.name}
                 onChange={(e) => onChange('name', e.target.value)}
                 placeholder="请输入您的姓名"
-                className={inputClass}
+                className={cn(inputClass, 'h-9 sm:h-10')}
                 disabled={submitting}
               />
               {fieldErrors.name && <p className="text-xs text-rose-600">{fieldErrors.name}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label className={labelClass}>
-                <Users className="w-4 h-4 inline mr-1 text-[#5D7CFA]" />
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>
+                <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 inline mr-1 text-[#5D7CFA]" />
                 性别
               </Label>
               <Tabs
                 value={value.gender}
                 onValueChange={(next) => onChange('gender', next as 'male' | 'female')}
               >
-                <TabsList className="grid grid-cols-2 h-10 rounded-xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-white/10 p-1 shadow-sm">
+                <TabsList className="grid grid-cols-2 h-9 sm:h-10 rounded-xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-white/10 p-1 shadow-sm">
                   <TabsTrigger
                     value="male"
                     disabled={submitting}
                     className={cn(
-                      'rounded-lg font-bold transition-all',
+                      'rounded-lg font-bold transition-all text-xs sm:text-sm',
                       'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
                       'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
                       'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
@@ -203,7 +204,7 @@ export function BaziInputForm({
                     value="female"
                     disabled={submitting}
                     className={cn(
-                      'rounded-lg font-bold transition-all',
+                      'rounded-lg font-bold transition-all text-xs sm:text-sm',
                       'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
                       'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
                       'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
@@ -221,56 +222,57 @@ export function BaziInputForm({
         <section
           className={cn(
             panelClass,
-            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10',
+            'px-4 py-4 sm:px-6 sm:py-6'
           )}
           style={{
             boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
           }}
         >
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-[#5D7CFA] dark:text-indigo-400" />
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#5D7CFA] dark:text-indigo-400" />
             出生日期
           </h3>
-          <div className="mt-4 space-y-4">
+          <div className="mt-3 sm:mt-4 space-y-3 sm:space-y-4">
             {/* 农历/阳历选择 */}
-            <div className="space-y-2">
-              <Label className={labelClass}>历法</Label>
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>历法</Label>
               <Tabs
                 value={value.calendarType}
                 onValueChange={(next) => onChange('calendarType', next as 'lunar' | 'solar')}
               >
-                <TabsList className="grid grid-cols-2 h-10 rounded-xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-white/10 p-1 shadow-sm">
+                <TabsList className="grid grid-cols-2 h-9 sm:h-10 rounded-xl bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-white/10 p-1 shadow-sm">
                   <TabsTrigger
                     value="lunar"
                     disabled={submitting}
                     className={cn(
-                      'rounded-lg font-bold transition-all',
+                      'rounded-lg font-bold transition-all text-xs sm:text-sm',
                       'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
                       'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
                       'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
                     )}
                   >
-                    农历（阴历）
+                    农历
                   </TabsTrigger>
                   <TabsTrigger
                     value="solar"
                     disabled={submitting}
                     className={cn(
-                      'rounded-lg font-bold transition-all',
+                      'rounded-lg font-bold transition-all text-xs sm:text-sm',
                       'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100',
                       'data-[state=active]:text-[#5D7CFA] dark:data-[state=active]:text-indigo-400',
                       'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm'
                     )}
                   >
-                    阳历（公历）
+                    阳历
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-2">
-                <Label className={labelClass}>年</Label>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>年</Label>
                 <Select
                   value={String(value.birthDate.year)}
                   onValueChange={(next) =>
@@ -278,7 +280,7 @@ export function BaziInputForm({
                   }
                   disabled={submitting}
                 >
-                  <SelectTrigger className={cn(inputClass, 'h-10')}>
+                  <SelectTrigger className={cn(inputClass, 'h-9 sm:h-10')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -291,14 +293,14 @@ export function BaziInputForm({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label className={labelClass}>月</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>月</Label>
                 <Select
                   value={String(value.birthDate.month)}
                   onValueChange={(next) => handleMonthChange(Number(next))}
                   disabled={submitting}
                 >
-                  <SelectTrigger className={cn(inputClass, 'h-10')}>
+                  <SelectTrigger className={cn(inputClass, 'h-9 sm:h-10')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -311,8 +313,8 @@ export function BaziInputForm({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label className={labelClass}>日</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>日</Label>
                 <Select
                   value={String(value.birthDate.day)}
                   onValueChange={(next) =>
@@ -320,7 +322,7 @@ export function BaziInputForm({
                   }
                   disabled={submitting}
                 >
-                  <SelectTrigger className={cn(inputClass, 'h-10')}>
+                  <SelectTrigger className={cn(inputClass, 'h-9 sm:h-10')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -349,7 +351,10 @@ export function BaziInputForm({
                   }
                   disabled={submitting}
                 />
-                <Label htmlFor="leap-month" className="text-sm font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+                <Label
+                  htmlFor="leap-month"
+                  className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none"
+                >
                   闰月（{leapMonth}月）
                 </Label>
               </div>
@@ -361,20 +366,21 @@ export function BaziInputForm({
         <section
           className={cn(
             panelClass,
-            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10',
+            'px-4 py-4 sm:px-6 sm:py-6'
           )}
           style={{
             boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
           }}
         >
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#5D7CFA] dark:text-indigo-400" />
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#5D7CFA] dark:text-indigo-400" />
             出生时间
           </h3>
-          <div className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className={labelClass}>时</Label>
+          <div className="mt-3 sm:mt-4 space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>时</Label>
                 <Select
                   value={value.birthTime.hour}
                   onValueChange={(next) =>
@@ -382,7 +388,7 @@ export function BaziInputForm({
                   }
                   disabled={submitting}
                 >
-                  <SelectTrigger className={cn(inputClass, 'h-10')}>
+                  <SelectTrigger className={cn(inputClass, 'h-9 sm:h-10')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -395,8 +401,8 @@ export function BaziInputForm({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label className={labelClass}>分</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>分</Label>
                 <Select
                   value={value.birthTime.minute}
                   onValueChange={(next) =>
@@ -404,7 +410,7 @@ export function BaziInputForm({
                   }
                   disabled={submitting}
                 >
-                  <SelectTrigger className={cn(inputClass, 'h-10')}>
+                  <SelectTrigger className={cn(inputClass, 'h-9 sm:h-10')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -417,7 +423,7 @@ export function BaziInputForm({
                 </Select>
               </div>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
               出生时间用于精准排盘，请尽量准确填写
             </p>
           </div>
@@ -427,19 +433,20 @@ export function BaziInputForm({
         <section
           className={cn(
             panelClass,
-            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10'
+            'bg-white/35 dark:bg-slate-800/40 border border-white/40 dark:border-white/10',
+            'px-4 py-4 sm:px-6 sm:py-6'
           )}
           style={{
             boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
           }}
         >
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-[#5D7CFA] dark:text-indigo-400" />
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#5D7CFA] dark:text-indigo-400" />
             出生地点
           </h3>
-          <div className="mt-4 space-y-4">
-            <div className="space-y-2">
-              <Label className={labelClass}>城市或地区</Label>
+          <div className="mt-3 sm:mt-4 space-y-3 sm:space-y-4">
+            <div className="space-y-1.5 sm:space-y-2">
+              <Label className={cn(labelClass, 'text-xs sm:text-[13px]')}>城市或地区</Label>
               <Popover open={cityPopoverOpen} onOpenChange={setCityPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -447,19 +454,22 @@ export function BaziInputForm({
                     role="combobox"
                     aria-expanded={cityPopoverOpen}
                     className={cn(
-                      'w-full justify-between h-10 font-normal',
+                      'w-full justify-between h-9 sm:h-10 font-normal text-xs sm:text-sm',
                       inputClass,
                       !value.location.name && 'text-slate-400 dark:text-slate-500'
                     )}
                     disabled={submitting}
                   >
-                    {hasExactLocation
-                      ? value.location.name
-                      : value.location.name || '搜索城市（越精确越好，如：北京朝阳区三里屯街道）'}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    {hasExactLocation ? value.location.name : value.location.name || '搜索城市'}
+                    <ChevronsUpDown className="ml-2 h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <PopoverContent
+                  className="w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] p-0"
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                >
                   <div className="p-2">
                     <Input
                       ref={cityInputRef}
@@ -475,19 +485,21 @@ export function BaziInputForm({
                       className="mb-2"
                       autoFocus
                     />
-                    <div className="max-h-56 overflow-y-auto">
+                    <div className="max-h-48 sm:max-h-56 overflow-y-auto">
                       {cityResults.length > 0 ? (
                         cityResults.map((city, idx) => {
                           const isSelected =
-                            hasExactLocation && value.location.lat === city.lat && value.location.lon === city.lon;
+                            hasExactLocation &&
+                            value.location.lat === city.lat &&
+                            value.location.lon === city.lon;
                           return (
                             <button
                               key={`${city.id}-${city.fullName}-${idx}`}
                               type="button"
                               className={cn(
-                                'w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2',
+                                'w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 min-h-[44px]',
                                 isSelected
-                                  ? 'bg-[#5D7CFA]/10 text-[#3851D4] font-medium'
+                                  ? 'bg-[#5D7CFA]/10 text-[#3C58D8] font-medium'
                                   : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
                               )}
                               onClick={() => {
@@ -500,9 +512,7 @@ export function BaziInputForm({
                                 setCityPopoverOpen(false);
                               }}
                             >
-                              {isSelected && (
-                                <Check className="h-4 w-4 shrink-0 text-[#5D7CFA]" />
-                              )}
+                              {isSelected && <Check className="h-4 w-4 shrink-0 text-[#5D7CFA]" />}
                               <span className={cn(!isSelected && 'ml-6')}>{city.fullName}</span>
                             </button>
                           );
@@ -519,10 +529,10 @@ export function BaziInputForm({
               {fieldErrors.location ? (
                 <p className="text-xs text-rose-600">{fieldErrors.location}</p>
               ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                   {hasExactLocation
-                    ? `坐标 ${value.location.lat?.toFixed(2)}, ${value.location.lon?.toFixed(2)}，提交后会按经度修正真太阳时`
-                    : '输入城市名称搜索，选中的城市将用于真太阳时校准'}
+                    ? `坐标 ${value.location.lat?.toFixed(2)}, ${value.location.lon?.toFixed(2)}`
+                    : '输入城市名称搜索，用于真太阳时校准'}
                 </p>
               )}
             </div>
@@ -531,15 +541,15 @@ export function BaziInputForm({
       </div>
 
       {error && (
-        <div className="mt-5 rounded-[20px] border border-rose-200/50 dark:border-rose-800/50 bg-gradient-to-br from-rose-50/60 dark:from-rose-950/60 via-rose-50/40 dark:via-rose-950/40 to-transparent backdrop-blur-sm px-4 py-3 text-sm text-rose-700 dark:text-rose-300 shadow-[0_4px_16px_rgba(244,63,94,0.08)]">
+        <div className="mt-4 sm:mt-5 rounded-[16px] sm:rounded-[20px] border border-rose-200/50 dark:border-rose-800/50 bg-gradient-to-br from-rose-50/60 dark:from-rose-950/60 via-rose-50/40 dark:via-rose-950/40 to-transparent backdrop-blur-sm px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm text-rose-700 dark:text-rose-300 shadow-[0_4px_16px_rgba(244,63,94,0.08)]">
           {error}
         </div>
       )}
 
-      <div className="mt-7 flex flex-wrap items-center gap-3">
+      <div className="mt-5 sm:mt-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <Button
           type="button"
-          className="rounded-full bg-gradient-to-r from-[#5D7CFA] via-[#6F87FF] to-[#8190FF] px-6 py-2.5 text-white shadow-[0_8px_24px_rgba(93,124,250,0.28),0_1px_0_rgba(255,255,255,0.2)_inset] hover:shadow-[0_12px_32px_rgba(93,124,250,0.35)] hover:brightness-105 transition-all duration-300"
+          className="rounded-full bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] px-5 sm:px-6 py-2.5 sm:py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] hover:brightness-[1.03] active:scale-[0.98] transition-all duration-200 min-h-[44px]"
           onClick={onSubmit}
           disabled={submitting || !canSubmit}
         >
@@ -548,7 +558,7 @@ export function BaziInputForm({
         <Button
           type="button"
           variant="outline"
-          className="rounded-full border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm text-[#4B5D9F] dark:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:border-white/80 dark:hover:border-white/20 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)]"
+          className="rounded-full border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm text-[#475569] dark:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:border-white/80 dark:hover:border-white/20 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)] min-h-[44px] text-sm"
           onClick={onReset}
           disabled={submitting}
         >
@@ -556,7 +566,7 @@ export function BaziInputForm({
         </Button>
       </div>
 
-      <p className="mt-4 text-center text-xs text-slate-500/70 dark:text-slate-400/70">
+      <p className="mt-3 sm:mt-4 text-center text-[11px] sm:text-xs text-slate-500/70 dark:text-slate-400/70">
         您的个人信息仅用于 AI 命理推算，我们不会向第三方泄露
       </p>
     </div>

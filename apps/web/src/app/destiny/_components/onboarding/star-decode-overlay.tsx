@@ -220,7 +220,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
             <div className="h-[340px] w-[340px] rounded-full border border-[color:var(--ds-glass-stroke-light)] bg-[color:var(--ds-glass-white)] backdrop-blur-[20px] shadow-[var(--ds-shadow-3)]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="px-6 text-center">
-                <div className="text-xs font-bold tracking-[0.12em] text-[#4E67E6]">星空解码中</div>
+                <div className="text-xs font-bold tracking-[0.12em] text-[#3C58D8]">星空解码中</div>
                 <div className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
                   提取命运密码
                 </div>

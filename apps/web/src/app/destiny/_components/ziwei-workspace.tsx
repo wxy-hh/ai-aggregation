@@ -307,11 +307,6 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   );
   const abortRef = useRef<AbortController | null>(null);
 
-  const pageTitle = useMemo(
-    () => (step === 'form' ? '紫微斗数排盘 · 信息输入' : 'AI 紫微斗数 · 星盘全景视图'),
-    [step]
-  );
-
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
@@ -476,22 +471,11 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   );
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-50/40 via-slate-50 to-indigo-50/30 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
+    <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
       <div className="h-full min-h-0 w-full xl:pl-[304px]">
         {step === 'form' ? (
-          <div className="flex h-full min-h-0 flex-col p-6">
-            <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
-              <div>
-                <h1 className="font-display text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                  {pageTitle}
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  同页分步流程:先录入生辰信息,再查看 AI 推演结果
-                </p>
-              </div>
-            </header>
-
-            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[32px]">
+          <div className="absolute inset-0 flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}
@@ -506,20 +490,22 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
             </div>
           </div>
         ) : (
-          <ZiweiResultView
-            report={report ?? partialReport}
-            relationSection={relationSection}
-            streaming={streaming}
-            streamStatus={streamStatus}
-            lockedSections={lockedSections}
-            tab={tab}
-            activePalaceLabel={activePalaceLabel}
-            onTabChange={(nextTab) => setWorkspaceState('ziwei', { tab: nextTab })}
-            onPalaceLabelChange={(label) =>
-              setWorkspaceState('ziwei', { activePalaceLabel: label })
-            }
-            onRecalculate={handleRecalculate}
-          />
+          <div className="absolute inset-0 h-full min-h-0 w-full">
+            <ZiweiResultView
+              report={report ?? partialReport}
+              relationSection={relationSection}
+              streaming={streaming}
+              streamStatus={streamStatus}
+              lockedSections={lockedSections}
+              tab={tab}
+              activePalaceLabel={activePalaceLabel}
+              onTabChange={(nextTab) => setWorkspaceState('ziwei', { tab: nextTab })}
+              onPalaceLabelChange={(label) =>
+                setWorkspaceState('ziwei', { activePalaceLabel: label })
+              }
+              onRecalculate={handleRecalculate}
+            />
+          </div>
         )}
       </div>
 
@@ -604,9 +590,9 @@ function ZiweiResultView({
         {/* 页面标题 - 使用设计系统字体 */}
         <header className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
-            <h1 className="font-display text-2xl md:text-3xl font-bold leading-tight text-slate-900 dark:text-white">
+            <h1 className="font-heading text-2xl md:text-3xl font-bold leading-tight text-slate-900 dark:text-white">
               AI 紫微斗数{' '}
-              <span className="block text-base font-medium text-[#5D7CFA] dark:text-[#9BADFF] sm:inline">
+              <span className="block text-base font-medium text-[#3C58D8] dark:text-[#9BADFF] sm:inline">
                 星盘全景视图
               </span>
             </h1>
@@ -615,8 +601,7 @@ function ZiweiResultView({
           <Button
             type="button"
             onClick={onRecalculate}
-            className="self-start rounded-[12px] bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white hover:brightness-110 transition-all duration-200 shadow-[0_8px_20px_rgba(93,124,250,0.32)] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] sm:self-auto"
-            style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
+            className="self-start inline-flex min-h-10 sm:min-h-11 items-center justify-center rounded-full px-4 sm:px-5 text-xs sm:text-sm font-bold bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)] hover:brightness-[1.03] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] active:scale-[0.98] transition-all duration-200 sm:self-auto"
           >
             重新排盘
           </Button>
@@ -655,8 +640,8 @@ function ZiweiResultView({
                               'min-h-[132px] rounded-2xl p-3 flex flex-col justify-between text-left transition border shadow-[0_6px_18px_-14px_rgba(30,41,59,0.45),inset_0_1px_0_rgba(255,255,255,0.75)] sm:min-h-0 sm:p-3.5',
                               toneClass,
                               isActive
-                                ? 'ring-2 ring-[#4A63EE]/35 border-[#4A63EE]/45 shadow-[0_10px_26px_-14px_rgba(59,91,246,0.46),inset_0_1px_0_rgba(255,255,255,0.84)]'
-                                : 'hover:border-[#5D74EA]/35 hover:shadow-[0_12px_30px_-18px_rgba(59,91,246,0.35),inset_0_1px_0_rgba(255,255,255,0.84)]',
+                                ? 'ring-2 ring-[#4969E9]/35 border-[#4969E9]/45 shadow-[0_10px_26px_-14px_rgba(59,91,246,0.46),inset_0_1px_0_rgba(255,255,255,0.84)]'
+                                : 'hover:border-[#4969E9]/35 hover:shadow-[0_12px_30px_-18px_rgba(59,91,246,0.35),inset_0_1px_0_rgba(255,255,255,0.84)]',
                             ].join(' ')}
                           >
                             <div>
@@ -785,7 +770,7 @@ function ZiweiResultView({
                       className={[
                         'rounded-xl text-xs font-bold py-2.5 transition',
                         tab === option.key
-                          ? 'bg-white dark:bg-slate-800 text-[#394FE6] dark:text-blue-400 shadow-sm'
+                          ? 'bg-white dark:bg-slate-800 text-[#3C58D8] dark:text-blue-400 shadow-sm'
                           : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200',
                       ].join(' ')}
                     >
@@ -797,7 +782,7 @@ function ZiweiResultView({
                 <div className="p-5 space-y-3 flex-1 min-h-[520px] overflow-y-auto custom-scrollbar">
                   {tab === 'overview' && (
                     <>
-                      <div className="text-xs font-bold text-[#5D7CFA] dark:text-[#9BADFF]">
+                      <div className="text-xs font-bold text-[#3C58D8] dark:text-[#9BADFF]">
                         当前宫位 · {activePalace?.label ?? '命宫'}
                       </div>
                       <div className="text-sm font-bold text-slate-900 dark:text-white">

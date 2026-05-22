@@ -22,10 +22,10 @@ export function BaziBasisCard({
 
   return (
     <GlassCard className={cn('shrink-0 overflow-hidden p-4 sm:p-6', className)}>
-      <div className="font-heading text-lg font-bold text-slate-900 dark:text-slate-100">
+      <div className="font-heading text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
         排盘依据
       </div>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+      <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
         真太阳时校正与传统子平术算法说明
       </p>
       <div className="mt-4 flex flex-col gap-4">
@@ -52,7 +52,7 @@ export function BaziBasisCard({
         {basisOpen && (
           <>
             {/* 基本信息 */}
-            <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               <BasisSummaryCard
                 label="农历录入"
                 value={baziBasis.profile.birthText}
@@ -71,11 +71,11 @@ export function BaziBasisCard({
             </div>
 
             {/* 节气上下文（去掉时分秒） */}
-            <div className="rounded-2xl border border-white/50 bg-white/55 px-4 py-3 shadow-sm">
-              <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+            <div className="rounded-2xl border border-white/50 bg-white/55 px-3 sm:px-4 py-3 shadow-sm">
+              <div className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                 节气上下文
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-600">
+              <div className="mt-2 flex flex-col sm:flex-row flex-wrap gap-x-6 gap-y-1 text-xs sm:text-sm text-slate-600">
                 <span>
                   上一节气：{baziBasis.solarTerms.previous.name}
                   {' · '}
@@ -99,7 +99,7 @@ export function BaziBasisCard({
               type="button"
               onClick={() => setAdvancedOpen((v) => !v)}
               className={cn(
-                'inline-flex w-fit items-center justify-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors',
+                'inline-flex w-fit items-center justify-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors min-h-[40px]',
                 'border-white/60 bg-white/60 text-slate-500 hover:bg-white/75 hover:text-slate-700'
               )}
             >
@@ -112,31 +112,33 @@ export function BaziBasisCard({
             </button>
 
             {advancedOpen && (
-              <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <div className="space-y-4">
                   {/* 四柱与藏干 */}
                   <div>
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                    <div className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                       四柱与藏干
                     </div>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="mt-3 grid gap-2 sm:gap-3 grid-cols-2 xl:grid-cols-4">
                       {baziBasis.pillars.map((pillar) => (
                         <div
                           key={pillar.label}
-                          className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm"
+                          className="rounded-[20px] sm:rounded-[24px] border border-white/50 bg-white/55 px-3 sm:px-4 py-3 sm:py-4 shadow-sm"
                         >
-                          <div className="text-xs font-bold text-slate-400">{pillar.label}</div>
-                          <div className="mt-2 text-lg font-black text-slate-900">
+                          <div className="text-[11px] sm:text-xs font-bold text-slate-400">
+                            {pillar.label}
+                          </div>
+                          <div className="mt-1.5 sm:mt-2 text-base sm:text-lg font-black text-slate-900">
                             {pillar.name}
                           </div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">
+                          <div className="mt-1 text-[10px] sm:text-xs font-semibold text-slate-500">
                             纳音 {pillar.sound}
                           </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mt-2 sm:mt-3 flex flex-wrap gap-1.5 sm:gap-2">
                             {pillar.hiddenStems.map((item) => (
                               <span
                                 key={`${pillar.label}-${item.stem}-${item.type}`}
-                                className="rounded-full border border-white/60 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600"
+                                className="rounded-full border border-white/60 bg-white/80 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-600"
                               >
                                 {item.stem}
                                 {item.tenGod}
@@ -175,12 +177,18 @@ export function BaziBasisCard({
 
 function elementLabel(k: string) {
   switch (k) {
-    case 'metal': return '金';
-    case 'wood': return '木';
-    case 'water': return '水';
-    case 'fire': return '火';
-    case 'earth': return '土';
-    default: return '';
+    case 'metal':
+      return '金';
+    case 'wood':
+      return '木';
+    case 'water':
+      return '水';
+    case 'fire':
+      return '火';
+    case 'earth':
+      return '土';
+    default:
+      return '';
   }
 }
 

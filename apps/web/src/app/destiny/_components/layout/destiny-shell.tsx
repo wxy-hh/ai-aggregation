@@ -60,20 +60,20 @@ export function DestinyShell({
 
   return (
     <div className="relative h-full min-h-0 w-full">
-      <div className="flex h-full min-h-0 w-full gap-4 p-4 lg:gap-6 lg:p-6">
+      <div className="flex h-full min-h-0 w-full gap-3 sm:gap-4 p-3 sm:p-4 lg:gap-6 lg:p-6">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex h-full min-h-0 flex-col gap-6">
-            <header className="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-6">
+            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 md:text-3xl">
+                  <h1 className="font-heading text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 md:text-3xl">
                     {title}
                   </h1>
-                  <span className="inline-flex items-center rounded-full bg-[#F3F6FF] px-3 py-1 text-xs font-bold text-[#4E67E6] dark:bg-[#1E2A55] dark:text-[#9BADFF]">
+                  <span className="inline-flex items-center rounded-full bg-[#F3F6FF] px-2.5 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold text-[#3C58D8] dark:bg-[#1E2A55] dark:text-[#9BADFF]">
                     {subtitleTag}
                   </span>
                 </div>
-                <p className="mt-2 truncate text-sm text-slate-600 dark:text-slate-300">
+                <p className="mt-1.5 sm:mt-2 truncate text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                   {subtitle}
                 </p>
               </div>
@@ -83,12 +83,19 @@ export function DestinyShell({
                   type="button"
                   variant="outline"
                   onClick={() => setIsReportDrawerOpen(true)}
-                  className="min-h-11 rounded-full border-[#D5DAEB] bg-white/72 px-4 text-slate-700 hover:bg-white/90 lg:hidden dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
+                  className="min-h-10 sm:min-h-11 rounded-full border-[#D5DAEB] bg-white/72 px-3 sm:px-4 text-xs sm:text-sm text-slate-700 hover:bg-white/90 lg:hidden dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
                 >
-                  <PanelRightOpen className="mr-2 h-4 w-4" />
+                  <PanelRightOpen className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   深度报告
                 </Button>
-                <button type="button" onClick={onRecalculate} className={primaryCtaClass}>
+                <button
+                  type="button"
+                  onClick={onRecalculate}
+                  className={cn(
+                    primaryCtaClass,
+                    'min-h-10 sm:min-h-11 px-4 sm:px-5 text-xs sm:text-sm'
+                  )}
+                >
                   重新排盘
                 </button>
               </div>
@@ -138,21 +145,21 @@ export function DestinyShell({
         <DialogContent
           className={cn(
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0',
-            'rounded-t-[32px] rounded-b-none border border-[#E2E8F0] bg-[#F8FAFC] p-0 pb-[env(safe-area-inset-bottom)]',
+            'rounded-t-[24px] sm:rounded-t-[32px] rounded-b-none border border-[#E2E8F0] bg-[#F8FAFC] p-0 pb-[env(safe-area-inset-bottom)]',
             'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
             'dark:border-white/10 dark:bg-[#111218]'
           )}
         >
-          <div className="border-b border-[#E2E8F0] px-5 py-4 dark:border-white/10">
-            <DialogTitle className="text-left font-heading text-base font-semibold text-slate-900 dark:text-white">
+          <div className="border-b border-[#E2E8F0] px-4 sm:px-5 py-3 sm:py-4 dark:border-white/10">
+            <DialogTitle className="text-left font-heading text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
               深度报告
             </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+            <DialogDescription className="mt-1 text-left text-xs sm:text-sm text-slate-500 dark:text-slate-400">
               查看测算报告、流年趋势和 AI 追问
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
-            <GlassCard variant="compact" className="w-full p-4">
+          <div className="max-h-[78vh] overflow-y-auto px-3 sm:px-4 py-3 sm:py-4">
+            <GlassCard variant="compact" className="w-full p-3 sm:p-4">
               {displayReport ? (
                 <ReportRightRail
                   report={displayReport}

@@ -244,7 +244,7 @@ export function AICoPilotConversation({
     <div className={cn('min-h-0 flex flex-col', className)}>
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 custom-scrollbar"
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 space-y-4 custom-scrollbar"
       >
         {messages.map((m) => {
           const isUser = m.role === 'user';
@@ -256,20 +256,20 @@ export function AICoPilotConversation({
             <div
               key={m.id}
               className={cn('max-w-[92%] rounded-2xl border shadow-sm', {
-                'ml-auto bg-[#2F6BFF]/10 border-[#2F6BFF]/20': isUser,
+                'ml-auto bg-[#4969E9]/10 border-[#4969E9]/20': isUser,
                 'mr-auto bg-white/65 border-slate-200/70': !isUser,
               })}
             >
               {isThinking ? (
                 <ThinkingParticles />
               ) : (
-                <div className="p-3 text-sm leading-relaxed text-slate-700">
+                <div className="p-2.5 sm:p-3 text-[13px] sm:text-sm leading-relaxed text-slate-700">
                   <pre className="whitespace-pre-wrap break-words font-sans">{displayContent}</pre>
                   {isTyping && (
                     <button
                       type="button"
                       onClick={() => skipTyping(m.id)}
-                      className="mt-2 text-xs text-slate-400 hover:text-slate-600 underline"
+                      className="mt-2 text-[11px] sm:text-xs text-slate-400 hover:text-slate-600 underline"
                     >
                       立即显示全部
                     </button>
@@ -281,9 +281,9 @@ export function AICoPilotConversation({
         })}
       </div>
 
-      <div className="shrink-0 border-t border-slate-200/60 bg-white/55 p-4">
+      <div className="shrink-0 border-t border-slate-200/60 bg-white/55 p-3 sm:p-4">
         {error ? (
-          <div className="mb-2 text-xs leading-relaxed text-red-500 break-words">{error}</div>
+          <div className="mb-2 text-[11px] sm:text-xs leading-relaxed text-red-500 break-words">{error}</div>
         ) : null}
         {/* 单行 flex：输入与发送同属一个圆角容器，避免 absolute 在侧栏里错位 */}
         <div
@@ -298,7 +298,7 @@ export function AICoPilotConversation({
             placeholder="输入你的追问…（Enter 发送，Shift+Enter 换行）"
             rows={3}
             className={cn(
-              'block min-h-[72px] max-h-[140px] min-w-0 flex-1 resize-none',
+              'block min-h-[56px] sm:min-h-[72px] max-h-[140px] min-w-0 flex-1 resize-none',
               'border-0 bg-transparent py-2 pr-1 shadow-none',
               'focus-visible:ring-0 focus-visible:ring-offset-0'
             )}
@@ -314,7 +314,7 @@ export function AICoPilotConversation({
             onClick={() => void sendQuestion()}
             disabled={!canSend || sending}
             className={cn(
-              'mb-1 h-9 shrink-0 rounded-full px-4',
+              'mb-1 h-11 sm:h-9 shrink-0 rounded-full px-4',
               'bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-sm font-bold text-white',
               'shadow-[0_6px_16px_rgba(93,124,250,0.28)]',
               'hover:brightness-[1.03] active:scale-[0.98] disabled:opacity-50'

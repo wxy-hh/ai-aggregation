@@ -13,7 +13,7 @@ export function AICoPilotPanel({ report }: { report: DestinyReport }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-white/30 bg-white/35">
+      <div className="px-3 py-2.5 sm:px-4 sm:py-3 border-b border-white/30 bg-white/35">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-extrabold text-slate-900">AI Co-Pilot</div>
