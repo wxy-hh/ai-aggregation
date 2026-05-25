@@ -1,6 +1,6 @@
 import type { QimenAnalyzeRequest, QimenFormData } from './qimen-types';
 
-function toLocalDateTimeInputValue(date: Date): string {
+export function toLocalDateTimeInputValue(date: Date): string {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
@@ -8,7 +8,7 @@ function toLocalDateTimeInputValue(date: Date): string {
 export function createDefaultQimenFormData(): QimenFormData {
   return {
     datetime: toLocalDateTimeInputValue(new Date()),
-    location: '',
+    location: { name: '', lat: null, lon: null },
     category: 'decision',
     description: '',
     chartMethod: 'time',
@@ -22,8 +22,9 @@ export function mapFormToQimenRequest(formData: QimenFormData): QimenAnalyzeRequ
   return {
     context: {
       datetime: formData.datetime,
-      location: formData.location,
+      location: formData.location.name,
       chartMethod: formData.chartMethod,
+      longitude: formData.location.lon ?? undefined,
     },
     question: {
       category: formData.category,

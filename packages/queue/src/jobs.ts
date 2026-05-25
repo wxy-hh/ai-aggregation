@@ -54,6 +54,7 @@ export interface QimenBaseJobData {
   analysisId: string;
   userId?: string;
   input: QimenAnalyzeRequest;
+  precomputedChart?: boolean;
 }
 
 export interface QimenSectionJobData {

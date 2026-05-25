@@ -26,6 +26,13 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
       }
 
       await store.markSectionPending(analysisId, sectionKey);
+
+      // 尝试读取本地预计算的盘局数据
+      const chart = (await store.getBaseResult(analysisId)) ?? undefined;
+      if (chart) {
+        logger.info('奇门分块任务使用预计算盘局', { analysisId, sectionKey });
+      }
+
       const result = await generateQimenSectionResult(
         sectionKey,
         input,
@@ -73,7 +80,8 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
             onRequestError: (meta) =>
               logger.error('奇门模型请求失败', new Error(String(meta.error ?? '未知错误')), meta),
           },
-        }
+        },
+        chart
       );
       const saved = await store.saveSectionResult(analysisId, sectionKey, result);
 

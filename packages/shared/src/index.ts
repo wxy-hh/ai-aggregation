@@ -8,6 +8,7 @@ export * from './file-validation';
 export * from './bazi-chart';
 export * from './qimen-analysis';
 export * from './qimen-analysis-store';
+export * from './qimen-chart';
 
 // 城市经纬度数据 (用于八字测算真太阳时修正)
 export * from './data/china-cities';

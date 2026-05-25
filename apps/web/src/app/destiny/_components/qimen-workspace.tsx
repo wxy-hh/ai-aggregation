@@ -1,13 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button } from '@/components/ui/button';
 import { authHeaders } from '@/lib/api/client';
-import {
-  useDestinyWorkspaceStore,
-  type QimenErrorKind,
-} from '@/stores/destiny-workspace-store';
+import { useDestinyWorkspaceStore, type QimenErrorKind } from '@/stores/destiny-workspace-store';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
 import { mapFormToQimenRequest } from './qimen-mappers';
@@ -31,8 +30,8 @@ function validateForm(formData: QimenFormData): Partial<Record<keyof QimenFormDa
   if (!formData.datetime.trim()) {
     errors.datetime = '请填写起局时间';
   }
-  if (!formData.location.trim()) {
-    errors.location = '请填写地点';
+  if (!formData.location.name.trim()) {
+    errors.location = '请选择地点';
   }
 
   const desc = formData.description.trim();
@@ -95,11 +94,6 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   const abortRef = useRef<AbortController | null>(null);
   const sectionTimeoutsRef = useRef<number[]>([]);
   const runIdRef = useRef(0);
-
-  const pageTitle = useMemo(
-    () => (step === 'form' ? '奇门遁甲演化 · 信息输入' : '奇门遁甲演化 · AI 分析结果'),
-    [step]
-  );
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -432,36 +426,46 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     resetWorkspace('qimen');
   };
 
+  const stepTransitionClass =
+    'transition-all duration-[240ms] motion-reduce:transition-opacity motion-reduce:duration-150';
+  const stepTransitionStyle = {
+    transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+  } as const;
+
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full min-h-0 w-full xl:pl-[304px]">
-        <div className="flex h-full min-h-0 flex-col p-6">
-          <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {pageTitle}
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                同页分步流程：先录入问题，再查看 AI 推演结果
+    <DestinyPageScaffold withNavOffset>
+      <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
+        <div className="flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6">
+          <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl md:text-[28px]">
+                  {step === 'form' ? '奇门遁甲演化' : '奇门遁甲 · 分析结果'}
+                </h1>
+                <span className="inline-flex items-center rounded-full bg-[#F3F6FF] px-2.5 py-0.5 text-[10px] font-bold text-[#3C58D8] sm:px-3 sm:text-xs dark:bg-[#1E2A55] dark:text-[#9BADFF]">
+                  {step === 'form' ? '信息输入' : 'AI 推演'}
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 sm:text-sm">
+                {step === 'form'
+                  ? '填写起局时空与问题描述，系统基于时家奇门进行演化分析'
+                  : '盘面生成后，策略总论、时机窗口与盘局摘要将分块呈现'}
               </p>
             </div>
-
-            {step === 'result' && (
-              <Button
-                type="button"
-                className="rounded-full bg-[#2F6BFF] text-white hover:brightness-110"
-                disabled={blockingLoading}
-                onClick={() => {
-                  void submit();
-                }}
-              >
-                重新排盘
-              </Button>
-            )}
           </header>
 
-          <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
-            {step === 'form' ? (
+          <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'form'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'form'}
+            >
               <QimenInputForm
                 value={formData}
                 submitting={blockingLoading}
@@ -473,7 +477,19 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                 }}
                 onReset={reset}
               />
-            ) : (
+            </div>
+
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'result'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'result'}
+            >
               <QimenAnalysisResult
                 analysisId={analysisId}
                 baseResult={baseResult}
@@ -493,10 +509,10 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                   void submit();
                 }}
               />
-            )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </DestinyPageScaffold>
   );
 }

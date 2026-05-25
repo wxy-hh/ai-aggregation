@@ -51,6 +51,10 @@ export type QimenAnalyzeResult = {
     horsePosition: string;
     valueSymbol: string;
     valueDoor: string;
+    xunshou: string;
+    riGan: string;
+    shiGan: string;
+    trueSolarTime?: string;
   };
   board: QimenBoardCell[];
   chartSummary: string;
@@ -131,7 +135,11 @@ export type QimenBaseSectionResponse = {
 
 export type QimenFormData = {
   datetime: string;
-  location: string;
+  location: {
+    name: string;
+    lat: number | null;
+    lon: number | null;
+  };
   category: QimenQuestionCategory;
   description: string;
   chartMethod: QimenChartMethod;

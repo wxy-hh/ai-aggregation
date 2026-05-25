@@ -3,6 +3,7 @@ import { logger } from '@repo/logger';
 import {
   QimenAnalysisStore,
   qimenAnalyzeRequestSchema,
+  computeQimenChart,
   type QimenSectionKey,
 } from '@repo/shared';
 import { WorkerHeartbeatStore } from '@repo/shared/server';
@@ -56,29 +57,37 @@ export async function POST(request: Request) {
 
     const analysisId = crypto.randomUUID();
     await store.initializeAnalysis(analysisId);
-    logger.info('奇门分析任务初始化完成', {
+
+    // 本地排盘：由算法精确计算盘局，不再依赖 LLM 生成
+    const chart = computeQimenChart({
+      datetime: parsed.data.context.datetime,
+      longitude: parsed.data.context.longitude,
+    });
+    await store.saveBaseResult(analysisId, chart);
+
+    logger.info('奇门分析任务初始化完成（本地排盘）', {
       analysisId,
       chartMethod: parsed.data.context.chartMethod,
       questionCategory: parsed.data.question.category,
+      dun: chart.chartMeta.dun,
+      ju: chart.chartMeta.ju,
     });
 
+    // 基础盘面 job：仅用于状态跟踪，不再调用 LLM 排盘
     await qimenBaseQueue.add(
       analysisId,
       {
         analysisId,
         userId: userId ?? undefined,
         input: parsed.data,
+        precomputedChart: true,
       },
       {
         jobId: `${analysisId}-baseResult`,
       }
     );
-    logger.info('奇门基础盘面任务入队完成', {
-      analysisId,
-      queueName: 'qimen-base',
-      jobId: `${analysisId}-baseResult`,
-    });
 
+    // 分块分析 job：Worker 从 Redis 读取盘局数据，传给 LLM 做分析解读
     await qimenSectionQueue.addBulk(
       SECTION_KEYS.map((sectionKey) => ({
         name: sectionKey,

@@ -779,7 +779,7 @@ function getDayOfYear(year: number, month: number, day: number): number {
   return dayOfYear;
 }
 
-function buildSolarCorrection(
+export function buildSolarCorrection(
   longitude: number | null,
   year: number,
   month: number,

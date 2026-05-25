@@ -51,6 +51,10 @@ const QimenModelSchema = z.object({
     horsePosition: z.string().trim().min(1),
     valueSymbol: z.string().trim().min(1),
     valueDoor: z.string().trim().min(1),
+    xunshou: z.string().trim().default(''),
+    riGan: z.string().trim().default(''),
+    shiGan: z.string().trim().default(''),
+    trueSolarTime: z.string().optional(),
   }),
   board: z.array(QimenCellSchema).min(9).max(9),
   chartSummary: z.string().trim().min(1),
@@ -131,8 +135,12 @@ const QIMEN_FULL_RESULT_SCHEMA = {
         horsePosition: { type: 'string' },
         valueSymbol: { type: 'string' },
         valueDoor: { type: 'string' },
+        xunshou: { type: 'string' },
+        riGan: { type: 'string' },
+        shiGan: { type: 'string' },
+        trueSolarTime: { type: 'string' },
       },
-      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor'],
+      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor', 'xunshou', 'riGan', 'shiGan'],
       additionalProperties: false,
     },
     board: {
@@ -1101,24 +1109,39 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
       32
     ),
     chartMeta: {
-      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '阳遁', 12),
-      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '三局', 12),
+      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '', 12),
+      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '', 12),
       jiaziXunkong: sanitizeText(
-        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '甲辰旬 寅卯空',
+        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '',
         20
       ),
       horsePosition: sanitizeText(
-        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '马星在巳',
+        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '',
         20
       ),
       valueSymbol: sanitizeText(
-        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '天冲星',
+        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '',
         16
       ),
       valueDoor: sanitizeText(
-        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '伤门',
+        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '',
         16
       ),
+      xunshou: sanitizeText(
+        typeof chartMetaRaw.xunshou === 'string' ? chartMetaRaw.xunshou : '',
+        8
+      ),
+      riGan: sanitizeText(
+        typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '',
+        4
+      ),
+      shiGan: sanitizeText(
+        typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '',
+        4
+      ),
+      trueSolarTime: typeof chartMetaRaw.trueSolarTime === 'string'
+        ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
+        : undefined,
     },
     board: normalizedBoard,
     chartSummary: sanitizeText(
