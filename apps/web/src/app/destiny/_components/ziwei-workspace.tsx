@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { BaziInputForm } from './bazi-input-form';
+import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
@@ -471,8 +472,8 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   );
 
   return (
-    <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
-      <div className="h-full min-h-0 w-full xl:pl-[304px]">
+    <DestinyPageScaffold withNavOffset>
+      <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
         {step === 'form' ? (
           <div className="absolute inset-0 flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6">
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -509,9 +510,8 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
         )}
       </div>
 
-      {/* Loading 动画 */}
       <StarDecodeOverlay open={blockingLoading} />
-    </div>
+    </DestinyPageScaffold>
   );
 }
 
