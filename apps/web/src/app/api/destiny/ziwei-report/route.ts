@@ -6,19 +6,26 @@ import type {
   ZiweiLockedSections,
   ZiweiSectionKey,
   ZiweiStreamEvent,
+  ZiweiPalaceAnalysis,
 } from '@/app/destiny/_components/types';
+import {
+  computeZiweiChart,
+  buildZiweiPromptContext,
+  type ZiweiChartData,
+} from '../_lib/ziwei-chart';
 import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
-import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
+// ─── 请求校验 ───
+
 const RequestSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空'),
   gender: z.enum(['male', 'female']),
-  calendarType: z.enum(['lunar', 'solar']).default('lunar'), // 默认农历
+  calendarType: z.enum(['lunar', 'solar']).default('lunar'),
   birthDate: z.object({
     year: z.number().int().min(1900).max(2100),
     month: z.number().int().min(1).max(12),
@@ -35,66 +42,28 @@ const RequestSchema = z.object({
   }),
 });
 
-const QuickZiweiSectionSchema = z.object({
-  profileOverview: z
-    .object({
-      name: z.string().min(1),
-      genderLabel: z.string().min(1),
-      birthText: z.string().min(1),
-      lunarText: z.string().min(1),
-      locationText: z.string().min(1),
-    })
-    .optional(),
-  overviewModules: z
-    .object({
-      personality: z.object({
-        title: z.string().min(1),
-        summary: z.string().min(1),
-        bullets: z.array(z.string().min(1)).min(1),
-      }),
-      career: z.object({
-        title: z.string().min(1),
-        summary: z.string().min(1),
-        bullets: z.array(z.string().min(1)).min(1),
-      }),
-      wealth: z.object({
-        title: z.string().min(1),
-        summary: z.string().min(1),
-        bullets: z.array(z.string().min(1)).min(1),
-      }),
-    })
-    .optional(),
-  timeline: z
-    .array(
-      z.object({
-        year: z.number(),
-        title: z.string().min(1),
-        summary: z.string().min(1),
-        detail: z.object({
-          opportunities: z.array(z.string().min(1)).min(1),
-          risks: z.array(z.string().min(1)).min(1),
-          actions: z.array(z.string().min(1)).min(1),
-        }),
-      })
-    )
-    .min(1)
-    .optional(),
-  relations: z
-    .object({
-      summary: z.string().min(1),
-      opportunities: z.array(z.string().min(1)).min(1),
-      risks: z.array(z.string().min(1)).min(1),
-      actions: z.array(z.string().min(1)).min(1),
-    })
-    .optional(),
-});
+// ─── 常量 ───
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const QUICK_TIMEOUT_MS = 40000;
+const REPORT_TIMEOUT_MS = 180000;
+const QUICK_MAX_TOKENS = 4000;
+const FULL_MAX_TOKENS = 6000;
 
-// JSON Schema 常量，用于 Doubao json_schema 结构化输出
-type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+const SECTION_ORDER: ZiweiSectionKey[] = [
+  'chartData',
+  'profileOverview',
+  'overviewModules',
+  'timeline',
+  'relations',
+  'palaceAnalysis',
+  'love',
+  'health',
+];
 
-const ZIWEI_QUICK_SECTIONS_SCHEMA = {
+// ─── JSON Schema（豆包结构化输出）───
+
+const QUICK_SCHEMA = {
   type: 'object',
   properties: {
     profileOverview: {
@@ -184,209 +153,60 @@ const ZIWEI_QUICK_SECTIONS_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const ZIWEI_FULL_REPORT_SCHEMA = {
+const FULL_SCHEMA = {
   type: 'object',
   properties: {
-    profile: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        genderLabel: { type: 'string' },
-        birthText: { type: 'string' },
-        lunarText: { type: 'string' },
-        locationText: { type: 'string' },
-      },
-      required: ['name', 'genderLabel', 'birthText', 'lunarText', 'locationText'],
-      additionalProperties: false,
-    },
-    pillars: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          stem: { type: 'string' },
-          branch: { type: 'string' },
-          label: { type: 'string' },
-          element: { type: 'string' },
-          tooltip: { type: 'string' },
-        },
-        required: ['stem', 'branch', 'label', 'element', 'tooltip'],
-        additionalProperties: false,
-      },
-    },
-    elements: {
+    palaceAnalysis: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
           key: { type: 'string' },
           label: { type: 'string' },
-          value: { type: 'integer' },
-        },
-        required: ['key', 'label', 'value'],
-        additionalProperties: false,
-      },
-    },
-    tenGods: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          key: { type: 'string' },
-          label: { type: 'string' },
-          value: { type: 'integer' },
-          tooltip: { type: 'string' },
-        },
-        required: ['key', 'label', 'value', 'tooltip'],
-        additionalProperties: false,
-      },
-    },
-    modules: {
-      type: 'object',
-      properties: {
-        personality: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'bullets'],
-          additionalProperties: false,
-        },
-        career: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'bullets'],
-          additionalProperties: false,
-        },
-        love: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'bullets'],
-          additionalProperties: false,
-        },
-        wealth: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'bullets'],
-          additionalProperties: false,
-        },
-        health: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'bullets'],
-          additionalProperties: false,
-        },
-      },
-      required: ['personality', 'career', 'love', 'wealth', 'health'],
-      additionalProperties: false,
-    },
-    timeline: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          year: { type: 'integer' },
-          title: { type: 'string' },
-          summary: { type: 'string' },
-          detail: {
-            type: 'object',
-            properties: {
-              opportunities: { type: 'array', items: { type: 'string' } },
-              risks: { type: 'array', items: { type: 'string' } },
-              actions: { type: 'array', items: { type: 'string' } },
-            },
-            required: ['opportunities', 'risks', 'actions'],
-            additionalProperties: false,
-          },
-        },
-        required: ['year', 'title', 'summary', 'detail'],
-        additionalProperties: false,
-      },
-    },
-    ziweiCenter: {
-      type: 'object',
-      properties: {
-        chartTitle: { type: 'string' },
-        mingZhu: { type: 'string' },
-        shenZhu: { type: 'string' },
-      },
-      required: ['chartTitle', 'mingZhu', 'shenZhu'],
-      additionalProperties: false,
-    },
-    ziweiPalaces: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          key: { type: 'string' },
-          label: { type: 'string' },
-          branch: { type: 'string' },
-          stars: { type: 'array', items: { type: 'string' } },
-          dominant: { type: 'string' },
           summary: { type: 'string' },
           suggestions: { type: 'array', items: { type: 'string' } },
         },
-        required: ['key', 'label', 'branch', 'stars', 'summary', 'suggestions'],
+        required: ['key', 'label', 'summary', 'suggestions'],
         additionalProperties: false,
       },
     },
+    love: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        summary: { type: 'string' },
+        bullets: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['title', 'summary', 'bullets'],
+      additionalProperties: false,
+    },
+    health: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        summary: { type: 'string' },
+        bullets: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['title', 'summary', 'bullets'],
+      additionalProperties: false,
+    },
   },
-  required: [
-    'profile',
-    'pillars',
-    'elements',
-    'tenGods',
-    'modules',
-    'timeline',
-    'ziweiCenter',
-    'ziweiPalaces',
-  ],
+  required: ['palaceAnalysis', 'love', 'health'],
   additionalProperties: false,
 } as const;
-const QUICK_STAGE_TIMEOUT_MS = 20000;
-const REPORT_TIMEOUT_MS = 300000;
-const QUICK_MAX_OUTPUT_TOKENS = 1800;
-const PRIMARY_MAX_OUTPUT_TOKENS = 2800;
-const RETRY_MAX_OUTPUT_TOKENS = 5000;
 
-const ZIWEI_SECTION_ORDER: ZiweiSectionKey[] = [
-  'profileOverview',
-  'overviewModules',
-  'timeline',
-  'relations',
-  'ziweiCenter',
-  'ziweiPalaces',
-];
+// ─── 错误类 ───
 
 class UpstreamModelError extends Error {
   status: number;
-  details?: string;
-
-  constructor(message: string, status = 502, details?: string) {
+  constructor(message: string, status = 502) {
     super(message);
     this.name = 'UpstreamModelError';
     this.status = status;
-    this.details = details;
   }
 }
+
+// ─── 主入口 ───
 
 export async function POST(req: Request) {
   try {
@@ -414,13 +234,19 @@ export async function POST(req: Request) {
 
     const input: DestinyReportRequest = parsed.data;
     const currentYear = new Date().getFullYear();
-    const stream = createZiweiStream({
-      input,
-      currentYear,
-      arkApiKey,
-      arkBaseUrl,
-      userId,
-    });
+
+    // Step 0: 本地排盘
+    let chartData: ZiweiChartData;
+    try {
+      chartData = computeZiweiChart(input);
+    } catch (chartError) {
+      return NextResponse.json(
+        { error: `排盘计算失败：${chartError instanceof Error ? chartError.message : '未知错误'}` },
+        { status: 422 }
+      );
+    }
+
+    const stream = createZiweiStream({ input, currentYear, arkApiKey, arkBaseUrl, userId, chartData });
 
     return new Response(stream, {
       headers: {
@@ -431,13 +257,13 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : '测算失败，请稍后重试',
-      },
+      { error: error instanceof Error ? error.message : '测算失败，请稍后重试' },
       { status: 500 }
     );
   }
 }
+
+// ─── SSE 流 ───
 
 function createZiweiStream({
   input,
@@ -445,12 +271,14 @@ function createZiweiStream({
   arkApiKey,
   arkBaseUrl,
   userId,
+  chartData,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   arkApiKey: string;
   arkBaseUrl: string;
   userId: string | null;
+  chartData: ZiweiChartData;
 }) {
   const encoder = new TextEncoder();
 
@@ -464,45 +292,51 @@ function createZiweiStream({
       };
 
       try {
+        // 立即发送精确星盘数据（本地计算，毫秒级）
         send({ type: 'status', status: 'queued' });
         send({ type: 'status', status: 'charting' });
 
-        const quickSections = await generateQuickZiweiSections({
-          arkApiKey,
-          arkBaseUrl,
-          input,
-          currentYear,
-          userId,
-        });
+        emittedSections.add('chartData');
+        lockedSections.chartData = chartData;
+        send({
+          type: 'section-final',
+          sectionKey: 'chartData',
+          payload: chartData,
+        } as ZiweiStreamEvent);
 
-        emitZiweiSectionEvents({
-          sections: quickSections,
-          emittedSections,
-          lockedSections,
-          send,
-        });
+        // 构建 AI 提示词上下文
+        const chartContext = buildZiweiPromptContext(chartData);
 
+        // 第一阶段：快速区块（profile + modules + timeline + relations）
         send({ type: 'status', status: 'analyzing' });
 
-        const fullReport = await generateFullZiweiReport({
+        const quickResult = await generateQuickSections({
           arkApiKey,
           arkBaseUrl,
           input,
+          chartContext,
           currentYear,
           userId,
         });
 
-        emitZiweiSectionEvents({
-          sections: extractZiweiSectionsFromReport(fullReport),
-          emittedSections,
-          lockedSections,
-          send,
+        emitSections({ sections: quickResult, emittedSections, lockedSections, send });
+
+        // 第二阶段：宫位详解 + 感情/健康模块
+        const fullResult = await generateFullSections({
+          arkApiKey,
+          arkBaseUrl,
+          input,
+          chartContext,
+          currentYear,
+          userId,
         });
+
+        emitSections({ sections: fullResult, emittedSections, lockedSections, send });
 
         send({ type: 'status', status: 'finalizing' });
         send({
           type: 'complete',
-          report: mergeZiweiSectionsIntoReport(fullReport, lockedSections),
+          report: buildFinalReport(input, chartData, lockedSections, currentYear),
         });
       } catch (error) {
         send({
@@ -516,132 +350,171 @@ function createZiweiStream({
   });
 }
 
-async function generateQuickZiweiSections({
+// ─── 发射区块事件 ───
+
+function emitSections({
+  sections,
+  emittedSections,
+  lockedSections,
+  send,
+}: {
+  sections: ZiweiLockedSections;
+  emittedSections: Set<ZiweiSectionKey>;
+  lockedSections: ZiweiLockedSections;
+  send: (event: ZiweiStreamEvent) => void;
+}) {
+  for (const sectionKey of SECTION_ORDER) {
+    if (emittedSections.has(sectionKey)) continue;
+    const payload = sections[sectionKey];
+    if (!payload) continue;
+
+    if (sectionKey === 'palaceAnalysis' && (!Array.isArray(payload) || payload.length < 12)) continue;
+    if (sectionKey === 'timeline' && (!Array.isArray(payload) || payload.length === 0)) continue;
+
+    emittedSections.add(sectionKey);
+    (lockedSections as Record<string, unknown>)[sectionKey] = payload;
+    send({ type: 'section-final', sectionKey, payload } as ZiweiStreamEvent);
+  }
+}
+
+// ─── 快速解读 ───
+
+async function generateQuickSections({
   arkApiKey,
   arkBaseUrl,
   input,
+  chartContext,
   currentYear,
   userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
+  chartContext: string;
   currentYear: number;
   userId: string | null;
-}) {
+}): Promise<ZiweiLockedSections> {
   try {
-    const payload = await requestArkPayload({
+    const payload = await callArkApi({
       arkApiKey,
       arkBaseUrl,
-      inputMessages: [
-        { role: 'system', content: buildQuickZiweiSystemPrompt(currentYear) },
-        { role: 'user', content: buildUserPrompt(input) },
+      messages: [
+        { role: 'system', content: buildQuickSystemPrompt(currentYear) },
+        { role: 'user', content: buildUserPrompt(input, chartContext) },
       ],
-      maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
+      maxTokens: QUICK_MAX_TOKENS,
       temperature: 0.25,
-      timeoutMs: QUICK_STAGE_TIMEOUT_MS,
-      userId,
-      action: 'destiny-ziwei-report',
-      metadata: { stage: 'quick', currentYear },
-      jsonSchema: { name: 'ziwei_quick_sections', schema: ZIWEI_QUICK_SECTIONS_SCHEMA },
+      timeoutMs: QUICK_TIMEOUT_MS,
+      jsonSchema: { name: 'ziwei_quick', schema: QUICK_SCHEMA },
     });
 
     const text = extractArkOutputText(payload);
-    return normalizeQuickZiweiSections(parseModelJson(text));
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      return {};
+    const parsed = parseJson(text);
+
+    if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action: 'destiny-ziwei-report',
+        provider: 'doubao',
+        model: ARK_MODEL,
+        endpoint: '/api/destiny/ziwei-report',
+        usage: normalizeUsage(extractArkUsage(payload)),
+        metadata: { stage: 'quick', currentYear },
+      });
     }
-    console.warn('[destiny/ziwei-report] quick stage skipped', {
-      message: error instanceof Error ? error.message : 'unknown quick stage error',
-    });
+
+    const result: ZiweiLockedSections = {};
+    if (parsed && typeof parsed === 'object') {
+      const data = parsed as Record<string, unknown>;
+      if (data.profileOverview) result.profileOverview = data.profileOverview as never;
+      if (data.overviewModules) result.overviewModules = data.overviewModules as never;
+      if (Array.isArray(data.timeline)) result.timeline = data.timeline as never;
+      if (data.relations) result.relations = data.relations as never;
+    }
+    return result;
+  } catch {
+    console.warn('[ziwei-report] quick stage skipped');
     return {};
   }
 }
 
-async function generateFullZiweiReport({
+// ─── 完整解读 ───
+
+async function generateFullSections({
   arkApiKey,
   arkBaseUrl,
   input,
+  chartContext,
   currentYear,
   userId,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   input: DestinyReportRequest;
+  chartContext: string;
   currentYear: number;
   userId: string | null;
-}) {
-  let payload = await requestArkPayload({
+}): Promise<ZiweiLockedSections> {
+  const payload = await callArkApi({
     arkApiKey,
     arkBaseUrl,
-    inputMessages: [
-      { role: 'system', content: buildSystemPrompt(currentYear) },
-      { role: 'user', content: buildUserPrompt(input) },
+    messages: [
+      { role: 'system', content: buildFullSystemPrompt(currentYear) },
+      { role: 'user', content: buildUserPrompt(input, chartContext) },
     ],
-    maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
+    maxTokens: FULL_MAX_TOKENS,
     temperature: 0.35,
     timeoutMs: REPORT_TIMEOUT_MS,
-    userId,
-    action: 'destiny-ziwei-report',
-    metadata: { stage: 'primary', currentYear },
-    jsonSchema: { name: 'ziwei_full_report', schema: ZIWEI_FULL_REPORT_SCHEMA },
+    jsonSchema: { name: 'ziwei_full', schema: FULL_SCHEMA },
   });
 
-  if (isLengthIncomplete(payload)) {
-    payload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
-      inputMessages: [
-        { role: 'system', content: buildCompactSystemPrompt(currentYear) },
-        { role: 'user', content: buildUserPrompt(input) },
-      ],
-      maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
-      temperature: 0.2,
-      timeoutMs: REPORT_TIMEOUT_MS,
-      userId,
-      action: 'destiny-ziwei-report',
-      metadata: { stage: 'retry', currentYear },
-      jsonSchema: { name: 'ziwei_full_report_compact', schema: ZIWEI_FULL_REPORT_SCHEMA },
-    });
-
-    if (isLengthIncomplete(payload)) {
-      throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
-    }
-  }
-
   const text = extractArkOutputText(payload);
-  const modelJson = parseModelJson(text);
-  const strictError = validateZiweiModelPayload(modelJson);
-  if (strictError) {
-    throw new UpstreamModelError(`紫微测算结果不完整：${strictError}，请重试`, 502);
+  const parsed = parseJson(text);
+
+  if (userId) {
+    await safeRecordAiUsage({
+      userId,
+      feature: 'destiny',
+      action: 'destiny-ziwei-report',
+      provider: 'doubao',
+      model: ARK_MODEL,
+      endpoint: '/api/destiny/ziwei-report',
+      usage: normalizeUsage(extractArkUsage(payload)),
+      metadata: { stage: 'full', currentYear },
+    });
   }
 
-  return normalizeDestinyReport(modelJson, input, currentYear);
+  const result: ZiweiLockedSections = {};
+  if (parsed && typeof parsed === 'object') {
+    const data = parsed as Record<string, unknown>;
+    if (Array.isArray(data.palaceAnalysis)) {
+      result.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
+    }
+    if (data.love) result.love = data.love as never;
+    if (data.health) result.health = data.health as never;
+  }
+  return result;
 }
 
-async function requestArkPayload({
+// ─── ARK API 调用 ───
+
+async function callArkApi({
   arkApiKey,
   arkBaseUrl,
-  inputMessages,
-  maxOutputTokens,
+  messages,
+  maxTokens,
   temperature,
   timeoutMs,
-  userId,
-  action,
-  metadata,
   jsonSchema,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
-  inputMessages: Array<{ role: 'system' | 'user'; content: string }>;
-  maxOutputTokens: number;
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  maxTokens: number;
   temperature: number;
   timeoutMs: number;
-  userId: string | null;
-  action: 'destiny-ziwei-report';
-  metadata?: Record<string, unknown>;
-  jsonSchema?: JsonSchemaConfig;
+  jsonSchema?: { name: string; schema: Record<string, unknown> };
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -655,9 +528,9 @@ async function requestArkPayload({
       },
       body: JSON.stringify({
         model: ARK_MODEL,
-        input: inputMessages,
+        input: messages,
         temperature,
-        max_output_tokens: maxOutputTokens,
+        max_output_tokens: maxTokens,
         reasoning: { effort: 'low' },
         text: jsonSchema
           ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
@@ -667,158 +540,128 @@ async function requestArkPayload({
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new UpstreamModelError(
-        mapArkError(response.status),
-        response.status,
-        text.slice(0, 400)
-      );
+      const errText = await response.text().catch(() => '');
+      throw new UpstreamModelError(mapArkError(response.status), response.status);
     }
 
-    const payload = await response.json();
-
-    if (userId) {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action,
-        provider: 'doubao',
-        model: ARK_MODEL,
-        endpoint: '/api/destiny/ziwei-report',
-        usage: normalizeUsage(extractArkUsage(payload)),
-        metadata: {
-          ...metadata,
-          maxOutputTokens,
-          messageCount: inputMessages.length,
-        },
-      });
-    }
-
-    return payload;
+    return response.json();
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-function emitZiweiSectionEvents({
-  sections,
-  emittedSections,
-  lockedSections,
-  send,
-}: {
-  sections: ZiweiLockedSections;
-  emittedSections: Set<ZiweiSectionKey>;
-  lockedSections: ZiweiLockedSections;
-  send: (event: ZiweiStreamEvent) => void;
-}) {
-  for (const sectionKey of ZIWEI_SECTION_ORDER) {
-    if (emittedSections.has(sectionKey)) continue;
+// ─── 提示词构建 ───
 
-    const payload = sections[sectionKey];
-    if (!isRenderableZiweiSection(sectionKey, payload)) continue;
+function buildUserPrompt(input: DestinyReportRequest, chartContext: string): string {
+  const location =
+    input.location.lat != null && input.location.lon != null
+      ? `${input.location.name}（${input.location.lat}, ${input.location.lon}）`
+      : input.location.name;
 
-    emittedSections.add(sectionKey);
-    (lockedSections as Record<ZiweiSectionKey, ZiweiLockedSections[ZiweiSectionKey]>)[sectionKey] =
-      payload;
-    send({
-      type: 'section-final',
-      sectionKey,
-      payload,
-    } as ZiweiStreamEvent);
-  }
+  return [
+    `姓名：${input.name}`,
+    `性别：${input.gender === 'female' ? '女' : '男'}`,
+    `出生日期：${input.birthDate.year}-${input.birthDate.month}-${input.birthDate.day}`,
+    `出生时间：${input.birthTime.hour}:${input.birthTime.minute}`,
+    `出生地：${location}`,
+    '',
+    chartContext,
+  ].join('\n');
 }
 
-function isRenderableZiweiSection(
-  sectionKey: ZiweiSectionKey,
-  payload: ZiweiLockedSections[ZiweiSectionKey]
-): payload is NonNullable<ZiweiLockedSections[ZiweiSectionKey]> {
-  if (!payload) return false;
-  if (sectionKey === 'profileOverview') return typeof payload === 'object';
-  if (sectionKey === 'ziweiCenter') return typeof payload === 'object';
-  if (sectionKey === 'overviewModules') return typeof payload === 'object';
-  if (sectionKey === 'timeline') return Array.isArray(payload) && payload.length > 0;
-  if (sectionKey === 'relations') return typeof payload === 'object';
-  if (sectionKey === 'ziweiPalaces') return Array.isArray(payload) && payload.length >= 12;
-  return false;
+function buildQuickSystemPrompt(currentYear: number): string {
+  return `你是专业的紫微斗数命理分析师。你需要基于用户提供的精确星盘数据进行解读。
+星盘数据已由本地算法精确计算完成，你只需负责解读，不要编造或修改星曜位置。
+
+请输出首屏可展示的 4 个区块：
+1. profileOverview：用户名片信息（name, genderLabel, birthText, lunarText, locationText）
+2. overviewModules：三大维度（personality 性格/career 事业/wealth 财运），每项含 title/summary/bullets(2-4条)
+3. timeline：未来 3 年流年运势（${currentYear}, ${currentYear + 1}, ${currentYear + 2}），每项含 year/title/summary/detail(opportunities/risks/actions)
+4. relations：六亲关系总览，含 summary/opportunities/risks/actions
+
+要求：
+- 所有解读必须基于提供的星盘数据，不要凭空编造
+- 语气稳健，不夸大确定性
+- summary 每项 50-90 字，bullet 每条 18 字以内
+- 使用中文简体
+- 严格只返回 JSON 对象`.trim();
 }
 
-function extractZiweiSectionsFromReport(report: DestinyReport): ZiweiLockedSections {
-  return {
-    profileOverview: report.profile,
-    overviewModules: {
-      personality: report.modules.personality,
-      career: report.modules.career,
-      wealth: report.modules.wealth,
-    },
-    timeline: report.timeline,
-    relations: {
-      summary: report.modules.love.summary,
-      opportunities: report.modules.love.bullets.slice(0, 3),
-      risks: report.modules.health.bullets.slice(0, 3),
-      actions: report.modules.personality.bullets.slice(0, 3),
-    },
-    ziweiCenter: report.ziweiCenter,
-    ziweiPalaces: report.ziweiPalaces,
-  };
+function buildFullSystemPrompt(currentYear: number): string {
+  return `你是专业的紫微斗数命理分析师。你需要基于用户提供的精确星盘数据进行深度解读。
+
+请输出以下内容：
+1. palaceAnalysis：12 宫位的 AI 解读（必须 12 项，对应 父母宫/福德宫/田宅宫/官禄宫/命宫/兄弟宫/奴仆宫/夫妻宫/迁移宫/子女宫/财帛宫/疾厄宫）
+   每项含：key（唯一标识）、label（宫位名）、summary（结合星曜组合的解读，50-90字）、suggestions（2-4 条可执行的行动建议，每条 18 字以内）
+2. love：感情婚姻模块，含 title/summary/bullets(2-4条)
+3. health：健康运势模块，含 title/summary/bullets(2-4条)
+
+要求：
+- 必须严格基于提供的星盘数据进行解读，不要编造
+- 关注宫位间的关系（三方四正、对宫影响）
+- 关注生年四化在各宫位的能量分布
+- 对于空宫，说明需借对宫星曜参考
+- 语气稳健，不夸大确定性，不使用"改命""转运""消灾""化解"等词汇
+- 使用中文简体
+- 严格只返回 JSON 对象`.trim();
 }
 
-function mergeZiweiSectionsIntoReport(
-  report: DestinyReport,
-  lockedSections: ZiweiLockedSections
+// ─── 构建最终报告 ───
+
+function buildFinalReport(
+  input: DestinyReportRequest,
+  chartData: ZiweiChartData,
+  lockedSections: ZiweiLockedSections,
+  currentYear: number
 ): DestinyReport {
+  const profile = lockedSections.profileOverview ?? {
+    name: input.name,
+    genderLabel: input.gender === 'female' ? '坤造（女命）' : '乾造（男命）',
+    birthText: `${input.birthDate.year}年${input.birthDate.month}月${input.birthDate.day}日 ${input.birthTime.hour}:${input.birthTime.minute}`,
+    lunarText: chartData.lunarDate,
+    locationText: input.location.name,
+  };
+
+  const modules = lockedSections.overviewModules ?? {
+    personality: { title: '性格特质', summary: '', bullets: [] },
+    career: { title: '事业发展', summary: '', bullets: [] },
+    wealth: { title: '财运运势', summary: '', bullets: [] },
+  };
+
+  const defaultModule = { title: '', summary: '', bullets: [] };
+
   return {
-    ...report,
-    profile: lockedSections.profileOverview ?? report.profile,
-    modules: lockedSections.overviewModules
-      ? {
-          ...report.modules,
-          personality: lockedSections.overviewModules.personality,
-          career: lockedSections.overviewModules.career,
-          wealth: lockedSections.overviewModules.wealth,
-          love: lockedSections.relations
-            ? {
-                ...report.modules.love,
-                summary: lockedSections.relations.summary,
-                bullets: lockedSections.relations.opportunities,
-              }
-            : report.modules.love,
-          health: lockedSections.relations
-            ? {
-                ...report.modules.health,
-                bullets: lockedSections.relations.risks,
-              }
-            : report.modules.health,
-        }
-      : lockedSections.relations
-        ? {
-            ...report.modules,
-            love: {
-              ...report.modules.love,
-              summary: lockedSections.relations.summary,
-              bullets: lockedSections.relations.opportunities,
-            },
-            health: {
-              ...report.modules.health,
-              bullets: lockedSections.relations.risks,
-            },
-            personality: {
-              ...report.modules.personality,
-              bullets: lockedSections.relations.actions,
-            },
-          }
-        : report.modules,
-    timeline: lockedSections.timeline ?? report.timeline,
-    ziweiCenter: lockedSections.ziweiCenter ?? report.ziweiCenter,
-    ziweiPalaces: lockedSections.ziweiPalaces ?? report.ziweiPalaces,
+    profile: profile as DestinyReport['profile'],
+    coreTone: { tag: chartData.fiveElementsClass, chartSummary: '', headline: '', description: '' },
+    pillars: [],
+    tenGods: [],
+    elements: [],
+    balanceInsight: { title: '', value: '', tooltip: '' },
+    patternHighlights: [],
+    modules: {
+      personality: modules.personality ?? defaultModule,
+      career: modules.career ?? defaultModule,
+      love: lockedSections.love ?? defaultModule,
+      wealth: modules.wealth ?? defaultModule,
+      health: lockedSections.health ?? defaultModule,
+    },
+    timeline: lockedSections.timeline ?? [],
   };
 }
 
-function normalizeQuickZiweiSections(payload: unknown): ZiweiLockedSections {
-  const parsed = QuickZiweiSectionSchema.safeParse(payload);
-  if (!parsed.success) {
-    return {};
+// ─── 工具函数 ───
+
+function parseJson(text: string): unknown {
+  const source = extractJsonBlock(text).trim();
+  try {
+    return JSON.parse(source);
+  } catch {
+    const match = source.match(/\{[\s\S]*\}/);
+    if (match) {
+      return JSON.parse(match[0].replace(/,\s*([}\]])/g, '$1'));
+    }
+    throw new SyntaxError('JSON 解析失败');
   }
-  return parsed.data;
 }
 
 function mapArkError(status: number): string {
@@ -828,161 +671,7 @@ function mapArkError(status: number): string {
 }
 
 function mapStreamError(error: unknown): string {
-  if (error instanceof Error && error.name === 'AbortError') {
-    return '测算超时，请稍后重试';
-  }
-  if (error instanceof z.ZodError) {
-    return '模型返回格式不合法，请稍后重试';
-  }
-  if (error instanceof SyntaxError) {
-    return '模型返回内容不可解析，请稍后重试';
-  }
-  if (error instanceof UpstreamModelError) {
-    return error.message;
-  }
+  if (error instanceof UpstreamModelError) return error.message;
+  if (error instanceof Error && error.name === 'AbortError') return '测算超时，请稍后重试';
   return error instanceof Error ? error.message : '测算失败，请稍后重试';
-}
-
-function buildUserPrompt(input: DestinyReportRequest): string {
-  const location =
-    input.location.lat != null && input.location.lon != null
-      ? `${input.location.name}（${input.location.lat}, ${input.location.lon}）`
-      : input.location.name;
-
-  return [
-    '请基于以下用户信息生成紫微斗数排盘分析（中文）：',
-    '重要：以下出生日期与出生时间均为农历（阴历）口径，不是公历（阳历）。',
-    `姓名：${input.name}`,
-    `性别：${input.gender === 'female' ? '女' : '男'}`,
-    `出生日期：${input.birthDate.year}-${input.birthDate.month}-${input.birthDate.day}`,
-    `出生时间：${input.birthTime.hour}:${input.birthTime.minute}`,
-    `出生地：${location}`,
-  ].join('\n');
-}
-
-function buildQuickZiweiSystemPrompt(currentYear: number) {
-  return `
-你是专业紫微斗数分析助手。必须严格返回合法 JSON，禁止额外文字。
-只返回首屏可直接展示的 4 个区块：
-- profileOverview: name, genderLabel, birthText, lunarText, locationText
-- overviewModules: personality/career/wealth，每项含 title/summary/bullets
-- timeline: 至少 1 项，年份优先从 ${currentYear} 开始
-- relations: summary/opportunities/risks/actions
-
-要求：
-1. 所有字段必须完整可直接展示
-2. 不要输出 pillars、elements、tenGods、ziweiCenter、ziweiPalaces
-3. 严格只返回 JSON 对象
-`.trim();
-}
-
-function buildSystemPrompt(currentYear: number): string {
-  return `
-你是专业紫微斗数分析助手。必须严格输出 JSON 对象，禁止输出任何额外文字。
-不要输出思考过程，不要解释，只返回最终 JSON。
-用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行紫微斗数推演，不要按公历换算理解。
-
-字段要求：
-1. profile：name, genderLabel, birthText, lunarText, locationText
-2. pillars：长度4，按年柱/月柱/日柱/时柱，包含 stem, branch, label, element, tooltip
-3. elements：必须含 metal/wood/water/fire/earth 五项，value 为 0-100 数字
-4. tenGods：返回 4 项，包含 key, label, value(0-100), tooltip
-5. modules：包含 personality/career/love/wealth/health，每项有 title/summary/bullets(2-4条)
-6. timeline：必须返回 3 项，年份依次是 ${currentYear}, ${currentYear + 1}, ${currentYear + 2}，每项含 title/summary/detail，
-   detail 里有 opportunities/risks/actions 三个数组，每个数组 2-3 条
-7. ziweiCenter：包含 chartTitle, mingZhu, shenZhu
-8. ziweiPalaces：必须返回 12 项（父母宫/福德宫/田宅宫/官禄宫/命宫/兄弟宫/奴仆宫/夫妻宫/迁移宫/子女宫/财帛宫/疾厄宫），每项包含 key,label,branch,stars(1-3),dominant,summary,suggestions(2-4)
-
-输出风格：
-- 聚焦紫微斗数语境，强调宫位、主星结构与流年建议
-- 内容可执行，避免空泛措辞
-- 语气稳健，不夸大确定性
-- 使用中文简体
-- 控制篇幅：summary 每项 50-90 字，bullet/action 每条 18 字以内
-- 保持精炼，避免重复表达
-  `.trim();
-}
-
-function buildCompactSystemPrompt(currentYear: number) {
-  return `
-仅返回合法 JSON。不要输出其他文字。
-用户提供的出生日期与出生时间均为农历（阴历）口径，请按农历进行紫微斗数推演，不要按公历换算理解。
-返回字段：
-profile(name,genderLabel,birthText,lunarText,locationText)
-pillars(4项: stem,branch,label,element,tooltip)
-elements(5项: key=metal/wood/water/fire/earth, value=0-100)
-tenGods(4项: key,label,value,tooltip)
-modules(personality/career/love/wealth/health，每项 title/summary/bullets[2-3条])
-timeline(3项，年份固定 ${currentYear}/${currentYear + 1}/${currentYear + 2}，每项 title/summary/detail，detail含 opportunities/risks/actions)
-ziweiCenter(chartTitle,mingZhu,shenZhu)
-ziweiPalaces(12项: key,label,branch,stars,dominant,summary,suggestions)
-内容尽量简短，保持紫微斗数表述。
-  `.trim();
-}
-
-function isLengthIncomplete(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const data = payload as Record<string, unknown>;
-  const incomplete = data.incomplete_details;
-  if (!incomplete || typeof incomplete !== 'object') return false;
-  return (incomplete as Record<string, unknown>).reason === 'length';
-}
-
-function parseModelJson(text: string): unknown {
-  const source = extractJsonBlock(text).trim();
-
-  try {
-    return JSON.parse(source);
-  } catch {
-    const objectMatch = source.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      const candidate = objectMatch[0]
-        .replace(/,\s*([}\]])/g, '$1')
-        .replace(/[\u0000-\u001F]+/g, ' ');
-      return JSON.parse(candidate);
-    }
-    throw new SyntaxError('模型 JSON 解析失败');
-  }
-}
-
-function validateZiweiModelPayload(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') return '返回体为空';
-  const source = payload as Record<string, unknown>;
-
-  if (
-    !source.ziweiPalaces ||
-    !Array.isArray(source.ziweiPalaces) ||
-    source.ziweiPalaces.length < 12
-  ) {
-    return '缺少 12 宫位数据';
-  }
-
-  const firstTimeline = Array.isArray(source.timeline) ? source.timeline[0] : null;
-  const firstDetail =
-    firstTimeline && typeof firstTimeline === 'object'
-      ? (firstTimeline as Record<string, unknown>).detail
-      : null;
-  if (!firstDetail || typeof firstDetail !== 'object') {
-    return '缺少流年 detail';
-  }
-
-  const detailObj = firstDetail as Record<string, unknown>;
-  if (
-    !Array.isArray(detailObj.opportunities) ||
-    !Array.isArray(detailObj.risks) ||
-    !Array.isArray(detailObj.actions)
-  ) {
-    return '流年 detail 结构不完整';
-  }
-
-  const modules = source.modules;
-  if (!modules || typeof modules !== 'object') {
-    return '缺少 modules';
-  }
-  const moduleObj = modules as Record<string, unknown>;
-  if (!moduleObj.love || !moduleObj.personality) {
-    return '缺少六亲/总论模块';
-  }
-
-  return null;
 }

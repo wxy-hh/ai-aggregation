@@ -57,6 +57,64 @@ export type ZiweiCenterInfo = {
   shenZhu: string;
 };
 
+// ─── 本地排盘产出（iztro）───
+
+export type ZiweiStarInfo = {
+  name: string;
+  type: string;
+  brightness: string;
+};
+
+export type ZiweiChartPalace = {
+  name: string;
+  heavenlyStem: string;
+  earthlyBranch: string;
+  isBodyPalace: boolean;
+  isOriginalPalace: boolean;
+  majorStars: ZiweiStarInfo[];
+  minorStars: ZiweiStarInfo[];
+  adjectiveStars: ZiweiStarInfo[];
+  changsheng12: string;
+  stageRange: [number, number];
+  stageStem: string;
+  ages: number[];
+};
+
+export type ZiweiSihua = {
+  lu: string;
+  quan: string;
+  ke: string;
+  ji: string;
+};
+
+export type ZiweiChartData = {
+  solarDate: string;
+  lunarDate: string;
+  chineseDate: string;
+  time: string;
+  timeRange: string;
+  sign: string;
+  zodiac: string;
+  yearStem: string;
+  yearBranch: string;
+  soulPalaceBranch: string;
+  bodyPalaceBranch: string;
+  soul: string;
+  body: string;
+  fiveElementsClass: string;
+  sihua: ZiweiSihua;
+  palaces: ZiweiChartPalace[];
+  solarCorrection?: string;
+};
+
+// AI 对每个宫位的解读（仅含解读，不含星曜数据）
+export type ZiweiPalaceAnalysis = {
+  key: string;
+  label: string;
+  summary: string;
+  suggestions: string[];
+};
+
 export type BaZiPillar = {
   stem: string;
   branch: string;
@@ -160,12 +218,14 @@ export type BaziSectionKey =
   | 'timeline';
 
 export type ZiweiSectionKey =
+  | 'chartData'
   | 'profileOverview'
-  | 'ziweiCenter'
   | 'overviewModules'
   | 'timeline'
   | 'relations'
-  | 'ziweiPalaces';
+  | 'palaceAnalysis'
+  | 'love'
+  | 'health';
 
 export type BaziSectionPayloadMap = {
   baziBasis: NonNullable<DestinyReport['baziBasis']>;
@@ -190,8 +250,8 @@ export type BaziSectionPayloadMap = {
 };
 
 export type ZiweiSectionPayloadMap = {
+  chartData: ZiweiChartData;
   profileOverview: DestinyReport['profile'];
-  ziweiCenter: NonNullable<DestinyReport['ziweiCenter']>;
   overviewModules: Pick<DestinyReport['modules'], 'personality' | 'career' | 'wealth'>;
   timeline: DestinyReport['timeline'];
   relations: {
@@ -200,7 +260,9 @@ export type ZiweiSectionPayloadMap = {
     risks: string[];
     actions: string[];
   };
-  ziweiPalaces: NonNullable<DestinyReport['ziweiPalaces']>;
+  palaceAnalysis: ZiweiPalaceAnalysis[];
+  love: DestinyModule;
+  health: DestinyModule;
 };
 
 export type BaziLockedSections = Partial<BaziSectionPayloadMap>;

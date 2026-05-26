@@ -129,110 +129,53 @@ export function DestinyPageClient() {
     );
   }
 
+  const isLoading = activeModule === 'bazi' ? baziLoading : activeModule === 'ziwei' ? ziweiLoading : qimenLoading;
+
   return (
     <div className="relative flex-1 h-full overflow-hidden">
-      {/* 八字格局精批 */}
+      {/* 左侧导航 - 渲染一次，按活跃模块显示加载状态 */}
       <div
         className={cn(
-          'absolute inset-0 transition-all duration-[180ms] will-change-transform will-change-opacity',
-          activeModule === 'bazi'
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-2 pointer-events-none'
+          'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
+          isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
         )}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
       >
-        <div className="relative h-full w-full">
-          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
-          <div
-            className={cn(
-              'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
-              baziLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
-            )}
-          >
-            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
-              <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
-            </div>
-          </div>
-
-          <div className="h-full w-full">
-            <BaziWorkspace
-              isActive={activeModule === 'bazi'}
-              activeModule={activeModule}
-              onModuleChange={setActiveModule}
-              onLoadingChange={setBaziLoading}
-            />
-          </div>
+        <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
+          <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
         </div>
       </div>
 
-      {/* 紫微斗数排盘 */}
-      <div
-        className={cn(
-          'absolute inset-0 transition-all duration-[180ms]',
-          activeModule === 'ziwei'
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-2 pointer-events-none'
+      {/* 工作区 - 仅渲染当前活跃模块 */}
+      <div className="h-full w-full">
+        {activeModule === 'bazi' && (
+          <BaziWorkspace
+            isActive
+            activeModule={activeModule}
+            onModuleChange={setActiveModule}
+            onLoadingChange={setBaziLoading}
+          />
         )}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
-      >
-        <div className="relative h-full w-full">
-          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
-          <div
-            className={cn(
-              'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
-              ziweiLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
-            )}
-          >
-            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
-              <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
-            </div>
-          </div>
-
-          <div className="h-full w-full">
-            <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
-          </div>
-        </div>
-      </div>
-
-      {/* 奇门遁甲演化 */}
-      <div
-        className={cn(
-          'absolute inset-0 transition-all duration-[180ms]',
-          activeModule === 'qimen'
-            ? 'opacity-100 translate-y-0 pointer-events-auto'
-            : 'opacity-0 translate-y-2 pointer-events-none'
+        {activeModule === 'ziwei' && (
+          <ZiweiWorkspace isActive onLoadingChange={setZiweiLoading} />
         )}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}
-      >
-        <div className="relative h-full w-full">
-          {/* 左侧导航 - 使用设计系统的玻璃卡片样式 */}
-          <div
-            className={cn(
-              'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
-              qimenLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
-            )}
-          >
-            <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
-              <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
+        {activeModule === 'qimen' && (
+          <>
+            <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
+              <QimenWorkspace isActive onLoadingChange={setQimenLoading} />
             </div>
-          </div>
-
-          <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
-            <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />
-          </div>
-
-          {qimenLoading && (
-            <div className="absolute inset-0 z-[35] overflow-hidden">
-              <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
-                <div className="pointer-events-none absolute inset-y-0 left-[288px] hidden w-20 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
-                <div className="relative h-full w-full xl:pl-[304px]">
-                  <QimenLoadingAnimation />
+            {qimenLoading && (
+              <div className="absolute inset-0 z-[35] overflow-hidden">
+                <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
+                  <div className="pointer-events-none absolute inset-y-0 left-[288px] hidden w-20 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
+                  <div className="relative h-full w-full xl:pl-[304px]">
+                    <QimenLoadingAnimation />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

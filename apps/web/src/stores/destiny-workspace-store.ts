@@ -16,6 +16,7 @@ import type {
   BaziLockedSections,
   DestinyReport,
   DestinyStreamStatus,
+  ZiweiChartData,
   ZiweiLockedSections,
 } from '@/app/destiny/_components/types';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
@@ -25,7 +26,7 @@ export type DestinyWorkspaceLastView = DestinyWorkspaceStep;
 export type BaziErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
-export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations';
+export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
 
 type BaseWorkspaceCache<TFormData, TFieldErrors, TErrorKind> = {
   step: DestinyWorkspaceStep;
@@ -56,6 +57,7 @@ export type ZiweiWorkspaceCache = BaseWorkspaceCache<
 > & {
   streaming: boolean;
   report: DestinyReport | null;
+  chartData: ZiweiChartData | null;
   lockedSections: ZiweiLockedSections;
   streamStatus: DestinyStreamStatus | null;
   tab: ZiweiPanelTab;
@@ -124,6 +126,7 @@ function createDefaultZiweiWorkspaceCache(): ZiweiWorkspaceCache {
     error: null,
     errorKind: null,
     report: null,
+    chartData: null,
     lockedSections: {},
     streamStatus: null,
     tab: 'overview',
