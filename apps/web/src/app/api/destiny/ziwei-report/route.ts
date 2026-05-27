@@ -86,9 +86,10 @@ const QUICK_SCHEMA = {
           properties: {
             title: { type: 'string' },
             summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
+            advantages: { type: 'array', items: { type: 'string' } },
+            suggestions: { type: 'array', items: { type: 'string' } },
           },
-          required: ['title', 'summary', 'bullets'],
+          required: ['title', 'summary', 'advantages', 'suggestions'],
           additionalProperties: false,
         },
         career: {
@@ -96,9 +97,10 @@ const QUICK_SCHEMA = {
           properties: {
             title: { type: 'string' },
             summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
+            advantages: { type: 'array', items: { type: 'string' } },
+            suggestions: { type: 'array', items: { type: 'string' } },
           },
-          required: ['title', 'summary', 'bullets'],
+          required: ['title', 'summary', 'advantages', 'suggestions'],
           additionalProperties: false,
         },
         wealth: {
@@ -106,9 +108,10 @@ const QUICK_SCHEMA = {
           properties: {
             title: { type: 'string' },
             summary: { type: 'string' },
-            bullets: { type: 'array', items: { type: 'string' } },
+            advantages: { type: 'array', items: { type: 'string' } },
+            suggestions: { type: 'array', items: { type: 'string' } },
           },
-          required: ['title', 'summary', 'bullets'],
+          required: ['title', 'summary', 'advantages', 'suggestions'],
           additionalProperties: false,
         },
       },
@@ -175,9 +178,10 @@ const FULL_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     health: {
@@ -185,9 +189,10 @@ const FULL_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
   },
@@ -575,14 +580,18 @@ function buildQuickSystemPrompt(currentYear: number): string {
 
 请输出首屏可展示的 4 个区块：
 1. profileOverview：用户名片信息（name, genderLabel, birthText, lunarText, locationText）
-2. overviewModules：三大维度（personality 性格/career 事业/wealth 财运），每项含 title/summary/bullets(2-4条)
+2. overviewModules：三大维度（personality 性格/career 事业/wealth 财运）
+   - title：对应宫位的星曜组合描述，如"命宫武曲贪狼同守"、"官禄宫紫微七杀坐守"、"财帛宫廉贞破军坐守"，不要写模块名称
+   - summary：50-90 字核心解读
+   - advantages：1 条优势
+   - suggestions：1 条建议
 3. timeline：未来 3 年流年运势（${currentYear}, ${currentYear + 1}, ${currentYear + 2}），每项含 year/title/summary/detail(opportunities/risks/actions)
 4. relations：六亲关系总览，含 summary/opportunities/risks/actions
 
 要求：
 - 所有解读必须基于提供的星盘数据，不要凭空编造
 - 语气稳健，不夸大确定性
-- summary 每项 50-90 字，bullet 每条 18 字以内
+- summary 每项 50-90 字，advantages/suggestions 每条 18 字以内
 - 使用中文简体
 - 严格只返回 JSON 对象`.trim();
 }
@@ -593,8 +602,16 @@ function buildFullSystemPrompt(currentYear: number): string {
 请输出以下内容：
 1. palaceAnalysis：12 宫位的 AI 解读（必须 12 项，对应 父母宫/福德宫/田宅宫/官禄宫/命宫/兄弟宫/奴仆宫/夫妻宫/迁移宫/子女宫/财帛宫/疾厄宫）
    每项含：key（唯一标识）、label（宫位名）、summary（结合星曜组合的解读，50-90字）、suggestions（2-4 条可执行的行动建议，每条 18 字以内）
-2. love：感情婚姻模块，含 title/summary/bullets(2-4条)
-3. health：健康运势模块，含 title/summary/bullets(2-4条)
+2. love：感情婚姻模块
+   - title：对应宫位的星曜组合描述，如"夫妻宫天府坐守"，不要写"感情婚姻运势解析"等模块名称
+   - summary：50-90 字核心解读
+   - advantages：1 条优势
+   - suggestions：1 条建议
+3. health：健康运势模块
+   - title：对应宫位的星曜组合描述，如"疾厄宫廉贞破军能量"，不要写"整体健康运势提示"等模块名称
+   - summary：50-90 字核心解读
+   - advantages：1 条优势
+   - suggestions：1 条建议
 
 要求：
 - 必须严格基于提供的星盘数据进行解读，不要编造
@@ -623,12 +640,12 @@ function buildFinalReport(
   };
 
   const modules = lockedSections.overviewModules ?? {
-    personality: { title: '性格特质', summary: '', bullets: [] },
-    career: { title: '事业发展', summary: '', bullets: [] },
-    wealth: { title: '财运运势', summary: '', bullets: [] },
+    personality: { title: '性格特质', summary: '', advantages: [], suggestions: [] },
+    career: { title: '事业发展', summary: '', advantages: [], suggestions: [] },
+    wealth: { title: '财运运势', summary: '', advantages: [], suggestions: [] },
   };
 
-  const defaultModule = { title: '', summary: '', bullets: [] };
+  const defaultModule = { title: '', summary: '', advantages: [], suggestions: [] };
 
   return {
     profile: profile as DestinyReport['profile'],

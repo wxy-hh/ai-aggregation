@@ -105,9 +105,10 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     moduleCareer: {
@@ -115,9 +116,10 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     moduleLove: {
@@ -125,9 +127,10 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     moduleWealth: {
@@ -135,9 +138,10 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     moduleHealth: {
@@ -145,9 +149,10 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       properties: {
         title: { type: 'string' },
         summary: { type: 'string' },
-        bullets: { type: 'array', items: { type: 'string' } },
+        advantages: { type: 'array', items: { type: 'string' } },
+        suggestions: { type: 'array', items: { type: 'string' } },
       },
-      required: ['title', 'summary', 'bullets'],
+      required: ['title', 'summary', 'advantages', 'suggestions'],
       additionalProperties: false,
     },
     timeline: {

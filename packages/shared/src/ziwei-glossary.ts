@@ -1,17 +1,9 @@
-'use client';
+/**
+ * 紫微斗数专业词汇基础解释表
+ * 前后端共享：后端用于生成个性化解释，前端用于 fallback
+ */
 
-import React from 'react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import type { ZiweiChartData } from './types';
-
-// ─── 专业词汇解释映射表 ───
-
-const GLOSSARY: Record<string, string> = {
+export const ZIWEI_BASE_GLOSSARY: Record<string, string> = {
   // 十四主星 — 北斗
   '紫微': '北斗主星，帝星。代表权威、领导力、高贵气质和自尊心。紫微坐命者通常有领导才能，但也可能显得孤高。',
   '天机': '北斗星，谋星。代表智慧、策划、变动和机敏。天机坐命者思维敏捷，善于谋划，但有时会思虑过多。',
@@ -74,7 +66,7 @@ const GLOSSARY: Record<string, string> = {
   '疾厄宫': '代表健康状况、体质强弱、易患疾病和意外伤害。',
   '迁移宫': '代表外出运势、变动发展、人际关系和对外表现。',
   '交友宫': '代表朋友关系、社交圈子、下属和合作伙伴。也称奴仆宫。',
-  '仆役': '代表朋友关系、社交圈子、下属和合作伙伴。也称交友宫、奴仆宫。',
+  '仆役宫': '代表朋友关系、社交圈子、下属和合作伙伴。也称交友宫、奴仆宫。',
   '官禄宫': '代表事业发展、职业方向、社会地位和工作成就。也称事业宫。',
   '田宅宫': '代表不动产、家庭环境、居住条件和家族根基。',
   '福德宫': '代表精神享受、福分厚薄、内心世界和晚年运势。',
@@ -96,69 +88,17 @@ const GLOSSARY: Record<string, string> = {
   '小限': '每年一个小限，按年龄依次对应不同宫位。用于分析每年的运势细节。',
 };
 
-// ─── 组件 ───
-
-type GlossaryTooltipProps = {
-  term: string;
-  children: React.ReactNode;
-  side?: 'top' | 'right' | 'bottom' | 'left';
-  /** 命盘数据，传入后会优先使用 personalizedGlossary 中的个性化解释 */
-  chartData?: ZiweiChartData;
-};
-
-/** 查找词汇解释：优先 personalizedGlossary，其次本地基础词表 */
-function lookupDescription(term: string, chartData?: ZiweiChartData): string | undefined {
-  if (chartData?.personalizedGlossary && term in chartData.personalizedGlossary) {
-    return chartData.personalizedGlossary[term];
-  }
-  return GLOSSARY[term] ?? (term.endsWith('宫') ? undefined : GLOSSARY[`${term}宫`]);
+/** 直接获取词汇基础解释 */
+export function getBaseGlossary(term: string): string | undefined {
+  return ZIWEI_BASE_GLOSSARY[term] ?? (term.endsWith('宫') ? undefined : ZIWEI_BASE_GLOSSARY[`${term}宫`]);
 }
 
-export function GlossaryTooltip({ term, children, side = 'top', chartData }: GlossaryTooltipProps) {
-  const description = lookupDescription(term, chartData);
-
-  if (!description) {
-    return <>{children}</>;
-  }
-
-  return (
-    <TooltipProvider delayDuration={100} skipDelayDuration={0}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className="inline-flex cursor-help border-b border-dotted border-[#4969E9]/40 hover:border-[#4969E9]"
-            role="button"
-            tabIndex={0}
-          >
-            {children}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side={side} align="start" sideOffset={8}>
-          <div className="text-[11px] font-bold text-[#4969E9] dark:text-[#9BADFF] mb-1">
-            {term}
-          </div>
-          <div className="text-xs leading-relaxed">{description}</div>
-          <div className="mt-2 pt-2 border-t border-[#4969E9]/10 text-[10px] text-[#94A3B8] flex items-center gap-1">
-            <span>悬停或点击查看详细影响</span>
-            <span>→</span>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+/** 检查是否有基础解释 */
+export function hasBaseGlossary(term: string): boolean {
+  return term in ZIWEI_BASE_GLOSSARY || `${term}宫` in ZIWEI_BASE_GLOSSARY;
 }
 
-/** 直接获取词汇解释（用于不需要交互的场景），支持传入命盘数据优先查个性化解释 */
-export function getGlossary(term: string, chartData?: ZiweiChartData): string | undefined {
-  return lookupDescription(term, chartData);
-}
-
-/** 检查是否有该词汇的解释（含个性化词表），支持传入命盘数据 */
-export function hasGlossary(term: string, chartData?: ZiweiChartData): boolean {
-  return lookupDescription(term, chartData) !== undefined;
-}
-
-/** 所有词汇列表（用于搜索/索引） */
+/** 所有词汇列表 */
 export function getAllGlossaryTerms(): string[] {
-  return Object.keys(GLOSSARY);
+  return Object.keys(ZIWEI_BASE_GLOSSARY);
 }

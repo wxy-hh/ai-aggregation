@@ -156,7 +156,9 @@ const ElementsAndTenGodsCoreSectionSchema = z.object({
 const ModuleSectionSchema = z.object({
   title: z.string().trim().min(1),
   summary: z.string().trim().min(1),
-  bullets: z.array(z.string().trim().min(1)).max(4),
+  advantages: z.array(z.string().trim().min(1)).max(3).optional(),
+  suggestions: z.array(z.string().trim().min(1)).max(3).optional(),
+  bullets: z.array(z.string().trim().min(1)).max(4).optional(),
 });
 
 const TimelineSectionSchema = z
@@ -456,6 +458,22 @@ function normalizeLooseModule(raw: unknown, rawPayload: string): DestinyModule {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const title = asString(source.title) || extractNamedStringField(rawPayload, 'title');
   const summary = asString(source.summary) || extractNamedStringField(rawPayload, 'summary');
+
+  // 优先解析新字段 advantages / suggestions
+  const advantagesFromObject = coerceBullets(source.advantages);
+  const suggestionsFromObject = coerceBullets(source.suggestions);
+
+  // 兜底：从 rawPayload 正则提取新字段（应对 JSON 损坏场景）
+  const advantages =
+    advantagesFromObject.length > 0
+      ? advantagesFromObject
+      : extractBulletsFromMalformedPayloadByField(rawPayload, 'advantages');
+  const suggestions =
+    suggestionsFromObject.length > 0
+      ? suggestionsFromObject
+      : extractBulletsFromMalformedPayloadByField(rawPayload, 'suggestions');
+
+  // 兼容旧格式 bullets
   const bulletsFromObject = coerceBullets(source.bullets);
   const bullets =
     bulletsFromObject.length > 0
@@ -465,7 +483,9 @@ function normalizeLooseModule(raw: unknown, rawPayload: string): DestinyModule {
   return {
     title,
     summary,
-    bullets,
+    advantages: advantages.length > 0 ? advantages : undefined,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+    bullets: bullets.length > 0 ? bullets : undefined,
   };
 }
 
@@ -531,6 +551,19 @@ function extractBulletsFromMalformedPayload(rawPayload: string): string[] {
   }
 
   const tailMatch = rawPayload.match(/"bullets"\s*:\s*([\s\S]*)$/);
+  return tailMatch?.[1] ? extractQuotedStrings(tailMatch[1]) : [];
+}
+
+/** 从损坏的 JSON 中按字段名提取字符串数组（用于 advantages / suggestions） */
+function extractBulletsFromMalformedPayloadByField(rawPayload: string, fieldName: string): string[] {
+  const regex = new RegExp(`"${fieldName}"\\s*:\\s*\\[([\\s\\S]*?)\\]`, 's');
+  const arrayMatch = rawPayload.match(regex);
+  if (arrayMatch?.[1]) {
+    return extractQuotedStrings(arrayMatch[1]);
+  }
+
+  const tailRegex = new RegExp(`"${fieldName}"\\s*:\\s*([\\s\\S]*)$`, 's');
+  const tailMatch = rawPayload.match(tailRegex);
   return tailMatch?.[1] ? extractQuotedStrings(tailMatch[1]) : [];
 }
 

@@ -49,7 +49,9 @@ export function ReportRightRail({
   }, [tab]);
 
   const hasModuleSummary = Boolean(module?.summary?.trim());
-  const hasModuleBullets = Boolean(module?.bullets?.length);
+  const hasModuleBullets = Boolean(
+    module?.bullets?.length || module?.advantages?.length || module?.suggestions?.length
+  );
 
   const timeline = report.timeline ?? [];
 
@@ -172,12 +174,31 @@ export function ReportRightRail({
             </div>
             {hasModuleBullets ? (
               <ul className="mt-2 space-y-2 text-xs sm:text-sm text-slate-700">
-                {module!.bullets.map((b) => (
-                  <li key={b} className="flex gap-2">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
-                    <span className="leading-relaxed">{b}</span>
-                  </li>
-                ))}
+                {/* 新格式：优先显示 advantages + suggestions */}
+                {(module?.advantages?.length || module?.suggestions?.length) ? (
+                  <>
+                    {module?.advantages?.slice(0, 1).map((b) => (
+                      <li key={`adv-${b}`} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                        <span className="leading-relaxed"><span className="font-bold">优势：</span>{b}</span>
+                      </li>
+                    ))}
+                    {module?.suggestions?.slice(0, 1).map((b) => (
+                      <li key={`sug-${b}`} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
+                        <span className="leading-relaxed"><span className="font-bold">建议：</span>{b}</span>
+                      </li>
+                    ))}
+                  </>
+                ) : (
+                  /* 兼容旧格式 bullets */
+                  (module?.bullets ?? []).map((b) => (
+                    <li key={b} className="flex gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
+                      <span className="leading-relaxed">{b}</span>
+                    </li>
+                  ))
+                )}
               </ul>
             ) : (
               <div className="mt-2 space-y-2">

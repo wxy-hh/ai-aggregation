@@ -66,11 +66,11 @@ const ReportSchema = z.object({
     })
   ),
   modules: z.object({
-    career: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
-    love: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
-    wealth: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
-    health: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
-    personality: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()) }),
+    career: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
+    love: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
+    wealth: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
+    health: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
+    personality: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
   }),
   timeline: z.array(
     z.object({
@@ -464,31 +464,37 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
 function buildQuestionScopedInsights(report: z.infer<typeof ReportSchema>, question: string) {
   const q = question.toLowerCase();
   const pickedModules: Array<{ label: string; summary: string; bullets: string[] }> = [];
-  const pushModule = (label: string, summary: string, bullets: string[]) => {
+  const pushModule = (label: string, summary: string, advantages: string[], suggestions: string[], bullets: string[]) => {
     if (!pickedModules.some((item) => item.label === label)) {
-      pickedModules.push({ label, summary, bullets });
+      // 优先使用新格式 advantages + suggestions，兼容旧格式 bullets
+      const combined = [
+        ...advantages.map((t) => `优势：${t}`),
+        ...suggestions.map((t) => `建议：${t}`),
+        ...bullets,
+      ];
+      pickedModules.push({ label, summary, bullets: combined.slice(0, 4) });
     }
   };
 
   if (/事业|工作|职业|升职|跳槽|offer|career|job/.test(q)) {
-    pushModule('事业', report.modules.career.summary, report.modules.career.bullets);
+    pushModule('事业', report.modules.career.summary, report.modules.career.advantages, report.modules.career.suggestions, report.modules.career.bullets);
   }
   if (/感情|爱情|婚|伴侣|恋爱|桃花|关系|love|relationship/.test(q)) {
-    pushModule('感情', report.modules.love.summary, report.modules.love.bullets);
+    pushModule('感情', report.modules.love.summary, report.modules.love.advantages, report.modules.love.suggestions, report.modules.love.bullets);
   }
   if (/财|收入|钱|投资|副业|财富|wealth|money/.test(q)) {
-    pushModule('财运', report.modules.wealth.summary, report.modules.wealth.bullets);
+    pushModule('财运', report.modules.wealth.summary, report.modules.wealth.advantages, report.modules.wealth.suggestions, report.modules.wealth.bullets);
   }
   if (/健康|睡眠|情绪|身体|medical|health/.test(q)) {
-    pushModule('健康', report.modules.health.summary, report.modules.health.bullets);
+    pushModule('健康', report.modules.health.summary, report.modules.health.advantages, report.modules.health.suggestions, report.modules.health.bullets);
   }
   if (/性格|人际|沟通|自己|状态|personality/.test(q)) {
-    pushModule('性格', report.modules.personality.summary, report.modules.personality.bullets);
+    pushModule('性格', report.modules.personality.summary, report.modules.personality.advantages, report.modules.personality.suggestions, report.modules.personality.bullets);
   }
 
   if (pickedModules.length === 0) {
-    pushModule('事业', report.modules.career.summary, report.modules.career.bullets);
-    pushModule('感情', report.modules.love.summary, report.modules.love.bullets);
+    pushModule('事业', report.modules.career.summary, report.modules.career.advantages, report.modules.career.suggestions, report.modules.career.bullets);
+    pushModule('感情', report.modules.love.summary, report.modules.love.advantages, report.modules.love.suggestions, report.modules.love.bullets);
   }
 
   const currentYear = new Date().getFullYear();

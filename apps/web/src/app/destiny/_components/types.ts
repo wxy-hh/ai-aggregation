@@ -105,6 +105,8 @@ export type ZiweiChartData = {
   sihua: ZiweiSihua;
   palaces: ZiweiChartPalace[];
   solarCorrection?: string;
+  /** 基于用户命盘数据生成的个性化词汇解释（优先于基础词表） */
+  personalizedGlossary?: Record<string, string>;
 };
 
 // AI 对每个宫位的解读（仅含解读，不含星曜数据）
@@ -124,9 +126,16 @@ export type BaZiPillar = {
 };
 
 export type DestinyModule = {
+  /** 宫位名，如「紫杀在辰」 */
   title: string;
+  /** 核心描述（一句话概括） */
   summary: string;
-  bullets: string[];
+  /** 优势列表（每项为纯文本，前端自动加「优势：」前缀） */
+  advantages?: string[];
+  /** 建议列表（每项为纯文本，前端自动加「建议：」前缀） */
+  suggestions?: string[];
+  /** 旧格式兼容：兜底 bullet 列表（优先使用 advantages / suggestions） */
+  bullets?: string[];
 };
 
 export type DestinyTimelineItem = {

@@ -94,7 +94,9 @@ const TenGodSchema = z.object({
 const ModuleSchema = z.object({
   title: z.string(),
   summary: z.string(),
-  bullets: z.array(z.string()),
+  advantages: z.array(z.string()).optional(),
+  suggestions: z.array(z.string()).optional(),
+  bullets: z.array(z.string()).optional(),
 });
 
 const TimelineItemSchema = z.object({
@@ -369,15 +371,28 @@ function normalizeLooseModules(raw: unknown) {
     'wealth',
     'health',
   ];
-  const result: Record<string, { title: string; summary: string; bullets: string[] }> = {};
+  const result: Record<string, { title: string; summary: string; advantages?: string[]; suggestions?: string[]; bullets?: string[] }> = {};
   list.slice(0, 5).forEach((item, index) => {
     const key = slots[index];
     const title = asString(item.name) || `${key}分析`;
     const content = asString(item.content);
+    // 优先提取新字段 advantages / suggestions，兼容旧字段 bullets
+    const advantages = Array.isArray(item.advantages)
+      ? item.advantages.map((v) => asString(v)).filter(Boolean)
+      : undefined;
+    const suggestions = Array.isArray(item.suggestions)
+      ? item.suggestions.map((v) => asString(v)).filter(Boolean)
+      : undefined;
+    const bullets = Array.isArray(item.bullets)
+      ? item.bullets.map((v) => asString(v)).filter(Boolean)
+      : content ? [content] : [];
+
     result[key] = {
       title,
       summary: content,
-      bullets: content ? [content] : [],
+      advantages: advantages && advantages.length > 0 ? advantages : undefined,
+      suggestions: suggestions && suggestions.length > 0 ? suggestions : undefined,
+      bullets: bullets.length > 0 ? bullets : undefined,
     };
   });
   return Object.keys(result).length > 0 ? result : raw;
@@ -576,6 +591,18 @@ function normalizeCoreTone(
 function safeModule(input: Partial<DestinyModule> | undefined, fallbackTitle: string): DestinyModule {
   const title = input?.title?.trim() || fallbackTitle;
   const summary = input?.summary?.trim() || '';
+
+  // 规范化新字段：advantages / suggestions
+  const advantages = (input?.advantages ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const suggestions = (input?.suggestions ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+
+  // 兼容旧格式：兜底 bullet 列表
   const bullets = (input?.bullets ?? [])
     .map((item) => item.trim())
     .filter(Boolean)
@@ -584,7 +611,9 @@ function safeModule(input: Partial<DestinyModule> | undefined, fallbackTitle: st
   return {
     title,
     summary,
-    bullets,
+    advantages: advantages.length > 0 ? advantages : undefined,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+    bullets: bullets.length > 0 ? bullets : undefined,
   };
 }
 

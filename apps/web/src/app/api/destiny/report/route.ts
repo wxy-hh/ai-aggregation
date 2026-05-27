@@ -709,7 +709,12 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 4. lifeDimensionHighlights 的 strength 和 caution 各 1 句，28-60 个中文字符，说人话，不堆术语。
 5. balanceInsight 用一句短标题 + 当前更显的五行 + 45-90 个中文字符的解释，重点讲现实做事风格。注意：必须结合月令五行（seasonalBonus 最高的元素）与日主的生克关系来分析，不要只堆数值或套话。
 6. patternHighlights 返回 2-4 项，用大白话解释已给出的术语或组合，不要虚构新的命理组合，每项要具体对应命盘特征。
-7. 五大模块 summary 各 50-90 字，bullets 2-4 条，每条 18 字以内，直接给建议。每个模块必须结合命盘格局、五行强弱或十神重心给出个性化解读，避免千篇一律的通用建议。
+7. 五大模块：
+   - title：对应宫位的星曜组合描述，如"命宫武曲贪狼同守"、"官禄宫紫微七杀坐守"，不要写模块名称（如"性格特质"、"事业发展"）
+   - summary：50-90 字核心解读
+   - advantages：1 条优势
+   - suggestions：1 条建议
+   每条 18 字以内，必须结合命盘格局、五行强弱或十神重心给出个性化解读，避免千篇一律的通用建议。
 8. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须结合 litePromptPayload 中的 decadeFortunes（十年大运）与 annualCycles（流年岁运）来分析：先说明当前所在大运的干支与阶段特征，再结合流年干支判断该年的放大或缓冲效应，给出具体趋势判断。
 9. 语气稳健、具体、克制，不夸大确定性，不要许愿式话术。整体输出要求个性化，每个模块都应体现命盘独特性，避免模板化表述。
 `.trim();
