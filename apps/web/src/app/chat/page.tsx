@@ -629,7 +629,7 @@ export default function ChatPage() {
           <div className="relative h-full overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
             <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
             {/* 头部 */}
-            <header className="z-20 flex-none border-b border-slate-200/70 bg-white/72 px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/50 dark:border-slate-800/80 dark:bg-slate-900/70 sm:px-6">
+            <header className="relative z-20 flex-none border-b border-slate-200/70 bg-white/72 px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/50 dark:border-slate-800/80 dark:bg-slate-900/70 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
