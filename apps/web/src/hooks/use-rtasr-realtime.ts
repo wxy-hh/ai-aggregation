@@ -486,6 +486,8 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
             void finalizeStop();
             return;
           }
+          stopTimers();
+          void closeAll(false);
           setStatusSafe('error');
         };
 
@@ -496,13 +498,10 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
             return;
           }
 
-          setStatus((prev) => {
-            const current = statusRef.current;
-            if (current === 'running' || current === 'connecting' || current === 'paused') {
-              return 'stopped';
-            }
-            return prev;
-          });
+          if (statusRef.current === 'running' || statusRef.current === 'connecting' || statusRef.current === 'paused') {
+            void closeAll(false);
+            setStatusSafe('stopped');
+          }
         };
       } catch (err) {
         setError(err instanceof Error ? err.message : '启动失败');

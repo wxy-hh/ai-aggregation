@@ -11,6 +11,7 @@ import { AudioHistoryItem } from '@/types/audio-history';
 import { withRetry, formatErrorMessage, RetryProgressTracker } from '@/lib/api/error-handler';
 import { useHistoryStore } from '@/stores/history-store';
 import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
+import { toast } from 'sonner';
 
 interface UploadAudioProps {
   onFileSelect?: (file: File) => void;
@@ -276,14 +277,14 @@ export function UploadAudio({
     const fileExtension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
 
     if (!validTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
-      alert('请上传 MP3、WAV 或 AAC 格式的音频文件');
+      toast.error('请上传 MP3、WAV 或 AAC 格式的音频文件');
       return;
     }
 
     // 验证文件大小（最大 50MB）
     const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
-      alert('文件大小不能超过 50MB');
+      toast.error('文件大小不能超过 50MB');
       return;
     }
 
@@ -502,9 +503,9 @@ export function UploadAudio({
 
           // 如果所有翻译都失败，显示提示
           if (translationErrors === sentences.length) {
-            alert('翻译失败，但转录结果已保存');
+            toast.warning('翻译失败，但转录结果已保存');
           } else if (translationErrors > 0) {
-            alert(`部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`);
+            toast.warning(`部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`);
           }
         } catch (translationError) {
           console.error('翻译错误:', translationError);
@@ -558,7 +559,7 @@ export function UploadAudio({
 
       // 使用格式化的错误消息
       const errorMessage = formatErrorMessage(error, '转录');
-      alert(errorMessage);
+      toast.error(errorMessage);
     }
   };
 

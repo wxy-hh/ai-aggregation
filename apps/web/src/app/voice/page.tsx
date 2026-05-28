@@ -99,7 +99,12 @@ function VoicePageContent() {
           fileSize: voiceItem.fileSize,
           fileMimeType: 'audio/mpeg', // 默认类型
           uploadTime: new Date(voiceItem.createdAt), // 上传时间
-          duration: parseFloat(voiceItem.duration.replace(':', '.')) * 60 || 0,
+          duration: (() => {
+            const parts = voiceItem.duration.split(':');
+            const mins = parseInt(parts[0], 10) || 0;
+            const secs = parseInt(parts[1], 10) || 0;
+            return mins * 60 + secs;
+          })(),
           transcriptionText: voiceItem.transcription,
           translationText: undefined,
           processingStatus: 'completed',
@@ -182,16 +187,50 @@ function VoicePageContent() {
     }
   }, [addHistoryItem, rtasr]);
 
+  const handleCopyText = useCallback(async () => {
+    const text = rtasr.segments
+      .map((segment) => segment.text)
+      .join('\n')
+      .trim();
+    if (!text) {
+      toast.info('暂无转录文本可复制');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('已复制到剪贴板');
+    } catch {
+      toast.error('复制失败，请手动复制');
+    }
+  }, [rtasr.segments]);
+
+  const handleExport = useCallback(() => {
+    const text = rtasr.segments
+      .map((segment) => `[${segment.timestamp}] ${segment.text}`)
+      .join('\n')
+      .trim();
+    if (!text) {
+      toast.info('暂无转录文本可导出');
+      return;
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transcription-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('导出成功');
+  }, [rtasr.segments]);
+
   const primaryActionLabel =
     rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error'
       ? '开始录音'
-      : rtasr.status === 'running'
-        ? '暂停录音'
-        : rtasr.status === 'paused'
-          ? '继续录音'
-          : rtasr.status === 'connecting'
-            ? '连接中...'
-            : '停止并保存';
+      : rtasr.status === 'connecting'
+        ? '连接中...'
+        : rtasr.status === 'stopping'
+          ? '收尾中...'
+          : '停止并保存';
 
   return (
     <AppLayout>
@@ -378,7 +417,7 @@ function VoicePageContent() {
 
               {/* Transcript List */}
               <TranscriptList
-                segments={rtasr.segments.length > 0 ? rtasr.segments : mockSegments}
+                segments={rtasr.segments.length > 0 ? rtasr.segments : []}
               />
 
               {/* Loading State for next segment */}
@@ -461,6 +500,7 @@ function VoicePageContent() {
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
                   <Button
                     variant="ghost"
+                    onClick={handleCopyText}
                     className="gap-2 justify-center text-slate-600 dark:text-slate-300"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -475,6 +515,7 @@ function VoicePageContent() {
                   </Button>
                   <Button
                     variant="ghost"
+                    onClick={handleExport}
                     className="gap-2 justify-center text-slate-600 dark:text-slate-300"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -499,14 +540,6 @@ function VoicePageContent() {
                       rtasr.status === 'error'
                     ) {
                       await rtasr.start();
-                      return;
-                    }
-                    if (rtasr.status === 'running') {
-                      await rtasr.pause();
-                      return;
-                    }
-                    if (rtasr.status === 'paused') {
-                      await rtasr.resume();
                       return;
                     }
                     await handleStopAndSave();

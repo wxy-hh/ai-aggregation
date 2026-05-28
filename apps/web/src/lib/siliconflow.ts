@@ -1,8 +1,22 @@
 import { readFileSync, statSync } from 'fs';
-import { basename } from 'path';
+import { basename, extname } from 'path';
 
 const API_KEY = process.env.SILICONFLOW_API_KEY!;
 const API_URL = process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1';
+
+const MIME_MAP: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.mpeg': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.wave': 'audio/wav',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.wma': 'audio/x-ms-wma',
+  '.webm': 'audio/webm',
+};
 
 export interface TranscribeResult {
   text: string;
@@ -18,6 +32,8 @@ function createFormData(filePath: string, model: string) {
   const boundary = '----Boundary' + Date.now();
   const fileName = basename(filePath);
   const fileContent = readFileSync(filePath);
+  const ext = extname(fileName).toLowerCase();
+  const mimeType = MIME_MAP[ext] || 'audio/mpeg';
 
   const parts: Buffer[] = [];
 
@@ -26,7 +42,7 @@ function createFormData(filePath: string, model: string) {
     Buffer.from(
       `--${boundary}\r\n` +
         `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
-        `Content-Type: audio/mpeg\r\n\r\n`,
+        `Content-Type: ${mimeType}\r\n\r\n`,
       'utf8'
     )
   );
