@@ -1007,7 +1007,7 @@ export function QimenAnalysisResult({
             </Button>
             <Button
               type="button"
-              className="rounded-full bg-[#2F6BFF] text-white"
+              className=              "rounded-full bg-[#2F6BFF] dark:bg-[#4D7FFF] text-white"
               onClick={onRetry}
             >
               重新演化分析

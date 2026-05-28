@@ -306,6 +306,7 @@ export const useHistoryStore = create<HistoryState>()(
           chat: items.filter((item) => item.type === 'chat').length,
           voice: items.filter((item) => item.type === 'voice').length,
           image: items.filter((item) => item.type === 'image').length,
+          destiny: items.filter((item) => item.type === 'destiny').length,
         };
       },
 

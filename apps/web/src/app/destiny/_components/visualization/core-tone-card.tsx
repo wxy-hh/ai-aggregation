@@ -83,9 +83,9 @@ export function CoreToneCard({
 
           {/* 骨架描述 */}
           {!coreTone?.description && coreTone?.headline && (
-            <div className="mt-1.5 space-y-1.5">
-              <div className="h-3 w-full animate-pulse rounded bg-[#E2E8F0]/70" />
-              <div className="h-3 w-4/5 animate-pulse rounded bg-[#E2E8F0]/70" />
+             <div className="mt-1.5 space-y-1.5">
+              <div className="h-3 w-full animate-pulse rounded bg-[#E2E8F0]/70 dark:bg-slate-700/60" />
+              <div className="h-3 w-4/5 animate-pulse rounded bg-[#E2E8F0]/70 dark:bg-slate-700/60" />
             </div>
           )}
         </div>

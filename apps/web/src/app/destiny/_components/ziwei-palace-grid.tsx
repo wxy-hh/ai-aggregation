@@ -55,10 +55,10 @@ const GROUP_STYLES: Record<string, {
   label: string;
   accentClass: string;
 }> = {
-  self:   { border: 'border-amber-200/50',  bg: 'bg-amber-50/40',  label: 'text-amber-700',  accentClass: 'text-amber-500' },
-  family: { border: 'border-rose-200/40',   bg: 'bg-rose-50/30',   label: 'text-rose-700',   accentClass: 'text-rose-500' },
-  career: { border: 'border-blue-200/50',   bg: 'bg-blue-50/40',   label: 'text-blue-700',   accentClass: 'text-blue-500' },
-  spirit: { border: 'border-emerald-200/40', bg: 'bg-emerald-50/30', label: 'text-emerald-700', accentClass: 'text-emerald-500' },
+  self:   { border: 'border-amber-200/50 dark:border-amber-800/30',  bg: 'bg-amber-50/40 dark:bg-amber-950/20',  label: 'text-amber-700 dark:text-amber-300',  accentClass: 'text-amber-500' },
+  family: { border: 'border-rose-200/40 dark:border-rose-800/30',   bg: 'bg-rose-50/30 dark:bg-rose-950/20',   label: 'text-rose-700 dark:text-rose-300',   accentClass: 'text-rose-500' },
+  career: { border: 'border-blue-200/50 dark:border-blue-800/30',   bg: 'bg-blue-50/40 dark:bg-blue-950/20',   label: 'text-blue-700 dark:text-blue-300',   accentClass: 'text-blue-500' },
+  spirit: { border: 'border-emerald-200/40 dark:border-emerald-800/30', bg: 'bg-emerald-50/30 dark:bg-emerald-950/20', label: 'text-emerald-700 dark:text-emerald-300', accentClass: 'text-emerald-500' },
 };
 
 // ─── 三方四正关系表 ───
@@ -269,13 +269,13 @@ function isCurrentYearPalace(palace: ZiweiChartPalace): boolean {
 
 function SihuaBadgeDot({ type }: { type: string }) {
   const styles: Record<string, string> = {
-    '禄': 'bg-emerald-100 text-emerald-700 border-emerald-200/60',
-    '权': 'bg-amber-100 text-amber-700 border-amber-200/60',
-    '科': 'bg-blue-100 text-blue-700 border-blue-200/60',
-    '忌': 'bg-rose-100 text-rose-700 border-rose-200/60',
+    '禄': 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/30',
+    '权': 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/30',
+    '科': 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200/60 dark:border-blue-800/30',
+    '忌': 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200/60 dark:border-rose-800/30',
   };
   return (
-    <span className={`inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded text-[9px] font-bold border ${styles[type] ?? 'bg-slate-100 text-slate-600'}`}>
+    <span className={`inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded text-[9px] font-bold border ${styles[type] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
       {type}
     </span>
   );

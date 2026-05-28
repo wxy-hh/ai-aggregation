@@ -47,15 +47,15 @@ export function PersonalityDashboardCard({
               <div
                 key={item.key}
                 className={cn(
-                  'group rounded-[24px] border border-white/45 bg-white/52 px-4 py-4 backdrop-blur-[18px]',
-                  'shadow-sm transition duration-200 hover:bg-white/66 hover:shadow-md'
+                  'group rounded-[24px] border border-white/45 dark:border-white/5 bg-white/52 dark:bg-slate-800/40 px-4 py-4 backdrop-blur-[18px]',
+                  'shadow-sm transition duration-200 hover:bg-white/66 dark:hover:bg-slate-700/60 hover:shadow-md'
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-extrabold text-slate-700">
+                    <div className="text-xs sm:text-sm font-extrabold text-slate-700 dark:text-slate-300">
                       {item.label}
-                      <span className="ml-1 text-slate-400">（{item.technicalLabel}）</span>
+                      <span className="ml-1 text-slate-400 dark:text-slate-500">（{item.technicalLabel}）</span>
                     </div>
                   </div>
                   <div
@@ -101,15 +101,15 @@ export function PersonalityDashboardCard({
             {Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={`ten-god-domain-skeleton-${index}`}
-                className="rounded-[24px] border border-white/45 bg-white/52 px-4 py-4"
+                className="rounded-[24px] border border-white/45 dark:border-white/5 bg-white/52 dark:bg-slate-800/40 px-4 py-4"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="h-4 w-40 animate-pulse rounded bg-slate-200/70" />
-                  <div className="h-4 w-10 animate-pulse rounded bg-slate-200/70" />
+                  <div className="h-4 w-40 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
+                  <div className="h-4 w-10 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
                 </div>
-                <div className="mt-3 h-3 animate-pulse rounded-full bg-slate-100" />
-                <div className="mt-3 h-3 w-full animate-pulse rounded bg-slate-200/70" />
-                <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-200/70" />
+                <div className="mt-3 h-3 animate-pulse rounded-full bg-slate-100 dark:bg-slate-700" />
+                <div className="mt-3 h-3 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
+                <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
               </div>
             ))}
           </div>

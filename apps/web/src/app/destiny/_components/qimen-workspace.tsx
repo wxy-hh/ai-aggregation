@@ -4,6 +4,8 @@ import React, { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type QimenErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
@@ -104,6 +106,96 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       restoreWorkspace('qimen');
     }
   }, [isActive, restoreWorkspace]);
+
+  // 当所有分析区块完成后保存历史记录
+  const historySavedRef = useRef(false);
+  useEffect(() => {
+    if (historySavedRef.current) return;
+    if (!baseResult || !analysisId) return;
+    const statusValues = Object.values(sectionStatuses) as QimenSectionStatus[];
+    if (statusValues.length < 3) return;
+    const allSettled = statusValues.every(
+      (s) => s === 'completed' || s === 'failed'
+    );
+    if (!allSettled) return;
+
+    historySavedRef.current = true;
+    const description = formData.description || '奇门遁甲推演';
+    const previewText = description.length > 150 ? description.slice(0, 150) : description;
+
+    // 打包所有结果数据
+    const reportData = {
+      baseResult,
+      sections,
+      analysisId,
+      formData,
+    };
+
+    const historyItem = createDestinyHistoryItem(
+      'qimen',
+      { ...formData } as unknown as Record<string, unknown>,
+      reportData as unknown as Record<string, unknown>,
+      'doubao-seed-2-0',
+      {
+        title: `奇门遁甲推演 · ${baseResult.chartTitle || '盘局分析'}`,
+        preview: previewText,
+        coreTone: baseResult.chartTitle || '奇门遁甲',
+      }
+    );
+    useHistoryStore.getState().addItem(historyItem);
+  }, [baseResult, analysisId, sectionStatuses, sections, formData]);
+
+  // 从历史记录恢复
+  useEffect(() => {
+    if (!isActive) return;
+    const params = new URLSearchParams(window.location.search);
+    const historyId = params.get('historyId');
+    if (!historyId) return;
+    const historyItem = useHistoryStore.getState().getItemById(historyId);
+    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'qimen') return;
+    const savedData = historyItem.reportData as Record<string, unknown> | null;
+    if (!savedData) return;
+    const savedBaseResult = savedData.baseResult;
+    const savedSections = (savedData.sections as Record<string, unknown>) || {};
+    const savedAnalysisId = savedData.analysisId as string;
+    const savedFormData = (savedData.formData as QimenFormData) || formData;
+
+    setWorkspaceState('qimen', {
+      step: 'result',
+      lastView: 'result',
+      hasResult: true,
+      blockingLoading: false,
+      error: null,
+      errorKind: null,
+      analysisId: savedAnalysisId || null,
+      baseResult: savedBaseResult as never,
+      baseStatus: 'completed',
+      baseError: null,
+      sections: savedSections as never,
+      sectionErrors: {},
+      sectionStatuses: {
+        strategyOverview: Object.prototype.hasOwnProperty.call(savedSections, 'strategyOverview')
+          ? 'completed'
+          : 'idle',
+        timingWindows: Object.prototype.hasOwnProperty.call(savedSections, 'timingWindows')
+          ? 'completed'
+          : 'idle',
+        chartSummary: Object.prototype.hasOwnProperty.call(savedSections, 'chartSummary')
+          ? 'completed'
+          : 'idle',
+      },
+      formData: savedFormData,
+      fieldErrors: {},
+    });
+    // 防止恢复后 sectionStatuses 观察者再次触发保存
+    historySavedRef.current = true;
+    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
+    const url = new URL(window.location.href);
+    url.searchParams.delete('historyId');
+    window.history.replaceState({}, '', url.toString());
+    // formData 仅用作后备值，恢复以 savedData.formData 为准
+    // setWorkspaceState 为 Zustand 稳定引用
+  }, [isActive]);
 
   useEffect(() => {
     return () => {
@@ -358,6 +450,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     clearSectionTimeouts();
     runIdRef.current += 1;
     const runId = runIdRef.current;
+    historySavedRef.current = false;
 
     setWorkspaceState('qimen', {
       step: 'form',
@@ -423,6 +516,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     abortRef.current?.abort();
     clearSectionTimeouts();
     runIdRef.current += 1;
+    historySavedRef.current = false;
     resetWorkspace('qimen');
   };
 

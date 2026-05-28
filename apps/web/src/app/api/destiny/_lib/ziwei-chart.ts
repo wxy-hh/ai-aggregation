@@ -283,6 +283,80 @@ export function computeZiweiChart(input: DestinyReportRequest): ZiweiChartData {
   };
 }
 
+/** 查找星曜所在的宫位名称 */
+function findStarPalace(starName: string, palaces: ZiweiChartPalace[]): string | null {
+  for (const p of palaces) {
+    if (p.majorStars.some((s) => s.name === starName)) return p.name;
+    if (p.minorStars.some((s) => s.name === starName)) return p.name;
+  }
+  return null;
+}
+
+// ─── 四化落宫具体影响表 ───
+const SIHUA_LU_EFFECT: Record<string, string> = {
+  '命宫': '你天生自带福气，性格乐观、人缘好，一生中常有意外之喜，做事容易遇到好机会。',
+  '官禄': '你的事业发展顺利，工作中容易获得赏识和提升，适合从事与人脉相关的行业，财运随事业水涨船高。',
+  '财帛': '你的财运亨通，正财偏财都不错，赚钱相对轻松，但也需注意理财规划，避免来得快去得也快。',
+  '夫妻': '你的感情婚姻运势良好，容易遇到条件不错的对象，婚恋美满，配偶对你的事业和财运也有帮助。',
+  '疾厄': '你体质不错，恢复力强。先天底子好但也不能挥霍，保持良好生活习惯即可。',
+  '迁移': '你外出运佳，适合外出发展，出门遇贵人，外地机缘多，社交场合中也容易给人好印象。',
+  '仆役': '你朋友多、人脉广，朋友圈中常有贵人相助，合作合伙能顺利开展，社交活动丰富。',
+  '交友': '你朋友多、人脉广，朋友圈中常有贵人相助，合作合伙能顺利开展，社交活动丰富。',
+  '兄弟': '你的兄弟姐妹和同辈朋友对你有帮助，合作关系和谐，共同创业或合伙做事容易成功。',
+  '子女': '你子女缘分好，生育顺利，与孩子关系融洽，在创造力和兴趣爱好方面也容易有收获。',
+  '田宅': '你的房产运不错，买房置业比较顺利，家庭环境温暖和睦，家族根基稳固。',
+  '福德': '你晚年福气好，心态乐观知足，精神世界丰富，喜欢享受生活，晚年安逸。',
+  '父母': '你的父母长辈对你帮助很大，长辈缘好，容易得到贵人提携，家教和学历背景也不错。',
+};
+
+const SIHUA_QUAN_EFFECT: Record<string, string> = {
+  '命宫': '你天生有领导力和掌控欲，做事果断有主见。适合管理和决策类工作，但要避免独断专行。',
+  '官禄': '你的事业心强，有担当和责任心，能独当一面，有望成为团队核心或领导，适合自立门户。',
+  '财帛': '你对财务有掌控力，善于主导赚钱方向，不满足于稳定收入，有创业意识。建议做好风险把控。',
+  '夫妻': '你在感情中较有主导权，习惯掌控关系走向。建议多沟通协商，适当让伴侣也有发挥空间。',
+  '疾厄': '你对健康有较强的自我管理意识，能坚持锻炼和养生。但避免过度强势导致紧张压力。',
+  '迁移': '你外出时展现的气场和能力较强，容易在异地获得认可和话语权，适合到外地开拓。',
+  '仆役': '你在朋友圈中比较有话语权，善于组织和带领，但注意不要对朋友过于挑剔或强势。',
+  '交友': '你在朋友圈中比较有话语权，善于组织和带领，但注意不要对朋友过于挑剔或强势。',
+  '兄弟': '你在兄弟姐妹和同辈中较有话语权，合作中习惯主导方向。建议多听取他人意见，保持平衡。',
+  '子女': '你对子女教育有严格要求和方向感，孩子长大后也比较有主张。创造力方面你有较强的执行力。',
+  '田宅': '你对房产和家庭事务有较强的决定权，家里以你为主导，购房置业决策果断。',
+  '福德': '你晚年依然保有较强个性，精神和思想上不容易受外界影响，内心世界较强，活得很自我。',
+  '父母': '你的父母长辈对你比较严格，或你在家庭中承担较多责任，长辈关系中有较强的张力。',
+};
+
+const SIHUA_KE_EFFECT: Record<string, string> = {
+  '命宫': '你气质好、有才华，容易给人留下好印象，学识修养不错，考试运也比较好，适合学术或艺术方向。',
+  '官禄': '你的事业发展容易获得名声和认可，工作中你的才华能被看见，适合需要展现专业能力的职业。',
+  '财帛': '你的财运来得比较体面，靠才华和名声赚钱，不太需要投机冒险，适合稳扎稳打。',
+  '夫妻': '你的配偶品味较好，有一定的学识修养，婚恋名声不错，感情关系体面和谐。',
+  '疾厄': '你的健康状况总体可控，养生意识强，愿意学习健康知识。建议保持定期体检。',
+  '迁移': '你外出的形象表现容易给人留下良好印象，异地发展有利于名声和人际关系的积累。',
+  '仆役': '你交友有品位，朋友圈素质较高，朋友中有文化人或专业能力强的人，社交中你的形象加分。',
+  '交友': '你交友有品位，朋友圈素质较高，朋友中有文化人或专业能力强的人，社交中你的形象加分。',
+  '兄弟': '你的兄弟朋友中有人比较有才华，合作关系和学术交流对你有利，同辈中容易产生良性互动。',
+  '子女': '你的子女聪慧好学，教育运好，孩子有才艺天赋。你在创造力方面也容易获得认可和赞赏。',
+  '田宅': '你的居住环境比较有品位，家庭文化氛围好，房产购置过程也较顺利，属于精致宜居的类型。',
+  '福德': '你晚年心态优雅，精神世界丰富，喜欢阅读、艺术等高雅活动，晚年生活有品质有格调。',
+  '父母': '你的父母长辈品味好、学识不错，对你的教育和培养比较用心，长辈缘好，外在气质出众。',
+};
+
+const SIHUA_JI_EFFECT: Record<string, string> = {
+  '命宫': '你个性中容易有执着不放的一面，对某些事情特别较真。建议学会放松，不要钻牛角尖。',
+  '官禄': '你的事业发展容易遇到瓶颈和阻力，需要特别努力才能突破。不适合频繁跳槽，建议选定方向深耕。',
+  '财帛': '你的财运波动较大，花钱的地方多，建议做好财务规划，避免冲动消费和投资，财来财去要守住。',
+  '夫妻': '你的感情婚姻需要特别用心经营，容易有沟通不畅或缘分波折。建议多包容理解，感情需要时间沉淀。',
+  '疾厄': '健康是需要你特别留意的领域，容易有慢性病或体质偏弱。建议养成规律体检和健康管理的习惯。',
+  '迁移': '你外出发展容易遇到不顺，建议多留后路。如果不适合远行，就近发展未尝不是好的选择。',
+  '仆役': '你的朋友圈中容易有是非纠纷，交友需谨慎，避免轻信他人。合作合伙建议签好协议留有证据。',
+  '交友': '你的朋友圈中容易有是非纠纷，交友需谨慎，避免轻信他人。合作合伙建议签好协议留有证据。',
+  '兄弟': '你与兄弟姐妹或同辈之间容易有摩擦或竞争，合作关系需要特别维护，建议多沟通避免误会累积。',
+  '子女': '你的子女成长中可能需要更多关照，教育上建议多些耐心。创造力方面容易碰到瓶颈，不急于求成。',
+  '田宅': '你的房产家庭方面容易有波折，购房置业需谨慎，家庭关系也需要多花心思维护。',
+  '福德': '你晚年轻松的心态较难维持，容易思虑过多或精神压力大。建议培养一两项放松身心的爱好。',
+  '父母': '你的父母长辈关系需要你多包容体谅，或父母健康需要关注。建议多和家人沟通，尽孝要及时。',
+};
+
 /**
  * 宫位对人生的影响映射（小白友好版）
  */
@@ -333,6 +407,31 @@ function translateBrightnessToPlain(brightness: string): string {
  * 每个解释都结合了该用户的实际命盘信息，而非通用百科描述
  * 核心原则：先讲"对你的影响"，再解释星曜本身，用"你"做主语
  */
+// ─── 地支含义表 ───
+const EARTHLY_BRANCH_MEANING: Record<string, string> = {
+  '子': '子属水，为桃花帝座，代表智慧灵动、善于变通，但也可能内心敏感多思。',
+  '丑': '丑属土，为金库墓库，代表勤勉务实、稳重坚韧，但也可能固执守旧。',
+  '寅': '寅属木，为火的长生之地，代表开创进取、活力充沛，但也可能冲动急躁。',
+  '卯': '卯属木，为桃花之地，代表柔美灵活、善交际表达，但也可能优柔寡断。',
+  '辰': '辰属土，为水库墓库，代表包容大度、善于谋划，但也可能隐藏心机。',
+  '巳': '巳属火，为金的长生之地，代表热情积极、行动力强，但也可能急躁多变。',
+  '午': '午属火，为桃花帝座，代表光明磊落、热情直率，但也可能骄傲自负。',
+  '未': '未属土，为木库墓库，代表温厚善良、细腻包容，但也可能优柔寡断。',
+  '申': '申属金，为水的长生之地，代表机敏灵活、善于变通，但也可能心猿意马。',
+  '酉': '酉属金，为桃花之地，代表精致细腻、善于社交，但也可能过于在意细节。',
+  '戌': '戌属土，为火库墓库，代表忠诚可靠、有担当魄力，但也可能顽固不化。',
+  '亥': '亥属水，为木的长生之地，代表聪明灵慧、直觉敏锐，但也可能情绪波动大。',
+};
+
+// ─── 五行局含义表 ───
+const FIVE_ELEMENT_CLASS_MEANING: Record<string, string> = {
+  '水二局': '水主智，属水的人聪明灵慧、善于变通，但有时情绪波动较大、心思多变。大限每十年递进一个宫位。',
+  '木三局': '木主仁，属木的人善良正直、富有同理心，但有时容易优柔寡断、缺乏主见。大限每十年递进一个宫位。',
+  '金四局': '金主义，属金的人刚毅果断、重情重义，但有时过于刚硬、缺乏灵活变通。大限每十年递进一个宫位。',
+  '土五局': '土主信，属土的人稳重务实、诚信可靠，但有时固执保守、不善变通。大限每十年递进一个宫位。',
+  '火六局': '火主礼，属火的人热情开朗、行动力强，但有时急躁冲动、缺乏耐心。大限每十年递进一个宫位。',
+};
+
 function buildPersonalizedGlossary(chart: ZiweiChartData): Record<string, string> {
   const glossary: Record<string, string> = {};
   const palaceMap = new Map(chart.palaces.map((p) => [p.name, p]));
@@ -341,21 +440,26 @@ function buildPersonalizedGlossary(chart: ZiweiChartData): Record<string, string
 
   const fe = chart.fiveElementsClass;
   const firstAge = fe.includes('二') ? 2 : fe.includes('三') ? 3 : fe.includes('四') ? 4 : fe.includes('五') ? 5 : 6;
+  const feMeaning = FIVE_ELEMENT_CLASS_MEANING[fe] ?? `${fe}决定了您的大限起始年龄和递转步长。`;
 
-  glossary['五行局'] = `您的五行局为${fe}。五行局由命宫的天干地支推算得出，决定了您大限的起始年龄和递转步长。${fe}意味着您的大限从${firstAge}岁开始，每十年递进一个宫位。`;
+  glossary['五行局'] = `您的五行局为${fe}，大限从${firstAge}岁开始起运。${feMeaning}（注：五行局是紫微斗数中由命宫天干地支推算的独立参数，与八字测算的五行分布没有对应关系，两者不同是正常现象。）`;
 
   // 命宫
   const ming = palaceMap.get('命宫');
   const mingMain = ming?.majorStars[0];
-  glossary['命宫'] = `您的命宫在${chart.soulPalaceBranch}。命宫是十二宫之首，代表您的先天本质和整体命运基调。${mingMain ? `您的命宫主星为${mingMain.name}${mingMain.brightness ? `（${mingMain.brightness}）` : ''}，这塑造了您核心性格特质的基础。` : '您的命宫为空宫，需借对宫星曜参考，不代表命运空白，而是该领域受到对宫影响较大。'}`;
+  const branchMeaning = EARTHLY_BRANCH_MEANING[chart.soulPalaceBranch] ?? `${chart.soulPalaceBranch}是十二地支之一。`;
+  glossary['命宫'] = `您的命宫在${chart.soulPalaceBranch}。${branchMeaning}${mingMain ? `您的命宫主星为${mingMain.name}${mingMain.brightness ? `（${mingMain.brightness}）` : ''}，与${chart.soulPalaceBranch}地支结合，塑造了您核心性格特质的基础。` : '您的命宫为空宫，需借对宫星曜参考，不代表命运空白，而是该领域受到对宫影响较大。'}`;
 
   // 身宫
   const bodyPalace = palaceMap.get(chart.bodyPalaceBranch);
-  glossary['身宫'] = `您的身宫在${chart.bodyPalaceBranch}。身宫代表后天运势的重心所在，影响中年以后的人生走向。${bodyPalace?.majorStars.length ? `您的身宫主星为${bodyPalace.majorStars.map((s) => s.name).join('、')}。` : '您的身宫为空宫，需借对宫星曜参考。'}`;
+  const bodyBranchMeaning = EARTHLY_BRANCH_MEANING[chart.bodyPalaceBranch] ?? `${chart.bodyPalaceBranch}是十二地支之一。`;
+  glossary['身宫'] = `您的身宫在${chart.bodyPalaceBranch}。${bodyBranchMeaning}身宫代表后天运势的重心所在，影响中年以后的人生走向。${bodyPalace?.majorStars.length ? `您的身宫主星为${bodyPalace.majorStars.map((s) => s.name).join('、')}。` : '您的身宫为空宫，需借对宫星曜参考。'}`;
 
   // 命主 / 身主
-  glossary['命主'] = `您的命主是${chart.soul}。命主由命宫地支${chart.soulPalaceBranch}决定，代表您的先天本质和性格核心。`;
-  glossary['身主'] = `您的身主是${chart.body}。身主由出生年支${chart.yearBranch}决定，代表您的后天发展和身体运势。`;
+  const soulMeaning = EARTHLY_BRANCH_MEANING[chart.soulPalaceBranch] ?? '';
+  glossary['命主'] = `您的命主是${chart.soul}。命主由命宫地支${chart.soulPalaceBranch}决定，代表您的先天本质和性格核心。${soulMeaning ? `命宫在${chart.soulPalaceBranch}的补充说明：${soulMeaning}` : ''}`;
+  const yearBranchMeaning = EARTHLY_BRANCH_MEANING[chart.yearBranch] ?? '';
+  glossary['身主'] = `您的身主是${chart.body}。身主由出生年支${chart.yearBranch}决定，代表您的后天发展和身体运势。${yearBranchMeaning ? `年支${chart.yearBranch}的说明：${yearBranchMeaning}` : ''}`;
 
   // 四柱
   const pillars = chart.chineseDate.split(' ');
@@ -364,15 +468,36 @@ function buildPersonalizedGlossary(chart: ZiweiChartData): Record<string, string
   // 生年四化
   glossary['生年四化'] = `您的生年四化由年干${chart.yearStem}决定：化禄在${chart.sihua.lu}、化权在${chart.sihua.quan}、化科在${chart.sihua.ke}、化忌在${chart.sihua.ji}。四化是紫微斗数中最重要的动态能量，决定一生运势变化的主要线索。`;
 
-  // 各化
-  glossary['化禄'] = `您的化禄在${chart.sihua.lu}。化禄代表财富、机会、顺利和增加的能量。`;
-  glossary['化权'] = `您的化权在${chart.sihua.quan}。化权代表权力、掌控、能力和主导力。`;
-  glossary['化科'] = `您的化科在${chart.sihua.ke}。化科代表名声、才华展现、考试和贵人。`;
-  glossary['化忌'] = `您的化忌在${chart.sihua.ji}。化忌代表阻碍、收敛、执着和需要注意之处。`;
+  // 各化 —— 结合星曜 + 落入宫位 + 具体吉凶影响生成个性化解释
+  const getSihuaEffectMap = (huaname: string): Record<string, string> | null => {
+    if (huaname === '化禄') return SIHUA_LU_EFFECT;
+    if (huaname === '化权') return SIHUA_QUAN_EFFECT;
+    if (huaname === '化科') return SIHUA_KE_EFFECT;
+    if (huaname === '化忌') return SIHUA_JI_EFFECT;
+    return null;
+  };
+
+  const buildSihuaGlossary = (huaname: string, starName: string, desc: string) => {
+    if (!starName) return `您的${huaname}暂未确定。${desc}`;
+    const palaceName = findStarPalace(starName, chart.palaces);
+    const palaceKey = palaceName ?? '命宫';
+    const palaceInfluence = PALACE_INFLUENCE[palaceKey] ?? '你人生的一个方面';
+    const displayPalace = palaceName === '命宫' ? '命宫' : `${palaceName}宫`;
+    const effectMap = getSihuaEffectMap(huaname);
+    const specificEffect = effectMap?.[palaceKey] ?? `你在${palaceInfluence}上会特别明显地感受到这股能量的影响`;
+    return `您的${huaname}是${starName}，落入${displayPalace}（${palaceInfluence}）。${desc}具体来说：${specificEffect}`;
+  };
+
+  glossary['化禄'] = buildSihuaGlossary('化禄', chart.sihua.lu, '化禄代表财富、机会、顺利和增加的能量。');
+  glossary['化权'] = buildSihuaGlossary('化权', chart.sihua.quan, '化权代表权力、掌控、能力和主导力。');
+  glossary['化科'] = buildSihuaGlossary('化科', chart.sihua.ke, '化科代表名声、才华展现、考试和贵人。');
+  glossary['化忌'] = buildSihuaGlossary('化忌', chart.sihua.ji, '化忌代表阻碍、收敛、执着和需要注意之处。');
 
   // 天干 / 地支
   glossary['天干'] = `您的年干为${chart.yearStem}。天干与地支配合组成六十甲子纪年，是推算四化、五行局的基础。`;
-  glossary['地支'] = `您的命宫地支为${chart.soulPalaceBranch}，年支为${chart.yearBranch}。地支用于划分宫位和纪年。`;
+  const sbMeaning = EARTHLY_BRANCH_MEANING[chart.soulPalaceBranch] ?? '';
+  const ybMeaning = EARTHLY_BRANCH_MEANING[chart.yearBranch] ?? '';
+  glossary['地支'] = `您的命宫地支为${chart.soulPalaceBranch}，年支为${chart.yearBranch}。地支用于划分宫位和纪年。${sbMeaning ? `${chart.soulPalaceBranch}：${sbMeaning}` : ''}${ybMeaning ? ` ${chart.yearBranch}：${ybMeaning}` : ''}`;
 
   // ─── 十二宫 ───
 

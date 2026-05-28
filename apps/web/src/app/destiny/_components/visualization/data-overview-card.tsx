@@ -15,11 +15,11 @@ const ELEMENT_LABELS: Record<FiveElementKey, string> = {
 };
 
 const ELEMENT_COLORS: Record<FiveElementKey, { bg: string; text: string; bar: string }> = {
-  metal: { bg: 'bg-amber-50/70', text: 'text-amber-700', bar: 'bg-amber-500' },
-  wood: { bg: 'bg-emerald-50/70', text: 'text-emerald-700', bar: 'bg-emerald-500' },
-  water: { bg: 'bg-blue-50/70', text: 'text-blue-700', bar: 'bg-blue-500' },
-  fire: { bg: 'bg-rose-50/70', text: 'text-rose-700', bar: 'bg-rose-500' },
-  earth: { bg: 'bg-stone-50/70', text: 'text-stone-700', bar: 'bg-stone-500' },
+  metal: { bg: 'bg-amber-50/70 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-300', bar: 'bg-amber-500 dark:bg-amber-600' },
+  wood: { bg: 'bg-emerald-50/70 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-300', bar: 'bg-emerald-500 dark:bg-emerald-600' },
+  water: { bg: 'bg-blue-50/70 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-300', bar: 'bg-blue-500 dark:bg-blue-600' },
+  fire: { bg: 'bg-rose-50/70 dark:bg-rose-950/30', text: 'text-rose-700 dark:text-rose-300', bar: 'bg-rose-500 dark:bg-rose-600' },
+  earth: { bg: 'bg-stone-50/70 dark:bg-stone-950/30', text: 'text-stone-700 dark:text-stone-300', bar: 'bg-stone-500 dark:bg-stone-600' },
 };
 
 /** 五行在命理中的象征意义 */
@@ -171,15 +171,15 @@ export function DataOverviewCard({
       <div className="font-heading text-lg font-bold text-slate-900 dark:text-slate-100">
         五行数据概览
       </div>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
         日主{dayStem}属{ELEMENT_LABELS[dayMasterElement]} · {dayMasterStrength}
       </p>
 
       {/* 喜用神 */}
-      <div className="mt-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 to-blue-50/70 px-3 sm:px-4 py-3">
+      <div className="mt-4 rounded-2xl bg-gradient-to-r from-emerald-50/70 to-blue-50/70 dark:from-emerald-950/20 dark:to-blue-950/20 px-3 sm:px-4 py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1">
-            <span className="text-xs sm:text-sm font-extrabold text-emerald-700">喜用神</span>
+            <span className="text-xs sm:text-sm font-extrabold text-emerald-700 dark:text-emerald-300">喜用神</span>
             {favorable.length > 0 ? (
               favorable.map((k) => (
                 <span
@@ -194,11 +194,11 @@ export function DataOverviewCard({
                 </span>
               ))
             ) : (
-              <span className="text-xs text-slate-500">五行均衡</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">五行均衡</span>
             )}
             {unfavorable.length > 0 && (
               <>
-                <span className="text-xs sm:text-sm font-extrabold text-amber-700">忌神</span>
+                <span className="text-xs sm:text-sm font-extrabold text-amber-700 dark:text-amber-300">忌神</span>
                 {unfavorable.map((k) => (
                   <span
                     key={k}
@@ -217,22 +217,22 @@ export function DataOverviewCard({
           <button
             type="button"
             onClick={() => setShowFavorableIntro(!showFavorableIntro)}
-            className="shrink-0 text-[10px] font-medium text-slate-400 hover:text-emerald-600 transition-colors"
+            className="shrink-0 text-[10px] font-medium text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
           >
             {showFavorableIntro ? '收起' : '是什么？'}
           </button>
         </div>
         {showFavorableIntro && (
-          <div className="mt-2 border-t border-emerald-100/60 pt-2 text-[11px] leading-5 text-slate-500">
+          <div className="mt-2 border-t border-emerald-100/60 dark:border-emerald-800/30 pt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
             <p>
-              <span className="font-bold text-emerald-700">喜用神</span>
+              <span className="font-bold text-emerald-700 dark:text-emerald-300">喜用神</span>
               ：能平衡命局的五行。当某个元素过弱而日主需要它生扶时，该元素即为喜用神。
-              生活中可多接触喜用神对应的颜色、方位、行业，有助于增强运势。
+               生活中可多接触喜用神对应的颜色、方位、行业，有助于增强运势。
               <br />
               {favorableReason}
             </p>
             <p className="mt-1.5">
-              <span className="font-bold text-amber-700">忌神</span>
+              <span className="font-bold text-amber-700 dark:text-amber-300">忌神</span>
               ：命局中过旺且克制日主的五行，容易造成失衡与压力，需要留意但不代表不好——旺
               的能量也可以转化为优势，关键是找到合适的使用方式。
             </p>
@@ -245,10 +245,10 @@ export function DataOverviewCard({
         {/* 五行统计 */}
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-              五行分布
-            </span>
-            <span className="text-[10px] text-slate-300">命局中各元素相对强弱</span>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                五行分布
+              </span>
+              <span className="text-[10px] text-slate-300 dark:text-slate-600">命局中各元素相对强弱</span>
           </div>
           <div className="mt-3 space-y-3">
             {elementStats.map((item) => {
@@ -278,12 +278,12 @@ export function DataOverviewCard({
                         <PopoverContent
                           side="top"
                           align="start"
-                          className="w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                          className="w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                         >
-                          <div className="text-xs font-bold text-slate-700">
+                          <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
                             {ELEMENT_LABELS[item.key]}元素
                           </div>
-                          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                          <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                             {ELEMENT_MEANINGS[item.key]}
                           </p>
                         </PopoverContent>
@@ -292,7 +292,7 @@ export function DataOverviewCard({
                         <PopoverTrigger asChild>
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 cursor-help truncate"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-help truncate"
                           >
                             {count}个
                             {hasSeasonalBonus && (
@@ -302,10 +302,10 @@ export function DataOverviewCard({
                         </PopoverTrigger>
                         <PopoverContent
                           side="top"
-                          className="w-52 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
-                        >
-                          <div className="text-xs font-bold text-slate-500 mb-2">权重来源</div>
-                          <div className="space-y-1.5 text-xs text-slate-600">
+                        className="w-52 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                      >
+                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">权重来源</div>
+                        <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                             <div className="flex justify-between">
                               <span>天干（显性特质）</span>
                               <span className="font-semibold">{item.sources.stems}</span>
@@ -318,14 +318,14 @@ export function DataOverviewCard({
                               <span>藏干（潜在能量）</span>
                               <span className="font-semibold">{item.sources.hiddenStems}</span>
                             </div>
-                            <div className="flex justify-between border-t border-slate-100 pt-1.5 mt-1.5">
-                              <span>月令（季节加成）</span>
-                              <span
-                                className={cn(
-                                  'font-semibold',
-                                  hasSeasonalBonus ? 'text-amber-600' : 'text-slate-400'
-                                )}
-                              >
+                          <div className="flex justify-between border-t border-slate-100 dark:border-white/5 pt-1.5 mt-1.5">
+                            <span>月令（季节加成）</span>
+                            <span
+                              className={cn(
+                                'font-semibold',
+                                hasSeasonalBonus ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'
+                              )}
+                            >
                                 +{item.sources.seasonalBonus}
                               </span>
                             </div>
@@ -336,13 +336,13 @@ export function DataOverviewCard({
                     <span
                       className={cn(
                         'text-xs font-black shrink-0',
-                        isMax ? palette.text : 'text-slate-600'
+                        isMax ? palette.text : 'text-slate-600 dark:text-slate-300'
                       )}
                     >
                       {pct}%
                     </span>
                   </div>
-                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
                       className={cn(
                         'h-full rounded-full transition-all',
@@ -362,15 +362,15 @@ export function DataOverviewCard({
         <div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                 十神分布
               </span>
-              <span className="text-[10px] text-slate-300">各维度能量占比</span>
+              <span className="text-[10px] text-slate-300 dark:text-slate-600">各维度能量占比</span>
             </div>
             <button
               type="button"
               onClick={() => setShowTenGodDetail((v) => !v)}
-              className="text-[10px] font-bold text-slate-400 hover:text-[#5D7CFA] transition-colors"
+              className="text-[10px] font-bold text-slate-400 dark:text-slate-500 hover:text-[#5D7CFA] dark:hover:text-[#5D7CFA] transition-colors"
             >
               {showTenGodDetail ? '归并视图' : '展开详情'}
             </button>
@@ -387,30 +387,30 @@ export function DataOverviewCard({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="text-sm font-semibold text-slate-700 cursor-help text-left"
+                              className="text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-help text-left"
                             >
                               {item.label}
                             </button>
                           </PopoverTrigger>
                           <PopoverContent
                             side="top"
-                            className="w-52 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                            className="w-52 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                           >
-                            <div className="text-xs font-bold text-slate-700">{item.label}</div>
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                            <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{item.label}</div>
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                               属于"{domainLabel}"维度的能量。{item.label}
                               数值越高，说明该十神在命局中的作用越突出，对该维度的外在表现与内在倾向均有直接影响。
                             </p>
                           </PopoverContent>
                         </Popover>
-                        <span className="text-[10px] font-medium text-slate-400">
+                        <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
                           {domainLabel}
                         </span>
-                        <span className="text-xs font-black text-slate-900">{pct}%</span>
+                        <span className="text-xs font-black text-slate-900 dark:text-slate-100">{pct}%</span>
                       </div>
-                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                         <div
-                          className="h-full rounded-full bg-[#5D7CFA]"
+                          className="h-full rounded-full bg-[#5D7CFA] dark:bg-[#6D8CFF]"
                           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
                         />
                       </div>
@@ -426,7 +426,7 @@ export function DataOverviewCard({
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="text-sm font-semibold text-slate-700 cursor-help text-left"
+                              className="text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-help text-left"
                             >
                               {item.friendlyLabel}
                               <span className="ml-1 text-slate-400 font-normal">
@@ -436,24 +436,24 @@ export function DataOverviewCard({
                           </PopoverTrigger>
                           <PopoverContent
                             side="top"
-                            className="w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                            className="w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                           >
-                            <div className="text-xs font-bold text-slate-700">
+                            <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
                               {item.friendlyLabel}
                             </div>
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                               {DOMAIN_MEANINGS[item.friendlyLabel] || '该维度的十神能量占比'}
                             </p>
-                            <div className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+                            <div className="mt-2 border-t border-slate-100 dark:border-white/5 pt-2 text-[11px] text-slate-400 dark:text-slate-500">
                               包含十神：{item.labels.join('、')}
                             </div>
                           </PopoverContent>
                         </Popover>
-                        <span className="text-xs font-black text-slate-900">{pct}%</span>
+                        <span className="text-xs font-black text-slate-900 dark:text-slate-100">{pct}%</span>
                       </div>
-                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                         <div
-                          className="h-full rounded-full bg-[#5D7CFA]"
+                          className="h-full rounded-full bg-[#5D7CFA] dark:bg-[#6D8CFF]"
                           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
                         />
                       </div>

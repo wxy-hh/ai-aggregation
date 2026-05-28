@@ -10,8 +10,11 @@ import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 
-export function DestinyPageClient() {
-  const [activeModule, setActiveModule] = useState<DestinyModuleKey>('bazi');
+export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
+  const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
+    if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
+    return 'bazi';
+  });
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
@@ -45,26 +48,31 @@ export function DestinyPageClient() {
     lastActiveModuleRef.current = activeModule;
   }, [activeModule]);
 
-  const renderWorkspace = (module: DestinyModuleKey) => {
-    if (module === 'bazi') {
-      return (
+  // 所有工作区始终挂载，仅通过 CSS 显隐切换，确保后台请求不中断
+  const workspaceElements = (
+    <>
+      <div className={cn('h-full w-full', activeModule !== 'bazi' && 'hidden')}>
         <BaziWorkspace
           isActive={activeModule === 'bazi'}
           activeModule={activeModule}
           onModuleChange={setActiveModule}
           onLoadingChange={setBaziLoading}
         />
-      );
-    }
-
-    if (module === 'ziwei') {
-      return (
-        <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
-      );
-    }
-
-    return <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />;
-  };
+      </div>
+      <div className={cn('h-full w-full', activeModule !== 'ziwei' && 'hidden')}>
+        <ZiweiWorkspace
+          isActive={activeModule === 'ziwei'}
+          onLoadingChange={setZiweiLoading}
+        />
+      </div>
+      <div className={cn('h-full w-full', activeModule !== 'qimen' && 'hidden')}>
+        <QimenWorkspace
+          isActive={activeModule === 'qimen'}
+          onLoadingChange={setQimenLoading}
+        />
+      </div>
+    </>
+  );
 
   if (isCompactLayout) {
     const mobileTabs = [
@@ -78,7 +86,7 @@ export function DestinyPageClient() {
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950"
         style={{ minHeight: '100dvh' }}
       >
-        {/* 移动端分段控件 - 使用设计系统规范 */}
+        {/* 移动端分段控件 */}
         <div className="sticky top-0 z-20 border-b border-slate-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/90">
           <div className="rounded-[999px] bg-slate-100/80 p-1 dark:bg-slate-800/80">
             <div className="grid grid-cols-3 gap-1">
@@ -105,7 +113,7 @@ export function DestinyPageClient() {
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
-          {renderWorkspace(activeModule)}
+          {workspaceElements}
 
           {activeModule === 'qimen' && qimenLoading ? (
             <div
@@ -133,7 +141,7 @@ export function DestinyPageClient() {
 
   return (
     <div className="relative flex-1 h-full overflow-hidden">
-      {/* 左侧导航 - 渲染一次，按活跃模块显示加载状态 */}
+      {/* 左侧导航 */}
       <div
         className={cn(
           'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
@@ -145,36 +153,20 @@ export function DestinyPageClient() {
         </div>
       </div>
 
-      {/* 工作区 - 仅渲染当前活跃模块 */}
+      {/* 工作区 - 所有模块始终挂载，仅 CSS 显隐 */}
       <div className="h-full w-full">
-        {activeModule === 'bazi' && (
-          <BaziWorkspace
-            isActive
-            activeModule={activeModule}
-            onModuleChange={setActiveModule}
-            onLoadingChange={setBaziLoading}
-          />
-        )}
-        {activeModule === 'ziwei' && (
-          <ZiweiWorkspace isActive onLoadingChange={setZiweiLoading} />
-        )}
-        {activeModule === 'qimen' && (
-          <>
-            <div className={cn('h-full w-full', qimenLoading && 'pointer-events-none')}>
-              <QimenWorkspace isActive onLoadingChange={setQimenLoading} />
-            </div>
-            {qimenLoading && (
-              <div className="absolute inset-0 z-[35] overflow-hidden">
-                <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
-                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
-                  <div className="pointer-events-none absolute inset-y-0 left-[288px] hidden w-20 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
-                  <div className="relative h-full w-full xl:pl-[304px]">
-                    <QimenLoadingAnimation />
-                  </div>
-                </div>
+        {workspaceElements}
+
+        {activeModule === 'qimen' && qimenLoading && (
+          <div className="absolute inset-0 z-[35] overflow-hidden">
+            <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
+              <div className="pointer-events-none absolute inset-y-0 left-[288px] hidden w-20 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
+              <div className="relative h-full w-full xl:pl-[304px]">
+                <QimenLoadingAnimation />
               </div>
-            )}
-          </>
+            </div>
+          </div>
         )}
       </div>
     </div>

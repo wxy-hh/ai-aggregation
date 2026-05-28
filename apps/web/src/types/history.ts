@@ -3,7 +3,9 @@
  * 统一的历史记录类型定义
  */
 
-export type HistoryType = 'chat' | 'voice' | 'image';
+export type HistoryType = 'chat' | 'voice' | 'image' | 'destiny';
+
+export type DestinySubType = 'bazi' | 'ziwei' | 'qimen';
 
 export interface BaseHistoryItem {
   id: string;
@@ -48,7 +50,22 @@ export interface ImageHistoryItem extends BaseHistoryItem {
   parameters?: Record<string, any>;
 }
 
-export type HistoryItem = ChatHistoryItem | VoiceHistoryItem | ImageHistoryItem;
+export interface DestinyHistoryItem extends BaseHistoryItem {
+  type: 'destiny';
+  subType: DestinySubType;
+  preview: string;
+  model: string;
+  formData: Record<string, unknown>;
+  reportData: Record<string, unknown> | null;
+  profileSummary: {
+    name: string;
+    gender: string;
+    birthDate: string;
+  };
+  coreTone: string;
+}
+
+export type HistoryItem = ChatHistoryItem | VoiceHistoryItem | ImageHistoryItem | DestinyHistoryItem;
 
 export interface HistoryFilter {
   type?: HistoryType | 'all';
@@ -62,4 +79,5 @@ export interface HistoryStats {
   chat: number;
   voice: number;
   image: number;
+  destiny: number;
 }

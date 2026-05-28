@@ -1,5 +1,6 @@
 'use client';
 
+import { use } from 'react';
 import dynamic from 'next/dynamic';
 
 const DestinyPageClient = dynamic(
@@ -7,6 +8,11 @@ const DestinyPageClient = dynamic(
   { ssr: false }
 );
 
-export function ClientOnly() {
-  return <DestinyPageClient />;
+export function ClientOnly({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; historyId?: string }>;
+}) {
+  const params = use(searchParams);
+  return <DestinyPageClient initialTab={params.tab} />;
 }

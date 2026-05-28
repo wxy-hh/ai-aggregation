@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
@@ -102,6 +104,36 @@ export function BaziWorkspace({
       restoreWorkspace('bazi');
     }
   }, [isActive, restoreWorkspace]);
+
+  // 从历史记录恢复
+  useEffect(() => {
+    if (!isActive) return;
+    const params = new URLSearchParams(window.location.search);
+    const historyId = params.get('historyId');
+    if (!historyId) return;
+    const historyItem = useHistoryStore.getState().getItemById(historyId);
+    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'bazi') return;
+    setWorkspaceState('bazi', {
+      step: 'result',
+      lastView: 'result',
+      hasResult: true,
+      blockingLoading: false,
+      streaming: false,
+      error: null,
+      errorKind: null,
+      report: historyItem.reportData as never,
+      lockedSections: {},
+      streamStatus: null,
+      formData: (historyItem.formData as BaziFormData) || formData,
+      fieldErrors: {},
+    });
+    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
+    const url = new URL(window.location.href);
+    url.searchParams.delete('historyId');
+    window.history.replaceState({}, '', url.toString());
+    // formData 仅用作后备值，历史记录恢复以 item.formData 为准，无需作为依赖
+    // setWorkspaceState 为 Zustand 稳定引用，无需声明为依赖
+  }, [isActive]);
 
   useEffect(() => {
     return () => {
@@ -304,14 +336,33 @@ export function BaziWorkspace({
 
         if (event.type === 'complete') {
           sawComplete = true;
+          const mergedReport = mergeLockedSectionsIntoReport(event.report, receivedSections);
           setWorkspaceState('bazi', (current) => ({
-            report: mergeLockedSectionsIntoReport(event.report, receivedSections),
+            report: mergedReport,
             lockedSections: { ...receivedSections, ...current.lockedSections },
             blockingLoading: false,
             streaming: false,
             streamStatus: null,
           }));
           markResultReady('bazi');
+
+          // 保存到历史记录
+          const previewText =
+            mergedReport.coreTone?.headline ||
+            mergedReport.coreTone?.description ||
+            '八字格局精批';
+          const historyItem = createDestinyHistoryItem(
+            'bazi',
+            formData as unknown as Record<string, unknown>,
+            mergedReport as unknown as Record<string, unknown>,
+            'doubao-seed-2-0',
+            {
+              title: `${formData.name}的八字命理报告`,
+              preview: previewText.slice(0, 150),
+              coreTone: mergedReport.coreTone?.tag || '八字命理',
+            }
+          );
+          useHistoryStore.getState().addItem(historyItem);
           return;
         }
 

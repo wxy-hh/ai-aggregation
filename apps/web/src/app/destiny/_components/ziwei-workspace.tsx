@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
@@ -175,6 +177,42 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     if (isActive) restoreWorkspace('ziwei');
   }, [isActive, restoreWorkspace]);
 
+  // 从历史记录恢复
+  useEffect(() => {
+    if (!isActive) return;
+    const params = new URLSearchParams(window.location.search);
+    const historyId = params.get('historyId');
+    if (!historyId) return;
+    const historyItem = useHistoryStore.getState().getItemById(historyId);
+    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'ziwei') return;
+    const savedReportData = historyItem.reportData as Record<string, unknown> | null;
+    const savedReport = savedReportData?.report as never;
+    const savedChartData = (savedReportData?.chartData as never) || null;
+    setWorkspaceState('ziwei', {
+      step: 'result',
+      lastView: 'result',
+      hasResult: true,
+      blockingLoading: false,
+      streaming: false,
+      error: null,
+      errorKind: null,
+      report: savedReport,
+      chartData: savedChartData,
+      lockedSections: {},
+      streamStatus: null,
+      tab: 'overview',
+      activePalaceLabel: '命宫',
+      formData: (historyItem.formData as BaziFormData) || formData,
+      fieldErrors: {},
+    });
+    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
+    const url = new URL(window.location.href);
+    url.searchParams.delete('historyId');
+    window.history.replaceState({}, '', url.toString());
+    // formData 仅用作后备值，历史记录恢复以 item.formData 为准
+    // setWorkspaceState 为 Zustand 稳定引用
+  }, [isActive]);
+
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
@@ -291,6 +329,29 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
             streamStatus: null,
           }));
           markResultReady('ziwei');
+
+          // 保存到历史记录（包含 chartData 以便恢复时重建星盘）
+          const currentChartData = useDestinyWorkspaceStore.getState().ziwei.chartData;
+          const enhancedReportData = {
+            report: event.report,
+            chartData: currentChartData,
+          };
+          const previewText =
+            event.report.coreTone?.headline ||
+            event.report.coreTone?.description ||
+            '紫微斗数星盘分析';
+          const historyItem = createDestinyHistoryItem(
+            'ziwei',
+            formData as unknown as Record<string, unknown>,
+            enhancedReportData as unknown as Record<string, unknown>,
+            'doubao-seed-2-0',
+            {
+              title: `${formData.name}的紫微斗数命理报告`,
+              preview: previewText.slice(0, 150),
+              coreTone: event.report.coreTone?.tag || '紫微斗数',
+            }
+          );
+          useHistoryStore.getState().addItem(historyItem);
           return;
         }
 
@@ -331,7 +392,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
 
   return (
     <DestinyPageScaffold withNavOffset>
-      <div className="relative h-full min-h-0 w-full bg-[#F3F5FA] dark:bg-[#111218]">
+      <div className="relative h-full min-h-0 w-full bg-slate-100 dark:bg-[#111218]">
         {step === 'form' ? (
           <div className="absolute inset-0 flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6">
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -453,22 +514,22 @@ function ZiweiResultView({
     <div className="h-full w-full overflow-y-auto p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:gap-6">
         {/* 页面标题 */}
-        <header className="relative overflow-hidden rounded-[32px] border border-[#F1F5F9] dark:border-white/5 bg-white dark:bg-slate-900/70 p-6 sm:p-8 shadow-[0_20px_40px_rgba(15,23,42,0.08)] flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <div>
-            <h1 className="font-heading text-2xl md:text-3xl font-bold leading-tight text-[#0F172A] dark:text-white">
+        <header className="relative overflow-hidden rounded-[24px] border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl py-3 px-4 sm:px-5 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)] flex flex-row items-center justify-between gap-2 sm:gap-4">
+          <div className="min-w-0">
+            <h1 className="font-heading text-xl sm:text-2xl font-bold leading-tight text-[#0F172A] dark:text-white truncate">
               <GlossaryTooltip term="紫微" chartData={chartData ?? undefined}>
                 AI 紫微斗数
               </GlossaryTooltip>{' '}
-              <span className="block text-base font-medium text-[#3C58D8] dark:text-[#9BADFF] sm:inline">
+              <span className="text-sm sm:text-base font-medium text-[#3C58D8] dark:text-[#9BADFF]">
                 星盘全景视图
               </span>
             </h1>
-            <p className="text-sm text-[#64748B] dark:text-slate-400 mt-1">{progressText}</p>
+            <p className="text-xs text-[#64748B] dark:text-slate-400 mt-0.5 truncate">{progressText}</p>
           </div>
           <Button
             type="button"
             onClick={onRecalculate}
-            className="self-start inline-flex min-h-10 sm:min-h-11 items-center justify-center rounded-xl px-5 sm:px-6 text-xs sm:text-sm font-semibold bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)] hover:brightness-[1.05] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] active:scale-[0.98] transition-all duration-200 sm:self-auto"
+            className="flex-shrink-0 inline-flex min-h-9 sm:min-h-10 items-center justify-center rounded-lg px-4 sm:px-5 text-xs sm:text-sm font-semibold bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)] hover:brightness-[1.05] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] active:scale-[0.98] transition-all duration-200"
           >
             重新排盘
           </Button>
@@ -476,7 +537,7 @@ function ZiweiResultView({
 
         {/* 无数据提示 */}
         {!hasData && (
-          <div className="rounded-[32px] border border-[#F1F5F9] dark:border-white/5 bg-white dark:bg-slate-900/70 backdrop-blur-xl p-8 shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
+          <div className="rounded-[24px] border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl p-8 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
             <div className="text-lg font-bold text-[#0F172A] dark:text-white">正在计算紫微星盘</div>
             <p className="mt-2 text-sm text-[#64748B] dark:text-slate-400">
               本地排盘引擎正在计算您的精准星盘数据，请稍候...
@@ -646,7 +707,7 @@ function ModuleCards({
       {moduleList.map((item) => (
         <div
           key={item.key}
-          className="relative overflow-hidden rounded-[20px] bg-[#F8F7FB] dark:bg-slate-800/40 border border-[#E8E6F0]/60 dark:border-white/5 p-5 transition-all duration-200 hover:shadow-[0_8px_24px_rgba(15,23,42,0.06)]"
+          className="relative overflow-hidden rounded-[24px] bg-white/70 dark:bg-slate-800/40 backdrop-blur-sm border border-slate-200 dark:border-white/5 p-5 transition-all duration-200 hover:shadow-[0_8px_20px_rgba(76,95,154,0.10)] shadow-[0_1px_2px_rgba(15,23,42,0.06)]"
         >
           {item.data ? (
             <>
@@ -693,12 +754,12 @@ function ModuleSkeleton({ label, color }: { label: string; color: string }) {
   return (
     <>
       <div className="flex items-center gap-2 mb-3">
-        <span className="h-5 w-5 rounded animate-pulse bg-slate-200/60" style={{ backgroundColor: `${color}20` }} />
-        <div className="h-4 w-16 animate-pulse rounded bg-slate-200/60" />
+        <span className="h-5 w-5 rounded animate-pulse bg-slate-200/60 dark:bg-slate-700/60" style={{ backgroundColor: `${color}20` }} />
+        <div className="h-4 w-16 animate-pulse rounded bg-slate-200/60 dark:bg-slate-700/60" />
       </div>
-      <div className="h-4 w-24 animate-pulse rounded bg-slate-200/50 mb-2" />
-      <div className="h-3 w-full animate-pulse rounded bg-slate-200/50" />
-      <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-200/50" />
+      <div className="h-4 w-24 animate-pulse rounded bg-slate-200/50 dark:bg-slate-700/50 mb-2" />
+      <div className="h-3 w-full animate-pulse rounded bg-slate-200/50 dark:bg-slate-700/50" />
+      <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-200/50 dark:bg-slate-700/50" />
     </>
   );
 }
@@ -727,7 +788,7 @@ function RightPanel({
   onTabChange,
 }: RightPanelProps) {
   return (
-    <section className="rounded-[32px] border border-[#F1F5F9] dark:border-white/5 bg-white dark:bg-slate-900/70 backdrop-blur-xl overflow-hidden h-full min-h-[760px] flex flex-col shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
+    <section className="rounded-[32px] border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl overflow-hidden h-full min-h-[760px] flex flex-col shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
       {/* 标签页导航 */}
       <div className="grid grid-cols-4 gap-1 p-2 bg-[#F8FAFC] dark:bg-slate-900/40">
         {TAB_OPTIONS.map((option) => (
@@ -1060,11 +1121,11 @@ function TimelineTab({ timeline, streaming }: { timeline: unknown[]; streaming: 
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className="rounded-[16px] border border-[#F1F5F9] bg-white p-4 shadow-[0_2px_8px_rgba(15,23,42,0.04)]"
+            className="rounded-[16px] border border-slate-200 dark:border-white/5 bg-white dark:bg-slate-800/40 p-4 shadow-[0_2px_8px_rgba(15,23,42,0.04)]"
           >
-            <div className="h-3 w-16 animate-pulse rounded bg-slate-200/70" />
-            <div className="mt-2 h-4 w-28 animate-pulse rounded bg-slate-200/70" />
-            <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70" />
+            <div className="h-3 w-16 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+            <div className="mt-2 h-4 w-28 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+            <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
           </div>
         ))}
       </div>
@@ -1299,7 +1360,7 @@ function StarItem({
         'w-full text-left rounded-[12px] border p-3 transition-all duration-200 bg-white dark:bg-slate-800/40',
         isSelected
           ? 'border-l-[3px] border-l-[#3b82f6] bg-[#eff6ff] dark:bg-blue-950/20 border-[#E2E8F0] dark:border-white/10 shadow-[0_2px_8px_rgba(59,130,246,0.08)]'
-          : 'border-[#F1F5F9] dark:border-white/5 shadow-[0_2px_8px_rgba(15,23,42,0.04)] hover:shadow-[0_4px_12px_rgba(15,23,42,0.06)] hover:bg-[#f8fafc] dark:hover:bg-slate-800/60 hover:-translate-y-px',
+          : 'border-slate-200 dark:border-white/5 shadow-[0_1px_2px_rgba(15,23,42,0.06)] hover:shadow-[0_8px_20px_rgba(76,95,154,0.10)]'
       ].join(' ')}
     >
       <div className="flex items-center gap-2 flex-wrap">
@@ -1335,7 +1396,7 @@ function StarItem({
 function StarIntroDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto rounded-[20px] bg-white dark:bg-slate-900 border border-[#F1F5F9] dark:border-white/10">
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto rounded-[24px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] dark:shadow-[0_24px_56px_rgba(0,0,0,0.40)]">
         <DialogTitle className="text-base font-bold text-[#0F172A] dark:text-white">
           星曜入门指南
         </DialogTitle>
@@ -1645,7 +1706,7 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
 
 function Disclaimer() {
   return (
-    <div className="mt-8 rounded-[16px] border border-[#F1F5F9] dark:border-white/5 bg-white/80 dark:bg-slate-900/40 backdrop-blur-sm p-5 text-center">
+    <div className="mt-8 rounded-[16px] border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-900/40 backdrop-blur-sm p-5 text-center">
       <p className="text-xs text-[#94A3B8] dark:text-slate-500 leading-relaxed max-w-2xl mx-auto">
         本网站基于传统紫微斗数理论与 AI
         大模型生成内容，仅供娱乐消遣之用。命运掌握在自己手中，人生的成败取决于个人的选择和努力。请理性看待，切勿迷信。本网站不提供医疗、法律、投资等专业领域的决策建议。

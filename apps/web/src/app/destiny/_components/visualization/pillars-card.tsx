@@ -7,11 +7,11 @@ import { GlassCard } from '../layout/glass-card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const elementStyles: Record<FiveElementKey, { bg: string; text: string; ring: string }> = {
-  metal: { bg: 'bg-amber-50/70', text: 'text-amber-700', ring: 'ring-amber-200/60' },
-  wood: { bg: 'bg-emerald-50/70', text: 'text-emerald-700', ring: 'ring-emerald-200/60' },
-  water: { bg: 'bg-slate-50/70', text: 'text-slate-700', ring: 'ring-slate-200/60' },
-  fire: { bg: 'bg-rose-50/70', text: 'text-rose-700', ring: 'ring-rose-200/60' },
-  earth: { bg: 'bg-stone-50/70', text: 'text-stone-700', ring: 'ring-stone-200/60' },
+  metal: { bg: 'bg-amber-50/70 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-300', ring: 'ring-amber-200/60 dark:ring-amber-800/30' },
+  wood: { bg: 'bg-emerald-50/70 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-300', ring: 'ring-emerald-200/60 dark:ring-emerald-800/30' },
+  water: { bg: 'bg-slate-50/70 dark:bg-slate-800/40', text: 'text-slate-700 dark:text-slate-300', ring: 'ring-slate-200/60 dark:ring-white/5' },
+  fire: { bg: 'bg-rose-50/70 dark:bg-rose-950/30', text: 'text-rose-700 dark:text-rose-300', ring: 'ring-rose-200/60 dark:ring-rose-800/30' },
+  earth: { bg: 'bg-stone-50/70 dark:bg-stone-950/30', text: 'text-stone-700 dark:text-stone-300', ring: 'ring-stone-200/60 dark:ring-stone-800/30' },
 };
 
 export function PillarsCard({
@@ -39,14 +39,14 @@ export function PillarsCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold bg-white/60 border border-white/50 text-slate-700">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-extrabold bg-white/60 dark:bg-slate-800/60 border border-white/50 dark:border-white/5 text-slate-700 dark:text-slate-300">
               {profile?.genderLabel ?? '命盘生成中'}
             </span>
             <div className="min-w-0 truncate font-heading text-lg font-bold text-slate-900 dark:text-slate-100">
               {profile?.name ?? '基础信息整理中'}
             </div>
           </div>
-          <div className="mt-2 text-xs leading-6 text-slate-500 sm:text-sm">
+          <div className="mt-2 text-xs leading-6 text-slate-500 dark:text-slate-400 sm:text-sm">
             {profile?.birthText?.replace(/\(.*?\)/g, '').trim() ?? '正在整理生辰信息'}
           </div>
         </div>
@@ -54,20 +54,20 @@ export function PillarsCard({
         {hasBalanceInsight ? (
           <HoverHint align="end" title={balanceInsightTitle} body={balanceInsightTooltip}>
             <div className="shrink-0 text-right">
-              <div className="text-xs text-slate-400 font-bold tracking-[0.18em] uppercase">
+              <div className="text-xs text-slate-400 dark:text-slate-500 font-bold tracking-[0.18em] uppercase">
                 {balanceInsightTitle}
               </div>
-              <div className="mt-1 text-sm font-extrabold text-slate-700">
+              <div className="mt-1 text-sm font-extrabold text-slate-700 dark:text-slate-200">
                 {balanceInsightValue}
               </div>
             </div>
           </HoverHint>
         ) : (
           <div className="shrink-0 text-right">
-            <div className="text-xs text-slate-300 font-bold tracking-[0.18em] uppercase">
+            <div className="text-xs text-slate-300 dark:text-slate-600 font-bold tracking-[0.18em] uppercase">
               旺衰解析
             </div>
-            <div className="mt-2 h-4 w-16 rounded bg-slate-200/70" />
+            <div className="mt-2 h-4 w-16 rounded bg-slate-200/70 dark:bg-slate-700/50" />
           </div>
         )}
       </div>
@@ -83,11 +83,11 @@ export function PillarsCard({
             return (
               <div
                 key={p.label}
-                className="rounded-2xl sm:rounded-3xl border border-white/50 bg-white/55 px-3 py-3 sm:py-4 shadow-sm sm:px-4"
+                className="rounded-2xl sm:rounded-3xl border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-3 py-3 sm:py-4 shadow-sm sm:px-4"
               >
-                <div className="text-[10px] sm:text-xs font-bold text-slate-400">{p.label}</div>
-                <div className="mt-2 sm:mt-3 h-6 sm:h-8 w-16 animate-pulse rounded bg-slate-200/70" />
-                <div className="mt-2 sm:mt-3 h-2.5 sm:h-3 w-24 animate-pulse rounded bg-slate-200/70" />
+                <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">{p.label}</div>
+                <div className="mt-2 sm:mt-3 h-6 sm:h-8 w-16 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
+                <div className="mt-2 sm:mt-3 h-2.5 sm:h-3 w-24 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />
               </div>
             );
           }
@@ -101,10 +101,10 @@ export function PillarsCard({
           const pillarContent = (
             <div
               className={cn(
-                'relative rounded-2xl sm:rounded-3xl border border-white/50 backdrop-blur-[18px]',
+                'relative rounded-2xl sm:rounded-3xl border border-white/50 dark:border-white/5 backdrop-blur-[18px]',
                 'px-3 py-3 sm:py-4 text-left shadow-sm transition sm:px-4',
-                pillar.tooltip ? 'hover:bg-white/70 hover:shadow-md' : 'cursor-default',
-                isFocus ? 'bg-[#5D7CFA]/6 ring-[3px] ring-[#5D7CFA]/75 shadow-lg' : 'bg-white/55'
+                pillar.tooltip ? 'hover:bg-white/70 dark:hover:bg-slate-800/60 hover:shadow-md' : 'cursor-default',
+                isFocus ? 'bg-[#5D7CFA]/6 dark:bg-[#5D7CFA]/15 ring-[3px] ring-[#5D7CFA]/75 dark:ring-[#5D7CFA]/40 shadow-lg' : 'bg-white/55 dark:bg-slate-800/40'
               )}
             >
               {/* 日主标签 */}
@@ -117,14 +117,14 @@ export function PillarsCard({
               {/* 十神标签移到顶部 */}
               {pillarTag && (
                 <div className="mb-1.5 sm:mb-2 flex items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/80 px-1.5 sm:px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/60 dark:border-white/10 bg-white/80 dark:bg-slate-800/60 px-1.5 sm:px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
                     <ElementDot element={pillar.element} />
                     {pillarTag}
                   </span>
                 </div>
               )}
 
-              <div className="text-[10px] sm:text-xs font-bold text-slate-400">{pillar.label}</div>
+              <div className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500">{pillar.label}</div>
               <div className="mt-1.5 sm:mt-2 flex items-center justify-between gap-2">
                 <div
                   className={cn('text-[1.4rem] font-black tracking-tight sm:text-3xl', style.text)}
@@ -154,7 +154,7 @@ export function PillarsCard({
                   const chartPillar = baziBasis?.pillars?.find((bp) => bp.label === pillar.label);
                   if (!chartPillar?.sound) return null;
                   return (
-                    <span className="text-[10px] font-semibold text-slate-400">
+                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500">
                       {chartPillar.sound}
                     </span>
                   );
@@ -182,46 +182,46 @@ export function PillarsCard({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="rounded-3xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30"
+                  className="rounded-3xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30 dark:focus-visible:ring-[#5D7CFA]/50"
                 >
                   {pillarContent}
                 </button>
               </PopoverTrigger>
               <PopoverContent
                 className={cn(
-                  'w-72 rounded-2xl border border-slate-200/90 bg-white/88 backdrop-blur-[26px]',
-                  'ring-1 ring-[#5D7CFA]/12',
-                  'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)]',
+                  'w-72 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/88 dark:bg-slate-900/90 backdrop-blur-[26px]',
+                  'ring-1 ring-[#5D7CFA]/12 dark:ring-[#5D7CFA]/20',
+                  'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)] dark:shadow-[0_28px_70px_-30px_rgba(0,0,0,0.55)]',
                   'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
                   'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
                 )}
                 side="top"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-extrabold text-slate-900">
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
                     深度解析：{pillar.label}
                   </div>
                   {hasBalanceInsight && (
-                    <span className="rounded-full border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-500">
+                    <span className="rounded-full border border-slate-200/80 dark:border-white/10 bg-slate-50/90 dark:bg-slate-800/60 px-2.5 py-1 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                       命局重心 {balanceInsightValue}
                     </span>
                   )}
                 </div>
-                <div className="mt-2 text-sm text-slate-600 leading-relaxed">{pillar.tooltip}</div>
+                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{pillar.tooltip}</div>
                 {(() => {
                   const chartPillar = baziBasis?.pillars?.find((bp) => bp.label === pillar.label);
                   if (!chartPillar?.hiddenStems?.length) return null;
                   return (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                      <div className="text-[11px] font-bold text-slate-400 mb-2">藏干</div>
+                    <div className="mt-3 border-t border-slate-100 dark:border-white/5 pt-3">
+                      <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 mb-2">藏干</div>
                       <div className="flex flex-wrap gap-1.5">
                         {chartPillar.hiddenStems.map((hs) => (
                           <span
                             key={`${pillar.label}-${hs.stem}-${hs.type}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300"
                           >
                             {hs.stem}
-                            <span className="text-slate-400 font-normal">{hs.tenGod}</span>
+                            <span className="text-slate-400 dark:text-slate-500 font-normal">{hs.tenGod}</span>
                           </span>
                         ))}
                       </div>
@@ -235,7 +235,7 @@ export function PillarsCard({
       </div>
 
       {patternHighlights && patternHighlights.length > 0 && (
-        <div className="mt-4 sm:mt-6 flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-2 text-[11px] sm:text-xs font-semibold text-slate-500">
+        <div className="mt-4 sm:mt-6 flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-2 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400">
           {patternHighlights.map((item) => (
             <LegendDot key={item.label} label={item.label} tooltip={item.tooltip} />
           ))}
@@ -330,7 +330,7 @@ function HoverHint({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex cursor-help text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30"
+          className="inline-flex cursor-help text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30 dark:focus-visible:ring-[#5D7CFA]/50"
           onMouseEnter={handleOpen}
           onMouseLeave={handleClose}
           onFocus={handleOpen}
@@ -347,12 +347,12 @@ function HoverHint({
         onMouseLeave={handleClose}
         onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
-          'z-[80] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-3 text-left',
-          'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-200/80'
+          'z-[80] w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 text-left',
+          'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.35)] dark:shadow-[0_28px_70px_-30px_rgba(0,0,0,0.55)] ring-1 ring-slate-200/80 dark:ring-white/10'
         )}
       >
-        <span className="block text-sm font-extrabold text-slate-900">{title}</span>
-        <span className="mt-2 block text-sm leading-relaxed text-slate-600">{body}</span>
+        <span className="block text-sm font-extrabold text-slate-900 dark:text-slate-100">{title}</span>
+        <span className="mt-2 block text-sm leading-relaxed text-slate-600 dark:text-slate-300">{body}</span>
       </PopoverContent>
     </Popover>
   );

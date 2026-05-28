@@ -122,12 +122,12 @@ export function DecadeFortuneCard({
       {/* 头部 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-7 w-7 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-md bg-[#F3F6FF]">
-            <AssetToneIcon className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-[#5D7CFA]" src={dayunIcon} />
+          <div className="flex h-7 w-7 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-md bg-[#F3F6FF] dark:bg-[#1a2245]">
+            <AssetToneIcon className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-[#5D7CFA] dark:text-[#9BADFF]" src={dayunIcon} />
           </div>
-          <span className="text-sm font-bold text-slate-700 truncate">十年大运</span>
+          <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">十年大运</span>
           {activeDecade && (
-            <span className="shrink-0 rounded-full bg-[#5D7CFA]/10 px-2 py-0.5 text-[11px] font-semibold text-[#5D7CFA]">
+            <span className="shrink-0 rounded-full bg-[#5D7CFA]/10 dark:bg-[#5D7CFA]/20 px-2 py-0.5 text-[11px] font-semibold text-[#5D7CFA] dark:text-[#9BADFF]">
               {activeDecade.name} · {activeDecade.startAge}-{activeDecade.endAge} 岁
             </span>
           )}
@@ -135,7 +135,7 @@ export function DecadeFortuneCard({
         <button
           type="button"
           onClick={() => setShowIntro(!showIntro)}
-          className="shrink-0 ml-2 text-[11px] sm:text-xs font-medium text-slate-400 hover:text-[#5D7CFA] transition-colors"
+          className="shrink-0 ml-2 text-[11px] sm:text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-[#5D7CFA] dark:hover:text-[#9BADFF] transition-colors"
         >
           {showIntro ? '收起说明' : '什么是大运？'}
         </button>
@@ -143,14 +143,14 @@ export function DecadeFortuneCard({
 
       {/* 展开的说明区域 */}
       {showIntro && (
-        <div className="mt-3 rounded-xl bg-slate-50/80 px-3 py-3 text-[11px] sm:text-xs leading-6 text-slate-600">
+        <div className="mt-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 px-3 py-3 text-[11px] sm:text-xs leading-6 text-slate-600 dark:text-slate-300">
           <p>
-            <span className="font-bold text-slate-800">大运</span>
+            <span className="font-bold text-slate-800 dark:text-slate-100">大运</span>
             ：子平术中，以月柱为起点，按"阳男阴女顺排、阴男阳女逆排"的规则推演出十年一步的运程周期。
             每步大运由一个天干和一个地支组成，天干主前五年外在表现，地支主后五年内在根基。
           </p>
           <p className="mt-2">
-            <span className="font-bold text-slate-800">起运</span>
+            <span className="font-bold text-slate-800 dark:text-slate-100">起运</span>
             ：{directionReason}。{startAgeReason}
             ，此后每十年进入下一步大运。
           </p>
@@ -172,12 +172,12 @@ export function DecadeFortuneCard({
                     type="button"
                     className={cn(
                       'relative flex-1 rounded-t-md transition-all duration-200',
-                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30',
+                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30 dark:focus-visible:ring-[#5D7CFA]/50',
                       isActive
-                        ? 'bg-[#5D7CFA] shadow-[0_2px_8px_rgba(93,124,250,0.35)]'
+                        ? 'bg-[#5D7CFA] dark:bg-[#5D7CFA] shadow-[0_2px_8px_rgba(93,124,250,0.35)]'
                         : isPast
-                          ? 'bg-slate-300/60 hover:bg-[#5D7CFA]/30'
-                          : 'bg-slate-200 hover:bg-[#5D7CFA]/30',
+                          ? 'bg-slate-300/60 dark:bg-slate-600/40 hover:bg-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/20'
+                          : 'bg-slate-200 dark:bg-slate-700/50 hover:bg-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/20',
                     )}
                     style={{ height: isActive ? 48 : isPast ? 36 : 40 }}
                     aria-label={`${decade.name} · ${decade.startAge}-${decade.endAge}岁 · ${tenGod ? tenGod.name + '运' : ''}`}
@@ -186,11 +186,11 @@ export function DecadeFortuneCard({
                 <PopoverContent
                   side="top"
                   align="center"
-                  className="w-[min(300px,calc(100vw-2rem))] sm:w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                  className="w-[min(300px,calc(100vw-2rem))] sm:w-60 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-base font-extrabold text-slate-900">{decade.name}</span>
-                    <span className="text-xs text-slate-400">{decade.sixtyCycle}</span>
+                    <span className="text-base font-extrabold text-slate-900 dark:text-slate-100">{decade.name}</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">{decade.sixtyCycle}</span>
                     {isActive && (
                       <span className="rounded-full bg-[#5D7CFA] px-2 py-0.5 text-[10px] font-extrabold text-white">
                         当前
@@ -200,22 +200,22 @@ export function DecadeFortuneCard({
 
                   {/* 十神关系 */}
                   {tenGod && (
-                    <div className="mt-2 rounded-lg bg-amber-50/70 px-2 py-1.5">
-                      <span className="text-[11px] font-extrabold text-amber-700">
+                    <div className="mt-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 px-2 py-1.5">
+                      <span className="text-[11px] font-extrabold text-amber-700 dark:text-amber-300">
                         {tenGod.name}运
                       </span>
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-amber-600/80">
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-amber-600/80 dark:text-amber-400/80">
                         {TEN_GOD_DESCRIPTIONS[tenGod.name]}
                       </p>
                     </div>
                   )}
 
-                  <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+                  <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                     <span>{decade.startAge}-{decade.endAge} 岁</span>
-                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-300 dark:text-slate-600">·</span>
                     <span>{decade.startYear}-{decade.endYear}</span>
-                    {isPast && <span className="text-slate-400">· 已过</span>}
-                    {!isActive && !isPast && <span className="text-slate-400">· 未来</span>}
+                    {isPast && <span className="text-slate-400 dark:text-slate-500">· 已过</span>}
+                    {!isActive && !isPast && <span className="text-slate-400 dark:text-slate-500">· 未来</span>}
                   </div>
                 </PopoverContent>
               </Popover>
@@ -224,7 +224,7 @@ export function DecadeFortuneCard({
         </div>
 
         {/* 底部标签 */}
-        <div className="mt-2 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400">
+        <div className="mt-2 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500">
           <span>
             {yearStem}{YANG_STEMS.has(yearStem) ? '阳' : '阴'}年{isMale ? '男' : '女'} · {childLimit.forward ? '顺排' : '逆排'} · {childLimit.startAge} 岁起运
           </span>

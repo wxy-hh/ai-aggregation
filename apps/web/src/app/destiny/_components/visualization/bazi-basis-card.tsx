@@ -35,8 +35,8 @@ export function BaziBasisCard({
           onClick={() => setBasisOpen((v) => !v)}
           className={cn(
             'flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition',
-            'hover:bg-white/50',
-            basisOpen ? '' : 'bg-white/40'
+            'hover:bg-white/50 dark:hover:bg-slate-800/60',
+            basisOpen ? '' : 'bg-white/40 dark:bg-slate-800/40'
           )}
         >
           <div className="min-w-0 text-sm font-medium text-slate-600 leading-relaxed">
@@ -71,7 +71,7 @@ export function BaziBasisCard({
             </div>
 
             {/* 节气上下文（去掉时分秒） */}
-            <div className="rounded-2xl border border-white/50 bg-white/55 px-3 sm:px-4 py-3 shadow-sm">
+            <div className="rounded-2xl border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-3 sm:px-4 py-3 shadow-sm">
               <div className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                 节气上下文
               </div>
@@ -100,7 +100,7 @@ export function BaziBasisCard({
               onClick={() => setAdvancedOpen((v) => !v)}
               className={cn(
                 'inline-flex w-fit items-center justify-center gap-2 rounded-full border px-3 py-2 text-xs font-bold transition-colors min-h-[40px]',
-                'border-white/60 bg-white/60 text-slate-500 hover:bg-white/75 hover:text-slate-700'
+                'border-white/60 dark:border-white/5 bg-white/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-300 hover:bg-white/75 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-100'
               )}
             >
               <span>{advancedOpen ? '收起高级排盘数据' : '展开高级排盘数据'}</span>
@@ -123,7 +123,7 @@ export function BaziBasisCard({
                       {baziBasis.pillars.map((pillar) => (
                         <div
                           key={pillar.label}
-                          className="rounded-[20px] sm:rounded-[24px] border border-white/50 bg-white/55 px-3 sm:px-4 py-3 sm:py-4 shadow-sm"
+                          className="rounded-[20px] sm:rounded-[24px] border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-3 sm:px-4 py-3 sm:py-4 shadow-sm"
                         >
                           <div className="text-[11px] sm:text-xs font-bold text-slate-400">
                             {pillar.label}
@@ -138,7 +138,7 @@ export function BaziBasisCard({
                             {pillar.hiddenStems.map((item) => (
                               <span
                                 key={`${pillar.label}-${item.stem}-${item.type}`}
-                                className="rounded-full border border-white/60 bg-white/80 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-600"
+                                className="rounded-full border border-white/60 dark:border-white/5 bg-white/80 dark:bg-slate-700/60 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold text-slate-600 dark:text-slate-300"
                               >
                                 {item.stem}
                                 {item.tenGod}
@@ -208,10 +208,10 @@ function BasisSummaryCard({
   detail: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
-      <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-2 text-sm font-extrabold text-slate-900">{value}</div>
-      <div className="mt-2 text-xs leading-6 text-slate-500">{detail}</div>
+    <div className="rounded-[24px] border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-4 py-4 shadow-sm">
+      <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{label}</div>
+      <div className="mt-2 text-sm font-extrabold text-slate-900 dark:text-slate-100">{value}</div>
+      <div className="mt-2 text-xs leading-6 text-slate-500 dark:text-slate-400">{detail}</div>
     </div>
   );
 }
@@ -224,22 +224,22 @@ function BasisDistributionCard({
   items: Array<{ key: string; label: string; value: number; detail: string }>;
 }) {
   return (
-    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
-      <div className="text-sm font-extrabold text-slate-900">{title}</div>
+    <div className="rounded-[24px] border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-4 py-4 shadow-sm">
+      <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">{title}</div>
       <div className="mt-4 space-y-3">
         {items.map((item) => (
           <div key={item.key}>
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-slate-700">{item.label}</span>
-              <span className="font-black text-slate-900">{item.value}%</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{item.label}</span>
+              <span className="font-black text-slate-900 dark:text-slate-100">{item.value}%</span>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
               <div
-                className="h-full rounded-full bg-[#5D7CFA]"
+                className="h-full rounded-full bg-[#5D7CFA] dark:bg-[#6D8CFF]"
                 style={{ width: `${Math.min(100, Math.max(0, item.value))}%` }}
               />
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">{item.detail}</div>
+            <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">{item.detail}</div>
           </div>
         ))}
       </div>
@@ -249,11 +249,11 @@ function BasisDistributionCard({
 
 function BasisMetaCard({ title, rows }: { title: string; rows: string[] }) {
   return (
-    <div className="rounded-[24px] border border-white/50 bg-white/55 px-4 py-4 shadow-sm">
-      <div className="text-sm font-extrabold text-slate-900">{title}</div>
+    <div className="rounded-[24px] border border-white/50 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-4 py-4 shadow-sm">
+      <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">{title}</div>
       <div className="mt-3 space-y-2">
         {rows.map((row) => (
-          <div key={row} className="text-sm leading-6 text-slate-600">
+          <div key={row} className="text-sm leading-6 text-slate-600 dark:text-slate-300">
             {row}
           </div>
         ))}

@@ -3,7 +3,8 @@
  * 历史记录辅助函数
  */
 
-import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem } from '@/types/history';
+import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem, DestinyHistoryItem, DestinySubType } from '@/types/history';
+import { generateUUID } from '@/lib/utils/uuid';
 
 /**
  * Format relative time
@@ -168,5 +169,75 @@ export function createImageHistoryItem(
     style: options?.style,
     aspectRatio: options?.aspectRatio,
     parameters: options?.parameters,
+  };
+}
+
+/**
+ * 创建命理历史记录项（返回完整对象，包含 id 和时间戳）
+ */
+export function createDestinyHistoryItem(
+  subType: DestinySubType,
+  formData: Record<string, unknown>,
+  reportData: Record<string, unknown> | null,
+  model: string,
+  options?: {
+    title?: string;
+    preview?: string;
+    coreTone?: string;
+  }
+): DestinyHistoryItem {
+  const now = new Date();
+  const id = generateUUID();
+  const timestamp = now.toISOString();
+
+  // 根据不同命理类型提取人物概要信息
+  let name = '未知';
+  let genderLabel = '未知';
+  let birthDateText = '未知';
+
+  if (subType === 'qimen') {
+    const qf = formData as { datetime?: string; location?: { name?: string }; description?: string };
+    name = qf.location?.name || '奇门遁甲';
+    genderLabel = '';
+    birthDateText = qf.datetime
+      ? new Date(qf.datetime).toLocaleDateString('zh-CN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : '未知';
+  } else {
+    name = (formData as { name?: string }).name || '未知';
+    const birthDate =
+      (formData as { birthDate?: { year: number; month: number; day: number } }).birthDate;
+    birthDateText = birthDate
+      ? `${birthDate.year}年${birthDate.month}月${birthDate.day}日`
+      : '未知';
+    const gender = (formData as { gender?: string }).gender || 'male';
+    genderLabel = gender === 'male' ? '男' : '女';
+  }
+
+  const title = options?.title || `${name}的${subType === 'bazi' ? '八字' : subType === 'ziwei' ? '紫微斗数' : '奇门遁甲'}命理报告`;
+  const preview = options?.preview || (name !== '未知' ? `姓名：${name}，出生：${birthDateText}` : `起局时间：${birthDateText}`);
+  const coreTone = options?.coreTone || '命理分析';
+
+  return {
+    id,
+    type: 'destiny',
+    subType,
+    title,
+    preview,
+    date: formatRelativeTime(now),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    model,
+    formData,
+    reportData,
+    profileSummary: {
+      name,
+      gender: genderLabel,
+      birthDate: birthDateText,
+    },
+    coreTone,
   };
 }

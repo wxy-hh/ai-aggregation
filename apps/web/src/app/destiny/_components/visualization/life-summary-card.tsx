@@ -96,17 +96,17 @@ export function LifeSummaryCard({
           data-testid="life-dimensions-skeleton"
           className="mt-6 flex min-h-[240px] sm:min-h-[400px] flex-col justify-between"
         >
-          <div className="mx-auto h-[288px] w-full max-w-[320px] animate-pulse rounded-[32px] bg-slate-100/80" />
+          <div className="mx-auto h-[288px] w-full max-w-[320px] animate-pulse rounded-[32px] bg-slate-100/80 dark:bg-slate-800/60" />
           <div className="space-y-4">
-            <div className="rounded-2xl border border-white/45 bg-white/52 p-4">
-              <div className="h-4 w-24 animate-pulse rounded bg-slate-200/70" />
-              <div className="mt-3 h-4 w-full animate-pulse rounded bg-slate-200/70" />
-              <div className="mt-2 h-4 w-5/6 animate-pulse rounded bg-slate-200/70" />
+            <div className="rounded-2xl border border-white/45 dark:border-white/5 bg-white/52 dark:bg-slate-800/40 p-4">
+              <div className="h-4 w-24 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+              <div className="mt-3 h-4 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+              <div className="mt-2 h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
             </div>
-            <div className="rounded-2xl border border-white/45 bg-white/52 p-4">
-              <div className="h-4 w-24 animate-pulse rounded bg-slate-200/70" />
-              <div className="mt-3 h-4 w-full animate-pulse rounded bg-slate-200/70" />
-              <div className="mt-2 h-4 w-4/5 animate-pulse rounded bg-slate-200/70" />
+            <div className="rounded-2xl border border-white/45 dark:border-white/5 bg-white/52 dark:bg-slate-800/40 p-4">
+              <div className="h-4 w-24 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+              <div className="mt-3 h-4 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+              <div className="mt-2 h-4 w-4/5 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
             </div>
           </div>
         </div>

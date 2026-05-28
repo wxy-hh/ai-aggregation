@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
+import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ const tabs = [
   { id: 'chat', label: '对话' },
   { id: 'voice', label: '语音' },
   { id: 'image', label: '图片' },
+  { id: 'destiny', label: '命理' },
 ];
 
 export default function HistoryPage() {
@@ -65,6 +67,7 @@ export default function HistoryPage() {
         chat: 0,
         voice: 0,
         image: 0,
+        destiny: 0,
       };
 
   // 处理删除历史记录
@@ -268,6 +271,10 @@ export default function HistoryPage() {
                       onPreview={setPreviewItem}
                       onDelete={handleDeleteItem}
                     />
+                  );
+                } else if (item.type === 'destiny') {
+                  return (
+                    <DestinyHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />
                   );
                 }
                 return null;
