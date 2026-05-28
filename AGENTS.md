@@ -354,6 +354,28 @@ docker-compose -f infra/docker/docker-compose.yml up -d
 
 ---
 
+---
+
+## CodeGraph 代码图谱
+
+本项目使用 [CodeGraph](https://github.com/colbymchenry/codegraph) 构建代码知识图谱。CodeGraph MCP 已安装到 opencode，全局使用指南见 `~/.config/opencode/AGENTS.md`。
+
+### 自动同步机制
+
+- **文件监听自动同步**：CodeGraph MCP 服务器使用原生 OS 文件事件（FSEvents）监听文件变更，2 秒防抖后自动增量更新索引
+- **启动时 catch-up**：每次 MCP 服务器连接时，自动对比文件大小/修改时间 + 内容哈希，吸收离线期间的变更
+- **防抖窗口提示**：编辑后 2 秒内查询时，待同步文件会在 CodeGraph 响应中显示 ⚠️ 横幅，此时应直接 Read 取实时内容
+
+手动同步仅在调试或 CI 脚本中使用：`codegraph sync`
+
+### 项目特有配置
+
+- **已索引**：523 文件，6258 节点，12003 边（2026-05-28）
+- **不提交到 Git**：`.codegraph/` 已通过 `.gitignore` 排除
+- **首次初始化**：已通过 `codegraph init -i` 完成
+
+---
+
 ## AI Agent 开发注意事项
 
 ### 文件写入问题与解决方案
