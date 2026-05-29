@@ -10,6 +10,7 @@ import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+import { generateUUID } from '@/lib/utils/uuid';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
@@ -168,6 +169,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
+  const currentHistoryIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -240,6 +242,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    currentHistoryIdRef.current = generateUUID();
 
     setWorkspaceState('ziwei', {
       step: 'form',
@@ -346,6 +349,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
             enhancedReportData as unknown as Record<string, unknown>,
             'doubao-seed-2-0',
             {
+              id: currentHistoryIdRef.current || undefined,
               title: `${formData.name}的紫微斗数命理报告`,
               preview: previewText.slice(0, 150),
               coreTone: event.report.coreTone?.tag || '紫微斗数',

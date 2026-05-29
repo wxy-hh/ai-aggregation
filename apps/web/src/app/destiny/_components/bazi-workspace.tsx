@@ -6,6 +6,7 @@ import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+import { generateUUID } from '@/lib/utils/uuid';
 import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
@@ -94,6 +95,7 @@ export function BaziWorkspace({
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
+  const currentHistoryIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -275,6 +277,7 @@ export function BaziWorkspace({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    currentHistoryIdRef.current = generateUUID();
 
     setWorkspaceState('bazi', {
       step: 'form',
@@ -357,6 +360,7 @@ export function BaziWorkspace({
             mergedReport as unknown as Record<string, unknown>,
             'doubao-seed-2-0',
             {
+              id: currentHistoryIdRef.current || undefined,
               title: `${formData.name}的八字命理报告`,
               preview: previewText.slice(0, 150),
               coreTone: mergedReport.coreTone?.tag || '八字命理',

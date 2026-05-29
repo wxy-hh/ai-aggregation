@@ -6,6 +6,7 @@ import { authHeaders } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type QimenErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+import { generateUUID } from '@/lib/utils/uuid';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
@@ -97,6 +98,11 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   const sectionTimeoutsRef = useRef<number[]>([]);
   const runIdRef = useRef(0);
 
+  // 当前分析的 history ID（在 submit 时生成，save 时复用，保证 id 稳定）
+  const currentHistoryIdRef = useRef<string | null>(null);
+  // 记录本 mount 周期内成功创建的 analysisId，防止因 store 状态残留触发保存
+  const submittedAnalysisIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
@@ -110,7 +116,17 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   // 当所有分析区块完成后保存历史记录
   const historySavedRef = useRef(false);
   useEffect(() => {
+    // 非活跃 tab 不保存，防止所有 workspace 同时挂载时非活跃 tab 也触发保存
+    if (!isActive) return;
+    // 恢复历史时不保存（URL 中仍有 historyId 参数，或已由恢复流程标记）
     if (historySavedRef.current) return;
+    // 额外防护：检查 URL 是否还有 historyId（防止 Zustand 同步更新时序问题）
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('historyId')) return;
+    }
+    // 核心防护：仅保存在本 mount 周期内发起的分析，防止因 workspace store 状态残留触发重复保存
+    if (!submittedAnalysisIdRef.current || submittedAnalysisIdRef.current !== analysisId) return;
     if (!baseResult || !analysisId) return;
     const statusValues = Object.values(sectionStatuses) as QimenSectionStatus[];
     if (statusValues.length < 3) return;
@@ -137,13 +153,14 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       reportData as unknown as Record<string, unknown>,
       'doubao-seed-2-0',
       {
+        id: currentHistoryIdRef.current || undefined,
         title: `奇门遁甲推演 · ${baseResult.chartTitle || '盘局分析'}`,
         preview: previewText,
         coreTone: baseResult.chartTitle || '奇门遁甲',
       }
     );
     useHistoryStore.getState().addItem(historyItem);
-  }, [baseResult, analysisId, sectionStatuses, sections, formData]);
+  }, [isActive, baseResult, analysisId, sectionStatuses, sections, formData]);
 
   // 从历史记录恢复
   useEffect(() => {
@@ -451,6 +468,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     runIdRef.current += 1;
     const runId = runIdRef.current;
     historySavedRef.current = false;
+    // 提前生成稳定的历史记录 ID，整个分析流程共用此 ID
+    currentHistoryIdRef.current = generateUUID();
+    submittedAnalysisIdRef.current = null;
 
     setWorkspaceState('qimen', {
       step: 'form',
@@ -494,6 +514,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       }
 
       setWorkspaceState('qimen', { analysisId: json.analysisId });
+      submittedAnalysisIdRef.current = json.analysisId;
       void requestBaseResult(json.analysisId, runId);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
@@ -517,6 +538,8 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     clearSectionTimeouts();
     runIdRef.current += 1;
     historySavedRef.current = false;
+    currentHistoryIdRef.current = null;
+    submittedAnalysisIdRef.current = null;
     resetWorkspace('qimen');
   };
 

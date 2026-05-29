@@ -113,7 +113,7 @@ export function ReportRightRail({
           </div>
           <div className={cn('mt-0.5 flex items-center gap-1.5 truncate text-xs', statusTone)}>
             {streaming && !streamError ? (
-              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500" />
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500 dark:bg-amber-400" />
             ) : null}
             <span className="truncate">{statusLabel}</span>
           </div>
@@ -158,17 +158,17 @@ export function ReportRightRail({
             </div>
           ) : (
             <div className="mt-3 space-y-2">
-              <div className="h-4 animate-pulse rounded bg-slate-200/70" />
-              <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70" />
+              <div className="h-4 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
             </div>
           )}
           {(tab === 'wealth' || tab === 'health') && module && (
-            <div className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-[11px] sm:text-xs font-semibold text-amber-700">
+            <div className="mt-3 rounded-xl border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-[11px] sm:text-xs font-semibold text-amber-700 dark:text-amber-300">
               仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
             </div>
           )}
 
-          <div className="mt-3 sm:mt-4 rounded-2xl border border-white/35 bg-white/45 p-3 sm:p-4">
+          <div className="mt-3 sm:mt-4 rounded-2xl border border-white/35 dark:border-white/5 bg-white/45 dark:bg-slate-800/40 p-3 sm:p-4">
             <div className="text-[11px] sm:text-xs font-bold text-[#3C58D8] dark:text-[#9BADFF]">
               AI 核心建议
             </div>
@@ -202,9 +202,9 @@ export function ReportRightRail({
               </ul>
             ) : (
               <div className="mt-2 space-y-2">
-                <div className="h-4 animate-pulse rounded bg-slate-200/70" />
-                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70" />
-                <div className="h-4 w-4/6 animate-pulse rounded bg-slate-200/70" />
+                <div className="h-4 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                <div className="h-4 w-4/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
               </div>
             )}
           </div>
@@ -225,7 +225,7 @@ export function ReportRightRail({
             {timeline.length > 0 ? (
               <div className="relative pl-5 sm:pl-6">
                 {/* 垂直线 */}
-                <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200 rounded-full" />
+                <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
 
                 {timeline.map((t, idx) => {
                   const isExpanded = t.year === expandedYear;
@@ -237,11 +237,11 @@ export function ReportRightRail({
                       <div
                         className={cn(
                           'absolute -left-[17px] sm:-left-[21px] top-1 h-3 w-3 sm:h-[14px] sm:w-[14px] rounded-full border-2 z-10 transition-all',
-                          isFirst
-                            ? 'border-[#5D7CFA] bg-[#5D7CFA] shadow-[0_0_0_4px_rgba(93,124,250,0.15)]'
+                            isFirst
+                            ? 'border-[#5D7CFA] bg-[#5D7CFA] dark:border-[#7D8CFF] dark:bg-[#7D8CFF] shadow-[0_0_0_4px_rgba(93,124,250,0.15)] dark:shadow-[0_0_0_4px_rgba(125,140,255,0.20)]'
                             : isExpanded
-                              ? 'border-[#5D7CFA] bg-white'
-                              : 'border-slate-300 bg-white'
+                              ? 'border-[#5D7CFA] bg-white dark:border-[#7D8CFF] dark:bg-slate-800'
+                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
                         )}
                       />
 
@@ -274,7 +274,7 @@ export function ReportRightRail({
                       {/* 展开的详细内容 */}
                       {isExpanded && (
                         <div className="mt-2 sm:mt-3 ml-0 space-y-2.5 sm:space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="rounded-xl sm:rounded-2xl border border-emerald-200/60 bg-emerald-50/60 p-2.5 sm:p-3">
+                          <div className="rounded-xl sm:rounded-2xl border border-emerald-200/60 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 sm:p-3">
                             <div className="text-[11px] sm:text-xs font-extrabold text-emerald-700">
                               机会
                             </div>
@@ -290,7 +290,7 @@ export function ReportRightRail({
                               ))}
                             </ul>
                           </div>
-                          <div className="rounded-xl sm:rounded-2xl border border-amber-200/60 bg-amber-50/60 p-2.5 sm:p-3">
+                          <div className="rounded-xl sm:rounded-2xl border border-amber-200/60 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 p-2.5 sm:p-3">
                             <div className="text-[11px] sm:text-xs font-extrabold text-amber-700">
                               风险
                             </div>
@@ -306,7 +306,7 @@ export function ReportRightRail({
                               ))}
                             </ul>
                           </div>
-                          <div className="rounded-xl sm:rounded-2xl border border-blue-200/60 bg-blue-50/60 p-2.5 sm:p-3">
+                          <div className="rounded-xl sm:rounded-2xl border border-blue-200/60 dark:border-blue-800/40 bg-blue-50/60 dark:bg-blue-950/20 p-2.5 sm:p-3">
                             <div className="text-[11px] sm:text-xs font-extrabold text-blue-700">
                               行动建议
                             </div>
@@ -333,11 +333,11 @@ export function ReportRightRail({
                 {Array.from({ length: 3 }).map((_, idx) => (
                   <div
                     key={`timeline-skeleton-${idx}`}
-                    className="rounded-2xl border border-white/45 bg-white/55 px-4 py-4"
+                    className="rounded-2xl border border-white/45 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-4 py-4"
                   >
-                    <div className="h-3 w-20 animate-pulse rounded bg-slate-200/70" />
-                    <div className="mt-2 h-4 w-40 animate-pulse rounded bg-slate-200/70" />
-                    <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70" />
+                    <div className="h-3 w-20 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                    <div className="mt-2 h-4 w-40 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                    <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
                   </div>
                 ))}
               </div>

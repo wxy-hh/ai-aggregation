@@ -4,7 +4,8 @@
 
 // ============ 导入外部组件 ============
 import React from 'react';
-import { AppLayout } from '@/components/layout/app-layout'; // 应用的整体布局组件（包含侧边栏、头部等）
+import { AppLayout } from '@/components/layout/app-layout';
+import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -607,17 +608,20 @@ export default function ChatPage() {
   // 如果数据还没从本地存储加载完成，显示加载动画
   if (!isLoaded) {
     return (
-      <AppLayout>
-        <div className="flex items-center justify-center w-full h-full">
-          {/* 旋转的加载动画 */}
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
-        </div>
-      </AppLayout>
+      <AuthGuard>
+        <AppLayout>
+          <div className="flex items-center justify-center w-full h-full">
+            {/* 旋转的加载动画 */}
+            <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+          </div>
+        </AppLayout>
+      </AuthGuard>
     );
   }
 
   return (
-    <AppLayout>
+    <AuthGuard>
+      <AppLayout>
       <div className="flex w-full h-full">
         {/* 聊天历史侧边栏 */}
         <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
@@ -858,5 +862,6 @@ export default function ChatPage() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+    </AuthGuard>
   );
 }

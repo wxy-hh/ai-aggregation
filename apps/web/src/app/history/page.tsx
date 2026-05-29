@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
+import { AuthGuard } from '@/components/auth/auth-guard';
 import type { HistoryType, ImageHistoryItem } from '@/types/history';
 
 const tabs = [
@@ -108,7 +109,8 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <AppLayout>
+    <AuthGuard>
+      <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
         {/* 头部 */}
         <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-4 md:px-6 md:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10 shadow-sm">
@@ -428,5 +430,6 @@ export default function HistoryPage() {
         </Dialog>
       </div>
     </AppLayout>
+    </AuthGuard>
   );
 }

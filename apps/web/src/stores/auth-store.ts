@@ -98,7 +98,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           const res = await authApi.getMe(get().accessToken!);
           if (res.success && res.data?.user) {
-            set({ user: res.data.user, isLoading: false });
+            set({ user: res.data.user, isAuthenticated: true, isLoading: false });
             return;
           }
 
@@ -110,7 +110,7 @@ export const useAuthStore = create<AuthState>()(
           }
           const retryRes = await authApi.getMe(newToken);
           if (retryRes.success && retryRes.data?.user) {
-            set({ user: retryRes.data.user, isLoading: false });
+            set({ user: retryRes.data.user, isAuthenticated: true, isLoading: false });
             return;
           }
           set({ user: null, accessToken: null, isAuthenticated: false, isLoading: false });
@@ -129,7 +129,7 @@ export const useAuthStore = create<AuthState>()(
             if (newToken) {
               const retryRes = await authApi.getMe(newToken);
               if (retryRes.success && retryRes.data?.user) {
-                set({ user: retryRes.data.user, isLoading: false });
+                set({ user: retryRes.data.user, isAuthenticated: true, isLoading: false });
                 return;
               }
             }

@@ -174,6 +174,7 @@ export function createImageHistoryItem(
 
 /**
  * 创建命理历史记录项（返回完整对象，包含 id 和时间戳）
+ * @param id - 可选的外部 ID，用于防止重复保存；不传则生成新 UUID
  */
 export function createDestinyHistoryItem(
   subType: DestinySubType,
@@ -184,10 +185,11 @@ export function createDestinyHistoryItem(
     title?: string;
     preview?: string;
     coreTone?: string;
+    id?: string;
   }
 ): DestinyHistoryItem {
   const now = new Date();
-  const id = generateUUID();
+  const id = options?.id || generateUUID();
   const timestamp = now.toISOString();
 
   // 根据不同命理类型提取人物概要信息
