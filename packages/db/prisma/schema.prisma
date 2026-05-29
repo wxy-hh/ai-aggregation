@@ -30,7 +30,8 @@ model User {
   voiceHistory        VoiceHistory[]       @relation("VoiceHistoryToUser")
   oauthAccounts       OAuthAccount[]
   refreshTokens       RefreshToken[]
-
+  feedbacks           Feedback[]
+  feedbackReplies     FeedbackReply[]
   @@map("users")
 }
 
@@ -220,4 +221,102 @@ model VoiceHistory {
   @@index([userId])
   @@index([createdAt])
   @@map("voice_history")
+}
+
+// 反馈类型枚举
+enum FeedbackType {
+  BUG
+  FEATURE
+  UI
+  PERFORMANCE
+  OTHER
+}
+
+// 反馈状态枚举
+enum FeedbackStatus {
+  PENDING
+  UNDER_REVIEW
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+// 反馈优先级枚举
+enum FeedbackPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Feedback {
+  id          String           @id @default(cuid())
+  userId      String
+  type        FeedbackType
+  status      FeedbackStatus   @default(PENDING)
+  priority    FeedbackPriority @default(MEDIUM)
+  title       String
+  content     String           @db.Text
+  isPinned    Boolean          @default(false)
+  tags        String[]         @default([])
+  replyCount  Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  resolvedAt  DateTime?
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies     FeedbackReply[]
+  attachments FeedbackAttachment[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+  @@index([type])
+  @@index([isPinned])
+  @@index([createdAt])
+  @@map("feedbacks")
+}
+
+model FeedbackReply {
+  id         String   @id @default(cuid())
+  feedbackId String
+  userId     String
+  content    String   @db.Text
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("feedback_replies")
+}
+
+model FeedbackAttachment {
+  id         String   @id @default(cuid())
+  feedbackId String
+  fileName   String
+  fileSize   Int
+  fileType   String
+  fileUrl    String
+  createdAt  DateTime @default(now())
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId])
+  @@map("feedback_attachments")
+}
+
+model FeedbackTag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  color       String   @default("#5D7CFA")
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("feedback_tags")
 }

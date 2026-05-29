@@ -21,6 +21,7 @@ import {
   Pin,
   X,
   Plus,
+  MessageSquare,
 } from 'lucide-react';
 
 function AssetAppIcon({
@@ -107,7 +108,8 @@ export type AppId =
   | 'legal'
   | 'code'
   | 'video'
-  | '3d';
+  | '3d'
+  | 'feedback';
 
 interface AppConfig {
   id: AppId;
@@ -244,6 +246,18 @@ export const APP_CONFIGS: AppConfig[] = [
     iconBg: 'bg-cyan-100 dark:bg-cyan-900/30',
     disabled: true,
     sidebarPinEnabled: false,
+  },
+  // 用户反馈
+  {
+    id: 'feedback',
+    label: '用户反馈',
+    description: '提交问题、建议，参与产品共建。',
+    icon: MessageSquare,
+    category: 'core',
+    href: '/feedback',
+    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
+    sidebarPinEnabled: true,
   },
 ];
 

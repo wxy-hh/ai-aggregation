@@ -1,25 +1,10 @@
 import type { Metadata } from 'next';
-import { DM_Sans, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import '@/styles/scrollbar.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { Toaster } from '@/components/ui/toaster';
-
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  variable: '--font-dm-sans',
-  display: 'swap',
-});
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-space-grotesk',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: 'AI 聚合平台',
@@ -40,7 +25,6 @@ export default function RootLayout({
   return (
     <html
       lang="zh-CN"
-      className={`${dmSans.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -75,7 +59,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={dmSans.className} suppressHydrationWarning>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeInitializer />
         <QueryProvider>{children}</QueryProvider>
         <Toaster />

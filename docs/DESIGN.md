@@ -26,23 +26,23 @@
 
 #### 主色调 Primary
 
-| 色阶 | 数值 |
-| --- | --- |
-| 50 | `#EFF6FF` |
-| 100 | `#DBEAFE` |
-| 200 | `#BFDBFE` |
-| 300 | `#93C5FD` |
-| 400 | 本页未使用 |
-| 500 | `#3B82F6` |
-| 600 | `#2563EB` |
-| 700 | 本页未使用 |
-| 800 | 本页未使用 |
-| 900 | 本页未使用 |
+| 色阶 | 数值       |
+| ---- | ---------- |
+| 50   | `#EFF6FF`  |
+| 100  | `#DBEAFE`  |
+| 200  | `#BFDBFE`  |
+| 300  | `#93C5FD`  |
+| 400  | 本页未使用 |
+| 500  | `#3B82F6`  |
+| 600  | `#2563EB`  |
+| 700  | 本页未使用 |
+| 800  | 本页未使用 |
+| 900  | 本页未使用 |
 
 #### 辅助色 Secondary
 
-| 色阶 | 数值 |
-| --- | --- |
+| 色阶   | 数值      |
+| ------ | --------- |
 | 紫 100 | `#F3E8FF` |
 | 紫 200 | `#E9D5FF` |
 | 紫 500 | `#A855F7` |
@@ -57,26 +57,26 @@
 
 #### 中性色 Neutral
 
-| 用途 | 数值 |
-| --- | --- |
+| 用途               | 数值      |
+| ------------------ | --------- |
 | AppLayout 页面底色 | `#F5F7FA` |
-| `/home` 页面底色 | `#F3F5FA` |
+| `/home` 页面底色   | `#F3F5FA` |
 | 全局基础背景 token | `#F5F6FA` |
-| 卡片纯白 | `#FFFFFF` |
-| 一级浅灰背景 | `#F8FAFC` |
-| 二级浅灰背景 | `#F1F5F9` |
-| 边框浅灰 | `#E2E8F0` |
-| 文本弱化灰 | `#94A3B8` |
-| 正文次级灰 | `#64748B` |
-| 正文主灰 | `#475569` |
-| 标题深灰 | `#0F172A` |
+| 卡片纯白           | `#FFFFFF` |
+| 一级浅灰背景       | `#F8FAFC` |
+| 二级浅灰背景       | `#F1F5F9` |
+| 边框浅灰           | `#E2E8F0` |
+| 文本弱化灰         | `#94A3B8` |
+| 正文次级灰         | `#64748B` |
+| 正文主灰           | `#475569` |
+| 标题深灰           | `#0F172A` |
 | 深色图片卡片起始色 | `#1E293B` |
 | 深色图片卡片终止色 | `#000000` |
 
 #### 功能色
 
-| 类型 | 数值 |
-| --- | --- |
+| 类型 | 数值      |
+| ---- | --------- |
 | 成功 | `#22C55E` |
 | 警告 | `#F59E0B` |
 | 错误 | `#E54350` |
@@ -84,30 +84,30 @@
 
 #### 特殊效果色
 
-| 用途 | 数值 |
-| --- | --- |
-| Logo 渐变起点 | `#5D7CFA` |
-| Logo 渐变终点 | `#8794FF` |
-| 激活图标渐变终点 | `#7D91FF` |
-| 激活指示条 | `#6B83FA` |
-| 激活标签文本 | `#4E67E6` |
-| Hero 标题渐变 | `#2563EB` -> `#6366F1` -> `#06B6D4` |
-| 主按钮渐变 | `#4969E9` -> `#7B8FFF` |
-| 玻璃描边白 | `rgba(255, 255, 255, 0.60)` |
-| 玻璃背景白 | `rgba(255, 255, 255, 0.60)` |
-| 背景蓝光 | `rgba(219, 234, 254, 0.50)` |
-| 背景紫光 | `rgba(233, 213, 255, 0.30)` |
-| 背景蓝光 2 | `rgba(191, 219, 254, 0.30)` |
+| 用途             | 数值                                |
+| ---------------- | ----------------------------------- |
+| Logo 渐变起点    | `#5D7CFA`                           |
+| Logo 渐变终点    | `#8794FF`                           |
+| 激活图标渐变终点 | `#7D91FF`                           |
+| 激活指示条       | `#6B83FA`                           |
+| 激活标签文本     | `#4E67E6`                           |
+| Hero 标题渐变    | `#2563EB` -> `#6366F1` -> `#06B6D4` |
+| 主按钮渐变       | `#4969E9` -> `#7B8FFF`              |
+| 玻璃描边白       | `rgba(255, 255, 255, 0.60)`         |
+| 玻璃背景白       | `rgba(255, 255, 255, 0.60)`         |
+| 背景蓝光         | `rgba(219, 234, 254, 0.50)`         |
+| 背景紫光         | `rgba(233, 213, 255, 0.30)`         |
+| 背景蓝光 2       | `rgba(191, 219, 254, 0.30)`         |
 
 ### 2.2 排版系统
 
 #### 字体家族
 
-| 类型 | 数值 |
-| --- | --- |
-| 主字体 | `"DM Sans", sans-serif` |
-| 备用标题字体变量 | `"Space Grotesk", sans-serif` |
-| 代码字体 | 当前 `/home` 页面未显式定义，不纳入本轮基准 |
+| 类型             | 数值                                        |
+| ---------------- | ------------------------------------------- |
+| 主字体           | `"DM Sans", sans-serif`                     |
+| 备用标题字体变量 | `"Space Grotesk", sans-serif`               |
+| 代码字体         | 当前 `/home` 页面未显式定义，不纳入本轮基准 |
 
 说明：
 
@@ -117,58 +117,58 @@
 
 #### 字体大小
 
-| 层级 | 数值 |
-| --- | --- |
-| Hero H1 | `60px` |
-| 页面分区标题 | `20px` |
-| 功能卡片标题 | `24px` |
-| 正文大号 | `18px` |
-| 正文标准 | `16px` |
-| 正文小号 | `14px` |
+| 层级            | 数值   |
+| --------------- | ------ |
+| Hero H1         | `60px` |
+| 页面分区标题    | `20px` |
+| 功能卡片标题    | `24px` |
+| 正文大号        | `18px` |
+| 正文标准        | `16px` |
+| 正文小号        | `14px` |
 | 辅助说明 / 标签 | `12px` |
-| Logo 版本号 | `8px` |
-| Logo 标识 | `10px` |
+| Logo 版本号     | `8px`  |
+| Logo 标识       | `10px` |
 
 #### 字体粗细
 
-| 层级 | 数值 |
-| --- | --- |
-| Hero H1 | `900` |
-| 页面标题 / 卡片标题 | `700` |
+| 层级                         | 数值           |
+| ---------------------------- | -------------- |
+| Hero H1                      | `900`          |
+| 页面标题 / 卡片标题          | `700`          |
 | 胶囊标签 / 主按钮 / 分区标题 | `600` 或 `700` |
-| 普通正文 | `400` 或 `500` |
-| Logo 标识 | `900` |
+| 普通正文                     | `400` 或 `500` |
+| Logo 标识                    | `900`          |
 
 #### 行高
 
-| 层级 | 数值 |
-| --- | --- |
-| Hero H1 | `1.25` |
-| 普通正文 | `1.50` |
+| 层级         | 数值    |
+| ------------ | ------- |
+| Hero H1      | `1.25`  |
+| 普通正文     | `1.50`  |
 | 功能卡片说明 | `1.625` |
-| Logo 文本 | `1` |
+| Logo 文本    | `1`     |
 
 #### 字间距
 
-| 层级 | 数值 |
-| --- | --- |
-| Hero H1 | `-0.025em` |
-| 分区英文标签 | `0.05em` |
-| Logo 标识 | `-0.05em` 到更紧凑的默认值 |
-| 其他中文正文 | `0` |
+| 层级         | 数值                       |
+| ------------ | -------------------------- |
+| Hero H1      | `-0.025em`                 |
+| 分区英文标签 | `0.05em`                   |
+| Logo 标识    | `-0.05em` 到更紧凑的默认值 |
+| 其他中文正文 | `0`                        |
 
 #### 文本颜色
 
-| 用途 | 数值 |
-| --- | --- |
-| Hero 标题主体 | `#0F172A` |
-| 功能卡片标题 | `#0F172A` |
-| 正文主文本 | `#475569` |
-| 正文说明文本 | `#64748B` |
+| 用途                           | 数值      |
+| ------------------------------ | --------- |
+| Hero 标题主体                  | `#0F172A` |
+| 功能卡片标题                   | `#0F172A` |
+| 正文主文本                     | `#475569` |
+| 正文说明文本                   | `#64748B` |
 | 弱化标题 / 占位符 / 图标默认色 | `#94A3B8` |
-| 激活蓝文字 | `#2563EB` |
-| 紫色强调 | `#9333EA` |
-| 粉色强调 | `#DB2777` |
+| 激活蓝文字                     | `#2563EB` |
+| 紫色强调                       | `#9333EA` |
+| 粉色强调                       | `#DB2777` |
 
 ### 2.3 间距系统
 
@@ -179,77 +179,77 @@
 
 #### 内边距 Padding
 
-| 元素 | 数值 |
-| --- | --- |
-| 全局侧栏上下 | `24px` |
-| 二级侧栏桌面内边距 | `24px` |
-| 主内容容器桌面内边距 | 左右 `32px`，上下 `40px` |
-| Hero 卡片桌面内边距 | `48px` |
-| 功能卡片内边距 | `32px` |
-| 命令卡片内边距 | `12px` |
-| 文件项内边距 | `8px` |
-| 搜索框内边距 | 上下 `12px`，左 `40px`，右 `16px` |
-| Hero 胶囊标签内边距 | 左右 `12px`，上下 `4px` |
-| 功能卡片按钮内边距 | 左右 `24px`，上下 `12px` |
+| 元素                 | 数值                              |
+| -------------------- | --------------------------------- |
+| 全局侧栏上下         | `24px`                            |
+| 二级侧栏桌面内边距   | `24px`                            |
+| 主内容容器桌面内边距 | 左右 `32px`，上下 `40px`          |
+| Hero 卡片桌面内边距  | `48px`                            |
+| 功能卡片内边距       | `32px`                            |
+| 命令卡片内边距       | `12px`                            |
+| 文件项内边距         | `8px`                             |
+| 搜索框内边距         | 上下 `12px`，左 `40px`，右 `16px` |
+| Hero 胶囊标签内边距  | 左右 `12px`，上下 `4px`           |
+| 功能卡片按钮内边距   | 左右 `24px`，上下 `12px`          |
 
 #### 外边距 Margin
 
-| 元素 | 数值 |
-| --- | --- |
-| 页面标题到底部搜索框 | `24px` |
-| 搜索框到底部工具区 | `32px` |
+| 元素                        | 数值   |
+| --------------------------- | ------ |
+| 页面标题到底部搜索框        | `24px` |
+| 搜索框到底部工具区          | `32px` |
 | Hero 头部到底部功能卡片网格 | `64px` |
-| Hero 区到底部最近创作区 | `64px` |
-| 功能卡片标题到底部正文 | `12px` |
-| 功能卡片正文到底部按钮 | `32px` |
-| 最近创作标题到底部列表 | `24px` |
+| Hero 区到底部最近创作区     | `64px` |
+| 功能卡片标题到底部正文      | `12px` |
+| 功能卡片正文到底部按钮      | `32px` |
+| 最近创作标题到底部列表      | `24px` |
 
 #### 容器宽度
 
-| 容器 | 数值 |
-| --- | --- |
-| 全局侧栏宽度 | `100px` |
-| 二级侧栏桌面宽度 | `280px` |
-| 主内容最大宽度 | `1400px` |
-| Hero 背景光斑 1 | `384px x 384px` |
-| Hero 背景光斑 2 | `288px x 288px` |
+| 容器             | 数值            |
+| ---------------- | --------------- |
+| 全局侧栏宽度     | `100px`         |
+| 二级侧栏桌面宽度 | `280px`         |
+| 主内容最大宽度   | `1400px`        |
+| Hero 背景光斑 1  | `384px x 384px` |
+| Hero 背景光斑 2  | `288px x 288px` |
 
 #### 栅格系统
 
-| 场景 | 规则 |
-| --- | --- |
-| 功能卡片网格 | 桌面 `3` 列，列间距 `32px` |
-| 最近创作网格 | 超宽桌面 `4` 列，列间距 `24px` |
+| 场景             | 规则                                       |
+| ---------------- | ------------------------------------------ |
+| 功能卡片网格     | 桌面 `3` 列，列间距 `32px`                 |
+| 最近创作网格     | 超宽桌面 `4` 列，列间距 `24px`             |
 | 二级侧栏内部列表 | 单列纵向排列，间距 `4px`、`12px` 或 `16px` |
 
 ### 2.4 阴影与圆角
 
 #### 阴影系统
 
-| 层级 | 数值 |
-| --- | --- |
-| Hero 主卡片 | `0 20px 60px -10px rgba(59, 130, 246, 0.10)` |
-| 主按钮默认 | `0 10px 24px rgba(93, 124, 250, 0.32)` |
-| 主按钮悬停 | `0 14px 30px rgba(93, 124, 250, 0.36)` |
-| 描边按钮 | `0 8px 20px rgba(76, 95, 154, 0.10)` |
-| 次按钮 | `inset 0 1px 0 rgba(255, 255, 255, 0.70), 0 6px 16px rgba(78, 99, 160, 0.12)` |
-| 功能卡片 | 使用 `shadow-xl`，视觉接近中强度漫反射阴影 |
-| 功能卡片悬停 | 使用 `shadow-2xl`，较默认明显增强 |
-| 轻量卡片 / 搜索框 / 文件块 | `shadow-sm` |
-| 每日灵感卡片悬停 | `shadow-md` |
-| 侧栏激活图标 | `shadow-lg` + `shadow-indigo-500/35` |
+| 层级                       | 数值                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| Hero 主卡片                | `0 20px 60px -10px rgba(59, 130, 246, 0.10)`                                  |
+| 主按钮默认                 | `0 10px 24px rgba(93, 124, 250, 0.32)`                                        |
+| 主按钮悬停                 | `0 14px 30px rgba(93, 124, 250, 0.36)`                                        |
+| 描边按钮                   | `0 8px 20px rgba(76, 95, 154, 0.10)`                                          |
+| 次按钮                     | `inset 0 1px 0 rgba(255, 255, 255, 0.70), 0 6px 16px rgba(78, 99, 160, 0.12)` |
+| 功能卡片                   | 使用 `shadow-xl`，视觉接近中强度漫反射阴影                                    |
+| 功能卡片悬停               | 使用 `shadow-2xl`，较默认明显增强                                             |
+| 轻量卡片 / 搜索框 / 文件块 | `shadow-sm`                                                                   |
+| 每日灵感卡片悬停           | `shadow-md`                                                                   |
+| 侧栏激活图标               | `shadow-lg` + `shadow-indigo-500/35`                                          |
 
 #### 圆角系统
 
-| 层级 | 数值 |
-| --- | --- |
-| 超大 Hero 桌面圆角 | `48px` |
-| Hero 移动基础圆角 | `28px` |
-| 功能卡片 | `32px` |
-| 普通卡片 / 新建项目卡片 / 最近创作卡片 | `16px` |
-| 输入框 / 图标按钮 / 功能按钮 | `12px` |
-| 小图标底座 | `8px` |
-| 圆形头像 / 状态点 / 胶囊标签 | `9999px` |
+| 层级                                   | 数值     |
+| -------------------------------------- | -------- |
+| 超大 Hero 桌面圆角                     | `48px`   |
+| Hero 移动基础圆角                      | `28px`   |
+| 功能卡片                               | `32px`   |
+| 普通卡片 / 新建项目卡片 / 最近创作卡片 | `16px`   |
+| 输入框 / 图标按钮 / 功能按钮           | `12px`   |
+| 小图标底座                             | `8px`    |
+| 圆形头像 / 状态点 / 胶囊标签           | `9999px` |
 
 ## 三、核心组件设计规范
 
@@ -298,11 +298,11 @@
 
 #### 按钮尺寸
 
-| 尺寸 | 高度 | 圆角 | 水平内边距 |
-| --- | --- | --- | --- |
-| 小 | `36px` | `8px` | `12px` |
-| 中 | `40px` | `12px` | `16px` |
-| 大 | `44px` | `12px` | `32px` |
+| 尺寸 | 高度   | 圆角   | 水平内边距 |
+| ---- | ------ | ------ | ---------- |
+| 小   | `36px` | `8px`  | `12px`     |
+| 中   | `40px` | `12px` | `16px`     |
+| 大   | `44px` | `12px` | `32px`     |
 
 ### 3.2 卡片组件
 
@@ -461,3 +461,143 @@
 1. 以后续优化后的源码为唯一事实源
 2. 追加到本文件对应章节，不另起平行规范
 3. 新增 token 必须和现有 `home-light-tokens.css` 命名体系兼容
+
+---
+
+name: Luminal Tech
+colors:
+tech-blue: '#2F6BFF'
+deep-sea: '#0B1B3A'
+accent-cyan: '#22D3EE'
+mesh-bg-light: '#F6F8FF'
+glass-border: rgba(255, 255, 255, 0.60)
+glass-surface: rgba(255, 255, 255, 0.60)
+icon-bg-start: '#ffffff'
+icon-bg-end: '#f1f5f9'
+typography:
+display-xl:
+fontFamily: Space Grotesk
+fontSize: 72px
+fontWeight: '900'
+lineHeight: '1.1'
+letterSpacing: -0.04em
+display-xl-mobile:
+fontFamily: Space Grotesk
+fontSize: 40px
+fontWeight: '900'
+lineHeight: '1.1'
+headline-lg:
+fontFamily: Space Grotesk
+fontSize: 36px
+fontWeight: '700'
+lineHeight: '1.2'
+headline-md:
+fontFamily: Space Grotesk
+fontSize: 24px
+fontWeight: '700'
+lineHeight: '1.3'
+body-lg:
+fontFamily: Noto Sans SC
+fontSize: 18px
+fontWeight: '400'
+lineHeight: '1.6'
+body-md:
+fontFamily: Noto Sans SC
+fontSize: 14px
+fontWeight: '400'
+lineHeight: '1.5'
+label-bold:
+fontFamily: Space Grotesk
+fontSize: 11px
+fontWeight: '700'
+lineHeight: '1'
+letterSpacing: 0.15em
+rounded:
+sm: 0.25rem
+DEFAULT: 0.5rem
+md: 0.75rem
+lg: 1rem
+xl: 1.5rem
+full: 9999px
+spacing:
+sidebar-width: 88px
+discovery-width: 288px
+gutter: 24px
+section-gap: 40px
+card-padding: 32px
+safe-area: 40px
+
+---
+
+## Brand & Style
+
+Luminal Tech is a high-performance, AI-driven productivity suite designed for professional creators who demand both power and aesthetic refinement. The brand personality is **visionary, precise, and fluid**, bridging the gap between complex computational power and intuitive creative flow.
+
+The visual style is a sophisticated evolution of **Glassmorphism**, characterized by multi-layered translucent surfaces, vibrant mesh-gradient backgrounds, and subtle 3D effects. It avoids the heaviness of traditional skuomorphism, instead opting for "tactile digitalism"—where elements feel like polished glass or physical resin floating in a luminous, atmospheric space. The goal is to evoke a sense of focused calm and infinite possibility.
+
+## Colors
+
+The palette is anchored by **Tech Blue**, a high-vibrancy primary that signifies intelligence and energy. This is balanced by **Deep Sea**, a near-black navy used for high-level hierarchy and text to ground the airy glass elements.
+
+- **Primary (Tech Blue):** Used for active states, primary CTAs, and key brand moments.
+- **Secondary (Deep Sea):** Reserved for headlines and structural navigation containers.
+- **Accents (Cyan & Purple):** Used sparingly for specialized AI roles (e.g., Cyan for creative tools, Purple for audio/logic).
+- **Backgrounds:** Employs a multi-point radial mesh gradient starting from `#F6F8FF` to create depth and eliminate flat "dead" space.
+
+## Typography
+
+The system utilizes a dual-font strategy. **Space Grotesk** is the display face, providing a technical, futuristic edge with its geometric terminals and tight apertures. It is used for all headlines and navigation labels to reinforce the "AI Suite" identity.
+
+**Noto Sans SC** (or standard Sans-Serif) serves as the workhorse body font. It provides high legibility for Chinese and Latin characters alike, ensuring that complex AI-generated text is easy to scan.
+
+Typography hierarchy is reinforced through letter spacing on small labels (tracking 15-20% for uppercase labels) and aggressive tight tracking on large display headers.
+
+## Layout & Spacing
+
+The interface follows a **Triple-Pane Architecture**:
+
+1.  **Global Command Strip (88px):** A slim, high-depth rail for core navigation and system settings.
+2.  **Discovery/Context Sidebar (288px):** A semi-transparent pane for local navigation and utility tools.
+3.  **Canvas/Workspace:** A fluid, wide-margin area for primary content.
+
+The layout uses a "Floating Canvas" model where the background mesh remains fixed while content panels sit on top. Spacing is generous, utilizing an 8px base grid, but often expanding to 24px or 40px to maintain the airy, "uncluttered" feel essential for creative focus.
+
+## Elevation & Depth
+
+Depth is the primary communicator of hierarchy, achieved through three distinct methods:
+
+1.  **Glass Panels:** Backgrounds use `white/60` opacity with high `backdrop-blur` (28px). This creates a "frosted" layer that feels physically separate from the mesh background.
+2.  **3D Icons:** Icons are housed in rounded squares with a subtle `linear-gradient(145deg, #ffffff, #f1f5f9)`. They feature an "inner glow" (inset white shadow) and a soft drop shadow, making them appear like physical plastic keys.
+3.  **Active States:** When an element is selected, it transitions from white/glass to a vibrant gradient (`#2F6BFF` to `#1E40AF`) and gains a colored outer glow (`shadow-tech-blue/20`), signaling it has "powered on."
+
+## Shapes
+
+The shape language is defined by **hyper-rounded corners** and organic silhouettes.
+
+- **Large Panels (Cards/Hero):** 28px to 40px corner radius, creating a soft, friendly container.
+- **Primary Icons/Buttons:** 16px corner radius (Semi-squircle).
+- **Utility Items:** 12px corner radius.
+
+The extreme roundedness serves to contrast against the technical "Grotesk" typography, balancing "high-tech" with "high-human" accessibility.
+
+## Components
+
+### 3D Navigation Icons
+
+The hallmark of the system. These are 48x48px squares with a 16px radius. They must include an inset top-light shadow to simulate a beveled edge. On hover, they translate -4px on the Y-axis to enhance the "tactile" feel.
+
+### Glass Module Cards
+
+Cards should not have solid backgrounds. Use `white/60` with a 1px solid white border. On hover, the background opacity increases to `white/100`, and the card should slightly rotate on the X/Y axis (CSS `perspective`) to respond to the cursor position.
+
+### Flyout Menus
+
+Menus appear 16px to the right of the trigger. They use a 24px backdrop blur and a 20% opacity border. Items within the flyout use a "Soft Fill" hover state (e.g., `bg-blue-50` or `bg-white/80`).
+
+### Action Chips
+
+Small pill-shaped indicators used within cards for "tags" or "recent actions." These should use low-contrast backgrounds (e.g., `blue-50/50`) with high-contrast text.
+
+### Search Input
+
+The search bar is treated as a glass element with a 12px radius. The placeholder text should be `slate-400`, and the border should "glow" with a `tech-blue/30` tint upon focus.

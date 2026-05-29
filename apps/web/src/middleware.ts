@@ -9,9 +9,10 @@ const PUBLIC_PATHS = [
   '/reset-password',
 ];
 
-/** 公开 API 路径前缀 */
+/** 公开 API 路径前缀（API 路由自行处理认证） */
 const PUBLIC_API_PREFIXES = [
   '/api/auth',
+  '/api/feedback',
 ];
 
 /** 静态资源前缀 */

@@ -52,6 +52,10 @@
     --ds-glass-white-strong: rgba(255, 255, 255, 0.72);
     --ds-glass-white: rgba(255, 255, 255, 0.56);
     --ds-glass-dark: rgba(20, 20, 24, 0.56);
+
+    /* 字体变量：使用系统字体栈替代 Google Fonts（避免网络不可用导致构建失败） */
+    --font-dm-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-space-grotesk: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --ds-glass-stroke-light: rgba(255, 255, 255, 0.45);
     --ds-glass-stroke-dark: rgba(255, 255, 255, 0.18);
     --ds-neo-highlight: rgba(255, 255, 255, 0.65);
@@ -451,5 +455,15 @@
     border: none;
     border-top: 1px solid hsl(var(--border));
     margin: 1.5em 0;
+  }
+}
+
+@layer utilities {
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
