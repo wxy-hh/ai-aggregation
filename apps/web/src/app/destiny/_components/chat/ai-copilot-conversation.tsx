@@ -241,10 +241,10 @@ export function AICoPilotConversation({
   }, [queuedQuestion?.id, sessionKey]);
 
   return (
-    <div className={cn('min-h-0 flex flex-col', className)}>
+    <div className={cn('flex min-h-0 flex-col bg-white dark:bg-slate-950', className)}>
       <div
         ref={listRef}
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 space-y-4 custom-scrollbar"
+        className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto bg-white px-3 py-3 sm:px-4 sm:py-4 dark:bg-slate-950"
       >
         {messages.map((m) => {
           const isUser = m.role === 'user';
@@ -256,8 +256,8 @@ export function AICoPilotConversation({
             <div
               key={m.id}
               className={cn('max-w-[92%] rounded-2xl border shadow-sm', {
-                'ml-auto bg-[#4969E9]/10 border-[#4969E9]/20': isUser,
-                'mr-auto bg-white/65 border-slate-200/70': !isUser,
+                'ml-auto border-[#4969E9]/25 bg-[#eef2ff] dark:border-[#4969E9]/30 dark:bg-[#1e2a55]': isUser,
+                'mr-auto border-slate-200/80 bg-slate-50 dark:border-white/10 dark:bg-slate-900': !isUser,
               })}
             >
               {isThinking ? (
@@ -281,14 +281,14 @@ export function AICoPilotConversation({
         })}
       </div>
 
-      <div className="shrink-0 border-t border-slate-200/60 bg-white/55 p-3 sm:p-4">
+      <div className="shrink-0 border-t border-slate-200/60 bg-white p-3 sm:p-4 dark:border-white/10 dark:bg-slate-950">
         {error ? (
           <div className="mb-2 text-[11px] sm:text-xs leading-relaxed text-red-500 break-words">{error}</div>
         ) : null}
         {/* 单行 flex：输入与发送同属一个圆角容器，避免 absolute 在侧栏里错位 */}
         <div
           className={cn(
-            'flex items-end gap-2 rounded-2xl border border-slate-200/80 bg-white/70 p-2 pl-3',
+            'flex items-end gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 p-2 pl-3 dark:border-white/10 dark:bg-slate-900',
             'focus-within:border-[#5D7CFA]/40 focus-within:ring-2 focus-within:ring-[#5D7CFA]/15'
           )}
         >

@@ -256,9 +256,10 @@ litePromptPayload（便于快速把握主轴）：
             "properties": {
               "key": { "type": "string", "enum": ["career", "wealth", "health", "love", "wisdom"] },
               "label": { "type": "string" },
-              "value": { "type": "integer" }
+              "value": { "type": "integer" },
+              "summary": { "type": "string" }
             },
-            "required": ["key", "label", "value"],
+            "required": ["key", "label", "value", "summary"],
             "additionalProperties": false
           }
         },

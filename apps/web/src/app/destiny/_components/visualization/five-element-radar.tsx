@@ -11,8 +11,11 @@ const startAngle = -90;
 const angleStep = 72;
 const viewBoxSize = 260;
 const center = viewBoxSize / 2;
-const maxRadius = 88;
-const labelRadius = 112;
+
+const RADAR_GEOMETRY = {
+  default: { maxRadius: 88, labelRadius: 112 },
+  compact: { maxRadius: 72, labelRadius: 96 },
+} as const;
 /** 雷达图最小可视半径比例，避免数值整体偏低时缩成一团 */
 const MIN_RADIUS_RATIO = 0.28;
 const MAX_RADIUS_RATIO = 0.92;
@@ -67,12 +70,17 @@ export function FiveElementRadar({
   data,
   className,
   showScores = false,
+  compact = false,
 }: {
   data: DestinyLifeDimension[];
   className?: string;
   /** 是否在顶点旁展示能量指数 */
   showScores?: boolean;
+  /** 紧凑模式：缩小图形与标签半径，适合与列表并排 */
+  compact?: boolean;
 }) {
+  const { maxRadius, labelRadius } = compact ? RADAR_GEOMETRY.compact : RADAR_GEOMETRY.default;
+
   const vertices = useMemo(() => {
     const source = new Map(data.map((item) => [item.key, item]));
     if (dimensionOrder.some((key) => !source.has(key))) return [];
@@ -101,14 +109,20 @@ export function FiveElementRadar({
         labelY,
       };
     });
-  }, [data]);
+  }, [data, labelRadius, maxRadius]);
 
   if (vertices.length !== 5) return null;
 
   const dataPolygon = vertices.map((vertex) => `${vertex.x},${vertex.y}`).join(' ');
 
   return (
-    <div className={cn('relative mx-auto h-[288px] w-full max-w-[320px]', className)}>
+    <div
+      className={cn(
+        'relative mx-auto w-full',
+        compact ? 'h-full max-w-none' : 'h-[288px] max-w-[320px]',
+        className
+      )}
+    >
       <svg
         viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
         className="absolute inset-0 h-full w-full"

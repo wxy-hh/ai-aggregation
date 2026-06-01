@@ -53,6 +53,7 @@ const LifeDimensionSchema = z.object({
   key: z.enum(lifeDimensionTuple),
   label: z.string().min(1).optional(),
   value: z.number(),
+  summary: z.string().min(1).optional(),
 });
 
 const LifeDimensionHighlightsSchema = z.object({

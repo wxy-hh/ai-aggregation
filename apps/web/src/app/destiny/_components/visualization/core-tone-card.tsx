@@ -3,21 +3,19 @@
 import React, { type CSSProperties } from 'react';
 import baziIcon from '@/assets/image/bazi.svg';
 import { cn } from '@/lib/utils';
-import type { DestinyCoreTone, DestinyProfile } from '../types';
+import type { DestinyCoreTone } from '../types';
 import { GlassCard } from '../layout/glass-card';
 
 export function CoreToneCard({
   coreTone,
-  profile,
   className,
 }: {
   coreTone?: DestinyCoreTone;
-  profile?: DestinyProfile;
   className?: string;
 }) {
   return (
-    <GlassCard className={cn('shrink-0 overflow-hidden p-3 sm:p-4', className)}>
-      <div className="relative flex items-start gap-3 sm:gap-4">
+    <GlassCard variant="hero" className={cn('shrink-0 p-4 sm:p-5', className)}>
+      <div className="relative z-10 flex items-start gap-3 sm:gap-4">
         {/* 左侧：图标区 */}
         <div className="shrink-0">
           <div
@@ -45,15 +43,6 @@ export function CoreToneCard({
             >
               {coreTone?.tag ?? '核心命理定调'}
             </span>
-            {profile && (
-              <span className="text-xs font-medium text-[#94A3B8]">
-                {profile.name}
-                {' · '}
-                {profile.genderLabel}
-                {' · '}
-                {profile.birthText?.replace(/\(.*?\)/g, '').trim()}
-              </span>
-            )}
           </div>
 
           {/* 核心定调 headline */}
@@ -61,7 +50,8 @@ export function CoreToneCard({
             className={cn(
               'mt-2 break-words font-heading font-bold leading-[1.2] tracking-tight',
               'text-[1.25rem] sm:text-[1.5rem] lg:text-[1.75rem]',
-              'text-[#23318C] dark:text-[#9BADFF]'
+              'bg-gradient-to-r from-blue-700 via-indigo-600 to-indigo-500 bg-clip-text text-transparent',
+              'dark:from-blue-300 dark:via-indigo-300 dark:to-indigo-400'
             )}
           >
             {coreTone?.headline ?? '正在推演你的人生底色'}
@@ -76,9 +66,11 @@ export function CoreToneCard({
 
           {/* 详细描述 */}
           {coreTone?.description && (
-            <p className="mt-1.5 text-xs leading-5 text-[#475569] sm:text-[13px] sm:leading-6">
-              {coreTone.description}
-            </p>
+            <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2.5 dark:border-white/10 dark:bg-slate-950/50">
+              <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                {coreTone.description}
+              </p>
+            </div>
           )}
 
           {/* 骨架描述 */}

@@ -4,6 +4,15 @@ import React from 'react';
 import type { ZiweiChartData } from '@/app/destiny/_components/types';
 import { GlossaryTooltip } from './ziwei-glossary';
 
+const HEADER_SHELL_CLASS = [
+  'relative overflow-hidden rounded-[32px] border border-white/60',
+  'bg-gradient-to-b from-white/60 via-white/25 to-white/10 bg-white/90',
+  'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
+  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  'p-5 sm:p-6',
+  'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10 dark:bg-slate-900/80',
+].join(' ');
+
 type Props = {
   chart: ZiweiChartData;
   name: string;
@@ -14,22 +23,30 @@ export function ZiweiChartHeader({ chart, name, gender }: Props) {
   const genderLabel = gender === 'female' ? '女' : '男';
 
   return (
-    <div className="rounded-[32px] border border-[#F1F5F9] dark:border-white/5 bg-white dark:bg-slate-900/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
+    <div className={HEADER_SHELL_CLASS}>
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent opacity-70 dark:via-white/15"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-gradient-to-br from-blue-500/10 to-violet-500/10 blur-3xl opacity-40"
+        aria-hidden
+      />
       {/* 第一行：姓名、性别、出生日期 */}
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="text-lg font-bold text-[#0F172A] dark:text-white">
+        <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
           {name}
         </span>
-        <span className="text-sm text-[#94A3B8] dark:text-slate-400">
+        <span className="text-sm text-slate-600 dark:text-slate-300">
           {genderLabel} · {chart.zodiac}年
         </span>
-        <span className="text-sm text-[#94A3B8] dark:text-slate-500">
+        <span className="text-sm text-slate-600 dark:text-slate-400">
           {chart.lunarDate}
         </span>
       </div>
 
       {/* 第二行：四柱 + 时辰 */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#64748B] dark:text-slate-300">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-700 dark:text-slate-300">
         <GlossaryTooltip term="四柱" chartData={chart}>
           <span className="font-medium">{chart.chineseDate}</span>
         </GlossaryTooltip>
@@ -92,12 +109,90 @@ export function ZiweiChartHeader({ chart, name, gender }: Props) {
 }
 
 function InfoBadge({ term, value, chart }: { term: string; value: string; chart: ZiweiChartData }) {
+  const accent = (() => {
+    // 按语义做轻量色彩分配：同材质、不同光色（更“未来高级感”，也更好扫读）
+    switch (term) {
+      case '五行局':
+        return {
+          label: 'text-violet-700 dark:text-violet-300',
+          ring: 'hover:border-violet-200/70 dark:hover:border-violet-400/20',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(139,92,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-violet-500/18 to-blue-500/12',
+        };
+      case '命宫':
+        return {
+          label: 'text-blue-700 dark:text-blue-300',
+          ring: 'hover:border-blue-200/70 dark:hover:border-blue-400/20',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(59,130,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-blue-500/18 to-cyan-500/12',
+        };
+      case '身宫':
+        return {
+          label: 'text-emerald-700 dark:text-emerald-300',
+          ring: 'hover:border-emerald-200/70 dark:hover:border-emerald-400/20',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(16,185,129,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-emerald-500/18 to-teal-500/12',
+        };
+      case '命主':
+        return {
+          label: 'text-amber-700 dark:text-amber-300',
+          ring: 'hover:border-amber-200/70 dark:hover:border-amber-400/20',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(245,158,11,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-amber-500/18 to-rose-500/10',
+        };
+      case '身主':
+        return {
+          label: 'text-rose-700 dark:text-rose-300',
+          ring: 'hover:border-rose-200/70 dark:hover:border-rose-400/20',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(244,63,94,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-rose-500/16 to-violet-500/12',
+        };
+      default:
+        return {
+          label: 'text-slate-600 dark:text-slate-300',
+          ring: 'hover:border-blue-200/60 dark:hover:border-blue-400/15',
+          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(59,130,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+          orb: 'from-blue-500/15 to-violet-500/15',
+        };
+    }
+  })();
+
   return (
-    <div className="rounded-[16px] border border-[#F1F5F9] dark:border-white/5 bg-[#F8FAFC] dark:bg-[#1A1D2E] px-3 py-2">
-      <div className="text-[11px] font-semibold text-[#94A3B8] dark:text-[#9BADFF]/70">
+    <div
+      className={[
+        // 小卡片按 DESIGN.md 走“标准玻璃拟态/柔光阴影”质感（不使用 backdrop-blur，避免频繁渲染卡顿）
+        'relative group overflow-hidden rounded-2xl border',
+        // 基础态就要能看出柔光/磨砂：降低纯白占比，增加蓝紫倾向
+        'border-slate-200/60 bg-gradient-to-br from-white/75 via-white/45 to-blue-50/30',
+        'px-3 py-2 shadow-[inset_0_1px_1px_rgba(255,255,255,0.35),0_1px_2px_rgba(0,0,0,0.03)]',
+        'transition-all duration-200',
+        'hover:-translate-y-0.5',
+        accent.ring,
+        accent.glow,
+        'active:scale-[0.98]',
+        'dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900/80 dark:via-slate-900/55 dark:to-violet-950/20',
+      ].join(' ')}
+    >
+      {/* 顶部 1px 高光切线：增强玻璃边缘层次 */}
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/85 to-transparent opacity-80 dark:via-white/20"
+        aria-hidden
+      />
+
+      {/* 右上角柔光背光圈：Hover 时渐隐增强（不影响布局） */}
+      <span
+        className={[
+          'pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-gradient-to-br blur-3xl',
+          'opacity-25 transition-opacity duration-200 group-hover:opacity-55',
+          accent.orb,
+        ].join(' ')}
+        aria-hidden
+      />
+
+      <div className={['relative z-10 text-[11px] font-semibold', accent.label].join(' ')}>
         <GlossaryTooltip term={term} chartData={chart}>{term}</GlossaryTooltip>
       </div>
-      <div className="mt-0.5 text-sm font-bold text-[#0F172A] dark:text-white">
+      <div className="relative z-10 mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100">
         {value || '—'}
       </div>
     </div>

@@ -544,32 +544,32 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   };
 
   const stepTransitionClass =
-    'transition-all duration-[240ms] motion-reduce:transition-opacity motion-reduce:duration-150';
+    'transition-all duration-300 motion-reduce:transition-opacity motion-reduce:duration-150';
   const stepTransitionStyle = {
-    transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
   } as const;
 
   return (
-    <DestinyPageScaffold withNavOffset>
-      <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
-        <div className="flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6">
-          <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-2xl md:text-[28px]">
-                  {step === 'form' ? '奇门遁甲演化' : '奇门遁甲 · 分析结果'}
-                </h1>
-                <span className="inline-flex items-center rounded-full bg-[#F3F6FF] px-2.5 py-0.5 text-[10px] font-bold text-[#3C58D8] sm:px-3 sm:text-xs dark:bg-[#1E2A55] dark:text-[#9BADFF]">
-                  {step === 'form' ? '信息输入' : 'AI 推演'}
-                </span>
+    <DestinyPageScaffold withNavOffset tone="indigo">
+      <div className="relative h-full min-h-0 w-full overflow-hidden">
+        <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
+          {step === 'form' && (
+            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+                    奇门遁甲演化
+                  </h1>
+                  <span className="inline-flex items-center rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-600 dark:bg-violet-500/15 dark:text-violet-400">
+                    信息输入
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  填写起局时空与问题描述，系统基于时家奇门进行演化分析
+                </p>
               </div>
-              <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300 sm:text-sm">
-                {step === 'form'
-                  ? '填写起局时空与问题描述，系统基于时家奇门进行演化分析'
-                  : '盘面生成后，策略总论、时机窗口与盘局摘要将分块呈现'}
-              </p>
-            </div>
-          </header>
+            </header>
+          )}
 
           <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
             <div

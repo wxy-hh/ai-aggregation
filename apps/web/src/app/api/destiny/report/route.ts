@@ -705,7 +705,7 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 要求：
 1. coreDestinyTone 只写 headline 和 description。headline 8-16 个中文字符，描述命局基调，避免通用句式；description 55-90 个中文字符，2 句内，先概括格局特点再落到现实风格。
 2. pillars 必须 4 项，label 依次固定为年柱/月柱/日柱/时柱。tooltip 60-120 个中文字符，固定写成 2-3 句：第一句解释这根柱子代表什么；第二句结合该柱的干支、纳音（sound 字段）与藏干（hiddenStems 字段）分析五行十神重心，明确写"这意味着你……"；如有必要可加第三句点出该柱与月令节气的关系。四根柱子的解读应体现不同侧重点，避免四句结构雷同。
-3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项；tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。每个 domain 的 positive 和 negative 各写 1 句直接针对用户的个性化描述（15-35 字）：positive 写该域在命局中的优势表现，negative 写需注意的倾向。不写领域定义式文案。
+3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项，key 固定 career/wealth/health/love/wisdom；每项除 value 外必须输出 summary（18-32 字），用大白话说明该维在用户命局中的现实倾向，禁止写「事业指……」这类定义式解释。tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。每个 domain 的 positive 和 negative 各写 1 句直接针对用户的个性化描述（15-35 字）：positive 写该域在命局中的优势表现，negative 写需注意的倾向。不写领域定义式文案。
 4. lifeDimensionHighlights 的 strength 和 caution 各 1 句，28-60 个中文字符，说人话，不堆术语。
 5. balanceInsight 用一句短标题 + 当前更显的五行 + 45-90 个中文字符的解释，重点讲现实做事风格。注意：必须结合月令五行（seasonalBonus 最高的元素）与日主的生克关系来分析，不要只堆数值或套话。
 6. patternHighlights 返回 2-4 项，用大白话解释已给出的术语或组合，不要虚构新的命理组合，每项要具体对应命盘特征。

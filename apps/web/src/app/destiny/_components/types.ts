@@ -34,6 +34,8 @@ export type DestinyLifeDimension = {
   key: LifeDimensionKey;
   label: string;
   value: number;
+  /** 大白话：该维在用户命局中的倾向（AI 生成，可选） */
+  summary?: string;
 };
 
 export type DestinyLifeDimensionHighlights = {

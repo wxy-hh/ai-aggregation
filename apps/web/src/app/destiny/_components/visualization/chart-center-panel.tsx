@@ -11,6 +11,7 @@ import { DecadeFortuneCard } from './decade-fortune-card';
 import { PersonalityDashboardCard } from './personality-dashboard-card';
 import { LifeSummaryCard } from './life-summary-card';
 import { SectionReveal, SectionBlockSkeleton } from './section-reveal';
+import { BAZI_SECTION_IDS } from './chart-section-nav';
 
 export function ChartCenterPanel({
   report,
@@ -45,80 +46,93 @@ export function ChartCenterPanel({
 
   return (
     <div className={cn('flex min-h-0 flex-col gap-4 sm:gap-6', className)}>
-      <SectionReveal
-        ready={hasCoreTone || Boolean(profile)}
-        streaming={streaming}
-        delayIndex={0}
-        skeleton={<SectionBlockSkeleton lines={4} />}
-      >
-        <CoreToneCard coreTone={coreTone} profile={profile} />
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.tone} className="scroll-mt-3">
+        <SectionReveal
+          ready={hasCoreTone || Boolean(profile)}
+          streaming={streaming}
+          delayIndex={0}
+          skeleton={<SectionBlockSkeleton lines={4} />}
+        >
+          <CoreToneCard coreTone={coreTone} />
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={hasPillars || Boolean(profile)}
-        streaming={streaming}
-        delayIndex={1}
-        skeleton={<SectionBlockSkeleton lines={3} />}
-      >
-        <PillarsCard
-          profile={profile}
-          pillars={pillars}
-          balanceInsight={balanceInsight}
-          patternHighlights={patternHighlights}
-          baziBasis={baziBasis}
-        />
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.pillars} className="scroll-mt-3">
+        <SectionReveal
+          ready={hasPillars || Boolean(profile)}
+          streaming={streaming}
+          delayIndex={1}
+          skeleton={<SectionBlockSkeleton lines={3} />}
+        >
+          <PillarsCard
+            pillars={pillars}
+            balanceInsight={balanceInsight}
+            patternHighlights={patternHighlights}
+            baziBasis={baziBasis}
+          />
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={Boolean(baziBasis)}
-        streaming={streaming}
-        delayIndex={2}
-        skeleton={<SectionBlockSkeleton lines={2} />}
-      >
-        {baziBasis ? <BaziBasisCard baziBasis={baziBasis} /> : null}
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.basis} className="scroll-mt-3">
+        <SectionReveal
+          ready={Boolean(baziBasis)}
+          streaming={streaming}
+          delayIndex={2}
+          skeleton={<SectionBlockSkeleton lines={2} />}
+        >
+          {baziBasis ? <BaziBasisCard baziBasis={baziBasis} /> : null}
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={Boolean(baziBasis)}
-        streaming={streaming}
-        delayIndex={3}
-        skeleton={<SectionBlockSkeleton lines={3} />}
-      >
-        {baziBasis ? <DataOverviewCard baziBasis={baziBasis} /> : null}
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.elements} className="scroll-mt-3">
+        <SectionReveal
+          ready={Boolean(baziBasis)}
+          streaming={streaming}
+          delayIndex={3}
+          skeleton={<SectionBlockSkeleton lines={3} />}
+        >
+          {baziBasis ? <DataOverviewCard baziBasis={baziBasis} /> : null}
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={Boolean(baziBasis)}
-        streaming={streaming}
-        delayIndex={4}
-        skeleton={<SectionBlockSkeleton lines={4} />}
-      >
-        {baziBasis ? <DecadeFortuneCard baziBasis={baziBasis} /> : null}
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.decade} className="scroll-mt-3">
+        <SectionReveal
+          ready={Boolean(baziBasis)}
+          streaming={streaming}
+          delayIndex={4}
+          skeleton={<SectionBlockSkeleton lines={4} />}
+        >
+          {baziBasis ? <DecadeFortuneCard baziBasis={baziBasis} /> : null}
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={hasTenGodDomains || !streaming}
-        streaming={streaming && !hasTenGodDomains}
-        delayIndex={5}
-        skeleton={<SectionBlockSkeleton lines={5} />}
-        testId="ten-god-domains-section"
-      >
-        <PersonalityDashboardCard tenGodDomains={tenGodDomains} />
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.personality} className="scroll-mt-3">
+        <SectionReveal
+          ready={hasTenGodDomains || !streaming}
+          streaming={streaming && !hasTenGodDomains}
+          delayIndex={5}
+          skeleton={<SectionBlockSkeleton lines={5} />}
+          testId="ten-god-domains-section"
+        >
+          <PersonalityDashboardCard tenGodDomains={tenGodDomains} />
+        </SectionReveal>
+      </div>
 
-      <SectionReveal
-        ready={hasLifeSummary || !streaming}
-        streaming={streaming && !hasLifeSummary}
-        delayIndex={6}
-        skeleton={<SectionBlockSkeleton lines={4} />}
-      >
-        <LifeSummaryCard
-          lifeDimensions={lifeDimensions}
-          lifeDimensionHighlights={lifeDimensionHighlights}
-          baziBasis={baziBasis}
-          personalityModule={personalityModule}
-        />
-      </SectionReveal>
+      <div id={BAZI_SECTION_IDS.life} className="scroll-mt-3">
+        <SectionReveal
+          ready={hasLifeSummary || !streaming}
+          streaming={streaming && !hasLifeSummary}
+          delayIndex={6}
+          skeleton={<SectionBlockSkeleton lines={4} />}
+        >
+          <LifeSummaryCard
+            lifeDimensions={lifeDimensions}
+            lifeDimensionHighlights={lifeDimensionHighlights}
+            baziBasis={baziBasis}
+            hasTenGodSection={hasTenGodDomains}
+          />
+        </SectionReveal>
+      </div>
 
       <div className="px-3 sm:px-4 py-2.5 sm:py-3 text-center text-[11px] sm:text-xs leading-5 text-slate-400 dark:text-slate-500">
         【娱乐声明】本内容基于中国传统民俗文化进行娱乐化解读，仅供休闲参考，

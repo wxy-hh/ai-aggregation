@@ -86,8 +86,12 @@ export function resolveLifeDimensionsForDisplay(input: {
   }
 
   const labelByKey = new Map(lifeDimensions.map((item) => [item.key, item.label?.trim()]));
+  const summaryByKey = new Map(
+    lifeDimensions.map((item) => [item.key, item.summary?.trim()] as const)
+  );
   return scored.map((item) => ({
     ...item,
     label: labelByKey.get(item.key) || item.label,
+    summary: summaryByKey.get(item.key) || item.summary,
   }));
 }

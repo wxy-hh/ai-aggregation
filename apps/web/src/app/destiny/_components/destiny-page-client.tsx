@@ -6,7 +6,9 @@ import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
-import { LeftNav, type DestinyModuleKey } from './layout/left-nav';
+import type { DestinyModuleKey } from './layout/left-nav';
+import { DestinyDesktopNav } from './layout/destiny-desktop-nav';
+import { DestinyNavProvider, useDestinyNav } from './layout/destiny-nav-context';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 
@@ -83,11 +85,11 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
 
     return (
       <div
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-100 dark:bg-slate-950"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
         style={{ minHeight: '100dvh' }}
       >
         {/* 移动端分段控件 */}
-        <div className="sticky top-0 z-20 border-b border-slate-200/60 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/90">
+        <div className="sticky top-0 z-20 border-b border-white/50 bg-white/75 px-4 py-3 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/75">
           <div className="rounded-[999px] bg-slate-100/80 p-1 dark:bg-slate-800/80">
             <div className="grid grid-cols-3 gap-1">
               {mobileTabs.map((tab) => {
@@ -140,20 +142,44 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const isLoading = activeModule === 'bazi' ? baziLoading : activeModule === 'ziwei' ? ziweiLoading : qimenLoading;
 
   return (
-    <div className="relative flex-1 h-full overflow-hidden">
-      {/* 左侧导航 */}
-      <div
-        className={cn(
-          'absolute left-6 top-6 bottom-6 hidden xl:flex w-[280px] z-20 transition-opacity duration-200',
-          isLoading ? 'opacity-50 pointer-events-none' : 'opacity-100'
-        )}
-      >
-        <div className="h-full w-full rounded-[32px] border border-white/60 dark:border-white/10 bg-white/78 dark:bg-slate-900/90 backdrop-blur-[24px] p-4 shadow-[0_8px_20px_rgba(76,95,154,0.10)] dark:shadow-[0_14px_32px_rgba(0,0,0,0.28)]">
-          <LeftNav activeModule={activeModule} onModuleChange={setActiveModule} />
-        </div>
-      </div>
+    <DestinyNavProvider>
+      <DestinyDesktopLayout
+        activeModule={activeModule}
+        onModuleChange={setActiveModule}
+        isLoading={isLoading}
+        qimenLoading={qimenLoading}
+        workspaceElements={workspaceElements}
+      />
+    </DestinyNavProvider>
+  );
+}
 
-      {/* 工作区 - 所有模块始终挂载，仅 CSS 显隐 */}
+function DestinyDesktopLayout({
+  activeModule,
+  onModuleChange,
+  isLoading,
+  qimenLoading,
+  workspaceElements,
+}: {
+  activeModule: DestinyModuleKey;
+  onModuleChange: (key: DestinyModuleKey) => void;
+  isLoading: boolean;
+  qimenLoading: boolean;
+  workspaceElements: React.ReactNode;
+}) {
+  const { navOffsetPx } = useDestinyNav();
+
+  return (
+    <div
+      className="relative h-full flex-1 overflow-hidden"
+      style={{ ['--destiny-nav-offset' as string]: `${navOffsetPx}px` }}
+    >
+      <DestinyDesktopNav
+        activeModule={activeModule}
+        onModuleChange={onModuleChange}
+        disabled={isLoading}
+      />
+
       <div className="h-full w-full">
         {workspaceElements}
 
@@ -161,8 +187,8 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
           <div className="absolute inset-0 z-[35] overflow-hidden">
             <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
-              <div className="pointer-events-none absolute inset-y-0 left-[288px] hidden w-20 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
-              <div className="relative h-full w-full xl:pl-[304px]">
+              <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
+              <div className="relative h-full w-full transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
                 <QimenLoadingAnimation />
               </div>
             </div>

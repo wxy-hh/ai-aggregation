@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import timelineIcon from '@/assets/image/timeline.svg';
 import { cn } from '@/lib/utils';
@@ -28,9 +28,56 @@ export function ReportRightRail({
 }) {
   const [tab, setTab] = useState<TabKey>('career');
   const [copilotOpen, setCopilotOpen] = useState(false);
-  const [expandedYear, setExpandedYear] = useState<number | null>(
-    report.timeline?.[0]?.year ?? null
-  );
+  /** 默认收起，避免首屏在矮容器里撑出无效滚动 */
+  const [expandedYear, setExpandedYear] = useState<number | null>(null);
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const yearItemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const shouldScrollYearRef = useRef(false);
+
+  const scrollExpandedYearIntoView = useCallback((year: number) => {
+    const container = timelineScrollRef.current;
+    const item = yearItemRefs.current.get(year);
+    if (!container || !item) return;
+
+    const padding = 12;
+    const containerRect = container.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+
+    if (itemRect.top < containerRect.top + padding) {
+      container.scrollBy({
+        top: itemRect.top - containerRect.top - padding,
+        behavior: 'smooth',
+      });
+      return;
+    }
+
+    if (itemRect.bottom > containerRect.bottom - padding) {
+      container.scrollBy({
+        top: itemRect.bottom - containerRect.bottom + padding,
+        behavior: 'smooth',
+      });
+    }
+  }, []);
+
+  const handleYearToggle = useCallback((year: number, isCurrentlyExpanded: boolean) => {
+    if (isCurrentlyExpanded) {
+      shouldScrollYearRef.current = false;
+      setExpandedYear(null);
+      return;
+    }
+    shouldScrollYearRef.current = true;
+    setExpandedYear(year);
+  }, []);
+
+  useEffect(() => {
+    if (expandedYear == null || !shouldScrollYearRef.current) return;
+    shouldScrollYearRef.current = false;
+    // 等展开内容完成布局后再滚动，避免仍停留在上一年的滚动位置
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollExpandedYearIntoView(expandedYear));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [expandedYear, scrollExpandedYearIntoView]);
 
   const module = useMemo(() => {
     const m = report.modules;
@@ -88,6 +135,18 @@ export function ReportRightRail({
     health: { label: '健康', Icon: Stethoscope },
   };
 
+  /** 侧栏分区：浅底 + 圆角，不用边框（外层 GlassCard 已提供轮廓） */
+  const sectionShellClass = cn(
+    'rounded-2xl bg-slate-100/50 p-2.5 sm:p-3',
+    'dark:bg-slate-800/35'
+  );
+
+  /** 长文阅读区：实体底、无边框 */
+  const readSurfaceClass = cn(
+    'mt-3 rounded-xl bg-white/92 p-3 sm:mt-3.5 sm:p-4',
+    'dark:bg-slate-950/65'
+  );
+
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-hidden">
       {/* 顶部：标题 + AI 追问 */}
@@ -120,10 +179,15 @@ export function ReportRightRail({
         </div>
       </div>
 
-      {/* 模块 Tab */}
-      <div className="shrink-0 rounded-2xl border border-[#D5DAEB]/70 bg-[#F1F5F9]/80 p-2.5 sm:p-3 backdrop-blur-[16px] dark:border-white/10 dark:bg-slate-900/50">
+      {/* 模块 Tab + 解读：限制最高高度，把剩余空间留给流年列表 */}
+      <div
+        className={cn(
+          'flex min-h-0 max-h-[min(46%,17.5rem)] shrink-0 flex-col overflow-hidden',
+          sectionShellClass
+        )}
+      >
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-          <TabsList className="grid h-9 sm:h-11 grid-cols-4 rounded-xl border border-[#E2E8F0]/90 bg-[#F1F5F9] p-1 dark:border-white/10 dark:bg-slate-800/80">
+          <TabsList className="grid h-9 grid-cols-4 rounded-xl bg-slate-200/45 p-1 sm:h-11 dark:bg-slate-800/55">
             {(Object.entries(tabMeta) as [TabKey, (typeof tabMeta)[TabKey]][]).map(
               ([key, meta]) => (
                 <TabsTrigger
@@ -144,8 +208,9 @@ export function ReportRightRail({
           </TabsList>
         </Tabs>
 
-        <div className="mt-3 sm:mt-4 rounded-2xl border border-[#E2E8F0]/80 bg-white/85 p-3 sm:p-4 dark:border-white/10 dark:bg-slate-900/60">
-          <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 custom-scrollbar">
+        <div className={readSurfaceClass}>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-900 sm:text-sm dark:text-slate-100">
             {(() => {
               const Icon = tabMeta[tab].Icon;
               return <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#5D7CFA]" />;
@@ -163,13 +228,13 @@ export function ReportRightRail({
             </div>
           )}
           {(tab === 'wealth' || tab === 'health') && module && (
-            <div className="mt-3 rounded-xl border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-[11px] sm:text-xs font-semibold text-amber-700 dark:text-amber-300">
+            <div className="mt-3 rounded-lg bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold text-amber-800/90 sm:text-xs dark:bg-amber-950/25 dark:text-amber-300/90">
               仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
             </div>
           )}
 
-          <div className="mt-3 sm:mt-4 rounded-2xl border border-white/35 dark:border-white/5 bg-white/45 dark:bg-slate-800/40 p-3 sm:p-4">
-            <div className="text-[11px] sm:text-xs font-bold text-[#3C58D8] dark:text-[#9BADFF]">
+          <div className="mt-3 border-t border-slate-200/55 pt-3 sm:mt-4 sm:pt-4 dark:border-white/10">
+            <div className="text-[11px] font-bold text-[#3C58D8] sm:text-xs dark:text-[#9BADFF]">
               AI 核心建议
             </div>
             {hasModuleBullets ? (
@@ -209,10 +274,13 @@ export function ReportRightRail({
             )}
           </div>
         </div>
+        </div>
       </div>
 
-      {/* 流年时间轴（垂直时间线） */}
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-[#D5DAEB]/70 bg-white/75 p-3 sm:p-4 backdrop-blur-[16px] dark:border-white/10 dark:bg-slate-900/55">
+      {/* 流年时间轴（垂直时间线，占据侧栏剩余高度） */}
+      <div
+        className={cn('flex min-h-[12rem] flex-1 flex-col overflow-hidden', sectionShellClass)}
+      >
         <div className="flex h-full min-h-0 flex-col">
           <div className="mb-3 sm:mb-4 flex shrink-0 items-center gap-2">
             <AssetToneIcon className="h-4 w-4 text-[#5D7CFA]" src={timelineIcon} />
@@ -221,7 +289,10 @@ export function ReportRightRail({
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
+          <div
+            ref={timelineScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
+          >
             {timeline.length > 0 ? (
               <div className="relative pl-5 sm:pl-6">
                 {/* 垂直线 */}
@@ -232,7 +303,14 @@ export function ReportRightRail({
                   const isFirst = idx === 0;
 
                   return (
-                    <div key={t.year} className="relative pb-4 sm:pb-5 last:pb-0">
+                    <div
+                      key={t.year}
+                      ref={(node) => {
+                        if (node) yearItemRefs.current.set(t.year, node);
+                        else yearItemRefs.current.delete(t.year);
+                      }}
+                      className="relative scroll-mt-2 pb-4 sm:pb-5 last:pb-0"
+                    >
                       {/* 时间线圆点 */}
                       <div
                         className={cn(
@@ -248,8 +326,12 @@ export function ReportRightRail({
                       {/* 年份标题（可点击展开） */}
                       <button
                         type="button"
-                        onClick={() => setExpandedYear(isExpanded ? null : t.year)}
-                        className={cn('w-full text-left transition', 'hover:opacity-80')}
+                        onClick={() => handleYearToggle(t.year, isExpanded)}
+                        className={cn(
+                          'w-full min-h-11 rounded-lg text-left transition',
+                          'hover:bg-white/50 dark:hover:bg-slate-800/40',
+                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30'
+                        )}
                       >
                         <div className="flex items-center gap-2">
                           {isFirst && (
@@ -273,9 +355,9 @@ export function ReportRightRail({
 
                       {/* 展开的详细内容 */}
                       {isExpanded && (
-                        <div className="mt-2 sm:mt-3 ml-0 space-y-2.5 sm:space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                          <div className="rounded-xl sm:rounded-2xl border border-emerald-200/60 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 sm:p-3">
-                            <div className="text-[11px] sm:text-xs font-extrabold text-emerald-700">
+                        <div className="ml-0 mt-2 space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200 sm:mt-3 sm:space-y-3">
+                          <div className="rounded-lg border-l-2 border-l-emerald-400/45 bg-emerald-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-emerald-950/18">
+                            <div className="text-[11px] font-extrabold text-emerald-700 sm:text-xs dark:text-emerald-300">
                               机会
                             </div>
                             <ul className="mt-1.5 sm:mt-2 space-y-1">
@@ -290,8 +372,8 @@ export function ReportRightRail({
                               ))}
                             </ul>
                           </div>
-                          <div className="rounded-xl sm:rounded-2xl border border-amber-200/60 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 p-2.5 sm:p-3">
-                            <div className="text-[11px] sm:text-xs font-extrabold text-amber-700">
+                          <div className="rounded-lg border-l-2 border-l-amber-400/45 bg-amber-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-amber-950/18">
+                            <div className="text-[11px] font-extrabold text-amber-700 sm:text-xs dark:text-amber-300">
                               风险
                             </div>
                             <ul className="mt-1.5 sm:mt-2 space-y-1">
@@ -306,8 +388,8 @@ export function ReportRightRail({
                               ))}
                             </ul>
                           </div>
-                          <div className="rounded-xl sm:rounded-2xl border border-blue-200/60 dark:border-blue-800/40 bg-blue-50/60 dark:bg-blue-950/20 p-2.5 sm:p-3">
-                            <div className="text-[11px] sm:text-xs font-extrabold text-blue-700">
+                          <div className="rounded-lg border-l-2 border-l-blue-400/45 bg-blue-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-blue-950/18">
+                            <div className="text-[11px] font-extrabold text-blue-700 sm:text-xs dark:text-blue-300">
                               行动建议
                             </div>
                             <ul className="mt-1.5 sm:mt-2 space-y-1">
@@ -333,7 +415,7 @@ export function ReportRightRail({
                 {Array.from({ length: 3 }).map((_, idx) => (
                   <div
                     key={`timeline-skeleton-${idx}`}
-                    className="rounded-2xl border border-white/45 dark:border-white/5 bg-white/55 dark:bg-slate-800/40 px-4 py-4"
+                    className="rounded-xl bg-white/55 px-4 py-4 dark:bg-slate-800/40"
                   >
                     <div className="h-3 w-20 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
                     <div className="mt-2 h-4 w-40 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />

@@ -29,6 +29,9 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+const dialogCenterMotionClass =
+  'duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]';
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
@@ -36,10 +39,21 @@ const DialogContent = React.forwardRef<
     overlayClassName?: string;
     hideOverlay?: boolean;
     customOverlay?: React.ReactNode;
+    /** none：由子组件自行处理动效（如右侧抽屉弹簧滑入） */
+    contentAnimation?: 'default' | 'none';
   }
 >(
   (
-    { className, children, showClose = true, overlayClassName, hideOverlay = false, customOverlay, ...props },
+    {
+      className,
+      children,
+      showClose = true,
+      overlayClassName,
+      hideOverlay = false,
+      customOverlay,
+      contentAnimation = 'default',
+      ...props
+    },
     ref
   ) => (
   <DialogPortal>
@@ -48,7 +62,8 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg',
+        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg',
+        contentAnimation === 'default' && dialogCenterMotionClass,
         className
       )}
       {...props}

@@ -94,11 +94,21 @@ export function getMockDestinyReport(input: OnboardingInput | null): DestinyRepo
       { key: 'zhengguan', label: '正官/七杀', value: 23, tooltip: '正官/七杀：规则、压力与目标感' },
     ],
     lifeDimensions: [
-      { key: 'career', label: '事业', value: 72 },
-      { key: 'wealth', label: '财运', value: 68 },
-      { key: 'health', label: '健康', value: 61 },
-      { key: 'love', label: '感情', value: 56 },
-      { key: 'wisdom', label: '智慧/创造', value: 74 },
+      {
+        key: 'career',
+        label: '事业',
+        value: 72,
+        summary: '事业节奏偏快，适合主动争取窗口期。',
+      },
+      { key: 'wealth', label: '财运', value: 68, summary: '求财宜稳，适合长期配置。' },
+      { key: 'health', label: '健康', value: 61, summary: '精力中等，注意作息恢复。' },
+      { key: 'love', label: '感情', value: 56, summary: '情感表达偏内敛，宜慢慢建立信任。' },
+      {
+        key: 'wisdom',
+        label: '智慧/创造',
+        value: 74,
+        summary: '学习与复盘能力不错，越做越稳。',
+      },
     ],
     lifeDimensionHighlights: {
       strength: '印星与官星配合得稳，做事抗风险、能沉住气，越到后期越容易靠积累见成效。',

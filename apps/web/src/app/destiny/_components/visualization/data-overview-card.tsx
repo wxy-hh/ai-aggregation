@@ -294,7 +294,7 @@ export function DataOverviewCard({
                             type="button"
                             className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-help truncate"
                           >
-                            {count}个
+                            权重 {pct}%
                             {hasSeasonalBonus && (
                               <span className="text-[10px] text-amber-500 shrink-0">+月令</span>
                             )}
@@ -304,7 +304,9 @@ export function DataOverviewCard({
                           side="top"
                         className="w-52 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                       >
-                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">权重来源</div>
+                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">
+                          权重来源（合计 {count} 点）
+                        </div>
                         <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                             <div className="flex justify-between">
                               <span>天干（显性特质）</span>

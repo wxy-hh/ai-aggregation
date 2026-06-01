@@ -426,11 +426,21 @@ describe('ChartCenterPanel', () => {
     const report: PartialDestinyReport = {
       ...createBaseReport(),
       lifeDimensions: [
-        { key: 'career', label: '事业', value: 72 },
-        { key: 'wealth', label: '财运', value: 68 },
-        { key: 'health', label: '健康', value: 61 },
-        { key: 'love', label: '感情', value: 56 },
-        { key: 'wisdom', label: '智慧/创造', value: 74 },
+        {
+          key: 'career',
+          label: '事业',
+          value: 72,
+          summary: '事业节奏偏快，适合主动争取窗口期。',
+        },
+        { key: 'wealth', label: '财运', value: 68, summary: '求财宜稳，适合长期配置。' },
+        { key: 'health', label: '健康', value: 61, summary: '精力中等，注意作息恢复。' },
+        { key: 'love', label: '感情', value: 56, summary: '情感表达偏内敛，宜慢慢建立信任。' },
+        {
+          key: 'wisdom',
+          label: '智慧/创造',
+          value: 74,
+          summary: '学习与复盘能力不错，越做越稳。',
+        },
       ],
       lifeDimensionHighlights: {
         strength: '印星与官星配合得稳，做事抗风险、能沉住气，越到后期越容易靠积累见成效。',
@@ -477,12 +487,15 @@ describe('ChartCenterPanel', () => {
 
     render(<ChartCenterPanel report={report} />);
 
-    expect(screen.getByText('人生五维摘要')).toBeInTheDocument();
-    expect(screen.getByText('性格与潜能仪表盘')).toBeInTheDocument();
-    expect(screen.getByText(/印星与官星配合得稳/)).toBeInTheDocument();
-    expect(screen.getByText(/木气偏旺时容易把压力憋在心里/)).toBeInTheDocument();
+    expect(screen.getByText('人生五维')).toBeInTheDocument();
+    expect(screen.getByText(/怎么读数字/)).toBeInTheDocument();
+    expect(screen.getByText(/事业节奏偏快/)).toBeInTheDocument();
+    expect(screen.getByText('十神能量结构')).toBeInTheDocument();
+    expect(screen.getByText(/上方「十神」看做事习惯/)).toBeInTheDocument();
+    expect(screen.queryByText(/五维小结 · 优势/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/印星与官星配合得稳/)).not.toBeInTheDocument();
     expect(screen.getByText(/自我与社交/)).toBeInTheDocument();
-    expect(screen.getByText(/智慧\/创造/)).toBeInTheDocument();
+    expect(screen.getAllByText('智慧/创造').length).toBeGreaterThan(0);
   });
 
   it('缺失正式五维与五域数据时保持骨架态', () => {

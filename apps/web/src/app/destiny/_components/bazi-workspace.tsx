@@ -107,14 +107,19 @@ export function BaziWorkspace({
     }
   }, [isActive, restoreWorkspace]);
 
+  const isBaziHistoryInitialized = useHistoryStore((state) => state.isInitialized);
+
   // 从历史记录恢复
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || !isBaziHistoryInitialized) return;
     const params = new URLSearchParams(window.location.search);
     const historyId = params.get('historyId');
     if (!historyId) return;
     const historyItem = useHistoryStore.getState().getItemById(historyId);
     if (historyItem?.type !== 'destiny' || historyItem.subType !== 'bazi') return;
+    // 兼容旧格式（reportData 直接是 mergedReport）和新格式（{ report, lockedSections }）
+    const reportData = historyItem.reportData as Record<string, unknown> | null;
+    const isNewFormat = reportData != null && 'report' in reportData && 'lockedSections' in reportData;
     setWorkspaceState('bazi', {
       step: 'result',
       lastView: 'result',
@@ -123,8 +128,8 @@ export function BaziWorkspace({
       streaming: false,
       error: null,
       errorKind: null,
-      report: historyItem.reportData as never,
-      lockedSections: {},
+      report: (isNewFormat ? (reportData as Record<string, unknown>).report : reportData) as never,
+      lockedSections: (isNewFormat ? (reportData as Record<string, unknown>).lockedSections : {}) as BaziLockedSections,
       streamStatus: null,
       formData: (historyItem.formData as BaziFormData) || formData,
       fieldErrors: {},
@@ -135,7 +140,7 @@ export function BaziWorkspace({
     window.history.replaceState({}, '', url.toString());
     // formData 仅用作后备值，历史记录恢复以 item.formData 为准，无需作为依赖
     // setWorkspaceState 为 Zustand 稳定引用，无需声明为依赖
-  }, [isActive]);
+  }, [isActive, isBaziHistoryInitialized]);
 
   useEffect(() => {
     return () => {
@@ -349,7 +354,12 @@ export function BaziWorkspace({
           }));
           markResultReady('bazi');
 
-          // 保存到历史记录
+          // 保存到历史记录（包含 lockedSections 以便恢复时重建完整状态）
+          const currentState = useDestinyWorkspaceStore.getState().bazi;
+          const enhancedReportData = {
+            report: mergedReport,
+            lockedSections: currentState.lockedSections,
+          };
           const previewText =
             mergedReport.coreTone?.headline ||
             mergedReport.coreTone?.description ||
@@ -357,7 +367,7 @@ export function BaziWorkspace({
           const historyItem = createDestinyHistoryItem(
             'bazi',
             formData as unknown as Record<string, unknown>,
-            mergedReport as unknown as Record<string, unknown>,
+            enhancedReportData as unknown as Record<string, unknown>,
             'doubao-seed-2-0',
             {
               id: currentHistoryIdRef.current || undefined,
@@ -411,66 +421,86 @@ export function BaziWorkspace({
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
   const stepTransitionClass =
-    'transition-all duration-[240ms] motion-reduce:transition-opacity motion-reduce:duration-150';
+    'transition-all duration-300 motion-reduce:transition-opacity motion-reduce:duration-150';
   const stepTransitionStyle = {
-    transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
   } as const;
 
   return (
-    <DestinyPageScaffold withNavOffset>
-      <div className="relative h-full min-h-0 w-full bg-[#F1F5F9] dark:bg-[#111218]">
-        {/* 表单步 */}
-        <div
-          className={cn(
-            'absolute inset-0 flex h-full min-h-0 flex-col p-3 sm:p-5 lg:p-6',
-            stepTransitionClass,
-            step === 'form'
-              ? 'pointer-events-auto z-10 opacity-100 translate-y-0 scale-100'
-              : 'pointer-events-none z-0 opacity-0 translate-y-3 scale-[0.99] motion-reduce:translate-y-0 motion-reduce:scale-100'
+    <DestinyPageScaffold withNavOffset tone="blue">
+      <div className="relative h-full min-h-0 w-full overflow-hidden">
+        <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
+          {step === 'form' && (
+            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+                    八字格局精批
+                  </h1>
+                  <span className="inline-flex items-center rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                    信息输入
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  填写生辰时空信息，AI 将基于真实模型生成完整命理解读
+                </p>
+              </div>
+            </header>
           )}
-          style={stepTransitionStyle}
-          aria-hidden={step !== 'form'}
-        >
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <BaziInputForm
-              value={formData}
-              submitting={blockingLoading || streaming}
-              error={error}
-              fieldErrors={fieldErrors}
-              onChange={onChange}
-              onSubmit={() => {
-                void submit();
-              }}
-              onReset={reset}
-            />
-          </div>
-        </div>
 
-        {/* 结果步 */}
-        <div
-          className={cn(
-            'absolute inset-0 h-full min-h-0 w-full',
-            stepTransitionClass,
-            step === 'result'
-              ? 'pointer-events-auto z-10 opacity-100 translate-y-0 scale-100'
-              : 'pointer-events-none z-0 opacity-0 translate-y-3 scale-[0.99] motion-reduce:translate-y-0 motion-reduce:scale-100'
-          )}
-          style={stepTransitionStyle}
-          aria-hidden={step !== 'result'}
-        >
-          <DestinyShell
-            report={report}
-            partialReport={partialReport}
-            streaming={streaming}
-            streamStatus={streamStatus}
-            streamError={error}
-            lockedSections={lockedSections}
-            activeModule={activeModule}
-            title="AI 命理大师"
-            subtitleTag="八字格局精批"
-            onModuleChange={onModuleChange}
-            onRecalculate={handleRecalculate}
-          />
+          <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
+            {/* 表单步 */}
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'form'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'form'}
+            >
+              <BaziInputForm
+                value={formData}
+                submitting={blockingLoading || streaming}
+                error={error}
+                fieldErrors={fieldErrors}
+                onChange={onChange}
+                onSubmit={() => {
+                  void submit();
+                }}
+                onReset={reset}
+              />
+            </div>
+
+            {/* 结果步 */}
+            <div
+              className={cn(
+                'absolute inset-0 h-full min-h-0 w-full',
+                stepTransitionClass,
+                step === 'result'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'result'}
+            >
+              <DestinyShell
+                report={report}
+                partialReport={partialReport}
+                streaming={streaming}
+                streamStatus={streamStatus}
+                streamError={error}
+                lockedSections={lockedSections}
+                activeModule={activeModule}
+                title="AI 命理大师"
+                subtitleTag="八字格局精批"
+                onModuleChange={onModuleChange}
+                onRecalculate={handleRecalculate}
+              />
+            </div>
+          </div>
         </div>
       </div>
 

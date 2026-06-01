@@ -105,6 +105,7 @@ const LifeDimensionSchema = z.object({
   key: z.enum(['career', 'wealth', 'health', 'love', 'wisdom']),
   label: z.string().trim().min(1).optional(),
   value: z.number(),
+  summary: z.string().trim().min(1).optional(),
 });
 
 const LifeDimensionHighlightsSchema = z.object({

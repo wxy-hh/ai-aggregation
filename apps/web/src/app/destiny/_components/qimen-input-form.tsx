@@ -129,12 +129,44 @@ function formatDateTimePreview(date: Date): string {
 }
 
 
-const panelClass =
-  'relative rounded-[24px] backdrop-blur-[24px] px-4 py-4 sm:px-6 sm:py-6 overflow-hidden';
+const shellClass = cn(
+  'relative overflow-hidden rounded-[32px] border border-white/60 p-4 sm:p-6 md:p-8',
+  'bg-gradient-to-b from-white/60 via-white/30 to-white/10',
+  'shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
+  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  'bg-white/92 lg:from-white/60 lg:via-white/30 lg:to-white/10 lg:bg-transparent',
+  'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10',
+  'dark:bg-slate-900/92 lg:dark:bg-transparent'
+);
 
-const labelClass = 'text-[13px] font-semibold text-[#475569]/90 dark:text-slate-300';
-const inputClass =
-  'bg-white/60 dark:bg-slate-800/60 border-white/50 dark:border-white/10 rounded-[14px] text-slate-700 dark:text-slate-100 shadow-[0_2px_8px_rgba(93,124,250,0.06),inset_0_1px_0_rgba(255,255,255,0.8)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.2)] focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/25 dark:focus-visible:ring-indigo-500/25 focus-visible:border-[#9BAEFF]/60 dark:focus-visible:border-indigo-500/60 focus-visible:bg-white/80 dark:focus-visible:bg-slate-800/80 transition-all duration-200 dark:placeholder:text-slate-400';
+/** 内嵌 panel：实体半透明，避免玻璃套玻璃 */
+const panelClass = cn(
+  'relative overflow-hidden rounded-3xl border border-slate-200/50 px-4 py-4 sm:px-6 sm:py-6',
+  'bg-white/85 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]',
+  'dark:border-white/10 dark:bg-slate-900/85'
+);
+
+const labelClass = 'text-xs font-semibold text-slate-500 dark:text-slate-400';
+
+const inputClass = cn(
+  'h-11 rounded-xl border-slate-200/50 bg-white/80 text-sm text-slate-700',
+  'shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_1px_1px_0_rgba(0,0,0,0.02)]',
+  'transition-all duration-200',
+  'focus-visible:border-violet-500/50 focus-visible:bg-white/95 focus-visible:ring-2 focus-visible:ring-violet-500/10',
+  'dark:border-slate-800/50 dark:bg-slate-900/80 dark:text-slate-100 dark:placeholder:text-slate-400',
+  'dark:focus-visible:border-violet-500/50 dark:focus-visible:bg-slate-950/90'
+);
+
+const primaryBtnClass = cn(
+  'min-h-11 w-full rounded-full px-6 text-sm font-bold text-white sm:w-auto',
+  'bg-gradient-to-r from-violet-600 to-indigo-500',
+  'shadow-[0_10px_24px_rgba(124,58,237,0.28)] transition-all duration-200 hover:brightness-[1.03]'
+);
+
+const secondaryBtnClass = cn(
+  'min-h-11 w-full rounded-full border-slate-200/60 bg-white/80 px-6 text-sm font-semibold text-slate-700 sm:w-auto',
+  'hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-900/80'
+);
 
 export function QimenInputForm({
   value,
@@ -200,46 +232,29 @@ export function QimenInputForm({
   };
 
   return (
-    <div
-      className="relative overflow-hidden rounded-[24px] bg-white/78 p-4 backdrop-blur-[24px] sm:rounded-[28px] sm:p-6 md:rounded-[32px] md:p-8 dark:border dark:border-white/10 dark:bg-slate-900/70 supports-[backdrop-filter]:bg-white/72 dark:supports-[backdrop-filter]:bg-slate-900/65"
-      style={{
-        boxShadow:
-          '0 1px 0 rgba(255,255,255,0.4) inset, 0 8px 20px rgba(76,95,154,0.10)',
-      }}
-    >
+    <div className={shellClass}>
       {/* 顶部边框高光 */}
       <div
-        className="absolute inset-x-0 top-0 h-px"
-        style={{
-          background:
-            'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.6) 50%, transparent 100%)',
-        }}
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent dark:via-white/20"
+        aria-hidden
       />
 
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="font-heading text-lg font-bold tracking-tight text-[#0F172A] dark:text-slate-100 sm:text-[22px]">
+          <h2 className="font-heading text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-xl">
             起局信息输入
           </h2>
-          <p className="mt-1 text-xs text-slate-600/80 dark:text-slate-300/80 sm:text-sm">
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 sm:text-sm">
             已自动填入当前时间，请补充地点与问题描述后开始演化
           </p>
         </div>
-        <span className="shrink-0 rounded-full border border-[#D5DAEB]/80 bg-[#F3F6FF] px-2.5 py-0.5 text-[10px] font-bold text-[#4969E9] sm:px-3 sm:text-xs dark:border-white/10 dark:bg-[#1E2A55] dark:text-[#9BADFF]">
+        <span className="shrink-0 rounded-full border border-slate-200/60 bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-violet-600 sm:px-3 sm:text-xs dark:border-white/10 dark:bg-violet-500/15 dark:text-violet-400">
           1/2
         </span>
       </div>
 
       <div className="relative mt-4 grid grid-cols-1 items-stretch gap-3 sm:mt-6 sm:gap-5 xl:grid-cols-2">
-        <section
-          className={cn(
-            panelClass,
-            'border border-[#D5DAEB]/70 bg-white/75 dark:border-white/10 dark:bg-slate-900/55'
-          )}
-          style={{
-            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
-          }}
-        >
+        <section className={panelClass}>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">基础时空信息</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -260,7 +275,7 @@ export function QimenInputForm({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-10 shrink-0 rounded-full border-white/60 bg-white/40 backdrop-blur-sm text-xs font-semibold text-[#445ECC] hover:bg-white/60 transition-all dark:border-white/10 dark:bg-slate-800/50 dark:text-indigo-400 dark:hover:bg-slate-800/70"
+                  className="h-10 shrink-0 rounded-full border-slate-200/60 bg-white/80 text-xs font-semibold text-violet-600 transition-all hover:bg-white dark:border-white/10 dark:bg-slate-800/50 dark:text-violet-400 dark:hover:bg-slate-800/70"
                   onClick={() => onChange('datetime', toLocalDateTimeInputValue(new Date()))}
                   disabled={submitting}
                 >
@@ -278,7 +293,7 @@ export function QimenInputForm({
 
             {/* 时辰预演 */}
             {value.datetime && (
-              <div className="rounded-2xl border border-[#D5DAEB]/70 bg-[#F3F6FF]/80 px-4 py-3 dark:border-white/10 dark:bg-[#1E2A55]/50">
+              <div className="rounded-2xl border border-slate-200/50 bg-violet-500/5 px-4 py-3 dark:border-white/10 dark:bg-violet-500/10">
                 <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-6 sm:gap-y-1">
                   {(() => {
                     const dt = new Date(value.datetime);
@@ -295,15 +310,15 @@ export function QimenInputForm({
                       return (
                         <>
                           <div>
-                            <span className="text-xs text-[#64748B] dark:text-slate-400">北京时间</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">北京时间</span>
                             <div className="font-bold text-slate-800 dark:text-slate-100">
                               {formatDateTimePreview(dt)}{' '}
-                              <span className="text-[#3C58D8] dark:text-[#9BADFF]">{shiChen}</span>
+                              <span className="text-violet-600 dark:text-violet-400">{shiChen}</span>
                             </div>
                           </div>
-                          <div className="hidden text-[#94A3B8] dark:text-slate-500 text-lg sm:block">→</div>
+                          <div className="hidden text-lg text-slate-400 dark:text-slate-500 sm:block">→</div>
                           <div>
-                            <span className="text-xs text-[#64748B] dark:text-slate-400">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
                               真太阳时（{value.location.name.slice(0, 6)}）
                             </span>
                             <div
@@ -315,7 +330,7 @@ export function QimenInputForm({
                               {formatDateTimePreview(corrected)}{' '}
                               <span
                                 className={
-                                  crossBoundary ? 'text-amber-600 dark:text-amber-400' : 'text-[#3C58D8] dark:text-[#9BADFF]'
+                                  crossBoundary ? 'text-amber-600 dark:text-amber-400' : 'text-violet-600 dark:text-violet-400'
                                 }
                               >
                                 {correctedShiChen}
@@ -323,7 +338,7 @@ export function QimenInputForm({
                             </div>
                           </div>
                           <div>
-                            <span className="text-xs text-[#64748B] dark:text-slate-400">时柱</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">时柱</span>
                             <div className={cn('font-bold', crossBoundary ? 'text-amber-700 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100')}>
                               {crossBoundary ? shiZhu + ' → ' + correctedShiZhu : correctedShiZhu}
                             </div>
@@ -345,10 +360,10 @@ export function QimenInputForm({
                     return (
                       <>
                         <div>
-                          <span className="text-xs text-[#64748B] dark:text-slate-400">起局时间</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">起局时间</span>
                           <div className="font-bold text-slate-800 dark:text-slate-100">
                             {formatDateTimePreview(dt)}{' '}
-                            <span className="text-[#3C58D8] dark:text-[#9BADFF]">{shiChen}</span>
+                            <span className="text-violet-600 dark:text-violet-400">{shiChen}</span>
                           </div>
                         </div>
                         <div>
@@ -413,8 +428,8 @@ export function QimenInputForm({
                               className={cn(
                                 'w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center gap-2 min-h-[44px]',
                                 isSelected
-                                  ? 'bg-[#5D7CFA]/10 text-[#3C58D8] dark:bg-indigo-500/15 dark:text-indigo-300 font-medium'
-                                  : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                  ? 'bg-violet-500/10 font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+                                  : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700/50'
                               )}
                               onClick={() => {
                                 onChange('location', {
@@ -426,7 +441,7 @@ export function QimenInputForm({
                                 setCityPopoverOpen(false);
                               }}
                             >
-                              {isSelected && <Check className="h-4 w-4 shrink-0 text-[#5D7CFA] dark:text-indigo-400" />}
+                              {isSelected && <Check className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />}
                               <span className={cn(!isSelected && 'ml-6')}>{city.fullName}</span>
                             </button>
                           );
@@ -456,15 +471,7 @@ export function QimenInputForm({
           </div>
         </section>
 
-        <section
-          className={cn(
-            panelClass,
-            'border border-[#D5DAEB]/70 bg-white/75 dark:border-white/10 dark:bg-slate-900/55'
-          )}
-          style={{
-            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
-          }}
-        >
+        <section className={panelClass}>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">问题信息</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -526,15 +533,7 @@ export function QimenInputForm({
           </div>
         </section>
 
-        <section
-          className={cn(
-            panelClass,
-            'border border-[#D5DAEB]/70 bg-white/75 dark:border-white/10 dark:bg-slate-900/55'
-          )}
-          style={{
-            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
-          }}
-        >
+        <section className={panelClass}>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">排盘参数</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -577,15 +576,7 @@ export function QimenInputForm({
           </div>
         </section>
 
-        <section
-          className={cn(
-            panelClass,
-            'border border-[#D5DAEB]/70 bg-white/75 dark:border-white/10 dark:bg-slate-900/55'
-          )}
-          style={{
-            boxShadow: '0 1px 0 rgba(255,255,255,0.6) inset, 0 8px 32px rgba(93,124,250,0.08)',
-          }}
-        >
+        <section className={panelClass}>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">输出偏好</h3>
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
@@ -636,18 +627,13 @@ export function QimenInputForm({
       )}
 
       <div className="mt-5 flex flex-col gap-3 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button
-          type="button"
-          className="min-h-11 w-full rounded-full bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] px-6 text-sm font-bold text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)] transition-all duration-200 hover:brightness-[1.03] sm:w-auto"
-          onClick={onSubmit}
-          disabled={submitting}
-        >
+        <Button type="button" className={primaryBtnClass} onClick={onSubmit} disabled={submitting}>
           {submitting ? '演化分析中...' : '开始演化分析'}
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="min-h-11 w-full rounded-full border-[#D5DAEB] bg-white/72 px-6 text-sm font-semibold text-slate-700 hover:bg-white/90 sm:w-auto dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
+          className={secondaryBtnClass}
           onClick={onReset}
           disabled={submitting}
         >

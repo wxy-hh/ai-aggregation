@@ -60,6 +60,36 @@ describe('life-dimension-scores', () => {
     expect(resolved?.find((item) => item.key === 'career')?.value).toBeGreaterThan(60);
   });
 
+  it('合并展示时保留 AI 返回的 summary', () => {
+    const resolved = resolveLifeDimensionsForDisplay({
+      lifeDimensions: [
+        {
+          key: 'career',
+          label: '事业',
+          value: 8,
+          summary: '职场节奏偏快，适合主动争取窗口期。',
+        },
+        { key: 'wealth', label: '财运', value: 6 },
+        { key: 'health', label: '健康', value: 7 },
+        { key: 'love', label: '感情', value: 5 },
+        { key: 'wisdom', label: '智慧', value: 9 },
+      ],
+      baziBasis: {
+        elementStats: [
+          { key: 'fire', label: '火', value: 40, sources: { stems: 2, branches: 1, hiddenStems: 0, seasonalBonus: 0 } },
+          { key: 'earth', label: '土', value: 20, sources: { stems: 1, branches: 1, hiddenStems: 0, seasonalBonus: 0 } },
+          { key: 'metal', label: '金', value: 15, sources: { stems: 1, branches: 0, hiddenStems: 0, seasonalBonus: 0 } },
+          { key: 'water', label: '水', value: 15, sources: { stems: 1, branches: 0, hiddenStems: 0, seasonalBonus: 0 } },
+          { key: 'wood', label: '木', value: 10, sources: { stems: 1, branches: 0, hiddenStems: 0, seasonalBonus: 0 } },
+        ],
+      } as never,
+    });
+
+    expect(resolved?.find((item) => item.key === 'career')?.summary).toBe(
+      '职场节奏偏快，适合主动争取窗口期。'
+    );
+  });
+
   it('仅有 AI 低分时做相对拉伸', () => {
     const normalized = normalizeAiLifeDimensionValues([
       { key: 'career', label: '事业', value: 8 },

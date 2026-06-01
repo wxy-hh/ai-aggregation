@@ -4,6 +4,10 @@ import React from 'react';
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
+import {
+  DestinyResultHeader,
+  destinySecondaryBtnClass,
+} from './destiny-result-header';
 import type {
   BaziLockedSections,
   DestinyReport,
@@ -13,16 +17,11 @@ import type {
 import type { DestinyModuleKey } from './left-nav';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
+import { ChartSectionNav } from '../visualization/chart-section-nav';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { PanelRightOpen } from 'lucide-react';
-
-const primaryCtaClass = cn(
-  'inline-flex min-h-11 items-center justify-center px-5 rounded-full text-sm font-bold transition-all duration-200',
-  'bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white shadow-[0_10px_24px_rgba(93,124,250,0.32)]',
-  'hover:brightness-[1.03] hover:shadow-[0_14px_30px_rgba(93,124,250,0.36)] active:scale-[0.98]',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30 focus-visible:ring-offset-2'
-);
+import { ProfileSubtitle } from './profile-subtitle';
 
 export function DestinyShell({
   report,
@@ -63,50 +62,40 @@ export function DestinyShell({
       <div className="flex h-full min-h-0 w-full gap-3 sm:gap-4 p-3 sm:p-4 lg:gap-6 lg:p-6">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-6">
-            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <h1 className="font-heading text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 md:text-3xl">
-                    {title}
-                  </h1>
-                  <span className="inline-flex items-center rounded-full bg-[#F3F6FF] px-2.5 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold text-[#3C58D8] dark:bg-[#1E2A55] dark:text-[#9BADFF]">
-                    {subtitleTag}
-                  </span>
-                </div>
-                <p className="mt-1.5 sm:mt-2 truncate text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                  {subtitle}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
+            <DestinyResultHeader
+              title={title}
+              moduleBadge={subtitleTag}
+              tone="blue"
+              subtitle={<ProfileSubtitle text={subtitle} />}
+              onRecalculate={onRecalculate}
+              leadingActions={
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setIsReportDrawerOpen(true)}
-                  className="min-h-10 sm:min-h-11 rounded-full border-[#D5DAEB] bg-white/72 px-3 sm:px-4 text-xs sm:text-sm text-slate-700 hover:bg-white/90 lg:hidden dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200"
+                  className={cn(destinySecondaryBtnClass, 'lg:hidden')}
                 >
-                  <PanelRightOpen className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <PanelRightOpen className="mr-2 h-4 w-4" />
                   深度报告
                 </Button>
-                <button
-                  type="button"
-                  onClick={onRecalculate}
-                  className={cn(
-                    primaryCtaClass,
-                    'min-h-10 sm:min-h-11 px-4 sm:px-5 text-xs sm:text-sm'
-                  )}
-                >
-                  重新排盘
-                </button>
-              </div>
-            </header>
+              }
+            />
 
             {displayReport ? (
-              <ChartCenterPanel
-                report={displayReport}
-                streaming={streaming}
-                className="min-h-0 flex-1 overflow-y-auto pr-1"
-              />
+              <>
+                <ChartSectionNav
+                  report={displayReport}
+                  className={cn(
+                    'shrink-0 border-b border-slate-200/60 pb-3',
+                    'dark:border-white/10'
+                  )}
+                />
+                <ChartCenterPanel
+                  report={displayReport}
+                  streaming={streaming}
+                  className="min-h-0 flex-1 overflow-y-auto pr-1 pt-1"
+                />
+              </>
             ) : (
               <GlassCard className="flex min-h-0 flex-1 items-center justify-center p-8">
                 <div className="text-center">
@@ -145,16 +134,19 @@ export function DestinyShell({
         <DialogContent
           className={cn(
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0',
-            'rounded-t-[24px] sm:rounded-t-[32px] rounded-b-none border border-[#E2E8F0] bg-[#F8FAFC] p-0 pb-[env(safe-area-inset-bottom)]',
+            'rounded-t-[24px] sm:rounded-t-[32px] rounded-b-none border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
+            'bg-white/80 backdrop-blur-2xl',
+            'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(59,130,246,0.15),inset_0_1px_0_0_rgba(255,255,255,0.1)]',
             'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-            'dark:border-white/10 dark:bg-[#111218]'
+            'dark:border-white/10 dark:bg-slate-900/85'
           )}
         >
-          <div className="border-b border-[#E2E8F0] px-4 sm:px-5 py-3 sm:py-4 dark:border-white/10">
-            <DialogTitle className="text-left font-heading text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30 dark:bg-white/10" aria-hidden />
+          <div className="border-b border-slate-200/50 px-4 py-4 sm:px-6 dark:border-white/10">
+            <DialogTitle className="text-left font-heading text-base font-semibold text-slate-900 dark:text-white">
               深度报告
             </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            <DialogDescription className="mt-2 text-left text-sm text-slate-500 dark:text-slate-400">
               查看测算报告、流年趋势和 AI 追问
             </DialogDescription>
           </div>

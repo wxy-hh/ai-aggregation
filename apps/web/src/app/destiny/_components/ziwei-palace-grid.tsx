@@ -10,6 +10,30 @@ import { useIsMobile } from '@/hooks/use-is-mobile';
 //  紫微斗数命盘网格 — 宫位卡片、中央面板、三方四正、四化等
 // ═══════════════════════════════════════════════════════════════
 
+// ─── DESIGN.md 视觉 token（局部复用：Card / G-3 / Z-4） ───
+const GRID_SHELL_CLASS = [
+  'relative overflow-hidden rounded-[32px] border border-white/60',
+  'bg-gradient-to-b from-white/60 via-white/25 to-white/10 bg-white/90',
+  'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
+  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  // 关键：给网格留出内边距，避免宫位卡片与外层边框视觉重叠
+  'p-4 sm:p-5',
+  'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10 dark:bg-slate-900/80',
+].join(' ');
+
+const CARD_BASE_CLASS = [
+  'group relative overflow-hidden',
+  'rounded-[24px] border',
+  'p-3.5 sm:p-4',
+  'text-left',
+  'transition-all duration-200',
+  'hover:translate-y-[-1px] hover:scale-[1.01]',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950',
+].join(' ');
+
+const CARD_SHADOW_Z2 = 'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]';
+const CARD_HOVER_SHADOW_Z3 = 'hover:shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)]';
+
 // ─── 十二宫排布顺序 ───
 const PALACE_ORDER = [
   '父母', '福德', '田宅', '官禄',
@@ -88,20 +112,20 @@ const STEM_COLORS: Record<string, string> = {
 
 // ─── 十四主星颜色（保持与之前一致） ───
 const STAR_COLORS: Array<{ names: string[]; className: string }> = [
-  { names: ['紫微'], className: 'text-[#5A4BEA]' },
-  { names: ['天府'], className: 'text-[#2D7D58]' },
-  { names: ['武曲'], className: 'text-[#2F5FAE]' },
-  { names: ['太阳'], className: 'text-[#C77A1A]' },
-  { names: ['太阴'], className: 'text-[#6B5CA5]' },
-  { names: ['天机'], className: 'text-[#1F8A84]' },
-  { names: ['天同'], className: 'text-[#329D7C]' },
-  { names: ['廉贞'], className: 'text-[#B04A6B]' },
-  { names: ['贪狼'], className: 'text-[#8B5E1A]' },
-  { names: ['巨门'], className: 'text-[#4E5E7A]' },
-  { names: ['天相'], className: 'text-[#3A6AA6]' },
-  { names: ['天梁'], className: 'text-[#6D8A2E]' },
-  { names: ['七杀'], className: 'text-[#A23A3A]' },
-  { names: ['破军'], className: 'text-[#7E4AA1]' },
+  { names: ['紫微'], className: 'text-violet-600 dark:text-violet-400' },
+  { names: ['天府'], className: 'text-emerald-700 dark:text-emerald-400' },
+  { names: ['武曲'], className: 'text-blue-700 dark:text-blue-400' },
+  { names: ['太阳'], className: 'text-amber-600 dark:text-amber-400' },
+  { names: ['太阴'], className: 'text-indigo-600 dark:text-indigo-400' },
+  { names: ['天机'], className: 'text-teal-700 dark:text-teal-400' },
+  { names: ['天同'], className: 'text-emerald-700 dark:text-emerald-400' },
+  { names: ['廉贞'], className: 'text-rose-600 dark:text-rose-400' },
+  { names: ['贪狼'], className: 'text-amber-700 dark:text-amber-400' },
+  { names: ['巨门'], className: 'text-slate-700 dark:text-slate-300' },
+  { names: ['天相'], className: 'text-sky-700 dark:text-sky-400' },
+  { names: ['天梁'], className: 'text-lime-700 dark:text-lime-400' },
+  { names: ['七杀'], className: 'text-red-600 dark:text-red-400' },
+  { names: ['破军'], className: 'text-fuchsia-600 dark:text-fuchsia-400' },
 ];
 
 // ─── 宫位含义速查 ───
@@ -344,8 +368,8 @@ function PalaceCard({
 
   const activeRing = isActive
     ? isMing
-      ? 'ring-2 ring-amber-400/30 border-amber-300/60 shadow-[0_12px_32px_-14px_rgba(245,158,11,0.20),inset_0_1px_0_rgba(255,255,255,0.80)]'
-      : 'ring-2 ring-[#4969E9]/25 border-[#4969E9]/30 shadow-[0_12px_32px_-14px_rgba(59,91,246,0.20),inset_0_1px_0_rgba(255,255,255,0.80)]'
+      ? 'ring-2 ring-amber-400/30 border-amber-300/60 shadow-[0_12px_20px_-8px_rgba(245,158,11,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.55)]'
+      : 'ring-2 ring-blue-500/25 border-blue-500/30 shadow-[0_12px_20px_-8px_rgba(59,130,246,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.55)]'
     : '';
 
   const decadeHighlight = isCurrentDecade
@@ -358,7 +382,10 @@ function PalaceCard({
       onClick={onClick}
       className={[
         !isMobile && GRID_AREAS[index],
-        'min-h-[140px] rounded-[24px] p-3.5 flex flex-col justify-between text-left transition-all duration-300 border backdrop-blur-sm sm:min-h-0 sm:p-4',
+        'min-h-[140px] sm:min-h-0 flex flex-col justify-between',
+        CARD_BASE_CLASS,
+        CARD_SHADOW_Z2,
+        CARD_HOVER_SHADOW_Z3,
         baseBorder,
         baseBg,
         style.border,
@@ -366,10 +393,14 @@ function PalaceCard({
         decadeHighlight,
         activeRing,
         !isActive && !isRelated && !isCurrentDecade
-          ? 'hover:border-[#4969E9]/25 hover:shadow-[0_12px_32px_-14px_rgba(59,91,246,0.15),inset_0_1px_0_rgba(255,255,255,0.80)]'
+          ? 'hover:border-blue-500/20 hover:shadow-[0_12px_20px_-8px_rgba(59,130,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.55)]'
           : '',
       ].join(' ')}
     >
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent opacity-60 dark:via-white/15"
+        aria-hidden
+      />
       {/* 顶部：天干 + 宫位名 + 标签 + 四化 + 来因 */}
       <div className="relative">
         {/* 第一行：天干 + 宫位名 + 各种徽章 */}
@@ -378,7 +409,7 @@ function PalaceCard({
           <span className={`text-xs font-bold ${getStemColor(palace.heavenlyStem)}`}>
             {palace.heavenlyStem}
           </span>
-          <span className="text-[10px] text-[#CBD5E1]">·</span>
+          <span className="text-[10px] text-slate-300 dark:text-slate-600">·</span>
 
           {/* 宫位名 + 命宫皇冠 + 身宫标签 */}
           <span className={`text-xs font-extrabold ${style.label} dark:text-slate-200 flex items-center gap-1`}>
@@ -418,7 +449,7 @@ function PalaceCard({
         <div className={`mt-1 text-lg sm:text-xl leading-tight font-black tracking-tight break-words ${starColorClass}`}>
           {hasMainStar ? (
             <GlossaryTooltip term={dominantStar!.name} chartData={chart} side="right">
-              <span className="cursor-help border-b border-dotted border-[#4969E9]/30">
+              <span className="cursor-help border-b border-dotted border-blue-500/30">
                 {dominantStar!.name}
               </span>
             </GlossaryTooltip>
@@ -451,7 +482,7 @@ function PalaceCard({
             {mainStars.slice(1, 3).map((s) => (
               <span key={s.name} className="mr-1.5">
                 <GlossaryTooltip term={s.name} chartData={chart} side="right">
-                  <span className="cursor-help border-b border-dotted border-[#4969E9]/20">{s.name}</span>
+                  <span className="cursor-help border-b border-dotted border-blue-500/20">{s.name}</span>
                 </GlossaryTooltip>
                 {s.brightness && (
                   <span className={`text-[8px] ${getBrightnessColor(s.brightness)}`}>[{s.brightness}]</span>
@@ -478,7 +509,7 @@ function PalaceCard({
 
         {/* 辅星/煞星 */}
         {palace.minorStars.length > 0 && (
-          <div className="mt-0.5 text-[9px] leading-snug text-[#94A3B8] dark:text-slate-500 break-words line-clamp-1">
+          <div className="mt-0.5 text-[9px] leading-snug text-slate-500/90 dark:text-slate-500 break-words line-clamp-1">
             {palace.minorStars.slice(0, 2).map((s) => s.name).join(' · ')}
           </div>
         )}
@@ -486,14 +517,14 @@ function PalaceCard({
 
       {/* 底部：地支 + 大限年龄 */}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-[#64748B] dark:text-slate-400 font-medium">
+        <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
           {palace.earthlyBranch}
         </span>
         <span className={[
           'text-[10px] px-1.5 py-px rounded-md transition-colors',
           isCurrentDecade
             ? 'bg-amber-50 text-amber-700 font-bold dark:bg-amber-950/30 dark:text-amber-400'
-            : 'text-[#CBD5E1] dark:text-slate-600',
+            : 'text-slate-400 dark:text-slate-600',
         ].join(' ')}>
           {palace.stageRange[0]}-{palace.stageRange[1]}岁
           {isCurrentDecade && (
@@ -523,35 +554,62 @@ function CenterPanel({
 }) {
   // 默认状态：全局命盘信息
   if (!activePalace || activePalace.name === '命宫') {
+    const totalMajorStars = allPalaces.reduce((sum, palace) => {
+      return (
+        sum +
+        palace.majorStars.filter((s) => s.type === 'major' || s.type === 'lucun' || s.type === 'tianma').length
+      );
+    }, 0);
+
     return (
-      <div className="order-first col-span-2 rounded-[32px] border border-[#F1F5F9] dark:border-white/10 bg-white dark:bg-slate-900/90 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center shadow-[0_20px_40px_rgba(15,23,42,0.08)] sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2">
-        <div className="text-[2rem] leading-tight font-black text-[#0F172A] dark:text-white sm:text-[36px] sm:leading-none">
-          <GlossaryTooltip term="命宫" chartData={chart}>紫微命盘</GlossaryTooltip>
-        </div>
-        <div className="mt-1 text-xs text-[#94A3B8] dark:text-slate-500">
-          {chart.yearStem}{chart.yearBranch}年 · {chart.fiveElementsClass}
-        </div>
-
-        {/* 五行局起运年龄 */}
-        <div className="mt-1 text-[11px] text-[#94A3B8] dark:text-slate-500">
-          {getStartingAge(chart.fiveElementsClass)}
-        </div>
-
-        <div className="mt-4 grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:items-center">
-          <div className="rounded-[16px] border border-blue-100 dark:border-blue-800/30 bg-blue-50/40 dark:bg-blue-950/20 px-3 py-2 sm:px-4">
-            <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
-              <GlossaryTooltip term="命主" chartData={chart}>命主</GlossaryTooltip>
+      <div className="order-first col-span-2 rounded-[32px] border border-white/75 bg-gradient-to-b from-white/88 via-white/80 to-white/70 p-4 text-center shadow-[0_24px_44px_-16px_rgba(59,130,246,0.18),0_10px_24px_-12px_rgba(15,23,42,0.12),inset_0_1px_1px_rgba(255,255,255,0.45)] backdrop-blur-xl ring-1 ring-blue-100/70 dark:border-white/20 dark:from-slate-900/90 dark:via-slate-900/82 dark:to-slate-900/72 dark:ring-blue-400/20 sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2">
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/85 to-transparent opacity-80 dark:via-white/25" aria-hidden />
+        <span className="pointer-events-none absolute -bottom-16 left-1/2 h-36 w-56 -translate-x-1/2 rounded-full bg-gradient-to-r from-blue-500/12 via-indigo-500/10 to-cyan-500/12 blur-3xl opacity-70 dark:from-blue-400/14 dark:via-indigo-400/12 dark:to-cyan-400/14" aria-hidden />
+        <div className="relative z-10 flex h-full flex-col justify-between text-center">
+          <div>
+            <div className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-[2rem] leading-tight font-black text-transparent drop-shadow-[0_2px_6px_rgba(59,130,246,0.2)] sm:text-[36px] sm:leading-none dark:from-blue-400 dark:via-indigo-400 dark:to-cyan-400">
+              <GlossaryTooltip term="命宫" chartData={chart}>紫微命盘</GlossaryTooltip>
             </div>
-            <div className="mt-1 text-lg font-black text-blue-900 dark:text-blue-100 sm:text-xl sm:mt-0.5">
-              <GlossaryTooltip term={chart.soul} chartData={chart}>{chart.soul}</GlossaryTooltip>
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {chart.yearStem}{chart.yearBranch}年 · {chart.fiveElementsClass}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+              {getStartingAge(chart.fiveElementsClass)}
             </div>
           </div>
-          <div className="rounded-[16px] border border-amber-100 dark:border-amber-800/30 bg-amber-50/40 dark:bg-amber-950/20 px-3 py-2 sm:px-4">
-            <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-              <GlossaryTooltip term="身主" chartData={chart}>身主</GlossaryTooltip>
+
+          <div className="my-4 grid w-full grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-blue-200/50 bg-blue-50/50 px-3 py-2 sm:px-4 dark:border-blue-800/30 dark:bg-blue-950/20">
+              <div className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                <GlossaryTooltip term="命主" chartData={chart}>命主</GlossaryTooltip>
+              </div>
+              <div className="mt-1 text-lg font-black text-blue-900 dark:text-blue-100 sm:text-xl sm:mt-0.5">
+                <GlossaryTooltip term={chart.soul} chartData={chart}>{chart.soul}</GlossaryTooltip>
+              </div>
             </div>
-            <div className="mt-1 text-lg font-black text-amber-900 dark:text-amber-100 sm:text-xl sm:mt-0.5">
-              <GlossaryTooltip term={chart.body} chartData={chart}>{chart.body}</GlossaryTooltip>
+            <div className="rounded-2xl border border-amber-200/50 bg-amber-50/50 px-3 py-2 sm:px-4 dark:border-amber-800/30 dark:bg-amber-950/20">
+              <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                <GlossaryTooltip term="身主" chartData={chart}>身主</GlossaryTooltip>
+              </div>
+              <div className="mt-1 text-lg font-black text-amber-900 dark:text-amber-100 sm:text-xl sm:mt-0.5">
+                <GlossaryTooltip term={chart.body} chartData={chart}>{chart.body}</GlossaryTooltip>
+              </div>
+            </div>
+          </div>
+
+          {/* 底部信息条：填补中宫留白并增强结构层次 */}
+          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-200/60 bg-white/70 p-2.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:border-white/10 dark:bg-slate-900/60">
+            <div>
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">命宫</div>
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{chart.soulPalaceBranch}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">身宫</div>
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{chart.bodyPalaceBranch}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">主星数</div>
+              <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{totalMajorStars} 颗</div>
             </div>
           </div>
         </div>
@@ -567,57 +625,67 @@ function CenterPanel({
   const tripartite = getTripartite(activePalace.name);
 
   return (
-    <div className="order-first col-span-2 rounded-[32px] border border-[#F1F5F9] dark:border-white/10 bg-white dark:bg-slate-900/90 backdrop-blur-xl p-4 flex flex-col items-center justify-center text-center shadow-[0_20px_40px_rgba(15,23,42,0.08)] sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2">
-      {/* 宫位名称 */}
-      <div className="text-[1.75rem] leading-tight font-black text-[#0F172A] dark:text-white sm:text-[32px] sm:leading-none">
-        {activePalace.name}
-      </div>
-      <div className="mt-1 text-xs text-[#94A3B8] dark:text-slate-500">
-        {PALACE_MEANING[activePalace.name] ?? ''}
-      </div>
+      <div className="order-first col-span-2 rounded-[32px] border border-white/75 bg-gradient-to-b from-white/88 via-white/80 to-white/70 p-4 text-center shadow-[0_24px_44px_-16px_rgba(59,130,246,0.18),0_10px_24px_-12px_rgba(15,23,42,0.12),inset_0_1px_1px_rgba(255,255,255,0.45)] backdrop-blur-xl ring-1 ring-blue-100/70 dark:border-white/20 dark:from-slate-900/90 dark:via-slate-900/82 dark:to-slate-900/72 dark:ring-blue-400/20 sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/85 to-transparent opacity-80 dark:via-white/25" aria-hidden />
+      <span className="pointer-events-none absolute -bottom-16 left-1/2 h-36 w-56 -translate-x-1/2 rounded-full bg-gradient-to-r from-blue-500/12 via-indigo-500/10 to-cyan-500/12 blur-3xl opacity-70 dark:from-blue-400/14 dark:via-indigo-400/12 dark:to-cyan-400/14" aria-hidden />
+      <div className="relative z-10 flex h-full flex-col justify-between text-center">
+        <div>
+          {/* 宫位名称 */}
+          <div className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-[1.75rem] leading-tight font-black text-transparent drop-shadow-[0_2px_6px_rgba(59,130,246,0.18)] sm:text-[32px] sm:leading-none dark:from-blue-400 dark:via-indigo-400 dark:to-cyan-400">
+            {activePalace.name}
+          </div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {PALACE_MEANING[activePalace.name] ?? ''}
+          </div>
+        </div>
 
-      {/* 主星展示 */}
-      {mainStars.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          {mainStars.slice(0, 3).map((s) => (
-            <div key={s.name} className="flex items-center gap-1">
-              <span className={`text-sm font-bold ${getStarColor(s.name)}`}>{s.name}</span>
-              {s.brightness && (
-                <span className={`text-[10px] font-bold ${getBrightnessColor(s.brightness)}`}>[{s.brightness}]</span>
-              )}
+        {/* 主星展示 */}
+        {mainStars.length > 0 ? (
+          <div className="my-3 flex flex-wrap items-center justify-center gap-2">
+            {mainStars.slice(0, 3).map((s) => (
+              <div key={s.name} className="flex items-center gap-1">
+                <span className={`text-sm font-bold ${getStarColor(s.name)}`}>{s.name}</span>
+                {s.brightness && (
+                  <span className={`text-[10px] font-bold ${getBrightnessColor(s.brightness)}`}>[{s.brightness}]</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="my-3 text-sm text-slate-400 italic">空宫（借对宫星曜）</div>
+        )}
+
+        <div className="space-y-2 rounded-2xl border border-slate-200/60 bg-white/70 p-2.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:border-white/10 dark:bg-slate-900/60">
+          {/* 大限信息 */}
+          <div className="text-[11px] text-slate-600 dark:text-slate-400">
+            大限：{activePalace.stageRange[0]}-{activePalace.stageRange[1]}岁
+          </div>
+
+          {/* 四化指示 */}
+          {sihuaBadges.length > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">四化：</span>
+              {sihuaBadges.map((b) => (
+                <SihuaBadgeDot key={b} type={b} />
+              ))}
             </div>
-          ))}
+          )}
+
+          {/* 三方四正 */}
+          {tripartite && (
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+              三方四正：
+              <span className="text-slate-600 dark:text-slate-300">
+                {tripartite.tri[0]} · {tripartite.tri[1]} · {tripartite.opposite}
+              </span>
+            </div>
+          )}
+
+          {/* 天干地支 */}
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+            {activePalace.heavenlyStem}{activePalace.earthlyBranch}
+          </div>
         </div>
-      ) : (
-        <div className="mt-3 text-sm text-slate-400 italic">空宫（借对宫星曜）</div>
-      )}
-
-      {/* 大限信息 */}
-      <div className="mt-2 text-[11px] text-[#64748B] dark:text-slate-400">
-        大限：{activePalace.stageRange[0]}-{activePalace.stageRange[1]}岁
-      </div>
-
-      {/* 四化指示 */}
-      {sihuaBadges.length > 0 && (
-        <div className="mt-2 flex items-center gap-1">
-          <span className="text-[10px] text-[#94A3B8]">四化：</span>
-          {sihuaBadges.map((b) => (
-            <SihuaBadgeDot key={b} type={b} />
-          ))}
-        </div>
-      )}
-
-      {/* 三方四正 */}
-      {tripartite && (
-        <div className="mt-2 text-[10px] text-[#94A3B8] dark:text-slate-500">
-          三方四正：
-          <span className="text-[#64748B] dark:text-slate-400">{tripartite.tri[0]} · {tripartite.tri[1]} · {tripartite.opposite}</span>
-        </div>
-      )}
-
-      {/* 天干地支 */}
-      <div className="mt-2 text-[10px] text-[#94A3B8]">
-        {activePalace.heavenlyStem}{activePalace.earthlyBranch}
       </div>
     </div>
   );
@@ -656,7 +724,15 @@ export function ZiweiPalaceGrid({ chart, activePalaceLabel, onPalaceSelect, birt
   }, [orderedPalaces, activePalaceLabel]);
 
   return (
-    <div className="rounded-[32px] border border-[#F1F5F9] dark:border-white/5 bg-white dark:bg-slate-900/70 p-4 sm:p-5 backdrop-blur-xl shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
+    <div className={GRID_SHELL_CLASS}>
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent opacity-70 dark:via-white/15"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-gradient-to-br from-blue-500/10 to-violet-500/10 blur-3xl opacity-40"
+        aria-hidden
+      />
       <div className="grid grid-cols-2 auto-rows-[minmax(150px,auto)] gap-3 sm:grid-cols-4 sm:grid-rows-4 sm:auto-rows-auto">
         {orderedPalaces.map((palace, index) => {
           const isActive = palace.name === activePalaceLabel;
