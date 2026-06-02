@@ -47,8 +47,8 @@ export function ChartCenterPanel({
     Boolean(personalityModule?.summary?.trim());
 
   return (
-    <div className={cn('flex min-h-0 flex-col gap-4 sm:gap-6', className)}>
-      <div id={BAZI_SECTION_IDS.tone} className="scroll-mt-3">
+    <div className={cn('flex flex-col gap-4 sm:gap-6', className)}>
+      <div id={BAZI_SECTION_IDS.tone} className="scroll-mt-14">
         <SectionReveal
           ready={hasCoreTone || Boolean(profile)}
           streaming={streaming}
@@ -59,7 +59,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.pillars} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.pillars} className="scroll-mt-14">
         <SectionReveal
           ready={hasPillars || Boolean(profile)}
           streaming={streaming}
@@ -75,7 +75,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.basis} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.basis} className="scroll-mt-14">
         <SectionReveal
           ready={Boolean(baziBasis)}
           streaming={streaming}
@@ -86,7 +86,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.elements} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.elements} className="scroll-mt-14">
         <SectionReveal
           ready={Boolean(baziBasis)}
           streaming={streaming}
@@ -97,7 +97,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.decade} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.decade} className="scroll-mt-14">
         <SectionReveal
           ready={Boolean(baziBasis)}
           streaming={streaming}
@@ -114,7 +114,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.personality} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.personality} className="scroll-mt-14">
         <SectionReveal
           ready={hasTenGodDomains || !streaming}
           streaming={streaming && !hasTenGodDomains}
@@ -126,7 +126,7 @@ export function ChartCenterPanel({
         </SectionReveal>
       </div>
 
-      <div id={BAZI_SECTION_IDS.life} className="scroll-mt-3">
+      <div id={BAZI_SECTION_IDS.life} className="scroll-mt-14">
         <SectionReveal
           ready={hasLifeSummary || !streaming}
           streaming={streaming && !hasLifeSummary}

@@ -22,7 +22,7 @@ import {
 } from '../chat/destiny-copilot-types';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
-import { ChartSectionNav } from '../visualization/chart-section-nav';
+// import { ChartSectionNav } from '../visualization/chart-section-nav';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { PanelRightOpen } from 'lucide-react';
@@ -99,9 +99,10 @@ export function DestinyShell({
 
   return (
     <div className="relative h-full min-h-0 w-full">
-      <div className="flex h-full min-h-0 w-full gap-3 sm:gap-4 p-3 sm:p-4 lg:gap-6 lg:p-6">
+      <div className="flex h-full min-h-0 w-full gap-3 sm:gap-4 px-3 sm:px-4 lg:gap-6 lg:px-6">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-6">
+          {/* 整体滚动容器：标题、吸附导航、内容一起滚动，导航在滚动时吸附顶部 */}
+          <div className="flex h-full min-h-0 flex-col overflow-y-auto pr-1 custom-scrollbar">
             <DestinyResultHeader
               title={title}
               moduleBadge={subtitleTag}
@@ -123,22 +124,29 @@ export function DestinyShell({
 
             {displayReport ? (
               <>
+                {/* 
+                  锚点导航（区块跳转）暂时禁用：
+                  你觉得放在当前吸顶位置不协调，先注释掉，后续需要再打开。
+                */}
+                {/*
                 <ChartSectionNav
                   report={displayReport}
                   className={cn(
-                    'shrink-0 border-b border-slate-200/60 pb-3',
-                    'dark:border-white/10'
+                    'sticky top-0 z-10 shrink-0 mb-2 -mx-1 rounded-2xl border px-2 py-2',
+                    'border-slate-200/70 bg-white/75 shadow-[0_4px_20px_-12px_rgba(15,23,42,0.25)] backdrop-blur-xl',
+                    'dark:border-white/10 dark:bg-slate-950/70 dark:shadow-[0_8px_24px_-16px_rgba(2,6,23,0.6)]'
                   )}
                 />
+                */}
                 <ChartCenterPanel
                   report={displayReport}
                   streaming={streaming}
                   onAskDecadeFortune={handleAskDecadeFortune}
-                  className="min-h-0 flex-1 overflow-y-auto pr-1 pt-1"
+                  className="mt-4 sm:mt-6"
                 />
               </>
             ) : (
-              <GlassCard className="flex min-h-0 flex-1 items-center justify-center p-8">
+              <GlassCard className="flex min-h-[320px] flex-1 items-center justify-center p-8">
                 <div className="text-center">
                   <div className="font-heading text-xl font-bold text-slate-900 dark:text-slate-100">
                     等待开始测算
