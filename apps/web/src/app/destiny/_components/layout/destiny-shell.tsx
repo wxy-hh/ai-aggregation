@@ -142,7 +142,7 @@ export function DestinyShell({
                   report={displayReport}
                   streaming={streaming}
                   onAskDecadeFortune={handleAskDecadeFortune}
-                  className="mt-4 sm:mt-6"
+                  className="mt-3 sm:mt-4"
                 />
               </>
             ) : (
