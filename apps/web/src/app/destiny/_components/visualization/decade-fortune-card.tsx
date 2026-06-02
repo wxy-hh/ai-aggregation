@@ -1,105 +1,70 @@
 'use client';
 
 import React, { useMemo, useState, type CSSProperties } from 'react';
+import { Sparkles } from 'lucide-react';
 import dayunIcon from '@/assets/image/xingge.svg';
 import { cn } from '@/lib/utils';
+import {
+  buildDecadeFortuneInsights,
+  getDecadePhaseLabel,
+} from '@/lib/destiny/decade-fortune-insight';
 import type { PartialDestinyReport } from '../types';
 import { GlassCard } from '../layout/glass-card';
+import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-// ---- 八字原理：天干十神计算 ----
-
 const YANG_STEMS = new Set(['甲', '丙', '戊', '庚', '壬']);
-
-const STEM_ELEMENT: Record<string, string> = {
-  甲: 'wood', 乙: 'wood', 丙: 'fire', 丁: 'fire', 戊: 'earth',
-  己: 'earth', 庚: 'metal', 辛: 'metal', 壬: 'water', 癸: 'water',
-};
-
-const ELEMENT_PRODUCES: Record<string, string> = {
-  wood: 'fire', fire: 'earth', earth: 'metal', metal: 'water', water: 'wood',
-};
-
-const ELEMENT_CONTROLS: Record<string, string> = {
-  wood: 'earth', earth: 'water', water: 'fire', fire: 'metal', metal: 'wood',
-};
-
-/** 天干十神关系 */
-function computeStemTenGod(
-  dayStem: string,
-  otherStem: string,
-): { name: string; type: 'friend' | 'output' | 'wealth' | 'power' | 'resource' } | null {
-  if (!dayStem || !otherStem) return null;
-  const dmEl = STEM_ELEMENT[dayStem];
-  const otEl = STEM_ELEMENT[otherStem];
-  const dmYang = YANG_STEMS.has(dayStem);
-  const otYang = YANG_STEMS.has(otherStem);
-  const sameYinYang = dmYang === otYang;
-
-  if (dmEl === otEl) {
-    return { name: sameYinYang ? '比肩' : '劫财', type: 'friend' };
-  }
-  if (ELEMENT_PRODUCES[dmEl] === otEl) {
-    return { name: sameYinYang ? '食神' : '伤官', type: 'output' };
-  }
-  if (ELEMENT_PRODUCES[otEl] === dmEl) {
-    return { name: sameYinYang ? '偏印' : '正印', type: 'resource' };
-  }
-  if (ELEMENT_CONTROLS[dmEl] === otEl) {
-    return { name: sameYinYang ? '偏财' : '正财', type: 'wealth' };
-  }
-  if (ELEMENT_CONTROLS[otEl] === dmEl) {
-    return { name: sameYinYang ? '七杀' : '正官', type: 'power' };
-  }
-  return null;
-}
-
-const TEN_GOD_DESCRIPTIONS: Record<string, string> = {
-  '比肩': '大运天干与日主同五行同阴阳，增强自我意识与独立行动力，适合主动争取、拓展人际',
-  '劫财': '大运天干与日主同五行异阴阳，社交与竞争感上升，适合合作但也需注意利益分配',
-  '食神': '大运天干为日主所生，创造力与输出欲增强，适合表达、创作、享受生活',
-  '伤官': '大运天干为日主所生，打破常规的冲动增强，适合创新突破，但需注意言行分寸',
-  '正财': '大运天干为日主所克，稳定收入与资源积累期，适合踏实经营、长期投入',
-  '偏财': '大运天干为日主所克，机会型收入与风险偏好上升，适合灵活应变但不贪快',
-  '正官': '大运天干克日主，规则意识与责任压力增大，适合建立秩序、争取认可',
-  '七杀': '大运天干克日主，挑战与突破压力集中出现，适合迎难而上、锻炼抗压能力',
-  '正印': '大运天干生日主，学习与贵人运增强，适合吸收知识、沉淀经验',
-  '偏印': '大运天干生日主，独立思考与钻研倾向增强，适合深入研究、自我提升',
-};
-
-// ---- 组件 ----
 
 export function DecadeFortuneCard({
   baziBasis,
   className,
+  insightsPending = false,
+  onAskDecadeFortune,
 }: {
   baziBasis: NonNullable<PartialDestinyReport['baziBasis']>;
   className?: string;
+  /** 流式生成中且专属大运解读尚未返回 */
+  insightsPending?: boolean;
+  /** 从弹层追问该步大运 */
+  onAskDecadeFortune?: (decade: { name: string; startAge: number; endAge: number }) => void;
 }) {
   const decadeFortunes = baziBasis.decadeFortunes;
   const childLimit = baziBasis.childLimit;
-  const dayStem = baziBasis.dayMaster.stem;
   const yearStem = baziBasis.pillars[0]?.stem ?? '';
   const isMale = baziBasis.profile.genderLabel?.includes('乾造') ?? false;
   const [showIntro, setShowIntro] = useState(false);
+  const [openDecadeIndex, setOpenDecadeIndex] = useState<number | null>(null);
 
   const activeIndex = decadeFortunes.findIndex((d) => d.active);
   const activeDecade = activeIndex >= 0 ? decadeFortunes[activeIndex] : null;
+  const currentAge = baziBasis.annualCycles[0]?.age ?? null;
 
-  // 起运方向的具体推导
+  const hasAiInsights = Boolean(baziBasis.decadeFortuneInsights?.length);
+
+  const decadeInsights = useMemo(() => {
+    if (hasAiInsights) {
+      return baziBasis.decadeFortuneInsights!;
+    }
+    return buildDecadeFortuneInsights(baziBasis);
+  }, [baziBasis, hasAiInsights]);
+
+  const activeInsight = activeIndex >= 0 ? decadeInsights[activeIndex] : null;
+  const activePhase = activeDecade ? getDecadePhaseLabel(activeDecade, currentAge) : null;
+
   const yearYang = YANG_STEMS.has(yearStem);
+  const genderText = isMale ? '男命（乾造）' : '女命（坤造）';
+
   const directionReason = useMemo(() => {
     if (childLimit.forward) {
       return yearYang
-        ? `年干${yearStem}为阳，命主为男命（乾造），阳年男命顺排大运`
-        : `年干${yearStem}为阴，命主为女命（坤造），阴年女命顺排大运`;
+        ? `年干${yearStem}为阳，命主为${genderText}，符合阳男阴女顺排规则`
+        : `年干${yearStem}为阴，命主为${genderText}，符合阳男阴女顺排规则`;
     }
     return yearYang
-      ? `年干${yearStem}为阳，命主为女命（坤造），阳年女命逆排大运`
-      : `年干${yearStem}为阴，命主为男命（乾造），阴年男命逆排大运`;
-  }, [childLimit.forward, yearStem, yearYang, isMale]);
+      ? `年干${yearStem}为阳，命主为${genderText}，符合阴男阳女逆排规则`
+      : `年干${yearStem}为阴，命主为${genderText}，符合阴男阳女逆排规则`;
+  }, [childLimit.forward, yearStem, yearYang, genderText]);
 
-  // 起运年龄说明
   const startAgeReason = useMemo(() => {
     const termName = childLimit.forward
       ? baziBasis.solarTerms.next.name
@@ -111,21 +76,20 @@ export function DecadeFortuneCard({
     return `从出生时刻到${direction}节气「${termName}」（${termTime}）的时长为 ${childLimit.duration.years}年${childLimit.duration.months}月${childLimit.duration.days}天，折算后命主 ${childLimit.startAge} 岁起运`;
   }, [childLimit, baziBasis.solarTerms]);
 
-  // 每步大运的十神关系
-  const decadeTenGods = useMemo(
-    () => decadeFortunes.map((d) => computeStemTenGod(dayStem, d.name[0])),
-    [decadeFortunes, dayStem],
-  );
-
   return (
     <GlassCard className={cn('p-3 sm:p-4', className)}>
       {/* 头部 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex h-7 w-7 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-md bg-[#F3F6FF] dark:bg-[#1a2245]">
-            <AssetToneIcon className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-[#5D7CFA] dark:text-[#9BADFF]" src={dayunIcon} />
+            <AssetToneIcon
+              className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-[#5D7CFA] dark:text-[#9BADFF]"
+              src={dayunIcon}
+            />
           </div>
-          <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">十年大运</span>
+          <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">
+            十年大运
+          </span>
           {activeDecade && (
             <span className="shrink-0 rounded-full bg-[#5D7CFA]/10 dark:bg-[#5D7CFA]/20 px-2 py-0.5 text-[11px] font-semibold text-[#5D7CFA] dark:text-[#9BADFF]">
               {activeDecade.name} · {activeDecade.startAge}-{activeDecade.endAge} 岁
@@ -141,6 +105,62 @@ export function DecadeFortuneCard({
         </button>
       </div>
 
+      {/* 当前大运个性化解读 */}
+      {activeInsight && (
+        <div className="mt-3 rounded-xl border border-[#5D7CFA]/15 bg-[#5D7CFA]/[0.04] px-3 py-2.5 dark:border-[#5D7CFA]/25 dark:bg-[#5D7CFA]/10">
+          <div className="flex items-start gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-extrabold text-[#5D7CFA] dark:text-[#9BADFF]">
+                {activeInsight.stemTenGod}运 · {activeInsight.branchMainTenGod}藏
+              </span>
+              {activePhase && (
+                <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800/80 dark:text-slate-400">
+                  当前{activePhase}
+                </span>
+              )}
+              {hasAiInsights ? <AiExclusiveBadge /> : null}
+            </div>
+            {hasAiInsights && onAskDecadeFortune && activeDecade ? (
+              <Button
+                type="button"
+                size="sm"
+                aria-label="追问当前大运"
+                onClick={() =>
+                  onAskDecadeFortune({
+                    name: activeDecade.name,
+                    startAge: activeDecade.startAge,
+                    endAge: activeDecade.endAge,
+                  })
+                }
+                className={cn(
+                  'shrink-0 min-h-8 h-8 gap-1 rounded-full px-2.5 text-[10px] font-bold sm:min-h-9 sm:h-9 sm:px-3 sm:text-[11px]',
+                  'bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white',
+                  'shadow-[0_4px_12px_rgba(93,124,250,0.24)] hover:brightness-[1.03]',
+                  'focus-visible:ring-2 focus-visible:ring-[#5D7CFA]/30'
+                )}
+              >
+                <Sparkles className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden />
+                <span className="hidden sm:inline">追问当前大运</span>
+              </Button>
+            ) : null}
+          </div>
+          {insightsPending && !hasAiInsights ? (
+            <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+              正在结合你的命盘生成专属大运解读…
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[11px] sm:text-xs font-medium leading-relaxed text-slate-700 dark:text-slate-200">
+              {activeInsight.summary}
+            </p>
+          )}
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {activePhase === '后五年'
+              ? `后五年：${activeInsight.branchPhase}`
+              : `前五年：${activeInsight.stemPhase}`}
+          </p>
+        </div>
+      )}
+
       {/* 展开的说明区域 */}
       {showIntro && (
         <div className="mt-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/50 px-3 py-3 text-[11px] sm:text-xs leading-6 text-slate-600 dark:text-slate-300">
@@ -150,8 +170,8 @@ export function DecadeFortuneCard({
             每步大运由一个天干和一个地支组成，天干主前五年外在表现，地支主后五年内在根基。
           </p>
           <p className="mt-2">
-            <span className="font-bold text-slate-800 dark:text-slate-100">起运</span>
-            ：{directionReason}。{startAgeReason}
+            <span className="font-bold text-slate-800 dark:text-slate-100">起运</span>：
+            {directionReason}。{startAgeReason}
             ，此后每十年进入下一步大运。
           </p>
         </div>
@@ -163,10 +183,14 @@ export function DecadeFortuneCard({
           {decadeFortunes.map((decade, idx) => {
             const isActive = decade.active;
             const isPast = idx < activeIndex;
-            const tenGod = decadeTenGods[idx];
+            const insight = decadeInsights[idx];
 
             return (
-              <Popover key={decade.index}>
+              <Popover
+                key={decade.index}
+                open={openDecadeIndex === decade.index}
+                onOpenChange={(open) => setOpenDecadeIndex(open ? decade.index : null)}
+              >
                 <PopoverTrigger asChild>
                   <button
                     type="button"
@@ -177,46 +201,97 @@ export function DecadeFortuneCard({
                         ? 'bg-[#5D7CFA] dark:bg-[#5D7CFA] shadow-[0_2px_8px_rgba(93,124,250,0.35)]'
                         : isPast
                           ? 'bg-slate-300/60 dark:bg-slate-600/40 hover:bg-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/20'
-                          : 'bg-slate-200 dark:bg-slate-700/50 hover:bg-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/20',
+                          : 'bg-slate-200 dark:bg-slate-700/50 hover:bg-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/20'
                     )}
                     style={{ height: isActive ? 48 : isPast ? 36 : 40 }}
-                    aria-label={`${decade.name} · ${decade.startAge}-${decade.endAge}岁 · ${tenGod ? tenGod.name + '运' : ''}`}
+                    aria-label={`${decade.name} · ${decade.startAge}-${decade.endAge}岁 · ${insight?.stemTenGod ?? ''}运`}
                   />
                 </PopoverTrigger>
                 <PopoverContent
                   side="top"
                   align="center"
-                  className="w-[min(300px,calc(100vw-2rem))] sm:w-60 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+                  className="w-[min(320px,calc(100vw-2rem))] sm:w-72 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shadow-lg dark:shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-base font-extrabold text-slate-900 dark:text-slate-100">{decade.name}</span>
-                    <span className="text-xs text-slate-400 dark:text-slate-500">{decade.sixtyCycle}</span>
+                    <span className="text-base font-extrabold text-slate-900 dark:text-slate-100">
+                      {decade.name}
+                    </span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                      {decade.sixtyCycle}
+                    </span>
                     {isActive && (
                       <span className="rounded-full bg-[#5D7CFA] px-2 py-0.5 text-[10px] font-extrabold text-white">
                         当前
                       </span>
                     )}
+                    {hasAiInsights ? <AiExclusiveBadge /> : null}
                   </div>
 
-                  {/* 十神关系 */}
-                  {tenGod && (
-                    <div className="mt-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 px-2 py-1.5">
-                      <span className="text-[11px] font-extrabold text-amber-700 dark:text-amber-300">
-                        {tenGod.name}运
-                      </span>
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-amber-600/80 dark:text-amber-400/80">
-                        {TEN_GOD_DESCRIPTIONS[tenGod.name]}
+                  {insight && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-[11px] font-semibold leading-relaxed text-slate-700 dark:text-slate-200">
+                        <span className="text-amber-700 dark:text-amber-300">
+                          {insight.stemTenGod}运 · {insight.branchMainTenGod}藏
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400"> · </span>
+                        {insight.summary}
                       </p>
+                      <div className="grid grid-cols-2 gap-1.5 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
+                        <p>
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">
+                            前五年
+                          </span>
+                          <br />
+                          {insight.stemPhase}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-600 dark:text-slate-300">
+                            后五年
+                          </span>
+                          <br />
+                          {insight.branchPhase}
+                        </p>
+                      </div>
                     </div>
                   )}
 
                   <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                    <span>{decade.startAge}-{decade.endAge} 岁</span>
+                    <span>
+                      {decade.startAge}-{decade.endAge} 岁
+                    </span>
                     <span className="text-slate-300 dark:text-slate-600">·</span>
-                    <span>{decade.startYear}-{decade.endYear}</span>
+                    <span>
+                      {decade.startYear}-{decade.endYear}
+                    </span>
                     {isPast && <span className="text-slate-400 dark:text-slate-500">· 已过</span>}
-                    {!isActive && !isPast && <span className="text-slate-400 dark:text-slate-500">· 未来</span>}
+                    {!isActive && !isPast && (
+                      <span className="text-slate-400 dark:text-slate-500">· 未来</span>
+                    )}
                   </div>
+
+                  {hasAiInsights && onAskDecadeFortune ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={cn(
+                        'mt-2 h-8 min-h-8 w-full gap-1 rounded-lg px-2.5 text-[11px] font-semibold',
+                        'bg-[#5D7CFA]/10 text-[#4969E9] shadow-none',
+                        'ring-1 ring-inset ring-[#5D7CFA]/25',
+                        'hover:bg-[#5D7CFA]/16 hover:brightness-100 dark:bg-[#5D7CFA]/18 dark:text-[#9BADFF] dark:ring-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/26'
+                      )}
+                      onClick={() => {
+                        setOpenDecadeIndex(null);
+                        onAskDecadeFortune({
+                          name: decade.name,
+                          startAge: decade.startAge,
+                          endAge: decade.endAge,
+                        });
+                      }}
+                    >
+                      <Sparkles className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+                      追问这一步大运
+                    </Button>
+                  ) : null}
                 </PopoverContent>
               </Popover>
             );
@@ -226,7 +301,9 @@ export function DecadeFortuneCard({
         {/* 底部标签 */}
         <div className="mt-2 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500">
           <span>
-            {yearStem}{YANG_STEMS.has(yearStem) ? '阳' : '阴'}年{isMale ? '男' : '女'} · {childLimit.forward ? '顺排' : '逆排'} · {childLimit.startAge} 岁起运
+            {yearStem}
+            {YANG_STEMS.has(yearStem) ? '阳' : '阴'}年{isMale ? '男' : '女'} ·{' '}
+            {childLimit.forward ? '顺排' : '逆排'} · {childLimit.startAge} 岁起运
           </span>
           <span>
             {activeIndex >= 0
@@ -236,6 +313,21 @@ export function DecadeFortuneCard({
         </div>
       </div>
     </GlassCard>
+  );
+}
+
+function AiExclusiveBadge({ className }: { className?: string }) {
+  return (
+    <span
+      title="可一键追问，AI 将只围绕该步大运作答"
+      className={cn(
+        'inline-flex items-center gap-0.5 rounded-full border border-[#5D7CFA]/20 bg-gradient-to-r from-[#4969E9]/12 to-[#7B8FFF]/12 px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#5D7CFA] dark:border-[#9BADFF]/25 dark:from-[#4969E9]/20 dark:to-[#7B8FFF]/20 dark:text-[#9BADFF]',
+        className
+      )}
+    >
+      <Sparkles className="h-2.5 w-2.5 shrink-0" aria-hidden />
+      AI 专属
+    </span>
   );
 }
 

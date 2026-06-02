@@ -165,7 +165,13 @@ export function BaziWorkspace({
 
   const buildPartialReport = (sections: BaziLockedSections): PartialDestinyReport => {
     const partial: PartialDestinyReport = {};
-    if (sections.baziBasis) partial.baziBasis = sections.baziBasis;
+    if (sections.baziBasis) {
+      partial.baziBasis = {
+        ...sections.baziBasis,
+        decadeFortuneInsights:
+          sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
+      };
+    }
     if (sections.profileOverview) partial.profile = sections.profileOverview;
     if (sections.coreDestinyTone) partial.coreTone = sections.coreDestinyTone;
     if (sections.pillars) partial.pillars = sections.pillars;
@@ -194,7 +200,13 @@ export function BaziWorkspace({
     sections: BaziLockedSections
   ): DestinyReport => ({
     ...nextReport,
-    baziBasis: sections.baziBasis ?? nextReport.baziBasis,
+    baziBasis: sections.baziBasis
+      ? {
+          ...sections.baziBasis,
+          decadeFortuneInsights:
+            sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
+        }
+      : nextReport.baziBasis,
     profile: sections.profileOverview ?? nextReport.profile,
     coreTone: sections.coreDestinyTone ?? nextReport.coreTone,
     pillars: sections.pillars ?? nextReport.pillars,

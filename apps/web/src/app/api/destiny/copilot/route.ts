@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { formatDecadeFortuneInsightsForPrompt } from '@repo/shared';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { prisma, deductTokens, refundTokens } from '@repo/db';
@@ -92,6 +93,7 @@ const ReportSchema = z.object({
 const RequestSchema = z.object({
   report: ReportSchema,
   question: z.string().trim().min(1, '问题不能为空').max(1000),
+  focusDecadeName: z.string().trim().min(1).max(8).optional(),
 });
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
@@ -153,6 +155,7 @@ export async function POST(req: Request) {
       arkBaseUrl,
       report: parsed.data.report,
       question: parsed.data.question,
+      focusDecadeName: parsed.data.focusDecadeName,
     });
 
     return new Response(
@@ -184,16 +187,18 @@ async function requestArkStream({
   arkBaseUrl,
   report,
   question,
+  focusDecadeName,
 }: {
   arkApiKey: string;
   arkBaseUrl: string;
   report: z.infer<typeof ReportSchema>;
   question: string;
+  focusDecadeName?: string;
 }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
   const context = buildCopilotPromptContext(report);
-  const scopedInsights = buildQuestionScopedInsights(report, question);
+  const scopedInsights = buildQuestionScopedInsights(report, question, focusDecadeName);
 
   const response = await fetch(`${arkBaseUrl}/responses`, {
     method: 'POST',
@@ -207,7 +212,7 @@ async function requestArkStream({
         {
           role: 'system',
           content:
-            '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、大运流年等），给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
+            '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、十年大运 AI 专属解读、流年等），其中「十年大运」段落为逐步大运全文，用户问运势/大运/流年时必须优先引用对应步运的 summary、前五年与后五年内容。给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
         },
         {
           role: 'user',
@@ -368,6 +373,50 @@ function createCopilotStream({
   });
 }
 
+function formatDecadeFortunesForPrompt(basis: {
+  decadeFortunes?: Array<{
+    name?: string;
+    startAge?: number;
+    endAge?: number;
+    startYear?: number;
+    endYear?: number;
+    active?: boolean;
+  }>;
+  decadeFortuneInsights?: Array<{
+    name?: string;
+    index?: number;
+    stemTenGod?: string;
+    branchMainTenGod?: string;
+    summary?: string;
+    stemPhase?: string;
+    branchPhase?: string;
+    natalNotes?: string[];
+  }>;
+}) {
+  return {
+    decadeFortunes: (basis.decadeFortunes ?? []).map((item, index) => ({
+      index,
+      name: item.name ?? '',
+      startAge: item.startAge ?? 0,
+      endAge: item.endAge ?? 0,
+      startYear: item.startYear ?? 0,
+      endYear: item.endYear ?? 0,
+      sixtyCycle: item.name ?? '',
+      active: Boolean(item.active),
+    })),
+    decadeFortuneInsights: (basis.decadeFortuneInsights ?? []).map((item, index) => ({
+      index: item.index ?? index,
+      name: item.name ?? '',
+      stemTenGod: item.stemTenGod ?? '',
+      branchMainTenGod: item.branchMainTenGod ?? '',
+      summary: item.summary ?? '',
+      stemPhase: item.stemPhase ?? '',
+      branchPhase: item.branchPhase ?? '',
+      natalNotes: item.natalNotes ?? [],
+    })),
+  };
+}
+
 function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
   if (report.baziBasis && typeof report.baziBasis === 'object') {
     const basis = report.baziBasis as {
@@ -389,6 +438,24 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
       elementStats?: Array<{ label?: string; value?: number }>;
       tenGodStats?: Array<{ label?: string; value?: number }>;
       annualCycles?: Array<{ year?: number; yearCycle?: string; decadeFortune?: string }>;
+      decadeFortunes?: Array<{
+        name?: string;
+        startAge?: number;
+        endAge?: number;
+        startYear?: number;
+        endYear?: number;
+        active?: boolean;
+      }>;
+      decadeFortuneInsights?: Array<{
+        name?: string;
+        index?: number;
+        stemTenGod?: string;
+        branchMainTenGod?: string;
+        summary?: string;
+        stemPhase?: string;
+        branchPhase?: string;
+        natalNotes?: string[];
+      }>;
     };
 
     const basisPillars = basis.pillars?.length
@@ -417,6 +484,12 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
           )
           .join('；')
       : '';
+    const decadeFortuneBlock =
+      basis.decadeFortunes?.length && basis.decadeFortuneInsights?.length
+        ? formatDecadeFortuneInsightsForPrompt(
+            formatDecadeFortunesForPrompt(basis)
+          )
+        : '';
 
     return [
       `用户信息：${basis.profile?.name ?? report.profile.name}，${basis.profile?.genderLabel ?? report.profile.genderLabel}，${basis.profile?.birthText ?? report.profile.birthText}，出生地${basis.profile?.locationText ?? report.profile.locationText}${basis.profile?.lunarText ? `，${basis.profile.lunarText}` : ''}`,
@@ -425,7 +498,8 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
       basisPillars ? `四柱：${basisPillars}` : '',
       basisElements ? `五行：${basisElements}` : '',
       basisTenGods ? `十神：${basisTenGods}` : '',
-      basisTimeline ? `未来三年：${basisTimeline}` : '',
+      decadeFortuneBlock ? `十年大运（AI 专属解读，回答大运/运势问题时必须优先引用）：\n${decadeFortuneBlock}` : '',
+      basisTimeline ? `未来三年流年：${basisTimeline}` : '',
     ]
       .filter(Boolean)
       .join('\n');
@@ -461,7 +535,11 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
     .join('\n');
 }
 
-function buildQuestionScopedInsights(report: z.infer<typeof ReportSchema>, question: string) {
+function buildQuestionScopedInsights(
+  report: z.infer<typeof ReportSchema>,
+  question: string,
+  focusDecadeName?: string,
+) {
   const q = question.toLowerCase();
   const pickedModules: Array<{ label: string; summary: string; bullets: string[] }> = [];
   const pushModule = (label: string, summary: string, advantages: string[], suggestions: string[], bullets: string[]) => {
@@ -512,5 +590,109 @@ function buildQuestionScopedInsights(report: z.infer<typeof ReportSchema>, quest
     )
     .join('\n');
 
-  return [`相关模块：\n${modules}`, `相关流年：\n${timeline}`].join('\n');
+  const decadeFortuneScoped = buildDecadeFortuneScopedBlock(report, question, focusDecadeName);
+
+  return [
+    decadeFortuneScoped,
+    `相关模块：\n${modules}`,
+    `相关流年：\n${timeline}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildDecadeFortuneScopedBlock(
+  report: z.infer<typeof ReportSchema>,
+  question: string,
+  focusDecadeName?: string,
+): string {
+  const mentionsDecade =
+    /大运|十年|运势|流年|岁运|走运|运程|decade|fortune/i.test(question);
+
+  if (!report.baziBasis || typeof report.baziBasis !== 'object') {
+    return '';
+  }
+
+  const basis = report.baziBasis as {
+    decadeFortunes?: Array<{
+      name?: string;
+      startAge?: number;
+      endAge?: number;
+      startYear?: number;
+      endYear?: number;
+      active?: boolean;
+    }>;
+    decadeFortuneInsights?: Array<{
+      name?: string;
+      index?: number;
+      stemTenGod?: string;
+      branchMainTenGod?: string;
+      summary?: string;
+      stemPhase?: string;
+      branchPhase?: string;
+      natalNotes?: string[];
+    }>;
+  };
+
+  if (!basis.decadeFortuneInsights?.length || !basis.decadeFortunes?.length) {
+    return '';
+  }
+
+  if (focusDecadeName) {
+    const focusedInsight = basis.decadeFortuneInsights.find((item) => item.name === focusDecadeName);
+    const focusedDecade = basis.decadeFortunes?.find((item) => item.name === focusDecadeName);
+    if (focusedInsight) {
+      const timeline = focusedDecade
+        ? `${focusedDecade.startAge}-${focusedDecade.endAge}岁（${focusedDecade.startYear}-${focusedDecade.endYear}年）`
+        : '';
+      const natal =
+        focusedInsight.natalNotes && focusedInsight.natalNotes.length > 0
+          ? `命局互动：${focusedInsight.natalNotes.join('；')}。`
+          : '';
+      return [
+        `【用户从十年大运弹层追问，须优先只回答 ${focusDecadeName}大运，勿泛泛谈论其他步运】`,
+        `${focusDecadeName}大运 ${timeline}；十神：天干${focusedInsight.stemTenGod}，地支藏${focusedInsight.branchMainTenGod}`,
+        `整体：${focusedInsight.summary}`,
+        `前五年：${focusedInsight.stemPhase}`,
+        `后五年：${focusedInsight.branchPhase}`,
+        natal,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+  }
+
+  const fullText = formatDecadeFortuneInsightsForPrompt(
+    formatDecadeFortunesForPrompt(basis)
+  );
+
+  if (!fullText) return '';
+
+  if (mentionsDecade) {
+    return `十年大运全文（AI 专属，须据此回答）：\n${fullText}`;
+  }
+
+  const activeInsight = basis.decadeFortuneInsights.find((item) => {
+    const decade = basis.decadeFortunes?.find((entry) => entry.name === item.name);
+    return decade?.active;
+  });
+
+  if (!activeInsight) return '';
+
+  const activeDecade = basis.decadeFortunes?.find((item) => item.active);
+  const header = activeDecade
+    ? `当前大运 ${activeDecade.name}（${activeDecade.startAge}-${activeDecade.endAge}岁）`
+    : `当前大运 ${activeInsight.name}`;
+
+  return [
+    `${header}（AI 专属摘要）`,
+    `整体：${activeInsight.summary}`,
+    `前五年：${activeInsight.stemPhase}`,
+    `后五年：${activeInsight.branchPhase}`,
+    activeInsight.natalNotes?.length
+      ? `命局互动：${activeInsight.natalNotes.join('；')}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }

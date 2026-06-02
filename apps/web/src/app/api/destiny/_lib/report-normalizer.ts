@@ -452,7 +452,7 @@ function formatBirthText(input: DestinyReportRequest): string {
 
 function buildDefaultCoreTone(): DestinyCoreTone {
   return {
-    tag: '核心命理定调',
+    tag: '一句话看懂',
     chartSummary: '',
     headline: '',
     description: '',

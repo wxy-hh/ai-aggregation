@@ -101,6 +101,24 @@ export const BAZI_REPORT_JSON_SCHEMA = {
       ],
       additionalProperties: false,
     },
+    decadeFortuneInsights: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          summary: { type: 'string' },
+          stemPhase: { type: 'string' },
+          branchPhase: { type: 'string' },
+          natalNotes: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        required: ['name', 'summary', 'stemPhase', 'branchPhase', 'natalNotes'],
+        additionalProperties: false,
+      },
+    },
     modulePersonality: {
       type: 'object',
       properties: {
@@ -183,6 +201,7 @@ export const BAZI_REPORT_JSON_SCHEMA = {
     'coreDestinyTone',
     'pillars',
     'elementsAndTenGods',
+    'decadeFortuneInsights',
     'modulePersonality',
     'moduleCareer',
     'moduleLove',

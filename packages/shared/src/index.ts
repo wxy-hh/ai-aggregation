@@ -6,6 +6,7 @@ export * from './schemas';
 export * from './constants';
 export * from './file-validation';
 export * from './bazi-chart';
+export * from './decade-fortune';
 export * from './qimen-analysis';
 export * from './qimen-analysis-store';
 export * from './qimen-chart';

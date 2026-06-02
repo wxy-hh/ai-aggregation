@@ -12,6 +12,7 @@ import {
   buildCopilotContext,
   type QueuedQuestion,
 } from './ai-copilot-conversation';
+import type { DestinyCopilotDecadeFocus } from './destiny-copilot-types';
 
 const QUICK_ASKS = [
   {
@@ -38,31 +39,42 @@ const QUICK_ASKS = [
 
 const PANEL_EASE = [0.32, 0.72, 0, 1] as const;
 
-function reportSessionKey(report: DestinyReport) {
+function reportSessionKey(report: DestinyReport, focusDecadeName?: string | null) {
   const pillars = report.pillars.map((p) => `${p.label}:${p.stem}${p.branch}`).join('|');
   const elements = report.elements.map((e) => `${e.key}:${e.value}`).join('|');
   const lifeDimensions =
     report.lifeDimensions?.map((item) => `${item.key}:${item.value}`).join('|') || '';
   const tenGodDomains =
     report.tenGodDomains?.map((item) => `${item.key}:${item.value}`).join('|') || '';
-  return `${report.profile.birthText}|${report.profile.locationText}|${pillars}|${elements}|${lifeDimensions}|${tenGodDomains}`;
+  return `${report.profile.birthText}|${report.profile.locationText}|${pillars}|${elements}|${lifeDimensions}|${tenGodDomains}|focus:${focusDecadeName ?? 'general'}`;
 }
 
 export function AICoPilotDrawer({
   open,
   onOpenChange,
   report,
+  focusDecade = null,
+  queuedQuestion: queuedQuestionProp = null,
+  onQueuedQuestionHandled,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   report: DestinyReport;
+  /** 从十年大运弹层进入时，展示聚焦步运 */
+  focusDecade?: DestinyCopilotDecadeFocus | null;
+  queuedQuestion?: QueuedQuestion | null;
+  onQueuedQuestionHandled?: (id: number) => void;
 }) {
-  const [queuedQuestion, setQueuedQuestion] = useState<QueuedQuestion | null>(null);
+  const [localQueuedQuestion, setLocalQueuedQuestion] = useState<QueuedQuestion | null>(null);
+  const queuedQuestion = queuedQuestionProp ?? localQueuedQuestion;
   const [sending, setSending] = useState(false);
   const reduceMotion = useReducedMotion();
 
   const summary = useMemo(() => buildCopilotContext(report), [report]);
-  const sessionKey = useMemo(() => reportSessionKey(report), [report]);
+  const sessionKey = useMemo(
+    () => reportSessionKey(report, focusDecade?.decadeName),
+    [report, focusDecade?.decadeName]
+  );
 
   const overlayTransition = reduceMotion
     ? { duration: 0.01 }
@@ -131,6 +143,12 @@ export function AICoPilotDrawer({
                         <div className="mt-1 break-words pr-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                           {summary}
                         </div>
+                        {focusDecade ? (
+                          <div className="mt-2 inline-flex max-w-full items-center gap-1 rounded-full border border-[#5D7CFA]/25 bg-[#5D7CFA]/10 px-2 py-0.5 text-[10px] font-bold text-[#5D7CFA] dark:text-[#9BADFF]">
+                            <span className="shrink-0">聚焦</span>
+                            <span className="truncate">{focusDecade.label}</span>
+                          </div>
+                        ) : null}
                       </div>
                       <button
                         type="button"
@@ -156,7 +174,7 @@ export function AICoPilotDrawer({
                           variant="outline"
                           disabled={sending}
                           onClick={() =>
-                            setQueuedQuestion({
+                            setLocalQueuedQuestion({
                               id: Date.now() + idx,
                               text: item.question,
                             })
@@ -176,9 +194,11 @@ export function AICoPilotDrawer({
                   <AICoPilotConversation
                     report={report}
                     sessionKey={sessionKey}
+                    focusDecadeName={focusDecade?.decadeName}
                     queuedQuestion={queuedQuestion}
                     onQueuedQuestionHandled={(id) => {
-                      setQueuedQuestion((current) => (current?.id === id ? null : current));
+                      onQueuedQuestionHandled?.(id);
+                      setLocalQueuedQuestion((current) => (current?.id === id ? null : current));
                     }}
                     onSendingChange={setSending}
                     className="min-h-0 flex-1"

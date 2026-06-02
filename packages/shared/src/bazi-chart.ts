@@ -137,6 +137,10 @@ export type BaziChartAnnualCycle = {
   annualFortune: string;
 };
 
+import type { BaziDecadeFortuneInsight } from './decade-fortune';
+import { buildDecadeFortuneFacts } from './decade-fortune';
+
+export type { BaziDecadeFortuneInsight, BaziDecadeFortuneInsightDraft } from './decade-fortune';
 export type BaziChartBasis = {
   profile: {
     name: string;
@@ -164,6 +168,8 @@ export type BaziChartBasis = {
   tenGodStats: BaziChartTenGodStat[];
   childLimit: BaziChartChildLimit;
   decadeFortunes: BaziChartDecadeFortune[];
+  /** AI 生成的各步大运解读（与 decadeFortunes 一一对应） */
+  decadeFortuneInsights?: BaziDecadeFortuneInsight[];
   annualCycles: BaziChartAnnualCycle[];
   reportSeed: {
     pillars: Array<{
@@ -432,13 +438,16 @@ export function buildBaziPromptPayload(basis: BaziChartBasis): BaziPromptPayload
         duration: basis.childLimit.duration,
       },
       annualCycles: basis.annualCycles,
-      decadeFortunes: basis.decadeFortunes.map((d) => ({
-        name: d.name,
-        startAge: d.startAge,
-        endAge: d.endAge,
-        startYear: d.startYear,
-        endYear: d.endYear,
-        active: d.active,
+      decadeFortunes: buildDecadeFortuneFacts(basis).map((fact) => ({
+        name: fact.name,
+        startAge: fact.startAge,
+        endAge: fact.endAge,
+        startYear: fact.startYear,
+        endYear: fact.endYear,
+        active: fact.active,
+        stemTenGod: fact.stemTenGod,
+        branchMainTenGod: fact.branchMainTenGod,
+        natalNotes: fact.natalNotes,
       })),
     },
   };

@@ -56,6 +56,7 @@ function initialMessages(): Msg[] {
 export function AICoPilotConversation({
   report,
   sessionKey,
+  focusDecadeName,
   queuedQuestion,
   onQueuedQuestionHandled,
   onSendingChange,
@@ -63,6 +64,7 @@ export function AICoPilotConversation({
 }: {
   report: DestinyReport;
   sessionKey: string;
+  focusDecadeName?: string;
   queuedQuestion?: QueuedQuestion | null;
   onQueuedQuestionHandled?: (id: number) => void;
   onSendingChange?: (sending: boolean) => void;
@@ -165,6 +167,7 @@ export function AICoPilotConversation({
         body: JSON.stringify({
           report,
           question: q,
+          ...(focusDecadeName ? { focusDecadeName } : {}),
         }),
       });
 

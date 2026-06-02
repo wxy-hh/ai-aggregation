@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
 import {
@@ -15,6 +15,11 @@ import type {
   PartialDestinyReport,
 } from '../types';
 import type { DestinyModuleKey } from './left-nav';
+import { AICoPilotDrawer } from '../chat/ai-copilot-drawer';
+import {
+  buildDecadeFortuneAskQuestion,
+  type DestinyCopilotLaunch,
+} from '../chat/destiny-copilot-types';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 import { ChartSectionNav } from '../visualization/chart-section-nav';
@@ -56,6 +61,41 @@ export function DestinyShell({
     return `${name} · ${genderLabel} · ${birthText} · ${locationClean}`;
   }, [displayReport]);
   const [isReportDrawerOpen, setIsReportDrawerOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotLaunch, setCopilotLaunch] = useState<DestinyCopilotLaunch>({});
+
+  const copilotReport = report;
+  const canOpenCopilot = Boolean(
+    copilotReport?.profile &&
+      copilotReport.pillars?.length &&
+      copilotReport.elements?.length &&
+      copilotReport.timeline?.length
+  );
+
+  const openCopilot = useCallback((launch: DestinyCopilotLaunch = {}) => {
+    setCopilotLaunch(launch);
+    setCopilotOpen(true);
+  }, []);
+
+  const handleOpenCopilotGeneral = useCallback(() => {
+    openCopilot({ focus: null });
+  }, [openCopilot]);
+
+  const handleAskDecadeFortune = useCallback(
+    (decade: { name: string; startAge: number; endAge: number }) => {
+      openCopilot({
+        focus: {
+          decadeName: decade.name,
+          label: `${decade.name}大运 · ${decade.startAge}-${decade.endAge}岁`,
+        },
+        queuedQuestion: {
+          id: Date.now(),
+          text: buildDecadeFortuneAskQuestion(decade),
+        },
+      });
+    },
+    [openCopilot]
+  );
 
   return (
     <div className="relative h-full min-h-0 w-full">
@@ -93,6 +133,7 @@ export function DestinyShell({
                 <ChartCenterPanel
                   report={displayReport}
                   streaming={streaming}
+                  onAskDecadeFortune={handleAskDecadeFortune}
                   className="min-h-0 flex-1 overflow-y-auto pr-1 pt-1"
                 />
               </>
@@ -120,6 +161,7 @@ export function DestinyShell({
                 lockedSections={lockedSections}
                 streamStatus={streamStatus}
                 streamError={streamError}
+                onOpenCopilot={handleOpenCopilotGeneral}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-300">
@@ -159,6 +201,7 @@ export function DestinyShell({
                   lockedSections={lockedSections}
                   streamStatus={streamStatus}
                   streamError={streamError}
+                  onOpenCopilot={handleOpenCopilotGeneral}
                 />
               ) : (
                 <div className="flex min-h-48 items-center justify-center text-sm text-slate-500 dark:text-slate-300">
@@ -169,6 +212,22 @@ export function DestinyShell({
           </div>
         </DialogContent>
       </Dialog>
+
+      {canOpenCopilot && copilotReport ? (
+        <AICoPilotDrawer
+          open={copilotOpen}
+          onOpenChange={(nextOpen) => {
+            setCopilotOpen(nextOpen);
+            if (!nextOpen) setCopilotLaunch({});
+          }}
+          report={copilotReport}
+          focusDecade={copilotLaunch.focus ?? null}
+          queuedQuestion={copilotLaunch.queuedQuestion ?? null}
+          onQueuedQuestionHandled={() => {
+            setCopilotLaunch((current) => ({ ...current, queuedQuestion: null }));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

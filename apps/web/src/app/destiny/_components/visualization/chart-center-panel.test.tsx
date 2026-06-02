@@ -506,18 +506,17 @@ describe('ChartCenterPanel', () => {
     expect(screen.queryByText('自我与社交')).not.toBeInTheDocument();
   });
 
-  it('存在 baziBasis 时渲染可展开的排盘依据面板', () => {
+  it('存在 baziBasis 时默认紧凑展示并可展开校正与藏干明细', () => {
     render(<ChartCenterPanel report={{ ...createBaseReport(), baziBasis: createBaziBasis() }} />);
 
-    // 默认折叠：显示摘要文本
-    expect(screen.getByText(/✅ 排盘依据/)).toBeInTheDocument();
+    expect(screen.getByText(/已按出生地校正真太阳时/)).toBeInTheDocument();
+    expect(screen.queryByText('排盘时间链')).not.toBeInTheDocument();
 
-    // 点击摘要区域展开基本排盘信息
-    fireEvent.click(screen.getByText(/✅ 排盘依据/));
+    fireEvent.click(screen.getByRole('button', { name: /查看校正明细/ }));
+    expect(screen.getByText('排盘时间链')).toBeInTheDocument();
     expect(screen.getByText('节气上下文')).toBeInTheDocument();
 
-    // 点击"展开高级排盘数据"展开详细信息
-    fireEvent.click(screen.getByRole('button', { name: /展开高级排盘数据/ }));
+    fireEvent.click(screen.getByRole('button', { name: /藏干与岁运/ }));
     expect(screen.getByText('未来三年岁运')).toBeInTheDocument();
     expect(screen.getByText(/已按东八区标准经线 120E 做经度修正/)).toBeInTheDocument();
   });

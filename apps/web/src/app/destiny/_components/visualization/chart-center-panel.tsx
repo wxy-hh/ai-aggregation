@@ -16,10 +16,12 @@ import { BAZI_SECTION_IDS } from './chart-section-nav';
 export function ChartCenterPanel({
   report,
   streaming = false,
+  onAskDecadeFortune,
   className,
 }: {
   report: PartialDestinyReport;
   streaming?: boolean;
+  onAskDecadeFortune?: (decade: { name: string; startAge: number; endAge: number }) => void;
   className?: string;
 }) {
   const profile = report.profile;
@@ -102,7 +104,13 @@ export function ChartCenterPanel({
           delayIndex={4}
           skeleton={<SectionBlockSkeleton lines={4} />}
         >
-          {baziBasis ? <DecadeFortuneCard baziBasis={baziBasis} /> : null}
+          {baziBasis ? (
+            <DecadeFortuneCard
+              baziBasis={baziBasis}
+              insightsPending={streaming && !baziBasis.decadeFortuneInsights?.length}
+              onAskDecadeFortune={onAskDecadeFortune}
+            />
+          ) : null}
         </SectionReveal>
       </div>
 

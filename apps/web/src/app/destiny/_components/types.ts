@@ -221,6 +221,7 @@ export type BaziSectionKey =
   | 'coreDestinyTone'
   | 'pillars'
   | 'elementsAndTenGods'
+  | 'decadeFortuneInsights'
   | 'modulePersonality'
   | 'moduleCareer'
   | 'moduleLove'
@@ -252,6 +253,9 @@ export type BaziSectionPayloadMap = {
     lifeDimensionHighlights?: DestinyReport['lifeDimensionHighlights'];
     tenGodDomains?: DestinyReport['tenGodDomains'];
   };
+  decadeFortuneInsights: NonNullable<
+    NonNullable<DestinyReport['baziBasis']>['decadeFortuneInsights']
+  >;
   modulePersonality: DestinyReport['modules']['personality'];
   moduleCareer: DestinyReport['modules']['career'];
   moduleLove: DestinyReport['modules']['love'];
@@ -311,6 +315,8 @@ export type DestinyCopilotMessage = {
 export type DestinyCopilotRequest = {
   report: DestinyReport;
   question: string;
+  /** 从十年大运弹层发起追问时，指定聚焦的干支大运名（如「丙寅」） */
+  focusDecadeName?: string;
 };
 
 export type DestinyCopilotResponse = {

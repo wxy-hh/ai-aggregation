@@ -9,7 +9,6 @@ import type { BaziLockedSections, DestinyStreamStatus, PartialDestinyReport } fr
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Briefcase, Heart, Sparkles, Stethoscope, Wallet } from 'lucide-react';
-import { AICoPilotDrawer } from '../chat/ai-copilot-drawer';
 
 type TabKey = 'career' | 'love' | 'wealth' | 'health';
 
@@ -19,15 +18,16 @@ export function ReportRightRail({
   lockedSections,
   streamStatus,
   streamError,
+  onOpenCopilot,
 }: {
   report: PartialDestinyReport;
   streaming?: boolean;
   lockedSections?: BaziLockedSections;
   streamStatus?: DestinyStreamStatus | null;
   streamError?: string | null;
+  onOpenCopilot?: () => void;
 }) {
   const [tab, setTab] = useState<TabKey>('career');
-  const [copilotOpen, setCopilotOpen] = useState(false);
   /** 默认收起，避免首屏在矮容器里撑出无效滚动 */
   const [expandedYear, setExpandedYear] = useState<number | null>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -136,14 +136,11 @@ export function ReportRightRail({
   };
 
   /** 侧栏分区：浅底 + 圆角，不用边框（外层 GlassCard 已提供轮廓） */
-  const sectionShellClass = cn(
-    'rounded-2xl bg-slate-100/50 p-2.5 sm:p-3',
-    'dark:bg-slate-800/35'
-  );
+  const sectionShellClass = cn('rounded-2xl bg-slate-100/50 p-2.5 sm:p-3', 'dark:bg-slate-800/35');
 
   /** 长文阅读区：实体底、无边框 */
   const readSurfaceClass = cn(
-    'mt-3 rounded-xl bg-white/92 p-3 sm:mt-3.5 sm:p-4',
+    'mt-3 rounded-xl bg-white/92 px-2 py-0.5 sm:mt-3.5 sm:px-4 sm:py-0.5',
     'dark:bg-slate-950/65'
   );
 
@@ -159,7 +156,8 @@ export function ReportRightRail({
             <Button
               type="button"
               size="sm"
-              onClick={() => setCopilotOpen(true)}
+              onClick={() => onOpenCopilot?.()}
+              disabled={!onOpenCopilot}
               className={cn(
                 'ml-auto min-h-9 rounded-full px-3 text-xs font-bold',
                 'bg-gradient-to-r from-[#4969E9] to-[#7B8FFF] text-white shadow-[0_6px_16px_rgba(93,124,250,0.28)]',
@@ -209,78 +207,75 @@ export function ReportRightRail({
         </Tabs>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 custom-scrollbar">
-        <div className={readSurfaceClass}>
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-900 sm:text-sm dark:text-slate-100">
-            {(() => {
-              const Icon = tabMeta[tab].Icon;
-              return <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#5D7CFA]" />;
-            })()}
-            {moduleLabel}建议
-          </div>
-          {hasModuleSummary ? (
-            <div className="mt-2 text-xs sm:text-sm text-slate-600 leading-relaxed">
-              {module?.summary}
-            </div>
-          ) : (
-            <div className="mt-3 space-y-2">
-              <div className="h-4 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
-              <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
-            </div>
-          )}
-          {(tab === 'wealth' || tab === 'health') && module && (
-            <div className="mt-3 rounded-lg bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold text-amber-800/90 sm:text-xs dark:bg-amber-950/25 dark:text-amber-300/90">
-              仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
-            </div>
-          )}
-
-          <div className="mt-3 border-t border-slate-200/55 pt-3 sm:mt-4 sm:pt-4 dark:border-white/10">
-            <div className="text-[11px] font-bold text-[#3C58D8] sm:text-xs dark:text-[#9BADFF]">
-              AI 核心建议
-            </div>
-            {hasModuleBullets ? (
-              <ul className="mt-2 space-y-2 text-xs sm:text-sm text-slate-700">
-                {/* 新格式：优先显示 advantages + suggestions */}
-                {(module?.advantages?.length || module?.suggestions?.length) ? (
-                  <>
-                    {module?.advantages?.slice(0, 1).map((b) => (
-                      <li key={`adv-${b}`} className="flex gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                        <span className="leading-relaxed"><span className="font-bold">优势：</span>{b}</span>
-                      </li>
-                    ))}
-                    {module?.suggestions?.slice(0, 1).map((b) => (
-                      <li key={`sug-${b}`} className="flex gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
-                        <span className="leading-relaxed"><span className="font-bold">建议：</span>{b}</span>
-                      </li>
-                    ))}
-                  </>
-                ) : (
-                  /* 兼容旧格式 bullets */
-                  (module?.bullets ?? []).map((b) => (
-                    <li key={b} className="flex gap-2">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
-                      <span className="leading-relaxed">{b}</span>
-                    </li>
-                  ))
-                )}
-              </ul>
+          <div className={readSurfaceClass}>
+            {hasModuleSummary ? (
+              <div className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                {module?.summary}
+              </div>
             ) : (
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2">
                 <div className="h-4 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
                 <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
-                <div className="h-4 w-4/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
               </div>
             )}
+            {(tab === 'wealth' || tab === 'health') && module && (
+              <div className="mt-3 rounded-lg bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold text-amber-800/90 sm:text-xs dark:bg-amber-950/25 dark:text-amber-300/90">
+                仅供参考，不构成{tab === 'wealth' ? '投资' : '医疗'}建议
+              </div>
+            )}
+
+            <div className="mt-3 border-t border-slate-200/55 pt-3 sm:mt-4 sm:pt-4 dark:border-white/10">
+              <div className="text-[11px] font-bold text-[#3C58D8] sm:text-xs dark:text-[#9BADFF]">
+                AI 核心建议
+              </div>
+              {hasModuleBullets ? (
+                <ul className="mt-2 space-y-2 text-xs sm:text-sm text-slate-700">
+                  {/* 新格式：优先显示 advantages + suggestions */}
+                  {module?.advantages?.length || module?.suggestions?.length ? (
+                    <>
+                      {module?.advantages?.slice(0, 1).map((b) => (
+                        <li key={`adv-${b}`} className="flex gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                          <span className="leading-relaxed">
+                            <span className="font-bold">优势：</span>
+                            {b}
+                          </span>
+                        </li>
+                      ))}
+                      {module?.suggestions?.slice(0, 1).map((b) => (
+                        <li key={`sug-${b}`} className="flex gap-2">
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
+                          <span className="leading-relaxed">
+                            <span className="font-bold">建议：</span>
+                            {b}
+                          </span>
+                        </li>
+                      ))}
+                    </>
+                  ) : (
+                    /* 兼容旧格式 bullets */
+                    (module?.bullets ?? []).map((b) => (
+                      <li key={b} className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5D7CFA]/70" />
+                        <span className="leading-relaxed">{b}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <div className="h-4 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                  <div className="h-4 w-5/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                  <div className="h-4 w-4/6 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/60" />
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         </div>
       </div>
 
       {/* 流年时间轴（垂直时间线，占据侧栏剩余高度） */}
-      <div
-        className={cn('flex min-h-[12rem] flex-1 flex-col overflow-hidden', sectionShellClass)}
-      >
+      <div className={cn('flex min-h-[12rem] flex-1 flex-col overflow-hidden', sectionShellClass)}>
         <div className="flex h-full min-h-0 flex-col">
           <div className="mb-3 sm:mb-4 flex shrink-0 items-center gap-2">
             <AssetToneIcon className="h-4 w-4 text-[#5D7CFA]" src={timelineIcon} />
@@ -315,7 +310,7 @@ export function ReportRightRail({
                       <div
                         className={cn(
                           'absolute -left-[17px] sm:-left-[21px] top-1 h-3 w-3 sm:h-[14px] sm:w-[14px] rounded-full border-2 z-10 transition-all',
-                            isFirst
+                          isFirst
                             ? 'border-[#5D7CFA] bg-[#5D7CFA] dark:border-[#7D8CFF] dark:bg-[#7D8CFF] shadow-[0_0_0_4px_rgba(93,124,250,0.15)] dark:shadow-[0_0_0_4px_rgba(125,140,255,0.20)]'
                             : isExpanded
                               ? 'border-[#5D7CFA] bg-white dark:border-[#7D8CFF] dark:bg-slate-800'
@@ -428,13 +423,6 @@ export function ReportRightRail({
         </div>
       </div>
 
-      {report.profile && report.pillars && report.elements && report.timeline ? (
-        <AICoPilotDrawer
-          open={copilotOpen}
-          onOpenChange={setCopilotOpen}
-          report={report as never}
-        />
-      ) : null}
     </div>
   );
 }

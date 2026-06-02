@@ -47,7 +47,7 @@ const RequestSchema = z.object({
 
 const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
 const REPORT_TIMEOUT_MS = 300000;
-const REPORT_MAX_OUTPUT_TOKENS = 6200;
+const REPORT_MAX_OUTPUT_TOKENS = 7200;
 
 class UpstreamModelError extends Error {
   status: number;
@@ -526,6 +526,14 @@ function buildReportFromSections(
   currentYear: number,
   basis: ReturnType<typeof computeBaziChart>
 ): DestinyReport {
+  const mergedBasis = basis
+    ? {
+        ...basis,
+        decadeFortuneInsights:
+          sections.decadeFortuneInsights ?? basis.decadeFortuneInsights,
+      }
+    : sections.baziBasis;
+
   return normalizeDestinyReport(
     {
       profile: sections.profileOverview,
@@ -549,7 +557,7 @@ function buildReportFromSections(
     },
     input,
     currentYear,
-    { basis }
+    { basis: mergedBasis }
   );
 }
 
@@ -682,7 +690,7 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 4. 纳音辅助：pillars 中每柱的 sound 字段为纳音（如"海中金""炉中火"），可用于辅助判断命局层次与五行气质
 5. 节气定位：solarTerms 提供了命主出生时的节气上下文（前一个、当前、下一个节气），可用于辅助判断月令深浅与五行进退
 
-必须严格输出一个包含以下 9 个属性的完整 JSON 对象，禁止输出任何额外文字、markdown、解释或思考过程：
+必须严格输出一个包含以下 10 个属性的完整 JSON 对象，禁止输出任何额外文字、markdown、解释或思考过程：
 
 {
   “coreDestinyTone”: {“headline”:”string”,”description”:”string”},
@@ -694,6 +702,13 @@ function buildStreamingSystemPrompt(currentYear: number): string {
     “balanceInsight”:{...},
     “patternHighlights”:[...]
   },
+  “decadeFortuneInsights”: [{
+    “name”:”string”,
+    “summary”:”string”,
+    “stemPhase”:”string”,
+    “branchPhase”:”string”,
+    “natalNotes”:[“string”]
+  }],
   “modulePersonality”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
   “moduleCareer”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
   “moduleLove”: {“title”:”string”,”summary”:”string”,”bullets”:[“string”]},
@@ -703,20 +718,25 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 }
 
 要求：
-1. coreDestinyTone 只写 headline 和 description。headline 8-16 个中文字符，描述命局基调，避免通用句式；description 55-90 个中文字符，2 句内，先概括格局特点再落到现实风格。
+1. coreDestinyTone 只写 headline 和 description。headline 必须为**零基础可读的大白话**（10-18 字），直接说「你」的整体气质或做事风格，例如「内敛好学，适合稳扎稳打」「表达力强，宜先立口碑再扩张」；禁止把 headline 写成格局术语串（如印食相生、寒金、清透、七杀格等）。专业格局名若有，放在 description 第一句括号内简要带过。description 55-90 个中文字符，2 句内，第二句必须落到现实生活场景。
 2. pillars 必须 4 项，label 依次固定为年柱/月柱/日柱/时柱。tooltip 60-120 个中文字符，固定写成 2-3 句：第一句解释这根柱子代表什么；第二句结合该柱的干支、纳音（sound 字段）与藏干（hiddenStems 字段）分析五行十神重心，明确写"这意味着你……"；如有必要可加第三句点出该柱与月令节气的关系。四根柱子的解读应体现不同侧重点，避免四句结构雷同。
 3. elementsAndTenGods 不要输出任何新的数值事实，只能围绕已给出的数值做解释。lifeDimensions 返回 5 项，key 固定 career/wealth/health/love/wisdom；每项除 value 外必须输出 summary（18-32 字），用大白话说明该维在用户命局中的现实倾向，禁止写「事业指……」这类定义式解释。tenGodDomains 返回 5 项，key 固定 self/expression/wealth/order/resource。每个 domain 的 positive 和 negative 各写 1 句直接针对用户的个性化描述（15-35 字）：positive 写该域在命局中的优势表现，negative 写需注意的倾向。不写领域定义式文案。
 4. lifeDimensionHighlights 的 strength 和 caution 各 1 句，28-60 个中文字符，说人话，不堆术语。
 5. balanceInsight 用一句短标题 + 当前更显的五行 + 45-90 个中文字符的解释，重点讲现实做事风格。注意：必须结合月令五行（seasonalBonus 最高的元素）与日主的生克关系来分析，不要只堆数值或套话。
 6. patternHighlights 返回 2-4 项，用大白话解释已给出的术语或组合，不要虚构新的命理组合，每项要具体对应命盘特征。
-7. 五大模块：
+7. decadeFortuneInsights 必须覆盖 litePromptPayload.decadeFortunes 中的每一步大运（条数一致，name 与干支名完全一致）。你只写可读文案，不要输出十神字段（stemTenGod/branchMainTenGod 由系统根据排盘补齐）。针对**该命主本人**个性化撰写，必须引用其日主、四柱、十神重心、五行强弱与当步大运干支的合冲关系；每一步的 summary/stemPhase/branchPhase 必须彼此不同，禁止在不同大运间复用相同句式和套话（如「见好就收」「忌逞强单打」「宜建设少硬扛」等）。字段要求：
+   - summary：45-75 字，用「你」称呼，说明这十年整体和你的人生主题（事业/感情/财务/健康等）有什么关系；
+   - stemPhase：14-28 字，前五年外在行动建议，紧扣该步天干主题；
+   - branchPhase：14-28 字，后五年内在重心，紧扣该步地支藏干主题；
+   - natalNotes：0-2 条，每条 12-22 字，仅当 litePromptPayload 中该步大运的 natalNotes 非空时，将其改写成更口语的一句话；无互动则返回空数组。
+8. 五大模块：
    - title：对应宫位的星曜组合描述，如"命宫武曲贪狼同守"、"官禄宫紫微七杀坐守"，不要写模块名称（如"性格特质"、"事业发展"）
    - summary：50-90 字核心解读
    - advantages：1 条优势
    - suggestions：1 条建议
    每条 18 字以内，必须结合命盘格局、五行强弱或十神重心给出个性化解读，避免千篇一律的通用建议。
-8. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须结合 litePromptPayload 中的 decadeFortunes（十年大运）与 annualCycles（流年岁运）来分析：先说明当前所在大运的干支与阶段特征，再结合流年干支判断该年的放大或缓冲效应，给出具体趋势判断。
-9. 语气稳健、具体、克制，不夸大确定性，不要许愿式话术。整体输出要求个性化，每个模块都应体现命盘独特性，避免模板化表述。
+9. timeline 必须返回 3 项，分别对应 ${currentYear}、${currentYear + 1}、${currentYear + 2}。每项必须包含 year 字段（数值年份）。标题、摘要和 detail 必须结合 litePromptPayload 中的 decadeFortunes（十年大运）与 annualCycles（流年岁运）来分析：先说明当前所在大运的干支与阶段特征，再结合流年干支判断该年的放大或缓冲效应，给出具体趋势判断。可与 decadeFortuneInsights 中当前大运的解读呼应，但不要整段复制。
+10. 语气稳健、具体、克制，不夸大确定性，不要许愿式话术。整体输出要求个性化，每个模块都应体现命盘独特性，避免模板化表述。
 `.trim();
 }
 

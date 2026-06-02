@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import type { BaziChartBasis } from '@repo/shared';
+import { mergeDecadeFortuneInsights, type BaziChartBasis } from '@repo/shared';
+import {
+  buildDecadeFortuneInsights,
+  fillDecadeFortuneInsightFallbacks,
+} from '@/lib/destiny/decade-fortune-insight';
 import type {
   BaziLockedSections,
   BaziSectionKey,
@@ -17,6 +21,7 @@ export const BAZI_SECTION_ORDER = [
   'coreDestinyTone',
   'pillars',
   'elementsAndTenGods',
+  'decadeFortuneInsights',
   'modulePersonality',
   'moduleCareer',
   'moduleLove',
@@ -29,6 +34,7 @@ export const BAZI_MODEL_SECTION_ORDER = [
   'coreDestinyTone',
   'pillars',
   'elementsAndTenGods',
+  'decadeFortuneInsights',
   'modulePersonality',
   'moduleCareer',
   'moduleLove',
@@ -53,7 +59,16 @@ type ModuleSectionKey =
   | 'moduleHealth';
 type RecoveryMode = 'none' | 'recovered';
 
+const DecadeFortuneInsightDraftSchema = z.object({
+  name: z.string().trim().min(1),
+  summary: z.string().trim().min(1),
+  stemPhase: z.string().trim().min(1),
+  branchPhase: z.string().trim().min(1),
+  natalNotes: z.array(z.string().trim().min(1)).max(2).optional(),
+});
+
 const recoverableSectionKeys = new Set<RecoverableBaziSectionKey>([
+  'decadeFortuneInsights',
   'modulePersonality',
   'moduleCareer',
   'moduleLove',
@@ -280,6 +295,14 @@ function normalizeSectionPayload<K extends BaziSectionKey>(
       const parsed = normalizeElementsAndTenGodsSection(raw, input, currentYear, basis);
       return parsed as BaziSectionPayloadMap[K];
     }
+    case 'decadeFortuneInsights': {
+      if (!basis) {
+        throw new Error('missing bazi basis');
+      }
+      const parsed = z.array(DecadeFortuneInsightDraftSchema).parse(raw);
+      const merged = mergeDecadeFortuneInsights(basis, parsed);
+      return fillDecadeFortuneInsightFallbacks(basis, merged) as BaziSectionPayloadMap[K];
+    }
     case 'modulePersonality': {
       const parsed = ModuleSectionSchema.parse(raw);
       return normalizeDestinyReport({ modules: { personality: parsed } }, input, currentYear, { basis })
@@ -373,6 +396,22 @@ function recoverRecoverableSectionPayload(
   basis?: BaziChartBasis
 ): BaziSectionPayloadMap[RecoverableBaziSectionKey] {
   switch (sectionKey) {
+    case 'decadeFortuneInsights': {
+      try {
+        return normalizeSectionPayload(
+          'decadeFortuneInsights',
+          tryParseModelJson(rawPayload) ?? [],
+          input,
+          currentYear,
+          basis
+        );
+      } catch {
+        return buildFallbackSectionPayload(
+          'decadeFortuneInsights',
+          normalizeDestinyReport({}, input, currentYear, { basis })
+        );
+      }
+    }
     case 'timeline':
       return recoverTimelinePayload(rawPayload, input, currentYear, basis);
     case 'modulePersonality':
@@ -511,6 +550,12 @@ function buildFallbackSectionPayload<K extends RecoverableBaziSectionKey>(
   fallback: DestinyReport
 ): BaziSectionPayloadMap[K] {
   switch (sectionKey) {
+    case 'decadeFortuneInsights': {
+      if (!fallback.baziBasis) {
+        throw new Error('missing bazi basis for decade fortune fallback');
+      }
+      return buildDecadeFortuneInsights(fallback.baziBasis) as BaziSectionPayloadMap[K];
+    }
     case 'modulePersonality':
       return fallback.modules.personality as BaziSectionPayloadMap[K];
     case 'moduleCareer':

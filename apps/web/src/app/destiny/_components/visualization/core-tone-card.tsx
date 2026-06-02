@@ -3,6 +3,7 @@
 import React, { type CSSProperties } from 'react';
 import baziIcon from '@/assets/image/bazi.svg';
 import { cn } from '@/lib/utils';
+import { resolveCoreToneDisplay } from '@/lib/destiny/core-tone-display';
 import type { DestinyCoreTone } from '../types';
 import { GlassCard } from '../layout/glass-card';
 
@@ -13,6 +14,8 @@ export function CoreToneCard({
   coreTone?: DestinyCoreTone;
   className?: string;
 }) {
+  const display = resolveCoreToneDisplay(coreTone);
+
   return (
     <GlassCard variant="hero" className={cn('shrink-0 p-4 sm:p-5', className)}>
       <div className="relative z-10 flex items-start gap-3 sm:gap-4">
@@ -41,11 +44,23 @@ export function CoreToneCard({
                 'border border-[#C9D4FF]/80 dark:bg-[#1E2A55] dark:text-[#9BADFF] dark:border-[#3144B7]/40'
               )}
             >
-              {coreTone?.tag ?? '核心命理定调'}
+              {coreTone?.tag ?? '一句话看懂'}
             </span>
+            {display.patternLabel ? (
+              <span
+                className={cn(
+                  'inline-flex max-w-full items-center rounded-full px-2 py-0.5',
+                  'text-[10px] font-medium text-slate-500',
+                  'border border-slate-200/80 bg-slate-50/90 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-400'
+                )}
+                title="专业格局称谓，仅供参考"
+              >
+                术语：{display.patternLabel}
+              </span>
+            ) : null}
           </div>
 
-          {/* 核心定调 headline */}
+          {/* 主标题：大白话 */}
           <h2
             className={cn(
               'mt-2 break-words font-heading font-bold leading-[1.2] tracking-tight',
@@ -54,27 +69,27 @@ export function CoreToneCard({
               'dark:from-blue-300 dark:via-indigo-300 dark:to-indigo-400'
             )}
           >
-            {coreTone?.headline ?? '正在推演你的人生底色'}
+            {display.primaryTitle}
           </h2>
 
-          {/* 一句话总结 */}
-          {coreTone?.chartSummary && (
+          {/* 乾造等基础摘要 */}
+          {display.chartSummary ? (
             <p className="mt-1 text-xs font-semibold text-[#64748B] sm:text-sm">
-              {coreTone.chartSummary}
+              {display.chartSummary}
             </p>
-          )}
+          ) : null}
 
-          {/* 详细描述 */}
-          {coreTone?.description && (
+          {/* 详细描述（已从主标题抽离白话句时仍展示全文） */}
+          {display.description ? (
             <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2.5 dark:border-white/10 dark:bg-slate-950/50">
               <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-                {coreTone.description}
+                {display.description}
               </p>
             </div>
-          )}
+          ) : null}
 
           {/* 骨架描述 */}
-          {!coreTone?.description && coreTone?.headline && (
+          {!display.description && coreTone?.headline && (
              <div className="mt-1.5 space-y-1.5">
               <div className="h-3 w-full animate-pulse rounded bg-[#E2E8F0]/70 dark:bg-slate-700/60" />
               <div className="h-3 w-4/5 animate-pulse rounded bg-[#E2E8F0]/70 dark:bg-slate-700/60" />
