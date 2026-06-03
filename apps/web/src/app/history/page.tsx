@@ -8,6 +8,7 @@ import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
 import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
+import { HistoryMasonryGrid, HistoryMasonryItem } from '@/components/history/history-masonry-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -251,37 +252,30 @@ export default function HistoryPage() {
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
           ) : (
-            <div
-              data-testid="history-grid"
-              className={cn(
-                'grid gap-6',
-                activeTab === 'image'
-                  ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-                  : 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
-              )}
-            >
+            <HistoryMasonryGrid variant={activeTab === 'image' ? 'image' : 'default'}>
               {filteredHistory.map((item) => {
+                let card: React.ReactNode = null;
                 if (item.type === 'chat') {
-                  return <ChatHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                  card = <ChatHistoryCard item={item} onDelete={handleDeleteItem} />;
                 } else if (item.type === 'voice') {
-                  return <VoiceHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                  card = <VoiceHistoryCard item={item} onDelete={handleDeleteItem} />;
                 } else if (item.type === 'image') {
-                  return (
+                  card = (
                     <ImageHistoryCard
-                      key={item.id}
                       item={item}
                       onPreview={setPreviewItem}
                       onDelete={handleDeleteItem}
                     />
                   );
                 } else if (item.type === 'destiny') {
-                  return (
-                    <DestinyHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />
-                  );
+                  card = <DestinyHistoryCard item={item} onDelete={handleDeleteItem} />;
                 }
-                return null;
+                if (!card) return null;
+                return (
+                  <HistoryMasonryItem key={item.id}>{card}</HistoryMasonryItem>
+                );
               })}
-            </div>
+            </HistoryMasonryGrid>
           )}
 
           {!isLoading && filteredHistory.length === 0 && (

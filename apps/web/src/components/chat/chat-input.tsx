@@ -16,7 +16,16 @@ import { authFetch } from '@/lib/api/client';
 // Attachment: 附件类型定义（图片或文件）
 
 // ============ 导入图标组件 ============
-import { Image, FileText, X, Loader2, AlertCircle, FileWarning } from 'lucide-react';
+import {
+  Image,
+  FileText,
+  X,
+  Loader2,
+  AlertCircle,
+  FileWarning,
+  Paperclip,
+  Send,
+} from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
 // X: 关闭/删除图标
@@ -26,11 +35,14 @@ import { Image, FileText, X, Loader2, AlertCircle, FileWarning } from 'lucide-re
 
 // ============ 导入提示组件 ============
 import { toast } from 'sonner'; // 用于显示提示消息（如错误提示、成功提示）
+import { cn } from '@/lib/utils';
 
 // ============ 文件上传常量配置 ============
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 图片最大大小：10MB（10 * 1024KB * 1024B）
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 文件最大大小：5MB
 const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
+/** 输入框自动增高上限（px） */
+const TEXTAREA_MAX_HEIGHT = 120;
 
 // ============ 组件属性类型定义 ============
 interface ChatInputProps {
@@ -143,7 +155,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
 
     // 2. 设置为内容的实际高度，但最大不超过 200px
     //    scrollHeight 是元素内容的实际高度（包括滚动区域）
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+    e.target.style.height = `${Math.min(e.target.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
   };
 
   // ============ 图片上传处理 ============
@@ -649,56 +661,119 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`; // 否则显示 MB
   };
 
+  const attachButton = showAttachment ? (
+    <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300"
+          aria-label="添加附件"
+        >
+          <Paperclip className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-48 rounded-2xl border-slate-200/80 bg-white/95 p-1.5 shadow-lg backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95"
+        align="start"
+        side="top"
+        sideOffset={8}
+      >
+        <div className="flex flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Image className="h-4 w-4 text-green-500" />
+            上传图片
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <FileText className="h-4 w-4 text-blue-500" />
+            上传文件
+          </button>
+          <p className="px-3 pb-1 pt-1 text-[10px] text-slate-400">PDF，≤ 5MB</p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  ) : (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 shrink-0 cursor-not-allowed rounded-xl text-slate-300 dark:text-slate-600"
+      disabled
+      aria-label="当前模型不支持附件"
+    >
+      <Paperclip className="h-4 w-4" />
+    </Button>
+  );
+
   return (
-    <div className="mx-auto max-w-4xl p-4">
-      <div className="relative overflow-hidden rounded-[28px] border border-white/80 bg-white/92 p-2 shadow-[0_18px_40px_rgba(76,95,154,0.08)] backdrop-blur-2xl transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-blue-200 focus-within:shadow-[0_0_0_1px_rgba(168,184,255,0.55),0_18px_40px_rgba(76,95,154,0.1)] dark:border-slate-700/80 dark:bg-slate-900/92 dark:focus-within:border-blue-500/30 dark:focus-within:shadow-[0_0_0_1px_rgba(125,145,255,0.32),0_18px_40px_rgba(0,0,0,0.26)]">
-        {/* 附件预览区域 */}
-        {attachment && (
-          <div className="relative px-3 pb-1 pt-2">
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/84 px-3 py-2 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/84">
-              {attachment.status === 'uploading' ? (
-                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-              ) : attachment.type === 'image' ? (
-                <div className="h-10 w-10 overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-600">
-                  {attachment.imageUrl && (
-                    <img
-                      src={attachment.imageUrl}
-                      alt={attachment.name}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-              ) : (
-                <FileText className="w-5 h-5 text-blue-500" />
-              )}
-              <div className="flex flex-col">
-                <span className="text-sm text-slate-700 dark:text-slate-200 truncate max-w-[150px]">
-                  {attachment.name}
-                </span>
-                {attachment.size && (
-                  <span className="text-xs text-slate-400">{formatFileSize(attachment.size)}</span>
+    <div className="mx-auto w-full max-w-3xl">
+      {/* 附件预览：仅在有附件时占用额外高度 */}
+      {attachment && (
+        <div className="mb-2 flex items-center gap-2 px-1">
+          <div className="inline-flex max-w-full items-center gap-2 rounded-xl bg-white/50 px-2 py-1 backdrop-blur-md dark:bg-slate-800/50">
+            {attachment.status === 'uploading' ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-500" />
+            ) : attachment.type === 'image' ? (
+              <div className="h-7 w-7 shrink-0 overflow-hidden rounded-md bg-slate-200 dark:bg-slate-600">
+                {attachment.imageUrl && (
+                  <img
+                    src={attachment.imageUrl}
+                    alt={attachment.name}
+                    className="h-full w-full object-cover"
+                  />
                 )}
               </div>
-              {(attachment.status === 'ready' || attachment.status === 'error') && (
-                <button
-                  onClick={handleRemoveAttachment}
-                  className="ml-2 rounded-full p-1 transition-colors hover:bg-slate-200 dark:hover:bg-slate-600"
-                  title="删除附件"
-                >
-                  <X className="w-4 h-4 text-slate-500" />
-                </button>
-              )}
-              {attachment.status === 'error' && (
-                <span
-                  className="text-xs text-red-500 ml-2 max-w-[120px] truncate"
-                  title={attachment.error}
-                >
-                  {attachment.error || '上传失败'}
-                </span>
-              )}
-            </div>
+            ) : (
+              <FileText className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+            )}
+            <span className="truncate text-xs text-slate-700 dark:text-slate-200 max-w-[140px] sm:max-w-[200px]">
+              {attachment.name}
+            </span>
+            {attachment.size ? (
+              <span className="shrink-0 text-[10px] text-slate-400">
+                {formatFileSize(attachment.size)}
+              </span>
+            ) : null}
+            {(attachment.status === 'ready' || attachment.status === 'error') && (
+              <button
+                type="button"
+                onClick={handleRemoveAttachment}
+                className="shrink-0 rounded-md p-0.5 hover:bg-slate-200 dark:hover:bg-slate-600"
+                aria-label="删除附件"
+              >
+                <X className="h-3.5 w-3.5 text-slate-500" />
+              </button>
+            )}
+            {attachment.status === 'error' && (
+              <span className="truncate text-[10px] text-red-500" title={attachment.error}>
+                {attachment.error || '失败'}
+              </span>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，单容器无嵌套描边（DESIGN.md §8.2） */}
+      <div
+        className={cn(
+          'flex items-end gap-1 rounded-2xl p-1.5',
+          'border border-white/60 bg-white/60 shadow-sm backdrop-blur-xl',
+          'transition-all duration-200',
+          'hover:border-slate-300/80 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-slate-700/80',
+          'focus-within:border-blue-500/50 focus-within:bg-white/70 focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.12),0_4px_12px_-2px_rgba(59,130,246,0.15)]',
+          'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
         )}
+      >
+        {attachButton}
 
         <Textarea
           ref={textareaRef}
@@ -708,135 +783,53 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
-          placeholder={attachment ? '继续补充说明，和附件一起发送...' : '输入消息，开始当前任务'}
-          className="min-h-[28px] max-h-[200px] w-full resize-none border-0 bg-transparent px-4 py-3 text-base text-slate-900 shadow-none outline-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none dark:text-white"
+          placeholder={attachment ? '补充说明…' : '输入消息…'}
+          title="Enter 发送，Shift + Enter 换行"
+          className="min-h-[36px] max-h-[120px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
           disabled={isLoading}
         />
-        <div className="mt-2 flex items-center justify-between px-2 pb-1">
-          <div className="flex items-center gap-1 text-slate-400">
-            {/* 附件按钮 - 仅豆包显示 */}
-            {showAttachment ? (
-              <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 rounded-2xl border border-transparent text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/70 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                      />
-                    </svg>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-52 rounded-3xl border-white/80 bg-white/90 p-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl dark:border-slate-700/80 dark:bg-slate-900/92"
-                  align="start"
-                >
-                  <div className="flex flex-col gap-1">
-                    <button
-                      onClick={() => imageInputRef.current?.click()}
-                      className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
-                    >
-                      <Image className="w-4 h-4 text-green-500" />
-                      <span>上传图片</span>
-                    </button>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
-                    >
-                      <FileText className="w-4 h-4 text-blue-500" />
-                      <span>上传文件</span>
-                    </button>
-                    <div className="mt-1 border-t border-slate-200 px-3 pt-2 text-xs text-slate-400 dark:border-slate-600">
-                      <p>支持 PDF 文件，大小 ≤ 5MB</p>
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 cursor-not-allowed rounded-2xl text-slate-300 dark:text-slate-600"
-                disabled
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                  />
-                </svg>
-              </Button>
-            )}
 
-            {/* 隐藏的文件输入 */}
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              className="hidden"
-            />
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden text-xs text-slate-400 sm:block">
-              {isLoading ? 'AI 正在处理中' : 'Enter 发送，Shift + Enter 换行'}
-            </div>
-            <Button
-              onClick={handleSend}
-              disabled={
-                (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
-              }
-              className="h-11 w-11 rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] p-0 text-white shadow-[0_12px_28px_rgba(93,124,250,0.28)] transition duration-200 hover:brightness-105 disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:bg-slate-700"
-              size="icon"
-            >
-              {isLoading ? (
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg>
-              )}
-            </Button>
-          </div>
-        </div>
+        <Button
+          type="button"
+          onClick={handleSend}
+          disabled={
+            (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
+          }
+          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
+          size="icon"
+          aria-label={isLoading ? '发送中' : '发送'}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+        </Button>
       </div>
-      <div className="mt-3 text-center text-xs text-slate-400">
-        AI 生成的内容可能不准确，请核实重要信息。
-      </div>
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageSelect}
+        className="hidden"
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
+      {/* 辅助说明：无额外边框，弱对比融入底板 */}
+      <p className="mt-1.5 px-1 text-center text-[10px] leading-tight text-slate-400/75 dark:text-slate-500/80">
+        <span className="hidden sm:inline">
+          {isLoading ? 'AI 正在回复… · ' : ''}
+          Enter 发送 · Shift+Enter 换行 ·{' '}
+        </span>
+        生成内容请自行核实
+      </p>
     </div>
   );
 }

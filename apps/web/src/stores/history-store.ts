@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { createDexieStorage } from '@/lib/storage/zustand-dexie-storage';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
@@ -275,7 +276,7 @@ export const useHistoryStore = create<HistoryState>()(
         }
       },
 
-      // 从服务器获取历史记录
+      // 从服务器获取历史记录（远端未接入时保留本地 IndexedDB 数据）
       fetchHistory: async () => {
         set({ isLoading: true, error: null });
         try {
@@ -283,8 +284,26 @@ export const useHistoryStore = create<HistoryState>()(
           if (!response.ok) throw new Error('Failed to fetch history');
 
           const data = await response.json();
+          const remoteItems = Array.isArray(data.items) ? (data.items as HistoryItem[]) : [];
+
+          // 远端 API 仍为占位实现时返回空数组，不能覆盖本地已持久化的记录
+          if (remoteItems.length === 0) {
+            set({ isLoading: false, isInitialized: true });
+            return;
+          }
+
+          const localItems = get().items;
+          const mergedMap = new Map<string, HistoryItem>();
+
+          [...localItems, ...remoteItems].forEach((item) => {
+            const existing = mergedMap.get(item.id);
+            if (!existing || getItemTimestamp(item) >= getItemTimestamp(existing)) {
+              mergedMap.set(item.id, item);
+            }
+          });
+
           set({
-            items: data.items || [],
+            items: Array.from(mergedMap.values()),
             isLoading: false,
             isInitialized: true,
           });
@@ -346,15 +365,17 @@ export const useHistoryFilter = () => useHistoryStore((state) => state.filter);
 export const useHistoryInitialized = () => useHistoryStore((state) => state.isInitialized);
 
 export const useHistoryActions = () =>
-  useHistoryStore((state) => ({
-    setFilter: state.setFilter,
-    addItem: state.addItem,
-    updateItem: state.updateItem,
-    deleteItem: state.deleteItem,
-    deleteItems: state.deleteItems,
-    clearHistory: state.clearHistory,
-    fetchHistory: state.fetchHistory,
-    getFilteredItems: state.getFilteredItems,
-    getStats: state.getStats,
-    getItemById: state.getItemById,
-  }));
+  useHistoryStore(
+    useShallow((state) => ({
+      setFilter: state.setFilter,
+      addItem: state.addItem,
+      updateItem: state.updateItem,
+      deleteItem: state.deleteItem,
+      deleteItems: state.deleteItems,
+      clearHistory: state.clearHistory,
+      fetchHistory: state.fetchHistory,
+      getFilteredItems: state.getFilteredItems,
+      getStats: state.getStats,
+      getItemById: state.getItemById,
+    }))
+  );

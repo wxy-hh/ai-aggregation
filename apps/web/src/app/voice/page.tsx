@@ -232,6 +232,16 @@ function VoicePageContent() {
           ? '收尾中...'
           : '停止并保存';
 
+  /** 未开始且无转写内容：用居中紧凑布局，避免大块底部留白 */
+  const isVoiceIdle =
+    rtasr.segments.length === 0 &&
+    (rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error');
+  const isVoiceSessionActive =
+    rtasr.status === 'running' ||
+    rtasr.status === 'connecting' ||
+    rtasr.status === 'paused' ||
+    rtasr.status === 'stopping';
+
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-blue-900/10 overflow-hidden">
@@ -374,61 +384,102 @@ function VoicePageContent() {
 
           {/* 实时录音界面 */}
           <div
-            className={
-              mode === 'realtime'
-                ? 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-[calc(env(safe-area-inset-bottom)+18rem)] sm:pb-40'
-                : 'hidden'
-            }
-            style={{ display: mode === 'realtime' ? 'block' : 'none' }}
+            className={cn(
+              mode === 'realtime' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'
+            )}
+            style={{ display: mode === 'realtime' ? 'flex' : 'none' }}
           >
-            <div className="max-w-4xl mx-auto">
-              {rtasr.error && (
-                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
-                  {rtasr.error}
-                </div>
+            <div
+              className={cn(
+                'custom-scrollbar min-h-0 flex-1',
+                isVoiceIdle
+                  ? 'flex flex-col justify-center px-4 py-5 sm:px-6 sm:py-6 pb-[calc(env(safe-area-inset-bottom)+7.5rem)] lg:pb-24'
+                  : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-[calc(env(safe-area-inset-bottom)+11rem)] sm:pb-36'
               )}
-              {/* Visualization Card */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                      />
-                    </svg>
-                    Microphone Array (Active)
+            >
+              <div className="mx-auto w-full max-w-4xl">
+                {rtasr.error && (
+                  <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
+                    {rtasr.error}
                   </div>
-                  <span className="font-mono text-slate-400 text-xs tracking-widest">
-                    SESSION: {formatElapsed(rtasr.elapsedMs)}
-                  </span>
+                )}
+                {/* 波形可视化 */}
+                <div
+                  className={cn(
+                    'relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6',
+                    isVoiceIdle ? 'mb-5' : 'mb-8'
+                  )}
+                >
+                  <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium',
+                        isVoiceSessionActive
+                          ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      )}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                        />
+                      </svg>
+                      {isVoiceSessionActive ? '麦克风 · 采集中' : '麦克风 · 待激活'}
+                    </div>
+                    <span className="shrink-0 font-mono text-xs tracking-widest text-slate-400">
+                      会话 {formatElapsed(rtasr.elapsedMs)}
+                    </span>
+                  </div>
+
+                  <WaveformVisualizer level={rtasr.level} />
+
+                  <div className="pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
+                  <div className="pointer-events-none absolute -left-10 -top-10 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl" />
                 </div>
 
-                <WaveformVisualizer level={rtasr.level} />
+                {isVoiceIdle ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/60 px-5 py-8 text-center backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-900/40">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      转写内容将显示在这里
+                    </p>
+                    <p className="mx-auto mt-2 max-w-md text-xs leading-6 text-slate-500 dark:text-slate-400">
+                      点击下方「开始录音」即可实时识别；支持暂停、继续与导出文本。
+                    </p>
+                    <ul className="mx-auto mt-5 flex max-w-lg flex-col gap-2 text-left text-xs text-slate-500 dark:text-slate-400 sm:grid sm:grid-cols-3 sm:gap-3">
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        尽量在安静环境录音
+                      </li>
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        说话清晰、语速适中
+                      </li>
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        结束后可一键保存历史
+                      </li>
+                    </ul>
+                  </div>
+                ) : (
+                  <>
+                    <TranscriptList segments={rtasr.segments} />
 
-                {/* Decorative background blur */}
-                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              </div>
-
-              {/* Transcript List */}
-              <TranscriptList
-                segments={rtasr.segments.length > 0 ? rtasr.segments : []}
-              />
-
-              {/* Loading State for next segment */}
-              <div className="mt-6 flex gap-4 px-4 opacity-50">
-                <div className="w-12 pt-1">
-                  <div className="h-3 w-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full animate-pulse"></div>
-                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-2/3 animate-pulse"></div>
-                </div>
+                    {/* 录音进行中：下一段识别占位 */}
+                    {isVoiceSessionActive && (
+                      <div className="mt-6 flex gap-4 px-4 opacity-50">
+                        <div className="w-12 pt-1">
+                          <div className="h-3 w-8 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                          <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>

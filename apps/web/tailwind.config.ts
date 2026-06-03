@@ -87,10 +87,16 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        /** AI 头像外层光晕：柔和呼吸 */
+        "avatar-glow-breathe": {
+          "0%, 100%": { opacity: "0.32", transform: "scale(0.94)" },
+          "50%": { opacity: "0.62", transform: "scale(1.06)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "avatar-glow-breathe": "avatar-glow-breathe 3.4s ease-in-out infinite",
       },
     },
   },

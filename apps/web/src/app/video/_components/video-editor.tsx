@@ -9,7 +9,8 @@ import { useVideoGeneration } from './use-video-generation';
 import { AppLayout } from '@/components/layout/app-layout';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, Settings2, Sparkles } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { FolderOpen, Settings2, Sparkles, Clapperboard } from 'lucide-react';
 
 export function VideoEditor() {
   const {
@@ -35,11 +36,31 @@ export function VideoEditor() {
 
   return (
     <AppLayout>
-      <div className="flex flex-col w-full h-full bg-[#F5F7FA] dark:bg-[#0A0B10] text-slate-900 dark:text-slate-100 transition-colors duration-500 overflow-hidden font-sans">
+      <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 font-sans text-slate-900 transition-colors duration-500 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 dark:text-slate-100">
+        {/* 背景光晕：支撑玻璃拟态质感（DESIGN.md §2.1） */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -right-[10%] -top-[20%] h-[50%] w-[50%] rounded-full bg-blue-400/10 blur-[100px]" />
+          <div className="absolute -left-[10%] top-[40%] h-[40%] w-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
+          <div className="absolute bottom-0 left-1/3 h-[30%] w-[35%] rounded-full bg-cyan-400/8 blur-[90px]" />
+        </div>
+
+        {/* 顶栏：透明磨砂，与页面渐变一体 */}
+        <header className="relative z-20 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
+          <h1 className="flex items-center gap-2 text-xl font-bold text-slate-900 dark:text-white">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/70 bg-white/60 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] backdrop-blur-xl dark:border-slate-700/80 dark:bg-slate-800/60 dark:text-blue-300">
+              <Clapperboard className="h-5 w-5" />
+            </span>
+            AI 视频工坊
+            <Badge className="rounded-full border-0 bg-gradient-to-r from-indigo-500 to-cyan-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white shadow-lg shadow-indigo-500/20">
+              READY
+            </Badge>
+          </h1>
+        </header>
+
         {/* 主界面内容区 */}
-        <main className="flex-1 flex overflow-hidden relative">
-          {/* 左侧面板：配置区 */}
-          <aside className="hidden lg:flex w-[360px] lg:w-[400px] flex-shrink-0 bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 overflow-y-auto no-scrollbar shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
+        <main className="relative z-10 flex flex-1 overflow-hidden">
+          {/* 左侧面板：G-2 磨砂玻璃 */}
+          <aside className="no-scrollbar z-10 hidden w-full max-w-[400px] flex-shrink-0 flex-col overflow-y-auto border-r border-white/25 bg-white/40 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 lg:flex lg:w-[400px] xl:w-[433px]">
             <ConfigPanel
               prompt={prompt}
               setPrompt={setPrompt}
@@ -53,33 +74,42 @@ export function VideoEditor() {
             />
           </aside>
 
-          {/* 中央工作区：预览和时间轴 */}
-          <section className="flex-1 flex flex-col min-w-0 bg-[#F8FAFC] dark:bg-[#0E0F15]">
-            <div className="lg:hidden px-4 pt-4 flex items-center gap-3">
+          {/* 中央工作区：预览与时间轴（flex-shrink-0 避免被参数栏挤压变窄） */}
+          <section className="relative flex min-w-0 flex-1 shrink-0 flex-col lg:min-w-[min(100%,720px)]">
+            <div
+              className="pointer-events-none absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
+              style={{
+                backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)',
+                backgroundSize: '32px 32px',
+              }}
+              aria-hidden
+            />
+
+            <div className="relative z-10 flex items-center gap-3 px-4 pt-2 lg:hidden">
               <Button
                 type="button"
                 variant="outline"
-                className="flex-1 justify-center rounded-2xl h-11"
+                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md dark:border-slate-700 dark:bg-slate-800/70"
                 aria-label="打开配置面板"
                 onClick={() => setIsConfigDrawerOpen(true)}
               >
-                <Settings2 className="w-4 h-4 mr-2" />
+                <Settings2 className="mr-2 h-4 w-4" />
                 配置
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="flex-1 justify-center rounded-2xl h-11"
+                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md dark:border-slate-700 dark:bg-slate-800/70"
                 aria-label="打开资源面板"
                 onClick={() => setIsAssetsDrawerOpen(true)}
               >
-                <FolderOpen className="w-4 h-4 mr-2" />
+                <FolderOpen className="mr-2 h-4 w-4" />
                 资源
               </Button>
             </div>
 
             {/* 预览区域 */}
-            <div className="flex-1 p-4 lg:p-8 overflow-hidden flex flex-col items-center justify-center">
+            <div className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden p-4 lg:p-8">
               <div className="w-full h-full max-w-[1200px] max-h-[800px]">
                 <PreviewCanvas
                   videoUrl={videoUrl}
@@ -98,13 +128,13 @@ export function VideoEditor() {
             </div>
           </section>
 
-          {/* 右侧工具栏：资源面板 */}
-          <aside className="hidden lg:block border-l border-slate-200 dark:border-slate-800/50 bg-white dark:bg-[#111218] z-10">
+          {/* 右侧资源栏：空间不足时优先收缩，避免挤压预览区 */}
+          <aside className="z-10 hidden shrink border-l border-white/25 bg-white/40 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 lg:block">
             <AssetsSidebar />
           </aside>
         </main>
 
-        <div className="lg:hidden sticky bottom-0 z-20 border-t border-slate-200/80 bg-white/95 px-4 py-3 backdrop-blur dark:border-slate-800 dark:bg-[#111218]/95">
+        <div className="sticky bottom-0 z-20 border-t border-white/30 bg-white/75 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-950/75 lg:hidden">
           <Button
             type="button"
             onClick={generateVideo}

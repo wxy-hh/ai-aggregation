@@ -169,9 +169,9 @@ export function ConfigPanel({
   const selectedModel = MODELS.find((m) => m.id === config.model) || MODELS[0];
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#111218] transition-colors overflow-hidden">
+    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-transparent transition-colors">
       {/* 滚动内容区 */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-7 no-scrollbar">
+      <div className="no-scrollbar w-full min-w-0 flex-1 space-y-7 overflow-y-auto px-5 py-6 lg:px-6">
         <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
           创作参数
         </h2>
@@ -181,7 +181,7 @@ export function ConfigPanel({
           <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
             模型选择
           </label>
-          <div className="p-1.5 bg-slate-100/50 dark:bg-slate-800/30 rounded-2xl flex gap-1.5 border border-slate-200/50 dark:border-slate-800/50">
+          <div className="flex gap-1.5 rounded-2xl border border-white/50 bg-white/50 p-1.5 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
             {MODELS.map((model) => {
               const active = config.model === model.id;
               return (
@@ -192,8 +192,8 @@ export function ConfigPanel({
                   className={cn(
                     'relative flex-1 py-3.5 px-4 rounded-xl transition-all flex flex-col items-center gap-1.5 overflow-hidden',
                     active
-                      ? 'bg-white dark:bg-slate-700 shadow-md text-blue-600 dark:text-blue-400 border border-slate-100 dark:border-slate-600'
-                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50',
+                      ? 'border border-white/70 bg-white/90 text-blue-600 shadow-md backdrop-blur-md dark:border-slate-600 dark:bg-slate-700/90 dark:text-blue-400'
+                      : 'text-slate-500 hover:bg-white/40 dark:text-slate-400 dark:hover:bg-slate-800/40',
                     isGenerating && 'opacity-50 cursor-not-allowed'
                   )}
                 >
@@ -231,18 +231,23 @@ export function ConfigPanel({
               {isOptimizing ? '优化中...' : '✨ 智能优化'}
             </button>
           </div>
-          <div className="relative group">
+          {/* 外层承载边框与 focus 光晕，内层 textarea 滚动，避免滚动条压住描边 */}
+          <div
+            className={cn(
+              'relative overflow-hidden rounded-2xl border border-white/60 bg-white/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35)] backdrop-blur-xl transition-all',
+              'focus-within:border-blue-500/50 focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.12),inset_0_1px_0_0_rgba(255,255,255,0.35)]',
+              'dark:border-white/10 dark:bg-slate-900/50 dark:focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.18),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
+              isGenerating && 'opacity-50'
+            )}
+          >
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               disabled={isGenerating}
               placeholder="描述你想要生成的视频画面，例如：一只金色的鲤鱼在星空中游动，鳞片闪烁着微光，背景是深蓝色的银河系..."
-              className={cn(
-                'min-h-[140px] px-4 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 rounded-2xl focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500/50 transition-all text-sm leading-relaxed resize-none',
-                isGenerating && 'opacity-50'
-              )}
+              className="min-h-[140px] max-h-[200px] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 py-4 pr-3 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]"
             />
-            <div className="absolute bottom-4 right-4 text-[10px] font-mono text-slate-400 bg-white/80 dark:bg-black/50 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-800">
+            <div className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-slate-100/80 bg-white/85 px-2 py-0.5 text-[10px] font-mono text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
               {prompt.length}/500
             </div>
           </div>
@@ -270,11 +275,11 @@ export function ConfigPanel({
           <div
             onClick={() => !isGenerating && !referenceImage && fileInputRef.current?.click()}
             className={cn(
-              'relative h-32 rounded-2xl border-2 border-dashed transition-all overflow-hidden',
+              'relative h-32 overflow-hidden rounded-2xl border-2 border-dashed transition-all',
               referenceImage
-                ? 'border-solid border-blue-400/50 dark:border-blue-500/30'
-                : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500/50 cursor-pointer',
-              isGenerating && 'opacity-50 pointer-events-none'
+                ? 'border-solid border-blue-400/50 bg-white/40 dark:border-blue-500/30 dark:bg-slate-900/30'
+                : 'cursor-pointer border-white/60 bg-white/40 hover:border-blue-400/60 dark:border-white/10 dark:bg-slate-900/30 dark:hover:border-blue-500/40',
+              isGenerating && 'pointer-events-none opacity-50'
             )}
           >
             {referenceImage ? (
@@ -321,8 +326,8 @@ export function ConfigPanel({
                   className={cn(
                     'flex-1 flex flex-col items-center gap-2.5 p-4 rounded-2xl border-2 transition-all',
                     config.aspectRatio === ratio.id
-                      ? 'border-blue-500 bg-blue-50/30 dark:bg-blue-500/10 shadow-sm'
-                      : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700',
+                      ? 'border-blue-500/60 bg-white/70 shadow-sm backdrop-blur-md dark:bg-blue-500/15'
+                      : 'border-white/50 bg-white/40 hover:border-blue-200/60 dark:border-white/10 dark:bg-slate-900/30',
                     isGenerating && 'opacity-50 cursor-not-allowed'
                   )}
                 >
@@ -349,7 +354,7 @@ export function ConfigPanel({
               <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">
                 时长
               </span>
-              <div className="grid grid-cols-2 p-1 bg-slate-100/50 dark:bg-slate-800/30 rounded-xl border border-slate-200/50 dark:border-slate-800/50">
+              <div className="grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
                 {DURATIONS.map((d) => (
                   <button
                     key={d}
@@ -374,7 +379,7 @@ export function ConfigPanel({
               <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">
                 分辨率
               </span>
-              <div className="grid grid-cols-2 p-1 bg-slate-100/50 dark:bg-slate-800/30 rounded-xl border border-slate-200/50 dark:border-slate-800/50">
+              <div className="grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
                 {RESOLUTIONS.map((r) => (
                   <button
                     key={r}
@@ -420,7 +425,7 @@ export function ConfigPanel({
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                <div className="mt-4 rounded-2xl border border-white/50 bg-white/50 p-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
                   <p className="text-[10px] text-slate-400 text-center py-2">
                     更多高级创作参数（如种子值、CFG 强度）即将推出...
                   </p>
@@ -433,13 +438,13 @@ export function ConfigPanel({
 
       {/* 底部生成按钮 */}
       {showGenerateButton ? (
-        <div className="p-6 border-t border-slate-100 dark:border-slate-800/50 bg-white/80 dark:bg-[#111218]/80 backdrop-blur-xl">
+        <div className="w-full min-w-0 border-t border-white/30 bg-gradient-to-t from-white/90 via-white/70 to-transparent p-5 backdrop-blur-xl dark:border-white/5 dark:from-slate-900/90 dark:via-slate-900/70 lg:p-6">
           <Button
             onClick={onGenerate}
             disabled={isGenerating || !prompt.trim()}
             className={cn(
-              'w-full h-14 rounded-2xl text-base font-bold transition-all',
-              'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/20 active:scale-[0.98]',
+              'h-14 w-full rounded-2xl text-base font-bold transition-all',
+              'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.98]',
               'disabled:opacity-50 disabled:grayscale disabled:scale-100 disabled:cursor-not-allowed',
               'relative overflow-hidden group'
             )}

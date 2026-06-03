@@ -36,7 +36,6 @@ import {
   Trash2, // 垃圾桶图标（删除对话）
   Bot, // 机器人图标（欢迎页面）
   FileText, // 文件图标（功能卡片）
-  Code2, // 代码图标（功能卡片）
   Lightbulb, // 灯泡图标（功能卡片）
   ShieldCheck, // 盾牌图标（功能说明）
   Globe, // 地球图标（功能说明）
@@ -95,6 +94,7 @@ export default function ChatPage() {
 
   // 指向消息列表底部的 DOM 元素
   // 用于实现自动滚动到最新消息的功能
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 指向模型选择器的 DOM 元素
@@ -344,12 +344,12 @@ export default function ChatPage() {
   }, [showModelSelector]);
 
   // ============ 自动滚动到最新消息 ============
-  // 当有新消息或 AI 正在回复时，自动滚动到消息列表底部
+  // 在消息列表容器内滚动，避免误滚到外层布局
   useEffect(() => {
-    // scrollIntoView 会将元素滚动到可见区域
-    // behavior: 'smooth' 表示平滑滚动（有动画效果）
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]); // 依赖项：消息列表变化或加载状态变化时触发
+    const scrollEl = messagesScrollRef.current;
+    if (!scrollEl) return;
+    scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   // ============ 消息展示处理 ============
   // 为每条消息添加流式输出状态标记
@@ -363,6 +363,7 @@ export default function ChatPage() {
       msg.isStreaming ??
       (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
   }));
+  const isEmptyChat = displayMessages.length === 0;
 
   // ============ 发送消息处理函数 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
@@ -474,30 +475,34 @@ export default function ChatPage() {
   // 借首页的视觉语气，但保持聊天页自己的信息结构
   const quickActions = [
     {
-      title: '写一封周报',
-      description: '总结本周工作重点与计划',
-      prompt: '帮我写一封周报，总结本周工作重点与计划',
+      title: '生成周报框架',
+      description: '四板块模板，改填即用',
+      prompt:
+        '请生成一份通用周报框架（Markdown），包含「本周完成」「关键数据与亮点」「遇到的问题」「下周计划」四个部分。每部分用项目符号列出 2～3 条示例占位内容，方便我直接改成自己的实际情况。',
       icon: FileEdit,
       iconClassName: 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-300',
     },
     {
-      title: '润色代码',
-      description: '优化逻辑与代码风格',
-      prompt: '请帮我润色以下代码，优化逻辑与代码风格：\n',
-      icon: Code2,
-      iconClassName: 'bg-blue-100 text-blue-500 dark:bg-blue-900/30 dark:text-blue-300',
-    },
-    {
-      title: '总结长文',
-      description: '快速提取文章核心观点',
-      prompt: '请帮我总结这篇文章的核心观点：\n',
+      title: '站会纪要模板',
+      description: '议题、决议与待办清单',
+      prompt:
+        '请给我一份适用于 30 分钟团队站会的会议纪要模板（Markdown 表格）。需包含：日期与参会人、议题列表、讨论要点、决议结论、待办事项（负责人 + 截止时间），并各填一行示例说明写法。',
       icon: FileText,
       iconClassName: 'bg-violet-100 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300',
     },
     {
-      title: '图片创意建议',
-      description: '为设计项目寻找灵感',
-      prompt: '我需要一些图片设计的创意灵感，关于...',
+      title: '产品复盘提纲',
+      description: '上线后复盘与迭代建议',
+      prompt:
+        '请列出一份「功能上线后产品复盘」的完整提纲，按顺序覆盖：复盘背景与目标、核心数据指标、用户反馈摘要、做得好的地方、问题与根因、经验教训、后续迭代建议。每个板块用 1～2 句话说明应写什么。',
+      icon: BarChart2,
+      iconClassName: 'bg-blue-100 text-blue-500 dark:bg-blue-900/30 dark:text-blue-300',
+    },
+    {
+      title: '述职汇报结构',
+      description: '六大章节写什么、怎么写',
+      prompt:
+        '请设计一份季度述职汇报的文档结构（约 6 个章节），说明每章建议篇幅、核心要点和可写的示例要点。面向技术研发岗位，语气务实，避免空泛套话。',
       icon: Lightbulb,
       iconClassName: 'bg-emerald-100 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300',
     },
@@ -622,32 +627,31 @@ export default function ChatPage() {
   return (
     <AuthGuard>
       <AppLayout>
-      <div className="flex w-full h-full">
+      <div className="flex h-full min-h-0 w-full">
         {/* 聊天历史侧边栏 */}
         <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
           {renderConversationList()}
         </aside>
 
         {/* 主聊天区域 */}
-        <div className="flex-1 p-4 min-w-0 h-full">
-          <div className="relative h-full overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
+        <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
+          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
             <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
             {/* 头部 */}
-            <header className="relative z-20 flex-none border-b border-slate-200/70 bg-white/72 px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/50 dark:border-slate-800/80 dark:bg-slate-900/70 sm:px-6">
+            <header
+              className={cn(
+                'relative z-20 flex-none px-4 py-4 sm:px-6',
+                // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
+                !isEmptyChat &&
+                  'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
+              )}
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
                     <BarChart2 className="w-5 h-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                        智能对话
-                      </span>
-                      <span className="hidden text-xs text-slate-400 dark:text-slate-500 sm:inline">
-                        当前会话
-                      </span>
-                    </div>
                     <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
                       {currentTitle}
                     </h1>
@@ -744,18 +748,24 @@ export default function ChatPage() {
 
             {/* 错误显示 */}
             {error && (
-              <div className="mx-6 mt-4 rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+              <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
                 <strong>错误：</strong> {error.message}
               </div>
             )}
 
-            {/* 消息列表 */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-transparent">
-              {displayMessages.length === 0 ? (
-                <div className="relative z-0 flex h-full flex-col items-center justify-center px-4">
+            {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
+            <div
+              ref={messagesScrollRef}
+              className={cn(
+                'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
+                isEmptyChat ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5' : 'px-4 py-4 sm:px-5 sm:py-5'
+              )}
+            >
+              {isEmptyChat ? (
+                <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
                   <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
-                  <div className="relative w-full max-w-3xl rounded-[32px] border border-white/75 bg-white/72 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.1)] backdrop-blur-2xl dark:border-slate-700/70 dark:bg-slate-900/72 md:p-8">
+                  <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
                     <div className="mb-8 flex flex-col items-center text-center">
                       <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
                         <Bot className="h-8 w-8" />
@@ -813,17 +823,24 @@ export default function ChatPage() {
                   </div>
                 </div>
               ) : (
-                <div className="max-w-4xl mx-auto flex flex-col pt-4 pb-[calc(env(safe-area-inset-bottom)+8.5rem)] lg:pb-6">
+                <div className="flex w-full flex-col pt-2 pb-4">
                   {displayMessages.map((msg) => (
                     <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
                   ))}
                   <div ref={messagesEndRef} />
                 </div>
               )}
+              {/* 有消息时底部渐隐，避免输入坞上方硬切线；空状态不渲染以免中间区域出现色带 */}
+              {!isEmptyChat && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-14 bg-gradient-to-t from-[rgba(248,250,252,0.98)] via-[rgba(248,250,252,0.65)] to-transparent dark:from-[rgba(15,23,42,0.95)] dark:via-[rgba(15,23,42,0.5)]"
+                  aria-hidden
+                />
+              )}
             </div>
 
-            {/* 输入区域 */}
-            <div className="sticky bottom-0 z-10 flex-none bg-transparent pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:static lg:pb-2">
+            {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
+            <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>
           </div>

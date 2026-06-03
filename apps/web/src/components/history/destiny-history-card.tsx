@@ -50,7 +50,7 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
   return (
     <div
       onClick={handleClick}
-      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative"
     >
       <button
         onClick={handleDelete}
@@ -87,7 +87,7 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
         {item.profileSummary.gender} · {item.profileSummary.birthDate}
       </p>
 
-      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2 mb-4 flex-1">
+      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
         {item.preview}
       </p>
     </div>

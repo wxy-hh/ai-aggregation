@@ -261,8 +261,8 @@ export default function ImagePage() {
             <div className="absolute top-[40%] -left-[10%] w-[40%] h-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
           </div>
 
-          {/* 头部 */}
-          <header className="flex-none px-4 md:px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
+          {/* 头部：透明磨砂，与页面径向渐变融为一体，避免白底拼接感 */}
+          <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊

@@ -241,38 +241,103 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
   );
 });
 
-// 用户头像组件
+/** 用户发言标识：消息气泡内人物轮廓 */
+function ChatUserMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.5 5.5h12a2.25 2.25 0 0 1 2.25 2.25v5a2.25 2.25 0 0 1-2.25 2.25H10.8l-3.3 2.9V15h-3a2.25 2.25 0 0 1-2.25-2.25V7.75A2.25 2.25 0 0 1 4.5 5.5z"
+        fill="currentColor"
+        fillOpacity="0.1"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <circle cx="11.25" cy="9.85" r="2" stroke="currentColor" strokeWidth="1.35" />
+      <path
+        d="M7.6 14.55c.75-1.65 2.1-2.55 3.65-2.55s2.9.9 3.65 2.55"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
+}
+
+/** 智能对话助手标识：对话气泡 + 星芒 + 流式回复点 */
+function ChatAiMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.5 5.75h12.25a2.25 2.25 0 0 1 2.25 2.25v5.25a2.25 2.25 0 0 1-2.25 2.25h-4.1l-3.35 2.95V15.5H4.5a2.25 2.25 0 0 1-2.25-2.25V8a2.25 2.25 0 0 1 2.25-2.25z"
+        fill="currentColor"
+        fillOpacity="0.2"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path
+        d="M11.35 9.1l.72 2.15 2.15.72-2.15.72-.72 2.15-.72-2.15-2.15-.72 2.15-.72.72-2.15z"
+        fill="currentColor"
+      />
+      <circle cx="8.55" cy="12.55" r="0.55" fill="currentColor" opacity="0.55" />
+      <circle cx="10.75" cy="12.55" r="0.55" fill="currentColor" opacity="0.8" />
+      <circle cx="12.95" cy="12.55" r="0.55" fill="currentColor" opacity="0.55" />
+      <path
+        d="M16.75 7.1v1.35M16.75 11.15v1.35M14.7 9.12h1.35M18.8 9.12h1.35"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeOpacity="0.75"
+        strokeWidth="1.1"
+      />
+    </svg>
+  );
+}
+
+// 用户头像：发言者（G-2 玻璃底 + 消息气泡人物标识）
 const UserAvatar = memo(function UserAvatar() {
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/70 bg-white/88 text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/88 dark:text-slate-300">
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-        />
-      </svg>
+    <div
+      className={cn(
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl',
+        'border border-white/60 bg-white/60 text-slate-600 backdrop-blur-xl',
+        'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),0_8px_20px_-6px_rgba(76,95,154,0.12)]',
+        'dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300',
+        'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_8px_20px_-6px_rgba(0,0,0,0.35)]'
+      )}
+    >
+      <ChatUserMark className="h-[22px] w-[22px]" />
     </div>
   );
 });
 
-// AI 头像组件
+// AI 头像：智能对话助手（低饱和蓝青背光 + 外层呼吸光晕）
 const AIAvatar = memo(function AIAvatar() {
   return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_14px_28px_rgba(93,124,250,0.24)] ring-2 ring-white/80 dark:ring-slate-900">
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M12 2L14.4 7.2L20 9.6L14.4 12L12 17.2L9.6 12L4 9.6L9.6 7.2L12 2Z"
-          fill="currentColor"
-          className="animate-pulse"
-        />
-        <path
-          d="M19 15L20 17L22 18L20 19L19 21L18 19L16 18L18 17L19 15Z"
-          fill="currentColor"
-          className="opacity-70"
-        />
-      </svg>
+    <div className="relative h-10 w-10 shrink-0">
+      {/* 外层柔和光晕（呼吸动效，系统减少动效时自动弱化） */}
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute -inset-2 rounded-[20px]',
+          'bg-gradient-to-br from-blue-400/22 via-indigo-400/14 to-cyan-400/20',
+          'blur-[7px] motion-safe:animate-avatar-glow-breathe',
+          'dark:from-blue-500/28 dark:via-indigo-500/18 dark:to-cyan-500/22'
+        )}
+      />
+      <div
+        className={cn(
+          'relative z-[1] flex h-10 w-10 items-center justify-center rounded-2xl',
+          'border border-blue-200/55 bg-gradient-to-br from-blue-500/14 via-indigo-500/10 to-cyan-500/14',
+          'text-blue-600 backdrop-blur-xl',
+          'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_6px_16px_-6px_rgba(59,130,246,0.14)]',
+          'dark:border-blue-500/22 dark:from-blue-500/18 dark:via-indigo-500/12 dark:to-cyan-500/16',
+          'dark:text-blue-300',
+          'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_6px_16px_-6px_rgba(59,130,246,0.1)]'
+        )}
+      >
+        <ChatAiMark className="h-[22px] w-[22px]" />
+      </div>
     </div>
   );
 });
@@ -333,7 +398,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
     <div className={cn('flex w-full mb-6', isUser ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'flex max-w-4xl w-full flex-col gap-2 md:gap-4',
+          'flex w-full flex-col gap-2 md:gap-4',
           isUser ? 'items-end md:items-start md:flex-row-reverse' : 'items-start md:flex-row'
         )}
       >

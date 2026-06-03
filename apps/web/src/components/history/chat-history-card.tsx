@@ -34,7 +34,7 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative"
     >
       {/* 删除按钮 */}
       <button
@@ -66,11 +66,11 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
         {item.title}
       </h3>
 
-      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4 flex-1">
+      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4">
         {item.preview}
       </p>
 
-      <div className="flex items-center gap-2 mt-auto">
+      <div className="flex items-center gap-2">
         {item.tags?.map((tag) => (
           <span
             key={tag}
