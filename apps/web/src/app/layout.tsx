@@ -12,8 +12,10 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/xingpan.svg', type: 'image/svg+xml' },
     ],
-    apple: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/xingpan.svg',
   },
 };
 
@@ -23,10 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh-CN"
-      suppressHydrationWarning
-    >
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{

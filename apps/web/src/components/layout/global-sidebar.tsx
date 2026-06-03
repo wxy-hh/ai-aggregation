@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Check, Clock, Home, User, Shield } from 'lucide-react';
+import { Plus, Check, Clock, Home, User, Shield } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
 import { useAuthStore } from '@/stores/auth-store';
+import { SidebarAppLogo } from '@/components/layout/sidebar-app-logo';
 
 export function GlobalSidebar() {
   const pathname = usePathname();
@@ -107,18 +108,19 @@ export function GlobalSidebar() {
   return (
     <>
       <aside className="w-[100px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
-        {/* Logo Area */}
-        <div className="mb-10 px-2 flex flex-col items-center gap-1 group cursor-pointer">
-          <div className="w-12 h-12 bg-gradient-to-tr from-[#5D7CFA] to-[#8794FF] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-500/25 group-hover:scale-110 transition-transform">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div className="flex flex-col items-center mt-2">
-            <span className="text-[10px] font-black tracking-tighter text-slate-900 dark:text-white uppercase leading-none">
+        {/* Logo：星盘图形 + 柔和光晕 */}
+        <Link
+          href="/home"
+          aria-label="返回首页"
+          className="mb-10 px-2 flex flex-col items-center gap-1 group"
+        >
+          <SidebarAppLogo />
+          <div className="mt-2 flex flex-col items-center">
+            <span className="bg-gradient-to-r from-[#2563EB] via-[#4F46E5] to-[#6366F1] bg-clip-text text-[10px] font-semibold tracking-[0.14em] text-transparent uppercase leading-none dark:from-[#93C5FD] dark:via-[#A5B4FC] dark:to-[#C4B5FD]">
               AI Studio
             </span>
-            <span className="text-[8px] font-bold text-[#6B7FF2] leading-none mt-0.5">V2.0</span>
           </div>
-        </div>
+        </Link>
 
         {/* 动态导航项 */}
         <nav className="sidebar-scrollbar flex-1 w-full flex flex-col gap-3 px-3 overflow-y-auto overflow-x-visible relative z-10 pt-2">
