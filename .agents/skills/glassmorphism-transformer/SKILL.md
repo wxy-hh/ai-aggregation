@@ -121,9 +121,25 @@ flowchart TD
 
 ---
 
+---
 ## 7. 关联参考资源列表
 
 *   全局设计规范源头：[DESIGN.md](DESIGN.md)
 *   TailwindCSS 自定义主题代码片段：[tailwind-config.js](references/tailwind-config.js)
 *   全局 CSS 工具类与降级代码：[global-styles.css](references/global-styles.css)
 *   5 大核心组件重构模板：[components.md](references/components.md)
+
+---
+
+## 8. 异常处理与回退路径 (Failure Modes)
+
+重构过程中遇到以下异常情况时，按三段式回退执行：
+
+| 触发条件 | 一线修复 | 仍失败 → 兜底方案 |
+| :--- | :--- | :--- |
+| 目标页面无背景（纯白/纯黑空白页，玻璃效果无从折射） | 先创建步骤1的底板背景（深邃暗底 `#020617` + 发光核），再继续玻璃化 | 页面背景改为简单渐变 `bg-gradient-to-b from-slate-900 to-slate-950`，放弃发光核 |
+| Tailwind 配置合并冲突（自定义键名与现有 `theme.extend` 冲突） | 检查现有命名空间，将 `backdropBlur`/`boxShadow` 重命名为 `backdropBlurGlass`/`boxShadowGlass` 等非冲突键名 | 不合并到 tailwind.config.js，改为在行内 style 或 CSS 变量中定义模糊值与阴影 |
+| 滚动容器被误加 `backdrop-blur`（scroll 事件帧率骤降） | 移除滚动容器的 `backdrop-blur`，改为 `bg-white/90`(浅色) / `bg-slate-900/90`(深色) 实体半透明 | 在滚动容器外层包一个静态玻璃 wrapper（不随滚动），容器自身保持实体色 |
+| 玻璃面板文字可读性不达标（WCAG 对比度 < 4.5:1） | 叠加 `glass-text-sharp` + 提高背景不透明度 10% + 文字色加深一级 | 该面板放弃玻璃效果，退回纯实体背景 `bg-white dark:bg-slate-900` |
+| 移动端大面积滚动掉帧（`<1024px` 滚屏卡顿） | 对 `<1024px` 屏幕去除所有 `backdrop-blur`，替换为实体半透明色 | 移动端完全禁用玻璃效果，全部组件降级为 `bg-white/90` 或 `bg-slate-900/90` |
+| 设计禁忌自检卡在某项无法修复（结构限制无法规避） | 在代码注释中标注该项为"已知降级"，列出未通过的禁忌项和原因 | 该组件回退到原始 Before 版本，仅保留颜色和基本布局调整 |
