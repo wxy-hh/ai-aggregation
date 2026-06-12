@@ -1,6 +1,6 @@
 ---
 name: glassmorphism-transformer
-description: 用于将现有网页或前端组件重构为符合全局设计规范 (DESIGN.md) 的极致磨砂玻璃拟态 (Glassmorphism) 与柔光发光效果。当用户要求：(1) 将普通页面升级为未来感科技风，(2) 改造导航栏、侧边栏、卡片和按钮为磨砂玻璃材质，(3) 应用精密的多层柔光阴影 (Z-0 至 Z-5) 及高光边缘，(4) 设计流光背景 and 呼吸背光效果以突出核心视觉时，触发此技能。
+description: 用于将现有网页或前端组件重构为符合全局设计规范 (DESIGN.md) 的极致磨砂玻璃拟态 (Glassmorphism) 与柔光发光效果。当用户要求：(1) 将普通页面升级为未来感科技风，(2) 改造导航栏、侧边栏、卡片和按钮为磨砂玻璃材质，(3) 应用精密的多层柔光阴影 (Z-0 至 Z-5) 及高光边缘，(4) 设计流光背景和呼吸背光效果以突出核心视觉时，触发此技能。触发词: 玻璃拟态 磨砂玻璃 毛玻璃 glassmorphism frosted-glass 科技风改造 柔光阴影 玻璃UI 未来感设计 glass-ui backdrop-blur
 ---
 
 # 玻璃拟态重构技能 (Glassmorphism Transformer)
