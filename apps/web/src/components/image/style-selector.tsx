@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Box, Camera, Sparkles, Mountain, Zap, Palette } from 'lucide-react';
+import { Box, Camera, Sparkles, Mountain, Zap, Palette, Film } from 'lucide-react';
 import { AGNES_STYLES, ImageModel } from '@/lib/constants/image-generation';
 
 const styles = [
@@ -78,20 +78,14 @@ export interface StyleSelectorProps {
 export function StyleSelector({ selected, onStyleChange, model = 'kolors' }: StyleSelectorProps) {
   // 根据模型决定使用哪个风格列表
   const styleList = model === 'agnes'
-    ? AGNES_STYLES.map((s) => ({
-        id: s.id,
-        name: s.name,
-        icon: s.id === 'photographic' ? <Camera className="w-5 h-5" /> :
-              s.id === 'anime' ? <Sparkles className="w-5 h-5" /> :
-              <Zap className="w-5 h-5" />,
-        color: s.id === 'photographic' ? 'text-emerald-500' :
-               s.id === 'anime' ? 'text-pink-500' :
-               'text-purple-500',
-        gradient: 'from-slate-50/50 to-slate-100/50 dark:from-slate-900/10 dark:to-slate-900/30',
-        activeGradient: 'from-slate-100 to-slate-200 dark:from-slate-900/40 dark:to-slate-800/60',
-        borderColor: 'border-slate-200 dark:border-slate-800',
-        shadowColor: 'shadow-slate-500/10',
-      }))
+    ? AGNES_STYLES.map((s) => {
+        const theme = s.id === 'photographic'
+          ? { icon: <Camera className="w-5 h-5" />, color: 'text-emerald-500', gradient: 'from-emerald-50/50 to-emerald-100/50 dark:from-emerald-900/10 dark:to-emerald-900/30', activeGradient: 'from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/60', borderColor: 'border-emerald-200 dark:border-emerald-800', shadowColor: 'shadow-emerald-500/10' }
+          : s.id === 'anime'
+          ? { icon: <Sparkles className="w-5 h-5" />, color: 'text-pink-500', gradient: 'from-pink-50/50 to-pink-100/50 dark:from-pink-900/10 dark:to-pink-900/30', activeGradient: 'from-pink-100 to-pink-200 dark:from-pink-900/40 dark:to-pink-800/60', borderColor: 'border-pink-200 dark:border-pink-800', shadowColor: 'shadow-pink-500/10' }
+          : { icon: <Film className="w-5 h-5" />, color: 'text-indigo-500', gradient: 'from-indigo-50/50 to-indigo-100/50 dark:from-indigo-900/10 dark:to-indigo-900/30', activeGradient: 'from-indigo-100 to-indigo-200 dark:from-indigo-900/40 dark:to-indigo-800/60', borderColor: 'border-indigo-200 dark:border-indigo-800', shadowColor: 'shadow-indigo-500/10' };
+        return { id: s.id, name: s.name, ...theme };
+      })
     : styles; // 原有的 Kolors 6 种风格（保持不变）
 
   return (

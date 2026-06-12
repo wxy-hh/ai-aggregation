@@ -95,30 +95,52 @@ export function SettingsPanel({
         )}
       </div>
 
-      {/* 仅 Kolors: Steps */}
+      {/* 仅 Kolors: Steps 和 CFG */}
       {model === 'kolors' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
-            <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
-              {steps}
-            </span>
+        <>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
+              <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
+                {steps}
+              </span>
+            </div>
+            <div className="px-1">
+              <Slider
+                value={[steps]}
+                max={PARAM_CONSTRAINTS.steps.max}
+                min={PARAM_CONSTRAINTS.steps.min}
+                step={PARAM_CONSTRAINTS.steps.step}
+                onValueChange={(vals) => onStepsChange(vals[0])}
+                className="py-2"
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
+              <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
+              <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
+            </div>
           </div>
-          <div className="px-1">
-            <Slider
-              value={[steps]}
-              max={PARAM_CONSTRAINTS.steps.max}
-              min={PARAM_CONSTRAINTS.steps.min}
-              step={PARAM_CONSTRAINTS.steps.step}
-              onValueChange={(vals) => onStepsChange(vals[0])}
-              className="py-2"
-            />
+
+          {/* Guidance Scale (CFG) */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">引导强度 (CFG)</span>
+              <span className="text-purple-600 dark:text-purple-400 font-mono font-bold bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded text-[10px]">
+                {cfg}
+              </span>
+            </div>
+            <div className="px-1">
+              <Slider
+                value={[cfg]}
+                max={PARAM_CONSTRAINTS.guidanceScale.max}
+                min={PARAM_CONSTRAINTS.guidanceScale.min}
+                step={PARAM_CONSTRAINTS.guidanceScale.step}
+                onValueChange={(vals) => onCfgChange(vals[0])}
+                className="py-2"
+              />
+            </div>
           </div>
-          <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-            <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
-            <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
-          </div>
-        </div>
+        </>
       )}
 
       {/* 仅 Agnes: Quality 选择 */}
