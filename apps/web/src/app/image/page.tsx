@@ -20,6 +20,8 @@ import {
   STYLE_PROMPTS,
   PROMPT_TEMPLATES,
   AGNES_DEFAULT_PARAMS,
+  getImagePreviewBoxStyle,
+  getRatioLabel,
   ImageModel,
 } from '@/lib/constants/image-generation';
 import {
@@ -64,6 +66,7 @@ export default function ImagePage() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [generatedRatio, setGeneratedRatio] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
@@ -107,7 +110,7 @@ export default function ImagePage() {
           prompt,
           negativePrompt: negativePrompt || undefined,
           size: ratio,
-          n: batchSize,
+          n: 1,
           seed: seed ? parseInt(seed) : undefined,
           style: style || undefined,
           quality: quality as 'standard' | 'hd',
@@ -132,6 +135,7 @@ export default function ImagePage() {
       setProgress(100);
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
+      setGeneratedRatio(ratio);
       setActiveImageIndex(0);
 
       // 保存到历史记录
@@ -139,7 +143,7 @@ export default function ImagePage() {
         const modelName = model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash';
         const params = model === 'kolors'
           ? { steps, cfg, seed: seed || 'random', batchSize }
-          : { quality, seed: seed || 'random', batchSize };
+          : { quality, seed: seed || 'random' };
         const historyItem = {
           id: `image-${Date.now()}`,
           ...createImageHistoryItem(prompt, images[0].historyUrl, modelName, {
@@ -192,25 +196,12 @@ export default function ImagePage() {
     setSeed('');
   }, []);
 
-  // 根据当前比例返回预览区域样式
-  const getAspectRatioClass = () => {
-    switch (ratio) {
-      case '1:1':
-        return 'aspect-square';
-      case '3:4':
-        return 'aspect-[3/4]';
-      case '4:3':
-        return 'aspect-[4/3]';
-      case '16:9':
-        return 'aspect-[16/9]';
-      case '9:16':
-        return 'aspect-[9/16]';
-      case '3:2':
-        return 'aspect-[3/2]';
-      default:
-        return 'aspect-[16/9]';
-    }
-  };
+  // 预览框始终跟随当前选中的比例，生成 API 仍使用 ratio 参数
+  const previewBoxStyle = getImagePreviewBoxStyle(ratio);
+  const previewRatioMismatch =
+    generatedImages.length > 0 && generatedRatio != null && generatedRatio !== ratio;
+  // 仅当当前比例与生成图一致时才展示主预览，避免旧图在新比例框内留白
+  const showGeneratedPreview = generatedImages.length > 0 && !previewRatioMismatch;
 
   // Quick Start Actions
   const quickStarts = [
@@ -436,32 +427,26 @@ export default function ImagePage() {
               </div>
 
               <div
-                className={cn(
-                  'relative transition-all duration-500 ease-in-out',
-                  generatedImages.length > 0 ? 'w-full max-w-4xl' : 'w-full max-w-lg'
-                )}
+                className="relative mx-auto transition-all duration-500 ease-in-out"
+                style={previewBoxStyle}
               >
-                {generatedImages.length > 0 ? (
+                {showGeneratedPreview ? (
                   <div
                     className={cn(
-                      'relative rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300',
-                      getAspectRatioClass()
+                      'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300'
                     )}
                   >
-                    {/* 图片内容 */}
-                    <div
+                    <img
+                      src={generatedImages[activeImageIndex]}
+                      alt="生成结果"
                       className={cn(
-                        'absolute inset-0 bg-cover bg-center transition-all duration-1000',
+                        'absolute inset-0 w-full h-full object-cover transition-all duration-1000',
                         isGenerating
-                          ? 'scale-110 blur-xl opacity-80'
+                          ? 'scale-105 blur-xl opacity-80'
                           : 'scale-100 blur-0 opacity-100'
                       )}
-                      style={{
-                        backgroundImage: `url('${generatedImages[activeImageIndex]}')`,
-                      }}
-                    ></div>
+                    />
 
-                    {/* 下载按钮 */}
                     {!isGenerating && (
                       <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <button
@@ -480,11 +465,9 @@ export default function ImagePage() {
                     )}
                   </div>
                 ) : (
-                  // 空状态 - 准备好开始创作了吗？
                   <div
                     className={cn(
-                      'flex flex-col items-center justify-center text-center py-20 px-8 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300',
-                      getAspectRatioClass()
+                      'absolute inset-0 flex flex-col items-center justify-center text-center py-12 px-6 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300'
                     )}
                   >
                     <div className="w-24 h-24 mb-6 rounded-3xl bg-white dark:bg-slate-800 shadow-xl shadow-blue-500/10 flex items-center justify-center relative overflow-hidden group">
@@ -493,27 +476,48 @@ export default function ImagePage() {
                       <div className="absolute -top-1 -right-1 w-8 h-8 bg-blue-500/20 blur-xl rounded-full" />
                     </div>
 
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
-                      准备好开始创作了吗？
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
-                      在左侧输入提示词，选择风格并点击"立即生成"开始您的艺术之旅。
-                    </p>
-
-                    <div className="flex flex-wrap justify-center gap-3">
-                      {quickStarts.map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleQuickStart(item)}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                    {previewRatioMismatch ? (
+                      <>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
+                          已切换至 {getRatioLabel(ratio)} 比例
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6 leading-relaxed text-sm">
+                          当前预览框已按新比例调整。点击「立即生成」将输出对应尺寸的图片，下方缩略图可查看上次结果。
+                        </p>
+                        <Button
+                          onClick={handleGenerate}
+                          disabled={isGenerating || !prompt.trim()}
+                          className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-6 text-white shadow-lg"
                         >
-                          {item.icon}
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {item.label}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          按 {getRatioLabel(ratio)} 重新生成
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
+                          准备好开始创作了吗？
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
+                          在左侧输入提示词，选择风格并点击「立即生成」开始您的艺术之旅。
+                        </p>
+
+                        <div className="flex flex-wrap justify-center gap-3">
+                          {quickStarts.map((item, i) => (
+                            <button
+                              key={i}
+                              onClick={() => handleQuickStart(item)}
+                              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                            >
+                              {item.icon}
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                {item.label}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -582,7 +586,10 @@ export default function ImagePage() {
                     {generatedImages.map((img: string, i: number) => (
                       <div
                         key={i}
-                        onClick={() => setActiveImageIndex(i)}
+                        onClick={() => {
+                          setActiveImageIndex(i);
+                          if (generatedRatio) setRatio(generatedRatio);
+                        }}
                         className={cn(
                           'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
                           i === activeImageIndex
@@ -607,7 +614,7 @@ export default function ImagePage() {
         <div className="hidden xl:block">
           <CreativeCockpit
             onPromptAppend={(text) => {
-              setPrompt(text);
+              setPrompt((prev) => (prev ? `${prev}，${text}` : text));
             }}
             onStyleApply={(params) => {
               if (params.ratio) setRatio(params.ratio);

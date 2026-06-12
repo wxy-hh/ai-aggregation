@@ -44,7 +44,7 @@ export async function generateAgnesImage(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `Agnes API error: ${response.statusText}`);
+    throw new Error(error.details || error.error || `Agnes API error: ${response.statusText}`);
   }
 
   return response.json();

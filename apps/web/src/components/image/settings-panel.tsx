@@ -167,29 +167,31 @@ export function SettingsPanel({
         </div>
       )}
 
-      {/* 批量生成 */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">生成数量</span>
+      {/* 批量生成 - 仅 Kolors 支持 */}
+      {model === 'kolors' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">生成数量</span>
+          </div>
+          <div className="grid grid-cols-4 gap-2 bg-slate-100/50 dark:bg-slate-900/50 p-1 rounded-xl backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
+            {[1, 2, 3, 4].map((size) => (
+              <Button
+                key={size}
+                onClick={() => onBatchSizeChange(size)}
+                variant={batchSize === size ? 'default' : 'ghost'}
+                className={cn(
+                  'text-xs h-7 font-bold transition-all duration-300 rounded-lg',
+                  batchSize === size
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-black/5 dark:ring-white/5'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50'
+                )}
+              >
+                {size}
+              </Button>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-4 gap-2 bg-slate-100/50 dark:bg-slate-900/50 p-1 rounded-xl backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
-          {[1, 2, 3, 4].map((size) => (
-            <Button
-              key={size}
-              onClick={() => onBatchSizeChange(size)}
-              variant={batchSize === size ? 'default' : 'ghost'}
-              className={cn(
-                'text-xs h-7 font-bold transition-all duration-300 rounded-lg',
-                batchSize === size
-                  ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-black/5 dark:ring-white/5'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50'
-              )}
-            >
-              {size}
-            </Button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* 种子输入 */}
       <div className="space-y-3">

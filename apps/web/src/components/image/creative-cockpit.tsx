@@ -185,7 +185,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply }: Cre
                     'https://images.unsplash.com/photo-1535868463750-c78d9543614f?auto=format&fit=crop&w=400&q=80',
                   tags: ['Cyberpunk', 'Neon'],
                   prompt: '赛博朋克, 霓虹雨夜, 未来城市, 湿润地面反射',
-                  params: { ratio: '9:16', steps: 30, style: 'cyberpunk' },
+                  params: { ratio: '16:9', steps: 30, style: 'cyberpunk' },
                 },
                 {
                   id: 2,
