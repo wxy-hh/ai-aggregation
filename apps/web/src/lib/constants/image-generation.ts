@@ -1,6 +1,6 @@
 /**
  * Image Generation Constants
- * Mappings and configurations for Kolors image generation
+ * Mappings and configurations for Kolors and Agnes image generation
  */
 
 // 图像生成模型类型
@@ -36,7 +36,7 @@ export const AGNES_DEFAULT_PARAMS = {
   model: 'agnes' as ImageModel,
   style: 'photographic',
   size: '1024x1024',
-  quality: 'standard' as 'standard' | 'hd',
+  quality: 'standard' as (typeof AGNES_QUALITIES)[number]['id'],
   n: 1,
 } as const;
 
