@@ -17,7 +17,7 @@ export interface AgnesGenerateParams {
 
 export interface AgnesGenerateResponse {
   created: number;
-  data: Array<{
+  images: Array<{
     url: string;
     revised_prompt?: string;
   }>;

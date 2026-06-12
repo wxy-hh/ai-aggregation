@@ -11,12 +11,16 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { ModelSwitcher } from '@/components/image/model-switcher';
 import { generateKolorsImage, downloadImage } from '@/lib/api/kolors';
+import { generateAgnesImage } from '@/lib/api/agnes';
 import {
   DEFAULT_PARAMS,
   ASPECT_RATIO_TO_SIZE,
   STYLE_PROMPTS,
   PROMPT_TEMPLATES,
+  AGNES_DEFAULT_PARAMS,
+  ImageModel,
 } from '@/lib/constants/image-generation';
 import {
   Sparkles,
@@ -50,6 +54,11 @@ export default function ImagePage() {
   const [seed, setSeed] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
+  // 模型选择
+  const [model, setModel] = useState<ImageModel>('kolors');
+  // Agnes 专属参数
+  const [quality, setQuality] = useState<string>(AGNES_DEFAULT_PARAMS.quality);
+
   // 生成状态
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -67,33 +76,50 @@ export default function ImagePage() {
     setCurrentStep('准备生成...');
 
     try {
-      // 根据风格补全提示词
-      const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
-      const enhancedPrompt = styleConfig
-        ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
-        : prompt;
+      let response;
+      if (model === 'kolors') {
+        // 根据风格补全提示词
+        const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
+        const enhancedPrompt = styleConfig
+          ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
+          : prompt;
 
-      setCurrentStep('正在扩散生成...');
-      setProgress(10);
+        setCurrentStep('正在扩散生成...');
+        setProgress(10);
 
-      // 调用生成接口
-      const response = await generateKolorsImage({
-        prompt: enhancedPrompt,
-        negativePrompt: negativePrompt || styleConfig?.negativePrompt,
-        imageSize: ASPECT_RATIO_TO_SIZE[ratio],
-        steps,
-        guidanceScale: cfg,
-        batchSize,
-        seed: seed ? parseInt(seed) : undefined,
-        style,
-      });
+        // 调用 Kolors 生成接口
+        response = await generateKolorsImage({
+          prompt: enhancedPrompt,
+          negativePrompt: negativePrompt || styleConfig?.negativePrompt,
+          imageSize: ASPECT_RATIO_TO_SIZE[ratio],
+          steps,
+          guidanceScale: cfg,
+          batchSize,
+          seed: seed ? parseInt(seed) : undefined,
+          style,
+        });
+      } else {
+        setCurrentStep('正在生成...');
+        setProgress(10);
+
+        // 调用 Agnes 生成接口
+        response = await generateAgnesImage({
+          prompt,
+          negativePrompt: negativePrompt || undefined,
+          size: ratio,
+          n: batchSize,
+          seed: seed ? parseInt(seed) : undefined,
+          style: style || undefined,
+          quality: quality as 'standard' | 'hd',
+        });
+      }
 
       setProgress(80);
       setCurrentStep('下载图片...');
 
       // 下载图片并分别生成页面预览地址与可持久化历史地址
       const images = await Promise.all(
-        response.images.map(async (img) => {
+        response.images.map(async (img: { url: string }) => {
           const blob = await downloadImage(img.url);
           return {
             previewUrl: URL.createObjectURL(blob),
@@ -110,13 +136,17 @@ export default function ImagePage() {
 
       // 保存到历史记录
       if (images.length > 0) {
+        const modelName = model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash';
+        const params = model === 'kolors'
+          ? { steps, cfg, seed: seed || 'random', batchSize }
+          : { quality, seed: seed || 'random', batchSize };
         const historyItem = {
           id: `image-${Date.now()}`,
-          ...createImageHistoryItem(prompt, images[0].historyUrl, 'Kolors', {
+          ...createImageHistoryItem(prompt, images[0].historyUrl, modelName, {
             negativePrompt,
             style,
             aspectRatio: ratio,
-            parameters: { steps, cfg, seed: seed || 'random', batchSize },
+            parameters: params,
           }),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -137,13 +167,30 @@ export default function ImagePage() {
       setProgress(0);
       setCurrentStep('');
     }
-  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize]);
+  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem]);
 
   // 随机灵感提示词
   const handleRandomPrompt = () => {
     const randomIndex = Math.floor(Math.random() * PROMPT_TEMPLATES.length);
     setPrompt(PROMPT_TEMPLATES[randomIndex]);
   };
+
+  // 模型切换时重置相关参数
+  const handleModelChange = useCallback((newModel: ImageModel) => {
+    setModel(newModel);
+    if (newModel === 'agnes') {
+      setStyle(AGNES_DEFAULT_PARAMS.style);
+      setRatio(AGNES_DEFAULT_PARAMS.size);
+      setQuality(AGNES_DEFAULT_PARAMS.quality);
+    } else {
+      setStyle(DEFAULT_PARAMS.style);
+      setRatio(DEFAULT_PARAMS.aspectRatio);
+      setSteps(DEFAULT_PARAMS.steps);
+      setCfg(DEFAULT_PARAMS.guidanceScale);
+    }
+    setBatchSize(DEFAULT_PARAMS.batchSize);
+    setSeed('');
+  }, []);
 
   // 根据当前比例返回预览区域样式
   const getAspectRatioClass = () => {
@@ -231,21 +278,24 @@ export default function ImagePage() {
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-      <StyleSelector selected={style} onStyleChange={setStyle} />
+      <StyleSelector selected={style} onStyleChange={setStyle} model={model} />
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
       <SettingsPanel
+        model={model}
         ratio={ratio}
         steps={steps}
         cfg={cfg}
         seed={seed}
         batchSize={batchSize}
+        quality={quality}
         onRatioChange={setRatio}
         onStepsChange={setSteps}
         onCfgChange={setCfg}
         onSeedChange={setSeed}
         onBatchSizeChange={setBatchSize}
+        onQualityChange={setQuality}
       />
     </>
   );
@@ -271,16 +321,19 @@ export default function ImagePage() {
                 </Badge>
               </h1>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              aria-label="打开参数面板"
-              onClick={() => setShowMobileSettings(true)}
-              className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
-            >
-              <Pencil className="w-4 h-4 mr-2" />
-              参数设置
-            </Button>
+            <div className="flex items-center gap-3">
+              <ModelSwitcher model={model} onModelChange={handleModelChange} />
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="打开参数面板"
+                onClick={() => setShowMobileSettings(true)}
+                className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                参数设置
+              </Button>
+            </div>
           </header>
 
           {/* 内容区域：拆分视图 */}
