@@ -3,6 +3,49 @@
  * Mappings and configurations for Kolors image generation
  */
 
+// 图像生成模型类型
+export type ImageModel = 'kolors' | 'agnes';
+
+// Agnes 模型名（发送给 API）
+export const AGNES_MODEL_NAME = 'agnes-image-2.1-flash';
+
+// Agnes 支持的风格
+export const AGNES_STYLES = [
+  { id: 'photographic', name: '摄影写实', description: '照片级真实感' },
+  { id: 'anime', name: '动漫风格', description: '二次元动漫画风' },
+  { id: 'cinematic', name: '电影质感', description: '电影级光影构图' },
+] as const;
+
+// Agnes 尺寸选项
+export const AGNES_SIZE_OPTIONS = [
+  { id: '1024x1024', label: '1:1', title: '正方形', size: '1024×1024' },
+  { id: '768x1024', label: '3:4', title: '竖屏', size: '768×1024' },
+  { id: '1024x768', label: '4:3', title: '横屏', size: '1024×768' },
+  { id: '1024x576', label: '16:9', title: '宽屏', size: '1024×576' },
+  { id: '576x1024', label: '9:16', title: '竖屏视频', size: '576×1024' },
+] as const;
+
+// Agnes 画质选项
+export const AGNES_QUALITIES = [
+  { id: 'standard', label: '标准', description: '较快生成' },
+  { id: 'hd', label: '高清', description: '更多细节' },
+] as const;
+
+// Agnes 默认参数
+export const AGNES_DEFAULT_PARAMS = {
+  model: 'agnes' as ImageModel,
+  style: 'photographic',
+  size: '1024x1024',
+  quality: 'standard' as 'standard' | 'hd',
+  n: 1,
+} as const;
+
+// 模型选择器选项
+export const IMAGE_MODELS = [
+  { id: 'kolors' as ImageModel, label: 'Kolors', description: 'Kolors 模型' },
+  { id: 'agnes' as ImageModel, label: 'Agnes Flash', description: 'Agnes Image 2.1 Flash' },
+] as const;
+
 // Aspect ratio to actual size mapping
 export const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
   '1:1': '1024x1024', // Square
