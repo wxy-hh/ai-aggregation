@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { Box, Camera, Sparkles, Mountain, Zap, Palette } from 'lucide-react';
+import { AGNES_STYLES, ImageModel } from '@/lib/constants/image-generation';
 
 const styles = [
   {
@@ -71,9 +72,28 @@ const styles = [
 export interface StyleSelectorProps {
   selected: string;
   onStyleChange: (style: string) => void;
+  model?: ImageModel;
 }
 
-export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
+export function StyleSelector({ selected, onStyleChange, model = 'kolors' }: StyleSelectorProps) {
+  // 根据模型决定使用哪个风格列表
+  const styleList = model === 'agnes'
+    ? AGNES_STYLES.map((s) => ({
+        id: s.id,
+        name: s.name,
+        icon: s.id === 'photographic' ? <Camera className="w-5 h-5" /> :
+              s.id === 'anime' ? <Sparkles className="w-5 h-5" /> :
+              <Zap className="w-5 h-5" />,
+        color: s.id === 'photographic' ? 'text-emerald-500' :
+               s.id === 'anime' ? 'text-pink-500' :
+               'text-purple-500',
+        gradient: 'from-slate-50/50 to-slate-100/50 dark:from-slate-900/10 dark:to-slate-900/30',
+        activeGradient: 'from-slate-100 to-slate-200 dark:from-slate-900/40 dark:to-slate-800/60',
+        borderColor: 'border-slate-200 dark:border-slate-800',
+        shadowColor: 'shadow-slate-500/10',
+      }))
+    : styles; // 原有的 Kolors 6 种风格（保持不变）
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -82,7 +102,7 @@ export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
         </h3>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        {styles.map((style) => (
+        {styleList.map((style) => (
           <button
             key={style.id}
             onClick={() => onStyleChange(style.id)}
