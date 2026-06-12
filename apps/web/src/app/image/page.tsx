@@ -468,7 +468,7 @@ export default function ImagePage() {
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = generatedImages[activeImageIndex];
-                            link.download = `kolors-${Date.now()}.png`;
+                            link.download = `${model}-${Date.now()}.png`;
                             link.click();
                           }}
                           className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
