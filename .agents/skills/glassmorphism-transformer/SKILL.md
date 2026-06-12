@@ -5,7 +5,7 @@ description: 用于将现有网页或前端组件重构为符合全局设计规�
 
 # 玻璃拟态重构技能 (Glassmorphism Transformer)
 
-本技能提供了一套系统的重构方法论与代码范式，用于将普通的前端网页、面板、组件升级为极致通透的磨砂玻璃拟态与柔光发光的未来主义设计风格，同时严格对齐 [DESIGN.md](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/DESIGN.md) 全局设计规范。
+本技能提供了一套系统的重构方法论与代码范式，用于将普通的前端网页、面板、组件升级为极致通透的磨砂玻璃拟态与柔光发光的未来主义设计风格，同时严格对齐 [DESIGN.md](DESIGN.md) 全局设计规范。
 
 ---
 
@@ -22,8 +22,8 @@ description: 用于将现有网页或前端组件重构为符合全局设计规�
 
 在重构任何页面之前，必须确保项目中已完成 TailwindCSS 的配置扩展和全局 CSS 的工具类注入。
 
-*   **TailwindCSS 自定义主题扩展**：详见 [tailwind-config.js](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/tailwind-config.js)，包含三级玻璃模糊等级、五级柔光阴影系统和高级物理缓动函数。
-*   **全局 CSS 适配与优雅降级**：详见 [global-styles.css](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/global-styles.css)，提供标准的玻璃控制类 `.glass-panel-standard`，以及 Safari 兼容（`-webkit-backdrop-filter`）与古老浏览器的优雅回退方案。
+*   **TailwindCSS 自定义主题扩展**：详见 [tailwind-config.js](references/tailwind-config.js)，包含三级玻璃模糊等级、五级柔光阴影系统和高级物理缓动函数。
+*   **全局 CSS 适配与优雅降级**：详见 [global-styles.css](references/global-styles.css)，提供标准的玻璃控制类 `.glass-panel-standard`，以及 Safari 兼容（`-webkit-backdrop-filter`）与古老浏览器的优雅回退方案。
 
 ---
 
@@ -56,7 +56,7 @@ flowchart TD
     ```
 
 ### 步骤 2：基础设施层配置与降级处理 (Infrastructure & Fallback)
-确保项目已读取 [tailwind-config.js](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/tailwind-config.js) 和 [global-styles.css](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/global-styles.css) 的配置。
+确保项目已读取 [tailwind-config.js](references/tailwind-config.js) 和 [global-styles.css](references/global-styles.css) 的配置。
 
 🔴 **CHECKPOINT · 基础设施就绪确认**：执行以下验证，任一失败则**终止后续步骤，先修复配置**：
 1. `tailwind.config.js` 中 `backdropBlur['2xl']` / `boxShadow['2xl-glass']` / `transitionTimingFunction['smooth-out']` 三者均已合并
@@ -64,7 +64,7 @@ flowchart TD
 3. 验证通过后，才进入步骤 3
 
 ### 步骤 3：容器材质玻璃化 (Panels & Cards)
-对照 [DESIGN.md](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/DESIGN.md) 的玻璃材质基础参数矩阵表，重构各容器의背景与模糊度：
+对照 [DESIGN.md](DESIGN.md) 的玻璃材质基础参数矩阵表，重构各容器의背景与模糊度：
 *   **辅助元素 (G-1)**：`backdrop-blur-md` (8px)，背景 `bg-white/40` 或 `bg-slate-900/40`。适用于悬停状态行、侧边栏辅助项。
 *   **侧边栏与输入框 (G-2)**：`backdrop-blur-xl` (20px)，背景 `bg-white/60` 或 `bg-slate-900/60`。
 *   **大导航栏、模态框、Hero 卡片 (G-3)**：`backdrop-blur-2xl` (40px)，背景 `bg-white/70` 或 `bg-slate-950/75`。
@@ -98,7 +98,7 @@ flowchart TD
 
 ## 5. 核心组件重构模板参考
 
-在重构常见组件时，可直接查阅 [components.md](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/components.md) 以获取如下 5 大核心组件的完整 React / Tailwind 实现范式与 Before/After 修改参考：
+在重构常见组件时，可直接查阅 [components.md](references/components.md) 以获取如下 5 大核心组件的完整 React / Tailwind 实现范式与 Before/After 修改参考：
 1.  **Header 导航栏** (阻尼融合模糊)
 2.  **Button 按钮** (1px 顶部发光微凸起 + 按压手感)
 3.  **Input 输入框** (下凹微阴影 + 呼吸落焦圈)
@@ -123,7 +123,7 @@ flowchart TD
 
 ## 7. 关联参考资源列表
 
-*   全局设计规范源头：[DESIGN.md](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/DESIGN.md)
-*   TailwindCSS 自定义主题代码片段：[tailwind-config.js](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/tailwind-config.js)
-*   全局 CSS 工具类与降级代码：[global-styles.css](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/global-styles.css)
-*   5 大核心组件重构模板：[components.md](file:///Users/weixiaoyu/Desktop/practice/AI-aggregation/.agents/skills/glassmorphism-transformer/references/components.md)
+*   全局设计规范源头：[DESIGN.md](DESIGN.md)
+*   TailwindCSS 自定义主题代码片段：[tailwind-config.js](references/tailwind-config.js)
+*   全局 CSS 工具类与降级代码：[global-styles.css](references/global-styles.css)
+*   5 大核心组件重构模板：[components.md](references/components.md)
