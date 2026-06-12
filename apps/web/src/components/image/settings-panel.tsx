@@ -4,34 +4,43 @@ import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ASPECT_RATIOS, PARAM_CONSTRAINTS } from '@/lib/constants/image-generation';
+import { ASPECT_RATIOS, PARAM_CONSTRAINTS, AGNES_SIZE_OPTIONS, AGNES_QUALITIES, ImageModel } from '@/lib/constants/image-generation';
 import { Settings2, Dice5 } from 'lucide-react';
 
 export interface SettingsPanelProps {
+  model?: ImageModel;
   ratio: string;
   steps: number;
   cfg: number;
   seed: string;
   batchSize: number;
+  quality?: string;
   onRatioChange: (ratio: string) => void;
   onStepsChange: (steps: number) => void;
   onCfgChange: (cfg: number) => void;
   onSeedChange: (seed: string) => void;
   onBatchSizeChange: (size: number) => void;
+  onQualityChange?: (quality: string) => void;
 }
 
 export function SettingsPanel({
+  model = 'kolors',
   ratio,
   steps,
   cfg,
   seed,
   batchSize,
+  quality = 'standard',
   onRatioChange,
   onStepsChange,
   onCfgChange,
   onSeedChange,
   onBatchSizeChange,
+  onQualityChange,
 }: SettingsPanelProps) {
+  // 根据模型选择尺寸列表
+  const ratioOptions = model === 'agnes' ? AGNES_SIZE_OPTIONS : ASPECT_RATIOS;
+
   return (
     <div className="space-y-6">
       {/* 参数设置头部 */}
@@ -45,66 +54,96 @@ export function SettingsPanel({
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-500 dark:text-slate-400 font-medium">画面比例</span>
           <span className="text-slate-900 dark:text-white font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-            {ASPECT_RATIOS.find((r) => r.id === ratio)?.label || ratio}
+            {ratioOptions.find((r) => r.id === ratio)?.label || ratio}
           </span>
         </div>
         <div className="grid grid-cols-4 gap-2">
-          {ASPECT_RATIOS.map((item) => (
-            <div key={item.id} className="relative group">
+          {ratioOptions.slice(0, 4).map((item) => (
+            <Button
+              key={item.id}
+              onClick={() => onRatioChange(item.id)}
+              variant={ratio === item.id ? 'default' : 'outline'}
+              className={cn(
+                'h-9 text-xs font-bold rounded-xl transition-all',
+                ratio === item.id
+                  ? 'bg-blue-500 text-white shadow-md border-blue-500'
+                  : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-blue-300'
+              )}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+        {ratioOptions.length > 4 && (
+          <div className="grid grid-cols-4 gap-2">
+            {ratioOptions.slice(4).map((item) => (
               <Button
+                key={item.id}
                 onClick={() => onRatioChange(item.id)}
                 variant={ratio === item.id ? 'default' : 'outline'}
                 className={cn(
-                  'w-full h-auto py-2 flex flex-col items-center gap-1 transition-all duration-300 cursor-pointer overflow-hidden relative',
+                  'h-9 text-xs font-bold rounded-xl transition-all',
                   ratio === item.id
                     ? 'bg-blue-500 text-white shadow-md border-blue-500'
-                    : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-blue-300 dark:hover:border-slate-500 backdrop-blur-sm'
+                    : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-blue-300'
                 )}
               >
-                {/* Aspect Ratio Preview Box */}
-                <div
-                  className={cn(
-                    'border mb-1 transition-colors',
-                    ratio === item.id
-                      ? 'border-white/90 bg-white/20'
-                      : 'border-slate-400 dark:border-slate-500'
-                  )}
-                  style={{
-                    width: '18px',
-                    height: item.id === '1:1' ? '18px' : item.id === '16:9' ? '12px' : '24px',
-                    aspectRatio: item.id.replace(':', '/'),
-                  }}
-                />
-                <span className="text-[10px] font-bold">{item.label}</span>
+                {item.label}
               </Button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* 图片质量 (Steps) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
-          <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
-            {steps}
-          </span>
+      {/* 仅 Kolors: Steps */}
+      {model === 'kolors' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
+            <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
+              {steps}
+            </span>
+          </div>
+          <div className="px-1">
+            <Slider
+              value={[steps]}
+              max={PARAM_CONSTRAINTS.steps.max}
+              min={PARAM_CONSTRAINTS.steps.min}
+              step={PARAM_CONSTRAINTS.steps.step}
+              onValueChange={(vals) => onStepsChange(vals[0])}
+              className="py-2"
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
+            <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
+            <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
+          </div>
         </div>
-        <div className="px-1">
-          <Slider
-            value={[steps]}
-            max={PARAM_CONSTRAINTS.steps.max}
-            min={PARAM_CONSTRAINTS.steps.min}
-            step={PARAM_CONSTRAINTS.steps.step}
-            onValueChange={(vals) => onStepsChange(vals[0])}
-            className="py-2"
-          />
+      )}
+
+      {/* 仅 Agnes: Quality 选择 */}
+      {model === 'agnes' && (
+        <div className="space-y-3">
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">画质</span>
+          <div className="grid grid-cols-2 gap-2">
+            {AGNES_QUALITIES.map((q) => (
+              <Button
+                key={q.id}
+                onClick={() => onQualityChange?.(q.id)}
+                variant={quality === q.id ? 'default' : 'outline'}
+                className={cn(
+                  'h-9 text-xs font-bold rounded-xl transition-all',
+                  quality === q.id
+                    ? 'bg-indigo-500 text-white shadow-md border-indigo-500'
+                    : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-indigo-300'
+                )}
+              >
+                {q.label}
+              </Button>
+            ))}
+          </div>
         </div>
-        <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-          <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
-          <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
-        </div>
-      </div>
+      )}
 
       {/* 批量生成 */}
       <div className="space-y-3">
