@@ -758,7 +758,9 @@ export default function ChatPage() {
               ref={messagesScrollRef}
               className={cn(
                 'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
-                isEmptyChat ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5' : 'px-4 py-4 sm:px-5 sm:py-5'
+                isEmptyChat
+                  ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
+                  : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
               )}
             >
               {isEmptyChat ? (
@@ -830,10 +832,10 @@ export default function ChatPage() {
                   <div ref={messagesEndRef} />
                 </div>
               )}
-              {/* 有消息时底部渐隐，避免输入坞上方硬切线；空状态不渲染以免中间区域出现色带 */}
+              {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
               {!isEmptyChat && (
                 <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-14 bg-gradient-to-t from-[rgba(248,250,252,0.98)] via-[rgba(248,250,252,0.65)] to-transparent dark:from-[rgba(15,23,42,0.95)] dark:via-[rgba(15,23,42,0.5)]"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
                   aria-hidden
                 />
               )}
