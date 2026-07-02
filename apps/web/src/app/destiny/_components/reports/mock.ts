@@ -26,7 +26,7 @@ export type DestinyReport = {
   pillars: BaZiPillar[];
   tenGods: { key: string; label: string; value: number; tooltip: string }[];
   elements: { key: FiveElementKey; label: string; value: number }[];
-  lifeDimensions?: { key: LifeDimensionKey; label: string; value: number }[];
+  lifeDimensions?: { key: LifeDimensionKey; label: string; value: number; summary?: string }[];
   lifeDimensionHighlights?: { strength: string; caution: string };
   tenGodDomains?: {
     key: TenGodDomainKey;

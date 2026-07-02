@@ -66,6 +66,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@tailwindcss/typography": "^0.5.19",
