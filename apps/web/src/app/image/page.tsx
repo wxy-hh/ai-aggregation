@@ -11,12 +11,18 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { ModelSwitcher } from '@/components/image/model-switcher';
 import { generateKolorsImage, downloadImage } from '@/lib/api/kolors';
+import { generateAgnesImage } from '@/lib/api/agnes';
 import {
   DEFAULT_PARAMS,
   ASPECT_RATIO_TO_SIZE,
   STYLE_PROMPTS,
   PROMPT_TEMPLATES,
+  AGNES_DEFAULT_PARAMS,
+  getImagePreviewBoxStyle,
+  getRatioLabel,
+  ImageModel,
 } from '@/lib/constants/image-generation';
 import {
   Sparkles,
@@ -50,11 +56,17 @@ export default function ImagePage() {
   const [seed, setSeed] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
+  // 模型选择
+  const [model, setModel] = useState<ImageModel>('kolors');
+  // Agnes 专属参数
+  const [quality, setQuality] = useState<string>(AGNES_DEFAULT_PARAMS.quality);
+
   // 生成状态
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  const [generatedRatio, setGeneratedRatio] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
@@ -67,33 +79,50 @@ export default function ImagePage() {
     setCurrentStep('准备生成...');
 
     try {
-      // 根据风格补全提示词
-      const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
-      const enhancedPrompt = styleConfig
-        ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
-        : prompt;
+      let response;
+      if (model === 'kolors') {
+        // 根据风格补全提示词
+        const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
+        const enhancedPrompt = styleConfig
+          ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
+          : prompt;
 
-      setCurrentStep('正在扩散生成...');
-      setProgress(10);
+        setCurrentStep('正在扩散生成...');
+        setProgress(10);
 
-      // 调用生成接口
-      const response = await generateKolorsImage({
-        prompt: enhancedPrompt,
-        negativePrompt: negativePrompt || styleConfig?.negativePrompt,
-        imageSize: ASPECT_RATIO_TO_SIZE[ratio],
-        steps,
-        guidanceScale: cfg,
-        batchSize,
-        seed: seed ? parseInt(seed) : undefined,
-        style,
-      });
+        // 调用 Kolors 生成接口
+        response = await generateKolorsImage({
+          prompt: enhancedPrompt,
+          negativePrompt: negativePrompt || styleConfig?.negativePrompt,
+          imageSize: ASPECT_RATIO_TO_SIZE[ratio],
+          steps,
+          guidanceScale: cfg,
+          batchSize,
+          seed: seed ? parseInt(seed) : undefined,
+          style,
+        });
+      } else {
+        setCurrentStep('正在生成...');
+        setProgress(10);
+
+        // 调用 Agnes 生成接口
+        response = await generateAgnesImage({
+          prompt,
+          negativePrompt: negativePrompt || undefined,
+          size: ratio,
+          n: 1,
+          seed: seed ? parseInt(seed) : undefined,
+          style: style || undefined,
+          quality: quality as 'standard' | 'hd',
+        });
+      }
 
       setProgress(80);
       setCurrentStep('下载图片...');
 
       // 下载图片并分别生成页面预览地址与可持久化历史地址
       const images = await Promise.all(
-        response.images.map(async (img) => {
+        response.images.map(async (img: { url: string }) => {
           const blob = await downloadImage(img.url);
           return {
             previewUrl: URL.createObjectURL(blob),
@@ -106,17 +135,22 @@ export default function ImagePage() {
       setProgress(100);
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
+      setGeneratedRatio(ratio);
       setActiveImageIndex(0);
 
       // 保存到历史记录
       if (images.length > 0) {
+        const modelName = model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash';
+        const params = model === 'kolors'
+          ? { steps, cfg, seed: seed || 'random', batchSize }
+          : { quality, seed: seed || 'random' };
         const historyItem = {
           id: `image-${Date.now()}`,
-          ...createImageHistoryItem(prompt, images[0].historyUrl, 'Kolors', {
+          ...createImageHistoryItem(prompt, images[0].historyUrl, modelName, {
             negativePrompt,
             style,
             aspectRatio: ratio,
-            parameters: { steps, cfg, seed: seed || 'random', batchSize },
+            parameters: params,
           }),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -137,7 +171,7 @@ export default function ImagePage() {
       setProgress(0);
       setCurrentStep('');
     }
-  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize]);
+  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem]);
 
   // 随机灵感提示词
   const handleRandomPrompt = () => {
@@ -145,25 +179,29 @@ export default function ImagePage() {
     setPrompt(PROMPT_TEMPLATES[randomIndex]);
   };
 
-  // 根据当前比例返回预览区域样式
-  const getAspectRatioClass = () => {
-    switch (ratio) {
-      case '1:1':
-        return 'aspect-square';
-      case '3:4':
-        return 'aspect-[3/4]';
-      case '4:3':
-        return 'aspect-[4/3]';
-      case '16:9':
-        return 'aspect-[16/9]';
-      case '9:16':
-        return 'aspect-[9/16]';
-      case '3:2':
-        return 'aspect-[3/2]';
-      default:
-        return 'aspect-[16/9]';
+  // 模型切换时重置相关参数
+  const handleModelChange = useCallback((newModel: ImageModel) => {
+    setModel(newModel);
+    if (newModel === 'agnes') {
+      setStyle(AGNES_DEFAULT_PARAMS.style);
+      setRatio(AGNES_DEFAULT_PARAMS.size);
+      setQuality(AGNES_DEFAULT_PARAMS.quality);
+    } else {
+      setStyle(DEFAULT_PARAMS.style);
+      setRatio(DEFAULT_PARAMS.aspectRatio);
+      setSteps(DEFAULT_PARAMS.steps);
+      setCfg(DEFAULT_PARAMS.guidanceScale);
     }
-  };
+    setBatchSize(DEFAULT_PARAMS.batchSize);
+    setSeed('');
+  }, []);
+
+  // 预览框始终跟随当前选中的比例，生成 API 仍使用 ratio 参数
+  const previewBoxStyle = getImagePreviewBoxStyle(ratio);
+  const previewRatioMismatch =
+    generatedImages.length > 0 && generatedRatio != null && generatedRatio !== ratio;
+  // 仅当当前比例与生成图一致时才展示主预览，避免旧图在新比例框内留白
+  const showGeneratedPreview = generatedImages.length > 0 && !previewRatioMismatch;
 
   // Quick Start Actions
   const quickStarts = [
@@ -231,21 +269,24 @@ export default function ImagePage() {
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-      <StyleSelector selected={style} onStyleChange={setStyle} />
+      <StyleSelector selected={style} onStyleChange={setStyle} model={model} />
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
       <SettingsPanel
+        model={model}
         ratio={ratio}
         steps={steps}
         cfg={cfg}
         seed={seed}
         batchSize={batchSize}
+        quality={quality}
         onRatioChange={setRatio}
         onStepsChange={setSteps}
         onCfgChange={setCfg}
         onSeedChange={setSeed}
         onBatchSizeChange={setBatchSize}
+        onQualityChange={setQuality}
       />
     </>
   );
@@ -271,16 +312,19 @@ export default function ImagePage() {
                 </Badge>
               </h1>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              aria-label="打开参数面板"
-              onClick={() => setShowMobileSettings(true)}
-              className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
-            >
-              <Pencil className="w-4 h-4 mr-2" />
-              参数设置
-            </Button>
+            <div className="flex items-center gap-3">
+              <ModelSwitcher model={model} onModelChange={handleModelChange} />
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="打开参数面板"
+                onClick={() => setShowMobileSettings(true)}
+                className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                参数设置
+              </Button>
+            </div>
           </header>
 
           {/* 内容区域：拆分视图 */}
@@ -383,39 +427,33 @@ export default function ImagePage() {
               </div>
 
               <div
-                className={cn(
-                  'relative transition-all duration-500 ease-in-out',
-                  generatedImages.length > 0 ? 'w-full max-w-4xl' : 'w-full max-w-lg'
-                )}
+                className="relative mx-auto transition-all duration-500 ease-in-out"
+                style={previewBoxStyle}
               >
-                {generatedImages.length > 0 ? (
+                {showGeneratedPreview ? (
                   <div
                     className={cn(
-                      'relative rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300',
-                      getAspectRatioClass()
+                      'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300'
                     )}
                   >
-                    {/* 图片内容 */}
-                    <div
+                    <img
+                      src={generatedImages[activeImageIndex]}
+                      alt="生成结果"
                       className={cn(
-                        'absolute inset-0 bg-cover bg-center transition-all duration-1000',
+                        'absolute inset-0 w-full h-full object-cover transition-all duration-1000',
                         isGenerating
-                          ? 'scale-110 blur-xl opacity-80'
+                          ? 'scale-105 blur-xl opacity-80'
                           : 'scale-100 blur-0 opacity-100'
                       )}
-                      style={{
-                        backgroundImage: `url('${generatedImages[activeImageIndex]}')`,
-                      }}
-                    ></div>
+                    />
 
-                    {/* 下载按钮 */}
                     {!isGenerating && (
                       <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <button
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = generatedImages[activeImageIndex];
-                            link.download = `kolors-${Date.now()}.png`;
+                            link.download = `${model}-${Date.now()}.png`;
                             link.click();
                           }}
                           className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
@@ -427,11 +465,9 @@ export default function ImagePage() {
                     )}
                   </div>
                 ) : (
-                  // 空状态 - 准备好开始创作了吗？
                   <div
                     className={cn(
-                      'flex flex-col items-center justify-center text-center py-20 px-8 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300',
-                      getAspectRatioClass()
+                      'absolute inset-0 flex flex-col items-center justify-center text-center py-12 px-6 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300'
                     )}
                   >
                     <div className="w-24 h-24 mb-6 rounded-3xl bg-white dark:bg-slate-800 shadow-xl shadow-blue-500/10 flex items-center justify-center relative overflow-hidden group">
@@ -440,27 +476,48 @@ export default function ImagePage() {
                       <div className="absolute -top-1 -right-1 w-8 h-8 bg-blue-500/20 blur-xl rounded-full" />
                     </div>
 
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
-                      准备好开始创作了吗？
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
-                      在左侧输入提示词，选择风格并点击"立即生成"开始您的艺术之旅。
-                    </p>
-
-                    <div className="flex flex-wrap justify-center gap-3">
-                      {quickStarts.map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleQuickStart(item)}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                    {previewRatioMismatch ? (
+                      <>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
+                          已切换至 {getRatioLabel(ratio)} 比例
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6 leading-relaxed text-sm">
+                          当前预览框已按新比例调整。点击「立即生成」将输出对应尺寸的图片，下方缩略图可查看上次结果。
+                        </p>
+                        <Button
+                          onClick={handleGenerate}
+                          disabled={isGenerating || !prompt.trim()}
+                          className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-6 text-white shadow-lg"
                         >
-                          {item.icon}
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {item.label}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          按 {getRatioLabel(ratio)} 重新生成
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
+                          准备好开始创作了吗？
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
+                          在左侧输入提示词，选择风格并点击「立即生成」开始您的艺术之旅。
+                        </p>
+
+                        <div className="flex flex-wrap justify-center gap-3">
+                          {quickStarts.map((item, i) => (
+                            <button
+                              key={i}
+                              onClick={() => handleQuickStart(item)}
+                              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                            >
+                              {item.icon}
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                {item.label}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -529,7 +586,10 @@ export default function ImagePage() {
                     {generatedImages.map((img: string, i: number) => (
                       <div
                         key={i}
-                        onClick={() => setActiveImageIndex(i)}
+                        onClick={() => {
+                          setActiveImageIndex(i);
+                          if (generatedRatio) setRatio(generatedRatio);
+                        }}
                         className={cn(
                           'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
                           i === activeImageIndex
@@ -554,7 +614,7 @@ export default function ImagePage() {
         <div className="hidden xl:block">
           <CreativeCockpit
             onPromptAppend={(text) => {
-              setPrompt(text);
+              setPrompt((prev) => (prev ? `${prev}，${text}` : text));
             }}
             onStyleApply={(params) => {
               if (params.ratio) setRatio(params.ratio);

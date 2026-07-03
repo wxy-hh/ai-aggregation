@@ -141,7 +141,6 @@ export function BaziInputForm({
       setCityQuery(value.location.name);
     }
     // 仅在外部 value 变化时同步
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.location.name]);
 
   const cityResults = useMemo(() => {

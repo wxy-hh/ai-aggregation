@@ -627,258 +627,260 @@ export default function ChatPage() {
   return (
     <AuthGuard>
       <AppLayout>
-      <div className="flex h-full min-h-0 w-full">
-        {/* 聊天历史侧边栏 */}
-        <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
-          {renderConversationList()}
-        </aside>
+        <div className="flex h-full min-h-0 w-full">
+          {/* 聊天历史侧边栏 */}
+          <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
+            {renderConversationList()}
+          </aside>
 
-        {/* 主聊天区域 */}
-        <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
-          <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
-            <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
-            {/* 头部 */}
-            <header
-              className={cn(
-                'relative z-20 flex-none px-4 py-4 sm:px-6',
-                // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
-                !isEmptyChat &&
-                  'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
-              )}
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
-                    <BarChart2 className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
-                      {currentTitle}
-                    </h1>
-                    <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
-                      {/* 模型选择器 */}
-                      <div className="relative" ref={modelSelectorRef}>
-                        <button
-                          onClick={() => setShowModelSelector(!showModelSelector)}
-                          className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
-                        >
-                          <svg
-                            className="w-3.5 h-3.5 text-blue-500"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                          </svg>
-                          <span>{currentModelLabel}</span>
-                          <svg
-                            className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        </button>
-
-                        {/* 下拉列表 */}
-                        {showModelSelector && (
-                          <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
-                            {(
-                              Object.entries(MODELS) as [
-                                ProviderName,
-                                (typeof MODELS)[ProviderName],
-                              ][]
-                            ).map(([providerKey, config]) => (
-                              <div key={providerKey} className="px-2 py-1">
-                                <div className="text-xs text-slate-400 font-medium px-2 py-1">
-                                  {config.name}
-                                </div>
-                                {config.models.map((m) => (
-                                  <button
-                                    key={m.id}
-                                    onClick={() => {
-                                      handleSwitchProvider(providerKey, m.id);
-                                      setShowModelSelector(false);
-                                    }}
-                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                      provider === providerKey && model === m.id
-                                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                    }`}
-                                  >
-                                    {m.label}
-                                  </button>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+          {/* 主聊天区域 */}
+          <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
+            <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
+              <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
+              {/* 头部 */}
+              <header
+                className={cn(
+                  'relative z-20 flex-none px-4 py-4 sm:px-6',
+                  // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
+                  !isEmptyChat &&
+                    'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
+                )}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
+                      <BarChart2 className="w-5 h-5" />
                     </div>
-                  </div>
-                </div>
-
-                {/* 头部操作区 */}
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <button
-                    type="button"
-                    aria-label="打开会话列表"
-                    onClick={() => setShowConversationDrawer(true)}
-                    className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >
-                    <PanelLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="打开模型选择"
-                    onClick={() => setShowMobileModelDrawer(true)}
-                    className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    <span className="max-w-[88px] truncate">{currentModelLabel}</span>
-                  </button>
-                </div>
-              </div>
-            </header>
-
-            {/* 错误显示 */}
-            {error && (
-              <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
-                <strong>错误：</strong> {error.message}
-              </div>
-            )}
-
-            {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
-            <div
-              ref={messagesScrollRef}
-              className={cn(
-                'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
-                isEmptyChat ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5' : 'px-4 py-4 sm:px-5 sm:py-5'
-              )}
-            >
-              {isEmptyChat ? (
-                <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
-                  <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
-
-                  <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
-                    <div className="mb-8 flex flex-col items-center text-center">
-                      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
-                        <Bot className="h-8 w-8" />
-                      </div>
-                      <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                        智能对话助手
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {quickActions.map((action) => {
-                        const ActionIcon = action.icon;
-
-                        return (
+                    <div className="min-w-0 flex-1">
+                      <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+                        {currentTitle}
+                      </h1>
+                      <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
+                        {/* 模型选择器 */}
+                        <div className="relative" ref={modelSelectorRef}>
                           <button
-                            key={action.title}
-                            onClick={() => handleSend(action.prompt)}
-                            className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                            onClick={() => setShowModelSelector(!showModelSelector)}
+                            className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
                           >
-                            <div
-                              className={cn(
-                                'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                                action.iconClassName
-                              )}
+                            <svg
+                              className="w-3.5 h-3.5 text-blue-500"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
                             >
-                              <ActionIcon className="h-5 w-5" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
-                                {action.title}
-                              </div>
-                              <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                {action.description}
-                              </div>
-                            </div>
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                            </svg>
+                            <span>{currentModelLabel}</span>
+                            <svg
+                              className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
                           </button>
-                        );
-                      })}
-                    </div>
 
-                    <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                        <FileText className="h-3.5 w-3.5 text-blue-500" />
-                        支持长文本分析
-                      </div>
-                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                        <Globe className="h-3.5 w-3.5 text-blue-500" />
-                        实时联网搜索
-                      </div>
-                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                        <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                        企业级数据安全
+                          {/* 下拉列表 */}
+                          {showModelSelector && (
+                            <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
+                              {(
+                                Object.entries(MODELS) as [
+                                  ProviderName,
+                                  (typeof MODELS)[ProviderName],
+                                ][]
+                              ).map(([providerKey, config]) => (
+                                <div key={providerKey} className="px-2 py-1">
+                                  <div className="text-xs text-slate-400 font-medium px-2 py-1">
+                                    {config.name}
+                                  </div>
+                                  {config.models.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      onClick={() => {
+                                        handleSwitchProvider(providerKey, m.id);
+                                        setShowModelSelector(false);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                        provider === providerKey && model === m.id
+                                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      {m.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* 头部操作区 */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      aria-label="打开会话列表"
+                      onClick={() => setShowConversationDrawer(true)}
+                      className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                      <PanelLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="打开模型选择"
+                      onClick={() => setShowMobileModelDrawer(true)}
+                      className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <span className="max-w-[88px] truncate">{currentModelLabel}</span>
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <div className="flex w-full flex-col pt-2 pb-4">
-                  {displayMessages.map((msg) => (
-                    <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
-                  ))}
-                  <div ref={messagesEndRef} />
+              </header>
+
+              {/* 错误显示 */}
+              {error && (
+                <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+                  <strong>错误：</strong> {error.message}
                 </div>
               )}
-              {/* 有消息时底部渐隐，避免输入坞上方硬切线；空状态不渲染以免中间区域出现色带 */}
+
+              {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
+              <div
+                ref={messagesScrollRef}
+                className={cn(
+                  'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
+                  isEmptyChat
+                    ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
+                    : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
+                )}
+              >
+                {isEmptyChat ? (
+                  <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
+                    <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
+
+                    <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
+                      <div className="mb-8 flex flex-col items-center text-center">
+                        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                          <Bot className="h-8 w-8" />
+                        </div>
+                        <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                          智能对话助手
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {quickActions.map((action) => {
+                          const ActionIcon = action.icon;
+
+                          return (
+                            <button
+                              key={action.title}
+                              onClick={() => handleSend(action.prompt)}
+                              className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                            >
+                              <div
+                                className={cn(
+                                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                                  action.iconClassName
+                                )}
+                              >
+                                <ActionIcon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                  {action.title}
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                  {action.description}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <FileText className="h-3.5 w-3.5 text-blue-500" />
+                          支持长文本分析
+                        </div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <Globe className="h-3.5 w-3.5 text-blue-500" />
+                          实时联网搜索
+                        </div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                          企业级数据安全
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex w-full flex-col pt-2 pb-4">
+                    {displayMessages.map((msg) => (
+                      <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </div>
+              {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
               {!isEmptyChat && (
                 <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-14 bg-gradient-to-t from-[rgba(248,250,252,0.98)] via-[rgba(248,250,252,0.65)] to-transparent dark:from-[rgba(15,23,42,0.95)] dark:via-[rgba(15,23,42,0.5)]"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
                   aria-hidden
                 />
               )}
-            </div>
 
-            {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
-            <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
-              <ChatInput onSend={handleSend} isLoading={isLoading} />
+              {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
+              <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+                <ChatInput onSend={handleSend} isLoading={isLoading} />
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
-        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
-              对话列表
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              在移动端快速切换历史会话
-            </DialogDescription>
-          </div>
-          <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
-            {renderConversationList(() => setShowConversationDrawer(false))}
-          </div>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
+          <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+                对话列表
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+                在移动端快速切换历史会话
+              </DialogDescription>
+            </div>
+            <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
+              {renderConversationList(() => setShowConversationDrawer(false))}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog open={showMobileModelDrawer} onOpenChange={setShowMobileModelDrawer}>
-        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
-              模型选择
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              选择当前对话使用的模型与提供商
-            </DialogDescription>
-          </div>
-          <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
-            {renderModelOptions(() => setShowMobileModelDrawer(false))}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </AppLayout>
+        <Dialog open={showMobileModelDrawer} onOpenChange={setShowMobileModelDrawer}>
+          <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+                模型选择
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+                选择当前对话使用的模型与提供商
+              </DialogDescription>
+            </div>
+            <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
+              {renderModelOptions(() => setShowMobileModelDrawer(false))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </AppLayout>
     </AuthGuard>
   );
 }

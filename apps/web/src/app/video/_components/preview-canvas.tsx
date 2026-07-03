@@ -54,11 +54,15 @@ export function PreviewCanvas({
     }
   }, [videoUrl]);
 
-  // 下载视频
+  // 下载视频（通过 BFF 代理，避免第三方 URL 的 CORS 限制）
   const handleDownload = async () => {
     if (!videoUrl) return;
     try {
-      const response = await fetch(videoUrl);
+      const proxyUrl = `/api/video/proxy?url=${encodeURIComponent(videoUrl)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) {
+        throw new Error(`下载失败: ${response.statusText}`);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -172,6 +176,7 @@ export function PreviewCanvas({
                     strokeWidth="6"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 85}
+                    initial={{ strokeDashoffset: 2 * Math.PI * 85 }}
                     animate={{ strokeDashoffset: 2 * Math.PI * 85 * (1 - progress / 100) }}
                     className="text-blue-500"
                     transition={{ duration: 0.5 }}

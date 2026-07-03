@@ -23,8 +23,11 @@ export function VideoEditor() {
     progress,
     config,
     setConfig,
+    setModel,
     referenceImage,
     setReferenceImage,
+    referenceImages,
+    setReferenceImages,
     generateVideo,
     reset,
   } = useVideoGeneration();
@@ -66,8 +69,11 @@ export function VideoEditor() {
               setPrompt={setPrompt}
               config={config}
               setConfig={setConfig}
+              setModel={setModel}
               referenceImage={referenceImage}
               setReferenceImage={setReferenceImage}
+              referenceImages={referenceImages}
+              setReferenceImages={setReferenceImages}
               onGenerate={generateVideo}
               isGenerating={isGenerating}
               loadingStep={loadingStep}
@@ -110,7 +116,7 @@ export function VideoEditor() {
 
             {/* 预览区域 */}
             <div className="relative z-10 flex flex-1 flex-col items-center justify-center overflow-hidden p-4 lg:p-8">
-              <div className="w-full h-full max-w-[1200px] max-h-[800px]">
+              <div className="h-full w-full max-h-[800px] max-w-[1200px]">
                 <PreviewCanvas
                   videoUrl={videoUrl}
                   coverUrl={coverUrl}
@@ -169,8 +175,11 @@ export function VideoEditor() {
               setPrompt={setPrompt}
               config={config}
               setConfig={setConfig}
+              setModel={setModel}
               referenceImage={referenceImage}
               setReferenceImage={setReferenceImage}
+              referenceImages={referenceImages}
+              setReferenceImages={setReferenceImages}
               onGenerate={() => {
                 setIsConfigDrawerOpen(false);
                 generateVideo();

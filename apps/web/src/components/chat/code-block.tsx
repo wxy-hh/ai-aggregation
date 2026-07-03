@@ -29,7 +29,7 @@ export function CodeBlock({ language, children, className }: CodeBlockProps) {
   };
 
   return (
-    <div className="relative group/code my-4 rounded-xl overflow-hidden bg-slate-900 mx-0">
+    <div className="relative group/code rounded-xl overflow-hidden bg-slate-900 mx-0">
       {/* 顶部工具栏：显示语言和复制按钮 */}
       <div className="flex items-center justify-between px-4 py-2 bg-slate-950/50 border-b border-white/10 text-xs text-slate-400">
         {/* 左侧：编程语言标签 */}
@@ -76,7 +76,7 @@ export function CodeBlock({ language, children, className }: CodeBlockProps) {
       </div>
 
       {/* 代码内容区域：支持横向滚动 */}
-      <div className="p-4 overflow-x-auto">
+      <div className="overflow-x-auto">
         <code className={className}>{children}</code>
       </div>
     </div>
