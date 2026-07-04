@@ -60,3 +60,5 @@ infra/worker-rtasr/.wrangler/
 apps/web/ark-response-debug.json
 .playwright-mcp*
 .codegraph*
+.codex*
+.agents*

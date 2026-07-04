@@ -29,6 +29,6 @@ export function stripDataUrlPrefix(dataUrl: string): string {
 
 // 读取多个文件为 Data URL，限制最大数量
 export function readFilesAsDataUrls(files: File[], maxCount = Infinity): Promise<string[]> {
-  const limited = maxCount < files.length ? files.slice(0, maxCount) : Array.from(files);
+  const limited = files.slice(0, maxCount);
   return Promise.all(limited.map(blobToDataUrl));
 }

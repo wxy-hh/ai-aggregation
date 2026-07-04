@@ -9,6 +9,12 @@ const AGNES_API_URL = process.env.AGNES_INFERENCE_API_URL || 'https://apihub.agn
 export async function POST(request: NextRequest) {
   let deducted = false;
   let userId: string | null = null;
+  const maybeRefund = () => {
+    if (userId && deducted) {
+      deducted = false;
+      return refundTokens(userId, 1);
+    }
+  };
 
   try {
     if (!AGNES_API_KEY) {
@@ -39,12 +45,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log('→ Generating image with Agnes...');
-    console.log('  Prompt length:', body.prompt?.length || 0);
-    console.log('  Size:', body.size);
-    console.log('  Style:', body.style);
-    console.log('  Quality:', body.quality);
-
     const apiBody: Record<string, unknown> = {
       model: 'agnes-image-2.1-flash',
       prompt: body.prompt,
@@ -66,15 +66,9 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(apiBody),
     });
 
-    console.log('← Agnes API Response Status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('← Agnes API Error:', errorText);
-      if (userId && deducted) {
-        deducted = false;
-        await refundTokens(userId, 1);
-      }
+      await maybeRefund();
       return NextResponse.json(
         { error: `Agnes API error: ${errorText}` },
         { status: response.status }
@@ -93,7 +87,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (userId) {
-      await safeRecordAiUsage({
+      safeRecordAiUsage({
         userId,
         feature: 'image',
         action: 'image-generate',
@@ -111,10 +105,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
-    if (userId && deducted) {
-      deducted = false;
-      await refundTokens(userId, 1);
-    }
+    await maybeRefund();
     console.error('Agnes image generation error:', error);
     return NextResponse.json(
       {

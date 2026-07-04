@@ -72,7 +72,7 @@ async function handleZhipuPost(body: VideoGenerationRequest, userId: string | nu
   }
 
   if (userId) {
-    await safeRecordAiUsage({
+    safeRecordAiUsage({
       userId,
       feature: 'video',
       action: 'image-generate',
@@ -157,7 +157,7 @@ async function handleAgnesPost(body: VideoGenerationRequest, userId: string | nu
   }
 
   if (userId) {
-    await safeRecordAiUsage({
+    safeRecordAiUsage({
       userId,
       feature: 'video',
       action: 'image-generate',

@@ -141,18 +141,14 @@ const PREVIEW_MAX_HEIGHT = 560;
 
 /** 将比例 ID（1:1 或 1024x1024）转为 CSS aspect-ratio 值 */
 export function resolveAspectRatioCss(ratioId: string): string {
-  const map: Record<string, string> = {
-    '1:1': '1 / 1',
-    '3:4': '3 / 4',
-    '4:3': '4 / 3',
-    '16:9': '16 / 9',
-    '3:2': '3 / 2',
-    '1024x1024': '1 / 1',
-    '768x1024': '3 / 4',
-    '1024x768': '4 / 3',
-    '1024x576': '16 / 9',
-  };
-  return map[ratioId] ?? '16 / 9';
+  // 从已有映射推导（'1:1' → '1024x1024' → '1024 / 1024'）
+  const pixelSize = ASPECT_RATIO_TO_SIZE[ratioId];
+  if (pixelSize) {
+    return pixelSize.replace('x', ' / ');
+  }
+  // 直接传入像素格式（'1024x1024' → '1024 / 1024'）
+  const css = ratioId.replace('x', ' / ');
+  return css !== ratioId ? css : '16 / 9';
 }
 
 function parseAspectRatioNumeric(cssRatio: string): number {
@@ -161,10 +157,6 @@ function parseAspectRatioNumeric(cssRatio: string): number {
   return w / h;
 }
 
-/**
- * 预览框样式：在固定边界内按宽高比自适应
- * 横屏受 maxWidth 约束，竖屏受 maxHeight 约束，避免无脑等比放大缩小
- */
 /** 获取比例的人类可读标签（1:1、16:9 等） */
 export function getRatioLabel(ratioId: string): string {
   const agnes = AGNES_SIZE_OPTIONS.find((r) => r.id === ratioId);
@@ -173,6 +165,10 @@ export function getRatioLabel(ratioId: string): string {
   return kolors?.label ?? ratioId;
 }
 
+/**
+ * 预览框样式：在固定边界内按宽高比自适应
+ * 横屏受 maxWidth 约束，竖屏受 maxHeight 约束，避免无脑等比放大缩小
+ */
 export function getImagePreviewBoxStyle(ratioId: string): {
   width: string;
   maxWidth: string;
@@ -182,11 +178,10 @@ export function getImagePreviewBoxStyle(ratioId: string): {
   const numericRatio = parseAspectRatioNumeric(aspectRatio);
 
   let width = PREVIEW_MAX_WIDTH;
-  let height = width / numericRatio;
+  const height = width / numericRatio;
 
   if (height > PREVIEW_MAX_HEIGHT) {
-    height = PREVIEW_MAX_HEIGHT;
-    width = height * numericRatio;
+    width = PREVIEW_MAX_HEIGHT * numericRatio;
   }
 
   return {
