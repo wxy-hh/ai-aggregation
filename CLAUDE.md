@@ -394,3 +394,21 @@ EOF
 - 文件名使用英文，避免中文字符
 - 超过 500 行的文件分批写入
 - 写入后使用 `wc -l` 或 `head` 验证内容完整性
+
+## dev-flow 工作流
+
+使用 `.claude/skills/dev-flow/SKILL.md` 作为开发标准入口。新功能、业务改动、bug 修复或重构请求默认以此技能为入口，先判断 XS / S / M / L，再选择最小足够流程。
+
+**入口命令**：
+- `/dev-task <需求描述>` — 新需求默认入口
+- `/onboard-dev-flow` — 为本项目重新生成适配配置
+- `/finish` — 收尾前验证
+- `/review-diff` — 审查当前改动
+
+**启用技能**：dev-flow、req-probe、writing-plans、code-review、verification-before-completion
+
+**风险链路**：涉及登录、鉴权、token/session、Supabase RLS、数据删除、跨系统入口时，先提示风险并建议完整流程。
+
+**验证**：`automated-tests: none`，不把 `typecheck`/`lint` 当成测试证据。L 级运行时行为改动必须有手动测试脚本或 dev server 验证记录。
+
+**项目适配**：`.claude/rules/project-workflow.md` 包含项目特有配置。
