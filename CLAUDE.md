@@ -405,7 +405,9 @@ EOF
 - `/finish` — 收尾前验证
 - `/review-diff` — 审查当前改动
 
-**启用技能**：dev-flow、req-probe、writing-plans、code-review、verification-before-completion
+**启用技能**：dev-flow、req-probe、grillme、writing-plans、requirements-coverage、plan-review、rollback-units、subagent-driven-development、executing-plans、code-review、requesting-code-review、verification-before-completion、finishing-a-development-branch
+
+**迁移/使用文档**：`docs/claude-dev-flow-migration.md`、`docs/claude-dev-flow-post-migration-usage.md`、`docs/claude-dev-flow-smoke-test.md`
 
 **风险链路**：涉及登录、鉴权、token/session、Supabase RLS、数据删除、跨系统入口时，先提示风险并建议完整流程。
 

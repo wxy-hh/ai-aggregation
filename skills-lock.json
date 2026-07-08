@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "zhang-yiming-perspective": {
+      "source": "alchaincyf/zhang-yiming-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "11ee6fcf4a06a203af8f7c7360f3a6aa981bbe494c28a8f73de8dde36b8f0dbb"
+    }
+  }
+}
