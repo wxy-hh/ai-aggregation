@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { requireAuth } from '@/lib/auth/require-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { ApiError, createSuccessResponse } from '@/lib/api/responses';
+import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
         emailVerified: true,
         role: true,
         tokens: true,
+        isAnonymous: true,
         createdAt: true,
       },
     });
@@ -30,10 +31,7 @@ export async function GET(req: NextRequest) {
     return createSuccessResponse({ user });
   } catch (error) {
     if (error instanceof AuthError) {
-      if (error.code === 'FORBIDDEN') {
-        return ApiError.forbidden(error.message);
-      }
-      return ApiError.unauthorized(error.message);
+      return handleAuthError(error);
     }
     if (error instanceof Error && error.message.includes('jwt')) {
       return ApiError.unauthorized('登录已过期，请重新登录');

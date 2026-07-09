@@ -6,8 +6,11 @@ import type {
   QimenStreamEvent,
 } from '@/app/destiny/_components/qimen-types';
 import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../../_lib/ark-response';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -94,7 +97,7 @@ const QuickSectionSchema = z.object({
 type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 
 // JSON Schema 常量，用于 Doubao json_schema 结构化输出
 type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
@@ -367,8 +370,11 @@ class UpstreamModelError extends Error {
 }
 
 export async function POST(request: Request) {
+  let deductedAmount = 0;
+
   try {
-    const userId = await getOptionalUserId(request);
+    const user = await getCurrentUser(request);
+    const userId = user.id;
     const body = await request.json();
     const parsed = RequestSchema.safeParse(body);
 
@@ -386,6 +392,30 @@ export async function POST(request: Request) {
       );
     }
 
+    // 匿名用户额度检查（真实用户保持原有逻辑，由调用方控制）
+    if (userId) {
+      const deduction = await deductAiQuotaForRoute({
+        userId,
+        user,
+        anonymousCost: ANONYMOUS_OPERATION_COSTS.DESTINY_QIMEN_ANALYZE,
+      });
+
+      if (!deduction.success) {
+        if (deduction.reason === 'QUOTA_EXHAUSTED') {
+          return NextResponse.json(
+            { success: false, error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
+            { status: 402 }
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
+          { status: 429 }
+        );
+      }
+
+      deductedAmount = deduction.deductedAmount;
+    }
+
     const arkApiKey = process.env.ARK_API_KEY;
     const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
     if (!arkApiKey) {
@@ -397,6 +427,7 @@ export async function POST(request: Request) {
       arkApiKey,
       arkBaseUrl,
       userId,
+      deductedAmount,
     });
 
     return new Response(stream, {
@@ -407,6 +438,12 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ success: false, error: error.message }, { status: 403 });
+      }
+      return NextResponse.json({ success: false, error: error.message }, { status: 401 });
+    }
     return NextResponse.json(
       {
         success: false,
@@ -422,11 +459,13 @@ function createQimenStream({
   arkApiKey,
   arkBaseUrl,
   userId,
+  deductedAmount,
 }: {
   input: QimenAnalyzeInput;
   arkApiKey: string;
   arkBaseUrl: string;
   userId: string | null;
+  deductedAmount: number;
 }) {
   const encoder = new TextEncoder();
 
@@ -481,6 +520,9 @@ function createQimenStream({
           result: mergedResult,
         });
       } catch (error) {
+        // 流式处理失败，退还已扣额度
+        await maybeRefund(userId, deductedAmount);
+
         send({
           type: 'error',
           error: mapStreamError(error),

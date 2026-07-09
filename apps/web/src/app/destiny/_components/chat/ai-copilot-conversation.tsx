@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { consumeChatResponse } from '@/lib/utils/chat-stream';
 import type { DestinyReport } from '../types';
 import { Button } from '@/components/ui/button';
@@ -161,9 +161,8 @@ export function AICoPilotConversation({
     scrollToBottom();
 
     try {
-      const response = await fetch('/api/destiny/copilot', {
+      const response = await authFetch('/api/destiny/copilot', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({
           report,
           question: q,

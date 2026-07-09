@@ -3,7 +3,7 @@ import { prisma } from '@repo/db';
 import { hashPassword } from '@/lib/auth/password';
 import { requireAdmin } from '@/lib/auth/require-admin';
 import { AuthError } from '@/lib/auth/errors';
-import { ApiError, createSuccessResponse } from '@/lib/api/responses';
+import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
 import { adminCreateUserSchema, adminUsersQuerySchema } from '@/schemas/auth.schema';
 
 export async function GET(req: NextRequest) {
@@ -25,15 +25,21 @@ export async function GET(req: NextRequest) {
 
     const { search, page, limit } = parsed.data;
 
-    const where = search
-      ? {
-          OR: [
-            { username: { contains: search, mode: 'insensitive' as const } },
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { email: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    // 默认不显示匿名用户，避免污染真实用户列表
+    const includeAnonymous = url.searchParams.get('includeAnonymous') === 'true';
+
+    const where = {
+      ...(includeAnonymous ? {} : { isAnonymous: false }),
+      ...(search
+        ? {
+            OR: [
+              { username: { contains: search, mode: 'insensitive' as const } },
+              { name: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
 
     const [users, total, adminCount, disabledCount] = await Promise.all([
       prisma.user.findMany({
@@ -54,8 +60,8 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       prisma.user.count({ where }),
-      prisma.user.count({ where: { role: 'admin' } }),
-      prisma.user.count({ where: { status: 'disabled' } }),
+      prisma.user.count({ where: { role: 'admin', isAnonymous: false } }),
+      prisma.user.count({ where: { status: 'disabled', isAnonymous: false } }),
     ]);
 
     return createSuccessResponse({
@@ -64,9 +70,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     if (error instanceof AuthError) {
-      return error.code === 'UNAUTHORIZED'
-        ? ApiError.unauthorized(error.message)
-        : ApiError.forbidden(error.message);
+      return handleAuthError(error);
     }
     return ApiError.internalError('获取用户列表失败');
   }
@@ -121,9 +125,7 @@ export async function POST(req: NextRequest) {
     return createSuccessResponse({ user }, '用户创建成功', 201);
   } catch (error) {
     if (error instanceof AuthError) {
-      return error.code === 'UNAUTHORIZED'
-        ? ApiError.unauthorized(error.message)
-        : ApiError.forbidden(error.message);
+      return handleAuthError(error);
     }
     return ApiError.internalError('创建用户失败');
   }

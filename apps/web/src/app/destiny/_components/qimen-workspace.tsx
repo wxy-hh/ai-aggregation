@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type QimenErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
@@ -495,9 +495,8 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     let currentErrorKind: QimenErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/qimen/analyze/start', {
+      const response = await authFetch('/api/destiny/qimen/analyze/start', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify(mapFormToQimenRequest(formData)),
         signal: controller.signal,
       });

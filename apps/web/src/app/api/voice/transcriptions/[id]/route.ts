@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@repo/db';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
+
+/**
+ * 将认证错误统一转换为转写详情 API 的错误响应格式。
+ */
+function handleAuthError(error: AuthError) {
+  return NextResponse.json(
+    { error: error.message },
+    { status: error.code === 'FORBIDDEN' ? 403 : 401 }
+  );
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -21,6 +32,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json(transcription);
   } catch (error) {
     console.error('Fetch transcription error:', error);
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
     return NextResponse.json({ error: '获取记录失败' }, { status: 500 });
   }
 }
@@ -53,6 +67,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
   } catch (error) {
     console.error('Delete transcription error:', error);
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
     return NextResponse.json({ error: '删除失败' }, { status: 500 });
   }
 }

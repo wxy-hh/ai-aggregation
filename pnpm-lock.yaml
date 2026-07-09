@@ -26,6 +26,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@fingerprintjs/fingerprintjs':
+        specifier: ^5.2.0
+        version: 5.2.0
       '@radix-ui/react-avatar':
         specifier: ^1.0.4
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.13))(@types/react@19.2.13)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -1184,6 +1187,9 @@ packages:
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
+
+  '@fingerprintjs/fingerprintjs@5.2.0':
+    resolution: {integrity: sha512-j+2nInkwCQNTJcNhOjvkGM/nLRTuGJTC6xai4quqvUpjob2ssrGwBZjS7k55nOmKvge7qvJT2nS3i/IRvQSTQA==}
 
   '@floating-ui/core@1.7.4':
     resolution: {integrity: sha512-C3HlIdsBxszvm5McXlB8PeOEWfBhcGBTZGkGlWc2U0KFY5IwG5OQEuQ8rq52DZmcHDlPLd+YFBK+cZcytwIFWg==}
@@ -6585,6 +6591,8 @@ snapshots:
   '@exodus/bytes@1.12.0': {}
 
   '@fastify/busboy@2.1.1': {}
+
+  '@fingerprintjs/fingerprintjs@5.2.0': {}
 
   '@floating-ui/core@1.7.4':
     dependencies:

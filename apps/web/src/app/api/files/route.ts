@@ -10,6 +10,7 @@ import {
 } from '@repo/shared';
 import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
 import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
 
 /**
  * 文件上传 API
@@ -26,6 +27,26 @@ const POLLING_INTERVAL = 500; // 500ms
 function createErrorId() {
   return (
     globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+}
+
+/**
+ * 将认证错误统一转换为文件 API 的错误响应格式。
+ */
+function handleAuthError(error: AuthError, errorId: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: error.message,
+      errorId,
+      timestamp: new Date().toISOString(),
+    },
+    {
+      status: error.code === 'FORBIDDEN' ? 403 : 401,
+      headers: {
+        'X-Error-ID': errorId,
+      },
+    }
   );
 }
 
@@ -321,6 +342,11 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    // 认证错误优先返回 401/403
+    if (error instanceof AuthError) {
+      return handleAuthError(error, errorId);
+    }
+
     // 根据错误类型返回不同的状态码
     if (error instanceof Error) {
       // 网络错误
@@ -440,6 +466,10 @@ export async function DELETE(request: NextRequest) {
       stack: error instanceof Error ? error.stack : undefined,
       timestamp: new Date().toISOString(),
     });
+
+    if (error instanceof AuthError) {
+      return handleAuthError(error, errorId);
+    }
 
     return NextResponse.json(
       {

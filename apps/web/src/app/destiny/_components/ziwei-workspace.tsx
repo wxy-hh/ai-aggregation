@@ -6,7 +6,7 @@ import { PersonalityIcon } from './icons/personality-icon';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
@@ -316,9 +316,8 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     let currentErrorKind: ZiweiErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/ziwei-report', {
+      const response = await authFetch('/api/destiny/ziwei-report', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify(mapFormToBaziRequest(formData)),
         signal: controller.signal,
       });

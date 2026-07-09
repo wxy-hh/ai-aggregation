@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { X, Loader2, ImagePlus, Trash2 } from 'lucide-react';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { validateFile, ALLOWED_MIME_TYPES } from '@repo/shared';
 import { TYPE_CONFIG } from './feedback-constants';
 import { toast } from 'sonner';
@@ -84,9 +84,8 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
     setError('');
 
     try {
-      const res = await fetch('/api/feedback', {
+      const res = await authFetch('/api/feedback', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({
           type,
           title: title.trim(),
@@ -110,9 +109,8 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
         imageEntries.forEach((entry) => formData.append('files', entry.file));
 
         try {
-          const uploadRes = await fetch(`/api/feedback/${feedbackId}/attachments`, {
+          const uploadRes = await authFetch(`/api/feedback/${feedbackId}/attachments`, {
             method: 'POST',
-            headers: authHeaders(undefined, null),
             body: formData,
           });
           const uploadData = await uploadRes.json();

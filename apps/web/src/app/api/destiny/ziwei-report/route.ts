@@ -44,7 +44,7 @@ const RequestSchema = z.object({
 
 // ─── 常量 ───
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const QUICK_TIMEOUT_MS = 40000;
 const REPORT_TIMEOUT_MS = 180000;
 const QUICK_MAX_TOKENS = 4000;

@@ -7,7 +7,7 @@ import { FeedbackList } from './_components/feedback-list';
 import { FeedbackForm } from './_components/feedback-form';
 import { FeedbackDetail } from './_components/feedback-detail';
 import { TYPE_LABEL, STATUS_LABEL } from './_components/feedback-constants';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { MessageSquarePlus, Filter, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -69,9 +69,7 @@ export default function FeedbackPage() {
       if (filterStatus !== 'ALL') params.set('status', filterStatus);
       if (debouncedSearch) params.set('search', debouncedSearch);
 
-      const res = await fetch(`/api/feedback?${params.toString()}`, {
-        headers: authHeaders(undefined, null),
-      });
+      const res = await authFetch(`/api/feedback?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setFeedbacks(data.data.items);
@@ -98,9 +96,7 @@ export default function FeedbackPage() {
       if (filterStatus !== 'ALL') params.set('status', filterStatus);
       if (debouncedSearch) params.set('search', debouncedSearch);
 
-      const res = await fetch(`/api/feedback?${params.toString()}`, {
-        headers: authHeaders(undefined, null),
-      });
+      const res = await authFetch(`/api/feedback?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setFeedbacks((prev) => [...prev, ...data.data.items]);

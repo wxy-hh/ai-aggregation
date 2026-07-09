@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { formatDecadeFortuneInsightsForPrompt } from '@repo/shared';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, refundTokens } from '@repo/db';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -96,7 +98,7 @@ const RequestSchema = z.object({
   focusDecadeName: z.string().trim().min(1).max(8).optional(),
 });
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const COPILOT_TIMEOUT_MS = 55000;
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream; charset=utf-8',
@@ -109,27 +111,33 @@ function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
 }
 
 export async function POST(req: Request) {
-  let deducted = false;
-  let userId: string | null = null;
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let deductedAmount = 0;
 
-  try {
-    userId = await getOptionalUserId(req);
-
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true, tokens: true },
+    try {
+      const deduction = await deductAiQuotaForRoute({
+        userId,
+        user,
+        anonymousCost: ANONYMOUS_OPERATION_COSTS.DESTINY_COPILOT,
       });
-      if (user && user.role !== 'admin') {
-        if (user.tokens <= 0) {
-          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
-        }
-        await deductTokens(userId, 1);
-        deducted = true;
-      }
-    }
 
-    const body = await req.json();
+      if (!deduction.success) {
+        if (deduction.reason === 'QUOTA_EXHAUSTED') {
+          return NextResponse.json(
+            { error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
+            { status: 402 }
+          );
+        }
+        return NextResponse.json(
+          { error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
+          { status: 429 }
+        );
+      }
+
+      deductedAmount = deduction.deductedAmount;
+
+      const body = await req.json();
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -163,14 +171,18 @@ export async function POST(req: Request) {
         response,
         timeoutId,
         userId,
-        deducted,
+        deductedAmount,
         questionLength: parsed.data.question.length,
       }),
       { headers: SSE_HEADERS }
     );
   } catch (error) {
-    if (userId && deducted) {
-      await refundTokens(userId, 1);
+    await maybeRefund(userId, deductedAmount);
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 401 });
     }
     if (error instanceof Error && error.name === 'AbortError') {
       return NextResponse.json({ error: '追问超时，请稍后重试' }, { status: 504 });
@@ -180,6 +192,7 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+});
 }
 
 async function requestArkStream({
@@ -244,13 +257,13 @@ function createCopilotStream({
   response,
   timeoutId,
   userId,
-  deducted,
+  deductedAmount,
   questionLength,
 }: {
   response: Response;
   timeoutId: ReturnType<typeof setTimeout>;
   userId: string | null;
-  deducted: boolean;
+  deductedAmount: number;
   questionLength: number;
 }) {
   const reader = response.body!.getReader();
@@ -350,9 +363,7 @@ function createCopilotStream({
           });
         }
       } catch (error) {
-        if (userId && deducted) {
-          await refundTokens(userId, 1);
-        }
+        await maybeRefund(userId, deductedAmount);
         streamController.enqueue(
           encodeSseEvent({
             type: 'error',

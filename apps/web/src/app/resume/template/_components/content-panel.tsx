@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { User, Briefcase, GraduationCap, Sparkles, FolderKanban } from 'lucide-react';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { ModuleCard } from './module-card';
 import { ResumeInput } from './resume-input';
 import { ResumeTextarea } from './resume-textarea';
@@ -198,9 +198,8 @@ export function ContentPanel() {
         context.position = personalInfo.title || undefined;
       }
 
-      const response = await fetch('/api/resume/polish', {
+      const response = await authFetch('/api/resume/polish', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({
           target: fieldPath,
           text,

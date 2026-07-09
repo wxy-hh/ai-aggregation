@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateZhipuToken } from '@/lib/zhipu-auth';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, refundTokens } from '@repo/db';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
 import { getProviderByModel, getVideoModelMeta } from '@/lib/constants/video-generation';
 
 const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
@@ -191,44 +192,47 @@ async function handleAgnesPost(body: VideoGenerationRequest, userId: string | nu
 }
 
 export async function POST(req: NextRequest) {
-  let deducted = false;
-  let userId: string | null = null;
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let deductedAmount = 0;
 
-  const maybeRefund = async () => {
-    if (userId && deducted) {
-      deducted = false;
-      await refundTokens(userId, getModelCredits(model));
-    }
-  };
+    let model = 'cogvideox-flash';
 
-  let model = 'cogvideox-flash';
+    try {
+      const body: VideoGenerationRequest = await req.json();
+      const { prompt, model: requestModel = 'cogvideox-flash' } = body;
+      model = requestModel;
 
-  try {
-    userId = await getOptionalUserId(req);
-
-    const body: VideoGenerationRequest = await req.json();
-    const { prompt, model: requestModel = 'cogvideox-flash' } = body;
-    model = requestModel;
-
-    if (!prompt?.trim()) {
-      return NextResponse.json({ error: { message: '请输入视频描述' } }, { status: 400 });
-    }
-
-    const credits = getModelCredits(model);
-
-    // 已认证的非 admin 用户预扣 token
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true, tokens: true },
-      });
-      if (user && user.role !== 'admin') {
-        if (user.tokens < credits) {
-          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
-        }
-        await deductTokens(userId, credits);
-        deducted = true;
+      if (!prompt?.trim()) {
+        return NextResponse.json({ error: { message: '请输入视频描述' } }, { status: 400 });
       }
+
+      const credits = getModelCredits(model);
+
+      // 非 admin 用户扣减额度
+      // 免费模型 credits 为 0，跳过扣减
+      if (credits > 0) {
+        const quotaResult = await deductAiQuotaForRoute({
+          userId,
+          user,
+          anonymousCost: credits,
+          realUserCost: credits,
+        });
+
+      if (!quotaResult.success) {
+        if (quotaResult.reason === 'QUOTA_EXHAUSTED') {
+          return NextResponse.json(
+            { error: { message: '免费额度已用完，您可以继续查看历史记录' }, code: 'QUOTA_EXHAUSTED' },
+            { status: 402 }
+          );
+        }
+        return NextResponse.json(
+          { error: { message: 'Token 额度不足，请联系管理员充值' } },
+          { status: 429 }
+        );
+      }
+
+      deductedAmount = quotaResult.deductedAmount;
     }
 
     const provider = getProviderByModel(model as any);
@@ -236,7 +240,7 @@ export async function POST(req: NextRequest) {
       provider === 'agnes' ? await handleAgnesPost(body, userId) : await handleZhipuPost(body, userId);
 
     if (result instanceof NextResponse || !result.ok) {
-      await maybeRefund();
+      await maybeRefund(userId, deductedAmount);
       if (result instanceof NextResponse) {
         return result;
       }
@@ -251,12 +255,21 @@ export async function POST(req: NextRequest) {
       provider,
     });
   } catch (error: any) {
-    await maybeRefund();
+    await maybeRefund(userId, deductedAmount);
+
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ error: { message: error.message } }, { status: 403 });
+      }
+      return NextResponse.json({ error: { message: error.message } }, { status: 401 });
+    }
+
     return NextResponse.json(
       { error: { message: error.message || '服务器内部错误' } },
       { status: 500 }
     );
   }
+});
 }
 
 // Zhipu GET

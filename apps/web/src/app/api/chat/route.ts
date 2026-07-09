@@ -9,9 +9,12 @@ import {
 import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
-import { requireAuth } from '@/lib/auth/require-auth';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens } from '@repo/db';
+import { prisma, deductTokens, checkAndDeductTokens } from '@repo/db';
+import { maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 function createErrorId() {
   return (
@@ -82,16 +85,16 @@ function createSseStreamFromTextStream(
 }
 
 /**
- * 非 admin 用户按实际用量扣减 Token。
+ * 非 admin 真实用户按实际用量扣减 Token；匿名用户已在调用前预扣，不再重复扣减。
  */
 async function deductForNonAdmin(
   userId: string,
   userRole: string,
+  isAnonymous: boolean,
   totalTokens?: number | null
 ): Promise<void> {
-  if (userRole !== 'admin') {
-    await deductTokens(userId, totalTokens ?? 1);
-  }
+  if (userRole === 'admin' || isAnonymous) return;
+  await deductTokens(userId, totalTokens ?? 1);
 }
 
 function buildChatUsageMetadata(messages: ChatMessage[]) {
@@ -187,27 +190,34 @@ async function waitForFileReady(
 export async function POST(req: Request) {
   const errorId = createErrorId();
   const startTime = Date.now();
+  let userId = '';
+  let isAnonymous = false;
 
   try {
     // 1. 限流检查
-    const userId = await requireAuth(req);
-
-    // 2. 获取用户信息用于配额检查
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true, tokens: true },
-    });
-
-    if (!user) {
-      return new Response(JSON.stringify({ error: '用户不存在' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const user = await getCurrentUser(req);
+    userId = user.id;
+    isAnonymous = user.isAnonymous;
 
     // 非 admin 用户检查并扣除 tokens
     if (user.role !== 'admin') {
-      if (user.tokens <= 0) {
+      if (isAnonymous) {
+        // 匿名用户预扣固定额度，余额不足直接拦截
+        const deduction = await checkAndDeductTokens(userId, ANONYMOUS_OPERATION_COSTS.CHAT_RESERVE);
+        if (!deduction.success) {
+          return new Response(
+            JSON.stringify({
+              error: '免费额度已用完，您可以继续查看历史记录',
+              code: 'QUOTA_EXHAUSTED',
+              errorId,
+            }),
+            {
+              status: 402,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+        }
+      } else if ((user.tokens ?? 0) <= 0) {
         return new Response(
           JSON.stringify({
             error: 'Token 额度不足，请联系管理员充值',
@@ -339,8 +349,8 @@ export async function POST(req: Request) {
             metadata: buildChatUsageMetadata(messages),
           });
 
-          // 调用完成后按实际用量扣减
-          await deductForNonAdmin(userId, user.role, xunfeiUsage?.totalTokens);
+          // 调用完成后按实际用量扣减（匿名用户已预扣，不再重复）
+          await deductForNonAdmin(userId, user.role, user.isAnonymous, xunfeiUsage?.totalTokens);
         })
       );
     }
@@ -582,7 +592,7 @@ export async function POST(req: Request) {
                 metadata: buildChatUsageMetadata(messages),
               });
 
-              await deductForNonAdmin(userId, user.role, doubaoUsage?.totalTokens);
+              await deductForNonAdmin(userId, user.role, user.isAnonymous, doubaoUsage?.totalTokens);
               controller.enqueue(encodeSseEvent({ type: 'done' }));
             } else {
               await safeRecordAiUsage({
@@ -597,7 +607,7 @@ export async function POST(req: Request) {
                 metadata: buildChatUsageMetadata(messages),
               });
 
-              await deductForNonAdmin(userId, user.role, doubaoUsage?.totalTokens);
+              await deductForNonAdmin(userId, user.role, user.isAnonymous, doubaoUsage?.totalTokens);
             }
             controller.close();
           } catch (error) {
@@ -678,7 +688,7 @@ export async function POST(req: Request) {
             metadata: buildChatUsageMetadata(messages),
           });
 
-          await deductForNonAdmin(userId, user.role, normalized.totalTokens);
+          await deductForNonAdmin(userId, user.role, user.isAnonymous, normalized.totalTokens);
         } catch (usageError) {
           console.error('[chat] 读取 usage 失败:', usageError);
         }
@@ -687,6 +697,15 @@ export async function POST(req: Request) {
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;
+
+    // 匿名用户预扣额度后调用失败，退还预扣额度
+    try {
+      if (userId && isAnonymous) {
+        await maybeRefund(userId, ANONYMOUS_OPERATION_COSTS.CHAT_RESERVE);
+      }
+    } catch {
+      // 忽略退款失败，优先返回原始错误
+    }
 
     console.error('Chat API 错误:', {
       errorId,
@@ -697,28 +716,23 @@ export async function POST(req: Request) {
     });
 
     // 认证错误
-    if (error instanceof Error) {
-      if (
-        error.message === '缺少认证令牌' ||
-        error.message.includes('jwt expired') ||
-        error.message.includes('invalid signature') ||
-        error.message.includes('jwt malformed')
-      ) {
-        return new Response(
-          JSON.stringify({
-            error: '请先登录',
-            errorId,
-          }),
-          {
-            status: 401,
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Error-ID': errorId,
-            },
-          }
-        );
-      }
+    if (error instanceof AuthError) {
+      return new Response(
+        JSON.stringify({
+          error: error.message,
+          errorId,
+        }),
+        {
+          status: error.code === 'FORBIDDEN' ? 403 : 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Error-ID': errorId,
+          },
+        }
+      );
+    }
 
+    if (error instanceof Error) {
       // 配置错误
       if (error.message.includes('Missing') || error.message.includes('未设置')) {
         return new Response(

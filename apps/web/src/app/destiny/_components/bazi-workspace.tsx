@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
@@ -312,9 +312,8 @@ export function BaziWorkspace({
     let currentErrorKind: BaziErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/report', {
+      const response = await authFetch('/api/destiny/report', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify(mapFormToBaziRequest(formData)),
         signal: controller.signal,
       });

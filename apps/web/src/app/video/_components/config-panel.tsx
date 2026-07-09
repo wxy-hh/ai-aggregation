@@ -6,6 +6,7 @@ import { Sparkles, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { authFetch } from '@/lib/api/client';
 import { VideoConfig, isAgnesConfig, isCogVideoXConfig } from '@/lib/constants/video-generation';
 import { VideoModelSwitcher } from './model-switcher';
 import { CogVideoXConfigSection } from './cogvideox-config-section';
@@ -50,11 +51,8 @@ export function ConfigPanel({
 
     setIsOptimizing(true);
     try {
-      const response = await fetch('/api/video/optimize-prompt', {
+      const response = await authFetch('/api/video/optimize-prompt', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           prompt: prompt.trim(),
           model: config.model,

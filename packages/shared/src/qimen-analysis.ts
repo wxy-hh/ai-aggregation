@@ -285,7 +285,7 @@ const QIMEN_CHART_SUMMARY_SCHEMA = {
 
 type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 // 异步 worker 链路与页面直连链路需要保持一致的模型时间预算。
 // 当前奇门能力使用强推理模型，40-45s 在生产环境中会被频繁打断。
 const BASE_STAGE_TIMEOUT_MS = 300000;

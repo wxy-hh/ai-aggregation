@@ -23,15 +23,25 @@ export async function POST(_req: NextRequest) {
       return ApiError.unauthorized('刷新令牌已过期，请重新登录');
     }
 
-    // 检查用户是否被禁用
+    // 检查用户是否被禁用；匿名用户不允许刷新，避免恢复登录认证后存在幽灵会话
     const user = await prisma.user.findUnique({
       where: { id: record.userId },
-      select: { status: true },
+      select: { status: true, isAnonymous: true },
     });
 
-    if (!user || user.status === 'disabled') {
+    if (!user) {
+      await prisma.refreshToken.delete({ where: { id: record.id } });
+      return ApiError.unauthorized('用户不存在');
+    }
+
+    if (user.status === 'disabled') {
       await prisma.refreshToken.delete({ where: { id: record.id } });
       return ApiError.forbidden('账号已被停用，请联系管理员');
+    }
+
+    if (user.isAnonymous) {
+      await prisma.refreshToken.delete({ where: { id: record.id } });
+      return ApiError.unauthorized('匿名会话已过期，请登录');
     }
 
     // 轮换：删除旧 Token，生成新 Token

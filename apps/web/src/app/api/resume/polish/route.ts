@@ -1,8 +1,10 @@
 import { PolishRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, refundTokens } from '@repo/db';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 /**
  * POST /api/resume/polish
@@ -11,15 +13,15 @@ import { prisma, deductTokens, refundTokens } from '@repo/db';
  */
 
 export async function POST(req: Request) {
-  let deducted = false;
-  let userId: string | null = null;
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let deductedAmount = 0;
 
-  try {
-    userId = await getOptionalUserId(req);
-    const body = await req.json();
+    try {
+      const body = await req.json();
 
-    // 使用 Zod schema 校验请求体
-    const validationResult = PolishRequestSchema.safeParse(body);
+      // 使用 Zod schema 校验请求体
+      const validationResult = PolishRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
       const errors = validationResult.error.errors.map((err) => ({
@@ -63,23 +65,33 @@ export async function POST(req: Request) {
       });
     }
 
-    // 已认证的非 admin 用户预扣 1 token
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true, tokens: true },
-      });
-      if (user && user.role !== 'admin') {
-        if (user.tokens <= 0) {
-          return new Response(JSON.stringify({ error: 'Token 额度不足，请联系管理员充值' }), {
-            status: 429,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        await deductTokens(userId, 1);
-        deducted = true;
+    // 非 admin 用户扣减额度
+    const deduction = await deductAiQuotaForRoute({
+      userId,
+      user,
+      anonymousCost: ANONYMOUS_OPERATION_COSTS.RESUME_POLISH,
+    });
+
+    if (!deduction.success) {
+      if (deduction.reason === 'QUOTA_EXHAUSTED') {
+        return new Response(
+          JSON.stringify({
+            error: '免费额度已用完，您可以继续查看历史记录',
+            code: 'QUOTA_EXHAUSTED',
+          }),
+          { status: 402, headers: { 'Content-Type': 'application/json' } }
+        );
       }
+      return new Response(
+        JSON.stringify({
+          error: 'Token 额度不足，请联系管理员充值',
+          code: 'INSUFFICIENT_TOKENS',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } }
+      );
     }
+
+    deductedAmount = deduction.deductedAmount;
 
     // 构建提示词
     const systemPrompt = buildSystemPrompt(style, language);
@@ -125,6 +137,9 @@ export async function POST(req: Request) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('ARK API 错误:', response.status, errorText);
+
+        // AI 调用失败，退还已扣额度
+        await maybeRefund(userId, deductedAmount);
 
         if (response.status === 429) {
           return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
@@ -200,13 +215,28 @@ export async function POST(req: Request) {
       throw fetchError;
     }
   } catch (error) {
-    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
+    await maybeRefund(userId, deductedAmount);
     console.error('Polish API 错误:', error);
+
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: '服务器内部错误' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
+});
 }
 
 /**

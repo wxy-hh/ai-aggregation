@@ -1,38 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-/** 无需登录即可访问的路径 */
-const PUBLIC_PATHS = [
-  '/login',
-  '/register',
-  '/forgot-password',
-  '/reset-password',
-];
-
-/** 公开 API 路径前缀（API 路由自行处理认证） */
-const PUBLIC_API_PREFIXES = [
-  '/api/auth',
-  '/api/feedback',
-];
-
-/** 静态资源前缀 */
-const STATIC_PREFIXES = [
-  '/_next',
-  '/favicon',
-  '/assets',
-];
-
-function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_PATHS.includes(pathname)) return true;
-
-  if (PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p))) return true;
-
-  if (STATIC_PREFIXES.some((p) => pathname.startsWith(p))) return true;
-
-  return false;
-}
-
-/** 仅供未登录用户访问的路径（已登录用户访问时重定向到 /chat） */
+/** 仅供未登录用户访问的路径（已登录用户访问时重定向到 /home） */
 const UNAUTH_ONLY_PATHS = ['/login', '/register', '/', '/forgot-password', '/reset-password'];
 
 export function middleware(req: NextRequest) {
@@ -45,17 +14,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/home', origin));
   }
 
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
-  // 未登录用户访问受保护页面，重定向到登录页
-  if (!hasToken) {
-    const loginUrl = new URL('/login', origin);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
-  }
-
+  // 所有页面均允许访问；未登录用户的权限控制由 API 路由内部处理
   return NextResponse.next();
 }
 

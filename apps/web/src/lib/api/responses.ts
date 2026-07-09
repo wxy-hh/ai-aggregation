@@ -5,6 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { AuthError } from '@/lib/auth/errors';
 
 /**
  * 错误代码枚举
@@ -29,6 +30,7 @@ export const ErrorCode = {
   // 请求相关
   INVALID_REQUEST: 'INVALID_REQUEST',
   INVALID_REQUEST_BODY: 'INVALID_REQUEST_BODY',
+  INVALID_DEVICE_ID: 'INVALID_DEVICE_ID',
   MISSING_FILE: 'MISSING_FILE',
   INVALID_FILE: 'INVALID_FILE',
 
@@ -102,6 +104,18 @@ export function createSuccessResponse<T = unknown>(
 }
 
 /**
+ * 将 AuthError 统一转换为 401/403 响应。
+ * 所有路由 handler 捕获 AuthError 后可直接返回此结果，避免重复手写状态码映射。
+ */
+export function handleAuthError(error: AuthError): NextResponse<ErrorResponse> {
+  return createErrorResponse(
+    error.message,
+    error.code === 'FORBIDDEN' ? ErrorCode.FORBIDDEN : ErrorCode.UNAUTHORIZED,
+    error.code === 'FORBIDDEN' ? 403 : 401
+  );
+}
+
+/**
  * 常用错误响应快捷方法
  */
 export const ApiError = {
@@ -124,4 +138,7 @@ export const ApiError = {
 
   internalError: (message = '服务器内部错误', details?: Record<string, unknown>) =>
     createErrorResponse(message, ErrorCode.INTERNAL_ERROR, 500, details),
+
+  tooManyRequests: (message = '请求过于频繁，请稍后再试', details?: Record<string, unknown>) =>
+    createErrorResponse(message, ErrorCode.SERVICE_UNAVAILABLE, 429, details),
 };

@@ -5,6 +5,7 @@ import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { Toaster } from '@/components/ui/toaster';
+import { QuotaExhaustedDialog } from '@/components/quota-exhausted-dialog';
 
 export const metadata: Metadata = {
   title: 'AI 聚合平台',
@@ -60,7 +61,10 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeInitializer />
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          {children}
+          <QuotaExhaustedDialog />
+        </QueryProvider>
         <Toaster />
       </body>
     </html>

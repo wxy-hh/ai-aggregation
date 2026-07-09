@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/api/client';
 import { stripDataUrlPrefix } from '@/lib/utils/image-url';
 import {
   VideoConfig,
@@ -157,9 +158,8 @@ export function useVideoGeneration() {
         ...apiParams,
       };
 
-      const initRes = await fetch('/api/video', {
+      const initRes = await authFetch('/api/video', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
@@ -208,7 +208,7 @@ export function useVideoGeneration() {
             queryParams.set('videoId', initData.videoId);
           }
 
-          const statusRes = await fetch(`/api/video?${queryParams.toString()}`);
+          const statusRes = await authFetch(`/api/video?${queryParams.toString()}`);
           const statusData: StatusResponse = await statusRes.json();
 
           const pollDelay = currentProvider === 'agnes' ? 5000 : 3000;

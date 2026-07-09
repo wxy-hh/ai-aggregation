@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { transcribeAudio } from '@/lib/siliconflow';
 import { saveUploadedFile, deleteFile, validateFile } from '@/lib/file-upload';
-import { requireAuth } from '@/lib/auth/require-auth';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, refundTokens } from '@repo/db';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 最大 60 秒
@@ -12,62 +14,75 @@ export const maxDuration = 60; // 最大 60 秒
 const isDatabaseAvailable = !!process.env.DATABASE_URL;
 
 export async function POST(req: NextRequest) {
-  let tempFilePath: string | null = null;
-  let deducted = false;
-  let userId = '';
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let tempFilePath: string | null = null;
+    let deductedAmount = 0;
 
-  try {
-    console.log('=== 开始处理转录请求 ===');
+    try {
+      console.log('=== 开始处理转录请求 ===');
 
-    // 1. 解析表单数据
-    const formData = await req.formData();
-    console.log('✓ FormData 解析成功');
-
-    const file = formData.get('file') as File;
-    const model = (formData.get('model') as string) || 'FunAudioLLM/SenseVoiceSmall';
-
-    if (!file) {
-      console.error('✗ 缺少文件');
-      return NextResponse.json({ error: '缺少文件' }, { status: 400 });
-    }
-
-    console.log('✓ 文件信息:', {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-    });
-
-    // 2. 验证文件
-    const validation = validateFile(file);
-    if (!validation.valid) {
-      console.error('✗ 文件验证失败:', validation.error);
-      return NextResponse.json({ error: validation.error }, { status: 400 });
-    }
-    console.log('✓ 文件验证通过');
-
-    // 3. 保存文件到临时目录
-    console.log('→ 开始保存文件到临时目录...');
-    tempFilePath = await saveUploadedFile(file);
-    console.log('✓ 文件已保存:', tempFilePath);
-
-    let transcriptionId = 'temp-id';
-
-    // 4. 认证（无论数据库是否可用都需要）
-    userId = await requireAuth(req);
-
-    // 4.1 非 admin 用户预扣 1 token
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true, tokens: true },
-    });
-    if (user && user.role !== 'admin') {
-      if (user.tokens <= 0) {
-        if (tempFilePath) await deleteFile(tempFilePath);
-        return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+      // 1. 解析表单数据
+      let formData: FormData;
+      try {
+        formData = await req.formData();
+      } catch (parseError) {
+        console.error('✗ 请求体解析失败:', parseError);
+        return NextResponse.json({ error: '请求体必须是 multipart/form-data 格式' }, { status: 400 });
       }
-      await deductTokens(userId, 1);
-      deducted = true;
-    }
+      console.log('✓ FormData 解析成功');
+
+      const file = formData.get('file') as File;
+      const model = (formData.get('model') as string) || 'FunAudioLLM/SenseVoiceSmall';
+
+      if (!file) {
+        console.error('✗ 缺少文件');
+        return NextResponse.json({ error: '缺少文件' }, { status: 400 });
+      }
+
+      console.log('✓ 文件信息:', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      });
+
+      // 2. 验证文件
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        console.error('✗ 文件验证失败:', validation.error);
+        return NextResponse.json({ error: validation.error }, { status: 400 });
+      }
+      console.log('✓ 文件验证通过');
+
+      // 3. 保存文件到临时目录
+      console.log('→ 开始保存文件到临时目录...');
+      tempFilePath = await saveUploadedFile(file);
+      console.log('✓ 文件已保存:', tempFilePath);
+
+      let transcriptionId = 'temp-id';
+
+      // 4. 非 admin 用户扣减额度
+      const quotaResult = await deductAiQuotaForRoute({
+        userId,
+        user,
+        anonymousCost: ANONYMOUS_OPERATION_COSTS.VOICE_TRANSCRIBE,
+      });
+
+      if (!quotaResult.success) {
+        if (tempFilePath) await deleteFile(tempFilePath);
+        if (quotaResult.reason === 'QUOTA_EXHAUSTED') {
+          return NextResponse.json(
+            { error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
+            { status: 402 }
+          );
+        }
+        return NextResponse.json(
+          { error: 'Token 额度不足，请联系管理员充值' },
+          { status: 429 }
+        );
+      }
+
+      deductedAmount = quotaResult.deductedAmount;
 
     // 5. 创建数据库记录（如果数据库可用）
     if (isDatabaseAvailable) {
@@ -185,7 +200,7 @@ export async function POST(req: NextRequest) {
       throw apiError;
     }
   } catch (error) {
-    if (deducted) { deducted = false; await refundTokens(userId, 1); }
+    await maybeRefund(userId, deductedAmount);
     console.error('=== 转录请求处理失败 ===');
     console.error('错误类型:', error?.constructor?.name);
     console.error('错误信息:', error instanceof Error ? error.message : error);
@@ -196,6 +211,13 @@ export async function POST(req: NextRequest) {
       await deleteFile(tempFilePath);
     }
 
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+
     return NextResponse.json(
       {
         error: '转录失败',
@@ -204,4 +226,5 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+});
 }

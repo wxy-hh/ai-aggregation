@@ -1,37 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, refundTokens } from '@repo/db';
+import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
+import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
 
 const SILICONFLOW_API_KEY = process.env.SILICONFLOW_API_KEY;
 const SILICONFLOW_API_URL = process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1';
 
 export async function POST(request: NextRequest) {
-  let deducted = false;
-  let userId: string | null = null;
+  return withAuth(request, async (user) => {
+    const userId = user.id;
+    let deductedAmount = 0;
 
-  try {
-    if (!SILICONFLOW_API_KEY) {
-      return NextResponse.json({ error: 'SILICONFLOW_API_KEY is not configured' }, { status: 500 });
-    }
-
-    userId = await getOptionalUserId(request);
-    const body = await request.json();
-
-    // 已认证的非 admin 用户预扣 1 token
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true, tokens: true },
-      });
-      if (user && user.role !== 'admin') {
-        if (user.tokens <= 0) {
-          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
-        }
-        await deductTokens(userId, 1);
-        deducted = true;
+    try {
+      if (!SILICONFLOW_API_KEY) {
+        return NextResponse.json({ error: 'SILICONFLOW_API_KEY is not configured' }, { status: 500 });
       }
+
+      // 非 admin 用户扣减额度
+      const quotaResult = await deductAiQuotaForRoute({
+        userId,
+        user,
+        anonymousCost: ANONYMOUS_OPERATION_COSTS.IMAGE_GENERATE,
+      });
+
+    if (!quotaResult.success) {
+      if (quotaResult.reason === 'QUOTA_EXHAUSTED') {
+        return NextResponse.json(
+          { error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
+          { status: 402 }
+        );
+      }
+      return NextResponse.json(
+        { error: 'Token 额度不足，请联系管理员充值' },
+        { status: 429 }
+      );
     }
+    deductedAmount = quotaResult.deductedAmount;
+
+    const body = await request.json();
 
     console.log('→ Generating image with Kolors...');
     console.log('  Model:', body.model);
@@ -54,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('← API Error:', errorText);
-      if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
+      await maybeRefund(userId, deductedAmount);
       return NextResponse.json(
         { error: `SiliconFlow API error: ${errorText}` },
         { status: response.status }
@@ -84,8 +92,16 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
-    if (userId && deducted) { deducted = false; await refundTokens(userId, 1); }
+    await maybeRefund(userId, deductedAmount);
     console.error('Image generation error:', error);
+
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ error: error.message }, { status: 403 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
+
     return NextResponse.json(
       {
         error: 'Internal server error',
@@ -94,4 +110,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+});
 }

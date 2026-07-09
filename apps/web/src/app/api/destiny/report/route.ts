@@ -45,9 +45,9 @@ const RequestSchema = z.object({
   }),
 });
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260428';
+const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const REPORT_TIMEOUT_MS = 300000;
-const REPORT_MAX_OUTPUT_TOKENS = 7200;
+const REPORT_MAX_OUTPUT_TOKENS = 24000;
 
 class UpstreamModelError extends Error {
   status: number;
@@ -528,10 +528,10 @@ function buildReportFromSections(
 ): DestinyReport {
   const mergedBasis = basis
     ? {
-        ...basis,
-        decadeFortuneInsights:
-          sections.decadeFortuneInsights ?? basis.decadeFortuneInsights,
-      }
+      ...basis,
+      decadeFortuneInsights:
+        sections.decadeFortuneInsights ?? basis.decadeFortuneInsights,
+    }
     : sections.baziBasis;
 
   return normalizeDestinyReport(

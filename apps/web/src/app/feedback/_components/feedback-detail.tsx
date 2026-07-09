@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { FeedbackItem } from '../page';
-import { authHeaders } from '@/lib/api/client';
+import { authFetch } from '@/lib/api/client';
 import { TYPE_CONFIG, STATUS_CONFIG, PRIORITY_CONFIG } from './feedback-constants';
 import {
   X, MessageCircle, Send, Pin, Check, Loader2, Paperclip,
@@ -52,9 +52,7 @@ export function FeedbackDetail({ feedback, onClose, isAdmin, onRefresh, currentU
 
   const fetchDetail = async () => {
     try {
-      const res = await fetch(`/api/feedback/${feedback.id}`, {
-        headers: authHeaders(undefined, null),
-      });
+      const res = await authFetch(`/api/feedback/${feedback.id}`);
       const data = await res.json();
       if (data.success) {
         setDetail(data.data);
@@ -70,9 +68,8 @@ export function FeedbackDetail({ feedback, onClose, isAdmin, onRefresh, currentU
 
     setSendingReply(true);
     try {
-      const res = await fetch(`/api/feedback/${feedback.id}/reply`, {
+      const res = await authFetch(`/api/feedback/${feedback.id}/reply`, {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ content: replyContent.trim() }),
       });
       const data = await res.json();
@@ -91,9 +88,8 @@ export function FeedbackDetail({ feedback, onClose, isAdmin, onRefresh, currentU
   const handleUpdateStatus = async (newStatus: string) => {
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/feedback/${feedback.id}`, {
+      const res = await authFetch(`/api/feedback/${feedback.id}`, {
         method: 'PATCH',
-        headers: authHeaders(),
         body: JSON.stringify({ status: newStatus, resolvedAt: newStatus === 'COMPLETED' ? new Date().toISOString() : null }),
       });
       const data = await res.json();
@@ -112,9 +108,8 @@ export function FeedbackDetail({ feedback, onClose, isAdmin, onRefresh, currentU
   const handleUpdatePriority = async (newPriority: string) => {
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/feedback/${feedback.id}`, {
+      const res = await authFetch(`/api/feedback/${feedback.id}`, {
         method: 'PATCH',
-        headers: authHeaders(),
         body: JSON.stringify({ priority: newPriority }),
       });
       const data = await res.json();
@@ -133,9 +128,8 @@ export function FeedbackDetail({ feedback, onClose, isAdmin, onRefresh, currentU
   const handleTogglePin = async () => {
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/feedback/${feedback.id}`, {
+      const res = await authFetch(`/api/feedback/${feedback.id}`, {
         method: 'PATCH',
-        headers: authHeaders(),
         body: JSON.stringify({ isPinned: !display.isPinned }),
       });
       const data = await res.json();

@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/auth-store';
+import { dispatchQuotaExhausted } from './quota-events';
 
 /** 从 Zustand store 读取当前 Access Token（非 React 环境可用） */
 export function getAccessToken(): string | null {
@@ -60,12 +61,13 @@ function buildRequestHeaders(explicitHeaders?: HeadersInit): Headers {
 }
 
 /**
- * 带 Authorization 的 fetch 封装，401 自动刷新 token 并重试一次。
+ * 纯 HTTP 层：带 Authorization 的 fetch 封装，401 自动刷新 token 并重试一次。
  * - 自动从 auth-store 读取 Access Token
  * - FormData body 时不设 Content-Type（由浏览器自动设置 multipart boundary）
  * - 非 FormData 且未显式设 Content-Type 时默认 application/json
+ * - 不处理任何 UI 副作用（如额度弹窗），便于单元测试和复用
  */
-export async function authFetch(url: string, options?: RequestInit): Promise<Response> {
+export async function rawAuthFetch(url: string, options?: RequestInit): Promise<Response> {
   const headers = buildRequestHeaders(options?.headers);
   const isFormData = options?.body instanceof FormData;
 
@@ -98,4 +100,27 @@ export async function authFetch(url: string, options?: RequestInit): Promise<Res
     ...options,
     headers,
   });
+}
+
+/**
+ * 业务层包装：在 rawAuthFetch 基础上统一处理额度耗尽事件。
+ * 所有需要自动刷新 token 的客户端请求都应使用此函数。
+ */
+export async function authFetch(url: string, options?: RequestInit): Promise<Response> {
+  const response = await rawAuthFetch(url, options);
+
+  // 额度耗尽：触发全局事件让弹框显示
+  if (response.status === 402 || response.status === 429) {
+    try {
+      const cloned = response.clone();
+      const data = await cloned.json();
+      if (data?.code === 'QUOTA_EXHAUSTED') {
+        dispatchQuotaExhausted();
+      }
+    } catch {
+      // 忽略非 JSON 响应体
+    }
+  }
+
+  return response;
 }

@@ -16,6 +16,8 @@ model User {
   role          String   @default("user")   // "user" | "admin"
   status        String   @default("active") // "active" | "disabled"
   tokens        Int      @default(20000)    // AI Token 剩余额度（每次调用按实际用量扣减）
+  isAnonymous   Boolean  @default(false)    // 是否为匿名用户（设备指纹自动创建）
+  deviceHash    String?  @unique            // 匿名用户设备哈希，用于查找与去重
   emailVerified DateTime?
   avatar        String?
   createdAt     DateTime @default(now())
