@@ -575,7 +575,10 @@ function ZiweiResultView({
     return lockedSections.palaceAnalysis ?? [];
   }, [lockedSections.palaceAnalysis]);
 
-  const timeline = useMemo(() => lockedSections.timeline ?? report?.timeline ?? [], [lockedSections.timeline, report?.timeline]);
+  const timeline = useMemo(
+    () => lockedSections.timeline ?? report?.timeline ?? [],
+    [lockedSections.timeline, report?.timeline]
+  );
   const relations = useMemo(() => lockedSections.relations, [lockedSections.relations]);
 
   // 合并 overviewModules（personality/career/wealth）与 love/health 为完整的 5 模块数据
@@ -1768,17 +1771,17 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
   return (
     <div ref={scrollRef} className="relative h-full overflow-y-auto pr-1 -mr-1">
       {/* 标题与搜索 */}
-      <div className="sticky top-0 z-10 bg-white/80 pb-2 backdrop-blur-md dark:bg-slate-900/80">
-        <div className="flex items-end justify-between">
+      <div className="sticky top-0 z-10 rounded-lg bg-white/80 p-2 backdrop-blur-md dark:bg-slate-900/80">
+        <div className="flex items-end mb-2 justify-between">
           <div>
             <div className="text-base font-bold text-slate-900 dark:text-slate-100">
               命盘星曜详解
             </div>
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-              点击星曜查看详细解释，也可点击命盘中的星曜名称快速跳转
+              点击星曜查看详细解释，也可点击命盘中的星曜名称跳转
             </p>
           </div>
-          <span className="mb-0.5 text-xs text-slate-500">共{totalCount}颗星曜</span>
+          {/* <span className="mb-0.5 text-xs text-slate-500">共{totalCount}颗星曜</span> */}
         </div>
 
         {/* 小白入门引导 */}

@@ -10,6 +10,7 @@ import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
 import { DestinyDesktopNav } from './layout/destiny-desktop-nav';
 import { DestinyNavProvider, useDestinyNav } from './layout/destiny-nav-context';
+import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 
@@ -18,6 +19,8 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
     return 'bazi';
   });
+  // 模型切换只在填表步骤显示，结果页不显示
+  const isFormStep = useDestinyWorkspaceStore((s) => s[activeModule].step === 'form');
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
@@ -113,10 +116,12 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
               })}
             </div>
           </div>
-          {/* 模型切换入口：移动端 sticky 头部内居中，三页共享，拇指易触达 */}
-          <div className="mt-2 flex justify-center">
-            <DestinyModelSwitcher />
-          </div>
+          {/* 模型切换入口：移动端，仅在填表步骤显示 */}
+          {isFormStep && (
+            <div className="mt-2 flex justify-center">
+              <DestinyModelSwitcher />
+            </div>
+          )}
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -154,6 +159,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         isLoading={isLoading}
         qimenLoading={qimenLoading}
         workspaceElements={workspaceElements}
+        isFormStep={isFormStep}
       />
     </DestinyNavProvider>
   );
@@ -165,12 +171,14 @@ function DestinyDesktopLayout({
   isLoading,
   qimenLoading,
   workspaceElements,
+  isFormStep,
 }: {
   activeModule: DestinyModuleKey;
   onModuleChange: (key: DestinyModuleKey) => void;
   isLoading: boolean;
   qimenLoading: boolean;
   workspaceElements: React.ReactNode;
+  isFormStep: boolean;
 }) {
   const { navOffsetPx } = useDestinyNav();
 
@@ -185,10 +193,12 @@ function DestinyDesktopLayout({
         disabled={isLoading}
       />
 
-      {/* 模型切换入口：桌面端右上角悬浮，三页共享；z-30 低于奇门 loading(z-35)，避免 loading 时误触 */}
-      <div className="fixed right-6 top-4 z-30">
-        <DestinyModelSwitcher />
-      </div>
+      {/* 模型切换入口：桌面端右上角悬浮，仅在填表步骤显示 */}
+      {isFormStep && (
+        <div className="fixed right-6 top-4 z-30">
+          <DestinyModelSwitcher />
+        </div>
+      )}
 
       <div className="h-full w-full">
         {workspaceElements}
