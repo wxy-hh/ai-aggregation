@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { authFetch } from '@/lib/api/client';
+import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { consumeChatResponse } from '@/lib/utils/chat-stream';
 import type { DestinyReport } from '../types';
 import { Button } from '@/components/ui/button';
@@ -80,6 +81,7 @@ export function AICoPilotConversation({
 
   const canSend = input.trim().length > 0;
   const ctxSummary = useMemo(() => buildCopilotContext(report), [report]);
+  const provider = useDestinyWorkspaceStore((s) => s.provider);
 
   useEffect(() => {
     sendingRef.current = sending;
@@ -166,6 +168,7 @@ export function AICoPilotConversation({
         body: JSON.stringify({
           report,
           question: q,
+          provider,
           ...(focusDecadeName ? { focusDecadeName } : {}),
         }),
       });

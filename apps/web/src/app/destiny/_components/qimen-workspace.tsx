@@ -86,12 +86,14 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     setWorkspaceState,
     resetWorkspace,
     restoreWorkspace,
+    provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.qimen,
       setWorkspaceState: state.setWorkspaceState,
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
+      provider: state.provider,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
@@ -497,7 +499,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     try {
       const response = await authFetch('/api/destiny/qimen/analyze/start', {
         method: 'POST',
-        body: JSON.stringify(mapFormToQimenRequest(formData)),
+        body: JSON.stringify({ ...mapFormToQimenRequest(formData), provider }),
         signal: controller.signal,
       });
 

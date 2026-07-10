@@ -55,6 +55,7 @@ export interface QimenBaseJobData {
   userId?: string;
   input: QimenAnalyzeRequest;
   precomputedChart?: boolean;
+  provider?: 'doubao' | 'deepseek';
 }
 
 export interface QimenSectionJobData {
@@ -62,6 +63,7 @@ export interface QimenSectionJobData {
   userId?: string;
   sectionKey: QimenSectionKey;
   input: QimenAnalyzeRequest;
+  provider?: 'doubao' | 'deepseek';
 }
 
 export const JOB_NAMES = {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { logger } from '@repo/logger';
 import {
   QimenAnalysisStore,
@@ -55,6 +56,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const providerParsed = z
+      .enum(['doubao', 'deepseek'])
+      .safeParse((body as { provider?: unknown } | null)?.provider);
+    const provider: 'doubao' | 'deepseek' = providerParsed.success ? providerParsed.data : 'doubao';
+
     const analysisId = crypto.randomUUID();
     await store.initializeAnalysis(analysisId);
 
@@ -81,6 +87,7 @@ export async function POST(request: Request) {
         userId: userId ?? undefined,
         input: parsed.data,
         precomputedChart: true,
+        provider,
       },
       {
         jobId: `${analysisId}-baseResult`,
@@ -96,6 +103,7 @@ export async function POST(request: Request) {
           userId: userId ?? undefined,
           sectionKey,
           input: parsed.data,
+          provider,
         },
         jobId: `${analysisId}-${sectionKey}`,
       }))

@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { formatDecadeFortuneInsightsForPrompt } from '@repo/shared';
+import {
+  formatDecadeFortuneInsightsForPrompt,
+  resolveModelConfig,
+  streamModel,
+  ModelConfigError,
+  ModelUpstreamError,
+  type ModelConfig,
+} from '@repo/shared';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
@@ -96,9 +103,9 @@ const RequestSchema = z.object({
   report: ReportSchema,
   question: z.string().trim().min(1, '问题不能为空').max(1000),
   focusDecadeName: z.string().trim().min(1).max(8).optional(),
+  provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
-const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const COPILOT_TIMEOUT_MS = 55000;
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream; charset=utf-8',
@@ -152,24 +159,22 @@ export async function POST(req: Request) {
       );
     }
 
-    const arkApiKey = process.env.ARK_API_KEY;
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    if (!arkApiKey) {
-      return NextResponse.json({ error: 'Missing ARK_API_KEY' }, { status: 500 });
+    let config: ModelConfig;
+    try {
+      config = resolveModelConfig(parsed.data.provider);
+    } catch (error) {
+      if (error instanceof ModelConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      throw error;
     }
-
-    const { response, timeoutId } = await requestArkStream({
-      arkApiKey,
-      arkBaseUrl,
-      report: parsed.data.report,
-      question: parsed.data.question,
-      focusDecadeName: parsed.data.focusDecadeName,
-    });
 
     return new Response(
       createCopilotStream({
-        response,
-        timeoutId,
+        config,
+        report: parsed.data.report,
+        question: parsed.data.question,
+        focusDecadeName: parsed.data.focusDecadeName,
         userId,
         deductedAmount,
         questionLength: parsed.data.question.length,
@@ -195,156 +200,57 @@ export async function POST(req: Request) {
 });
 }
 
-async function requestArkStream({
-  arkApiKey,
-  arkBaseUrl,
+function createCopilotStream({
+  config,
   report,
   question,
   focusDecadeName,
-}: {
-  arkApiKey: string;
-  arkBaseUrl: string;
-  report: z.infer<typeof ReportSchema>;
-  question: string;
-  focusDecadeName?: string;
-}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
-  const context = buildCopilotPromptContext(report);
-  const scopedInsights = buildQuestionScopedInsights(report, question, focusDecadeName);
-
-  const response = await fetch(`${arkBaseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${arkApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: ARK_MODEL,
-      input: [
-        {
-          role: 'system',
-          content:
-            '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、十年大运 AI 专属解读、流年等），其中「十年大运」段落为逐步大运全文，用户问运势/大运/流年时必须优先引用对应步运的 summary、前五年与后五年内容。给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
-        },
-        {
-          role: 'user',
-          content: `${context}\n${scopedInsights}\n\n用户追问：${question}`,
-        },
-      ],
-      stream: true,
-      temperature: 0.3,
-      reasoning: { effort: 'low' },
-    }),
-    signal: controller.signal,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    clearTimeout(timeoutId);
-    throw new Error(text || '追问失败，请稍后重试');
-  }
-
-  if (!response.body) {
-    clearTimeout(timeoutId);
-    throw new Error('追问响应体为空');
-  }
-
-  return { response, timeoutId };
-}
-
-function createCopilotStream({
-  response,
-  timeoutId,
   userId,
   deductedAmount,
   questionLength,
 }: {
-  response: Response;
-  timeoutId: ReturnType<typeof setTimeout>;
+  config: ModelConfig;
+  report: z.infer<typeof ReportSchema>;
+  question: string;
+  focusDecadeName?: string;
   userId: string | null;
   deductedAmount: number;
   questionLength: number;
 }) {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let usagePayload: unknown = null;
-  let didComplete = false;
-
-  const processArkChunk = (chunk: string, streamController: ReadableStreamDefaultController<Uint8Array>) => {
-    const lines = chunk
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    const dataLine = lines.find((line) => line.startsWith('data: '));
-    if (!dataLine) return;
-
-    const raw = dataLine.slice(6);
-    if (!raw || raw === '[DONE]') {
-      didComplete = true;
-      streamController.enqueue(encodeSseEvent({ type: 'done' }));
-      return;
-    }
-
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    if (data.type === 'response.output_text.delta' && typeof data.delta === 'string') {
-      streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: data.delta }));
-      return;
-    }
-
-    if (
-      data.type === 'response.done' ||
-      data.type === 'response.completed' ||
-      data.type === 'response.incomplete'
-    ) {
-      const responseObject =
-        data.response && typeof data.response === 'object'
-          ? (data.response as Record<string, unknown>)
-          : null;
-      usagePayload = responseObject?.usage ?? data.usage ?? usagePayload;
-      didComplete = true;
-      streamController.enqueue(encodeSseEvent({ type: 'done' }));
-      return;
-    }
-
-    if (data.type === 'response.failed' || data.type === 'error') {
-      const errorMessage =
-        typeof data.error === 'string'
-          ? data.error
-          : data.error && typeof data.error === 'object'
-            ? ((data.error as Record<string, unknown>).message as string | undefined)
-            : null;
-      throw new Error(errorMessage || '追问失败，请稍后重试');
-    }
-  };
+  const context = buildCopilotPromptContext(report);
+  const scopedInsights = buildQuestionScopedInsights(report, question, focusDecadeName);
 
   return new ReadableStream<Uint8Array>({
     async start(streamController) {
-      let buffer = '';
+      let usagePayload: unknown = null;
 
       try {
-        while (!didComplete) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        const stream = streamModel({
+          config,
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、十年大运 AI 专属解读、流年等），其中「十年大运」段落为逐步大运全文，用户问运势/大运/流年时必须优先引用对应步运的 summary、前五年与后五年内容。给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
+            },
+            {
+              role: 'user',
+              content: `${context}\n${scopedInsights}\n\n用户追问：${question}`,
+            },
+          ],
+          temperature: 0.3,
+          timeoutMs: COPILOT_TIMEOUT_MS,
+        });
 
-          buffer += decoder.decode(value, { stream: true });
-          const chunks = buffer.split('\n\n');
-          buffer = chunks.pop() || '';
-
-          for (const chunk of chunks) {
-            processArkChunk(chunk, streamController);
-            if (didComplete) break;
+        for await (const ev of stream) {
+          if (ev.type === 'text-delta') {
+            streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: ev.text }));
+          } else if (ev.type === 'done') {
+            usagePayload = ev.rawUsage ?? usagePayload;
+            streamController.enqueue(encodeSseEvent({ type: 'done' }));
+          } else if (ev.type === 'error') {
+            throw new ModelUpstreamError(ev.error, 502);
           }
-        }
-
-        const rest = buffer + decoder.decode();
-        if (!didComplete && rest.trim()) {
-          processArkChunk(rest, streamController);
-        }
-
-        if (!didComplete) {
-          streamController.enqueue(encodeSseEvent({ type: 'done' }));
         }
 
         if (userId) {
@@ -352,13 +258,14 @@ function createCopilotStream({
             userId,
             feature: 'destiny',
             action: 'destiny-copilot',
-            provider: 'doubao',
-            model: ARK_MODEL,
+            provider: config.provider,
+            model: config.model,
             endpoint: '/api/destiny/copilot',
             usage: normalizeUsage(usagePayload),
             metadata: {
               questionLength,
               stream: true,
+              provider: config.provider,
             },
           });
         }
@@ -376,8 +283,6 @@ function createCopilotStream({
           })
         );
       } finally {
-        clearTimeout(timeoutId);
-        reader.releaseLock();
         streamController.close();
       }
     },

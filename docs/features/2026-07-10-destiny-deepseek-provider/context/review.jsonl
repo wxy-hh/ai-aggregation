@@ -1,0 +1,5 @@
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/需求说明书.md","kind":"requirement","reason":"REQ-ID 与验收标准 AC1-AC5，覆盖矩阵与审查对照"}
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/初步实现计划.md","kind":"plan","reason":"任务拆分/依赖/回撤边界，plan-review 与 rollback-units 输入"}
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/requirements-coverage.md","kind":"review","reason":"需求覆盖结论(light)：19 COVERED / 1 PARTIAL(REQ-F3)"}
+{"file":"docs/reviews/2026-07-10-destiny-deepseek-provider-plan-review.md","kind":"review","reason":"计划审查(light)：0 CRITICAL / 2 HIGH / 3 MEDIUM / 4 LOW，2 条 HIGH 待用户决策"}
+{"file":"docs/deepseek-api/deepseek-chat-api.md","kind":"spec","reason":"协议差异（json_object 弱约束/流式帧/思考模式），审查关注点"}

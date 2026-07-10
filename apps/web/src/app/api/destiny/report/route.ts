@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { buildBaziPromptPayload, computeBaziChart } from '@repo/shared';
+import {
+  buildBaziPromptPayload,
+  computeBaziChart,
+  resolveModelConfig,
+  streamModel,
+  ModelConfigError,
+  ModelUpstreamError,
+  type ModelConfig,
+} from '@repo/shared';
 import type {
   BaziLockedSections,
   BaziSectionKey,
@@ -43,9 +51,9 @@ const RequestSchema = z.object({
     lat: z.number().nullable(),
     lon: z.number().nullable(),
   }),
+  provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
-const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const REPORT_TIMEOUT_MS = 300000;
 const REPORT_MAX_OUTPUT_TOKENS = 24000;
 
@@ -79,10 +87,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const arkApiKey = process.env.ARK_API_KEY;
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    if (!arkApiKey) {
-      return NextResponse.json({ error: 'Missing ARK_API_KEY' }, { status: 500 });
+    let config: ModelConfig;
+    try {
+      config = resolveModelConfig(parsed.data.provider);
+    } catch (error) {
+      if (error instanceof ModelConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      throw error;
     }
 
     const input: DestinyReportRequest = {
@@ -97,8 +109,7 @@ export async function POST(req: Request) {
     const stream = createBaziStream({
       input,
       currentYear,
-      arkApiKey,
-      arkBaseUrl,
+      config,
       userId,
     });
 
@@ -122,14 +133,12 @@ export async function POST(req: Request) {
 function createBaziStream({
   input,
   currentYear,
-  arkApiKey,
-  arkBaseUrl,
+  config,
   userId,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   userId: string | null;
 }) {
   const encoder = new TextEncoder();
@@ -145,8 +154,7 @@ function createBaziStream({
         await streamBaziReport({
           input,
           currentYear,
-          arkApiKey,
-          arkBaseUrl,
+          config,
           userId,
           send,
         });
@@ -165,15 +173,13 @@ function createBaziStream({
 async function streamBaziReport({
   input,
   currentYear,
-  arkApiKey,
-  arkBaseUrl,
+  config,
   userId,
   send,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   userId: string | null;
   send: (event: BaziStreamEvent) => void;
 }) {
@@ -190,10 +196,7 @@ async function streamBaziReport({
   const emittedSections = new Set<BaziSectionKey>();
   const lockedSections: BaziLockedSections = {};
   let textBuffer = '';
-  let eventBuffer = '';
-  let responseId: string | null = null;
   let usagePayload: unknown = null;
-  let incompleteReason: string | null = null;
 
   try {
     const basis = computeBaziChart(input, { referenceYear: currentYear });
@@ -215,143 +218,63 @@ async function streamBaziReport({
     });
     transitionStatus('analyzing');
 
-    const response = await fetch(`${arkBaseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${arkApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input: [
-          { role: 'system', content: buildStreamingSystemPrompt(currentYear) },
-          { role: 'user', content: buildUserPrompt(input, basis) },
-        ],
-        stream: true,
-        temperature: 0.25,
-        max_output_tokens: REPORT_MAX_OUTPUT_TOKENS,
-        reasoning: { effort: 'low' },
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'bazi_interpretation_report',
-            schema: BAZI_REPORT_JSON_SCHEMA,
-          },
-        },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new UpstreamModelError(
-        mapArkError(response.status),
-        response.status,
-        text.slice(0, 400)
-      );
-    }
-
-    if (!response.body) {
-      throw new UpstreamModelError('模型流式响应为空，请稍后重试', 502);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    const processEvent = (event: unknown) => {
-      const textDelta = extractArkTextDelta(event);
-      if (textDelta) {
-        textBuffer += textDelta;
+    // 把累计文本解析为结构化分区并发射（流结束后调用；截断/半完整 JSON 交给后续兜底）
+    const emitSectionsFromText = (rawJson: string) => {
+      const trimmed = rawJson.trim();
+      if (!trimmed) return;
+      let fullData: Record<string, unknown>;
+      try {
+        fullData = JSON.parse(trimmed) as Record<string, unknown>;
+      } catch {
+        return;
       }
-
-      const eventType = getArkEventType(event);
-      if (eventType === 'response.completed' || eventType === 'response.incomplete') {
-        const responseObject = getArkResponseObject(event);
-        responseId = responseId ?? (typeof responseObject?.id === 'string' ? responseObject.id : null);
-        usagePayload = usagePayload ?? responseObject?.usage ?? null;
-
-        if (eventType === 'response.incomplete') {
-          const reason = getIncompleteReason(responseObject);
-          incompleteReason = reason ?? 'unknown';
+      for (const sectionKey of BAZI_MODEL_SECTION_ORDER) {
+        if (emittedSections.has(sectionKey)) continue;
+        const rawValue = fullData[sectionKey];
+        if (rawValue == null) continue;
+        const result = parseSectionPayloadSafely({
+          sectionKey,
+          rawPayload: JSON.stringify(rawValue),
+          input,
+          currentYear,
+          basis,
+        });
+        emitLockedSection({
+          sectionKey,
+          payload: result,
+          emittedSections,
+          lockedSections,
+          send,
+        });
+        if (sectionKey === 'timeline') {
+          transitionStatus('finalizing');
         }
-
-        let rawJson = textBuffer.trim();
-        if (!rawJson && eventType === 'response.completed') {
-          const fallbackText = extractCompletedOutputText(responseObject);
-          if (fallbackText) {
-            rawJson = fallbackText;
-          }
-        }
-
-        if (rawJson) {
-          try {
-            const fullData = JSON.parse(rawJson);
-            for (const sectionKey of BAZI_MODEL_SECTION_ORDER) {
-              if (emittedSections.has(sectionKey)) continue;
-              const rawValue = fullData[sectionKey];
-              if (rawValue == null) continue;
-
-              const result = parseSectionPayloadSafely({
-                sectionKey,
-                rawPayload: JSON.stringify(rawValue),
-                input,
-                currentYear,
-                basis,
-              });
-
-              emitLockedSection({
-                sectionKey,
-                payload: result,
-                emittedSections,
-                lockedSections,
-                send,
-              });
-
-              if (sectionKey === 'timeline') {
-                transitionStatus('finalizing');
-              }
-            }
-          } catch {
-            // 等待 stream 结束后的 fallback 逻辑
-          }
-        }
-      }
-
-      if (eventType === 'response.failed' || eventType === 'error') {
-        throw new UpstreamModelError(getArkEventErrorMessage(event), 502);
       }
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        eventBuffer += decoder.decode();
-        break;
-      }
+    const stream = streamModel({
+      config,
+      messages: [
+        { role: 'system', content: buildStreamingSystemPrompt(currentYear) },
+        { role: 'user', content: buildUserPrompt(input, basis) },
+      ],
+      temperature: 0.25,
+      maxTokens: REPORT_MAX_OUTPUT_TOKENS,
+      timeoutMs: REPORT_TIMEOUT_MS,
+      json: { schema: { name: 'bazi_interpretation_report', schema: BAZI_REPORT_JSON_SCHEMA } },
+    });
 
-      eventBuffer += decoder.decode(value, { stream: true });
-      let separatorIndex = eventBuffer.indexOf('\n\n');
-      while (separatorIndex !== -1) {
-        const chunk = eventBuffer.slice(0, separatorIndex);
-        eventBuffer = eventBuffer.slice(separatorIndex + 2);
-        const event = parseArkSseChunk(chunk);
-        if (event !== null) {
-          processEvent(event);
-        }
-        separatorIndex = eventBuffer.indexOf('\n\n');
-      }
-    }
-
-    if (eventBuffer.trim()) {
-      const trailingEvent = parseArkSseChunk(eventBuffer);
-      if (trailingEvent !== null) {
-        processEvent(trailingEvent);
+    for await (const ev of stream) {
+      if (ev.type === 'text-delta') {
+        textBuffer += ev.text;
+      } else if (ev.type === 'done') {
+        usagePayload = ev.rawUsage ?? usagePayload;
+      } else if (ev.type === 'error') {
+        throw new ModelUpstreamError(ev.error, 502);
       }
     }
 
-    if (incompleteReason === 'length') {
-      console.warn('[Destiny Report] AI output was truncated (length limit), using available data with fallbacks');
-    }
+    emitSectionsFromText(textBuffer);
 
     // 补充缺失的分区：先尝试恢复（recoverable section），再用算法真值兜底（primary section）
 
@@ -414,14 +337,14 @@ async function streamBaziReport({
         userId,
         feature: 'destiny',
         action: 'destiny-report',
-        provider: 'doubao',
-        model: ARK_MODEL,
+        provider: config.provider,
+        model: config.model,
         endpoint: '/api/destiny/report',
         usage: normalizeUsage(usagePayload),
         metadata: {
           stage: 'single-stream',
           currentYear,
-          responseId,
+          provider: config.provider,
           sectionCount: emittedSections.size,
         },
       });
@@ -561,95 +484,6 @@ function buildReportFromSections(
   );
 }
 
-function parseArkSseChunk(chunk: string): unknown | null {
-  const data = chunk
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trim())
-    .join('\n')
-    .trim();
-
-  if (!data || data === '[DONE]') return null;
-
-  try {
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
-
-function extractCompletedOutputText(responseObject: Record<string, unknown> | null): string {
-  if (!responseObject) return '';
-  const output = responseObject.output;
-  if (!Array.isArray(output)) return '';
-  for (const item of output) {
-    if (
-      item &&
-      typeof item === 'object' &&
-      (item as Record<string, unknown>).type === 'output_text'
-    ) {
-      const text = (item as Record<string, unknown>).text;
-      if (typeof text === 'string') return text;
-    }
-  }
-  return '';
-}
-
-function extractArkTextDelta(event: unknown): string {
-  if (!event || typeof event !== 'object') return '';
-  const payload = event as Record<string, unknown>;
-  if (payload.type === 'response.output_text.delta' && typeof payload.delta === 'string') {
-    return payload.delta;
-  }
-  return '';
-}
-
-function getArkEventType(event: unknown): string {
-  if (!event || typeof event !== 'object') return '';
-  const payload = event as Record<string, unknown>;
-  return typeof payload.type === 'string' ? payload.type : '';
-}
-
-function getArkResponseObject(event: unknown): Record<string, unknown> | null {
-  if (!event || typeof event !== 'object') return null;
-  const response = (event as Record<string, unknown>).response;
-  return response && typeof response === 'object' ? (response as Record<string, unknown>) : null;
-}
-
-function getIncompleteReason(responseObject: Record<string, unknown> | null) {
-  if (!responseObject) return null;
-  const details = responseObject.incomplete_details;
-  if (!details || typeof details !== 'object') return null;
-  return typeof (details as Record<string, unknown>).reason === 'string'
-    ? ((details as Record<string, unknown>).reason as string)
-    : null;
-}
-
-function getArkEventErrorMessage(event: unknown): string {
-  if (!event || typeof event !== 'object') return '模型流式输出失败，请稍后重试';
-  const payload = event as Record<string, unknown>;
-  const error = payload.error;
-  if (
-    error &&
-    typeof error === 'object' &&
-    typeof (error as Record<string, unknown>).message === 'string'
-  ) {
-    return (error as Record<string, unknown>).message as string;
-  }
-
-  const responseObject = getArkResponseObject(event);
-  const responseError = responseObject?.error;
-  if (
-    responseError &&
-    typeof responseError === 'object' &&
-    typeof (responseError as Record<string, unknown>).message === 'string'
-  ) {
-    return (responseError as Record<string, unknown>).message as string;
-  }
-
-  return '模型流式输出失败，请稍后重试';
-}
-
 function buildUserPrompt(
   input: DestinyReportRequest,
   basis: ReturnType<typeof computeBaziChart>
@@ -740,15 +574,12 @@ function buildStreamingSystemPrompt(currentYear: number): string {
 `.trim();
 }
 
-function mapArkError(status: number): string {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
-}
-
 function mapStreamError(error: unknown): string {
   if (error instanceof Error && error.name === 'AbortError') {
     return '测算超时，请稍后重试';
+  }
+  if (error instanceof ModelUpstreamError) {
+    return error.message;
   }
   if (error instanceof z.ZodError) {
     return '模型返回格式不合法，请稍后重试';

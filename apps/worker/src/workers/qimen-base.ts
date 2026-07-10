@@ -26,11 +26,15 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
 
       logger.warn('奇门基础盘面未预计算，降级到 LLM 排盘（不推荐）', { analysisId });
       // 降级路径保留（向后兼容）：调用 LLM 排盘
-      const { generateQimenBaseResult, resolveArkConfig } = await import('@repo/shared');
-      const baseResult = await generateQimenBaseResult(job.data.input, resolveArkConfig(process.env), {
-        analysisId,
-        stage: 'baseResult',
-      });
+      const { generateQimenBaseResult, resolveModelConfig } = await import('@repo/shared');
+      const baseResult = await generateQimenBaseResult(
+        job.data.input,
+        resolveModelConfig(job.data.provider ?? 'doubao', process.env),
+        {
+          analysisId,
+          stage: 'baseResult',
+        }
+      );
       await store.saveBaseResult(analysisId, baseResult);
       logger.info('奇门基础盘面降级完成', {
         analysisId,

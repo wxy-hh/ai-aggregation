@@ -11,6 +11,7 @@ export * from './qimen-analysis';
 export * from './qimen-analysis-store';
 export * from './qimen-chart';
 export * from './ziwei-glossary';
+export * from './destiny-model-client';
 
 // 城市经纬度数据 (用于八字测算真太阳时修正)
 export * from './data/china-cities';

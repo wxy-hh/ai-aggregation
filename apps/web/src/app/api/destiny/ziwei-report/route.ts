@@ -13,7 +13,14 @@ import {
   buildZiweiPromptContext,
   type ZiweiChartData,
 } from '../_lib/ziwei-chart';
-import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
+import { extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
+import {
+  resolveModelConfig,
+  callModel,
+  ModelConfigError,
+  ModelUpstreamError,
+  type ModelConfig,
+} from '@repo/shared';
 import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
@@ -40,11 +47,11 @@ const RequestSchema = z.object({
     lat: z.number().nullable(),
     lon: z.number().nullable(),
   }),
+  provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
 // ─── 常量 ───
 
-const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 const QUICK_TIMEOUT_MS = 40000;
 const REPORT_TIMEOUT_MS = 180000;
 const QUICK_MAX_TOKENS = 4000;
@@ -200,17 +207,6 @@ const FULL_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-// ─── 错误类 ───
-
-class UpstreamModelError extends Error {
-  status: number;
-  constructor(message: string, status = 502) {
-    super(message);
-    this.name = 'UpstreamModelError';
-    this.status = status;
-  }
-}
-
 // ─── 主入口 ───
 
 export async function POST(req: Request) {
@@ -231,10 +227,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const arkApiKey = process.env.ARK_API_KEY;
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    if (!arkApiKey) {
-      return NextResponse.json({ error: 'Missing ARK_API_KEY' }, { status: 500 });
+    let config: ModelConfig;
+    try {
+      config = resolveModelConfig(parsed.data.provider);
+    } catch (error) {
+      if (error instanceof ModelConfigError) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      throw error;
     }
 
     const input: DestinyReportRequest = parsed.data;
@@ -251,7 +251,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const stream = createZiweiStream({ input, currentYear, arkApiKey, arkBaseUrl, userId, chartData });
+    const stream = createZiweiStream({ input, currentYear, config, userId, chartData });
 
     return new Response(stream, {
       headers: {
@@ -273,15 +273,13 @@ export async function POST(req: Request) {
 function createZiweiStream({
   input,
   currentYear,
-  arkApiKey,
-  arkBaseUrl,
+  config,
   userId,
   chartData,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   userId: string | null;
   chartData: ZiweiChartData;
 }) {
@@ -316,8 +314,7 @@ function createZiweiStream({
         send({ type: 'status', status: 'analyzing' });
 
         const quickResult = await generateQuickSections({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
           chartContext,
           currentYear,
@@ -328,8 +325,7 @@ function createZiweiStream({
 
         // 第二阶段：宫位详解 + 感情/健康模块
         const fullResult = await generateFullSections({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
           chartContext,
           currentYear,
@@ -385,24 +381,21 @@ function emitSections({
 // ─── 快速解读 ───
 
 async function generateQuickSections({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
   chartContext,
   currentYear,
   userId,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: DestinyReportRequest;
   chartContext: string;
   currentYear: number;
   userId: string | null;
 }): Promise<ZiweiLockedSections> {
   try {
-    const payload = await callArkApi({
-      arkApiKey,
-      arkBaseUrl,
+    const result = await callModel({
+      config,
       messages: [
         { role: 'system', content: buildQuickSystemPrompt(currentYear) },
         { role: 'user', content: buildUserPrompt(input, chartContext) },
@@ -410,34 +403,33 @@ async function generateQuickSections({
       maxTokens: QUICK_MAX_TOKENS,
       temperature: 0.25,
       timeoutMs: QUICK_TIMEOUT_MS,
-      jsonSchema: { name: 'ziwei_quick', schema: QUICK_SCHEMA },
+      json: { schema: { name: 'ziwei_quick', schema: QUICK_SCHEMA } },
     });
 
-    const text = extractArkOutputText(payload);
-    const parsed = parseJson(text);
+    const parsed = parseJson(result.text);
 
     if (userId) {
       await safeRecordAiUsage({
         userId,
         feature: 'destiny',
         action: 'destiny-ziwei-report',
-        provider: 'doubao',
-        model: ARK_MODEL,
+        provider: config.provider,
+        model: config.model,
         endpoint: '/api/destiny/ziwei-report',
-        usage: normalizeUsage(extractArkUsage(payload)),
-        metadata: { stage: 'quick', currentYear },
+        usage: normalizeUsage(extractArkUsage(result.raw)),
+        metadata: { stage: 'quick', currentYear, provider: config.provider },
       });
     }
 
-    const result: ZiweiLockedSections = {};
+    const resultSections: ZiweiLockedSections = {};
     if (parsed && typeof parsed === 'object') {
       const data = parsed as Record<string, unknown>;
-      if (data.profileOverview) result.profileOverview = data.profileOverview as never;
-      if (data.overviewModules) result.overviewModules = data.overviewModules as never;
-      if (Array.isArray(data.timeline)) result.timeline = data.timeline as never;
-      if (data.relations) result.relations = data.relations as never;
+      if (data.profileOverview) resultSections.profileOverview = data.profileOverview as never;
+      if (data.overviewModules) resultSections.overviewModules = data.overviewModules as never;
+      if (Array.isArray(data.timeline)) resultSections.timeline = data.timeline as never;
+      if (data.relations) resultSections.relations = data.relations as never;
     }
-    return result;
+    return resultSections;
   } catch {
     console.warn('[ziwei-report] quick stage skipped');
     return {};
@@ -447,23 +439,20 @@ async function generateQuickSections({
 // ─── 完整解读 ───
 
 async function generateFullSections({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
   chartContext,
   currentYear,
   userId,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: DestinyReportRequest;
   chartContext: string;
   currentYear: number;
   userId: string | null;
 }): Promise<ZiweiLockedSections> {
-  const payload = await callArkApi({
-    arkApiKey,
-    arkBaseUrl,
+  const result = await callModel({
+    config,
     messages: [
       { role: 'system', content: buildFullSystemPrompt(currentYear) },
       { role: 'user', content: buildUserPrompt(input, chartContext) },
@@ -471,88 +460,34 @@ async function generateFullSections({
     maxTokens: FULL_MAX_TOKENS,
     temperature: 0.35,
     timeoutMs: REPORT_TIMEOUT_MS,
-    jsonSchema: { name: 'ziwei_full', schema: FULL_SCHEMA },
+    json: { schema: { name: 'ziwei_full', schema: FULL_SCHEMA } },
   });
 
-  const text = extractArkOutputText(payload);
-  const parsed = parseJson(text);
+  const parsed = parseJson(result.text);
 
   if (userId) {
     await safeRecordAiUsage({
       userId,
       feature: 'destiny',
       action: 'destiny-ziwei-report',
-      provider: 'doubao',
-      model: ARK_MODEL,
+      provider: config.provider,
+      model: config.model,
       endpoint: '/api/destiny/ziwei-report',
-      usage: normalizeUsage(extractArkUsage(payload)),
-      metadata: { stage: 'full', currentYear },
+      usage: normalizeUsage(extractArkUsage(result.raw)),
+      metadata: { stage: 'full', currentYear, provider: config.provider },
     });
   }
 
-  const result: ZiweiLockedSections = {};
+  const resultSections: ZiweiLockedSections = {};
   if (parsed && typeof parsed === 'object') {
     const data = parsed as Record<string, unknown>;
     if (Array.isArray(data.palaceAnalysis)) {
-      result.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
+      resultSections.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
     }
-    if (data.love) result.love = data.love as never;
-    if (data.health) result.health = data.health as never;
+    if (data.love) resultSections.love = data.love as never;
+    if (data.health) resultSections.health = data.health as never;
   }
-  return result;
-}
-
-// ─── ARK API 调用 ───
-
-async function callArkApi({
-  arkApiKey,
-  arkBaseUrl,
-  messages,
-  maxTokens,
-  temperature,
-  timeoutMs,
-  jsonSchema,
-}: {
-  arkApiKey: string;
-  arkBaseUrl: string;
-  messages: Array<{ role: 'system' | 'user'; content: string }>;
-  maxTokens: number;
-  temperature: number;
-  timeoutMs: number;
-  jsonSchema?: { name: string; schema: Record<string, unknown> };
-}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(`${arkBaseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${arkApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input: messages,
-        temperature,
-        max_output_tokens: maxTokens,
-        reasoning: { effort: 'low' },
-        text: jsonSchema
-          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
-          : { format: { type: 'json_object' } },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new UpstreamModelError(mapArkError(response.status), response.status);
-    }
-
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return resultSections;
 }
 
 // ─── 提示词构建 ───
@@ -681,14 +616,8 @@ function parseJson(text: string): unknown {
   }
 }
 
-function mapArkError(status: number): string {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
-}
-
 function mapStreamError(error: unknown): string {
-  if (error instanceof UpstreamModelError) return error.message;
+  if (error instanceof ModelUpstreamError) return error.message;
   if (error instanceof Error && error.name === 'AbortError') return '测算超时，请稍后重试';
   return error instanceof Error ? error.message : '测算失败，请稍后重试';
 }

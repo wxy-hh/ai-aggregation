@@ -1,0 +1,3 @@
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/需求说明书.md","kind":"requirement","reason":"AC1-AC5 行为验收标准"}
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/初步实现计划.md","kind":"plan","reason":"验证总览与回撤边界，verification 对照"}
+{"file":"docs/deepseek-api/deepseek-chat-api.md","kind":"spec","reason":"DeepSeek 行为验证要点（普通/流式/JSON/错误分支）"}

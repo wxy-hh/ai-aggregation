@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
 import { DestinyDesktopNav } from './layout/destiny-desktop-nav';
@@ -112,6 +113,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
               })}
             </div>
           </div>
+          {/* 模型切换入口：移动端 sticky 头部内居中，三页共享，拇指易触达 */}
+          <div className="mt-2 flex justify-center">
+            <DestinyModelSwitcher />
+          </div>
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -179,6 +184,11 @@ function DestinyDesktopLayout({
         onModuleChange={onModuleChange}
         disabled={isLoading}
       />
+
+      {/* 模型切换入口：桌面端右上角悬浮，三页共享；z-30 低于奇门 loading(z-35)，避免 loading 时误触 */}
+      <div className="fixed right-6 top-4 z-30">
+        <DestinyModelSwitcher />
+      </div>
 
       <div className="h-full w-full">
         {workspaceElements}

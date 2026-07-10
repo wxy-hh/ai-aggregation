@@ -5,7 +5,14 @@ import type {
   QimenSectionKey,
   QimenStreamEvent,
 } from '@/app/destiny/_components/qimen-types';
-import { extractArkOutputText, extractArkUsage, extractJsonBlock } from '../../_lib/ark-response';
+import { extractArkUsage, extractJsonBlock } from '../../_lib/ark-response';
+import {
+  resolveModelConfig,
+  callModel,
+  ModelConfigError,
+  ModelUpstreamError,
+  type ModelConfig,
+} from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
@@ -28,6 +35,7 @@ const RequestSchema = z.object({
     outputStyle: z.enum(['professional', 'plain']),
     outputLength: z.enum(['brief', 'detailed']),
   }),
+  provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
 const QimenCellSchema = z.object({
@@ -97,9 +105,7 @@ const QuickSectionSchema = z.object({
 type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
-const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
-
-// JSON Schema 常量，用于 Doubao json_schema 结构化输出
+// JSON Schema 常量，用于结构化输出（doubao=json_schema / deepseek=json_object+样例）
 type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
 
 const QIMEN_QUICK_SECTIONS_SCHEMA = {
@@ -416,16 +422,19 @@ export async function POST(request: Request) {
       deductedAmount = deduction.deductedAmount;
     }
 
-    const arkApiKey = process.env.ARK_API_KEY;
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    if (!arkApiKey) {
-      return NextResponse.json({ success: false, error: 'Missing ARK_API_KEY' }, { status: 500 });
+    let config: ModelConfig;
+    try {
+      config = resolveModelConfig(parsed.data.provider);
+    } catch (error) {
+      if (error instanceof ModelConfigError) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      throw error;
     }
 
     const stream = createQimenStream({
       input: parsed.data,
-      arkApiKey,
-      arkBaseUrl,
+      config,
       userId,
       deductedAmount,
     });
@@ -456,14 +465,12 @@ export async function POST(request: Request) {
 
 function createQimenStream({
   input,
-  arkApiKey,
-  arkBaseUrl,
+  config,
   userId,
   deductedAmount,
 }: {
   input: QimenAnalyzeInput;
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   userId: string | null;
   deductedAmount: number;
 }) {
@@ -483,8 +490,7 @@ function createQimenStream({
         send({ type: 'status', status: 'charting' });
 
         const quickSections = await generateQuickSections({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
           userId,
         });
@@ -499,8 +505,7 @@ function createQimenStream({
         send({ type: 'status', status: 'analyzing' });
 
         const fullResult = await generateFullResult({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
           userId,
         });
@@ -591,20 +596,17 @@ function setLockedSection(
 }
 
 async function generateQuickSections({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
   userId,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: QimenAnalyzeInput;
   userId: string | null;
 }): Promise<QimenLockedSections> {
   try {
-    const primaryPayload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+    const primaryResult = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildQuickSectionSystemPrompt(input) },
         { role: 'user', content: buildUserPrompt(input) },
@@ -618,15 +620,13 @@ async function generateQuickSections({
       jsonSchema: { name: 'qimen_quick_sections', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
-    const primaryText = extractArkOutputText(primaryPayload);
-    const primarySections = normalizeQuickSections(parseModelJson(primaryText), input);
+    const primarySections = normalizeQuickSections(parseModelJson(primaryResult.text), input);
     if (hasRenderableQuickSections(primarySections)) {
       return primarySections;
     }
 
-    const retryPayload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+    const retryResult = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildQuickSectionRetryPrompt(input) },
         { role: 'user', content: buildUserPrompt(input) },
@@ -640,8 +640,7 @@ async function generateQuickSections({
       jsonSchema: { name: 'qimen_quick_sections_retry', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
-    const retryText = extractArkOutputText(retryPayload);
-    return normalizeQuickSections(parseModelJson(retryText), input);
+    return normalizeQuickSections(parseModelJson(retryResult.text), input);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return {};
@@ -655,19 +654,16 @@ async function generateQuickSections({
 }
 
 async function generateFullResult({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
   userId,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: QimenAnalyzeInput;
   userId: string | null;
 }) {
-  let payload = await requestArkPayload({
-    arkApiKey,
-    arkBaseUrl,
+  let result = await requestModelPayload({
+    config,
     input: [
       { role: 'system', content: buildSystemPrompt() },
       { role: 'user', content: buildUserPrompt(input) },
@@ -681,10 +677,9 @@ async function generateFullResult({
     jsonSchema: { name: 'qimen_full_result', schema: QIMEN_FULL_RESULT_SCHEMA },
   });
 
-  if (isLengthIncomplete(payload)) {
-    payload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+  if (result.finishReason === 'length') {
+    result = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildCompactSystemPrompt() },
         { role: 'user', content: buildUserPrompt(input) },
@@ -698,29 +693,17 @@ async function generateFullResult({
       jsonSchema: { name: 'qimen_full_result_compact', schema: QIMEN_FULL_RESULT_SCHEMA },
     });
 
-    if (isLengthIncomplete(payload)) {
+    if (result.finishReason === 'length') {
       throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
     }
   }
 
-  let text: string;
-  try {
-    text = extractArkOutputText(payload);
-  } catch (error) {
-    throw new UpstreamModelError(
-      '模型返回格式不合法，请稍后重试',
-      502,
-      error instanceof Error ? error.message : undefined
-    );
-  }
-
-  const parsedModel = parseModelJson(text);
+  const parsedModel = parseModelJson(result.text);
   return normalizeQimenResult(parsedModel, input);
 }
 
-async function requestArkPayload({
-  arkApiKey,
-  arkBaseUrl,
+async function requestModelPayload({
+  config,
   input,
   maxOutputTokens,
   temperature,
@@ -730,8 +713,7 @@ async function requestArkPayload({
   metadata,
   jsonSchema,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: Array<{ role: 'system' | 'user'; content: string }>;
   maxOutputTokens: number;
   temperature: number;
@@ -741,57 +723,34 @@ async function requestArkPayload({
   metadata?: Record<string, unknown>;
   jsonSchema?: JsonSchemaConfig;
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const result = await callModel({
+    config,
+    messages: input,
+    maxTokens: maxOutputTokens,
+    temperature,
+    timeoutMs,
+    json: jsonSchema ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } } : undefined,
+  });
 
-  try {
-    const response = await fetch(`${arkBaseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${arkApiKey}`,
-        'Content-Type': 'application/json',
+  if (userId) {
+    await safeRecordAiUsage({
+      userId,
+      feature: 'destiny',
+      action,
+      provider: config.provider,
+      model: config.model,
+      endpoint: '/api/destiny/qimen/analyze',
+      usage: normalizeUsage(extractArkUsage(result.raw)),
+      metadata: {
+        ...metadata,
+        provider: config.provider,
+        maxOutputTokens,
+        messageCount: input.length,
       },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input,
-        temperature,
-        max_output_tokens: maxOutputTokens,
-        reasoning: { effort: 'low' },
-        text: jsonSchema
-          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
-          : { format: { type: 'json_object' } },
-      }),
-      signal: controller.signal,
     });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
-    }
-
-    const payload = await response.json();
-
-    if (userId) {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action,
-        provider: 'doubao',
-        model: ARK_MODEL,
-        endpoint: '/api/destiny/qimen/analyze',
-        usage: normalizeUsage(extractArkUsage(payload)),
-        metadata: {
-          ...metadata,
-          maxOutputTokens,
-          messageCount: input.length,
-        },
-      });
-    }
-
-    return payload;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  return result;
 }
 
 function mergeLockedSectionsIntoResult(result: QimenAnalyzeResult, lockedSections: QimenLockedSections) {
@@ -810,6 +769,10 @@ function mapStreamError(error: unknown): string {
     return '测算超时，请稍后重试';
   }
 
+  if (error instanceof ModelUpstreamError) {
+    return error.message;
+  }
+
   if (error instanceof z.ZodError) {
     return '模型返回格式不合法，请稍后重试';
   }
@@ -823,12 +786,6 @@ function mapStreamError(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : '服务暂时不可用，请稍后重试';
-}
-
-function mapArkError(status: number): string {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
 }
 
 function buildUserPrompt(input: QimenAnalyzeInput): string {
@@ -968,14 +925,6 @@ function parseModelJson(text: string): unknown {
     }
     throw new SyntaxError('模型 JSON 解析失败');
   }
-}
-
-function isLengthIncomplete(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const data = payload as Record<string, unknown>;
-  const incomplete = data.incomplete_details;
-  if (!incomplete || typeof incomplete !== 'object') return false;
-  return (incomplete as Record<string, unknown>).reason === 'length';
 }
 
 function normalizeQuickSections(payload: unknown, input: QimenAnalyzeInput): QimenLockedSections {

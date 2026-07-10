@@ -210,6 +210,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     resetWorkspace,
     restoreWorkspace,
     markResultReady,
+    provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.ziwei,
@@ -217,6 +218,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
       markResultReady: state.markResultReady,
+      provider: state.provider,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
@@ -318,7 +320,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     try {
       const response = await authFetch('/api/destiny/ziwei-report', {
         method: 'POST',
-        body: JSON.stringify(mapFormToBaziRequest(formData)),
+        body: JSON.stringify({ ...mapFormToBaziRequest(formData), provider }),
         signal: controller.signal,
       });
 

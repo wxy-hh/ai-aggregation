@@ -4,7 +4,7 @@ import { normalizeUsage, recordAiUsage } from '@repo/db';
 import {
   QimenAnalysisStore,
   generateQimenSectionResult,
-  resolveArkConfig,
+  resolveModelConfig,
 } from '@repo/shared';
 import { resolveRedisConnectionOptions } from '@repo/shared/server';
 import type { QimenSectionJobData } from '@repo/queue';
@@ -33,10 +33,11 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
         logger.info('奇门分块任务使用预计算盘局', { analysisId, sectionKey });
       }
 
+      const config = resolveModelConfig(job.data.provider ?? 'doubao', process.env);
       const result = await generateQimenSectionResult(
         sectionKey,
         input,
-        resolveArkConfig(process.env),
+        config,
         {
           analysisId,
           stage: sectionKey,
@@ -56,8 +57,8 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
                       : sectionKey === 'timingWindows'
                         ? 'destiny-qimen-timing-windows'
                         : 'destiny-qimen-chart-summary',
-                  provider: 'doubao',
-                  model: 'doubao-seed-2-0-lite-260428',
+                  provider: config.provider,
+                  model: config.model,
                   endpoint: 'worker:qimen-section',
                   usage: normalizeUsage(
                     ((meta as { payload?: unknown }).payload as Record<string, unknown>)?.usage

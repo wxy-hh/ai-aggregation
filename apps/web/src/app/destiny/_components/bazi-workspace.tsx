@@ -85,6 +85,7 @@ export function BaziWorkspace({
     resetWorkspace,
     restoreWorkspace,
     markResultReady,
+    provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.bazi,
@@ -92,6 +93,7 @@ export function BaziWorkspace({
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
       markResultReady: state.markResultReady,
+      provider: state.provider,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
@@ -314,7 +316,7 @@ export function BaziWorkspace({
     try {
       const response = await authFetch('/api/destiny/report', {
         method: 'POST',
-        body: JSON.stringify(mapFormToBaziRequest(formData)),
+        body: JSON.stringify({ ...mapFormToBaziRequest(formData), provider }),
         signal: controller.signal,
       });
 

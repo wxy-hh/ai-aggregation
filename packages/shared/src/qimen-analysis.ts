@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { callModel, ModelUpstreamError, type ModelConfig } from './destiny-model-client';
 
 export type QimenQuestionCategory =
   | 'career'
@@ -285,7 +286,6 @@ const QIMEN_CHART_SUMMARY_SCHEMA = {
 
 type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
 
-const ARK_MODEL = process.env.ARK_DESTINY_MODEL || 'doubao-seed-2-0-lite-260428';
 // 异步 worker 链路与页面直连链路需要保持一致的模型时间预算。
 // 当前奇门能力使用强推理模型，40-45s 在生产环境中会被频繁打断。
 const BASE_STAGE_TIMEOUT_MS = 300000;
@@ -417,11 +417,6 @@ class UpstreamModelError extends Error {
   }
 }
 
-type ArkConfig = {
-  apiKey: string;
-  baseUrl: string;
-};
-
 type QimenTraceContext = {
   analysisId?: string;
   stage: 'baseResult' | QimenSectionKey;
@@ -435,21 +430,9 @@ type QimenTraceContext = {
   };
 };
 
-export function resolveArkConfig(env: NodeJS.ProcessEnv): ArkConfig {
-  const apiKey = env.ARK_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing ARK_API_KEY');
-  }
-
-  return {
-    apiKey,
-    baseUrl: env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
-  };
-}
-
 export async function generateQimenBaseResult(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
+  config: ModelConfig,
   trace?: QimenTraceContext,
   chart?: QimenAnalysisBaseResult
 ): Promise<QimenAnalysisBaseResult> {
@@ -459,7 +442,7 @@ export async function generateQimenBaseResult(
   }
 
   // 兼容旧路径：LLM 自行排盘
-  const payload = await requestArkPayload({
+  const result = await requestModelPayload({
     config,
     input: [
       { role: 'system', content: buildBaseSystemPrompt() },
@@ -472,13 +455,13 @@ export async function generateQimenBaseResult(
     jsonSchema: { name: 'qimen_base_result', schema: QIMEN_BASE_RESULT_SCHEMA },
   });
 
-  return normalizeBaseResult(parseModelJson(extractArkOutputText(payload)));
+  return normalizeBaseResult(parseModelJson(result.text));
 }
 
 export async function generateQimenSectionResult<K extends QimenSectionKey>(
   sectionKey: K,
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
+  config: ModelConfig,
   trace?: QimenTraceContext,
   chart?: QimenAnalysisBaseResult
 ): Promise<QimenSectionResultMap[K]> {
@@ -494,12 +477,12 @@ export async function generateQimenSectionResult<K extends QimenSectionKey>(
 
 async function generateStrategyOverview(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
+  config: ModelConfig,
   trace?: QimenTraceContext,
   chart?: QimenAnalysisBaseResult
 ) {
   const hasChart = Boolean(chart);
-  const payload = await requestArkPayload({
+  const result = await requestModelPayload({
     config,
     input: [
       { role: 'system', content: buildStrategySystemPrompt(input, hasChart) },
@@ -512,17 +495,17 @@ async function generateStrategyOverview(
     jsonSchema: { name: 'qimen_strategy_overview', schema: QIMEN_STRATEGY_OVERVIEW_SCHEMA },
   });
 
-  return normalizeStrategyOverview(parseModelJson(extractArkOutputText(payload)), input);
+  return normalizeStrategyOverview(parseModelJson(result.text), input);
 }
 
 async function generateTimingWindows(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
+  config: ModelConfig,
   trace?: QimenTraceContext,
   chart?: QimenAnalysisBaseResult
 ) {
   const hasChart = Boolean(chart);
-  const payload = await requestArkPayload({
+  const result = await requestModelPayload({
     config,
     input: [
       { role: 'system', content: buildTimingSystemPrompt(input, hasChart) },
@@ -535,17 +518,17 @@ async function generateTimingWindows(
     jsonSchema: { name: 'qimen_timing_windows', schema: QIMEN_TIMING_WINDOWS_SCHEMA },
   });
 
-  return normalizeTimingWindows(parseModelJson(extractArkOutputText(payload)), input);
+  return normalizeTimingWindows(parseModelJson(result.text), input);
 }
 
 async function generateChartSummary(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
+  config: ModelConfig,
   trace?: QimenTraceContext,
   chart?: QimenAnalysisBaseResult
 ) {
   const hasChart = Boolean(chart);
-  const payload = await requestArkPayload({
+  const result = await requestModelPayload({
     config,
     input: [
       { role: 'system', content: buildSummarySystemPrompt(hasChart) },
@@ -558,10 +541,10 @@ async function generateChartSummary(
     jsonSchema: { name: 'qimen_chart_summary', schema: QIMEN_CHART_SUMMARY_SCHEMA },
   });
 
-  return normalizeChartSummary(parseModelJson(extractArkOutputText(payload)));
+  return normalizeChartSummary(parseModelJson(result.text));
 }
 
-async function requestArkPayload({
+async function requestModelPayload({
   config,
   input,
   maxOutputTokens,
@@ -570,7 +553,7 @@ async function requestArkPayload({
   trace,
   jsonSchema,
 }: {
-  config: ArkConfig;
+  config: ModelConfig;
   input: Array<{ role: 'system' | 'user'; content: string }>;
   maxOutputTokens: number;
   temperature: number;
@@ -578,61 +561,37 @@ async function requestArkPayload({
   trace?: QimenTraceContext;
   jsonSchema?: JsonSchemaConfig;
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
 
   trace?.hooks?.onRequestStart?.({
     analysisId: trace?.analysisId,
     stage: trace?.stage,
     sectionKey: trace?.sectionKey,
-    model: ARK_MODEL,
+    model: config.model,
+    provider: config.provider,
     maxOutputTokens,
     timeoutMs,
   });
 
   try {
-    const response = await fetch(`${config.baseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input,
-        temperature,
-        max_output_tokens: maxOutputTokens,
-        reasoning: { effort: 'low' },
-        text: jsonSchema
-          ? { format: { type: 'json_schema', name: jsonSchema.name, schema: jsonSchema.schema } }
-          : { format: { type: 'json_object' } },
-      }),
-      signal: controller.signal,
+    const result = await callModel({
+      config,
+      messages: input,
+      maxTokens: maxOutputTokens,
+      temperature,
+      timeoutMs,
+      json: jsonSchema ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } } : undefined,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      trace?.hooks?.onRequestNonOk?.({
-        analysisId: trace?.analysisId,
-        stage: trace?.stage,
-        sectionKey: trace?.sectionKey,
-        status: response.status,
-        durationMs: Date.now() - startedAt,
-      });
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
-    }
-
-    const payload = await response.json();
     trace?.hooks?.onRequestSuccess?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
       sectionKey: trace?.sectionKey,
-      status: response.status,
+      status: 200,
       durationMs: Date.now() - startedAt,
-      payload,
+      payload: result.raw,
     });
-    return payload;
+    return result;
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'AbortError';
     if (isTimeout) {
@@ -646,6 +605,17 @@ async function requestArkPayload({
       throw new UpstreamModelError('模型推演超时，请稍后重试', 504);
     }
 
+    if (error instanceof ModelUpstreamError) {
+      trace?.hooks?.onRequestNonOk?.({
+        analysisId: trace?.analysisId,
+        stage: trace?.stage,
+        sectionKey: trace?.sectionKey,
+        status: error.status,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new UpstreamModelError(error.message, error.status);
+    }
+
     trace?.hooks?.onRequestError?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
@@ -654,8 +624,6 @@ async function requestArkPayload({
       durationMs: Date.now() - startedAt,
     });
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -1160,10 +1128,4 @@ function parseModelJson(text: string): unknown {
 
 function sanitizeText(value: string, maxLen: number) {
   return value.replace(/\s+/g, ' ').trim().slice(0, maxLen);
-}
-
-function mapArkError(status: number) {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
 }
