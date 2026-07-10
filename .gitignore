@@ -63,3 +63,4 @@ apps/web/ark-response-debug.json
 .codex*
 .agents*
 .claude*
+dump.rdb*

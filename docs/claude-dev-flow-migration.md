@@ -22,6 +22,7 @@
   rules/
     git-workflow.md
     security.md
+    specs/README.md
     project-workflow.template.md
 docs/
   claude-dev-flow-migration.md
@@ -64,6 +65,8 @@ templates/
     project-workflow.md
     git-workflow.md
     security.md
+    specs/
+      README.md
 docs/
   claude-dev-flow-migration.md
   claude-dev-flow-smoke-test.md
@@ -114,6 +117,7 @@ onboarding 会根据 `.claude/rules/project-workflow.template.md` 检测并生�
 | 浏览器验证 | 是否启用 webapp-testing，dev server 命令、协议和端口 |
 | OpenSpec | 是否存在 openspec，是否维护 living baseline |
 | 文档能力 | 是否有 CODEMAPS 或文档生成流程 |
+| 局部规范 | 是否已有 `.claude/rules/specs/<scope>/index.md`，没有也可以保留为空能力 |
 | Git 边界 | `.claude/` 和 `CLAUDE.md` 是本地配置还是仓库治理文件 |
 | Agent 启用 | 哪些 agent 可作为默认门禁，哪些只在用户明确要求时使用 |
 
@@ -121,25 +125,44 @@ onboarding 会根据 `.claude/rules/project-workflow.template.md` 检测并生�
 
 ```yaml
 dev_flow:
-  version: "0.1.0"
+  version: "0.3.0"
   project_kind: "<vue|react|next|node|monorepo|other>"
   package_manager: "<pnpm|npm|yarn|bun|other|none>"
   paths:
     runtime_root: .claude/runtime
     feature_root: docs/dev-flow/features
     review_root: docs/dev-flow/reviews
+    scoped_spec_root: .claude/rules/specs
   verification:
     type_check: pnpm type-check
     lint: pnpm lint
+    lint_changed: <detected-or-none>
     build: pnpm build
     test: none
     automated_tests: "<none|present>"
     webapp_testing: "<disabled|enabled>"
+  artifacts:
+    retention: compact
   openspec:
     living_baseline: false
   git:
     mode: "<local-config|repo-governed>"
 ```
+
+### 轻量三件套接口
+
+迁移后保留这些接口，但不要把它们变成所有任务的负担：
+
+| 接口 | 路径 | 使用边界 |
+|------|------|----------|
+| 机器可读状态 | `<FEATURE_ROOT>/<feature-id>/status.md` frontmatter 的 `dev_flow_status` | 轻量 L、标准 M/L、需要跨技能恢复的任务 |
+| HUMAN GATE | `dev_flow_status.human_gates.{requirement_confirmation,implementation_approval}` | 标准 M/L 必须维护；轻量 L 必须记录边界确认和实现前确认 |
+| 上下文清单 | `<FEATURE_ROOT>/<feature-id>/context/{implement,review,verify}.jsonl` | 轻量 L 和标准 M/L 必须维护；轻量 M 仅在已有落盘资产时维护 |
+| 最终资产 | `<FEATURE_ROOT>/<feature-id>/{feature.md,completion.md}` | 完成后默认保留；中间资产按 `dev_flow.artifacts.retention` 压缩或归档 |
+| 局部规范 | `<SCOPED_SPEC_ROOT>/<scope>/index.md` | 可选；M/L 明确命中 scope 时读取 |
+
+XS/S 不创建 `status.md` 或 context manifest；轻量 M 默认也不创建。不要为了启用三件套而改变任务分级。
+标准 M/L 在需求确认前不得写实现计划，在实现前确认前不得写业务代码；实现后的 `code-review` 不能替代实现前 `plan-review`。标准 L 的计划后固定骨架是 `requirements-coverage -> plan-review`，覆盖报告默认只进入 `context/review.jsonl`，不进入 `context/verify.jsonl`。
 
 ### 4. 生成验证矩阵
 
@@ -178,7 +201,13 @@ dev_flow:
 
 按 [claude-dev-flow-smoke-test.md](./claude-dev-flow-smoke-test.md) 执行。
 
-smoke test 通过后，再开始真实业务任务。
+smoke test 通过后，再开始真实业务任务。M/L 功能进入收尾时，还必须运行：
+
+```bash
+.claude/skills/dev-flow/scripts/dev-flow-feature-check <feature-id> --finish
+```
+
+feature-check 失败时不能宣称验证通过或直接合并。
 
 ## 适配不同项目的判断
 
@@ -205,6 +234,7 @@ smoke test 通过后，再开始真实业务任务。
 - `<FEATURE_ROOT>` 和 `<REVIEW_ROOT>` 可以放仓库根。
 - 验证矩阵要按 package/workspace 分层。
 - `dev-flow` 任务必须明确影响的 package。
+- 可以按 package 增加 `.claude/rules/specs/<package>/index.md`，但只有当团队愿意维护具体规则时才创建。
 
 ## 迁移完成标准
 
@@ -215,6 +245,7 @@ smoke test 通过后，再开始真实业务任务。
 - test strategy 明确是 `none` 还是 `present`。
 - OpenSpec 策略明确是 `living-baseline: false` 还是 `true`。
 - 启用/禁用 agents 有理由。
+- 三件套路径已写入 `dev_flow.paths` 和标准资产表；没有实际局部规范时也说明为空能力。
 - `dev-flow doctor` 通过。
 - smoke test 通过。
 
@@ -225,10 +256,12 @@ smoke test 通过后，再开始真实业务任务。
 - 把浏览器验证能力写成 enabled，但项目没有 dev server 或 Playwright/Browser 能力。
 - `.claude/` 被 ignored，却以为 git diff 能看到迁移结果。
 - 在非 Vue 项目里保留 Vue 专属规则。
+- 为了三件套让 XS/S 或轻量 M 也强制生成流程产物。
+- 在没有真实局部约定时创建空的 scope 规范。
 - 没有跑 smoke test 就开始真实 L 级任务。
 
 ## 迁移后建议
 
-先用一个真实但低风险的 M 级任务试跑，再用一个轻量 L 场景验证安全审查、行为验证和回撤证据。确认没有流程摩擦后，再把迁移包作为团队默认入口。
+先用一个真实但低风险的 M 级任务试跑，再用一个轻量 L 场景验证 HUMAN GATE、安全审查、行为验证和回撤证据。确认没有流程摩擦后，再把迁移包作为团队默认入口。
 
 迁移完成后的日常使用方式、任务描述示例、产物位置和维护规则，见 [迁移后使用说明](./claude-dev-flow-post-migration-usage.md)。
