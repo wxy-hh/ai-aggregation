@@ -1,7 +1,6 @@
 ---
 dev_flow_status:
   schema_version: "1"
-  workflow_version: "0.3.0"
   feature_id: "2026-07-10-destiny-deepseek-provider"
   level: "M"
   current_gate: "verification_before_completion"
