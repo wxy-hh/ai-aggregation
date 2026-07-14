@@ -26,6 +26,9 @@ export interface ChatHistoryItem extends BaseHistoryItem {
     role: 'user' | 'assistant' | 'system';
     content: string;
   }>;
+  // 比较会话扩展（单聊时缺省，向后兼容）
+  mode?: 'single' | 'compare'; // 会话模式
+  conversationId?: string; // 比较会话 id，点击后回 /chat 按 id 载入
 }
 
 export interface VoiceHistoryItem extends BaseHistoryItem {

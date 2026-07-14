@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { SelectedModel, ComparisonTurn } from '@/types/comparison';
 
 // ==================== 类型定义 ====================
 
@@ -22,6 +23,10 @@ export interface Conversation {
     model: string;
     createdAt: number;
     updatedAt: number;
+    // 比较会话扩展（单聊时缺省，向后兼容旧数据）
+    mode?: 'single' | 'compare'; // 会话模式
+    selectedModels?: SelectedModel[]; // 比较模式已选模型
+    turns?: ComparisonTurn[]; // 比较模式：会话→轮次→模型分支
 }
 
 // 按日期分组的对话
@@ -89,6 +94,12 @@ interface ConversationsState {
     updateConversationSettings: (id: string, provider: string, model: string) => void;
     deleteConversation: (id: string, _isSyncDelete?: boolean) => void;
 
+    // 比较会话：创建与更新轮次分支
+    createComparisonConversation: (selectedModels: SelectedModel[], firstPromptTitle?: string) => string;
+    updateComparisonTurns: (id: string, turns: ComparisonTurn[]) => void;
+    // 比较会话：同步已选模型（取消/新增模型后持久化，避免刷新后回退）
+    updateComparisonSelectedModels: (id: string, selectedModels: SelectedModel[]) => void;
+
     // 新增：查找空对话
     findEmptyConversation: () => Conversation | undefined;
 }
@@ -153,6 +164,59 @@ export const useConversationsStore = create<ConversationsState>()(
                 }));
 
                 return newConv.id;
+            },
+
+            // 创建比较会话（并行对比模式）
+            // messages 保持为空数组，实际分支数据放在 turns 中
+            createComparisonConversation: (selectedModels, firstPromptTitle) => {
+                const title = firstPromptTitle
+                    ? (firstPromptTitle.length > 30 ? firstPromptTitle.slice(0, 30) + '...' : firstPromptTitle)
+                    : '比较对话';
+
+                const newConv: Conversation = {
+                    id: generateId(),
+                    title,
+                    messages: [],
+                    provider: 'compare',
+                    model: 'multi',
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    mode: 'compare',
+                    selectedModels,
+                    turns: [],
+                };
+
+                set(state => ({
+                    conversations: [newConv, ...state.conversations],
+                    currentConversationId: newConv.id,
+                }));
+
+                return newConv.id;
+            },
+
+            // 更新比较会话的轮次分支（由 comparison-store 同步调用）
+            updateComparisonTurns: (id, turns) => {
+                set(state => ({
+                    conversations: state.conversations.map(conv => {
+                        if (conv.id === id) {
+                            const firstPrompt = turns[0]?.prompt;
+                            const title = firstPrompt
+                                ? (firstPrompt.length > 30 ? firstPrompt.slice(0, 30) + '...' : firstPrompt)
+                                : conv.title;
+                            return { ...conv, turns, title, updatedAt: Date.now() };
+                        }
+                        return conv;
+                    }),
+                }));
+            },
+
+            // 同步比较会话的已选模型（由 comparison-store.toggleModel 调用）
+            updateComparisonSelectedModels: (id, selectedModels) => {
+                set(state => ({
+                    conversations: state.conversations.map(conv =>
+                        conv.id === id ? { ...conv, selectedModels, updatedAt: Date.now() } : conv
+                    ),
+                }));
             },
 
             // 切换对话

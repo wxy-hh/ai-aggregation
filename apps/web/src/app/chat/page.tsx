@@ -8,6 +8,8 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
+import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
+import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 // ============ 导入状态管理 Store ============
@@ -18,6 +20,11 @@ import {
   type Message, // 消息类型定义
   type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
 } from '@/stores';
+
+// 并行对比运行时 store（管理对比模式、已选模型、轮次分支）
+import { useComparisonStore } from '@/stores/comparison-store';
+// 对比模式类型（'single' | 'compare'）
+import type { ComparisonMode } from '@/types/comparison';
 
 // ============ 导入 React Hooks ============
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
@@ -42,6 +49,7 @@ import {
   FileEdit, // 编辑图标（功能卡片）
   PanelLeft,
   SlidersHorizontal,
+  GitCompareArrows, // 对比图标（并行对比会话标识）
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -70,6 +78,50 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
     ],
   },
 };
+
+// ============ 对话模式分段控制器 ============
+// 在「单聊 / 并行对比」之间切换；遵循 DESIGN.md 玻璃拟态与科技蓝强调色
+function ModeSegmentedControl({
+  mode,
+  onChange,
+}: {
+  mode: ComparisonMode;
+  onChange: (mode: ComparisonMode) => void;
+}) {
+  const options: { value: ComparisonMode; label: string }[] = [
+    { value: 'single', label: '单聊' },
+    { value: 'compare', label: '并行对比' },
+  ];
+
+  return (
+    <div
+      role="tablist"
+      aria-label="对话模式切换"
+      className="inline-flex flex-shrink-0 items-center rounded-full border border-white/70 bg-white/60 p-0.5 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-800/60"
+    >
+      {options.map((opt) => {
+        const active = mode === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200',
+              active
+                ? 'bg-blue-500 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.4)]'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // ============ 聊天页面主组件 ============
 // 这是整个聊天页面的核心组件，负责：
@@ -173,11 +225,24 @@ export default function ChatPage() {
     }))
   );
 
+  // ============ 从 Comparison Store 获取对比模式状态 ============
+  // Comparison Store 负责并行对比模式的模式切换、已选模型与轮次分支
+  const comparisonMode = useComparisonStore((state) => state.mode); // 当前模式：单聊 / 并行对比
+  const setComparisonMode = useComparisonStore((state) => state.setMode); // 切换模式
+  const loadComparison = useComparisonStore((state) => state.loadComparison); // 载入比较会话
+  const startNewComparison = useComparisonStore((state) => state.startNewComparison); // 新建比较会话
+  const isCompareMode = comparisonMode === 'compare'; // 是否处于并行对比模式
+
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
 
   // 获取当前激活的对话对象（包含完整信息）
   const currentConversation = getCurrentConversation();
+
+  // 当前会话是否为「并行对比」会话
+  // 单聊模式下若停留在比较会话上，发送消息需新建单聊会话，
+  // 否则会因比较会话消息存于 turns（而非 messages）导致消息丢失或写错会话
+  const isCurrentConversationCompare = currentConversation?.mode === 'compare';
 
   // 获取按时间分组的对话列表
   // 返回格式：[{ title: '今天', items: [...] }, { title: '昨天', items: [...] }, ...]
@@ -202,7 +267,21 @@ export default function ChatPage() {
     // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
     const historyId = urlParams.get('historyId');
 
-    if (historyId) {
+    // 检查是否是从历史记录页重新打开比较会话（URL 中有 ?comparisonId=xxx）
+    const comparisonId = urlParams.get('comparisonId');
+
+    if (comparisonId) {
+      // ============ 场景0：重新打开比较会话 ============
+      // 用户从历史记录页点击某条「多模型对比」记录，跳转到这里
+      // 切到对比模式并载入该比较会话（turns 分支由 comparison-store 恢复）
+      setComparisonMode('compare');
+      loadComparison(comparisonId);
+      // 同步高亮侧栏对应会话
+      switchConversation(comparisonId);
+
+      // 清除 URL 参数，保持 URL 干净
+      window.history.replaceState({}, '', '/chat');
+    } else if (historyId) {
       // ============ 场景1：从历史记录加载对话 ============
       // 用户从历史记录页面点击某条聊天记录，跳转到这里
       console.log('[ChatPage] Loading from history:', historyId);
@@ -281,6 +360,8 @@ export default function ChatPage() {
     switchConversation, // 切换对话方法
     findEmptyConversation, // 查找空对话方法
     loadConversation, // 加载对话方法
+    setComparisonMode, // 切换对比模式方法
+    loadComparison, // 载入比较会话方法
   ]);
 
   // ============ 对话切换时加载消息 ============
@@ -309,6 +390,13 @@ export default function ChatPage() {
       const conv = conversations.find((c) => c.id === currentConversationId);
 
       if (conv) {
+        // 比较会话：不加载到单聊 Chat Store，交由 comparison-store 接管，
+        // 避免把空的 messages 覆盖进单聊消息（对比模式分支数据放在 turns 中）
+        if (conv.mode === 'compare') {
+          loadedIdRef.current = currentConversationId;
+          return;
+        }
+
         // 将对话的消息加载到 Chat Store
         // 需要传入：对话 ID、消息列表、AI 提供商、模型
         loadConversation(conv.id, conv.messages as Message[], conv.provider, conv.model);
@@ -370,9 +458,11 @@ export default function ChatPage() {
   // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
     (content: string) => {
-      // 检查是否有当前对话
-      if (!currentConversationId) {
-        // 如果没有当前对话，需要先创建一个新对话
+      // 检查是否有可用的单聊会话
+      // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
+      // 则新建一个单聊会话，避免消息写入比较会话而丢失
+      if (!currentConversationId || isCurrentConversationCompare) {
+        // 需要先创建一个新对话
         // 使用当前选中的 AI 提供商和模型
         const newId = createConversation(provider, model);
 
@@ -391,13 +481,27 @@ export default function ChatPage() {
       }
     },
     // 依赖项列表：这些值变化时，函数会重新创建
-    [currentConversationId, createConversation, provider, model, loadConversation, sendMessage]
+    [
+      currentConversationId,
+      isCurrentConversationCompare,
+      createConversation,
+      provider,
+      model,
+      loadConversation,
+      sendMessage,
+    ]
   );
 
   // ============ 新建对话处理函数 ============
   // 用户点击"新建对话"按钮时调用
   const handleNewConversation = useCallback(() => {
-    // 先查找是否已经有空对话（没有消息的对话）
+    // 并行对比模式：新建比较会话（保持 mode='compare'），不走单聊创建逻辑
+    if (isCompareMode) {
+      startNewComparison();
+      return;
+    }
+
+    // 单聊模式：先查找是否已经有空对话（没有消息的对话）
     const emptyConversation = findEmptyConversation();
 
     if (emptyConversation) {
@@ -409,7 +513,15 @@ export default function ChatPage() {
       // 使用当前选中的 AI 提供商和模型
       createConversation(provider, model);
     }
-  }, [findEmptyConversation, switchConversation, createConversation, provider, model]);
+  }, [
+    isCompareMode,
+    startNewComparison,
+    findEmptyConversation,
+    switchConversation,
+    createConversation,
+    provider,
+    model,
+  ]);
 
   // ============ 切换 AI 提供商和模型 ============
   // 用户在模型选择器中选择不同的模型时调用
@@ -530,6 +642,7 @@ export default function ChatPage() {
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const isActive = item.id === currentConversationId;
+                  const isCompare = item.mode === 'compare';
                   return (
                     <div
                       key={item.id}
@@ -540,17 +653,40 @@ export default function ChatPage() {
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
                       )}
                       onClick={() => {
-                        switchConversation(item.id);
+                        // 按会话类型分流：比较会话载入 turns 分支并切到对比模式，
+                        // 单聊会话切回单聊模式（自动加载副作用会加载其消息）
+                        if (isCompare) {
+                          setComparisonMode('compare');
+                          loadComparison(item.id);
+                          switchConversation(item.id); // 仅用于侧栏高亮
+                        } else {
+                          setComparisonMode('single');
+                          switchConversation(item.id);
+                        }
                         onSelect?.();
                       }}
                     >
-                      <MessageSquare
-                        className={cn(
-                          'w-4 h-4 flex-shrink-0',
-                          isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
-                        )}
-                      />
+                      {isCompare ? (
+                        <GitCompareArrows
+                          className={cn(
+                            'w-4 h-4 flex-shrink-0',
+                            isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
+                          )}
+                        />
+                      ) : (
+                        <MessageSquare
+                          className={cn(
+                            'w-4 h-4 flex-shrink-0',
+                            isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
+                          )}
+                        />
+                      )}
                       <span className="truncate flex-1">{item.title}</span>
+                      {isCompare && (
+                        <span className="flex-shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+                          对比
+                        </span>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -656,8 +792,12 @@ export default function ChatPage() {
                         {currentTitle}
                       </h1>
                       <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
-                        {/* 模型选择器 */}
-                        <div className="relative" ref={modelSelectorRef}>
+                        {isCompareMode ? (
+                          // 对比模式：多模型选择器（含「已选 N 个模型」与成本提示）
+                          <ModelSelector variant="header" />
+                        ) : (
+                          // 单聊模式：单模型选择器
+                          <div className="relative" ref={modelSelectorRef}>
                           <button
                             onClick={() => setShowModelSelector(!showModelSelector)}
                             className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
@@ -719,12 +859,15 @@ export default function ChatPage() {
                             </div>
                           )}
                         </div>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   {/* 头部操作区 */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
+                    <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
                     <button
                       type="button"
                       aria-label="打开会话列表"
@@ -733,19 +876,33 @@ export default function ChatPage() {
                     >
                       <PanelLeft className="w-4 h-4" />
                     </button>
-                    <button
-                      type="button"
-                      aria-label="打开模型选择"
-                      onClick={() => setShowMobileModelDrawer(true)}
-                      className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
-                    >
-                      <SlidersHorizontal className="w-4 h-4" />
-                      <span className="max-w-[88px] truncate">{currentModelLabel}</span>
-                    </button>
+                    {isCompareMode ? (
+                      // 对比模式（移动/平板）：多模型选择器，内部用底部抽屉
+                      <div className="lg:hidden">
+                        <ModelSelector variant="header" />
+                      </div>
+                    ) : (
+                      // 单聊模式（移动/平板）：单模型选择抽屉
+                      <button
+                        type="button"
+                        aria-label="打开模型选择"
+                        onClick={() => setShowMobileModelDrawer(true)}
+                        className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        <SlidersHorizontal className="w-4 h-4" />
+                        <span className="max-w-[88px] truncate">{currentModelLabel}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </header>
 
+              {isCompareMode ? (
+                // 并行对比模式：多模型聚焦比较视图（自带概览轨道、双列聚焦与输入区）
+                <ComparisonView />
+              ) : (
+                // 单聊模式：现有单聊主体（保持不变）
+                <>
               {/* 错误显示 */}
               {error && (
                 <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
@@ -845,6 +1002,8 @@ export default function ChatPage() {
               <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
                 <ChatInput onSend={handleSend} isLoading={isLoading} />
               </div>
+                </>
+              )}
             </div>
           </div>
         </div>

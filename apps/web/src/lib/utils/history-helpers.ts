@@ -5,6 +5,7 @@
 
 import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem, DestinyHistoryItem, DestinySubType } from '@/types/history';
 import { generateUUID } from '@/lib/utils/uuid';
+import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
 
 /**
  * Format relative time
@@ -109,6 +110,40 @@ export function createChatHistoryItem(
     provider,
     messages,
     tags: extractChatTags(messages),
+  };
+}
+
+/**
+ * Create comparison (multi-model) history item
+ * 比较会话历史记录：以单条记录呈现，conversationId 用于回 /chat 重新载入
+ */
+export function createComparisonHistoryItem(
+  conversationId: string,
+  turns: ComparisonTurn[],
+  selectedModels: SelectedModel[]
+): Omit<ChatHistoryItem, 'id' | 'createdAt' | 'updatedAt'> {
+  const now = new Date();
+  const firstPrompt = turns[0]?.prompt ?? '比较对话';
+  const lastTurn = turns[turns.length - 1];
+  // 取最后一个已完成模型的回答作为预览
+  const lastContent = lastTurn
+    ? (Object.values(lastTurn.runs).find((r) => r.content)?.content ?? '')
+    : '';
+  const preview = lastContent
+    ? lastContent.length > 150 ? lastContent.slice(0, 150) + '...' : lastContent
+    : '比较对话';
+
+  return {
+    type: 'chat',
+    title: firstPrompt.length > 30 ? firstPrompt.slice(0, 30) + '...' : firstPrompt,
+    preview,
+    date: formatRelativeTime(now),
+    model: `${selectedModels.length} 模型对比`,
+    provider: 'compare',
+    messages: turns.map((t) => ({ role: 'user' as const, content: t.prompt })),
+    tags: ['多模型对比'],
+    mode: 'compare',
+    conversationId,
   };
 }
 
