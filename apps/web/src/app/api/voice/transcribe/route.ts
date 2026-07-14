@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
           );
         }
         return NextResponse.json(
-          { error: 'Token 额度不足，请联系管理员充值' },
+          { error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
           { status: 429 }
         );
       }

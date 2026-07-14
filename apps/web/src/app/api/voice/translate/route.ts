@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
       });
       if (user && user.role !== 'admin') {
         if (user.tokens <= 0) {
-          return NextResponse.json({ error: 'Token 额度不足，请联系管理员充值' }, { status: 429 });
+          return NextResponse.json(
+            { error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
+            { status: 429 }
+          );
         }
         await deductTokens(userId, 1);
         deducted = true;

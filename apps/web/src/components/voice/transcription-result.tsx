@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { translateText } from '@/lib/api/translation';
+import { translateText, isQuotaError } from '@/lib/api/translation';
 import { exportToWord } from '@/lib/utils/export-docx';
 import { useToast } from '@/hooks/use-toast';
 import { ToastContainer } from '@/components/ui/toast';
@@ -216,7 +216,12 @@ export function TranscriptionResult({
       success('编辑成功，翻译已更新');
     } catch (err) {
       console.error('重新翻译失败:', err);
-      error('重新翻译失败，请重试');
+      // 额度不足：明确提示，而非笼统的「重新翻译失败」
+      if (isQuotaError(err)) {
+        error('Token 额度不足，请联系管理员充值');
+      } else {
+        error('重新翻译失败，请重试');
+      }
 
       // Revert retranslating state
       setSegments((prev) =>

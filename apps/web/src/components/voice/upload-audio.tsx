@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUploadVoice } from '@/hooks/use-voice-transcriptions';
 import { TranscriptionResult } from './transcription-result';
-import { translateText } from '@/lib/api/translation';
+import { translateText, isQuotaError } from '@/lib/api/translation';
 import { useHistoryActions, useHistoryInitialized } from '@/stores/audio-history-store';
 import { AudioHistoryItem } from '@/types/audio-history';
 import { withRetry, formatErrorMessage, RetryProgressTracker } from '@/lib/api/error-handler';
@@ -429,6 +429,7 @@ export function UploadAudio({
 
           // 逐句翻译，每翻译完一句就更新显示
           let translationErrors = 0;
+          let quotaExceeded = false;
           for (let i = 0; i < sentences.length; i++) {
             const sentence = sentences[i].trim();
             console.log(`  翻译第 ${i + 1}/${sentences.length} 句...`);
@@ -459,6 +460,18 @@ export function UploadAudio({
 
               console.log(`  ✓ 第 ${i + 1} 句翻译完成`);
             } catch (error) {
+              // 额度不足：后续句子必然同样失败，终止循环避免无效请求与 loading 卡死
+              if (isQuotaError(error)) {
+                console.warn(`  第 ${i + 1} 句翻译失败：Token 额度不足，终止剩余翻译`);
+                quotaExceeded = true;
+                // 将当前及后续未翻译句子置为失败态，避免一直显示 loading
+                for (let j = i; j < sentences.length; j++) {
+                  translatedSentences[j] = '(Translation failed)';
+                }
+                translationErrors += sentences.length - i;
+                setTranslationResults([...translatedSentences] as string[]);
+                break;
+              }
               console.error(`  第 ${i + 1} 句翻译失败:`, error);
               translatedSentences[i] = '(Translation failed)';
               translationErrors++;
@@ -477,8 +490,9 @@ export function UploadAudio({
                 .join(' ');
 
               // 如果有翻译错误，记录在 errorMessage 中
-              const errorMessage =
-                translationErrors > 0
+              const errorMessage = quotaExceeded
+                ? 'Token 额度不足，翻译未完成'
+                : translationErrors > 0
                   ? `部分翻译失败 (${translationErrors}/${sentences.length})`
                   : undefined;
 
@@ -502,7 +516,9 @@ export function UploadAudio({
           }
 
           // 如果所有翻译都失败，显示提示
-          if (translationErrors === sentences.length) {
+          if (quotaExceeded) {
+            toast.error('Token 额度不足，请联系管理员充值');
+          } else if (translationErrors === sentences.length) {
             toast.warning('翻译失败，但转录结果已保存');
           } else if (translationErrors > 0) {
             toast.warning(`部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`);

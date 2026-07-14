@@ -21,7 +21,7 @@
   hooks/       dev-flow-gate-guard.sh、dev-flow-finish-guard.sh
   settings.json  注册上述 hooks（ask 模式）
   rules/       git-workflow.md、security.md、specs/README.md、
-               project-workflow.template.md（按项目类型再决定是否带 vue3.md）
+               project-workflow.template.md（框架/栈规则由目标项目按需自建）
 docs/
   claude-dev-flow-guide.md（本文件）
   claude-dev-flow-smoke-test.md
@@ -33,7 +33,7 @@ templates/
 
 ## 迁移步骤
 
-1. 复制上方「包含内容」到新项目；非 Vue 项目删除或替换 `vue3.md`。
+1. 复制上方「包含内容」到新项目；如需框架/栈规则，由目标项目自行补充（迁移包不随附）。
 2. 如果目标项目已有 `CLAUDE.md`，合并 `templates/CLAUDE.dev-flow-snippet.md`；没有则基于该片段新建，并补充项目自己的技术栈和禁止事项。
 3. 运行 `/onboard-dev-flow`（或 `/onboard-dev-flow --smoke-test` 同时验证迁移包）。它会检测项目事实、生成 `.claude/rules/project-workflow.md`、确认 hooks 已注册且可执行、生成 `dev_flow.label_hints` 初始猜测。
 4. 检测清单：项目类型、包管理器、install/dev/build/type-check/lint/test 脚本、test 是否为真测试运行器、是否有浏览器测试/OpenSpec/代码映射、局部规范是否存在、git 边界（本地配置/仓库治理）、agent 例外。这些事实写入 `project-workflow.md` frontmatter 的 `dev_flow` 配置块（结构见 `project-workflow.template.md`），机器可读锚点与下方 Markdown 表格必须一致。

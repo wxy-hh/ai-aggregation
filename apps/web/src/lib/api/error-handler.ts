@@ -25,6 +25,18 @@ export interface ApiErrorDetails {
  * Parse error into structured format
  */
 export function parseApiError(error: unknown): ApiErrorDetails {
+  // 额度不足 / 配额耗尽：显式标记不可重试（而非依赖默认兜底行为）。
+  // code 与后端 voice/*、qimen、resume 等路由及 quota-helpers 返回的错误码对齐。
+  const quotaCode = (error as { code?: string } | null | undefined)?.code;
+  if (quotaCode === 'INSUFFICIENT_TOKENS' || quotaCode === 'QUOTA_EXHAUSTED') {
+    return {
+      message: error instanceof Error ? error.message : 'Token 额度不足，请联系管理员充值',
+      code: quotaCode,
+      isNetworkError: false,
+      isRetryable: false,
+    };
+  }
+
   // Network errors
   if (error instanceof TypeError && error.message.includes('fetch')) {
     return {
