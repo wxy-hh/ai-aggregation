@@ -21,8 +21,12 @@ import {
   ModelUpstreamError,
   type ModelConfig,
 } from '@repo/shared';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -67,6 +71,11 @@ const SECTION_ORDER: ZiweiSectionKey[] = [
   'love',
   'health',
 ];
+
+type ZiweiBillingContext = {
+  userId: string;
+  requestId: string;
+};
 
 // ─── JSON Schema（豆包结构化输出）───
 
@@ -210,62 +219,80 @@ const FULL_SCHEMA = {
 // ─── 主入口 ───
 
 export async function POST(req: Request) {
-  try {
-    const userId = await getOptionalUserId(req);
-    const body = await req.json();
-    const parsed = RequestSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          error: '请求参数错误',
-          details: parsed.error.errors.map((item) => ({
-            path: item.path.join('.'),
-            message: item.message,
-          })),
-        },
-        { status: 400 }
-      );
-    }
-
-    let config: ModelConfig;
+  return withAuth(req, async (user) => {
     try {
-      config = resolveModelConfig(parsed.data.provider);
-    } catch (error) {
-      if (error instanceof ModelConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+      const body = await req.json();
+      const parsed = RequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: '请求参数错误',
+            details: parsed.error.errors.map((item) => ({
+              path: item.path.join('.'),
+              message: item.message,
+            })),
+          },
+          { status: 400 }
+        );
       }
-      throw error;
-    }
 
-    const input: DestinyReportRequest = parsed.data;
-    const currentYear = new Date().getFullYear();
+      let config: ModelConfig;
+      try {
+        config = resolveModelConfig(parsed.data.provider);
+      } catch (error) {
+        if (error instanceof ModelConfigError) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        throw error;
+      }
 
-    // Step 0: 本地排盘
-    let chartData: ZiweiChartData;
-    try {
-      chartData = computeZiweiChart(input);
-    } catch (chartError) {
+      const input: DestinyReportRequest = parsed.data;
+      const currentYear = new Date().getFullYear();
+      const billing =
+        user.role === 'admin'
+          ? null
+          : {
+              userId: user.id,
+              requestId: getBillingRequestId(req, body as Record<string, unknown>),
+            };
+
+      // Step 0: 本地排盘
+      let chartData: ZiweiChartData;
+      try {
+        chartData = computeZiweiChart(input);
+      } catch (chartError) {
+        return NextResponse.json(
+          {
+            error: `排盘计算失败：${chartError instanceof Error ? chartError.message : '未知错误'}`,
+          },
+          { status: 422 }
+        );
+      }
+
+      const stream = createZiweiStream({
+        input,
+        currentYear,
+        config,
+        userId: user.id,
+        billing,
+        chartData,
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
+    } catch (error) {
+      if (error instanceof BillingError) return billingErrorResponse(error);
       return NextResponse.json(
-        { error: `排盘计算失败：${chartError instanceof Error ? chartError.message : '未知错误'}` },
-        { status: 422 }
+        { error: error instanceof Error ? error.message : '测算失败，请稍后重试' },
+        { status: 500 }
       );
     }
-
-    const stream = createZiweiStream({ input, currentYear, config, userId, chartData });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-      },
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : '测算失败，请稍后重试' },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 // ─── SSE 流 ───
@@ -275,12 +302,14 @@ function createZiweiStream({
   currentYear,
   config,
   userId,
+  billing,
   chartData,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   config: ModelConfig;
-  userId: string | null;
+  userId: string;
+  billing: ZiweiBillingContext | null;
   chartData: ZiweiChartData;
 }) {
   const encoder = new TextEncoder();
@@ -319,6 +348,7 @@ function createZiweiStream({
           chartContext,
           currentYear,
           userId,
+          billing,
         });
 
         emitSections({ sections: quickResult, emittedSections, lockedSections, send });
@@ -330,6 +360,7 @@ function createZiweiStream({
           chartContext,
           currentYear,
           userId,
+          billing,
         });
 
         emitSections({ sections: fullResult, emittedSections, lockedSections, send });
@@ -369,7 +400,8 @@ function emitSections({
     const payload = sections[sectionKey];
     if (!payload) continue;
 
-    if (sectionKey === 'palaceAnalysis' && (!Array.isArray(payload) || payload.length < 12)) continue;
+    if (sectionKey === 'palaceAnalysis' && (!Array.isArray(payload) || payload.length < 12))
+      continue;
     if (sectionKey === 'timeline' && (!Array.isArray(payload) || payload.length === 0)) continue;
 
     emittedSections.add(sectionKey);
@@ -386,29 +418,65 @@ async function generateQuickSections({
   chartContext,
   currentYear,
   userId,
+  billing,
 }: {
   config: ModelConfig;
   input: DestinyReportRequest;
   chartContext: string;
   currentYear: number;
-  userId: string | null;
+  userId: string;
+  billing: ZiweiBillingContext | null;
 }): Promise<ZiweiLockedSections> {
+  const messages = [
+    { role: 'system' as const, content: buildQuickSystemPrompt(currentYear) },
+    { role: 'user' as const, content: buildUserPrompt(input, chartContext) },
+  ];
+  const requestId = billing ? `${billing.requestId}:quick` : null;
+  let reservation: { id: string } | null = null;
+  let inputUnits = 0;
+  let outputLimit = QUICK_MAX_TOKENS;
+
   try {
+    if (billing && requestId) {
+      const quota = await reserveChatQuota({
+        userId: billing.userId,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages,
+        maxOutputTokens: QUICK_MAX_TOKENS,
+        metadata: { reportType: 'ziwei', stage: 'quick', currentYear },
+      });
+      reservation = quota.reservation;
+      inputUnits = quota.inputUnits;
+      outputLimit = quota.outputLimit;
+    }
     const result = await callModel({
       config,
-      messages: [
-        { role: 'system', content: buildQuickSystemPrompt(currentYear) },
-        { role: 'user', content: buildUserPrompt(input, chartContext) },
-      ],
-      maxTokens: QUICK_MAX_TOKENS,
+      messages,
+      maxTokens: outputLimit,
       temperature: 0.25,
       timeoutMs: QUICK_TIMEOUT_MS,
       json: { schema: { name: 'ziwei_quick', schema: QUICK_SCHEMA } },
     });
 
-    const parsed = parseJson(result.text);
-
-    if (userId) {
+    if (reservation && requestId) {
+      await settleAiQuota({
+        reservationId: reservation.id,
+        requestId,
+        feature: 'destiny',
+        action: 'destiny-ziwei-report',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/ziwei-report',
+        measurement: createTokenMeasurement(
+          extractArkUsage(result.raw),
+          inputUnits + estimateOutputTokens(result.text)
+        ),
+        metadata: { reportType: 'ziwei', stage: 'quick', currentYear, provider: config.provider },
+      });
+    } else {
       await safeRecordAiUsage({
         userId,
         feature: 'destiny',
@@ -421,6 +489,8 @@ async function generateQuickSections({
       });
     }
 
+    const parsed = parseJson(result.text);
+
     const resultSections: ZiweiLockedSections = {};
     if (parsed && typeof parsed === 'object') {
       const data = parsed as Record<string, unknown>;
@@ -430,7 +500,17 @@ async function generateQuickSections({
       if (data.relations) resultSections.relations = data.relations as never;
     }
     return resultSections;
-  } catch {
+  } catch (error) {
+    if (reservation) {
+      await releaseAiQuota({
+        reservationId: reservation.id,
+        reason: '紫微快速解读调用失败',
+        meterType: 'tokens',
+      }).catch((releaseError) =>
+        console.error('[ziwei-report] 释放快速解读额度失败:', releaseError)
+      );
+    }
+    if (error instanceof BillingError) throw error;
     console.warn('[ziwei-report] quick stage skipped');
     return {};
   }
@@ -444,50 +524,101 @@ async function generateFullSections({
   chartContext,
   currentYear,
   userId,
+  billing,
 }: {
   config: ModelConfig;
   input: DestinyReportRequest;
   chartContext: string;
   currentYear: number;
-  userId: string | null;
+  userId: string;
+  billing: ZiweiBillingContext | null;
 }): Promise<ZiweiLockedSections> {
-  const result = await callModel({
-    config,
-    messages: [
-      { role: 'system', content: buildFullSystemPrompt(currentYear) },
-      { role: 'user', content: buildUserPrompt(input, chartContext) },
-    ],
-    maxTokens: FULL_MAX_TOKENS,
-    temperature: 0.35,
-    timeoutMs: REPORT_TIMEOUT_MS,
-    json: { schema: { name: 'ziwei_full', schema: FULL_SCHEMA } },
-  });
+  const messages = [
+    { role: 'system' as const, content: buildFullSystemPrompt(currentYear) },
+    { role: 'user' as const, content: buildUserPrompt(input, chartContext) },
+  ];
+  const requestId = billing ? `${billing.requestId}:full` : null;
+  let reservation: { id: string } | null = null;
+  let inputUnits = 0;
+  let outputLimit = FULL_MAX_TOKENS;
 
-  const parsed = parseJson(result.text);
-
-  if (userId) {
-    await safeRecordAiUsage({
-      userId,
-      feature: 'destiny',
-      action: 'destiny-ziwei-report',
-      provider: config.provider,
-      model: config.model,
-      endpoint: '/api/destiny/ziwei-report',
-      usage: normalizeUsage(extractArkUsage(result.raw)),
-      metadata: { stage: 'full', currentYear, provider: config.provider },
-    });
-  }
-
-  const resultSections: ZiweiLockedSections = {};
-  if (parsed && typeof parsed === 'object') {
-    const data = parsed as Record<string, unknown>;
-    if (Array.isArray(data.palaceAnalysis)) {
-      resultSections.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
+  try {
+    if (billing && requestId) {
+      const quota = await reserveChatQuota({
+        userId: billing.userId,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages,
+        maxOutputTokens: FULL_MAX_TOKENS,
+        metadata: { reportType: 'ziwei', stage: 'full', currentYear },
+      });
+      reservation = quota.reservation;
+      inputUnits = quota.inputUnits;
+      outputLimit = quota.outputLimit;
     }
-    if (data.love) resultSections.love = data.love as never;
-    if (data.health) resultSections.health = data.health as never;
+    const result = await callModel({
+      config,
+      messages,
+      maxTokens: outputLimit,
+      temperature: 0.35,
+      timeoutMs: REPORT_TIMEOUT_MS,
+      json: { schema: { name: 'ziwei_full', schema: FULL_SCHEMA } },
+    });
+
+    if (reservation && requestId) {
+      await settleAiQuota({
+        reservationId: reservation.id,
+        requestId,
+        feature: 'destiny',
+        action: 'destiny-ziwei-report',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/ziwei-report',
+        measurement: createTokenMeasurement(
+          extractArkUsage(result.raw),
+          inputUnits + estimateOutputTokens(result.text)
+        ),
+        metadata: { reportType: 'ziwei', stage: 'full', currentYear, provider: config.provider },
+      });
+    } else {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action: 'destiny-ziwei-report',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/ziwei-report',
+        usage: normalizeUsage(extractArkUsage(result.raw)),
+        metadata: { stage: 'full', currentYear, provider: config.provider },
+      });
+    }
+
+    const parsed = parseJson(result.text);
+
+    const resultSections: ZiweiLockedSections = {};
+    if (parsed && typeof parsed === 'object') {
+      const data = parsed as Record<string, unknown>;
+      if (Array.isArray(data.palaceAnalysis)) {
+        resultSections.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
+      }
+      if (data.love) resultSections.love = data.love as never;
+      if (data.health) resultSections.health = data.health as never;
+    }
+    return resultSections;
+  } catch (error) {
+    if (reservation) {
+      await releaseAiQuota({
+        reservationId: reservation.id,
+        reason: '紫微完整解读调用失败',
+        meterType: 'tokens',
+      }).catch((releaseError) =>
+        console.error('[ziwei-report] 释放完整解读额度失败:', releaseError)
+      );
+    }
+    throw error;
   }
-  return resultSections;
 }
 
 // ─── 提示词构建 ───

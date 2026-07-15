@@ -233,7 +233,16 @@ const QIMEN_BASE_RESULT_SCHEMA = {
           isVoid: { type: 'boolean' },
           isHorse: { type: 'boolean' },
         },
-        required: ['palace', 'luoshu', 'direction', 'god', 'star', 'door', 'heavenStem', 'earthStem'],
+        required: [
+          'palace',
+          'luoshu',
+          'direction',
+          'god',
+          'star',
+          'door',
+          'heavenStem',
+          'earthStem',
+        ],
         additionalProperties: false,
       },
     },
@@ -422,11 +431,13 @@ type QimenTraceContext = {
   stage: 'baseResult' | QimenSectionKey;
   sectionKey?: QimenSectionKey;
   hooks?: {
-    onRequestStart?: (meta: Record<string, unknown>) => void;
-    onRequestSuccess?: (meta: Record<string, unknown>) => void;
-    onRequestNonOk?: (meta: Record<string, unknown>) => void;
-    onRequestTimeout?: (meta: Record<string, unknown>) => void;
-    onRequestError?: (meta: Record<string, unknown>) => void;
+    onRequestStart?: (
+      meta: Record<string, unknown>
+    ) => void | { maxOutputTokens?: number } | Promise<void | { maxOutputTokens?: number }>;
+    onRequestSuccess?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestNonOk?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestTimeout?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestError?: (meta: Record<string, unknown>) => void | Promise<void>;
   };
 };
 
@@ -467,9 +478,13 @@ export async function generateQimenSectionResult<K extends QimenSectionKey>(
 ): Promise<QimenSectionResultMap[K]> {
   switch (sectionKey) {
     case 'strategyOverview':
-      return generateStrategyOverview(input, config, trace, chart) as Promise<QimenSectionResultMap[K]>;
+      return generateStrategyOverview(input, config, trace, chart) as Promise<
+        QimenSectionResultMap[K]
+      >;
     case 'timingWindows':
-      return generateTimingWindows(input, config, trace, chart) as Promise<QimenSectionResultMap[K]>;
+      return generateTimingWindows(input, config, trace, chart) as Promise<
+        QimenSectionResultMap[K]
+      >;
     case 'chartSummary':
       return generateChartSummary(input, config, trace, chart) as Promise<QimenSectionResultMap[K]>;
   }
@@ -563,7 +578,7 @@ async function requestModelPayload({
 }) {
   const startedAt = Date.now();
 
-  trace?.hooks?.onRequestStart?.({
+  const requestStartResult = await trace?.hooks?.onRequestStart?.({
     analysisId: trace?.analysisId,
     stage: trace?.stage,
     sectionKey: trace?.sectionKey,
@@ -571,31 +586,40 @@ async function requestModelPayload({
     provider: config.provider,
     maxOutputTokens,
     timeoutMs,
+    messages: input,
   });
+  const overriddenMaxTokens = requestStartResult?.maxOutputTokens;
+  const effectiveMaxOutputTokens =
+    typeof overriddenMaxTokens === 'number' && Number.isFinite(overriddenMaxTokens)
+      ? Math.max(1, Math.min(maxOutputTokens, Math.floor(overriddenMaxTokens)))
+      : maxOutputTokens;
 
   try {
     const result = await callModel({
       config,
       messages: input,
-      maxTokens: maxOutputTokens,
+      maxTokens: effectiveMaxOutputTokens,
       temperature,
       timeoutMs,
-      json: jsonSchema ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } } : undefined,
+      json: jsonSchema
+        ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } }
+        : undefined,
     });
 
-    trace?.hooks?.onRequestSuccess?.({
+    await trace?.hooks?.onRequestSuccess?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
       sectionKey: trace?.sectionKey,
       status: 200,
       durationMs: Date.now() - startedAt,
       payload: result.raw,
+      maxOutputTokens: effectiveMaxOutputTokens,
     });
     return result;
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'AbortError';
     if (isTimeout) {
-      trace?.hooks?.onRequestTimeout?.({
+      await trace?.hooks?.onRequestTimeout?.({
         analysisId: trace?.analysisId,
         stage: trace?.stage,
         sectionKey: trace?.sectionKey,
@@ -606,7 +630,7 @@ async function requestModelPayload({
     }
 
     if (error instanceof ModelUpstreamError) {
-      trace?.hooks?.onRequestNonOk?.({
+      await trace?.hooks?.onRequestNonOk?.({
         analysisId: trace?.analysisId,
         stage: trace?.stage,
         sectionKey: trace?.sectionKey,
@@ -616,7 +640,7 @@ async function requestModelPayload({
       throw new UpstreamModelError(error.message, error.status);
     }
 
-    trace?.hooks?.onRequestError?.({
+    await trace?.hooks?.onRequestError?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
       sectionKey: trace?.sectionKey,
@@ -651,7 +675,9 @@ export function formatChartForPrompt(chart: QimenAnalysisBaseResult): string {
       cell.isValueDoor ? '🚪值使宫' : '',
       cell.isVoid ? '○空亡' : '',
       cell.isHorse ? '🐎驿马' : '',
-    ].filter(Boolean).join(' ');
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     out += `| ${cell.palace} | ${cell.direction}·${cell.wuxing || '-'} | ${cell.god} | ${cell.star} | ${cell.door} | ${cell.heavenStem} | ${cell.earthStem} | ${cell.pattern || '-'} | ${tags || '-'} |\n`;
   }
@@ -835,8 +861,7 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
     return parsed.data;
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const chartMetaRaw =
     raw.chartMeta && typeof raw.chartMeta === 'object'
       ? (raw.chartMeta as Record<string, unknown>)
@@ -888,7 +913,9 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
       isVoid: Boolean(value.isVoid),
       isHorse: Boolean(value.isHorse),
       wuxing: (value.wuxing ?? (fallback as Record<string, unknown>).wuxing) as string | undefined,
-      pattern: (value.pattern ?? (fallback as Record<string, unknown>).pattern) as string | undefined,
+      pattern: (value.pattern ?? (fallback as Record<string, unknown>).pattern) as
+        | string
+        | undefined,
     };
   });
 
@@ -920,17 +947,12 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
         typeof chartMetaRaw.xunshou === 'string' ? chartMetaRaw.xunshou : '',
         8
       ),
-      riGan: sanitizeText(
-        typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '',
-        4
-      ),
-      shiGan: sanitizeText(
-        typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '',
-        4
-      ),
-      trueSolarTime: typeof chartMetaRaw.trueSolarTime === 'string'
-        ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
-        : undefined,
+      riGan: sanitizeText(typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '', 4),
+      shiGan: sanitizeText(typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '', 4),
+      trueSolarTime:
+        typeof chartMetaRaw.trueSolarTime === 'string'
+          ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
+          : undefined,
     },
     board,
     score: Math.max(40, Math.min(95, Math.round(typeof raw.score === 'number' ? raw.score : 78))),
@@ -949,8 +971,7 @@ function normalizeStrategyOverview(
     return parsed.data;
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const riskAlertsRaw = Array.isArray(raw.riskAlerts) ? raw.riskAlerts : [];
   const actionSuggestionsRaw = Array.isArray(raw.actionSuggestions) ? raw.actionSuggestions : [];
 
@@ -977,10 +998,12 @@ function normalizeStrategyOverview(
 }
 
 function normalizeTimingWindows(payload: unknown, input: QimenAnalyzeRequest): QimenTimingWindow[] {
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-  const timingWindowsRaw =
-    Array.isArray(raw.timingWindows) ? raw.timingWindows : Array.isArray(payload) ? payload : [];
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const timingWindowsRaw = Array.isArray(raw.timingWindows)
+    ? raw.timingWindows
+    : Array.isArray(payload)
+      ? payload
+      : [];
 
   const parsed = qimenTimingWindowsSchema.safeParse(timingWindowsRaw);
   if (parsed.success && parsed.data.length >= 1) {
@@ -999,12 +1022,13 @@ function normalizeTimingWindows(payload: unknown, input: QimenAnalyzeRequest): Q
     .filter((item): item is QimenTimingWindow => Boolean(item?.period && item?.guidance))
     .slice(0, input.question.outputLength === 'brief' ? 2 : 4);
 
-  return timingWindows.length >= 1 ? timingWindows : buildFallbackTimingWindows(input.question.outputLength);
+  return timingWindows.length >= 1
+    ? timingWindows
+    : buildFallbackTimingWindows(input.question.outputLength);
 }
 
 function normalizeChartSummary(payload: unknown): string {
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   return sanitizeText(
     typeof raw.chartSummary === 'string'
       ? raw.chartSummary

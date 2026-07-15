@@ -61,6 +61,8 @@ export interface QimenBaseJobData {
 export interface QimenSectionJobData {
   analysisId: string;
   userId?: string;
+  /** 非管理员请求的额度幂等键；管理员任务不传该字段。 */
+  billingRequestId?: string;
   sectionKey: QimenSectionKey;
   input: QimenAnalyzeRequest;
   provider?: 'doubao' | 'deepseek';

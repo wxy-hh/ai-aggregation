@@ -1,100 +1,52 @@
-# ============================================
-# Vercel 部署环境变量配置
-# ============================================
-# 复制以下内容到 Vercel Dashboard 的 Environment Variables 中
-# 注意：
-# 1. 这份文件只给 Vercel 上的 apps/web 使用
-# 2. apps/worker 不部署在 Vercel，需要在 Railway / Render 单独配置同一套数据库 / Redis / 模型密钥
-# 3. 如果只部署 Vercel Web、没有独立 Worker，奇门异步入口会直接返回 503
+# Vercel 部署环境变量模板
 
-# ============================================
+此文件只记录变量名和配置说明，禁止填写任何真实凭证。请在 Vercel Dashboard 的 Environment Variables 中逐项配置真实值。
+
+```env
 # 数据库
-# ============================================
-# DATABASE_URL 会在创建 Vercel Postgres 后自动生成；如果你使用外部数据库，请改成真实值
-DATABASE_URL=postgresql://user:password@host:5432/dbname
+DATABASE_URL=
 
-# ============================================
-# Redis 配置（推荐优先使用 REDIS_URL）
-# ============================================
-REDIS_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
-REDIS_TLS=true
+# Redis
+REDIS_URL=
+REDIS_TLS=
+REDIS_HOST=
+REDIS_PORT=
+REDIS_PASSWORD=
+REDIS_KV_REST_API_URL=
+REDIS_KV_REST_API_TOKEN=
+REDIS_KV_REST_API_READ_ONLY_TOKEN=
+REDIS_KV_URL=
 
-# 传统 Redis 连接（兼容旧配置）
-REDIS_HOST=discrete-cockatoo-104386.upstash.io
-REDIS_PORT=6379
-REDIS_PASSWORD="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
-
-# 如果你有用到 Upstash REST，也可以一起保留
-REDIS_KV_REST_API_URL="https://discrete-cockatoo-104386.upstash.io"
-REDIS_KV_REST_API_TOKEN="gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw"
-REDIS_KV_REST_API_READ_ONLY_TOKEN="ggAAAAAAAZfCAAIgcDEEqvuIMYukBY68TACC_eNPJ06Jg-zr9vfPMc2HdMMlqQ"
-REDIS_KV_URL="rediss://default:gQAAAAAAAZfCAAIgcDEyOTM5NTFmZjVlZjA0YWZlOGJhMDE3NTQ5NTJmNWY1Yw@discrete-cockatoo-104386.upstash.io:6379"
-
-# ============================================
-# AI 服务商 API Keys
-# ============================================
-
-# 硅基流动（Kolors 图像生成 + 语音转写）
-SILICONFLOW_API_KEY=sk-kphdbudlrvuaotsptthedzrdsmdqchoegrsfwmrxjobjtjwh
-SILICONFLOW_API_URL=https://api.siliconflow.cn/v1
-SILICONFLOW_DEFAULT_MODEL=FunAudioLLM/SenseVoiceSmall
-
-# 讯飞星火（语音转写）
-XUNFEI_API_PASSWORD=UwNOOlcwenyPLxcygUKn:xMBXuSGpUOkxPcobSryl
-XUNFEI_APP_ID=290f4fa9
-XUNFEI_API_KEY=9bf315f669cd77f7cc91a023c0a36f8b
-XUNFEI_API_SECRET=M2FlNmIzMmRmYzdmYjFjOTU3YzQ4ZjA4
-
-# 豆包（火山方舟）
-ARK_API_KEY=3a04b704-6445-4f3e-a127-bcb711461706
-ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-ARK_MODEL=doubao-seed-2-0-lite-260428
-
-# 其他供应商（按需）
+# AI 服务商
+SILICONFLOW_API_KEY=
+SILICONFLOW_API_URL=
+SILICONFLOW_DEFAULT_MODEL=
+XUNFEI_API_PASSWORD=
+XUNFEI_APP_ID=
+XUNFEI_API_KEY=
+XUNFEI_API_SECRET=
+ARK_API_KEY=
+ARK_BASE_URL=
+ARK_MODEL=
 DASHSCOPE_API_KEY=
 ZHIPU_API_KEY=
 DEEPSEEK_API_KEY=
 
-# ============================================
-# 应用配置
-# ============================================
+# 应用与身份认证
+NEXT_PUBLIC_APP_URL=
+NEXTAUTH_URL=
+AUTH_SECRET=
+MAX_FILE_SIZE=
+ALLOWED_FILE_TYPES=
 
-# Next.js 应用 URL（部署后需要更新为实际域名）
-NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
-NEXTAUTH_URL=https://your-app.vercel.app
+# 实时语音转写。RTASR_GATEWAY_SECRET 必须与 Cloudflare Worker 的
+# RTASR_GATEWAY_SECRET 使用同一随机值，且不能写入仓库。
+NEXT_PUBLIC_RTASR_GATEWAY_URL=
+RTASR_GATEWAY_SECRET=
+```
 
-# 身份认证密钥
-AUTH_SECRET=8jLxSzDvwnDdJBNvBnWWJQPk0v+D7m9CJ1lUV2V/IYg=
+部署前请确认：
 
-# ============================================
-# 文件上传配置（可选）
-# ============================================
-MAX_FILE_SIZE=52428800
-ALLOWED_FILE_TYPES=audio/mpeg,audio/wav,audio/aac
-
-# ============================================
-# 对象存储（可选，暂时不配置）
-# ============================================
-# S3_ENDPOINT=
-# S3_ACCESS_KEY=
-# S3_SECRET_KEY=
-# S3_BUCKET=
-
-# OSS（如果启用）
-# OSS_ACCESS_KEY_ID=
-# OSS_ACCESS_KEY_SECRET=
-# OSS_BUCKET=
-# OSS_REGION=
-
-# ============================================
-# 实时语音转写网关（可选）
-# ============================================
-# NEXT_PUBLIC_RTASR_GATEWAY_URL=
-
-# ============================================
-# 部署提醒
-# ============================================
-# 1. DATABASE_URL 如果不是 Vercel Postgres，请改成真实生产库
-# 2. NEXT_PUBLIC_APP_URL 和 NEXTAUTH_URL 需要在部署后更新为实际域名
-# 3. 这份文件只覆盖 Vercel Web；Worker 需要单独部署并配置同样的 DATABASE_URL / REDIS_* / ARK_*
-# 4. Worker 的 Railway / Render 部署说明见 apps/worker/DEPLOY.md
+1. 所有真实值仅存在于部署平台的 Secret 或 Environment Variables 中。
+2. 本地开发仅写入已被 Git 忽略的 `apps/web/.env.local`。
+3. 不要将本文件复制后提交为包含真实值的配置文件。

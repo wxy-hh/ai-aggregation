@@ -12,7 +12,6 @@ export async function uploadVoiceFile(file: File, model?: string): Promise<Trans
   if (model) {
     formData.append('model', model);
   }
-
   // FormData 上传不设置 Content-Type，由浏览器自动添加 multipart boundary
   const response = await authFetch('/api/voice/transcribe', {
     method: 'POST',

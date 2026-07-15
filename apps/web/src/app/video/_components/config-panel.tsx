@@ -11,6 +11,7 @@ import { VideoConfig, isAgnesConfig, isCogVideoXConfig } from '@/lib/constants/v
 import { VideoModelSwitcher } from './model-switcher';
 import { CogVideoXConfigSection } from './cogvideox-config-section';
 import { AgnesConfigSection } from './agnes-config-section';
+import { toast } from 'sonner';
 
 interface ConfigPanelProps {
   prompt: string;
@@ -60,14 +61,15 @@ export function ConfigPanel({
       });
 
       if (!response.ok) {
-        throw new Error('优化失败');
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || '提示词优化失败');
       }
 
       const result = await response.json();
       setPrompt(result.optimizedPrompt);
     } catch (error) {
-      // 如果优化失败，使用简单的后缀增强
-      setPrompt(prompt + '，8K超清画质，电影级调色，流畅的镜头运动，自然光影效果');
+      // 失败时不伪造“已优化”结果，避免用户误以为发生了模型调用。
+      toast.error(error instanceof Error ? error.message : '提示词优化失败');
     } finally {
       setIsOptimizing(false);
     }

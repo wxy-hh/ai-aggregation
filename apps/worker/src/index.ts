@@ -1,4 +1,9 @@
 import { logger } from '@repo/logger';
+import {
+  markExpiredProcessingQuotaReservationsPending,
+  reconcilePendingQuotas,
+  releaseExpiredQuotaReservations,
+} from '@repo/db';
 import { WorkerHeartbeatStore, getRedisConnectionSummary } from '@repo/shared/server';
 import { sttWorker } from './workers/stt';
 import { pptWorker } from './workers/ppt';
@@ -8,7 +13,38 @@ import { qimenSectionWorker } from './workers/qimen-section';
 
 let isRunning = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+let billingReconcileTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
+
+function getBillingReconcileIntervalMs(): number {
+  const configured = Number(process.env.BILLING_RECONCILE_INTERVAL_MS ?? 60_000);
+  if (!Number.isInteger(configured) || configured < 30_000 || configured > 3_600_000) {
+    return 60_000;
+  }
+  return configured;
+}
+
+/** 定期释放未开始的预留，锁定执行超时的成本，并对已有真实 usage 的待补账记录执行重试。 */
+async function reconcileBilling(): Promise<void> {
+  try {
+    const [releasedReservations, processingReservations, pending] = await Promise.all([
+      releaseExpiredQuotaReservations(),
+      markExpiredProcessingQuotaReservationsPending(),
+      reconcilePendingQuotas(),
+    ]);
+    if (releasedReservations > 0 || processingReservations > 0 || pending.settled > 0) {
+      logger.info('额度账本对账完成', { releasedReservations, processingReservations, pending });
+    }
+    if (processingReservations > 0 || pending.pending > 0) {
+      logger.warn('存在等待真实用量的额度记录，需要供应商回调或受保护对账接口完成补账', {
+        processingReservations,
+        pending,
+      });
+    }
+  } catch (error) {
+    logger.error('额度账本对账失败', error instanceof Error ? error : new Error(String(error)));
+  }
+}
 
 async function main() {
   if (isRunning) {
@@ -36,6 +72,10 @@ async function main() {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
+    }
+    if (billingReconcileTimer) {
+      clearInterval(billingReconcileTimer);
+      billingReconcileTimer = null;
     }
 
     await Promise.allSettled(workers.map((worker) => worker.close()));
@@ -72,11 +112,19 @@ async function main() {
     heartbeatTimer = setInterval(() => {
       void heartbeatStore.beat('apps-worker');
     }, 30_000);
+    await reconcileBilling();
+    billingReconcileTimer = setInterval(() => {
+      void reconcileBilling();
+    }, getBillingReconcileIntervalMs());
   } catch (error) {
     isRunning = false;
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
       heartbeatTimer = null;
+    }
+    if (billingReconcileTimer) {
+      clearInterval(billingReconcileTimer);
+      billingReconcileTimer = null;
     }
     await heartbeatStore.disconnect();
     logger.error('Worker 启动失败', error instanceof Error ? error : new Error(String(error)));

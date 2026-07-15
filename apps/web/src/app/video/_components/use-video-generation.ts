@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import { authFetch } from '@/lib/api/client';
+import { createBillingRequestId } from '@/lib/billing/request-id';
 import { stripDataUrlPrefix } from '@/lib/utils/image-url';
 import {
   VideoConfig,
@@ -48,7 +49,10 @@ function configToApiParams(config: VideoConfig, referenceImage: string | null) {
       body.image = stripDataUrlPrefix(config.referenceImages[0]);
     }
 
-    if ((config.mode === 'multi-image' || config.mode === 'keyframes') && config.referenceImages.length > 0) {
+    if (
+      (config.mode === 'multi-image' || config.mode === 'keyframes') &&
+      config.referenceImages.length > 0
+    ) {
       const extraBody: Record<string, unknown> = {
         image: config.referenceImages.map(stripDataUrlPrefix),
       };
@@ -115,7 +119,7 @@ export function useVideoGeneration() {
   }, []);
 
   const updateConfig = useCallback((partial: Partial<VideoConfig>) => {
-    setConfig((prev) => ({ ...prev, ...partial } as VideoConfig));
+    setConfig((prev) => ({ ...prev, ...partial }) as VideoConfig);
   }, []);
 
   const generateVideo = useCallback(async () => {
@@ -157,16 +161,22 @@ export function useVideoGeneration() {
         prompt,
         ...apiParams,
       };
+      const requestId = createBillingRequestId();
+      requestBody.requestId = requestId;
 
       const initRes = await authFetch('/api/video', {
         method: 'POST',
+        headers: { 'Idempotency-Key': requestId },
         body: JSON.stringify(requestBody),
       });
 
       const initData: GenerationResponse = await initRes.json();
 
       if (!initRes.ok) {
-        throw new Error((initData as unknown as { error?: { message?: string } })?.error?.message || '生成请求失败');
+        throw new Error(
+          (initData as unknown as { error?: { message?: string } })?.error?.message ||
+            '生成请求失败'
+        );
       }
 
       const newTaskId = initData.id;
@@ -214,10 +224,12 @@ export function useVideoGeneration() {
           const pollDelay = currentProvider === 'agnes' ? 5000 : 3000;
 
           if (statusData.task_status === 'SUCCESS') {
-            const url = currentProvider === 'zhipu'
-              ? statusData.video_result?.[0]?.url
-              : statusData.videoUrl || statusData.video_result?.[0]?.url;
-            const cover = currentProvider === 'zhipu' ? statusData.video_result?.[0]?.cover_image_url : null;
+            const url =
+              currentProvider === 'zhipu'
+                ? statusData.video_result?.[0]?.url
+                : statusData.videoUrl || statusData.video_result?.[0]?.url;
+            const cover =
+              currentProvider === 'zhipu' ? statusData.video_result?.[0]?.cover_image_url : null;
             if (url) {
               finishWithSuccess(url, cover);
             } else {
@@ -249,9 +261,12 @@ export function useVideoGeneration() {
     setProvider(null);
   }, []);
 
-  const setReferenceImages = useCallback((images: string[]) => {
-    updateConfig({ referenceImages: images } as Partial<VideoConfig>);
-  }, [updateConfig]);
+  const setReferenceImages = useCallback(
+    (images: string[]) => {
+      updateConfig({ referenceImages: images } as Partial<VideoConfig>);
+    },
+    [updateConfig]
+  );
 
   return useMemo(
     () => ({
@@ -275,6 +290,22 @@ export function useVideoGeneration() {
       generateVideo,
       reset,
     }),
-    [prompt, status, loadingStep, videoUrl, coverUrl, progress, taskId, provider, config, setModel, updateConfig, setReferenceImages, referenceImage, generateVideo, reset]
+    [
+      prompt,
+      status,
+      loadingStep,
+      videoUrl,
+      coverUrl,
+      progress,
+      taskId,
+      provider,
+      config,
+      setModel,
+      updateConfig,
+      setReferenceImages,
+      referenceImage,
+      generateVideo,
+      reset,
+    ]
   );
 }

@@ -9,12 +9,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ANONYMOUS_FREE_TOKENS } from '@/lib/constants/quota';
 
 /**
  * 额度耗尽提示弹框。
  *
- * 监听全局 QUOTA_EXHAUSTED 事件，触发后显示提示。
+ * 监听全局额度不足事件，触发后显示提示。
  * 用户关闭弹框后仍可继续浏览历史记录，但无法发起新的 AI 调用。
  */
 export function QuotaExhaustedDialog() {
@@ -33,9 +32,9 @@ export function QuotaExhaustedDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>免费额度已用完</DialogTitle>
+          <DialogTitle>文本或语音额度不足</DialogTitle>
           <DialogDescription className="pt-2 leading-relaxed">
-            您的 {ANONYMOUS_FREE_TOKENS} token 免费额度已消耗完毕。您可以继续查看历史记录，但暂时无法发起新的 AI 调用。
+            当前文本或语音额度不足。您可以继续查看历史记录，图片和视频任务统计不受此额度影响。
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end pt-2">

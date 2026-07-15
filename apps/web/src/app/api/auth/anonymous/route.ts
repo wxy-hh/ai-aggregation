@@ -113,6 +113,12 @@ export async function POST(req: NextRequest) {
           tokens: ANONYMOUS_FREE_TOKENS,
           isAnonymous: true,
           deviceHash,
+          quotaAccount: {
+            create: {
+              grantedUnits: ANONYMOUS_FREE_TOKENS,
+              availableUnits: ANONYMOUS_FREE_TOKENS,
+            },
+          },
         },
         select: {
           id: true,

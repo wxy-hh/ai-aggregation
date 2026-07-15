@@ -11,8 +11,10 @@ import {
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
-import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
+import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -76,11 +78,41 @@ const ReportSchema = z.object({
     })
   ),
   modules: z.object({
-    career: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
-    love: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
-    wealth: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
-    health: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
-    personality: z.object({ title: z.string(), summary: z.string(), bullets: z.array(z.string()).optional().default([]), advantages: z.array(z.string()).optional().default([]), suggestions: z.array(z.string()).optional().default([]) }),
+    career: z.object({
+      title: z.string(),
+      summary: z.string(),
+      bullets: z.array(z.string()).optional().default([]),
+      advantages: z.array(z.string()).optional().default([]),
+      suggestions: z.array(z.string()).optional().default([]),
+    }),
+    love: z.object({
+      title: z.string(),
+      summary: z.string(),
+      bullets: z.array(z.string()).optional().default([]),
+      advantages: z.array(z.string()).optional().default([]),
+      suggestions: z.array(z.string()).optional().default([]),
+    }),
+    wealth: z.object({
+      title: z.string(),
+      summary: z.string(),
+      bullets: z.array(z.string()).optional().default([]),
+      advantages: z.array(z.string()).optional().default([]),
+      suggestions: z.array(z.string()).optional().default([]),
+    }),
+    health: z.object({
+      title: z.string(),
+      summary: z.string(),
+      bullets: z.array(z.string()).optional().default([]),
+      advantages: z.array(z.string()).optional().default([]),
+      suggestions: z.array(z.string()).optional().default([]),
+    }),
+    personality: z.object({
+      title: z.string(),
+      summary: z.string(),
+      bullets: z.array(z.string()).optional().default([]),
+      advantages: z.array(z.string()).optional().default([]),
+      suggestions: z.array(z.string()).optional().default([]),
+    }),
   }),
   timeline: z.array(
     z.object({
@@ -120,130 +152,133 @@ function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
     const userId = user.id;
-    let deductedAmount = 0;
+    let reservation: { id: string } | null = null;
 
     try {
-      const deduction = await deductAiQuotaForRoute({
-        userId,
-        user,
-        anonymousCost: ANONYMOUS_OPERATION_COSTS.DESTINY_COPILOT,
-      });
-
-      if (!deduction.success) {
-        if (deduction.reason === 'QUOTA_EXHAUSTED') {
-          return NextResponse.json(
-            { error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
-            { status: 402 }
-          );
-        }
+      const body = await req.json();
+      const parsed = RequestSchema.safeParse(body);
+      if (!parsed.success) {
         return NextResponse.json(
-          { error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
-          { status: 429 }
+          {
+            error: '请求参数错误',
+            details: parsed.error.errors.map((item) => ({
+              path: item.path.join('.'),
+              message: item.message,
+            })),
+          },
+          { status: 400 }
         );
       }
 
-      deductedAmount = deduction.deductedAmount;
+      let config: ModelConfig;
+      try {
+        config = resolveModelConfig(parsed.data.provider);
+      } catch (error) {
+        if (error instanceof ModelConfigError) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        throw error;
+      }
 
-      const body = await req.json();
-    const parsed = RequestSchema.safeParse(body);
-    if (!parsed.success) {
+      const messages = buildCopilotMessages(
+        parsed.data.report,
+        parsed.data.question,
+        parsed.data.focusDecadeName
+      );
+      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      let inputUnits = 0;
+      let outputLimit = 2048;
+      if (user.role !== 'admin') {
+        const quota = await reserveChatQuota({
+          userId,
+          requestId,
+          feature: 'destiny',
+          provider: config.provider,
+          model: config.model,
+          messages,
+          maxOutputTokens: 2048,
+          metadata: { questionLength: parsed.data.question.length, stream: true },
+        });
+        reservation = quota.reservation;
+        inputUnits = quota.inputUnits;
+        outputLimit = quota.outputLimit;
+      }
+
+      return new Response(
+        createCopilotStream({
+          config,
+          messages,
+          userId,
+          reservationId: reservation?.id,
+          requestId,
+          inputUnits,
+          outputLimit,
+          questionLength: parsed.data.question.length,
+        }),
+        { headers: SSE_HEADERS }
+      );
+    } catch (error) {
+      if (reservation) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '命理追问请求失败',
+          meterType: 'tokens',
+        }).catch((releaseError) => console.error('[destiny/copilot] 释放额度失败:', releaseError));
+      }
+      if (error instanceof AuthError) {
+        if (error.code === 'FORBIDDEN') {
+          return NextResponse.json({ error: error.message }, { status: 403 });
+        }
+        return NextResponse.json({ error: error.message }, { status: 401 });
+      }
+      if (error instanceof Error && error.name === 'AbortError') {
+        return NextResponse.json({ error: '追问超时，请稍后重试' }, { status: 504 });
+      }
+      if (error instanceof BillingError) return billingErrorResponse(error);
       return NextResponse.json(
-        {
-          error: '请求参数错误',
-          details: parsed.error.errors.map((item) => ({
-            path: item.path.join('.'),
-            message: item.message,
-          })),
-        },
-        { status: 400 }
+        { error: error instanceof Error ? error.message : '追问失败，请稍后重试' },
+        { status: 500 }
       );
     }
-
-    let config: ModelConfig;
-    try {
-      config = resolveModelConfig(parsed.data.provider);
-    } catch (error) {
-      if (error instanceof ModelConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      throw error;
-    }
-
-    return new Response(
-      createCopilotStream({
-        config,
-        report: parsed.data.report,
-        question: parsed.data.question,
-        focusDecadeName: parsed.data.focusDecadeName,
-        userId,
-        deductedAmount,
-        questionLength: parsed.data.question.length,
-      }),
-      { headers: SSE_HEADERS }
-    );
-  } catch (error) {
-    await maybeRefund(userId, deductedAmount);
-    if (error instanceof AuthError) {
-      if (error.code === 'FORBIDDEN') {
-        return NextResponse.json({ error: error.message }, { status: 403 });
-      }
-      return NextResponse.json({ error: error.message }, { status: 401 });
-    }
-    if (error instanceof Error && error.name === 'AbortError') {
-      return NextResponse.json({ error: '追问超时，请稍后重试' }, { status: 504 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : '追问失败，请稍后重试' },
-      { status: 500 }
-    );
-  }
-});
+  });
 }
 
 function createCopilotStream({
   config,
-  report,
-  question,
-  focusDecadeName,
+  messages,
   userId,
-  deductedAmount,
+  reservationId,
+  requestId,
+  inputUnits,
+  outputLimit,
   questionLength,
 }: {
   config: ModelConfig;
-  report: z.infer<typeof ReportSchema>;
-  question: string;
-  focusDecadeName?: string;
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
   userId: string | null;
-  deductedAmount: number;
+  reservationId?: string;
+  requestId: string;
+  inputUnits: number;
+  outputLimit: number;
   questionLength: number;
 }) {
-  const context = buildCopilotPromptContext(report);
-  const scopedInsights = buildQuestionScopedInsights(report, question, focusDecadeName);
-
   return new ReadableStream<Uint8Array>({
     async start(streamController) {
       let usagePayload: unknown = null;
+      let outputText = '';
 
       try {
         const stream = streamModel({
           config,
-          messages: [
-            {
-              role: 'system',
-              content:
-                '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、十年大运 AI 专属解读、流年等），其中「十年大运」段落为逐步大运全文，用户问运势/大运/流年时必须优先引用对应步运的 summary、前五年与后五年内容。给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
-            },
-            {
-              role: 'user',
-              content: `${context}\n${scopedInsights}\n\n用户追问：${question}`,
-            },
-          ],
+          messages,
           temperature: 0.3,
+          maxTokens: outputLimit,
           timeoutMs: COPILOT_TIMEOUT_MS,
         });
 
         for await (const ev of stream) {
           if (ev.type === 'text-delta') {
+            outputText += ev.text;
             streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: ev.text }));
           } else if (ev.type === 'done') {
             usagePayload = ev.rawUsage ?? usagePayload;
@@ -253,7 +288,22 @@ function createCopilotStream({
           }
         }
 
-        if (userId) {
+        if (reservationId) {
+          await settleAiQuota({
+            reservationId,
+            requestId,
+            feature: 'destiny',
+            action: 'destiny-copilot',
+            provider: config.provider,
+            model: config.model,
+            endpoint: '/api/destiny/copilot',
+            measurement: createTokenMeasurement(
+              usagePayload,
+              inputUnits + estimateOutputTokens(outputText)
+            ),
+            metadata: { questionLength, stream: true, provider: config.provider },
+          });
+        } else if (userId) {
           await safeRecordAiUsage({
             userId,
             feature: 'destiny',
@@ -270,7 +320,31 @@ function createCopilotStream({
           });
         }
       } catch (error) {
-        await maybeRefund(userId, deductedAmount);
+        if (reservationId) {
+          if (outputText) {
+            await settleAiQuota({
+              reservationId,
+              requestId,
+              feature: 'destiny',
+              action: 'destiny-copilot',
+              provider: config.provider,
+              model: config.model,
+              endpoint: '/api/destiny/copilot',
+              measurement: createTokenMeasurement(
+                usagePayload,
+                inputUnits + estimateOutputTokens(outputText)
+              ),
+              status: 'partial',
+              metadata: { questionLength, stream: true, provider: config.provider },
+            });
+          } else {
+            await releaseAiQuota({
+              reservationId,
+              reason: '命理追问流式失败',
+              meterType: 'tokens',
+            });
+          }
+        }
         streamController.enqueue(
           encodeSseEvent({
             type: 'error',
@@ -287,6 +361,23 @@ function createCopilotStream({
       }
     },
   });
+}
+
+function buildCopilotMessages(
+  report: z.infer<typeof ReportSchema>,
+  question: string,
+  focusDecadeName?: string
+): Array<{ role: 'system' | 'user'; content: string }> {
+  const context = buildCopilotPromptContext(report);
+  const scopedInsights = buildQuestionScopedInsights(report, question, focusDecadeName);
+  return [
+    {
+      role: 'system',
+      content:
+        '你是命理报告解读助手。你必须严格基于下方用户消息中提供的八字测算结果来回答追问，不得脱离报告内容编造信息。回答时优先引用报告中的具体数据（四柱八字、五行分布、十神格局、人生五维、十年大运 AI 专属解读、流年等），其中「十年大运」段落为逐步大运全文，用户问运势/大运/流年时必须优先引用对应步运的 summary、前五年与后五年内容。给出清晰、具体、可直接参考的建议。回答要完整说透，不要因为长度限制而截断内容。避免绝对化判断，不做医疗或投资承诺。',
+    },
+    { role: 'user', content: `${context}\n${scopedInsights}\n\n用户追问：${question}` },
+  ];
 }
 
 function formatDecadeFortunesForPrompt(basis: {
@@ -402,9 +493,7 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
       : '';
     const decadeFortuneBlock =
       basis.decadeFortunes?.length && basis.decadeFortuneInsights?.length
-        ? formatDecadeFortuneInsightsForPrompt(
-            formatDecadeFortunesForPrompt(basis)
-          )
+        ? formatDecadeFortuneInsightsForPrompt(formatDecadeFortunesForPrompt(basis))
         : '';
 
     return [
@@ -414,7 +503,9 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
       basisPillars ? `四柱：${basisPillars}` : '',
       basisElements ? `五行：${basisElements}` : '',
       basisTenGods ? `十神：${basisTenGods}` : '',
-      decadeFortuneBlock ? `十年大运（AI 专属解读，回答大运/运势问题时必须优先引用）：\n${decadeFortuneBlock}` : '',
+      decadeFortuneBlock
+        ? `十年大运（AI 专属解读，回答大运/运势问题时必须优先引用）：\n${decadeFortuneBlock}`
+        : '',
       basisTimeline ? `未来三年流年：${basisTimeline}` : '',
     ]
       .filter(Boolean)
@@ -430,7 +521,9 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
     ? report.lifeDimensions.map((item) => `${item.label}${item.value}`).join('，')
     : '';
   const tenGodDomains = report.tenGodDomains?.length
-    ? report.tenGodDomains.map((item) => `${item.label}(${item.technicalLabel})${item.value}`).join('，')
+    ? report.tenGodDomains
+        .map((item) => `${item.label}(${item.technicalLabel})${item.value}`)
+        .join('，')
     : '';
   const highlights = report.lifeDimensionHighlights
     ? `人生五维提示：优势点=${report.lifeDimensionHighlights.strength}；规避点=${report.lifeDimensionHighlights.caution}`
@@ -454,11 +547,17 @@ function buildCopilotPromptContext(report: z.infer<typeof ReportSchema>) {
 function buildQuestionScopedInsights(
   report: z.infer<typeof ReportSchema>,
   question: string,
-  focusDecadeName?: string,
+  focusDecadeName?: string
 ) {
   const q = question.toLowerCase();
   const pickedModules: Array<{ label: string; summary: string; bullets: string[] }> = [];
-  const pushModule = (label: string, summary: string, advantages: string[], suggestions: string[], bullets: string[]) => {
+  const pushModule = (
+    label: string,
+    summary: string,
+    advantages: string[],
+    suggestions: string[],
+    bullets: string[]
+  ) => {
     if (!pickedModules.some((item) => item.label === label)) {
       // 优先使用新格式 advantages + suggestions，兼容旧格式 bullets
       const combined = [
@@ -471,24 +570,66 @@ function buildQuestionScopedInsights(
   };
 
   if (/事业|工作|职业|升职|跳槽|offer|career|job/.test(q)) {
-    pushModule('事业', report.modules.career.summary, report.modules.career.advantages, report.modules.career.suggestions, report.modules.career.bullets);
+    pushModule(
+      '事业',
+      report.modules.career.summary,
+      report.modules.career.advantages,
+      report.modules.career.suggestions,
+      report.modules.career.bullets
+    );
   }
   if (/感情|爱情|婚|伴侣|恋爱|桃花|关系|love|relationship/.test(q)) {
-    pushModule('感情', report.modules.love.summary, report.modules.love.advantages, report.modules.love.suggestions, report.modules.love.bullets);
+    pushModule(
+      '感情',
+      report.modules.love.summary,
+      report.modules.love.advantages,
+      report.modules.love.suggestions,
+      report.modules.love.bullets
+    );
   }
   if (/财|收入|钱|投资|副业|财富|wealth|money/.test(q)) {
-    pushModule('财运', report.modules.wealth.summary, report.modules.wealth.advantages, report.modules.wealth.suggestions, report.modules.wealth.bullets);
+    pushModule(
+      '财运',
+      report.modules.wealth.summary,
+      report.modules.wealth.advantages,
+      report.modules.wealth.suggestions,
+      report.modules.wealth.bullets
+    );
   }
   if (/健康|睡眠|情绪|身体|medical|health/.test(q)) {
-    pushModule('健康', report.modules.health.summary, report.modules.health.advantages, report.modules.health.suggestions, report.modules.health.bullets);
+    pushModule(
+      '健康',
+      report.modules.health.summary,
+      report.modules.health.advantages,
+      report.modules.health.suggestions,
+      report.modules.health.bullets
+    );
   }
   if (/性格|人际|沟通|自己|状态|personality/.test(q)) {
-    pushModule('性格', report.modules.personality.summary, report.modules.personality.advantages, report.modules.personality.suggestions, report.modules.personality.bullets);
+    pushModule(
+      '性格',
+      report.modules.personality.summary,
+      report.modules.personality.advantages,
+      report.modules.personality.suggestions,
+      report.modules.personality.bullets
+    );
   }
 
   if (pickedModules.length === 0) {
-    pushModule('事业', report.modules.career.summary, report.modules.career.advantages, report.modules.career.suggestions, report.modules.career.bullets);
-    pushModule('感情', report.modules.love.summary, report.modules.love.advantages, report.modules.love.suggestions, report.modules.love.bullets);
+    pushModule(
+      '事业',
+      report.modules.career.summary,
+      report.modules.career.advantages,
+      report.modules.career.suggestions,
+      report.modules.career.bullets
+    );
+    pushModule(
+      '感情',
+      report.modules.love.summary,
+      report.modules.love.advantages,
+      report.modules.love.suggestions,
+      report.modules.love.bullets
+    );
   }
 
   const currentYear = new Date().getFullYear();
@@ -508,11 +649,7 @@ function buildQuestionScopedInsights(
 
   const decadeFortuneScoped = buildDecadeFortuneScopedBlock(report, question, focusDecadeName);
 
-  return [
-    decadeFortuneScoped,
-    `相关模块：\n${modules}`,
-    `相关流年：\n${timeline}`,
-  ]
+  return [decadeFortuneScoped, `相关模块：\n${modules}`, `相关流年：\n${timeline}`]
     .filter(Boolean)
     .join('\n');
 }
@@ -520,10 +657,9 @@ function buildQuestionScopedInsights(
 function buildDecadeFortuneScopedBlock(
   report: z.infer<typeof ReportSchema>,
   question: string,
-  focusDecadeName?: string,
+  focusDecadeName?: string
 ): string {
-  const mentionsDecade =
-    /大运|十年|运势|流年|岁运|走运|运程|decade|fortune/i.test(question);
+  const mentionsDecade = /大运|十年|运势|流年|岁运|走运|运程|decade|fortune/i.test(question);
 
   if (!report.baziBasis || typeof report.baziBasis !== 'object') {
     return '';
@@ -555,7 +691,9 @@ function buildDecadeFortuneScopedBlock(
   }
 
   if (focusDecadeName) {
-    const focusedInsight = basis.decadeFortuneInsights.find((item) => item.name === focusDecadeName);
+    const focusedInsight = basis.decadeFortuneInsights.find(
+      (item) => item.name === focusDecadeName
+    );
     const focusedDecade = basis.decadeFortunes?.find((item) => item.name === focusDecadeName);
     if (focusedInsight) {
       const timeline = focusedDecade
@@ -578,9 +716,7 @@ function buildDecadeFortuneScopedBlock(
     }
   }
 
-  const fullText = formatDecadeFortuneInsightsForPrompt(
-    formatDecadeFortunesForPrompt(basis)
-  );
+  const fullText = formatDecadeFortuneInsightsForPrompt(formatDecadeFortunesForPrompt(basis));
 
   if (!fullText) return '';
 
@@ -605,9 +741,7 @@ function buildDecadeFortuneScopedBlock(
     `整体：${activeInsight.summary}`,
     `前五年：${activeInsight.stemPhase}`,
     `后五年：${activeInsight.branchPhase}`,
-    activeInsight.natalNotes?.length
-      ? `命局互动：${activeInsight.natalNotes.join('；')}`
-      : '',
+    activeInsight.natalNotes?.length ? `命局互动：${activeInsight.natalNotes.join('；')}` : '',
   ]
     .filter(Boolean)
     .join('\n');

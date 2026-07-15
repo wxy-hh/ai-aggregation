@@ -1,14 +1,11 @@
 import { NextRequest } from 'next/server';
-import { prisma } from '@repo/db';
+import { prisma, setQuotaBalanceInTransaction } from '@repo/db';
 import { requireAdmin } from '@/lib/auth/require-admin';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 import { adminUpdateUserSchema } from '@/schemas/auth.schema';
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const adminId = await requireAdmin(req);
     const { id: targetId } = await params;
@@ -45,25 +42,38 @@ export async function PATCH(
       return ApiError.badRequest('不能修改管理员的 Token 额度', 'INVALID_REQUEST');
     }
 
-    const user = await prisma.user.update({
-      where: { id: targetId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(role !== undefined && { role }),
-        ...(status !== undefined && { status }),
-        ...(tokens !== undefined && { tokens }),
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        name: true,
-        avatar: true,
-        role: true,
-        status: true,
-        tokens: true,
-        createdAt: true,
-      },
+    const user = await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id: targetId },
+        data: {
+          ...(name !== undefined && { name }),
+          ...(role !== undefined && { role }),
+          ...(status !== undefined && { status }),
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          name: true,
+          avatar: true,
+          role: true,
+          status: true,
+          tokens: true,
+          createdAt: true,
+        },
+      });
+
+      if (tokens !== undefined) {
+        await setQuotaBalanceInTransaction(tx, {
+          userId: targetId,
+          availableUnits: tokens,
+          requestId: `admin-adjust:${targetId}:${globalThis.crypto.randomUUID()}`,
+          reason: '管理员调整用户可用额度',
+        });
+        return { ...updated, tokens };
+      }
+
+      return updated;
     });
 
     return createSuccessResponse({ user }, '更新成功');
@@ -77,10 +87,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const adminId = await requireAdmin(req);
     const { id: targetId } = await params;

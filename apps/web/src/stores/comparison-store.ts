@@ -129,7 +129,8 @@ async function runModel(
   turnId: string,
   model: SelectedModel,
   prompt: string,
-  appendToBranch: boolean
+  appendToBranch: boolean,
+  billingReservation?: { requestId: string; reservationId: string }
 ): Promise<void> {
   const modelKey = toModelKey(model.provider, model.model);
   const controller = new AbortController();
@@ -164,6 +165,8 @@ async function runModel(
         messages: branch.map((m) => ({ role: m.role, content: m.content })),
         provider: model.provider,
         model: model.model,
+        requestId: billingReservation?.requestId,
+        reservationId: billingReservation?.reservationId,
       }),
       signal: controller.signal,
     });
@@ -218,6 +221,33 @@ async function runModel(
     // 流式结束（完成/失败/停止）才持久化镜像；进行中内容不落盘
     syncTurnsToConversation();
   }
+}
+
+async function reserveComparisonModels(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  models: SelectedModel[]
+): Promise<Map<string, { requestId: string; reservationId: string }>> {
+  const response = await authFetch('/api/chat/batch-reserve', {
+    method: 'POST',
+    body: JSON.stringify({ messages, models }),
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    reservations?: Array<{
+      provider: string;
+      model: string;
+      requestId: string;
+      reservationId: string;
+    }>;
+    error?: string;
+  };
+  if (!response.ok) throw new Error(data.error || `额度预留失败: ${response.status}`);
+
+  return new Map(
+    (data.reservations ?? []).map((item) => [
+      toModelKey(item.provider as SelectedModel['provider'], item.model),
+      { requestId: item.requestId, reservationId: item.reservationId },
+    ])
+  );
 }
 
 // ==================== Store 接口 ====================
@@ -296,6 +326,17 @@ export const useComparisonStore = create<ComparisonState>()(
           return;
         }
 
+        let billingReservations: Map<string, { requestId: string; reservationId: string }>;
+        try {
+          billingReservations = await reserveComparisonModels(
+            [{ role: 'user', content: prompt }],
+            selectedModels
+          );
+        } catch (error) {
+          set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
+          return;
+        }
+
         const turnId = `turn-${Date.now()}`;
         const runs: Record<string, ModelRun> = {};
         for (const m of selectedModels) {
@@ -322,14 +363,26 @@ export const useComparisonStore = create<ComparisonState>()(
         // 若无激活会话则创建持久化会话
         let convId = get().activeComparisonId;
         if (!convId) {
-          convId = useConversationsStore.getState().createComparisonConversation(selectedModels, prompt);
+          convId = useConversationsStore
+            .getState()
+            .createComparisonConversation(selectedModels, prompt);
           set({ activeComparisonId: convId });
         }
 
         set((s) => ({ turns: [...s.turns, turn], input: '', error: null }));
 
         // 并发：各自独立，互不阻塞
-        await Promise.allSettled(selectedModels.map((m) => runModel(turnId, m, prompt, false)));
+        await Promise.allSettled(
+          selectedModels.map((m) =>
+            runModel(
+              turnId,
+              m,
+              prompt,
+              false,
+              billingReservations.get(toModelKey(m.provider, m.model))
+            )
+          )
+        );
 
         recordHistory();
       },
@@ -341,6 +394,15 @@ export const useComparisonStore = create<ComparisonState>()(
         if (!prompt || !lastTurn) return;
         if (selectedModels.length < MIN_COMPARE_MODELS) {
           set({ error: new Error(`请至少选择 ${MIN_COMPARE_MODELS} 个模型进行对比`) });
+          return;
+        }
+
+        const reservationMessages = [{ role: 'user' as const, content: prompt }];
+        let billingReservations: Map<string, { requestId: string; reservationId: string }>;
+        try {
+          billingReservations = await reserveComparisonModels(reservationMessages, selectedModels);
+        } catch (error) {
+          set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
           return;
         }
 
@@ -372,7 +434,7 @@ export const useComparisonStore = create<ComparisonState>()(
         // 焦点继承：被取消的焦点模型重定向到新一轮可用模型，避免悬空槽位（只显示一列）
         const prevFocus = lastTurn.focusSlots;
         const left = runs[prevFocus.left] ? prevFocus.left : keys[0];
-        const right = runs[prevFocus.right] ? prevFocus.right : keys[1] ?? keys[0];
+        const right = runs[prevFocus.right] ? prevFocus.right : (keys[1] ?? keys[0]);
         const turn: ComparisonTurn = {
           id: turnId,
           prompt,
@@ -383,7 +445,17 @@ export const useComparisonStore = create<ComparisonState>()(
 
         set((s) => ({ turns: [...s.turns, turn], input: '', error: null }));
 
-        await Promise.allSettled(selectedModels.map((m) => runModel(turnId, m, prompt, true)));
+        await Promise.allSettled(
+          selectedModels.map((m) =>
+            runModel(
+              turnId,
+              m,
+              prompt,
+              true,
+              billingReservations.get(toModelKey(m.provider, m.model))
+            )
+          )
+        );
 
         recordHistory();
       },

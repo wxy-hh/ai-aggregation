@@ -3,9 +3,12 @@ import { transcribeAudio } from '@/lib/siliconflow';
 import { saveUploadedFile, deleteFile, validateFile } from '@/lib/file-upload';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
-import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
+import { reserveAiQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createAudioMeasurement } from '@/lib/billing/usage-measurement';
+import { getAudioDurationSeconds } from '@/lib/billing/audio-duration';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { safeRecordAiUsage } from '@/lib/ai-usage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 最大 60 秒
@@ -17,7 +20,8 @@ export async function POST(req: NextRequest) {
   return withAuth(req, async (user) => {
     const userId = user.id;
     let tempFilePath: string | null = null;
-    let deductedAmount = 0;
+    let reservation: { id: string } | null = null;
+    let billingSettled = false;
 
     try {
       console.log('=== 开始处理转录请求 ===');
@@ -28,7 +32,10 @@ export async function POST(req: NextRequest) {
         formData = await req.formData();
       } catch (parseError) {
         console.error('✗ 请求体解析失败:', parseError);
-        return NextResponse.json({ error: '请求体必须是 multipart/form-data 格式' }, { status: 400 });
+        return NextResponse.json(
+          { error: '请求体必须是 multipart/form-data 格式' },
+          { status: 400 }
+        );
       }
       console.log('✓ FormData 解析成功');
 
@@ -54,177 +61,215 @@ export async function POST(req: NextRequest) {
       }
       console.log('✓ 文件验证通过');
 
-      // 3. 保存文件到临时目录
+      // 先落盘并读取媒体元数据，禁止使用客户端上报时长或文件体积估算计费。
       console.log('→ 开始保存文件到临时目录...');
       tempFilePath = await saveUploadedFile(file);
       console.log('✓ 文件已保存:', tempFilePath);
+      const actualDuration = await getAudioDurationSeconds(tempFilePath);
+      const requestId = getBillingRequestId(req);
+
+      if (user.role !== 'admin') {
+        const quota = await reserveAiQuota({
+          userId,
+          requestId,
+          feature: 'voice',
+          provider: 'siliconflow',
+          model,
+          estimatedUnits: actualDuration,
+          meterType: 'audio_seconds',
+          metadata: { fileName: file.name, fileSize: file.size, actualDuration },
+        });
+        reservation = quota;
+      }
 
       let transcriptionId = 'temp-id';
 
-      // 4. 非 admin 用户扣减额度
-      const quotaResult = await deductAiQuotaForRoute({
-        userId,
-        user,
-        anonymousCost: ANONYMOUS_OPERATION_COSTS.VOICE_TRANSCRIBE,
-      });
+      // 5. 创建数据库记录（如果数据库可用）
+      if (isDatabaseAvailable) {
+        console.log('→ 尝试创建数据库记录...');
+        try {
+          const { prisma } = await import('@repo/db');
 
-      if (!quotaResult.success) {
-        if (tempFilePath) await deleteFile(tempFilePath);
-        if (quotaResult.reason === 'QUOTA_EXHAUSTED') {
-          return NextResponse.json(
-            { error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
-            { status: 402 }
+          const transcription = await prisma.voiceTranscription.create({
+            data: {
+              userId,
+              fileName: file.name,
+              fileSize: file.size,
+              duration: actualDuration,
+              format: file.type.split('/')[1] || file.name.split('.').pop() || 'unknown',
+              model,
+              status: 'processing',
+            },
+          });
+          transcriptionId = transcription.id;
+          console.log('✓ 数据库记录已创建:', transcriptionId);
+        } catch (dbError) {
+          console.warn(
+            '⚠ 数据库不可用，继续处理:',
+            dbError instanceof Error ? dbError.message : dbError
           );
         }
-        return NextResponse.json(
-          { error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
-          { status: 429 }
-        );
+      } else {
+        console.log('⚠ 数据库未配置，跳过数据库操作');
       }
 
-      deductedAmount = quotaResult.deductedAmount;
-
-    // 5. 创建数据库记录（如果数据库可用）
-    if (isDatabaseAvailable) {
-      console.log('→ 尝试创建数据库记录...');
       try {
-        const { prisma } = await import('@repo/db');
+        // 5. 调用 SiliconFlow API
+        console.log('→ 开始调用 SiliconFlow API...');
+        console.log('  模型:', model);
+        console.log('  文件路径:', tempFilePath);
 
-        const transcription = await prisma.voiceTranscription.create({
-          data: {
-            userId,
-            fileName: file.name,
-            fileSize: file.size,
-            format: file.type.split('/')[1] || file.name.split('.').pop() || 'unknown',
+        const result = await transcribeAudio(tempFilePath, model);
+        console.log('✓ SiliconFlow API 调用成功');
+        console.log('  转录文本长度:', result.text?.length || 0);
+
+        if (reservation) {
+          await settleAiQuota({
+            reservationId: reservation.id,
+            requestId,
+            feature: 'voice',
+            action: 'voice-transcribe',
+            provider: 'siliconflow',
             model,
-            status: 'processing',
-          },
+            endpoint: '/api/voice/transcribe',
+            measurement: createAudioMeasurement(actualDuration),
+            metadata: {
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType: file.type,
+              actualDuration,
+              transcriptionLength: result.text?.length ?? 0,
+            },
+          });
+          billingSettled = true;
+        } else {
+          // 管理员免扣额度，但仍保留真实媒体计量记录，供审计和运营统计使用。
+          await safeRecordAiUsage({
+            userId,
+            feature: 'voice',
+            action: 'voice-transcribe',
+            provider: 'siliconflow',
+            model,
+            endpoint: '/api/voice/transcribe',
+            requestId,
+            meterType: 'audio_seconds',
+            billableUnits: actualDuration,
+            billingStatus: 'settled',
+            usage: {
+              inputTokens: null,
+              outputTokens: null,
+              totalTokens: null,
+              cachedTokens: null,
+              reasoningTokens: null,
+              taskCount: 1,
+            },
+            metadata: {
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType: file.type,
+              actualDuration,
+              transcriptionLength: result.text?.length ?? 0,
+            },
+          });
+        }
+
+        // 6. 更新数据库记录（如果数据库可用）
+        if (isDatabaseAvailable && transcriptionId !== 'temp-id') {
+          console.log('→ 更新数据库记录...');
+          try {
+            const { prisma } = await import('@repo/db');
+            await prisma.voiceTranscription.update({
+              where: { id: transcriptionId },
+              data: {
+                status: 'completed',
+                transcription: result.text,
+                completedAt: new Date(),
+              },
+            });
+            console.log('✓ 数据库记录已更新');
+          } catch (dbError) {
+            console.warn('⚠ 更新数据库失败:', dbError instanceof Error ? dbError.message : dbError);
+          }
+        }
+
+        // 7. 删除临时文件
+        console.log('→ 删除临时文件...');
+        await deleteFile(tempFilePath);
+        tempFilePath = null;
+        console.log('✓ 临时文件已删除');
+
+        console.log('=== 转录请求处理成功 ===');
+        return NextResponse.json({
+          id: transcriptionId,
+          status: 'completed',
+          transcription: result.text,
+          message: '转录成功',
         });
-        transcriptionId = transcription.id;
-        console.log('✓ 数据库记录已创建:', transcriptionId);
-      } catch (dbError) {
-        console.warn(
-          '⚠ 数据库不可用，继续处理:',
-          dbError instanceof Error ? dbError.message : dbError
-        );
-      }
-    } else {
-      console.log('⚠ 数据库未配置，跳过数据库操作');
-    }
+      } catch (apiError) {
+        console.error('=== SiliconFlow API 调用失败 ===');
+        console.error('错误类型:', apiError?.constructor?.name);
+        console.error('错误信息:', apiError instanceof Error ? apiError.message : apiError);
+        console.error('错误堆栈:', apiError instanceof Error ? apiError.stack : '');
 
-    try {
-      // 5. 调用 SiliconFlow API
-      console.log('→ 开始调用 SiliconFlow API...');
-      console.log('  模型:', model);
-      console.log('  文件路径:', tempFilePath);
-
-      const result = await transcribeAudio(tempFilePath, model);
-      console.log('✓ SiliconFlow API 调用成功');
-      console.log('  转录文本长度:', result.text?.length || 0);
-
-      await safeRecordAiUsage({
-        userId,
-        feature: 'voice',
-        action: 'voice-transcribe',
-        provider: 'siliconflow',
-        model,
-        endpoint: '/api/voice/transcribe',
-        usage: normalizeUsage((result as { usage?: unknown }).usage),
-        metadata: {
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type,
-          transcriptionLength: result.text?.length ?? 0,
-        },
-      });
-
-      // 6. 更新数据库记录（如果数据库可用）
-      if (isDatabaseAvailable && transcriptionId !== 'temp-id') {
-        console.log('→ 更新数据库记录...');
-        try {
-          const { prisma } = await import('@repo/db');
-          await prisma.voiceTranscription.update({
-            where: { id: transcriptionId },
-            data: {
-              status: 'completed',
-              transcription: result.text,
-              completedAt: new Date(),
-            },
-          });
-          console.log('✓ 数据库记录已更新');
-        } catch (dbError) {
-          console.warn('⚠ 更新数据库失败:', dbError instanceof Error ? dbError.message : dbError);
+        // API 调用失败，更新数据库记录（如果数据库可用）
+        if (isDatabaseAvailable && transcriptionId !== 'temp-id') {
+          try {
+            const { prisma } = await import('@repo/db');
+            await prisma.voiceTranscription.update({
+              where: { id: transcriptionId },
+              data: {
+                status: 'failed',
+                error: apiError instanceof Error ? apiError.message : '转录失败',
+              },
+            });
+          } catch (dbError) {
+            console.warn('⚠ 更新数据库失败:', dbError instanceof Error ? dbError.message : dbError);
+          }
         }
-      }
 
-      // 7. 删除临时文件
-      console.log('→ 删除临时文件...');
-      await deleteFile(tempFilePath);
-      tempFilePath = null;
-      console.log('✓ 临时文件已删除');
-
-      console.log('=== 转录请求处理成功 ===');
-      return NextResponse.json({
-        id: transcriptionId,
-        status: 'completed',
-        transcription: result.text,
-        message: '转录成功',
-      });
-    } catch (apiError) {
-      console.error('=== SiliconFlow API 调用失败 ===');
-      console.error('错误类型:', apiError?.constructor?.name);
-      console.error('错误信息:', apiError instanceof Error ? apiError.message : apiError);
-      console.error('错误堆栈:', apiError instanceof Error ? apiError.stack : '');
-
-      // API 调用失败，更新数据库记录（如果数据库可用）
-      if (isDatabaseAvailable && transcriptionId !== 'temp-id') {
-        try {
-          const { prisma } = await import('@repo/db');
-          await prisma.voiceTranscription.update({
-            where: { id: transcriptionId },
-            data: {
-              status: 'failed',
-              error: apiError instanceof Error ? apiError.message : '转录失败',
-            },
-          });
-        } catch (dbError) {
-          console.warn('⚠ 更新数据库失败:', dbError instanceof Error ? dbError.message : dbError);
+        // 删除临时文件
+        if (tempFilePath) {
+          await deleteFile(tempFilePath);
         }
-      }
 
-      // 删除临时文件
+        throw apiError;
+      }
+    } catch (error) {
+      if (reservation && !billingSettled) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '语音转写请求失败',
+          meterType: 'audio_seconds',
+        }).catch((releaseError) => console.error('[voice/transcribe] 释放额度失败:', releaseError));
+      }
+      console.error('=== 转录请求处理失败 ===');
+      console.error('错误类型:', error?.constructor?.name);
+      console.error('错误信息:', error instanceof Error ? error.message : error);
+      console.error('错误堆栈:', error instanceof Error ? error.stack : '');
+
+      // 确保清理临时文件
       if (tempFilePath) {
         await deleteFile(tempFilePath);
       }
 
-      throw apiError;
-    }
-  } catch (error) {
-    await maybeRefund(userId, deductedAmount);
-    console.error('=== 转录请求处理失败 ===');
-    console.error('错误类型:', error?.constructor?.name);
-    console.error('错误信息:', error instanceof Error ? error.message : error);
-    console.error('错误堆栈:', error instanceof Error ? error.stack : '');
-
-    // 确保清理临时文件
-    if (tempFilePath) {
-      await deleteFile(tempFilePath);
-    }
-
-    if (error instanceof AuthError) {
-      if (error.code === 'FORBIDDEN') {
-        return NextResponse.json({ error: error.message }, { status: 403 });
+      if (error instanceof AuthError) {
+        if (error.code === 'FORBIDDEN') {
+          return NextResponse.json({ error: error.message }, { status: 403 });
+        }
+        return NextResponse.json({ error: error.message }, { status: 401 });
       }
-      return NextResponse.json({ error: error.message }, { status: 401 });
-    }
 
-    return NextResponse.json(
-      {
-        error: '转录失败',
-        details: error instanceof Error ? error.message : '未知错误',
-      },
-      { status: 500 }
-    );
-  }
-});
+      if (error instanceof BillingError) {
+        return billingErrorResponse(error, 402);
+      }
+
+      return NextResponse.json(
+        {
+          error: '转录失败',
+          details: error instanceof Error ? error.message : '未知错误',
+        },
+        { status: 500 }
+      );
+    }
+  });
 }

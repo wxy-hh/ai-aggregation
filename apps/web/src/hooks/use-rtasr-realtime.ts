@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptSegment } from '@/components/voice/transcript-list';
+import { getAccessToken } from '@/lib/api/client';
+import { generateUUID } from '@/lib/utils/uuid';
 
 export type RtasrStatus =
   | 'idle'
@@ -29,7 +31,10 @@ type GatewayEvent =
   | { type: 'result'; segId?: number; isEnd?: boolean; text: string; raw?: any }
   | { type: 'error'; message: string; raw?: any };
 
-type ControlMessage = { type: 'start'; pd?: string } | { type: 'end' } | { type: 'ping' };
+type ControlMessage =
+  | { type: 'start'; accessToken: string; requestId: string }
+  | { type: 'end' }
+  | { type: 'ping' };
 
 interface StopWaiter {
   promise: Promise<TranscriptSegment[]>;
@@ -376,6 +381,8 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
           return;
         }
 
+        stopTimers();
+        void closeAll(false);
         setStatusSafe('error');
         return;
       }
@@ -392,11 +399,11 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
         void finalizeStop(nextSegments);
       }
     },
-    [finalizeStop, updateSegments]
+    [closeAll, finalizeStop, stopTimers, updateSegments]
   );
 
   const start = useCallback(
-    async (opts?: { pd?: string }) => {
+    async (_opts?: { pd?: string }) => {
       if (statusRef.current === 'connecting' || statusRef.current === 'running') return;
 
       reset();
@@ -420,7 +427,13 @@ export function useRtasrRealtime(): UseRtasrRealtimeResult {
               );
             }
 
-            const msg: ControlMessage = { type: 'start', pd: opts?.pd };
+            const accessToken = getAccessToken();
+            if (!accessToken) {
+              throw new Error('登录状态已失效，请重新登录后再使用实时转写');
+            }
+            const requestId = generateUUID();
+            // 网关会用登录令牌向 Web 服务换取一次已预留额度的会话，音频数据本身不携带身份信息。
+            const msg: ControlMessage = { type: 'start', accessToken, requestId };
             ws.send(JSON.stringify(msg));
 
             startedAtRef.current = Date.now();

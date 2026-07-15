@@ -2,9 +2,15 @@ import { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
-import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import {
+  signAccessToken,
+  generateRefreshToken,
+  setRefreshTokenCookie,
+  REFRESH_TOKEN_EXPIRES,
+} from '@/lib/auth/jwt';
 import { getQQAccessToken, getQQOpenId, getQQUserInfo } from '@/lib/auth/oauth';
 import { generateOAuthUsername } from '@/lib/auth/oauth-username';
+import { REGISTERED_FREE_TOKENS } from '@/lib/constants/quota';
 
 const CLIENT_REDIRECT = '/home';
 
@@ -25,7 +31,13 @@ export async function GET(req: NextRequest) {
 
     // state 和 code 验证通过，清除 oauth_state cookie
     const jar = await cookies();
-    jar.set('oauth_state', '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/auth/oauth', maxAge: 0 });
+    jar.set('oauth_state', '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/auth/oauth',
+      maxAge: 0,
+    });
 
     const tokenData = await getQQAccessToken(code);
     const openId = await getQQOpenId(tokenData.access_token);
@@ -51,6 +63,13 @@ export async function GET(req: NextRequest) {
           username,
           name: userInfo.nickname,
           avatar: userInfo.figureurl_qq_2,
+          tokens: REGISTERED_FREE_TOKENS,
+          quotaAccount: {
+            create: {
+              grantedUnits: REGISTERED_FREE_TOKENS,
+              availableUnits: REGISTERED_FREE_TOKENS,
+            },
+          },
           oauthAccounts: {
             create: {
               provider: 'qq',

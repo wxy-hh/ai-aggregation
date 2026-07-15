@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateZhipuToken } from '@/lib/zhipu-auth';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
-import { getProviderByModel, getVideoModelMeta } from '@/lib/constants/video-generation';
+import { recordMediaTask } from '@/lib/billing/quota-service';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import {
+  beginMediaTask,
+  completeMediaTask,
+  failMediaTask,
+  findMediaTaskByProviderTaskId,
+  markMediaTaskSubmitted,
+} from '@repo/db';
+import { getProviderByModel } from '@/lib/constants/video-generation';
 
 const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
 const AGNES_API_KEY = process.env.AGNES_API_KEY;
@@ -37,12 +44,51 @@ interface VideoGenerationRequest {
   negative_prompt?: string;
 }
 
-function getModelCredits(model: string): number {
-  return getVideoModelMeta(model as any).credits;
+/** 供应商异步任务终态才会写入成功媒体次数；重复轮询由用量记录的 requestId 幂等保护。 */
+async function finalizeVideoMediaTask(input: {
+  userId: string;
+  providerTaskId: string;
+  provider: 'zhipu' | 'agnes';
+  model?: string;
+  taskStatus: 'SUCCESS' | 'FAIL' | 'PROCESSING';
+  output: Record<string, unknown>;
+}) {
+  if (input.taskStatus === 'PROCESSING') return;
+
+  const mediaTask = await findMediaTaskByProviderTaskId(input.userId, input.providerTaskId);
+  if (!mediaTask) return;
+
+  if (input.taskStatus === 'FAIL') {
+    await failMediaTask(mediaTask.id, '供应商返回视频生成失败');
+    return;
+  }
+
+  await completeMediaTask(mediaTask.id, input.output);
+  if (!mediaTask.requestId) return;
+
+  await recordMediaTask({
+    userId: input.userId,
+    feature: 'video',
+    action: 'video-generate',
+    provider: input.provider,
+    model: input.model,
+    endpoint: '/api/video',
+    requestId: mediaTask.requestId,
+    metadata: {
+      providerTaskId: input.providerTaskId,
+    },
+  });
+}
+
+function normalizeVideoTaskStatus(status: unknown): 'SUCCESS' | 'FAIL' | 'PROCESSING' {
+  const normalized = String(status ?? '').toUpperCase();
+  if (normalized === 'SUCCESS' || normalized === 'COMPLETED') return 'SUCCESS';
+  if (normalized === 'FAIL' || normalized === 'FAILED') return 'FAIL';
+  return 'PROCESSING';
 }
 
 // Zhipu POST
-async function handleZhipuPost(body: VideoGenerationRequest, userId: string | null) {
+async function handleZhipuPost(body: VideoGenerationRequest) {
   if (!ZHIPU_API_KEY) {
     return NextResponse.json({ error: { message: 'ZHIPU_API_KEY 未配置' } }, { status: 500 });
   }
@@ -72,26 +118,6 @@ async function handleZhipuPost(body: VideoGenerationRequest, userId: string | nu
     return { ok: false, status: response.status, data };
   }
 
-  if (userId) {
-    safeRecordAiUsage({
-      userId,
-      feature: 'video',
-      action: 'image-generate',
-      provider: 'zhipu',
-      model,
-      endpoint: '/api/video',
-      usage: normalizeUsage(null),
-      metadata: {
-        promptLength: prompt.length,
-        imageUrl: imageUrl || null,
-        size: size || null,
-        duration: duration || null,
-        fps: fps || null,
-        taskId: data.id,
-      },
-    });
-  }
-
   return {
     ok: true,
     data: {
@@ -104,7 +130,7 @@ async function handleZhipuPost(body: VideoGenerationRequest, userId: string | nu
 }
 
 // Agnes POST
-async function handleAgnesPost(body: VideoGenerationRequest, userId: string | null) {
+async function handleAgnesPost(body: VideoGenerationRequest) {
   if (!AGNES_API_KEY) {
     return NextResponse.json({ error: { message: 'AGNES_API_KEY 未配置' } }, { status: 500 });
   }
@@ -157,28 +183,6 @@ async function handleAgnesPost(body: VideoGenerationRequest, userId: string | nu
     return { ok: false, status: response.status, data };
   }
 
-  if (userId) {
-    safeRecordAiUsage({
-      userId,
-      feature: 'video',
-      action: 'image-generate',
-      provider: 'agnes',
-      model: 'agnes-video-v2.0',
-      endpoint: '/api/video',
-      usage: normalizeUsage(null),
-      metadata: {
-        promptLength: prompt.length,
-        width: width || null,
-        height: height || null,
-        numFrames: num_frames || null,
-        frameRate: frame_rate || null,
-        mode: mode || null,
-        taskId: data.task_id,
-        videoId: data.video_id,
-      },
-    });
-  }
-
   return {
     ok: true,
     data: {
@@ -194,12 +198,11 @@ async function handleAgnesPost(body: VideoGenerationRequest, userId: string | nu
 export async function POST(req: NextRequest) {
   return withAuth(req, async (user) => {
     const userId = user.id;
-    let deductedAmount = 0;
-
     let model = 'cogvideox-flash';
+    let mediaTaskId: string | null = null;
 
     try {
-      const body: VideoGenerationRequest = await req.json();
+      const body: VideoGenerationRequest & { requestId?: string } = await req.json();
       const { prompt, model: requestModel = 'cogvideox-flash' } = body;
       model = requestModel;
 
@@ -207,73 +210,78 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: { message: '请输入视频描述' } }, { status: 400 });
       }
 
-      const credits = getModelCredits(model);
+      const requestId = getBillingRequestId(req, body as unknown as Record<string, unknown>);
 
-      // 非 admin 用户扣减额度
-      // 免费模型 credits 为 0，跳过扣减
-      if (credits > 0) {
-        const quotaResult = await deductAiQuotaForRoute({
-          userId,
-          user,
-          anonymousCost: credits,
-          realUserCost: credits,
-        });
-
-      if (!quotaResult.success) {
-        if (quotaResult.reason === 'QUOTA_EXHAUSTED') {
-          return NextResponse.json(
-            { error: { message: '免费额度已用完，您可以继续查看历史记录' }, code: 'QUOTA_EXHAUSTED' },
-            { status: 402 }
-          );
+      const provider = getProviderByModel(model as any);
+      const mediaTask = await beginMediaTask({
+        userId,
+        requestId,
+        feature: 'video',
+        provider,
+        model,
+        payload: body as unknown as Record<string, unknown>,
+      });
+      if (mediaTask.state === 'completed') return NextResponse.json(mediaTask.output);
+      if (mediaTask.state === 'processing') {
+        if (mediaTask.output) {
+          return NextResponse.json(mediaTask.output, { status: 202 });
         }
         return NextResponse.json(
-          { error: { message: 'Token 额度不足，请联系管理员充值' } },
-          { status: 429 }
+          { error: { message: '相同视频任务正在处理中，请勿重复提交' } },
+          { status: 409 }
+        );
+      }
+      mediaTaskId = mediaTask.taskId;
+      const result =
+        provider === 'agnes'
+          ? await handleAgnesPost(body)
+          : await handleZhipuPost(body);
+
+      if (result instanceof NextResponse || !result.ok) {
+        if (result instanceof NextResponse) {
+          await failMediaTask(mediaTaskId, '视频服务配置或请求失败');
+          return result;
+        }
+        await failMediaTask(mediaTaskId, result.data.error?.message || '视频生成请求失败');
+        return NextResponse.json(
+          { error: { message: result.data.error?.message || '视频生成请求失败' } },
+          { status: result.status }
         );
       }
 
-      deductedAmount = quotaResult.deductedAmount;
-    }
-
-    const provider = getProviderByModel(model as any);
-    const result =
-      provider === 'agnes' ? await handleAgnesPost(body, userId) : await handleZhipuPost(body, userId);
-
-    if (result instanceof NextResponse || !result.ok) {
-      await maybeRefund(userId, deductedAmount);
-      if (result instanceof NextResponse) {
-        return result;
+      const output = {
+        ...result.data,
+        provider,
+      };
+      await markMediaTaskSubmitted({
+        taskId: mediaTaskId,
+        providerTaskId: result.data.id,
+        output,
+      });
+      return NextResponse.json(output);
+    } catch (error: any) {
+      if (mediaTaskId) {
+        await failMediaTask(mediaTaskId, error?.message || '视频生成失败').catch((taskError) =>
+          console.error('[video] 更新任务状态失败:', taskError)
+        );
       }
+      if (error instanceof AuthError) {
+        if (error.code === 'FORBIDDEN') {
+          return NextResponse.json({ error: { message: error.message } }, { status: 403 });
+        }
+        return NextResponse.json({ error: { message: error.message } }, { status: 401 });
+      }
+
       return NextResponse.json(
-        { error: { message: result.data.error?.message || '视频生成请求失败' } },
-        { status: result.status }
+        { error: { message: error.message || '服务器内部错误' } },
+        { status: 500 }
       );
     }
-
-    return NextResponse.json({
-      ...result.data,
-      provider,
-    });
-  } catch (error: any) {
-    await maybeRefund(userId, deductedAmount);
-
-    if (error instanceof AuthError) {
-      if (error.code === 'FORBIDDEN') {
-        return NextResponse.json({ error: { message: error.message } }, { status: 403 });
-      }
-      return NextResponse.json({ error: { message: error.message } }, { status: 401 });
-    }
-
-    return NextResponse.json(
-      { error: { message: error.message || '服务器内部错误' } },
-      { status: 500 }
-    );
-  }
-});
+  });
 }
 
 // Zhipu GET
-async function handleZhipuGet(id: string) {
+async function handleZhipuGet(id: string, userId: string) {
   if (!ZHIPU_API_KEY) {
     return NextResponse.json({ error: { message: 'ZHIPU_API_KEY 未配置' } }, { status: 500 });
   }
@@ -295,17 +303,26 @@ async function handleZhipuGet(id: string) {
     );
   }
 
-  return NextResponse.json({
+  const output = {
     id: data.id,
     model: data.model,
-    task_status: data.task_status,
+    task_status: normalizeVideoTaskStatus(data.task_status),
     video_result: data.video_result,
     request_id: data.request_id,
+  };
+  await finalizeVideoMediaTask({
+    userId,
+    providerTaskId: id,
+    provider: 'zhipu',
+    model: data.model,
+    taskStatus: output.task_status,
+    output,
   });
+  return NextResponse.json(output);
 }
 
 // Agnes GET
-async function handleAgnesGet(taskId: string, videoId: string | null) {
+async function handleAgnesGet(taskId: string, videoId: string | null, userId: string) {
   if (!AGNES_API_KEY) {
     return NextResponse.json({ error: { message: 'AGNES_API_KEY 未配置' } }, { status: 500 });
   }
@@ -332,52 +349,50 @@ async function handleAgnesGet(taskId: string, videoId: string | null) {
   }
 
   const { data } = result;
-  const status = data.status || data.task_status;
-  let taskStatus: string;
-  switch (status) {
-    case 'completed':
-      taskStatus = 'SUCCESS';
-      break;
-    case 'failed':
-      taskStatus = 'FAIL';
-      break;
-    case 'queued':
-    case 'in_progress':
-    default:
-      taskStatus = 'PROCESSING';
-  }
+  const taskStatus = normalizeVideoTaskStatus(data.status || data.task_status);
 
   const videoUrl = data.remixed_from_video_id || data.video_url || null;
 
-  return NextResponse.json({
+  const output = {
     id: data.id || taskId,
     model: data.model,
     task_status: taskStatus,
     video_result: videoUrl ? [{ url: videoUrl }] : undefined,
     videoUrl,
+  };
+  await finalizeVideoMediaTask({
+    userId,
+    providerTaskId: taskId,
+    provider: 'agnes',
+    model: data.model,
+    taskStatus,
+    output,
   });
+  return NextResponse.json(output);
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    const provider = searchParams.get('provider') || 'zhipu';
-    const videoId = searchParams.get('videoId');
+  return withAuth(req, async (user) => {
+    try {
+      const { searchParams } = new URL(req.url);
+      const id = searchParams.get('id');
+      const provider = searchParams.get('provider') || 'zhipu';
+      const videoId = searchParams.get('videoId');
 
-    if (!id) {
-      return NextResponse.json({ error: { message: '缺少任务 ID' } }, { status: 400 });
+      if (!id) {
+        return NextResponse.json({ error: { message: '缺少任务 ID' } }, { status: 400 });
+      }
+
+      if (provider === 'agnes') {
+        return handleAgnesGet(id, videoId, user.id);
+      }
+
+      return handleZhipuGet(id, user.id);
+    } catch (error: any) {
+      return NextResponse.json(
+        { error: { message: error.message || '服务器内部错误' } },
+        { status: 500 }
+      );
     }
-
-    if (provider === 'agnes') {
-      return handleAgnesGet(id, videoId);
-    }
-
-    return handleZhipuGet(id);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: { message: error.message || '服务器内部错误' } },
-      { status: 500 }
-    );
-  }
+  });
 }

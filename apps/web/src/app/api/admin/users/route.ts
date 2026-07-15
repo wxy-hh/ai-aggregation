@@ -108,6 +108,12 @@ export async function POST(req: NextRequest) {
         role: 'user',
         status: 'active',
         tokens: 20000,
+        quotaAccount: {
+          create: {
+            grantedUnits: 20000,
+            availableUnits: 20000,
+          },
+        },
       },
       select: {
         id: true,

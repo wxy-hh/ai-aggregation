@@ -16,8 +16,10 @@ import {
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { deductAiQuotaForRoute, maybeRefund } from '@/lib/api/quota-helpers';
-import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
+import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -149,7 +151,17 @@ const QIMEN_FULL_RESULT_SCHEMA = {
         shiGan: { type: 'string' },
         trueSolarTime: { type: 'string' },
       },
-      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor', 'xunshou', 'riGan', 'shiGan'],
+      required: [
+        'dun',
+        'ju',
+        'jiaziXunkong',
+        'horsePosition',
+        'valueSymbol',
+        'valueDoor',
+        'xunshou',
+        'riGan',
+        'shiGan',
+      ],
       additionalProperties: false,
     },
     board: {
@@ -170,7 +182,16 @@ const QIMEN_FULL_RESULT_SCHEMA = {
           isVoid: { type: 'boolean' },
           isHorse: { type: 'boolean' },
         },
-        required: ['palace', 'luoshu', 'direction', 'god', 'star', 'door', 'heavenStem', 'earthStem'],
+        required: [
+          'palace',
+          'luoshu',
+          'direction',
+          'god',
+          'star',
+          'door',
+          'heavenStem',
+          'earthStem',
+        ],
         additionalProperties: false,
       },
     },
@@ -375,9 +396,12 @@ class UpstreamModelError extends Error {
   }
 }
 
-export async function POST(request: Request) {
-  let deductedAmount = 0;
+type QimenBillingContext = {
+  userId: string;
+  requestId: string;
+};
 
+export async function POST(request: Request) {
   try {
     const user = await getCurrentUser(request);
     const userId = user.id;
@@ -398,30 +422,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 匿名用户额度检查（真实用户保持原有逻辑，由调用方控制）
-    if (userId) {
-      const deduction = await deductAiQuotaForRoute({
-        userId,
-        user,
-        anonymousCost: ANONYMOUS_OPERATION_COSTS.DESTINY_QIMEN_ANALYZE,
-      });
-
-      if (!deduction.success) {
-        if (deduction.reason === 'QUOTA_EXHAUSTED') {
-          return NextResponse.json(
-            { success: false, error: '免费额度已用完，您可以继续查看历史记录', code: 'QUOTA_EXHAUSTED' },
-            { status: 402 }
-          );
-        }
-        return NextResponse.json(
-          { success: false, error: 'Token 额度不足，请联系管理员充值', code: 'INSUFFICIENT_TOKENS' },
-          { status: 429 }
-        );
-      }
-
-      deductedAmount = deduction.deductedAmount;
-    }
-
     let config: ModelConfig;
     try {
       config = resolveModelConfig(parsed.data.provider);
@@ -436,7 +436,13 @@ export async function POST(request: Request) {
       input: parsed.data,
       config,
       userId,
-      deductedAmount,
+      billing:
+        user.role === 'admin'
+          ? null
+          : {
+              userId,
+              requestId: getBillingRequestId(request, body as Record<string, unknown>),
+            },
     });
 
     return new Response(stream, {
@@ -453,6 +459,7 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ success: false, error: error.message }, { status: 401 });
     }
+    if (error instanceof BillingError) return billingErrorResponse(error);
     return NextResponse.json(
       {
         success: false,
@@ -467,12 +474,12 @@ function createQimenStream({
   input,
   config,
   userId,
-  deductedAmount,
+  billing,
 }: {
   input: QimenAnalyzeInput;
   config: ModelConfig;
   userId: string | null;
-  deductedAmount: number;
+  billing: QimenBillingContext | null;
 }) {
   const encoder = new TextEncoder();
 
@@ -493,6 +500,7 @@ function createQimenStream({
           config,
           input,
           userId,
+          billing,
         });
 
         emitSectionEvents({
@@ -508,6 +516,7 @@ function createQimenStream({
           config,
           input,
           userId,
+          billing,
         });
 
         emitSectionEvents({
@@ -525,9 +534,6 @@ function createQimenStream({
           result: mergedResult,
         });
       } catch (error) {
-        // 流式处理失败，退还已扣额度
-        await maybeRefund(userId, deductedAmount);
-
         send({
           type: 'error',
           error: mapStreamError(error),
@@ -599,10 +605,12 @@ async function generateQuickSections({
   config,
   input,
   userId,
+  billing,
 }: {
   config: ModelConfig;
   input: QimenAnalyzeInput;
   userId: string | null;
+  billing: QimenBillingContext | null;
 }): Promise<QimenLockedSections> {
   try {
     const primaryResult = await requestModelPayload({
@@ -615,6 +623,8 @@ async function generateQuickSections({
       temperature: 0.2,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
       userId,
+      billing,
+      stage: 'quick-primary',
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'quick-primary' },
       jsonSchema: { name: 'qimen_quick_sections', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
@@ -635,6 +645,8 @@ async function generateQuickSections({
       temperature: 0.15,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
       userId,
+      billing,
+      stage: 'quick-retry',
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'quick-retry' },
       jsonSchema: { name: 'qimen_quick_sections_retry', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
@@ -657,10 +669,12 @@ async function generateFullResult({
   config,
   input,
   userId,
+  billing,
 }: {
   config: ModelConfig;
   input: QimenAnalyzeInput;
   userId: string | null;
+  billing: QimenBillingContext | null;
 }) {
   let result = await requestModelPayload({
     config,
@@ -672,6 +686,8 @@ async function generateFullResult({
     temperature: 0.25,
     timeoutMs: FULL_STAGE_TIMEOUT_MS,
     userId,
+    billing,
+    stage: 'full-primary',
     action: 'destiny-qimen-analyze',
     metadata: { stage: 'primary' },
     jsonSchema: { name: 'qimen_full_result', schema: QIMEN_FULL_RESULT_SCHEMA },
@@ -688,6 +704,8 @@ async function generateFullResult({
       temperature: 0.15,
       timeoutMs: FULL_STAGE_TIMEOUT_MS,
       userId,
+      billing,
+      stage: 'full-retry',
       action: 'destiny-qimen-analyze',
       metadata: { stage: 'retry' },
       jsonSchema: { name: 'qimen_full_result_compact', schema: QIMEN_FULL_RESULT_SCHEMA },
@@ -709,6 +727,8 @@ async function requestModelPayload({
   temperature,
   timeoutMs,
   userId,
+  billing,
+  stage,
   action,
   metadata,
   jsonSchema,
@@ -719,41 +739,103 @@ async function requestModelPayload({
   temperature: number;
   timeoutMs: number;
   userId: string | null;
+  billing: QimenBillingContext | null;
+  stage: string;
   action: 'destiny-qimen-analyze';
   metadata?: Record<string, unknown>;
   jsonSchema?: JsonSchemaConfig;
 }) {
-  const result = await callModel({
-    config,
-    messages: input,
-    maxTokens: maxOutputTokens,
-    temperature,
-    timeoutMs,
-    json: jsonSchema ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } } : undefined,
-  });
+  const requestId = billing ? `${billing.requestId}:${stage}` : null;
+  let reservation: { id: string } | null = null;
+  let inputUnits = 0;
+  let effectiveMaxTokens = maxOutputTokens;
 
-  if (userId) {
-    await safeRecordAiUsage({
-      userId,
-      feature: 'destiny',
-      action,
-      provider: config.provider,
-      model: config.model,
-      endpoint: '/api/destiny/qimen/analyze',
-      usage: normalizeUsage(extractArkUsage(result.raw)),
-      metadata: {
-        ...metadata,
+  try {
+    if (billing && requestId) {
+      const quota = await reserveChatQuota({
+        userId: billing.userId,
+        requestId,
+        feature: 'destiny',
         provider: config.provider,
+        model: config.model,
+        messages: input,
         maxOutputTokens,
-        messageCount: input.length,
-      },
-    });
-  }
+        metadata: { ...metadata, stage, messageCount: input.length },
+      });
+      reservation = quota.reservation;
+      inputUnits = quota.inputUnits;
+      effectiveMaxTokens = quota.outputLimit;
+    }
 
-  return result;
+    const result = await callModel({
+      config,
+      messages: input,
+      maxTokens: effectiveMaxTokens,
+      temperature,
+      timeoutMs,
+      json: jsonSchema
+        ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } }
+        : undefined,
+    });
+    const rawUsage = extractArkUsage(result.raw);
+
+    if (reservation && requestId) {
+      await settleAiQuota({
+        reservationId: reservation.id,
+        requestId,
+        feature: 'destiny',
+        action,
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/qimen/analyze',
+        measurement: createTokenMeasurement(
+          rawUsage,
+          inputUnits + estimateOutputTokens(result.text)
+        ),
+        metadata: {
+          ...metadata,
+          stage,
+          provider: config.provider,
+          maxOutputTokens: effectiveMaxTokens,
+          messageCount: input.length,
+        },
+      });
+    } else if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action,
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/qimen/analyze',
+        usage: normalizeUsage(rawUsage),
+        metadata: {
+          ...metadata,
+          stage,
+          provider: config.provider,
+          maxOutputTokens: effectiveMaxTokens,
+          messageCount: input.length,
+        },
+      });
+    }
+
+    return result;
+  } catch (error) {
+    if (reservation) {
+      await releaseAiQuota({
+        reservationId: reservation.id,
+        reason: `奇门 ${stage} 阶段调用失败`,
+        meterType: 'tokens',
+      }).catch((releaseError) => console.error('[qimen/analyze] 释放额度失败:', releaseError));
+    }
+    throw error;
+  }
 }
 
-function mergeLockedSectionsIntoResult(result: QimenAnalyzeResult, lockedSections: QimenLockedSections) {
+function mergeLockedSectionsIntoResult(
+  result: QimenAnalyzeResult,
+  lockedSections: QimenLockedSections
+) {
   return {
     ...result,
     overallAssessment: lockedSections.overallAssessment ?? result.overallAssessment,
@@ -936,8 +1018,7 @@ function normalizeQuickSections(payload: unknown, input: QimenAnalyzeInput): Qim
     });
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
   const riskAlertsRaw = Array.isArray(raw.riskAlerts) ? raw.riskAlerts : [];
   const actionSuggestionsRaw = Array.isArray(raw.actionSuggestions) ? raw.actionSuggestions : [];
@@ -1122,17 +1203,12 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
         typeof chartMetaRaw.xunshou === 'string' ? chartMetaRaw.xunshou : '',
         8
       ),
-      riGan: sanitizeText(
-        typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '',
-        4
-      ),
-      shiGan: sanitizeText(
-        typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '',
-        4
-      ),
-      trueSolarTime: typeof chartMetaRaw.trueSolarTime === 'string'
-        ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
-        : undefined,
+      riGan: sanitizeText(typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '', 4),
+      shiGan: sanitizeText(typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '', 4),
+      trueSolarTime:
+        typeof chartMetaRaw.trueSolarTime === 'string'
+          ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
+          : undefined,
     },
     board: normalizedBoard,
     chartSummary: sanitizeText(

@@ -331,14 +331,17 @@ export function UploadAudio({
     // 开始上传并转录
     try {
       // 使用 withRetry 包装转录请求
-      const result = await withRetry(() => uploadMutation.mutateAsync({ file }), {
-        maxRetries: 3,
-        initialDelay: 1000,
-        onRetry: (attempt, error) => {
-          console.log(`转录重试 ${attempt}/3:`, error.message);
-          setRetryProgress({ attempt, maxAttempts: 3 });
-        },
-      });
+      const result = await withRetry(
+        () => uploadMutation.mutateAsync({ file }),
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          onRetry: (attempt, error) => {
+            console.log(`转录重试 ${attempt}/3:`, error.message);
+            setRetryProgress({ attempt, maxAttempts: 3 });
+          },
+        }
+      );
 
       setRetryProgress(null); // 清除重试进度
       console.log('转录结果:', result);
@@ -521,7 +524,9 @@ export function UploadAudio({
           } else if (translationErrors === sentences.length) {
             toast.warning('翻译失败，但转录结果已保存');
           } else if (translationErrors > 0) {
-            toast.warning(`部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`);
+            toast.warning(
+              `部分翻译失败 (${translationErrors}/${sentences.length})，转录结果已保存`
+            );
           }
         } catch (translationError) {
           console.error('翻译错误:', translationError);

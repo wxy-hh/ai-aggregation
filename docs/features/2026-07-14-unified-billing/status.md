@@ -1,0 +1,21 @@
+# 统一额度计费改造状态
+
+- 当前阶段：实现、复审和迁移重放已完成，具备“统一按真实用量扣费”的验收条件。
+- 实施确认：已确认。用户于 2026-07-14 明确授权直接应用最新数据库，测试账号和旧字段/旧数据无需兼容。
+- 接受风险：历史额度和历史用量不做保留或对账；数据库迁移会改变现有测试数据结构。
+- 计费口径：文本、命理、简历和语音翻译按供应商实际 Token 结算；语音转写按实际音频秒数结算；图片与视频只记录成功任务次数，不混入 Token 余额。
+- 账本来源：`QuotaAccount` 是唯一余额来源；`users.tokens` 仅由账本事务同步为展示快照，不参与扣费决策。
+- 已完成：主应用内的全路由预留/结算/释放、流式部分成功结算、媒体幂等、多模型原子批量预留、异步奇门 Worker 结算、管理员调额流水和数据库完整性约束。
+- 已修复：每条预留均有 `ready → processing → completed` 的原子执行占用状态；同一 `requestId` 的并发或已完成重放只返回 `409`，不得再次调用供应商。批量对比和异步奇门 Worker 也在调用前领取执行权。
+- 待验收验证：实际用量超过预留或执行中断应进入 `billing_pending`；已保存的真实用量由 Worker 自动对账，无法自动取得的真实用量可通过受 `BILLING_RECONCILE_SECRET` 保护的 `/api/internal/billing/reconcile` 回填结算，并写入流水凭据。文本计量工具仍有 `local_estimate` 分支，必须由人工清单 T-06 验证“缺少可审计 usage 不会直接最终扣款”后，才能将该项标记为已修复。
+- 已修复：聊天遗留的 Redis 每日请求次数配额已删除，匿名与注册用户不再因身份或调用次数走不同的扣费分支；`isAnonymous` 只用于身份限制和 10000 初始额度创建。
+- 本轮已修复：视频提示词优化已认证并按实际 Token 结算；上传转写改为服务端音频元数据时长；实时 RTASR 已按认证会话、实际转发 PCM 字节和最终秒数结算；首段音频会锁定预留避免过期退款；个人中心已分列 Token、音频秒数、图片任务和视频任务；管理员跳过每日业务次数额度；网关当前配置已移除明文凭据。
+- 剩余外部动作：必须撤销并轮换此前暴露的讯飞凭据；在 Cloudflare 配置 `XUNFEI_APP_ID`、`XUNFEI_API_KEY`、`RTASR_GATEWAY_SECRET` 和 `BILLING_API_URL`，并在 Web 配置相同的 `RTASR_GATEWAY_SECRET`。
+- 数据库迁移：本地 `ai_aggregation` 已按最新迁移从零重建并完整重放；新增 `20260715103000_add_quota_execution_state`、`20260715104000_add_feedback_schema`、`20260715105000_sync_schema_history`，`prisma migrate status` 已确认同步。
+- 自动对账：Worker 启动时执行一次，随后每 60 秒执行；可用 `BILLING_RECONCILE_INTERVAL_MS` 配置为 30 秒至 1 小时。未领取执行权的过期预留会释放，已领取但未结算的预留会保留为待补账，绝不自动退款。
+- 验证结论：21 项聚焦计费测试、真实 PostgreSQL 账本演练、Web 与 Worker 类型检查、全仓 lint、生产构建、迁移重放和 `git diff --check` 均通过；全量 Vitest 的 106 项通过，2 项既有命理测试失败，与计费改动无关。
+- 已知非阻塞验证风险：全量 Vitest 仍有两个既有命理测试失败（`bazi-chart.test.ts`、`bazi-section-payload.test.ts`），与本次计费改动无关。
+- 审查报告：`docs/reviews/2026-07-15-unified-billing-final-code-review.md`
+- 验证报告：`docs/reviews/2026-07-14-unified-billing-verification.md`
+- 人工验收清单：`docs/features/2026-07-14-unified-billing/manual-test-checklist.md`
+- 验收整改：多模型已改为无法覆盖完整输出上限时调用前统一提示额度不足；视频任务改为供应商异步成功后才计数；简历入口已统一返回额度不足 402。未知供应商用量仍按真实用量原则保留为 `billing_pending`，需按人工清单复测真实 Provider 场景。

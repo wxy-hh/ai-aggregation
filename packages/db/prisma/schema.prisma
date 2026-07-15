@@ -34,6 +34,9 @@ model User {
   refreshTokens       RefreshToken[]
   feedbacks           Feedback[]
   feedbackReplies     FeedbackReply[]
+  quotaAccount        QuotaAccount?
+  quotaReservations   QuotaReservation[]
+  quotaLedgerEntries  QuotaLedgerEntry[]
   @@map("users")
 }
 
@@ -98,6 +101,8 @@ model Message {
 model Task {
   id          String    @id @default(cuid())
   userId      String
+  requestId   String?
+  providerTaskId String?
   type        String
   status      String    @default("pending")
   input       Json
@@ -111,6 +116,8 @@ model Task {
 
   @@index([userId])
   @@index([status])
+  @@unique([userId, requestId])
+  @@unique([userId, providerTaskId])
   @@map("tasks")
 }
 
@@ -130,16 +137,92 @@ model AIUsageRecord {
   reasoningTokens Int?
   taskCount       Int      @default(1)
   status          String   @default("success")
+  meterType       String?
+  billableUnits   Int?
+  billingStatus   String?
+  reservationId   String?  @unique
   rawUsage        Json?
   metadata        Json?
   createdAt       DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservation QuotaReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([userId, feature, createdAt])
   @@index([provider, model])
+  @@unique([userId, requestId])
   @@map("ai_usage_records")
+}
+
+model QuotaAccount {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  grantedUnits   Int      @default(0)
+  availableUnits Int      @default(0)
+  reservedUnits  Int      @default(0)
+  settledUnits   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservations    QuotaReservation[]
+  ledgerEntries   QuotaLedgerEntry[]
+
+  @@map("quota_accounts")
+}
+
+model QuotaReservation {
+  id             String   @id @default(cuid())
+  userId         String
+  requestId      String
+  feature        String
+  provider       String?
+  model          String?
+  meterType      String   @default("tokens")
+  estimatedUnits Int
+  settledUnits   Int      @default(0)
+  status         String   @default("reserved")
+  executionState String   @default("ready")
+  expiresAt      DateTime
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade, map: "quota_reservations_user_id_fkey")
+  account       QuotaAccount       @relation(fields: [userId], references: [userId], onDelete: Cascade, map: "quota_reservations_account_user_id_fkey")
+  aiUsageRecord AIUsageRecord?
+  ledgerEntries QuotaLedgerEntry[]
+
+  @@unique([userId, requestId])
+  @@index([status, executionState, expiresAt])
+  @@index([userId, createdAt])
+  @@map("quota_reservations")
+}
+
+model QuotaLedgerEntry {
+  id            String   @id @default(cuid())
+  userId        String
+  reservationId String?
+  requestId     String
+  eventType     String
+  units         Int
+  meterType     String
+  feature       String?
+  provider      String?
+  model         String?
+  reason        String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade, map: "quota_ledger_entries_user_id_fkey")
+  account     QuotaAccount       @relation(fields: [userId], references: [userId], onDelete: Cascade, map: "quota_ledger_entries_account_user_id_fkey")
+  reservation QuotaReservation?  @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@unique([requestId, eventType])
+  @@index([userId, createdAt])
+  @@index([reservationId])
+  @@map("quota_ledger_entries")
 }
 
 model VoiceTranscription {

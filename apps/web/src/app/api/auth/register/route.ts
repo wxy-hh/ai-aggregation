@@ -1,9 +1,15 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { hashPassword } from '@/lib/auth/password';
-import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import {
+  signAccessToken,
+  generateRefreshToken,
+  setRefreshTokenCookie,
+  REFRESH_TOKEN_EXPIRES,
+} from '@/lib/auth/jwt';
 import { registerSchema } from '@/schemas/auth.schema';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
+import { REGISTERED_FREE_TOKENS } from '@/lib/constants/quota';
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,7 +32,18 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
-      data: { username, passwordHash, name },
+      data: {
+        username,
+        passwordHash,
+        name,
+        tokens: REGISTERED_FREE_TOKENS,
+        quotaAccount: {
+          create: {
+            grantedUnits: REGISTERED_FREE_TOKENS,
+            availableUnits: REGISTERED_FREE_TOKENS,
+          },
+        },
+      },
       select: { id: true, username: true, name: true, avatar: true, role: true },
     });
 

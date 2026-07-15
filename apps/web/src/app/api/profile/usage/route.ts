@@ -10,17 +10,38 @@ export async function GET(request: Request) {
   try {
     const userId = await requireAuth(request);
 
-    const [summary, user] = await Promise.all([
+    const [summary, user, quotaAccount] = await Promise.all([
       getProfileUsageSummary(userId),
       prisma.user.findUnique({
         where: { id: userId },
-        select: { tokens: true, role: true },
+        select: { role: true },
+      }),
+      prisma.quotaAccount.findUnique({
+        where: { userId },
+        select: {
+          grantedUnits: true,
+          availableUnits: true,
+          reservedUnits: true,
+          settledUnits: true,
+        },
       }),
     ]);
 
+    if (!quotaAccount && user?.role !== 'admin') {
+      return NextResponse.json(
+        { error: '额度账户不存在，请联系管理员初始化账户' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       ...summary,
-      tokenRemaining: user?.role === 'admin' ? null : (user?.tokens ?? 0),
+      tokenRemaining: user?.role === 'admin' ? null : (quotaAccount?.availableUnits ?? null),
+      quota: user?.role === 'admin' ? null : quotaAccount,
+      taskUsage: {
+        imageCount: summary.features.find((item) => item.feature === 'image')?.taskCount ?? 0,
+        videoCount: summary.features.find((item) => item.feature === 'video')?.taskCount ?? 0,
+      },
     });
   } catch (error) {
     if (error instanceof AuthError) {

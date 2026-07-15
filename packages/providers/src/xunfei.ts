@@ -59,6 +59,7 @@ export interface XunfeiChatOptions {
   maxTokens?: number;
   stream?: boolean;
   onUsage?: (usage: XunfeiChatResult['usage']) => void;
+  signal?: AbortSignal;
 }
 
 export interface XunfeiChatResult {
@@ -94,6 +95,7 @@ export async function xunfeiChat(options: XunfeiChatOptions): Promise<XunfeiChat
       max_tokens: options.maxTokens,
       stream: false,
     }),
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -111,10 +113,10 @@ export async function xunfeiChat(options: XunfeiChatOptions): Promise<XunfeiChat
     content: data.choices[0]?.message?.content || '',
     usage: data.usage
       ? {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens,
-      }
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens,
+        }
       : undefined,
   };
 }
@@ -141,6 +143,7 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
       max_tokens: options.maxTokens,
       stream: true,
     }),
+    signal: options.signal,
   });
 
   if (!response.ok) {

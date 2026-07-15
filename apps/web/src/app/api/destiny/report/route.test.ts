@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/lib/auth/get-optional-user-id', () => ({
-  getOptionalUserId: vi.fn().mockResolvedValue(null),
+vi.mock('@/lib/api/with-auth', () => ({
+  withAuth: vi.fn(
+    (req: Request, handler: (user: { id: string; role: string }, request: Request) => unknown) =>
+      handler({ id: 'test-admin', role: 'admin' }, req)
+  ),
 }));
 
 vi.mock('@/lib/ai-usage', () => ({

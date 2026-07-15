@@ -13,6 +13,7 @@ const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
   voice: '语音',
   image: '图片生成',
   video: '视频生成',
+  video_prompt: '视频提示词优化',
   destiny: 'AI 命理大师',
   resume: '简历制作',
 };
@@ -125,95 +126,85 @@ export async function recordAiUsage(input: AiUsageRecordInput) {
       taskCount: 1,
     } satisfies NormalizedAiUsage);
 
-  return prisma.aIUsageRecord.create({
-    data: {
-      userId: input.userId,
-      feature: input.feature,
-      action: input.action,
-      provider: input.provider ?? null,
-      model: input.model ?? null,
-      endpoint: input.endpoint ?? null,
-      requestId: input.requestId ?? null,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      totalTokens: usage.totalTokens,
-      cachedTokens: usage.cachedTokens,
-      reasoningTokens: usage.reasoningTokens,
-      taskCount: usage.taskCount,
-      status: input.status ?? 'success',
-      rawUsage:
-        usage.rawUsage === undefined
-          ? undefined
-          : usage.rawUsage === null
-            ? Prisma.JsonNull
-            : (usage.rawUsage as Prisma.InputJsonValue),
-      metadata:
-        input.metadata === undefined
-          ? undefined
-          : input.metadata === null
-            ? Prisma.JsonNull
-            : (input.metadata as Prisma.InputJsonValue),
-    },
-  });
+  const data = {
+    userId: input.userId,
+    feature: input.feature,
+    action: input.action,
+    provider: input.provider ?? null,
+    model: input.model ?? null,
+    endpoint: input.endpoint ?? null,
+    requestId: input.requestId ?? null,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cachedTokens: usage.cachedTokens,
+    reasoningTokens: usage.reasoningTokens,
+    taskCount: usage.taskCount,
+    status: input.status ?? 'success',
+    meterType: input.meterType ?? null,
+    billableUnits: input.billableUnits ?? null,
+    billingStatus: input.billingStatus ?? null,
+    reservationId: input.reservationId ?? null,
+    rawUsage:
+      usage.rawUsage === undefined
+        ? undefined
+        : usage.rawUsage === null
+          ? Prisma.JsonNull
+          : (usage.rawUsage as Prisma.InputJsonValue),
+    metadata:
+      input.metadata === undefined
+        ? undefined
+        : input.metadata === null
+          ? Prisma.JsonNull
+          : (input.metadata as Prisma.InputJsonValue),
+  };
+
+  if (input.reservationId) {
+    return prisma.aIUsageRecord.upsert({
+      where: { reservationId: input.reservationId },
+      update: data,
+      create: data,
+    });
+  }
+
+  if (input.requestId) {
+    return prisma.aIUsageRecord.upsert({
+      where: { userId_requestId: { userId: input.userId, requestId: input.requestId } },
+      update: data,
+      create: data,
+    });
+  }
+
+  return prisma.aIUsageRecord.create({ data });
 }
 
 export async function getProfileUsageSummary(
   userId: string,
   _date?: Date
 ): Promise<ProfileUsageSummary> {
-  let records: Array<{
-    feature: string;
-    totalTokens: number | null;
-    taskCount: number;
-  }> = [];
-
-  try {
-    records = await prisma.aIUsageRecord.findMany({
-      where: {
-        userId,
-        status: 'success',
-      },
-      select: {
-        feature: true,
-        totalTokens: true,
-        taskCount: true,
-      },
-    });
-  } catch (error) {
-    // 兼容尚未执行迁移或 Prisma Client 未重新生成的本地环境，避免个人中心直接报 500。
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error
-        ? String((error as { code?: string }).code)
-        : '';
-    const message = error instanceof Error ? error.message : String(error);
-
-    const isModelMissing =
-      error instanceof TypeError &&
-      message.includes("Cannot read properties of undefined") &&
-      message.includes("findMany");
-
-    if (
-      code === 'P2021' ||
-      isModelMissing ||
-      (message.includes('ai_usage_records') && message.includes('does not exist')) ||
-      message.includes("Can't reach database server")
-    ) {
-      return {
-        totalTokens: 0,
-        totalTaskCount: 0,
-        features: [],
-      };
-    }
-
-    throw error;
-  }
+  const records = await prisma.aIUsageRecord.findMany({
+    where: {
+      userId,
+      status: { in: ['success', 'partial', 'billing_pending'] },
+    },
+    select: {
+      feature: true,
+      totalTokens: true,
+      taskCount: true,
+      meterType: true,
+      billableUnits: true,
+      billingStatus: true,
+    },
+  });
 
   const grouped = new Map<
     AiUsageFeature,
     {
       totalTokens: number;
+      audioSeconds: number;
       taskCount: number;
-      hasTokenData: boolean;
+      billableUnits: number;
+      billingStatus: string | null;
     }
   >();
 
@@ -221,13 +212,31 @@ export async function getProfileUsageSummary(
     const feature = record.feature as AiUsageFeature;
     const current = grouped.get(feature) ?? {
       totalTokens: 0,
+      audioSeconds: 0,
       taskCount: 0,
-      hasTokenData: false,
+      billableUnits: 0,
+      billingStatus: null,
     };
 
-    current.totalTokens += record.totalTokens ?? 0;
-    current.taskCount += record.taskCount;
-    current.hasTokenData ||= record.totalTokens !== null;
+    const isMediaTask =
+      record.meterType === 'image_task' ||
+      record.meterType === 'video_task' ||
+      ((feature === 'image' || feature === 'video') && record.meterType === null);
+    const isAudio = record.meterType === 'audio_seconds';
+    const isToken = record.meterType === 'tokens' || (!record.meterType && !isMediaTask);
+
+    // 三类计量严格分账，禁止把音频秒数或媒体任务次数累加到 Token 统计中。
+    if (isToken) {
+      current.totalTokens += record.totalTokens ?? record.billableUnits ?? 0;
+    }
+    if (isAudio) {
+      current.audioSeconds += record.billableUnits ?? record.totalTokens ?? 0;
+    }
+    if (isMediaTask) {
+      current.taskCount += record.taskCount;
+    }
+    current.billableUnits += record.billableUnits ?? 0;
+    current.billingStatus = record.billingStatus ?? current.billingStatus;
     grouped.set(feature, current);
   }
 
@@ -235,42 +244,40 @@ export async function getProfileUsageSummary(
     (feature) => {
       const current = grouped.get(feature) ?? {
         totalTokens: 0,
+        audioSeconds: 0,
         taskCount: 0,
-        hasTokenData: false,
+        billableUnits: 0,
+        billingStatus: null,
       };
+
+      const kinds = [
+        current.totalTokens > 0 ? 'tokens' : null,
+        current.audioSeconds > 0 ? 'audio_seconds' : null,
+        current.taskCount > 0 ? 'tasks' : null,
+      ].filter(Boolean) as ProfileUsageItem['sourceKind'][];
 
       return {
         feature,
         label: FEATURE_LABEL_MAP[feature],
         totalTokens: current.totalTokens,
+        audioSeconds: current.audioSeconds,
         taskCount: current.taskCount,
         percent: 0,
-        hasTokenData: current.hasTokenData,
-        sourceKind: current.hasTokenData ? 'tokens' : 'tasks',
+        sourceKind: kinds.length > 1 ? 'mixed' : (kinds[0] ?? 'tokens'),
+        billableUnits: current.billableUnits,
+        billingStatus: current.billingStatus as ProfileUsageItem['billingStatus'],
       };
     }
   );
 
-  const totalDisplayValue = items.reduce((sum, item) => {
-    return sum + (item.hasTokenData ? item.totalTokens : item.taskCount);
-  }, 0);
-
-  const features = items.map((item) => ({
-    ...item,
-    percent:
-      totalDisplayValue > 0
-        ? Number(
-            (
-              ((item.hasTokenData ? item.totalTokens : item.taskCount) / totalDisplayValue) *
-              100
-            ).toFixed(1)
-          )
-        : 0,
-  }));
+  const features = items;
 
   return {
     totalTokens: features.reduce((sum, item) => sum + item.totalTokens, 0),
+    totalAudioSeconds: features.reduce((sum, item) => sum + item.audioSeconds, 0),
     totalTaskCount: features.reduce((sum, item) => sum + item.taskCount, 0),
-    features: features.filter((item) => item.totalTokens > 0 || item.taskCount > 0),
+    features: features.filter(
+      (item) => item.totalTokens > 0 || item.audioSeconds > 0 || item.taskCount > 0
+    ),
   };
 }

@@ -1,6 +1,8 @@
 import { useAuthStore } from '@/stores/auth-store';
 import { dispatchQuotaExhausted } from './quota-events';
 
+const QUOTA_EXHAUSTED_CODES = new Set(['QUOTA_INSUFFICIENT', 'QUOTA_EXHAUSTED']);
+
 /** 从 Zustand store 读取当前 Access Token（非 React 环境可用） */
 export function getAccessToken(): string | null {
   return useAuthStore.getState().accessToken;
@@ -114,7 +116,7 @@ export async function authFetch(url: string, options?: RequestInit): Promise<Res
     try {
       const cloned = response.clone();
       const data = await cloned.json();
-      if (data?.code === 'QUOTA_EXHAUSTED') {
+      if (QUOTA_EXHAUSTED_CODES.has(data?.code)) {
         dispatchQuotaExhausted();
       }
     } catch {

@@ -6,15 +6,21 @@ import {
   createXunfeiStreamResponse,
   type XunfeiMessage,
 } from '@repo/providers';
-import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
+import { getRateLimiter } from '@repo/shared/server';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { prisma, deductTokens, checkAndDeductTokens } from '@repo/db';
-import { maybeRefund } from '@/lib/api/quota-helpers';
-import { ANONYMOUS_OPERATION_COSTS } from '@/lib/constants/quota';
+import {
+  reserveChatQuota,
+  releaseAiQuota,
+  settleAiQuota,
+  useExistingAiQuota,
+} from '@/lib/billing/quota-service';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
 
 function createErrorId() {
   return (
@@ -48,7 +54,9 @@ function createSseResponse(stream: ReadableStream<Uint8Array>) {
 
 function createSseStreamFromTextStream(
   source: ReadableStream<Uint8Array>,
-  onComplete?: () => Promise<void> | void
+  onComplete?: () => Promise<void> | void,
+  onText?: (text: string) => void,
+  onError?: (error: unknown) => Promise<void> | void
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   const decoder = new TextDecoder();
@@ -61,6 +69,7 @@ function createSseStreamFromTextStream(
           if (done) {
             const rest = decoder.decode();
             if (rest) {
+              onText?.(rest);
               controller.enqueue(encodeSseEvent({ type: 'text-delta', text: rest }));
             }
             await onComplete?.();
@@ -70,31 +79,20 @@ function createSseStreamFromTextStream(
 
           const chunk = decoder.decode(value, { stream: true });
           if (chunk) {
+            onText?.(chunk);
             controller.enqueue(encodeSseEvent({ type: 'text-delta', text: chunk }));
           }
         }
 
         controller.close();
       } catch (error) {
+        await onError?.(error);
         controller.error(error);
       } finally {
         reader.releaseLock();
       }
     },
   });
-}
-
-/**
- * 非 admin 真实用户按实际用量扣减 Token；匿名用户已在调用前预扣，不再重复扣减。
- */
-async function deductForNonAdmin(
-  userId: string,
-  userRole: string,
-  isAnonymous: boolean,
-  totalTokens?: number | null
-): Promise<void> {
-  if (userRole === 'admin' || isAnonymous) return;
-  await deductTokens(userId, totalTokens ?? 1);
 }
 
 function buildChatUsageMetadata(messages: ChatMessage[]) {
@@ -111,11 +109,22 @@ function buildChatUsageMetadata(messages: ChatMessage[]) {
 function parseDoubaoError(errorText: string): string {
   try {
     const errorData = JSON.parse(errorText);
-    const errorMessage = errorData?.error?.message || '';
+    const errorMessage: string = errorData?.error?.message || '';
+    const errorCode: string = errorData?.error?.code || '';
 
     // 文件还在处理中
     if (errorMessage.includes('invalid state: processing')) {
       return '文件正在处理中，请等待几秒钟后重试。大文件需要更长的处理时间。';
+    }
+
+    // 请求突发触发系统保护 / 限流（豆包上游风控）
+    if (
+      errorCode === 'RateLimitExceeded' ||
+      errorMessage.includes('System protection triggered by request burst') ||
+      errorMessage.includes('request burst') ||
+      errorMessage.toLowerCase().includes('rate limit')
+    ) {
+      return '当前请求过于频繁，已触发系统保护机制。请稍等 1-2 分钟后重试，并避免短时间内连续发送。';
     }
 
     // 图片像素超限（豆包 API 将 PDF 当作图片处理，限制总像素数）
@@ -191,48 +200,61 @@ export async function POST(req: Request) {
   const errorId = createErrorId();
   const startTime = Date.now();
   let userId = '';
-  let isAnonymous = false;
+  let reservation: Awaited<ReturnType<typeof reserveChatQuota>>['reservation'] | null = null;
+  let billingInputUnits = 0;
+  let billingOutputLimit = 2048;
+  let billingFinalized = false;
+  let billingProvider: ProviderName | undefined;
+  let billingModel: string | undefined;
+  let providerStarted = false;
+  let billingRequestId = errorId;
+
+  const finalizeBilling = async (input: {
+    rawUsage?: unknown;
+    fallbackTokens?: number;
+    status?: 'success' | 'failed' | 'partial' | 'billing_pending';
+  }) => {
+    if (!reservation || billingFinalized) return;
+    billingFinalized = true;
+    try {
+      await settleAiQuota({
+        reservationId: reservation.id,
+        requestId: billingRequestId,
+        feature: 'chat',
+        provider: billingProvider,
+        model: billingModel,
+        action: 'chat-stream',
+        endpoint: '/api/chat',
+        measurement: createTokenMeasurement(
+          input.rawUsage,
+          input.fallbackTokens ?? billingInputUnits
+        ),
+        status: input.status,
+        metadata: { errorId },
+      });
+    } catch (billingError) {
+      billingFinalized = false;
+      console.error('[chat] 额度结算失败:', { errorId, billingError });
+    }
+  };
+
+  const releasePendingReservation = async (reason: string) => {
+    if (!reservation || billingFinalized) return;
+    billingFinalized = true;
+    try {
+      await releaseAiQuota({ reservationId: reservation.id, reason, meterType: 'tokens' });
+    } catch (releaseError) {
+      billingFinalized = false;
+      console.error('[chat] 额度预留释放失败:', { errorId, releaseError });
+    }
+  };
 
   try {
     // 1. 限流检查
     const user = await getCurrentUser(req);
     userId = user.id;
-    isAnonymous = user.isAnonymous;
-
-    // 非 admin 用户检查并扣除 tokens
-    if (user.role !== 'admin') {
-      if (isAnonymous) {
-        // 匿名用户预扣固定额度，余额不足直接拦截
-        const deduction = await checkAndDeductTokens(userId, ANONYMOUS_OPERATION_COSTS.CHAT_RESERVE);
-        if (!deduction.success) {
-          return new Response(
-            JSON.stringify({
-              error: '免费额度已用完，您可以继续查看历史记录',
-              code: 'QUOTA_EXHAUSTED',
-              errorId,
-            }),
-            {
-              status: 402,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        }
-      } else if ((user.tokens ?? 0) <= 0) {
-        return new Response(
-          JSON.stringify({
-            error: 'Token 额度不足，请联系管理员充值',
-            errorId,
-          }),
-          {
-            status: 429,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-      }
-    }
 
     const rateLimiter = getRateLimiter();
-    const quotaManager = getQuotaManager();
 
     // 检查 API 限流
     const rateLimitResult = await rateLimiter.check(userId);
@@ -255,38 +277,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // 检查用户配额
-    const quotaResult = await quotaManager.checkQuota(userId, 'requests');
-    if (!quotaResult.allowed) {
-      return new Response(
-        JSON.stringify({
-          error: '今日请求次数已达上限',
-          errorId,
-          remaining: quotaResult.remaining,
-          quota: quotaResult.quota,
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Quota-Remaining': String(quotaResult.remaining),
-            'X-Quota-Limit': String(quotaResult.quota),
-          },
-        }
-      );
-    }
-
     // 3. 解析请求体
     const body = await req.json();
     const {
       messages,
       model,
       provider = 'xunfei',
+      reservationId,
     } = body as {
       messages: ChatMessage[];
       model?: string;
       provider?: ProviderName;
+      reservationId?: string;
     };
+
+    billingRequestId = getBillingRequestId(req, body as Record<string, unknown>);
 
     // 添加请求日志
     console.log('Chat API 请求参数:', {
@@ -305,17 +310,50 @@ export async function POST(req: Request) {
     const modelName = model || getDefaultModel(provider);
     console.log('使用的模型名称:', modelName);
 
+    if (user.role !== 'admin') {
+      if (reservationId) {
+        reservation = await useExistingAiQuota({
+          userId,
+          reservationId,
+          requestId: billingRequestId,
+        });
+        billingInputUnits = Number(reservation.metadata?.inputEstimate ?? 0);
+        const reservedOutputLimit = Number(reservation.metadata?.outputLimit);
+        if (Number.isInteger(reservedOutputLimit) && reservedOutputLimit > 0) {
+          billingOutputLimit = reservedOutputLimit;
+        }
+      } else {
+        const quota = await reserveChatQuota({
+          userId,
+          requestId: billingRequestId,
+          provider,
+          model: modelName,
+          messages,
+          metadata: buildChatUsageMetadata(messages),
+        });
+        reservation = quota.reservation;
+        billingInputUnits = quota.inputUnits;
+        billingOutputLimit = quota.outputLimit;
+      }
+      billingProvider = provider;
+      billingModel = modelName;
+    }
+
     // 对于讯飞，使用自定义的流式处理
     if (provider === 'xunfei') {
       let xunfeiUsage: ReturnType<typeof normalizeUsage> | null = null;
+      let xunfeiText = '';
       const stream = createXunfeiStreamResponse({
         model: modelName,
         messages: messages as XunfeiMessage[],
         stream: true,
+        maxTokens: billingOutputLimit,
+        signal: req.signal,
         onUsage: (usage) => {
           xunfeiUsage = normalizeUsage(usage);
         },
       });
+      providerStarted = true;
 
       // 记录讯飞请求成功并更新配额
       const endTime = Date.now();
@@ -330,28 +368,42 @@ export async function POST(req: Request) {
         timestamp: new Date().toISOString(),
       });
 
-      // 异步更新配额使用量
-      quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
-        console.error('更新配额失败:', err);
-      });
-
       return createSseResponse(
-        createSseStreamFromTextStream(stream, async () => {
-          await safeRecordAiUsage({
-            userId,
-            feature: 'chat',
-            action: 'chat-stream',
-            provider: 'xunfei',
-            model: modelName,
-            endpoint: '/api/chat',
-            requestId: errorId,
-            usage: xunfeiUsage,
-            metadata: buildChatUsageMetadata(messages),
-          });
-
-          // 调用完成后按实际用量扣减（匿名用户已预扣，不再重复）
-          await deductForNonAdmin(userId, user.role, user.isAnonymous, xunfeiUsage?.totalTokens);
-        })
+        createSseStreamFromTextStream(
+          stream,
+          async () => {
+            if (reservation) {
+              await finalizeBilling({
+                rawUsage: xunfeiUsage,
+                fallbackTokens: billingInputUnits + estimateOutputTokens(xunfeiText),
+              });
+            } else {
+              await safeRecordAiUsage({
+                userId,
+                feature: 'chat',
+                action: 'chat-stream',
+                provider: 'xunfei',
+                model: modelName,
+                endpoint: '/api/chat',
+                requestId: errorId,
+                usage: xunfeiUsage,
+                metadata: buildChatUsageMetadata(messages),
+              });
+            }
+          },
+          (text) => {
+            xunfeiText += text;
+          },
+          async () => {
+            if (reservation) {
+              await finalizeBilling({
+                rawUsage: xunfeiUsage,
+                fallbackTokens: billingInputUnits + estimateOutputTokens(xunfeiText),
+                status: xunfeiText ? 'partial' : 'failed',
+              });
+            }
+          }
+        )
       );
     }
 
@@ -362,6 +414,7 @@ export async function POST(req: Request) {
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
       if (!arkApiKey) {
+        await releasePendingReservation('缺少豆包 API 配置');
         return new Response(JSON.stringify({ error: 'Missing ARK_API_KEY' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
@@ -438,6 +491,7 @@ export async function POST(req: Request) {
 
             if (!isReady) {
               console.warn(`[Chat API] 文件 ${attachment.fileId} 未在超时时间内就绪`);
+              await releasePendingReservation('文件未准备就绪');
               return new Response(
                 JSON.stringify({ error: '文件正在处理中，请稍后重试。大文件需要更长的处理时间。' }),
                 { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -459,6 +513,7 @@ export async function POST(req: Request) {
         stream: true,
         temperature: 0.7,
         top_p: 0.9,
+        max_output_tokens: billingOutputLimit,
       };
 
       console.log('Doubao Responses API 调用参数:', {
@@ -475,7 +530,9 @@ export async function POST(req: Request) {
           Authorization: `Bearer ${arkApiKey}`,
         },
         body: JSON.stringify(requestBody),
+        signal: req.signal,
       });
+      providerStarted = true;
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -489,6 +546,7 @@ export async function POST(req: Request) {
 
         // 解析并返回更友好的错误信息
         const friendlyError = parseDoubaoError(errorText);
+        await releasePendingReservation('豆包上游请求失败');
         return new Response(JSON.stringify({ error: friendlyError }), {
           status: response.status,
           headers: { 'Content-Type': 'application/json' },
@@ -496,6 +554,7 @@ export async function POST(req: Request) {
       }
 
       if (!response.body) {
+        await releasePendingReservation('上游未返回响应体');
         return new Response(JSON.stringify({ error: 'No response body' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
@@ -506,6 +565,7 @@ export async function POST(req: Request) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let doubaoUsage: ReturnType<typeof normalizeUsage> | null = null;
+      let doubaoText = '';
 
       const stream = new ReadableStream({
         async start(controller) {
@@ -546,6 +606,7 @@ export async function POST(req: Request) {
                   if (data.type === 'response.output_text.delta') {
                     const content = data.delta;
                     if (content) {
+                      doubaoText += content;
                       controller.enqueue(encodeSseEvent({ type: 'text-delta', text: content }));
                     }
                   } else if (
@@ -580,38 +641,56 @@ export async function POST(req: Request) {
             }
 
             if (!hasSentDone) {
-              await safeRecordAiUsage({
-                userId,
-                feature: 'chat',
-                action: 'chat-stream',
-                provider: 'doubao',
-                model: modelName,
-                endpoint: '/api/chat',
-                requestId: errorId,
-                usage: doubaoUsage,
-                metadata: buildChatUsageMetadata(messages),
-              });
-
-              await deductForNonAdmin(userId, user.role, user.isAnonymous, doubaoUsage?.totalTokens);
+              if (reservation) {
+                await finalizeBilling({
+                  rawUsage: doubaoUsage,
+                  fallbackTokens: billingInputUnits + estimateOutputTokens(doubaoText),
+                  status: doubaoText ? 'partial' : 'failed',
+                });
+              } else {
+                await safeRecordAiUsage({
+                  userId,
+                  feature: 'chat',
+                  action: 'chat-stream',
+                  provider: 'doubao',
+                  model: modelName,
+                  endpoint: '/api/chat',
+                  requestId: errorId,
+                  usage: doubaoUsage,
+                  metadata: buildChatUsageMetadata(messages),
+                });
+              }
               controller.enqueue(encodeSseEvent({ type: 'done' }));
             } else {
-              await safeRecordAiUsage({
-                userId,
-                feature: 'chat',
-                action: 'chat-stream',
-                provider: 'doubao',
-                model: modelName,
-                endpoint: '/api/chat',
-                requestId: errorId,
-                usage: doubaoUsage,
-                metadata: buildChatUsageMetadata(messages),
-              });
-
-              await deductForNonAdmin(userId, user.role, user.isAnonymous, doubaoUsage?.totalTokens);
+              if (reservation) {
+                await finalizeBilling({
+                  rawUsage: doubaoUsage,
+                  fallbackTokens: billingInputUnits + estimateOutputTokens(doubaoText),
+                });
+              } else {
+                await safeRecordAiUsage({
+                  userId,
+                  feature: 'chat',
+                  action: 'chat-stream',
+                  provider: 'doubao',
+                  model: modelName,
+                  endpoint: '/api/chat',
+                  requestId: errorId,
+                  usage: doubaoUsage,
+                  metadata: buildChatUsageMetadata(messages),
+                });
+              }
             }
             controller.close();
           } catch (error) {
             console.error('Stream error:', error);
+            if (reservation) {
+              await finalizeBilling({
+                rawUsage: doubaoUsage,
+                fallbackTokens: billingInputUnits + estimateOutputTokens(doubaoText),
+                status: doubaoText ? 'partial' : 'failed',
+              });
+            }
             controller.error(error);
           } finally {
             reader.releaseLock();
@@ -633,11 +712,6 @@ export async function POST(req: Request) {
         timestamp: new Date().toISOString(),
       });
 
-      // 异步更新配额使用量
-      quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
-        console.error('更新配额失败:', err);
-      });
-
       return createSseResponse(stream);
     }
 
@@ -646,6 +720,8 @@ export async function POST(req: Request) {
     const result = streamText({
       model: aiProvider(modelName),
       messages,
+      abortSignal: req.signal,
+      maxOutputTokens: billingOutputLimit,
     });
 
     // 记录成功请求并更新配额
@@ -661,50 +737,64 @@ export async function POST(req: Request) {
       timestamp: new Date().toISOString(),
     });
 
-    // 异步更新配额使用量
-    quotaManager.incrementQuota(userId, 'requests', 1).catch((err) => {
-      console.error('更新配额失败:', err);
-    });
-
     const textResponse = result.toTextStreamResponse();
     if (!textResponse.body) {
       throw new Error('上游未返回流式响应体');
     }
+    providerStarted = true;
 
     return createSseResponse(
-      createSseStreamFromTextStream(textResponse.body, async () => {
-        try {
-          const usage = await result.totalUsage;
-          const normalized = normalizeUsage(usage);
-          await safeRecordAiUsage({
-            userId,
-            feature: 'chat',
-            action: 'chat-stream',
-            provider,
-            model: modelName,
-            endpoint: '/api/chat',
-            requestId: errorId,
-            usage: normalized,
-            metadata: buildChatUsageMetadata(messages),
-          });
-
-          await deductForNonAdmin(userId, user.role, user.isAnonymous, normalized.totalTokens);
-        } catch (usageError) {
-          console.error('[chat] 读取 usage 失败:', usageError);
+      createSseStreamFromTextStream(
+        textResponse.body,
+        async () => {
+          try {
+            const usage = await result.totalUsage;
+            const normalized = normalizeUsage(usage);
+            if (reservation) {
+              await finalizeBilling({
+                rawUsage: normalized.rawUsage,
+                fallbackTokens: billingInputUnits,
+              });
+            } else {
+              await safeRecordAiUsage({
+                userId,
+                feature: 'chat',
+                action: 'chat-stream',
+                provider,
+                model: modelName,
+                endpoint: '/api/chat',
+                requestId: errorId,
+                usage: normalized,
+                metadata: buildChatUsageMetadata(messages),
+              });
+            }
+          } catch (usageError) {
+            console.error('[chat] 读取 usage 失败:', usageError);
+          }
+        },
+        undefined,
+        async () => {
+          if (reservation) {
+            await finalizeBilling({ status: 'partial', fallbackTokens: billingInputUnits });
+          }
         }
-      })
+      )
     );
   } catch (error) {
     const endTime = Date.now();
     const duration = endTime - startTime;
 
-    // 匿名用户预扣额度后调用失败，退还预扣额度
-    try {
-      if (userId && isAnonymous) {
-        await maybeRefund(userId, ANONYMOUS_OPERATION_COSTS.CHAT_RESERVE);
+    // 供应商尚未启动时释放预留；已开始的流式请求由流回调负责结算，避免重复退款。
+    if (reservation && !billingFinalized && !providerStarted) {
+      try {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: error instanceof Error ? error.message : '聊天请求失败',
+          meterType: 'tokens',
+        });
+      } catch (releaseError) {
+        console.error('[chat] 额度预留释放失败:', { errorId, releaseError });
       }
-    } catch {
-      // 忽略退款失败，优先返回原始错误
     }
 
     console.error('Chat API 错误:', {
@@ -730,6 +820,10 @@ export async function POST(req: Request) {
           },
         }
       );
+    }
+
+    if (error instanceof BillingError) {
+      return billingErrorResponse(error, 402);
     }
 
     if (error instanceof Error) {

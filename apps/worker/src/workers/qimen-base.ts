@@ -12,31 +12,17 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
     const startedAt = Date.now();
 
     try {
-      // 本地排盘模式下，盘局已在 API 路由中计算并存入 Redis，Worker 无需再调用 LLM
-      if (precomputedChart) {
-        const existing = await store.getBaseResult(analysisId);
-        if (existing) {
-          logger.info('奇门基础盘面已在本地完成排盘（跳过 LLM）', {
-            analysisId,
-            durationMs: Date.now() - startedAt,
-          });
-          return;
-        }
+      // 基础盘面只允许由本地算法生成，禁止遗留的 LLM 排盘降级路径绕过统一计费。
+      if (!precomputedChart) {
+        throw new Error('奇门基础盘面必须在创建任务时完成本地排盘');
       }
 
-      logger.warn('奇门基础盘面未预计算，降级到 LLM 排盘（不推荐）', { analysisId });
-      // 降级路径保留（向后兼容）：调用 LLM 排盘
-      const { generateQimenBaseResult, resolveModelConfig } = await import('@repo/shared');
-      const baseResult = await generateQimenBaseResult(
-        job.data.input,
-        resolveModelConfig(job.data.provider ?? 'doubao', process.env),
-        {
-          analysisId,
-          stage: 'baseResult',
-        }
-      );
-      await store.saveBaseResult(analysisId, baseResult);
-      logger.info('奇门基础盘面降级完成', {
+      const existing = await store.getBaseResult(analysisId);
+      if (!existing) {
+        throw new Error('奇门基础盘面不存在，无法启动分块分析');
+      }
+
+      logger.info('奇门基础盘面已在本地完成排盘（跳过 LLM）', {
         analysisId,
         durationMs: Date.now() - startedAt,
       });

@@ -26,8 +26,12 @@ import {
 } from '../_lib/bazi-section-payload';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { BAZI_REPORT_JSON_SCHEMA } from '../_lib/bazi-json-schema';
-import { getOptionalUserId } from '@/lib/auth/get-optional-user-id';
+import { withAuth } from '@/lib/api/with-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -70,64 +74,103 @@ class UpstreamModelError extends Error {
 }
 
 export async function POST(req: Request) {
-  try {
-    const userId = await getOptionalUserId(req);
-    const body = await req.json();
-    const parsed = RequestSchema.safeParse(body);
-    if (!parsed.success) {
+  return withAuth(req, async (user) => {
+    let reservation: { id: string } | null = null;
+    try {
+      const body = await req.json();
+      const parsed = RequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error: '请求参数错误',
+            details: parsed.error.errors.map((item) => ({
+              path: item.path.join('.'),
+              message: item.message,
+            })),
+          },
+          { status: 400 }
+        );
+      }
+
+      let config: ModelConfig;
+      try {
+        config = resolveModelConfig(parsed.data.provider);
+      } catch (error) {
+        if (error instanceof ModelConfigError) {
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        throw error;
+      }
+
+      const input: DestinyReportRequest = {
+        name: parsed.data.name,
+        gender: parsed.data.gender,
+        calendarType: parsed.data.calendarType,
+        birthDate: parsed.data.birthDate,
+        birthTime: parsed.data.birthTime,
+        location: parsed.data.location,
+      };
+      const currentYear = new Date().getFullYear();
+      const basis = computeBaziChart(input, { referenceYear: currentYear });
+      const messages = [
+        { role: 'system' as const, content: buildStreamingSystemPrompt(currentYear) },
+        { role: 'user' as const, content: buildUserPrompt(input, basis) },
+      ];
+      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      let inputUnits = 0;
+      let outputLimit = REPORT_MAX_OUTPUT_TOKENS;
+      if (user.role !== 'admin') {
+        const quota = await reserveChatQuota({
+          userId: user.id,
+          requestId,
+          feature: 'destiny',
+          provider: config.provider,
+          model: config.model,
+          messages,
+          maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
+          metadata: { reportType: 'bazi', currentYear },
+        });
+        reservation = quota.reservation;
+        inputUnits = quota.inputUnits;
+        outputLimit = quota.outputLimit;
+      }
+      const stream = createBaziStream({
+        input,
+        currentYear,
+        config,
+        userId: user.id,
+        basis,
+        messages,
+        reservationId: reservation?.id,
+        requestId,
+        inputUnits,
+        outputLimit,
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+        },
+      });
+    } catch (error) {
+      if (reservation) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '八字报告请求初始化失败',
+          meterType: 'tokens',
+        }).catch((releaseError) => console.error('[destiny/report] 释放额度失败:', releaseError));
+      }
+      if (error instanceof BillingError) return billingErrorResponse(error);
       return NextResponse.json(
         {
-          error: '请求参数错误',
-          details: parsed.error.errors.map((item) => ({
-            path: item.path.join('.'),
-            message: item.message,
-          })),
+          error: error instanceof Error ? error.message : '测算失败，请稍后重试',
         },
-        { status: 400 }
+        { status: 500 }
       );
     }
-
-    let config: ModelConfig;
-    try {
-      config = resolveModelConfig(parsed.data.provider);
-    } catch (error) {
-      if (error instanceof ModelConfigError) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      throw error;
-    }
-
-    const input: DestinyReportRequest = {
-      name: parsed.data.name,
-      gender: parsed.data.gender,
-      calendarType: parsed.data.calendarType,
-      birthDate: parsed.data.birthDate,
-      birthTime: parsed.data.birthTime,
-      location: parsed.data.location,
-    };
-    const currentYear = new Date().getFullYear();
-    const stream = createBaziStream({
-      input,
-      currentYear,
-      config,
-      userId,
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-      },
-    });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : '测算失败，请稍后重试',
-      },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 function createBaziStream({
@@ -135,11 +178,23 @@ function createBaziStream({
   currentYear,
   config,
   userId,
+  basis,
+  messages,
+  reservationId,
+  requestId,
+  inputUnits,
+  outputLimit,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   config: ModelConfig;
-  userId: string | null;
+  userId: string;
+  basis: ReturnType<typeof computeBaziChart>;
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  reservationId?: string;
+  requestId: string;
+  inputUnits: number;
+  outputLimit: number;
 }) {
   const encoder = new TextEncoder();
 
@@ -156,6 +211,12 @@ function createBaziStream({
           currentYear,
           config,
           userId,
+          basis,
+          messages,
+          reservationId,
+          requestId,
+          inputUnits,
+          outputLimit,
           send,
         });
       } catch (error) {
@@ -175,12 +236,24 @@ async function streamBaziReport({
   currentYear,
   config,
   userId,
+  basis,
+  messages,
+  reservationId,
+  requestId,
+  inputUnits,
+  outputLimit,
   send,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   config: ModelConfig;
-  userId: string | null;
+  userId: string;
+  basis: ReturnType<typeof computeBaziChart>;
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  reservationId?: string;
+  requestId: string;
+  inputUnits: number;
+  outputLimit: number;
   send: (event: BaziStreamEvent) => void;
 }) {
   const controller = new AbortController();
@@ -199,7 +272,6 @@ async function streamBaziReport({
   let usagePayload: unknown = null;
 
   try {
-    const basis = computeBaziChart(input, { referenceYear: currentYear });
     const deterministicReport = normalizeDestinyReport({}, input, currentYear, { basis });
     transitionStatus('charting');
     emitLockedSection({
@@ -254,12 +326,9 @@ async function streamBaziReport({
 
     const stream = streamModel({
       config,
-      messages: [
-        { role: 'system', content: buildStreamingSystemPrompt(currentYear) },
-        { role: 'user', content: buildUserPrompt(input, basis) },
-      ],
+      messages,
       temperature: 0.25,
-      maxTokens: REPORT_MAX_OUTPUT_TOKENS,
+      maxTokens: outputLimit,
       timeoutMs: REPORT_TIMEOUT_MS,
       json: { schema: { name: 'bazi_interpretation_report', schema: BAZI_REPORT_JSON_SCHEMA } },
     });
@@ -332,7 +401,27 @@ async function streamBaziReport({
       report,
     });
 
-    if (userId) {
+    if (reservationId) {
+      await settleAiQuota({
+        reservationId,
+        requestId,
+        feature: 'destiny',
+        action: 'destiny-report',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/report',
+        measurement: createTokenMeasurement(
+          usagePayload,
+          inputUnits + estimateOutputTokens(textBuffer)
+        ),
+        metadata: {
+          stage: 'single-stream',
+          currentYear,
+          provider: config.provider,
+          sectionCount: emittedSections.size,
+        },
+      });
+    } else {
       await safeRecordAiUsage({
         userId,
         feature: 'destiny',
@@ -349,6 +438,29 @@ async function streamBaziReport({
         },
       });
     }
+  } catch (error) {
+    if (reservationId) {
+      if (textBuffer) {
+        await settleAiQuota({
+          reservationId,
+          requestId,
+          feature: 'destiny',
+          action: 'destiny-report',
+          provider: config.provider,
+          model: config.model,
+          endpoint: '/api/destiny/report',
+          measurement: createTokenMeasurement(
+            usagePayload,
+            inputUnits + estimateOutputTokens(textBuffer)
+          ),
+          status: 'partial',
+          metadata: { stage: 'single-stream', currentYear, provider: config.provider },
+        });
+      } else {
+        await releaseAiQuota({ reservationId, reason: '八字报告流式失败', meterType: 'tokens' });
+      }
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -451,10 +563,9 @@ function buildReportFromSections(
 ): DestinyReport {
   const mergedBasis = basis
     ? {
-      ...basis,
-      decadeFortuneInsights:
-        sections.decadeFortuneInsights ?? basis.decadeFortuneInsights,
-    }
+        ...basis,
+        decadeFortuneInsights: sections.decadeFortuneInsights ?? basis.decadeFortuneInsights,
+      }
     : sections.baziBasis;
 
   return normalizeDestinyReport(

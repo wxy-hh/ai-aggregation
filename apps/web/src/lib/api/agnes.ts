@@ -4,6 +4,7 @@
  */
 
 import { authFetch } from './client';
+import { createBillingRequestId } from '@/lib/billing/request-id';
 
 export interface AgnesGenerateParams {
   prompt: string;
@@ -29,8 +30,10 @@ export interface AgnesGenerateResponse {
 export async function generateAgnesImage(
   params: AgnesGenerateParams
 ): Promise<AgnesGenerateResponse> {
+  const requestId = createBillingRequestId();
   const response = await authFetch('/api/image/agnes', {
     method: 'POST',
+    headers: { 'Idempotency-Key': requestId },
     body: JSON.stringify({
       prompt: params.prompt,
       negative_prompt: params.negativePrompt || undefined,
@@ -39,6 +42,7 @@ export async function generateAgnesImage(
       seed: params.seed,
       style: params.style || undefined,
       quality: params.quality || 'standard',
+      requestId,
     }),
   });
 

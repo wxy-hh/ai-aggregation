@@ -4,6 +4,7 @@
  */
 
 import { authFetch } from './client';
+import { createBillingRequestId } from '@/lib/billing/request-id';
 
 export interface KolorsGenerateParams {
   prompt: string;
@@ -37,8 +38,10 @@ export interface KolorsError {
 export async function generateKolorsImage(
   params: KolorsGenerateParams
 ): Promise<KolorsGenerateResponse> {
+  const requestId = createBillingRequestId();
   const response = await authFetch('/api/image/generate', {
     method: 'POST',
+    headers: { 'Idempotency-Key': requestId },
     body: JSON.stringify({
       model: 'Kwai-Kolors/Kolors',
       prompt: params.prompt,
@@ -46,6 +49,7 @@ export async function generateKolorsImage(
       num_inference_steps: params.steps,
       guidance_scale: params.guidanceScale,
       batch_size: params.batchSize || 1,
+      requestId,
       // Note: seed and negative_prompt may not be supported by API
       // Include them for future compatibility
       ...(params.seed && { seed: params.seed }),

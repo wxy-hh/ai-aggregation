@@ -48,6 +48,28 @@ function formatTaskCount(value: number) {
   return `${new Intl.NumberFormat('zh-CN').format(value)} 次`;
 }
 
+function formatDurationSeconds(value: number) {
+  const seconds = Math.max(0, Math.round(value));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0 ? `${minutes} 分 ${remainder} 秒` : `${remainder} 秒`;
+}
+
+function getUsageSourceLabel(sourceKind: ProfileUsageItem['sourceKind']) {
+  if (sourceKind === 'tokens') return '按 Token 统计';
+  if (sourceKind === 'audio_seconds') return '按音频时长统计';
+  if (sourceKind === 'tasks') return '按媒体任务次数统计';
+  return '按多种真实计量单位统计';
+}
+
+function formatUsageValue(item: ProfileUsageItem) {
+  const values: string[] = [];
+  if (item.totalTokens > 0) values.push(formatTokenCount(item.totalTokens));
+  if (item.audioSeconds > 0) values.push(formatDurationSeconds(item.audioSeconds));
+  if (item.taskCount > 0) values.push(formatTaskCount(item.taskCount));
+  return values.join(' · ') || '0';
+}
+
 function buildProfileViewModel(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): ProfileViewModel {
@@ -141,10 +163,21 @@ function ResourceRing({
             <stop offset="100%" stopColor={isAdmin ? '#7C3AED' : '#0E39D2'} />
           </linearGradient>
         </defs>
-        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(148,163,184,0.15)" strokeWidth="10" />
         <circle
-          cx="100" cy="100" r={radius} fill="none"
-          stroke="url(#profile-usage-gradient)" strokeWidth="10"
+          cx="100"
+          cy="100"
+          r={radius}
+          fill="none"
+          stroke="rgba(148,163,184,0.15)"
+          strokeWidth="10"
+        />
+        <circle
+          cx="100"
+          cy="100"
+          r={radius}
+          fill="none"
+          stroke="url(#profile-usage-gradient)"
+          strokeWidth="10"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
@@ -172,10 +205,10 @@ function ResourceRing({
             <div className="mt-3 flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-full bg-[#255DFF]" />
               <span className="text-[13px] font-medium text-[#64748B] dark:text-slate-300">
-                已消耗 {consumed.toLocaleString()}
+                已结算 {consumed.toLocaleString()}
               </span>
             </div>
-            <p className="mt-1 text-[12px] text-[#94A3B8]">共 {total.toLocaleString()} Tokens</p>
+            <p className="mt-1 text-[12px] text-[#94A3B8]">共 {total.toLocaleString()} 统一额度</p>
           </>
         )}
       </div>
@@ -502,12 +535,12 @@ export function ProfileShell() {
 
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
   const isAdminUser = user?.role === 'admin';
-  // 剩余额度：来自 DB（每次调用已扣减），与管理员端一致
-  const tokenRemaining = isAdminUser ? Infinity : (usage?.tokenRemaining ?? user?.tokens ?? 0);
-  // 消耗：来自 AIUsageRecord（仅用于展示）
-  const tokenConsumed = usage?.totalTokens ?? 0;
-  // 总额 = 剩余 + 已消耗（自适应管理员调整配额）
-  const tokenTotal = isAdminUser ? 20000 : tokenRemaining + tokenConsumed;
+  // 剩余额度仅来自统一额度账户，避免用户资料快照与真实账本混用。
+  const tokenRemaining = isAdminUser ? Infinity : (usage?.tokenRemaining ?? 0);
+  // 圆环只使用统一账本的已结算额度，不能把音频秒数、图片或视频任务混入 Token 展示。
+  const tokenConsumed = usage?.quota?.settledUnits ?? 0;
+  // 总额读取统一额度账户。
+  const tokenTotal = isAdminUser ? 20000 : (usage?.quota?.grantedUnits ?? 0);
 
   useEffect(() => {
     // 等待 auth 初始化完成，避免用过期 token 触发不必要的 401 刷新
@@ -610,7 +643,7 @@ export function ProfileShell() {
                 </div>
                 <div className="relative col-span-2 overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/10 via-white/70 to-white/40 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] sm:col-span-1 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.58))]">
                   <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
-                    剩余额度
+                    文本/语音额度
                   </div>
                   <div className="mt-2 text-sm font-semibold text-[#2563EB] dark:text-[#C2D1FF]">
                     {isAdminUser ? '无限额度' : tokenRemaining.toLocaleString()}
@@ -739,7 +772,12 @@ export function ProfileShell() {
               </div>
 
               <div className="mt-5">
-                <ResourceRing remaining={tokenRemaining} consumed={tokenConsumed} total={tokenTotal} isAdmin={isAdminUser} />
+                <ResourceRing
+                  remaining={tokenRemaining}
+                  consumed={tokenConsumed}
+                  total={tokenTotal}
+                  isAdmin={isAdminUser}
+                />
               </div>
 
               <p className="mt-1 text-center text-sm text-[#64748B] dark:text-slate-300 sm:text-[15px]">
@@ -759,9 +797,27 @@ export function ProfileShell() {
                 <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/8 via-white/72 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(34,78,212,0.22),rgba(15,23,42,0.52))]">
                   <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
                   <div className="relative flex items-center justify-between gap-4">
-                    <span>调用总次数</span>
+                    <span>语音转写时长</span>
                     <strong className="text-lg text-[#2563EB] dark:text-[#A8BAFF]">
-                      {formatTaskCount(usage?.totalTaskCount ?? 0)}
+                      {formatDurationSeconds(usage?.totalAudioSeconds ?? 0)}
+                    </strong>
+                  </div>
+                </div>
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
+                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
+                  <div className="relative flex items-center justify-between gap-4">
+                    <span>图片生成任务</span>
+                    <strong className="text-lg text-[#0F172A] dark:text-white">
+                      {formatTaskCount(usage?.taskUsage?.imageCount ?? 0)}
+                    </strong>
+                  </div>
+                </div>
+                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
+                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
+                  <div className="relative flex items-center justify-between gap-4">
+                    <span>视频生成任务</span>
+                    <strong className="text-lg text-[#0F172A] dark:text-white">
+                      {formatTaskCount(usage?.taskUsage?.videoCount ?? 0)}
                     </strong>
                   </div>
                 </div>
@@ -796,15 +852,13 @@ export function ProfileShell() {
                                   {item.label}
                                 </span>
                                 <span className="block text-xs text-[#94A3B8] dark:text-slate-400">
-                                  {item.hasTokenData ? '按 Token 统计' : '按调用次数统计'}
+                                  {getUsageSourceLabel(item.sourceKind)}
                                 </span>
                               </div>
                             </div>
                             <div className="flex shrink-0 items-center gap-3">
                               <strong className="text-base text-[#475569] dark:text-slate-300">
-                                {item.hasTokenData
-                                  ? formatTokenCount(item.totalTokens)
-                                  : formatTaskCount(item.taskCount)}
+                                {formatUsageValue(item)}
                               </strong>
                               <Button
                                 type="button"
@@ -827,7 +881,7 @@ export function ProfileShell() {
                                   统计方式
                                 </div>
                                 <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  {item.hasTokenData ? 'Token' : '调用次数'}
+                                  {getUsageSourceLabel(item.sourceKind)}
                                 </div>
                               </div>
                               <div>
@@ -840,18 +894,18 @@ export function ProfileShell() {
                               </div>
                               <div>
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  调用次数
+                                  语音转写时长
                                 </div>
                                 <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  {formatTaskCount(item.taskCount)}
+                                  {formatDurationSeconds(item.audioSeconds)}
                                 </div>
                               </div>
                               <div>
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  占比
+                                  媒体任务次数
                                 </div>
                                 <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  {item.percent.toFixed(1)}%
+                                  {formatTaskCount(item.taskCount)}
                                 </div>
                               </div>
                               <div className="sm:col-span-2">
@@ -859,9 +913,7 @@ export function ProfileShell() {
                                   说明
                                 </div>
                                 <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  {item.hasTokenData
-                                    ? '该功能已记录模型返回的真实 Token 使用量，同时保留调用次数。'
-                                    : '该功能当前未返回稳定 Token 字段，先按真实调用次数统计。'}
+                                  Token、音频时长与图片/视频任务分别统计；图片和视频任务不会占用文本/语音额度。
                                 </div>
                               </div>
                             </div>

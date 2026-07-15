@@ -23,13 +23,16 @@ pnpm install
 
 ### 2. 配置环境变量
 
-创建 `.dev.vars` 文件（已在 `.gitignore` 中）：
+复制 `.dev.vars.example` 为 `.dev.vars` 后填写本地密钥（已在 `.gitignore` 中）：
 
 ```bash
 XUNFEI_APP_ID=你的AppID
 XUNFEI_API_KEY=你的APIKey
 XUNFEI_PD=medical   # 可选
+RTASR_GATEWAY_SECRET=与 Web 应用相同的随机长密钥
 ```
+
+`BILLING_API_URL` 默认来自 `wrangler.toml` 的 `http://localhost:3030`；若 Web 服务使用其他地址，请在 `.dev.vars` 覆盖。Web 应用也必须配置同一个 `RTASR_GATEWAY_SECRET`，实时会话结算回调才会被接受。
 
 ### 3. 启动开发服务器
 
@@ -47,8 +50,8 @@ pnpm dev
 const ws = new WebSocket('ws://localhost:8787');
 
 ws.onopen = () => {
-  // 启动转写会话
-  ws.send(JSON.stringify({ type: 'start' }));
+// 启动转写会话
+ws.send(JSON.stringify({ type: 'start', accessToken, requestId }));
 
   // 发送音频数据（PCM 格式）
   ws.send(audioBuffer);
@@ -74,9 +77,11 @@ npx wrangler login
 
 - Workers & Pages → 你的 Worker → Settings → Variables
 - 添加以下环境变量：
-  - `XUNFEI_APP_ID`
-  - `XUNFEI_API_KEY`
+  - `XUNFEI_APP_ID`（Secret）
+  - `XUNFEI_API_KEY`（Secret）
   - `XUNFEI_PD`（可选）
+  - `RTASR_GATEWAY_SECRET`（Secret，必须与 Web 应用一致）
+  - `BILLING_API_URL`（Web 应用对外地址）
 
 ### 3. 部署
 
@@ -101,8 +106,8 @@ NEXT_PUBLIC_RTASR_GATEWAY_URL=https://rtasr-gateway.your-subdomain.workers.dev
 **控制消息（JSON 格式）**：
 
 ```typescript
-// 启动转写
-{ type: 'start', pd?: string }
+// 启动转写。accessToken 为当前登录用户的 Bearer Token，requestId 用于幂等重试。
+{ type: 'start', accessToken: string, requestId: string }
 
 // 结束转写
 { type: 'end' }
@@ -161,10 +166,10 @@ Cloudflare Worker (本服务)
 
 ## 注意事项
 
-1. **API 密钥安全**：不要将 `.dev.vars` 提交到 Git
+1. **API 密钥安全**：不要将 `.dev.vars` 提交到 Git；生产密钥必须使用 `wrangler secret put` 配置
 2. **并发限制**：讯飞 API 有并发路数限制，注意控制
 3. **超时处理**：长时间无数据时上游可能自动断开，前端要做好重连提示
-4. **成本控制**：按时长计费，建议添加录音时长限制
+4. **成本控制**：网关会先在 Web 应用预留可用秒数，再按实际转发的 PCM 字节数结算；达到额度上限会自动停止转发
 
 ## 故障排查
 

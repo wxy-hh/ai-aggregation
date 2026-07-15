@@ -57,6 +57,7 @@ yarn-error.log*
 .codefree/
 downcode/
 infra/worker-rtasr/.wrangler/
+infra/worker-rtasr/.dev.vars
 apps/web/ark-response-debug.json
 .playwright-mcp*
 .codegraph*

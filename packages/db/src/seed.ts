@@ -30,6 +30,12 @@ async function main() {
       role: 'admin',
       status: 'active',
       tokens: 999999,
+      quotaAccount: {
+        create: {
+          grantedUnits: 999999,
+          availableUnits: 999999,
+        },
+      },
     },
   });
 
@@ -49,6 +55,12 @@ async function main() {
       role: 'user',
       status: 'active',
       tokens: 20000,
+      quotaAccount: {
+        create: {
+          grantedUnits: 20000,
+          availableUnits: 20000,
+        },
+      },
     },
   });
 

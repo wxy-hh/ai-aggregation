@@ -128,6 +128,15 @@ describe('authFetch', () => {
     expect(event).toBeInstanceOf(CustomEvent);
   });
 
+  it('遇到新的 QUOTA_INSUFFICIENT 错误码时也触发全局事件', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_INSUFFICIENT' }), { status: 402 }));
+
+    await authFetch('/api/test');
+
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('遇到 402 但 code 不是 QUOTA_EXHAUSTED 时不触发事件', async () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
     mockFetch(new Response(JSON.stringify({ code: 'OTHER_ERROR' }), { status: 402 }));
