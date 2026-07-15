@@ -37,6 +37,7 @@ import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
 import { createComparisonHistoryItem } from '@/lib/utils/history-helpers';
 import type { ChatHistoryItem } from '@/types/history';
+import type { DerivationMetadata } from '@repo/shared';
 
 // ==================== 模块级非响应式状态 ====================
 
@@ -110,13 +111,15 @@ function syncTurnsToConversation() {
 }
 
 // 记录历史（addItem 按 id 去重覆盖，等同 upsert）
-function recordHistory() {
+// derivation：接力派生元数据（REQ-016），仅在发送成功路径透传
+function recordHistory(derivation?: DerivationMetadata) {
   const { activeComparisonId, turns, selectedModels } = useComparisonStore.getState();
   if (!activeComparisonId || turns.length === 0) return;
   const now = new Date().toISOString();
   const item = {
     id: activeComparisonId,
     ...createComparisonHistoryItem(activeComparisonId, turns, selectedModels),
+    ...(derivation ?? {}),
     createdAt: now,
     updatedAt: now,
   } as ChatHistoryItem;
@@ -265,8 +268,8 @@ interface ComparisonState {
   setMode: (mode: ComparisonMode) => void;
   toggleModel: (item: ModelCatalogItem) => void;
   setInput: (value: string) => void;
-  sendComparison: (prompt?: string) => Promise<void>;
-  continueComparison: (prompt?: string) => Promise<void>;
+  sendComparison: (prompt?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'skipped'>;
+  continueComparison: (prompt?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'skipped'>;
   stopModel: (modelKey: string) => void;
   retryModel: (turnId: string, modelKey: string) => Promise<void>;
   setFocus: (turnId: string, slot: 'left' | 'right', modelKey: string) => void;
@@ -317,13 +320,13 @@ export const useComparisonStore = create<ComparisonState>()(
         }
       },
 
-      sendComparison: async (promptOverride) => {
+      sendComparison: async (promptOverride, derivation) => {
         const { selectedModels, input } = get();
         const prompt = (promptOverride ?? input).trim();
-        if (!prompt) return;
+        if (!prompt) return 'skipped';
         if (selectedModels.length < MIN_COMPARE_MODELS) {
           set({ error: new Error(`请至少选择 ${MIN_COMPARE_MODELS} 个模型进行对比`) });
-          return;
+          return 'skipped';
         }
 
         let billingReservations: Map<string, { requestId: string; reservationId: string }>;
@@ -334,7 +337,7 @@ export const useComparisonStore = create<ComparisonState>()(
           );
         } catch (error) {
           set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
-          return;
+          return 'skipped';
         }
 
         const turnId = `turn-${Date.now()}`;
@@ -384,17 +387,19 @@ export const useComparisonStore = create<ComparisonState>()(
           )
         );
 
-        recordHistory();
+        recordHistory(derivation);
+        // 本轮已发出并记录（单模型失败局部化，不阻断整轮；REQ-016 语义：轮次发出即视为执行成功）
+        return 'sent';
       },
 
-      continueComparison: async (promptOverride) => {
+      continueComparison: async (promptOverride, derivation) => {
         const { turns, input, selectedModels } = get();
         const prompt = (promptOverride ?? input).trim();
         const lastTurn = turns[turns.length - 1];
-        if (!prompt || !lastTurn) return;
+        if (!prompt || !lastTurn) return 'skipped';
         if (selectedModels.length < MIN_COMPARE_MODELS) {
           set({ error: new Error(`请至少选择 ${MIN_COMPARE_MODELS} 个模型进行对比`) });
-          return;
+          return 'skipped';
         }
 
         const reservationMessages = [{ role: 'user' as const, content: prompt }];
@@ -403,7 +408,7 @@ export const useComparisonStore = create<ComparisonState>()(
           billingReservations = await reserveComparisonModels(reservationMessages, selectedModels);
         } catch (error) {
           set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
-          return;
+          return 'skipped';
         }
 
         const turnId = `turn-${Date.now()}`;
@@ -457,7 +462,9 @@ export const useComparisonStore = create<ComparisonState>()(
           )
         );
 
-        recordHistory();
+        recordHistory(derivation);
+        // 追问轮次发出并记录即视为执行成功（REQ-016）
+        return 'sent';
       },
 
       stopModel: (modelKey) => {

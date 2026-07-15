@@ -27,6 +27,8 @@ interface ConfigPanelProps {
   isGenerating: boolean;
   loadingStep: string;
   showGenerateButton?: boolean;
+  // 跨模态接力：引用条插槽（渲染在视频描述上方）
+  relayBar?: React.ReactNode;
 }
 
 export function ConfigPanel({
@@ -43,6 +45,7 @@ export function ConfigPanel({
   isGenerating,
   loadingStep,
   showGenerateButton = true,
+  relayBar,
 }: ConfigPanelProps) {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -90,6 +93,9 @@ export function ConfigPanel({
           </label>
           <VideoModelSwitcher model={config.model} onModelChange={setModel} disabled={isGenerating} />
         </section>
+
+        {/* 接力引用条：位于视频描述上方（REQ-007） */}
+        {relayBar}
 
         {/* 视频描述 */}
         <section className="space-y-3">

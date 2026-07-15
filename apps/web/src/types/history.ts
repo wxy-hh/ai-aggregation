@@ -3,11 +3,13 @@
  * 统一的历史记录类型定义
  */
 
-export type HistoryType = 'chat' | 'voice' | 'image' | 'destiny';
+import type { DerivationMetadata } from '@repo/shared';
+
+export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny';
 
 export type DestinySubType = 'bazi' | 'ziwei' | 'qimen';
 
-export interface BaseHistoryItem {
+export interface BaseHistoryItem extends DerivationMetadata {
   id: string;
   type: HistoryType;
   title: string;
@@ -68,7 +70,21 @@ export interface DestinyHistoryItem extends BaseHistoryItem {
   coreTone: string;
 }
 
-export type HistoryItem = ChatHistoryItem | VoiceHistoryItem | ImageHistoryItem | DestinyHistoryItem;
+export interface VideoHistoryItem extends BaseHistoryItem {
+  type: 'video';
+  preview: string;
+  model: string;
+  /** 视频地址（可恢复地址，禁 objectURL） */
+  videoUrl: string;
+  prompt: string;
+  /** 参考图（可选） */
+  referenceImage?: string;
+  durationSec?: number;
+  aspectRatio?: string;
+  parameters?: Record<string, any>;
+}
+
+export type HistoryItem = ChatHistoryItem | VoiceHistoryItem | ImageHistoryItem | VideoHistoryItem | DestinyHistoryItem;
 
 export interface HistoryFilter {
   type?: HistoryType | 'all';
@@ -82,5 +98,6 @@ export interface HistoryStats {
   chat: number;
   voice: number;
   image: number;
+  video: number;
   destiny: number;
 }

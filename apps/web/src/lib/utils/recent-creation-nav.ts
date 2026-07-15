@@ -23,6 +23,12 @@ export const RECENT_CREATION_TYPE_META: Record<
     chip: 'bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300',
     iconBg: 'bg-pink-100/80 dark:bg-pink-900/30',
   },
+  video: {
+    label: '视频',
+    accent: 'text-cyan-600 dark:text-cyan-400',
+    chip: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300',
+    iconBg: 'bg-cyan-100/80 dark:bg-cyan-900/30',
+  },
   destiny: {
     label: '命理',
     accent: 'text-amber-600 dark:text-amber-400',

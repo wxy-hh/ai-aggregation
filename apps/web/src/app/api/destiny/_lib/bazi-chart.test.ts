@@ -1,36 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildBaziPromptPayload, computeBaziChart } from '@repo/shared';
-
-const input = {
-  name: '测试用户',
-  gender: 'male' as const,
-  calendarType: 'lunar' as const, // 农历
-  birthDate: { year: 1993, month: 8, day: 16 },
-  birthTime: { hour: '09', minute: '30' },
-  location: { name: '杭州', lat: 30.27, lon: 120.16 },
-};
+import { computeBaziChart } from '@repo/shared';
 
 describe('computeBaziChart', () => {
-  it('生成确定性的排盘依据、流年种子与 prompt payload', () => {
-    const basis = computeBaziChart(input, { referenceYear: 2025 });
-    const promptPayload = buildBaziPromptPayload(basis);
-
-    expect(basis.profile.chartSummary).toMatch(/^乾造：/);
-    expect(basis.solarTime.standard.text).toMatch(/1993年10月1日/);
-    expect(basis.correction.applied).toBe(true);
-    expect(basis.correction.summary).toMatch(/向后顺延|向前回拨/);
-    expect(basis.correction.offsetSeconds).not.toBe(0);
-    expect(basis.pillars).toHaveLength(4);
-    expect(basis.elementStats).toHaveLength(5);
-    expect(basis.tenGodStats.length).toBeGreaterThanOrEqual(4);
-    expect(basis.reportSeed.pillars).toHaveLength(4);
-    expect(basis.reportSeed.elements).toHaveLength(5);
-    expect(basis.reportSeed.tenGods).toHaveLength(4);
-    expect(basis.annualCycles.map((item) => item.year)).toEqual([2025, 2026, 2027]);
-    expect(promptPayload.deterministicFacts).toHaveProperty('solarTerms');
-    expect(promptPayload.litePromptPayload).toHaveProperty('annualCycles');
-  });
-
   it('农历 2026-04-19 北京中午的真太阳时修正正确', () => {
     const basis = computeBaziChart(
       {

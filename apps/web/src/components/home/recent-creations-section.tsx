@@ -12,6 +12,7 @@ import {
   Mic,
   Plus,
   Sparkles,
+  Video as VideoIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +40,7 @@ const TYPE_ICONS: Record<HistoryType, React.ComponentType<{ className?: string }
   chat: MessageSquare,
   voice: Mic,
   image: ImageIcon,
+  video: VideoIcon,
   destiny: Compass,
 };
 

@@ -4,6 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { ChatHistoryItem } from '@/types/history';
 import { Trash2, GitCompareArrows } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface ChatHistoryCardProps {
   item: ChatHistoryItem;
@@ -95,6 +96,8 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
           </span>
         ))}
       </div>
+
+      <DerivationBadge item={item} />
     </div>
   );
 }

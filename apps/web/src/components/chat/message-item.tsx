@@ -9,6 +9,12 @@ import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
 import type { Attachment, Message } from '@/stores/chat-store';
+import { useChatStore } from '@/stores/chat-store';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 interface MessageItemProps {
   message: Message;
@@ -101,10 +107,17 @@ const ActionButtons = memo(function ActionButtons({
   onCopy,
   onRegenerate,
   isUser,
+  relay,
 }: {
   onCopy: () => void;
   onRegenerate?: () => void;
   isUser?: boolean;
+  relay?: {
+    disabled: boolean;
+    disabledReason?: string;
+    onOpen: () => void;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  };
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -117,7 +130,8 @@ const ActionButtons = memo(function ActionButtons({
   return (
     <div
       className={cn(
-        'mt-2 flex items-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100',
+        // 移动端常显（无 hover 无法发现接力），桌面保留 hover 渐显
+        'mt-2 flex items-center gap-1 px-1 transition-opacity max-sm:opacity-100 opacity-0 group-hover:opacity-100',
         isUser ? 'flex-row-reverse' : ''
       )}
     >
@@ -181,6 +195,18 @@ const ActionButtons = memo(function ActionButtons({
             />
           </svg>
         </button>
+      )}
+
+      {/* 接力按钮 - 只对 AI 显示（REQ-007 助手操作栏发起） */}
+      {!isUser && relay && (
+        <RelayAction
+          ref={relay.triggerRef}
+          iconOnly
+          disabled={relay.disabled}
+          disabledReason={relay.disabledReason}
+          onClick={relay.onOpen}
+          className="rounded-full border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+        />
       )}
     </div>
   );
@@ -390,6 +416,31 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const isThinking = !isUser && isStreaming && !message.content;
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
+  // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
+  const currentModel = useChatStore((s) => s.model);
+  const currentProvider = useChatStore((s) => s.provider);
+  const canRelay = !isUser && !isStreaming && !isThinking && message.content.trim().length > 0;
+  const relay = useRelayLauncher({
+    sourceType: 'text',
+    disabledReason: !canRelay
+      ? isStreaming || isThinking
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelay) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'chat',
+        sourceType: 'text',
+        sourceId: message.id,
+        sourceTitle: message.content.slice(0, 30) || '对话回答',
+        sourceModel: currentModel ?? currentProvider,
+        snapshotText: message.content,
+      };
+      return partial;
+    },
+  });
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
   }, [message.content]);
@@ -426,6 +477,8 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
 
           {/* Message Bubble */}
           <div
+            onContextMenu={!isUser ? relay.onContextMenu : undefined}
+            {...(!isUser ? relay.longPressProps : {})}
             className={cn(
               'max-w-full break-words rounded-[24px] px-5 py-4 text-[15px] leading-relaxed shadow-[0_10px_26px_rgba(76,95,154,0.08)]',
               isUser
@@ -467,10 +520,32 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               onCopy={handleCopy}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
               isUser={isUser}
+              relay={
+                !isUser
+                  ? {
+                      disabled: relay.disabled,
+                      disabledReason: relay.disabledReason,
+                      onOpen: relay.openAtTrigger,
+                      triggerRef: relay.triggerRef,
+                    }
+                  : undefined
+              }
             />
           )}
         </div>
       </div>
+
+      {/* 接力菜单（显式按钮/右键/长按复用同一菜单） */}
+      {!isUser && (
+        <RelayMenu
+          open={relay.menuOpen}
+          onOpenChange={relay.setMenuOpen}
+          targets={relay.targets}
+          onSelect={relay.onSelect}
+          anchorPoint={relay.anchorPoint}
+          triggerRef={relay.triggerRef}
+        />
+      )}
     </div>
   );
 });

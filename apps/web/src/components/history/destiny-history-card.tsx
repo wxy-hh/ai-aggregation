@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { DestinyHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 import baziIcon from '@/assets/image/bazi.svg';
 import ziweiIcon from '@/assets/image/ziwei.svg';
 import qimendunjiaIcon from '@/assets/image/qimendunjia.svg';
@@ -90,6 +91,8 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
       <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
         {item.preview}
       </p>
+
+      <DerivationBadge item={item} />
     </div>
   );
 }

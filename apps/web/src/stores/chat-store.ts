@@ -6,6 +6,7 @@ import { useHistoryStore } from './history-store';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { consumeChatResponse } from '@/lib/utils/chat-stream';
 import { authHeaders, authFetch } from '@/lib/api/client';
+import type { DerivationMetadata } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -61,7 +62,7 @@ export interface ChatState {
   setAttachment: (attachment: Attachment | null) => void; // 设置附件
 
   // ========== 核心交互功能 ==========
-  sendMessage: (content?: string) => Promise<void>; // 发送消息（支持流式响应）
+  sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
   reload: (msgId?: string) => Promise<void>; // 重新生成AI回复
   stop: () => void; // 停止当前的AI生成
 
@@ -157,24 +158,24 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     // 发送消息
-    sendMessage: async (contentOverrides) => {
+    sendMessage: async (contentOverrides, derivation) => {
       const { input, messages, provider, model, isLoading, activeConversationId, attachment } =
         get();
       const content = contentOverrides || input;
 
       // 有附件时允许空文本，否则需要文本内容
-      if ((!content.trim() && !attachment) || isLoading) return;
+      if ((!content.trim() && !attachment) || isLoading) return 'skipped';
 
       // 附件只能在豆包 provider 下使用
       if (attachment && provider !== 'doubao') {
         set({ error: new Error('附件功能仅支持豆包模型') });
-        return;
+        return 'skipped';
       }
 
       // 附件必须准备就绪
       if (attachment && attachment.status !== 'ready') {
         set({ error: new Error('附件尚未准备就绪') });
-        return;
+        return 'skipped';
       }
 
       // 1. 中断之前的请求
@@ -276,7 +277,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             useConversationsStore.getState().updateMessages(activeConversationId, finalMessages);
           }
 
-          // 保存到历史记录
+          // 保存到历史记录（携带接力派生元数据，REQ-016「由某来源接力生成」）
           if (finalMessages.length >= 2 && activeConversationId) {
             // 至少有一轮对话才保存
             const historyItem = {
@@ -286,6 +287,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                 provider,
                 model || 'unknown'
               ),
+              // 接力派生：成功才记录（失败/取消时已由目标侧保留引用，不进此分支）
+              ...(derivation ?? {}),
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
@@ -294,10 +297,13 @@ export const useChatStore = create<ChatState>((set, get) => {
 
           return { messages: finalMessages };
         });
+
+        // 成功完成一轮对话，供目标侧 commit 接力（清引用+草稿）
+        return 'sent';
       } catch (err) {
         // ===== 9. 错误处理 =====
-        // 用户主动取消不算错误
-        if (err instanceof Error && err.name === 'AbortError') return;
+        // 用户主动取消不算错误，但也不算成功发送（保留引用，REQ-016）
+        if (err instanceof Error && err.name === 'AbortError') return 'aborted';
 
         // 设置错误信息
         const error = err instanceof Error ? err : new Error('未知错误');
@@ -311,6 +317,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
           return { messages: filteredMessages };
         });
+        return 'failed';
       } finally {
         // ===== 10. 清理工作 =====
         set({ isLoading: false }); // 重置加载状态

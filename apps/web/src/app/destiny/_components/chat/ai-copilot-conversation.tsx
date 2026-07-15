@@ -24,6 +24,12 @@ export type QueuedQuestion = {
   text: string;
 };
 
+/** 跨模态接力预填草稿：仅入输入框，绝不自动发送（区别于 queuedQuestion） */
+export type ExternalDraft = {
+  id: string;
+  text: string;
+};
+
 const WELCOME_MESSAGE =
   '我是你的专属 AI 顾问。你可以直接追问报告里的任何一句话，例如：\n“报告说我今年适合变动，具体几月份最稳？”';
 
@@ -60,6 +66,9 @@ export function AICoPilotConversation({
   focusDecadeName,
   queuedQuestion,
   onQueuedQuestionHandled,
+  externalDraft,
+  onExternalDraftHandled,
+  onExternalDraftSent,
   onSendingChange,
   className,
 }: {
@@ -68,6 +77,10 @@ export function AICoPilotConversation({
   focusDecadeName?: string;
   queuedQuestion?: QueuedQuestion | null;
   onQueuedQuestionHandled?: (id: number) => void;
+  externalDraft?: ExternalDraft | null;
+  onExternalDraftHandled?: (id: string) => void;
+  /** 接力预填内容被用户实际发送且成功提交后触发（REQ §4.6.4-5：发送成功才完成接力） */
+  onExternalDraftSent?: (id: string) => void;
   onSendingChange?: (sending: boolean) => void;
   className?: string;
 }) {
@@ -78,6 +91,9 @@ export function AICoPilotConversation({
   const sendingRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // 记录本次 externalDraft 的 id 与文本，用于「发送成功才完成接力」判定（REQ §4.6.4-5）
+  const externalDraftRef = useRef<{ id: string; text: string } | null>(null);
+  const externalDraftSentRef = useRef<string | null>(null);
 
   const canSend = input.trim().length > 0;
   const ctxSummary = useMemo(() => buildCopilotContext(report), [report]);
@@ -146,6 +162,9 @@ export function AICoPilotConversation({
     const q = (rawQuestion ?? input).trim();
     if (!q || sendingRef.current) return;
 
+    // 判定本次发送是否源自接力预填（REQ §4.6.4-5：仅此时发送成功才完成接力）
+    const fromExternalDraft = externalDraftRef.current !== null && q === externalDraftRef.current.text;
+
     setError(null);
     setInput('');
     setSending(true);
@@ -208,6 +227,13 @@ export function AICoPilotConversation({
             : m
         )
       );
+
+      // 接力预填内容发送成功：通知目标侧完成接力（清引用+草稿，REQ §4.6.4-5）
+      if (fromExternalDraft && externalDraftRef.current && externalDraftSentRef.current !== externalDraftRef.current.id) {
+        externalDraftSentRef.current = externalDraftRef.current.id;
+        onExternalDraftSent?.(externalDraftRef.current.id);
+        externalDraftRef.current = null;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '追问失败，请稍后重试';
       setError(message);
@@ -244,6 +270,16 @@ export function AICoPilotConversation({
     onQueuedQuestionHandled?.(queuedQuestion.id);
     // sessionKey 变化会重置会话后再消费新的快捷问题
   }, [queuedQuestion?.id, sessionKey]);
+
+  // 接力预填：只 setInput，绝不触发发送（REQ §4.6.4；与 queuedQuestion 严格区分）
+  // 完成接力的时机不在这里——预填不完成接力，仅记录草稿；发送成功由 onExternalDraftSent 触发
+  useEffect(() => {
+    if (!externalDraft) return;
+    externalDraftRef.current = { id: externalDraft.id, text: externalDraft.text };
+    setInput((current) => (current.trim() ? current : externalDraft.text));
+    onExternalDraftHandled?.(externalDraft.id);
+
+  }, [externalDraft?.id, sessionKey]);
 
   return (
     <div className={cn('flex min-h-0 flex-col bg-white dark:bg-slate-950', className)}>

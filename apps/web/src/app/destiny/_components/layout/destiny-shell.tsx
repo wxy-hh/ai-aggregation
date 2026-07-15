@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from './glass-card';
 import {
@@ -20,6 +20,7 @@ import {
   buildDecadeFortuneAskQuestion,
   type DestinyCopilotLaunch,
 } from '../chat/destiny-copilot-types';
+import type { ExternalDraft } from '../chat/ai-copilot-conversation';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 // import { ChartSectionNav } from '../visualization/chart-section-nav';
@@ -40,6 +41,9 @@ export function DestinyShell({
   subtitleTag = '专业分析视图',
   onModuleChange,
   onRecalculate,
+  relayDraft = null,
+  onRelayDraftHandled,
+  onRelayDraftSent,
 }: {
   report: DestinyReport | null;
   partialReport?: PartialDestinyReport | null;
@@ -52,6 +56,11 @@ export function DestinyShell({
   subtitleTag?: string;
   onModuleChange?: (key: DestinyModuleKey) => void;
   onRecalculate?: () => void;
+  /** 跨模态接力预填草稿：命盘生成后仅 setInput 到顾问输入框，绝不自动发送 */
+  relayDraft?: ExternalDraft | null;
+  onRelayDraftHandled?: (id: string) => void;
+  /** 接力预填内容被顾问发送且成功提交后触发（REQ §4.6.4-5：发送成功才完成接力） */
+  onRelayDraftSent?: (id: string) => void;
 }) {
   const displayReport = report ?? partialReport ?? null;
   const subtitle = useMemo(() => {
@@ -71,6 +80,16 @@ export function DestinyShell({
       copilotReport.elements?.length &&
       copilotReport.timeline?.length
   );
+
+  // 接力草稿到达且命盘已就绪：打开顾问并仅预填输入框（绝不自动发送，REQ §4.6.4）
+  const relayDraftHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!relayDraft || !canOpenCopilot) return;
+    if (relayDraftHandledRef.current === relayDraft.id) return;
+    relayDraftHandledRef.current = relayDraft.id;
+    setCopilotLaunch({ focus: null, externalDraft: relayDraft });
+    setCopilotOpen(true);
+  }, [relayDraft, canOpenCopilot]);
 
   const openCopilot = useCallback((launch: DestinyCopilotLaunch = {}) => {
     setCopilotLaunch(launch);
@@ -233,6 +252,16 @@ export function DestinyShell({
           queuedQuestion={copilotLaunch.queuedQuestion ?? null}
           onQueuedQuestionHandled={() => {
             setCopilotLaunch((current) => ({ ...current, queuedQuestion: null }));
+          }}
+          externalDraft={copilotLaunch.externalDraft ?? null}
+          onExternalDraftHandled={(id) => {
+            setCopilotLaunch((current) =>
+              current.externalDraft?.id === id ? { ...current, externalDraft: null } : current
+            );
+            onRelayDraftHandled?.(id);
+          }}
+          onExternalDraftSent={(id) => {
+            onRelayDraftSent?.(id);
           }}
         />
       ) : null}

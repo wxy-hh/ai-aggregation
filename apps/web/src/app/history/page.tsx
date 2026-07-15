@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
+import { VideoHistoryCard } from '@/components/history/video-history-card';
 import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
 import { HistoryMasonryGrid, HistoryMasonryItem } from '@/components/history/history-masonry-grid';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,7 @@ const tabs = [
   { id: 'chat', label: '对话' },
   { id: 'voice', label: '语音' },
   { id: 'image', label: '图片' },
+  { id: 'video', label: '视频' },
   { id: 'destiny', label: '命理' },
 ];
 
@@ -69,6 +71,7 @@ export default function HistoryPage() {
         chat: 0,
         voice: 0,
         image: 0,
+        video: 0,
         destiny: 0,
       };
 
@@ -267,6 +270,8 @@ export default function HistoryPage() {
                       onDelete={handleDeleteItem}
                     />
                   );
+                } else if (item.type === 'video') {
+                  card = <VideoHistoryCard item={item} onDelete={handleDeleteItem} />;
                 } else if (item.type === 'destiny') {
                   card = <DestinyHistoryCard item={item} onDelete={handleDeleteItem} />;
                 }

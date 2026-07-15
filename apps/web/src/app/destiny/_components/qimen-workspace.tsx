@@ -13,6 +13,8 @@ import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
 import { mapFormToQimenRequest } from './qimen-mappers';
+// 跨模态接力：奇门预填所问之事（REQ-011；绝不写入出生资料，奇门无出生资料）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import type {
   QimenBaseSectionResponse,
   QimenAnalysisStartResponse,
@@ -100,6 +102,20 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
   const sectionTimeoutsRef = useRef<number[]>([]);
   const runIdRef = useRef(0);
 
+  // 接力：奇门目标接收。所问之事（description）可预填，绝不自动起局（点起局才完成）。
+  const relay = useRelayReceive('destiny');
+  const relayText = relay.bundle?.items[0]?.snapshotText ?? '';
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (!relayText) return;
+    // 仅在 description 为空且用户未编辑过草稿时预填，避免覆盖用户输入
+    if (!formData.description.trim() && !relay.draft) {
+      onChange('description', relayText);
+      relay.setDraft(relayText);
+    }
+     
+  }, [relay.initialized, relay.bundle?.id]);
+
   // 当前分析的 history ID（在 submit 时生成，save 时复用，保证 id 稳定）
   const currentHistoryIdRef = useRef<string | null>(null);
   // 记录本 mount 周期内成功创建的 analysisId，防止因 store 状态残留触发保存
@@ -141,6 +157,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     const description = formData.description || '奇门遁甲推演';
     const previewText = description.length > 150 ? description.slice(0, 150) : description;
 
+    // 接力两阶段（REQ-016）：起局成功写历史前只读派生元数据（不清引用），成功才 commit
+    const derivation = relay.prepareExecution();
+
     // 打包所有结果数据
     const reportData = {
       baseResult,
@@ -159,9 +178,12 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
         title: `奇门遁甲推演 · ${baseResult.chartTitle || '盘局分析'}`,
         preview: previewText,
         coreTone: baseResult.chartTitle || '奇门遁甲',
+        derivation,
       }
     );
     useHistoryStore.getState().addItem(historyItem);
+    // 起局成功才完成接力：清活动引用与草稿（REQ-016/§4.6.5「起局成功后完成接力」）
+    relay.commitExecution();
   }, [isActive, baseResult, analysisId, sectionStatuses, sections, formData]);
 
   // 从历史记录恢复

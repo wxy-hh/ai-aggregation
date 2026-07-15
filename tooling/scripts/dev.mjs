@@ -9,6 +9,10 @@ let cleanupInProgress = false;
 let ownedRedisProcess = null;
 let ownedDockerRedis = false;
 
+const PROJECT_ROOT = process.cwd();
+/** Web 首选端口 + next-dev 可能漂移到的邻近端口，以及 rtasr 网关端口 */
+const DEV_PORTS = [3030, 3031, 3032, 3033, 3034, 3035, 8787];
+
 function getRedisConfig() {
   const host = process.env.REDIS_HOST || '127.0.0.1';
   const port = Number(process.env.REDIS_PORT || '6379');
@@ -31,8 +35,8 @@ async function main() {
 
 function loadSharedEnv() {
   const envFiles = [
-    path.resolve(process.cwd(), 'apps/web/.env.local'),
-    path.resolve(process.cwd(), 'apps/worker/.env.local'),
+    path.resolve(PROJECT_ROOT, 'apps/web/.env.local'),
+    path.resolve(PROJECT_ROOT, 'apps/worker/.env.local'),
   ];
 
   for (const filePath of envFiles) {
@@ -47,7 +51,8 @@ function loadSharedEnv() {
       if (separatorIndex === -1) continue;
 
       const key = line.slice(0, separatorIndex).trim();
-      if (!key) continue;
+      // 与 dotenv 一致：已有环境变量（含 shell 注入）不被覆盖
+      if (!key || process.env[key] !== undefined) continue;
 
       let value = line.slice(separatorIndex + 1).trim();
       if (
@@ -93,7 +98,7 @@ async function ensureRedis() {
       {
         stdio: 'inherit',
         env: process.env,
-        cwd: process.cwd(),
+        cwd: PROJECT_ROOT,
       }
     );
 
@@ -139,6 +144,9 @@ async function ensureRedis() {
 
 async function runTurboDev() {
   await cleanupExistingDevProcesses();
+  await assertDevPortsAvailable();
+
+  // stream 模式便于在终端直接看到 web/worker/rtasr 的交错日志，避免 TUI 吞掉告警
   await runCommand('pnpm', [
     'turbo',
     'run',
@@ -146,66 +154,181 @@ async function runTurboDev() {
     '--filter=@repo/web',
     '--filter=@repo/worker',
     '--filter=@repo/worker-rtasr',
+    '--ui=stream',
     '--output-logs=full',
   ]);
 }
 
-async function cleanupExistingDevProcesses() {
-  const currentPid = process.pid;
-  const result = await execCapture(
-    `pgrep -af "turbo run dev --filter=@repo/web --filter=@repo/worker --filter=@repo/worker-rtasr|turbo run dev --filter=@repo/web --filter=@repo/worker|tsx.*src/index.ts|wrangler dev" || true`
-  );
-  const lines = result
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !line.includes(` ${currentPid} `) && !line.startsWith(`${currentPid} `));
+/**
+ * 列出本机进程。使用 ps 而非 pgrep：
+ * macOS 上 `pgrep -af` 的 -a 表示 include ancestors，且只输出 PID，
+ * 旧实现用 /^(\d+)\s+(.*)$/ 解析会导致清理逻辑 100% 失效。
+ */
+async function listProcesses() {
+  const result = await execCapture('ps -ax -o pid= -o command=');
+  const processes = [];
 
-  if (lines.length === 0) {
-    return;
-  }
+  for (const rawLine of result.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
 
-  console.log('检测到旧的开发进程，准备清理...');
-
-  const turboPids = [];
-  const workerPids = [];
-
-  for (const line of lines) {
     const match = line.match(/^(\d+)\s+(.*)$/);
     if (!match) continue;
 
-    const pid = match[1];
-    const command = match[2];
+    processes.push({
+      pid: match[1],
+      command: match[2],
+    });
+  }
 
+  return processes;
+}
+
+function isProjectDevProcess(command) {
+  const inProject =
+    command.includes(PROJECT_ROOT) ||
+    // next-dev 以相对路径启动时命令行不含绝对路径
+    command.includes('tooling/scripts/next-dev.mjs') ||
+    command.includes('tooling/scripts/dev.mjs');
+
+  if (!inProject) {
+    // turbo/pnpm 入口可能不带项目绝对路径，用 monorepo filter 特征识别
     if (
-      command.includes(
-        'turbo run dev --filter=@repo/web --filter=@repo/worker --filter=@repo/worker-rtasr'
-      ) ||
-      command.includes('turbo run dev --filter=@repo/web --filter=@repo/worker')
+      command.includes('turbo run dev') &&
+      command.includes('@repo/web') &&
+      command.includes('@repo/worker')
     ) {
-      turboPids.push(pid);
-      continue;
+      return true;
     }
+    return false;
+  }
 
+  return (
+    command.includes('turbo run dev') ||
+    command.includes('tooling/scripts/dev.mjs') ||
+    command.includes('tooling/scripts/next-dev.mjs') ||
+    command.includes('next dev') ||
+    command.includes('next-server') ||
+    (command.includes('tsx') && command.includes('src/index.ts')) ||
+    command.includes('wrangler') ||
+    command.includes('workerd')
+  );
+}
+
+async function listPidsListeningOnDevPorts() {
+  const pids = new Set();
+
+  for (const port of DEV_PORTS) {
+    try {
+      const output = await execCapture(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t 2>/dev/null || true`);
+      for (const line of output.split('\n')) {
+        const pid = line.trim();
+        if (pid) pids.add(pid);
+      }
+    } catch {
+      // lsof 不可用或端口无监听时忽略
+    }
+  }
+
+  return pids;
+}
+
+async function collectDevProcessTargets(currentPid) {
+  const processes = await listProcesses();
+  const byPid = new Map(processes.map((item) => [item.pid, item]));
+  const targets = new Map();
+
+  for (const item of processes) {
+    if (item.pid === currentPid) continue;
+    if (isProjectDevProcess(item.command)) {
+      targets.set(item.pid, item);
+    }
+  }
+
+  // next-server 命令行通常不含项目路径，通过开发端口反查补齐
+  const listeningPids = await listPidsListeningOnDevPorts();
+  for (const pid of listeningPids) {
+    if (pid === currentPid || targets.has(pid)) continue;
+    const item = byPid.get(pid);
+    if (!item) continue;
+
+    const command = item.command;
     if (
-      (command.includes('tsx') && command.includes('src/index.ts')) ||
-      command.includes('wrangler dev')
+      command.includes('next') ||
+      command.includes('workerd') ||
+      command.includes('wrangler') ||
+      command.includes(PROJECT_ROOT)
     ) {
-      workerPids.push(pid);
+      targets.set(pid, item);
     }
   }
 
-  if (turboPids.length > 0) {
-    console.log(`清理旧 turbo 进程: ${turboPids.join(', ')}`);
-    await runCommand('kill', ['-TERM', ...turboPids], { allowNonZeroExit: true });
+  return [...targets.values()];
+}
+
+async function cleanupExistingDevProcesses() {
+  const currentPid = String(process.pid);
+  const targets = await collectDevProcessTargets(currentPid);
+
+  if (targets.length === 0) {
+    return;
   }
 
-  if (workerPids.length > 0) {
-    console.log(`清理旧 worker 进程: ${workerPids.join(', ')}`);
-    await runCommand('kill', ['-TERM', ...workerPids], { allowNonZeroExit: true });
+  console.log(`检测到 ${targets.length} 个旧的开发进程，准备清理...`);
+  for (const { pid, command } of targets) {
+    const short = command.length > 120 ? `${command.slice(0, 117)}...` : command;
+    console.log(`  - PID ${pid}: ${short}`);
   }
 
-  await delay(500);
+  const pids = targets.map(({ pid }) => pid);
+  await signalPids(pids, 'TERM');
+  await delay(800);
+
+  // 仍存活的进程再强杀，避免 next/worker/workerd 成为孤儿继续占端口
+  const stillAlive = (await collectDevProcessTargets(currentPid)).map(({ pid }) => pid);
+
+  if (stillAlive.length > 0) {
+    console.log(`以下进程未响应 SIGTERM，改为 SIGKILL: ${stillAlive.join(', ')}`);
+    await signalPids(stillAlive, 'KILL');
+    await delay(300);
+  }
+
+  const leftovers = await collectDevProcessTargets(currentPid);
+  if (leftovers.length > 0) {
+    console.log(`仍有 ${leftovers.length} 个残留开发进程，再次清理...`);
+    await signalPids(
+      leftovers.map(({ pid }) => pid),
+      'KILL'
+    );
+    await delay(300);
+  }
+}
+
+async function signalPids(pids, signal) {
+  if (pids.length === 0) return;
+
+  const flag = signal === 'KILL' ? '-KILL' : '-TERM';
+  await runCommand('kill', [flag, ...pids], { allowNonZeroExit: true });
+}
+
+async function assertDevPortsAvailable() {
+  const criticalPorts = [3030, 8787];
+  const busy = [];
+
+  for (const port of criticalPorts) {
+    if (await isPortOpen('127.0.0.1', port)) {
+      busy.push(port);
+    }
+  }
+
+  if (busy.length === 0) {
+    return;
+  }
+
+  console.warn(
+    `警告：关键开发端口仍被占用（${busy.join(', ')}）。next-dev 可能会自动换端口，导致与 worker-rtasr 的 BILLING_API_URL 不一致。`
+  );
+  console.warn('可手动检查: lsof -nP -iTCP:3030,8787 -sTCP:LISTEN');
 }
 
 function registerCleanupHandlers() {
@@ -256,10 +379,17 @@ async function cleanup(reason) {
 async function isPortOpen(host, port) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
+    // 避免连接挂起导致启动卡住
+    socket.setTimeout(500);
 
     socket.once('connect', () => {
       socket.end();
       resolve(true);
+    });
+
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
     });
 
     socket.once('error', () => {
@@ -306,7 +436,7 @@ async function runCommand(command, args, options = {}) {
     const child = spawn(command, args, {
       stdio: 'inherit',
       env: process.env,
-      cwd: process.cwd(),
+      cwd: PROJECT_ROOT,
       ...spawnOptions,
     });
 
@@ -327,7 +457,7 @@ async function execCapture(command) {
   return new Promise((resolve, reject) => {
     const child = spawn('sh', ['-c', command], {
       env: process.env,
-      cwd: process.cwd(),
+      cwd: PROJECT_ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

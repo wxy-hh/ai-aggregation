@@ -13,6 +13,12 @@ import { DestinyNavProvider, useDestinyNav } from './layout/destiny-nav-context'
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
+// 跨模态接力：「待解读引用」领域级入口（REQ-011）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { RelayMethodPicker } from './relay-method-picker';
+import { RELAY_COPY } from '@/lib/relay/copy';
 
 export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
@@ -24,6 +30,23 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
+
+  // 接力：命理目标接收。文本绝不写入出生资料字段，仅以「待解读引用」呈现 + 三术数平级选择。
+  const relay = useRelayReceive('destiny');
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  const relaySourceType = relay.bundle?.items[0]?.sourceType;
+
+  // 各术数必要输入就绪：出生资料看八字/紫微表单，所问之事看奇门 description
+  const baziHasBirth = useDestinyWorkspaceStore((s) => Boolean(s.bazi.formData?.name?.trim()));
+  const ziweiHasBirth = useDestinyWorkspaceStore((s) => Boolean(s.ziwei.formData?.name?.trim()));
+  const qimenHasQuestion = useDestinyWorkspaceStore((s) =>
+    Boolean(s.qimen.formData?.description?.trim())
+  );
+  const relayReadinessCtx = {
+    hasBirthProfile: baziHasBirth || ziweiHasBirth,
+    hasQuestion: qimenHasQuestion,
+    hasCastTime: true, // 起局时间默认取当前时刻，不作为阻塞输入
+  };
 
   const scrollByModuleRef = useRef<Partial<Record<DestinyModuleKey, number>>>({});
   const lastActiveModuleRef = useRef<DestinyModuleKey>(activeModule);
@@ -53,6 +76,49 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
 
     lastActiveModuleRef.current = activeModule;
   }, [activeModule]);
+
+  // 接力「待解读引用」横幅：替换确认 / 活动引用 + 术数平级选择 / 失效提示。
+  // 引用文本绝不写入出生资料字段；仅在表单步展示（结果步由顾问 externalDraft 接管）。
+  const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
+    <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6">
+      {relay.replaceCandidate ? (
+        <ReferenceBar
+          bundle={relay.replaceCandidate.incoming}
+          isReplaceCandidate
+          onConfirmReplace={relay.confirmReplace}
+          onCancelReplace={relay.cancelReplace}
+          onRemove={relay.remove}
+        />
+      ) : relay.bundle ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
+              {RELAY_COPY.destiny.pendingReference}
+            </span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {RELAY_COPY.destiny.prefillNote}
+            </p>
+          </div>
+          <ReferenceBar
+            bundle={relay.bundle}
+            onRemove={relay.remove}
+            onViewSource={() => setRelayPreviewOpen(true)}
+          />
+          {relaySourceType && (
+            <RelayMethodPicker
+              sourceType={relaySourceType}
+              readinessCtx={relayReadinessCtx}
+              onPick={(methodId) => setActiveModule(methodId)}
+            />
+          )}
+        </div>
+      ) : relay.isInvalid ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          {RELAY_COPY.referenceBar.invalid}
+        </p>
+      ) : null}
+    </div>
+  ) : null;
 
   // 所有工作区始终挂载，仅通过 CSS 显隐切换，确保后台请求不中断
   const workspaceElements = (
@@ -125,6 +191,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
+          {relayBanner}
           {workspaceElements}
 
           {activeModule === 'qimen' && qimenLoading ? (
@@ -145,6 +212,13 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
             </div>
           ) : null}
         </div>
+
+        {/* 接力来源只读预览 */}
+        <ReferenceSourcePreview
+          open={relayPreviewOpen}
+          onOpenChange={setRelayPreviewOpen}
+          item={relay.bundle?.items[0] ?? null}
+        />
       </div>
     );
   }
@@ -160,6 +234,14 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         qimenLoading={qimenLoading}
         workspaceElements={workspaceElements}
         isFormStep={isFormStep}
+        relayBanner={relayBanner}
+        relayPreview={
+          <ReferenceSourcePreview
+            open={relayPreviewOpen}
+            onOpenChange={setRelayPreviewOpen}
+            item={relay.bundle?.items[0] ?? null}
+          />
+        }
       />
     </DestinyNavProvider>
   );
@@ -172,6 +254,8 @@ function DestinyDesktopLayout({
   qimenLoading,
   workspaceElements,
   isFormStep,
+  relayBanner,
+  relayPreview,
 }: {
   activeModule: DestinyModuleKey;
   onModuleChange: (key: DestinyModuleKey) => void;
@@ -179,6 +263,8 @@ function DestinyDesktopLayout({
   qimenLoading: boolean;
   workspaceElements: React.ReactNode;
   isFormStep: boolean;
+  relayBanner?: React.ReactNode;
+  relayPreview?: React.ReactNode;
 }) {
   const { navOffsetPx } = useDestinyNav();
 
@@ -201,6 +287,7 @@ function DestinyDesktopLayout({
       )}
 
       <div className="h-full w-full">
+        {relayBanner}
         {workspaceElements}
 
         {activeModule === 'qimen' && qimenLoading && (
@@ -215,6 +302,8 @@ function DestinyDesktopLayout({
           </div>
         )}
       </div>
+
+      {relayPreview}
     </div>
   );
 }

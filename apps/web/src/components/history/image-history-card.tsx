@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ImageHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface ImageHistoryCardProps {
   item: ImageHistoryItem;
@@ -164,6 +165,7 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
         <p className="text-sm text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed font-medium">
           {item.preview || item.prompt}
         </p>
+        <DerivationBadge item={item} />
       </div>
     </div>
   );

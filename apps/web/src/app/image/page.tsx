@@ -6,7 +6,7 @@ import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
 import { CreativeCockpit } from '@/components/image/creative-cockpit';
 import { NegativePrompt } from '@/components/image/negative-prompt';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,15 @@ import { useHistoryStore } from '@/stores/history-store';
 import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 import { blobToDataUrl } from '@/lib/utils/image-url';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+// 跨模态接力：目标侧接收 + 结果源侧发起
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { DerivationMetadata, RelayReferenceItem } from '@repo/shared';
 
 export default function ImagePage() {
   // 历史记录状态
@@ -66,13 +75,61 @@ export default function ImagePage() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  // 与 generatedImages 同序的可恢复 DataURL（接力快照用，禁 objectURL）
+  const [generatedDataUrls, setGeneratedDataUrls] = useState<string[]>([]);
   const [generatedRatio, setGeneratedRatio] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
 
+  // 跨模态接力：图像目标接收（REQ-004/005/006）
+  const relay = useRelayReceive('image');
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  const relayDraftText = relay.bundle?.items[0]?.snapshotText ?? '';
+  // 到达时：prompt 目标且当前 prompt 为初始模板则预填；不自动发送（REQ-005）
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (relayDraftText && !relay.draft) {
+      setPrompt(relayDraftText);
+      relay.setDraft(relayDraftText);
+    }
+     
+  }, [relay.initialized, relay.bundle?.id]);
+  // 记录本次生成是否来自接力（成功后写入历史，REQ-016）
+  const relayDerivationRef = useRef<DerivationMetadata | undefined>(undefined);
+
+  // 结果源侧接力：把当前生成图作为来源（REQ-002/007）。快照含图片 dataURL 与原 Prompt。
+  // 快照用可恢复 DataURL（禁 objectURL：刷新/跨页后 objectURL 失效，REQ §4.3.3）
+  const activeGeneratedImage = generatedImages[activeImageIndex];
+  const activeGeneratedDataUrl = generatedDataUrls[activeImageIndex];
+  const canRelayResult = !isGenerating && Boolean(activeGeneratedImage);
+  const resultRelay = useRelayLauncher({
+    sourceType: 'image',
+    disabledReason: !canRelayResult
+      ? isGenerating
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelayResult) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'image',
+        sourceType: 'image',
+        sourceId: `image-result-${activeImageIndex}`,
+        sourceTitle: prompt.slice(0, 30) || '生成图片',
+        sourceModel: model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash',
+        snapshotText: prompt,
+        snapshotMediaUrl: activeGeneratedDataUrl,
+      };
+      return partial;
+    },
+  });
+
   // 处理图片生成
   const handleGenerate = useCallback(async () => {
+    // 接力两阶段（REQ-016）：生成前只读派生元数据（不清引用），成功才 commit 清引用与草稿；
+    // 失败时引用与草稿原样保留，允许原地重试
+    relayDerivationRef.current = relay.prepareExecution();
     setIsGenerating(true);
     setProgress(0);
     setError(null);
@@ -135,6 +192,7 @@ export default function ImagePage() {
       setProgress(100);
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
+      setGeneratedDataUrls(images.map((item) => item.historyUrl));
       setGeneratedRatio(ratio);
       setActiveImageIndex(0);
 
@@ -152,10 +210,16 @@ export default function ImagePage() {
             aspectRatio: ratio,
             parameters: params,
           }),
+          // 接力派生：成功才记录（REQ-016「由某来源接力生成」）
+          ...(relayDerivationRef.current ?? {}),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         addHistoryItem(historyItem);
+        // 成功才完成接力：清活动引用与草稿（REQ-016）
+        relay.commitExecution();
+        // 清派生暂存，避免残留错配到下一次无关生成
+        relayDerivationRef.current = undefined;
       }
 
       // 稍后重置生成状态
@@ -171,7 +235,7 @@ export default function ImagePage() {
       setProgress(0);
       setCurrentStep('');
     }
-  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem]);
+  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem, relay]);
 
   // 随机灵感提示词
   const handleRandomPrompt = () => {
@@ -232,6 +296,31 @@ export default function ImagePage() {
 
   const renderParameterPanel = () => (
     <>
+      {/* 接力引用条：位于 Prompt 上方（REQ-004）。参考图目标展示媒体快照，再次绘图/Prompt 目标展示文本快照。 */}
+      {relay.replaceCandidate ? (
+        <ReferenceBar
+          bundle={relay.replaceCandidate.incoming}
+          isReplaceCandidate
+          onConfirmReplace={relay.confirmReplace}
+          onCancelReplace={relay.cancelReplace}
+          onRemove={relay.remove}
+        />
+      ) : relay.bundle ? (
+        <ReferenceBar
+          bundle={relay.bundle}
+          onRemove={relay.remove}
+          onViewSource={() => setRelayPreviewOpen(true)}
+          showFill={Boolean(relayDraftText) && prompt !== relayDraftText}
+          fillLabel={RELAY_COPY.referenceBar.fillPrompt}
+          onFill={() => {
+            setPrompt(relayDraftText);
+            relay.setDraft(relayDraftText);
+          }}
+        />
+      ) : relay.isInvalid ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{RELAY_COPY.referenceBar.invalid}</p>
+      ) : null}
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -435,6 +524,8 @@ export default function ImagePage() {
                     className={cn(
                       'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300'
                     )}
+                    onContextMenu={resultRelay.onContextMenu}
+                    {...resultRelay.longPressProps}
                   >
                     <img
                       src={generatedImages[activeImageIndex]}
@@ -448,7 +539,16 @@ export default function ImagePage() {
                     />
 
                     {!isGenerating && (
-                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-100 transition-opacity duration-300 sm:opacity-0 sm:group-hover:opacity-100">
+                        {/* 接力：移动端常显（无 hover），桌面 hover 渐显（REQ-002 显式入口） */}
+                        <RelayAction
+                          ref={resultRelay.triggerRef}
+                          iconOnly
+                          disabled={resultRelay.disabled}
+                          disabledReason={resultRelay.disabledReason}
+                          onClick={resultRelay.openAtTrigger}
+                          className="h-11 w-11 rounded-full border border-white/20 bg-white/20 p-3 text-white shadow-lg backdrop-blur-md hover:bg-white/30"
+                        />
                         <button
                           onClick={() => {
                             const link = document.createElement('a');
@@ -640,6 +740,23 @@ export default function ImagePage() {
           <div className="max-h-[78vh] overflow-y-auto p-4 space-y-6">{renderParameterPanel()}</div>
         </DialogContent>
       </Dialog>
+
+      {/* 接力：结果源侧菜单（显式按钮/右键/长按复用） */}
+      <RelayMenu
+        open={resultRelay.menuOpen}
+        onOpenChange={resultRelay.setMenuOpen}
+        targets={resultRelay.targets}
+        onSelect={resultRelay.onSelect}
+        anchorPoint={resultRelay.anchorPoint}
+        triggerRef={resultRelay.triggerRef}
+      />
+
+      {/* 接力来源只读预览 */}
+      <ReferenceSourcePreview
+        open={relayPreviewOpen}
+        onOpenChange={setRelayPreviewOpen}
+        item={relay.bundle?.items[0] ?? null}
+      />
     </AppLayout>
   );
 }

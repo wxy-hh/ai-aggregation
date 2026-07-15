@@ -58,7 +58,12 @@ export function createDexieStorage(
 ): DexieStateStorage {
   let db: ZustandPersistDB | null = null;
 
-  const getDb = (): ZustandPersistDB => {
+  const getDb = (): ZustandPersistDB | null => {
+    // SSR 环境没有 indexedDB，new Dexie() 会同步抛 MissingAPIError 并触发 unhandledRejection。
+    // 服务端统一返回 null 让上层降级为 no-op；zustand persist 在客户端水合时会重新执行。
+    if (typeof indexedDB === 'undefined') {
+      return null;
+    }
     if (!db) {
       db = new ZustandPersistDB(dbName);
     }
@@ -67,12 +72,15 @@ export function createDexieStorage(
 
   return {
     getItem: async (name: string): Promise<string | null> => {
+      const database = getDb();
+      if (!database) return null;
+
       // 一次性迁移：从 localStorage 读取旧数据并写入 IndexedDB
       if (migrateFromLocalStorage && typeof localStorage !== 'undefined') {
         try {
           const localValue = localStorage.getItem(name);
           if (localValue) {
-            await getDb().kv.put({ id: name, value: localValue });
+            await database.kv.put({ id: name, value: localValue });
             localStorage.removeItem(name);
             return localValue;
           }
@@ -82,7 +90,7 @@ export function createDexieStorage(
       }
 
       try {
-        const item = await getDb().kv.get(name);
+        const item = await database.kv.get(name);
         return item?.value ?? null;
       } catch {
         return null;
@@ -90,11 +98,26 @@ export function createDexieStorage(
     },
 
     setItem: async (name: string, value: string): Promise<void> => {
-      await getDb().kv.put({ id: name, value });
+      const database = getDb();
+      if (!database) return;
+
+      try {
+        await database.kv.put({ id: name, value });
+      } catch (error) {
+        // 客户端写入失败降级为告警，避免 persist 包装层把 rejection 抛成 unhandledRejection。
+        console.warn('[DexieStorage] setItem 写入失败:', error);
+      }
     },
 
     removeItem: async (name: string): Promise<void> => {
-      await getDb().kv.delete(name);
+      const database = getDb();
+      if (!database) return;
+
+      try {
+        await database.kv.delete(name);
+      } catch (error) {
+        console.warn('[DexieStorage] removeItem 删除失败:', error);
+      }
     },
   };
 }

@@ -13,6 +13,8 @@ import { DestinyShell } from './layout/destiny-shell';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
+// 跨模态接力：命盘生成后经 externalDraft 预填顾问（绝不复用 queuedQuestion，REQ §4.6.4）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import type { BaziFormData } from './bazi-types';
 import type {
   BaziLockedSections,
@@ -98,6 +100,28 @@ export function BaziWorkspace({
   );
   const abortRef = useRef<AbortController | null>(null);
   const currentHistoryIdRef = useRef<string | null>(null);
+
+  // 接力：八字目标接收。命盘生成后把引用文本经 externalDraft 预填到 AI 顾问输入框。
+  const relay = useRelayReceive('destiny');
+  const relayText = relay.bundle?.items[0]?.snapshotText ?? '';
+  const relayDraft = useMemo(() => {
+    if (step !== 'result' || !report || !relayText) return null;
+    return { id: relay.bundle!.id, text: relayText };
+  }, [step, report, relayText, relay.bundle]);
+  // 预填被顾问接收：仅记录，不完成接力（REQ §4.6.4-5：发送成功才完成接力）
+  const handleRelayDraftHandled = useMemo(
+    () => () => {
+      // 顾问已接收预填：此处不清引用，接力完成时机推迟到「顾问发送成功」（onRelayDraftSent）
+    },
+    [relay.bundle?.id]
+  );
+  // 顾问发送预填内容成功：完成一次接力（清活动引用与草稿）
+  const handleRelayDraftSent = useMemo(
+    () => () => {
+      relay.commitExecution();
+    },
+    [relay.bundle?.id]
+  );
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -387,6 +411,8 @@ export function BaziWorkspace({
               title: `${formData.name}的八字命理报告`,
               preview: previewText.slice(0, 150),
               coreTone: mergedReport.coreTone?.tag || '八字命理',
+              // 接力派生：有活动引用时记录来源（REQ-013）；完成接力时机在顾问发送成功（§4.6.4-5）
+              derivation: relay.prepareExecution(),
             }
           );
           useHistoryStore.getState().addItem(historyItem);
@@ -511,6 +537,9 @@ export function BaziWorkspace({
                 subtitleTag="八字格局精批"
                 onModuleChange={onModuleChange}
                 onRecalculate={handleRecalculate}
+                relayDraft={relayDraft}
+                onRelayDraftHandled={handleRelayDraftHandled}
+                onRelayDraftSent={handleRelayDraftSent}
               />
             </div>
           </div>

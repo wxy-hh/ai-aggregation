@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import {
   AICoPilotConversation,
   buildCopilotContext,
+  type ExternalDraft,
   type QueuedQuestion,
 } from './ai-copilot-conversation';
 import type { DestinyCopilotDecadeFocus } from './destiny-copilot-types';
@@ -56,6 +57,9 @@ export function AICoPilotDrawer({
   focusDecade = null,
   queuedQuestion: queuedQuestionProp = null,
   onQueuedQuestionHandled,
+  externalDraft = null,
+  onExternalDraftHandled,
+  onExternalDraftSent,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -64,6 +68,11 @@ export function AICoPilotDrawer({
   focusDecade?: DestinyCopilotDecadeFocus | null;
   queuedQuestion?: QueuedQuestion | null;
   onQueuedQuestionHandled?: (id: number) => void;
+  /** 跨模态接力预填：仅入输入框，绝不自动发送 */
+  externalDraft?: ExternalDraft | null;
+  onExternalDraftHandled?: (id: string) => void;
+  /** 接力预填内容被发送且成功提交后触发（REQ §4.6.4-5：发送成功才完成接力） */
+  onExternalDraftSent?: (id: string) => void;
 }) {
   const [localQueuedQuestion, setLocalQueuedQuestion] = useState<QueuedQuestion | null>(null);
   const queuedQuestion = queuedQuestionProp ?? localQueuedQuestion;
@@ -200,6 +209,9 @@ export function AICoPilotDrawer({
                       onQueuedQuestionHandled?.(id);
                       setLocalQueuedQuestion((current) => (current?.id === id ? null : current));
                     }}
+                    externalDraft={externalDraft}
+                    onExternalDraftHandled={onExternalDraftHandled}
+                    onExternalDraftSent={onExternalDraftSent}
                     onSendingChange={setSending}
                     className="min-h-0 flex-1"
                   />

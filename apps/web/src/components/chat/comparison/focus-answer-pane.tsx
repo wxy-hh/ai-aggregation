@@ -16,6 +16,11 @@ import { Copy, Check, RotateCw, Square, Loader2, AlertCircle } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { CodeBlock } from '../code-block';
 import type { ModelRun } from '@/types/comparison';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 // 流式内容：纯文本 + 光标（不做 Markdown 解析，避免流式抖动）
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
@@ -121,6 +126,29 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
     setTimeout(() => setCopied(false), 2000);
   }, [run.content]);
 
+  // 接力：仅已完成的非空回答可发起（REQ-007/REQ-011）。快照只含本列内容与 modelKey。
+  const canRelay = run.status === 'completed' && run.content.trim().length > 0;
+  const relay = useRelayLauncher({
+    sourceType: 'text',
+    disabledReason: !canRelay
+      ? run.status === 'streaming' || run.status === 'queued'
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelay) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'chat',
+        sourceType: 'text',
+        sourceId: `${turnId}:${run.modelKey}`,
+        sourceTitle: run.content.slice(0, 30) || '对比回答',
+        sourceModel: run.modelKey,
+        snapshotText: run.content,
+      };
+      return partial;
+    },
+  });
+
   return (
     <section
       className={cn(
@@ -155,8 +183,12 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
         </div>
       </header>
 
-      {/* 回答正文（独立滚动） */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+      {/* 回答正文（独立滚动）。右键/长按复用同一接力菜单。 */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar"
+        onContextMenu={relay.onContextMenu}
+        {...relay.longPressProps}
+      >
         {run.status === 'queued' && <QueuedSkeleton />}
         {run.status === 'streaming' &&
           (run.content ? <StreamingContent content={run.content} /> : <QueuedSkeleton />)}
@@ -227,7 +259,27 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
             重试
           </button>
         )}
+
+        {/* 接力按钮（REQ-007 对比源：仅本列内容入快照） */}
+        <RelayAction
+          ref={relay.triggerRef}
+          iconOnly
+          disabled={relay.disabled}
+          disabledReason={relay.disabledReason}
+          onClick={relay.openAtTrigger}
+          className="ml-auto"
+        />
       </footer>
+
+      {/* 接力菜单（显式按钮/右键/长按复用同一菜单） */}
+      <RelayMenu
+        open={relay.menuOpen}
+        onOpenChange={relay.setMenuOpen}
+        targets={relay.targets}
+        onSelect={relay.onSelect}
+        anchorPoint={relay.anchorPoint}
+        triggerRef={relay.triggerRef}
+      />
     </section>
   );
 });

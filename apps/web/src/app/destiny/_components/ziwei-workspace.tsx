@@ -10,6 +10,8 @@ import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+// 跨模态接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（REQ §4.6.4 紫微裁剪）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { generateUUID } from '@/lib/utils/uuid';
 import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
@@ -224,6 +226,9 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   const abortRef = useRef<AbortController | null>(null);
   const currentHistoryIdRef = useRef<string | null>(null);
 
+  // 接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（区别于八字的顾问追问）。
+  const relay = useRelayReceive('destiny');
+
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
@@ -408,9 +413,13 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
               title: `${formData.name}的紫微斗数命理报告`,
               preview: previewText.slice(0, 150),
               coreTone: event.report.coreTone?.tag || '紫微斗数',
+              // 接力派生：记录来源（REQ-013）；紫微无顾问，生成命盘即完成接力
+              derivation: relay.prepareExecution(),
             }
           );
           useHistoryStore.getState().addItem(historyItem);
+          // 紫微承接语义：生成命盘成功即完成接力（清引用+草稿，REQ-016/§4.6.4 紫微裁剪）
+          relay.commitExecution();
           return;
         }
 

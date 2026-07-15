@@ -7,7 +7,7 @@
  * 首轮调 sendComparison，已有轮次调 continueComparison。发送按钮 ≥44×44。
  */
 
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Send, Loader2, X, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,6 +19,11 @@ import {
   useSelectedModels,
   useComparisonTurns,
 } from '@/stores/comparison-store';
+import { useConversationsStore } from '@/stores/conversations-store';
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RELAY_COPY } from '@/lib/relay/copy';
 
 const TEXTAREA_MAX_HEIGHT = 140;
 
@@ -30,9 +35,39 @@ export const ComparisonInput = memo(function ComparisonInput() {
   const sendComparison = useComparisonStore((s) => s.sendComparison);
   const continueComparison = useComparisonStore((s) => s.continueComparison);
   const toggleModel = useComparisonStore((s) => s.toggleModel);
+  const loadComparison = useComparisonStore((s) => s.loadComparison);
 
   const [isComposing, setIsComposing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 跨模态接力：对比模式共享输入区接收（引用只在底部共享输入区，不复制到每个回答面板）
+  // 落点语义（M-3/D4）：对比模式下接力落点为「当前对比会话」——草稿预填到共享输入区；
+  // 单聊模式落点由 chat/page.tsx 保证为单聊会话（若停在比较会话则新建单聊）。
+  const relay = useRelayReceive('chat');
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
+
+  // H6 落点固定：接力到达时若 activeComparisonId 为 null 但存在对比会话，恢复最近一个为落点，
+  // 避免发送时新建空对比会话而割裂已有上下文（M-3/D4：对比模式落点为「当前对比会话」）
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (useComparisonStore.getState().activeComparisonId) return;
+    const latestCompare = useConversationsStore
+      .getState()
+      .conversations.find((c) => c.mode === 'compare');
+    if (latestCompare) loadComparison(latestCompare.id);
+
+  }, [relay.initialized, relay.bundle?.id]);
+
+  // 到达且有文本快照且当前输入为空时直接预填，不自动发送
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (relayBundleText && !input.trim()) {
+      setInput(relayBundleText);
+      relay.setDraft(relayBundleText);
+    }
+
+  }, [relay.initialized, relay.bundle?.id]);
 
   const hasTurns = turns.length > 0;
   const isStreaming = turns.some((t) => Object.values(t.runs).some((r) => r.status === 'streaming'));
@@ -44,12 +79,16 @@ export const ComparisonInput = memo(function ComparisonInput() {
     ? new Set([lastTurn.focusSlots.left, lastTurn.focusSlots.right])
     : new Set<string>();
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!canSend) return;
-    if (hasTurns) {
-      void continueComparison(input);
-    } else {
-      void sendComparison(input);
+    // 接力两阶段（REQ-016）：发送前只读派生元数据（不清引用），发送成功才 commit 清引用与草稿；
+    // 失败/跳过时引用与草稿原样保留，允许原地重试
+    const derivation = relay.prepareExecution();
+    const result = hasTurns
+      ? await continueComparison(input, derivation)
+      : await sendComparison(input, derivation);
+    if (result === 'sent') {
+      relay.commitExecution();
     }
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
@@ -105,6 +144,36 @@ export const ComparisonInput = memo(function ComparisonInput() {
         <ModelSelector variant="add" />
       </div>
 
+      {/* 接力引用条：对比模式下位于模型选择区与共享输入区之间（REQ-007） */}
+      {relay.replaceCandidate ? (
+        <div className="mb-2 px-1">
+          <ReferenceBar
+            bundle={relay.replaceCandidate.incoming}
+            isReplaceCandidate
+            onConfirmReplace={relay.confirmReplace}
+            onCancelReplace={relay.cancelReplace}
+            onRemove={relay.remove}
+          />
+        </div>
+      ) : relay.bundle ? (
+        <div className="mb-2 px-1">
+          <ReferenceBar
+            bundle={relay.bundle}
+            onRemove={relay.remove}
+            onViewSource={() => setRelayPreviewOpen(true)}
+            showFill={Boolean(relayBundleText) && input.trim() !== relayBundleText}
+            onFill={() => {
+              setInput(relayBundleText);
+              relay.setDraft(relayBundleText);
+            }}
+          />
+        </div>
+      ) : relay.isInvalid ? (
+        <p className="mb-2 px-1 text-xs text-amber-600 dark:text-amber-400">
+          {RELAY_COPY.referenceBar.invalid}
+        </p>
+      ) : null}
+
       {/* 输入坞（与 ChatInput 同系 G-2 玻璃） */}
       <div
         className={cn(
@@ -155,6 +224,13 @@ export const ComparisonInput = memo(function ComparisonInput() {
           <span className="text-amber-500">（至少选 {MIN_COMPARE_MODELS} 个）</span>
         )}
       </p>
+
+      {/* 接力来源只读预览 */}
+      <ReferenceSourcePreview
+        open={relayPreviewOpen}
+        onOpenChange={setRelayPreviewOpen}
+        item={relay.bundle?.items[0] ?? null}
+      />
     </div>
   );
 });

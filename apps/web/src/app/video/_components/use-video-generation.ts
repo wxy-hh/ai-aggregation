@@ -3,6 +3,9 @@ import { toast } from 'sonner';
 import { authFetch } from '@/lib/api/client';
 import { createBillingRequestId } from '@/lib/billing/request-id';
 import { stripDataUrlPrefix } from '@/lib/utils/image-url';
+import { useHistoryStore } from '@/stores/history-store';
+import { createVideoHistoryItem } from '@/lib/utils/history-helpers';
+import type { DerivationMetadata } from '@repo/shared';
 import {
   VideoConfig,
   VideoModel,
@@ -122,7 +125,7 @@ export function useVideoGeneration() {
     setConfig((prev) => ({ ...prev, ...partial }) as VideoConfig);
   }, []);
 
-  const generateVideo = useCallback(async () => {
+  const generateVideo = useCallback(async (derivation?: DerivationMetadata, onSuccess?: () => void) => {
     if (!prompt.trim()) {
       toast.error('请输入视频描述');
       return;
@@ -143,6 +146,18 @@ export function useVideoGeneration() {
       setCoverUrl(cover || null);
       setStatus('success');
       toast.success('🎬 视频生成成功！');
+      // 成功才写历史（含接力派生元数据，REQ-013）
+      try {
+        const item = createVideoHistoryItem(prompt, url, config.model, {
+          referenceImage: referenceImage ?? undefined,
+          derivation,
+        });
+        useHistoryStore.getState().addItem(item as never);
+      } catch {
+        // 历史写入失败不阻塞生成结果
+      }
+      // 成功回调：目标侧在此 commit 接力（清引用+草稿，REQ-016 成功才完成）
+      onSuccess?.();
     };
 
     const finishWithError = (message: string) => {

@@ -1,4 +1,4 @@
-import type { QueuedQuestion } from './ai-copilot-conversation';
+import type { ExternalDraft, QueuedQuestion } from './ai-copilot-conversation';
 
 /** 追问面板聚焦某一步大运时的上下文 */
 export type DestinyCopilotDecadeFocus = {
@@ -10,6 +10,8 @@ export type DestinyCopilotDecadeFocus = {
 export type DestinyCopilotLaunch = {
   focus?: DestinyCopilotDecadeFocus | null;
   queuedQuestion?: QueuedQuestion | null;
+  /** 跨模态接力预填：仅入输入框，绝不自动发送 */
+  externalDraft?: ExternalDraft | null;
 };
 
 /** 生成「追问这一步大运」的默认问题 */

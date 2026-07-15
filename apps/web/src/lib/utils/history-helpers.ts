@@ -3,9 +3,10 @@
  * 历史记录辅助函数
  */
 
-import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem, DestinyHistoryItem, DestinySubType } from '@/types/history';
+import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem, VideoHistoryItem, DestinyHistoryItem, DestinySubType } from '@/types/history';
 import { generateUUID } from '@/lib/utils/uuid';
 import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
+import type { DerivationMetadata } from '@repo/shared';
 
 /**
  * Format relative time
@@ -208,6 +209,39 @@ export function createImageHistoryItem(
 }
 
 /**
+ * 创建视频历史记录项（REQ-013；成功生成后写入，含接力派生元数据）
+ */
+export function createVideoHistoryItem(
+  prompt: string,
+  videoUrl: string,
+  model: string,
+  options?: {
+    referenceImage?: string;
+    aspectRatio?: string;
+    parameters?: Record<string, any>;
+    derivation?: DerivationMetadata;
+  }
+): Omit<VideoHistoryItem, 'id' | 'createdAt' | 'updatedAt'> {
+  const now = new Date();
+  const preview = prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt;
+  const title = prompt.split(/[,，。]/)[0].slice(0, 30) || '生成视频';
+
+  return {
+    type: 'video',
+    title,
+    preview,
+    date: formatRelativeTime(now),
+    model,
+    videoUrl,
+    prompt,
+    referenceImage: options?.referenceImage,
+    aspectRatio: options?.aspectRatio,
+    parameters: options?.parameters,
+    ...(options?.derivation ?? {}),
+  };
+}
+
+/**
  * 创建命理历史记录项（返回完整对象，包含 id 和时间戳）
  * @param id - 可选的外部 ID，用于防止重复保存；不传则生成新 UUID
  */
@@ -221,6 +255,7 @@ export function createDestinyHistoryItem(
     preview?: string;
     coreTone?: string;
     id?: string;
+    derivation?: DerivationMetadata;
   }
 ): DestinyHistoryItem {
   const now = new Date();
@@ -276,5 +311,7 @@ export function createDestinyHistoryItem(
       birthDate: birthDateText,
     },
     coreTone,
+    // 接力派生元数据（REQ-013/016「由某来源接力生成」）
+    ...(options?.derivation ?? {}),
   };
 }

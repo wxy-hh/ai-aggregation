@@ -164,6 +164,14 @@ export const useHistoryStore = create<HistoryState>()(
 
         // 避免循环调用
         if (!_isSyncDelete) {
+          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+          try {
+            const { markSourcesInvalidBySourceIds } = require('./relay-store');
+            markSourcesInvalidBySourceIds([id]);
+          } catch (e) {
+            console.warn('Failed to mark relay source invalid:', e);
+          }
+
           // 同步删除 conversations-store 中的对应对话（chat 类型）
           try {
             const { useConversationsStore } = require('./conversations-store');
@@ -201,6 +209,14 @@ export const useHistoryStore = create<HistoryState>()(
 
         // 避免循环调用
         if (!_isSyncDelete) {
+          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+          try {
+            const { markSourcesInvalidBySourceIds } = require('./relay-store');
+            markSourcesInvalidBySourceIds(ids);
+          } catch (e) {
+            console.warn('Failed to mark relay source invalid (batch):', e);
+          }
+
           // 同步删除 conversations-store 中的对应对话（chat 类型）
           try {
             const { useConversationsStore } = require('./conversations-store');
@@ -232,8 +248,11 @@ export const useHistoryStore = create<HistoryState>()(
 
       // 清空历史记录
       clearHistory: (type) => {
-        // 获取要被删除的记录 ID，用于同步删除
+        // 获取要被删除的记录 ID，用于同步删除与接力失效标记
         const state = get();
+        const deletedIds = new Set(
+          state.items.filter((item) => (type ? item.type === type : true)).map((item) => item.id)
+        );
         const chatIdsToDelete = type === 'chat' || !type
           ? state.items.filter((item) => (type ? item.type === type : item.type === 'chat')).map((item) => item.id)
           : [];
@@ -247,6 +266,14 @@ export const useHistoryStore = create<HistoryState>()(
           }));
         } else {
           set({ items: [] });
+        }
+
+        // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+        try {
+          const { markSourcesInvalidBySourceIds } = require('./relay-store');
+          markSourcesInvalidBySourceIds(Array.from(deletedIds));
+        } catch (e) {
+          console.warn('Failed to mark relay source invalid (clear):', e);
         }
 
         // 同步清空 conversations-store 中的对应对话（chat 类型）
@@ -331,6 +358,7 @@ export const useHistoryStore = create<HistoryState>()(
           chat: items.filter((item) => item.type === 'chat').length,
           voice: items.filter((item) => item.type === 'voice').length,
           image: items.filter((item) => item.type === 'image').length,
+          video: items.filter((item) => item.type === 'video').length,
           destiny: items.filter((item) => item.type === 'destiny').length,
         };
       },

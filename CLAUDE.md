@@ -413,6 +413,6 @@ EOF
 
 **风险链路**：涉及登录、鉴权、token/session、Supabase RLS、数据删除、跨系统入口时，先提示风险并建议完整流程。
 
-**验证**：`automated-tests: none`，不把 `typecheck`/`lint` 当成测试证据。L 级运行时行为改动必须有手动测试脚本或 dev server 验证记录。
+**验证**：`automated-tests: present`（apps/web 配置了 Vitest + Playwright），M/L 任务把 `pnpm test` 纳入验证矩阵，但不把 `typecheck`/`lint` 当成测试证据。L 级关键路径优先用 `pnpm test:e2e` 浏览器自动化验证，其余运行时行为改动必须有手动测试脚本或 dev server 验证记录。
 
 **项目适配**：`.claude/rules/project-workflow.md` 包含项目特有配置。

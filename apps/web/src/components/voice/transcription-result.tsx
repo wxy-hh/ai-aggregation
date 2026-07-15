@@ -7,6 +7,12 @@ import { translateText, isQuotaError } from '@/lib/api/translation';
 import { exportToWord } from '@/lib/utils/export-docx';
 import { useToast } from '@/hooks/use-toast';
 import { ToastContainer } from '@/components/ui/toast';
+// 跨模态接力：转写作为来源（REQ-002/008）
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 type ViewMode = 'original' | 'translation' | 'bilingual';
 
@@ -163,10 +169,31 @@ export function TranscriptionResult({
     }
   };
 
-  const handleSendToChat = () => {
-    // TODO: 实现发送到对话功能
-    alert('发送到对话功能开发中');
-  };
+  // 跨模态接力：完整转写作为来源（REQ-008）。处理中/空时禁用。
+  const fullTranscript = segments
+    .map((s) => s.originalText)
+    .filter(Boolean)
+    .join('\n\n');
+  const canRelay = !isProcessing && fullTranscript.trim().length > 0;
+  const relay = useRelayLauncher({
+    sourceType: 'transcript',
+    disabledReason: !canRelay
+      ? isProcessing
+        ? RELAY_COPY.disabled.recording
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelay) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'voice',
+        sourceType: 'transcript',
+        sourceId: fileName,
+        sourceTitle: fileName || RELAY_COPY.voice.fullTranscript,
+        snapshotText: fullTranscript,
+      };
+      return partial;
+    },
+  });
 
   // Edit handlers
   const handleStartEdit = (segmentId: string, originalText: string) => {
@@ -234,6 +261,16 @@ export function TranscriptionResult({
     <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* 接力菜单（显式按钮/右键/长按复用） */}
+      <RelayMenu
+        open={relay.menuOpen}
+        onOpenChange={relay.setMenuOpen}
+        targets={relay.targets}
+        onSelect={relay.onSelect}
+        anchorPoint={relay.anchorPoint}
+        triggerRef={relay.triggerRef}
+      />
 
       {/* Header */}
       <header className="flex-none px-4 py-4 sm:px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
@@ -389,21 +426,14 @@ export function TranscriptionResult({
               )}
               {isExporting ? '导出中...' : '导出'}
             </Button>
-            <Button
-              size="sm"
-              onClick={handleSendToChat}
-              className="gap-2 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/20"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-              发送到对话
-            </Button>
+            {/* 接力：完整转写发起（REQ-002 显式入口）。替换原「发送到对话」TODO。 */}
+            <RelayAction
+              ref={relay.triggerRef}
+              disabled={relay.disabled}
+              disabledReason={relay.disabledReason}
+              onClick={relay.openAtTrigger}
+              className="h-9 gap-2 rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 px-3 text-white shadow-lg shadow-blue-500/20 hover:from-blue-700 hover:to-indigo-700 hover:text-white"
+            />
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 // ============ 导入 React Hooks ============
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 // useState: 管理组件内部状态（如输入内容、弹窗显示状态）
 // useRef: 引用 DOM 元素（如文本框、文件输入框）
 // useCallback: 缓存函数，避免不必要的重新创建
@@ -48,6 +48,10 @@ const TEXTAREA_MAX_HEIGHT = 120;
 interface ChatInputProps {
   onSend: (message: string) => void; // 发送消息的回调函数（父组件传入）
   isLoading?: boolean; // 是否正在加载（可选，用于禁用输入）
+  // 跨模态接力：外部草稿预填（仅写入输入框，不自动发送；id 变化才消费一次）
+  externalDraft?: { id: string; text: string } | null;
+  // 预填被消费后的回调（父组件清除活动草稿）
+  onExternalDraftConsumed?: (id: string) => void;
 }
 
 // ============ 聊天输入组件 ============
@@ -56,7 +60,7 @@ interface ChatInputProps {
 // 2. 上传图片和文件附件（仅豆包模型支持）
 // 3. 处理键盘事件（如 Enter 发送）
 // 4. 显示附件预览和删除
-export function ChatInput({ onSend, isLoading }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, externalDraft, onExternalDraftConsumed }: ChatInputProps) {
   // ============ 组件内部状态 ============
 
   // 输入框的文本内容
@@ -157,6 +161,21 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
     //    scrollHeight 是元素内容的实际高度（包括滚动区域）
     e.target.style.height = `${Math.min(e.target.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
   };
+
+  // ============ 跨模态接力：外部草稿预填（仅写入，不自动发送） ============
+  useEffect(() => {
+    if (!externalDraft) return;
+    const el = textareaRef.current;
+    setInput(externalDraft.text);
+    // 触发与 handleInput 一致的高度重算，避免预填后高度不变
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+    }
+    onExternalDraftConsumed?.(externalDraft.id);
+    // 仅在草稿 id 变化时消费一次
+     
+  }, [externalDraft?.id]);
 
   // ============ 图片上传处理 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数

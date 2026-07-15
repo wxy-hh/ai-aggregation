@@ -9,8 +9,21 @@ import type { BaziLockedSections, DestinyStreamStatus, PartialDestinyReport } fr
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Briefcase, Heart, Sparkles, Stethoscope, Wallet } from 'lucide-react';
+// 跨模态接力：报告稳定段落作为来源（REQ-012）
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 type TabKey = 'career' | 'love' | 'wealth' | 'health';
+
+const TAB_LABEL: Record<TabKey, string> = {
+  career: '事业',
+  love: '感情',
+  wealth: '财运',
+  health: '健康',
+};
 
 export function ReportRightRail({
   report,
@@ -94,6 +107,39 @@ export function ReportRightRail({
     if (tab === 'wealth') return '财运';
     return '健康';
   }, [tab]);
+
+  // 接力来源：仅稳定段落（非流式/无错误/有内容）可接力，快照当前段落全文
+  const sectionText = useMemo(() => {
+    if (!module) return '';
+    const parts = [
+      module.summary?.trim() ?? '',
+      ...(module.advantages ?? []).map((b) => `优势：${b}`),
+      ...(module.suggestions ?? []).map((b) => `建议：${b}`),
+      ...(module.bullets ?? []),
+    ].filter(Boolean);
+    return parts.join('\n');
+  }, [module]);
+  const canRelaySection = !streaming && !streamError && sectionText.length > 0;
+  const sectionRelay = useRelayLauncher({
+    sourceType: 'destiny_report_section',
+    disabledReason: canRelaySection
+      ? undefined
+      : streaming
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty,
+    buildItem: () => {
+      if (!canRelaySection) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'destiny',
+        sourceType: 'destiny_report_section',
+        sourceId: `destiny-report-section:${tab}`,
+        sourceTitle: `命理报告 · ${TAB_LABEL[tab]}段落`,
+        sourceModel: report.profile ? '命理报告' : undefined,
+        snapshotText: sectionText,
+      };
+      return partial;
+    },
+  });
 
   const hasModuleSummary = Boolean(module?.summary?.trim());
   const hasModuleBullets = Boolean(
@@ -206,7 +252,24 @@ export function ReportRightRail({
           </TabsList>
         </Tabs>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 custom-scrollbar">
+        {/* 当前段落接力入口：显式按钮 + 内容区右键/长按复用同一菜单 */}
+        <div className="mt-2 flex shrink-0 items-center justify-between gap-2 px-1">
+          <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">
+            {RELAY_COPY.destiny.pendingReference}·{moduleLabel}
+          </span>
+          <RelayAction
+            ref={sectionRelay.triggerRef}
+            disabled={sectionRelay.disabled}
+            disabledReason={sectionRelay.disabledReason}
+            onClick={sectionRelay.openAtTrigger}
+          />
+        </div>
+
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 custom-scrollbar"
+          onContextMenu={sectionRelay.onContextMenu}
+          {...sectionRelay.longPressProps}
+        >
           <div className={readSurfaceClass}>
             {hasModuleSummary ? (
               <div className="text-xs sm:text-sm text-slate-600 leading-relaxed">
@@ -423,6 +486,15 @@ export function ReportRightRail({
         </div>
       </div>
 
+      {/* 接力菜单（报告段落来源） */}
+      <RelayMenu
+        open={sectionRelay.menuOpen}
+        onOpenChange={sectionRelay.setMenuOpen}
+        targets={sectionRelay.targets}
+        onSelect={sectionRelay.onSelect}
+        anchorPoint={sectionRelay.anchorPoint}
+        triggerRef={sectionRelay.triggerRef}
+      />
     </div>
   );
 }

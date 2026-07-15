@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { toast } from 'sonner';
 import { ConfigPanel } from './config-panel';
 import { PreviewCanvas } from './preview-canvas';
 import { AssetsSidebar } from './assets-sidebar';
@@ -11,6 +12,16 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { FolderOpen, Settings2, Sparkles, Clapperboard } from 'lucide-react';
+// 跨模态接力：视频目标接收 + 结果源侧发起
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import { isAgnesConfig } from '@/lib/constants/video-generation';
+import type { RelayReferenceItem } from '@repo/shared';
 
 export function VideoEditor() {
   const {
@@ -36,6 +47,90 @@ export function VideoEditor() {
   const [isConfigDrawerOpen, setIsConfigDrawerOpen] = React.useState(false);
   const [isAssetsDrawerOpen, setIsAssetsDrawerOpen] = React.useState(false);
   const canGenerate = prompt.trim().length > 0 && !isGenerating;
+
+  // 跨模态接力：视频目标接收（REQ-004/005/006）
+  const relay = useRelayReceive('video');
+  const [relayPreviewOpen, setRelayPreviewOpen] = React.useState(false);
+  const relayDraftText = relay.bundle?.items[0]?.snapshotText ?? '';
+  const relayMediaUrl = relay.bundle?.items[0]?.snapshotMediaUrl ?? '';
+  const relayTargetRole = relay.bundle?.targetRole;
+  // 到达时预填：文本→视频描述；图片→参考图。移动端自动打开配置抽屉（不用 focus 唤起键盘）。
+  React.useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (relayTargetRole === 'prompt' && relayDraftText && !relay.draft) {
+      setPrompt(relayDraftText);
+      relay.setDraft(relayDraftText);
+    } else if (relayTargetRole === 'reference_image' && relayMediaUrl) {
+      // H4 能力守卫：agnes 模型不消费 CogVideoX 单参考图字段（静默写入不生效），
+      // 提示用户改用「参考图列表」能力，不写字段（REQ §4.5.3 不支持时给中文提示）
+      if (isAgnesConfig(config)) {
+        toast.warning('当前模型不支持单张参考图输入，请切换到 CogVideoX 模型，或在「参考图列表」中添加图片');
+      } else if (referenceImage && referenceImage !== relayMediaUrl) {
+        // H4 已有手动参考图：不静默覆盖，提示并保留原图（REQ §4.5.3 替换需用户确认）
+        toast.warning('已有参考图，未自动替换。请先移除当前参考图，再重新发起接力');
+      } else {
+        setReferenceImage(relayMediaUrl);
+      }
+    }
+    if (window.matchMedia('(max-width: 1023px)').matches) setIsConfigDrawerOpen(true);
+
+  }, [relay.initialized, relay.bundle?.id]);
+
+  // 结果源侧接力：把生成视频作为来源（REQ-002/009）。快照含视频地址与描述。
+  const canRelayResult = status === 'success' && Boolean(videoUrl);
+  const resultRelay = useRelayLauncher({
+    sourceType: 'video',
+    disabledReason: !canRelayResult
+      ? isGenerating
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelayResult || !videoUrl) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'video',
+        sourceType: 'video',
+        sourceId: videoUrl,
+        sourceTitle: prompt.slice(0, 30) || '生成视频',
+        sourceModel: config.model,
+        snapshotText: prompt,
+        snapshotMediaUrl: coverUrl ?? undefined,
+      };
+      return partial;
+    },
+  });
+
+  // 包装 generateVideo：两阶段接力（REQ-016）——生成前只读派生元数据（不清引用），
+  // 成功回调里再 commit 清引用与草稿；失败/取消时引用与草稿原样保留，允许原地重试
+  const handleGenerateWithRelay = React.useCallback(() => {
+    const derivation = relay.prepareExecution();
+    generateVideo(derivation, () => relay.commitExecution());
+  }, [relay, generateVideo]);
+
+  // 接力引用条（三态：替换确认 / 活动引用 / 失效提示），渲染在视频描述上方
+  const relayBar = relay.replaceCandidate ? (
+    <ReferenceBar
+      bundle={relay.replaceCandidate.incoming}
+      isReplaceCandidate
+      onConfirmReplace={relay.confirmReplace}
+      onCancelReplace={relay.cancelReplace}
+      onRemove={relay.remove}
+    />
+  ) : relay.bundle ? (
+    <ReferenceBar
+      bundle={relay.bundle}
+      onRemove={relay.remove}
+      onViewSource={() => setRelayPreviewOpen(true)}
+      showFill={relayTargetRole === 'prompt' && Boolean(relayDraftText) && prompt !== relayDraftText}
+      fillLabel={RELAY_COPY.referenceBar.fillPrompt}
+      onFill={() => {
+        setPrompt(relayDraftText);
+        relay.setDraft(relayDraftText);
+      }}
+    />
+  ) : relay.isInvalid ? (
+    <p className="text-xs text-amber-600 dark:text-amber-400">{RELAY_COPY.referenceBar.invalid}</p>
+  ) : null;
 
   return (
     <AppLayout>
@@ -74,9 +169,10 @@ export function VideoEditor() {
               setReferenceImage={setReferenceImage}
               referenceImages={referenceImages}
               setReferenceImages={setReferenceImages}
-              onGenerate={generateVideo}
+              onGenerate={handleGenerateWithRelay}
               isGenerating={isGenerating}
               loadingStep={loadingStep}
+              relayBar={relayBar}
             />
           </aside>
 
@@ -124,6 +220,16 @@ export function VideoEditor() {
                   progress={progress}
                   status={status}
                   onReset={reset}
+                  relayAction={
+                    canRelayResult ? (
+                      <RelayAction
+                        ref={resultRelay.triggerRef}
+                        iconOnly
+                        className="h-11 w-11 rounded-full text-white hover:bg-white/20 hover:text-white"
+                        onClick={resultRelay.openAtTrigger}
+                      />
+                    ) : undefined
+                  }
                 />
               </div>
             </div>
@@ -143,7 +249,7 @@ export function VideoEditor() {
         <div className="sticky bottom-0 z-20 border-t border-white/30 bg-white/75 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-950/75 lg:hidden">
           <Button
             type="button"
-            onClick={generateVideo}
+            onClick={handleGenerateWithRelay}
             disabled={!canGenerate}
             className="h-12 w-full rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-blue-700"
           >
@@ -182,11 +288,12 @@ export function VideoEditor() {
               setReferenceImages={setReferenceImages}
               onGenerate={() => {
                 setIsConfigDrawerOpen(false);
-                generateVideo();
+                handleGenerateWithRelay();
               }}
               isGenerating={isGenerating}
               loadingStep={loadingStep}
               showGenerateButton={false}
+              relayBar={relayBar}
             />
           </div>
         </DialogContent>
@@ -207,6 +314,21 @@ export function VideoEditor() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 接力菜单（结果源侧发起）与来源只读预览 */}
+      <RelayMenu
+        open={resultRelay.menuOpen}
+        onOpenChange={resultRelay.setMenuOpen}
+        targets={resultRelay.targets}
+        onSelect={resultRelay.onSelect}
+        anchorPoint={resultRelay.anchorPoint}
+        triggerRef={resultRelay.triggerRef}
+      />
+      <ReferenceSourcePreview
+        open={relayPreviewOpen}
+        onOpenChange={setRelayPreviewOpen}
+        item={relay.bundle?.items[0] ?? null}
+      />
     </AppLayout>
   );
 }

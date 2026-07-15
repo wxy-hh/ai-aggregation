@@ -19,6 +19,12 @@ import { useRtasrRealtime } from '@/hooks/use-rtasr-realtime';
 import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+// 跨模态接力：实时转写作为来源（REQ-002/008）
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 function formatElapsed(ms: number) {
   const sec = Math.max(0, Math.floor(ms / 1000));
@@ -222,6 +228,39 @@ function VoicePageContent() {
     URL.revokeObjectURL(url);
     toast.success('导出成功');
   }, [rtasr.segments]);
+
+  // 跨模态接力：实时转写作为来源（REQ-008）。
+  // RTASR 语义：active=true 表示该段识别中未定稿，故快照只取已定稿（active:false）段。
+  // 录音进行中禁用完整接力，避免快照残缺。
+  const isRecordingActive =
+    rtasr.status === 'running' || rtasr.status === 'connecting' || rtasr.status === 'stopping';
+  const finalizedTranscript = rtasr.segments
+    .filter((s) => !s.active)
+    .map((s) => s.text)
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  const canRelay = !isRecordingActive && finalizedTranscript.length > 0;
+  const relay = useRelayLauncher({
+    sourceType: 'transcript',
+    disabledReason: !canRelay
+      ? isRecordingActive
+        ? RELAY_COPY.disabled.recording
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelay) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'voice',
+        sourceType: 'transcript',
+        sourceId: `rtasr-${Date.now()}`,
+        sourceTitle: RELAY_COPY.voice.fullTranscript,
+        sourceModel: 'iFlytek/RTASR',
+        snapshotText: finalizedTranscript,
+      };
+      return partial;
+    },
+  });
 
   const primaryActionLabel =
     rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error'
@@ -579,6 +618,14 @@ function VoicePageContent() {
                     </svg>
                     导出
                   </Button>
+                  {/* 接力：实时转写发起（REQ-002 显式入口，录音中禁用） */}
+                  <RelayAction
+                    ref={relay.triggerRef}
+                    disabled={relay.disabled}
+                    disabledReason={relay.disabledReason}
+                    onClick={relay.openAtTrigger}
+                    className="gap-2 justify-center"
+                  />
                 </div>
 
                 <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 sm:block"></div>
@@ -634,6 +681,16 @@ function VoicePageContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 接力菜单（显式按钮/右键/长按复用） */}
+      <RelayMenu
+        open={relay.menuOpen}
+        onOpenChange={relay.setMenuOpen}
+        targets={relay.targets}
+        onSelect={relay.onSelect}
+        anchorPoint={relay.anchorPoint}
+        triggerRef={relay.triggerRef}
+      />
     </AppLayout>
   );
 }

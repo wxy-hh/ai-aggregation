@@ -4,6 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { VoiceHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface VoiceHistoryCardProps {
   item: VoiceHistoryItem;
@@ -100,6 +101,8 @@ export function VoiceHistoryCard({ item, onDelete }: VoiceHistoryCardProps) {
           {item.preview}
         </p>
       </div>
+
+      <DerivationBadge item={item} />
     </div>
   );
 }

@@ -22,6 +22,8 @@ interface PreviewCanvasProps {
   progress: number;
   status: GenerationStatus;
   onReset?: () => void;
+  // 跨模态接力：结果工具栏上的接力按钮槽（成功态才传入）
+  relayAction?: React.ReactNode;
 }
 
 export function PreviewCanvas({
@@ -31,6 +33,7 @@ export function PreviewCanvas({
   progress,
   status,
   onReset,
+  relayAction,
 }: PreviewCanvasProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
@@ -244,29 +247,33 @@ export function PreviewCanvas({
                 onPause={() => setIsPlaying(false)}
               />
 
-              {/* 悬停控制层 */}
+              {/* 悬停控制层（移动端常显，避免依赖 hover） */}
               <div
                 className={cn(
-                  'absolute inset-0 transition-opacity bg-gradient-to-t from-black/50 via-transparent to-black/20 flex flex-col justify-between p-8',
+                  'absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/50 via-transparent to-black/20 p-4 transition-opacity sm:p-8',
+                  'max-sm:opacity-100',
                   isHovering ? 'opacity-100' : 'opacity-0'
                 )}
               >
-                {/* 顶部工具栏 */}
+                {/* 顶部工具栏：接力 / 下载 / 全屏 */}
                 <div className="flex justify-end gap-3">
+                  {relayAction}
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-white hover:bg-white/20 rounded-full"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
                     onClick={handleDownload}
+                    aria-label="下载视频"
                   >
-                    <Download className="w-5 h-5" />
+                    <Download className="h-5 w-5" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-white hover:bg-white/20 rounded-full"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
+                    aria-label="全屏播放"
                   >
-                    <Maximize2 className="w-5 h-5" />
+                    <Maximize2 className="h-5 w-5" />
                   </Button>
                 </div>
 

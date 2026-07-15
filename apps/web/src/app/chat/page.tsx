@@ -11,6 +11,11 @@ import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组�
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+// 跨模态接力：目标侧接收（引用条 + 预填 + 派生）
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RELAY_COPY } from '@/lib/relay/copy';
 
 // ============ 导入状态管理 Store ============
 import {
@@ -232,6 +237,40 @@ export default function ChatPage() {
   const loadComparison = useComparisonStore((state) => state.loadComparison); // 载入比较会话
   const startNewComparison = useComparisonStore((state) => state.startNewComparison); // 新建比较会话
   const isCompareMode = comparisonMode === 'compare'; // 是否处于并行对比模式
+
+  // ============ 跨模态接力：对话目标接收 ============
+  // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
+  const relay = useRelayReceive('chat');
+  // 承载传给 ChatInput 的外部草稿（id 用于只消费一次）
+  const [relayDraft, setRelayDraft] = useState<{ id: string; text: string } | null>(null);
+  // 查看来源快照预览
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  // 接力到达且有文本快照时，若当前输入为空则直接预填，非空则由「填入输入框」显式触发
+  const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    // 接力上下文进入输入框：文本作为用户引导句（可编辑），不自动发送
+    if (relayBundleText && !relay.draft) {
+      setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
+      relay.setDraft(relayBundleText);
+    }
+
+  }, [relay.initialized, relay.bundle?.id]);
+
+  // ============ 接力会话落点（M-3）============
+  // 目标=对话的接力到达时，若当前停在比较会话（消息存 turns 而非 messages），
+  // 新建一个单聊会话承载接力上下文，避免用户直接发送导致消息写错会话。
+  // ?relayId= 已由 useRelayReceive 在 URL 参数 effect 前清掉，不会误入场景分支。
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (!isLoaded) return;
+    const current = getCurrentConversation();
+    if (current?.mode === 'compare') {
+      const newId = createConversation(provider, model);
+      loadConversation(newId, [], provider, model || 'lite');
+      loadedIdRef.current = newId;
+    }
+  }, [relay.initialized, relay.bundle?.id, isLoaded]);
 
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
@@ -457,7 +496,10 @@ export default function ChatPage() {
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
   // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
-    (content: string) => {
+    async (content: string) => {
+      // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
+      const derivation = relay.prepareExecution();
+
       // 检查是否有可用的单聊会话
       // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
       // 则新建一个单聊会话，避免消息写入比较会话而丢失
@@ -472,12 +514,13 @@ export default function ChatPage() {
 
         // 更新已加载标记，防止 useEffect 重复加载
         loadedIdRef.current = newId;
+      }
 
-        // 发送用户输入的消息
-        sendMessage(content);
-      } else {
-        // 如果已经有当前对话，直接发送消息
-        sendMessage(content);
+      // 发送消息（携带接力派生元数据，仅成功路径写入历史）
+      const result = await sendMessage(content, derivation);
+      // 成功才完成接力（清引用+草稿）；失败/取消/早退保留引用允许原地重试
+      if (result === 'sent') {
+        relay.commitExecution();
       }
     },
     // 依赖项列表：这些值变化时，函数会重新创建
@@ -489,6 +532,7 @@ export default function ChatPage() {
       model,
       loadConversation,
       sendMessage,
+      relay,
     ]
   );
 
@@ -998,10 +1042,55 @@ export default function ChatPage() {
                 />
               )}
 
+              {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
+              {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (
+                <div className="relative z-10 flex-none px-4 pt-2 sm:px-5">
+                  {relay.replaceCandidate ? (
+                    <ReferenceBar
+                      bundle={relay.replaceCandidate.incoming}
+                      isReplaceCandidate
+                      onConfirmReplace={relay.confirmReplace}
+                      onCancelReplace={relay.cancelReplace}
+                      onRemove={relay.remove}
+                    />
+                  ) : relay.bundle ? (
+                    <ReferenceBar
+                      bundle={relay.bundle}
+                      onViewSource={() => setRelayPreviewOpen(true)}
+                      onRemove={relay.remove}
+                      showFill={Boolean(relayBundleText) && !relayDraft}
+                      fillLabel={RELAY_COPY.referenceBar.fillInput}
+                      onFill={() => {
+                        if (relay.bundle) {
+                          setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
+                          relay.setDraft(relayBundleText);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900">
+                      {RELAY_COPY.referenceBar.invalid}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
               <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
-                <ChatInput onSend={handleSend} isLoading={isLoading} />
+                <ChatInput
+                  onSend={handleSend}
+                  isLoading={isLoading}
+                  externalDraft={relayDraft}
+                  onExternalDraftConsumed={() => setRelayDraft(null)}
+                />
               </div>
+
+              {/* 接力来源快照预览（只读） */}
+              <ReferenceSourcePreview
+                open={relayPreviewOpen}
+                onOpenChange={setRelayPreviewOpen}
+                item={relay.bundle?.items[0] ?? null}
+              />
                 </>
               )}
             </div>
