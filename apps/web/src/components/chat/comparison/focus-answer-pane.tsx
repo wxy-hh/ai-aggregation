@@ -8,7 +8,7 @@
  * 行为栏：复制、重试、停止。
  */
 
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useMemo, useState, useCallback, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -128,22 +128,27 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
 
   // 接力：仅已完成的非空回答可发起（REQ-007/REQ-011）。快照只含本列内容与 modelKey。
   const canRelay = run.status === 'completed' && run.content.trim().length > 0;
+  // 回答正文容器 ref：判定选区是否落在本列内（REQ-009 选区优先）
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const relay = useRelayLauncher({
     sourceType: 'text',
+    selectionRootRef: contentRef,
     disabledReason: !canRelay
       ? run.status === 'streaming' || run.status === 'queued'
         ? RELAY_COPY.disabled.generating
         : RELAY_COPY.disabled.empty
       : undefined,
-    buildItem: () => {
+    buildItem: ({ selectedText }) => {
       if (!canRelay) return null;
+      // 选区片段优先；否则回退到本列完整回答
+      const snapshot = selectedText ?? run.content;
       const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
         sourceModule: 'chat',
         sourceType: 'text',
         sourceId: `${turnId}:${run.modelKey}`,
-        sourceTitle: run.content.slice(0, 30) || '对比回答',
+        sourceTitle: snapshot.slice(0, 30) || '对比回答',
         sourceModel: run.modelKey,
-        snapshotText: run.content,
+        snapshotText: snapshot,
       };
       return partial;
     },
@@ -185,6 +190,7 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
 
       {/* 回答正文（独立滚动）。右键/长按复用同一接力菜单。 */}
       <div
+        ref={contentRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar"
         onContextMenu={relay.onContextMenu}
         {...relay.longPressProps}

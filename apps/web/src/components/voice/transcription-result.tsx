@@ -169,7 +169,9 @@ export function TranscriptionResult({
     }
   };
 
-  // 跨模态接力：完整转写作为来源（REQ-008）。处理中/空时禁用。
+  // 跨模态接力：转写作为来源（REQ-008/REQ-009）。处理中/空时禁用。
+  // 转写容器 ref：选区完全落在容器内时，优先接力选中片段（REQ-009 第 4 条）。
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
   const fullTranscript = segments
     .map((s) => s.originalText)
     .filter(Boolean)
@@ -177,19 +179,24 @@ export function TranscriptionResult({
   const canRelay = !isProcessing && fullTranscript.trim().length > 0;
   const relay = useRelayLauncher({
     sourceType: 'transcript',
+    selectionRootRef: transcriptContainerRef,
     disabledReason: !canRelay
       ? isProcessing
         ? RELAY_COPY.disabled.recording
         : RELAY_COPY.disabled.empty
       : undefined,
-    buildItem: () => {
+    buildItem: ({ selectedText }) => {
       if (!canRelay) return null;
+      // 选中片段优先；否则回退到完整转写
+      const snapshot = selectedText ?? fullTranscript;
       const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
         sourceModule: 'voice',
         sourceType: 'transcript',
         sourceId: fileName,
-        sourceTitle: fileName || RELAY_COPY.voice.fullTranscript,
-        snapshotText: fullTranscript,
+        sourceTitle: selectedText
+          ? snapshot.slice(0, 30) || fileName
+          : fileName || RELAY_COPY.voice.fullTranscript,
+        snapshotText: snapshot,
       };
       return partial;
     },
@@ -481,7 +488,7 @@ export function TranscriptionResult({
       </header>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+      <div ref={transcriptContainerRef} className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         <div className="max-w-7xl mx-auto">
           {viewMode === 'bilingual' ? (
             // 双栏对照模式 - 使用 grid 自动对齐高度

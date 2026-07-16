@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useState, useCallback, useMemo, memo } from 'react';
+import { useState, useCallback, useMemo, useRef, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -420,22 +420,27 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const currentModel = useChatStore((s) => s.model);
   const currentProvider = useChatStore((s) => s.provider);
   const canRelay = !isUser && !isStreaming && !isThinking && message.content.trim().length > 0;
+  // 气泡容器 ref：用于判定用户是否在气泡内选中了片段（REQ-009 选区优先）
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
   const relay = useRelayLauncher({
     sourceType: 'text',
+    selectionRootRef: bubbleRef,
     disabledReason: !canRelay
       ? isStreaming || isThinking
         ? RELAY_COPY.disabled.generating
         : RELAY_COPY.disabled.empty
       : undefined,
-    buildItem: () => {
+    buildItem: ({ selectedText }) => {
       if (!canRelay) return null;
+      // 选区片段优先；否则回退到完整回答
+      const snapshot = selectedText ?? message.content;
       const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
         sourceModule: 'chat',
         sourceType: 'text',
         sourceId: message.id,
-        sourceTitle: message.content.slice(0, 30) || '对话回答',
+        sourceTitle: snapshot.slice(0, 30) || '对话回答',
         sourceModel: currentModel ?? currentProvider,
-        snapshotText: message.content,
+        snapshotText: snapshot,
       };
       return partial;
     },
@@ -477,6 +482,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
 
           {/* Message Bubble */}
           <div
+            ref={bubbleRef}
             onContextMenu={!isUser ? relay.onContextMenu : undefined}
             {...(!isUser ? relay.longPressProps : {})}
             className={cn(

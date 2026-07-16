@@ -57,20 +57,26 @@ export function getHistoryItemHref(item: HistoryItem): string | null {
 export function pickRecentHistoryItems(items: HistoryItem[], limit = 3): HistoryItem[] {
   const latestById = new Map<string, HistoryItem>();
 
+  // 本地匿名数据可能缺 updatedAt/createdAt，统一兜底为 0，避免 NaN 参与排序
+  const getTime = (item: HistoryItem): number => {
+    const raw = item.updatedAt || item.createdAt;
+    if (!raw) return 0;
+    const t = new Date(raw).getTime();
+    return Number.isNaN(t) ? 0 : t;
+  };
+
   items.forEach((item) => {
     const existing = latestById.get(item.id);
     if (!existing) {
       latestById.set(item.id, item);
       return;
     }
-    const existingTime = new Date(existing.updatedAt).getTime();
-    const itemTime = new Date(item.updatedAt).getTime();
-    if (itemTime >= existingTime) {
+    if (getTime(item) >= getTime(existing)) {
       latestById.set(item.id, item);
     }
   });
 
   return Array.from(latestById.values())
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .sort((a, b) => getTime(b) - getTime(a))
     .slice(0, limit);
 }

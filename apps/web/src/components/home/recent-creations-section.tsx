@@ -350,7 +350,7 @@ export function RecentFilesSidebarList() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-slate-600 dark:text-slate-300">{item.title}</span>
-              <span className="block text-[10px] text-slate-400">{formatRelativeTime(item.updatedAt)}</span>
+              <span className="block text-[10px] text-slate-400">{formatRelativeTime(item.updatedAt || item.createdAt)}</span>
             </span>
           </button>
         );

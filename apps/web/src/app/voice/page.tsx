@@ -241,22 +241,27 @@ function VoicePageContent() {
     .join('\n')
     .trim();
   const canRelay = !isRecordingActive && finalizedTranscript.length > 0;
+  // 实时转写容器 ref：录音停止后，用户选中已确认片段时优先接力选区（REQ-009 第 4 条）
+  const realtimeTranscriptRef = useRef<HTMLDivElement | null>(null);
   const relay = useRelayLauncher({
     sourceType: 'transcript',
+    selectionRootRef: realtimeTranscriptRef,
     disabledReason: !canRelay
       ? isRecordingActive
         ? RELAY_COPY.disabled.recording
         : RELAY_COPY.disabled.empty
       : undefined,
-    buildItem: () => {
+    buildItem: ({ selectedText }) => {
       if (!canRelay) return null;
+      // 选中片段优先；否则回退到完整转写
+      const snapshot = selectedText ?? finalizedTranscript;
       const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
         sourceModule: 'voice',
         sourceType: 'transcript',
         sourceId: `rtasr-${Date.now()}`,
-        sourceTitle: RELAY_COPY.voice.fullTranscript,
+        sourceTitle: selectedText ? snapshot.slice(0, 30) : RELAY_COPY.voice.fullTranscript,
         sourceModel: 'iFlytek/RTASR',
-        snapshotText: finalizedTranscript,
+        snapshotText: snapshot,
       };
       return partial;
     },
@@ -503,7 +508,9 @@ function VoicePageContent() {
                   </div>
                 ) : (
                   <>
-                    <TranscriptList segments={rtasr.segments} />
+                    <div ref={realtimeTranscriptRef}>
+                      <TranscriptList segments={rtasr.segments} />
+                    </div>
 
                     {/* 录音进行中：下一段识别占位 */}
                     {isVoiceSessionActive && (

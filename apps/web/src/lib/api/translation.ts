@@ -74,7 +74,10 @@ export async function translateText(options: TranslateOptions): Promise<Translat
     const result = await response.json();
     return result;
   } catch (error) {
-    console.error('Translation error:', error);
+    // 额度不足属于业务预期错误，上层已用 warn 级别记录并展示专门 UI，这里跳过 error 日志
+    if (!isQuotaError(error)) {
+      console.error('Translation error:', error);
+    }
     throw error;
   }
 }

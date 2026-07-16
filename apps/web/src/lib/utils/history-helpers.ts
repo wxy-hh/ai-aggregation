@@ -10,10 +10,15 @@ import type { DerivationMetadata } from '@repo/shared';
 
 /**
  * Format relative time
+ * 对无效输入做兜底：匿名/本地数据可能缺 updatedAt，避免抛 TypeError
  */
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (!date) return '未知时间';
   const now = new Date();
   const targetDate = typeof date === 'string' ? new Date(date) : date;
+  if (!(targetDate instanceof Date) || Number.isNaN(targetDate.getTime())) {
+    return '未知时间';
+  }
   const diffMs = now.getTime() - targetDate.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
