@@ -106,30 +106,39 @@ export function ReferenceBar({
       role="region"
       aria-label={`${RELAY_COPY.action}引用：${item.sourceTitle}`}
       className={cn(
-        'flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2',
-        'dark:border-white/10 dark:bg-slate-900',
+        // Z-3 悬浮指令层：G-2 玻璃 + 顶部 1px 高光 + Z-2 柔光阴影（DESIGN.md §2.1 / §3.1）
+        'relative flex items-center gap-3 overflow-hidden rounded-xl border px-3 py-2',
+        'border-white/60 bg-white/60 backdrop-blur-xl',
+        'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]',
+        'dark:border-white/10 dark:bg-slate-900/60',
         className,
       )}
     >
-      {/* 来源缩略图 / 类型图标 */}
+      {/* 顶部 1px 高光切线 */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/60 dark:bg-white/10"
+      />
+
+      {/* 来源缩略图 / 类型图标（蓝色光晕方块，对齐 DESIGN.md §8.3 图标容器） */}
       {item.snapshotMediaUrl && !mediaInvalid ? (
-         
+
         <img
           src={item.snapshotMediaUrl}
           alt={item.sourceTitle}
           className="h-10 w-10 flex-none rounded-lg object-cover"
         />
       ) : (
-        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+        <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
       )}
 
       {/* 来源信息 */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+        <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-slate-400">
           <span>{TYPE_LABEL[item.sourceType]}</span>
-          {item.sourceModel && <span>· {item.sourceModel}</span>}
+          {item.sourceModel && <span className="truncate">· {item.sourceModel}</span>}
         </div>
         <p className="truncate text-sm text-slate-700 dark:text-slate-200">
           {item.snapshotText || item.sourceTitle}
@@ -144,7 +153,13 @@ export function ReferenceBar({
           <button
             type="button"
             onClick={onFill}
-            className="min-h-[44px] rounded-lg bg-slate-700 px-3 text-xs font-medium text-white hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500"
+            className={cn(
+              // 主按钮：蓝色渐变 + 蓝色发光悬浮阴影（DESIGN.md §8.1 primary）
+              'min-h-[44px] rounded-lg px-3 text-xs font-semibold text-white',
+              'bg-gradient-to-r from-blue-600 to-indigo-600',
+              'shadow-md shadow-blue-500/15 transition-all duration-200',
+              'hover:shadow-lg hover:shadow-blue-500/25 hover:brightness-110 active:scale-[0.98]',
+            )}
           >
             {fillLabel ?? copy.fillInput}
           </button>
@@ -155,7 +170,7 @@ export function ReferenceBar({
             onClick={onViewSource}
             aria-label={copy.viewSource}
             title={copy.viewSource}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-800"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
           >
             <Eye className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -165,7 +180,7 @@ export function ReferenceBar({
           onClick={onRemove}
           aria-label={copy.remove}
           title={copy.remove}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-800"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>

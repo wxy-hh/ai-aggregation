@@ -15,6 +15,7 @@ export const RELAY_COPY = {
     remove: '移除引用',
     fillInput: '填入输入框',
     fillPrompt: '填入 Prompt',
+    fillReferenceImage: '填入参考图',
     replaceTitle: '替换当前引用？',
     replaceDesc: '目标已有引用，替换不会删除你的草稿。',
     replaceConfirm: '替换',

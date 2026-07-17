@@ -65,14 +65,6 @@ export async function POST(req: NextRequest) {
 
     const clientIp = getClientIp(req);
 
-    // IP 级速率限制
-    const rateLimitResult = await anonymousCreationLimiter.check(clientIp);
-    if (!rateLimitResult.allowed) {
-      return ApiError.tooManyRequests('设备注册过于频繁，请稍后再试', {
-        retryAfter: rateLimitResult.reset - Math.floor(Date.now() / 1000),
-      });
-    }
-
     const deviceHash = getDeviceHash(deviceId);
     let username = generateAnonymousUsername(deviceHash);
 
@@ -92,6 +84,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user) {
+      // 仅在确实需要创建新匿名账号时做 IP 级限流，
+      // 避免同一设备 refresh token 过期后的"复活"路径反复扣配额
+      const rateLimitResult = await anonymousCreationLimiter.check(clientIp);
+      if (!rateLimitResult.allowed) {
+        return ApiError.tooManyRequests('设备注册过于频繁，请稍后再试', {
+          retryAfter: rateLimitResult.reset - Math.floor(Date.now() / 1000),
+        });
+      }
+
       // 再次检查 username 唯一性（极小概率哈希冲突）
       const existingUsername = await prisma.user.findUnique({
         where: { username },

@@ -79,44 +79,48 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
 
   // 接力「待解读引用」横幅：替换确认 / 活动引用 + 术数平级选择 / 失效提示。
   // 引用文本绝不写入出生资料字段；仅在表单步展示（结果步由顾问 externalDraft 接管）。
+  // 桌面端：xl 起给左侧 nav 与右上模型切换器让位（与 DestinyPageScaffold 的 withNavOffset 对齐）；
+  // 移动端：保持 mx-4 间距，模型切换器在 sticky header 内不冲突。
   const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
-    <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6">
-      {relay.replaceCandidate ? (
-        <ReferenceBar
-          bundle={relay.replaceCandidate.incoming}
-          isReplaceCandidate
-          onConfirmReplace={relay.confirmReplace}
-          onCancelReplace={relay.cancelReplace}
-          onRemove={relay.remove}
-        />
-      ) : relay.bundle ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
-              {RELAY_COPY.destiny.pendingReference}
-            </span>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {RELAY_COPY.destiny.prefillNote}
-            </p>
-          </div>
+    <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
+      <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6 xl:mr-[280px]">
+        {relay.replaceCandidate ? (
           <ReferenceBar
-            bundle={relay.bundle}
+            bundle={relay.replaceCandidate.incoming}
+            isReplaceCandidate
+            onConfirmReplace={relay.confirmReplace}
+            onCancelReplace={relay.cancelReplace}
             onRemove={relay.remove}
-            onViewSource={() => setRelayPreviewOpen(true)}
           />
-          {relaySourceType && (
-            <RelayMethodPicker
-              sourceType={relaySourceType}
-              readinessCtx={relayReadinessCtx}
-              onPick={(methodId) => setActiveModule(methodId)}
+        ) : relay.bundle ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
+                {RELAY_COPY.destiny.pendingReference}
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {RELAY_COPY.destiny.prefillNote}
+              </p>
+            </div>
+            <ReferenceBar
+              bundle={relay.bundle}
+              onRemove={relay.remove}
+              onViewSource={() => setRelayPreviewOpen(true)}
             />
-          )}
-        </div>
-      ) : relay.isInvalid ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
-          {RELAY_COPY.referenceBar.invalid}
-        </p>
-      ) : null}
+            {relaySourceType && (
+              <RelayMethodPicker
+                sourceType={relaySourceType}
+                readinessCtx={relayReadinessCtx}
+                onPick={(methodId) => setActiveModule(methodId)}
+              />
+            )}
+          </div>
+        ) : relay.isInvalid ? (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            {RELAY_COPY.referenceBar.invalid}
+          </p>
+        ) : null}
+      </div>
     </div>
   ) : null;
 

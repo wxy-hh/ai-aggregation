@@ -54,27 +54,41 @@ export function VideoEditor() {
   const relayDraftText = relay.bundle?.items[0]?.snapshotText ?? '';
   const relayMediaUrl = relay.bundle?.items[0]?.snapshotMediaUrl ?? '';
   const relayTargetRole = relay.bundle?.targetRole;
-  // 到达时预填：文本→视频描述；图片→参考图。移动端自动打开配置抽屉（不用 focus 唤起键盘）。
+  // 到达时预填：文本→视频描述。图片不再自动写入参考图字段，
+  // 改为 ReferenceBar 上显式「填入参考图」按钮触发（用户切换模型后仍可主动回填）。
   React.useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
     if (relayTargetRole === 'prompt' && relayDraftText && !relay.draft) {
       setPrompt(relayDraftText);
       relay.setDraft(relayDraftText);
-    } else if (relayTargetRole === 'reference_image' && relayMediaUrl) {
-      // H4 能力守卫：agnes 模型不消费 CogVideoX 单参考图字段（静默写入不生效），
-      // 提示用户改用「参考图列表」能力，不写字段（REQ §4.5.3 不支持时给中文提示）
-      if (isAgnesConfig(config)) {
-        toast.warning('当前模型不支持单张参考图输入，请切换到 CogVideoX 模型，或在「参考图列表」中添加图片');
-      } else if (referenceImage && referenceImage !== relayMediaUrl) {
-        // H4 已有手动参考图：不静默覆盖，提示并保留原图（REQ §4.5.3 替换需用户确认）
-        toast.warning('已有参考图，未自动替换。请先移除当前参考图，再重新发起接力');
-      } else {
-        setReferenceImage(relayMediaUrl);
-      }
     }
     if (window.matchMedia('(max-width: 1023px)').matches) setIsConfigDrawerOpen(true);
 
   }, [relay.initialized, relay.bundle?.id]);
+
+  // 「填入参考图」：按当前模型写入对应字段。
+  // - CogVideoX → referenceImage（单图）
+  // - Agnes → referenceImages[0]，并把 mode 切到 image2video
+  // 已有手动参考图时不静默覆盖，提示先移除（REQ §4.5.3 替换需用户确认）
+  const handleFillReferenceImage = React.useCallback(() => {
+    if (!relayMediaUrl) return;
+    if (isAgnesConfig(config)) {
+      if (config.referenceImages.length > 0 && config.referenceImages[0] !== relayMediaUrl) {
+        toast.warning('已有参考图，未自动替换。请先移除当前参考图，再点击填入');
+        return;
+      }
+      // 单次 setConfig 同时更新 mode + referenceImages，避免两次 setState 互相覆盖
+      setConfig({ ...config, mode: 'image2video', referenceImages: [relayMediaUrl] });
+      toast.success('已填入参考图，并切换到「图生视频」模式');
+      return;
+    }
+    if (referenceImage && referenceImage !== relayMediaUrl) {
+      toast.warning('已有参考图，未自动替换。请先移除当前参考图，再点击填入');
+      return;
+    }
+    setReferenceImage(relayMediaUrl);
+    toast.success('已填入参考图');
+  }, [relayMediaUrl, config, referenceImage, setReferenceImage, setConfig]);
 
   // 结果源侧接力：把生成视频作为来源（REQ-002/009）。快照含视频地址与描述。
   const canRelayResult = status === 'success' && Boolean(videoUrl);
@@ -121,12 +135,23 @@ export function VideoEditor() {
       bundle={relay.bundle}
       onRemove={relay.remove}
       onViewSource={() => setRelayPreviewOpen(true)}
-      showFill={relayTargetRole === 'prompt' && Boolean(relayDraftText) && prompt !== relayDraftText}
-      fillLabel={RELAY_COPY.referenceBar.fillPrompt}
-      onFill={() => {
-        setPrompt(relayDraftText);
-        relay.setDraft(relayDraftText);
-      }}
+      showFill={
+        (relayTargetRole === 'prompt' && Boolean(relayDraftText) && prompt !== relayDraftText) ||
+        (relayTargetRole === 'reference_image' && Boolean(relayMediaUrl))
+      }
+      fillLabel={
+        relayTargetRole === 'reference_image'
+          ? RELAY_COPY.referenceBar.fillReferenceImage
+          : RELAY_COPY.referenceBar.fillPrompt
+      }
+      onFill={
+        relayTargetRole === 'reference_image'
+          ? handleFillReferenceImage
+          : () => {
+              setPrompt(relayDraftText);
+              relay.setDraft(relayDraftText);
+            }
+      }
     />
   ) : relay.isInvalid ? (
     <p className="text-xs text-amber-600 dark:text-amber-400">{RELAY_COPY.referenceBar.invalid}</p>
