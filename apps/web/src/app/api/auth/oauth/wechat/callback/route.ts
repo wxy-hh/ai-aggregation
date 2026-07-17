@@ -6,6 +6,7 @@ import {
   signAccessToken,
   generateRefreshToken,
   setRefreshTokenCookie,
+  setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { getWechatAccessToken, getWechatUserInfo } from '@/lib/auth/oauth';
@@ -110,6 +111,7 @@ export async function GET(req: NextRequest) {
 
     const redirectUrl = new URL(CLIENT_REDIRECT, req.nextUrl.origin);
     await setRefreshTokenCookie(refreshToken, expiresAt);
+    await setAuthKindCookie('user', expiresAt);
 
     return Response.redirect(redirectUrl);
   } catch (error) {

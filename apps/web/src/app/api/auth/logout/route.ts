@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { getRefreshTokenFromCookie, clearRefreshTokenCookie } from '@/lib/auth/jwt';
+import { getRefreshTokenFromCookie, clearRefreshTokenCookie, clearAuthKindCookie } from '@/lib/auth/jwt';
 
 /** GET / POST 均可，清除 Cookie 后重定向到登录页 */
 export async function GET(req: NextRequest) {
@@ -23,6 +23,7 @@ async function handleLogout(req: NextRequest) {
   // 先清除 Cookie，确保登出始终生效
   try {
     await clearRefreshTokenCookie();
+    await clearAuthKindCookie();
   } catch {
     // Cookie 清除失败继续执行
   }

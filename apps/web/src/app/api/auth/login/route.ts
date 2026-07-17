@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { verifyPassword } from '@/lib/auth/password';
-import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import { signAccessToken, generateRefreshToken, setRefreshTokenCookie, setAuthKindCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { loginSchema } from '@/schemas/auth.schema';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);
+    await setAuthKindCookie('user', expiresAt);
 
     return createSuccessResponse({
       user: {
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
         avatar: user.avatar,
         role: user.role,
         tokens: user.tokens,
+        isAnonymous: false,
       },
       accessToken,
     });

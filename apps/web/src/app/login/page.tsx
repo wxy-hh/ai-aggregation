@@ -21,6 +21,7 @@ function LoginPageContent() {
   const router = useRouter();
   const [hydrated, setHydrated] = useState(getAuthHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isAnonymous = useAuthStore((s) => s.user?.isAnonymous === true);
 
   useEffect(() => {
     const onFinishHydration = useAuthStore.persist?.onFinishHydration;
@@ -32,10 +33,11 @@ function LoginPageContent() {
   }, [hydrated]);
 
   useEffect(() => {
-    if (hydrated && isAuthenticated) {
+    // 仅真实登录用户自动跳 /home；匿名用户停留以便输入账号密码切换为真实登录
+    if (hydrated && isAuthenticated && !isAnonymous) {
       router.replace('/home');
     }
-  }, [hydrated, isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, isAnonymous, router]);
 
   if (!hydrated) {
     return <LoginSpinner />;

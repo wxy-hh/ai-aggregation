@@ -5,6 +5,7 @@ import {
   signAccessToken,
   generateRefreshToken,
   setRefreshTokenCookie,
+  setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
@@ -155,6 +156,7 @@ export async function POST(req: NextRequest) {
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);
+    await setAuthKindCookie('anonymous', expiresAt);
 
     return createSuccessResponse({
       user: {

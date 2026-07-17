@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, setRefreshTokenCookie, setAuthKindCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { ApiError } from '@/lib/api/responses';
 
 export async function POST(_req: NextRequest) {
@@ -66,6 +66,8 @@ export async function POST(_req: NextRequest) {
 
     const accessToken = signAccessToken(record.userId, record.user.role);
     await setRefreshTokenCookie(newRefreshToken, expiresAt);
+    // 此分支只可能为真实用户（匿名用户已在上方被拦截），同步续期 auth_kind 保持与 refresh_token 一致的生命周期
+    await setAuthKindCookie('user', expiresAt);
 
     return Response.json({ accessToken });
   } catch (error) {

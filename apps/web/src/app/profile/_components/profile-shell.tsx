@@ -7,6 +7,7 @@ import {
   BarChart3,
   Camera,
   Crown,
+  LogIn,
   LogOut,
   MessageSquare,
   Mic,
@@ -15,6 +16,7 @@ import {
   User,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -535,6 +537,7 @@ export function ProfileShell() {
 
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
   const isAdminUser = user?.role === 'admin';
+  const isAnonymousUser = user?.isAnonymous === true;
   // 剩余额度仅来自统一额度账户，避免用户资料快照与真实账本混用。
   const tokenRemaining = isAdminUser ? Infinity : (usage?.tokenRemaining ?? 0);
   // 圆环只使用统一账本的已结算额度，不能把音频秒数、图片或视频任务混入 Token 展示。
@@ -707,29 +710,57 @@ export function ProfileShell() {
                 </div>
               </div>
 
-              <div className={`grid gap-6 ${isAdminUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
-                <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-slate-100/80 bg-white p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
-                  <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/52 to-transparent dark:from-white/5" />
-                  <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
-                  <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
-                    安全退出
-                  </h3>
-                  <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
-                    结束当前的会话并清除本地缓存。建议在公用设备上使用。
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void logout()}
-                    className="mt-auto h-11 w-full rounded-xl border-white/60 bg-white/60 text-sm font-semibold text-[#475569] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/72 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    退出当前登录
-                  </Button>
-                </div>
+              <div className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+                {isAnonymousUser ? (
+                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-[#255DFF]/30 bg-[linear-gradient(180deg,rgba(239,246,255,0.98),rgba(255,255,255,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-[#255DFF]/40 dark:bg-[linear-gradient(180deg,rgba(30,58,138,0.32),rgba(15,23,42,0.64))] sm:p-7">
+                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
+                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-blue-100/80 blur-3xl dark:hidden" />
+                    <div className="flex items-center gap-3">
+                      <LogIn className="h-6 w-6 text-[#255DFF] dark:text-[#A8BAFF]" />
+                      <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
+                        使用账号密码登录
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                      您当前处于匿名体验模式。使用账号密码登录后，可享受完整额度、云端同步与个性化服务。
+                    </p>
+                    <Button
+                      asChild
+                      type="button"
+                      variant="outline"
+                      className="mt-auto h-11 w-full rounded-xl border-[#255DFF]/60 bg-white/60 text-sm font-semibold text-[#255DFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-blue-50/75 dark:border-[#255DFF]/50 dark:bg-slate-800/72 dark:text-[#C2D1FF] dark:hover:bg-slate-800"
+                    >
+                      <Link href="/login">
+                        <LogIn className="mr-2 h-4 w-4" />
+                        前往登录页
+                      </Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-slate-100/80 bg-white p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
+                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/52 to-transparent dark:from-white/5" />
+                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
+                    <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
+                      安全退出
+                    </h3>
+                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                      结束当前的会话并清除本地缓存。建议在公用设备上使用。
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void logout()}
+                      className="mt-auto h-11 w-full rounded-xl border-white/60 bg-white/60 text-sm font-semibold text-[#475569] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/72 dark:text-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      退出当前登录
+                    </Button>
+                  </div>
+                )}
 
-                {!isAdminUser ? (
+                {!isAdminUser && !isAnonymousUser ? (
                   <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
                     <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />

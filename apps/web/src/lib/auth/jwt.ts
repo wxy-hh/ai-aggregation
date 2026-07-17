@@ -38,6 +38,14 @@ export function generateRefreshToken(): string {
 
 const COOKIE_NAME = 'refresh_token';
 
+/**
+ * 标记当前 refresh_token 属于匿名用户还是真实用户。
+ * httpOnly 防止 XSS 篡改；鉴权仍以 refresh_token + JWT 为准，
+ * 此字段仅供 middleware 在 Edge 端区分身份类型。
+ */
+export const AUTH_KIND_COOKIE = 'auth_kind';
+export type AuthKind = 'anonymous' | 'user';
+
 /** 设置 Refresh Token 到 httpOnly Cookie */
 export async function setRefreshTokenCookie(token: string, expiresAt: Date): Promise<void> {
   const jar = await cookies();
@@ -66,6 +74,30 @@ export async function clearRefreshTokenCookie(): Promise<void> {
 export async function getRefreshTokenFromCookie(): Promise<string | undefined> {
   const jar = await cookies();
   return jar.get(COOKIE_NAME)?.value;
+}
+
+/** 写入 auth_kind Cookie（区分匿名/真实身份，与 refresh_token 同步生命周期） */
+export async function setAuthKindCookie(kind: AuthKind, expiresAt: Date): Promise<void> {
+  const jar = await cookies();
+  jar.set(AUTH_KIND_COOKIE, kind, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    expires: expiresAt,
+  });
+}
+
+/** 清除 auth_kind Cookie */
+export async function clearAuthKindCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.set(AUTH_KIND_COOKIE, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
 }
 
 export { COOKIE_NAME, ACCESS_TOKEN_EXPIRES, REFRESH_TOKEN_EXPIRES };

@@ -5,6 +5,7 @@ import {
   signAccessToken,
   generateRefreshToken,
   setRefreshTokenCookie,
+  setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { registerSchema } from '@/schemas/auth.schema';
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);
+    await setAuthKindCookie('user', expiresAt);
 
     return createSuccessResponse({ user, accessToken }, '注册成功');
   } catch (error) {
