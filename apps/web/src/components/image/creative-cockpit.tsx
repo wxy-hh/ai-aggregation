@@ -1,16 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { ChevronRight, ChevronLeft, Sparkles, Zap, History, LayoutGrid, Clock } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Sparkles, Zap, History, LayoutGrid, Clock, RotateCcw, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useHistoryStore } from '@/stores/history-store';
+import { formatRelativeTime } from '@/lib/utils/history-helpers';
+import type { ImageHistoryItem } from '@/types/history';
 
 interface CreativeCockpitProps {
   className?: string;
   currentPrompt?: string;
   onPromptAppend?: (text: string) => void;
   onStyleApply?: (style: any) => void;
-  onRestoreParams?: (params: any) => void;
+  onRestoreParams?: (params: ImageRestoreParams) => void;
+  onPreviewImage?: (imageUrl: string, prompt: string) => void;
+}
+
+/** 参数回溯传递给父组件的完整参数快照 */
+export interface ImageRestoreParams {
+  prompt: string;
+  negativePrompt?: string;
+  style?: string;
+  aspectRatio?: string;
+  steps?: number;
+  cfg?: number;
+  seed?: string;
+  batchSize?: number;
+  quality?: string;
 }
 
 const MAGIC_PROMPTS = [
@@ -58,8 +75,36 @@ const MAGIC_PROMPTS = [
   },
 ];
 
-export function CreativeCockpit({ className, onPromptAppend, onStyleApply }: CreativeCockpitProps) {
+export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRestoreParams, onPreviewImage }: CreativeCockpitProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // 从 history-store 读取最近 image 记录用于参数回溯
+  const historyItems = useHistoryStore((state) => state.items);
+  const recentImageHistory = useMemo(() => {
+    return historyItems
+      .filter((item): item is ImageHistoryItem => item.type === 'image')
+      .sort((a, b) => {
+        const ta = new Date(a.updatedAt || a.createdAt).getTime();
+        const tb = new Date(b.updatedAt || b.createdAt).getTime();
+        return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+      })
+      .slice(0, 5);
+  }, [historyItems]);
+
+  const handleRestore = (item: ImageHistoryItem) => {
+    const params: ImageRestoreParams = {
+      prompt: item.prompt,
+      negativePrompt: item.negativePrompt,
+      style: item.style,
+      aspectRatio: item.aspectRatio,
+      steps: item.parameters?.steps as number | undefined,
+      cfg: item.parameters?.cfg as number | undefined,
+      seed: item.parameters?.seed as string | undefined,
+      batchSize: item.parameters?.batchSize as number | undefined,
+      quality: item.parameters?.quality as string | undefined,
+    };
+    onRestoreParams?.(params);
+  };
 
   return (
     <div
@@ -284,36 +329,84 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply }: Cre
                 <Clock className="w-3.5 h-3.5 text-emerald-500" />
                 <span>参数回溯</span>
               </div>
+              {recentImageHistory.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-mono">
+                  {recentImageHistory.length}
+                </span>
+              )}
             </div>
 
-            <div className="relative pl-4 space-y-6 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200 dark:before:bg-white/10">
-              {[
-                { id: 1, time: '刚刚', params: { seed: 12345, cfg: 7 }, img: 'bg-indigo-500' },
-                { id: 2, time: '10分钟前', params: { seed: 67890, cfg: 9 }, img: 'bg-pink-500' },
-                { id: 3, time: '30分钟前', params: { seed: 11223, cfg: 5 }, img: 'bg-emerald-500' },
-              ].map((snap, i) => (
-                <div key={snap.id} className="relative group cursor-pointer">
-                  {/* 时间轴节点 */}
-                  <div className="absolute -left-[15px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-500 group-hover:first-letter:scale-125 transition-all z-10" />
+            {recentImageHistory.length === 0 ? (
+              <div className="text-center py-6 px-3">
+                <Clock className="w-8 h-8 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+                <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">暂无生成记录</p>
+                <p className="text-[10px] text-slate-300 dark:text-slate-600">生成图片后，参数将自动保存</p>
+              </div>
+            ) : (
+              <div className="relative pl-4 space-y-4 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-px before:bg-slate-200 dark:before:bg-white/10">
+                {recentImageHistory.map((item) => {
+                  const seed = item.parameters?.seed as string | undefined;
+                  const cfg = item.parameters?.cfg as number | undefined;
+                  const steps = item.parameters?.steps as number | undefined;
+                  const ratio = item.aspectRatio;
+                  const timeAgo = formatRelativeTime(item.updatedAt || item.createdAt);
 
-                  <div className="flex items-start gap-3 p-2 rounded-xl hover:bg-white/50 dark:hover:bg-white/5 border border-transparent hover:border-slate-100 dark:hover:border-white/5 transition-all">
-                    <div className={cn('w-10 h-10 rounded-lg shrink-0 shadow-sm', snap.img)} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[10px] text-slate-400 font-mono">{snap.time}</span>
-                        <History className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                      <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium truncate">
-                        Seed: {snap.params.seed}
-                      </div>
-                      <div className="text-[9px] text-slate-400">
-                        CFG: {snap.params.cfg} · Steps: 30
+                  return (
+                    <div key={item.id} className="relative group cursor-pointer">
+                      {/* 时间轴节点 */}
+                      <div className="absolute -left-[15px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-700 group-hover:bg-emerald-500 group-hover:scale-125 transition-all z-10" />
+
+                      <div className="flex items-start gap-3 p-2 rounded-xl hover:bg-white/50 dark:hover:bg-white/5 border border-transparent hover:border-slate-100 dark:hover:border-white/5 transition-all">
+                        {/* 缩略图 */}
+                        <div
+                          className="w-10 h-10 rounded-lg shrink-0 shadow-sm bg-slate-200 dark:bg-slate-700 overflow-hidden cursor-pointer"
+                          onClick={() => onPreviewImage?.(item.imageUrl, item.prompt)}
+                          title="查看大图"
+                        >
+                          {item.imageUrl ? (
+                            <img
+                              src={item.imageUrl}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Eye className="w-4 h-4 text-slate-400" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] text-slate-400 font-mono">{timeAgo}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRestore(item);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 font-medium"
+                              title="复现参数"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              复现
+                            </button>
+                          </div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-300 font-medium truncate">
+                            {seed && seed !== 'random' ? `Seed: ${seed}` : 'Seed: 随机'}
+                          </div>
+                          <div className="text-[9px] text-slate-400 truncate">
+                            {cfg != null && `CFG: ${cfg} · `}
+                            {steps != null && `Steps: ${steps}`}
+                            {ratio && ` · ${ratio}`}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         </div>
       </div>

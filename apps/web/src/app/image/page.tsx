@@ -4,7 +4,7 @@ import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
-import { CreativeCockpit } from '@/components/image/creative-cockpit';
+import { CreativeCockpit, type ImageRestoreParams } from '@/components/image/creative-cockpit';
 import { NegativePrompt } from '@/components/image/negative-prompt';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
@@ -41,6 +41,7 @@ import { useHistoryStore } from '@/stores/history-store';
 import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 import { blobToDataUrl } from '@/lib/utils/image-url';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 // 跨模态接力：目标侧接收 + 结果源侧发起
 import { ReferenceBar } from '@/components/relay/reference-bar';
 import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
@@ -81,6 +82,8 @@ export default function ImagePage() {
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
+  // 参数回溯：大图预览
+  const [previewImage, setPreviewImage] = useState<{ url: string; prompt: string } | null>(null);
 
   // 跨模态接力：图像目标接收（REQ-004/005/006）
   const relay = useRelayReceive('image');
@@ -293,6 +296,24 @@ export default function ImagePage() {
     setPrompt(item.prompt);
     setStyle(item.style);
   };
+
+  // 参数回溯：恢复参数到工作区
+  const handleRestoreParams = useCallback((params: ImageRestoreParams) => {
+    setPrompt(params.prompt);
+    if (params.negativePrompt !== undefined) setNegativePrompt(params.negativePrompt);
+    if (params.style !== undefined) setStyle(params.style);
+    if (params.aspectRatio !== undefined) setRatio(params.aspectRatio);
+    if (params.steps !== undefined) setSteps(params.steps);
+    if (params.cfg !== undefined) setCfg(params.cfg);
+    if (params.seed !== undefined) setSeed(params.seed === 'random' ? '' : params.seed);
+    if (params.batchSize !== undefined) setBatchSize(params.batchSize);
+    if (params.quality !== undefined) setQuality(params.quality);
+  }, []);
+
+  // 参数回溯：大图预览
+  const handlePreviewImage = useCallback((imageUrl: string, prompt: string) => {
+    setPreviewImage({ url: imageUrl, prompt });
+  }, []);
 
   const renderParameterPanel = () => (
     <>
@@ -723,6 +744,8 @@ export default function ImagePage() {
               if (params.cfg) setCfg(params.cfg);
               // Optionally show a toast here
             }}
+            onRestoreParams={handleRestoreParams}
+            onPreviewImage={handlePreviewImage}
           />
         </div>
       </div>
@@ -750,6 +773,32 @@ export default function ImagePage() {
         anchorPoint={resultRelay.anchorPoint}
         triggerRef={resultRelay.triggerRef}
       />
+
+      {/* 参数回溯：大图预览 */}
+      <Dialog open={Boolean(previewImage)} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border-0 shadow-2xl">
+          {previewImage && (
+            <div className="flex flex-col">
+              <VisuallyHidden>
+                <DialogTitle>历史生成图片预览</DialogTitle>
+                <DialogDescription>查看历史生成的大图</DialogDescription>
+              </VisuallyHidden>
+              <div className="relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center min-h-[40vh]">
+                <img
+                  src={previewImage.url}
+                  alt="历史生成图片"
+                  className="max-w-full max-h-[60vh] object-contain"
+                />
+              </div>
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3">
+                  {previewImage.prompt}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* 接力来源只读预览 */}
       <ReferenceSourcePreview
