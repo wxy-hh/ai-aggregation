@@ -335,8 +335,39 @@ async function callDeepSeek(opts: CallModelOptions): Promise<CallModelResult> {
   }
 }
 
+// ─── 非流式 callModel（带 429/5xx 退避重试）───
+
+/** 可重试的上游错误：429 限流、5xx 服务故障（含 503 过载）。401/402/其他 4xx 与主动超时中止不重试 */
+function isRetryableModelError(error: unknown): boolean {
+  return error instanceof ModelUpstreamError && (error.status === 429 || error.status >= 500);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 重试退避间隔（最多重试 2 次，共 3 次尝试）。429/5xx 通常是快速失败，几乎不占用调用方超时预算 */
+const RETRY_DELAYS_MS = [800, 2000];
+
 export async function callModel(opts: CallModelOptions): Promise<CallModelResult> {
-  return opts.config.protocol === 'deepseek-chat' ? callDeepSeek(opts) : callArk(opts);
+  const invoke = () =>
+    opts.config.protocol === 'deepseek-chat' ? callDeepSeek(opts) : callArk(opts);
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await invoke();
+    } catch (error) {
+      if (attempt === RETRY_DELAYS_MS.length || !isRetryableModelError(error)) {
+        throw error;
+      }
+      console.warn(
+        `[destiny-model] callModel 第 ${attempt + 1} 次调用失败（${
+          error instanceof Error ? error.message : error
+        }），${RETRY_DELAYS_MS[attempt]}ms 后重试`
+      );
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  // 理论不可达（循环内要么返回要么抛出），仅满足 TS 控制流分析
+  throw new ModelUpstreamError('模型调用失败，请稍后重试', 502);
 }
 
 // ─── 流式 streamModel ───

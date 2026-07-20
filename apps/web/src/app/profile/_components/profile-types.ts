@@ -10,6 +10,7 @@ export interface ProfileViewModel {
   bio: string;
   avatar: string | null;
   membership: string;
+  createdAt: string | null;
 }
 
 export type ResourceUsageViewModel = ProfileUsageSummary;

@@ -56,7 +56,9 @@ const RequestSchema = z.object({
 
 // ─── 常量 ───
 
-const QUICK_TIMEOUT_MS = 40000;
+// quick 阶段需一次性生成 4 个复杂 Schema 区块，pro 级模型 40s 实测稳定超时，提高到 90s
+// 注意与 maxDuration=300 对齐：quick(90s) + full(180s) 必须留有余量
+const QUICK_TIMEOUT_MS = 90000;
 const REPORT_TIMEOUT_MS = 180000;
 const QUICK_MAX_TOKENS = 4000;
 const FULL_MAX_TOKENS = 6000;
@@ -511,7 +513,11 @@ async function generateQuickSections({
       );
     }
     if (error instanceof BillingError) throw error;
-    console.warn('[ziwei-report] quick stage skipped');
+    // quick 区块允许降级为空，但错误详情必须落日志，否则线上排查无迹可循
+    console.warn(
+      '[ziwei-report] quick stage skipped:',
+      error instanceof Error ? `${error.name}: ${error.message}` : error
+    );
     return {};
   }
 }

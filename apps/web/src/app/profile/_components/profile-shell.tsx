@@ -7,6 +7,7 @@ import {
   BarChart3,
   Camera,
   Crown,
+  Image as ImageIcon,
   LogIn,
   LogOut,
   MessageSquare,
@@ -14,6 +15,7 @@ import {
   PencilLine,
   RefreshCw,
   User,
+  Video,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -42,12 +44,74 @@ import { toast } from 'sonner';
 const DEFAULT_AVATAR =
   'https://api.dicebear.com/9.x/thumbs/svg?seed=ai-user&backgroundColor=bfdbfe&shapeColor=0a5b83';
 
+/**
+ * 页面材质分级（对齐 DESIGN.md）：
+ * - 玻璃质感只保留在容器层（基本信息卡 / 资源消耗卡），内层元素一律不用 backdrop-blur，
+ *   避免「玻璃套玻璃」导致的画面发糊与 GPU 浪费（DESIGN.md 禁忌一）。
+ * - 阴影即 Z 轴高度：主卡 Z-3、次级操作卡 Z-2、页头扁平无阴影，形成清晰层级。
+ */
+const GLASS_CARD =
+  'group relative overflow-hidden rounded-[24px] border border-white/60 bg-gradient-to-b from-white/70 via-white/45 to-white/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)] backdrop-blur-[40px] transition-[box-shadow,border-color] duration-300 hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] dark:hover:border-white/20 dark:hover:shadow-[0_24px_48px_-18px_rgba(0,0,0,0.5)]';
+
+const SOLID_CARD =
+  'group relative overflow-hidden rounded-[24px] border border-slate-900/[0.06] bg-white shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none dark:hover:border-white/15';
+
+const OUTLINE_BUTTON =
+  'h-11 w-full rounded-xl border-slate-200/90 bg-white text-sm font-semibold text-[#475569] shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/10';
+
+const HAIRLINE = 'border-slate-900/[0.06] dark:border-white/[0.08]';
+
+/** 功能色彩编码，对齐 DESIGN.md「艺术霓虹流」：对话蓝 / 语音紫 / 绘图粉 / 视频靛。 */
+const ACCENTS = {
+  blue: 'bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300',
+  violet: 'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-300',
+  pink: 'bg-pink-500/10 text-pink-600 dark:bg-pink-400/10 dark:text-pink-300',
+  indigo: 'bg-indigo-500/10 text-indigo-600 dark:bg-indigo-400/10 dark:text-indigo-300',
+  amber: 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-300',
+  red: 'bg-red-500/10 text-red-500 dark:bg-red-400/10 dark:text-red-300',
+  slate: 'bg-slate-500/10 text-slate-500 dark:bg-slate-400/10 dark:text-slate-300',
+} as const;
+
+type AccentKey = keyof typeof ACCENTS;
+
+function getFeatureAccent(feature: ProfileUsageItem['feature']): AccentKey {
+  switch (feature) {
+    case 'chat':
+      return 'blue';
+    case 'voice':
+      return 'violet';
+    case 'destiny':
+      return 'amber';
+    case 'video':
+    case 'video_prompt':
+      return 'indigo';
+    default:
+      return 'pink';
+  }
+}
+
 function formatTokenCount(value: number) {
   return `${new Intl.NumberFormat('zh-CN').format(value)} Tokens`;
 }
 
 function formatTaskCount(value: number) {
   return `${new Intl.NumberFormat('zh-CN').format(value)} 次`;
+}
+
+const numberFormatter = new Intl.NumberFormat('zh-CN');
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value);
+}
+
+/** 语音时长拆分为「数值 + 单位」，用于统计行的大小字分级展示（完整文案见 formatDurationSeconds）。 */
+function formatDurationParts(value: number) {
+  const seconds = Math.max(0, Math.round(value));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes > 0
+    ? { amount: `${minutes} 分 ${remainder}`, unit: '秒' }
+    : { amount: `${remainder}`, unit: '秒' };
 }
 
 function formatDurationSeconds(value: number) {
@@ -72,6 +136,18 @@ function formatUsageValue(item: ProfileUsageItem) {
   return values.join(' · ') || '0';
 }
 
+/** 注册时间展示格式，无效输入返回 null（对应字段不渲染）。 */
+function formatJoinDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
+}
+
 function buildProfileViewModel(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): ProfileViewModel {
@@ -86,57 +162,135 @@ function buildProfileViewModel(
     bio: '',
     avatar: user?.avatar || DEFAULT_AVATAR,
     membership: '标准版',
+    createdAt: user?.createdAt || null,
   };
 }
 
-function UsageIcon({ feature }: { feature: ProfileUsageItem['feature'] }) {
-  const commonClassName = 'h-4 w-4';
-
-  if (feature === 'chat') {
-    return <MessageSquare className={commonClassName} />;
-  }
-
-  if (feature === 'voice') {
-    return <Mic className={commonClassName} />;
-  }
-
-  if (feature === 'destiny') {
-    return <Crown className={commonClassName} />;
-  }
-
-  return <PencilLine className={commonClassName} />;
+/** hover 背光：平时隐藏，鼠标移入卡片时淡入（DESIGN.md 7.2 高光流动规范），移动端无 hover 不生效。 */
+function HoverGlow({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        'pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-blue-400/10 opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-100 dark:bg-blue-500/10',
+        className
+      )}
+    />
+  );
 }
 
+/** 扁平功能图标底座：纯色半透明，不叠加模糊，用于卡片标题与统计行。 */
+function CardIconChip({
+  children,
+  accent = 'blue',
+  className,
+}: {
+  children: React.ReactNode;
+  accent?: AccentKey;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+        ACCENTS[accent],
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function UsageIcon({ feature }: { feature: ProfileUsageItem['feature'] }) {
+  const iconClassName = 'h-4 w-4';
+  let icon = <PencilLine className={iconClassName} />;
+
+  if (feature === 'chat') {
+    icon = <MessageSquare className={iconClassName} />;
+  } else if (feature === 'voice') {
+    icon = <Mic className={iconClassName} />;
+  } else if (feature === 'destiny') {
+    icon = <Crown className={iconClassName} />;
+  } else if (feature === 'image') {
+    icon = <ImageIcon className={iconClassName} />;
+  } else if (feature === 'video' || feature === 'video_prompt') {
+    icon = <Video className={iconClassName} />;
+  }
+
+  return <CardIconChip accent={getFeatureAccent(feature)}>{icon}</CardIconChip>;
+}
+
+/** 资料字段：细线分隔的定义列表行（底部发丝线 + hover 底色），支持两列网格布局。 */
 function ProfileStatField({
   label,
   value,
-  leading,
-  trailing,
-  fullWidth = false,
+  mono = false,
+  className,
 }: {
   label: string;
   value: string;
-  leading?: React.ReactNode;
-  trailing?: React.ReactNode;
-  fullWidth?: boolean;
+  mono?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={cn('space-y-3', fullWidth ? 'md:col-span-2' : undefined)}>
-      <p className="text-sm font-semibold tracking-[0.02em] text-[#64748B] dark:text-slate-300">
-        {label}
-      </p>
-      <div className="relative flex min-h-[56px] items-center gap-3 overflow-hidden rounded-2xl border border-white/55 bg-gradient-to-b from-white/72 via-white/42 to-white/24 px-5 py-3.5 text-sm text-slate-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_18px_30px_-24px_rgba(59,130,246,0.24)] backdrop-blur-[18px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.52))] dark:text-slate-100">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/28 to-transparent dark:from-white/5" />
-        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/25" />
-        <div className="pointer-events-none absolute -right-6 top-0 h-16 w-16 rounded-full bg-blue-200/30 blur-2xl dark:hidden" />
-        {leading}
-        <span className="relative min-w-0 flex-1 break-all">{value}</span>
-        {trailing}
-      </div>
+    <div
+      className={cn(
+        'flex items-center justify-between gap-6 border-b border-slate-900/[0.06] px-2 py-3.5 transition-colors -mx-2 rounded-lg hover:bg-slate-900/[0.03] dark:border-white/[0.08] dark:hover:bg-white/[0.04]',
+        className
+      )}
+    >
+      <span className="shrink-0 text-sm text-[#64748B] dark:text-slate-400">{label}</span>
+      <span
+        className={cn(
+          'min-w-0 truncate text-[15px] font-medium text-[#0F172A] dark:text-slate-100',
+          mono && 'font-mono text-sm tracking-wide'
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
+/** 消耗统计行：功能色图标 + 标签 + 大数字小单位的分级展示，行间细线分隔。 */
+function UsageStatRow({
+  icon,
+  label,
+  amount,
+  unit,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  amount: string;
+  unit: string;
+  accent: AccentKey;
+}) {
+  return (
+    <div className="-mx-2 flex items-center gap-3 rounded-xl border-b border-slate-900/[0.06] px-2 py-3 transition-colors last:border-b-0 hover:bg-slate-900/[0.03] dark:border-white/[0.08] dark:hover:bg-white/[0.04]">
+      <span
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
+          ACCENTS[accent]
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-[#475569] dark:text-slate-300">
+        {label}
+      </span>
+      <strong className="flex shrink-0 items-baseline gap-1 font-[var(--font-space-grotesk)]">
+        <span className="text-[17px] font-bold tabular-nums text-[#0F172A] dark:text-white">
+          {amount}
+        </span>
+        <span className="text-xs font-medium text-[#94A3B8] dark:text-slate-500">{unit}</span>
+      </strong>
+    </div>
+  );
+}
+
+/** 额度圆环：瘦身后的细环，去掉外层玻璃罩，数字居中等宽显示。 */
 function ResourceRing({
   remaining,
   consumed,
@@ -149,20 +303,18 @@ function ResourceRing({
   isAdmin?: boolean;
 }) {
   const percent = total > 0 ? (consumed / total) * 100 : 0;
-  const radius = 82;
+  const radius = 84;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - Math.min(percent, 100) / 100);
+  // 管理员无配额概念，画满环避免空灰圈；普通用户按已结算比例绘制
+  const offset = isAdmin ? 0 : circumference * (1 - Math.min(percent, 100) / 100);
 
   return (
-    <div className="relative mx-auto h-[252px] w-[252px] overflow-hidden rounded-full bg-gradient-to-b from-white/52 via-white/20 to-transparent shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_20px_36px_-28px_rgba(59,130,246,0.28)] backdrop-blur-[16px] dark:bg-transparent dark:shadow-none">
-      <div className="pointer-events-none absolute inset-0 rounded-full border border-white/60 dark:border-white/10" />
-      <div className="pointer-events-none absolute top-3 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-      <div className="pointer-events-none absolute -right-2 top-3 h-16 w-16 rounded-full bg-[rgba(219,234,254,0.50)] blur-2xl dark:hidden" />
+    <div className="relative mx-auto h-[208px] w-[208px]">
       <svg viewBox="0 0 200 200" className="h-full w-full -rotate-90">
         <defs>
           <linearGradient id="profile-usage-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={isAdmin ? '#A78BFA' : '#255DFF'} />
-            <stop offset="100%" stopColor={isAdmin ? '#7C3AED' : '#0E39D2'} />
+            <stop offset="0%" stopColor={isAdmin ? '#A78BFA' : '#3B82F6'} />
+            <stop offset="100%" stopColor={isAdmin ? '#7C3AED' : '#2563EB'} />
           </linearGradient>
         </defs>
         <circle
@@ -170,8 +322,9 @@ function ResourceRing({
           cy="100"
           r={radius}
           fill="none"
-          stroke="rgba(148,163,184,0.15)"
-          strokeWidth="10"
+          stroke="currentColor"
+          strokeWidth="8"
+          className="text-slate-900/[0.08] dark:text-white/[0.14]"
         />
         <circle
           cx="100"
@@ -179,44 +332,63 @@ function ResourceRing({
           r={radius}
           fill="none"
           stroke="url(#profile-usage-gradient)"
-          strokeWidth="10"
+          strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           className="transition-[stroke-dashoffset] duration-700 ease-out"
+          style={{
+            filter: isAdmin
+              ? 'drop-shadow(0 0 6px rgba(139,92,246,0.45))'
+              : 'drop-shadow(0 0 6px rgba(59,130,246,0.45))',
+          }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
         {isAdmin ? (
           <>
-            <p className="font-[var(--font-space-grotesk)] text-[28px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
+            <p className="font-[var(--font-space-grotesk)] text-[26px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
               无限额度
             </p>
-            <p className="mt-2 text-xs font-semibold text-[#64748B] dark:text-slate-300">
+            <p className="mt-2 text-xs font-medium text-[#64748B] dark:text-slate-400">
               管理员 · 无配额限制
             </p>
           </>
         ) : (
           <>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#94A3B8]">
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-[#94A3B8] dark:text-slate-500">
               剩余额度
             </p>
-            <p className="mt-1 font-[var(--font-space-grotesk)] text-[36px] font-bold leading-none tracking-tight text-[#0F172A] dark:text-white">
+            <p className="mt-1.5 font-[var(--font-space-grotesk)] text-[38px] font-bold leading-none tracking-tight tabular-nums text-[#0F172A] dark:text-white">
               {remaining.toLocaleString()}
             </p>
             <div className="mt-3 flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full bg-[#255DFF]" />
-              <span className="text-[13px] font-medium text-[#64748B] dark:text-slate-300">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#2563EB] shadow-[0_0_6px_rgba(37,99,235,0.6)]" />
+              <span className="text-xs font-medium tabular-nums text-[#64748B] dark:text-slate-400">
                 已结算 {consumed.toLocaleString()}
               </span>
             </div>
-            <p className="mt-1 text-[12px] text-[#94A3B8]">共 {total.toLocaleString()} 统一额度</p>
+            <p className="mt-1 text-xs tabular-nums text-[#94A3B8] dark:text-slate-500">
+              共 {total.toLocaleString()} 统一额度
+            </p>
           </>
         )}
       </div>
     </div>
   );
 }
+
+/** 弹窗统一容器样式：Z-5 层允许 G-3 玻璃，内部控件使用实体高对比背景。 */
+const DIALOG_SHELL =
+  'w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-[24px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(59,130,246,0.15)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/90';
+
+const DIALOG_OVERLAY = 'bg-slate-950/45 backdrop-blur-md dark:bg-slate-950/65';
+
+const DIALOG_INPUT =
+  'h-12 rounded-xl border-slate-200/90 bg-white px-4 text-sm shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100';
+
+const DIALOG_CANCEL_BUTTON =
+  'h-11 min-w-[96px] rounded-xl border-slate-200/90 bg-white text-sm shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/10';
 
 function EditProfileDialog({
   open,
@@ -257,23 +429,19 @@ function EditProfileDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-        className="w-[calc(100vw-2rem)] max-w-[480px] gap-0 overflow-hidden rounded-[32px] bg-gradient-to-b from-white/72 via-white/32 to-transparent px-5 py-5 shadow-[0_28px_80px_-24px_rgba(59,130,246,0.20)] backdrop-blur-[40px] sm:px-10 sm:py-10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.74))] dark:shadow-[0_24px_64px_-24px_rgba(0,0,0,0.48)]"
+        overlayClassName={DIALOG_OVERLAY}
+        className={cn(DIALOG_SHELL, 'max-w-[480px] px-6 py-6 sm:px-8 sm:py-8')}
       >
-        <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_32%,transparent_100%)] dark:border-white/10" />
-        <div className="pointer-events-none absolute top-0 inset-x-10 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/6 dark:via-transparent" />
-        <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
         <DialogHeader className="space-y-0">
-          <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[22px]">
+          <DialogTitle className="font-[var(--font-space-grotesk)] text-xl font-bold tracking-tight text-[#0F172A] dark:text-white">
             编辑个人资料
           </DialogTitle>
           <DialogDescription className="sr-only">修改用户名。</DialogDescription>
         </DialogHeader>
 
-        <div className="relative mt-8 grid gap-5">
+        <div className="mt-6 grid gap-5">
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">
+            <label className="text-sm font-semibold text-[#475569] dark:text-slate-300">
               用户名
             </label>
             <Input
@@ -282,19 +450,21 @@ function EditProfileDialog({
                 setDraft((current) => ({ ...current, username: event.target.value }))
               }
               placeholder="用户名"
-              className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
+              className={DIALOG_INPUT}
             />
-            <p className="text-xs text-[#94A3B8]">3-30 个字符，仅支持英文字母、数字和下划线</p>
+            <p className="text-xs text-[#94A3B8] dark:text-slate-500">
+              3-30 个字符，仅支持英文字母、数字和下划线
+            </p>
           </div>
         </div>
 
-        <DialogFooter className="mt-8 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
+        <DialogFooter className="mt-7 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
           <Button
             type="button"
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={saving}
-            className="h-10 min-w-[96px] rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-100"
+            className={DIALOG_CANCEL_BUTTON}
           >
             取消
           </Button>
@@ -302,7 +472,7 @@ function EditProfileDialog({
             type="button"
             disabled={saving}
             onClick={handleSave}
-            className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
+            className="h-11 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
           >
             {saving ? '保存中...' : '保存修改'}
           </Button>
@@ -364,22 +534,25 @@ function AvatarEditor({
         role="button"
         tabIndex={0}
         aria-label="更换头像"
-        className="group relative cursor-pointer overflow-hidden rounded-[24px] border border-white/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.8),rgba(255,255,255,0.54))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm transition-all duration-300 hover:shadow-[0_10px_24px_rgba(93,124,250,0.32)] dark:border-white/10 dark:bg-slate-900/70"
+        className="group relative w-fit cursor-pointer rounded-full outline-none transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         onClick={() => fileInputRef.current?.click()}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
         }}
       >
-        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
         <img
           src={avatarSrc}
           alt="用户头像"
-          className="h-[140px] w-[140px] rounded-[20px] object-cover sm:h-[156px] sm:w-[156px]"
+          className="h-32 w-32 rounded-full object-cover shadow-[0_10px_28px_-10px_rgba(15,23,42,0.35)] ring-4 ring-white/90 sm:h-36 sm:w-36 dark:ring-white/15"
         />
-        {/* hover 遮罩 */}
-        <div className="absolute inset-1.5 flex items-center justify-center rounded-[20px] bg-black/0 transition-all duration-300 group-hover:bg-black/30">
-          <Camera className="h-7 w-7 text-white opacity-0 transition-all duration-300 group-hover:opacity-100" />
+        {/* hover 遮罩（桌面端增强） */}
+        <div className="absolute inset-0 flex items-center justify-center rounded-full bg-slate-950/0 transition-colors duration-200 group-hover:bg-slate-950/30">
+          <Camera className="h-6 w-6 text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
         </div>
+        {/* 常驻相机角标：移动端无 hover，保证可发现性 */}
+        <span className="absolute bottom-0.5 right-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-[#2563EB] text-white shadow-[0_4px_10px_rgba(37,99,235,0.4)] ring-[3px] ring-white dark:ring-slate-900">
+          <Camera className="h-3.5 w-3.5" />
+        </span>
       </div>
 
       <input
@@ -393,11 +566,11 @@ function AvatarEditor({
       {/* 预览/确认弹窗 */}
       <Dialog open={previewSrc !== null} onOpenChange={() => setPreviewSrc(null)}>
         <DialogContent
-          overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-          className="w-[calc(100vw-2rem)] max-w-[420px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(59,130,246,0.22)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.88),rgba(15,23,42,0.76))]"
+          overlayClassName={DIALOG_OVERLAY}
+          className={cn(DIALOG_SHELL, 'max-w-[420px] p-6 sm:p-8')}
         >
           <DialogHeader className="space-y-0">
-            <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold tracking-tight text-[#0F172A] dark:text-white">
+            <DialogTitle className="font-[var(--font-space-grotesk)] text-xl font-bold tracking-tight text-[#0F172A] dark:text-white">
               预览头像
             </DialogTitle>
             <DialogDescription className="sr-only">确认裁剪区域后上传。</DialogDescription>
@@ -405,19 +578,19 @@ function AvatarEditor({
 
           {previewSrc ? (
             <div className="relative mt-6 flex justify-center">
-              <div className="overflow-hidden rounded-full border-4 border-white/80 shadow-xl">
+              <div className="overflow-hidden rounded-full shadow-xl ring-4 ring-white/90 dark:ring-white/15">
                 <img src={previewSrc} alt="头像预览" className="h-52 w-52 object-cover" />
               </div>
             </div>
           ) : null}
 
-          <DialogFooter className="mt-8 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
+          <DialogFooter className="mt-7 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
             <Button
               type="button"
               variant="outline"
               onClick={() => setPreviewSrc(null)}
               disabled={uploading}
-              className="h-10 min-w-[96px] rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px]"
+              className={DIALOG_CANCEL_BUTTON}
             >
               <X className="mr-1.5 h-4 w-4" />
               取消
@@ -426,7 +599,7 @@ function AvatarEditor({
               type="button"
               disabled={uploading}
               onClick={handleUpload}
-              className="h-10 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
+              className="h-11 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
             >
               {uploading ? '上传中...' : '确认上传'}
             </Button>
@@ -464,27 +637,26 @@ function DeleteAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        overlayClassName="bg-[rgba(220,228,247,0.58)] backdrop-blur-[10px] dark:bg-[rgba(5,10,24,0.68)]"
-        className="w-[calc(100vw-2rem)] max-w-[520px] overflow-hidden rounded-[30px] bg-gradient-to-b from-white/76 via-white/34 to-transparent p-8 shadow-[0_28px_72px_-24px_rgba(244,114,91,0.22)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.88),rgba(15,23,42,0.76))]"
+        overlayClassName={DIALOG_OVERLAY}
+        className={cn(
+          DIALOG_SHELL,
+          'max-w-[520px] border-red-200/70 p-6 shadow-[0_30px_60px_-20px_rgba(15,23,42,0.28),0_10px_30px_-15px_rgba(244,63,94,0.15)] sm:p-8 dark:border-red-900/40'
+        )}
       >
-        <div className="pointer-events-none absolute inset-0 rounded-[30px] border border-red-200/62 [mask-image:linear-gradient(to_bottom,black_32%,transparent_100%)] dark:border-red-900/45" />
-        <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/4 dark:via-transparent" />
-        <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-200/38 blur-3xl dark:hidden" />
         <DialogHeader className="space-y-3 text-left">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-red-100/75 bg-gradient-to-b from-white/80 to-red-50/85 text-red-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] dark:border-red-900/45 dark:bg-red-950/40 dark:text-red-300">
+          <CardIconChip accent="red" className="h-12 w-12 rounded-2xl">
             <AlertTriangle className="h-6 w-6" />
-          </div>
-          <DialogTitle className="font-[var(--font-space-grotesk)] text-[20px] font-bold text-red-600 dark:text-red-300 sm:text-[22px]">
+          </CardIconChip>
+          <DialogTitle className="font-[var(--font-space-grotesk)] text-xl font-bold text-red-600 dark:text-red-300">
             注销账户确认
           </DialogTitle>
-          <DialogDescription className="text-sm leading-[1.625] text-[#64748B] dark:text-slate-300">
+          <DialogDescription className="text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
             此操作不可撤销，将永久删除您的账户及所有关联数据（对话记录、历史、使用统计等）。请输入密码确认。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative mt-6 space-y-2">
-          <label className="text-sm font-semibold text-[#64748B] dark:text-slate-300">
+        <div className="mt-6 space-y-2">
+          <label className="text-sm font-semibold text-[#475569] dark:text-slate-300">
             密码确认
           </label>
           <Input
@@ -492,15 +664,15 @@ function DeleteAccountDialog({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="输入当前密码以确认注销"
-            className="h-14 rounded-xl border-white/60 bg-gradient-to-b from-white/78 to-white/52 px-5 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.56))] dark:text-slate-100"
+            className={DIALOG_INPUT}
           />
         </div>
 
-        <DialogFooter className="mt-8 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
+        <DialogFooter className="mt-7 flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:space-x-0">
           <Button
             type="button"
             variant="outline"
-            className="h-10 rounded-xl border-white/60 bg-white/60 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px]"
+            className={DIALOG_CANCEL_BUTTON}
             onClick={() => onOpenChange(false)}
             disabled={deleting}
           >
@@ -511,7 +683,7 @@ function DeleteAccountDialog({
             variant="destructive"
             disabled={deleting}
             onClick={handleDelete}
-            className="h-10 rounded-xl text-sm shadow-[0_10px_24px_rgba(244,92,126,0.28)]"
+            className="h-11 rounded-xl text-sm shadow-[0_10px_24px_rgba(244,92,126,0.28)]"
           >
             {deleting ? '注销中...' : '确认注销'}
           </Button>
@@ -538,6 +710,16 @@ export function ProfileShell() {
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
   const isAdminUser = user?.role === 'admin';
   const isAnonymousUser = user?.isAnonymous === true;
+  // 注册时间仅对正式账号展示，匿名账号的创建时间没有账户意义
+  const joinDate = isAnonymousUser ? null : formatJoinDate(profile.createdAt);
+  const profileFields: Array<{ label: string; value: string; mono?: boolean; span?: boolean }> = [
+    { label: '用户 ID', value: profile.userId, mono: true },
+    { label: '用户名', value: profile.username },
+    ...(profile.email ? [{ label: '邮箱', value: profile.email }] : []),
+    ...(joinDate ? [{ label: '注册时间', value: joinDate }] : []),
+    // 时区文案最长，独占整行避免两列网格内被截断
+    { label: '所属时区', value: profile.timezone, span: true },
+  ];
   // 剩余额度仅来自统一额度账户，避免用户资料快照与真实账本混用。
   const tokenRemaining = isAdminUser ? Infinity : (usage?.tokenRemaining ?? 0);
   // 圆环只使用统一账本的已结算额度，不能把音频秒数、图片或视频任务混入 Token 展示。
@@ -616,120 +798,125 @@ export function ProfileShell() {
         />
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/40 via-white/15 to-transparent dark:from-blue-500/8 dark:via-transparent" />
 
-        <div className="relative mx-auto flex w-full max-w-[1480px] flex-col">
-          <header className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/60 via-white/24 to-transparent px-5 py-5 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.58))] dark:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.4)] sm:px-6 sm:py-6 lg:px-8 lg:py-7">
-            <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
-            <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 dark:via-white/20" />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-            <div className="pointer-events-none absolute -right-10 top-0 h-32 w-32 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
-            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div className="mb-3 inline-flex items-center rounded-full border border-white/60 bg-white/60 px-3 py-1 text-xs font-bold tracking-[0.05em] text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/70 dark:text-[#A8BAFF]">
-                  账户中心
-                </div>
-                <h1 className="font-[var(--font-space-grotesk)] text-2xl font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[30px]">
-                  个人设置
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
-                  统一管理您的数字身份、资源消耗与安全操作。
-                </p>
-              </div>
+        <div className="relative mx-auto flex w-full max-w-[1400px] flex-col">
+          {/* 页头：扁平处理，不与大内容卡争夺视觉重心 */}
+          <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <span className="inline-flex items-center rounded-full bg-blue-500/[0.08] px-3 py-1 text-xs font-semibold tracking-[0.05em] text-[#2563EB] dark:bg-blue-400/10 dark:text-[#A8BAFF]">
+                账户中心
+              </span>
+              <h1 className="mt-3 font-[var(--font-space-grotesk)] text-[28px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-[32px]">
+                个人设置
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#64748B] dark:text-slate-400 sm:text-[15px]">
+                统一管理您的数字身份、资源消耗与安全操作。
+              </p>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:w-auto sm:grid-cols-3">
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/72 to-white/38 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.72),rgba(15,23,42,0.54))]">
-                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
-                    账户状态
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-[#0F172A] dark:text-white">
-                    已登录
-                  </div>
-                </div>
-                <div className="relative col-span-2 overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/10 via-white/70 to-white/40 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] sm:col-span-1 dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(37,99,235,0.2),rgba(15,23,42,0.58))]">
-                  <div className="text-xs font-medium text-[#94A3B8] dark:text-slate-400">
-                    文本/语音额度
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-[#2563EB] dark:text-[#C2D1FF]">
-                    {isAdminUser ? '无限额度' : tokenRemaining.toLocaleString()}
-                  </div>
-                </div>
-              </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-900/[0.06] bg-white/80 px-3.5 text-[13px] shadow-sm backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.06]">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.7)]" />
+                <span className="text-[#94A3B8] dark:text-slate-400">账户状态</span>
+                <strong className="font-semibold text-[#0F172A] dark:text-white">已登录</strong>
+              </span>
+              <span className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-900/[0.06] bg-white/80 px-3.5 text-[13px] shadow-sm backdrop-blur-sm dark:border-white/10 dark:bg-white/[0.06]">
+                <span className="text-[#94A3B8] dark:text-slate-400">文本/语音额度</span>
+                <strong className="font-[var(--font-space-grotesk)] font-bold tabular-nums text-[#2563EB] dark:text-[#A8BAFF]">
+                  {isAdminUser ? '无限额度' : tokenRemaining.toLocaleString()}
+                </strong>
+              </span>
             </div>
           </header>
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.82fr)]">
+          <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.82fr)]">
             <section className="space-y-6">
-              <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/60 via-white/24 to-transparent p-5 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-6 lg:p-8">
-                <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
-                <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 dark:via-white/20" />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/30 via-white/10 to-transparent dark:from-white/6 dark:via-transparent" />
-                <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
-                <div className="pointer-events-none absolute bottom-0 left-8 h-24 w-48 rounded-full bg-white/30 blur-3xl dark:hidden" />
-                <div className="relative flex flex-col gap-4 border-b border-white/60 pb-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
+              <div className={cn(GLASS_CARD, 'p-6 sm:p-8')}>
+                <HoverGlow />
+                <div
+                  className={cn(
+                    'flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-center sm:justify-between',
+                    HAIRLINE
+                  )}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
+                    <CardIconChip>
                       <User className="h-4 w-4" />
-                    </div>
+                    </CardIconChip>
                     <div>
-                      <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
+                      <h2 className="font-[var(--font-space-grotesk)] text-xl font-bold tracking-tight text-[#0F172A] dark:text-white">
                         基本信息
                       </h2>
-                      <p className="mt-1 text-sm text-[#94A3B8] dark:text-slate-400">
+                      <p className="mt-0.5 text-[13px] text-[#94A3B8] dark:text-slate-400">
                         展示头像、身份标识与账号归属信息
                       </p>
                     </div>
                   </div>
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="outline"
                     onClick={() => setIsEditOpen(true)}
-                    className="h-10 rounded-xl border-white/60 bg-white/60 px-4 text-sm font-semibold text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/65 dark:text-[#C2D1FF] dark:hover:bg-slate-800"
+                    className="h-11 rounded-xl border-slate-200/90 bg-white/80 px-4 text-sm font-semibold text-[#2563EB] shadow-sm hover:bg-white dark:border-white/10 dark:bg-white/[0.06] dark:text-[#C2D1FF] dark:hover:bg-white/10"
                   >
                     <PencilLine className="mr-2 h-4 w-4" />
                     编辑资料
                   </Button>
                 </div>
 
-                <div className="relative mt-6 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)]">
-                  <div className="flex flex-col items-center gap-4 lg:items-start">
+                <div className="mt-7 grid gap-8 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center">
+                  <div className="flex justify-center lg:justify-start">
                     <AvatarEditor
                       currentAvatar={profile.avatar}
                       onAvatarUpdated={() => fetchUser()}
                     />
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <ProfileStatField label="用户 ID" value={profile.userId} />
-                    <ProfileStatField
-                      label="用户名"
-                      value={profile.username}
-                      fullWidth
-                      trailing={<User className="h-5 w-5 shrink-0 text-[#255DFF]" />}
-                    />
-                    <ProfileStatField label="所属时区" value={profile.timezone} fullWidth />
+                  <div className="grid gap-x-10 sm:grid-cols-2">
+                    {profileFields.map((field, index) => (
+                      <ProfileStatField
+                        key={field.label}
+                        {...field}
+                        className={
+                          field.span ||
+                          (profileFields.length % 2 === 1 && index === profileFields.length - 1)
+                            ? 'sm:col-span-2'
+                            : undefined
+                        }
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+              <div
+                className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}
+              >
                 {isAnonymousUser ? (
-                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-[#255DFF]/30 bg-[linear-gradient(180deg,rgba(239,246,255,0.98),rgba(255,255,255,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-[#255DFF]/40 dark:bg-[linear-gradient(180deg,rgba(30,58,138,0.32),rgba(15,23,42,0.64))] sm:p-7">
-                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
-                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-blue-100/80 blur-3xl dark:hidden" />
+                  <div
+                    className={cn(
+                      SOLID_CARD,
+                      'flex h-full flex-col border-blue-200/70 bg-gradient-to-b from-blue-50/70 to-white p-6 dark:border-blue-900/40 dark:from-blue-950/20 dark:to-transparent'
+                    )}
+                  >
+                    <HoverGlow />
                     <div className="flex items-center gap-3">
-                      <LogIn className="h-6 w-6 text-[#255DFF] dark:text-[#A8BAFF]" />
-                      <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
+                      <CardIconChip>
+                        <LogIn className="h-4 w-4" />
+                      </CardIconChip>
+                      <h3 className="font-[var(--font-space-grotesk)] text-lg font-semibold tracking-tight text-[#0F172A] dark:text-white">
                         使用账号密码登录
                       </h3>
                     </div>
-                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                    <p className="mb-5 mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
                       您当前处于匿名体验模式。使用账号密码登录后，可享受完整额度、云端同步与个性化服务。
                     </p>
                     <Button
                       asChild
                       type="button"
                       variant="outline"
-                      className="mt-auto h-11 w-full rounded-xl border-[#255DFF]/60 bg-white/60 text-sm font-semibold text-[#255DFF] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-blue-50/75 dark:border-[#255DFF]/50 dark:bg-slate-800/72 dark:text-[#C2D1FF] dark:hover:bg-slate-800"
+                      className={cn(
+                        OUTLINE_BUTTON,
+                        'mt-auto border-blue-200/80 text-[#255DFF] hover:bg-blue-50/80 sm:w-auto sm:min-w-[200px] sm:self-start dark:border-blue-900/50 dark:text-[#A8BAFF] dark:hover:bg-blue-950/30'
+                      )}
                     >
                       <Link href="/login">
                         <LogIn className="mr-2 h-4 w-4" />
@@ -738,21 +925,27 @@ export function ProfileShell() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-slate-100/80 bg-white p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(15,23,42,0.66))] sm:p-7">
-                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/52 to-transparent dark:from-white/5" />
-                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
-                    <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
-                      安全退出
-                    </h3>
-                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                  <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
+                    <HoverGlow />
+                    <div className="flex items-center gap-3">
+                      <CardIconChip accent="slate">
+                        <LogOut className="h-4 w-4" />
+                      </CardIconChip>
+                      <h3 className="font-[var(--font-space-grotesk)] text-lg font-semibold tracking-tight text-[#0F172A] dark:text-white">
+                        安全退出
+                      </h3>
+                    </div>
+                    <p className="mb-5 mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
                       结束当前的会话并清除本地缓存。建议在公用设备上使用。
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => void logout()}
-                      className="mt-auto h-11 w-full rounded-xl border-white/60 bg-white/60 text-sm font-semibold text-[#475569] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm hover:bg-white/80 dark:border-white/10 dark:bg-slate-800/72 dark:text-slate-100 dark:hover:bg-slate-800"
+                      className={cn(
+                        OUTLINE_BUTTON,
+                        'mt-auto sm:w-auto sm:min-w-[200px] sm:self-start'
+                      )}
                     >
                       <LogOut className="mr-2 h-4 w-4" />
                       退出当前登录
@@ -761,24 +954,32 @@ export function ProfileShell() {
                 )}
 
                 {!isAdminUser && !isAnonymousUser ? (
-                  <div className="relative flex min-h-[296px] flex-col overflow-hidden rounded-[24px] border border-red-100/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,247,247,0.95))] p-6 shadow-xl transition-all duration-300 hover:shadow-2xl dark:border-red-900/40 dark:bg-[linear-gradient(180deg,rgba(48,19,22,0.76),rgba(15,23,42,0.64))] sm:p-7">
-                    <div className="pointer-events-none absolute top-0 inset-x-7 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/15" />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/55 to-transparent dark:from-white/4" />
-                    <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-rose-100/80 blur-3xl dark:hidden" />
+                  <div
+                    className={cn(
+                      SOLID_CARD,
+                      'flex h-full flex-col border-red-200/70 p-6 dark:border-red-900/40 dark:bg-red-950/[0.06]'
+                    )}
+                  >
+                    <HoverGlow className="bg-red-400/10 dark:bg-red-500/10" />
                     <div className="flex items-center gap-3">
-                      <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-300" />
-                      <h3 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-red-600 dark:text-red-300 sm:text-2xl">
+                      <CardIconChip accent="red">
+                        <AlertTriangle className="h-4 w-4" />
+                      </CardIconChip>
+                      <h3 className="font-[var(--font-space-grotesk)] text-lg font-semibold tracking-tight text-red-600 dark:text-red-300">
                         危险区域
                       </h3>
                     </div>
-                    <p className="mt-3 text-sm leading-[1.625] text-[#64748B] dark:text-slate-300 sm:text-[15px]">
+                    <p className="mb-5 mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
                       永久注销您的账户。此操作将立即删除所有云端数据、积分且无法恢复。
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setIsDeleteOpen(true)}
-                      className="mt-auto h-11 w-full rounded-xl border-red-200/75 bg-white/60 text-sm font-semibold text-red-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(217,119,87,0.12)] backdrop-blur-sm hover:bg-red-50/75 dark:border-red-900/50 dark:bg-slate-800/72 dark:text-red-200 dark:hover:bg-red-950/24"
+                      className={cn(
+                        OUTLINE_BUTTON,
+                        'mt-auto border-red-200/90 text-red-600 hover:bg-red-50/80 sm:w-auto sm:min-w-[200px] sm:self-start dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30'
+                      )}
                     >
                       申请注销账户
                     </Button>
@@ -787,22 +988,18 @@ export function ProfileShell() {
               </div>
             </section>
 
-            <aside className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white/66 via-white/24 to-transparent p-6 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.10)] backdrop-blur-[40px] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] sm:p-7 xl:sticky xl:top-8 xl:self-start">
-              <div className="pointer-events-none absolute inset-0 rounded-[32px] border border-white/60 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] dark:border-white/10" />
-              <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/32 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
-              <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-[rgba(219,234,254,0.50)] blur-3xl dark:hidden" />
-              <div className="pointer-events-none absolute bottom-0 left-8 h-20 w-40 rounded-full bg-white/28 blur-3xl dark:hidden" />
-              <div className="relative flex items-center gap-3 border-b border-white/60 pb-4 dark:border-white/10">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/70 dark:text-[#A8BAFF]">
+            <aside className={cn(GLASS_CARD, 'p-6 sm:p-7 xl:sticky xl:top-8 xl:self-start')}>
+              <HoverGlow />
+              <div className={cn('flex items-center gap-3 border-b pb-4', HAIRLINE)}>
+                <CardIconChip>
                   <BarChart3 className="h-4 w-4" />
-                </div>
-                <h2 className="font-[var(--font-space-grotesk)] text-[22px] font-bold tracking-tight text-[#0F172A] dark:text-white sm:text-2xl">
+                </CardIconChip>
+                <h2 className="font-[var(--font-space-grotesk)] text-xl font-bold tracking-tight text-[#0F172A] dark:text-white">
                   资源消耗
                 </h2>
               </div>
 
-              <div className="mt-5">
+              <div className="mt-6">
                 <ResourceRing
                   remaining={tokenRemaining}
                   consumed={tokenConsumed}
@@ -811,84 +1008,71 @@ export function ProfileShell() {
                 />
               </div>
 
-              <p className="mt-1 text-center text-sm text-[#64748B] dark:text-slate-300 sm:text-[15px]">
-                {usageLoading ? '资源统计加载中...' : '全部使用记录'}
-              </p>
-
-              <div className="mt-8 space-y-4 text-sm text-slate-600 dark:text-slate-300 sm:text-[15px]">
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                  <div className="relative flex items-center justify-between gap-4">
-                    <span>Token 总消耗</span>
-                    <strong className="text-lg text-[#0F172A] dark:text-white">
-                      {formatTokenCount(usage?.totalTokens ?? 0)}
-                    </strong>
-                  </div>
-                </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-[#2563EB]/8 via-white/72 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(34,78,212,0.22),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                  <div className="relative flex items-center justify-between gap-4">
-                    <span>语音转写时长</span>
-                    <strong className="text-lg text-[#2563EB] dark:text-[#A8BAFF]">
-                      {formatDurationSeconds(usage?.totalAudioSeconds ?? 0)}
-                    </strong>
-                  </div>
-                </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                  <div className="relative flex items-center justify-between gap-4">
-                    <span>图片生成任务</span>
-                    <strong className="text-lg text-[#0F172A] dark:text-white">
-                      {formatTaskCount(usage?.taskUsage?.imageCount ?? 0)}
-                    </strong>
-                  </div>
-                </div>
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/70 to-white/36 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.7),rgba(15,23,42,0.52))]">
-                  <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                  <div className="relative flex items-center justify-between gap-4">
-                    <span>视频生成任务</span>
-                    <strong className="text-lg text-[#0F172A] dark:text-white">
-                      {formatTaskCount(usage?.taskUsage?.videoCount ?? 0)}
-                    </strong>
-                  </div>
-                </div>
+              <div className="mt-7">
+                <UsageStatRow
+                  icon={<MessageSquare className="h-4 w-4" />}
+                  label="Token 总消耗"
+                  amount={formatNumber(usage?.totalTokens ?? 0)}
+                  unit="Tokens"
+                  accent="blue"
+                />
+                <UsageStatRow
+                  icon={<Mic className="h-4 w-4" />}
+                  label="语音转写时长"
+                  {...formatDurationParts(usage?.totalAudioSeconds ?? 0)}
+                  accent="violet"
+                />
+                <UsageStatRow
+                  icon={<ImageIcon className="h-4 w-4" />}
+                  label="图片生成任务"
+                  amount={formatNumber(usage?.taskUsage?.imageCount ?? 0)}
+                  unit="次"
+                  accent="pink"
+                />
+                <UsageStatRow
+                  icon={<Video className="h-4 w-4" />}
+                  label="视频生成任务"
+                  amount={formatNumber(usage?.taskUsage?.videoCount ?? 0)}
+                  unit="次"
+                  accent="indigo"
+                />
               </div>
 
-              <div className="relative mt-7 border-t border-white/60 pt-7 dark:border-white/10">
-                {usageError ? (
-                  <div className="rounded-2xl border border-red-200/60 bg-red-50/70 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
-                    {usageError}
-                  </div>
-                ) : usageLoading ? (
-                  <div className="flex items-center justify-center rounded-2xl border border-white/60 bg-white/60 px-4 py-6 text-sm text-[#94A3B8] dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                    正在同步资源消耗
-                  </div>
-                ) : usage?.features.length ? (
-                  <div className="space-y-4">
-                    {usage.features.map((item) => (
-                      <div
-                        key={item.feature}
-                        className="relative overflow-hidden rounded-2xl border border-white/60 bg-gradient-to-b from-white/56 to-white/26 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-[16px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.68),rgba(15,23,42,0.5))]"
-                      >
-                        <div className="pointer-events-none absolute top-0 inset-x-5 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-80 dark:via-white/20" />
-                        <div className="relative space-y-3">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex min-w-0 items-center gap-4">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/60 bg-white/60 text-[#2563EB] shadow-[inset_0_1px_0_rgba(255,255,255,0.70),0_6px_16px_rgba(78,99,160,0.12)] backdrop-blur-sm dark:border-white/10 dark:bg-slate-800/68 dark:text-[#A8BAFF]">
-                                <UsageIcon feature={item.feature} />
-                              </div>
+              <div className={cn('mt-7 border-t pt-6', HAIRLINE)}>
+                <p className="text-xs font-semibold tracking-[0.1em] text-[#94A3B8] dark:text-slate-500">
+                  {usageLoading ? '资源统计加载中...' : '全部使用记录'}
+                </p>
+                <div className="mt-4">
+                  {usageError ? (
+                    <div className="rounded-2xl border border-red-200/70 bg-red-50/70 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
+                      {usageError}
+                    </div>
+                  ) : usageLoading ? (
+                    <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300/80 px-4 py-6 text-sm text-[#94A3B8] dark:border-white/10 dark:text-slate-400">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      正在同步资源消耗
+                    </div>
+                  ) : usage?.features.length ? (
+                    <div className="space-y-3">
+                      {usage.features.map((item) => (
+                        <div
+                          key={item.feature}
+                          className="rounded-2xl border border-slate-900/[0.06] bg-white/55 px-4 py-3.5 transition-colors hover:bg-white/85 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.07]"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <UsageIcon feature={item.feature} />
                               <div className="min-w-0">
-                                <span className="block truncate text-base font-semibold text-[#0F172A] dark:text-slate-100">
+                                <span className="block truncate text-sm font-semibold text-[#0F172A] dark:text-slate-100">
                                   {item.label}
                                 </span>
-                                <span className="block text-xs text-[#94A3B8] dark:text-slate-400">
+                                <span className="mt-0.5 block text-xs text-[#94A3B8] dark:text-slate-400">
                                   {getUsageSourceLabel(item.sourceKind)}
                                 </span>
                               </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-3">
-                              <strong className="text-base text-[#475569] dark:text-slate-300">
+                            <div className="flex shrink-0 items-center gap-2.5">
+                              <strong className="text-sm font-semibold tabular-nums text-[#475569] dark:text-slate-300">
                                 {formatUsageValue(item)}
                               </strong>
                               <Button
@@ -899,14 +1083,14 @@ export function ProfileShell() {
                                     current === item.feature ? null : item.feature
                                   )
                                 }
-                                className="h-8 rounded-lg px-2 text-xs font-medium text-[#2563EB] hover:bg-white/50 dark:text-[#A8BAFF] dark:hover:bg-white/5"
+                                className="h-9 rounded-lg px-2.5 text-xs font-medium text-[#2563EB] hover:bg-blue-500/[0.08] dark:text-[#A8BAFF] dark:hover:bg-white/[0.06]"
                               >
                                 {expandedFeature === item.feature ? '收起明细' : '展开明细'}
                               </Button>
                             </div>
                           </div>
                           {expandedFeature === item.feature ? (
-                            <div className="grid gap-2 rounded-xl border border-white/55 bg-white/42 px-3 py-3 text-xs text-slate-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.68)] dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300 sm:grid-cols-3">
+                            <div className="mt-3.5 grid gap-3 rounded-xl border border-slate-900/[0.06] bg-slate-50/70 px-3.5 py-3 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 sm:grid-cols-3">
                               <div>
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
                                   统计方式
@@ -919,7 +1103,7 @@ export function ProfileShell() {
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
                                   Token 消耗
                                 </div>
-                                <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
+                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
                                   {formatTokenCount(item.totalTokens)}
                                 </div>
                               </div>
@@ -927,7 +1111,7 @@ export function ProfileShell() {
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
                                   语音转写时长
                                 </div>
-                                <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
+                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
                                   {formatDurationSeconds(item.audioSeconds)}
                                 </div>
                               </div>
@@ -935,7 +1119,7 @@ export function ProfileShell() {
                                 <div className="text-[11px] text-slate-400 dark:text-slate-500">
                                   媒体任务次数
                                 </div>
-                                <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
+                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
                                   {formatTaskCount(item.taskCount)}
                                 </div>
                               </div>
@@ -950,14 +1134,19 @@ export function ProfileShell() {
                             </div>
                           ) : null}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-white/60 bg-white/60 px-4 py-6 text-sm text-[#94A3B8] dark:border-white/10 dark:bg-slate-900/40 dark:text-slate-300">
-                    暂无资源消耗记录
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-dashed border-slate-300/80 px-4 py-8 text-center dark:border-white/10">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-500/10 text-slate-400 dark:text-slate-500">
+                        <BarChart3 className="h-4 w-4" />
+                      </span>
+                      <p className="text-sm text-[#94A3B8] dark:text-slate-400">
+                        暂无资源消耗记录
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </aside>
           </div>
