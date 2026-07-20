@@ -60,7 +60,7 @@ const RequestSchema = z.object({
 // 注意与 maxDuration=300 对齐：quick(90s) + full(180s) 必须留有余量
 const QUICK_TIMEOUT_MS = 90000;
 const REPORT_TIMEOUT_MS = 180000;
-const QUICK_MAX_TOKENS = 4000;
+const QUICK_MAX_TOKENS = 8000;
 const FULL_MAX_TOKENS = 6000;
 
 const SECTION_ORDER: ZiweiSectionKey[] = [
