@@ -62,6 +62,13 @@ export async function POST(request: NextRequest) {
       if (!response.ok) {
         const errorText = await response.text();
         await failMediaTask(mediaTaskId, errorText);
+        // 上游服务过载时返回友好提示
+        if (response.status === 503) {
+          return NextResponse.json(
+            { error: 'Agnes 服务暂时繁忙，请稍后重试' },
+            { status: 503 }
+          );
+        }
         return NextResponse.json(
           { error: `Agnes API error: ${errorText}` },
           { status: response.status }
