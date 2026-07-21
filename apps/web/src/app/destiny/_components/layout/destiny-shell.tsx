@@ -23,6 +23,7 @@ import {
 import type { ExternalDraft } from '../chat/ai-copilot-conversation';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
+import { BaziShareEntry } from '../share/bazi-share-entry';
 // import { ChartSectionNav } from '../visualization/chart-section-nav';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -129,15 +130,19 @@ export function DestinyShell({
               subtitle={<ProfileSubtitle text={subtitle} />}
               onRecalculate={onRecalculate}
               leadingActions={
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsReportDrawerOpen(true)}
-                  className={cn(destinySecondaryBtnClass, 'lg:hidden')}
-                >
-                  <PanelRightOpen className="mr-2 h-4 w-4" />
-                  深度报告
-                </Button>
+                <>
+                  {/* 分享入口：仅在完整报告就绪后可点（流式中不展示） */}
+                  {report && activeModule === 'bazi' ? <BaziShareEntry report={report} /> : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsReportDrawerOpen(true)}
+                    className={cn(destinySecondaryBtnClass, 'lg:hidden')}
+                  >
+                    <PanelRightOpen className="mr-2 h-4 w-4" />
+                    深度报告
+                  </Button>
+                </>
               }
             />
 
