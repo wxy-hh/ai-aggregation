@@ -89,6 +89,9 @@ export type DestinyWorkspaceCacheState = {
 type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   provider: DestinyProvider;
   setProvider: (provider: DestinyProvider) => void;
+  /** 当前激活的命理模块(由 DestinyPageClient 同步,供全局 chrome 感知场景,如移动端顶栏入夜) */
+  activeModule: DestinyModuleKey | null;
+  setActiveModule: (module: DestinyModuleKey | null) => void;
   setWorkspaceState: <TModule extends DestinyModuleKey>(
     module: TModule,
     patch:
@@ -177,6 +180,9 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
 
       provider: 'doubao',
       setProvider: (provider) => set({ provider }),
+
+      activeModule: null,
+      setActiveModule: (activeModule) => set({ activeModule }),
 
       setWorkspaceState: (module, patch) =>
         set((state) => {

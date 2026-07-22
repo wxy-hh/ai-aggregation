@@ -25,8 +25,17 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
     return 'bazi';
   });
+  // 同步激活模块到全局 store,供命理域外的全局 chrome(移动端顶栏/底栏)感知场景
+  const setActiveModuleInStore = useDestinyWorkspaceStore((s) => s.setActiveModule);
+  useEffect(() => {
+    setActiveModuleInStore(activeModule);
+    return () => setActiveModuleInStore(null);
+  }, [activeModule, setActiveModuleInStore]);
   // 模型切换只在填表步骤显示，结果页不显示
   const isFormStep = useDestinyWorkspaceStore((s) => s[activeModule].step === 'form');
+  // 紫微结果态:移动端分段控件随内容一起入夜(暮色三段式)
+  const ziweiInResult = useDestinyWorkspaceStore((s) => s.ziwei.step === 'result');
+  const isZiweiNight = activeModule === 'ziwei' && ziweiInResult;
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
@@ -162,9 +171,21 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
         style={{ minHeight: '100dvh' }}
       >
-        {/* 移动端分段控件 */}
-        <div className="sticky top-0 z-20 border-b border-white/50 bg-white/75 px-4 py-3 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/75">
-          <div className="rounded-[999px] bg-slate-100/80 p-1 dark:bg-slate-800/80">
+        {/* 移动端分段控件(紫微结果态入夜) */}
+        <div
+          className={cn(
+            'sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-2xl transition-[background-color,border-color] duration-500',
+            isZiweiNight
+              ? 'border-[#E7C873]/15 bg-[#0C1128]/85'
+              : 'border-white/50 bg-white/75 dark:border-white/10 dark:bg-slate-900/75'
+          )}
+        >
+          <div
+            className={cn(
+              'rounded-[999px] p-1 transition-colors duration-500',
+              isZiweiNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
+            )}
+          >
             <div className="grid grid-cols-3 gap-1">
               {mobileTabs.map((tab) => {
                 const active = activeModule === tab.key;
@@ -176,8 +197,12 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
                     className={cn(
                       'rounded-[999px] px-4 py-2 text-sm font-semibold transition-all duration-200',
                       active
-                        ? 'bg-white text-[#5D7CFA] shadow-sm dark:bg-slate-700 dark:text-[#9BADFF]'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                        ? isZiweiNight
+                          ? 'bg-[#A78BFA]/15 text-[#C4B5FD] shadow-[0_0_16px_rgba(139,92,246,0.25)]'
+                          : 'bg-white text-[#5D7CFA] shadow-sm dark:bg-slate-700 dark:text-[#9BADFF]'
+                        : isZiweiNight
+                          ? 'text-[#8B87A0] hover:text-[#C9C4D8]'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     )}
                   >
                     {tab.label}

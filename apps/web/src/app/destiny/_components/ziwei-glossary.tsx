@@ -123,16 +123,26 @@ export function GlossaryTooltip({ term, children, side = 'top', chartData }: Glo
     <Popover>
       <PopoverTrigger asChild>
         <span
-          className="inline-flex cursor-pointer border-b border-dotted border-[#4969E9]/40 hover:border-[#4969E9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/30 rounded-sm"
+          className="inline-flex cursor-pointer rounded-sm border-b border-dotted border-[#E7C873]/40 hover:border-[#E7C873] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A78BFA]/50"
         >
           {children}
         </span>
       </PopoverTrigger>
-      <PopoverContent side={side} align="start" sideOffset={8} className="max-w-[320px]">
-        <div className="text-[11px] font-bold text-[#4969E9] dark:text-[#9BADFF] mb-1">
+      <PopoverContent
+        side={side}
+        align="start"
+        sideOffset={8}
+        className="max-w-[320px] border-[#E7C873]/20 bg-[#0C1128]/95 text-[#C9C4D8] shadow-[0_16px_40px_rgba(3,6,18,0.75),0_0_28px_rgba(139,92,246,0.12)] backdrop-blur-xl"
+      >
+        {/* 顶部鎏金切线,与夜幕面板体系一致 */}
+        <span
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/40 to-transparent"
+          aria-hidden
+        />
+        <div className="mb-1 font-song text-[11px] font-bold text-[#E7C873]">
           {term}
         </div>
-        <div className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{description}</div>
+        <div className="text-xs leading-relaxed text-[#C9C4D8]">{description}</div>
       </PopoverContent>
     </Popover>
   );

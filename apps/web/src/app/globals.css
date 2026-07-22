@@ -467,3 +467,117 @@
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   紫微「夜幕星宫」主题基础设施
+   - 宋体展示字栈(系统字体,零加载成本)
+   - 夜幕动效 keyframes(星闪/缓旋/星轨/入场/呼吸)
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* 宋体展示字:macOS/iOS 宋体 → 安卓思源宋体 → Windows 中易宋体 */
+  --font-song:
+    'Songti SC', 'STSongti-SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC',
+    'SimSun', serif;
+}
+
+@layer utilities {
+  .font-song {
+    font-family: var(--font-song);
+  }
+}
+
+/* 星点闪烁(明暗呼吸) */
+@keyframes ziwei-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* 星盘仪刻度环缓旋(顺/逆) */
+@keyframes ziwei-spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ziwei-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* 星轨虚线流光 */
+@keyframes ziwei-dash-flow {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+/* 宫位 staggered 入场 */
+@keyframes ziwei-palace-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 星云呼吸 */
+@keyframes ziwei-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.07);
+  }
+}
+
+/* 内容块淡入上浮(通用揭示) */
+@keyframes ziwei-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 三方四正联动宫:鎏金呼吸光晕 */
+@keyframes ziwei-related-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(231, 200, 115, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(231, 200, 115, 0.32);
+  }
+}
+
+/* 选中宫:紫微紫呼吸光晕 */
+@keyframes ziwei-active-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(167, 139, 250, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 38px rgba(167, 139, 250, 0.42);
+  }
+}
+
+/* 星轨彗星粒子:reduced-motion 下隐藏(SMIL 不受 CSS 动画时长约束,需显式关闭) */
+@media (prefers-reduced-motion: reduce) {
+  .ziwei-comet {
+    display: none;
+  }
+}
