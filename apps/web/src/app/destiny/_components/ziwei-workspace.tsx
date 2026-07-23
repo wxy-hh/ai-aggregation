@@ -481,7 +481,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   };
 
   return (
-    <DestinyPageScaffold withNavOffset tone="violet" night={resultNight}>
+    <DestinyPageScaffold withNavOffset tone="blue" night={resultNight}>
       <div className="relative h-full min-h-0 w-full overflow-hidden">
         <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
           {step === 'form' && (
@@ -556,12 +556,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
                   <NightSky density="page" />
                 </div>
               )}
-              {step === 'result' && !resultNight && (
-                <div
-                  className="pointer-events-none absolute inset-0 bg-[linear-gradient(165deg,#FDFCF9_0%,#F7F5EF_50%,#F3F1EA_100%)]"
-                  aria-hidden
-                />
-              )}
+              {/* 白昼结果：去掉暖纸实色底，透出 DestinyAmbientBackground 冷蓝浅底 + 光晕（对齐八字） */}
               <ZiweiResultView
                 report={report}
                 chartData={chartData}

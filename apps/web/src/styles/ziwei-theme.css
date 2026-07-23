@@ -208,24 +208,38 @@
   --zw-comet: #f6e3b4;
 }
 
-/* ─── 白昼（命理系亮玻璃 + 紫金点缀） ─── */
+/* ─── 白昼（对齐八字 G-2/G-3 拟态磨玻璃 + 紫金内容语义） ─── */
 .ziwei-day-root {
-  --zw-panel-bg: rgba(255, 255, 255, 0.85);
-  --zw-panel-bg-90: rgba(255, 255, 255, 0.9);
-  --zw-panel-bg-95: rgba(255, 255, 255, 0.96);
-  --zw-panel-border: rgba(148, 163, 184, 0.35);
-  --zw-panel-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
-  --zw-card-bg: rgba(255, 255, 255, 0.9);
-  --zw-card-border: rgba(15, 23, 42, 0.08);
-  --zw-card-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.05);
-  --zw-grid-bg: rgba(255, 253, 249, 0.92);
-  --zw-grid-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.06);
-  --zw-palace-card-bg: rgba(255, 255, 255, 0.92);
-  --zw-center-bg: rgba(255, 255, 255, 0.9);
-  --zw-center-shadow: 0 0 32px rgba(124, 58, 237, 0.08), inset 0 1px 0 rgba(160, 125, 46, 0.1);
-  --zw-ming-grad: linear-gradient(160deg, rgba(160, 125, 46, 0.1), rgba(255, 255, 255, 0.92) 45%);
-  --zw-detail-bg: rgba(15, 23, 42, 0.035);
-  --zw-sticky-bg: rgba(255, 255, 255, 0.92);
+  /* 面板：半透明玻璃（透出 ambient 冷蓝光晕），正文对比度靠深档文本 token */
+  --zw-panel-bg: rgba(255, 255, 255, 0.62);
+  --zw-panel-bg-90: rgba(255, 255, 255, 0.72);
+  --zw-panel-bg-95: rgba(255, 255, 255, 0.82);
+  --zw-panel-border: rgba(255, 255, 255, 0.62);
+  /* DESIGN Z-3 柔影 + 极淡科技蓝环境光（非内容强调色） */
+  --zw-panel-shadow:
+    0 12px 20px -8px rgba(15, 23, 42, 0.08),
+    0 4px 10px -2px rgba(15, 23, 42, 0.04),
+    0 20px 40px -15px rgba(59, 130, 246, 0.1),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
+  --zw-card-bg: rgba(255, 255, 255, 0.7);
+  --zw-card-border: rgba(255, 255, 255, 0.55);
+  --zw-card-shadow:
+    0 4px 12px -2px rgba(15, 23, 42, 0.05),
+    0 2px 6px -1px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.45);
+  --zw-grid-bg: rgba(255, 255, 255, 0.55);
+  --zw-grid-shadow:
+    0 12px 24px -10px rgba(15, 23, 42, 0.08),
+    0 20px 40px -18px rgba(59, 130, 246, 0.08);
+  /* 宫位卡略实，避免密集格「脏」 */
+  --zw-palace-card-bg: rgba(255, 255, 255, 0.78);
+  --zw-center-bg: rgba(255, 255, 255, 0.72);
+  --zw-center-shadow:
+    0 0 32px rgba(59, 130, 246, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --zw-ming-grad: linear-gradient(160deg, rgba(160, 125, 46, 0.08), rgba(255, 255, 255, 0.78) 45%);
+  --zw-detail-bg: rgba(255, 255, 255, 0.45);
+  --zw-sticky-bg: rgba(255, 255, 255, 0.78);
   --zw-surface-1: rgba(15, 23, 42, 0.03);
   --zw-surface-2: rgba(15, 23, 42, 0.04);
   --zw-surface-3: rgba(15, 23, 42, 0.05);
@@ -412,6 +426,28 @@
 /* ─── 白昼关闭星幕（星点/星云只在夜幕渲染） ─── */
 .ziwei-day-root .ziwei-night-sky {
   display: none;
+}
+
+/* ─── 白昼：容器级磨玻璃（仅 day，夜幕零回归） ─── */
+.ziwei-day-root .zw-panel,
+.ziwei-day-root .zw-card {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* 星盘网格壳 + 宫位卡：白昼轻磨砂，透出环境光 */
+.ziwei-day-root .zw-grid-shell,
+.ziwei-day-root .zw-palace-card {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* 白昼顶部分割线改为冷白高光（弱化「实金边卡」感，内容语义仍用紫金） */
+.ziwei-day-root .zw-gold-divider {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.75), transparent);
+}
+.ziwei-day-root .zw-gold-divider-soft {
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.55), transparent);
 }
 
 /* ═══ 语义组合类（消费上方变量，双主题自动切换） ═══ */
