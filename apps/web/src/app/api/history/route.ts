@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HistoryType, HistoryItem } from '@/types/history';
+import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
 
-// Mock user ID for now (in production, get from auth session)
-const MOCK_USER_ID = 'user-1';
+/**
+ * 将认证错误统一转换为历史记录 API 的错误响应格式。
+ */
+function handleAuthError(error: AuthError) {
+  return NextResponse.json(
+    { error: error.message },
+    { status: error.code === 'FORBIDDEN' ? 403 : 401 }
+  );
+}
 
 /**
  * GET /api/history
@@ -10,6 +19,7 @@ const MOCK_USER_ID = 'user-1';
  */
 export async function GET(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as HistoryType | 'all' | null;
     const search = searchParams.get('search');
@@ -27,6 +37,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching history:', error);
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
     return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 });
   }
 }
@@ -37,6 +50,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const body = await request.json();
     const { type, data } = body;
 
@@ -57,6 +71,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(newItem, { status: 201 });
   } catch (error) {
     console.error('Error creating history item:', error);
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
     return NextResponse.json({ error: 'Failed to create history item' }, { status: 500 });
   }
 }
@@ -67,6 +84,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    const userId = await requireAuth(request);
     const { searchParams } = new URL(request.url);
     const ids = searchParams.get('ids')?.split(',') || [];
 
@@ -79,6 +97,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ deleted: ids.length });
   } catch (error) {
     console.error('Error deleting history items:', error);
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
     return NextResponse.json({ error: 'Failed to delete history items' }, { status: 500 });
   }
 }

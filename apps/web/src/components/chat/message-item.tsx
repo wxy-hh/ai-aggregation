@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useState, useCallback, useMemo, memo } from 'react';
+import { useState, useCallback, useMemo, useRef, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -9,6 +9,12 @@ import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
 import type { Attachment, Message } from '@/stores/chat-store';
+import { useChatStore } from '@/stores/chat-store';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 interface MessageItemProps {
   message: Message;
@@ -27,9 +33,9 @@ const AttachmentPreview = memo(function AttachmentPreview({
         <img
           src={attachment.imageUrl}
           alt={attachment.name}
-          className="max-w-[300px] max-h-[200px] rounded-lg object-cover border border-white/20"
+          className="max-h-[200px] max-w-[300px] rounded-2xl border border-white/70 object-cover shadow-[0_10px_24px_rgba(76,95,154,0.1)]"
         />
-        <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded">
+        <div className="absolute bottom-2 left-2 rounded-full border border-white/20 bg-slate-950/60 px-2.5 py-1 text-xs text-white backdrop-blur-sm">
           {attachment.name}
         </div>
       </div>
@@ -38,8 +44,8 @@ const AttachmentPreview = memo(function AttachmentPreview({
 
   if (attachment.type === 'file') {
     return (
-      <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2 mb-2">
-        <div className="w-8 h-8 rounded bg-red-500/20 flex items-center justify-center">
+      <div className="mb-2 flex items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2.5 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/72">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/12">
           <svg
             className="w-4 h-4 text-red-300"
             fill="none"
@@ -55,9 +61,11 @@ const AttachmentPreview = memo(function AttachmentPreview({
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{attachment.name}</p>
+          <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-100">
+            {attachment.name}
+          </p>
           {attachment.size && (
-            <p className="text-xs opacity-70">{(attachment.size / 1024).toFixed(1)} KB</p>
+            <p className="text-xs text-slate-400">{(attachment.size / 1024).toFixed(1)} KB</p>
           )}
         </div>
       </div>
@@ -87,9 +95,9 @@ const AttachmentList = memo(function AttachmentList({
 // 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
   return (
-    <div className="whitespace-pre-wrap">
+    <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700 dark:text-slate-200">
       {content}
-      <span className="inline-block w-2 h-5 ml-0.5 bg-blue-500 animate-pulse rounded-sm" />
+      <span className="ml-1 inline-block h-5 w-2 rounded-sm bg-blue-500 align-[-3px] animate-pulse" />
     </div>
   );
 });
@@ -99,10 +107,17 @@ const ActionButtons = memo(function ActionButtons({
   onCopy,
   onRegenerate,
   isUser,
+  relay,
 }: {
   onCopy: () => void;
   onRegenerate?: () => void;
   isUser?: boolean;
+  relay?: {
+    disabled: boolean;
+    disabledReason?: string;
+    onOpen: () => void;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  };
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -115,14 +130,15 @@ const ActionButtons = memo(function ActionButtons({
   return (
     <div
       className={cn(
-        'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity px-1',
+        // 移动端常显（无 hover 无法发现接力），桌面保留 hover 渐显
+        'mt-2 flex items-center gap-1 px-1 transition-opacity max-sm:opacity-100 opacity-0 group-hover:opacity-100',
         isUser ? 'flex-row-reverse' : ''
       )}
     >
       {/* 复制按钮 */}
       <button
         onClick={handleCopy}
-        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+        className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
         title="复制"
       >
         {copied ? (
@@ -150,7 +166,7 @@ const ActionButtons = memo(function ActionButtons({
       {onRegenerate && (
         <button
           onClick={onRegenerate}
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
           title="重新生成"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -167,7 +183,7 @@ const ActionButtons = memo(function ActionButtons({
       {/* 赞按钮 - 只对 AI 显示 */}
       {!isUser && (
         <button
-          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
           title="赞"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -179,6 +195,18 @@ const ActionButtons = memo(function ActionButtons({
             />
           </svg>
         </button>
+      )}
+
+      {/* 接力按钮 - 只对 AI 显示（REQ-007 助手操作栏发起） */}
+      {!isUser && relay && (
+        <RelayAction
+          ref={relay.triggerRef}
+          iconOnly
+          disabled={relay.disabled}
+          disabledReason={relay.disabledReason}
+          onClick={relay.onOpen}
+          className="rounded-full border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+        />
       )}
     </div>
   );
@@ -215,7 +243,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
         return (
           <code
             className={cn(
-              'bg-slate-100 dark:bg-slate-700/50 px-1.5 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-sm',
+              'rounded-md bg-[#F3F6FF] px-1.5 py-0.5 font-mono text-sm text-indigo-600 dark:bg-slate-800 dark:text-indigo-300',
               className
             )}
             {...props}
@@ -239,38 +267,103 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
   );
 });
 
-// 用户头像组件
+/** 用户发言标识：消息气泡内人物轮廓 */
+function ChatUserMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.5 5.5h12a2.25 2.25 0 0 1 2.25 2.25v5a2.25 2.25 0 0 1-2.25 2.25H10.8l-3.3 2.9V15h-3a2.25 2.25 0 0 1-2.25-2.25V7.75A2.25 2.25 0 0 1 4.5 5.5z"
+        fill="currentColor"
+        fillOpacity="0.1"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <circle cx="11.25" cy="9.85" r="2" stroke="currentColor" strokeWidth="1.35" />
+      <path
+        d="M7.6 14.55c.75-1.65 2.1-2.55 3.65-2.55s2.9.9 3.65 2.55"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
+}
+
+/** 智能对话助手标识：对话气泡 + 星芒 + 流式回复点 */
+function ChatAiMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M4.5 5.75h12.25a2.25 2.25 0 0 1 2.25 2.25v5.25a2.25 2.25 0 0 1-2.25 2.25h-4.1l-3.35 2.95V15.5H4.5a2.25 2.25 0 0 1-2.25-2.25V8a2.25 2.25 0 0 1 2.25-2.25z"
+        fill="currentColor"
+        fillOpacity="0.2"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path
+        d="M11.35 9.1l.72 2.15 2.15.72-2.15.72-.72 2.15-.72-2.15-2.15-.72 2.15-.72.72-2.15z"
+        fill="currentColor"
+      />
+      <circle cx="8.55" cy="12.55" r="0.55" fill="currentColor" opacity="0.55" />
+      <circle cx="10.75" cy="12.55" r="0.55" fill="currentColor" opacity="0.8" />
+      <circle cx="12.95" cy="12.55" r="0.55" fill="currentColor" opacity="0.55" />
+      <path
+        d="M16.75 7.1v1.35M16.75 11.15v1.35M14.7 9.12h1.35M18.8 9.12h1.35"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeOpacity="0.75"
+        strokeWidth="1.1"
+      />
+    </svg>
+  );
+}
+
+// 用户头像：发言者（G-2 玻璃底 + 消息气泡人物标识）
 const UserAvatar = memo(function UserAvatar() {
   return (
-    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300">
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-        />
-      </svg>
+    <div
+      className={cn(
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl',
+        'border border-white/60 bg-white/60 text-slate-600 backdrop-blur-xl',
+        'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),0_8px_20px_-6px_rgba(76,95,154,0.12)]',
+        'dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300',
+        'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_8px_20px_-6px_rgba(0,0,0,0.35)]'
+      )}
+    >
+      <ChatUserMark className="h-[22px] w-[22px]" />
     </div>
   );
 });
 
-// AI 头像组件
+// AI 头像：智能对话助手（低饱和蓝青背光 + 外层呼吸光晕）
 const AIAvatar = memo(function AIAvatar() {
   return (
-    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-md bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 border border-white/20 text-white ring-2 ring-white dark:ring-slate-800">
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M12 2L14.4 7.2L20 9.6L14.4 12L12 17.2L9.6 12L4 9.6L9.6 7.2L12 2Z"
-          fill="currentColor"
-          className="animate-pulse"
-        />
-        <path
-          d="M19 15L20 17L22 18L20 19L19 21L18 19L16 18L18 17L19 15Z"
-          fill="currentColor"
-          className="opacity-70"
-        />
-      </svg>
+    <div className="relative h-10 w-10 shrink-0">
+      {/* 外层柔和光晕（呼吸动效，系统减少动效时自动弱化） */}
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute -inset-2 rounded-[20px]',
+          'bg-gradient-to-br from-blue-400/22 via-indigo-400/14 to-cyan-400/20',
+          'blur-[7px] motion-safe:animate-avatar-glow-breathe',
+          'dark:from-blue-500/28 dark:via-indigo-500/18 dark:to-cyan-500/22'
+        )}
+      />
+      <div
+        className={cn(
+          'relative z-[1] flex h-10 w-10 items-center justify-center rounded-2xl',
+          'border border-blue-200/55 bg-gradient-to-br from-blue-500/14 via-indigo-500/10 to-cyan-500/14',
+          'text-blue-600 backdrop-blur-xl',
+          'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_6px_16px_-6px_rgba(59,130,246,0.14)]',
+          'dark:border-blue-500/22 dark:from-blue-500/18 dark:via-indigo-500/12 dark:to-cyan-500/16',
+          'dark:text-blue-300',
+          'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_6px_16px_-6px_rgba(59,130,246,0.1)]'
+        )}
+      >
+        <ChatAiMark className="h-[22px] w-[22px]" />
+      </div>
     </div>
   );
 });
@@ -323,6 +416,36 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const isThinking = !isUser && isStreaming && !message.content;
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
+  // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
+  const currentModel = useChatStore((s) => s.model);
+  const currentProvider = useChatStore((s) => s.provider);
+  const canRelay = !isUser && !isStreaming && !isThinking && message.content.trim().length > 0;
+  // 气泡容器 ref：用于判定用户是否在气泡内选中了片段（REQ-009 选区优先）
+  const bubbleRef = useRef<HTMLDivElement | null>(null);
+  const relay = useRelayLauncher({
+    sourceType: 'text',
+    selectionRootRef: bubbleRef,
+    disabledReason: !canRelay
+      ? isStreaming || isThinking
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: ({ selectedText }) => {
+      if (!canRelay) return null;
+      // 选区片段优先；否则回退到完整回答
+      const snapshot = selectedText ?? message.content;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'chat',
+        sourceType: 'text',
+        sourceId: message.id,
+        sourceTitle: snapshot.slice(0, 30) || '对话回答',
+        sourceModel: currentModel ?? currentProvider,
+        snapshotText: snapshot,
+      };
+      return partial;
+    },
+  });
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(message.content);
   }, [message.content]);
@@ -331,7 +454,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
     <div className={cn('flex w-full mb-6', isUser ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'flex max-w-4xl w-full flex-col gap-2 md:gap-4',
+          'flex w-full flex-col gap-2 md:gap-4',
           isUser ? 'items-end md:items-start md:flex-row-reverse' : 'items-start md:flex-row'
         )}
       >
@@ -359,11 +482,14 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
 
           {/* Message Bubble */}
           <div
+            ref={bubbleRef}
+            onContextMenu={!isUser ? relay.onContextMenu : undefined}
+            {...(!isUser ? relay.longPressProps : {})}
             className={cn(
-              'px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed shadow-sm max-w-full break-words',
+              'max-w-full break-words rounded-[24px] px-5 py-4 text-[15px] leading-relaxed shadow-[0_10px_26px_rgba(76,95,154,0.08)]',
               isUser
-                ? 'w-full md:w-fit bg-blue-600 text-white rounded-tr-none'
-                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-none text-slate-800 dark:text-slate-200',
+                ? 'w-full rounded-tr-[10px] border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] text-white md:w-fit'
+                : 'rounded-tl-[10px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.78))] text-slate-800 dark:border-slate-700/80 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.92),rgba(15,23,42,0.82))] dark:text-slate-200',
               // 思考状态下，气泡宽度设为更宽以容纳骨架屏
               isThinking ? 'w-full max-w-[500px]' : ''
             )}
@@ -375,7 +501,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                 {message.content && <div className="whitespace-pre-wrap">{message.content}</div>}
               </>
             ) : (
-              <div className="markdown-body prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border prose-pre:border-slate-200 dark:prose-pre:border-slate-700 prose-pre:rounded-xl">
+              <div className="markdown-body prose max-w-none prose-p:leading-7 prose-p:text-slate-700 prose-headings:font-heading prose-headings:text-slate-900 prose-strong:text-slate-900 prose-pre:rounded-2xl prose-pre:border prose-pre:border-slate-200 prose-pre:p-0 dark:prose-invert dark:prose-p:text-slate-200 dark:prose-headings:text-white dark:prose-strong:text-white dark:prose-pre:border-slate-700">
                 {isThinking ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (
@@ -400,10 +526,32 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               onCopy={handleCopy}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
               isUser={isUser}
+              relay={
+                !isUser
+                  ? {
+                      disabled: relay.disabled,
+                      disabledReason: relay.disabledReason,
+                      onOpen: relay.openAtTrigger,
+                      triggerRef: relay.triggerRef,
+                    }
+                  : undefined
+              }
             />
           )}
         </div>
       </div>
+
+      {/* 接力菜单（显式按钮/右键/长按复用同一菜单） */}
+      {!isUser && (
+        <RelayMenu
+          open={relay.menuOpen}
+          onOpenChange={relay.setMenuOpen}
+          targets={relay.targets}
+          onSelect={relay.onSelect}
+          anchorPoint={relay.anchorPoint}
+          triggerRef={relay.triggerRef}
+        />
+      )}
     </div>
   );
 });

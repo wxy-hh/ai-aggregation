@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ImageHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface ImageHistoryCardProps {
   item: ImageHistoryItem;
@@ -50,7 +51,7 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group h-full flex flex-col relative">
+    <div className="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative">
       {/* 删除按钮 */}
       <button
         onClick={handleDelete}
@@ -160,10 +161,11 @@ export function ImageHistoryCard({ item, onPreview, onDelete }: ImageHistoryCard
       </div>
 
       {/* 描述区域 */}
-      <div className="p-4 flex-1">
+      <div className="p-4">
         <p className="text-sm text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed font-medium">
           {item.preview || item.prompt}
         </p>
+        <DerivationBadge item={item} />
       </div>
     </div>
   );

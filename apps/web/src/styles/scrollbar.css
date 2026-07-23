@@ -17,6 +17,51 @@
   background-color: rgba(156, 163, 175, 0.5);
 }
 
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 138, 186, 0.34) transparent;
+  scrollbar-gutter: stable;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 8px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(145, 164, 255, 0.52), rgba(104, 126, 214, 0.34));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 36px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(125, 147, 255, 0.74), rgba(91, 110, 196, 0.48));
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .sidebar-scrollbar {
+  scrollbar-color: rgba(126, 150, 255, 0.42) transparent;
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(136, 160, 255, 0.55), rgba(92, 111, 196, 0.4));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dark .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(166, 184, 255, 0.72), rgba(110, 130, 220, 0.54));
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
 /* Hide scrollbar for clean look but keep functionality */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
@@ -38,4 +83,50 @@
 
 .cursor-blink {
   animation: cursor-blink 1s step-end infinite;
+}
+
+/* 紫微「夜幕星宫」场景滚动条:紫微紫低透明,融入夜色 */
+.ziwei-night-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(167, 139, 250, 0.22);
+}
+.ziwei-night-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(167, 139, 250, 0.4);
+}
+
+/* 紫微「夜幕星宫」场景:窗口级滚动条(macOS 常驻滚动条)夜化,由 ziwei-workspace 按结果步挂载到 <html> */
+.ziwei-night-root::-webkit-scrollbar {
+  width: 10px;
+}
+.ziwei-night-root::-webkit-scrollbar-track {
+  background: #0a0e20;
+}
+.ziwei-night-root::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.28);
+  border-radius: 999px;
+  border: 2px solid #0a0e20;
+}
+.ziwei-night-root::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.45);
+}
+
+/* 紫微「白昼」主题:同一场景滚动条切换为 slate 浅色系(覆盖上方夜幕规则) */
+.ziwei-day-root .ziwei-night-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.3);
+}
+.ziwei-day-root .ziwei-night-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.5);
+}
+.ziwei-day-root::-webkit-scrollbar {
+  width: 10px;
+}
+.ziwei-day-root::-webkit-scrollbar-track {
+  background: #f3f1ea;
+}
+.ziwei-day-root::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+  border: 2px solid #f3f1ea;
+}
+.ziwei-day-root::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
 }

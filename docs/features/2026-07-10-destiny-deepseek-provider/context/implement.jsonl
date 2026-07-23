@@ -1,0 +1,4 @@
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/需求说明书.md","kind":"requirement","reason":"需求边界与 REQ-ID，任务映射来源"}
+{"file":"docs/features/2026-07-10-destiny-deepseek-provider/初步实现计划.md","kind":"plan","reason":"7 个任务的文件/接口/验证/回撤，实现依据"}
+{"file":"docs/deepseek-api/deepseek-chat-api.md","kind":"spec","reason":"DeepSeek 官方 Chat Completions 接入要点（JSON 模式/流式/错误码/限流），Task 1 抽象层依据"}
+{"file":"apps/web/.env.local","kind":"reference","reason":"DEEPSEEK_MODEL(38) 承载 DeepSeek 官方 apikey；ARK_* 现状"}

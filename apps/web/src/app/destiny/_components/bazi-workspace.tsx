@@ -2,15 +2,20 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Button } from '@/components/ui/button';
-import {
-  useDestinyWorkspaceStore,
-  type BaziErrorKind,
-} from '@/stores/destiny-workspace-store';
+import { authFetch } from '@/lib/api/client';
+import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+import { generateUUID } from '@/lib/utils/uuid';
+import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
+import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
+// 跨模态接力：命盘生成后经 externalDraft 预填顾问（绝不复用 queuedQuestion，REQ §4.6.4）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import type { BaziFormData } from './bazi-types';
 import type {
   BaziLockedSections,
@@ -83,6 +88,7 @@ export function BaziWorkspace({
     resetWorkspace,
     restoreWorkspace,
     markResultReady,
+    provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.bazi,
@@ -90,13 +96,32 @@ export function BaziWorkspace({
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
       markResultReady: state.markResultReady,
+      provider: state.provider,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
+  const currentHistoryIdRef = useRef<string | null>(null);
 
-  const pageTitle = useMemo(
-    () => (step === 'form' ? '八字格局精批 · 信息输入' : '八字格局精批 · AI 分析结果'),
-    [step]
+  // 接力：八字目标接收。命盘生成后把引用文本经 externalDraft 预填到 AI 顾问输入框。
+  const relay = useRelayReceive('destiny');
+  const relayText = relay.bundle?.items[0]?.snapshotText ?? '';
+  const relayDraft = useMemo(() => {
+    if (step !== 'result' || !report || !relayText) return null;
+    return { id: relay.bundle!.id, text: relayText };
+  }, [step, report, relayText, relay.bundle]);
+  // 预填被顾问接收：仅记录，不完成接力（REQ §4.6.4-5：发送成功才完成接力）
+  const handleRelayDraftHandled = useMemo(
+    () => () => {
+      // 顾问已接收预填：此处不清引用，接力完成时机推迟到「顾问发送成功」（onRelayDraftSent）
+    },
+    [relay.bundle?.id]
+  );
+  // 顾问发送预填内容成功：完成一次接力（清活动引用与草稿）
+  const handleRelayDraftSent = useMemo(
+    () => () => {
+      relay.commitExecution();
+    },
+    [relay.bundle?.id]
   );
 
   useEffect(() => {
@@ -108,6 +133,41 @@ export function BaziWorkspace({
       restoreWorkspace('bazi');
     }
   }, [isActive, restoreWorkspace]);
+
+  const isBaziHistoryInitialized = useHistoryStore((state) => state.isInitialized);
+
+  // 从历史记录恢复
+  useEffect(() => {
+    if (!isActive || !isBaziHistoryInitialized) return;
+    const params = new URLSearchParams(window.location.search);
+    const historyId = params.get('historyId');
+    if (!historyId) return;
+    const historyItem = useHistoryStore.getState().getItemById(historyId);
+    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'bazi') return;
+    // 兼容旧格式（reportData 直接是 mergedReport）和新格式（{ report, lockedSections }）
+    const reportData = historyItem.reportData as Record<string, unknown> | null;
+    const isNewFormat = reportData != null && 'report' in reportData && 'lockedSections' in reportData;
+    setWorkspaceState('bazi', {
+      step: 'result',
+      lastView: 'result',
+      hasResult: true,
+      blockingLoading: false,
+      streaming: false,
+      error: null,
+      errorKind: null,
+      report: (isNewFormat ? (reportData as Record<string, unknown>).report : reportData) as never,
+      lockedSections: (isNewFormat ? (reportData as Record<string, unknown>).lockedSections : {}) as BaziLockedSections,
+      streamStatus: null,
+      formData: (historyItem.formData as BaziFormData) || formData,
+      fieldErrors: {},
+    });
+    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
+    const url = new URL(window.location.href);
+    url.searchParams.delete('historyId');
+    window.history.replaceState({}, '', url.toString());
+    // formData 仅用作后备值，历史记录恢复以 item.formData 为准，无需作为依赖
+    // setWorkspaceState 为 Zustand 稳定引用，无需声明为依赖
+  }, [isActive, isBaziHistoryInitialized]);
 
   useEffect(() => {
     return () => {
@@ -132,13 +192,32 @@ export function BaziWorkspace({
 
   const buildPartialReport = (sections: BaziLockedSections): PartialDestinyReport => {
     const partial: PartialDestinyReport = {};
+    if (sections.baziBasis) {
+      partial.baziBasis = {
+        ...sections.baziBasis,
+        decadeFortuneInsights:
+          sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
+      };
+    }
     if (sections.profileOverview) partial.profile = sections.profileOverview;
+    if (sections.coreDestinyTone) partial.coreTone = sections.coreDestinyTone;
     if (sections.pillars) partial.pillars = sections.pillars;
     if (sections.elementsAndTenGods) {
       partial.elements = sections.elementsAndTenGods.elements;
       partial.tenGods = sections.elementsAndTenGods.tenGods;
+      partial.balanceInsight = sections.elementsAndTenGods.balanceInsight;
+      partial.patternHighlights = sections.elementsAndTenGods.patternHighlights;
+      partial.lifeDimensions = sections.elementsAndTenGods.lifeDimensions;
+      partial.lifeDimensionHighlights = sections.elementsAndTenGods.lifeDimensionHighlights;
+      partial.tenGodDomains = sections.elementsAndTenGods.tenGodDomains;
     }
-    if (sections.modulesOverview) partial.modules = sections.modulesOverview;
+    const partialModules: Partial<DestinyReport['modules']> = {};
+    if (sections.modulePersonality) partialModules.personality = sections.modulePersonality;
+    if (sections.moduleCareer) partialModules.career = sections.moduleCareer;
+    if (sections.moduleLove) partialModules.love = sections.moduleLove;
+    if (sections.moduleWealth) partialModules.wealth = sections.moduleWealth;
+    if (sections.moduleHealth) partialModules.health = sections.moduleHealth;
+    if (Object.keys(partialModules).length > 0) partial.modules = partialModules;
     if (sections.timeline) partial.timeline = sections.timeline;
     return partial;
   };
@@ -148,18 +227,39 @@ export function BaziWorkspace({
     sections: BaziLockedSections
   ): DestinyReport => ({
     ...nextReport,
+    baziBasis: sections.baziBasis
+      ? {
+          ...sections.baziBasis,
+          decadeFortuneInsights:
+            sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
+        }
+      : nextReport.baziBasis,
     profile: sections.profileOverview ?? nextReport.profile,
+    coreTone: sections.coreDestinyTone ?? nextReport.coreTone,
     pillars: sections.pillars ?? nextReport.pillars,
     elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
     tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
-    modules: sections.modulesOverview ?? nextReport.modules,
+    balanceInsight: sections.elementsAndTenGods?.balanceInsight ?? nextReport.balanceInsight,
+    patternHighlights:
+      sections.elementsAndTenGods?.patternHighlights ?? nextReport.patternHighlights,
+    lifeDimensions: sections.elementsAndTenGods?.lifeDimensions ?? nextReport.lifeDimensions,
+    lifeDimensionHighlights:
+      sections.elementsAndTenGods?.lifeDimensionHighlights ?? nextReport.lifeDimensionHighlights,
+    tenGodDomains: sections.elementsAndTenGods?.tenGodDomains ?? nextReport.tenGodDomains,
+    modules: {
+      personality: sections.modulePersonality ?? nextReport.modules.personality,
+      career: sections.moduleCareer ?? nextReport.modules.career,
+      love: sections.moduleLove ?? nextReport.modules.love,
+      wealth: sections.moduleWealth ?? nextReport.modules.wealth,
+      health: sections.moduleHealth ?? nextReport.modules.health,
+    },
     timeline: sections.timeline ?? nextReport.timeline,
   });
 
-  const parseStreamBlock = (
-    block: string,
-    onEvent: (event: BaziStreamEvent) => void
-  ) => {
+  const hasAnyDisplayableSection = (sections: BaziLockedSections) =>
+    Object.keys(sections).length > 0;
+
+  const parseStreamBlock = (block: string, onEvent: (event: BaziStreamEvent) => void) => {
     const data = block
       .split('\n')
       .filter((line) => line.startsWith('data: '))
@@ -171,10 +271,7 @@ export function BaziWorkspace({
     onEvent(JSON.parse(data) as BaziStreamEvent);
   };
 
-  const consumeStream = async (
-    response: Response,
-    onEvent: (event: BaziStreamEvent) => void
-  ) => {
+  const consumeStream = async (response: Response, onEvent: (event: BaziStreamEvent) => void) => {
     if (!response.body) throw new Error('响应体为空');
 
     const reader = response.body.getReader();
@@ -224,6 +321,7 @@ export function BaziWorkspace({
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    currentHistoryIdRef.current = generateUUID();
 
     setWorkspaceState('bazi', {
       step: 'form',
@@ -241,10 +339,9 @@ export function BaziWorkspace({
     let currentErrorKind: BaziErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/report', {
+      const response = await authFetch('/api/destiny/report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mapFormToBaziRequest(formData)),
+        body: JSON.stringify({ ...mapFormToBaziRequest(formData), provider }),
         signal: controller.signal,
       });
 
@@ -270,22 +367,56 @@ export function BaziWorkspace({
             lockedSections: current.lockedSections[event.sectionKey]
               ? current.lockedSections
               : { ...current.lockedSections, [event.sectionKey]: event.payload },
-            blockingLoading: false,
+            blockingLoading: hasAnyDisplayableSection({
+              ...receivedSections,
+              ...current.lockedSections,
+            })
+              ? false
+              : current.blockingLoading,
           }));
-          markResultReady('bazi');
+          if (hasAnyDisplayableSection(receivedSections)) {
+            markResultReady('bazi');
+          }
           return;
         }
 
         if (event.type === 'complete') {
           sawComplete = true;
+          const mergedReport = mergeLockedSectionsIntoReport(event.report, receivedSections);
           setWorkspaceState('bazi', (current) => ({
-            report: mergeLockedSectionsIntoReport(event.report, receivedSections),
+            report: mergedReport,
             lockedSections: { ...receivedSections, ...current.lockedSections },
             blockingLoading: false,
             streaming: false,
             streamStatus: null,
           }));
           markResultReady('bazi');
+
+          // 保存到历史记录（包含 lockedSections 以便恢复时重建完整状态）
+          const currentState = useDestinyWorkspaceStore.getState().bazi;
+          const enhancedReportData = {
+            report: mergedReport,
+            lockedSections: currentState.lockedSections,
+          };
+          const previewText =
+            mergedReport.coreTone?.headline ||
+            mergedReport.coreTone?.description ||
+            '八字格局精批';
+          const historyItem = createDestinyHistoryItem(
+            'bazi',
+            formData as unknown as Record<string, unknown>,
+            enhancedReportData as unknown as Record<string, unknown>,
+            'doubao-seed-2-0',
+            {
+              id: currentHistoryIdRef.current || undefined,
+              title: `${formData.name}的八字命理报告`,
+              preview: previewText.slice(0, 150),
+              coreTone: mergedReport.coreTone?.tag || '八字命理',
+              // 接力派生：有活动引用时记录来源（REQ-013）；完成接力时机在顾问发送成功（§4.6.4-5）
+              derivation: relay.prepareExecution(),
+            }
+          );
+          useHistoryStore.getState().addItem(historyItem);
           return;
         }
 
@@ -329,23 +460,49 @@ export function BaziWorkspace({
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
 
-  return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full min-h-0 w-full xl:h-full xl:pl-[304px]">
-        {step === 'form' ? (
-          <div className="flex h-full min-h-0 flex-col p-6">
-            <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                  {pageTitle}
-                </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  同页分步流程：先录入生辰信息，再查看 AI 推演结果
-                </p>
-              </div>
-            </header>
+  const stepTransitionClass =
+    'transition-all duration-300 motion-reduce:transition-opacity motion-reduce:duration-150';
+  const stepTransitionStyle = {
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  } as const;
 
-            <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
+  return (
+    <DestinyPageScaffold withNavOffset tone="blue">
+      <div className="relative h-full min-h-0 w-full overflow-hidden">
+        <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
+          {step === 'form' && (
+            <header className="flex shrink-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                  <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+                    八字格局精批
+                  </h1>
+                  <span className="inline-flex items-center rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600 dark:bg-blue-500/15 dark:text-blue-400">
+                    信息输入
+                  </span>
+                </div>
+                {/* 移动端：模型切换与标题同行右上；桌面端由页面右上悬浮入口承接 */}
+                <DestinyModelSwitcher size="compact" className="shrink-0 xl:hidden" />
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                填写生辰时空信息，AI 将基于真实模型生成完整命理解读
+              </p>
+            </header>
+          )}
+
+          <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
+            {/* 表单步 */}
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'form'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'form'}
+            >
               <BaziInputForm
                 value={formData}
                 submitting={blockingLoading || streaming}
@@ -358,25 +515,41 @@ export function BaziWorkspace({
                 onReset={reset}
               />
             </div>
+
+            {/* 结果步 */}
+            <div
+              className={cn(
+                'absolute inset-0 h-full min-h-0 w-full',
+                stepTransitionClass,
+                step === 'result'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'result'}
+            >
+              <DestinyShell
+                report={report}
+                partialReport={partialReport}
+                streaming={streaming}
+                streamStatus={streamStatus}
+                streamError={error}
+                lockedSections={lockedSections}
+                activeModule={activeModule}
+                title="AI 命理大师"
+                subtitleTag="八字格局精批"
+                onModuleChange={onModuleChange}
+                onRecalculate={handleRecalculate}
+                relayDraft={relayDraft}
+                onRelayDraftHandled={handleRelayDraftHandled}
+                onRelayDraftSent={handleRelayDraftSent}
+              />
+            </div>
           </div>
-        ) : (
-          <DestinyShell
-            report={report}
-            partialReport={partialReport}
-            streaming={streaming}
-            streamStatus={streamStatus}
-            lockedSections={lockedSections}
-            activeModule={activeModule}
-            title="AI 命理大师"
-            subtitleTag="八字格局精批"
-            onModuleChange={onModuleChange}
-            onRecalculate={handleRecalculate}
-          />
-        )}
+        </div>
       </div>
 
-      {/* Loading 动画 */}
       <StarDecodeOverlay open={blockingLoading} />
-    </div>
+    </DestinyPageScaffold>
   );
 }

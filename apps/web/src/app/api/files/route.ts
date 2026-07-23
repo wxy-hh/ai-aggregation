@@ -8,7 +8,9 @@ import {
   ALLOWED_MIME_TYPES,
   FILE_SIZE_LIMITS,
 } from '@repo/shared';
-import { getRateLimiter, getQuotaManager } from '@repo/shared';
+import { getRateLimiter, getQuotaManager } from '@repo/shared/server';
+import { requireAuth } from '@/lib/auth/require-auth';
+import { AuthError } from '@/lib/auth/errors';
 
 /**
  * 文件上传 API
@@ -28,15 +30,24 @@ function createErrorId() {
   );
 }
 
-// 获取用户 ID (临时实现，实际应从 session 获取)
-async function getUserId(req: NextRequest): Promise<string> {
-  // TODO: 从 session 或 JWT token 中获取真实用户 ID
-  // 临时使用 IP 地址作为标识
-  const forwardedFor = req.headers.get('x-forwarded-for');
-  const realIp = req.headers.get('x-real-ip');
-  const remoteAddr = req.headers.get('x-remote-addr') || 'unknown';
-
-  return forwardedFor || realIp || remoteAddr;
+/**
+ * 将认证错误统一转换为文件 API 的错误响应格式。
+ */
+function handleAuthError(error: AuthError, errorId: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: error.message,
+      errorId,
+      timestamp: new Date().toISOString(),
+    },
+    {
+      status: error.code === 'FORBIDDEN' ? 403 : 401,
+      headers: {
+        'X-Error-ID': errorId,
+      },
+    }
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -46,7 +57,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 1. 限流和配额检查
-    userId = await getUserId(request);
+    userId = await requireAuth(request);
     const rateLimiter = getRateLimiter();
     const quotaManager = getQuotaManager();
 
@@ -331,6 +342,11 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    // 认证错误优先返回 401/403
+    if (error instanceof AuthError) {
+      return handleAuthError(error, errorId);
+    }
+
     // 根据错误类型返回不同的状态码
     if (error instanceof Error) {
       // 网络错误
@@ -391,6 +407,8 @@ export async function POST(request: NextRequest) {
 // DELETE: 删除远程文件
 export async function DELETE(request: NextRequest) {
   try {
+    await requireAuth(request);
+
     const arkApiKey = process.env.ARK_API_KEY;
     const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
 
@@ -448,6 +466,10 @@ export async function DELETE(request: NextRequest) {
       stack: error instanceof Error ? error.stack : undefined,
       timestamp: new Date().toISOString(),
     });
+
+    if (error instanceof AuthError) {
+      return handleAuthError(error, errorId);
+    }
 
     return NextResponse.json(
       {

@@ -6,6 +6,7 @@ import { Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ScoreRing } from './score-ring';
 import { useResumeEditorStore } from '@/stores/resume-editor-store';
 import type { EditModule } from '@/types/resume-editor';
+import { authFetch } from '@/lib/api/client';
 
 /**
  * AI 助手面板组件
@@ -55,11 +56,8 @@ export function AIAssistantPanel() {
     try {
       console.log('🔍 开始调用诊断 API，简历数据:', doc);
 
-      const response = await fetch('/api/resume/diagnose', {
+      const response = await authFetch('/api/resume/diagnose', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           resume: doc,
           privacy: {

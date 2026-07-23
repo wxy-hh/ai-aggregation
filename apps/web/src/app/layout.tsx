@@ -1,25 +1,12 @@
 import type { Metadata } from 'next';
-import { DM_Sans, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import '@/styles/scrollbar.css';
+import '@/styles/ziwei-theme.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';
 import { Toaster } from '@/components/ui/toaster';
-
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
-  variable: '--font-dm-sans',
-  display: 'swap',
-});
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-space-grotesk',
-  display: 'swap',
-});
+import { QuotaExhaustedDialog } from '@/components/quota-exhausted-dialog';
 
 export const metadata: Metadata = {
   title: 'AI 聚合平台',
@@ -27,8 +14,10 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/xingpan.svg', type: 'image/svg+xml' },
     ],
-    apple: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/xingpan.svg',
   },
 };
 
@@ -38,11 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="zh-CN"
-      className={`${dmSans.variable} ${spaceGrotesk.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -75,9 +60,12 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={dmSans.className}>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeInitializer />
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          {children}
+          <QuotaExhaustedDialog />
+        </QueryProvider>
         <Toaster />
       </body>
     </html>

@@ -5,10 +5,3 @@ export interface User {
   createdAt: Date;
   updatedAt: Date;
 }
-
-export interface UserUsage {
-  userId: string;
-  tokens: number;
-  tasks: number;
-  period: string;
-}

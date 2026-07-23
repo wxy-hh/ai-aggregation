@@ -1,4 +1,6 @@
 import type { Config } from 'tailwindcss';
+import tailwindcssAnimate from 'tailwindcss-animate';
+import tailwindcssTypography from '@tailwindcss/typography';
 
 const config: Config = {
   darkMode: 'class',
@@ -58,6 +60,18 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        ds: {
+          'bg-black': 'var(--ds-bg-black)',
+          'bg-soft': 'var(--ds-bg-soft)',
+          'text-primary': 'var(--ds-text-primary)',
+          'text-inverse': 'var(--ds-text-inverse)',
+          'accent-blue': 'var(--ds-accent-blue)',
+          'link-blue': 'var(--ds-link-blue)',
+          'link-blue-dark': 'var(--ds-link-blue-dark)',
+          'glass-white-strong': 'var(--ds-glass-white-strong)',
+          'glass-white': 'var(--ds-glass-white)',
+          'glass-dark': 'var(--ds-glass-dark)',
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -73,14 +87,20 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        /** AI 头像外层光晕：柔和呼吸 */
+        "avatar-glow-breathe": {
+          "0%, 100%": { opacity: "0.32", transform: "scale(0.94)" },
+          "50%": { opacity: "0.62", transform: "scale(1.06)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "avatar-glow-breathe": "avatar-glow-breathe 3.4s ease-in-out infinite",
       },
     },
   },
-  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
+  plugins: [tailwindcssAnimate, tailwindcssTypography],
 };
 
 export default config;

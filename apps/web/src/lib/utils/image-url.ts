@@ -17,3 +17,18 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+// 将 Data URL 的 base64 部分提取出来，如果传入的不是 Data URL 则原样返回
+export function stripDataUrlPrefix(dataUrl: string): string {
+  const commaIndex = dataUrl.indexOf(',');
+  if (commaIndex === -1 || !dataUrl.startsWith('data:')) {
+    return dataUrl;
+  }
+  return dataUrl.slice(commaIndex + 1);
+}
+
+// 读取多个文件为 Data URL，限制最大数量
+export function readFilesAsDataUrls(files: File[], maxCount = Infinity): Promise<string[]> {
+  const limited = files.slice(0, maxCount);
+  return Promise.all(limited.map(blobToDataUrl));
+}

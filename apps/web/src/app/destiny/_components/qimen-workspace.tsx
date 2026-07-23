@@ -1,15 +1,21 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { authFetch } from '@/lib/api/client';
+import { useDestinyWorkspaceStore, type QimenErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
+import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
+import { generateUUID } from '@/lib/utils/uuid';
 import { Button } from '@/components/ui/button';
-import {
-  useDestinyWorkspaceStore,
-  type QimenErrorKind,
-} from '@/stores/destiny-workspace-store';
+import { cn } from '@/lib/utils';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
+import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
 import { mapFormToQimenRequest } from './qimen-mappers';
+// 跨模态接力：奇门预填所问之事（REQ-011；绝不写入出生资料，奇门无出生资料）
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import type {
   QimenBaseSectionResponse,
   QimenAnalysisStartResponse,
@@ -30,8 +36,8 @@ function validateForm(formData: QimenFormData): Partial<Record<keyof QimenFormDa
   if (!formData.datetime.trim()) {
     errors.datetime = '请填写起局时间';
   }
-  if (!formData.location.trim()) {
-    errors.location = '请填写地点';
+  if (!formData.location.name.trim()) {
+    errors.location = '请选择地点';
   }
 
   const desc = formData.description.trim();
@@ -83,22 +89,38 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     setWorkspaceState,
     resetWorkspace,
     restoreWorkspace,
+    provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.qimen,
       setWorkspaceState: state.setWorkspaceState,
       resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
+      provider: state.provider,
     }))
   );
   const abortRef = useRef<AbortController | null>(null);
   const sectionTimeoutsRef = useRef<number[]>([]);
   const runIdRef = useRef(0);
 
-  const pageTitle = useMemo(
-    () => (step === 'form' ? '奇门遁甲演化 · 信息输入' : '奇门遁甲演化 · AI 分析结果'),
-    [step]
-  );
+  // 接力：奇门目标接收。所问之事（description）可预填，绝不自动起局（点起局才完成）。
+  const relay = useRelayReceive('destiny');
+  const relayText = relay.bundle?.items[0]?.snapshotText ?? '';
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (!relayText) return;
+    // 仅在 description 为空且用户未编辑过草稿时预填，避免覆盖用户输入
+    if (!formData.description.trim() && !relay.draft) {
+      onChange('description', relayText);
+      relay.setDraft(relayText);
+    }
+     
+  }, [relay.initialized, relay.bundle?.id]);
+
+  // 当前分析的 history ID（在 submit 时生成，save 时复用，保证 id 稳定）
+  const currentHistoryIdRef = useRef<string | null>(null);
+  // 记录本 mount 周期内成功创建的 analysisId，防止因 store 状态残留触发保存
+  const submittedAnalysisIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -109,6 +131,113 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       restoreWorkspace('qimen');
     }
   }, [isActive, restoreWorkspace]);
+
+  // 当所有分析区块完成后保存历史记录
+  const historySavedRef = useRef(false);
+  useEffect(() => {
+    // 非活跃 tab 不保存，防止所有 workspace 同时挂载时非活跃 tab 也触发保存
+    if (!isActive) return;
+    // 恢复历史时不保存（URL 中仍有 historyId 参数，或已由恢复流程标记）
+    if (historySavedRef.current) return;
+    // 额外防护：检查 URL 是否还有 historyId（防止 Zustand 同步更新时序问题）
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('historyId')) return;
+    }
+    // 核心防护：仅保存在本 mount 周期内发起的分析，防止因 workspace store 状态残留触发重复保存
+    if (!submittedAnalysisIdRef.current || submittedAnalysisIdRef.current !== analysisId) return;
+    if (!baseResult || !analysisId) return;
+    const statusValues = Object.values(sectionStatuses) as QimenSectionStatus[];
+    if (statusValues.length < 3) return;
+    const allSettled = statusValues.every(
+      (s) => s === 'completed' || s === 'failed'
+    );
+    if (!allSettled) return;
+
+    historySavedRef.current = true;
+    const description = formData.description || '奇门遁甲推演';
+    const previewText = description.length > 150 ? description.slice(0, 150) : description;
+
+    // 接力两阶段（REQ-016）：起局成功写历史前只读派生元数据（不清引用），成功才 commit
+    const derivation = relay.prepareExecution();
+
+    // 打包所有结果数据
+    const reportData = {
+      baseResult,
+      sections,
+      analysisId,
+      formData,
+    };
+
+    const historyItem = createDestinyHistoryItem(
+      'qimen',
+      { ...formData } as unknown as Record<string, unknown>,
+      reportData as unknown as Record<string, unknown>,
+      'doubao-seed-2-0',
+      {
+        id: currentHistoryIdRef.current || undefined,
+        title: `奇门遁甲推演 · ${baseResult.chartTitle || '盘局分析'}`,
+        preview: previewText,
+        coreTone: baseResult.chartTitle || '奇门遁甲',
+        derivation,
+      }
+    );
+    useHistoryStore.getState().addItem(historyItem);
+    // 起局成功才完成接力：清活动引用与草稿（REQ-016/§4.6.5「起局成功后完成接力」）
+    relay.commitExecution();
+  }, [isActive, baseResult, analysisId, sectionStatuses, sections, formData]);
+
+  // 从历史记录恢复
+  useEffect(() => {
+    if (!isActive) return;
+    const params = new URLSearchParams(window.location.search);
+    const historyId = params.get('historyId');
+    if (!historyId) return;
+    const historyItem = useHistoryStore.getState().getItemById(historyId);
+    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'qimen') return;
+    const savedData = historyItem.reportData as Record<string, unknown> | null;
+    if (!savedData) return;
+    const savedBaseResult = savedData.baseResult;
+    const savedSections = (savedData.sections as Record<string, unknown>) || {};
+    const savedAnalysisId = savedData.analysisId as string;
+    const savedFormData = (savedData.formData as QimenFormData) || formData;
+
+    setWorkspaceState('qimen', {
+      step: 'result',
+      lastView: 'result',
+      hasResult: true,
+      blockingLoading: false,
+      error: null,
+      errorKind: null,
+      analysisId: savedAnalysisId || null,
+      baseResult: savedBaseResult as never,
+      baseStatus: 'completed',
+      baseError: null,
+      sections: savedSections as never,
+      sectionErrors: {},
+      sectionStatuses: {
+        strategyOverview: Object.prototype.hasOwnProperty.call(savedSections, 'strategyOverview')
+          ? 'completed'
+          : 'idle',
+        timingWindows: Object.prototype.hasOwnProperty.call(savedSections, 'timingWindows')
+          ? 'completed'
+          : 'idle',
+        chartSummary: Object.prototype.hasOwnProperty.call(savedSections, 'chartSummary')
+          ? 'completed'
+          : 'idle',
+      },
+      formData: savedFormData,
+      fieldErrors: {},
+    });
+    // 防止恢复后 sectionStatuses 观察者再次触发保存
+    historySavedRef.current = true;
+    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
+    const url = new URL(window.location.href);
+    url.searchParams.delete('historyId');
+    window.history.replaceState({}, '', url.toString());
+    // formData 仅用作后备值，恢复以 savedData.formData 为准
+    // setWorkspaceState 为 Zustand 稳定引用
+  }, [isActive]);
 
   useEffect(() => {
     return () => {
@@ -363,6 +492,10 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     clearSectionTimeouts();
     runIdRef.current += 1;
     const runId = runIdRef.current;
+    historySavedRef.current = false;
+    // 提前生成稳定的历史记录 ID，整个分析流程共用此 ID
+    currentHistoryIdRef.current = generateUUID();
+    submittedAnalysisIdRef.current = null;
 
     setWorkspaceState('qimen', {
       step: 'form',
@@ -387,10 +520,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     let currentErrorKind: QimenErrorKind = 'unknown';
 
     try {
-      const response = await fetch('/api/destiny/qimen/analyze/start', {
+      const response = await authFetch('/api/destiny/qimen/analyze/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mapFormToQimenRequest(formData)),
+        body: JSON.stringify({ ...mapFormToQimenRequest(formData), provider }),
         signal: controller.signal,
       });
 
@@ -406,6 +538,7 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       }
 
       setWorkspaceState('qimen', { analysisId: json.analysisId });
+      submittedAnalysisIdRef.current = json.analysisId;
       void requestBaseResult(json.analysisId, runId);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === 'AbortError') {
@@ -428,39 +561,54 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     abortRef.current?.abort();
     clearSectionTimeouts();
     runIdRef.current += 1;
+    historySavedRef.current = false;
+    currentHistoryIdRef.current = null;
+    submittedAnalysisIdRef.current = null;
     resetWorkspace('qimen');
   };
 
+  const stepTransitionClass =
+    'transition-all duration-300 motion-reduce:transition-opacity motion-reduce:duration-150';
+  const stepTransitionStyle = {
+    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+  } as const;
+
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950">
-      <div className="h-full min-h-0 w-full xl:pl-[304px]">
-        <div className="flex h-full min-h-0 flex-col p-6">
-          <header className="hidden md:flex shrink-0 justify-between items-center gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {pageTitle}
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                同页分步流程：先录入问题，再查看 AI 推演结果
+    <DestinyPageScaffold withNavOffset tone="indigo">
+      <div className="relative h-full min-h-0 w-full overflow-hidden">
+        <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
+          {step === 'form' && (
+            <header className="flex shrink-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+                  <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+                    奇门遁甲演化
+                  </h1>
+                  <span className="inline-flex items-center rounded-full bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-600 dark:bg-violet-500/15 dark:text-violet-400">
+                    信息输入
+                  </span>
+                </div>
+                {/* 移动端：模型切换与标题同行右上；桌面端由页面右上悬浮入口承接 */}
+                <DestinyModelSwitcher size="compact" className="shrink-0 xl:hidden" />
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                填写起局时空与问题描述，系统基于时家奇门进行演化分析
               </p>
-            </div>
+            </header>
+          )}
 
-            {step === 'result' && (
-              <Button
-                type="button"
-                className="rounded-full bg-[#2F6BFF] text-white hover:brightness-110"
-                disabled={blockingLoading}
-                onClick={() => {
-                  void submit();
-                }}
-              >
-                重新排盘
-              </Button>
-            )}
-          </header>
-
-          <div className="mt-0 md:mt-6 min-h-0 flex-1 overflow-y-auto rounded-[30px]">
-            {step === 'form' ? (
+          <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'form'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'form'}
+            >
               <QimenInputForm
                 value={formData}
                 submitting={blockingLoading}
@@ -472,7 +620,19 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                 }}
                 onReset={reset}
               />
-            ) : (
+            </div>
+
+            <div
+              className={cn(
+                'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
+                stepTransitionClass,
+                step === 'result'
+                  ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
+                  : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
+              )}
+              style={stepTransitionStyle}
+              aria-hidden={step !== 'result'}
+            >
               <QimenAnalysisResult
                 analysisId={analysisId}
                 baseResult={baseResult}
@@ -492,10 +652,10 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                   void submit();
                 }}
               />
-            )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </DestinyPageScaffold>
   );
 }

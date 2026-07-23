@@ -3,7 +3,8 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { ChatHistoryItem } from '@/types/history';
-import { Trash2 } from 'lucide-react';
+import { Trash2, GitCompareArrows } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface ChatHistoryCardProps {
   item: ChatHistoryItem;
@@ -13,14 +14,21 @@ interface ChatHistoryCardProps {
 /**
  * 对话历史记录卡片组件
  * 点击后跳转到对话页面查看详细内容
+ * 比较会话（mode==='compare'）重新打开时走 comparisonId，回 /chat 载入分支
  */
 export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
   const router = useRouter();
+  const isCompare = item.mode === 'compare';
 
   // 处理卡片点击，跳转到对话页面
   const handleClick = () => {
-    // 使用 historyId 参数跳转到对话页面
-    router.push(`/chat?historyId=${item.id}`);
+    if (isCompare && item.conversationId) {
+      // 比较会话：回 /chat 切到对比模式并载入各模型分支
+      router.push(`/chat?comparisonId=${item.conversationId}`);
+    } else {
+      // 单聊会话：使用 historyId 参数跳转到对话页面
+      router.push(`/chat?historyId=${item.id}`);
+    }
   };
 
   // 处理删除
@@ -34,7 +42,7 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative"
     >
       {/* 删除按钮 */}
       <button
@@ -47,16 +55,24 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
-          </div>
+          {isCompare ? (
+            // 比较会话：蓝色对比图标
+            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <GitCompareArrows className="w-4 h-4" />
+            </div>
+          ) : (
+            // 单聊会话：绿色对话图标
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                />
+              </svg>
+            </div>
+          )}
           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item.model}</span>
         </div>
         <span className="text-xs text-slate-400 mr-8">{item.date}</span>
@@ -66,11 +82,11 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
         {item.title}
       </h3>
 
-      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4 flex-1">
+      <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4">
         {item.preview}
       </p>
 
-      <div className="flex items-center gap-2 mt-auto">
+      <div className="flex items-center gap-2">
         {item.tags?.map((tag) => (
           <span
             key={tag}
@@ -80,6 +96,8 @@ export function ChatHistoryCard({ item, onDelete }: ChatHistoryCardProps) {
           </span>
         ))}
       </div>
+
+      <DerivationBadge item={item} />
     </div>
   );
 }

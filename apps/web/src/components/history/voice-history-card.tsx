@@ -4,6 +4,7 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { VoiceHistoryItem } from '@/types/history';
 import { Trash2 } from 'lucide-react';
+import { DerivationBadge } from './derivation-badge';
 
 interface VoiceHistoryCardProps {
   item: VoiceHistoryItem;
@@ -34,7 +35,7 @@ export function VoiceHistoryCard({ item, onDelete }: VoiceHistoryCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col h-full relative"
+      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative"
     >
       {/* 删除按钮 */}
       <button
@@ -94,12 +95,14 @@ export function VoiceHistoryCard({ item, onDelete }: VoiceHistoryCardProps) {
         })}
       </div>
 
-      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 flex-1 mb-4">
+      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3">
           <span className="font-bold text-slate-400 mr-1">摘要</span>
           {item.preview}
         </p>
       </div>
+
+      <DerivationBadge item={item} />
     </div>
   );
 }

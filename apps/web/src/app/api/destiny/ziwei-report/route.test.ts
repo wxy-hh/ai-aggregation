@@ -1,234 +1,363 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { POST } from './route';
+import type { CallModelOptions, CallModelResult } from '@repo/shared';
 
-const validPayload = {
-  name: '测试',
-  gender: 'male' as const,
-  birthDate: { year: 1995, month: 6, day: 18 },
-  birthTime: { hour: '12', minute: '30' },
-  location: { name: '北京', lat: 39.9, lon: 116.4 },
+// 通过 hoisted 引用控制每次测试的登录用户（admin 走 safeRecordAiUsage，非 admin 走预留/结算）
+const { mockUserRef } = vi.hoisted(() => ({
+  mockUserRef: { current: { id: 'test-admin', role: 'admin' } as { id: string; role: string } },
+}));
+
+vi.mock('@/lib/api/with-auth', () => ({
+  withAuth: vi.fn(
+    (req: Request, handler: (user: { id: string; role: string }, request: Request) => unknown) =>
+      handler(mockUserRef.current, req)
+  ),
+}));
+
+vi.mock('@/lib/ai-usage', () => ({
+  normalizeUsage: vi.fn((value) => value),
+  safeRecordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/lib/billing/quota-service', () => ({
+  reserveChatQuota: vi.fn(),
+  settleAiQuota: vi.fn(async () => undefined),
+  releaseAiQuota: vi.fn(async () => undefined),
+}));
+
+vi.mock('@/lib/billing/usage-measurement', () => ({
+  createTokenMeasurement: vi.fn(() => ({ meterType: 'tokens', units: 1 })),
+  estimateOutputTokens: vi.fn(() => 1),
+}));
+
+vi.mock('@/lib/billing/request-id', () => ({
+  getBillingRequestId: vi.fn(() => 'req-test'),
+}));
+
+vi.mock('@repo/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@repo/shared')>();
+  return { ...actual, callModel: vi.fn() };
+});
+
+import { POST } from './route';
+import { callModel } from '@repo/shared';
+import {
+  releaseAiQuota,
+  reserveChatQuota,
+  settleAiQuota,
+} from '@/lib/billing/quota-service';
+import { BillingError } from '@/lib/billing/billing-errors';
+
+const callModelMock = vi.mocked(callModel);
+const reserveChatQuotaMock = vi.mocked(reserveChatQuota);
+const settleAiQuotaMock = vi.mocked(settleAiQuota);
+const releaseAiQuotaMock = vi.mocked(releaseAiQuota);
+
+// ─── 测试数据 ───
+
+const GROUP_A_LABELS = ['父母宫', '福德宫', '田宅宫', '官禄宫', '命宫', '兄弟宫'];
+const GROUP_B_LABELS = ['奴仆宫', '夫妻宫', '迁移宫', '子女宫', '财帛宫', '疾厄宫'];
+
+const QUICK_PAYLOAD = {
+  overviewModules: {
+    personality: {
+      title: '命宫武曲贪狼同守',
+      summary: '性格坚毅果断，行动力突出。',
+      advantages: ['行动力强'],
+      suggestions: ['注意劳逸结合'],
+    },
+    career: {
+      title: '官禄宫紫微七杀坐守',
+      summary: '事业发展稳健，具领导潜质。',
+      advantages: ['领导力强'],
+      suggestions: ['多听取意见'],
+    },
+    wealth: {
+      title: '财帛宫廉贞破军坐守',
+      summary: '财运起伏较大，需要规划。',
+      advantages: ['善于开拓'],
+      suggestions: ['量入为出'],
+    },
+  },
+  timeline: [
+    {
+      year: 2026,
+      title: '稳中求进',
+      summary: '整体运势平稳向上。',
+      detail: { opportunities: ['贵人相助'], risks: ['冲动决策'], actions: ['稳扎稳打'] },
+    },
+  ],
+  relations: {
+    summary: '六亲缘分和睦。',
+    opportunities: ['家庭支持'],
+    risks: ['沟通不足'],
+    actions: ['多陪伴家人'],
+  },
 };
+
+const LOVE_MODULE = {
+  title: '夫妻宫天府坐守',
+  summary: '感情婚姻稳定和谐。',
+  advantages: ['包容体贴'],
+  suggestions: ['多沟通'],
+};
+
+const HEALTH_MODULE = {
+  title: '疾厄宫廉贞破军能量',
+  summary: '注意作息规律与情绪管理。',
+  advantages: ['恢复力强'],
+  suggestions: ['定期体检'],
+};
+
+function palaceItems(labels: string[]) {
+  return labels.map((label) => ({
+    key: `p-${label}`,
+    label,
+    summary: `${label}星曜组合解读`,
+    suggestions: ['建议一', '建议二'],
+  }));
+}
+
+// ─── 工具函数 ───
+
+function modelResult(payload: unknown): CallModelResult {
+  return {
+    text: JSON.stringify(payload),
+    usage: null,
+    raw: { usage: { input_tokens: 1, output_tokens: 2 } },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function createRequest() {
   return new Request('http://localhost/api/destiny/ziwei-report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(validPayload),
+    body: JSON.stringify({
+      name: '测试用户',
+      gender: 'male',
+      calendarType: 'solar',
+      birthDate: { year: 1990, month: 6, day: 15 },
+      birthTime: { hour: '10', minute: '30' },
+      location: { name: '北京', lat: null, lon: null },
+      provider: 'doubao',
+    }),
   });
 }
 
-function createArkResponse(payload: unknown) {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
+type SseEvent = Record<string, unknown> & { type: string; sectionKey?: string; payload?: unknown };
 
-function extractSseEvents(payload: string) {
-  return payload
+async function readSseEvents(response: Response): Promise<SseEvent[]> {
+  const text = await response.text();
+  return text
+    .trim()
     .split('\n\n')
-    .map((block) => block.trim())
+    .map((chunk) => chunk.replace(/^data:\s*/, ''))
     .filter(Boolean)
-    .map((block) => {
-      const dataLine = block.split('\n').find((line) => line.startsWith('data: '));
-      if (!dataLine) {
-        throw new Error(`缺少 data 行: ${block}`);
-      }
-      return JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
-    });
+    .map((chunk) => JSON.parse(chunk) as SseEvent);
 }
 
-describe('/api/destiny/ziwei-report', () => {
-  const originalFetch = global.fetch;
-  const originalApiKey = process.env.ARK_API_KEY;
-  const originalBaseUrl = process.env.ARK_BASE_URL;
+function sectionKeys(events: SseEvent[]) {
+  return events.filter((e) => e.type === 'section-final').map((e) => e.sectionKey);
+}
 
+async function flushMicrotasks() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// ─── 测试 ───
+
+describe('POST /api/destiny/ziwei-report（并行化）', () => {
   beforeEach(() => {
     process.env.ARK_API_KEY = 'test-key';
-    process.env.ARK_BASE_URL = 'https://example.com/api/v3';
+    process.env.ARK_BASE_URL = 'https://ark.example.com/api/v3';
+    mockUserRef.current = { id: 'test-admin', role: 'admin' };
+    callModelMock.mockReset();
+    reserveChatQuotaMock.mockReset();
+    reserveChatQuotaMock.mockImplementation(
+      async ({ requestId }: { requestId: string }) =>
+        ({
+          reservation: { id: `res-${requestId}` },
+          inputUnits: 10,
+          outputLimit: 3500,
+        }) as never
+    );
+    settleAiQuotaMock.mockClear();
+    releaseAiQuotaMock.mockClear();
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
-    process.env.ARK_API_KEY = originalApiKey;
-    process.env.ARK_BASE_URL = originalBaseUrl;
     vi.restoreAllMocks();
   });
 
-  it('按分区事件流返回紫微区块，并在 complete 中保留首批区块内容', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce(
-        createArkResponse({
-          output: [
-            {
-              type: 'message',
-              content: [
-                {
-                  type: 'output_json',
-                  json: {
-                    profileOverview: {
-                      name: '测试',
-                      genderLabel: '男',
-                      birthText: '农历 1995年六月十八 12:30',
-                      lunarText: '乙亥年六月十八午时',
-                      locationText: '北京',
-                    },
-                    overviewModules: {
-                      personality: {
-                        title: '命理总论',
-                        summary: '首批总论摘要',
-                        bullets: ['先稳后动', '适合积累'],
-                      },
-                      career: {
-                        title: '事业趋势',
-                        summary: '首批事业摘要',
-                        bullets: ['节奏渐强', '贵人可借'],
-                      },
-                      wealth: {
-                        title: '财富节奏',
-                        summary: '首批财富摘要',
-                        bullets: ['稳中有升', '谨慎投资'],
-                      },
-                    },
-                    timeline: [
-                      {
-                        year: 2026,
-                        title: '流年标题',
-                        summary: '首批流年摘要',
-                        detail: {
-                          opportunities: ['机会1', '机会2'],
-                          risks: ['风险1', '风险2'],
-                          actions: ['行动1', '行动2'],
-                        },
-                      },
-                    ],
-                    relations: {
-                      summary: '首批六亲摘要',
-                      opportunities: ['关系机会1', '关系机会2'],
-                      risks: ['关系风险1', '关系风险2'],
-                      actions: ['关系行动1', '关系行动2'],
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        })
-      )
-      .mockResolvedValueOnce(
-        createArkResponse({
-          output: [
-            {
-              type: 'message',
-              content: [
-                {
-                  type: 'output_json',
-                  json: {
-                    profile: {
-                      name: '测试',
-                      genderLabel: '男',
-                      birthText: '完整出生信息',
-                      lunarText: '乙亥年六月十八午时',
-                      locationText: '北京',
-                    },
-                    pillars: [
-                      { stem: '甲', branch: '子', label: '年柱', element: 'wood', tooltip: '年柱说明' },
-                      { stem: '乙', branch: '丑', label: '月柱', element: 'wood', tooltip: '月柱说明' },
-                      { stem: '丙', branch: '寅', label: '日柱', element: 'fire', tooltip: '日柱说明' },
-                      { stem: '丁', branch: '卯', label: '时柱', element: 'fire', tooltip: '时柱说明' },
-                    ],
-                    elements: [
-                      { key: 'metal', label: '金', value: 48 },
-                      { key: 'wood', label: '木', value: 76 },
-                      { key: 'water', label: '水', value: 58 },
-                      { key: 'fire', label: '火', value: 66 },
-                      { key: 'earth', label: '土', value: 51 },
-                    ],
-                    tenGods: [
-                      { key: 'zhengguan', label: '正官', value: 62, tooltip: '正官说明' },
-                      { key: 'qisha', label: '七杀', value: 38, tooltip: '七杀说明' },
-                      { key: 'zhengyin', label: '正印', value: 57, tooltip: '正印说明' },
-                      { key: 'shishen', label: '食神', value: 46, tooltip: '食神说明' },
-                    ],
-                    modules: {
-                      personality: { title: '命理总论', summary: '完整总论摘要', bullets: ['a', 'b'] },
-                      career: { title: '事业趋势', summary: '完整事业摘要', bullets: ['a', 'b'] },
-                      love: { title: '情感关系', summary: '完整感情摘要', bullets: ['a', 'b'] },
-                      wealth: { title: '财富节奏', summary: '完整财富摘要', bullets: ['a', 'b'] },
-                      health: { title: '健康关注', summary: '完整健康摘要', bullets: ['a', 'b'] },
-                    },
-                    timeline: [
-                      {
-                        year: 2026,
-                        title: '完整流年标题',
-                        summary: '完整流年摘要',
-                        detail: {
-                          opportunities: ['机会1', '机会2'],
-                          risks: ['风险1', '风险2'],
-                          actions: ['行动1', '行动2'],
-                        },
-                      },
-                      {
-                        year: 2027,
-                        title: '完整流年标题2',
-                        summary: '完整流年摘要2',
-                        detail: {
-                          opportunities: ['机会1', '机会2'],
-                          risks: ['风险1', '风险2'],
-                          actions: ['行动1', '行动2'],
-                        },
-                      },
-                      {
-                        year: 2028,
-                        title: '完整流年标题3',
-                        summary: '完整流年摘要3',
-                        detail: {
-                          opportunities: ['机会1', '机会2'],
-                          risks: ['风险1', '风险2'],
-                          actions: ['行动1', '行动2'],
-                        },
-                      },
-                    ],
-                    ziweiCenter: {
-                      chartTitle: '紫微命盘',
-                      mingZhu: '紫微',
-                      shenZhu: '天相',
-                    },
-                    ziweiPalaces: Array.from({ length: 12 }).map((_, index) => ({
-                      key: `palace-${index + 1}`,
-                      label: ['父母宫','福德宫','田宅宫','官禄宫','命宫','兄弟宫','奴仆宫','夫妻宫','迁移宫','子女宫','财帛宫','疾厄宫'][index],
-                      branch: `地支${index + 1}`,
-                      stars: ['紫微', '天府'],
-                      dominant: '紫微',
-                      summary: `宫位摘要${index + 1}`,
-                      suggestions: ['建议1', '建议2'],
-                    })),
-                  },
-                },
-              ],
-            },
-          ],
-        })
-      ) as typeof fetch;
+  it('quick 与 full 两组三路 AI 调用并行发起，不互相等待', async () => {
+    const calls: Record<string, ReturnType<typeof deferred<CallModelResult>>> = {};
+    callModelMock.mockImplementation((opts: CallModelOptions) => {
+      const name = opts.json?.schema?.name ?? 'unknown';
+      const d = deferred<CallModelResult>();
+      calls[name] = d;
+      return d.promise;
+    });
 
     const response = await POST(createRequest());
-    const text = await response.text();
-    const events = extractSseEvents(text);
+    // 刷新微任务，让流 start 内的三路调用全部发起
+    await flushMicrotasks();
 
-    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
-    expect(events.some((event) => event.type === 'section-final')).toBe(true);
-    expect(events.at(-1)?.type).toBe('complete');
+    // 关键断言：三路调用都已在未完成任何一路的情况下发起（并行而非串行）
+    expect(Object.keys(calls).sort()).toEqual([
+      'ziwei_health_group',
+      'ziwei_love_group',
+      'ziwei_quick',
+    ]);
 
-    const completeEvent = events.at(-1) as {
-      type: 'complete';
-      report: {
-        profile: { birthText: string };
-        modules: { personality: { summary: string } };
-      };
+    // quick 阶段的 schema 不再包含 profileOverview（改为本地生成）
+    const quickCall = callModelMock.mock.calls.find(
+      ([opts]) => opts.json?.schema?.name === 'ziwei_quick'
+    );
+    const quickSchema = quickCall?.[0].json?.schema?.schema as {
+      properties: Record<string, unknown>;
     };
+    expect(quickSchema.properties).not.toHaveProperty('profileOverview');
 
-    expect(completeEvent.report.profile.birthText).toBe('农历 1995年六月十八 12:30');
-    expect(completeEvent.report.modules.personality.summary).toBe('首批总论摘要');
+    // B 组先完成、A 组后完成：合并后的宫位顺序仍必须是 canonical 顺序
+    calls['ziwei_health_group'].resolve(
+      modelResult({ palaceAnalysis: palaceItems(GROUP_B_LABELS), health: HEALTH_MODULE })
+    );
+    await flushMicrotasks();
+    calls['ziwei_love_group'].resolve(
+      modelResult({ palaceAnalysis: palaceItems(GROUP_A_LABELS), love: LOVE_MODULE })
+    );
+    calls['ziwei_quick'].resolve(modelResult(QUICK_PAYLOAD));
+
+    const events = await readSseEvents(response);
+    const keys = sectionKeys(events);
+
+    // chartData 与本地生成的 profileOverview 最先到达
+    expect(keys.slice(0, 2)).toEqual(['chartData', 'profileOverview']);
+
+    const profileEvent = events.find((e) => e.sectionKey === 'profileOverview');
+    expect(profileEvent?.payload).toMatchObject({ name: '测试用户', genderLabel: '乾造（男命）' });
+
+    const palaceEvent = events.find((e) => e.sectionKey === 'palaceAnalysis');
+    const palaces = palaceEvent?.payload as Array<{ label: string }>;
+    expect(palaces).toHaveLength(12);
+    expect(palaces.map((p) => p.label)).toEqual([...GROUP_A_LABELS, ...GROUP_B_LABELS]);
+
+    expect(keys).toContain('love');
+    expect(keys).toContain('health');
+    expect(events.some((e) => e.type === 'complete')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('单组失败降级：palaceAnalysis 与 love 缺失，health 与 quick 区块不受影响', async () => {
+    callModelMock.mockImplementation((opts: CallModelOptions) => {
+      const name = opts.json?.schema?.name ?? '';
+      if (name === 'ziwei_quick') return Promise.resolve(modelResult(QUICK_PAYLOAD));
+      if (name === 'ziwei_love_group') return Promise.reject(new Error('upstream boom'));
+      return Promise.resolve(
+        modelResult({ palaceAnalysis: palaceItems(GROUP_B_LABELS), health: HEALTH_MODULE })
+      );
+    });
+
+    const events = await readSseEvents(await POST(createRequest()));
+    const keys = sectionKeys(events);
+
+    expect(keys).not.toContain('palaceAnalysis');
+    expect(keys).not.toContain('love');
+    expect(keys).toContain('health');
+    expect(keys).toContain('overviewModules');
+    expect(keys).toContain('timeline');
+    expect(keys).toContain('relations');
+    // 降级不阻断报告完成，也不发送 error
+    expect(events.some((e) => e.type === 'complete')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('quick 失败降级为空：full 两组区块不受影响，报告仍完成', async () => {
+    callModelMock.mockImplementation((opts: CallModelOptions) => {
+      const name = opts.json?.schema?.name ?? '';
+      if (name === 'ziwei_quick') return Promise.reject(new Error('quick timeout'));
+      if (name === 'ziwei_love_group') {
+        return Promise.resolve(
+          modelResult({ palaceAnalysis: palaceItems(GROUP_A_LABELS), love: LOVE_MODULE })
+        );
+      }
+      return Promise.resolve(
+        modelResult({ palaceAnalysis: palaceItems(GROUP_B_LABELS), health: HEALTH_MODULE })
+      );
+    });
+
+    const events = await readSseEvents(await POST(createRequest()));
+    const keys = sectionKeys(events);
+
+    expect(keys).not.toContain('overviewModules');
+    expect(keys).not.toContain('timeline');
+    expect(keys).not.toContain('relations');
+    expect(keys).toContain('palaceAnalysis');
+    expect(keys).toContain('love');
+    expect(keys).toContain('health');
+    expect(events.some((e) => e.type === 'complete')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('非管理员：失败组的预留被释放，成功组正常结算', async () => {
+    mockUserRef.current = { id: 'user-1', role: 'user' };
+    callModelMock.mockImplementation((opts: CallModelOptions) => {
+      const name = opts.json?.schema?.name ?? '';
+      if (name === 'ziwei_quick') return Promise.resolve(modelResult(QUICK_PAYLOAD));
+      if (name === 'ziwei_love_group') return Promise.reject(new Error('boom'));
+      return Promise.resolve(
+        modelResult({ palaceAnalysis: palaceItems(GROUP_B_LABELS), health: HEALTH_MODULE })
+      );
+    });
+
+    const events = await readSseEvents(await POST(createRequest()));
+
+    expect(reserveChatQuotaMock).toHaveBeenCalledTimes(3);
+    // 失败组（full:a）的预留必须释放，不能悬挂
+    expect(releaseAiQuotaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reservationId: 'res-req-test:full:a' })
+    );
+    // quick 与 full:b 成功结算
+    expect(settleAiQuotaMock).toHaveBeenCalledTimes(2);
+    expect(events.some((e) => e.type === 'complete')).toBe(true);
+  });
+
+  it('计费错误不降级：BillingError 上抛为 error 事件且不发送 complete', async () => {
+    mockUserRef.current = { id: 'user-1', role: 'user' };
+    reserveChatQuotaMock.mockImplementation(async ({ requestId }: { requestId: string }) => {
+      if (requestId === 'req-test:quick') {
+        throw new BillingError('QUOTA_INSUFFICIENT', '当前额度不足，无法开始本次请求');
+      }
+      return {
+        reservation: { id: `res-${requestId}` },
+        inputUnits: 10,
+        outputLimit: 3500,
+      } as never;
+    });
+    callModelMock.mockImplementation((opts: CallModelOptions) => {
+      const name = opts.json?.schema?.name ?? '';
+      if (name === 'ziwei_love_group') {
+        return Promise.resolve(
+          modelResult({ palaceAnalysis: palaceItems(GROUP_A_LABELS), love: LOVE_MODULE })
+        );
+      }
+      return Promise.resolve(
+        modelResult({ palaceAnalysis: palaceItems(GROUP_B_LABELS), health: HEALTH_MODULE })
+      );
+    });
+
+    const events = await readSseEvents(await POST(createRequest()));
+
+    expect(events.some((e) => e.type === 'error')).toBe(true);
+    expect(events.some((e) => e.type === 'complete')).toBe(false);
   });
 });

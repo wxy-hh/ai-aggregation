@@ -19,7 +19,7 @@ fi
 # 模型列表
 # ============================================
 # Doubao-Seed-2.0-pro: doubao-seed-2-0-pro-260215 (推荐用于复杂任务)
-# Doubao-Seed-2.0-lite: doubao-seed-2-0-lite-260215 (推荐用于快速响应)
+# Doubao-Seed-2.0-lite: doubao-seed-2-0-lite-260428 (推荐用于快速响应)
 
 # ============================================
 # 基础对话示例
@@ -42,7 +42,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
   -H "Authorization: Bearer ${ARK_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-      "model": "doubao-seed-2-0-lite-260215",
+      "model": "doubao-seed-2-0-lite-260428",
       "input": "你好，请介绍一下自己",
       "stream": true,
       "temperature": 0.8,
@@ -85,7 +85,7 @@ curl https://ark.cn-beijing.volces.com/api/v3/responses \
 -H "Authorization: Bearer ${ARK_API_KEY}" \
 -H 'Content-Type: application/json' \
 -d '{
-    "model": "doubao-seed-2-0-lite-260215",
+    "model": "doubao-seed-2-0-lite-260428",
     "input": [
         {
             "role": "user",

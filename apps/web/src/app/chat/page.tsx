@@ -4,10 +4,18 @@
 
 // ============ 导入外部组件 ============
 import React from 'react';
-import { AppLayout } from '@/components/layout/app-layout'; // 应用的整体布局组件（包含侧边栏、头部等）
+import { AppLayout } from '@/components/layout/app-layout';
+import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
+import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
+import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+// 跨模态接力：目标侧接收（引用条 + 预填 + 派生）
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RELAY_COPY } from '@/lib/relay/copy';
 
 // ============ 导入状态管理 Store ============
 import {
@@ -17,6 +25,11 @@ import {
   type Message, // 消息类型定义
   type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
 } from '@/stores';
+
+// 并行对比运行时 store（管理对比模式、已选模型、轮次分支）
+import { useComparisonStore } from '@/stores/comparison-store';
+// 对比模式类型（'single' | 'compare'）
+import type { ComparisonMode } from '@/types/comparison';
 
 // ============ 导入 React Hooks ============
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
@@ -35,13 +48,13 @@ import {
   Trash2, // 垃圾桶图标（删除对话）
   Bot, // 机器人图标（欢迎页面）
   FileText, // 文件图标（功能卡片）
-  Code2, // 代码图标（功能卡片）
   Lightbulb, // 灯泡图标（功能卡片）
   ShieldCheck, // 盾牌图标（功能说明）
   Globe, // 地球图标（功能说明）
   FileEdit, // 编辑图标（功能卡片）
   PanelLeft,
   SlidersHorizontal,
+  GitCompareArrows, // 对比图标（并行对比会话标识）
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -65,11 +78,55 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
   doubao: {
     name: '豆包', // 显示名称
     models: [
-      { id: 'doubao-seed-2-0-lite-260215', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
+      { id: 'doubao-seed-2-0-lite-260428', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
     ],
   },
 };
+
+// ============ 对话模式分段控制器 ============
+// 在「单聊 / 并行对比」之间切换；遵循 DESIGN.md 玻璃拟态与科技蓝强调色
+function ModeSegmentedControl({
+  mode,
+  onChange,
+}: {
+  mode: ComparisonMode;
+  onChange: (mode: ComparisonMode) => void;
+}) {
+  const options: { value: ComparisonMode; label: string }[] = [
+    { value: 'single', label: '单聊' },
+    { value: 'compare', label: '并行对比' },
+  ];
+
+  return (
+    <div
+      role="tablist"
+      aria-label="对话模式切换"
+      className="inline-flex flex-shrink-0 items-center rounded-full border border-white/70 bg-white/60 p-0.5 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-800/60"
+    >
+      {options.map((opt) => {
+        const active = mode === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200',
+              active
+                ? 'bg-blue-500 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.4)]'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // ============ 聊天页面主组件 ============
 // 这是整个聊天页面的核心组件，负责：
@@ -94,6 +151,7 @@ export default function ChatPage() {
 
   // 指向消息列表底部的 DOM 元素
   // 用于实现自动滚动到最新消息的功能
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 指向模型选择器的 DOM 元素
@@ -172,11 +230,58 @@ export default function ChatPage() {
     }))
   );
 
+  // ============ 从 Comparison Store 获取对比模式状态 ============
+  // Comparison Store 负责并行对比模式的模式切换、已选模型与轮次分支
+  const comparisonMode = useComparisonStore((state) => state.mode); // 当前模式：单聊 / 并行对比
+  const setComparisonMode = useComparisonStore((state) => state.setMode); // 切换模式
+  const loadComparison = useComparisonStore((state) => state.loadComparison); // 载入比较会话
+  const startNewComparison = useComparisonStore((state) => state.startNewComparison); // 新建比较会话
+  const isCompareMode = comparisonMode === 'compare'; // 是否处于并行对比模式
+
+  // ============ 跨模态接力：对话目标接收 ============
+  // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
+  const relay = useRelayReceive('chat');
+  // 承载传给 ChatInput 的外部草稿（id 用于只消费一次）
+  const [relayDraft, setRelayDraft] = useState<{ id: string; text: string } | null>(null);
+  // 查看来源快照预览
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  // 接力到达且有文本快照时，若当前输入为空则直接预填，非空则由「填入输入框」显式触发
+  const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    // 接力上下文进入输入框：文本作为用户引导句（可编辑），不自动发送
+    if (relayBundleText && !relay.draft) {
+      setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
+      relay.setDraft(relayBundleText);
+    }
+
+  }, [relay.initialized, relay.bundle?.id]);
+
+  // ============ 接力会话落点（M-3）============
+  // 目标=对话的接力到达时，若当前停在比较会话（消息存 turns 而非 messages），
+  // 新建一个单聊会话承载接力上下文，避免用户直接发送导致消息写错会话。
+  // ?relayId= 已由 useRelayReceive 在 URL 参数 effect 前清掉，不会误入场景分支。
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (!isLoaded) return;
+    const current = getCurrentConversation();
+    if (current?.mode === 'compare') {
+      const newId = createConversation(provider, model);
+      loadConversation(newId, [], provider, model || 'lite');
+      loadedIdRef.current = newId;
+    }
+  }, [relay.initialized, relay.bundle?.id, isLoaded]);
+
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
 
   // 获取当前激活的对话对象（包含完整信息）
   const currentConversation = getCurrentConversation();
+
+  // 当前会话是否为「并行对比」会话
+  // 单聊模式下若停留在比较会话上，发送消息需新建单聊会话，
+  // 否则会因比较会话消息存于 turns（而非 messages）导致消息丢失或写错会话
+  const isCurrentConversationCompare = currentConversation?.mode === 'compare';
 
   // 获取按时间分组的对话列表
   // 返回格式：[{ title: '今天', items: [...] }, { title: '昨天', items: [...] }, ...]
@@ -201,7 +306,21 @@ export default function ChatPage() {
     // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
     const historyId = urlParams.get('historyId');
 
-    if (historyId) {
+    // 检查是否是从历史记录页重新打开比较会话（URL 中有 ?comparisonId=xxx）
+    const comparisonId = urlParams.get('comparisonId');
+
+    if (comparisonId) {
+      // ============ 场景0：重新打开比较会话 ============
+      // 用户从历史记录页点击某条「多模型对比」记录，跳转到这里
+      // 切到对比模式并载入该比较会话（turns 分支由 comparison-store 恢复）
+      setComparisonMode('compare');
+      loadComparison(comparisonId);
+      // 同步高亮侧栏对应会话
+      switchConversation(comparisonId);
+
+      // 清除 URL 参数，保持 URL 干净
+      window.history.replaceState({}, '', '/chat');
+    } else if (historyId) {
       // ============ 场景1：从历史记录加载对话 ============
       // 用户从历史记录页面点击某条聊天记录，跳转到这里
       console.log('[ChatPage] Loading from history:', historyId);
@@ -280,6 +399,8 @@ export default function ChatPage() {
     switchConversation, // 切换对话方法
     findEmptyConversation, // 查找空对话方法
     loadConversation, // 加载对话方法
+    setComparisonMode, // 切换对比模式方法
+    loadComparison, // 载入比较会话方法
   ]);
 
   // ============ 对话切换时加载消息 ============
@@ -308,6 +429,13 @@ export default function ChatPage() {
       const conv = conversations.find((c) => c.id === currentConversationId);
 
       if (conv) {
+        // 比较会话：不加载到单聊 Chat Store，交由 comparison-store 接管，
+        // 避免把空的 messages 覆盖进单聊消息（对比模式分支数据放在 turns 中）
+        if (conv.mode === 'compare') {
+          loadedIdRef.current = currentConversationId;
+          return;
+        }
+
         // 将对话的消息加载到 Chat Store
         // 需要传入：对话 ID、消息列表、AI 提供商、模型
         loadConversation(conv.id, conv.messages as Message[], conv.provider, conv.model);
@@ -343,12 +471,12 @@ export default function ChatPage() {
   }, [showModelSelector]);
 
   // ============ 自动滚动到最新消息 ============
-  // 当有新消息或 AI 正在回复时，自动滚动到消息列表底部
+  // 在消息列表容器内滚动，避免误滚到外层布局
   useEffect(() => {
-    // scrollIntoView 会将元素滚动到可见区域
-    // behavior: 'smooth' 表示平滑滚动（有动画效果）
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]); // 依赖项：消息列表变化或加载状态变化时触发
+    const scrollEl = messagesScrollRef.current;
+    if (!scrollEl) return;
+    scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   // ============ 消息展示处理 ============
   // 为每条消息添加流式输出状态标记
@@ -362,15 +490,21 @@ export default function ChatPage() {
       msg.isStreaming ??
       (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
   }));
+  const isEmptyChat = displayMessages.length === 0;
 
   // ============ 发送消息处理函数 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
   // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
-    (content: string) => {
-      // 检查是否有当前对话
-      if (!currentConversationId) {
-        // 如果没有当前对话，需要先创建一个新对话
+    async (content: string) => {
+      // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
+      const derivation = relay.prepareExecution();
+
+      // 检查是否有可用的单聊会话
+      // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
+      // 则新建一个单聊会话，避免消息写入比较会话而丢失
+      if (!currentConversationId || isCurrentConversationCompare) {
+        // 需要先创建一个新对话
         // 使用当前选中的 AI 提供商和模型
         const newId = createConversation(provider, model);
 
@@ -380,22 +514,38 @@ export default function ChatPage() {
 
         // 更新已加载标记，防止 useEffect 重复加载
         loadedIdRef.current = newId;
+      }
 
-        // 发送用户输入的消息
-        sendMessage(content);
-      } else {
-        // 如果已经有当前对话，直接发送消息
-        sendMessage(content);
+      // 发送消息（携带接力派生元数据，仅成功路径写入历史）
+      const result = await sendMessage(content, derivation);
+      // 成功才完成接力（清引用+草稿）；失败/取消/早退保留引用允许原地重试
+      if (result === 'sent') {
+        relay.commitExecution();
       }
     },
     // 依赖项列表：这些值变化时，函数会重新创建
-    [currentConversationId, createConversation, provider, model, loadConversation, sendMessage]
+    [
+      currentConversationId,
+      isCurrentConversationCompare,
+      createConversation,
+      provider,
+      model,
+      loadConversation,
+      sendMessage,
+      relay,
+    ]
   );
 
   // ============ 新建对话处理函数 ============
   // 用户点击"新建对话"按钮时调用
   const handleNewConversation = useCallback(() => {
-    // 先查找是否已经有空对话（没有消息的对话）
+    // 并行对比模式：新建比较会话（保持 mode='compare'），不走单聊创建逻辑
+    if (isCompareMode) {
+      startNewComparison();
+      return;
+    }
+
+    // 单聊模式：先查找是否已经有空对话（没有消息的对话）
     const emptyConversation = findEmptyConversation();
 
     if (emptyConversation) {
@@ -407,7 +557,15 @@ export default function ChatPage() {
       // 使用当前选中的 AI 提供商和模型
       createConversation(provider, model);
     }
-  }, [findEmptyConversation, switchConversation, createConversation, provider, model]);
+  }, [
+    isCompareMode,
+    startNewComparison,
+    findEmptyConversation,
+    switchConversation,
+    createConversation,
+    provider,
+    model,
+  ]);
 
   // ============ 切换 AI 提供商和模型 ============
   // 用户在模型选择器中选择不同的模型时调用
@@ -469,6 +627,43 @@ export default function ChatPage() {
   //    如果没有对话或对话没有标题，显示"新对话"
   const currentTitle = currentConversation?.title || '新对话';
 
+  // ============ 空状态快捷入口 ============
+  // 借首页的视觉语气，但保持聊天页自己的信息结构
+  const quickActions = [
+    {
+      title: '生成周报框架',
+      description: '四板块模板，改填即用',
+      prompt:
+        '请生成一份通用周报框架（Markdown），包含「本周完成」「关键数据与亮点」「遇到的问题」「下周计划」四个部分。每部分用项目符号列出 2～3 条示例占位内容，方便我直接改成自己的实际情况。',
+      icon: FileEdit,
+      iconClassName: 'bg-orange-100 text-orange-500 dark:bg-orange-900/30 dark:text-orange-300',
+    },
+    {
+      title: '站会纪要模板',
+      description: '议题、决议与待办清单',
+      prompt:
+        '请给我一份适用于 30 分钟团队站会的会议纪要模板（Markdown 表格）。需包含：日期与参会人、议题列表、讨论要点、决议结论、待办事项（负责人 + 截止时间），并各填一行示例说明写法。',
+      icon: FileText,
+      iconClassName: 'bg-violet-100 text-violet-500 dark:bg-violet-900/30 dark:text-violet-300',
+    },
+    {
+      title: '产品复盘提纲',
+      description: '上线后复盘与迭代建议',
+      prompt:
+        '请列出一份「功能上线后产品复盘」的完整提纲，按顺序覆盖：复盘背景与目标、核心数据指标、用户反馈摘要、做得好的地方、问题与根因、经验教训、后续迭代建议。每个板块用 1～2 句话说明应写什么。',
+      icon: BarChart2,
+      iconClassName: 'bg-blue-100 text-blue-500 dark:bg-blue-900/30 dark:text-blue-300',
+    },
+    {
+      title: '述职汇报结构',
+      description: '六大章节写什么、怎么写',
+      prompt:
+        '请设计一份季度述职汇报的文档结构（约 6 个章节），说明每章建议篇幅、核心要点和可写的示例要点。面向技术研发岗位，语气务实，避免空泛套话。',
+      icon: Lightbulb,
+      iconClassName: 'bg-emerald-100 text-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-300',
+    },
+  ] as const;
+
   const renderConversationList = (onSelect?: () => void) => (
     <>
       <button
@@ -491,6 +686,7 @@ export default function ChatPage() {
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const isActive = item.id === currentConversationId;
+                  const isCompare = item.mode === 'compare';
                   return (
                     <div
                       key={item.id}
@@ -501,17 +697,40 @@ export default function ChatPage() {
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
                       )}
                       onClick={() => {
-                        switchConversation(item.id);
+                        // 按会话类型分流：比较会话载入 turns 分支并切到对比模式，
+                        // 单聊会话切回单聊模式（自动加载副作用会加载其消息）
+                        if (isCompare) {
+                          setComparisonMode('compare');
+                          loadComparison(item.id);
+                          switchConversation(item.id); // 仅用于侧栏高亮
+                        } else {
+                          setComparisonMode('single');
+                          switchConversation(item.id);
+                        }
                         onSelect?.();
                       }}
                     >
-                      <MessageSquare
-                        className={cn(
-                          'w-4 h-4 flex-shrink-0',
-                          isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
-                        )}
-                      />
+                      {isCompare ? (
+                        <GitCompareArrows
+                          className={cn(
+                            'w-4 h-4 flex-shrink-0',
+                            isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
+                          )}
+                        />
+                      ) : (
+                        <MessageSquare
+                          className={cn(
+                            'w-4 h-4 flex-shrink-0',
+                            isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500'
+                          )}
+                        />
+                      )}
                       <span className="truncate flex-1">{item.title}</span>
+                      {isCompare && (
+                        <span className="flex-shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+                          对比
+                        </span>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -544,329 +763,372 @@ export default function ChatPage() {
   );
 
   const renderModelOptions = (onSelect?: () => void) =>
-    (
-      Object.entries(MODELS) as [ProviderName, (typeof MODELS)[ProviderName]][]
-    ).map(([providerKey, config]) => (
-      <div key={providerKey} className="px-2 py-1">
-        <div className="text-xs text-slate-400 font-medium px-2 py-1">{config.name}</div>
-        {config.models.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => {
-              handleSwitchProvider(providerKey, m.id);
-              setShowModelSelector(false);
-              onSelect?.();
-            }}
-            className={cn(
-              'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
-              provider === providerKey && model === m.id
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-            )}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-    ));
+    (Object.entries(MODELS) as [ProviderName, (typeof MODELS)[ProviderName]][]).map(
+      ([providerKey, config]) => (
+        <div key={providerKey} className="px-2 py-1">
+          <div className="text-xs text-slate-400 font-medium px-2 py-1">{config.name}</div>
+          {config.models.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => {
+                handleSwitchProvider(providerKey, m.id);
+                setShowModelSelector(false);
+                onSelect?.();
+              }}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
+                provider === providerKey && model === m.id
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )
+    );
 
   // ============ 加载状态显示 ============
   // 如果数据还没从本地存储加载完成，显示加载动画
   if (!isLoaded) {
     return (
-      <AppLayout>
-        <div className="flex items-center justify-center w-full h-full">
-          {/* 旋转的加载动画 */}
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
-        </div>
-      </AppLayout>
+      <AuthGuard>
+        <AppLayout>
+          <div className="flex items-center justify-center w-full h-full">
+            {/* 旋转的加载动画 */}
+            <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+          </div>
+        </AppLayout>
+      </AuthGuard>
     );
   }
 
   return (
-    <AppLayout>
-      <div className="flex w-full h-full">
-        {/* 聊天历史侧边栏 */}
-        <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
-          {renderConversationList()}
-        </aside>
+    <AuthGuard>
+      <AppLayout>
+        <div className="flex h-full min-h-0 w-full">
+          {/* 聊天历史侧边栏 */}
+          <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
+            {renderConversationList()}
+          </aside>
 
-        {/* 主聊天区域 */}
-        <div className="flex-1 p-4 min-w-0 h-full">
-          <div className="h-full flex flex-col bg-gradient-to-br from-[#eff6ff] to-white dark:from-slate-900 dark:to-slate-950 shadow-sm rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
-            {/* 头部 */}
-            <header className="flex-none px-4 py-4 sm:px-6 border-b border-slate-50 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 z-20">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400">
-                    <BarChart2 className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h1 className="break-words text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
-                      {currentTitle}
-                    </h1>
-                    <div className="mt-0.5 hidden lg:flex lg:items-center lg:gap-2">
-                      {/* 模型选择器 */}
-                      <div className="relative" ref={modelSelectorRef}>
-                        <button
-                          onClick={() => setShowModelSelector(!showModelSelector)}
-                          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors py-0.5 px-1.5 -ml-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <svg
-                            className="w-3.5 h-3.5 text-blue-500"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
+          {/* 主聊天区域 */}
+          <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
+            <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
+              <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
+              {/* 头部 */}
+              <header
+                className={cn(
+                  'relative z-20 flex-none px-4 py-4 sm:px-6',
+                  // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
+                  !isEmptyChat &&
+                    'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
+                )}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
+                      <BarChart2 className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+                        {currentTitle}
+                      </h1>
+                      <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
+                        {isCompareMode ? (
+                          // 对比模式：多模型选择器（含「已选 N 个模型」与成本提示）
+                          <ModelSelector variant="header" />
+                        ) : (
+                          // 单聊模式：单模型选择器
+                          <div className="relative" ref={modelSelectorRef}>
+                          <button
+                            onClick={() => setShowModelSelector(!showModelSelector)}
+                            className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
                           >
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                          </svg>
-                          <span>{currentModelLabel}</span>
-                          <svg
-                            className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 9l-7 7-7-7"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-3.5 h-3.5 text-blue-500"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                            </svg>
+                            <span>{currentModelLabel}</span>
+                            <svg
+                              className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </button>
 
-                        {/* 下拉列表 */}
-                        {showModelSelector && (
-                          <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-                            {(
-                              Object.entries(MODELS) as [
-                                ProviderName,
-                                (typeof MODELS)[ProviderName],
-                              ][]
-                            ).map(([providerKey, config]) => (
-                              <div key={providerKey} className="px-2 py-1">
-                                <div className="text-xs text-slate-400 font-medium px-2 py-1">
-                                  {config.name}
+                          {/* 下拉列表 */}
+                          {showModelSelector && (
+                            <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
+                              {(
+                                Object.entries(MODELS) as [
+                                  ProviderName,
+                                  (typeof MODELS)[ProviderName],
+                                ][]
+                              ).map(([providerKey, config]) => (
+                                <div key={providerKey} className="px-2 py-1">
+                                  <div className="text-xs text-slate-400 font-medium px-2 py-1">
+                                    {config.name}
+                                  </div>
+                                  {config.models.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      onClick={() => {
+                                        handleSwitchProvider(providerKey, m.id);
+                                        setShowModelSelector(false);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                        provider === providerKey && model === m.id
+                                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                      }`}
+                                    >
+                                      {m.label}
+                                    </button>
+                                  ))}
                                 </div>
-                                {config.models.map((m) => (
-                                  <button
-                                    key={m.id}
-                                    onClick={() => {
-                                      handleSwitchProvider(providerKey, m.id);
-                                      setShowModelSelector(false);
-                                    }}
-                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                      provider === providerKey && model === m.id
-                                        ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                    }`}
-                                  >
-                                    {m.label}
-                                  </button>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         )}
                       </div>
                     </div>
                   </div>
+
+                  {/* 头部操作区 */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
+                    <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                    <button
+                      type="button"
+                      aria-label="打开会话列表"
+                      onClick={() => setShowConversationDrawer(true)}
+                      className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                      <PanelLeft className="w-4 h-4" />
+                    </button>
+                    {isCompareMode ? (
+                      // 对比模式（移动/平板）：多模型选择器，内部用底部抽屉
+                      <div className="lg:hidden">
+                        <ModelSelector variant="header" />
+                      </div>
+                    ) : (
+                      // 单聊模式（移动/平板）：单模型选择抽屉
+                      <button
+                        type="button"
+                        aria-label="打开模型选择"
+                        onClick={() => setShowMobileModelDrawer(true)}
+                        className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                      >
+                        <SlidersHorizontal className="w-4 h-4" />
+                        <span className="max-w-[88px] truncate">{currentModelLabel}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
+              </header>
 
-                {/* 头部操作区 */}
-                <div className="flex items-center gap-2 self-end sm:self-auto">
-                  <button
-                    type="button"
-                    aria-label="打开会话列表"
-                    onClick={() => setShowConversationDrawer(true)}
-                    className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/80 text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >
-                    <PanelLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="打开模型选择"
-                    onClick={() => setShowMobileModelDrawer(true)}
-                    className="lg:hidden inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
-                  >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    <span className="max-w-[88px] truncate">{currentModelLabel}</span>
-                  </button>
+              {isCompareMode ? (
+                // 并行对比模式：多模型聚焦比较视图（自带概览轨道、双列聚焦与输入区）
+                <ComparisonView />
+              ) : (
+                // 单聊模式：现有单聊主体（保持不变）
+                <>
+              {/* 错误显示 */}
+              {error && (
+                <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+                  <strong>错误：</strong> {error.message}
                 </div>
-              </div>
-            </header>
+              )}
 
-            {/* 错误显示 */}
-            {error && (
-              <div className="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-                <strong>错误：</strong> {error.message}
-              </div>
-            )}
+              {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
+              <div
+                ref={messagesScrollRef}
+                className={cn(
+                  'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
+                  isEmptyChat
+                    ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
+                    : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
+                )}
+              >
+                {isEmptyChat ? (
+                  <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
+                    <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
-            {/* 消息列表 */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-transparent">
-              {displayMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full px-4 relative z-0">
-                  {/* Ambient Background Glow */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-[100px] -z-10 pointer-events-none" />
-
-                  <div className="max-w-3xl w-full bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2rem] p-8 md:p-12 border border-white/60 dark:border-slate-700/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.05)]">
-                    {/* Logo & Greeting */}
-                    <div className="flex flex-col items-center text-center mb-10">
-                      <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20 mb-6 rotate-3 hover:rotate-6 transition-transform">
-                        <Bot className="w-8 h-8 text-white" />
+                    <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
+                      <div className="mb-8 flex flex-col items-center text-center">
+                        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                          <Bot className="h-8 w-8" />
+                        </div>
+                        <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                          智能对话助手
+                        </div>
                       </div>
-                      <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">
-                        你好，我是您的智能助手
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400 max-w-lg">
-                        我可以协助您完成写作、编程、分析等任务，让工作更高效。
-                      </p>
-                    </div>
 
-                    {/* Capability Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full mb-10">
-                      <button
-                        onClick={() => handleSend('帮我写一封周报，总结本周工作重点与计划')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <FileEdit className="w-6 h-6 text-orange-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            写一封周报
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            总结本周工作重点与计划
-                          </div>
-                        </div>
-                      </button>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {quickActions.map((action) => {
+                          const ActionIcon = action.icon;
 
-                      <button
-                        onClick={() => handleSend('请帮我润色以下代码，优化逻辑与代码风格：\n')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <Code2 className="w-6 h-6 text-blue-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            润色代码
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            优化逻辑与代码风格
-                          </div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => handleSend('请帮我总结这篇文章的核心观点：\n')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <FileText className="w-6 h-6 text-purple-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            总结长文
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            快速提取文章核心观点
-                          </div>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => handleSend('我需要一些图片设计的创意灵感，关于...')}
-                        className="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all group text-left"
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                          <Lightbulb className="w-6 h-6 text-emerald-500" />
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800 dark:text-slate-200 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                            图片创意建议
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            为设计项目寻找灵感
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* Features Footer */}
-                    <div className="flex flex-wrap items-center justify-center gap-6 md:gap-12 pt-6 border-t border-slate-200/50 dark:border-white/5">
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <FileText className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        </div>
-                        支持长文本分析
+                          return (
+                            <button
+                              key={action.title}
+                              onClick={() => handleSend(action.prompt)}
+                              className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                            >
+                              <div
+                                className={cn(
+                                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                                  action.iconClassName
+                                )}
+                              >
+                                <ActionIcon className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                  {action.title}
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                  {action.description}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <Globe className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+
+                      <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <FileText className="h-3.5 w-3.5 text-blue-500" />
+                          支持长文本分析
                         </div>
-                        实时联网搜索
-                      </div>
-                      <div className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
-                          <ShieldCheck className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <Globe className="h-3.5 w-3.5 text-blue-500" />
+                          实时联网搜索
                         </div>
-                        企业级数据安全
+                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                          <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                          企业级数据安全
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="max-w-4xl mx-auto flex flex-col pt-4 pb-[calc(env(safe-area-inset-bottom)+8.5rem)] lg:pb-6">
-                  {displayMessages.map((msg) => (
-                    <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
-                  ))}
-                  <div ref={messagesEndRef} />
+                ) : (
+                  <div className="flex w-full flex-col pt-2 pb-4">
+                    {displayMessages.map((msg) => (
+                      <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </div>
+              {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
+              {!isEmptyChat && (
+                <div
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
+                  aria-hidden
+                />
+              )}
+
+              {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
+              {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (
+                <div className="relative z-10 flex-none px-4 pt-2 sm:px-5">
+                  {relay.replaceCandidate ? (
+                    <ReferenceBar
+                      bundle={relay.replaceCandidate.incoming}
+                      isReplaceCandidate
+                      onConfirmReplace={relay.confirmReplace}
+                      onCancelReplace={relay.cancelReplace}
+                      onRemove={relay.remove}
+                    />
+                  ) : relay.bundle ? (
+                    <ReferenceBar
+                      bundle={relay.bundle}
+                      onViewSource={() => setRelayPreviewOpen(true)}
+                      onRemove={relay.remove}
+                      showFill={Boolean(relayBundleText) && !relayDraft}
+                      fillLabel={RELAY_COPY.referenceBar.fillInput}
+                      onFill={() => {
+                        if (relay.bundle) {
+                          setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
+                          relay.setDraft(relayBundleText);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900">
+                      {RELAY_COPY.referenceBar.invalid}
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
 
-            {/* 输入区域 */}
-            <div className="sticky bottom-0 flex-none z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md pb-[calc(env(safe-area-inset-bottom)+0.5rem)] lg:static lg:bg-transparent lg:pb-2">
-              <ChatInput onSend={handleSend} isLoading={isLoading} />
+              {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
+              <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+                <ChatInput
+                  onSend={handleSend}
+                  isLoading={isLoading}
+                  externalDraft={relayDraft}
+                  onExternalDraftConsumed={() => setRelayDraft(null)}
+                />
+              </div>
+
+              {/* 接力来源快照预览（只读） */}
+              <ReferenceSourcePreview
+                open={relayPreviewOpen}
+                onOpenChange={setRelayPreviewOpen}
+                item={relay.bundle?.items[0] ?? null}
+              />
+                </>
+              )}
             </div>
           </div>
         </div>
-      </div>
 
-      <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
-        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
-              对话列表
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              在移动端快速切换历史会话
-            </DialogDescription>
-          </div>
-          <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
-            {renderConversationList(() => setShowConversationDrawer(false))}
-          </div>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
+          <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+                对话列表
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+                在移动端快速切换历史会话
+              </DialogDescription>
+            </div>
+            <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
+              {renderConversationList(() => setShowConversationDrawer(false))}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog open={showMobileModelDrawer} onOpenChange={setShowMobileModelDrawer}>
-        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-            <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
-              模型选择
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
-              选择当前对话使用的模型与提供商
-            </DialogDescription>
-          </div>
-          <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
-            {renderModelOptions(() => setShowMobileModelDrawer(false))}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </AppLayout>
+        <Dialog open={showMobileModelDrawer} onOpenChange={setShowMobileModelDrawer}>
+          <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
+                模型选择
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-left text-sm text-slate-500 dark:text-slate-400">
+                选择当前对话使用的模型与提供商
+              </DialogDescription>
+            </div>
+            <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
+              {renderModelOptions(() => setShowMobileModelDrawer(false))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </AppLayout>
+    </AuthGuard>
   );
 }

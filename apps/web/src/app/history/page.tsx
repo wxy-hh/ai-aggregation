@@ -7,6 +7,9 @@ import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
+import { VideoHistoryCard } from '@/components/history/video-history-card';
+import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
+import { HistoryMasonryGrid, HistoryMasonryItem } from '@/components/history/history-masonry-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +22,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
+import { AuthGuard } from '@/components/auth/auth-guard';
 import type { HistoryType, ImageHistoryItem } from '@/types/history';
 
 const tabs = [
@@ -26,6 +30,8 @@ const tabs = [
   { id: 'chat', label: '对话' },
   { id: 'voice', label: '语音' },
   { id: 'image', label: '图片' },
+  { id: 'video', label: '视频' },
+  { id: 'destiny', label: '命理' },
 ];
 
 export default function HistoryPage() {
@@ -65,6 +71,8 @@ export default function HistoryPage() {
         chat: 0,
         voice: 0,
         image: 0,
+        video: 0,
+        destiny: 0,
       };
 
   // 处理删除历史记录
@@ -105,7 +113,8 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <AppLayout>
+    <AuthGuard>
+      <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
         {/* 头部 */}
         <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-4 md:px-6 md:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10 shadow-sm">
@@ -246,33 +255,32 @@ export default function HistoryPage() {
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
           ) : (
-            <div
-              data-testid="history-grid"
-              className={cn(
-                'grid gap-6',
-                activeTab === 'image'
-                  ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-                  : 'grid-cols-1 lg:grid-cols-2 xl:grid-cols-3'
-              )}
-            >
+            <HistoryMasonryGrid variant={activeTab === 'image' ? 'image' : 'default'}>
               {filteredHistory.map((item) => {
+                let card: React.ReactNode = null;
                 if (item.type === 'chat') {
-                  return <ChatHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                  card = <ChatHistoryCard item={item} onDelete={handleDeleteItem} />;
                 } else if (item.type === 'voice') {
-                  return <VoiceHistoryCard key={item.id} item={item} onDelete={handleDeleteItem} />;
+                  card = <VoiceHistoryCard item={item} onDelete={handleDeleteItem} />;
                 } else if (item.type === 'image') {
-                  return (
+                  card = (
                     <ImageHistoryCard
-                      key={item.id}
                       item={item}
                       onPreview={setPreviewItem}
                       onDelete={handleDeleteItem}
                     />
                   );
+                } else if (item.type === 'video') {
+                  card = <VideoHistoryCard item={item} onDelete={handleDeleteItem} />;
+                } else if (item.type === 'destiny') {
+                  card = <DestinyHistoryCard item={item} onDelete={handleDeleteItem} />;
                 }
-                return null;
+                if (!card) return null;
+                return (
+                  <HistoryMasonryItem key={item.id}>{card}</HistoryMasonryItem>
+                );
               })}
-            </div>
+            </HistoryMasonryGrid>
           )}
 
           {!isLoading && filteredHistory.length === 0 && (
@@ -421,5 +429,6 @@ export default function HistoryPage() {
         </Dialog>
       </div>
     </AppLayout>
+    </AuthGuard>
   );
 }

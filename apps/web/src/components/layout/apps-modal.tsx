@@ -1,7 +1,9 @@
 'use client';
 
+import mingliIcon from '@/assets/image/mingli.svg';
 import React from 'react';
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { SVGProps } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
@@ -19,7 +21,40 @@ import {
   Pin,
   X,
   Plus,
+  MessageSquare,
 } from 'lucide-react';
+
+function AssetAppIcon({
+  className,
+  src,
+}: {
+  className?: string;
+  src: { src: string };
+  strokeWidth?: number;
+}) {
+  const maskStyle = {
+    WebkitMaskImage: `url(${src.src})`,
+    maskImage: `url(${src.src})`,
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+  } satisfies CSSProperties;
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('block shrink-0 bg-current', className)}
+      style={maskStyle}
+    />
+  );
+}
+
+function MingliIcon({ className }: { className?: string; strokeWidth?: number }) {
+  return <AssetAppIcon src={mingliIcon} className={className} />;
+}
 
 function BaguaIcon({ className, strokeWidth = 1.9, ...props }: SVGProps<SVGSVGElement>) {
   return (
@@ -73,7 +108,8 @@ export type AppId =
   | 'legal'
   | 'code'
   | 'video'
-  | '3d';
+  | '3d'
+  | 'feedback';
 
 interface AppConfig {
   id: AppId;
@@ -131,7 +167,7 @@ export const APP_CONFIGS: AppConfig[] = [
     id: 'destiny',
     label: 'AI 命理大师',
     description: '可视化排盘 + 深度报告 + 专属 AI 顾问。',
-    icon: BaguaIcon,
+    icon: MingliIcon,
     category: 'core',
     href: '/destiny',
     iconColor: 'text-indigo-600',
@@ -210,6 +246,18 @@ export const APP_CONFIGS: AppConfig[] = [
     iconBg: 'bg-cyan-100 dark:bg-cyan-900/30',
     disabled: true,
     sidebarPinEnabled: false,
+  },
+  // 用户反馈
+  {
+    id: 'feedback',
+    label: '用户反馈',
+    description: '提交问题、建议，参与产品共建。',
+    icon: MessageSquare,
+    category: 'core',
+    href: '/feedback',
+    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
+    sidebarPinEnabled: true,
   },
 ];
 

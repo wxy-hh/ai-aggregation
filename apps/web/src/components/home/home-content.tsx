@@ -1,82 +1,46 @@
 'use client';
+/* 生成页面的提示词:
+底部固定的“工具底座” (Utility Dock)：
 
+在侧边栏的最下方，我们将“设置”、“主题切换”和“个人中心”聚合在一起。
+由于宽度变窄：不再采用横向的“文字 + 开关”模式，而是设计一个极简的圆形磨砂玻璃图标按钮（太阳/月亮图标）。
+这样设计即便侧边栏收缩，图标依然能完美适配，不会出现文字截断或乱码。
+交互反馈 (Micro-interactions)：
+
+悬停状态：当鼠标悬停在这个图标上时，它会散发出淡淡的科技蓝（Technology Blue）外发光，并弹出一个小巧的玻璃气泡提示（Tooltip），显示“切换至深色模式”。
+无缝切换：点击后，全站色彩通过 css mix-blend-mode 进行平滑过渡，而无需重新加载。
+高级感细节：
+
+将该按钮设计为“悬浮式（Floating）”感，略微脱离底部的侧边栏底色，使用更强的 backdrop-blur，使其在视觉上既属于导航栏，又是一个独立的功能触点。
+ */
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useConversationsStore, useAudioHistoryStore, useChatStore } from '@/stores';
+import { useChatStore } from '@/stores';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search,
   FileText,
   PenTool,
-  Bookmark,
   Zap,
-  Clock,
   Mic,
   MessageSquare,
   Image as ImageIcon,
   ArrowRight,
-  Plus,
   Lightbulb,
-  File,
-  Sparkles,
+  Plus,
+  Compass,
 } from 'lucide-react';
-
-/**
- * 最近创作项目类型定义
- */
-interface RecentCreation {
-  id: string;
-  title: string;
-  time: string;
-  type: 'image' | 'doc' | 'audio';
-  status: 'completed' | 'processing';
-  // 图片类型的预览 URL
-  previewUrl?: string;
-}
-
-/**
- * 格式化相对时间显示
- * @param timestamp 时间戳（毫秒）
- * @returns 格式化后的相对时间字符串
- */
-function formatRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days === 1) return '昨天';
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  return `${Math.floor(days / 30)}个月前`;
-}
+import {
+  RecentCreationsSection,
+  RecentFilesSidebarList,
+} from '@/components/home/recent-creations-section';
 
 export function HomeContent() {
   const router = useRouter();
-
-  // ==================== Stores ====================
-  // 会话历史
-  const conversations = useConversationsStore((state) => state.conversations);
-  const createConversation = useConversationsStore((state) => state.createConversation);
-
-  // 音频历史
-  const audioHistoryItems = useAudioHistoryStore((state) => state.items);
-  const isAudioHistoryInitialized = useAudioHistoryStore((state) => state.isInitialized);
-  const initAudioHistory = useAudioHistoryStore((state) => state.initializeService);
-
-  // 聊天 store（用于预设消息）
   const setInput = useChatStore((state) => state.setInput);
-
-  // ==================== 状态 ====================
   const [searchQuery, setSearchQuery] = useState('');
-  const [recentCreations, setRecentCreations] = useState<RecentCreation[]>([]);
 
   // 每日灵感提示词
   const dailyInspirations = [
@@ -88,14 +52,6 @@ export function HomeContent() {
   ];
   const [currentInspiration, setCurrentInspiration] = useState(dailyInspirations[0]);
 
-  // ==================== 初始化 ====================
-  useEffect(() => {
-    // 初始化音频历史服务
-    if (!isAudioHistoryInitialized) {
-      initAudioHistory();
-    }
-  }, [isAudioHistoryInitialized, initAudioHistory]);
-
   // 每日更换灵感提示
   useEffect(() => {
     const dayOfYear = Math.floor(
@@ -103,40 +59,6 @@ export function HomeContent() {
     );
     setCurrentInspiration(dailyInspirations[dayOfYear % dailyInspirations.length]);
   }, []);
-
-  // 合并最近创作数据
-  useEffect(() => {
-    const creations: RecentCreation[] = [];
-
-    // 从对话历史中获取最近的文档类型创作
-    conversations.slice(0, 3).forEach((conv) => {
-      if (conv.messages.length > 0) {
-        creations.push({
-          id: conv.id,
-          title: conv.title || '新对话',
-          time: formatRelativeTime(conv.updatedAt),
-          type: 'doc',
-          status: 'completed',
-        });
-      }
-    });
-
-    // 从音频历史中获取最近的音频创作
-    audioHistoryItems.slice(0, 2).forEach((item) => {
-      creations.push({
-        id: item.id,
-        title: item.fileName?.replace(/\.[^/.]+$/, '') || '语音转写',
-        time: formatRelativeTime(
-          item.createdAt instanceof Date ? item.createdAt.getTime() : Date.now()
-        ),
-        type: 'audio',
-        status: item.processingStatus === 'completed' ? 'completed' : 'processing',
-      });
-    });
-
-    // 按时间排序并取前 3 个
-    setRecentCreations(creations.slice(0, 3));
-  }, [conversations, audioHistoryItems]);
 
   // ==================== 事件处理 ====================
 
@@ -166,6 +88,13 @@ export function HomeContent() {
   }, [router]);
 
   /**
+   * 跳转到命理测算页面
+   */
+  const handleDestiny = useCallback(() => {
+    router.push('/destiny');
+  }, [router]);
+
+  /**
    * 推荐指令：将录音总结为文档
    */
   const handleVoiceToDoc = useCallback(() => {
@@ -189,56 +118,6 @@ export function HomeContent() {
     }, 100);
   }, [router, setInput, currentInspiration]);
 
-  /**
-   * 最近文件点击处理
-   */
-  const handleRecentFileClick = useCallback(
-    (type: 'image' | 'audio' | 'doc') => {
-      switch (type) {
-        case 'image':
-          router.push('/image');
-          break;
-        case 'audio':
-          router.push('/voice');
-          break;
-        case 'doc':
-          router.push('/chat');
-          break;
-      }
-    },
-    [router]
-  );
-
-  /**
-   * 最近创作卡片点击处理
-   */
-  const handleCreationClick = useCallback(
-    (creation: RecentCreation) => {
-      switch (creation.type) {
-        case 'image':
-          router.push('/image');
-          break;
-        case 'audio':
-          router.push('/voice');
-          break;
-        case 'doc':
-          // 跳转到对应的对话
-          router.push(`/chat`);
-          break;
-      }
-    },
-    [router]
-  );
-
-  /**
-   * 新建项目
-   */
-  const handleNewProject = useCallback(() => {
-    // 创建新对话
-    createConversation();
-    router.push('/chat?new=true');
-  }, [createConversation, router]);
-
   return (
     <div className="flex h-full w-full flex-col lg:flex-row bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden font-sans">
       {/* 
@@ -261,7 +140,7 @@ export function HomeContent() {
         </div>
 
         {/* 常用工具 */}
-        <div className="mb-8">
+        <div className="mb-4">
           <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-wider">
             常用工具
           </h3>
@@ -281,16 +160,18 @@ export function HomeContent() {
               onClick={handleCopyPolish}
             />
             <ToolItem
-              icon={Bookmark}
-              label="收藏夹"
-              color="text-amber-500"
-              onClick={handleViewHistory}
+              icon={Compass}
+              label="命理测算"
+              badge="八字排盘"
+              badgeColor="text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20"
+              color="text-indigo-600"
+              onClick={handleDestiny}
             />
           </div>
         </div>
 
         {/* 推荐指令 */}
-        <div className="mb-8">
+        <div>
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               推荐指令
@@ -324,7 +205,7 @@ export function HomeContent() {
 
         {/* 最近文件 */}
         <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 mt-1">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               最近文件
             </h3>
@@ -334,21 +215,7 @@ export function HomeContent() {
             />
           </div>
           <div className="space-y-3">
-            <FileItem
-              name="未来城市概念设计.png"
-              type="image"
-              onClick={() => handleRecentFileClick('image')}
-            />
-            <FileItem
-              name="Q3 业务复盘录音.mp3"
-              type="audio"
-              onClick={() => handleRecentFileClick('audio')}
-            />
-            <FileItem
-              name="产品发布营销文案.doc"
-              type="doc"
-              onClick={() => handleRecentFileClick('doc')}
-            />
+            <RecentFilesSidebarList />
           </div>
         </div>
 
@@ -416,7 +283,10 @@ export function HomeContent() {
             </div>
 
             {/* 主要功能卡片 */}
-            <div data-testid="home-feature-grid" className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20">
+            <div
+              data-testid="home-feature-grid"
+              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20"
+            >
               <FeatureCard
                 href="/chat?new=true"
                 title="智能对话"
@@ -450,84 +320,7 @@ export function HomeContent() {
             </div>
           </div>
 
-          {/* 最近创作头部 */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-500" />
-              最近创作
-            </h2>
-            <Button
-              variant="ghost"
-              className="text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              asChild
-            >
-              <Link href="/history" className="flex items-center gap-1">
-                查看全部 <ArrowRight className="w-4 h-4" />
-              </Link>
-            </Button>
-          </div>
-
-          {/* 最近创作网格 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
-            {/* 使用动态数据，如果没有则显示示例 */}
-            {recentCreations.length > 0 ? (
-              recentCreations.map((creation) => (
-                <CreationCard
-                  key={creation.id}
-                  title={creation.title}
-                  time={creation.time}
-                  type={creation.type}
-                  gradient={
-                    creation.type === 'image'
-                      ? 'from-slate-800 to-black'
-                      : 'bg-white dark:bg-slate-800'
-                  }
-                  status={creation.status}
-                  onClick={() => handleCreationClick(creation)}
-                />
-              ))
-            ) : (
-              <>
-                <CreationCard
-                  title="未来城市概念"
-                  time="2小时前"
-                  type="image"
-                  gradient="from-slate-800 to-black"
-                  status="completed"
-                  onClick={() => router.push('/image')}
-                />
-                <CreationCard
-                  title="产品营销文案"
-                  time="5小时前"
-                  type="doc"
-                  gradient="bg-white dark:bg-slate-800"
-                  status="completed"
-                  onClick={() => router.push('/chat')}
-                />
-                <CreationCard
-                  title="Q3 业务复盘"
-                  time="昨天"
-                  type="audio"
-                  gradient="bg-white dark:bg-slate-800"
-                  status="processing"
-                  onClick={() => router.push('/voice')}
-                />
-              </>
-            )}
-
-            {/* 新建项目卡片 */}
-            <div
-              className="h-40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-300 dark:hover:border-blue-700 transition-all flex flex-col items-center justify-center cursor-pointer group"
-              onClick={handleNewProject}
-            >
-              <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-slate-400 group-hover:text-blue-500">
-                <Plus className="w-5 h-5" />
-              </div>
-              <span className="font-medium text-slate-500 group-hover:text-blue-600 dark:text-slate-400 dark:group-hover:text-blue-400 transition-colors">
-                新建项目
-              </span>
-            </div>
-          </div>
+          <RecentCreationsSection className="mb-2" />
         </div>
       </main>
     </div>
@@ -548,7 +341,7 @@ interface ToolItemProps {
 function ToolItem({ icon: Icon, label, badge, badgeColor, color, onClick }: ToolItemProps) {
   return (
     <div
-      className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group"
+      className="flex items-center justify-between p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group"
       onClick={onClick}
     >
       <div className="flex items-center gap-3">
@@ -614,39 +407,6 @@ function CommandCard({
   );
 }
 
-interface FileItemProps {
-  name: string;
-  type: 'image' | 'doc' | 'audio';
-  onClick?: () => void;
-}
-
-function FileItem({ name, type, onClick }: FileItemProps) {
-  let Icon = File;
-  let color = 'text-slate-500';
-  if (type === 'image') {
-    Icon = ImageIcon;
-    color = 'text-purple-500';
-  }
-  if (type === 'audio') {
-    Icon = Mic;
-    color = 'text-pink-500';
-  }
-  if (type === 'doc') {
-    Icon = FileText;
-    color = 'text-blue-500';
-  }
-
-  return (
-    <div
-      className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
-      onClick={onClick}
-    >
-      <Icon className={`w-4 h-4 ${color}`} />
-      <span className="text-sm text-slate-600 dark:text-slate-400 truncate">{name}</span>
-    </div>
-  );
-}
-
 function FeatureCard({
   href,
   title,
@@ -683,53 +443,6 @@ function FeatureCard({
           <ButtonIcon className="w-4 h-4" />
         </div>
       </Link>
-    </div>
-  );
-}
-
-interface CreationCardProps {
-  title: string;
-  time: string;
-  type: 'image' | 'doc' | 'audio';
-  gradient: string;
-  status: 'completed' | 'processing';
-  onClick?: () => void;
-}
-
-function CreationCard({ title, time, type, gradient, status, onClick }: CreationCardProps) {
-  return (
-    <div
-      className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow border border-slate-100 dark:border-slate-800 cursor-pointer group"
-      onClick={onClick}
-    >
-      <div
-        className={`aspect-[4/3] rounded-xl mb-4 overflow-hidden relative ${type === 'image' ? '' : 'bg-slate-50 dark:bg-slate-800 flex items-center justify-center'}`}
-      >
-        {type === 'image' ? (
-          <div
-            className={`absolute inset-0 bg-gradient-to-br ${gradient} group-hover:scale-105 transition-transform duration-500`}
-          >
-            <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center opacity-80 mix-blend-overlay"></div>
-          </div>
-        ) : (
-          <div className="text-slate-300 group-hover:text-blue-500 transition-colors">
-            {type === 'doc' ? <FileText className="w-10 h-10" /> : <Mic className="w-10 h-10" />}
-          </div>
-        )}
-
-        {/* 状态指示点 */}
-        <div
-          className={`absolute top-3 right-3 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 ${status === 'completed' ? 'bg-green-500' : 'bg-blue-500'}`}
-        ></div>
-      </div>
-
-      <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1">{title}</h4>
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <div
-          className={`w-1.5 h-1.5 rounded-full ${type === 'image' ? 'bg-purple-500' : type === 'doc' ? 'bg-blue-500' : 'bg-pink-500'}`}
-        ></div>
-        {time}
-      </div>
     </div>
   );
 }

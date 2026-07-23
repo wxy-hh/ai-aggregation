@@ -1,5 +1,12 @@
 import { DiagnoseRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
+import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
 
 /**
  * POST /api/resume/diagnose
@@ -8,183 +15,258 @@ import { ZodError } from 'zod';
  */
 
 export async function POST(req: Request) {
-  console.log('🔍 收到简历诊断请求');
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let reservation: { id: string } | null = null;
 
-  try {
-    const body = await req.json();
-    console.log('📄 请求体:', JSON.stringify(body, null, 2));
-
-    // 使用 Zod schema 校验请求体
-    const validationResult = DiagnoseRequestSchema.safeParse(body);
-
-    if (!validationResult.success) {
-      const errors = validationResult.error.errors.map((err) => ({
-        path: err.path.join('.'),
-        message: err.message,
-      }));
-
-      console.error('❌ 请求参数校验失败:', errors);
-
-      return new Response(
-        JSON.stringify({
-          error: '请求参数校验失败',
-          details: errors,
-        }),
-        {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const {
-      resume,
-      jobDescription,
-      privacy = { allowContactFields: false },
-    } = validationResult.data;
-
-    // 检查环境变量
-    const arkApiKey = process.env.ARK_API_KEY;
-    // 豆包 Responses API Base URL
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260215';
-
-    if (!arkApiKey) {
-      console.error('ARK_API_KEY 未配置');
-      // 回退到规则引擎评分
-      return await fallbackDiagnose(resume);
-    }
-
-    // 构建提示词
-    const systemPrompt = buildSystemPrompt();
-    const userPrompt = buildUserPrompt(resume, jobDescription, privacy);
-
-    // 调用 ARK API
-    const controller = new AbortController();
-    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    console.log('🚀 开始调用豆包 API:', {
-      url: `${arkBaseUrl}/responses`,
-      model: arkModel,
-      systemPromptLength: systemPrompt.length,
-      userPromptLength: userPrompt.length,
-    });
+    console.log('🔍 收到简历诊断请求');
 
     try {
-      console.log('🚀 调用豆包 API:', {
+      const body = await req.json();
+      console.log('📄 请求体:', JSON.stringify(body, null, 2));
+
+      // 使用 Zod schema 校验请求体
+      const validationResult = DiagnoseRequestSchema.safeParse(body);
+
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map((err) => ({
+          path: err.path.join('.'),
+          message: err.message,
+        }));
+
+        console.error('❌ 请求参数校验失败:', errors);
+
+        return new Response(
+          JSON.stringify({
+            error: '请求参数校验失败',
+            details: errors,
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      const {
+        resume,
+        jobDescription,
+        privacy = { allowContactFields: false },
+      } = validationResult.data;
+
+      // 检查环境变量
+      const arkApiKey = process.env.ARK_API_KEY;
+      // 豆包 Responses API Base URL
+      const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+      const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260428';
+
+      if (!arkApiKey) {
+        console.error('ARK_API_KEY 未配置');
+        // 回退到规则引擎评分
+        return await fallbackDiagnose(resume);
+      }
+
+      // 构建提示词
+      const systemPrompt = buildSystemPrompt();
+      const userPrompt = buildUserPrompt(resume, jobDescription, privacy);
+      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      let outputLimit = 1200;
+      if (user.role !== 'admin') {
+        const quota = await reserveChatQuota({
+          userId,
+          requestId,
+          feature: 'resume',
+          provider: 'doubao',
+          model: arkModel,
+          messages: [{ content: systemPrompt }, { content: userPrompt }],
+          maxOutputTokens: 1200,
+          metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
+        });
+        reservation = quota.reservation;
+        outputLimit = quota.outputLimit;
+      }
+
+      // 调用 ARK API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
+
+      console.log('🚀 开始调用豆包 API:', {
         url: `${arkBaseUrl}/responses`,
         model: arkModel,
         systemPromptLength: systemPrompt.length,
         userPromptLength: userPrompt.length,
-        max_output_tokens: 2000,
       });
 
-      const response = await fetch(`${arkBaseUrl}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${arkApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      try {
+        console.log('🚀 调用豆包 API:', {
+          url: `${arkBaseUrl}/responses`,
           model: arkModel,
-          input: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-          max_output_tokens: 2000,
-          temperature: 0.7,
-          top_p: 0.9,
-        }),
-        signal: controller.signal,
-      });
+          systemPromptLength: systemPrompt.length,
+          userPromptLength: userPrompt.length,
+          max_output_tokens: outputLimit,
+        });
 
-      clearTimeout(timeoutId);
+        const response = await fetch(`${arkBaseUrl}/responses`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${arkApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: arkModel,
+            input: [
+              {
+                role: 'system',
+                content: systemPrompt,
+              },
+              {
+                role: 'user',
+                content: userPrompt,
+              },
+            ],
+            max_output_tokens: outputLimit,
+            temperature: 0.7,
+            top_p: 0.9,
+          }),
+          signal: controller.signal,
+        });
 
-      console.log('📥 豆包 API 响应状态:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-      });
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        let errorText = '';
-        try {
-          errorText = await response.text();
-        } catch (e) {
-          errorText = '无法读取错误响应体';
-        }
-
-        console.error('❌ ARK API 错误:', {
+        console.log('📥 豆包 API 响应状态:', {
           status: response.status,
           statusText: response.statusText,
-          errorText: errorText,
-          url: `${arkBaseUrl}/responses`,
+          ok: response.ok,
           headers: Object.fromEntries(response.headers.entries()),
         });
 
-        if (response.status === 429) {
-          return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
-            status: 429,
-            headers: { 'Content-Type': 'application/json' },
+        if (!response.ok) {
+          let errorText = '';
+          try {
+            errorText = await response.text();
+          } catch (e) {
+            errorText = '无法读取错误响应体';
+          }
+
+          console.error('❌ ARK API 错误:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorText: errorText,
+            url: `${arkBaseUrl}/responses`,
+            headers: Object.fromEntries(response.headers.entries()),
+          });
+
+          if (response.status === 429) {
+            if (reservation)
+              await releaseAiQuota({
+                reservationId: reservation.id,
+                reason: '简历诊断上游限流',
+                meterType: 'tokens',
+              });
+            return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
+              status: 429,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+
+          if (reservation)
+            await releaseAiQuota({
+              reservationId: reservation.id,
+              reason: '简历诊断上游失败',
+              meterType: 'tokens',
+            });
+          console.log('🔄 回退到规则引擎诊断');
+          return await fallbackDiagnose(resume);
+        }
+
+        const result = await response.json();
+
+        // 解析 ARK 响应
+        const diagnosisResult = extractDiagnosisResult(result);
+
+        if (reservation) {
+          await settleAiQuota({
+            reservationId: reservation.id,
+            requestId,
+            feature: 'resume',
+            action: 'resume-diagnose',
+            provider: 'doubao',
+            model: arkModel,
+            endpoint: '/api/resume/diagnose',
+            measurement: createTokenMeasurement(result.usage ?? result.response?.usage),
+            metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
           });
         }
 
-        // 回退到规则引擎
-        console.log('🔄 回退到规则引擎诊断');
-        return await fallbackDiagnose(resume);
+        return new Response(
+          JSON.stringify({
+            ...diagnosisResult,
+            fallback: false,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          console.warn('ARK API 超时，回退到规则引擎');
+          if (reservation)
+            await releaseAiQuota({
+              reservationId: reservation.id,
+              reason: '简历诊断超时',
+              meterType: 'tokens',
+            });
+          return await fallbackDiagnose(resume);
+        }
+
+        throw fetchError;
       }
+    } catch (error) {
+      if (error instanceof BillingError) {
+        return billingErrorResponse(error);
+      }
+      if (reservation) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '简历诊断请求失败',
+          meterType: 'tokens',
+        }).catch((releaseError) => console.error('[resume/diagnose] 释放额度失败:', releaseError));
+      }
+      console.error('❌ Diagnose API 错误:', {
+        message: error instanceof Error ? error.message : '未知错误',
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : 'UnknownError',
+        timestamp: new Date().toISOString(),
+      });
 
-      const result = await response.json();
-
-      // 解析 ARK 响应
-      const diagnosisResult = extractDiagnosisResult(result);
+      if (error instanceof AuthError) {
+        if (error.code === 'FORBIDDEN') {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
 
       return new Response(
         JSON.stringify({
-          ...diagnosisResult,
-          fallback: false,
+          error: '服务器内部错误',
+          details: error instanceof Error ? error.message : '未知错误',
         }),
         {
-          status: 200,
+          status: 500,
           headers: { 'Content-Type': 'application/json' },
         }
       );
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        console.warn('ARK API 超时，回退到规则引擎');
-        return await fallbackDiagnose(resume);
-      }
-
-      throw fetchError;
     }
-  } catch (error) {
-    console.error('❌ Diagnose API 错误:', {
-      message: error instanceof Error ? error.message : '未知错误',
-      stack: error instanceof Error ? error.stack : undefined,
-      name: error instanceof Error ? error.name : 'UnknownError',
-      timestamp: new Date().toISOString(),
-    });
-    return new Response(
-      JSON.stringify({
-        error: '服务器内部错误',
-        details: error instanceof Error ? error.message : '未知错误',
-      }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-  }
+  });
 }
 
 /**

@@ -5,6 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { AuthError } from '@/lib/auth/errors';
 
 /**
  * 错误代码枚举
@@ -19,9 +20,17 @@ export const ErrorCode = {
   RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
   IMPORT_NOT_FOUND: 'IMPORT_NOT_FOUND',
 
+  // 认证业务错误
+  USERNAME_EXISTS: 'USERNAME_EXISTS',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  PASSWORD_REQUIRED: 'PASSWORD_REQUIRED',
+  INVALID_PASSWORD: 'INVALID_PASSWORD',
+
   // 请求相关
   INVALID_REQUEST: 'INVALID_REQUEST',
   INVALID_REQUEST_BODY: 'INVALID_REQUEST_BODY',
+  INVALID_DEVICE_ID: 'INVALID_DEVICE_ID',
   MISSING_FILE: 'MISSING_FILE',
   INVALID_FILE: 'INVALID_FILE',
 
@@ -41,6 +50,7 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
  * 错误响应接口
  */
 interface ErrorResponse {
+  success: false;
   error: string;
   errorCode: ErrorCodeType;
   details?: unknown;
@@ -50,6 +60,7 @@ interface ErrorResponse {
  * 成功响应接口
  */
 interface SuccessResponse<T = unknown> {
+  success: true;
   data?: T;
   message?: string;
 }
@@ -65,6 +76,7 @@ export function createErrorResponse(
 ): NextResponse<ErrorResponse> {
   return NextResponse.json(
     {
+      success: false as const,
       error: message,
       errorCode: code,
       ...(details && { details }),
@@ -83,10 +95,23 @@ export function createSuccessResponse<T = unknown>(
 ): NextResponse<SuccessResponse<T>> {
   return NextResponse.json(
     {
+      success: true as const,
       ...(data !== undefined && { data }),
       ...(message && { message }),
     },
     { status }
+  );
+}
+
+/**
+ * 将 AuthError 统一转换为 401/403 响应。
+ * 所有路由 handler 捕获 AuthError 后可直接返回此结果，避免重复手写状态码映射。
+ */
+export function handleAuthError(error: AuthError): NextResponse<ErrorResponse> {
+  return createErrorResponse(
+    error.message,
+    error.code === 'FORBIDDEN' ? ErrorCode.FORBIDDEN : ErrorCode.UNAUTHORIZED,
+    error.code === 'FORBIDDEN' ? 403 : 401
   );
 }
 
@@ -113,4 +138,7 @@ export const ApiError = {
 
   internalError: (message = '服务器内部错误', details?: Record<string, unknown>) =>
     createErrorResponse(message, ErrorCode.INTERNAL_ERROR, 500, details),
+
+  tooManyRequests: (message = '请求过于频繁，请稍后再试', details?: Record<string, unknown>) =>
+    createErrorResponse(message, ErrorCode.SERVICE_UNAVAILABLE, 429, details),
 };

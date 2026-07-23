@@ -189,7 +189,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
     <div
       className={cn(
         'z-50 flex items-center justify-center',
-        'bg-white/14 backdrop-blur-[12px]',
+        'bg-[#F1F5F9]/75 backdrop-blur-[12px] dark:bg-[#111218]/75',
         'animate-in fade-in duration-200',
         // 桌面端：相对于工作区定位
         'lg:absolute lg:inset-0',
@@ -217,14 +217,14 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
         {/* 玻璃圆环 + 中心文案 */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="relative">
-            <div className="h-[340px] w-[340px] rounded-full border border-white/50 bg-white/14 backdrop-blur-[18px] shadow-[0_30px_80px_-30px_rgba(47,107,255,0.38)]" />
+            <div className="h-[340px] w-[340px] rounded-full border border-[color:var(--ds-glass-stroke-light)] bg-[color:var(--ds-glass-white)] backdrop-blur-[20px] shadow-[var(--ds-shadow-3)]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="px-6 text-center">
-                <div className="text-sm font-bold tracking-[0.18em] text-slate-600">星空解码中</div>
-                <div className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">
+                <div className="text-xs font-bold tracking-[0.12em] text-[#3C58D8]">星空解码中</div>
+                <div className="mt-2 font-heading text-2xl font-bold tracking-tight text-slate-900">
                   提取命运密码
                 </div>
-                <div className="mt-3 text-xs text-slate-500">
+                <div className="mt-3 text-xs text-slate-600">
                   AI 正在从海量星宿数据中为你建立精准映射
                 </div>
               </div>

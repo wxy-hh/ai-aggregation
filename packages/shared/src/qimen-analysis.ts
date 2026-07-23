@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { callModel, ModelUpstreamError, type ModelConfig } from './destiny-model-client';
 
 export type QimenQuestionCategory =
   | 'career'
@@ -19,6 +20,7 @@ export type QimenAnalyzeRequest = {
     datetime: string;
     location: string;
     chartMethod: QimenChartMethod;
+    longitude?: number;
   };
   question: {
     category: QimenQuestionCategory;
@@ -42,6 +44,8 @@ export type QimenBoardCell = {
   isValueDoor?: boolean;
   isVoid?: boolean;
   isHorse?: boolean;
+  wuxing?: string;
+  pattern?: string;
 };
 
 export type QimenAnalysisBaseResult = {
@@ -53,6 +57,10 @@ export type QimenAnalysisBaseResult = {
     horsePosition: string;
     valueSymbol: string;
     valueDoor: string;
+    xunshou: string;
+    riGan: string;
+    shiGan: string;
+    trueSolarTime?: string;
   };
   board: QimenBoardCell[];
   score: number;
@@ -98,6 +106,7 @@ export const qimenAnalyzeRequestSchema = z.object({
     datetime: z.string().min(1, '起局时间不能为空'),
     location: z.string().min(1, '地点不能为空'),
     chartMethod: z.enum(['time', 'daily']),
+    longitude: z.number().optional(),
   }),
   question: z.object({
     category: z.enum(['career', 'wealth', 'love', 'health', 'decision', 'study', 'other']),
@@ -121,6 +130,8 @@ const qimenCellSchema = z.object({
   isValueDoor: z.boolean().optional(),
   isVoid: z.boolean().optional(),
   isHorse: z.boolean().optional(),
+  wuxing: z.string().optional(),
+  pattern: z.string().optional(),
 });
 
 const qimenBaseResultSchema = z.object({
@@ -132,6 +143,10 @@ const qimenBaseResultSchema = z.object({
     horsePosition: z.string().trim().min(1),
     valueSymbol: z.string().trim().min(1),
     valueDoor: z.string().trim().min(1),
+    xunshou: z.string().trim().min(1),
+    riGan: z.string().trim().min(1),
+    shiGan: z.string().trim().min(1),
+    trueSolarTime: z.string().optional(),
   }),
   board: z.array(qimenCellSchema).min(9).max(9),
   score: z.number().int().min(40).max(95),
@@ -182,13 +197,113 @@ const outputLengthLabelMap = {
   detailed: '详版',
 } as const;
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
-const BASE_STAGE_TIMEOUT_MS = 45000;
-const SECTION_STAGE_TIMEOUT_MS = 40000;
-const BASE_MAX_OUTPUT_TOKENS = 1200;
-const STRATEGY_MAX_OUTPUT_TOKENS = 1400;
-const TIMING_MAX_OUTPUT_TOKENS = 900;
-const SUMMARY_MAX_OUTPUT_TOKENS = 600;
+// JSON Schema 常量，用于 Doubao json_schema 结构化输出
+const QIMEN_BASE_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartTitle: { type: 'string' },
+    chartMeta: {
+      type: 'object',
+      properties: {
+        dun: { type: 'string' },
+        ju: { type: 'string' },
+        jiaziXunkong: { type: 'string' },
+        horsePosition: { type: 'string' },
+        valueSymbol: { type: 'string' },
+        valueDoor: { type: 'string' },
+      },
+      required: ['dun', 'ju', 'jiaziXunkong', 'horsePosition', 'valueSymbol', 'valueDoor'],
+      additionalProperties: false,
+    },
+    board: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          palace: { type: 'string' },
+          luoshu: { type: 'integer', minimum: 1, maximum: 9 },
+          direction: { type: 'string' },
+          god: { type: 'string' },
+          star: { type: 'string' },
+          door: { type: 'string' },
+          heavenStem: { type: 'string' },
+          earthStem: { type: 'string' },
+          isValueSymbol: { type: 'boolean' },
+          isValueDoor: { type: 'boolean' },
+          isVoid: { type: 'boolean' },
+          isHorse: { type: 'boolean' },
+        },
+        required: [
+          'palace',
+          'luoshu',
+          'direction',
+          'god',
+          'star',
+          'door',
+          'heavenStem',
+          'earthStem',
+        ],
+        additionalProperties: false,
+      },
+    },
+    score: { type: 'integer', minimum: 40, maximum: 95 },
+    disclaimer: { type: 'string' },
+  },
+  required: ['chartTitle', 'chartMeta', 'board', 'score', 'disclaimer'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_STRATEGY_OVERVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['overallAssessment', 'riskAlerts', 'actionSuggestions'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_TIMING_WINDOWS_SCHEMA = {
+  type: 'object',
+  properties: {
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['timingWindows'],
+  additionalProperties: false,
+} as const;
+
+const QIMEN_CHART_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartSummary: { type: 'string' },
+  },
+  required: ['chartSummary'],
+  additionalProperties: false,
+} as const;
+
+type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+
+// 异步 worker 链路与页面直连链路需要保持一致的模型时间预算。
+// 当前奇门能力使用强推理模型，40-45s 在生产环境中会被频繁打断。
+const BASE_STAGE_TIMEOUT_MS = 300000;
+const SECTION_STAGE_TIMEOUT_MS = 300000;
+// Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
+const BASE_MAX_OUTPUT_TOKENS = 8192;
+const STRATEGY_MAX_OUTPUT_TOKENS = 8192;
+const TIMING_MAX_OUTPUT_TOKENS = 4096;
+const SUMMARY_MAX_OUTPUT_TOKENS = 4096;
 
 const PALACE_ORDER = [
   '巽四宫',
@@ -311,42 +426,34 @@ class UpstreamModelError extends Error {
   }
 }
 
-type ArkConfig = {
-  apiKey: string;
-  baseUrl: string;
-};
-
 type QimenTraceContext = {
   analysisId?: string;
   stage: 'baseResult' | QimenSectionKey;
   sectionKey?: QimenSectionKey;
   hooks?: {
-    onRequestStart?: (meta: Record<string, unknown>) => void;
-    onRequestSuccess?: (meta: Record<string, unknown>) => void;
-    onRequestNonOk?: (meta: Record<string, unknown>) => void;
-    onRequestTimeout?: (meta: Record<string, unknown>) => void;
-    onRequestError?: (meta: Record<string, unknown>) => void;
+    onRequestStart?: (
+      meta: Record<string, unknown>
+    ) => void | { maxOutputTokens?: number } | Promise<void | { maxOutputTokens?: number }>;
+    onRequestSuccess?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestNonOk?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestTimeout?: (meta: Record<string, unknown>) => void | Promise<void>;
+    onRequestError?: (meta: Record<string, unknown>) => void | Promise<void>;
   };
 };
 
-export function resolveArkConfig(env: NodeJS.ProcessEnv): ArkConfig {
-  const apiKey = env.ARK_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing ARK_API_KEY');
-  }
-
-  return {
-    apiKey,
-    baseUrl: env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
-  };
-}
-
 export async function generateQimenBaseResult(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
-  trace?: QimenTraceContext
+  config: ModelConfig,
+  trace?: QimenTraceContext,
+  chart?: QimenAnalysisBaseResult
 ): Promise<QimenAnalysisBaseResult> {
-  const payload = await requestArkPayload({
+  // 如果提供了本地排盘结果，直接返回，不再调用 LLM
+  if (chart) {
+    return chart;
+  }
+
+  // 兼容旧路径：LLM 自行排盘
+  const result = await requestModelPayload({
     config,
     input: [
       { role: 'system', content: buildBaseSystemPrompt() },
@@ -356,158 +463,163 @@ export async function generateQimenBaseResult(
     temperature: 0.2,
     timeoutMs: BASE_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_base_result', schema: QIMEN_BASE_RESULT_SCHEMA },
   });
 
-  return normalizeBaseResult(parseModelJson(extractArkOutputText(payload)));
+  return normalizeBaseResult(parseModelJson(result.text));
 }
 
 export async function generateQimenSectionResult<K extends QimenSectionKey>(
   sectionKey: K,
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
-  trace?: QimenTraceContext
+  config: ModelConfig,
+  trace?: QimenTraceContext,
+  chart?: QimenAnalysisBaseResult
 ): Promise<QimenSectionResultMap[K]> {
   switch (sectionKey) {
     case 'strategyOverview':
-      return generateStrategyOverview(input, config, trace) as Promise<QimenSectionResultMap[K]>;
+      return generateStrategyOverview(input, config, trace, chart) as Promise<
+        QimenSectionResultMap[K]
+      >;
     case 'timingWindows':
-      return generateTimingWindows(input, config, trace) as Promise<QimenSectionResultMap[K]>;
+      return generateTimingWindows(input, config, trace, chart) as Promise<
+        QimenSectionResultMap[K]
+      >;
     case 'chartSummary':
-      return generateChartSummary(input, config, trace) as Promise<QimenSectionResultMap[K]>;
+      return generateChartSummary(input, config, trace, chart) as Promise<QimenSectionResultMap[K]>;
   }
 }
 
 async function generateStrategyOverview(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
-  trace?: QimenTraceContext
+  config: ModelConfig,
+  trace?: QimenTraceContext,
+  chart?: QimenAnalysisBaseResult
 ) {
-  const payload = await requestArkPayload({
+  const hasChart = Boolean(chart);
+  const result = await requestModelPayload({
     config,
     input: [
-      { role: 'system', content: buildStrategySystemPrompt(input) },
-      { role: 'user', content: buildUserPrompt(input) },
+      { role: 'system', content: buildStrategySystemPrompt(input, hasChart) },
+      { role: 'user', content: buildUserPrompt(input, chart) },
     ],
     maxOutputTokens: STRATEGY_MAX_OUTPUT_TOKENS,
     temperature: 0.2,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_strategy_overview', schema: QIMEN_STRATEGY_OVERVIEW_SCHEMA },
   });
 
-  return normalizeStrategyOverview(parseModelJson(extractArkOutputText(payload)), input);
+  return normalizeStrategyOverview(parseModelJson(result.text), input);
 }
 
 async function generateTimingWindows(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
-  trace?: QimenTraceContext
+  config: ModelConfig,
+  trace?: QimenTraceContext,
+  chart?: QimenAnalysisBaseResult
 ) {
-  const payload = await requestArkPayload({
+  const hasChart = Boolean(chart);
+  const result = await requestModelPayload({
     config,
     input: [
-      { role: 'system', content: buildTimingSystemPrompt(input) },
-      { role: 'user', content: buildUserPrompt(input) },
+      { role: 'system', content: buildTimingSystemPrompt(input, hasChart) },
+      { role: 'user', content: buildUserPrompt(input, chart) },
     ],
     maxOutputTokens: TIMING_MAX_OUTPUT_TOKENS,
     temperature: 0.15,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_timing_windows', schema: QIMEN_TIMING_WINDOWS_SCHEMA },
   });
 
-  return normalizeTimingWindows(parseModelJson(extractArkOutputText(payload)), input);
+  return normalizeTimingWindows(parseModelJson(result.text), input);
 }
 
 async function generateChartSummary(
   input: QimenAnalyzeRequest,
-  config: ArkConfig,
-  trace?: QimenTraceContext
+  config: ModelConfig,
+  trace?: QimenTraceContext,
+  chart?: QimenAnalysisBaseResult
 ) {
-  const payload = await requestArkPayload({
+  const hasChart = Boolean(chart);
+  const result = await requestModelPayload({
     config,
     input: [
-      { role: 'system', content: buildSummarySystemPrompt() },
-      { role: 'user', content: buildUserPrompt(input) },
+      { role: 'system', content: buildSummarySystemPrompt(hasChart) },
+      { role: 'user', content: buildUserPrompt(input, chart) },
     ],
     maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS,
     temperature: 0.15,
     timeoutMs: SECTION_STAGE_TIMEOUT_MS,
     trace,
+    jsonSchema: { name: 'qimen_chart_summary', schema: QIMEN_CHART_SUMMARY_SCHEMA },
   });
 
-  return normalizeChartSummary(parseModelJson(extractArkOutputText(payload)));
+  return normalizeChartSummary(parseModelJson(result.text));
 }
 
-async function requestArkPayload({
+async function requestModelPayload({
   config,
   input,
   maxOutputTokens,
   temperature,
   timeoutMs,
   trace,
+  jsonSchema,
 }: {
-  config: ArkConfig;
+  config: ModelConfig;
   input: Array<{ role: 'system' | 'user'; content: string }>;
   maxOutputTokens: number;
   temperature: number;
   timeoutMs: number;
   trace?: QimenTraceContext;
+  jsonSchema?: JsonSchemaConfig;
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
 
-  trace?.hooks?.onRequestStart?.({
+  const requestStartResult = await trace?.hooks?.onRequestStart?.({
     analysisId: trace?.analysisId,
     stage: trace?.stage,
     sectionKey: trace?.sectionKey,
-    model: ARK_MODEL,
+    model: config.model,
+    provider: config.provider,
     maxOutputTokens,
     timeoutMs,
+    messages: input,
   });
+  const overriddenMaxTokens = requestStartResult?.maxOutputTokens;
+  const effectiveMaxOutputTokens =
+    typeof overriddenMaxTokens === 'number' && Number.isFinite(overriddenMaxTokens)
+      ? Math.max(1, Math.min(maxOutputTokens, Math.floor(overriddenMaxTokens)))
+      : maxOutputTokens;
 
   try {
-    const response = await fetch(`${config.baseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input,
-        temperature,
-        max_output_tokens: maxOutputTokens,
-        reasoning: { effort: 'low' },
-        text: { format: { type: 'json_object' } },
-      }),
-      signal: controller.signal,
+    const result = await callModel({
+      config,
+      messages: input,
+      maxTokens: effectiveMaxOutputTokens,
+      temperature,
+      timeoutMs,
+      json: jsonSchema
+        ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } }
+        : undefined,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      trace?.hooks?.onRequestNonOk?.({
-        analysisId: trace?.analysisId,
-        stage: trace?.stage,
-        sectionKey: trace?.sectionKey,
-        status: response.status,
-        durationMs: Date.now() - startedAt,
-      });
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
-    }
-
-    const payload = await response.json();
-    trace?.hooks?.onRequestSuccess?.({
+    await trace?.hooks?.onRequestSuccess?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
       sectionKey: trace?.sectionKey,
-      status: response.status,
+      status: 200,
       durationMs: Date.now() - startedAt,
+      payload: result.raw,
+      maxOutputTokens: effectiveMaxOutputTokens,
     });
-    return payload;
+    return result;
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'AbortError';
     if (isTimeout) {
-      trace?.hooks?.onRequestTimeout?.({
+      await trace?.hooks?.onRequestTimeout?.({
         analysisId: trace?.analysisId,
         stage: trace?.stage,
         sectionKey: trace?.sectionKey,
@@ -517,7 +629,18 @@ async function requestArkPayload({
       throw new UpstreamModelError('模型推演超时，请稍后重试', 504);
     }
 
-    trace?.hooks?.onRequestError?.({
+    if (error instanceof ModelUpstreamError) {
+      await trace?.hooks?.onRequestNonOk?.({
+        analysisId: trace?.analysisId,
+        stage: trace?.stage,
+        sectionKey: trace?.sectionKey,
+        status: error.status,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new UpstreamModelError(error.message, error.status);
+    }
+
+    await trace?.hooks?.onRequestError?.({
       analysisId: trace?.analysisId,
       stage: trace?.stage,
       sectionKey: trace?.sectionKey,
@@ -525,23 +648,78 @@ async function requestArkPayload({
       durationMs: Date.now() - startedAt,
     });
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
-function buildUserPrompt(input: QimenAnalyzeRequest) {
-  return [
-    '请根据以下信息输出奇门基础盘面 JSON：',
-    `起局时间：${input.context.datetime}`,
-    `地点：${input.context.location}`,
-    `起局方式：${chartMethodLabelMap[input.context.chartMethod]}`,
-    `问题类别：${categoryLabelMap[input.question.category]}`,
-    `问题描述：${input.question.description}`,
-    `分析侧重：${focusLabelMap[input.question.focus]}`,
-    `语言风格：${outputStyleLabelMap[input.question.outputStyle]}`,
-    `结果长度：${outputLengthLabelMap[input.question.outputLength]}`,
-  ].join('\n');
+/**
+ * 将盘局数据格式化为 Prompt 中的表格
+ */
+export function formatChartForPrompt(chart: QimenAnalysisBaseResult): string {
+  const m = chart.chartMeta;
+
+  let out = '## 盘局基本信息\n';
+  out += `- 局数：${m.dun}${m.ju}局\n`;
+  out += `- 旬首：${m.xunshou} | 日干：${m.riGan}（代表求测人）| 时干：${m.shiGan}（代表所问之事）\n`;
+  out += `- 值符：${m.valueSymbol}（当前时空的主导星曜）| 值使：${m.valueDoor}（事态发展的关键门户）\n`;
+  out += `- 空亡：${m.jiaziXunkong}（能量减半、事情虚而不实的宫位）\n`;
+  if (m.horsePosition) out += `- 马星：${m.horsePosition}（主变动、奔波的宫位）\n`;
+  if (m.trueSolarTime) out += `- 真太阳时：${m.trueSolarTime}（已校准当地时间）\n`;
+
+  out += '\n## 九宫盘局数据（每个宫位的完整配置）\n';
+  out += '| 宫位 | 方位·五行 | 八神 | 九星 | 八门 | 天盘干 | 地盘干 | 格局 | 标记 |\n';
+  out += '|------|-----------|------|------|------|--------|--------|------|------|\n';
+
+  for (const cell of chart.board) {
+    const tags = [
+      cell.isValueSymbol ? '⭐值符宫' : '',
+      cell.isValueDoor ? '🚪值使宫' : '',
+      cell.isVoid ? '○空亡' : '',
+      cell.isHorse ? '🐎驿马' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    out += `| ${cell.palace} | ${cell.direction}·${cell.wuxing || '-'} | ${cell.god} | ${cell.star} | ${cell.door} | ${cell.heavenStem} | ${cell.earthStem} | ${cell.pattern || '-'} | ${tags || '-'} |\n`;
+  }
+
+  return out;
+}
+
+function buildUserPrompt(input: QimenAnalyzeRequest, chart?: QimenAnalysisBaseResult) {
+  const lines = [];
+
+  if (chart) {
+    // 本地排盘模式：LLM 只做分析，接收完整的盘局数据
+    lines.push('请根据以下已计算好的奇门遁甲盘局数据，进行专业分析解读。');
+    lines.push('');
+    lines.push(formatChartForPrompt(chart));
+    lines.push('');
+    lines.push('## 用户问题');
+    lines.push(`起局时间：${input.context.datetime}`);
+    if (chart.chartMeta.trueSolarTime) {
+      lines.push(`真太阳时：${chart.chartMeta.trueSolarTime}`);
+    }
+    lines.push(`地点：${input.context.location}`);
+    lines.push(`起局方式：${chartMethodLabelMap[input.context.chartMethod]}`);
+    lines.push(`问题类别：${categoryLabelMap[input.question.category]}`);
+    lines.push(`问题描述：${input.question.description}`);
+    lines.push(`分析侧重：${focusLabelMap[input.question.focus]}`);
+    lines.push(`语言风格：${outputStyleLabelMap[input.question.outputStyle]}`);
+    lines.push(`结果长度：${outputLengthLabelMap[input.question.outputLength]}`);
+  } else {
+    // 兼容旧模式：LLM 自行排盘
+    lines.push('请根据以下信息输出奇门基础盘面 JSON：');
+    lines.push(`起局时间：${input.context.datetime}`);
+    lines.push(`地点：${input.context.location}`);
+    lines.push(`起局方式：${chartMethodLabelMap[input.context.chartMethod]}`);
+    lines.push(`问题类别：${categoryLabelMap[input.question.category]}`);
+    lines.push(`问题描述：${input.question.description}`);
+    lines.push(`分析侧重：${focusLabelMap[input.question.focus]}`);
+    lines.push(`语言风格：${outputStyleLabelMap[input.question.outputStyle]}`);
+    lines.push(`结果长度：${outputLengthLabelMap[input.question.outputLength]}`);
+  }
+
+  return lines.join('\n');
 }
 
 function buildBaseSystemPrompt() {
@@ -564,22 +742,51 @@ function buildBaseSystemPrompt() {
 `.trim();
 }
 
-function buildStrategySystemPrompt(input: QimenAnalyzeRequest) {
+const YONGSHEN_GUIDE: Record<string, string> = {
+  career: '以开门（工作机会）、值符（领导/平台）为主要用神，兼看日干落宫与开门的关系',
+  wealth: '以生门（财运）、戊（资本）为主要用神，兼看日干落宫与生门的关系',
+  love: '以六合（婚姻/合作）、乙（女方）、庚（男方）为主要用神',
+  health: '以天芮星（疾病）、死门（严重程度）为主要用神，兼看日干落宫旺衰',
+  decision: '以值符（大局趋势）、值使（推进方向）为主要用神，对比选项对应宫位的吉凶',
+  study: '以天辅星（学业/贵人）、景门（文书/考试）为主要用神',
+  other: '以日干落宫为出发点，结合值符值使通盘分析',
+};
+
+export function buildStrategySystemPrompt(input: QimenAnalyzeRequest, hasChart = false) {
   const maxListCount = input.question.outputLength === 'brief' ? 3 : 5;
+  const yongShen = YONGSHEN_GUIDE[input.question.category] || YONGSHEN_GUIDE.other;
+
+  const chartHint = hasChart
+    ? '盘局数据已在上方提供（包含九宫位置、八神、九星、八门、天盘干、地盘干、格局、值符值使、空亡马星）。你的分析必须引用具体宫位和格局作为依据，禁止脱离盘局数据泛泛而谈。'
+    : '';
 
   return `
 你是专业奇门遁甲分析助手。必须仅返回合法 JSON 对象，禁止输出任何额外文字、解释和 markdown。
 禁止输出思考过程。
 
+${chartHint}
+
+## 用神指引（根据问题类别确定分析焦点）
+${yongShen}
+
+## 分析框架（请按此步骤逐项分析）
+1. 定位日干${input.question.category === 'love' ? '和用神' : ''}所在宫位，分析其旺衰、格局、临星临门，判读求测人当前状态
+2. 定位时干所在宫位，分析所问之事的状态和趋势
+3. 检查值符宫（大局主导力）和值使宫（发展通道），判断整体有利还是不利
+4. 单独检查空亡宫——空亡宫涉及的事情虚而不实、力量减半，需要特别提醒用户
+5. 检查马星宫——如有变动信号需要告知用户
+6. 综合分析：对比有利宫位和不利宫位，给出整体判断
+
+## 输出要求
 为前端右侧策略区生成最终定稿，必须且仅返回：
 - overallAssessment: 一段完整综合判断，1-2 句
 - riskAlerts: ${maxListCount} 条完整风险提醒
 - actionSuggestions: ${maxListCount} 条完整行动建议
 
-要求：
-1. 返回内容必须是最终版，禁止续写、禁止占位、禁止后续修订
-2. riskAlerts 与 actionSuggestions 每条都要独立成句
-3. 不要输出 board、chartMeta、timingWindows、chartSummary、score、disclaimer
+每条分析必须引用具体宫位作为依据，格式如：
+- 综合："日干${input.question.category === 'career' ? '甲' : ''}落X宫临X星+X门，主…"
+- 风险："X宫X神+X门+空亡，主…需注意…"
+- 建议："X宫X门临X神，宜…"
 
 返回格式：
 {
@@ -590,42 +797,61 @@ function buildStrategySystemPrompt(input: QimenAnalyzeRequest) {
 `.trim();
 }
 
-function buildTimingSystemPrompt(input: QimenAnalyzeRequest) {
+export function buildTimingSystemPrompt(input: QimenAnalyzeRequest, hasChart = false) {
   const maxTimingCount = input.question.outputLength === 'brief' ? 2 : 4;
+
+  const chartHint = hasChart
+    ? `盘局数据已在上方提供。请按以下规则推演时间窗口：
+1. 检查空亡宫——空亡逢冲或出空之时是关键节点（约10天一周期）
+2. 检查马星宫——马星逢冲之时是变动节点
+3. 检查值使宫——值使所落宫位对应的节气时段是事态推进期
+4. 检查用神宫位（根据问题类别确定）——用神旺相之时为有利窗口，用神受克之时为不利窗口
+5. period 格式为具体日期范围（年-月-日 至 年-月-日），需基于当前起局时间推算`
+    : '';
 
   return `
 你是专业奇门遁甲分析助手。必须仅返回合法 JSON 对象，禁止输出任何额外文字。
 禁止输出思考过程。
 
-只生成“关键时间窗口”最终定稿，必须且仅返回：
+${chartHint}
+
+只生成”关键时间窗口”最终定稿，必须且仅返回：
 {
-  "timingWindows": [
-    { "period": "string", "guidance": "string" }
+  “timingWindows”: [
+    { “period”: “string”, “guidance”: “string” }
   ]
 }
 
 要求：
-1. 输出 ${maxTimingCount} 项以内的完整时间窗口
-2. 每项 period 与 guidance 都必须可直接展示
-3. 禁止占位、禁止续写、禁止后续修订
-4. 不要输出其他字段
+1. 输出 ${maxTimingCount} 项以内的完整时间窗口，按时间先后排序
+2. 每项 period 必须是具体的日期范围（如”2026年6月6日-6月21日”），不能是模糊描述
+3. 每项 guidance 需包含：奇门依据（引用具体宫位）+ 具体行动建议
+4. 禁止占位、禁止续写、禁止后续修订
+5. 不要输出其他字段
 `.trim();
 }
 
-function buildSummarySystemPrompt() {
+export function buildSummarySystemPrompt(hasChart = false) {
+  const chartHint = hasChart
+    ? '盘局数据已在上方提供。请基于盘局中的关键格局（天盘干+地盘干的组合）、八门吉凶分布、值符值使位置进行总结。'
+    : '';
+
   return `
 你是专业奇门遁甲分析助手。必须仅返回合法 JSON 对象，禁止输出任何额外文字。
 禁止输出思考过程。
 
-只生成“盘局摘要”最终定稿，必须且仅返回：
+${chartHint}
+
+只生成”盘局摘要”最终定稿，必须且仅返回：
 {
-  "chartSummary": "string"
+  “chartSummary”: “string”
 }
 
 要求：
-1. 输出 1-2 句完整总结
-2. 可直接展示，禁止续写、禁止占位、禁止后续修订
-3. 不要输出其他字段
+1. 输出 1-2 句完整总结，直接点出核心结论
+2. 简要引用关键宫位依据（如”开门临值符在坎一宫，主现有工作稳定有贵人”）
+3. 可直接展示，禁止占位、禁止续写、禁止后续修订
+4. 不要输出其他字段
 `.trim();
 }
 
@@ -635,8 +861,7 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
     return parsed.data;
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const chartMetaRaw =
     raw.chartMeta && typeof raw.chartMeta === 'object'
       ? (raw.chartMeta as Record<string, unknown>)
@@ -662,6 +887,8 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
       isValueDoor: Boolean(row.isValueDoor),
       isVoid: Boolean(row.isVoid),
       isHorse: Boolean(row.isHorse),
+      wuxing: typeof row.wuxing === 'string' ? row.wuxing : undefined,
+      pattern: typeof row.pattern === 'string' ? row.pattern : undefined,
     });
   }
 
@@ -685,6 +912,10 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
       isValueDoor: Boolean(value.isValueDoor),
       isVoid: Boolean(value.isVoid),
       isHorse: Boolean(value.isHorse),
+      wuxing: (value.wuxing ?? (fallback as Record<string, unknown>).wuxing) as string | undefined,
+      pattern: (value.pattern ?? (fallback as Record<string, unknown>).pattern) as
+        | string
+        | undefined,
     };
   });
 
@@ -694,24 +925,34 @@ function normalizeBaseResult(payload: unknown): QimenAnalysisBaseResult {
       32
     ),
     chartMeta: {
-      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '阳遁', 12),
-      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '三局', 12),
+      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '', 12),
+      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '', 12),
       jiaziXunkong: sanitizeText(
-        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '甲辰旬 寅卯空',
+        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '',
         20
       ),
       horsePosition: sanitizeText(
-        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '马星在巳',
+        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '',
         20
       ),
       valueSymbol: sanitizeText(
-        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '天冲星',
+        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '',
         16
       ),
       valueDoor: sanitizeText(
-        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '伤门',
+        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '',
         16
       ),
+      xunshou: sanitizeText(
+        typeof chartMetaRaw.xunshou === 'string' ? chartMetaRaw.xunshou : '',
+        8
+      ),
+      riGan: sanitizeText(typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '', 4),
+      shiGan: sanitizeText(typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '', 4),
+      trueSolarTime:
+        typeof chartMetaRaw.trueSolarTime === 'string'
+          ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
+          : undefined,
     },
     board,
     score: Math.max(40, Math.min(95, Math.round(typeof raw.score === 'number' ? raw.score : 78))),
@@ -730,8 +971,7 @@ function normalizeStrategyOverview(
     return parsed.data;
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   const riskAlertsRaw = Array.isArray(raw.riskAlerts) ? raw.riskAlerts : [];
   const actionSuggestionsRaw = Array.isArray(raw.actionSuggestions) ? raw.actionSuggestions : [];
 
@@ -758,10 +998,12 @@ function normalizeStrategyOverview(
 }
 
 function normalizeTimingWindows(payload: unknown, input: QimenAnalyzeRequest): QimenTimingWindow[] {
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-  const timingWindowsRaw =
-    Array.isArray(raw.timingWindows) ? raw.timingWindows : Array.isArray(payload) ? payload : [];
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const timingWindowsRaw = Array.isArray(raw.timingWindows)
+    ? raw.timingWindows
+    : Array.isArray(payload)
+      ? payload
+      : [];
 
   const parsed = qimenTimingWindowsSchema.safeParse(timingWindowsRaw);
   if (parsed.success && parsed.data.length >= 1) {
@@ -780,12 +1022,13 @@ function normalizeTimingWindows(payload: unknown, input: QimenAnalyzeRequest): Q
     .filter((item): item is QimenTimingWindow => Boolean(item?.period && item?.guidance))
     .slice(0, input.question.outputLength === 'brief' ? 2 : 4);
 
-  return timingWindows.length >= 1 ? timingWindows : buildFallbackTimingWindows(input.question.outputLength);
+  return timingWindows.length >= 1
+    ? timingWindows
+    : buildFallbackTimingWindows(input.question.outputLength);
 }
 
 function normalizeChartSummary(payload: unknown): string {
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
   return sanitizeText(
     typeof raw.chartSummary === 'string'
       ? raw.chartSummary
@@ -909,10 +1152,4 @@ function parseModelJson(text: string): unknown {
 
 function sanitizeText(value: string, maxLen: number) {
   return value.replace(/\s+/g, ' ').trim().slice(0, maxLen);
-}
-
-function mapArkError(status: number) {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
 }

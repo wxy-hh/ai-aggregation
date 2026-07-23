@@ -119,7 +119,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
       {/* 主控制条 */}
         <div
           className={cn(
-            'flex items-center gap-6 bg-white dark:bg-[#111218] px-6 h-16 rounded-[24px] border border-slate-200 dark:border-slate-800/50 shadow-[0_8px_24px_rgba(0,0,0,0.02)]',
+            'flex h-16 items-center gap-6 rounded-[24px] border border-white/60 bg-white/60 px-6 shadow-[0_10px_28px_rgba(76,95,154,0.08),inset_0_1px_0_0_rgba(255,255,255,0.4)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/55',
             !hasVideo && 'opacity-50'
           )}
         >
@@ -153,7 +153,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
         </div>
 
         {/* 当前时间 */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-2 rounded-lg border border-white/50 bg-white/50 px-3 py-1.5 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
           <Clock className="w-3.5 h-3.5 text-slate-400" />
           <span className="text-xs font-bold font-mono text-slate-600 dark:text-slate-300">
             {formatTime(currentTime)}
@@ -213,7 +213,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="p-4 bg-white/50 dark:bg-[#111218]/50 rounded-[32px] border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-md">
+              <div className="rounded-[32px] border border-white/50 bg-white/45 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40">
                 <div className="h-20 flex items-center gap-1 overflow-x-auto no-scrollbar">
                   {hasVideo ? (
                     // 实际帧预览（占位）

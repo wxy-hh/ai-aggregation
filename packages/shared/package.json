@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
     }
   },
   "scripts": {
@@ -17,6 +21,9 @@
   },
   "dependencies": {
     "ioredis": "^5.4.1",
+    "lunar-javascript": "^1.7.7",
+    "qimen-dunjia": "^2.1.0",
+    "tyme4ts": "1.4.6",
     "zod": "^3.24.1"
   },
   "devDependencies": {

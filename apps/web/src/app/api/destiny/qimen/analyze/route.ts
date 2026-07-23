@@ -5,7 +5,21 @@ import type {
   QimenSectionKey,
   QimenStreamEvent,
 } from '@/app/destiny/_components/qimen-types';
-import { extractArkOutputText, extractJsonBlock } from '../../_lib/ark-response';
+import { extractArkUsage, extractJsonBlock } from '../../_lib/ark-response';
+import {
+  resolveModelConfig,
+  callModel,
+  ModelConfigError,
+  ModelUpstreamError,
+  type ModelConfig,
+} from '@repo/shared';
+import { getCurrentUser } from '@/lib/auth/get-current-user';
+import { AuthError } from '@/lib/auth/errors';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { getBillingRequestId } from '@/lib/billing/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -23,6 +37,7 @@ const RequestSchema = z.object({
     outputStyle: z.enum(['professional', 'plain']),
     outputLength: z.enum(['brief', 'detailed']),
   }),
+  provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
 const QimenCellSchema = z.object({
@@ -49,6 +64,10 @@ const QimenModelSchema = z.object({
     horsePosition: z.string().trim().min(1),
     valueSymbol: z.string().trim().min(1),
     valueDoor: z.string().trim().min(1),
+    xunshou: z.string().trim().default(''),
+    riGan: z.string().trim().default(''),
+    shiGan: z.string().trim().default(''),
+    trueSolarTime: z.string().optional(),
   }),
   board: z.array(QimenCellSchema).min(9).max(9),
   chartSummary: z.string().trim().min(1),
@@ -88,13 +107,134 @@ const QuickSectionSchema = z.object({
 type QimenAnalyzeInput = z.infer<typeof RequestSchema>;
 type QimenAnalyzeResult = z.infer<typeof QimenModelSchema>;
 
-const ARK_MODEL = 'doubao-seed-2-0-lite-260215';
+// JSON Schema 常量，用于结构化输出（doubao=json_schema / deepseek=json_object+样例）
+type JsonSchemaConfig = { name: string; schema: Record<string, unknown> };
+
+const QIMEN_QUICK_SECTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+    chartSummary: { type: 'string' },
+  },
+  additionalProperties: false,
+} as const;
+
+const QIMEN_FULL_RESULT_SCHEMA = {
+  type: 'object',
+  properties: {
+    chartTitle: { type: 'string' },
+    chartMeta: {
+      type: 'object',
+      properties: {
+        dun: { type: 'string' },
+        ju: { type: 'string' },
+        jiaziXunkong: { type: 'string' },
+        horsePosition: { type: 'string' },
+        valueSymbol: { type: 'string' },
+        valueDoor: { type: 'string' },
+        xunshou: { type: 'string' },
+        riGan: { type: 'string' },
+        shiGan: { type: 'string' },
+        trueSolarTime: { type: 'string' },
+      },
+      required: [
+        'dun',
+        'ju',
+        'jiaziXunkong',
+        'horsePosition',
+        'valueSymbol',
+        'valueDoor',
+        'xunshou',
+        'riGan',
+        'shiGan',
+      ],
+      additionalProperties: false,
+    },
+    board: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          palace: { type: 'string' },
+          luoshu: { type: 'integer', minimum: 1, maximum: 9 },
+          direction: { type: 'string' },
+          god: { type: 'string' },
+          star: { type: 'string' },
+          door: { type: 'string' },
+          heavenStem: { type: 'string' },
+          earthStem: { type: 'string' },
+          isValueSymbol: { type: 'boolean' },
+          isValueDoor: { type: 'boolean' },
+          isVoid: { type: 'boolean' },
+          isHorse: { type: 'boolean' },
+        },
+        required: [
+          'palace',
+          'luoshu',
+          'direction',
+          'god',
+          'star',
+          'door',
+          'heavenStem',
+          'earthStem',
+        ],
+        additionalProperties: false,
+      },
+    },
+    chartSummary: { type: 'string' },
+    overallAssessment: { type: 'string' },
+    riskAlerts: { type: 'array', items: { type: 'string' } },
+    actionSuggestions: { type: 'array', items: { type: 'string' } },
+    timingWindows: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          period: { type: 'string' },
+          guidance: { type: 'string' },
+        },
+        required: ['period', 'guidance'],
+        additionalProperties: false,
+      },
+    },
+    score: { type: 'integer', minimum: 40, maximum: 95 },
+    disclaimer: { type: 'string' },
+  },
+  required: [
+    'chartTitle',
+    'chartMeta',
+    'board',
+    'chartSummary',
+    'overallAssessment',
+    'riskAlerts',
+    'actionSuggestions',
+    'timingWindows',
+    'score',
+    'disclaimer',
+  ],
+  additionalProperties: false,
+} as const;
 const QUICK_STAGE_TIMEOUT_MS = 20000;
 const FULL_STAGE_TIMEOUT_MS = 300000;
-const QUICK_MAX_OUTPUT_TOKENS = 1400;
-const QUICK_RETRY_MAX_OUTPUT_TOKENS = 1800;
-const PRIMARY_MAX_OUTPUT_TOKENS = 2600;
-const RETRY_MAX_OUTPUT_TOKENS = 4600;
+// Seed 2.0 模型强制推理，约 75% 输出 token 用于推理过程，需预留充足预算
+const QUICK_MAX_OUTPUT_TOKENS = 8192;
+const QUICK_RETRY_MAX_OUTPUT_TOKENS = 12288;
+const PRIMARY_MAX_OUTPUT_TOKENS = 16384;
+const RETRY_MAX_OUTPUT_TOKENS = 24576;
 
 const categoryLabelMap = {
   career: '事业发展',
@@ -256,8 +396,15 @@ class UpstreamModelError extends Error {
   }
 }
 
+type QimenBillingContext = {
+  userId: string;
+  requestId: string;
+};
+
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    const userId = user.id;
     const body = await request.json();
     const parsed = RequestSchema.safeParse(body);
 
@@ -275,16 +422,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const arkApiKey = process.env.ARK_API_KEY;
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    if (!arkApiKey) {
-      return NextResponse.json({ success: false, error: 'Missing ARK_API_KEY' }, { status: 500 });
+    let config: ModelConfig;
+    try {
+      config = resolveModelConfig(parsed.data.provider);
+    } catch (error) {
+      if (error instanceof ModelConfigError) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      throw error;
     }
 
     const stream = createQimenStream({
       input: parsed.data,
-      arkApiKey,
-      arkBaseUrl,
+      config,
+      userId,
+      billing:
+        user.role === 'admin'
+          ? null
+          : {
+              userId,
+              requestId: getBillingRequestId(request, body as Record<string, unknown>),
+            },
     });
 
     return new Response(stream, {
@@ -295,6 +453,13 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      if (error.code === 'FORBIDDEN') {
+        return NextResponse.json({ success: false, error: error.message }, { status: 403 });
+      }
+      return NextResponse.json({ success: false, error: error.message }, { status: 401 });
+    }
+    if (error instanceof BillingError) return billingErrorResponse(error);
     return NextResponse.json(
       {
         success: false,
@@ -307,12 +472,14 @@ export async function POST(request: Request) {
 
 function createQimenStream({
   input,
-  arkApiKey,
-  arkBaseUrl,
+  config,
+  userId,
+  billing,
 }: {
   input: QimenAnalyzeInput;
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
+  userId: string | null;
+  billing: QimenBillingContext | null;
 }) {
   const encoder = new TextEncoder();
 
@@ -330,9 +497,10 @@ function createQimenStream({
         send({ type: 'status', status: 'charting' });
 
         const quickSections = await generateQuickSections({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
+          userId,
+          billing,
         });
 
         emitSectionEvents({
@@ -345,9 +513,10 @@ function createQimenStream({
         send({ type: 'status', status: 'analyzing' });
 
         const fullResult = await generateFullResult({
-          arkApiKey,
-          arkBaseUrl,
+          config,
           input,
+          userId,
+          billing,
         });
 
         emitSectionEvents({
@@ -433,18 +602,19 @@ function setLockedSection(
 }
 
 async function generateQuickSections({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
+  userId,
+  billing,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: QimenAnalyzeInput;
+  userId: string | null;
+  billing: QimenBillingContext | null;
 }): Promise<QimenLockedSections> {
   try {
-    const primaryPayload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+    const primaryResult = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildQuickSectionSystemPrompt(input) },
         { role: 'user', content: buildUserPrompt(input) },
@@ -452,17 +622,21 @@ async function generateQuickSections({
       maxOutputTokens: QUICK_MAX_OUTPUT_TOKENS,
       temperature: 0.2,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      billing,
+      stage: 'quick-primary',
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'quick-primary' },
+      jsonSchema: { name: 'qimen_quick_sections', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
-    const primaryText = extractArkOutputText(primaryPayload);
-    const primarySections = normalizeQuickSections(parseModelJson(primaryText), input);
+    const primarySections = normalizeQuickSections(parseModelJson(primaryResult.text), input);
     if (hasRenderableQuickSections(primarySections)) {
       return primarySections;
     }
 
-    const retryPayload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+    const retryResult = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildQuickSectionRetryPrompt(input) },
         { role: 'user', content: buildUserPrompt(input) },
@@ -470,10 +644,15 @@ async function generateQuickSections({
       maxOutputTokens: QUICK_RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.15,
       timeoutMs: QUICK_STAGE_TIMEOUT_MS,
+      userId,
+      billing,
+      stage: 'quick-retry',
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'quick-retry' },
+      jsonSchema: { name: 'qimen_quick_sections_retry', schema: QIMEN_QUICK_SECTIONS_SCHEMA },
     });
 
-    const retryText = extractArkOutputText(retryPayload);
-    return normalizeQuickSections(parseModelJson(retryText), input);
+    return normalizeQuickSections(parseModelJson(retryResult.text), input);
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return {};
@@ -487,17 +666,18 @@ async function generateQuickSections({
 }
 
 async function generateFullResult({
-  arkApiKey,
-  arkBaseUrl,
+  config,
   input,
+  userId,
+  billing,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: QimenAnalyzeInput;
+  userId: string | null;
+  billing: QimenBillingContext | null;
 }) {
-  let payload = await requestArkPayload({
-    arkApiKey,
-    arkBaseUrl,
+  let result = await requestModelPayload({
+    config,
     input: [
       { role: 'system', content: buildSystemPrompt() },
       { role: 'user', content: buildUserPrompt(input) },
@@ -505,12 +685,17 @@ async function generateFullResult({
     maxOutputTokens: PRIMARY_MAX_OUTPUT_TOKENS,
     temperature: 0.25,
     timeoutMs: FULL_STAGE_TIMEOUT_MS,
+    userId,
+    billing,
+    stage: 'full-primary',
+    action: 'destiny-qimen-analyze',
+    metadata: { stage: 'primary' },
+    jsonSchema: { name: 'qimen_full_result', schema: QIMEN_FULL_RESULT_SCHEMA },
   });
 
-  if (isLengthIncomplete(payload)) {
-    payload = await requestArkPayload({
-      arkApiKey,
-      arkBaseUrl,
+  if (result.finishReason === 'length') {
+    result = await requestModelPayload({
+      config,
       input: [
         { role: 'system', content: buildCompactSystemPrompt() },
         { role: 'user', content: buildUserPrompt(input) },
@@ -518,76 +703,139 @@ async function generateFullResult({
       maxOutputTokens: RETRY_MAX_OUTPUT_TOKENS,
       temperature: 0.15,
       timeoutMs: FULL_STAGE_TIMEOUT_MS,
+      userId,
+      billing,
+      stage: 'full-retry',
+      action: 'destiny-qimen-analyze',
+      metadata: { stage: 'retry' },
+      jsonSchema: { name: 'qimen_full_result_compact', schema: QIMEN_FULL_RESULT_SCHEMA },
     });
 
-    if (isLengthIncomplete(payload)) {
+    if (result.finishReason === 'length') {
       throw new UpstreamModelError('模型输出被截断（长度限制），请重试一次', 502);
     }
   }
 
-  let text: string;
-  try {
-    text = extractArkOutputText(payload);
-  } catch (error) {
-    throw new UpstreamModelError(
-      '模型返回格式不合法，请稍后重试',
-      502,
-      error instanceof Error ? error.message : undefined
-    );
-  }
-
-  const parsedModel = parseModelJson(text);
+  const parsedModel = parseModelJson(result.text);
   return normalizeQimenResult(parsedModel, input);
 }
 
-async function requestArkPayload({
-  arkApiKey,
-  arkBaseUrl,
+async function requestModelPayload({
+  config,
   input,
   maxOutputTokens,
   temperature,
   timeoutMs,
+  userId,
+  billing,
+  stage,
+  action,
+  metadata,
+  jsonSchema,
 }: {
-  arkApiKey: string;
-  arkBaseUrl: string;
+  config: ModelConfig;
   input: Array<{ role: 'system' | 'user'; content: string }>;
   maxOutputTokens: number;
   temperature: number;
   timeoutMs: number;
+  userId: string | null;
+  billing: QimenBillingContext | null;
+  stage: string;
+  action: 'destiny-qimen-analyze';
+  metadata?: Record<string, unknown>;
+  jsonSchema?: JsonSchemaConfig;
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const requestId = billing ? `${billing.requestId}:${stage}` : null;
+  let reservation: { id: string } | null = null;
+  let inputUnits = 0;
+  let effectiveMaxTokens = maxOutputTokens;
 
   try {
-    const response = await fetch(`${arkBaseUrl}/responses`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${arkApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: ARK_MODEL,
-        input,
-        temperature,
-        max_output_tokens: maxOutputTokens,
-        reasoning: { effort: 'low' },
-        text: { format: { type: 'json_object' } },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new UpstreamModelError(mapArkError(response.status), response.status, text.slice(0, 400));
+    if (billing && requestId) {
+      const quota = await reserveChatQuota({
+        userId: billing.userId,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages: input,
+        maxOutputTokens,
+        metadata: { ...metadata, stage, messageCount: input.length },
+      });
+      reservation = quota.reservation;
+      inputUnits = quota.inputUnits;
+      effectiveMaxTokens = quota.outputLimit;
     }
 
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
+    const result = await callModel({
+      config,
+      messages: input,
+      maxTokens: effectiveMaxTokens,
+      temperature,
+      timeoutMs,
+      json: jsonSchema
+        ? { schema: { name: jsonSchema.name, schema: jsonSchema.schema } }
+        : undefined,
+    });
+    const rawUsage = extractArkUsage(result.raw);
+
+    if (reservation && requestId) {
+      await settleAiQuota({
+        reservationId: reservation.id,
+        requestId,
+        feature: 'destiny',
+        action,
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/qimen/analyze',
+        measurement: createTokenMeasurement(
+          rawUsage,
+          inputUnits + estimateOutputTokens(result.text)
+        ),
+        metadata: {
+          ...metadata,
+          stage,
+          provider: config.provider,
+          maxOutputTokens: effectiveMaxTokens,
+          messageCount: input.length,
+        },
+      });
+    } else if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action,
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/qimen/analyze',
+        usage: normalizeUsage(rawUsage),
+        metadata: {
+          ...metadata,
+          stage,
+          provider: config.provider,
+          maxOutputTokens: effectiveMaxTokens,
+          messageCount: input.length,
+        },
+      });
+    }
+
+    return result;
+  } catch (error) {
+    if (reservation) {
+      await releaseAiQuota({
+        reservationId: reservation.id,
+        reason: `奇门 ${stage} 阶段调用失败`,
+        meterType: 'tokens',
+      }).catch((releaseError) => console.error('[qimen/analyze] 释放额度失败:', releaseError));
+    }
+    throw error;
   }
 }
 
-function mergeLockedSectionsIntoResult(result: QimenAnalyzeResult, lockedSections: QimenLockedSections) {
+function mergeLockedSectionsIntoResult(
+  result: QimenAnalyzeResult,
+  lockedSections: QimenLockedSections
+) {
   return {
     ...result,
     overallAssessment: lockedSections.overallAssessment ?? result.overallAssessment,
@@ -603,6 +851,10 @@ function mapStreamError(error: unknown): string {
     return '测算超时，请稍后重试';
   }
 
+  if (error instanceof ModelUpstreamError) {
+    return error.message;
+  }
+
   if (error instanceof z.ZodError) {
     return '模型返回格式不合法，请稍后重试';
   }
@@ -616,12 +868,6 @@ function mapStreamError(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : '服务暂时不可用，请稍后重试';
-}
-
-function mapArkError(status: number): string {
-  if (status === 429) return '请求过于频繁，请稍后重试';
-  if (status >= 500) return '模型服务暂时不可用，请稍后重试';
-  return '模型调用失败，请稍后重试';
 }
 
 function buildUserPrompt(input: QimenAnalyzeInput): string {
@@ -763,14 +1009,6 @@ function parseModelJson(text: string): unknown {
   }
 }
 
-function isLengthIncomplete(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false;
-  const data = payload as Record<string, unknown>;
-  const incomplete = data.incomplete_details;
-  if (!incomplete || typeof incomplete !== 'object') return false;
-  return (incomplete as Record<string, unknown>).reason === 'length';
-}
-
 function normalizeQuickSections(payload: unknown, input: QimenAnalyzeInput): QimenLockedSections {
   const parsed = QuickSectionSchema.safeParse(payload);
 
@@ -780,8 +1018,7 @@ function normalizeQuickSections(payload: unknown, input: QimenAnalyzeInput): Qim
     });
   }
 
-  const raw =
-    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const raw = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
   const riskAlertsRaw = Array.isArray(raw.riskAlerts) ? raw.riskAlerts : [];
   const actionSuggestionsRaw = Array.isArray(raw.actionSuggestions) ? raw.actionSuggestions : [];
@@ -944,24 +1181,34 @@ function normalizeQimenResult(payload: unknown, input: QimenAnalyzeInput): Qimen
       32
     ),
     chartMeta: {
-      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '阳遁', 12),
-      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '三局', 12),
+      dun: sanitizeText(typeof chartMetaRaw.dun === 'string' ? chartMetaRaw.dun : '', 12),
+      ju: sanitizeText(typeof chartMetaRaw.ju === 'string' ? chartMetaRaw.ju : '', 12),
       jiaziXunkong: sanitizeText(
-        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '甲辰旬 寅卯空',
+        typeof chartMetaRaw.jiaziXunkong === 'string' ? chartMetaRaw.jiaziXunkong : '',
         20
       ),
       horsePosition: sanitizeText(
-        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '马星在巳',
+        typeof chartMetaRaw.horsePosition === 'string' ? chartMetaRaw.horsePosition : '',
         20
       ),
       valueSymbol: sanitizeText(
-        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '天冲星',
+        typeof chartMetaRaw.valueSymbol === 'string' ? chartMetaRaw.valueSymbol : '',
         16
       ),
       valueDoor: sanitizeText(
-        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '伤门',
+        typeof chartMetaRaw.valueDoor === 'string' ? chartMetaRaw.valueDoor : '',
         16
       ),
+      xunshou: sanitizeText(
+        typeof chartMetaRaw.xunshou === 'string' ? chartMetaRaw.xunshou : '',
+        8
+      ),
+      riGan: sanitizeText(typeof chartMetaRaw.riGan === 'string' ? chartMetaRaw.riGan : '', 4),
+      shiGan: sanitizeText(typeof chartMetaRaw.shiGan === 'string' ? chartMetaRaw.shiGan : '', 4),
+      trueSolarTime:
+        typeof chartMetaRaw.trueSolarTime === 'string'
+          ? sanitizeText(chartMetaRaw.trueSolarTime, 32)
+          : undefined,
     },
     board: normalizedBoard,
     chartSummary: sanitizeText(

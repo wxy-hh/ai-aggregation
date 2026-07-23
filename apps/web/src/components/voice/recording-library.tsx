@@ -456,6 +456,8 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
                 {[
                   { value: 'completed', label: '已完成', color: 'green' },
                   { value: 'transcribing', label: '转录中', color: 'blue' },
+                  { value: 'translating', label: '翻译中', color: 'purple' },
+                  { value: 'uploading', label: '上传中', color: 'yellow' },
                   { value: 'error', label: '错误', color: 'red' },
                 ].map((option) => (
                   <button
@@ -464,11 +466,16 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
                     className={cn(
                       'px-2 py-1 text-xs rounded transition-colors',
                       statusFilter.includes(option.value as ProcessingStatus)
-                        ? option.color === 'green'
-                          ? 'bg-green-500 text-white'
-                          : option.color === 'blue'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-red-500 text-white'
+                        ? (() => {
+                            switch (option.color) {
+                              case 'green': return 'bg-green-500 text-white';
+                              case 'blue': return 'bg-blue-500 text-white';
+                              case 'purple': return 'bg-purple-500 text-white';
+                              case 'yellow': return 'bg-yellow-500 text-white';
+                              case 'red': return 'bg-red-500 text-white';
+                              default: return 'bg-slate-500 text-white';
+                            }
+                          })()
                         : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
                     )}
                   >

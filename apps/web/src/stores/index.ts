@@ -75,3 +75,15 @@ export {
   type ZiweiWorkspaceCache,
   type QimenWorkspaceCache,
 } from './destiny-workspace-store';
+
+// 跨模态单引用接力存储 (Relay Store)
+export {
+  useRelayStore,
+  useRelayBundles,
+  useRelayInitialized,
+  useRelayReplaceCandidate,
+  useActiveBundleForTarget,
+  useDraftForTarget,
+  useRelayActions,
+  type RelayReplaceCandidate,
+} from './relay-store';

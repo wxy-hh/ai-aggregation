@@ -3,6 +3,9 @@
  * SiliconFlow API integration for Kwai-Kolors/Kolors model
  */
 
+import { authFetch } from './client';
+import { createBillingRequestId } from '@/lib/billing/request-id';
+
 export interface KolorsGenerateParams {
   prompt: string;
   negativePrompt?: string;
@@ -35,11 +38,10 @@ export interface KolorsError {
 export async function generateKolorsImage(
   params: KolorsGenerateParams
 ): Promise<KolorsGenerateResponse> {
-  const response = await fetch('/api/image/generate', {
+  const requestId = createBillingRequestId();
+  const response = await authFetch('/api/image/generate', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Idempotency-Key': requestId },
     body: JSON.stringify({
       model: 'Kwai-Kolors/Kolors',
       prompt: params.prompt,
@@ -47,6 +49,7 @@ export async function generateKolorsImage(
       num_inference_steps: params.steps,
       guidance_scale: params.guidanceScale,
       batch_size: params.batchSize || 1,
+      requestId,
       // Note: seed and negative_prompt may not be supported by API
       // Include them for future compatibility
       ...(params.seed && { seed: params.seed }),
@@ -63,9 +66,11 @@ export async function generateKolorsImage(
 
 /**
  * Download image from URL and convert to Blob
+ * 通过 BFF 代理下载，避免 CORS 限制
  */
 export async function downloadImage(url: string): Promise<Blob> {
-  const response = await fetch(url);
+  const proxyUrl = `/api/image/proxy?url=${encodeURIComponent(url)}`;
+  const response = await fetch(proxyUrl);
   if (!response.ok) {
     throw new Error(`Failed to download image: ${response.statusText}`);
   }
@@ -83,7 +88,7 @@ export async function uploadGeneratedImage(
   formData.append('file', blob, `${Date.now()}.png`);
   formData.append('userId', userId);
 
-  const response = await fetch('/api/image/upload', {
+  const response = await authFetch('/api/image/upload', {
     method: 'POST',
     body: formData,
   });

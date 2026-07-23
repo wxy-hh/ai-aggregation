@@ -22,6 +22,8 @@ interface PreviewCanvasProps {
   progress: number;
   status: GenerationStatus;
   onReset?: () => void;
+  // 跨模态接力：结果工具栏上的接力按钮槽（成功态才传入）
+  relayAction?: React.ReactNode;
 }
 
 export function PreviewCanvas({
@@ -31,6 +33,7 @@ export function PreviewCanvas({
   progress,
   status,
   onReset,
+  relayAction,
 }: PreviewCanvasProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
@@ -54,11 +57,15 @@ export function PreviewCanvas({
     }
   }, [videoUrl]);
 
-  // 下载视频
+  // 下载视频（通过 BFF 代理，避免第三方 URL 的 CORS 限制）
   const handleDownload = async () => {
     if (!videoUrl) return;
     try {
-      const response = await fetch(videoUrl);
+      const proxyUrl = `/api/video/proxy?url=${encodeURIComponent(videoUrl)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) {
+        throw new Error(`下载失败: ${response.statusText}`);
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -77,10 +84,15 @@ export function PreviewCanvas({
     <div className="w-full h-full flex flex-col items-center justify-center relative">
       {/* 主容器 */}
       <div
-        className="w-full h-full lg:aspect-video bg-white dark:bg-[#111218] rounded-[40px] border border-slate-200 dark:border-slate-800/50 shadow-[0_24px_48px_rgba(0,0,0,0.04)] dark:shadow-none overflow-hidden relative group"
+        className={cn(
+          'group relative h-full w-full overflow-hidden rounded-[32px] border border-white/60 lg:aspect-video',
+          'bg-gradient-to-b from-white/70 via-white/50 to-white/30 shadow-[0_24px_48px_rgba(76,95,154,0.12),inset_0_1px_0_0_rgba(255,255,255,0.5)] backdrop-blur-2xl',
+          'dark:border-white/10 dark:from-slate-900/70 dark:via-slate-900/50 dark:to-slate-900/30 dark:shadow-[0_24px_48px_rgba(0,0,0,0.35)]'
+        )}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-500" />
         {/* 空状态占位 */}
         <AnimatePresence>
           {status === 'idle' && (
@@ -88,28 +100,30 @@ export function PreviewCanvas({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center p-12 text-center"
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center p-8 text-center sm:p-12"
             >
+              <div className="pointer-events-none absolute top-1/2 h-[280px] w-[min(88vw,520px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.12),transparent_72%)] blur-[80px]" />
+
               {/* 播放按钮 */}
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="w-28 h-28 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-2xl shadow-blue-500/30 text-white mb-10 cursor-pointer"
+                className="relative z-10 mb-8 flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border border-white/40 bg-gradient-to-br from-blue-600 via-indigo-500 to-cyan-500 text-white shadow-[0_16px_32px_rgba(93,124,250,0.28)] sm:mb-10 sm:h-28 sm:w-28"
               >
-                <Play className="w-10 h-10 ml-1.5 fill-current" />
+                <Play className="ml-1.5 h-9 w-9 fill-current sm:h-10 sm:w-10" />
               </motion.div>
 
-              <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
+              <h3 className="relative z-10 mb-3 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">
                 准备开始创作吗？
               </h3>
-              <p className="text-slate-500 dark:text-slate-400 max-w-lg mb-12 text-lg leading-relaxed">
-                在左侧输入提示词，或拖入参考图像开始生成您的第一段 AI 视频。
+              <p className="relative z-10 mb-10 max-w-lg text-base leading-relaxed text-slate-500 dark:text-slate-400 sm:mb-12 sm:text-lg">
+                在左侧输入提示词，或上传参考图，开始生成你的第一段 AI 视频。
               </p>
 
-              <div className="flex gap-4">
+              <div className="relative z-10 flex gap-4">
                 <Button
                   variant="outline"
-                  className="h-14 px-8 rounded-2xl gap-3 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 font-bold transition-all"
+                  className="h-12 gap-3 rounded-2xl border-white/70 bg-white/60 px-6 font-bold text-slate-600 shadow-sm backdrop-blur-md transition-all hover:bg-white/80 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 sm:h-14 sm:px-8"
                 >
                   <ImageIcon className="w-5 h-5" />
                   上传参考图
@@ -133,7 +147,7 @@ export function PreviewCanvas({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 bg-white/90 dark:bg-[#111218]/90 backdrop-blur-xl flex flex-col items-center justify-center"
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/75 backdrop-blur-2xl dark:bg-slate-950/75"
             >
               {/* 进度圆环 */}
               <div className="relative w-56 h-56 flex items-center justify-center">
@@ -165,6 +179,7 @@ export function PreviewCanvas({
                     strokeWidth="6"
                     strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 85}
+                    initial={{ strokeDashoffset: 2 * Math.PI * 85 }}
                     animate={{ strokeDashoffset: 2 * Math.PI * 85 * (1 - progress / 100) }}
                     className="text-blue-500"
                     transition={{ duration: 0.5 }}
@@ -196,7 +211,7 @@ export function PreviewCanvas({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-30 bg-white/90 dark:bg-[#111218]/90 backdrop-blur-xl flex flex-col items-center justify-center"
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/75 backdrop-blur-2xl dark:bg-slate-950/75"
             >
               <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mb-6">
                 <span className="text-4xl">😵</span>
@@ -232,29 +247,33 @@ export function PreviewCanvas({
                 onPause={() => setIsPlaying(false)}
               />
 
-              {/* 悬停控制层 */}
+              {/* 悬停控制层（移动端常显，避免依赖 hover） */}
               <div
                 className={cn(
-                  'absolute inset-0 transition-opacity bg-gradient-to-t from-black/50 via-transparent to-black/20 flex flex-col justify-between p-8',
+                  'absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/50 via-transparent to-black/20 p-4 transition-opacity sm:p-8',
+                  'max-sm:opacity-100',
                   isHovering ? 'opacity-100' : 'opacity-0'
                 )}
               >
-                {/* 顶部工具栏 */}
+                {/* 顶部工具栏：接力 / 下载 / 全屏 */}
                 <div className="flex justify-end gap-3">
+                  {relayAction}
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-white hover:bg-white/20 rounded-full"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
                     onClick={handleDownload}
+                    aria-label="下载视频"
                   >
-                    <Download className="w-5 h-5" />
+                    <Download className="h-5 w-5" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="text-white hover:bg-white/20 rounded-full"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
+                    aria-label="全屏播放"
                   >
-                    <Maximize2 className="w-5 h-5" />
+                    <Maximize2 className="h-5 w-5" />
                   </Button>
                 </div>
 

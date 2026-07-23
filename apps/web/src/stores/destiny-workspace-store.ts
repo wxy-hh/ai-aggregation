@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { createDefaultBaziFormData } from '@/app/destiny/_components/bazi-mappers';
 import { createDefaultQimenFormData } from '@/app/destiny/_components/qimen-mappers';
 import type { BaziFormData } from '@/app/destiny/_components/bazi-types';
@@ -16,16 +17,18 @@ import type {
   BaziLockedSections,
   DestinyReport,
   DestinyStreamStatus,
+  ZiweiChartData,
   ZiweiLockedSections,
 } from '@/app/destiny/_components/types';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
 
 export type DestinyWorkspaceStep = 'form' | 'result';
+export type DestinyProvider = 'doubao' | 'deepseek';
 export type DestinyWorkspaceLastView = DestinyWorkspaceStep;
 export type BaziErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
-export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations';
+export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
 
 type BaseWorkspaceCache<TFormData, TFieldErrors, TErrorKind> = {
   step: DestinyWorkspaceStep;
@@ -56,6 +59,7 @@ export type ZiweiWorkspaceCache = BaseWorkspaceCache<
 > & {
   streaming: boolean;
   report: DestinyReport | null;
+  chartData: ZiweiChartData | null;
   lockedSections: ZiweiLockedSections;
   streamStatus: DestinyStreamStatus | null;
   tab: ZiweiPanelTab;
@@ -83,6 +87,11 @@ export type DestinyWorkspaceCacheState = {
 };
 
 type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
+  provider: DestinyProvider;
+  setProvider: (provider: DestinyProvider) => void;
+  /** 当前激活的命理模块(由 DestinyPageClient 同步,供全局 chrome 感知场景,如移动端顶栏入夜) */
+  activeModule: DestinyModuleKey | null;
+  setActiveModule: (module: DestinyModuleKey | null) => void;
   setWorkspaceState: <TModule extends DestinyModuleKey>(
     module: TModule,
     patch:
@@ -124,6 +133,7 @@ function createDefaultZiweiWorkspaceCache(): ZiweiWorkspaceCache {
     error: null,
     errorKind: null,
     report: null,
+    chartData: null,
     lockedSections: {},
     streamStatus: null,
     tab: 'overview',
@@ -163,51 +173,69 @@ export function createDefaultDestinyWorkspaceState(): DestinyWorkspaceCacheState
   };
 }
 
-export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>((set) => ({
-  ...createDefaultDestinyWorkspaceState(),
+export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
+  persist(
+    (set) => ({
+      ...createDefaultDestinyWorkspaceState(),
 
-  setWorkspaceState: (module, patch) =>
-    set((state) => {
-      const current = state[module];
-      const nextPatch = typeof patch === 'function' ? patch(current as never) : patch;
-      return {
-        [module]: {
-          ...current,
-          ...nextPatch,
-        },
-      } as Partial<DestinyWorkspaceStore>;
+      provider: 'doubao',
+      setProvider: (provider) => set({ provider }),
+
+      activeModule: null,
+      setActiveModule: (activeModule) => set({ activeModule }),
+
+      setWorkspaceState: (module, patch) =>
+        set((state) => {
+          const current = state[module];
+          const nextPatch = typeof patch === 'function' ? patch(current as never) : patch;
+          return {
+            [module]: {
+              ...current,
+              ...nextPatch,
+            },
+          } as Partial<DestinyWorkspaceStore>;
+        }),
+
+      resetWorkspace: (module) =>
+        set((state) => ({
+          ...state,
+          [module]: createDefaultDestinyWorkspaceState()[module],
+        })),
+
+      restoreWorkspace: (module) =>
+        set((state) => {
+          const current = state[module];
+          const nextStep: DestinyWorkspaceStep = current.hasResult ? 'result' : 'form';
+          return {
+            ...state,
+            [module]: {
+              ...current,
+              step: nextStep,
+              lastView: nextStep,
+            },
+          };
+        }),
+
+      markResultReady: (module) =>
+        set((state) => ({
+          ...state,
+          [module]: {
+            ...state[module],
+            hasResult: true,
+            step: 'result',
+            lastView: 'result',
+          },
+        })),
+
+      resetAllWorkspaces: () =>
+        set((state) => ({
+          ...createDefaultDestinyWorkspaceState(),
+          provider: state.provider,
+        })),
     }),
-
-  resetWorkspace: (module) =>
-    set((state) => ({
-      ...state,
-      [module]: createDefaultDestinyWorkspaceState()[module],
-    })),
-
-  restoreWorkspace: (module) =>
-    set((state) => {
-      const current = state[module];
-      const nextStep: DestinyWorkspaceStep = current.hasResult ? 'result' : 'form';
-      return {
-        ...state,
-        [module]: {
-          ...current,
-          step: nextStep,
-          lastView: nextStep,
-        },
-      };
-    }),
-
-  markResultReady: (module) =>
-    set((state) => ({
-      ...state,
-      [module]: {
-        ...state[module],
-        hasResult: true,
-        step: 'result',
-        lastView: 'result',
-      },
-    })),
-
-  resetAllWorkspaces: () => set(createDefaultDestinyWorkspaceState()),
-}));
+    {
+      name: 'destiny-provider',
+      partialize: (state) => ({ provider: state.provider }),
+    }
+  )
+);

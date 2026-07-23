@@ -103,7 +103,7 @@ export function OnboardingModal({
           {/* 背景磨砂容器（参考图：引导弹框.png） */}
           <div
             className={cn(
-              'rounded-[36px] border border-white/80 bg-white/85 backdrop-blur-[32px]',
+              'rounded-[36px] border border-white/80 dark:border-white/10 bg-white/85 dark:bg-slate-900/85 backdrop-blur-[32px]',
               'shadow-[0_35px_110px_-40px_rgba(47,107,255,0.30)]'
             )}
           >
@@ -124,9 +124,9 @@ export function OnboardingModal({
                   type="button"
                   onClick={onCancelAction}
                   className={cn(
-                    'rounded-xl p-2 text-slate-400/90 hover:text-slate-600 hover:bg-white/45',
+                    'rounded-xl p-2 text-slate-400/90 hover:text-slate-600 hover:bg-white/45 dark:hover:bg-slate-700/40',
                     'transition-colors duration-200',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/25'
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/25'
                   )}
                 >
                   <X className="h-5 w-5" />
@@ -143,7 +143,7 @@ export function OnboardingModal({
                   请输入准确的生辰信息，以便 AI 为您精准排盘
                 </div>
               </div>
-              <div className="mt-6 h-px w-full bg-slate-200/35" />
+              <div className="mt-6 h-px w-full bg-slate-200/35 dark:bg-slate-700/35" />
 
               <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
                 {/* 姓名 */}
@@ -156,9 +156,9 @@ export function OnboardingModal({
                       onBlur={() => setTouched((t) => ({ ...t, name: true }))}
                       placeholder="请输入您的姓名"
                       className={cn(
-                        'h-12 rounded-full bg-white/80 border border-slate-200/40 shadow-sm',
-                        'text-black placeholder:text-slate-400',
-                        'focus-visible:ring-0 focus-visible:border-[#2F6BFF]/55 focus-visible:bg-white'
+                        'h-12 rounded-full bg-white/80 dark:bg-slate-800/80 border border-slate-200/40 dark:border-slate-700/40 shadow-sm',
+                        'text-black dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500',
+                        'focus-visible:ring-0 focus-visible:border-[#4969E9]/55 focus-visible:bg-white dark:focus-visible:bg-slate-800'
                       )}
                     />
                   </div>
@@ -176,15 +176,15 @@ export function OnboardingModal({
                       setValue((v) => ({ ...v, gender: next as 'male' | 'female' }))
                     }
                   >
-                    <TabsList className="grid grid-cols-2 h-12 rounded-full bg-slate-50/80 border border-slate-200/50 p-1 shadow-sm">
+                    <TabsList className="grid grid-cols-2 h-12 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-200/50 dark:border-slate-700/50 p-1 shadow-sm">
                       <TabsTrigger
                         value="male"
                         className={cn(
                           'rounded-full font-extrabold transition-all',
-                          'text-black/65 hover:text-black/80',
-                          'data-[state=active]:text-[#2F6BFF]',
-                          'data-[state=active]:bg-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
-                          'data-[state=active]:ring-2 data-[state=active]:ring-[#2F6BFF]/55',
+                          'text-black/65 dark:text-white/65 hover:text-black/80 dark:hover:text-white/80',
+                          'data-[state=active]:text-[#4969E9]',
+                          'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
+                          'data-[state=active]:ring-2 data-[state=active]:ring-[#4969E9]/55',
                           'data-[state=active]:scale-[1.02]'
                         )}
                       >
@@ -194,10 +194,10 @@ export function OnboardingModal({
                         value="female"
                         className={cn(
                           'rounded-full font-extrabold transition-all',
-                          'text-black/65 hover:text-black/80',
-                          'data-[state=active]:text-[#2F6BFF]',
-                          'data-[state=active]:bg-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
-                          'data-[state=active]:ring-2 data-[state=active]:ring-[#2F6BFF]/55',
+                          'text-black/65 dark:text-white/65 hover:text-black/80 dark:hover:text-white/80',
+                          'data-[state=active]:text-[#4969E9]',
+                          'data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/20',
+                          'data-[state=active]:ring-2 data-[state=active]:ring-[#4969E9]/55',
                           'data-[state=active]:scale-[1.02]'
                         )}
                       >
@@ -288,9 +288,9 @@ export function OnboardingModal({
                       onBlur={() => setTouched((t) => ({ ...t, location: true }))}
                       placeholder="输入城市…"
                       className={cn(
-                        'h-12 rounded-full bg-white/80 border border-slate-200/40 shadow-sm',
-                        'pl-11 text-black placeholder:text-slate-400',
-                        'focus-visible:ring-0 focus-visible:border-[#2F6BFF]/55 focus-visible:bg-white'
+                        'h-12 rounded-full bg-white/80 dark:bg-slate-800/80 border border-slate-200/40 dark:border-slate-700/40 shadow-sm',
+                        'pl-11 text-black dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500',
+                        'focus-visible:ring-0 focus-visible:border-[#4969E9]/55 focus-visible:bg-white dark:focus-visible:bg-slate-800'
                       )}
                     />
                   </div>
@@ -308,9 +308,9 @@ export function OnboardingModal({
                 disabled={!canStart}
                 className={cn(
                   'w-full h-14 rounded-full text-base font-extrabold',
-                  'bg-[#2356E8] text-white shadow-[0_18px_50px_-20px_rgba(37,99,235,0.80)]',
-                  'hover:bg-[#3B82F6] hover:shadow-[0_24px_70px_-26px_rgba(59,130,246,0.95)]',
-                  'active:bg-[#1D4ED8]',
+                  'bg-[#2356E8] dark:bg-[#4D7CFF] text-white shadow-[0_18px_50px_-20px_rgba(37,99,235,0.80)] dark:shadow-[0_18px_50px_-20px_rgba(77,124,255,0.50)]',
+                  'hover:bg-[#3B82F6] dark:hover:bg-[#6B9AFF] hover:shadow-[0_24px_70px_-26px_rgba(59,130,246,0.95)] dark:hover:shadow-[0_24px_70px_-26px_rgba(107,154,255,0.60)]',
+                  'active:bg-[#1D4ED8] dark:active:bg-[#3B6CFF]',
                   'transform transition-colors transition-shadow transition-transform duration-200',
                   'hover:-translate-y-0.5 active:translate-y-0',
                   'disabled:opacity-60 disabled:cursor-not-allowed'
@@ -332,7 +332,7 @@ export function OnboardingModal({
 function FieldLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <div className="flex items-center gap-2 text-sm font-black text-black drop-shadow-[0_1px_0_rgba(255,255,255,0.55)]">
-      <span className="text-[#2F6BFF]">{icon}</span>
+      <span className="text-[#4969E9]">{icon}</span>
       <span>{label}</span>
     </div>
   );
@@ -358,7 +358,7 @@ function SelectPill({
         className={cn(
           'h-12 w-full appearance-none rounded-full px-4 pr-10 text-sm font-bold',
           'bg-white/80 border border-slate-200/40 text-black shadow-sm',
-          'focus:outline-none focus:ring-2 focus:ring-[#2F6BFF]/10 focus:border-[#2F6BFF]/50'
+          'focus:outline-none focus:ring-2 focus:ring-[#4969E9]/10 focus:border-[#4969E9]/50'
         )}
       >
         {options.map((o) => (

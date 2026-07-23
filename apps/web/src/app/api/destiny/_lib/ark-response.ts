@@ -51,3 +51,12 @@ export function extractJsonBlock(text: string): string {
   if (fenced?.[1]) return fenced[1].trim();
   return cleaned;
 }
+
+export function extractArkUsage(result: unknown): unknown {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const payload = result as Record<string, unknown>;
+  return payload.usage ?? (payload.response as Record<string, unknown> | undefined)?.usage ?? null;
+}

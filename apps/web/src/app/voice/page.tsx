@@ -19,6 +19,12 @@ import { useRtasrRealtime } from '@/hooks/use-rtasr-realtime';
 import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+// 跨模态接力：实时转写作为来源（REQ-002/008）
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { RelayReferenceItem } from '@repo/shared';
 
 function formatElapsed(ms: number) {
   const sec = Math.max(0, Math.floor(ms / 1000));
@@ -99,7 +105,12 @@ function VoicePageContent() {
           fileSize: voiceItem.fileSize,
           fileMimeType: 'audio/mpeg', // 默认类型
           uploadTime: new Date(voiceItem.createdAt), // 上传时间
-          duration: parseFloat(voiceItem.duration.replace(':', '.')) * 60 || 0,
+          duration: (() => {
+            const parts = voiceItem.duration.split(':');
+            const mins = parseInt(parts[0], 10) || 0;
+            const secs = parseInt(parts[1], 10) || 0;
+            return mins * 60 + secs;
+          })(),
           transcriptionText: voiceItem.transcription,
           translationText: undefined,
           processingStatus: 'completed',
@@ -182,16 +193,98 @@ function VoicePageContent() {
     }
   }, [addHistoryItem, rtasr]);
 
+  const handleCopyText = useCallback(async () => {
+    const text = rtasr.segments
+      .map((segment) => segment.text)
+      .join('\n')
+      .trim();
+    if (!text) {
+      toast.info('暂无转录文本可复制');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('已复制到剪贴板');
+    } catch {
+      toast.error('复制失败，请手动复制');
+    }
+  }, [rtasr.segments]);
+
+  const handleExport = useCallback(() => {
+    const text = rtasr.segments
+      .map((segment) => `[${segment.timestamp}] ${segment.text}`)
+      .join('\n')
+      .trim();
+    if (!text) {
+      toast.info('暂无转录文本可导出');
+      return;
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transcription-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('导出成功');
+  }, [rtasr.segments]);
+
+  // 跨模态接力：实时转写作为来源（REQ-008）。
+  // RTASR 语义：active=true 表示该段识别中未定稿，故快照只取已定稿（active:false）段。
+  // 录音进行中禁用完整接力，避免快照残缺。
+  const isRecordingActive =
+    rtasr.status === 'running' || rtasr.status === 'connecting' || rtasr.status === 'stopping';
+  const finalizedTranscript = rtasr.segments
+    .filter((s) => !s.active)
+    .map((s) => s.text)
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  const canRelay = !isRecordingActive && finalizedTranscript.length > 0;
+  // 实时转写容器 ref：录音停止后，用户选中已确认片段时优先接力选区（REQ-009 第 4 条）
+  const realtimeTranscriptRef = useRef<HTMLDivElement | null>(null);
+  const relay = useRelayLauncher({
+    sourceType: 'transcript',
+    selectionRootRef: realtimeTranscriptRef,
+    disabledReason: !canRelay
+      ? isRecordingActive
+        ? RELAY_COPY.disabled.recording
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: ({ selectedText }) => {
+      if (!canRelay) return null;
+      // 选中片段优先；否则回退到完整转写
+      const snapshot = selectedText ?? finalizedTranscript;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'voice',
+        sourceType: 'transcript',
+        sourceId: `rtasr-${Date.now()}`,
+        sourceTitle: selectedText ? snapshot.slice(0, 30) : RELAY_COPY.voice.fullTranscript,
+        sourceModel: 'iFlytek/RTASR',
+        snapshotText: snapshot,
+      };
+      return partial;
+    },
+  });
+
   const primaryActionLabel =
     rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error'
       ? '开始录音'
-      : rtasr.status === 'running'
-        ? '暂停录音'
-        : rtasr.status === 'paused'
-          ? '继续录音'
-          : rtasr.status === 'connecting'
-            ? '连接中...'
-            : '停止并保存';
+      : rtasr.status === 'connecting'
+        ? '连接中...'
+        : rtasr.status === 'stopping'
+          ? '收尾中...'
+          : '停止并保存';
+
+  /** 未开始且无转写内容：用居中紧凑布局，避免大块底部留白 */
+  const isVoiceIdle =
+    rtasr.segments.length === 0 &&
+    (rtasr.status === 'idle' || rtasr.status === 'stopped' || rtasr.status === 'error');
+  const isVoiceSessionActive =
+    rtasr.status === 'running' ||
+    rtasr.status === 'connecting' ||
+    rtasr.status === 'paused' ||
+    rtasr.status === 'stopping';
 
   return (
     <AppLayout>
@@ -335,61 +428,104 @@ function VoicePageContent() {
 
           {/* 实时录音界面 */}
           <div
-            className={
-              mode === 'realtime'
-                ? 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar pb-[calc(env(safe-area-inset-bottom)+18rem)] sm:pb-40'
-                : 'hidden'
-            }
-            style={{ display: mode === 'realtime' ? 'block' : 'none' }}
+            className={cn(
+              mode === 'realtime' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'
+            )}
+            style={{ display: mode === 'realtime' ? 'flex' : 'none' }}
           >
-            <div className="max-w-4xl mx-auto">
-              {rtasr.error && (
-                <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
-                  {rtasr.error}
-                </div>
+            <div
+              className={cn(
+                'custom-scrollbar min-h-0 flex-1',
+                isVoiceIdle
+                  ? 'flex flex-col justify-center px-4 py-5 sm:px-6 sm:py-6 pb-[calc(env(safe-area-inset-bottom)+7.5rem)] lg:pb-24'
+                  : 'overflow-y-auto p-4 sm:p-6 lg:p-8 pb-[calc(env(safe-area-inset-bottom)+11rem)] sm:pb-36'
               )}
-              {/* Visualization Card */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-8 relative overflow-hidden group">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                      />
-                    </svg>
-                    Microphone Array (Active)
+            >
+              <div className="mx-auto w-full max-w-4xl">
+                {rtasr.error && (
+                  <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 shadow-sm dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-300">
+                    {rtasr.error}
                   </div>
-                  <span className="font-mono text-slate-400 text-xs tracking-widest">
-                    SESSION: {formatElapsed(rtasr.elapsedMs)}
-                  </span>
+                )}
+                {/* 波形可视化 */}
+                <div
+                  className={cn(
+                    'relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6',
+                    isVoiceIdle ? 'mb-5' : 'mb-8'
+                  )}
+                >
+                  <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div
+                      className={cn(
+                        'flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium',
+                        isVoiceSessionActive
+                          ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                      )}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                        />
+                      </svg>
+                      {isVoiceSessionActive ? '麦克风 · 采集中' : '麦克风 · 待激活'}
+                    </div>
+                    <span className="shrink-0 font-mono text-xs tracking-widest text-slate-400">
+                      会话 {formatElapsed(rtasr.elapsedMs)}
+                    </span>
+                  </div>
+
+                  <WaveformVisualizer level={rtasr.level} />
+
+                  <div className="pointer-events-none absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
+                  <div className="pointer-events-none absolute -left-10 -top-10 h-40 w-40 rounded-full bg-purple-500/10 blur-3xl" />
                 </div>
 
-                <WaveformVisualizer level={rtasr.level} />
+                {isVoiceIdle ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200/90 bg-white/60 px-5 py-8 text-center backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-900/40">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      转写内容将显示在这里
+                    </p>
+                    <p className="mx-auto mt-2 max-w-md text-xs leading-6 text-slate-500 dark:text-slate-400">
+                      点击下方「开始录音」即可实时识别；支持暂停、继续与导出文本。
+                    </p>
+                    <ul className="mx-auto mt-5 flex max-w-lg flex-col gap-2 text-left text-xs text-slate-500 dark:text-slate-400 sm:grid sm:grid-cols-3 sm:gap-3">
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        尽量在安静环境录音
+                      </li>
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        说话清晰、语速适中
+                      </li>
+                      <li className="rounded-xl bg-slate-50/90 px-3 py-2 dark:bg-slate-800/60">
+                        结束后可一键保存历史
+                      </li>
+                    </ul>
+                  </div>
+                ) : (
+                  <>
+                    <div ref={realtimeTranscriptRef}>
+                      <TranscriptList segments={rtasr.segments} />
+                    </div>
 
-                {/* Decorative background blur */}
-                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                <div className="absolute -top-10 -left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              </div>
-
-              {/* Transcript List */}
-              <TranscriptList
-                segments={rtasr.segments.length > 0 ? rtasr.segments : mockSegments}
-              />
-
-              {/* Loading State for next segment */}
-              <div className="mt-6 flex gap-4 px-4 opacity-50">
-                <div className="w-12 pt-1">
-                  <div className="h-3 w-8 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
-                </div>
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-full animate-pulse"></div>
-                  <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-2/3 animate-pulse"></div>
-                </div>
+                    {/* 录音进行中：下一段识别占位 */}
+                    {isVoiceSessionActive && (
+                      <div className="mt-6 flex gap-4 px-4 opacity-50">
+                        <div className="w-12 pt-1">
+                          <div className="h-3 w-8 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                          <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -461,6 +597,7 @@ function VoicePageContent() {
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
                   <Button
                     variant="ghost"
+                    onClick={handleCopyText}
                     className="gap-2 justify-center text-slate-600 dark:text-slate-300"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -475,6 +612,7 @@ function VoicePageContent() {
                   </Button>
                   <Button
                     variant="ghost"
+                    onClick={handleExport}
                     className="gap-2 justify-center text-slate-600 dark:text-slate-300"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -487,6 +625,14 @@ function VoicePageContent() {
                     </svg>
                     导出
                   </Button>
+                  {/* 接力：实时转写发起（REQ-002 显式入口，录音中禁用） */}
+                  <RelayAction
+                    ref={relay.triggerRef}
+                    disabled={relay.disabled}
+                    disabledReason={relay.disabledReason}
+                    onClick={relay.openAtTrigger}
+                    className="gap-2 justify-center"
+                  />
                 </div>
 
                 <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 sm:block"></div>
@@ -499,14 +645,6 @@ function VoicePageContent() {
                       rtasr.status === 'error'
                     ) {
                       await rtasr.start();
-                      return;
-                    }
-                    if (rtasr.status === 'running') {
-                      await rtasr.pause();
-                      return;
-                    }
-                    if (rtasr.status === 'paused') {
-                      await rtasr.resume();
                       return;
                     }
                     await handleStopAndSave();
@@ -550,6 +688,16 @@ function VoicePageContent() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 接力菜单（显式按钮/右键/长按复用） */}
+      <RelayMenu
+        open={relay.menuOpen}
+        onOpenChange={relay.setMenuOpen}
+        targets={relay.targets}
+        onSelect={relay.onSelect}
+        anchorPoint={relay.anchorPoint}
+        triggerRef={relay.triggerRef}
+      />
     </AppLayout>
   );
 }

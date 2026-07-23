@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { xunfeiChat } from '@repo/providers';
+import { withAuth } from '@/lib/api/with-auth';
+import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,23 +16,27 @@ interface TranslateRequest {
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    console.log('=== 开始处理翻译请求 ===');
+  return withAuth(request, async (user) => {
+    const userId = user.id;
+    let reservation: { id: string } | null = null;
 
-    const body: TranslateRequest = await request.json();
-    const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = body;
+    try {
+      console.log('=== 开始处理翻译请求 ===');
 
-    if (!text || text.trim().length === 0) {
-      return NextResponse.json({ error: 'Text is required' }, { status: 400 });
-    }
+      const body: TranslateRequest = await request.json();
+      const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = body;
 
-    console.log('→ 翻译文本长度:', text.length);
-    console.log('→ 源语言:', sourceLanguage);
-    console.log('→ 目标语言:', targetLanguage);
+      if (!text || text.trim().length === 0) {
+        return NextResponse.json({ error: 'Text is required' }, { status: 400 });
+      }
 
-    // 构建翻译提示词
-    // 重要：要求保持句子数量和结构一致，以便准确对照
-    const prompt = `请将以下${sourceLanguage}文本翻译成${targetLanguage}。
+      console.log('→ 翻译文本长度:', text.length);
+      console.log('→ 源语言:', sourceLanguage);
+      console.log('→ 目标语言:', targetLanguage);
+
+      // 构建翻译提示词
+      // 重要：要求保持句子数量和结构一致，以便准确对照
+      const prompt = `请将以下${sourceLanguage}文本翻译成${targetLanguage}。
 
 重要要求：
 1. 保持原文的句子数量和结构
@@ -38,44 +47,87 @@ export async function POST(request: NextRequest) {
 原文：
 ${text}`;
 
-    console.log('→ 调用讯飞 API...');
+      const requestId = getBillingRequestId(request, body as unknown as Record<string, unknown>);
+      let outputLimit = 4096;
+      if (user.role !== 'admin') {
+        const quota = await reserveChatQuota({
+          userId,
+          requestId,
+          feature: 'voice',
+          provider: 'xunfei',
+          model: 'lite',
+          messages: [{ content: prompt }],
+          maxOutputTokens: 4096,
+          metadata: { textLength: text.length, sourceLanguage, targetLanguage },
+        });
+        reservation = quota.reservation;
+        outputLimit = quota.outputLimit;
+      }
 
-    // 调用讯飞Lite模型进行翻译
-    const result = await xunfeiChat({
-      model: 'lite',
-      messages: [
+      console.log('→ 调用讯飞 API...');
+
+      // 调用讯飞Lite模型进行翻译
+      const result = await xunfeiChat({
+        model: 'lite',
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3, // 较低的温度以获得更稳定的翻译
+        maxTokens: outputLimit,
+      });
+
+      console.log('✓ 翻译完成, 译文长度:', result.content.length);
+
+      if (reservation) {
+        await settleAiQuota({
+          reservationId: reservation.id,
+          requestId,
+          feature: 'voice',
+          provider: 'xunfei',
+          model: 'lite',
+          endpoint: '/api/voice/translate',
+          measurement: createTokenMeasurement(result.usage),
+          action: 'voice-translate',
+          metadata: {
+            textLength: text.length,
+            sourceLanguage,
+            targetLanguage,
+          },
+        });
+      }
+
+      return NextResponse.json({
+        translatedText: result.content.trim(),
+        sourceLanguage,
+        targetLanguage,
+        usage: result.usage,
+      });
+    } catch (error) {
+      if (reservation) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '语音翻译请求失败',
+          meterType: 'tokens',
+        }).catch((releaseError) => console.error('[voice/translate] 释放额度失败:', releaseError));
+      }
+      console.error('=== 翻译失败 ===');
+      console.error('错误类型:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('错误信息:', error instanceof Error ? error.message : String(error));
+
+      if (error instanceof Error) {
+        console.error('错误堆栈:', error.stack);
+      }
+
+      if (error instanceof BillingError) return billingErrorResponse(error);
+      return NextResponse.json(
         {
-          role: 'user',
-          content: prompt,
+          error: '翻译失败，请稍后重试',
         },
-      ],
-      temperature: 0.3, // 较低的温度以获得更稳定的翻译
-      maxTokens: 4096,
-    });
-
-    console.log('✓ 翻译完成, 译文长度:', result.content.length);
-
-    return NextResponse.json({
-      translatedText: result.content.trim(),
-      sourceLanguage,
-      targetLanguage,
-      usage: result.usage,
-    });
-  } catch (error) {
-    console.error('=== 翻译失败 ===');
-    console.error('错误类型:', error instanceof Error ? error.constructor.name : typeof error);
-    console.error('错误信息:', error instanceof Error ? error.message : String(error));
-
-    if (error instanceof Error) {
-      console.error('错误堆栈:', error.stack);
+        { status: 500 }
+      );
     }
-
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Translation failed',
-        details: error instanceof Error ? error.stack : String(error),
-      },
-      { status: 500 }
-    );
-  }
+  });
 }

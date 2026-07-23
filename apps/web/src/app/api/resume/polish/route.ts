@@ -1,5 +1,12 @@
 import { PolishRequestSchema } from '@/schemas/resume-editor.schema';
 import { ZodError } from 'zod';
+import { withAuth } from '@/lib/api/with-auth';
+import { AuthError } from '@/lib/auth/errors';
+import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
+import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
 
 /**
  * POST /api/resume/polish
@@ -8,161 +15,227 @@ import { ZodError } from 'zod';
  */
 
 export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-
-    // 使用 Zod schema 校验请求体
-    const validationResult = PolishRequestSchema.safeParse(body);
-
-    if (!validationResult.success) {
-      const errors = validationResult.error.errors.map((err) => ({
-        path: err.path.join('.'),
-        message: err.message,
-      }));
-
-      return new Response(
-        JSON.stringify({
-          error: '请求参数校验失败',
-          details: errors,
-        }),
-        {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const {
-      target,
-      text,
-      context,
-      style = 'professional',
-      language = 'zh-CN',
-      privacy = { allowContactFields: false },
-    } = validationResult.data;
-
-    // 检查环境变量
-    const arkApiKey = process.env.ARK_API_KEY;
-    // 豆包 Responses API Base URL
-    const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-    // 使用 Lite 轻量模型（更快，成本更低）
-    const arkModel = process.env.ARK_MODEL || 'doubao-seed-2.0-lite';
-
-    if (!arkApiKey) {
-      console.error('ARK_API_KEY 未配置');
-      return new Response(JSON.stringify({ error: 'AI 服务配置错误' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 构建提示词
-    const systemPrompt = buildSystemPrompt(style, language);
-    const userPrompt = buildUserPrompt(text, context, target);
-
-    // 调用 ARK Responses API
-    const controller = new AbortController();
-    // Vercel 免费版 Serverless Functions 限制 10 秒，设置 8 秒留 2 秒缓冲
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+  return withAuth(req, async (user) => {
+    const userId = user.id;
+    let reservation: { id: string } | null = null;
 
     try {
-      const response = await fetch(`${arkBaseUrl}/responses`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${arkApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: arkModel,
-          input: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            {
-              role: 'user',
-              content: userPrompt,
-            },
-          ],
-          max_output_tokens: 800, // 限制输出长度
-          temperature: 0.7,
-          top_p: 0.9,
-          // 关键：禁用推理，直接输出结果
-          reasoning: {
-            effort: 'minimal', // minimal = 不思考，直接输出
-          },
-        }),
-        signal: controller.signal,
-      });
+      const body = await req.json();
 
-      clearTimeout(timeoutId);
+      // 使用 Zod schema 校验请求体
+      const validationResult = PolishRequestSchema.safeParse(body);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('ARK API 错误:', response.status, errorText);
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map((err) => ({
+          path: err.path.join('.'),
+          message: err.message,
+        }));
 
-        if (response.status === 429) {
-          return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
-            status: 429,
+        return new Response(
+          JSON.stringify({
+            error: '请求参数校验失败',
+            details: errors,
+          }),
+          {
+            status: 400,
             headers: { 'Content-Type': 'application/json' },
-          });
-        }
+          }
+        );
+      }
 
-        return new Response(JSON.stringify({ error: 'AI 服务暂时不可用' }), {
+      const {
+        target,
+        text,
+        context,
+        style = 'professional',
+        language = 'zh-CN',
+        privacy = { allowContactFields: false },
+      } = validationResult.data;
+
+      // 检查环境变量
+      const arkApiKey = process.env.ARK_API_KEY;
+      // 豆包 Responses API Base URL
+      const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
+      // 使用 Lite 轻量模型（更快，成本更低）
+      const arkModel = process.env.ARK_MODEL || 'doubao-seed-2.0-lite';
+
+      if (!arkApiKey) {
+        console.error('ARK_API_KEY 未配置');
+        return new Response(JSON.stringify({ error: 'AI 服务配置错误' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      const result = await response.json();
-      console.log('ARK API 完整响应:', JSON.stringify(result, null, 2));
-
-      // 临时：写入文件以便调试
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const logPath = path.join(process.cwd(), 'ark-response-debug.json');
-        fs.writeFileSync(logPath, JSON.stringify(result, null, 2));
-        console.log('✅ 响应已保存到:', logPath);
-      } catch (e) {
-        console.error('写入调试文件失败:', e);
+      // 构建提示词
+      const systemPrompt = buildSystemPrompt(style, language);
+      const userPrompt = buildUserPrompt(text, context, target);
+      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      let outputLimit = 800;
+      if (user.role !== 'admin') {
+        const quota = await reserveChatQuota({
+          userId,
+          requestId,
+          feature: 'resume',
+          provider: 'doubao',
+          model: arkModel,
+          messages: [{ content: systemPrompt }, { content: userPrompt }],
+          maxOutputTokens: 800,
+          metadata: { target, textLength: text.length, style, language },
+        });
+        reservation = quota.reservation;
+        outputLimit = quota.outputLimit;
       }
 
-      // 解析 ARK 响应
-      const optimizedText = extractOptimizedText(result);
-      console.log('提取的优化文本:', optimizedText);
+      // 调用 ARK Responses API
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
 
-      const highlights = extractHighlights(optimizedText, text);
+      try {
+        const response = await fetch(`${arkBaseUrl}/responses`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${arkApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: arkModel,
+            input: [
+              {
+                role: 'system',
+                content: systemPrompt,
+              },
+              {
+                role: 'user',
+                content: userPrompt,
+              },
+            ],
+            max_output_tokens: outputLimit, // 限制输出长度
+            temperature: 0.7,
+            top_p: 0.9,
+            // 关键：禁用推理，直接输出结果
+            reasoning: {
+              effort: 'minimal', // minimal = 不思考，直接输出
+            },
+          }),
+          signal: controller.signal,
+        });
 
-      return new Response(
-        JSON.stringify({
-          optimizedText,
-          highlights,
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('ARK API 错误:', response.status, errorText);
+
+          if (reservation) {
+            await releaseAiQuota({
+              reservationId: reservation.id,
+              reason: '简历润色上游失败',
+              meterType: 'tokens',
+            });
+          }
+
+          if (response.status === 429) {
+            return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
+              status: 429,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+
+          return new Response(JSON.stringify({ error: 'AI 服务暂时不可用' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
-      );
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
 
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        return new Response(JSON.stringify({ error: '请求超时，请重试' }), {
-          status: 408,
+        const result = await response.json();
+        console.log('ARK API 完整响应:', JSON.stringify(result, null, 2));
+
+        // 临时：写入文件以便调试
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const logPath = path.join(process.cwd(), 'ark-response-debug.json');
+          fs.writeFileSync(logPath, JSON.stringify(result, null, 2));
+          console.log('✅ 响应已保存到:', logPath);
+        } catch (e) {
+          console.error('写入调试文件失败:', e);
+        }
+
+        // 解析 ARK 响应
+        const optimizedText = extractOptimizedText(result);
+        console.log('提取的优化文本:', optimizedText);
+
+        const highlights = extractHighlights(optimizedText, text);
+
+        if (reservation) {
+          await settleAiQuota({
+            reservationId: reservation.id,
+            requestId,
+            feature: 'resume',
+            action: 'resume-polish',
+            provider: 'doubao',
+            model: arkModel,
+            endpoint: '/api/resume/polish',
+            measurement: createTokenMeasurement(result.usage ?? result.response?.usage),
+            metadata: { target, textLength: text.length, style, language },
+          });
+        }
+
+        return new Response(
+          JSON.stringify({
+            optimizedText,
+            highlights,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          return new Response(JSON.stringify({ error: '请求超时，请重试' }), {
+            status: 408,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        throw fetchError;
+      }
+    } catch (error) {
+      if (error instanceof BillingError) {
+        return billingErrorResponse(error);
+      }
+      if (reservation) {
+        await releaseAiQuota({
+          reservationId: reservation.id,
+          reason: '简历润色请求失败',
+          meterType: 'tokens',
+        }).catch((releaseError) => console.error('[resume/polish] 释放额度失败:', releaseError));
+      }
+      console.error('Polish API 错误:', error);
+
+      if (error instanceof AuthError) {
+        if (error.code === 'FORBIDDEN') {
+          return new Response(JSON.stringify({ error: error.message }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 401,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      throw fetchError;
+      return new Response(JSON.stringify({ error: '服务器内部错误' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
-  } catch (error) {
-    console.error('Polish API 错误:', error);
-    return new Response(JSON.stringify({ error: '服务器内部错误' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  });
 }
 
 /**

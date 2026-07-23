@@ -8,6 +8,7 @@ import type {
   QimenSectionResponseMap,
   QimenSectionTaskStatus,
 } from './qimen-analysis';
+import type { DestinyProvider } from './destiny-model-client';
 
 const ANALYSIS_TTL_SECONDS = 24 * 60 * 60;
 
@@ -208,4 +209,5 @@ export type QimenSectionJobPayload = {
   analysisId: string;
   sectionKey: QimenSectionKey;
   input: QimenAnalyzeRequest;
+  provider?: DestinyProvider;
 };

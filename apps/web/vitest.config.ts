@@ -1,22 +1,21 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'happy-dom',
-    setupFiles: ['./src/lib/__tests__/setup.ts'],
     include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    testTimeout: 60000, // Increase to 60 seconds for property-based tests
+    // e2e/ 是 Playwright 用例目录（*.spec.ts），不能进入 Vitest
+    exclude: [...configDefaults.exclude, 'e2e/**'],
+    testTimeout: 60000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
-        'src/lib/__tests__/setup.ts',
         '**/*.d.ts',
         '**/*.config.*',
-        '**/mockData',
         '**/dist',
       ],
     },

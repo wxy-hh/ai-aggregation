@@ -1,0 +1,424 @@
+:root {
+  /* 颜色变量：页面底色与中性色 */
+  --home-color-app-bg: #F5F7FA;
+  --home-color-page-bg: #F3F5FA;
+  --home-color-base-bg: #F5F6FA;
+  --home-color-surface: #FFFFFF;
+  --home-color-surface-muted: #F8FAFC;
+  --home-color-surface-soft: #F1F5F9;
+  --home-color-border: #E2E8F0;
+  --home-color-border-strong: #D5DAEB;
+  --home-color-text-primary: #0F172A;
+  --home-color-text-secondary: #475569;
+  --home-color-text-tertiary: #64748B;
+  --home-color-text-quaternary: #94A3B8;
+  --home-color-text-brand: #2563EB;
+
+  /* 颜色变量：品牌色与辅助色 */
+  --home-color-primary-50: #EFF6FF;
+  --home-color-primary-100: #DBEAFE;
+  --home-color-primary-200: #BFDBFE;
+  --home-color-primary-300: #93C5FD;
+  --home-color-primary-500: #3B82F6;
+  --home-color-primary-600: #2563EB;
+  --home-color-violet-500: #A855F7;
+  --home-color-violet-600: #9333EA;
+  --home-color-pink-500: #EC4899;
+  --home-color-pink-600: #DB2777;
+  --home-color-cyan-500: #06B6D4;
+  --home-color-indigo-500: #6366F1;
+  --home-color-amber-500: #F59E0B;
+  --home-color-success: #22C55E;
+  --home-color-danger: #E54350;
+
+  /* 颜色变量：定制渐变色 */
+  --home-color-logo-start: #5D7CFA;
+  --home-color-logo-end: #8794FF;
+  --home-color-active-end: #7D91FF;
+  --home-color-active-bar: #6B83FA;
+  --home-color-active-text: #4E67E6;
+  --home-color-button-end: #7B8FFF;
+
+  /* 透明效果 */
+  --home-glass-surface: rgba(255, 255, 255, 0.60);
+  --home-glass-border: rgba(255, 255, 255, 0.60);
+  --home-glass-button: rgba(255, 255, 255, 0.45);
+  --home-glass-button-hover: rgba(255, 255, 255, 0.80);
+  --home-glass-button-border: rgba(255, 255, 255, 0.30);
+  --home-focus-ring: rgba(59, 130, 246, 0.20);
+  --home-glow-blue: rgba(219, 234, 254, 0.50);
+  --home-glow-purple: rgba(233, 213, 255, 0.30);
+  --home-glow-blue-soft: rgba(191, 219, 254, 0.30);
+
+  /* 字体变量 */
+  --home-font-family-primary: "DM Sans", sans-serif;
+  --home-font-family-heading: "Space Grotesk", sans-serif;
+  --home-font-size-logo: 10px;
+  --home-font-size-version: 8px;
+  --home-font-size-xs: 12px;
+  --home-font-size-sm: 14px;
+  --home-font-size-md: 16px;
+  --home-font-size-lg: 18px;
+  --home-font-size-xl: 20px;
+  --home-font-size-card-title: 24px;
+  --home-font-size-hero: 60px;
+  --home-font-weight-regular: 400;
+  --home-font-weight-medium: 500;
+  --home-font-weight-semibold: 600;
+  --home-font-weight-bold: 700;
+  --home-font-weight-black: 900;
+  --home-line-height-tight: 1.25;
+  --home-line-height-base: 1.5;
+  --home-line-height-relaxed: 1.625;
+  --home-letter-spacing-tight: -0.025em;
+  --home-letter-spacing-wide: 0.05em;
+
+  /* 间距变量 */
+  --home-space-1: 4px;
+  --home-space-2: 8px;
+  --home-space-3: 12px;
+  --home-space-4: 16px;
+  --home-space-5: 20px;
+  --home-space-6: 24px;
+  --home-space-8: 32px;
+  --home-space-10: 40px;
+  --home-space-12: 48px;
+  --home-space-16: 64px;
+
+  /* 尺寸变量 */
+  --home-sidebar-width: 100px;
+  --home-secondary-sidebar-width: 280px;
+  --home-content-max-width: 1400px;
+  --home-icon-button-size: 40px;
+  --home-search-height: 48px;
+  --home-badge-height: 24px;
+
+  /* 圆角变量 */
+  --home-radius-sm: 8px;
+  --home-radius-md: 12px;
+  --home-radius-lg: 16px;
+  --home-radius-xl: 24px;
+  --home-radius-2xl: 32px;
+  --home-radius-hero: 48px;
+  --home-radius-full: 9999px;
+
+  /* 阴影变量 */
+  --home-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --home-shadow-md: 0 8px 20px rgba(76, 95, 154, 0.10);
+  --home-shadow-button: 0 10px 24px rgba(93, 124, 250, 0.32);
+  --home-shadow-button-hover: 0 14px 30px rgba(93, 124, 250, 0.36);
+  --home-shadow-secondary: inset 0 1px 0 rgba(255, 255, 255, 0.70), 0 6px 16px rgba(78, 99, 160, 0.12);
+  --home-shadow-hero: 0 20px 60px -10px rgba(59, 130, 246, 0.10);
+  --home-shadow-sidebar-active: 0 10px 28px rgba(93, 124, 250, 0.35);
+}
+
+/* 复用规则：页面壳层 */
+.home-shell {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--home-color-page-bg);
+  color: var(--home-color-text-primary);
+  font-family: var(--home-font-family-primary);
+}
+
+.home-secondary-sidebar {
+  width: var(--home-secondary-sidebar-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--home-space-6);
+  background: var(--home-glass-surface);
+  border-right: 1px solid rgba(226, 232, 240, 0.50);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.home-content {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.home-content-inner {
+  max-width: var(--home-content-max-width);
+  margin: 0 auto;
+  padding: 40px 32px;
+}
+
+/* 复用规则：搜索框 */
+.home-search {
+  position: relative;
+}
+
+.home-search input {
+  width: 100%;
+  height: var(--home-search-height);
+  padding: 12px 16px 12px 40px;
+  border: 0;
+  outline: none;
+  border-radius: var(--home-radius-md);
+  background: var(--home-color-surface);
+  color: var(--home-color-text-secondary);
+  font-size: var(--home-font-size-sm);
+  box-shadow: var(--home-shadow-sm);
+  transition: box-shadow 200ms ease, transform 200ms ease;
+}
+
+.home-search input::placeholder {
+  color: var(--home-color-text-quaternary);
+}
+
+.home-search input:focus {
+  box-shadow: 0 0 0 2px var(--home-focus-ring), var(--home-shadow-sm);
+}
+
+.home-search .home-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  color: var(--home-color-text-quaternary);
+  transform: translateY(-50%);
+}
+
+/* 复用规则：Hero */
+.home-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: var(--home-space-16);
+  padding: var(--home-space-12);
+  padding-bottom: 0;
+  border-radius: var(--home-radius-hero);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.60), rgba(255, 255, 255, 0.20), transparent);
+  box-shadow: var(--home-shadow-hero);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+.home-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--home-glass-border);
+  border-radius: var(--home-radius-hero);
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
+}
+
+.home-hero::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.80), transparent);
+  opacity: 0.5;
+}
+
+.home-hero-heading {
+  margin: 0 0 24px;
+  color: var(--home-color-text-primary);
+  font-size: var(--home-font-size-hero);
+  font-weight: var(--home-font-weight-black);
+  line-height: var(--home-line-height-tight);
+  letter-spacing: var(--home-letter-spacing-tight);
+  text-align: center;
+}
+
+.home-hero-accent {
+  background: linear-gradient(90deg, var(--home-color-primary-600), var(--home-color-indigo-500), var(--home-color-cyan-500));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.home-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--home-space-2);
+  min-height: var(--home-badge-height);
+  padding: 4px 12px;
+  border-radius: var(--home-radius-full);
+  background: rgba(59, 130, 246, 0.10);
+  color: var(--home-color-primary-600);
+  font-size: var(--home-font-size-xs);
+  font-weight: var(--home-font-weight-bold);
+  letter-spacing: var(--home-letter-spacing-wide);
+}
+
+.home-pill-badge::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: var(--home-radius-full);
+  background: var(--home-color-primary-500);
+}
+
+/* 复用规则：功能卡片 */
+.home-feature-card {
+  position: relative;
+  overflow: hidden;
+  padding: 32px;
+  border: 1px solid #F1F5F9;
+  border-radius: var(--home-radius-2xl);
+  background: var(--home-color-surface);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  transition: box-shadow 300ms ease, transform 300ms ease, border-color 300ms ease;
+}
+
+.home-feature-card:hover {
+  border-color: var(--home-color-border);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
+}
+
+.home-feature-card__orb {
+  position: absolute;
+  top: -48px;
+  right: -48px;
+  width: 256px;
+  height: 256px;
+  border-radius: var(--home-radius-full);
+  filter: blur(48px);
+  opacity: 0.5;
+  transition: opacity 500ms ease;
+}
+
+.home-feature-card:hover .home-feature-card__orb {
+  opacity: 1;
+}
+
+.home-feature-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 24px;
+  border-radius: 16px;
+  background: var(--home-color-surface-soft);
+  box-shadow: var(--home-shadow-sm);
+}
+
+.home-feature-card__title {
+  margin: 0 0 12px;
+  color: var(--home-color-text-primary);
+  font-size: var(--home-font-size-card-title);
+  font-weight: var(--home-font-weight-bold);
+}
+
+.home-feature-card__desc {
+  min-height: 48px;
+  margin: 0 0 32px;
+  color: var(--home-color-text-tertiary);
+  font-size: var(--home-font-size-lg);
+  line-height: var(--home-line-height-relaxed);
+}
+
+.home-feature-card__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--home-space-2);
+  padding: 12px 24px;
+  border-radius: var(--home-radius-md);
+  background: var(--home-color-surface-soft);
+  font-size: var(--home-font-size-sm);
+  font-weight: var(--home-font-weight-semibold);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.home-feature-card__button:hover {
+  background: var(--home-color-surface);
+}
+
+/* 复用规则：命令卡片 */
+.home-command-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--home-radius-md);
+  background: var(--home-color-surface-soft);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+  cursor: pointer;
+}
+
+.home-command-card:hover {
+  border-color: var(--home-color-border);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+/* 复用规则：文件项 */
+.home-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--home-color-text-secondary);
+  transition: background-color 200ms ease, color 200ms ease;
+  cursor: pointer;
+}
+
+.home-file-item:hover {
+  background: var(--home-color-surface-soft);
+}
+
+/* 复用规则：最近创作卡片 */
+.home-creation-card {
+  padding: 16px;
+  border: 1px solid #F1F5F9;
+  border-radius: var(--home-radius-lg);
+  background: var(--home-color-surface);
+  box-shadow: var(--home-shadow-sm);
+  transition: box-shadow 200ms ease;
+  cursor: pointer;
+}
+
+.home-creation-card:hover {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.home-creation-card__media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border-radius: var(--home-radius-md);
+  background: var(--home-color-surface-soft);
+}
+
+.home-creation-card__status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #FFFFFF;
+  border-radius: var(--home-radius-full);
+}
+
+.home-creation-card__status.is-completed {
+  background: var(--home-color-success);
+}
+
+.home-creation-card__status.is-processing {
+  background: var(--home-color-primary-500);
+}
+
+/* Tailwind 映射说明
+home-shell -> bg-[#F3F5FA] text-slate-900 font-sans
+home-secondary-sidebar -> bg-white/60 backdrop-blur-xl border-slate-200/50
+home-search -> rounded-xl py-3 pl-10 pr-4 text-sm shadow-sm focus:ring-2 focus:ring-blue-500/20
+home-hero -> rounded-[48px] p-12 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] backdrop-blur-2xl
+home-feature-card -> rounded-[32px] p-8 shadow-xl hover:shadow-2xl
+home-command-card -> rounded-xl p-3 bg-slate-50 hover:shadow-md
+home-file-item -> rounded-lg p-2 hover:bg-slate-100
+home-creation-card -> rounded-2xl p-4 shadow-sm hover:shadow-md
+home-pill-badge -> px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600
+*/

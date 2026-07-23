@@ -24,7 +24,7 @@ export function AssetsSidebar({
             animate={{ width: showToggle ? 80 : '100%', opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             className={cn(
-              'h-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col py-4 gap-6 overflow-hidden',
+              'flex h-full flex-col gap-6 overflow-hidden border-l border-white/20 bg-transparent py-4 dark:border-white/5',
               showToggle ? 'items-center' : 'w-full px-4'
             )}
           >

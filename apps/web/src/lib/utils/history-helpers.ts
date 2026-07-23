@@ -3,14 +3,22 @@
  * 历史记录辅助函数
  */
 
-import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem } from '@/types/history';
+import { ChatHistoryItem, VoiceHistoryItem, ImageHistoryItem, VideoHistoryItem, DestinyHistoryItem, DestinySubType } from '@/types/history';
+import { generateUUID } from '@/lib/utils/uuid';
+import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
+import type { DerivationMetadata } from '@repo/shared';
 
 /**
  * Format relative time
+ * 对无效输入做兜底：匿名/本地数据可能缺 updatedAt，避免抛 TypeError
  */
-export function formatRelativeTime(date: Date | string): string {
+export function formatRelativeTime(date: Date | string | null | undefined): string {
+  if (!date) return '未知时间';
   const now = new Date();
   const targetDate = typeof date === 'string' ? new Date(date) : date;
+  if (!(targetDate instanceof Date) || Number.isNaN(targetDate.getTime())) {
+    return '未知时间';
+  }
   const diffMs = now.getTime() - targetDate.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
@@ -112,6 +120,40 @@ export function createChatHistoryItem(
 }
 
 /**
+ * Create comparison (multi-model) history item
+ * 比较会话历史记录：以单条记录呈现，conversationId 用于回 /chat 重新载入
+ */
+export function createComparisonHistoryItem(
+  conversationId: string,
+  turns: ComparisonTurn[],
+  selectedModels: SelectedModel[]
+): Omit<ChatHistoryItem, 'id' | 'createdAt' | 'updatedAt'> {
+  const now = new Date();
+  const firstPrompt = turns[0]?.prompt ?? '比较对话';
+  const lastTurn = turns[turns.length - 1];
+  // 取最后一个已完成模型的回答作为预览
+  const lastContent = lastTurn
+    ? (Object.values(lastTurn.runs).find((r) => r.content)?.content ?? '')
+    : '';
+  const preview = lastContent
+    ? lastContent.length > 150 ? lastContent.slice(0, 150) + '...' : lastContent
+    : '比较对话';
+
+  return {
+    type: 'chat',
+    title: firstPrompt.length > 30 ? firstPrompt.slice(0, 30) + '...' : firstPrompt,
+    preview,
+    date: formatRelativeTime(now),
+    model: `${selectedModels.length} 模型对比`,
+    provider: 'compare',
+    messages: turns.map((t) => ({ role: 'user' as const, content: t.prompt })),
+    tags: ['多模型对比'],
+    mode: 'compare',
+    conversationId,
+  };
+}
+
+/**
  * Create voice history item
  */
 export function createVoiceHistoryItem(
@@ -168,5 +210,113 @@ export function createImageHistoryItem(
     style: options?.style,
     aspectRatio: options?.aspectRatio,
     parameters: options?.parameters,
+  };
+}
+
+/**
+ * 创建视频历史记录项（REQ-013；成功生成后写入，含接力派生元数据）
+ */
+export function createVideoHistoryItem(
+  prompt: string,
+  videoUrl: string,
+  model: string,
+  options?: {
+    referenceImage?: string;
+    aspectRatio?: string;
+    parameters?: Record<string, any>;
+    derivation?: DerivationMetadata;
+  }
+): Omit<VideoHistoryItem, 'id' | 'createdAt' | 'updatedAt'> {
+  const now = new Date();
+  const preview = prompt.length > 100 ? prompt.slice(0, 100) + '...' : prompt;
+  const title = prompt.split(/[,，。]/)[0].slice(0, 30) || '生成视频';
+
+  return {
+    type: 'video',
+    title,
+    preview,
+    date: formatRelativeTime(now),
+    model,
+    videoUrl,
+    prompt,
+    referenceImage: options?.referenceImage,
+    aspectRatio: options?.aspectRatio,
+    parameters: options?.parameters,
+    ...(options?.derivation ?? {}),
+  };
+}
+
+/**
+ * 创建命理历史记录项（返回完整对象，包含 id 和时间戳）
+ * @param id - 可选的外部 ID，用于防止重复保存；不传则生成新 UUID
+ */
+export function createDestinyHistoryItem(
+  subType: DestinySubType,
+  formData: Record<string, unknown>,
+  reportData: Record<string, unknown> | null,
+  model: string,
+  options?: {
+    title?: string;
+    preview?: string;
+    coreTone?: string;
+    id?: string;
+    derivation?: DerivationMetadata;
+  }
+): DestinyHistoryItem {
+  const now = new Date();
+  const id = options?.id || generateUUID();
+  const timestamp = now.toISOString();
+
+  // 根据不同命理类型提取人物概要信息
+  let name = '未知';
+  let genderLabel = '未知';
+  let birthDateText = '未知';
+
+  if (subType === 'qimen') {
+    const qf = formData as { datetime?: string; location?: { name?: string }; description?: string };
+    name = qf.location?.name || '奇门遁甲';
+    genderLabel = '';
+    birthDateText = qf.datetime
+      ? new Date(qf.datetime).toLocaleDateString('zh-CN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : '未知';
+  } else {
+    name = (formData as { name?: string }).name || '未知';
+    const birthDate =
+      (formData as { birthDate?: { year: number; month: number; day: number } }).birthDate;
+    birthDateText = birthDate
+      ? `${birthDate.year}年${birthDate.month}月${birthDate.day}日`
+      : '未知';
+    const gender = (formData as { gender?: string }).gender || 'male';
+    genderLabel = gender === 'male' ? '男' : '女';
+  }
+
+  const title = options?.title || `${name}的${subType === 'bazi' ? '八字' : subType === 'ziwei' ? '紫微斗数' : '奇门遁甲'}命理报告`;
+  const preview = options?.preview || (name !== '未知' ? `姓名：${name}，出生：${birthDateText}` : `起局时间：${birthDateText}`);
+  const coreTone = options?.coreTone || '命理分析';
+
+  return {
+    id,
+    type: 'destiny',
+    subType,
+    title,
+    preview,
+    date: formatRelativeTime(now),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    model,
+    formData,
+    reportData,
+    profileSummary: {
+      name,
+      gender: genderLabel,
+      birthDate: birthDateText,
+    },
+    coreTone,
+    // 接力派生元数据（REQ-013/016「由某来源接力生成」）
+    ...(options?.derivation ?? {}),
   };
 }

@@ -1,0 +1,5 @@
+# 本地开发：复制为 .dev.vars 后填写真实值；该文件不可提交。
+XUNFEI_APP_ID=your_xunfei_app_id
+XUNFEI_API_KEY=your_xunfei_api_key
+XUNFEI_PD=medical
+RTASR_GATEWAY_SECRET=use_the_same_random_secret_as_the_web_app

@@ -1,8 +1,11 @@
 'use client';
 
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { createDexieStorage } from '@/lib/storage/zustand-dexie-storage';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
+import { authFetch } from '@/lib/api/client';
 
 // ==================== 类型定义 ====================
 
@@ -108,9 +111,15 @@ function dedupeHistoryItems(items: HistoryItem[]): HistoryItem[] {
 
 // ==================== Store 实现 ====================
 
+// 在模块顶层保存 set 引用，用于 persist 中间件的 onRehydrateStorage 回调
+// onRehydrateStorage 在 useHistoryStore 赋值前执行，不能直接引用 useHistoryStore.setState
+let _storeSet: ((partial: Partial<HistoryState>) => void) | null = null;
+
 export const useHistoryStore = create<HistoryState>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      _storeSet = set;
+      return {
       // 初始状态
       items: [],
       isLoading: false,
@@ -155,6 +164,14 @@ export const useHistoryStore = create<HistoryState>()(
 
         // 避免循环调用
         if (!_isSyncDelete) {
+          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+          try {
+            const { markSourcesInvalidBySourceIds } = require('./relay-store');
+            markSourcesInvalidBySourceIds([id]);
+          } catch (e) {
+            console.warn('Failed to mark relay source invalid:', e);
+          }
+
           // 同步删除 conversations-store 中的对应对话（chat 类型）
           try {
             const { useConversationsStore } = require('./conversations-store');
@@ -192,6 +209,14 @@ export const useHistoryStore = create<HistoryState>()(
 
         // 避免循环调用
         if (!_isSyncDelete) {
+          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+          try {
+            const { markSourcesInvalidBySourceIds } = require('./relay-store');
+            markSourcesInvalidBySourceIds(ids);
+          } catch (e) {
+            console.warn('Failed to mark relay source invalid (batch):', e);
+          }
+
           // 同步删除 conversations-store 中的对应对话（chat 类型）
           try {
             const { useConversationsStore } = require('./conversations-store');
@@ -223,8 +248,11 @@ export const useHistoryStore = create<HistoryState>()(
 
       // 清空历史记录
       clearHistory: (type) => {
-        // 获取要被删除的记录 ID，用于同步删除
+        // 获取要被删除的记录 ID，用于同步删除与接力失效标记
         const state = get();
+        const deletedIds = new Set(
+          state.items.filter((item) => (type ? item.type === type : true)).map((item) => item.id)
+        );
         const chatIdsToDelete = type === 'chat' || !type
           ? state.items.filter((item) => (type ? item.type === type : item.type === 'chat')).map((item) => item.id)
           : [];
@@ -238,6 +266,14 @@ export const useHistoryStore = create<HistoryState>()(
           }));
         } else {
           set({ items: [] });
+        }
+
+        // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
+        try {
+          const { markSourcesInvalidBySourceIds } = require('./relay-store');
+          markSourcesInvalidBySourceIds(Array.from(deletedIds));
+        } catch (e) {
+          console.warn('Failed to mark relay source invalid (clear):', e);
         }
 
         // 同步清空 conversations-store 中的对应对话（chat 类型）
@@ -267,16 +303,34 @@ export const useHistoryStore = create<HistoryState>()(
         }
       },
 
-      // 从服务器获取历史记录
+      // 从服务器获取历史记录（远端未接入时保留本地 IndexedDB 数据）
       fetchHistory: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/history');
+          const response = await authFetch('/api/history');
           if (!response.ok) throw new Error('Failed to fetch history');
 
           const data = await response.json();
+          const remoteItems = Array.isArray(data.items) ? (data.items as HistoryItem[]) : [];
+
+          // 远端 API 仍为占位实现时返回空数组，不能覆盖本地已持久化的记录
+          if (remoteItems.length === 0) {
+            set({ isLoading: false, isInitialized: true });
+            return;
+          }
+
+          const localItems = get().items;
+          const mergedMap = new Map<string, HistoryItem>();
+
+          [...localItems, ...remoteItems].forEach((item) => {
+            const existing = mergedMap.get(item.id);
+            if (!existing || getItemTimestamp(item) >= getItemTimestamp(existing)) {
+              mergedMap.set(item.id, item);
+            }
+          });
+
           set({
-            items: data.items || [],
+            items: Array.from(mergedMap.values()),
             isLoading: false,
             isInitialized: true,
           });
@@ -304,6 +358,8 @@ export const useHistoryStore = create<HistoryState>()(
           chat: items.filter((item) => item.type === 'chat').length,
           voice: items.filter((item) => item.type === 'voice').length,
           image: items.filter((item) => item.type === 'image').length,
+          video: items.filter((item) => item.type === 'video').length,
+          destiny: items.filter((item) => item.type === 'destiny').length,
         };
       },
 
@@ -312,13 +368,18 @@ export const useHistoryStore = create<HistoryState>()(
         const items = dedupeHistoryItems(get().items);
         return items.find((item) => item.id === id);
       },
-    }),
+    };
+    },
     {
       name: 'ai-history-store',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => createDexieStorage('ai-history-db')),
       partialize: (state) => ({
         items: state.items,
       }),
+      // IndexedDB 数据水合完成后标记为已初始化，确保 historyId 恢复能在刷新后正常触发
+      onRehydrateStorage: () => () => {
+        _storeSet?.({ isInitialized: true });
+      },
     }
   )
 );
@@ -332,15 +393,17 @@ export const useHistoryFilter = () => useHistoryStore((state) => state.filter);
 export const useHistoryInitialized = () => useHistoryStore((state) => state.isInitialized);
 
 export const useHistoryActions = () =>
-  useHistoryStore((state) => ({
-    setFilter: state.setFilter,
-    addItem: state.addItem,
-    updateItem: state.updateItem,
-    deleteItem: state.deleteItem,
-    deleteItems: state.deleteItems,
-    clearHistory: state.clearHistory,
-    fetchHistory: state.fetchHistory,
-    getFilteredItems: state.getFilteredItems,
-    getStats: state.getStats,
-    getItemById: state.getItemById,
-  }));
+  useHistoryStore(
+    useShallow((state) => ({
+      setFilter: state.setFilter,
+      addItem: state.addItem,
+      updateItem: state.updateItem,
+      deleteItem: state.deleteItem,
+      deleteItems: state.deleteItems,
+      clearHistory: state.clearHistory,
+      fetchHistory: state.fetchHistory,
+      getFilteredItems: state.getFilteredItems,
+      getStats: state.getStats,
+      getItemById: state.getItemById,
+    }))
+  );

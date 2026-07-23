@@ -4,19 +4,25 @@ import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
-import { CreativeCockpit } from '@/components/image/creative-cockpit';
+import { CreativeCockpit, type ImageRestoreParams } from '@/components/image/creative-cockpit';
 import { NegativePrompt } from '@/components/image/negative-prompt';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { ModelSwitcher } from '@/components/image/model-switcher';
 import { generateKolorsImage, downloadImage } from '@/lib/api/kolors';
+import { generateAgnesImage } from '@/lib/api/agnes';
 import {
   DEFAULT_PARAMS,
   ASPECT_RATIO_TO_SIZE,
   STYLE_PROMPTS,
   PROMPT_TEMPLATES,
+  AGNES_DEFAULT_PARAMS,
+  getImagePreviewBoxStyle,
+  getRatioLabel,
+  ImageModel,
 } from '@/lib/constants/image-generation';
 import {
   Sparkles,
@@ -35,6 +41,16 @@ import { useHistoryStore } from '@/stores/history-store';
 import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 import { blobToDataUrl } from '@/lib/utils/image-url';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+// 跨模态接力：目标侧接收 + 结果源侧发起
+import { ReferenceBar } from '@/components/relay/reference-bar';
+import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
+import { useRelayReceive } from '@/components/relay/use-relay-receive';
+import { RelayAction } from '@/components/relay/relay-action';
+import { RelayMenu } from '@/components/relay/relay-menu';
+import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
+import { RELAY_COPY } from '@/lib/relay/copy';
+import type { DerivationMetadata, RelayReferenceItem } from '@repo/shared';
 
 export default function ImagePage() {
   // 历史记录状态
@@ -50,50 +66,123 @@ export default function ImagePage() {
   const [seed, setSeed] = useState<string>('');
   const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
+  // 模型选择
+  const [model, setModel] = useState<ImageModel>('kolors');
+  // Agnes 专属参数
+  const [quality, setQuality] = useState<string>(AGNES_DEFAULT_PARAMS.quality);
+
   // 生成状态
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
+  // 与 generatedImages 同序的可恢复 DataURL（接力快照用，禁 objectURL）
+  const [generatedDataUrls, setGeneratedDataUrls] = useState<string[]>([]);
+  const [generatedRatio, setGeneratedRatio] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
+  // 参数回溯：大图预览
+  const [previewImage, setPreviewImage] = useState<{ url: string; prompt: string } | null>(null);
+
+  // 跨模态接力：图像目标接收（REQ-004/005/006）
+  const relay = useRelayReceive('image');
+  const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
+  const relayDraftText = relay.bundle?.items[0]?.snapshotText ?? '';
+  // 到达时：prompt 目标且当前 prompt 为初始模板则预填；不自动发送（REQ-005）
+  useEffect(() => {
+    if (!relay.initialized || !relay.bundle) return;
+    if (relayDraftText && !relay.draft) {
+      setPrompt(relayDraftText);
+      relay.setDraft(relayDraftText);
+    }
+     
+  }, [relay.initialized, relay.bundle?.id]);
+  // 记录本次生成是否来自接力（成功后写入历史，REQ-016）
+  const relayDerivationRef = useRef<DerivationMetadata | undefined>(undefined);
+
+  // 结果源侧接力：把当前生成图作为来源（REQ-002/007）。快照含图片 dataURL 与原 Prompt。
+  // 快照用可恢复 DataURL（禁 objectURL：刷新/跨页后 objectURL 失效，REQ §4.3.3）
+  const activeGeneratedImage = generatedImages[activeImageIndex];
+  const activeGeneratedDataUrl = generatedDataUrls[activeImageIndex];
+  const canRelayResult = !isGenerating && Boolean(activeGeneratedImage);
+  const resultRelay = useRelayLauncher({
+    sourceType: 'image',
+    disabledReason: !canRelayResult
+      ? isGenerating
+        ? RELAY_COPY.disabled.generating
+        : RELAY_COPY.disabled.empty
+      : undefined,
+    buildItem: () => {
+      if (!canRelayResult) return null;
+      const partial: Omit<RelayReferenceItem, 'id' | 'createdAt'> = {
+        sourceModule: 'image',
+        sourceType: 'image',
+        sourceId: `image-result-${activeImageIndex}`,
+        sourceTitle: prompt.slice(0, 30) || '生成图片',
+        sourceModel: model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash',
+        snapshotText: prompt,
+        snapshotMediaUrl: activeGeneratedDataUrl,
+      };
+      return partial;
+    },
+  });
 
   // 处理图片生成
   const handleGenerate = useCallback(async () => {
+    // 接力两阶段（REQ-016）：生成前只读派生元数据（不清引用），成功才 commit 清引用与草稿；
+    // 失败时引用与草稿原样保留，允许原地重试
+    relayDerivationRef.current = relay.prepareExecution();
     setIsGenerating(true);
     setProgress(0);
     setError(null);
     setCurrentStep('准备生成...');
 
     try {
-      // 根据风格补全提示词
-      const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
-      const enhancedPrompt = styleConfig
-        ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
-        : prompt;
+      let response;
+      if (model === 'kolors') {
+        // 根据风格补全提示词
+        const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
+        const enhancedPrompt = styleConfig
+          ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
+          : prompt;
 
-      setCurrentStep('正在扩散生成...');
-      setProgress(10);
+        setCurrentStep('正在扩散生成...');
+        setProgress(10);
 
-      // 调用生成接口
-      const response = await generateKolorsImage({
-        prompt: enhancedPrompt,
-        negativePrompt: negativePrompt || styleConfig?.negativePrompt,
-        imageSize: ASPECT_RATIO_TO_SIZE[ratio],
-        steps,
-        guidanceScale: cfg,
-        batchSize,
-        seed: seed ? parseInt(seed) : undefined,
-        style,
-      });
+        // 调用 Kolors 生成接口
+        response = await generateKolorsImage({
+          prompt: enhancedPrompt,
+          negativePrompt: negativePrompt || styleConfig?.negativePrompt,
+          imageSize: ASPECT_RATIO_TO_SIZE[ratio],
+          steps,
+          guidanceScale: cfg,
+          batchSize,
+          seed: seed ? parseInt(seed) : undefined,
+          style,
+        });
+      } else {
+        setCurrentStep('正在生成...');
+        setProgress(10);
+
+        // 调用 Agnes 生成接口
+        response = await generateAgnesImage({
+          prompt,
+          negativePrompt: negativePrompt || undefined,
+          size: ratio,
+          n: 1,
+          seed: seed ? parseInt(seed) : undefined,
+          style: style || undefined,
+          quality: quality as 'standard' | 'hd',
+        });
+      }
 
       setProgress(80);
       setCurrentStep('下载图片...');
 
       // 下载图片并分别生成页面预览地址与可持久化历史地址
       const images = await Promise.all(
-        response.images.map(async (img) => {
+        response.images.map(async (img: { url: string }) => {
           const blob = await downloadImage(img.url);
           return {
             previewUrl: URL.createObjectURL(blob),
@@ -106,22 +195,34 @@ export default function ImagePage() {
       setProgress(100);
       setCurrentStep('完成！');
       setGeneratedImages(imageUrls);
+      setGeneratedDataUrls(images.map((item) => item.historyUrl));
+      setGeneratedRatio(ratio);
       setActiveImageIndex(0);
 
       // 保存到历史记录
       if (images.length > 0) {
+        const modelName = model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash';
+        const params = model === 'kolors'
+          ? { steps, cfg, seed: seed || 'random', batchSize }
+          : { quality, seed: seed || 'random' };
         const historyItem = {
           id: `image-${Date.now()}`,
-          ...createImageHistoryItem(prompt, images[0].historyUrl, 'Kolors', {
+          ...createImageHistoryItem(prompt, images[0].historyUrl, modelName, {
             negativePrompt,
             style,
             aspectRatio: ratio,
-            parameters: { steps, cfg, seed: seed || 'random', batchSize },
+            parameters: params,
           }),
+          // 接力派生：成功才记录（REQ-016「由某来源接力生成」）
+          ...(relayDerivationRef.current ?? {}),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         addHistoryItem(historyItem);
+        // 成功才完成接力：清活动引用与草稿（REQ-016）
+        relay.commitExecution();
+        // 清派生暂存，避免残留错配到下一次无关生成
+        relayDerivationRef.current = undefined;
       }
 
       // 稍后重置生成状态
@@ -137,7 +238,7 @@ export default function ImagePage() {
       setProgress(0);
       setCurrentStep('');
     }
-  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize]);
+  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem, relay]);
 
   // 随机灵感提示词
   const handleRandomPrompt = () => {
@@ -145,25 +246,29 @@ export default function ImagePage() {
     setPrompt(PROMPT_TEMPLATES[randomIndex]);
   };
 
-  // 根据当前比例返回预览区域样式
-  const getAspectRatioClass = () => {
-    switch (ratio) {
-      case '1:1':
-        return 'aspect-square';
-      case '3:4':
-        return 'aspect-[3/4]';
-      case '4:3':
-        return 'aspect-[4/3]';
-      case '16:9':
-        return 'aspect-[16/9]';
-      case '9:16':
-        return 'aspect-[9/16]';
-      case '3:2':
-        return 'aspect-[3/2]';
-      default:
-        return 'aspect-[16/9]';
+  // 模型切换时重置相关参数
+  const handleModelChange = useCallback((newModel: ImageModel) => {
+    setModel(newModel);
+    if (newModel === 'agnes') {
+      setStyle(AGNES_DEFAULT_PARAMS.style);
+      setRatio(AGNES_DEFAULT_PARAMS.size);
+      setQuality(AGNES_DEFAULT_PARAMS.quality);
+    } else {
+      setStyle(DEFAULT_PARAMS.style);
+      setRatio(DEFAULT_PARAMS.aspectRatio);
+      setSteps(DEFAULT_PARAMS.steps);
+      setCfg(DEFAULT_PARAMS.guidanceScale);
     }
-  };
+    setBatchSize(DEFAULT_PARAMS.batchSize);
+    setSeed('');
+  }, []);
+
+  // 预览框始终跟随当前选中的比例，生成 API 仍使用 ratio 参数
+  const previewBoxStyle = getImagePreviewBoxStyle(ratio);
+  const previewRatioMismatch =
+    generatedImages.length > 0 && generatedRatio != null && generatedRatio !== ratio;
+  // 仅当当前比例与生成图一致时才展示主预览，避免旧图在新比例框内留白
+  const showGeneratedPreview = generatedImages.length > 0 && !previewRatioMismatch;
 
   // Quick Start Actions
   const quickStarts = [
@@ -192,8 +297,51 @@ export default function ImagePage() {
     setStyle(item.style);
   };
 
+  // 参数回溯：恢复参数到工作区
+  const handleRestoreParams = useCallback((params: ImageRestoreParams) => {
+    setPrompt(params.prompt);
+    if (params.negativePrompt !== undefined) setNegativePrompt(params.negativePrompt);
+    if (params.style !== undefined) setStyle(params.style);
+    if (params.aspectRatio !== undefined) setRatio(params.aspectRatio);
+    if (params.steps !== undefined) setSteps(params.steps);
+    if (params.cfg !== undefined) setCfg(params.cfg);
+    if (params.seed !== undefined) setSeed(params.seed === 'random' ? '' : params.seed);
+    if (params.batchSize !== undefined) setBatchSize(params.batchSize);
+    if (params.quality !== undefined) setQuality(params.quality);
+  }, []);
+
+  // 参数回溯：大图预览
+  const handlePreviewImage = useCallback((imageUrl: string, prompt: string) => {
+    setPreviewImage({ url: imageUrl, prompt });
+  }, []);
+
   const renderParameterPanel = () => (
     <>
+      {/* 接力引用条：位于 Prompt 上方（REQ-004）。参考图目标展示媒体快照，再次绘图/Prompt 目标展示文本快照。 */}
+      {relay.replaceCandidate ? (
+        <ReferenceBar
+          bundle={relay.replaceCandidate.incoming}
+          isReplaceCandidate
+          onConfirmReplace={relay.confirmReplace}
+          onCancelReplace={relay.cancelReplace}
+          onRemove={relay.remove}
+        />
+      ) : relay.bundle ? (
+        <ReferenceBar
+          bundle={relay.bundle}
+          onRemove={relay.remove}
+          onViewSource={() => setRelayPreviewOpen(true)}
+          showFill={Boolean(relayDraftText) && prompt !== relayDraftText}
+          fillLabel={RELAY_COPY.referenceBar.fillPrompt}
+          onFill={() => {
+            setPrompt(relayDraftText);
+            relay.setDraft(relayDraftText);
+          }}
+        />
+      ) : relay.isInvalid ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{RELAY_COPY.referenceBar.invalid}</p>
+      ) : null}
+
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -231,21 +379,24 @@ export default function ImagePage() {
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-      <StyleSelector selected={style} onStyleChange={setStyle} />
+      <StyleSelector selected={style} onStyleChange={setStyle} model={model} />
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
       <SettingsPanel
+        model={model}
         ratio={ratio}
         steps={steps}
         cfg={cfg}
         seed={seed}
         batchSize={batchSize}
+        quality={quality}
         onRatioChange={setRatio}
         onStepsChange={setSteps}
         onCfgChange={setCfg}
         onSeedChange={setSeed}
         onBatchSizeChange={setBatchSize}
+        onQualityChange={setQuality}
       />
     </>
   );
@@ -261,8 +412,8 @@ export default function ImagePage() {
             <div className="absolute top-[40%] -left-[10%] w-[40%] h-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
           </div>
 
-          {/* 头部 */}
-          <header className="flex-none px-4 md:px-6 py-4 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 flex items-center justify-between z-10">
+          {/* 头部：透明磨砂，与页面径向渐变融为一体，避免白底拼接感 */}
+          <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊
@@ -271,16 +422,19 @@ export default function ImagePage() {
                 </Badge>
               </h1>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              aria-label="打开参数面板"
-              onClick={() => setShowMobileSettings(true)}
-              className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
-            >
-              <Pencil className="w-4 h-4 mr-2" />
-              参数设置
-            </Button>
+            <div className="flex items-center gap-3">
+              <ModelSwitcher model={model} onModelChange={handleModelChange} />
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="打开参数面板"
+                onClick={() => setShowMobileSettings(true)}
+                className="lg:hidden rounded-xl border-slate-200 bg-white/80 text-slate-700 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                参数设置
+              </Button>
+            </div>
           </header>
 
           {/* 内容区域：拆分视图 */}
@@ -383,39 +537,44 @@ export default function ImagePage() {
               </div>
 
               <div
-                className={cn(
-                  'relative transition-all duration-500 ease-in-out',
-                  generatedImages.length > 0 ? 'w-full max-w-4xl' : 'w-full max-w-lg'
-                )}
+                className="relative mx-auto transition-all duration-500 ease-in-out"
+                style={previewBoxStyle}
               >
-                {generatedImages.length > 0 ? (
+                {showGeneratedPreview ? (
                   <div
                     className={cn(
-                      'relative rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300',
-                      getAspectRatioClass()
+                      'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300'
                     )}
+                    onContextMenu={resultRelay.onContextMenu}
+                    {...resultRelay.longPressProps}
                   >
-                    {/* 图片内容 */}
-                    <div
+                    <img
+                      src={generatedImages[activeImageIndex]}
+                      alt="生成结果"
                       className={cn(
-                        'absolute inset-0 bg-cover bg-center transition-all duration-1000',
+                        'absolute inset-0 w-full h-full object-cover transition-all duration-1000',
                         isGenerating
-                          ? 'scale-110 blur-xl opacity-80'
+                          ? 'scale-105 blur-xl opacity-80'
                           : 'scale-100 blur-0 opacity-100'
                       )}
-                      style={{
-                        backgroundImage: `url('${generatedImages[activeImageIndex]}')`,
-                      }}
-                    ></div>
+                    />
 
-                    {/* 下载按钮 */}
                     {!isGenerating && (
-                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-100 transition-opacity duration-300 sm:opacity-0 sm:group-hover:opacity-100">
+                        {/* 接力：移动端常显（无 hover），桌面 hover 渐显（REQ-002 显式入口） */}
+                        <RelayAction
+                          ref={resultRelay.triggerRef}
+                          iconOnly
+                          disabled={resultRelay.disabled}
+                          disabledReason={resultRelay.disabledReason}
+                          onClick={resultRelay.openAtTrigger}
+                          className="h-11 w-11 rounded-full border border-white/20 bg-white/20 p-3 text-white shadow-lg backdrop-blur-md hover:bg-white/30"
+                        />
                         <button
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = generatedImages[activeImageIndex];
-                            link.download = `kolors-${Date.now()}.png`;
+                            link.download = `${model}-${Date.now()}.png`;
                             link.click();
                           }}
                           className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
@@ -427,11 +586,9 @@ export default function ImagePage() {
                     )}
                   </div>
                 ) : (
-                  // 空状态 - 准备好开始创作了吗？
                   <div
                     className={cn(
-                      'flex flex-col items-center justify-center text-center py-20 px-8 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300',
-                      getAspectRatioClass()
+                      'absolute inset-0 flex flex-col items-center justify-center text-center py-12 px-6 rounded-3xl border-4 border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 transition-all duration-300'
                     )}
                   >
                     <div className="w-24 h-24 mb-6 rounded-3xl bg-white dark:bg-slate-800 shadow-xl shadow-blue-500/10 flex items-center justify-center relative overflow-hidden group">
@@ -440,27 +597,48 @@ export default function ImagePage() {
                       <div className="absolute -top-1 -right-1 w-8 h-8 bg-blue-500/20 blur-xl rounded-full" />
                     </div>
 
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
-                      准备好开始创作了吗？
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
-                      在左侧输入提示词，选择风格并点击"立即生成"开始您的艺术之旅。
-                    </p>
-
-                    <div className="flex flex-wrap justify-center gap-3">
-                      {quickStarts.map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleQuickStart(item)}
-                          className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                    {previewRatioMismatch ? (
+                      <>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-2">
+                          已切换至 {getRatioLabel(ratio)} 比例
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6 leading-relaxed text-sm">
+                          当前预览框已按新比例调整。点击「立即生成」将输出对应尺寸的图片，下方缩略图可查看上次结果。
+                        </p>
+                        <Button
+                          onClick={handleGenerate}
+                          disabled={isGenerating || !prompt.trim()}
+                          className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-6 text-white shadow-lg"
                         >
-                          {item.icon}
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {item.label}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          按 {getRatioLabel(ratio)} 重新生成
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
+                          准备好开始创作了吗？
+                        </h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
+                          在左侧输入提示词，选择风格并点击「立即生成」开始您的艺术之旅。
+                        </p>
+
+                        <div className="flex flex-wrap justify-center gap-3">
+                          {quickStarts.map((item, i) => (
+                            <button
+                              key={i}
+                              onClick={() => handleQuickStart(item)}
+                              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                            >
+                              {item.icon}
+                              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                {item.label}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -529,7 +707,10 @@ export default function ImagePage() {
                     {generatedImages.map((img: string, i: number) => (
                       <div
                         key={i}
-                        onClick={() => setActiveImageIndex(i)}
+                        onClick={() => {
+                          setActiveImageIndex(i);
+                          if (generatedRatio) setRatio(generatedRatio);
+                        }}
                         className={cn(
                           'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
                           i === activeImageIndex
@@ -554,7 +735,7 @@ export default function ImagePage() {
         <div className="hidden xl:block">
           <CreativeCockpit
             onPromptAppend={(text) => {
-              setPrompt(text);
+              setPrompt((prev) => (prev ? `${prev}，${text}` : text));
             }}
             onStyleApply={(params) => {
               if (params.ratio) setRatio(params.ratio);
@@ -563,6 +744,8 @@ export default function ImagePage() {
               if (params.cfg) setCfg(params.cfg);
               // Optionally show a toast here
             }}
+            onRestoreParams={handleRestoreParams}
+            onPreviewImage={handlePreviewImage}
           />
         </div>
       </div>
@@ -580,6 +763,49 @@ export default function ImagePage() {
           <div className="max-h-[78vh] overflow-y-auto p-4 space-y-6">{renderParameterPanel()}</div>
         </DialogContent>
       </Dialog>
+
+      {/* 接力：结果源侧菜单（显式按钮/右键/长按复用） */}
+      <RelayMenu
+        open={resultRelay.menuOpen}
+        onOpenChange={resultRelay.setMenuOpen}
+        targets={resultRelay.targets}
+        onSelect={resultRelay.onSelect}
+        anchorPoint={resultRelay.anchorPoint}
+        triggerRef={resultRelay.triggerRef}
+      />
+
+      {/* 参数回溯：大图预览 */}
+      <Dialog open={Boolean(previewImage)} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-white dark:bg-slate-900 rounded-2xl border-0 shadow-2xl">
+          {previewImage && (
+            <div className="flex flex-col">
+              <VisuallyHidden>
+                <DialogTitle>历史生成图片预览</DialogTitle>
+                <DialogDescription>查看历史生成的大图</DialogDescription>
+              </VisuallyHidden>
+              <div className="relative bg-slate-100 dark:bg-slate-800 flex items-center justify-center min-h-[40vh]">
+                <img
+                  src={previewImage.url}
+                  alt="历史生成图片"
+                  className="max-w-full max-h-[60vh] object-contain"
+                />
+              </div>
+              <div className="p-4 border-t border-slate-200 dark:border-slate-700">
+                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3">
+                  {previewImage.prompt}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 接力来源只读预览 */}
+      <ReferenceSourcePreview
+        open={relayPreviewOpen}
+        onOpenChange={setRelayPreviewOpen}
+        item={relay.bundle?.items[0] ?? null}
+      />
     </AppLayout>
   );
 }

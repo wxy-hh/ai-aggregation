@@ -6,6 +6,7 @@ export function createDefaultBaziFormData(): BaziFormData {
   return {
     name: '',
     gender: 'male',
+    calendarType: 'lunar', // 默认农历
     birthDate: {
       year: now.getFullYear() - 25,
       month: 1,
