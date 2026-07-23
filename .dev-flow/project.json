@@ -1,58 +1,69 @@
 {
-  "schemaVersion": 1,
-  "verification": {
-    "commands": [
-      {
-        "id": "lint",
-        "command": "pnpm",
-        "args": [
-          "turbo",
-          "lint"
-        ],
-        "cwd": "."
-      },
-      {
-        "id": "typecheck",
-        "command": "pnpm",
-        "args": [
-          "turbo",
-          "typecheck"
-        ],
-        "cwd": "."
-      },
-      {
-        "id": "test",
-        "command": "pnpm",
-        "args": [
-          "turbo",
-          "test"
-        ],
-        "cwd": "."
-      },
-      {
-        "id": "build",
-        "command": "pnpm",
-        "args": [
-          "turbo",
-          "build"
-        ],
-        "cwd": "."
-      }
-    ],
-    "behaviorCommands": [
-      "lint",
-      "typecheck"
-    ]
-  },
   "enforcement": {
-    "mode": "strict",
     "gitWriteRequiresLogicComplete": true,
+    "mode": "strict",
     "oneActiveFeature": true,
     "requireExplicitHumanReply": true
   },
   "protectedRoots": [
-    "apps",
-    "packages",
+    "apps/web/src",
+    "apps/worker/src",
+    "packages/shared",
+    "packages/providers",
+    "packages/db",
+    "packages/queue",
+    "packages/storage",
+    "packages/logger",
     "infra"
-  ]
+  ],
+  "schemaVersion": 1,
+  "verification": {
+    "behaviorCommands": [
+      "unit",
+      "lint",
+      "typecheck"
+    ],
+    "commands": [
+      {
+        "args": [
+          "lint"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "lint"
+      },
+      {
+        "args": [
+          "typecheck"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "typecheck"
+      },
+      {
+        "args": [
+          "test"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "unit"
+      },
+      {
+        "args": [
+          "build"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "build"
+      },
+      {
+        "args": [
+          "test:e2e"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "e2e"
+      }
+    ]
+  }
 }
