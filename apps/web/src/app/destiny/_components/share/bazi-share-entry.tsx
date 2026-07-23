@@ -6,10 +6,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import {
-  destinyPrimaryBtnClass,
-  destinySecondaryBtnClass,
-} from '../layout/destiny-result-header';
+import { destinyPrimaryBtnClass, destinySecondaryBtnClass } from '../layout/destiny-result-header';
 import type { DestinyReport } from '../types';
 import { BaziShareCard } from './bazi-share-card';
 import {
@@ -62,9 +59,7 @@ export function BaziShareEntry({ report }: { report: DestinyReport }) {
       return;
     }
     const updateScale = () => {
-      setPreviewScale(
-        Math.min(1, node.clientWidth / CARD_WIDTH, node.clientHeight / CARD_HEIGHT)
-      );
+      setPreviewScale(Math.min(1, node.clientWidth / CARD_WIDTH, node.clientHeight / CARD_HEIGHT));
     };
     updateScale();
     const observer = new ResizeObserver(updateScale);
@@ -167,10 +162,6 @@ export function BaziShareEntry({ report }: { report: DestinyReport }) {
             'dark:border-white/10 dark:bg-slate-900/85'
           )}
         >
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/30 dark:bg-white/10"
-            aria-hidden
-          />
           <div className="border-b border-slate-200/50 px-4 py-4 sm:px-6 dark:border-white/10">
             <DialogTitle className="text-left font-heading text-base font-semibold text-slate-900 dark:text-white">
               分享命盘卡片

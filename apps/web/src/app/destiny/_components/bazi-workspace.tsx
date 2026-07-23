@@ -10,6 +10,7 @@ import { generateUUID } from '@/lib/utils/uuid';
 import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { mapFormToBaziRequest } from './bazi-mappers';
@@ -470,9 +471,9 @@ export function BaziWorkspace({
       <div className="relative h-full min-h-0 w-full overflow-hidden">
         <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
           {step === 'form' && (
-            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <header className="flex shrink-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                   <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
                     八字格局精批
                   </h1>
@@ -480,10 +481,12 @@ export function BaziWorkspace({
                     信息输入
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  填写生辰时空信息，AI 将基于真实模型生成完整命理解读
-                </p>
+                {/* 移动端：模型切换与标题同行右上；桌面端由页面右上悬浮入口承接 */}
+                <DestinyModelSwitcher size="compact" className="shrink-0 xl:hidden" />
               </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                填写生辰时空信息，AI 将基于真实模型生成完整命理解读
+              </p>
             </header>
           )}
 

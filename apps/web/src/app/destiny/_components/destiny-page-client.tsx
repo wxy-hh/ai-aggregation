@@ -95,7 +95,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   // 接力「待解读引用」横幅：替换确认 / 活动引用 + 术数平级选择 / 失效提示。
   // 引用文本绝不写入出生资料字段；仅在表单步展示（结果步由顾问 externalDraft 接管）。
   // 桌面端：xl 起给左侧 nav 与右上模型切换器让位（与 DestinyPageScaffold 的 withNavOffset 对齐）；
-  // 移动端：保持 mx-4 间距，模型切换器在 sticky header 内不冲突。
+  // 移动端：模型切换嵌在各术数表单标题行右侧，与 sticky 分段控件不冲突。
   const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
     <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
       <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6 xl:mr-[280px]">
@@ -217,12 +217,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
               })}
             </div>
           </div>
-          {/* 模型切换入口：移动端，仅在填表步骤显示 */}
-          {isFormStep && (
-            <div className="mt-2 flex justify-center">
-              <DestinyModelSwitcher />
-            </div>
-          )}
+          {/* 模型切换已移入各术数表单标题行右侧（移动端），此处不再单独占顶栏一行 */}
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">

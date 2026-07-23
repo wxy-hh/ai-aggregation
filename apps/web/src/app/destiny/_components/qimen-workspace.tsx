@@ -9,6 +9,7 @@ import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import { generateUUID } from '@/lib/utils/uuid';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { QimenInputForm } from './qimen-input-form';
 import { QimenAnalysisResult } from './qimen-analysis-result';
@@ -577,9 +578,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       <div className="relative h-full min-h-0 w-full overflow-hidden">
         <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
           {step === 'form' && (
-            <header className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <header className="flex shrink-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
                   <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
                     奇门遁甲演化
                   </h1>
@@ -587,10 +588,12 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                     信息输入
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  填写起局时空与问题描述，系统基于时家奇门进行演化分析
-                </p>
+                {/* 移动端：模型切换与标题同行右上；桌面端由页面右上悬浮入口承接 */}
+                <DestinyModelSwitcher size="compact" className="shrink-0 xl:hidden" />
               </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                填写起局时空与问题描述，系统基于时家奇门进行演化分析
+              </p>
             </header>
           )}
 

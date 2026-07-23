@@ -102,6 +102,26 @@ describe('buildBaziShareCardData', () => {
     expect(data!.shareUrl).toContain('utm_campaign=bazi');
   });
 
+  it('五维标签统一为短标签，忽略报告中的长文案（避免分享卡标签列换行）', () => {
+    const report = createFullReport();
+    report.lifeDimensions = [
+      { key: 'career', label: '事业发展', value: 88 },
+      { key: 'love', label: '感情人际', value: 54 },
+      { key: 'wealth', label: '财富积累', value: 44 },
+      { key: 'wisdom', label: '智慧学习', value: 44 },
+      { key: 'health', label: '健康状态', value: 59 },
+    ];
+    const data = buildBaziShareCardData(report, { origin: 'https://example.com' });
+    expect(data).not.toBeNull();
+    expect(data!.dimensions.map((d) => d.label)).toEqual([
+      '事业',
+      '感情',
+      '财运',
+      '智慧',
+      '健康',
+    ]);
+  });
+
   it('隐私字段在构建期被剥离：产物中不含出生时间/地点/农历/性别哨兵值', () => {
     const data = buildBaziShareCardData(createFullReport(), {
       origin: 'https://example.com',

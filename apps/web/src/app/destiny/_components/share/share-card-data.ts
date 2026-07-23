@@ -92,9 +92,10 @@ export function buildBaziShareCardData(
     baziBasis: report.baziBasis,
   });
   if (!resolvedDimensions || resolvedDimensions.length !== 5) return null;
+  // 分享卡标签列固定两字宽（w-8），必须用短标签；报告里的「事业发展」等长文案会换行撑破布局
   const dimensions = resolvedDimensions.map((dimension) => ({
     key: dimension.key,
-    label: dimension.label?.trim() || LIFE_DIMENSION_META[dimension.key].label,
+    label: LIFE_DIMENSION_META[dimension.key].label,
     value: dimension.value,
   }));
 

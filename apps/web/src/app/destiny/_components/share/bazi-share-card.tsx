@@ -192,7 +192,7 @@ export const BaziShareCard = forwardRef<
           <div className="mt-3 space-y-3.5">
             {data.dimensions.map((dimension) => (
               <div key={dimension.key} className="flex items-center gap-2.5">
-                <span className="w-8 shrink-0 text-[11px] font-bold text-slate-500">
+                <span className="w-8 shrink-0 whitespace-nowrap text-[11px] font-bold text-slate-500">
                   {dimension.label}
                 </span>
                 <div className="h-[6px] min-w-0 flex-1 overflow-hidden rounded-full bg-slate-900/[0.06]">
