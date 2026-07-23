@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "verification": {
+    "commands": [
+      {
+        "id": "lint",
+        "command": "pnpm",
+        "args": [
+          "turbo",
+          "lint"
+        ],
+        "cwd": "."
+      },
+      {
+        "id": "typecheck",
+        "command": "pnpm",
+        "args": [
+          "turbo",
+          "typecheck"
+        ],
+        "cwd": "."
+      },
+      {
+        "id": "test",
+        "command": "pnpm",
+        "args": [
+          "turbo",
+          "test"
+        ],
+        "cwd": "."
+      },
+      {
+        "id": "build",
+        "command": "pnpm",
+        "args": [
+          "turbo",
+          "build"
+        ],
+        "cwd": "."
+      }
+    ],
+    "behaviorCommands": [
+      "lint",
+      "typecheck"
+    ]
+  },
+  "enforcement": {
+    "mode": "strict",
+    "gitWriteRequiresLogicComplete": true,
+    "oneActiveFeature": true,
+    "requireExplicitHumanReply": true
+  },
+  "protectedRoots": [
+    "apps",
+    "packages",
+    "infra"
+  ]
+}

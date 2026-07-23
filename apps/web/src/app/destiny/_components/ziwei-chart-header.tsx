@@ -1,234 +1,170 @@
 'use client';
 
 import React from 'react';
+import { Info } from 'lucide-react';
 import type { ZiweiChartData } from '@/app/destiny/_components/types';
 import { GlossaryTooltip } from './ziwei-glossary';
 
-const HEADER_SHELL_CLASS = [
-  'relative overflow-hidden rounded-[32px] border border-white/60',
-  'bg-gradient-to-b from-white/60 via-white/25 to-white/10 bg-white/90',
-  'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
-  'backdrop-blur-xl lg:backdrop-blur-2xl',
-  'p-5 sm:p-6',
-  'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10 dark:bg-slate-900/80',
-].join(' ');
+// ═══════════════════════════════════════════════════════════════
+//  命牒头部 —「白昼 × 夜幕」双主题
+//  宋体鎏金名牒 · 五行局朱砂印 · 四化印章(可点击跳转落宫)
+//  注:五行局/命宫/身宫/命主/身主参数已由中央星盘仪呈现,此处不再重复
+//  主题令牌见 styles/ziwei-theme.css(.zw-* 语义类随根作用域自动切换)
+// ═══════════════════════════════════════════════════════════════
+
+const HEADER_SHELL_CLASS = 'zw-panel p-5 sm:p-6';
 
 type Props = {
   chart: ZiweiChartData;
   name: string;
   gender: 'male' | 'female';
+  /** 点击四化印章跳转落宫(可选) */
+  onSelectPalace?: (palaceName: string) => void;
 };
 
-export function ZiweiChartHeader({ chart, name, gender }: Props) {
+export function ZiweiChartHeader({ chart, name, gender, onSelectPalace }: Props) {
   const genderLabel = gender === 'female' ? '女' : '男';
 
   return (
     <div className={HEADER_SHELL_CLASS}>
-      <span
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent opacity-70 dark:via-white/15"
-        aria-hidden
-      />
+      {/* 顶部鎏金切线 */}
+      <span className="zw-gold-divider" aria-hidden />
+      {/* 右上紫微光晕 */}
       <div
-        className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-gradient-to-br from-blue-500/10 to-violet-500/10 blur-3xl opacity-40"
+        className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full blur-3xl"
+        style={{
+          background:
+            'radial-gradient(circle, var(--zw-violet-deep-a15) 0%, var(--zw-violet-deep-a10) 50%, transparent 70%)',
+        }}
         aria-hidden
       />
-      {/* 第一行：姓名、性别、出生日期 */}
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
-          {name}
-        </span>
-        <span className="text-sm text-slate-600 dark:text-slate-300">
-          {genderLabel} · {chart.zodiac}年
-        </span>
-        <span className="text-sm text-slate-600 dark:text-slate-400">
-          {chart.lunarDate}
-        </span>
-      </div>
 
-      {/* 第二行：四柱 + 时辰 */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-700 dark:text-slate-300">
-        <GlossaryTooltip term="四柱" chartData={chart}>
-          <span className="font-medium">{chart.chineseDate}</span>
-        </GlossaryTooltip>
-        <span className="text-slate-300 dark:text-slate-600">|</span>
-        <span>{chart.time}（{chart.timeRange}）</span>
-        <span className="text-slate-300 dark:text-slate-600">|</span>
-        <span>{chart.sign}</span>
-      </div>
+      <div className="relative z-10 flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          {/* 第一行:姓名(宋体鎏金)+ 性别生肖 + 农历 */}
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <span className="zw-gold-heading font-song text-2xl font-bold sm:text-[28px]">
+              {name}
+            </span>
+            <span className="zw-text-2b text-sm">
+              {genderLabel} · {chart.zodiac}年
+            </span>
+            <span className="zw-text-3 font-song text-sm">{chart.lunarDate}</span>
+          </div>
 
-      {/* 第三行：核心命盘参数 */}
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <InfoBadge
-          term="五行局"
-          value={chart.fiveElementsClass}
-          chart={chart}
-        />
-        <InfoBadge
-          term="命宫"
-          value={chart.soulPalaceBranch}
-          chart={chart}
-        />
-        <InfoBadge
-          term="身宫"
-          value={chart.bodyPalaceBranch}
-          chart={chart}
-        />
-        <InfoBadge
-          term="命主"
-          value={chart.soul}
-          chart={chart}
-        />
-        <InfoBadge
-          term="身主"
-          value={chart.body}
-          chart={chart}
-        />
-      </div>
+          {/* 第二行:四柱(宋体)+ 时辰 + 星座 */}
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <GlossaryTooltip term="四柱" chartData={chart}>
+              <span className="zw-text-1b font-song font-medium tracking-wide">
+                {chart.chineseDate}
+              </span>
+            </GlossaryTooltip>
+            <span className="zw-text-5">|</span>
+            <span className="zw-text-2b">
+              {chart.time}({chart.timeRange})
+            </span>
+            <span className="zw-text-5">|</span>
+            <span className="zw-text-2b">{chart.sign}</span>
+          </div>
 
-      {/* 第四行：生年四化 */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-          <GlossaryTooltip term="生年四化" chartData={chart}>生年四化</GlossaryTooltip>
-        </span>
-        <SihuaBadge label="化禄" star={chart.sihua.lu} chart={chart} palaces={chart.palaces} />
-        <SihuaBadge label="化权" star={chart.sihua.quan} chart={chart} palaces={chart.palaces} />
-        <SihuaBadge label="化科" star={chart.sihua.ke} chart={chart} palaces={chart.palaces} />
-        <SihuaBadge label="化忌" star={chart.sihua.ji} chart={chart} palaces={chart.palaces} />
-      </div>
+          {/* 第三行:生年四化(印章徽章,可点击跳转落宫) */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-2">
+            <span className="zw-text-3 font-song text-xs font-bold">
+              <GlossaryTooltip term="生年四化" chartData={chart}>生年四化</GlossaryTooltip>
+            </span>
+            <SihuaSeal label="化禄" star={chart.sihua.lu} chart={chart} onSelectPalace={onSelectPalace} />
+            <SihuaSeal label="化权" star={chart.sihua.quan} chart={chart} onSelectPalace={onSelectPalace} />
+            <SihuaSeal label="化科" star={chart.sihua.ke} chart={chart} onSelectPalace={onSelectPalace} />
+            <SihuaSeal label="化忌" star={chart.sihua.ji} chart={chart} onSelectPalace={onSelectPalace} />
+          </div>
 
-      {/* 真太阳时修正信息 */}
-      {chart.solarCorrection && (
-        <div className="mt-3 rounded-[16px] border border-blue-100 dark:border-blue-800/30 bg-blue-50/40 dark:bg-blue-950/20 px-3 py-2">
-          <p className="text-xs text-blue-600/90 dark:text-blue-400 leading-relaxed">
-            {chart.solarCorrection}
-          </p>
+          {/* 真太阳时修正:折叠为信息 chip,避免占用整行 */}
+          {chart.solarCorrection && (
+            <details className="group mt-3.5 inline-block max-w-full">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border border-[color:var(--zw-info-a20)] bg-[color:var(--zw-info-a06)] px-3 py-1 text-[11px] text-[color:var(--zw-info-dim)] transition-colors hover:border-[color:var(--zw-info-a35)] [&::-webkit-details-marker]:hidden">
+                <Info className="h-3 w-3" strokeWidth={2} />
+                已校正真太阳时
+                <span className="text-[color:var(--zw-info-a60)] transition-transform group-open:rotate-90">›</span>
+              </summary>
+              <p className="zw-text-3 mt-2 max-w-xl rounded-xl border border-[color:var(--zw-info-a15)] bg-[color:var(--zw-info-a04)] px-3 py-2 text-xs leading-relaxed">
+                {chart.solarCorrection}
+              </p>
+            </details>
+          )}
         </div>
-      )}
-    </div>
-  );
-}
 
-function InfoBadge({ term, value, chart }: { term: string; value: string; chart: ZiweiChartData }) {
-  const accent = (() => {
-    // 按语义做轻量色彩分配：同材质、不同光色（更“未来高级感”，也更好扫读）
-    switch (term) {
-      case '五行局':
-        return {
-          label: 'text-violet-700 dark:text-violet-300',
-          ring: 'hover:border-violet-200/70 dark:hover:border-violet-400/20',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(139,92,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-violet-500/18 to-blue-500/12',
-        };
-      case '命宫':
-        return {
-          label: 'text-blue-700 dark:text-blue-300',
-          ring: 'hover:border-blue-200/70 dark:hover:border-blue-400/20',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(59,130,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-blue-500/18 to-cyan-500/12',
-        };
-      case '身宫':
-        return {
-          label: 'text-emerald-700 dark:text-emerald-300',
-          ring: 'hover:border-emerald-200/70 dark:hover:border-emerald-400/20',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(16,185,129,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-emerald-500/18 to-teal-500/12',
-        };
-      case '命主':
-        return {
-          label: 'text-amber-700 dark:text-amber-300',
-          ring: 'hover:border-amber-200/70 dark:hover:border-amber-400/20',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(245,158,11,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-amber-500/18 to-rose-500/10',
-        };
-      case '身主':
-        return {
-          label: 'text-rose-700 dark:text-rose-300',
-          ring: 'hover:border-rose-200/70 dark:hover:border-rose-400/20',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(244,63,94,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-rose-500/16 to-violet-500/12',
-        };
-      default:
-        return {
-          label: 'text-slate-600 dark:text-slate-300',
-          ring: 'hover:border-blue-200/60 dark:hover:border-blue-400/15',
-          glow: 'hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.45),0_12px_20px_-8px_rgba(59,130,246,0.18),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-          orb: 'from-blue-500/15 to-violet-500/15',
-        };
-    }
-  })();
-
-  return (
-    <div
-      className={[
-        // 小卡片按 DESIGN.md 走“标准玻璃拟态/柔光阴影”质感（不使用 backdrop-blur，避免频繁渲染卡顿）
-        'relative group overflow-hidden rounded-2xl border',
-        // 基础态就要能看出柔光/磨砂：降低纯白占比，增加蓝紫倾向
-        'border-slate-200/60 bg-gradient-to-br from-white/75 via-white/45 to-blue-50/30',
-        'px-3 py-2 shadow-[inset_0_1px_1px_rgba(255,255,255,0.35),0_1px_2px_rgba(0,0,0,0.03)]',
-        'transition-all duration-200',
-        'hover:-translate-y-0.5',
-        accent.ring,
-        accent.glow,
-        'active:scale-[0.98]',
-        'dark:border-white/10 dark:bg-gradient-to-br dark:from-slate-900/80 dark:via-slate-900/55 dark:to-violet-950/20',
-      ].join(' ')}
-    >
-      {/* 顶部 1px 高光切线：增强玻璃边缘层次 */}
-      <span
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/85 to-transparent opacity-80 dark:via-white/20"
-        aria-hidden
-      />
-
-      {/* 右上角柔光背光圈：Hover 时渐隐增强（不影响布局） */}
-      <span
-        className={[
-          'pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-gradient-to-br blur-3xl',
-          'opacity-25 transition-opacity duration-200 group-hover:opacity-55',
-          accent.orb,
-        ].join(' ')}
-        aria-hidden
-      />
-
-      <div className={['relative z-10 text-[11px] font-semibold', accent.label].join(' ')}>
-        <GlossaryTooltip term={term} chartData={chart}>{term}</GlossaryTooltip>
-      </div>
-      <div className="relative z-10 mt-0.5 text-sm font-bold text-slate-900 dark:text-slate-100">
-        {value || '—'}
+        {/* 五行局朱砂印(旋转角印章,收束名牒仪式感) */}
+        <div
+          className="relative hidden h-[68px] w-[68px] shrink-0 rotate-[6deg] select-none items-center justify-center sm:flex"
+          aria-label={`五行局:${chart.fiveElementsClass}`}
+        >
+          <div className="absolute inset-0 rounded-full border-[1.5px] border-[color:var(--zw-cinnabar-a60)]" />
+          <div className="absolute inset-[5px] rounded-full border border-[color:var(--zw-cinnabar-a30)]" />
+          <div className="text-center font-song">
+            <div className="text-[9px] tracking-[0.2em] text-[color:var(--zw-cinnabar-a70)]">五行局</div>
+            <div className="mt-0.5 text-[13px] font-bold leading-none text-[color:var(--zw-cinnabar-text)]">
+              {chart.fiveElementsClass || '—'}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function SihuaBadge({
+// ═══════════════════════════════════════════════════════════════
+//  子组件:四化印章(点击跳转落宫)
+// ═══════════════════════════════════════════════════════════════
+
+function SihuaSeal({
   label,
   star,
   chart,
-  palaces,
+  onSelectPalace,
 }: {
   label: string;
   star: string;
   chart: ZiweiChartData;
-  palaces: ZiweiChartData['palaces'];
+  onSelectPalace?: (palaceName: string) => void;
 }) {
   const colorMap: Record<string, string> = {
-    '化禄': 'border border-emerald-200/60 bg-emerald-50/70 text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-950/30 dark:text-emerald-300',
-    '化权': 'border border-amber-200/60 bg-amber-50/70 text-amber-700 dark:border-amber-800/40 dark:bg-amber-950/30 dark:text-amber-300',
-    '化科': 'border border-blue-200/60 bg-blue-50/70 text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/30 dark:text-blue-300',
-    '化忌': 'border border-rose-200/60 bg-rose-50/70 text-rose-700 dark:border-rose-800/40 dark:bg-rose-950/30 dark:text-rose-300',
+    '化禄': 'zw-seal-lu',
+    '化权': 'zw-seal-quan',
+    '化科': 'zw-seal-ke',
+    '化忌': 'zw-seal-ji',
   };
 
   // 查找四化星落入的宫位
-  const palaceName = findSihuaPalace(star, palaces);
+  const palaceName = findSihuaPalace(star, chart.palaces);
+  const clickable = !!palaceName && !!onSelectPalace;
 
-  return (
-    <div className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${colorMap[label] ?? ''}`}>
-      <GlossaryTooltip term={label} chartData={chart}>{label}</GlossaryTooltip>
-      <span className="opacity-60">{star || '—'}</span>
-      {palaceName && (
-        <span className="text-[10px] opacity-50">（{palaceName}）</span>
-      )}
-    </div>
+  const inner = (
+    <>
+      <GlossaryTooltip term={label} chartData={chart}>
+        <span className="font-song font-bold">{label}</span>
+      </GlossaryTooltip>
+      <span className="font-song opacity-80">{star || '—'}</span>
+      {palaceName && <span className="text-[10px] opacity-55">({palaceName})</span>}
+    </>
   );
+
+  const cls = `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-all duration-200 ${colorMap[label] ?? ''}`;
+
+  // 可点击时渲染为按钮:点击跳转至四化落宫
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelectPalace(palaceName)}
+        className={`${cls} cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--zw-violet-a70)]`}
+        title={`查看${palaceName}宫`}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return <span className={cls}>{inner}</span>;
 }
 
 /** 查找四化星所在的宫位名 */

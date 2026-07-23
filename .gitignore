@@ -65,4 +65,4 @@ apps/web/ark-response-debug.json
 .agents*
 .claude*
 dump.rdb*
-.dev-flow*
+.dev-flow

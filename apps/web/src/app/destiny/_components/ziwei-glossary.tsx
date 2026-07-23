@@ -122,17 +122,22 @@ export function GlossaryTooltip({ term, children, side = 'top', chartData }: Glo
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <span
-          className="inline-flex cursor-pointer border-b border-dotted border-[#4969E9]/40 hover:border-[#4969E9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/30 rounded-sm"
-        >
+        <span className="zw-tooltip-trigger">
           {children}
         </span>
       </PopoverTrigger>
-      <PopoverContent side={side} align="start" sideOffset={8} className="max-w-[320px]">
-        <div className="text-[11px] font-bold text-[#4969E9] dark:text-[#9BADFF] mb-1">
+      <PopoverContent
+        side={side}
+        align="start"
+        sideOffset={8}
+        className="zw-tooltip max-w-[320px]"
+      >
+        {/* 顶部鎏金切线,与大面板体系一致(双主题) */}
+        <span className="zw-gold-divider-soft" aria-hidden />
+        <div className="zw-text-gold mb-1 font-song text-[11px] font-bold">
           {term}
         </div>
-        <div className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{description}</div>
+        <div className="text-xs leading-relaxed">{description}</div>
       </PopoverContent>
     </Popover>
   );

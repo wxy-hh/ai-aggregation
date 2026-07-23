@@ -43,6 +43,21 @@ function resolveTheme(theme: Theme): 'light' | 'dark' {
     return theme;
 }
 
+/**
+ * 全局明暗切换时释放紫微结果页的手动偏好。
+ * 动态 import 避免 settings ↔ ziwei-theme 循环依赖；失败静默（SSR / 未挂载时无副作用）。
+ */
+function clearZiweiThemePrefOnSystemChange() {
+    if (typeof window === 'undefined') return;
+    void import('@/stores/ziwei-theme-store')
+        .then(({ useZiweiThemeStore }) => {
+            useZiweiThemeStore.getState().clearPref();
+        })
+        .catch(() => {
+            /* 忽略：开发热更瞬间或包未就绪 */
+        });
+}
+
 // ==================== Store 实现 ====================
 
 export const useSettingsStore = create<SettingsState>()(
@@ -56,9 +71,14 @@ export const useSettingsStore = create<SettingsState>()(
 
             // 设置主题
             setTheme: (theme) => {
+                const prevResolved = get().resolvedTheme;
                 const resolvedTheme = resolveTheme(theme);
                 set({ theme, resolvedTheme });
                 get()._applyTheme(resolvedTheme);
+                // 全局明暗变化时释放紫微结果页手动锁定，重新跟随（暗→夜幕 / 亮→白昼）
+                if (prevResolved !== resolvedTheme) {
+                    clearZiweiThemePrefOnSystemChange();
+                }
             },
 
             // 切换主题（light <-> dark，跳过 system）
@@ -67,6 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
                 const newTheme = resolvedTheme === 'light' ? 'dark' : 'light';
                 set({ theme: newTheme, resolvedTheme: newTheme });
                 get()._applyTheme(newTheme);
+                clearZiweiThemePrefOnSystemChange();
             },
 
             // 设置语言
@@ -91,8 +112,12 @@ export const useSettingsStore = create<SettingsState>()(
                     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
                     const handleChange = (e: MediaQueryListEvent) => {
                         const newResolvedTheme = e.matches ? 'dark' : 'light';
+                        const prevResolved = get().resolvedTheme;
                         set({ resolvedTheme: newResolvedTheme });
                         _applyTheme(newResolvedTheme);
+                        if (prevResolved !== newResolvedTheme) {
+                            clearZiweiThemePrefOnSystemChange();
+                        }
                     };
                     mediaQuery.addEventListener('change', handleChange);
                 }

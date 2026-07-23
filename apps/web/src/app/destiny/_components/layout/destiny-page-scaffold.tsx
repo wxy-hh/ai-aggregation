@@ -11,6 +11,8 @@ type DestinyPageScaffoldProps = {
   withNavOffset?: boolean;
   /** 环境光主色调（八字蓝 / 紫微紫 / 奇门靛） */
   tone?: DestinyAmbientTone;
+  /** 页面级入夜（紫微结果步）：环境底层交叉渐变为深空夜底 */
+  night?: boolean;
 };
 
 export function DestinyPageScaffold({
@@ -18,10 +20,11 @@ export function DestinyPageScaffold({
   className,
   withNavOffset = false,
   tone = 'blue',
+  night = false,
 }: DestinyPageScaffoldProps) {
   return (
     <div className={cn('relative isolate h-full min-h-0 w-full overflow-hidden', className)}>
-      <DestinyAmbientBackground tone={tone} />
+      <DestinyAmbientBackground tone={tone} night={night} />
 
       <div
         className={cn(

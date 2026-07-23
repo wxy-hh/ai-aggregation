@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type {
+  DestinyModule,
   DestinyReport,
   DestinyReportRequest,
   ZiweiLockedSections,
@@ -56,12 +57,20 @@ const RequestSchema = z.object({
 
 // ─── 常量 ───
 
-// quick 阶段需一次性生成 4 个复杂 Schema 区块，pro 级模型 40s 实测稳定超时，提高到 90s
-// 注意与 maxDuration=300 对齐：quick(90s) + full(180s) 必须留有余量
+// quick 阶段需一次性生成 3 个复杂 Schema 区块，pro 级模型 40s 实测稳定超时，提高到 90s
+// 注意与 maxDuration=300 对齐：quick(90s) 与 full 两组(各 120s) 并行执行，总预算仍留有余量
 const QUICK_TIMEOUT_MS = 90000;
-const REPORT_TIMEOUT_MS = 180000;
+const GROUP_TIMEOUT_MS = 120000;
 const QUICK_MAX_TOKENS = 8000;
-const FULL_MAX_TOKENS = 6000;
+// 每组（6 宫 + 1 模块）输出预算：doubao pro 的 reasoning token 计入 output，
+// 实测简略输出约 3100 token，留足余量避免冗长输出被截断导致整组 JSON 解析失败
+const GROUP_MAX_TOKENS = 4500;
+
+// full 阶段 12 宫拆为两组并行：A 组前六宫 + love，B 组后六宫 + health。
+// 合并顺序与原单次调用的提示词顺序一致，保证 palaceAnalysis[0] 稳定（前端以此为初始选中宫位）
+const PALACE_GROUP_A = ['父母宫', '福德宫', '田宅宫', '官禄宫', '命宫', '兄弟宫'] as const;
+const PALACE_GROUP_B = ['奴仆宫', '夫妻宫', '迁移宫', '子女宫', '财帛宫', '疾厄宫'] as const;
+const PALACE_CANONICAL_ORDER: readonly string[] = [...PALACE_GROUP_A, ...PALACE_GROUP_B];
 
 const SECTION_ORDER: ZiweiSectionKey[] = [
   'chartData',
@@ -81,57 +90,28 @@ type ZiweiBillingContext = {
 
 // ─── JSON Schema（豆包结构化输出）───
 
+/** 单模块（性格/事业/财运/感情/健康）共用的 JSON Schema */
+const MODULE_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    advantages: { type: 'array', items: { type: 'string' } },
+    suggestions: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['title', 'summary', 'advantages', 'suggestions'],
+  additionalProperties: false,
+} as const;
+
 const QUICK_SCHEMA = {
   type: 'object',
   properties: {
-    profileOverview: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        genderLabel: { type: 'string' },
-        birthText: { type: 'string' },
-        lunarText: { type: 'string' },
-        locationText: { type: 'string' },
-      },
-      required: ['name', 'genderLabel', 'birthText', 'lunarText', 'locationText'],
-      additionalProperties: false,
-    },
     overviewModules: {
       type: 'object',
       properties: {
-        personality: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            advantages: { type: 'array', items: { type: 'string' } },
-            suggestions: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'advantages', 'suggestions'],
-          additionalProperties: false,
-        },
-        career: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            advantages: { type: 'array', items: { type: 'string' } },
-            suggestions: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'advantages', 'suggestions'],
-          additionalProperties: false,
-        },
-        wealth: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            summary: { type: 'string' },
-            advantages: { type: 'array', items: { type: 'string' } },
-            suggestions: { type: 'array', items: { type: 'string' } },
-          },
-          required: ['title', 'summary', 'advantages', 'suggestions'],
-          additionalProperties: false,
-        },
+        personality: MODULE_JSON_SCHEMA,
+        career: MODULE_JSON_SCHEMA,
+        wealth: MODULE_JSON_SCHEMA,
       },
       required: ['personality', 'career', 'wealth'],
       additionalProperties: false,
@@ -174,49 +154,30 @@ const QUICK_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const FULL_SCHEMA = {
+const PALACE_ANALYSIS_ITEM_SCHEMA = {
   type: 'object',
   properties: {
-    palaceAnalysis: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          key: { type: 'string' },
-          label: { type: 'string' },
-          summary: { type: 'string' },
-          suggestions: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['key', 'label', 'summary', 'suggestions'],
-        additionalProperties: false,
-      },
-    },
-    love: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        summary: { type: 'string' },
-        advantages: { type: 'array', items: { type: 'string' } },
-        suggestions: { type: 'array', items: { type: 'string' } },
-      },
-      required: ['title', 'summary', 'advantages', 'suggestions'],
-      additionalProperties: false,
-    },
-    health: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        summary: { type: 'string' },
-        advantages: { type: 'array', items: { type: 'string' } },
-        suggestions: { type: 'array', items: { type: 'string' } },
-      },
-      required: ['title', 'summary', 'advantages', 'suggestions'],
-      additionalProperties: false,
-    },
+    key: { type: 'string' },
+    label: { type: 'string' },
+    summary: { type: 'string' },
+    suggestions: { type: 'array', items: { type: 'string' } },
   },
-  required: ['palaceAnalysis', 'love', 'health'],
+  required: ['key', 'label', 'summary', 'suggestions'],
   additionalProperties: false,
 } as const;
+
+/** full 阶段每组（6 宫 + 1 个模块）的 JSON Schema */
+function buildGroupSchema(moduleKey: 'love' | 'health') {
+  return {
+    type: 'object',
+    properties: {
+      palaceAnalysis: { type: 'array', items: PALACE_ANALYSIS_ITEM_SCHEMA },
+      [moduleKey]: MODULE_JSON_SCHEMA,
+    },
+    required: ['palaceAnalysis', moduleKey],
+    additionalProperties: false,
+  };
+}
 
 // ─── 主入口 ───
 
@@ -320,8 +281,11 @@ function createZiweiStream({
     async start(controller) {
       const emittedSections = new Set<ZiweiSectionKey>();
       const lockedSections: ZiweiLockedSections = {};
+      // 并行分支在 error/close 之后仍可能回调节入区块，closed 标志防止向已关闭的流写入
+      let closed = false;
 
       const send = (event: ZiweiStreamEvent) => {
+        if (closed) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
 
@@ -338,34 +302,45 @@ function createZiweiStream({
           payload: chartData,
         } as ZiweiStreamEvent);
 
+        // profileOverview 是纯格式化信息，本地生成随星盘后立即下发，不再占用 AI 输出预算
+        const profileOverview = buildLocalProfileOverview(input, chartData);
+        emittedSections.add('profileOverview');
+        lockedSections.profileOverview = profileOverview;
+        send({
+          type: 'section-final',
+          sectionKey: 'profileOverview',
+          payload: profileOverview,
+        } as ZiweiStreamEvent);
+
         // 构建 AI 提示词上下文
         const chartContext = buildZiweiPromptContext(chartData);
 
-        // 第一阶段：快速区块（profile + modules + timeline + relations）
+        // quick 与 full 互不依赖（都只消费本地 chartContext），并行执行；
+        // 各自完成后立即下发自己的区块，总耗时从串行的 T(quick)+T(full) 降为 max(T(quick), T(full))
         send({ type: 'status', status: 'analyzing' });
 
-        const quickResult = await generateQuickSections({
+        const quickPromise = generateQuickSections({
           config,
           input,
           chartContext,
           currentYear,
           userId,
           billing,
+        }).then((sections) => {
+          emitSections({ sections, emittedSections, lockedSections, send });
         });
-
-        emitSections({ sections: quickResult, emittedSections, lockedSections, send });
-
-        // 第二阶段：宫位详解 + 感情/健康模块
-        const fullResult = await generateFullSections({
+        const fullPromise = generateFullSections({
           config,
           input,
           chartContext,
           currentYear,
           userId,
           billing,
+        }).then((sections) => {
+          emitSections({ sections, emittedSections, lockedSections, send });
         });
 
-        emitSections({ sections: fullResult, emittedSections, lockedSections, send });
+        await Promise.all([quickPromise, fullPromise]);
 
         send({ type: 'status', status: 'finalizing' });
         send({
@@ -378,6 +353,7 @@ function createZiweiStream({
           error: mapStreamError(error),
         });
       } finally {
+        closed = true;
         controller.close();
       }
     },
@@ -496,7 +472,6 @@ async function generateQuickSections({
     const resultSections: ZiweiLockedSections = {};
     if (parsed && typeof parsed === 'object') {
       const data = parsed as Record<string, unknown>;
-      if (data.profileOverview) resultSections.profileOverview = data.profileOverview as never;
       if (data.overviewModules) resultSections.overviewModules = data.overviewModules as never;
       if (Array.isArray(data.timeline)) resultSections.timeline = data.timeline as never;
       if (data.relations) resultSections.relations = data.relations as never;
@@ -522,7 +497,12 @@ async function generateQuickSections({
   }
 }
 
-// ─── 完整解读 ───
+// ─── 完整解读（12 宫拆两组并行）───
+
+type PalaceGroupResult = {
+  palaceAnalysis: ZiweiPalaceAnalysis[];
+  module: DestinyModule | null;
+};
 
 async function generateFullSections({
   config,
@@ -539,14 +519,79 @@ async function generateFullSections({
   userId: string;
   billing: ZiweiBillingContext | null;
 }): Promise<ZiweiLockedSections> {
+  // 12 宫解读是 full 阶段的输出主体，拆为两组并行后各组耗时近似减半；任一组失败仅影响本组输出
+  const [groupA, groupB] = await Promise.all([
+    generatePalaceGroup({
+      config,
+      input,
+      chartContext,
+      currentYear,
+      userId,
+      billing,
+      palaces: PALACE_GROUP_A,
+      moduleKey: 'love',
+      stage: 'full:a',
+    }),
+    generatePalaceGroup({
+      config,
+      input,
+      chartContext,
+      currentYear,
+      userId,
+      billing,
+      palaces: PALACE_GROUP_B,
+      moduleKey: 'health',
+      stage: 'full:b',
+    }),
+  ]);
+
+  // 按 canonical 顺序排序，保证并行合并后的宫位顺序稳定（前端以 palaceAnalysis[0] 作为初始选中宫位）
+  const orderIndex = (label: string) => {
+    const idx = PALACE_CANONICAL_ORDER.indexOf(label);
+    return idx === -1 ? PALACE_CANONICAL_ORDER.length : idx;
+  };
+  const palaceAnalysis = [...groupA.palaceAnalysis, ...groupB.palaceAnalysis].sort(
+    (a, b) => orderIndex(a.label) - orderIndex(b.label)
+  );
+
+  const resultSections: ZiweiLockedSections = {};
+  // 不满 12 项时不产出 palaceAnalysis：emitSections 现有检查会跳过该区块，
+  // 但另一组成功生成的 love/health 不受影响
+  if (palaceAnalysis.length >= 12) resultSections.palaceAnalysis = palaceAnalysis;
+  if (groupA.module) resultSections.love = groupA.module;
+  if (groupB.module) resultSections.health = groupB.module;
+  return resultSections;
+}
+
+async function generatePalaceGroup({
+  config,
+  input,
+  chartContext,
+  currentYear,
+  userId,
+  billing,
+  palaces,
+  moduleKey,
+  stage,
+}: {
+  config: ModelConfig;
+  input: DestinyReportRequest;
+  chartContext: string;
+  currentYear: number;
+  userId: string;
+  billing: ZiweiBillingContext | null;
+  palaces: readonly string[];
+  moduleKey: 'love' | 'health';
+  stage: string;
+}): Promise<PalaceGroupResult> {
   const messages = [
-    { role: 'system' as const, content: buildFullSystemPrompt(currentYear) },
+    { role: 'system' as const, content: buildPalaceGroupSystemPrompt(palaces, moduleKey) },
     { role: 'user' as const, content: buildUserPrompt(input, chartContext) },
   ];
-  const requestId = billing ? `${billing.requestId}:full` : null;
+  const requestId = billing ? `${billing.requestId}:${stage}` : null;
   let reservation: { id: string } | null = null;
   let inputUnits = 0;
-  let outputLimit = FULL_MAX_TOKENS;
+  let outputLimit = GROUP_MAX_TOKENS;
 
   try {
     if (billing && requestId) {
@@ -557,8 +602,8 @@ async function generateFullSections({
         provider: config.provider,
         model: config.model,
         messages,
-        maxOutputTokens: FULL_MAX_TOKENS,
-        metadata: { reportType: 'ziwei', stage: 'full', currentYear },
+        maxOutputTokens: GROUP_MAX_TOKENS,
+        metadata: { reportType: 'ziwei', stage, currentYear },
       });
       reservation = quota.reservation;
       inputUnits = quota.inputUnits;
@@ -569,8 +614,8 @@ async function generateFullSections({
       messages,
       maxTokens: outputLimit,
       temperature: 0.35,
-      timeoutMs: REPORT_TIMEOUT_MS,
-      json: { schema: { name: 'ziwei_full', schema: FULL_SCHEMA } },
+      timeoutMs: GROUP_TIMEOUT_MS,
+      json: { schema: { name: `ziwei_${moduleKey}_group`, schema: buildGroupSchema(moduleKey) } },
     });
 
     if (reservation && requestId) {
@@ -586,7 +631,7 @@ async function generateFullSections({
           extractArkUsage(result.raw),
           inputUnits + estimateOutputTokens(result.text)
         ),
-        metadata: { reportType: 'ziwei', stage: 'full', currentYear, provider: config.provider },
+        metadata: { reportType: 'ziwei', stage, currentYear, provider: config.provider },
       });
     } else {
       await safeRecordAiUsage({
@@ -597,33 +642,40 @@ async function generateFullSections({
         model: config.model,
         endpoint: '/api/destiny/ziwei-report',
         usage: normalizeUsage(extractArkUsage(result.raw)),
-        metadata: { stage: 'full', currentYear, provider: config.provider },
+        metadata: { stage, currentYear, provider: config.provider },
       });
     }
 
     const parsed = parseJson(result.text);
 
-    const resultSections: ZiweiLockedSections = {};
+    let palaceAnalysis: ZiweiPalaceAnalysis[] = [];
+    let module: DestinyModule | null = null;
     if (parsed && typeof parsed === 'object') {
       const data = parsed as Record<string, unknown>;
       if (Array.isArray(data.palaceAnalysis)) {
-        resultSections.palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
+        palaceAnalysis = data.palaceAnalysis as ZiweiPalaceAnalysis[];
       }
-      if (data.love) resultSections.love = data.love as never;
-      if (data.health) resultSections.health = data.health as never;
+      if (data[moduleKey]) module = data[moduleKey] as DestinyModule;
     }
-    return resultSections;
+    return { palaceAnalysis, module };
   } catch (error) {
     if (reservation) {
       await releaseAiQuota({
         reservationId: reservation.id,
-        reason: '紫微完整解读调用失败',
+        reason: `紫微宫位解读（${stage}）调用失败`,
         meterType: 'tokens',
       }).catch((releaseError) =>
-        console.error('[ziwei-report] 释放完整解读额度失败:', releaseError)
+        console.error(`[ziwei-report] 释放宫位解读额度失败（${stage}）:`, releaseError)
       );
     }
-    throw error;
+    if (error instanceof BillingError) throw error;
+    // 单组失败降级为空：合并后 palaceAnalysis 不满 12 项会被 emitSections 跳过，
+    // 另一组成功生成的 love/health 不受影响
+    console.warn(
+      `[ziwei-report] palace group ${stage} skipped:`,
+      error instanceof Error ? `${error.name}: ${error.message}` : error
+    );
+    return { palaceAnalysis: [], module: null };
   }
 }
 
@@ -646,19 +698,32 @@ function buildUserPrompt(input: DestinyReportRequest, chartContext: string): str
   ].join('\n');
 }
 
+/** 本地生成用户名片（纯格式化信息，无需消耗 AI 输出预算） */
+function buildLocalProfileOverview(
+  input: DestinyReportRequest,
+  chartData: ZiweiChartData
+): DestinyReport['profile'] {
+  return {
+    name: input.name,
+    genderLabel: input.gender === 'female' ? '坤造（女命）' : '乾造（男命）',
+    birthText: `${input.birthDate.year}年${input.birthDate.month}月${input.birthDate.day}日 ${input.birthTime.hour}:${input.birthTime.minute}`,
+    lunarText: chartData.lunarDate,
+    locationText: input.location.name,
+  };
+}
+
 function buildQuickSystemPrompt(currentYear: number): string {
   return `你是专业的紫微斗数命理分析师。你需要基于用户提供的精确星盘数据进行解读。
 星盘数据已由本地算法精确计算完成，你只需负责解读，不要编造或修改星曜位置。
 
-请输出首屏可展示的 4 个区块：
-1. profileOverview：用户名片信息（name, genderLabel, birthText, lunarText, locationText）
-2. overviewModules：三大维度（personality 性格/career 事业/wealth 财运）
+请输出首屏可展示的 3 个区块：
+1. overviewModules：三大维度（personality 性格/career 事业/wealth 财运）
    - title：对应宫位的星曜组合描述，如"命宫武曲贪狼同守"、"官禄宫紫微七杀坐守"、"财帛宫廉贞破军坐守"，不要写模块名称
    - summary：50-90 字核心解读
    - advantages：1 条优势
    - suggestions：1 条建议
-3. timeline：未来 3 年流年运势（${currentYear}, ${currentYear + 1}, ${currentYear + 2}），每项含 year/title/summary/detail(opportunities/risks/actions)
-4. relations：六亲关系总览，含 summary/opportunities/risks/actions
+2. timeline：未来 3 年流年运势（${currentYear}, ${currentYear + 1}, ${currentYear + 2}），每项含 year/title/summary/detail(opportunities/risks/actions)
+3. relations：六亲关系总览，含 summary/opportunities/risks/actions
 
 要求：
 - 所有解读必须基于提供的星盘数据，不要凭空编造
@@ -668,22 +733,29 @@ function buildQuickSystemPrompt(currentYear: number): string {
 - 严格只返回 JSON 对象`.trim();
 }
 
-function buildFullSystemPrompt(currentYear: number): string {
-  return `你是专业的紫微斗数命理分析师。你需要基于用户提供的精确星盘数据进行深度解读。
-
-请输出以下内容：
-1. palaceAnalysis：12 宫位的 AI 解读（必须 12 项，对应 父母宫/福德宫/田宅宫/官禄宫/命宫/兄弟宫/奴仆宫/夫妻宫/迁移宫/子女宫/财帛宫/疾厄宫）
-   每项含：key（唯一标识）、label（宫位名）、summary（结合星曜组合的解读，50-90字）、suggestions（2-4 条可执行的行动建议，每条 18 字以内）
-2. love：感情婚姻模块
+function buildPalaceGroupSystemPrompt(
+  palaces: readonly string[],
+  moduleKey: 'love' | 'health'
+): string {
+  const moduleSpec =
+    moduleKey === 'love'
+      ? `2. love：感情婚姻模块
    - title：对应宫位的星曜组合描述，如"夫妻宫天府坐守"，不要写"感情婚姻运势解析"等模块名称
    - summary：50-90 字核心解读
    - advantages：1 条优势
-   - suggestions：1 条建议
-3. health：健康运势模块
+   - suggestions：1 条建议`
+      : `2. health：健康运势模块
    - title：对应宫位的星曜组合描述，如"疾厄宫廉贞破军能量"，不要写"整体健康运势提示"等模块名称
    - summary：50-90 字核心解读
    - advantages：1 条优势
-   - suggestions：1 条建议
+   - suggestions：1 条建议`;
+
+  return `你是专业的紫微斗数命理分析师。你需要基于用户提供的精确星盘数据进行深度解读。
+
+请输出以下内容：
+1. palaceAnalysis：以下 ${palaces.length} 个宫位的 AI 解读（必须 ${palaces.length} 项，对应 ${palaces.join('/')}）
+   每项含：key（唯一标识）、label（宫位名）、summary（结合星曜组合的解读，50-90字）、suggestions（2-4 条可执行的行动建议，每条 18 字以内）
+${moduleSpec}
 
 要求：
 - 必须严格基于提供的星盘数据进行解读，不要编造
@@ -703,13 +775,7 @@ function buildFinalReport(
   lockedSections: ZiweiLockedSections,
   currentYear: number
 ): DestinyReport {
-  const profile = lockedSections.profileOverview ?? {
-    name: input.name,
-    genderLabel: input.gender === 'female' ? '坤造（女命）' : '乾造（男命）',
-    birthText: `${input.birthDate.year}年${input.birthDate.month}月${input.birthDate.day}日 ${input.birthTime.hour}:${input.birthTime.minute}`,
-    lunarText: chartData.lunarDate,
-    locationText: input.location.name,
-  };
+  const profile = lockedSections.profileOverview ?? buildLocalProfileOverview(input, chartData);
 
   const modules = lockedSections.overviewModules ?? {
     personality: { title: '性格特质', summary: '', advantages: [], suggestions: [] },
