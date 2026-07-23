@@ -10,6 +10,9 @@ import {
   useDestinyNav,
 } from './destiny-nav-context';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
+import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
 import { cn } from '@/lib/utils';
 
 const PANEL_EASE = [0.32, 0.72, 0, 1] as const;
@@ -52,9 +55,12 @@ export function DestinyDesktopNav({
 }) {
   const { collapsed, toggleCollapsed } = useDestinyNav();
   const reduceMotion = useReducedMotion();
-  // 紫微结果态:子导航随内容一起入夜,消除明度悬崖
+  // 紫微结果态:仅「夜幕观星」时子导航入夜;白昼主题与八字/奇门同亮玻璃
   const ziweiInResult = useDestinyWorkspaceStore((s) => s.ziwei.step === 'result');
-  const night = activeModule === 'ziwei' && ziweiInResult;
+  const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
+  const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
+  const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
+  const night = activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night';
 
   const panelTransition = reduceMotion
     ? { duration: 0.01 }

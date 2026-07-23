@@ -1,0 +1,869 @@
+/* ═══════════════════════════════════════════════════════════════
+   紫微斗数「白昼 × 夜幕」双主题令牌
+   - 作用域挂 <html>：.ziwei-night-root / .ziwei-day-root
+     由 ziwei-workspace 按解析后的主题挂载，Portal（Popover/Dialog）天然继承
+   - 夜幕值 = 现状「夜幕星宫」取色（零回归）；白昼值 = 命理系亮玻璃 + 紫金点缀
+   - 消费方式：.zw-* 语义类 / style 内联 var() / Tailwind text-[color:var(--x)]
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 夜幕（现状取色，勿动） ─── */
+.ziwei-night-root {
+  /* 面板与表面 */
+  --zw-panel-bg: rgba(12, 17, 40, 0.85);
+  --zw-panel-bg-90: rgba(12, 17, 40, 0.9);
+  --zw-panel-bg-95: rgba(12, 17, 40, 0.95);
+  --zw-panel-border: rgba(231, 200, 115, 0.15);
+  --zw-panel-shadow: 0 20px 40px -16px rgba(3, 6, 18, 0.8), 0 0 32px rgba(139, 92, 246, 0.06);
+  --zw-card-bg: rgba(18, 24, 48, 0.7);
+  --zw-card-border: rgba(255, 255, 255, 0.1);
+  --zw-card-shadow: inset 0 1px 0 rgba(231, 200, 115, 0.08), 0 16px 32px -16px rgba(3, 6, 18, 0.7);
+  --zw-grid-bg: rgba(10, 15, 36, 0.9);
+  --zw-grid-shadow: 0 24px 48px -16px rgba(3, 6, 18, 0.85), 0 0 40px rgba(139, 92, 246, 0.08);
+  --zw-palace-card-bg: rgba(18, 24, 48, 0.8);
+  --zw-center-bg: rgba(13, 19, 48, 0.85);
+  --zw-center-shadow: 0 0 44px rgba(139, 92, 246, 0.14), inset 0 1px 0 rgba(231, 200, 115, 0.14);
+  --zw-ming-grad: linear-gradient(160deg, rgba(231, 200, 115, 0.1), rgba(18, 24, 48, 0.85) 45%);
+  --zw-detail-bg: rgba(255, 255, 255, 0.04);
+  --zw-sticky-bg: rgba(12, 17, 40, 0.9);
+  --zw-surface-1: rgba(255, 255, 255, 0.03);
+  --zw-surface-2: rgba(255, 255, 255, 0.04);
+  --zw-surface-3: rgba(255, 255, 255, 0.05);
+  --zw-surface-4: rgba(255, 255, 255, 0.06);
+  --zw-skeleton: rgba(255, 255, 255, 0.1);
+  --zw-skeleton-soft: rgba(255, 255, 255, 0.07);
+  --zw-border-subtle: rgba(255, 255, 255, 0.1);
+  --zw-border-15: rgba(255, 255, 255, 0.15);
+  --zw-border-20: rgba(255, 255, 255, 0.2);
+  --zw-border-hover: rgba(255, 255, 255, 0.25);
+  --zw-dialog-shadow: 0 30px 60px -20px rgba(3, 6, 18, 0.8), 0 0 40px rgba(139, 92, 246, 0.12), inset 0 1px 0 0 rgba(231, 200, 115, 0.1);
+  --zw-tooltip-shadow: 0 16px 40px rgba(3, 6, 18, 0.75), 0 0 28px rgba(139, 92, 246, 0.12);
+
+  /* 鎏金 */
+  --zw-gold: #e7c873;
+  --zw-gold-soft: #f3dfa9;
+  --zw-gold-deep: #c9a35c;
+  --zw-gold-a06: rgba(231, 200, 115, 0.06);
+  --zw-gold-a07: rgba(231, 200, 115, 0.07);
+  --zw-gold-a08: rgba(231, 200, 115, 0.08);
+  --zw-gold-a09: rgba(231, 200, 115, 0.09);
+  --zw-gold-a10: rgba(231, 200, 115, 0.1);
+  --zw-gold-a14: rgba(231, 200, 115, 0.14);
+  --zw-gold-a15: rgba(231, 200, 115, 0.15);
+  --zw-gold-a20: rgba(231, 200, 115, 0.2);
+  --zw-gold-a25: rgba(231, 200, 115, 0.25);
+  --zw-gold-a30: rgba(231, 200, 115, 0.3);
+  --zw-gold-a35: rgba(231, 200, 115, 0.35);
+  --zw-gold-a40: rgba(231, 200, 115, 0.4);
+  --zw-gold-a45: rgba(231, 200, 115, 0.45);
+  --zw-gold-a50: rgba(231, 200, 115, 0.5);
+  --zw-gold-a60: rgba(231, 200, 115, 0.6);
+  --zw-gold-a70: rgba(231, 200, 115, 0.7);
+  --zw-gold-glow: rgba(231, 200, 115, 0.28);
+  --zw-gold-glow-strong: rgba(231, 200, 115, 0.9);
+
+  /* 紫微紫 */
+  --zw-violet: #a78bfa;
+  --zw-violet-soft: #c4b5fd;
+  --zw-violet-deep: #8b5cf6;
+  --zw-violet-bright: #ede9fe;
+  --zw-violet-a07: rgba(167, 139, 250, 0.07);
+  --zw-violet-a10: rgba(167, 139, 250, 0.1);
+  --zw-violet-a15: rgba(167, 139, 250, 0.15);
+  --zw-violet-a25: rgba(167, 139, 250, 0.25);
+  --zw-violet-a30: rgba(167, 139, 250, 0.3);
+  --zw-violet-a40: rgba(167, 139, 250, 0.4);
+  --zw-violet-a50: rgba(167, 139, 250, 0.5);
+  --zw-violet-a60: rgba(167, 139, 250, 0.6);
+  --zw-violet-a70: rgba(167, 139, 250, 0.7);
+  --zw-violet-a80: rgba(167, 139, 250, 0.8);
+  --zw-violet-deep-a10: rgba(139, 92, 246, 0.1);
+  --zw-violet-deep-a12: rgba(139, 92, 246, 0.12);
+  --zw-violet-deep-a15: rgba(139, 92, 246, 0.15);
+
+  /* 文本 */
+  --zw-text-1: #ede7da;
+  --zw-text-1b: #e8e4f0;
+  --zw-text-2: #c9c4d8;
+  --zw-text-2b: #b9b3cc;
+  --zw-text-3: #8b87a0;
+  --zw-text-4: #6e6a86;
+  --zw-text-5: #4a4763;
+
+  /* 模块强调（性格/事业/财运/感情/健康） */
+  --zw-acc-personality: #f5b85c;
+  --zw-acc-career: #7dd3fc;
+  --zw-acc-wealth: #34d399;
+  --zw-acc-love: #fb7185;
+  --zw-acc-health: #2dd4bf;
+  --zw-acc-personality-a08: rgba(245, 184, 92, 0.08);
+  --zw-acc-personality-a10: rgba(245, 184, 92, 0.1);
+  --zw-acc-personality-a15: rgba(245, 184, 92, 0.15);
+  --zw-acc-personality-a22: rgba(245, 184, 92, 0.22);
+  --zw-acc-personality-a33: rgba(245, 184, 92, 0.33);
+  --zw-acc-personality-a40: rgba(245, 184, 92, 0.4);
+  --zw-acc-career-a07: rgba(125, 211, 252, 0.07);
+  --zw-acc-career-a08: rgba(125, 211, 252, 0.08);
+  --zw-acc-career-a10: rgba(125, 211, 252, 0.1);
+  --zw-acc-career-a14: rgba(125, 211, 252, 0.14);
+  --zw-acc-career-a15: rgba(125, 211, 252, 0.15);
+  --zw-acc-career-a20: rgba(125, 211, 252, 0.2);
+  --zw-acc-career-a33: rgba(125, 211, 252, 0.33);
+  --zw-acc-career-a35: rgba(125, 211, 252, 0.35);
+  --zw-acc-career-a40: rgba(125, 211, 252, 0.4);
+  --zw-acc-career-a60: rgba(125, 211, 252, 0.6);
+  --zw-acc-wealth-a07: rgba(52, 211, 153, 0.07);
+  --zw-acc-wealth-a08: rgba(52, 211, 153, 0.08);
+  --zw-acc-wealth-a10: rgba(52, 211, 153, 0.1);
+  --zw-acc-wealth-a14: rgba(52, 211, 153, 0.14);
+  --zw-acc-wealth-a15: rgba(52, 211, 153, 0.15);
+  --zw-acc-wealth-a20: rgba(52, 211, 153, 0.2);
+  --zw-acc-wealth-a33: rgba(52, 211, 153, 0.33);
+  --zw-acc-wealth-a35: rgba(52, 211, 153, 0.35);
+  --zw-acc-wealth-a40: rgba(52, 211, 153, 0.4);
+  --zw-acc-wealth-a60: rgba(52, 211, 153, 0.6);
+  --zw-acc-love-a07: rgba(251, 113, 133, 0.07);
+  --zw-acc-love-a08: rgba(251, 113, 133, 0.08);
+  --zw-acc-love-a10: rgba(251, 113, 133, 0.1);
+  --zw-acc-love-a14: rgba(251, 113, 133, 0.14);
+  --zw-acc-love-a15: rgba(251, 113, 133, 0.15);
+  --zw-acc-love-a20: rgba(251, 113, 133, 0.2);
+  --zw-acc-love-a33: rgba(251, 113, 133, 0.33);
+  --zw-acc-love-a35: rgba(251, 113, 133, 0.35);
+  --zw-acc-love-a40: rgba(251, 113, 133, 0.4);
+  --zw-acc-love-a60: rgba(251, 113, 133, 0.6);
+  --zw-acc-health-a05: rgba(45, 212, 191, 0.05);
+  --zw-acc-health-a08: rgba(45, 212, 191, 0.08);
+  --zw-acc-health-a10: rgba(45, 212, 191, 0.1);
+  --zw-acc-health-a15: rgba(45, 212, 191, 0.15);
+  --zw-acc-health-a20: rgba(45, 212, 191, 0.2);
+  --zw-acc-health-a30: rgba(45, 212, 191, 0.3);
+  --zw-acc-health-a33: rgba(45, 212, 191, 0.33);
+  --zw-acc-health-a40: rgba(45, 212, 191, 0.4);
+
+  /* 状态文本 */
+  --zw-pos: #6ee7b7;
+  --zw-danger: #fda4af;
+  --zw-info: #7dd3fc;
+  --zw-info2: #93c5fd;
+  --zw-warn: #fcd34d;
+  --zw-info-a04: rgba(56, 189, 248, 0.04);
+  --zw-info-a06: rgba(56, 189, 248, 0.06);
+  --zw-info-a07: rgba(56, 189, 248, 0.07);
+  --zw-info-a08: rgba(56, 189, 248, 0.08);
+  --zw-info-a10: rgba(56, 189, 248, 0.1);
+  --zw-info-a14: rgba(56, 189, 248, 0.14);
+  --zw-info-a15: rgba(56, 189, 248, 0.15);
+  --zw-info-a20: rgba(56, 189, 248, 0.2);
+  --zw-info-a35: rgba(56, 189, 248, 0.35);
+  --zw-info-a60: rgba(56, 189, 248, 0.6);
+  --zw-info-dim: rgba(125, 211, 252, 0.9);
+
+  /* 朱砂印 */
+  --zw-cinnabar: #c04851;
+  --zw-cinnabar-text: #d96666;
+  --zw-cinnabar-a30: rgba(192, 72, 81, 0.3);
+  --zw-cinnabar-a60: rgba(192, 72, 81, 0.6);
+  --zw-cinnabar-a70: rgba(192, 72, 81, 0.7);
+
+  /* 十四主星色（夜幕高亮色阶） */
+  --zw-star-ziwei: #c4b5fd;
+  --zw-star-tianfu: #6ee7b7;
+  --zw-star-wuqu: #93c5fd;
+  --zw-star-taiyang: #fcd34d;
+  --zw-star-taiyin: #a5b4fc;
+  --zw-star-tianji: #5eead4;
+  --zw-star-tiantong: #86efac;
+  --zw-star-lianzhen: #fda4af;
+  --zw-star-tanlang: #fdba74;
+  --zw-star-jumen: #cbd5e1;
+  --zw-star-tianxiang: #7dd3fc;
+  --zw-star-tianliang: #bef264;
+  --zw-star-qisha: #fca5a5;
+  --zw-star-pojun: #f0abfc;
+
+  /* 庙旺落陷（xian=闲，xian2=陷） */
+  --zw-bri-miao: #34d399;
+  --zw-bri-wang: #6ee7b7;
+  --zw-bri-de: #7dd3fc;
+  --zw-bri-li: #a5b4fc;
+  --zw-bri-ping: #94a3b8;
+  --zw-bri-xian: #fbbf24;
+  --zw-bri-xian2: #fb7185;
+  --zw-bri-bu: #f87171;
+
+  /* 宫位分组导向点 */
+  --zw-dot-self: #e7c873;
+  --zw-dot-family: #fda4af;
+  --zw-dot-career: #7dd3fc;
+  --zw-dot-spirit: #6ee7b7;
+
+  /* 天干五行 */
+  --zw-stem-wood: #34d399;
+  --zw-stem-fire: #fb7185;
+  --zw-stem-earth: #fbbf24;
+  --zw-stem-metal: #94a3b8;
+  --zw-stem-water: #38bdf8;
+
+  /* 星轨彗星 */
+  --zw-comet: #f6e3b4;
+}
+
+/* ─── 白昼（命理系亮玻璃 + 紫金点缀） ─── */
+.ziwei-day-root {
+  --zw-panel-bg: rgba(255, 255, 255, 0.85);
+  --zw-panel-bg-90: rgba(255, 255, 255, 0.9);
+  --zw-panel-bg-95: rgba(255, 255, 255, 0.96);
+  --zw-panel-border: rgba(148, 163, 184, 0.35);
+  --zw-panel-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  --zw-card-bg: rgba(255, 255, 255, 0.9);
+  --zw-card-border: rgba(15, 23, 42, 0.08);
+  --zw-card-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.05);
+  --zw-grid-bg: rgba(255, 253, 249, 0.92);
+  --zw-grid-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.06);
+  --zw-palace-card-bg: rgba(255, 255, 255, 0.92);
+  --zw-center-bg: rgba(255, 255, 255, 0.9);
+  --zw-center-shadow: 0 0 32px rgba(124, 58, 237, 0.08), inset 0 1px 0 rgba(160, 125, 46, 0.1);
+  --zw-ming-grad: linear-gradient(160deg, rgba(160, 125, 46, 0.1), rgba(255, 255, 255, 0.92) 45%);
+  --zw-detail-bg: rgba(15, 23, 42, 0.035);
+  --zw-sticky-bg: rgba(255, 255, 255, 0.92);
+  --zw-surface-1: rgba(15, 23, 42, 0.03);
+  --zw-surface-2: rgba(15, 23, 42, 0.04);
+  --zw-surface-3: rgba(15, 23, 42, 0.05);
+  --zw-surface-4: rgba(15, 23, 42, 0.06);
+  --zw-skeleton: rgba(15, 23, 42, 0.1);
+  --zw-skeleton-soft: rgba(15, 23, 42, 0.07);
+  --zw-border-subtle: rgba(15, 23, 42, 0.1);
+  --zw-border-15: rgba(15, 23, 42, 0.14);
+  --zw-border-20: rgba(15, 23, 42, 0.18);
+  --zw-border-hover: rgba(15, 23, 42, 0.25);
+  --zw-dialog-shadow: 0 30px 60px -20px rgba(15, 23, 42, 0.18), 0 0 40px rgba(124, 58, 237, 0.08), inset 0 1px 0 0 rgba(160, 125, 46, 0.08);
+  --zw-tooltip-shadow: 0 16px 40px rgba(15, 23, 42, 0.12), 0 0 28px rgba(124, 58, 237, 0.08);
+
+  /* 赭金（白底对比度 ≥3:1） */
+  --zw-gold: #a07d2e;
+  --zw-gold-soft: #8a6d1f;
+  --zw-gold-deep: #c9a35c;
+  --zw-gold-a06: rgba(160, 125, 46, 0.06);
+  --zw-gold-a07: rgba(160, 125, 46, 0.07);
+  --zw-gold-a08: rgba(160, 125, 46, 0.08);
+  --zw-gold-a09: rgba(160, 125, 46, 0.09);
+  --zw-gold-a10: rgba(160, 125, 46, 0.1);
+  --zw-gold-a14: rgba(160, 125, 46, 0.14);
+  --zw-gold-a15: rgba(160, 125, 46, 0.15);
+  --zw-gold-a20: rgba(160, 125, 46, 0.2);
+  --zw-gold-a25: rgba(160, 125, 46, 0.25);
+  --zw-gold-a30: rgba(160, 125, 46, 0.3);
+  --zw-gold-a35: rgba(160, 125, 46, 0.35);
+  --zw-gold-a40: rgba(160, 125, 46, 0.4);
+  --zw-gold-a45: rgba(160, 125, 46, 0.45);
+  --zw-gold-a50: rgba(160, 125, 46, 0.5);
+  --zw-gold-a60: rgba(160, 125, 46, 0.6);
+  --zw-gold-a70: rgba(160, 125, 46, 0.7);
+  --zw-gold-glow: rgba(160, 125, 46, 0.25);
+  --zw-gold-glow-strong: rgba(160, 125, 46, 0.7);
+
+  /* 紫微紫（violet-700 系） */
+  --zw-violet: #6d28d9;
+  --zw-violet-soft: #7c3aed;
+  --zw-violet-deep: #7c3aed;
+  --zw-violet-bright: #5b21b6;
+  --zw-violet-a07: rgba(109, 40, 217, 0.06);
+  --zw-violet-a10: rgba(109, 40, 217, 0.08);
+  --zw-violet-a15: rgba(109, 40, 217, 0.12);
+  --zw-violet-a25: rgba(109, 40, 217, 0.2);
+  --zw-violet-a30: rgba(109, 40, 217, 0.25);
+  --zw-violet-a40: rgba(109, 40, 217, 0.32);
+  --zw-violet-a50: rgba(109, 40, 217, 0.4);
+  --zw-violet-a60: rgba(109, 40, 217, 0.5);
+  --zw-violet-a70: rgba(109, 40, 217, 0.6);
+  --zw-violet-a80: rgba(109, 40, 217, 0.7);
+  --zw-violet-deep-a10: rgba(124, 58, 237, 0.08);
+  --zw-violet-deep-a12: rgba(124, 58, 237, 0.1);
+  --zw-violet-deep-a15: rgba(124, 58, 237, 0.12);
+
+  /* 文本（slate 系） */
+  --zw-text-1: #1e293b;
+  --zw-text-1b: #334155;
+  --zw-text-2: #475569;
+  --zw-text-2b: #475569;
+  --zw-text-3: #64748b;
+  --zw-text-4: #94a3b8;
+  --zw-text-5: #cbd5e1;
+
+  /* 模块强调（600 深档，白底可读） */
+  --zw-acc-personality: #d97706;
+  --zw-acc-career: #0284c7;
+  --zw-acc-wealth: #059669;
+  --zw-acc-love: #e11d48;
+  --zw-acc-health: #0d9488;
+  --zw-acc-personality-a08: rgba(217, 119, 6, 0.08);
+  --zw-acc-personality-a10: rgba(217, 119, 6, 0.1);
+  --zw-acc-personality-a15: rgba(217, 119, 6, 0.15);
+  --zw-acc-personality-a22: rgba(217, 119, 6, 0.2);
+  --zw-acc-personality-a33: rgba(217, 119, 6, 0.33);
+  --zw-acc-personality-a40: rgba(217, 119, 6, 0.4);
+  --zw-acc-career-a07: rgba(2, 132, 199, 0.07);
+  --zw-acc-career-a08: rgba(2, 132, 199, 0.08);
+  --zw-acc-career-a10: rgba(2, 132, 199, 0.1);
+  --zw-acc-career-a14: rgba(2, 132, 199, 0.14);
+  --zw-acc-career-a15: rgba(2, 132, 199, 0.15);
+  --zw-acc-career-a20: rgba(2, 132, 199, 0.2);
+  --zw-acc-career-a33: rgba(2, 132, 199, 0.33);
+  --zw-acc-career-a35: rgba(2, 132, 199, 0.35);
+  --zw-acc-career-a40: rgba(2, 132, 199, 0.4);
+  --zw-acc-career-a60: rgba(2, 132, 199, 0.6);
+  --zw-acc-wealth-a07: rgba(5, 150, 105, 0.07);
+  --zw-acc-wealth-a08: rgba(5, 150, 105, 0.08);
+  --zw-acc-wealth-a10: rgba(5, 150, 105, 0.1);
+  --zw-acc-wealth-a14: rgba(5, 150, 105, 0.14);
+  --zw-acc-wealth-a15: rgba(5, 150, 105, 0.15);
+  --zw-acc-wealth-a20: rgba(5, 150, 105, 0.2);
+  --zw-acc-wealth-a33: rgba(5, 150, 105, 0.33);
+  --zw-acc-wealth-a35: rgba(5, 150, 105, 0.35);
+  --zw-acc-wealth-a40: rgba(5, 150, 105, 0.4);
+  --zw-acc-wealth-a60: rgba(5, 150, 105, 0.6);
+  --zw-acc-love-a07: rgba(225, 29, 72, 0.07);
+  --zw-acc-love-a08: rgba(225, 29, 72, 0.08);
+  --zw-acc-love-a10: rgba(225, 29, 72, 0.1);
+  --zw-acc-love-a14: rgba(225, 29, 72, 0.14);
+  --zw-acc-love-a15: rgba(225, 29, 72, 0.15);
+  --zw-acc-love-a20: rgba(225, 29, 72, 0.2);
+  --zw-acc-love-a33: rgba(225, 29, 72, 0.33);
+  --zw-acc-love-a35: rgba(225, 29, 72, 0.35);
+  --zw-acc-love-a40: rgba(225, 29, 72, 0.4);
+  --zw-acc-love-a60: rgba(225, 29, 72, 0.6);
+  --zw-acc-health-a05: rgba(13, 148, 136, 0.05);
+  --zw-acc-health-a08: rgba(13, 148, 136, 0.08);
+  --zw-acc-health-a10: rgba(13, 148, 136, 0.1);
+  --zw-acc-health-a15: rgba(13, 148, 136, 0.15);
+  --zw-acc-health-a20: rgba(13, 148, 136, 0.2);
+  --zw-acc-health-a30: rgba(13, 148, 136, 0.3);
+  --zw-acc-health-a33: rgba(13, 148, 136, 0.33);
+  --zw-acc-health-a40: rgba(13, 148, 136, 0.4);
+
+  /* 状态文本（700 深档，白底 ≥4.5:1） */
+  --zw-pos: #047857;
+  --zw-danger: #be123c;
+  --zw-info: #0369a1;
+  --zw-info2: #1d4ed8;
+  --zw-warn: #b45309;
+  --zw-info-a04: rgba(2, 132, 199, 0.04);
+  --zw-info-a06: rgba(2, 132, 199, 0.06);
+  --zw-info-a07: rgba(2, 132, 199, 0.07);
+  --zw-info-a08: rgba(2, 132, 199, 0.08);
+  --zw-info-a10: rgba(2, 132, 199, 0.1);
+  --zw-info-a14: rgba(2, 132, 199, 0.14);
+  --zw-info-a15: rgba(2, 132, 199, 0.15);
+  --zw-info-a20: rgba(2, 132, 199, 0.2);
+  --zw-info-a35: rgba(2, 132, 199, 0.35);
+  --zw-info-a60: rgba(2, 132, 199, 0.6);
+  --zw-info-dim: rgba(3, 105, 161, 0.85);
+
+  /* 朱砂印（略降深） */
+  --zw-cinnabar: #b03a44;
+  --zw-cinnabar-text: #c04851;
+  --zw-cinnabar-a30: rgba(176, 58, 68, 0.3);
+  --zw-cinnabar-a60: rgba(176, 58, 68, 0.6);
+  --zw-cinnabar-a70: rgba(176, 58, 68, 0.7);
+
+  /* 十四主星色（600-700 深档） */
+  --zw-star-ziwei: #7c3aed;
+  --zw-star-tianfu: #059669;
+  --zw-star-wuqu: #2563eb;
+  --zw-star-taiyang: #d97706;
+  --zw-star-taiyin: #4f46e5;
+  --zw-star-tianji: #0d9488;
+  --zw-star-tiantong: #16a34a;
+  --zw-star-lianzhen: #e11d48;
+  --zw-star-tanlang: #ea580c;
+  --zw-star-jumen: #64748b;
+  --zw-star-tianxiang: #0284c7;
+  --zw-star-tianliang: #65a30d;
+  --zw-star-qisha: #dc2626;
+  --zw-star-pojun: #c026d3;
+
+  /* 庙旺落陷 */
+  --zw-bri-miao: #047857;
+  --zw-bri-wang: #059669;
+  --zw-bri-de: #0284c7;
+  --zw-bri-li: #4f46e5;
+  --zw-bri-ping: #64748b;
+  --zw-bri-xian: #d97706;
+  --zw-bri-xian2: #e11d48;
+  --zw-bri-bu: #dc2626;
+
+  /* 宫位分组导向点 */
+  --zw-dot-self: #a07d2e;
+  --zw-dot-family: #e11d48;
+  --zw-dot-career: #0284c7;
+  --zw-dot-spirit: #059669;
+
+  /* 天干五行 */
+  --zw-stem-wood: #059669;
+  --zw-stem-fire: #e11d48;
+  --zw-stem-earth: #b45309;
+  --zw-stem-metal: #64748b;
+  --zw-stem-water: #0284c7;
+
+  /* 星轨彗星 */
+  --zw-comet: #a07d2e;
+}
+
+/* ─── 白昼关闭星幕（星点/星云只在夜幕渲染） ─── */
+.ziwei-day-root .ziwei-night-sky {
+  display: none;
+}
+
+/* ═══ 语义组合类（消费上方变量，双主题自动切换） ═══ */
+
+/* 大面板壳（页头/右侧面板/加载卡/免责声明） */
+.zw-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid var(--zw-panel-border);
+  background: var(--zw-panel-bg);
+  box-shadow: var(--zw-panel-shadow);
+}
+
+/* 模块卡（五大模块） */
+.zw-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid var(--zw-card-border);
+  background: var(--zw-card-bg);
+  box-shadow: var(--zw-card-shadow);
+  transition: all 0.2s;
+}
+.zw-card:hover {
+  transform: translateY(-2px);
+}
+.zw-card-acc-personality:hover {
+  border-color: var(--zw-acc-personality-a40);
+  box-shadow: inset 0 1px 0 var(--zw-gold-a10), 0 16px 32px -12px var(--zw-acc-personality-a22);
+}
+.zw-card-acc-career:hover {
+  border-color: var(--zw-acc-career-a40);
+  box-shadow: inset 0 1px 0 var(--zw-gold-a10), 0 16px 32px -12px var(--zw-acc-career-a20);
+}
+.zw-card-acc-wealth:hover {
+  border-color: var(--zw-acc-wealth-a40);
+  box-shadow: inset 0 1px 0 var(--zw-gold-a10), 0 16px 32px -12px var(--zw-acc-wealth-a20);
+}
+.zw-card-acc-love:hover {
+  border-color: var(--zw-acc-love-a40);
+  box-shadow: inset 0 1px 0 var(--zw-gold-a10), 0 16px 32px -12px var(--zw-acc-love-a20);
+}
+.zw-card-acc-health:hover {
+  border-color: var(--zw-acc-health-a40);
+  box-shadow: inset 0 1px 0 var(--zw-gold-a10), 0 16px 32px -12px var(--zw-acc-health-a20);
+}
+
+/* 详情折叠面板 */
+.zw-detail {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--zw-border-subtle);
+  background: var(--zw-detail-bg);
+  padding: 1rem;
+}
+
+/* 鎏金主按钮 */
+.zw-gold-btn {
+  position: relative;
+  display: inline-flex;
+  min-height: 2.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 9999px;
+  border: 1px solid var(--zw-gold-a40);
+  background: var(--zw-gold-a10);
+  padding: 0 1.25rem;
+  font-family: var(--font-song);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--zw-gold);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.zw-gold-btn:hover {
+  background: var(--zw-gold-a20);
+  box-shadow: 0 0 24px var(--zw-gold-glow);
+}
+.zw-gold-btn:active {
+  transform: scale(0.98);
+}
+.zw-gold-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--zw-gold-a60);
+}
+
+/* 鎏金顶部切线（强/弱两档） */
+.zw-gold-divider {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--zw-gold-a50), transparent);
+}
+.zw-gold-divider-soft {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--zw-gold-a40), transparent);
+}
+/* 宫位卡顶部切线（联动宫鎏金 / 常规微光） */
+.zw-card-divider {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--zw-border-15), transparent);
+}
+.zw-card-divider-gold {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--zw-gold-a50), transparent);
+}
+
+/* 鎏金渐变标题（姓名/紫微命盘） */
+.zw-gold-heading {
+  background: linear-gradient(to right, var(--zw-gold-soft), var(--zw-gold), var(--zw-gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 盘面外壳 / 宫位卡 / 中央星盘仪 */
+.zw-grid-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid var(--zw-panel-border);
+  background: var(--zw-grid-bg);
+  box-shadow: var(--zw-grid-shadow);
+}
+.zw-palace-card {
+  position: relative;
+  z-index: 10;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--zw-border-subtle);
+  background: var(--zw-palace-card-bg);
+  text-align: left;
+  transition: all 0.2s;
+}
+.zw-palace-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--zw-border-hover);
+}
+.zw-palace-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--zw-violet-a70);
+}
+.zw-palace-ming {
+  border-color: var(--zw-gold-a45);
+  background: var(--zw-ming-grad);
+}
+.zw-palace-related {
+  border-color: var(--zw-gold-a50);
+  background: var(--zw-gold-a09);
+}
+.zw-palace-active {
+  border-color: var(--zw-violet-a50);
+  background: var(--zw-violet-a10);
+  box-shadow: 0 0 0 2px var(--zw-violet-a40);
+}
+.zw-center-shell {
+  position: relative;
+  z-index: 10;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid var(--zw-gold-a20);
+  background: var(--zw-center-bg);
+  text-align: center;
+  box-shadow: var(--zw-center-shadow);
+}
+
+/* Tab 下划线 / 未读点 / 流式脉冲点 / 紫微徽章 */
+.zw-tab-underline {
+  position: absolute;
+  inset-inline: 0.5rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--zw-gold), var(--zw-violet));
+  box-shadow: 0 0 10px var(--zw-gold-a70);
+}
+.zw-unread-dot {
+  position: absolute;
+  right: 2px;
+  top: 10px;
+  height: 6px;
+  width: 6px;
+  border-radius: 9999px;
+  background: var(--zw-gold);
+  box-shadow: 0 0 6px var(--zw-gold-glow-strong);
+}
+.zw-pulse-dot {
+  display: inline-block;
+  height: 6px;
+  width: 6px;
+  border-radius: 9999px;
+  background: var(--zw-violet);
+  box-shadow: 0 0 8px var(--zw-violet-a80);
+}
+.zw-violet-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid var(--zw-violet-a30);
+  background: var(--zw-violet-deep-a15);
+  padding: 0.25rem 0.75rem;
+  font-family: var(--font-song);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--zw-violet-soft);
+}
+
+/* 弹窗 / 术语浮层 / 触发器 */
+.zw-dialog {
+  border: 1px solid var(--zw-panel-border);
+  background: var(--zw-panel-bg-95);
+  box-shadow: var(--zw-dialog-shadow);
+  backdrop-filter: blur(24px);
+}
+.zw-tooltip {
+  border: 1px solid var(--zw-gold-a20);
+  background: var(--zw-panel-bg-95);
+  color: var(--zw-text-2);
+  box-shadow: var(--zw-tooltip-shadow);
+  backdrop-filter: blur(20px);
+}
+.zw-tooltip-trigger {
+  display: inline-flex;
+  cursor: pointer;
+  border-radius: 2px;
+  border-bottom: 1px dotted var(--zw-gold-a40);
+}
+.zw-tooltip-trigger:hover {
+  border-bottom-color: var(--zw-gold);
+}
+.zw-tooltip-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--zw-violet-a50);
+}
+
+/* 百科：搜索框 / 吸附头 / 星曜条目 / 返回顶部 / 入门引导卡 */
+.zw-input {
+  height: 2.75rem;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--zw-border-subtle);
+  background: var(--zw-surface-3);
+  padding: 0.625rem 0.75rem 0.625rem 2.25rem;
+  font-size: 0.875rem;
+  color: var(--zw-text-1);
+  transition: all 0.2s;
+}
+.zw-input::placeholder {
+  color: var(--zw-text-4);
+}
+.zw-input:focus {
+  border-color: var(--zw-violet-a50);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--zw-violet-a15);
+}
+.zw-sticky-head {
+  background: var(--zw-sticky-bg);
+  backdrop-filter: blur(12px);
+}
+.zw-star-item {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--zw-border-subtle);
+  background: var(--zw-surface-2);
+  padding: 0.75rem;
+  text-align: left;
+  transition: all 0.2s;
+}
+.zw-star-item:hover {
+  border-color: var(--zw-border-20);
+  background: var(--zw-surface-4);
+}
+.zw-star-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--zw-violet-a60);
+}
+.zw-star-item-active {
+  border-color: var(--zw-border-subtle);
+  border-left: 3px solid var(--zw-gold);
+  background: var(--zw-violet-deep-a10);
+  box-shadow: 0 0 18px var(--zw-violet-deep-a15);
+}
+.zw-fab {
+  display: flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--zw-gold-a40);
+  background: var(--zw-panel-bg-90);
+  color: var(--zw-gold);
+  box-shadow: 0 0 20px var(--zw-gold-a25);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.zw-fab:hover {
+  transform: scale(1.05);
+  background: var(--zw-gold-a15);
+}
+.zw-fab:active {
+  transform: scale(0.95);
+}
+.zw-guide-card {
+  border-radius: 16px;
+  border: 1px solid var(--zw-border-subtle);
+  background: linear-gradient(to bottom right, var(--zw-violet-deep-a12), var(--zw-info-a06));
+}
+
+/* 四化印章（命牒头，含 hover 加亮） */
+.zw-seal-lu {
+  border-color: var(--zw-acc-wealth-a35);
+  background: var(--zw-acc-wealth-a08);
+  color: var(--zw-pos);
+}
+.zw-seal-lu:hover {
+  border-color: var(--zw-acc-wealth-a60);
+  background: var(--zw-acc-wealth-a14);
+}
+.zw-seal-quan {
+  border-color: var(--zw-gold-a35);
+  background: var(--zw-gold-a08);
+  color: var(--zw-gold);
+}
+.zw-seal-quan:hover {
+  border-color: var(--zw-gold-a60);
+  background: var(--zw-gold-a14);
+}
+.zw-seal-ke {
+  border-color: var(--zw-info-a35);
+  background: var(--zw-info-a08);
+  color: var(--zw-info);
+}
+.zw-seal-ke:hover {
+  border-color: var(--zw-info-a60);
+  background: var(--zw-info-a14);
+}
+.zw-seal-ji {
+  border-color: var(--zw-acc-love-a35);
+  background: var(--zw-acc-love-a08);
+  color: var(--zw-danger);
+}
+.zw-seal-ji:hover {
+  border-color: var(--zw-acc-love-a60);
+  background: var(--zw-acc-love-a14);
+}
+
+/* 中央面板统计块 / 大限标注 */
+.zw-stat-violet {
+  border: 1px solid var(--zw-violet-a25);
+  background: var(--zw-violet-a07);
+}
+.zw-stat-gold {
+  border: 1px solid var(--zw-gold-a25);
+  background: var(--zw-gold-a07);
+}
+.zw-stat-bar {
+  border: 1px solid var(--zw-border-subtle);
+  background: var(--zw-surface-1);
+}
+.zw-decade-active {
+  background: var(--zw-gold-a15);
+  font-weight: 700;
+  color: var(--zw-gold);
+}
+
+/* 文本工具类（替代硬编码 hex 文本色） */
+.zw-text-1 { color: var(--zw-text-1); }
+.zw-text-1b { color: var(--zw-text-1b); }
+.zw-text-2 { color: var(--zw-text-2); }
+.zw-text-2b { color: var(--zw-text-2b); }
+.zw-text-3 { color: var(--zw-text-3); }
+.zw-text-4 { color: var(--zw-text-4); }
+.zw-text-5 { color: var(--zw-text-5); }
+.zw-text-gold { color: var(--zw-gold); }
+.zw-text-gold-soft { color: var(--zw-gold-soft); }
+.zw-text-violet-soft { color: var(--zw-violet-soft); }
+.zw-text-violet-bright { color: var(--zw-violet-bright); }
+.zw-text-pos { color: var(--zw-pos); }
+.zw-text-danger { color: var(--zw-danger); }
+.zw-text-info { color: var(--zw-info); }
+.zw-text-info2 { color: var(--zw-info2); }
+.zw-text-warn { color: var(--zw-warn); }
+.zw-text-3-hover:hover { color: var(--zw-text-2); }
+
+/* 骨架屏底色 */
+.zw-skeleton { background-color: var(--zw-skeleton); }
+.zw-skeleton-soft { background-color: var(--zw-skeleton-soft); }
+
+/* 十四主星色（星盘网格 getStarColor 映射） */
+.zw-star-ziwei { color: var(--zw-star-ziwei); }
+.zw-star-tianfu { color: var(--zw-star-tianfu); }
+.zw-star-wuqu { color: var(--zw-star-wuqu); }
+.zw-star-taiyang { color: var(--zw-star-taiyang); }
+.zw-star-taiyin { color: var(--zw-star-taiyin); }
+.zw-star-tianji { color: var(--zw-star-tianji); }
+.zw-star-tiantong { color: var(--zw-star-tiantong); }
+.zw-star-lianzhen { color: var(--zw-star-lianzhen); }
+.zw-star-tanlang { color: var(--zw-star-tanlang); }
+.zw-star-jumen { color: var(--zw-star-jumen); }
+.zw-star-tianxiang { color: var(--zw-star-tianxiang); }
+.zw-star-tianliang { color: var(--zw-star-tianliang); }
+.zw-star-qisha { color: var(--zw-star-qisha); }
+.zw-star-pojun { color: var(--zw-star-pojun); }
+.zw-star-default { color: var(--zw-text-1b); }
+
+/* 庙旺落陷（getBrightnessColor 映射，xian=闲 xian2=陷） */
+.zw-bri-miao { color: var(--zw-bri-miao); }
+.zw-bri-wang { color: var(--zw-bri-wang); }
+.zw-bri-de { color: var(--zw-bri-de); }
+.zw-bri-li { color: var(--zw-bri-li); }
+.zw-bri-ping { color: var(--zw-bri-ping); }
+.zw-bri-xian { color: var(--zw-bri-xian); }
+.zw-bri-xian2 { color: var(--zw-bri-xian2); }
+.zw-bri-bu { color: var(--zw-bri-bu); }
+.zw-bri-default { color: var(--zw-text-3); }
+
+/* 天干五行（getStemColor 映射） */
+.zw-stem-wood { color: var(--zw-stem-wood); }
+.zw-stem-fire { color: var(--zw-stem-fire); }
+.zw-stem-earth { color: var(--zw-stem-earth); }
+.zw-stem-metal { color: var(--zw-stem-metal); }
+.zw-stem-water { color: var(--zw-stem-water); }
+
+/* 切换按钮首次邀请：呼吸发光（reduced-motion 退化为静态光圈） */
+@keyframes zw-invite-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--zw-gold-a40), 0 0 12px var(--zw-gold-glow); }
+  50% { box-shadow: 0 0 0 6px transparent, 0 0 20px var(--zw-gold-glow); }
+}
+.zw-invite-pulse {
+  animation: zw-invite-pulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zw-invite-pulse {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--zw-gold-a40);
+  }
+}

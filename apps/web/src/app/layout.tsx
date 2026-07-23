@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import '@/styles/scrollbar.css';
+import '@/styles/ziwei-theme.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';

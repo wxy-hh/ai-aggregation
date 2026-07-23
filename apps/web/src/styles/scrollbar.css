@@ -108,3 +108,25 @@
 .ziwei-night-root::-webkit-scrollbar-thumb:hover {
   background: rgba(167, 139, 250, 0.45);
 }
+
+/* 紫微「白昼」主题:同一场景滚动条切换为 slate 浅色系(覆盖上方夜幕规则) */
+.ziwei-day-root .ziwei-night-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.3);
+}
+.ziwei-day-root .ziwei-night-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.5);
+}
+.ziwei-day-root::-webkit-scrollbar {
+  width: 10px;
+}
+.ziwei-day-root::-webkit-scrollbar-track {
+  background: #f3f1ea;
+}
+.ziwei-day-root::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+  border: 2px solid #f3f1ea;
+}
+.ziwei-day-root::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}

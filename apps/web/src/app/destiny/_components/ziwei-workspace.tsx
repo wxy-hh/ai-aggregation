@@ -8,6 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
+import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 // 跨模态接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（REQ §4.6.4 紫微裁剪）
 import { useRelayReceive } from '@/components/relay/use-relay-receive';
@@ -19,6 +22,7 @@ import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
 import { NightSky } from './ziwei-night-sky';
 import { ZiweiChartHeader } from './ziwei-chart-header';
 import { ZiweiPalaceGrid } from './ziwei-palace-grid';
+import { ZiweiThemeToggle } from './ziwei-theme-toggle';
 import { GlossaryTooltip } from './ziwei-glossary';
 import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
@@ -70,16 +74,12 @@ const TAB_OPTIONS: Array<{ key: PanelTab; label: string }> = [
   { key: 'glossary', label: '星曜百科' },
 ];
 
-// ───「夜幕星宫」视觉 token ───
-// 结果页沉浸暗夜:鎏金 #E7C873 × 紫微紫 #A78BFA × 暖象牙文字
-// (表单步保持明亮玻璃体系,结果步独立夜宫,与八字/奇门形成体验分水岭)
+// ───「白昼 × 夜幕」视觉 token ───
+// 结果页支持双主题（见 styles/ziwei-theme.css）：夜幕=鎏金 × 紫微紫深空；白昼=亮玻璃+紫金点缀
+// (表单步保持明亮玻璃体系,与八字/奇门一致;结果步默认跟随系统,可手动切换沉浸夜幕)
 
-/** 夜幕大面板壳(解析面板/占位卡) */
-const nightPanelClass = cn(
-  'relative overflow-hidden rounded-[32px] border border-[#E7C873]/15',
-  'bg-[#0C1128]/85',
-  'shadow-[0_20px_40px_-16px_rgba(3,6,18,0.8),0_0_32px_rgba(139,92,246,0.06)]'
-);
+/** 大面板壳(解析面板/占位卡)，双主题语义类见 ziwei-theme.css */
+const panelClass = 'zw-panel';
 
 /** 表单步沿用明亮玻璃(输入阶段是白昼) */
 const daylightPanelClass = cn(
@@ -88,29 +88,19 @@ const daylightPanelClass = cn(
   'dark:border-white/10 dark:bg-slate-900/85 lg:dark:bg-slate-900/90'
 );
 
-/** 夜幕模块卡(不开 blur,金色内高光 + 深空投影建立夜色层次) */
-const nightModuleCardClass = cn(
-  'relative overflow-hidden rounded-3xl border border-white/10 p-5',
-  'bg-[#121830]/70',
-  'shadow-[inset_0_1px_0_rgba(231,200,115,0.08),0_16px_32px_-16px_rgba(3,6,18,0.7)]',
-  'transition-all duration-200 transform-gpu hover:-translate-y-0.5'
-);
+/** 模块卡(五大模块)，双主题语义类(内边距沿用原 p-5) */
+const moduleCardClass = 'zw-card p-5';
 
-/** 鎏金玻璃主按钮(夜幕体系) */
-const nightGoldBtnClass = cn(
-  'relative inline-flex min-h-11 shrink-0 items-center justify-center overflow-hidden rounded-full',
-  'border border-[#E7C873]/40 bg-[#E7C873]/10 px-5 font-song text-sm font-bold text-[#E7C873]',
-  'transition-all duration-200 hover:bg-[#E7C873]/20 hover:shadow-[0_0_24px_rgba(231,200,115,0.28)]',
-  'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E7C873]/60'
-);
+/** 鎏金主按钮，双主题语义类 */
+const goldBtnClass = 'zw-gold-btn';
 
-/** 夜色详情折叠面板 */
-const detailPanelClass = cn('overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-4');
+/** 详情折叠面板，双主题语义类 */
+const detailPanelClass = 'zw-detail';
 
-/** 折叠面板 summary:夜色 + 移动端 44px 热区 + 焦点环 */
-const nightSummaryClass = cn(
+/** 折叠面板 summary:双主题焦点环 + 移动端 44px 热区 */
+const summaryClass = cn(
   'cursor-pointer rounded-lg py-3 sm:py-1.5 text-xs font-bold',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A78BFA]/60'
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--zw-violet-a60)]'
 );
 
 /** 流式状态 → 中文文案(服务端枚举为英文,不可直接渲染) */
@@ -236,16 +226,34 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   // 接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（区别于八字的顾问追问）。
   const relay = useRelayReceive('destiny');
 
+  // 主题解析：手动偏好 > 跟随系统（暗→夜幕 / 亮→白昼），仅作用于结果步
+  const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
+  const clearZiweiThemePref = useZiweiThemeStore((s) => s.clearPref);
+  const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
+  const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
+  const resultNight = step === 'result' && ziweiTheme === 'night';
+
+  // 全局明暗切换时释放紫微手动锁定，重新跟随系统（暗→夜幕 / 亮→白昼）
+  // 避免 localStorage 里残留的 pref=day 在切到全局暗色后仍钉死白昼
+  const prevSystemThemeRef = useRef(systemResolvedTheme);
+  useEffect(() => {
+    if (prevSystemThemeRef.current === systemResolvedTheme) return;
+    prevSystemThemeRef.current = systemResolvedTheme;
+    clearZiweiThemePref();
+  }, [systemResolvedTheme, clearZiweiThemePref]);
+
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
 
-  // 紫微结果步:给 <html> 挂夜色标记,窗口级滚动条随之夜化(移动端窗口滚动场景的右缘亮带)
+  // 紫微结果步:按解析主题给 <html> 挂昼/夜标记——窗口级滚动条与 --zw-* 令牌随之切换
+  // (Portal 渲染的 Popover/Dialog 在 body 下,根作用域使其天然继承主题)
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('ziwei-night-root', step === 'result');
-    return () => root.classList.remove('ziwei-night-root');
-  }, [step]);
+    root.classList.toggle('ziwei-night-root', resultNight);
+    root.classList.toggle('ziwei-day-root', step === 'result' && !resultNight);
+    return () => root.classList.remove('ziwei-night-root', 'ziwei-day-root');
+  }, [step, resultNight]);
 
   useEffect(() => {
     if (isActive) restoreWorkspace('ziwei');
@@ -473,7 +481,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
   };
 
   return (
-    <DestinyPageScaffold withNavOffset tone="violet" night={step === 'result'}>
+    <DestinyPageScaffold withNavOffset tone="violet" night={resultNight}>
       <div className="relative h-full min-h-0 w-full overflow-hidden">
         <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
           {step === 'form' && (
@@ -540,12 +548,19 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
               style={stepTransitionStyle}
               aria-hidden={step !== 'result'}
             >
-              {/* 夜幕星点层:结果步沉入深空(白昼问命,夜幕观星)。
-                  页面底色已由 DestinyAmbientBackground 入夜,此处只铺星点,不再带边框/外发光,避免边缘二次割裂 */}
-              {step === 'result' && (
+              {/* 主题背景层:夜幕铺星点(白昼问命,夜幕观星);白昼铺暖纸渐变,
+                  覆盖暗色系统下 ambient 白昼层的 dark 变体,避免白昼面板浮于黑底。
+                  页面底色已由 DestinyAmbientBackground 提供,此处仅作主题补充层,不带边框/外发光 */}
+              {resultNight && (
                 <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
                   <NightSky density="page" />
                 </div>
+              )}
+              {step === 'result' && !resultNight && (
+                <div
+                  className="pointer-events-none absolute inset-0 bg-[linear-gradient(165deg,#FDFCF9_0%,#F7F5EF_50%,#F3F1EA_100%)]"
+                  aria-hidden
+                />
               )}
               <ZiweiResultView
                 report={report}
@@ -658,58 +673,57 @@ function ZiweiResultView({
   return (
     <div className="relative h-full w-full overflow-y-auto pr-1 custom-scrollbar ziwei-night-scrollbar">
       <div className="flex flex-col gap-4 sm:gap-6">
-        {/* 夜幕页头(紫微专属,不复用共享 DestinyResultHeader) */}
+        {/* 结果页头(紫微专属,不复用共享 DestinyResultHeader) */}
         <header
           className={cn(
-            nightPanelClass,
+            panelClass,
             'flex shrink-0 flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6'
           )}
         >
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/50 to-transparent"
-            aria-hidden
-          />
+          <span className="zw-gold-divider" aria-hidden />
           <div className="relative z-10 min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="font-song text-2xl font-bold tracking-tight text-[#EDE7DA] sm:text-3xl">
+              <h1 className="zw-text-1 font-song text-2xl font-bold tracking-tight sm:text-3xl">
                 <GlossaryTooltip term="紫微" chartData={chartData ?? undefined}>
                   AI 紫微斗数
                 </GlossaryTooltip>
               </h1>
-              <span className="inline-flex items-center rounded-full border border-[#A78BFA]/30 bg-[#8B5CF6]/15 px-3 py-1 font-song text-xs font-bold text-[#C4B5FD]">
-                星盘全景视图
-              </span>
+              <span className="zw-violet-badge">星盘全景视图</span>
             </div>
-            <div className="mt-2 flex items-center gap-2 text-sm leading-relaxed text-[#8B87A0]">
+            <div className="zw-text-3 mt-2 flex items-center gap-2 text-sm leading-relaxed">
               {streaming && chartData && (
-                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#A78BFA] shadow-[0_0_8px_rgba(167,139,250,0.8)]" />
+                <span className="zw-pulse-dot animate-pulse" />
               )}
               {progressText}
             </div>
           </div>
           <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
-            <button type="button" onClick={onRecalculate} className={nightGoldBtnClass}>
+            <ZiweiThemeToggle />
+            <button type="button" onClick={onRecalculate} className={goldBtnClass}>
               重新排盘
             </button>
           </div>
         </header>
 
         {!hasData && (
-          <div className={cn(nightPanelClass, 'flex flex-col items-center gap-4 p-10 text-center')}>
+          <div className={cn(panelClass, 'flex flex-col items-center gap-4 p-10 text-center')}>
             {/* 星盘仪加载指示:双环对旋 + 呼吸核 */}
             <div className="relative h-16 w-16" aria-hidden>
               <div
-                className="absolute inset-0 rounded-full border border-[#E7C873]/30"
+                className="absolute inset-0 rounded-full border border-[color:var(--zw-gold-a30)]"
                 style={{ animation: 'ziwei-spin-slow 8s linear infinite' }}
               />
               <div
-                className="absolute inset-2 rounded-full border border-dashed border-[#A78BFA]/40"
+                className="absolute inset-2 rounded-full border border-dashed border-[color:var(--zw-violet-a40)]"
                 style={{ animation: 'ziwei-spin-rev 12s linear infinite' }}
               />
-              <div className="absolute inset-0 m-auto h-2 w-2 animate-pulse rounded-full bg-[#E7C873] shadow-[0_0_10px_rgba(231,200,115,0.8)]" />
+              <div
+                className="absolute inset-0 m-auto h-2 w-2 animate-pulse rounded-full"
+                style={{ background: 'var(--zw-gold)', boxShadow: '0 0 10px var(--zw-gold-glow-strong)' }}
+              />
             </div>
-            <div className="font-song text-lg font-bold text-[#EDE7DA]">正在排布紫微星盘</div>
-            <p className="text-sm text-[#8B87A0]">
+            <div className="zw-text-1 font-song text-lg font-bold">正在排布紫微星盘</div>
+            <p className="zw-text-3 text-sm">
               排盘引擎正在计算您的精准星盘数据,请稍候…
             </p>
           </div>
@@ -774,41 +788,47 @@ function ZiweiResultView({
 // ─── 五大模块卡片 ───
 
 const MODULE_DEFAULTS = [
-  { key: 'personality', label: '性格特质', Icon: PersonalityIcon, color: '#F5B85C' },
-  { key: 'career', label: '事业发展', Icon: Briefcase, color: '#7DD3FC' },
-  { key: 'wealth', label: '财运运势', Icon: Wallet, color: '#34D399' },
-  { key: 'love', label: '感情婚姻', Icon: Heart, color: '#FB7185' },
-  { key: 'health', label: '健康运势', Icon: HeartPulse, color: '#2DD4BF' },
+  { key: 'personality', label: '性格特质', Icon: PersonalityIcon, accent: 'personality' },
+  { key: 'career', label: '事业发展', Icon: Briefcase, accent: 'career' },
+  { key: 'wealth', label: '财运运势', Icon: Wallet, accent: 'wealth' },
+  { key: 'love', label: '感情婚姻', Icon: Heart, accent: 'love' },
+  { key: 'health', label: '健康运势', Icon: HeartPulse, accent: 'health' },
 ] as const;
+
+type ModuleAccent = (typeof MODULE_DEFAULTS)[number]['accent'];
+
+/** 模块强调色 → 双主题令牌（夜幕高亮 / 白昼 600 深档，由 ziwei-theme.css 承载） */
+const ACCENT_VAR: Record<ModuleAccent, { solid: string; a15: string; a33: string }> = {
+  personality: { solid: 'var(--zw-acc-personality)', a15: 'var(--zw-acc-personality-a15)', a33: 'var(--zw-acc-personality-a33)' },
+  career: { solid: 'var(--zw-acc-career)', a15: 'var(--zw-acc-career-a15)', a33: 'var(--zw-acc-career-a33)' },
+  wealth: { solid: 'var(--zw-acc-wealth)', a15: 'var(--zw-acc-wealth-a15)', a33: 'var(--zw-acc-wealth-a33)' },
+  love: { solid: 'var(--zw-acc-love)', a15: 'var(--zw-acc-love-a15)', a33: 'var(--zw-acc-love-a33)' },
+  health: { solid: 'var(--zw-acc-health)', a15: 'var(--zw-acc-health-a15)', a33: 'var(--zw-acc-health-a33)' },
+};
 
 const MODULE_TONE_MAP: Record<
   (typeof MODULE_DEFAULTS)[number]['key'],
-  { card: string; orb: string; subtitle: string }
+  { card: string; orb: string }
 > = {
   personality: {
-    card: 'hover:border-[#F5B85C]/40 hover:shadow-[inset_0_1px_0_rgba(231,200,115,0.1),0_16px_32px_-12px_rgba(245,184,92,0.22)]',
+    card: 'zw-card-acc-personality',
     orb: 'from-amber-400/15 to-orange-400/10',
-    subtitle: 'text-[#F5B85C]',
   },
   career: {
-    card: 'hover:border-[#7DD3FC]/40 hover:shadow-[inset_0_1px_0_rgba(231,200,115,0.1),0_16px_32px_-12px_rgba(125,211,252,0.2)]',
+    card: 'zw-card-acc-career',
     orb: 'from-sky-400/15 to-cyan-400/10',
-    subtitle: 'text-[#7DD3FC]',
   },
   wealth: {
-    card: 'hover:border-[#34D399]/40 hover:shadow-[inset_0_1px_0_rgba(231,200,115,0.1),0_16px_32px_-12px_rgba(52,211,153,0.2)]',
+    card: 'zw-card-acc-wealth',
     orb: 'from-emerald-400/15 to-teal-400/10',
-    subtitle: 'text-[#34D399]',
   },
   love: {
-    card: 'hover:border-[#FB7185]/40 hover:shadow-[inset_0_1px_0_rgba(231,200,115,0.1),0_16px_32px_-12px_rgba(251,113,133,0.2)]',
+    card: 'zw-card-acc-love',
     orb: 'from-rose-400/15 to-pink-400/10',
-    subtitle: 'text-[#FB7185]',
   },
   health: {
-    card: 'hover:border-[#2DD4BF]/40 hover:shadow-[inset_0_1px_0_rgba(231,200,115,0.1),0_16px_32px_-12px_rgba(45,212,191,0.2)]',
+    card: 'zw-card-acc-health',
     orb: 'from-teal-400/15 to-cyan-300/5',
-    subtitle: 'text-[#2DD4BF]',
   },
 };
 
@@ -831,7 +851,7 @@ function renderAdvantagesAndSuggestions(data: DestinyModule, accentColor: string
         {data.advantages?.slice(0, 1).map((text, i) => (
           <p
             key={`adv-${i}`}
-            className="mt-3 text-sm leading-relaxed text-[#B9B3CC]"
+            className="zw-text-2b mt-3 text-sm leading-relaxed"
           >
             <span className="font-bold" style={{ color: accentColor }}>
               优势：
@@ -842,7 +862,7 @@ function renderAdvantagesAndSuggestions(data: DestinyModule, accentColor: string
         {data.suggestions?.slice(0, 1).map((text, i) => (
           <p
             key={`sug-${i}`}
-            className="text-sm leading-relaxed text-[#B9B3CC]"
+            className="zw-text-2b text-sm leading-relaxed"
           >
             <span className="font-bold" style={{ color: accentColor }}>
               建议：
@@ -865,7 +885,7 @@ function renderAdvantagesAndSuggestions(data: DestinyModule, accentColor: string
       return (
         <div className="mt-3 space-y-1.5">
           {parsed.slice(0, 2).map((p, i) => (
-            <p key={i} className="text-sm leading-relaxed text-[#B9B3CC]">
+            <p key={i} className="zw-text-2b text-sm leading-relaxed">
               {p.label ? (
                 <>
                   <span className="font-bold" style={{ color: accentColor }}>
@@ -891,7 +911,7 @@ function renderAdvantagesAndSuggestions(data: DestinyModule, accentColor: string
         {advantages.map((text, i) => (
           <p
             key={`adv-${i}`}
-            className="relative z-10 mt-3 text-sm leading-relaxed text-[#C9C4D8]"
+            className="zw-text-2 relative z-10 mt-3 text-sm leading-relaxed"
           >
             <span className="font-bold" style={{ color: accentColor }}>
               优势：
@@ -902,7 +922,7 @@ function renderAdvantagesAndSuggestions(data: DestinyModule, accentColor: string
         {suggestions.map((text, i) => (
           <p
             key={`sug-${i}`}
-            className="relative z-10 text-sm leading-relaxed text-[#C9C4D8]"
+            className="zw-text-2 relative z-10 text-sm leading-relaxed"
           >
             <span className="font-bold" style={{ color: accentColor }}>
               建议：
@@ -928,7 +948,7 @@ function ModuleCards({
 }) {
   const moduleList = MODULE_DEFAULTS.map((def) => {
     const data = modules?.[def.key];
-    return { ...def, data, tone: MODULE_TONE_MAP[def.key] };
+    return { ...def, data, tone: MODULE_TONE_MAP[def.key], accentVar: ACCENT_VAR[def.accent] };
   });
 
   // 平衡网格:lg 下 6 列,前三卡各占 2 列、后两卡各占 3 列,消除 3+2 缺角
@@ -942,17 +962,14 @@ function ModuleCards({
         <div
           key={item.key}
           className={cn(
-            nightModuleCardClass,
+            moduleCardClass,
             item.tone.card,
             index === moduleList.length - 1 ? lastSpanClass : spanClass(index)
           )}
           style={{ animation: `ziwei-fade-up 0.5s cubic-bezier(0.2,0.8,0.2,1) ${index * 60}ms both` }}
         >
           {/* 顶部鎏金高光切线 */}
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/40 to-transparent"
-            aria-hidden
-          />
+          <span className="zw-gold-divider-soft" aria-hidden />
           {/* 右上背光晕(hover 显色) */}
           <span
             className={cn(
@@ -967,33 +984,36 @@ function ModuleCards({
               <div className="mb-3 flex items-center gap-2">
                 <item.Icon
                   className="h-5 w-5"
-                  style={{ color: item.color, filter: `drop-shadow(0 0 8px ${item.color}55)` }}
+                  style={{ color: item.accentVar.solid, filter: `drop-shadow(0 0 8px ${item.accentVar.a33})` }}
                   strokeWidth={2}
                 />
-                <span className="relative z-10 font-song text-sm font-bold" style={{ color: item.color }}>
+                <span className="relative z-10 font-song text-sm font-bold" style={{ color: item.accentVar.solid }}>
                   {item.label}
                 </span>
               </div>
 
               {/* 宫位描述(副标题)——仅当 title 不等于模块名时显示,避免重复 */}
               {item.data.title && item.data.title !== item.label && (
-                <div className={cn('relative z-10 mb-2 font-song text-sm font-bold', item.tone.subtitle)}>
+                <div
+                  className="relative z-10 mb-2 font-song text-sm font-bold"
+                  style={{ color: item.accentVar.solid }}
+                >
                   {item.data.title}
                 </div>
               )}
 
               {/* 核心描述(一句话概括) */}
-              <p className="relative z-10 text-sm leading-relaxed text-[#C9C4D8]">
+              <p className="zw-text-2 relative z-10 text-sm leading-relaxed">
                 {item.data.summary}
               </p>
 
               {/* 优势 / 建议 分行展示(各最多 1 条,与设计图一致) */}
-              {renderAdvantagesAndSuggestions(item.data, item.color)}
+              {renderAdvantagesAndSuggestions(item.data, item.accentVar.solid)}
             </>
           ) : streaming ? (
-            <ModuleSkeleton label={item.label} color={item.color} />
+            <ModuleSkeleton label={item.label} accentA15={item.accentVar.a15} />
           ) : (
-            <ModuleEmpty label={item.label} color={item.color} />
+            <ModuleEmpty label={item.label} accent={item.accentVar.solid} accentA15={item.accentVar.a15} />
           )}
         </div>
       ))}
@@ -1001,39 +1021,39 @@ function ModuleCards({
   );
 }
 
-function ModuleSkeleton({ label, color }: { label: string; color: string }) {
+function ModuleSkeleton({ label, accentA15 }: { label: string; accentA15: string }) {
   return (
     <>
       <div className="mb-3 flex items-center gap-2">
         <span
           className="h-5 w-5 animate-pulse rounded"
-          style={{ backgroundColor: `${color}26` }}
+          style={{ backgroundColor: accentA15 }}
         />
-        <div className="h-4 w-16 animate-pulse rounded bg-white/10" />
+        <div className="zw-skeleton h-4 w-16 animate-pulse rounded" />
       </div>
-      <div className="mb-2 h-4 w-24 animate-pulse rounded bg-white/[0.08]" />
-      <div className="h-3 w-full animate-pulse rounded bg-white/[0.07]" />
-      <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-white/[0.07]" />
+      <div className="zw-skeleton-soft mb-2 h-4 w-24 animate-pulse rounded" />
+      <div className="zw-skeleton-soft h-3 w-full animate-pulse rounded" />
+      <div className="zw-skeleton-soft mt-2 h-3 w-5/6 animate-pulse rounded" />
     </>
   );
 }
 
 /** 流式结束后某模块未生成(服务端降级)时的空态,避免骨架屏永转 */
-function ModuleEmpty({ label, color }: { label: string; color: string }) {
+function ModuleEmpty({ label, accent, accentA15 }: { label: string; accent: string; accentA15: string }) {
   return (
     <>
       <div className="mb-3 flex items-center gap-2">
         <span
           className="flex h-5 w-5 items-center justify-center rounded"
-          style={{ backgroundColor: `${color}26` }}
+          style={{ backgroundColor: accentA15 }}
         >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} />
         </span>
-        <span className="font-song text-sm font-bold" style={{ color }}>
+        <span className="font-song text-sm font-bold" style={{ color: accent }}>
           {label}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-[#6E6A86]">
+      <p className="zw-text-4 text-xs leading-relaxed">
         本次解析未生成该模块内容，可重新排盘再试
       </p>
     </>
@@ -1069,17 +1089,14 @@ function RightPanel({
   return (
     <section
       className={cn(
-        nightPanelClass,
+        panelClass,
         'flex flex-col overflow-hidden xl:max-h-[calc(100vh-12rem)]'
       )}
     >
-      <span
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/50 to-transparent"
-        aria-hidden
-      />
+      <span className="zw-gold-divider" aria-hidden />
 
       {/* 鎏金下划线 Tab 栏(替代白底胶囊,修复 data-state 激活态失效问题) */}
-      <div className="flex shrink-0 items-end border-b border-white/10 px-2" role="tablist">
+      <div className="flex shrink-0 items-end border-b border-[color:var(--zw-border-subtle)] px-2" role="tablist">
         {TAB_OPTIONS.map((option) => {
           const active = tab === option.key;
           return (
@@ -1091,23 +1108,15 @@ function RightPanel({
               onClick={() => onTabChange(option.key)}
               className={cn(
                 'relative rounded-t-lg px-3 pb-3 pt-4 font-song text-[13px] font-bold transition-colors duration-200',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A78BFA]/60',
-                active ? 'text-[#E7C873]' : 'text-[#8B87A0] hover:text-[#C9C4D8]'
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--zw-violet-a60)]',
+                active ? 'zw-text-gold' : 'zw-text-3 zw-text-3-hover'
               )}
             >
               {option.label}
               {option.key === 'overview' && palaceUnread && (
-                <span
-                  className="absolute right-0.5 top-2.5 h-1.5 w-1.5 rounded-full bg-[#E7C873] shadow-[0_0_6px_rgba(231,200,115,0.9)]"
-                  aria-label="宫位解析已更新"
-                />
+                <span className="zw-unread-dot" aria-label="宫位解析已更新" />
               )}
-              {active && (
-                <span
-                  className="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-gradient-to-r from-[#E7C873] to-[#A78BFA] shadow-[0_0_10px_rgba(231,200,115,0.7)]"
-                  aria-hidden
-                />
-              )}
+              {active && <span className="zw-tab-underline" aria-hidden />}
             </button>
           );
         })}
@@ -1192,58 +1201,58 @@ function OverviewTab({
 
   return (
     <div className="space-y-3">
-      <div className="font-song text-xs font-bold tracking-wide text-[#E7C873]">
+      <div className="zw-text-gold font-song text-xs font-bold tracking-wide">
         当前宫位 · {activePalaceLabel}
       </div>
-      <div className="font-song text-base font-bold text-[#EDE7DA]">
+      <div className="zw-text-1 font-song text-base font-bold">
         AI 紫微格局深度解析
       </div>
 
       <details open className={cn(detailPanelClass, 'border-l-4 border-l-emerald-400')}>
-        <summary className={cn(nightSummaryClass, 'text-emerald-300')}>
+        <summary className={cn(summaryClass, 'zw-text-pos')}>
           宫位概述
         </summary>
-        <p className="mt-2 text-sm leading-relaxed text-[#B9B3CC]">
+        <p className="zw-text-2b mt-2 text-sm leading-relaxed">
           {summary || summaryFallback}
         </p>
       </details>
 
       <details className={cn(detailPanelClass, 'border-l-4 border-l-sky-400')}>
-        <summary className={cn(nightSummaryClass, 'text-sky-300')}>
+        <summary className={cn(summaryClass, 'zw-text-info')}>
           主星格局
         </summary>
         <div className="mt-2 space-y-1.5">
           {mainStars.length > 0 ? (
             mainStars.map((s) => (
               <div key={s.name} className="flex items-center gap-2 text-sm">
-                <span className="font-song font-bold text-[#E8E4F0]">{s.name}</span>
+                <span className="zw-text-1b font-song font-bold">{s.name}</span>
                 {s.brightness && (
-                  <span className="text-xs font-bold text-[#8B87A0]">[{s.brightness}]</span>
+                  <span className="zw-text-3 text-xs font-bold">[{s.brightness}]</span>
                 )}
-                <span className="text-xs text-[#6E6A86]">{getStarTypeLabel(s.type)}</span>
+                <span className="zw-text-4 text-xs">{getStarTypeLabel(s.type)}</span>
               </div>
             ))
           ) : (
-            <p className="text-xs text-[#6E6A86]">本宫无主星,借对宫星曜为用</p>
+            <p className="zw-text-4 text-xs">本宫无主星,借对宫星曜为用</p>
           )}
         </div>
       </details>
 
       <details className={cn(detailPanelClass, 'border-l-4 border-l-blue-400')}>
-        <summary className={cn(nightSummaryClass, 'text-blue-300')}>
+        <summary className={cn(summaryClass, 'zw-text-info2')}>
           辅煞影响
         </summary>
         <div className="mt-2 space-y-2">
           {(softStars.length > 0 || minorSoft.length > 0) && (
             <div>
-              <div className="mb-1 text-[10px] font-bold text-[#7DD3FC]">
+              <div className="zw-text-info mb-1 text-[10px] font-bold">
                 吉星 / 辅星
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {[...softStars, ...minorSoft].map((s) => (
                   <span
                     key={s.name}
-                    className="rounded-md border border-[#7DD3FC]/20 bg-[#7DD3FC]/10 px-2 py-0.5 text-xs text-[#7DD3FC]"
+                    className="zw-text-info rounded-md border border-[color:var(--zw-info-a20)] bg-[color:var(--zw-info-a10)] px-2 py-0.5 text-xs"
                   >
                     {s.name}
                     {s.brightness && (
@@ -1256,14 +1265,14 @@ function OverviewTab({
           )}
           {(toughStars.length > 0 || minorTough.length > 0) && (
             <div>
-              <div className="mb-1 text-[10px] font-bold text-[#FDA4AF]">
+              <div className="zw-text-danger mb-1 text-[10px] font-bold">
                 煞星 / 忌星
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {[...toughStars, ...minorTough].map((s) => (
                   <span
                     key={s.name}
-                    className="rounded-md border border-[#FB7185]/20 bg-[#FB7185]/10 px-2 py-0.5 text-xs text-[#FDA4AF]"
+                    className="zw-text-danger rounded-md border border-[color:var(--zw-acc-love-a20)] bg-[color:var(--zw-acc-love-a10)] px-2 py-0.5 text-xs"
                   >
                     {s.name}
                     {s.brightness && (
@@ -1277,12 +1286,12 @@ function OverviewTab({
           {softStars.length === 0 &&
             minorSoft.length === 0 &&
             toughStars.length === 0 &&
-            minorTough.length === 0 && <p className="text-xs text-[#6E6A86]">暂无辅煞星曜影响</p>}
+            minorTough.length === 0 && <p className="zw-text-4 text-xs">暂无辅煞星曜影响</p>}
         </div>
       </details>
 
       <details className={cn(detailPanelClass, 'border-l-4 border-l-violet-400')}>
-        <summary className={cn(nightSummaryClass, 'text-violet-300')}>
+        <summary className={cn(summaryClass, 'zw-text-violet-soft')}>
           四化分析
         </summary>
         <div className="mt-2 space-y-1.5">
@@ -1290,19 +1299,19 @@ function OverviewTab({
             const isInCurrentPalace = item.palaceName === activePalaceLabel;
             return (
               <div key={item.label} className="flex items-center gap-2 text-xs">
-                <span className="min-w-[3em] font-song font-bold text-[#E8E4F0]">
+                <span className="zw-text-1b min-w-[3em] font-song font-bold">
                   {item.label}
                 </span>
-                <span className="text-[#B9B3CC]">{item.star || '—'}</span>
+                <span className="zw-text-2b">{item.star || '—'}</span>
                 {item.palaceName && (
                   <span
-                    className={isInCurrentPalace ? 'font-bold text-[#C4B5FD]' : 'text-[#8B87A0]'}
+                    className={isInCurrentPalace ? 'zw-text-violet-soft font-bold' : 'zw-text-3'}
                   >
                     ({item.palaceName})
                   </span>
                 )}
                 {isInCurrentPalace && (
-                  <span className="rounded bg-[#8B5CF6]/15 px-1.5 py-px text-[9px] font-bold text-[#C4B5FD]">
+                  <span className="zw-text-violet-soft rounded bg-[color:var(--zw-violet-deep-a15)] px-1.5 py-px text-[9px] font-bold">
                     入本宫
                   </span>
                 )}
@@ -1313,43 +1322,43 @@ function OverviewTab({
       </details>
 
       <details className={cn(detailPanelClass, 'border-l-4 border-l-amber-400')}>
-        <summary className={cn(nightSummaryClass, 'text-amber-300')}>
+        <summary className={cn(summaryClass, 'zw-text-warn')}>
           三方四正联动
         </summary>
-        <div className="mt-2 text-sm text-[#B9B3CC]">
+        <div className="zw-text-2b mt-2 text-sm">
           {tripartite ? (
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="min-w-[3em] font-song text-xs font-bold text-[#E8E4F0]">
+                <span className="zw-text-1b min-w-[3em] font-song text-xs font-bold">
                   对宫
                 </span>
-                <span className="text-[#8B87A0]">{tripartite.opposite}</span>
+                <span className="zw-text-3">{tripartite.opposite}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="min-w-[3em] font-song text-xs font-bold text-[#E8E4F0]">
+                <span className="zw-text-1b min-w-[3em] font-song text-xs font-bold">
                   三合
                 </span>
-                <span className="text-[#8B87A0]">
+                <span className="zw-text-3">
                   {tripartite.tri[0]} · {tripartite.tri[1]}
                 </span>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-[#6E6A86]">暂无三方四正数据</p>
+            <p className="zw-text-4 text-xs">暂无三方四正数据</p>
           )}
         </div>
       </details>
 
       {suggestions.length > 0 && (
         <details open className={cn(detailPanelClass, 'border-l-4 border-l-emerald-400')}>
-          <summary className={cn(nightSummaryClass, 'text-emerald-300')}>
+          <summary className={cn(summaryClass, 'zw-text-pos')}>
             行动建议
           </summary>
           <ul className="mt-2 space-y-1.5">
             {suggestions.map((item, i) => (
               <li
                 key={i}
-                className="flex items-start gap-2 text-xs text-[#B9B3CC]"
+                className="zw-text-2b flex items-start gap-2 text-xs"
               >
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400" />
                 <span>{item}</span>
@@ -1420,7 +1429,7 @@ function TimelineTab({ timeline, streaming }: { timeline: unknown[]; streaming: 
     if (!streaming) {
       return (
         <div className={cn(detailPanelClass, 'p-4 text-center')}>
-          <p className="text-xs leading-relaxed text-[#6E6A86]">
+          <p className="zw-text-4 text-xs leading-relaxed">
             本次解析未生成大限流年内容，可查看命理总论与星曜百科
           </p>
         </div>
@@ -1430,9 +1439,9 @@ function TimelineTab({ timeline, streaming }: { timeline: unknown[]; streaming: 
       <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className={cn(detailPanelClass, 'p-4')}>
-            <div className="h-3 w-16 animate-pulse rounded bg-white/10" />
-            <div className="mt-2 h-4 w-28 animate-pulse rounded bg-white/10" />
-            <div className="mt-2 h-3 w-full animate-pulse rounded bg-white/[0.07]" />
+            <div className="zw-skeleton h-3 w-16 animate-pulse rounded" />
+            <div className="zw-skeleton mt-2 h-4 w-28 animate-pulse rounded" />
+            <div className="zw-skeleton-soft mt-2 h-3 w-full animate-pulse rounded" />
           </div>
         ))}
       </div>
@@ -1443,12 +1452,12 @@ function TimelineTab({ timeline, streaming }: { timeline: unknown[]; streaming: 
     <div className="space-y-3">
       {items.map((item, idx) => (
         <details key={item.year ?? idx} open className={cn(detailPanelClass, 'p-4')}>
-          <summary className={cn(nightSummaryClass, 'py-0 sm:py-0')}>
-            <div className="text-xs text-[#8B87A0]">{item.year}年</div>
-            <div className="mt-1 font-song text-sm font-bold text-[#EDE7DA]">
+          <summary className={cn(summaryClass, 'py-0 sm:py-0')}>
+            <div className="zw-text-3 text-xs">{item.year}年</div>
+            <div className="zw-text-1 mt-1 font-song text-sm font-bold">
               {item.title}
             </div>
-            <p className="mt-1 text-xs text-[#B9B3CC]">{item.summary}</p>
+            <p className="zw-text-2b mt-1 text-xs">{item.summary}</p>
           </summary>
           {item.detail && (
             <div className="mt-3 space-y-2">
@@ -1473,14 +1482,14 @@ function DetailBox({
   items?: string[];
 }) {
   const colors = {
-    opportunities: 'border-l-4 border-l-emerald-400 bg-[#34D399]/[0.07]',
-    risks: 'border-l-4 border-l-rose-400 bg-[#FB7185]/[0.07]',
-    actions: 'border-l-4 border-l-sky-400 bg-[#38BDF8]/[0.07]',
+    opportunities: 'border-l-4 border-l-emerald-400 bg-[color:var(--zw-acc-wealth-a07)]',
+    risks: 'border-l-4 border-l-rose-400 bg-[color:var(--zw-acc-love-a07)]',
+    actions: 'border-l-4 border-l-sky-400 bg-[color:var(--zw-info-a07)]',
   };
   const titleColors = {
-    opportunities: 'text-[#6EE7B7]',
-    risks: 'text-[#FDA4AF]',
-    actions: 'text-[#7DD3FC]',
+    opportunities: 'zw-text-pos',
+    risks: 'zw-text-danger',
+    actions: 'zw-text-info',
   };
   const dotColors = {
     opportunities: 'bg-emerald-400',
@@ -1489,13 +1498,13 @@ function DetailBox({
   };
 
   return (
-    <div className={cn('rounded-xl border border-white/10 p-3', colors[type])}>
+    <div className={cn('rounded-xl border border-[color:var(--zw-border-subtle)] p-3', colors[type])}>
       <div className={cn('text-[11px] font-bold', titleColors[type])}>{title}</div>
       <ul className="mt-1 space-y-1">
         {(items ?? []).map((x, i) => (
           <li key={i} className="flex items-start gap-2 text-xs">
             <span className={`mt-0.5 h-1 w-1 flex-shrink-0 rounded-full ${dotColors[type]}`} />
-            <span className="text-[#C9C4D8]">{x}</span>
+            <span className="zw-text-2">{x}</span>
           </li>
         ))}
       </ul>
@@ -1516,8 +1525,8 @@ function RelationsTab({ relations, streaming }: { relations: unknown; streaming:
 
   return (
     <>
-      <div className="font-song text-base font-bold text-[#EDE7DA]">六亲关系建议</div>
-      <p className="text-sm leading-relaxed text-[#B9B3CC]">
+      <div className="zw-text-1 font-song text-base font-bold">六亲关系建议</div>
+      <p className="zw-text-2b text-sm leading-relaxed">
         {data?.summary || summaryFallback}
       </p>
 
@@ -1560,9 +1569,9 @@ function DetailSection({
     actions: 'border-l-sky-400',
   };
   const labelColors = {
-    opportunities: 'text-[#6EE7B7]',
-    risks: 'text-[#FDA4AF]',
-    actions: 'text-[#7DD3FC]',
+    opportunities: 'zw-text-pos',
+    risks: 'zw-text-danger',
+    actions: 'zw-text-info',
   };
   const dotColors = {
     opportunities: 'bg-emerald-400',
@@ -1572,12 +1581,12 @@ function DetailSection({
 
   return (
     <details open className={cn(detailPanelClass, 'border-l-4', leftBarColors[type])}>
-      <summary className={cn(nightSummaryClass, labelColors[type])}>
+      <summary className={cn(summaryClass, labelColors[type])}>
         {title}
       </summary>
       <ul className="mt-2 space-y-1.5">
         {(items?.length ? items : [fallback]).map((item, i) => (
-          <li key={i} className="flex items-start gap-2 text-xs text-[#B9B3CC]">
+          <li key={i} className="zw-text-2b flex items-start gap-2 text-xs">
             <span className={`mt-1 h-1 w-1 flex-shrink-0 rounded-full ${dotColors[type]}`} />
             <span>{item}</span>
           </li>
@@ -1620,28 +1629,28 @@ const typeLabel: Record<string, string> = {
   helper: '辅星',
 };
 
-// ─── 庙旺落陷颜色映射 ───
+// ─── 庙旺落陷颜色映射（双主题令牌类） ───
 
 function getBrightnessColorClass(brightness: string): string {
   switch (brightness) {
     case '庙':
-      return 'text-[#34D399]';
+      return 'zw-bri-miao';
     case '旺':
-      return 'text-[#6EE7B7]';
+      return 'zw-bri-wang';
     case '得':
-      return 'text-[#7DD3FC]';
+      return 'zw-bri-de';
     case '利':
-      return 'text-[#A5B4FC]';
+      return 'zw-bri-li';
     case '平':
-      return 'text-[#94A3B8]';
+      return 'zw-bri-ping';
     case '闲':
-      return 'text-[#FBBF24]';
+      return 'zw-bri-xian';
     case '陷':
-      return 'text-[#FB7185]';
+      return 'zw-bri-xian2';
     case '不':
-      return 'text-[#F87171]';
+      return 'zw-bri-bu';
     default:
-      return 'text-[#8B87A0]';
+      return 'zw-bri-default';
   }
 }
 
@@ -1664,35 +1673,29 @@ function StarItem({
   return (
     <button
       onClick={onSelect}
-      className={cn(
-        'w-full rounded-xl border p-3 text-left transition-all duration-200',
-        'bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A78BFA]/60',
-        isSelected
-          ? 'border-l-[3px] border-l-[#E7C873] border-white/10 bg-[#8B5CF6]/[0.10] shadow-[0_0_18px_rgba(139,92,246,0.15)]'
-          : 'border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
-      )}
+      className={cn('zw-star-item', isSelected && 'zw-star-item-active')}
     >
       <div className="flex items-center gap-2 flex-wrap">
         <GlossaryTooltip term={star.name} side="right" chartData={chartData}>
-          <span className="cursor-help border-b border-dotted border-[#E7C873]/30 font-song text-sm font-bold text-[#E8E4F0]">
+          <span className="zw-text-1b cursor-help border-b border-dotted border-[color:var(--zw-gold-a30)] font-song text-sm font-bold">
             {star.name}
           </span>
         </GlossaryTooltip>
-        <span className="rounded-md bg-white/[0.06] px-1.5 py-px text-[10px] text-[#8B87A0]">
+        <span className="zw-text-3 rounded-md bg-[color:var(--zw-surface-4)] px-1.5 py-px text-[10px]">
           {typeLabel[star.type] ?? star.type}
         </span>
         {star.brightness && (
-          <span className="text-[10px] text-[#8B87A0]">
+          <span className="zw-text-3 text-[10px]">
             亮度：<span className={`font-bold ${brightnessColor}`}>{star.brightness}</span>
           </span>
         )}
       </div>
       {/* 小白友好：宫位 + 影响描述 */}
       <div className="mt-1.5 flex items-center gap-1.5">
-        <span className="rounded bg-[#A78BFA]/10 px-1.5 py-px text-[10px] font-medium text-[#C4B5FD]">
+        <span className="zw-text-violet-soft rounded bg-[color:var(--zw-violet-a10)] px-1.5 py-px text-[10px] font-medium">
           {star.palaceName}宫
         </span>
-        <span className="text-[10px] text-[#6E6A86]">{influence}</span>
+        <span className="zw-text-4 text-[10px]">{influence}</span>
       </div>
     </button>
   );
@@ -1713,22 +1716,18 @@ function StarIntroDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'max-h-[80vh] max-w-md overflow-y-auto rounded-[24px] border border-[#E7C873]/15 bg-[#0C1128]/95 backdrop-blur-2xl',
-          'shadow-[0_30px_60px_-20px_rgba(3,6,18,0.8),0_0_40px_rgba(139,92,246,0.12),inset_0_1px_0_0_rgba(231,200,115,0.1)]'
+          'zw-dialog max-h-[80vh] max-w-md overflow-y-auto rounded-[24px]'
         )}
       >
-        <span
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/40 to-transparent"
-          aria-hidden
-        />
-        <DialogTitle className="font-song text-base font-bold text-[#EDE7DA]">
+        <span className="zw-gold-divider-soft" aria-hidden />
+        <DialogTitle className="zw-text-1 font-song text-base font-bold">
           星曜入门指南
         </DialogTitle>
         <DialogDescription className="sr-only">紫微斗数星曜基础知识介绍</DialogDescription>
 
-        <div className="mt-2 space-y-5 text-sm text-[#B9B3CC]">
+        <div className="zw-text-2b mt-2 space-y-5 text-sm">
           <section>
-            <h4 className="mb-2 font-song text-sm font-bold text-[#E8E4F0]">
+            <h4 className="zw-text-1b mb-2 font-song text-sm font-bold">
               什么是星曜？
             </h4>
             <p className="leading-relaxed">
@@ -1739,24 +1738,24 @@ function StarIntroDialog({
 
           {/* 十四主星分类 */}
           <section>
-            <h4 className="mb-2 font-song text-sm font-bold text-[#E8E4F0]">
+            <h4 className="zw-text-1b mb-2 font-song text-sm font-bold">
               十四主星的四大类型
             </h4>
             <div className="space-y-2">
-              <div className="rounded-lg bg-[#F5B85C]/[0.08] p-2.5">
-                <div className="text-xs font-bold text-[#F5B85C]">领导型</div>
+              <div className="rounded-lg bg-[color:var(--zw-acc-personality-a08)] p-2.5">
+                <div className="text-xs font-bold" style={{ color: 'var(--zw-acc-personality)' }}>领导型</div>
                 <p className="mt-0.5 text-xs">紫微、天府、武曲、天相 — 天生有管理和统筹能力</p>
               </div>
-              <div className="rounded-lg bg-[#FB7185]/[0.08] p-2.5">
-                <div className="text-xs font-bold text-[#FDA4AF]">开创型</div>
+              <div className="rounded-lg bg-[color:var(--zw-acc-love-a08)] p-2.5">
+                <div className="zw-text-danger text-xs font-bold">开创型</div>
                 <p className="mt-0.5 text-xs">七杀、破军、廉贞、贪狼 — 敢闯敢拼，善于开创新局面</p>
               </div>
-              <div className="rounded-lg bg-[#7DD3FC]/[0.08] p-2.5">
-                <div className="text-xs font-bold text-[#7DD3FC]">支援型</div>
+              <div className="rounded-lg bg-[color:var(--zw-info-a08)] p-2.5">
+                <div className="zw-text-info text-xs font-bold">支援型</div>
                 <p className="mt-0.5 text-xs">太阳、巨门、天机 — 善于沟通、分析和技术支持</p>
               </div>
-              <div className="rounded-lg bg-[#34D399]/[0.08] p-2.5">
-                <div className="text-xs font-bold text-[#6EE7B7]">
+              <div className="rounded-lg bg-[color:var(--zw-acc-wealth-a08)] p-2.5">
+                <div className="zw-text-pos text-xs font-bold">
                   合作型
                 </div>
                 <p className="mt-0.5 text-xs">天同、太阴、天梁 — 温和细腻，善于协调和照顾他人</p>
@@ -1766,7 +1765,7 @@ function StarIntroDialog({
 
           {/* 庙旺落陷白话解释 */}
           <section>
-            <h4 className="mb-2 font-song text-sm font-bold text-[#E8E4F0]">
+            <h4 className="zw-text-1b mb-2 font-song text-sm font-bold">
               亮度是什么意思？
             </h4>
             <p className="mb-2 text-xs leading-relaxed">
@@ -1776,26 +1775,26 @@ function StarIntroDialog({
               <li className="flex items-start gap-2">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#34D399]" />
                 <span>
-                  <strong className="text-[#6EE7B7]">庙/旺</strong>
+                  <strong className="zw-text-pos">庙/旺</strong>
                   ：能量很强，这颗星的优点会非常明显
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#7DD3FC]" />
                 <span>
-                  <strong className="text-[#7DD3FC]">得/利</strong>：能量不错，特点会正常表现出来
+                  <strong className="zw-text-info">得/利</strong>：能量不错，特点会正常表现出来
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#94A3B8]" />
                 <span>
-                  <strong className="text-[#B9B3CC]">平/闲</strong>：能量一般，特点比较温和
+                  <strong className="zw-text-2b">平/闲</strong>：能量一般，特点比较温和
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="mt-0.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#FB7185]" />
                 <span>
-                  <strong className="text-[#FDA4AF]">陷/不</strong>：能量较弱，容易表现出负面特点
+                  <strong className="zw-text-danger">陷/不</strong>：能量较弱，容易表现出负面特点
                 </span>
               </li>
             </ul>
@@ -1803,7 +1802,7 @@ function StarIntroDialog({
 
           {/* 宫位白话解释 */}
           <section>
-            <h4 className="mb-2 font-song text-sm font-bold text-[#E8E4F0]">
+            <h4 className="zw-text-1b mb-2 font-song text-sm font-bold">
               十二宫是什么？
             </h4>
             <p className="text-xs leading-relaxed">
@@ -1822,23 +1821,23 @@ function StarIntroDialog({
 
 function StarGuideCard({ onOpenHelp }: { onOpenHelp: () => void }) {
   return (
-    <div className="mb-3 rounded-2xl border border-white/10 bg-gradient-to-br from-[#8B5CF6]/[0.12] to-[#38BDF8]/[0.06] p-4">
+    <div className="zw-guide-card mb-3 p-4">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#A78BFA]/15">
-          <Sparkles className="h-4 w-4 text-[#C4B5FD]" />
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:var(--zw-violet-a15)]">
+          <Sparkles className="zw-text-violet-soft h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="font-song text-sm font-bold text-[#EDE7DA]">
+          <div className="zw-text-1 font-song text-sm font-bold">
             小白一分钟看懂星曜
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-[#8B87A0]">
+          <p className="zw-text-3 mt-2 text-xs leading-relaxed">
             星曜就像你命盘里的「性格演员」，每颗星都有自己独特的脾气和本领。
             它们分布在你人生的不同领域（事业、感情、健康等），决定了你在这些方面的天生倾向。
           </p>
           <div className="mt-2 flex items-center gap-3">
             <button
               onClick={onOpenHelp}
-              className="flex items-center gap-1 text-xs font-medium text-[#C4B5FD] transition-colors hover:text-[#E7C873]"
+              className="zw-text-violet-soft flex items-center gap-1 text-xs font-medium transition-colors hover:text-[color:var(--zw-gold)]"
             >
               <HelpCircle className="h-3 w-3" />
               了解更多
@@ -1942,17 +1941,17 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
   return (
     <div ref={scrollRef} className="relative -mr-1 h-full overflow-y-auto pr-1">
       {/* 标题与搜索 */}
-      <div className="sticky top-0 z-10 rounded-lg bg-[#0C1128]/90 p-2 backdrop-blur-md">
+      <div className="zw-sticky-head sticky top-0 z-10 rounded-lg p-2">
         <div className="mb-2 flex items-end justify-between">
           <div>
-            <div className="font-song text-base font-bold text-[#EDE7DA]">
+            <div className="zw-text-1 font-song text-base font-bold">
               命盘星曜详解
             </div>
-            <p className="mt-1 text-xs text-[#8B87A0]">
+            <p className="zw-text-3 mt-1 text-xs">
               点击星曜查看详细解释，也可点击命盘中的星曜名称跳转
             </p>
           </div>
-          {/* <span className="mb-0.5 text-xs text-[#6E6A86]">共{totalCount}颗星曜</span> */}
+          {/* <span className="zw-text-4 mb-0.5 text-xs">共{totalCount}颗星曜</span> */}
         </div>
 
         {/* 小白入门引导 */}
@@ -1965,10 +1964,10 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索星曜名称，如：紫微、贪狼"
-            className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.05] py-2.5 pl-9 pr-3 text-sm text-[#EDE7DA] transition-all placeholder:text-[#6E6A86] focus:border-[#A78BFA]/50 focus:outline-none focus:ring-2 focus:ring-[#A78BFA]/15"
+            className="zw-input"
           />
           <svg
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6E6A86]"
+            className="zw-text-4 absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
@@ -1986,14 +1985,14 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
           <div key={group.key}>
             <div className="mb-2.5 flex items-center gap-2">
               <span className={`text-xs ${group.color}`}>{group.icon}</span>
-              <span className="font-song text-sm font-bold text-[#E8E4F0]">
+              <span className="zw-text-1b font-song text-sm font-bold">
                 {group.label}
               </span>
-              <span className="text-[10px] text-[#6E6A86]">（共{group.items.length}颗）</span>
+              <span className="zw-text-4 text-[10px]">（共{group.items.length}颗）</span>
             </div>
 
             {group.items.length === 0 ? (
-              <div className="py-4 text-center text-xs text-[#6E6A86]">
+              <div className="zw-text-4 py-4 text-center text-xs">
                 本分组暂无星曜
               </div>
             ) : (
@@ -2015,7 +2014,7 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
         ))}
 
         {filteredGroups.length === 0 && (
-          <div className="py-10 text-center text-sm text-[#6E6A86]">
+          <div className="zw-text-4 py-10 text-center text-sm">
             未找到匹配的星曜
           </div>
         )}
@@ -2026,7 +2025,7 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
         <div className="sticky bottom-4 z-20 flex justify-end">
           <button
             onClick={scrollToTop}
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E7C873]/40 bg-[#0C1128]/90 text-[#E7C873] shadow-[0_0_20px_rgba(231,200,115,0.25)] transition-all hover:scale-105 hover:bg-[#E7C873]/15 active:scale-95"
+            className="zw-fab"
             aria-label="返回顶部"
           >
             <svg
@@ -2052,8 +2051,8 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
 
 function Disclaimer() {
   return (
-    <div className={cn(nightPanelClass, 'mt-8 p-5 text-center')}>
-      <p className="mx-auto max-w-2xl text-xs leading-relaxed text-[#8B87A0]">
+    <div className={cn(panelClass, 'mt-8 p-5 text-center')}>
+      <p className="zw-text-3 mx-auto max-w-2xl text-xs leading-relaxed">
         本网站基于传统紫微斗数理论与 AI
         大模型生成内容，仅供娱乐消遣之用。命运掌握在自己手中，人生的成败取决于个人的选择和努力。请理性看待，切勿迷信。本网站不提供医疗、法律、投资等专业领域的决策建议。
       </p>

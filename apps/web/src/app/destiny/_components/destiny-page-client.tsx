@@ -11,6 +11,9 @@ import type { DestinyModuleKey } from './layout/left-nav';
 import { DestinyDesktopNav } from './layout/destiny-desktop-nav';
 import { DestinyNavProvider, useDestinyNav } from './layout/destiny-nav-context';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
+import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 // 跨模态接力：「待解读引用」领域级入口（REQ-011）
@@ -33,9 +36,12 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   }, [activeModule, setActiveModuleInStore]);
   // 模型切换只在填表步骤显示，结果页不显示
   const isFormStep = useDestinyWorkspaceStore((s) => s[activeModule].step === 'form');
-  // 紫微结果态:移动端分段控件随内容一起入夜(暮色三段式)
+  // 紫微结果态:仅夜幕主题时移动端分段控件入夜;白昼与八字/奇门一致
   const ziweiInResult = useDestinyWorkspaceStore((s) => s.ziwei.step === 'result');
-  const isZiweiNight = activeModule === 'ziwei' && ziweiInResult;
+  const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
+  const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
+  const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
+  const isZiweiNight = activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night';
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);

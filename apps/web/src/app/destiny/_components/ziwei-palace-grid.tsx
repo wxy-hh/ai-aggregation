@@ -8,31 +8,18 @@ import { useIsMobile } from '@/hooks/use-is-mobile';
 import { NightSky } from './ziwei-night-sky';
 
 // ═══════════════════════════════════════════════════════════════
-//  紫微斗数命盘网格 —「夜幕星宫」
-//  深空盘面 · 鎏金宋体星曜 · 中央星盘仪 · 三方四正星轨连线
+//  紫微斗数命盘网格 —「白昼 × 夜幕」双主题
+//  星盘盘面 · 鎏金宋体星曜 · 中央星盘仪 · 三方四正星轨连线
+//  主题令牌见 styles/ziwei-theme.css(.zw-* 语义类随根作用域自动切换)
 // ═══════════════════════════════════════════════════════════════
 
-// ─── 夜幕视觉 token ───
+// ─── 双主题视觉 token(语义类,昼/夜由根作用域变量决定) ───
 
-/** 盘面外壳:深空墨蓝 + 鎏金细边 */
-const GRID_SHELL_CLASS = [
-  'relative overflow-hidden rounded-[32px] border border-[#E7C873]/15',
-  'bg-[#0A0F24]/90',
-  'shadow-[0_24px_48px_-16px_rgba(3,6,18,0.85),0_0_40px_rgba(139,92,246,0.08)]',
-  // 关键:给网格留出内边距,避免宫位卡片与外层边框视觉重叠
-  'p-4 sm:p-5',
-].join(' ');
+/** 盘面外壳(内边距沿用原 p-4 sm:p-5,避免宫位卡片与外层边框视觉重叠) */
+const GRID_SHELL_CLASS = 'zw-grid-shell p-4 sm:p-5';
 
-/** 宫位卡基底:暗夜磨砂(不开 blur,保滚动性能) */
-const CARD_BASE_CLASS = [
-  'group relative z-10 overflow-hidden',
-  'rounded-[20px] border border-white/10 bg-[#121830]/80',
-  'p-3.5 sm:p-4',
-  'text-left',
-  'transition-all duration-200',
-  'hover:-translate-y-0.5 hover:border-white/25',
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A78BFA]/70',
-].join(' ');
+/** 宫位卡基底(布局/交互/昼夜色全在语义类内,保滚动性能不开 blur) */
+const CARD_BASE_CLASS = 'group zw-palace-card p-3.5 sm:p-4';
 
 // ─── 十二宫排布顺序 ───
 const PALACE_ORDER = [
@@ -73,12 +60,12 @@ const PALACE_GROUP_MAP: Record<string, 'self' | 'family' | 'career' | 'spirit'> 
   '父母': 'family',
 };
 
-/** 分组导向点颜色(小而克制,只用于宫位名前 5px 光点) */
+/** 分组导向点颜色(小而克制,只用于宫位名前 5px 光点;昼/夜由变量切换) */
 const GROUP_DOT_COLORS: Record<string, string> = {
-  self: '#E7C873',
-  family: '#FDA4AF',
-  career: '#7DD3FC',
-  spirit: '#6EE7B7',
+  self: 'var(--zw-dot-self)',
+  family: 'var(--zw-dot-family)',
+  career: 'var(--zw-dot-career)',
+  spirit: 'var(--zw-dot-spirit)',
 };
 
 // ─── 三方四正关系表 ───
@@ -97,31 +84,31 @@ const TRIPARTITE_MAP: Record<string, { opposite: string; tri: [string, string] }
   '父母': { opposite: '疾厄', tri: ['仆役', '子女'] },
 };
 
-// ─── 天干五行色(夜色 400 级) ───
+// ─── 天干五行色(双主题令牌类) ───
 const STEM_COLORS: Record<string, string> = {
-  '甲': 'text-emerald-400', '乙': 'text-emerald-400',
-  '丙': 'text-rose-400',    '丁': 'text-rose-400',
-  '戊': 'text-amber-400',   '己': 'text-amber-400',
-  '庚': 'text-slate-400',   '辛': 'text-slate-400',
-  '壬': 'text-sky-400',     '癸': 'text-sky-400',
+  '甲': 'zw-stem-wood',  '乙': 'zw-stem-wood',
+  '丙': 'zw-stem-fire',  '丁': 'zw-stem-fire',
+  '戊': 'zw-stem-earth', '己': 'zw-stem-earth',
+  '庚': 'zw-stem-metal', '辛': 'zw-stem-metal',
+  '壬': 'zw-stem-water', '癸': 'zw-stem-water',
 };
 
-// ─── 十四主星颜色(夜幕高亮色阶) ───
+// ─── 十四主星颜色(双主题令牌类:夜幕高亮色阶 / 白昼 600 深档) ───
 const STAR_COLORS: Array<{ names: string[]; className: string }> = [
-  { names: ['紫微'], className: 'text-[#C4B5FD]' },
-  { names: ['天府'], className: 'text-[#6EE7B7]' },
-  { names: ['武曲'], className: 'text-[#93C5FD]' },
-  { names: ['太阳'], className: 'text-[#FCD34D]' },
-  { names: ['太阴'], className: 'text-[#A5B4FC]' },
-  { names: ['天机'], className: 'text-[#5EEAD4]' },
-  { names: ['天同'], className: 'text-[#86EFAC]' },
-  { names: ['廉贞'], className: 'text-[#FDA4AF]' },
-  { names: ['贪狼'], className: 'text-[#FDBA74]' },
-  { names: ['巨门'], className: 'text-[#CBD5E1]' },
-  { names: ['天相'], className: 'text-[#7DD3FC]' },
-  { names: ['天梁'], className: 'text-[#BEF264]' },
-  { names: ['七杀'], className: 'text-[#FCA5A5]' },
-  { names: ['破军'], className: 'text-[#F0ABFC]' },
+  { names: ['紫微'], className: 'zw-star-ziwei' },
+  { names: ['天府'], className: 'zw-star-tianfu' },
+  { names: ['武曲'], className: 'zw-star-wuqu' },
+  { names: ['太阳'], className: 'zw-star-taiyang' },
+  { names: ['太阴'], className: 'zw-star-taiyin' },
+  { names: ['天机'], className: 'zw-star-tianji' },
+  { names: ['天同'], className: 'zw-star-tiantong' },
+  { names: ['廉贞'], className: 'zw-star-lianzhen' },
+  { names: ['贪狼'], className: 'zw-star-tanlang' },
+  { names: ['巨门'], className: 'zw-star-jumen' },
+  { names: ['天相'], className: 'zw-star-tianxiang' },
+  { names: ['天梁'], className: 'zw-star-tianliang' },
+  { names: ['七杀'], className: 'zw-star-qisha' },
+  { names: ['破军'], className: 'zw-star-pojun' },
 ];
 
 // ─── 宫位含义速查 ───
@@ -165,27 +152,27 @@ function getStarColor(name: string): string {
   for (const item of STAR_COLORS) {
     if (item.names.some((n) => name.includes(n))) return item.className;
   }
-  return 'text-[#E8E4F0]';
+  return 'zw-star-default';
 }
 
-/** 庙旺落陷 8 级颜色(夜色版) */
+/** 庙旺落陷 8 级颜色(双主题令牌类) */
 function getBrightnessColor(brightness: string): string {
   switch (brightness) {
-    case '庙':  return 'text-[#34D399]';
-    case '旺':  return 'text-[#6EE7B7]';
-    case '得':  return 'text-[#7DD3FC]';
-    case '利':  return 'text-[#A5B4FC]';
-    case '平':  return 'text-[#94A3B8]';
-    case '闲':  return 'text-[#FBBF24]';
-    case '陷':  return 'text-[#FB7185]';
-    case '不':  return 'text-[#F87171]';
-    default:    return 'text-[#8B87A0]';
+    case '庙':  return 'zw-bri-miao';
+    case '旺':  return 'zw-bri-wang';
+    case '得':  return 'zw-bri-de';
+    case '利':  return 'zw-bri-li';
+    case '平':  return 'zw-bri-ping';
+    case '闲':  return 'zw-bri-xian';
+    case '陷':  return 'zw-bri-xian2';
+    case '不':  return 'zw-bri-bu';
+    default:    return 'zw-bri-default';
   }
 }
 
 /** 获取天干五行色 */
 function getStemColor(stem: string): string {
-  return STEM_COLORS[stem] ?? 'text-slate-400';
+  return STEM_COLORS[stem] ?? 'zw-stem-metal';
 }
 
 /** 获取三方四正 */
@@ -305,14 +292,14 @@ function clipToRectEdge(from: Pt, to: Pt, rect: DOMRect, containerRect: DOMRect)
 
 function SihuaBadgeDot({ type }: { type: string }) {
   const styles: Record<string, string> = {
-    '禄': 'text-[#6EE7B7] border-[#34D399]/40 bg-[#34D399]/10',
-    '权': 'text-[#E7C873] border-[#E7C873]/40 bg-[#E7C873]/10',
-    '科': 'text-[#7DD3FC] border-[#38BDF8]/40 bg-[#38BDF8]/10',
-    '忌': 'text-[#FDA4AF] border-[#FB7185]/40 bg-[#FB7185]/10',
+    '禄': 'zw-text-pos border-[color:var(--zw-acc-wealth-a40)] bg-[color:var(--zw-acc-wealth-a10)]',
+    '权': 'zw-text-gold border-[color:var(--zw-gold-a40)] bg-[color:var(--zw-gold-a10)]',
+    '科': 'zw-text-info border-[color:var(--zw-info-a35)] bg-[color:var(--zw-info-a10)]',
+    '忌': 'zw-text-danger border-[color:var(--zw-acc-love-a40)] bg-[color:var(--zw-acc-love-a10)]',
   };
   return (
     <span
-      className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded border px-1 font-song text-[9px] font-bold ${styles[type] ?? 'border-white/15 bg-white/5 text-[#B9B3CC]'}`}
+      className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded border px-1 font-song text-[9px] font-bold ${styles[type] ?? 'zw-text-2b border-[color:var(--zw-border-15)] bg-[color:var(--zw-surface-3)]'}`}
     >
       {type}
     </span>
@@ -326,9 +313,10 @@ function SihuaBadgeDot({ type }: { type: string }) {
 function AstrolabeRing({ activeBranch }: { activeBranch?: string }) {
   return (
     <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
-      {/* 外环:十二地支(静止,保可读性;当前宫位地支鎏金点亮) */}
-      <circle cx="50" cy="50" r="47" fill="none" stroke="#E7C873" strokeOpacity="0.22" strokeWidth="0.3" />
-      <circle cx="50" cy="50" r="41.5" fill="none" stroke="#E7C873" strokeOpacity="0.12" strokeWidth="0.2" />
+      {/* 外环:十二地支(静止,保可读性;当前宫位地支鎏金点亮)。
+          注:SVG 表现属性不支持 var(),笔触/填充色统一走 style */}
+      <circle cx="50" cy="50" r="47" fill="none" style={{ stroke: 'var(--zw-gold)' }} strokeOpacity="0.22" strokeWidth="0.3" />
+      <circle cx="50" cy="50" r="41.5" fill="none" style={{ stroke: 'var(--zw-gold)' }} strokeOpacity="0.12" strokeWidth="0.2" />
       {BRANCHES_12.map((b, i) => {
         const angle = ((i * 30 - 90) * Math.PI) / 180;
         const x = 50 + 44.2 * Math.cos(angle);
@@ -344,9 +332,11 @@ function AstrolabeRing({ activeBranch }: { activeBranch?: string }) {
             fontSize={active ? 5.5 : 4.2}
             fontWeight={active ? 700 : 400}
             fontFamily="var(--font-song)"
-            fill={active ? '#F3DFA9' : '#E7C873'}
             fillOpacity={active ? 1 : 0.45}
-            style={active ? { filter: 'drop-shadow(0 0 2.5px rgba(231,200,115,0.9))' } : undefined}
+            style={{
+              fill: active ? 'var(--zw-gold-soft)' : 'var(--zw-gold)',
+              filter: active ? 'drop-shadow(0 0 2.5px var(--zw-gold-glow-strong))' : undefined,
+            }}
           >
             {b}
           </text>
@@ -367,7 +357,7 @@ function AstrolabeRing({ activeBranch }: { activeBranch?: string }) {
               y1={50 + r1 * Math.sin(angle)}
               x2={50 + r2 * Math.cos(angle)}
               y2={50 + r2 * Math.sin(angle)}
-              stroke="#A78BFA"
+              style={{ stroke: 'var(--zw-violet)' }}
               strokeOpacity={isMajor ? 0.4 : 0.16}
               strokeWidth={isMajor ? 0.35 : 0.2}
             />
@@ -379,7 +369,7 @@ function AstrolabeRing({ activeBranch }: { activeBranch?: string }) {
       <g style={{ transformOrigin: '50px 50px', animation: 'ziwei-spin-rev 90s linear infinite' }}>
         <circle
           cx="50" cy="50" r="30" fill="none"
-          stroke="#A78BFA" strokeOpacity="0.25" strokeWidth="0.25" strokeDasharray="0.8 2.4"
+          style={{ stroke: 'var(--zw-violet)' }} strokeOpacity="0.25" strokeWidth="0.25" strokeDasharray="0.8 2.4"
         />
         {[0, 90, 180, 270].map((deg) => {
           const angle = ((deg - 90) * Math.PI) / 180;
@@ -389,7 +379,7 @@ function AstrolabeRing({ activeBranch }: { activeBranch?: string }) {
               cx={50 + 30 * Math.cos(angle)}
               cy={50 + 30 * Math.sin(angle)}
               r="0.7"
-              fill="#E7C873"
+              style={{ fill: 'var(--zw-gold)' }}
               fillOpacity="0.5"
             />
           );
@@ -467,8 +457,8 @@ function ConstellationLayer({
     <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full" aria-hidden>
       <defs>
         <linearGradient id="ziwei-star-track" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#A78BFA" stopOpacity="1" />
-          <stop offset="100%" stopColor="#E7C873" stopOpacity="1" />
+          <stop offset="0%" style={{ stopColor: 'var(--zw-violet)' }} stopOpacity="1" />
+          <stop offset="100%" style={{ stopColor: 'var(--zw-gold)' }} stopOpacity="1" />
         </linearGradient>
         {/* 星芒/彗星辉光滤镜 */}
         <filter id="ziwei-comet-glow" x="-300%" y="-300%" width="700%" height="700%">
@@ -498,19 +488,19 @@ function ConstellationLayer({
               style={{ animation: 'ziwei-dash-flow 1.4s linear infinite' }}
             />
             {/* 起点星芒(本宫,紫微紫) */}
-            <circle cx={s.x1} cy={s.y1} r="3.2" fill="#A78BFA" opacity="0.25" />
-            <circle cx={s.x1} cy={s.y1} r="1.5" fill="#C4B5FD" opacity="0.95" filter="url(#ziwei-comet-glow)" />
+            <circle cx={s.x1} cy={s.y1} r="3.2" style={{ fill: 'var(--zw-violet)' }} opacity="0.25" />
+            <circle cx={s.x1} cy={s.y1} r="1.5" style={{ fill: 'var(--zw-violet-soft)' }} opacity="0.95" filter="url(#ziwei-comet-glow)" />
             {/* 终点星芒(联动宫,鎏金) */}
-            <circle cx={s.x2} cy={s.y2} r="3.2" fill="#E7C873" opacity="0.3" />
-            <circle cx={s.x2} cy={s.y2} r="1.6" fill="#F3DFA9" opacity="0.95" filter="url(#ziwei-comet-glow)" />
+            <circle cx={s.x2} cy={s.y2} r="3.2" style={{ fill: 'var(--zw-gold)' }} opacity="0.3" />
+            <circle cx={s.x2} cy={s.y2} r="1.6" style={{ fill: 'var(--zw-gold-soft)' }} opacity="0.95" filter="url(#ziwei-comet-glow)" />
             {/* 彗星粒子沿轨运行(主星 + 两级尾迹) */}
-            <circle r="1.8" fill="#F6E3B4" filter="url(#ziwei-comet-glow)" className="ziwei-comet">
+            <circle r="1.8" style={{ fill: 'var(--zw-comet)' }} filter="url(#ziwei-comet-glow)" className="ziwei-comet">
               <animateMotion dur={`${dur}s`} repeatCount="indefinite" path={path} />
             </circle>
-            <circle r="1.1" fill="#F6E3B4" opacity="0.5" className="ziwei-comet">
+            <circle r="1.1" style={{ fill: 'var(--zw-comet)' }} opacity="0.5" className="ziwei-comet">
               <animateMotion dur={`${dur}s`} begin="-0.12s" repeatCount="indefinite" path={path} />
             </circle>
-            <circle r="0.6" fill="#F6E3B4" opacity="0.3" className="ziwei-comet">
+            <circle r="0.6" style={{ fill: 'var(--zw-comet)' }} opacity="0.3" className="ziwei-comet">
               <animateMotion dur={`${dur}s`} begin="-0.24s" repeatCount="indefinite" path={path} />
             </circle>
           </g>
@@ -557,7 +547,7 @@ function PalaceCard({
   );
   const hasMainStar = mainStars.length > 0;
   const dominantStar = mainStars[0];
-  const starColorClass = dominantStar ? getStarColor(dominantStar.name) : 'text-[#6E6A86]';
+  const starColorClass = dominantStar ? getStarColor(dominantStar.name) : 'zw-text-4';
   const pattern = identifyPattern(mainStars);
 
   // 空宫对宫
@@ -569,20 +559,14 @@ function PalaceCard({
   // 四化徽章
   const sihuaBadges = getSihuaBadges(palace, chart);
 
-  // 命宫:鎏金描边 + 金光渐变底
-  const mingClass = isMing
-    ? 'border-[#E7C873]/45 bg-[linear-gradient(160deg,rgba(231,200,115,0.10),rgba(18,24,48,0.85)_45%)]'
-    : '';
+  // 命宫:鎏金描边 + 金光渐变底(双主题语义类)
+  const mingClass = isMing ? 'zw-palace-ming' : '';
 
   // 三方四正联动宫:鎏金高亮 + 呼吸光晕(见 style 中的 ziwei-related-glow)
-  const relatedClass = isRelated && !isActive
-    ? 'border-[#E7C873]/50 bg-[#E7C873]/[0.09]'
-    : '';
+  const relatedClass = isRelated && !isActive ? 'zw-palace-related' : '';
 
   // 选中宫:紫微紫 aura + 呼吸光晕(见 style 中的 ziwei-active-glow)
-  const activeClass = isActive
-    ? 'border-[#A78BFA]/50 bg-[#A78BFA]/[0.10] ring-2 ring-[#A78BFA]/40'
-    : '';
+  const activeClass = isActive ? 'zw-palace-active' : '';
 
   // 入场动画与光晕呼吸叠加(延迟内联进简写,不与 animationDelay 混用;光晕延迟到入场完成后启动)
   const animList = [`ziwei-palace-enter 0.55s cubic-bezier(0.2,0.8,0.2,1) ${index * 40}ms both`];
@@ -608,9 +592,7 @@ function PalaceCard({
       style={{ animation: animList.join(', ') }}
     >
       <span
-        className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent ${
-          isRelated && !isActive ? 'via-[#E7C873]/50' : 'via-white/15'
-        }`}
+        className={isRelated && !isActive ? 'zw-card-divider-gold' : 'zw-card-divider'}
         aria-hidden
       />
       {/* 顶部:天干 + 宫位名 + 标签 + 四化 + 来因 */}
@@ -621,7 +603,7 @@ function PalaceCard({
           <span className={`text-xs font-bold ${getStemColor(palace.heavenlyStem)}`}>
             {palace.heavenlyStem}
           </span>
-          <span className="text-[10px] text-[#4A4763]">·</span>
+          <span className="zw-text-5 text-[10px]">·</span>
 
           {/* 宫位名:分组导向点 + 宋体 */}
           <span className="flex items-center gap-1 text-[13px]">
@@ -630,11 +612,11 @@ function PalaceCard({
               style={{ backgroundColor: groupDot, boxShadow: `0 0 5px ${groupDot}` }}
               aria-hidden
             />
-            {isMing && <Crown className="h-3.5 w-3.5 text-[#E7C873]" strokeWidth={2} />}
+            {isMing && <Crown className="zw-text-gold h-3.5 w-3.5" strokeWidth={2} />}
             <GlossaryTooltip term={palace.name} chartData={chart} side="right">
               <span
                 className={`font-song font-bold ${
-                  isMing || (isRelated && !isActive) ? 'text-[#F3DFA9]' : 'text-[#E8E4F0]'
+                  isMing || (isRelated && !isActive) ? 'zw-text-gold-soft' : 'zw-text-1b'
                 }`}
               >
                 {palace.name}
@@ -644,14 +626,17 @@ function PalaceCard({
 
           {/* 身宫标签 */}
           {isShen && (
-            <span className="rounded-md border border-[#E7C873]/40 bg-[#E7C873]/10 px-1 py-px font-song text-[10px] font-bold text-[#E7C873]">
+            <span className="zw-text-gold rounded-md border border-[color:var(--zw-gold-a40)] bg-[color:var(--zw-gold-a10)] px-1 py-px font-song text-[10px] font-bold">
               <GlossaryTooltip term="身宫" chartData={chart}>身宫</GlossaryTooltip>
             </span>
           )}
 
           {/* 来因宫徽章 */}
           {palace.isOriginalPalace && (
-            <span className="rounded border border-[#2DD4BF]/30 bg-[#2DD4BF]/10 px-1 py-px font-song text-[9px] font-bold text-[#5EEAD4]">
+            <span
+              className="rounded border border-[color:var(--zw-acc-health-a30)] bg-[color:var(--zw-acc-health-a10)] px-1 py-px font-song text-[9px] font-bold"
+              style={{ color: 'var(--zw-acc-health)' }}
+            >
               来因
             </span>
           )}
@@ -670,12 +655,12 @@ function PalaceCard({
         <div className={`mt-1 break-words font-song text-lg font-bold leading-tight tracking-tight sm:text-xl ${starColorClass}`}>
           {hasMainStar ? (
             <GlossaryTooltip term={dominantStar!.name} chartData={chart} side="right">
-              <span className="cursor-help border-b border-dotted border-[#E7C873]/30">
+              <span className="cursor-help border-b border-dotted border-[color:var(--zw-gold-a30)]">
                 {dominantStar!.name}
               </span>
             </GlossaryTooltip>
           ) : (
-            <span className="text-base font-medium italic text-[#6E6A86]">
+            <span className="zw-text-4 text-base font-medium italic">
               {oppositePalace ? `借${oppositePalace.name}` : '空宫'}
             </span>
           )}
@@ -691,7 +676,7 @@ function PalaceCard({
         {/* 格局徽章 */}
         {pattern && (
           <div className="mt-1">
-            <span className="inline-block rounded border border-[#8B5CF6]/30 bg-[#8B5CF6]/15 px-1 py-px font-song text-[9px] font-bold text-[#C4B5FD]">
+            <span className="zw-text-violet-soft inline-block rounded border border-[color:var(--zw-violet-a30)] bg-[color:var(--zw-violet-deep-a15)] px-1 py-px font-song text-[9px] font-bold">
               {pattern}
             </span>
           </div>
@@ -699,11 +684,11 @@ function PalaceCard({
 
         {/* 其他主星 */}
         {mainStars.length > 1 && (
-          <div className="mt-0.5 break-words text-[10px] leading-snug text-[#B9B3CC] line-clamp-1">
+          <div className="zw-text-2b mt-0.5 break-words text-[10px] leading-snug line-clamp-1">
             {mainStars.slice(1, 3).map((s) => (
               <span key={s.name} className="mr-1.5">
                 <GlossaryTooltip term={s.name} chartData={chart} side="right">
-                  <span className="cursor-help border-b border-dotted border-white/15">{s.name}</span>
+                  <span className="cursor-help border-b border-dotted border-[color:var(--zw-border-15)]">{s.name}</span>
                 </GlossaryTooltip>
                 {s.brightness && (
                   <span className={`text-[8px] ${getBrightnessColor(s.brightness)}`}>[{s.brightness}]</span>
@@ -715,8 +700,8 @@ function PalaceCard({
 
         {/* 空宫借星详情 */}
         {!hasMainStar && borrowedStars && borrowedStars.length > 0 && (
-          <div className="mt-0.5 text-[10px] text-[#8B87A0]">
-            <span className="text-[#6E6A86]">→ </span>
+          <div className="zw-text-3 mt-0.5 text-[10px]">
+            <span className="zw-text-4">→ </span>
             {borrowedStars.slice(0, 1).map((s) => (
               <span key={s.name}>
                 <span className={`opacity-70 ${getStarColor(s.name)}`}>{s.name}</span>
@@ -732,7 +717,7 @@ function PalaceCard({
 
         {/* 辅星/煞星 */}
         {palace.minorStars.length > 0 && (
-          <div className="mt-0.5 break-words text-[9px] leading-snug text-[#8B87A0] line-clamp-1">
+          <div className="zw-text-3 mt-0.5 break-words text-[9px] leading-snug line-clamp-1">
             {palace.minorStars.slice(0, 2).map((s) => s.name).join(' · ')}
           </div>
         )}
@@ -740,21 +725,19 @@ function PalaceCard({
 
       {/* 底部:地支 + 大限年龄 */}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-song text-xs font-medium text-[#B9B3CC]">
+        <span className="zw-text-2b font-song text-xs font-medium">
           {palace.earthlyBranch}
         </span>
         <span
           className={[
             'rounded-md px-1.5 py-px text-[10px] transition-colors',
-            isCurrentDecade
-              ? 'bg-[#E7C873]/15 font-bold text-[#E7C873]'
-              : 'text-[#6E6A86]',
+            isCurrentDecade ? 'zw-decade-active' : 'zw-text-4',
           ].join(' ')}
         >
           {palace.stageRange[0]}-{palace.stageRange[1]}岁
           {isCurrentDecade && <span className="ml-1">· 当前大限</span>}
           {isYearPalace && (
-            <span className="ml-1 font-bold text-[#C4B5FD]">· 流年</span>
+            <span className="zw-text-violet-soft ml-1 font-bold">· 流年</span>
           )}
         </span>
       </div>
@@ -777,9 +760,7 @@ function CenterPanel({
 }) {
   const shellClass = [
     'order-first col-span-2 sm:order-none sm:col-start-2 sm:col-span-2 sm:row-start-2 sm:row-span-2',
-    'relative z-10 overflow-hidden rounded-[28px] border border-[#E7C873]/20',
-    'bg-[#0D1330]/85 p-4 text-center',
-    'shadow-[0_0_44px_rgba(139,92,246,0.14),inset_0_1px_0_rgba(231,200,115,0.14)]',
+    'zw-center-shell p-4',
   ].join(' ');
 
   const enterStyle = {
@@ -801,7 +782,7 @@ function CenterPanel({
       className="pointer-events-none absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl"
       style={{
         background:
-          'radial-gradient(circle, rgba(167,139,250,0.16) 0%, rgba(231,200,115,0.06) 55%, transparent 75%)',
+          'radial-gradient(circle, var(--zw-violet-a15) 0%, var(--zw-gold-a06) 55%, transparent 75%)',
         animation: 'ziwei-breathe 10s ease-in-out infinite',
       }}
       aria-hidden
@@ -823,49 +804,52 @@ function CenterPanel({
         {glowLayer}
         <div className="relative z-10 flex h-full flex-col justify-between text-center">
           <div>
-            <div className="bg-gradient-to-r from-[#F3DFA9] via-[#E7C873] to-[#C9A35C] bg-clip-text font-song text-[2rem] font-bold leading-tight text-transparent drop-shadow-[0_2px_10px_rgba(231,200,115,0.35)] sm:text-[36px] sm:leading-none">
+            <div
+              className="zw-gold-heading font-song text-[2rem] font-bold leading-tight sm:text-[36px] sm:leading-none"
+              style={{ filter: 'drop-shadow(0 2px 10px var(--zw-gold-a35))' }}
+            >
               <GlossaryTooltip term="命宫" chartData={chart}>紫微命盘</GlossaryTooltip>
             </div>
-            <div className="mt-2 font-song text-xs text-[#B9B3CC]">
+            <div className="zw-text-2b mt-2 font-song text-xs">
               {chart.yearStem}{chart.yearBranch}年 · {chart.fiveElementsClass}
             </div>
-            <div className="mt-1 text-[11px] text-[#8B87A0]">
+            <div className="zw-text-3 mt-1 text-[11px]">
               {getStartingAge(chart.fiveElementsClass)}
             </div>
           </div>
 
           <div className="my-4 grid w-full grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-[#A78BFA]/25 bg-[#A78BFA]/[0.07] px-3 py-2 sm:px-4">
-              <div className="font-song text-[11px] font-semibold text-[#C4B5FD]">
+            <div className="zw-stat-violet rounded-2xl px-3 py-2 sm:px-4">
+              <div className="zw-text-violet-soft font-song text-[11px] font-semibold">
                 <GlossaryTooltip term="命主" chartData={chart}>命主</GlossaryTooltip>
               </div>
-              <div className="mt-1 font-song text-lg font-bold text-[#EDE9FE] sm:mt-0.5 sm:text-xl">
+              <div className="zw-text-violet-bright mt-1 font-song text-lg font-bold sm:mt-0.5 sm:text-xl">
                 <GlossaryTooltip term={chart.soul} chartData={chart}>{chart.soul}</GlossaryTooltip>
               </div>
             </div>
-            <div className="rounded-2xl border border-[#E7C873]/25 bg-[#E7C873]/[0.07] px-3 py-2 sm:px-4">
-              <div className="font-song text-[11px] font-semibold text-[#E7C873]">
+            <div className="zw-stat-gold rounded-2xl px-3 py-2 sm:px-4">
+              <div className="zw-text-gold font-song text-[11px] font-semibold">
                 <GlossaryTooltip term="身主" chartData={chart}>身主</GlossaryTooltip>
               </div>
-              <div className="mt-1 font-song text-lg font-bold text-[#F3DFA9] sm:mt-0.5 sm:text-xl">
+              <div className="zw-text-gold-soft mt-1 font-song text-lg font-bold sm:mt-0.5 sm:text-xl">
                 <GlossaryTooltip term={chart.body} chartData={chart}>{chart.body}</GlossaryTooltip>
               </div>
             </div>
           </div>
 
           {/* 底部信息条 */}
-          <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-left">
+          <div className="zw-stat-bar grid grid-cols-3 gap-2 rounded-2xl p-2.5 text-left">
             <div>
-              <div className="text-[10px] font-semibold text-[#8B87A0]">命宫</div>
-              <div className="font-song text-xs font-bold text-[#E8E4F0]">{chart.soulPalaceBranch}</div>
+              <div className="zw-text-3 text-[10px] font-semibold">命宫</div>
+              <div className="zw-text-1b font-song text-xs font-bold">{chart.soulPalaceBranch}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold text-[#8B87A0]">身宫</div>
-              <div className="font-song text-xs font-bold text-[#E8E4F0]">{chart.bodyPalaceBranch}</div>
+              <div className="zw-text-3 text-[10px] font-semibold">身宫</div>
+              <div className="zw-text-1b font-song text-xs font-bold">{chart.bodyPalaceBranch}</div>
             </div>
             <div>
-              <div className="text-[10px] font-semibold text-[#8B87A0]">主星数</div>
-              <div className="font-song text-xs font-bold text-[#E8E4F0]">{totalMajorStars} 颗</div>
+              <div className="zw-text-3 text-[10px] font-semibold">主星数</div>
+              <div className="zw-text-1b font-song text-xs font-bold">{totalMajorStars} 颗</div>
             </div>
           </div>
         </div>
@@ -887,10 +871,13 @@ function CenterPanel({
       <div className="relative z-10 flex h-full flex-col justify-between text-center">
         <div>
           {/* 宫位名称 */}
-          <div className="bg-gradient-to-r from-[#F3DFA9] via-[#E7C873] to-[#C9A35C] bg-clip-text font-song text-[1.75rem] font-bold leading-tight text-transparent drop-shadow-[0_2px_10px_rgba(231,200,115,0.3)] sm:text-[32px] sm:leading-none">
+          <div
+            className="zw-gold-heading font-song text-[1.75rem] font-bold leading-tight sm:text-[32px] sm:leading-none"
+            style={{ filter: 'drop-shadow(0 2px 10px var(--zw-gold-a30))' }}
+          >
             {activePalace.name}
           </div>
-          <div className="mt-1.5 text-xs text-[#8B87A0]">
+          <div className="zw-text-3 mt-1.5 text-xs">
             {PALACE_MEANING[activePalace.name] ?? ''}
           </div>
         </div>
@@ -910,19 +897,19 @@ function CenterPanel({
             ))}
           </div>
         ) : (
-          <div className="my-3 text-sm italic text-[#6E6A86]">空宫(借对宫星曜)</div>
+          <div className="zw-text-4 my-3 text-sm italic">空宫(借对宫星曜)</div>
         )}
 
-        <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2.5 text-left">
+        <div className="zw-stat-bar space-y-2 rounded-2xl p-2.5 text-left">
           {/* 大限信息 */}
-          <div className="text-[11px] text-[#B9B3CC]">
+          <div className="zw-text-2b text-[11px]">
             大限:{activePalace.stageRange[0]}-{activePalace.stageRange[1]}岁
           </div>
 
           {/* 四化指示 */}
           {sihuaBadges.length > 0 && (
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-[#8B87A0]">四化:</span>
+              <span className="zw-text-3 text-[10px]">四化:</span>
               {sihuaBadges.map((b) => (
                 <SihuaBadgeDot key={b} type={b} />
               ))}
@@ -931,16 +918,16 @@ function CenterPanel({
 
           {/* 三方四正 */}
           {tripartite && (
-            <div className="text-[10px] text-[#8B87A0]">
+            <div className="zw-text-3 text-[10px]">
               三方四正:
-              <span className="font-song text-[#B9B3CC]">
+              <span className="zw-text-2b font-song">
                 {tripartite.tri[0]} · {tripartite.tri[1]} · {tripartite.opposite}
               </span>
             </div>
           )}
 
           {/* 天干地支 */}
-          <div className="font-song text-[10px] text-[#8B87A0]">
+          <div className="zw-text-3 font-song text-[10px]">
             {activePalace.heavenlyStem}{activePalace.earthlyBranch}
           </div>
         </div>
@@ -981,13 +968,10 @@ export function ZiweiPalaceGrid({ chart, activePalaceLabel, onPalaceSelect, birt
 
   return (
     <div className={GRID_SHELL_CLASS}>
-      {/* 盘面星幕(无星云,保持盘面纯净) */}
-      <NightSky density="panel" nebula={false} />
+      {/* 盘面星幕(无星云,保持盘面纯净;白昼主题下由 ziwei-theme.css 隐藏) */}
+      <NightSky density="panel" nebula={false} className="ziwei-night-sky" />
       {/* 顶部鎏金切线 */}
-      <span
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#E7C873]/50 to-transparent"
-        aria-hidden
-      />
+      <span className="zw-gold-divider" aria-hidden />
       <div
         ref={gridRef}
         className="relative grid grid-cols-2 auto-rows-[minmax(150px,auto)] gap-3 sm:grid-cols-4 sm:grid-rows-4 sm:auto-rows-auto"
