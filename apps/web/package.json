@@ -74,6 +74,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@prisma/nextjs-monorepo-workaround-plugin": "^7.9.0",
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@tailwindcss/typography": "^0.5.19",

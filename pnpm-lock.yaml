@@ -195,6 +195,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@prisma/nextjs-monorepo-workaround-plugin':
+        specifier: ^7.9.0
+        version: 7.9.0
       '@repo/config-eslint':
         specifier: workspace:*
         version: link:../../packages/config-eslint
@@ -1660,6 +1663,9 @@ packages:
 
   '@prisma/get-platform@6.19.2':
     resolution: {integrity: sha512-PGLr06JUSTqIvztJtAzIxOwtWKtJm5WwOG6xpsgD37Rc84FpfUBGLKz65YpJBGtkRQGXTYEFie7pYALocC3MtA==}
+
+  '@prisma/nextjs-monorepo-workaround-plugin@7.9.0':
+    resolution: {integrity: sha512-9qqwPObrLiIymn2D8me97dD42MbI3xrHLbSyBixIWRJEUI09gpVd9VCKeehnzjOnCtfxhdgDUHbHmXNr/VmoVg==}
 
   '@radix-ui/number@1.1.1':
     resolution: {integrity: sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==}
@@ -7126,6 +7132,8 @@ snapshots:
   '@prisma/get-platform@6.19.2':
     dependencies:
       '@prisma/debug': 6.19.2
+
+  '@prisma/nextjs-monorepo-workaround-plugin@7.9.0': {}
 
   '@radix-ui/number@1.1.1': {}
 
