@@ -1,4 +1,7 @@
 import type { NextConfig } from 'next';
+// 该包无官方类型定义，构建期仅作为 webpack 插件使用
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error 缺少类型声明
 import { PrismaPlugin } from '@prisma/nextjs-monorepo-workaround-plugin';
 
 const nextConfig: NextConfig = {
