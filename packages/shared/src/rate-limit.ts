@@ -53,47 +53,65 @@ export class RateLimiter {
     const now = Math.floor(Date.now() / 1000);
     const windowStart = now - this.config.window;
 
+    // Serverless 兜底：Redis 卡住时限时放行，避免 /api/chat 永久挂起
+    const failOpen = (): RateLimitResult => ({
+      allowed: true,
+      remaining: this.config.limit,
+      reset: now + this.config.window,
+      limit: this.config.limit,
+    });
+
     try {
-      // 使用 Redis 事务确保原子性
-      const multi = this.redis.multi();
+      const run = async (): Promise<RateLimitResult> => {
+        // 使用 Redis 事务确保原子性
+        const multi = this.redis.multi();
 
-      // 1. 移除时间窗口之前的记录
-      multi.zremrangebyscore(redisKey, 0, windowStart);
+        // 1. 移除时间窗口之前的记录
+        multi.zremrangebyscore(redisKey, 0, windowStart);
 
-      // 2. 添加当前请求时间戳
-      multi.zadd(redisKey, now, now.toString());
+        // 2. 添加当前请求时间戳
+        multi.zadd(redisKey, now, now.toString());
 
-      // 3. 设置过期时间
-      multi.expire(redisKey, this.config.window);
+        // 3. 设置过期时间
+        multi.expire(redisKey, this.config.window);
 
-      // 4. 获取当前窗口内的请求数
-      multi.zcard(redisKey);
+        // 4. 获取当前窗口内的请求数
+        multi.zcard(redisKey);
 
-      const results = await multi.exec();
+        const results = await multi.exec();
 
-      if (!results) {
-        throw new Error('Redis 事务执行失败');
-      }
+        if (!results) {
+          throw new Error('Redis 事务执行失败');
+        }
 
-      const currentCount = results[3][1] as number;
-      const remaining = Math.max(0, this.config.limit - currentCount);
-      const allowed = currentCount <= this.config.limit;
+        const currentCount = results[3][1] as number;
+        const remaining = Math.max(0, this.config.limit - currentCount);
+        const allowed = currentCount <= this.config.limit;
 
-      return {
-        allowed,
-        remaining,
-        reset: now + this.config.window,
-        limit: this.config.limit,
+        return {
+          allowed,
+          remaining,
+          reset: now + this.config.window,
+          limit: this.config.limit,
+        };
       };
+
+      const timeoutMs = 2500;
+      const result = await Promise.race([
+        run(),
+        new Promise<RateLimitResult>((resolve) => {
+          setTimeout(() => {
+            console.error(`限流检查超时(${timeoutMs}ms)，放行请求`);
+            resolve(failOpen());
+          }, timeoutMs);
+        }),
+      ]);
+
+      return result;
     } catch (error) {
       // Redis 错误时允许请求，避免单点故障
       console.error('限流检查失败:', error);
-      return {
-        allowed: true,
-        remaining: this.config.limit,
-        reset: now + this.config.window,
-        limit: this.config.limit,
-      };
+      return failOpen();
     }
   }
 
@@ -267,10 +285,19 @@ export class QuotaManager {
 }
 
 /**
- * 创建 Redis 客户端
+ * 创建 Redis 客户端（Serverless 安全默认：短超时、无 offline queue）。
+ * 连接/命令失败时由 RateLimiter.check 捕获并放行请求。
  */
 export function createRedisClient(): Redis {
-  return new Redis(resolveRedisConnectionOptions(process.env));
+  const options = resolveRedisConnectionOptions(process.env);
+  const redis = new Redis(options);
+
+  // 避免未处理 error 事件导致进程噪音；限流侧已失败放行
+  redis.on('error', (error) => {
+    console.error('[redis] 连接错误:', error instanceof Error ? error.message : error);
+  });
+
+  return redis;
 }
 
 /**
