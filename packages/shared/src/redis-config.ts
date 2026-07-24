@@ -37,11 +37,28 @@ function parseRedisUrl(url: string): RedisOptions {
  * ioredis 会无限排队导致 /api/chat 等接口挂起不返回。
  * 默认：短连接超时 + 关闭 offline queue + 有限重试，失败由调用方放行。
  */
+function isUsableRedisUrl(url: string | undefined): url is string {
+  if (!url) return false;
+  // Vercel 敏感变量偶发被导出为占位符，不能当真实连接串
+  if (url === '[SENSITIVE]' || url.includes('[SENSITIVE]')) return false;
+  try {
+    const parsed = new URL(url);
+    return Boolean(parsed.hostname) && (parsed.protocol === 'redis:' || parsed.protocol === 'rediss:');
+  } catch {
+    return false;
+  }
+}
+
 export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
   const redisUrl = env.REDIS_URL?.trim();
   // Vercel Upstash 集成常见变量名
   const kvUrl = env.KV_URL?.trim() || env.REDIS_KV_URL?.trim();
-  const effectiveUrl = redisUrl || kvUrl;
+  // 优先 REDIS_URL；无效时回退 HOST/PASSWORD（避免死掉的 KV 集成域名抢优先级）
+  const effectiveUrl = isUsableRedisUrl(redisUrl)
+    ? redisUrl
+    : isUsableRedisUrl(kvUrl)
+      ? kvUrl
+      : undefined;
 
   const base = effectiveUrl
     ? parseRedisUrl(effectiveUrl)
@@ -86,7 +103,11 @@ export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
     db: Number.isNaN(base.db ?? 0) ? 0 : base.db,
     port: Number.isNaN(base.port ?? 0) ? 6379 : base.port,
     tls: shouldUseTls ? {} : undefined,
-    lazyConnect: parseBoolean(env.REDIS_LAZY_CONNECT),
+    // Serverless 默认懒连接：避免构造客户端时同步建连拖垮冷启动
+    lazyConnect:
+      env.REDIS_LAZY_CONNECT !== undefined
+        ? parseBoolean(env.REDIS_LAZY_CONNECT)
+        : true,
     // null 表示不限制；未配置时用 1，连接失败快速抛错
     maxRetriesPerRequest:
       explicitMaxRetries !== null || env.REDIS_MAX_RETRIES_PER_REQUEST

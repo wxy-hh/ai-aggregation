@@ -223,7 +223,9 @@ export function createXunfeiStreamResponse(options: XunfeiChatOptions): Readable
         }
         controller.close();
       } catch (error) {
-        controller.error(error);
+        // 向上游 SSE 包装层抛出可读错误，而不是静默 controller.error
+        const message = error instanceof Error ? error.message : String(error);
+        controller.error(new Error(message));
       }
     },
   });

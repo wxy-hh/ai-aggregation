@@ -92,9 +92,21 @@ function createSseStreamFromTextStream(
         controller.close();
       } catch (error) {
         await onError?.(error);
-        controller.error(error);
+        // 不要 controller.error：在 Vercel 上容易变成 HTML 500 页
+        try {
+          const message = error instanceof Error ? error.message : String(error);
+          controller.enqueue(encodeSseEvent({ type: 'error', error: message }));
+          controller.enqueue(encodeSseEvent({ type: 'done' }));
+          controller.close();
+        } catch {
+          // 流已关闭时忽略
+        }
       } finally {
-        reader.releaseLock();
+        try {
+          reader.releaseLock();
+        } catch {
+          // ignore
+        }
       }
     },
   });
@@ -259,28 +271,35 @@ export async function POST(req: Request) {
     const user = await getCurrentUser(req);
     userId = user.id;
 
-    const rateLimiter = getRateLimiter();
+    console.log('[chat] 鉴权通过', { errorId, userId, t: Date.now() - startTime });
 
-    // 检查 API 限流
-    const rateLimitResult = await rateLimiter.check(userId);
-    if (!rateLimitResult.allowed) {
-      return new Response(
-        JSON.stringify({
-          error: '请求过于频繁，请稍后再试',
-          errorId,
-          retryAfter: 60,
-        }),
-        {
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RateLimit-Remaining': String(rateLimitResult.remaining),
-            'X-RateLimit-Reset': String(rateLimitResult.reset),
-            'Retry-After': '60',
-          },
-        }
-      );
+    try {
+      const rateLimiter = getRateLimiter();
+      const rateLimitResult = await rateLimiter.check(userId);
+      if (!rateLimitResult.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: '请求过于频繁，请稍后再试',
+            errorId,
+            retryAfter: 60,
+          }),
+          {
+            status: 429,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-RateLimit-Remaining': String(rateLimitResult.remaining),
+              'X-RateLimit-Reset': String(rateLimitResult.reset),
+              'Retry-After': '60',
+            },
+          }
+        );
+      }
+    } catch (rateLimitError) {
+      // 限流失败不阻断对话
+      console.error('[chat] 限流跳过:', rateLimitError);
     }
+
+    console.log('[chat] 限流完成', { errorId, t: Date.now() - startTime });
 
     // 3. 解析请求体
     const body = await req.json();
@@ -348,6 +367,9 @@ export async function POST(req: Request) {
     if (provider === 'xunfei') {
       let xunfeiUsage: ReturnType<typeof normalizeUsage> | null = null;
       let xunfeiText = '';
+
+      // 先构造流；真正请求在 ReadableStream start 内发起。
+      // 用 createSseStreamFromTextStream 包装，错误在 onError 结算，避免未捕获导致 HTML 500。
       const stream = createXunfeiStreamResponse({
         model: modelName,
         messages: messages as XunfeiMessage[],
@@ -360,16 +382,12 @@ export async function POST(req: Request) {
       });
       providerStarted = true;
 
-      // 记录讯飞请求成功并更新配额
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-
-      console.log('讯飞 API 请求成功:', {
+      console.log('讯飞 API 开始流式响应:', {
         userId,
         provider: 'xunfei',
         model: modelName,
         messagesCount: messages.length,
-        duration: `${duration}ms`,
+        duration: `${Date.now() - startTime}ms`,
         timestamp: new Date().toISOString(),
       });
 
@@ -399,7 +417,11 @@ export async function POST(req: Request) {
           (text) => {
             xunfeiText += text;
           },
-          async () => {
+          async (streamError) => {
+            console.error('讯飞流式错误:', {
+              errorId,
+              error: streamError instanceof Error ? streamError.message : String(streamError),
+            });
             if (reservation) {
               await finalizeBilling({
                 rawUsage: xunfeiUsage,
