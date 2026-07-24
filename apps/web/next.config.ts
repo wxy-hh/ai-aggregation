@@ -2,6 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger'],
+  // 避免 Next 打包 Prisma，确保 Query Engine 原生二进制在 Vercel 运行时可用
+  serverExternalPackages: ['@prisma/client', 'prisma'],
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',
