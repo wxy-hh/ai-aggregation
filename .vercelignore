@@ -32,6 +32,14 @@ pnpm-debug.log*
 # Turbo
 .turbo
 
+# 本地索引 / 工具（含 Unix socket，上传会失败）
+.codegraph
+.codegraph*
+.playwright-mcp
+.claude
+.agents
+.codex
+
 # 操作系统
 .DS_Store
 *.pem
