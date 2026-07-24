@@ -211,10 +211,16 @@ pnpm db:migrate
 
 ## 生产环境
 
-开发完成后，生产环境建议使用：
+开发完成后，请按仓库根目录 **[DEPLOYMENT.md](../DEPLOYMENT.md)** 部署到 Vercel。
 
-- 阿里云 RDS PostgreSQL
-- 阿里云 Redis
-- 阿里云 OSS
+最小闭环：
 
-详见部署文档（待创建）
+- `apps/web` → Vercel
+- 生产 PostgreSQL + `prisma migrate deploy`
+- `AUTH_SECRET` / `ANONYMOUS_DEVICE_SALT` / `NEXTAUTH_URL` / `NEXT_PUBLIC_APP_URL`
+
+可选：
+
+- Upstash Redis（队列）
+- Railway / Render 部署 `apps/worker`（见 `apps/worker/DEPLOY.md`）
+- Cloudflare Workers 部署实时语音（见 `docs/voice-realtime-setup.md`）

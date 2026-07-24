@@ -146,13 +146,17 @@ pnpm test:e2e     # 运行 E2E 测试
 
 ## 部署建议
 
+**生产部署请直接按 [DEPLOYMENT.md](./DEPLOYMENT.md)**（含 Vercel 配置、环境变量、Prisma 迁移、验收清单，可整份丢给大模型执行）。
+
 - 本地个人开发：优先 `pnpm dev`，兼容本地 Redis、Homebrew Redis 和 Docker Redis
   - `pnpm dev` 会优先加载 `apps/web/.env.local` 作为共享环境
   - `pnpm dev` 会在启动前清理旧的 `turbo dev` / `worker` 进程，避免多套进程抢任务
   - 不建议并行手工执行多套 `pnpm dev:web` / `pnpm dev:worker`
 - 团队协作：优先 `pnpm dev:docker`，保证 Redis / Postgres / MinIO 环境一致
 - 生产环境：优先容器化部署或托管服务
-  - Web 与 Worker 建议拆开部署
+  - Web（`apps/web`）→ **Vercel**（详见 [DEPLOYMENT.md](./DEPLOYMENT.md)）
+  - Worker（`apps/worker`）→ Railway / Render（详见 [apps/worker/DEPLOY.md](./apps/worker/DEPLOY.md)）
+  - 实时语音网关 → Cloudflare Workers（`infra/worker-rtasr`）
   - Redis 建议使用托管 Redis（如 Upstash / Redis Cloud）
-  - PostgreSQL 建议使用托管数据库（如 Supabase / Neon）
+  - PostgreSQL 建议使用托管数据库（Prisma Postgres / Supabase / Neon）
   - 不建议生产环境依赖某台机器上的本地 brew 服务
