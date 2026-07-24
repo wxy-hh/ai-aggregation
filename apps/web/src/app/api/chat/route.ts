@@ -22,6 +22,11 @@ import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
 
+export const runtime = 'nodejs';
+// Hobby 默认可到 60s；Pro 可更高。流式对话需要足够时长。
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 function createErrorId() {
   return (
     globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`

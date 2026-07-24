@@ -152,8 +152,6 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
   }
 
   const reader = response.body?.getReader();
-  // 使用 process.stdout.write 立即输出，不会被缓冲
-  process.stdout.write(`[Xunfei] reader --> ${reader ? 'exists' : 'null'}\n`);
   if (!reader) {
     throw new Error('No response body');
   }
@@ -167,7 +165,6 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      // 使用 process.stdout.write 立即输出，不会被缓冲
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const line of lines) {
@@ -198,14 +195,12 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
             yield content;
           } else if (content) {
             // 如果 content 不是字符串，尝试转换
-            process.stderr.write(
-              `[Xunfei] Warning: Received non-string content: ${JSON.stringify(content)}\n`
-            );
+            console.warn('[Xunfei] 收到非字符串 content:', content);
             yield String(content);
           }
         } catch (parseError) {
           // 忽略解析错误，继续处理下一行
-          process.stderr.write(`[Xunfei] Warning: Failed to parse stream chunk: ${parseError}\n`);
+          console.warn('[Xunfei] 解析流式分片失败:', parseError);
         }
       }
     }
