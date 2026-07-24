@@ -487,9 +487,11 @@ pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
 | 注册 500，列/表不存在 | 未 migrate | `prisma migrate deploy` |
 | 改了 env 仍旧行为 | 未 Redeploy | Deployments → Redeploy |
 | 本地 curl 连不上 vercel.app | DNS/网络污染 | 用浏览器验证 |
-| 导入 env 报 ENV_CONFLICT | 变量已存在 | 搜索后编辑，勿重复创建 |
+| 导入 env 报 ENV_CONFLICT | 变量已存在 | 搜索后编辑，勿重复 Add |
+| `/api/chat` 一直转圈/无响应（登录正常） | Redis 不可达 + ioredis offline queue 无限排队 | 已修：短超时、关闭 offline queue、限流 2.5s 放行；确认 `REDIS_URL`/`REDIS_HOST` 为 Upstash 且 `REDIS_TLS=true` |
 | 命理超时 | Hobby 60s / 长任务 | 升 Pro 或拆异步 + Worker |
 | 实时语音连不上 | 未部署 Worker 或 URL 非 wss | 第 7 节 |
+| `vercel deploy` 报 daemon.sock / error -102 | 本地 `.codegraph` 被打包 | 确保 `.vercelignore` 含 `.codegraph*` |
 
 ---
 
@@ -567,6 +569,7 @@ openssl rand -hex 32
 
 | 日期 | 部署 | 结果 |
 |------|------|------|
+| 2026-07-24 | `dpl_DMvV6fJJWxeUpNzJnM46xTevZ8pb` Ready | **chat 修复**：xunfei/doubao SSE 200 且返回 `text-delta`；根因 Redis 挂起 |
 | 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres |
 | 2026-07-24 | 环境变量 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT |
 | 2026-07-24 | Cloudflare | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续 |
