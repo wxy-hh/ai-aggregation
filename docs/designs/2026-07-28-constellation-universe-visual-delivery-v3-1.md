@@ -95,3 +95,71 @@
 - 移动端始终使用既有 AI 命理大师页头、四段模块切换和单一全局底栏；结果页不存在双底栏。
 - 所有 P0 状态符合第 3 节 Copy Deck、第 4 节范围和第 5 节区块顺序；未标为 P0 的内容不得通过视觉占位暗示“即将可用”。
 - 不使用旧 V3 图稿作为截图、组件样式或字段来源；任何新增视觉状态必须先更新主设计文档，再更新本附录。
+
+## 9. P0 最终状态图
+
+以下 16 组视觉稿为最终交付图。每张图左侧为桌面端的**右侧内容区**，右侧为移动端内容区；它们必须嵌入第 2 节规定的现有系统导航与命理大师模块侧栏。为避免产生第二套导航，本组图不重绘左侧导航，只交付允许变化的内容区域。
+
+### 9.1 模块入口
+
+![模块入口：桌面与移动内容区](./assets/constellation-universe-v3-1/01-entry.svg)
+
+### 9.2 基本资料 1/2
+
+![基本资料：桌面与移动内容区](./assets/constellation-universe-v3-1/02-profile.svg)
+
+### 9.3 出生时空：准确到分钟
+
+![准确到分钟：桌面与移动内容区](./assets/constellation-universe-v3-1/03-birth-time-exact.svg)
+
+### 9.4 出生时空：大约时段
+
+![大约时段：桌面与移动内容区](./assets/constellation-universe-v3-1/04-birth-time-approximate.svg)
+
+### 9.5 出生时空：完全未知
+
+![完全未知：桌面与移动内容区](./assets/constellation-universe-v3-1/05-birth-time-unknown.svg)
+
+### 9.6 字段校验
+
+![字段校验：桌面与移动内容区](./assets/constellation-universe-v3-1/06-form-validation.svg)
+
+### 9.7 加载：含宫位
+
+![加载含宫位：桌面与移动内容区](./assets/constellation-universe-v3-1/07-loading-full.svg)
+
+### 9.8 加载：无宫位
+
+![加载无宫位：桌面与移动内容区](./assets/constellation-universe-v3-1/08-loading-no-house.svg)
+
+### 9.9 加载失败恢复
+
+![加载失败：桌面与移动内容区](./assets/constellation-universe-v3-1/09-loading-error.svg)
+
+### 9.10 完整结果总览
+
+![完整结果总览：桌面与移动内容区](./assets/constellation-universe-v3-1/10-overview-full.svg)
+
+### 9.11 无宫位结果总览
+
+![无宫位结果总览：桌面与移动内容区](./assets/constellation-universe-v3-1/11-overview-no-house.svg)
+
+### 9.12 星盘轮
+
+![星盘轮：桌面与移动内容区](./assets/constellation-universe-v3-1/12-chart.svg)
+
+### 9.13 关键相位
+
+![关键相位：桌面与移动内容区](./assets/constellation-universe-v3-1/13-aspects.svg)
+
+### 9.14 星语问答
+
+![星语问答：桌面与移动内容区](./assets/constellation-universe-v3-1/14-qa.svg)
+
+### 9.15 脱敏分享
+
+![脱敏分享：桌面与移动内容区](./assets/constellation-universe-v3-1/15-share.svg)
+
+### 9.16 统一历史删除确认
+
+![统一历史删除确认：桌面与移动内容区](./assets/constellation-universe-v3-1/16-history-delete.svg)
