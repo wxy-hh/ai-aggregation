@@ -1090,45 +1090,75 @@ export function ProfileShell() {
                             </div>
                           </div>
                           {expandedFeature === item.feature ? (
-                            <div className="mt-3.5 grid gap-3 rounded-xl border border-slate-900/[0.06] bg-slate-50/70 px-3.5 py-3 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 sm:grid-cols-3">
-                              <div>
-                                <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  统计方式
+                            <div className="mt-3.5 space-y-3 rounded-xl border border-slate-900/[0.06] bg-slate-50/70 px-3.5 py-3 text-xs text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300">
+                              {item.details && item.details.length > 0 ? (
+                                <div className="space-y-2">
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    分项明细
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {item.details.map((detail) => (
+                                      <div
+                                        key={detail.key}
+                                        className="flex items-center justify-between gap-3 rounded-lg bg-white/70 px-3 py-2 dark:bg-white/[0.04]"
+                                      >
+                                        <span className="min-w-0 truncate font-medium text-slate-800 dark:text-slate-100">
+                                          {detail.label}
+                                        </span>
+                                        <span className="shrink-0 tabular-nums text-slate-600 dark:text-slate-300">
+                                          {detail.sourceKind === 'audio_seconds'
+                                            ? formatDurationSeconds(detail.audioSeconds)
+                                            : detail.sourceKind === 'tasks'
+                                              ? formatTaskCount(detail.taskCount)
+                                              : formatTokenCount(detail.totalTokens)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  {getUsageSourceLabel(item.sourceKind)}
+                              ) : null}
+                              <div className="grid gap-3 sm:grid-cols-3">
+                                <div>
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    统计方式
+                                  </div>
+                                  <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
+                                    {getUsageSourceLabel(item.sourceKind)}
+                                  </div>
                                 </div>
-                              </div>
-                              <div>
-                                <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  Token 消耗
+                                <div>
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    Token 消耗
+                                  </div>
+                                  <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                                    {formatTokenCount(item.totalTokens)}
+                                  </div>
                                 </div>
-                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
-                                  {formatTokenCount(item.totalTokens)}
+                                <div>
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    语音转写时长
+                                  </div>
+                                  <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                                    {formatDurationSeconds(item.audioSeconds)}
+                                  </div>
                                 </div>
-                              </div>
-                              <div>
-                                <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  语音转写时长
+                                <div>
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    媒体任务次数
+                                  </div>
+                                  <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
+                                    {formatTaskCount(item.taskCount)}
+                                  </div>
                                 </div>
-                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
-                                  {formatDurationSeconds(item.audioSeconds)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  媒体任务次数
-                                </div>
-                                <div className="mt-1 font-medium tabular-nums text-slate-800 dark:text-slate-100">
-                                  {formatTaskCount(item.taskCount)}
-                                </div>
-                              </div>
-                              <div className="sm:col-span-2">
-                                <div className="text-[11px] text-slate-400 dark:text-slate-500">
-                                  说明
-                                </div>
-                                <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
-                                  Token、音频时长与图片/视频任务分别统计；图片和视频任务不会占用文本/语音额度。
+                                <div className="sm:col-span-2">
+                                  <div className="text-[11px] text-slate-400 dark:text-slate-500">
+                                    说明
+                                  </div>
+                                  <div className="mt-1 font-medium text-slate-800 dark:text-slate-100">
+                                    {item.feature === 'destiny'
+                                      ? 'AI 命理大师按八字、八字合盘、紫微斗数、奇门遁甲分项统计；命理助手等归入其他。'
+                                      : 'Token、音频时长与图片/视频任务分别统计；图片和视频任务不会占用文本/语音额度。'}
+                                  </div>
                                 </div>
                               </div>
                             </div>

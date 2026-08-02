@@ -25,6 +25,8 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 
 export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
+    // 合盘档案从历史进入：tab=bazi-compatibility 时落到八字工作区
+    if (initialTab === 'bazi-compatibility') return 'bazi';
     if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
     return 'bazi';
   });

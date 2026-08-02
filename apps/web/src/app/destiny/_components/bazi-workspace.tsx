@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
@@ -8,6 +8,7 @@ import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import { generateUUID } from '@/lib/utils/uuid';
 import { cn } from '@/lib/utils';
+import type { DestinyHistoryItem } from '@/types/history';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyShell } from './layout/destiny-shell';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
@@ -25,6 +26,97 @@ import type {
   PartialDestinyReport,
 } from './types';
 import type { DestinyModuleKey } from './layout/left-nav';
+import { createDefaultPartnerForm } from './compatibility/constants';
+import { CompatibilityPartnerForm } from './compatibility/partner-form';
+import { CompatibilityGeneratingView } from './compatibility/generating-view';
+import { CompatibilityReportView } from './compatibility/report/compatibility-report';
+import { useCompatibilityFlow } from './compatibility/hooks/use-compatibility-flow';
+import type {
+  CompatibilityFlowStep,
+  CompatibilityReport,
+  CompatibilityStreamStatus,
+  PartnerProfileForm,
+  RelationType,
+} from './compatibility/types';
+
+/** 从历史合盘档案回填对方资料表单 */
+function partnerFormFromHistory(item: DestinyHistoryItem): PartnerProfileForm {
+  const form = (item.formData || {}) as {
+    partner?: {
+      name?: string;
+      gender?: 'male' | 'female' | null;
+      calendarType?: 'lunar' | 'solar';
+      birthDate?: PartnerProfileForm['birthDate'];
+      birthTime?: PartnerProfileForm['birthTime'];
+      location?: { name: string; lat?: number | null; lon?: number | null } | null;
+    };
+    focusTags?: string[];
+  };
+  const partner = form.partner;
+  const defaults = createDefaultPartnerForm();
+  if (!partner) {
+    return { ...defaults, consentConfirmed: true, focusTags: form.focusTags || [] };
+  }
+  return {
+    displayName: partner.name?.trim() || '',
+    gender:
+      partner.gender === 'male' || partner.gender === 'female' ? partner.gender : 'unspecified',
+    calendarType: partner.calendarType || 'solar',
+    birthDate: partner.birthDate || defaults.birthDate,
+    birthTime: partner.birthTime ?? null,
+    location: partner.location
+      ? {
+          name: partner.location.name,
+          lat: partner.location.lat ?? null,
+          lon: partner.location.lon ?? null,
+        }
+      : null,
+    locationSkipped: !partner.location?.name,
+    consentConfirmed: true,
+    focusTags: form.focusTags || [],
+  };
+}
+
+/**
+ * 在历史中找与当前八字最相关的合盘档案：
+ * 1) sourceBaziHistoryId 精确关联
+ * 2) 我方姓名与当前八字表单匹配
+ * 3) 兜底取最新一份合盘（同会话回看）
+ */
+function findRelatedCompatibilityItem(
+  items: ReturnType<typeof useHistoryStore.getState>['items'],
+  opts: { sourceBaziHistoryId?: string | null; selfName?: string }
+): DestinyHistoryItem | null {
+  const compatItems = items.filter(
+    (item): item is DestinyHistoryItem =>
+      item.type === 'destiny' && item.subType === 'bazi-compatibility'
+  );
+  if (compatItems.length === 0) return null;
+
+  const byUpdated = [...compatItems].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+
+  if (opts.sourceBaziHistoryId) {
+    const linked = byUpdated.find((item) => {
+      const report = item.reportData as CompatibilityReport | null;
+      return report?.sourceBaziHistoryId === opts.sourceBaziHistoryId;
+    });
+    if (linked) return linked;
+  }
+
+  const selfName = opts.selfName?.trim();
+  if (selfName) {
+    const bySelf = byUpdated.find((item) => {
+      const form = item.formData as { self?: { name?: string } };
+      return form.self?.name?.trim() === selfName;
+    });
+    if (bySelf) return bySelf;
+  }
+
+  // 无姓名可匹配时不盲目回填他人合盘，避免串档
+  return null;
+}
 
 type BaziWorkspaceProps = {
   isActive: boolean;
@@ -102,6 +194,24 @@ export function BaziWorkspace({
   const abortRef = useRef<AbortController | null>(null);
   const currentHistoryIdRef = useRef<string | null>(null);
 
+  // ─── 八字合盘本地流程状态（与个人报告 step 分离，独立占满主内容区） ───
+  // 必须放在 submit / 历史恢复 effect 之前声明，保证闭包与 hooks 顺序稳定
+  const [compatStep, setCompatStep] = useState<CompatibilityFlowStep>('idle');
+  const [compatRelation, setCompatRelation] = useState<RelationType>('romance');
+  const [partnerForm, setPartnerForm] = useState<PartnerProfileForm>(() =>
+    createDefaultPartnerForm()
+  );
+  const [compatReport, setCompatReport] = useState<CompatibilityReport | null>(null);
+  const [compatStatus, setCompatStatus] = useState<CompatibilityStreamStatus | null>(null);
+  const [compatError, setCompatError] = useState<string | null>(null);
+  const [compatLoadingView, setCompatLoadingView] = useState(false);
+  const { generate: generateCompatibility, abort: abortCompatibility } =
+    useCompatibilityFlow();
+
+  // 订阅历史列表：用于本地态丢失后仍能回看「上次合盘」
+  const historyItems = useHistoryStore((s) => s.items);
+  const isHistoryReady = useHistoryStore((s) => s.isInitialized);
+
   // 接力：八字目标接收。命盘生成后把引用文本经 externalDraft 预填到 AI 顾问输入框。
   const relay = useRelayReceive('destiny');
   const relayText = relay.bundle?.items[0]?.snapshotText ?? '';
@@ -136,17 +246,83 @@ export function BaziWorkspace({
 
   const isBaziHistoryInitialized = useHistoryStore((state) => state.isInitialized);
 
-  // 从历史记录恢复
+  // 从历史记录恢复（个人八字 / 八字合盘）
   useEffect(() => {
     if (!isActive || !isBaziHistoryInitialized) return;
     const params = new URLSearchParams(window.location.search);
     const historyId = params.get('historyId');
     if (!historyId) return;
     const historyItem = useHistoryStore.getState().getItemById(historyId);
-    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'bazi') return;
+    if (historyItem?.type !== 'destiny') return;
+
+    // 合盘档案：直接进入独立合盘报告层
+    if (historyItem.subType === 'bazi-compatibility') {
+      const form = historyItem.formData as {
+        self?: BaziFormData;
+        partner?: {
+          name?: string;
+          gender?: 'male' | 'female' | null;
+          calendarType?: 'lunar' | 'solar';
+          birthDate?: PartnerProfileForm['birthDate'];
+          birthTime?: PartnerProfileForm['birthTime'];
+          location?: { name: string; lat?: number | null; lon?: number | null } | null;
+        };
+        relationType?: RelationType;
+        focusTags?: string[];
+      };
+      const reportData = historyItem.reportData as CompatibilityReport | null;
+      if (form.self) {
+        // 仅回填「我」的表单，不覆盖已有个人报告
+        setWorkspaceState('bazi', {
+          formData: form.self,
+          fieldErrors: {},
+          blockingLoading: false,
+          streaming: false,
+          error: null,
+          errorKind: null,
+        });
+      }
+      if (form.partner) {
+        setPartnerForm({
+          displayName: form.partner.name?.trim() || '',
+          gender:
+            form.partner.gender === 'male' || form.partner.gender === 'female'
+              ? form.partner.gender
+              : 'unspecified',
+          calendarType: form.partner.calendarType || 'solar',
+          birthDate: form.partner.birthDate || createDefaultPartnerForm().birthDate,
+          birthTime: form.partner.birthTime ?? null,
+          location: form.partner.location
+            ? {
+                name: form.partner.location.name,
+                lat: form.partner.location.lat ?? null,
+                lon: form.partner.location.lon ?? null,
+              }
+            : null,
+          locationSkipped: !form.partner.location?.name,
+          consentConfirmed: true,
+          focusTags: form.focusTags || [],
+        });
+      }
+      if (form.relationType) setCompatRelation(form.relationType);
+      if (reportData?.chartFacts && reportData?.views) {
+        setCompatReport(reportData);
+        setCompatRelation(reportData.relationType || form.relationType || 'romance');
+        setCompatStep('report');
+      } else {
+        setCompatStep('partner-form');
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('historyId');
+      window.history.replaceState({}, '', url.toString());
+      return;
+    }
+
+    if (historyItem.subType !== 'bazi') return;
     // 兼容旧格式（reportData 直接是 mergedReport）和新格式（{ report, lockedSections }）
     const reportData = historyItem.reportData as Record<string, unknown> | null;
     const isNewFormat = reportData != null && 'report' in reportData && 'lockedSections' in reportData;
+    currentHistoryIdRef.current = historyId;
     setWorkspaceState('bazi', {
       step: 'result',
       lastView: 'result',
@@ -161,6 +337,21 @@ export function BaziWorkspace({
       formData: (historyItem.formData as BaziFormData) || formData,
       fieldErrors: {},
     });
+    // 恢复个人八字时，若存在关联合盘，预填以便结果页展示「查看合盘」
+    const linkedCompat = findRelatedCompatibilityItem(useHistoryStore.getState().items, {
+      sourceBaziHistoryId: historyId,
+      selfName: (historyItem.formData as BaziFormData | undefined)?.name,
+    });
+    if (linkedCompat) {
+      const compatData = linkedCompat.reportData as CompatibilityReport | null;
+      if (compatData?.chartFacts && compatData.views) {
+        setCompatReport(compatData);
+        setPartnerForm(partnerFormFromHistory(linkedCompat));
+        const form = linkedCompat.formData as { relationType?: RelationType };
+        setCompatRelation(compatData.relationType || form.relationType || 'romance');
+        setCompatStep('idle');
+      }
+    }
     // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
     const url = new URL(window.location.href);
     url.searchParams.delete('historyId');
@@ -323,6 +514,16 @@ export function BaziWorkspace({
     abortRef.current = controller;
     currentHistoryIdRef.current = generateUUID();
 
+    // 新一轮个人八字测算：清空合盘本地态，避免串到上一份对象
+    abortCompatibility();
+    setCompatStep('idle');
+    setCompatReport(null);
+    setCompatStatus(null);
+    setCompatError(null);
+    setCompatLoadingView(false);
+    setPartnerForm(createDefaultPartnerForm());
+    setCompatRelation('romance');
+
     setWorkspaceState('bazi', {
       step: 'form',
       lastView: 'form',
@@ -455,10 +656,203 @@ export function BaziWorkspace({
 
   const handleRecalculate = () => {
     abortRef.current?.abort();
+    abortCompatibility();
+    setCompatStep('idle');
+    setCompatReport(null);
+    setCompatStatus(null);
+    setCompatError(null);
+    setCompatLoadingView(false);
+    setPartnerForm(createDefaultPartnerForm());
+    setCompatRelation('romance');
+    currentHistoryIdRef.current = null;
     resetWorkspace('bazi');
   };
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
+
+  const relatedCompatHistory = useMemo(() => {
+    if (!isHistoryReady) return null;
+    return findRelatedCompatibilityItem(historyItems, {
+      sourceBaziHistoryId: currentHistoryIdRef.current,
+      selfName: formData.name,
+    });
+  }, [historyItems, isHistoryReady, formData.name, compatReport?.id]);
+
+  // 本地尚无合盘结果时，从历史档案回填（同会话返回 / 刷新后仍可「查看上次合盘」）
+  useEffect(() => {
+    if (compatReport?.chartFacts && compatReport.views) return;
+    if (!relatedCompatHistory) return;
+    const reportData = relatedCompatHistory.reportData as CompatibilityReport | null;
+    if (!reportData?.chartFacts || !reportData.views) return;
+
+    setCompatReport(reportData);
+    setPartnerForm(partnerFormFromHistory(relatedCompatHistory));
+    const form = relatedCompatHistory.formData as { relationType?: RelationType };
+    setCompatRelation(reportData.relationType || form.relationType || 'romance');
+  }, [relatedCompatHistory, compatReport?.chartFacts, compatReport?.views]);
+
+  const historyCompatReport =
+    (relatedCompatHistory?.reportData as CompatibilityReport | null) ?? null;
+
+  const hasExistingCompatibility = Boolean(
+    (compatReport?.chartFacts &&
+      compatReport.views &&
+      Object.keys(compatReport.views).length > 0) ||
+      (historyCompatReport?.chartFacts &&
+        historyCompatReport.views &&
+        Object.keys(historyCompatReport.views).length > 0)
+  );
+
+  const existingCompatibilityLabel = useMemo(() => {
+    if (!hasExistingCompatibility) return undefined;
+    const partner =
+      compatReport?.partnerDisplayName?.trim() ||
+      historyCompatReport?.partnerDisplayName?.trim() ||
+      partnerForm.displayName.trim() ||
+      'TA';
+    return `查看与${partner}的合盘`;
+  }, [
+    hasExistingCompatibility,
+    compatReport?.partnerDisplayName,
+    historyCompatReport?.partnerDisplayName,
+    partnerForm.displayName,
+  ]);
+
+  const selfSummary = useMemo(() => {
+    const d = formData.birthDate;
+    return {
+      name: formData.name || '我',
+      birthText: `${d.year}年${d.month}月${d.day}日`,
+      locationText: formData.location?.name || undefined,
+    };
+  }, [formData]);
+
+  /**
+   * 开启 / 重新测算合盘：进入对方资料表单。
+   * 不清空已有报告与对方资料，方便从八字结果页再次进入后编辑重算；
+   * 仅在首次无资料时初始化默认表单。
+   */
+  const startCompatibility = useCallback(() => {
+    setCompatError(null);
+    setCompatStatus(null);
+    setCompatLoadingView(false);
+    setPartnerForm((prev) => {
+      // 已有对方资料（含上次合盘）则保留，避免无效重填
+      if (prev.displayName.trim() || prev.consentConfirmed || compatReport) {
+        return prev;
+      }
+      return createDefaultPartnerForm();
+    });
+    setCompatStep('partner-form');
+  }, [compatReport]);
+
+  /** 回看已生成的合盘报告（不重算、不扣费）；必要时先从历史回填 */
+  const resumeCompatibilityReport = useCallback(() => {
+    if (!compatReport?.chartFacts || !compatReport.views) {
+      if (!relatedCompatHistory) return;
+      const fromHistory = relatedCompatHistory.reportData as CompatibilityReport | null;
+      if (!fromHistory?.chartFacts || !fromHistory.views) return;
+      setCompatReport(fromHistory);
+      setPartnerForm(partnerFormFromHistory(relatedCompatHistory));
+      const form = relatedCompatHistory.formData as { relationType?: RelationType };
+      setCompatRelation(fromHistory.relationType || form.relationType || 'romance');
+    }
+    setCompatError(null);
+    setCompatStatus(null);
+    setCompatLoadingView(false);
+    setCompatStep('report');
+  }, [compatReport, relatedCompatHistory]);
+
+  /**
+   * 从合盘层回到八字结果/表单。
+   * 保留 compatReport / partnerForm，使八字页可再进入「查看上次合盘」。
+   */
+  const backFromCompatibility = useCallback(() => {
+    abortCompatibility();
+    setCompatStep('idle');
+    setCompatStatus(null);
+    setCompatLoadingView(false);
+    // 若个人报告已就绪，确保落在结果步，避免返回后只剩表单
+    if (report || Object.keys(lockedSections || {}).length > 0) {
+      setWorkspaceState('bazi', {
+        step: 'result',
+        lastView: 'result',
+        hasResult: true,
+      });
+    }
+  }, [abortCompatibility, report, lockedSections, setWorkspaceState]);
+
+  const submitCompatibility = async (
+    relationOverride?: RelationType,
+    viewOnly = false,
+    rollbackRelation?: RelationType
+  ) => {
+    if (!partnerForm.consentConfirmed) {
+      setCompatError('请先确认已获得对方同意');
+      return;
+    }
+    const relation = relationOverride ?? compatRelation;
+    setCompatError(null);
+    if (!viewOnly) setCompatStep('generating');
+    else setCompatLoadingView(true);
+
+    await generateCompatibility({
+      selfForm: formData,
+      partnerForm,
+      relationType: relation,
+      provider,
+      sourceBaziHistoryId: currentHistoryIdRef.current,
+      existingReportId: compatReport?.id,
+      viewOnly,
+      onStatus: setCompatStatus,
+      onReport: (next) => {
+        setCompatReport((prev) => {
+          if (!prev) return next;
+          return {
+            ...next,
+            views: { ...prev.views, ...next.views },
+            id: prev.id || next.id,
+            sourceBaziHistoryId:
+              next.sourceBaziHistoryId ??
+              prev.sourceBaziHistoryId ??
+              currentHistoryIdRef.current,
+          };
+        });
+        setCompatRelation(relation);
+        setCompatStep('report');
+        setCompatLoadingView(false);
+      },
+      onError: (message) => {
+        // 额度不足由全局 QuotaExhaustedDialog 承接；不写页内 error，已缓存视角仍可看
+        const isQuota =
+          /额度不足|不足以处理|不足以开始|QUOTA_INSUFFICIENT|QUOTA_EXHAUSTED/i.test(
+            message
+          );
+        setCompatError(isQuota ? null : message);
+        if (!viewOnly) setCompatStep('partner-form');
+        else if (rollbackRelation) setCompatRelation(rollbackRelation);
+        setCompatLoadingView(false);
+      },
+    });
+  };
+
+  /**
+   * Tab 切换：已有缓存直接切；未缓存则立即切到目标 tab 并 viewOnly 请求，
+   * 由结果页主题化 loading 承接，无二次确认。
+   */
+  const handleCompatRelationChange = (next: RelationType) => {
+    if (next === compatRelation) return;
+    if (compatLoadingView) return;
+    if (compatReport?.views[next]) {
+      setCompatError(null);
+      setCompatRelation(next);
+      return;
+    }
+    const previous = compatRelation;
+    // 先切 activeRelation，确保 loading 展示目标视角主题
+    setCompatRelation(next);
+    void submitCompatibility(next, true, previous);
+  };
 
   const stepTransitionClass =
     'transition-all duration-300 motion-reduce:transition-opacity motion-reduce:duration-150';
@@ -466,11 +860,13 @@ export function BaziWorkspace({
     transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
   } as const;
 
+  const inCompatFlow = compatStep !== 'idle';
+
   return (
     <DestinyPageScaffold withNavOffset tone="blue">
       <div className="relative h-full min-h-0 w-full overflow-hidden">
         <div className="relative flex h-full min-h-0 flex-col p-4 sm:p-6">
-          {step === 'form' && (
+          {step === 'form' && !inCompatFlow && (
             <header className="flex shrink-0 flex-col gap-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
@@ -490,18 +886,83 @@ export function BaziWorkspace({
             </header>
           )}
 
-          <div className="relative mt-4 min-h-0 flex-1 sm:mt-6">
+          <div className={cn('relative min-h-0 flex-1', !inCompatFlow && 'mt-4 sm:mt-6')}>
+            {/* 合盘全屏层：独立报告页，不与个人报告混排；内部自管滚动，避免底栏 fixed 穿透左侧导航 */}
+            {inCompatFlow ? (
+              <div className="absolute inset-0 z-20 flex min-h-0 flex-col overflow-hidden">
+                {compatStep === 'partner-form' && (
+                  <CompatibilityPartnerForm
+                    selfSummary={selfSummary}
+                    value={partnerForm}
+                    relationType={compatRelation}
+                    submitting={false}
+                    error={compatError}
+                    onRelationChange={setCompatRelation}
+                    onChange={(patch) => setPartnerForm((prev) => ({ ...prev, ...patch }))}
+                    onBack={backFromCompatibility}
+                    onSubmit={() => {
+                      void submitCompatibility();
+                    }}
+                  />
+                )}
+                {compatStep === 'generating' && (
+                  <div className="min-h-0 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                    <CompatibilityGeneratingView
+                      status={compatStatus}
+                      partnerName={partnerForm.displayName || 'TA'}
+                      onCancel={() => {
+                        abortCompatibility();
+                        setCompatStatus(null);
+                        setCompatStep('partner-form');
+                      }}
+                    />
+                  </div>
+                )}
+                {compatStep === 'report' && compatReport && (
+                  <CompatibilityReportView
+                    report={compatReport}
+                    activeRelation={compatRelation}
+                    loadingView={compatLoadingView}
+                    error={compatError}
+                    onBack={backFromCompatibility}
+                    onOpenMyBazi={backFromCompatibility}
+                    onRelationChange={handleCompatRelationChange}
+                    onToggleAction={(actionId) => {
+                      setCompatReport((prev) => {
+                        if (!prev) return prev;
+                        const view = prev.views[compatRelation];
+                        if (!view) return prev;
+                        return {
+                          ...prev,
+                          views: {
+                            ...prev.views,
+                            [compatRelation]: {
+                              ...view,
+                              weeklyActions: view.weeklyActions.map((a) =>
+                                a.id === actionId ? { ...a, done: !a.done } : a
+                              ),
+                            },
+                          },
+                        };
+                      });
+                    }}
+                    onRefill={() => setCompatStep('partner-form')}
+                  />
+                )}
+              </div>
+            ) : null}
+
             {/* 表单步 */}
             <div
               className={cn(
                 'absolute inset-0 min-h-0 overflow-y-auto pr-1 custom-scrollbar',
                 stepTransitionClass,
-                step === 'form'
+                step === 'form' && !inCompatFlow
                   ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
                   : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
               )}
               style={stepTransitionStyle}
-              aria-hidden={step !== 'form'}
+              aria-hidden={step !== 'form' || inCompatFlow}
             >
               <BaziInputForm
                 value={formData}
@@ -521,12 +982,12 @@ export function BaziWorkspace({
               className={cn(
                 'absolute inset-0 h-full min-h-0 w-full',
                 stepTransitionClass,
-                step === 'result'
+                step === 'result' && !inCompatFlow
                   ? 'pointer-events-auto z-10 opacity-100 translate-y-0'
                   : 'pointer-events-none z-0 opacity-0 translate-y-2 motion-reduce:translate-y-0'
               )}
               style={stepTransitionStyle}
-              aria-hidden={step !== 'result'}
+              aria-hidden={step !== 'result' || inCompatFlow}
             >
               <DestinyShell
                 report={report}
@@ -543,6 +1004,10 @@ export function BaziWorkspace({
                 relayDraft={relayDraft}
                 onRelayDraftHandled={handleRelayDraftHandled}
                 onRelayDraftSent={handleRelayDraftSent}
+                onStartCompatibility={startCompatibility}
+                hasExistingCompatibility={hasExistingCompatibility}
+                onViewExistingCompatibility={resumeCompatibilityReport}
+                existingCompatibilityLabel={existingCompatibilityLabel}
               />
             </div>
           </div>

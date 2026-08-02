@@ -12,16 +12,26 @@ import { PersonalityDashboardCard } from './personality-dashboard-card';
 import { LifeSummaryCard } from './life-summary-card';
 import { SectionReveal, SectionBlockSkeleton } from './section-reveal';
 import { BAZI_SECTION_IDS } from './chart-section-nav';
+import { CompatibilityEntryCard } from '../compatibility/compatibility-entry-card';
 
 export function ChartCenterPanel({
   report,
   streaming = false,
   onAskDecadeFortune,
+  onStartCompatibility,
+  hasExistingCompatibility = false,
+  onViewExistingCompatibility,
   className,
 }: {
   report: PartialDestinyReport;
   streaming?: boolean;
   onAskDecadeFortune?: (decade: { name: string; startAge: number; endAge: number }) => void;
+  /** 四柱后插入八字合盘入口 */
+  onStartCompatibility?: () => void;
+  /** 是否已有合盘结果可回看（不重算） */
+  hasExistingCompatibility?: boolean;
+  /** 回看已有合盘结果页 */
+  onViewExistingCompatibility?: () => void;
   className?: string;
 }) {
   const profile = report.profile;
@@ -74,6 +84,18 @@ export function ChartCenterPanel({
           />
         </SectionReveal>
       </div>
+
+      {/* 合盘入口：四柱之后、排盘依据之前（设计 §6.1） */}
+      {onStartCompatibility && hasPillars && !streaming ? (
+        <div className="scroll-mt-14">
+          <CompatibilityEntryCard
+            visible
+            onStart={onStartCompatibility}
+            hasExisting={hasExistingCompatibility}
+            onViewExisting={onViewExistingCompatibility}
+          />
+        </div>
+      ) : null}
 
       <div id={BAZI_SECTION_IDS.basis} className="scroll-mt-14">
         <SectionReveal

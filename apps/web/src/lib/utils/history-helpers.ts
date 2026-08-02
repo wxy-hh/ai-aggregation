@@ -283,6 +283,25 @@ export function createDestinyHistoryItem(
           day: 'numeric',
         })
       : '未知';
+  } else if (subType === 'bazi-compatibility') {
+    const cf = formData as {
+      self?: { name?: string };
+      partner?: {
+        name?: string;
+        birthDate?: { year: number; month: number; day: number };
+        gender?: string | null;
+      };
+      relationType?: string;
+    };
+    const partnerName = cf.partner?.name?.trim() || 'TA';
+    const selfName = cf.self?.name?.trim() || '我';
+    name = `${selfName} × ${partnerName}`;
+    const birthDate = cf.partner?.birthDate;
+    birthDateText = birthDate
+      ? `${birthDate.year}年${birthDate.month}月${birthDate.day}日`
+      : '未知';
+    const g = cf.partner?.gender;
+    genderLabel = g === 'male' ? '男' : g === 'female' ? '女' : '合盘';
   } else {
     name = (formData as { name?: string }).name || '未知';
     const birthDate =
@@ -294,9 +313,27 @@ export function createDestinyHistoryItem(
     genderLabel = gender === 'male' ? '男' : '女';
   }
 
-  const title = options?.title || `${name}的${subType === 'bazi' ? '八字' : subType === 'ziwei' ? '紫微斗数' : '奇门遁甲'}命理报告`;
-  const preview = options?.preview || (name !== '未知' ? `姓名：${name}，出生：${birthDateText}` : `起局时间：${birthDateText}`);
-  const coreTone = options?.coreTone || '命理分析';
+  const subTypeLabel =
+    subType === 'bazi'
+      ? '八字'
+      : subType === 'ziwei'
+        ? '紫微斗数'
+        : subType === 'bazi-compatibility'
+          ? '八字合盘'
+          : '奇门遁甲';
+  const title =
+    options?.title ||
+    (subType === 'bazi-compatibility'
+      ? `${name} · 合盘`
+      : `${name}的${subTypeLabel}命理报告`);
+  const preview =
+    options?.preview ||
+    (subType === 'bazi-compatibility'
+      ? '八字合盘关系观察'
+      : name !== '未知'
+        ? `姓名：${name}，出生：${birthDateText}`
+        : `起局时间：${birthDateText}`);
+  const coreTone = options?.coreTone || (subType === 'bazi-compatibility' ? '八字合盘' : '命理分析');
 
   return {
     id,

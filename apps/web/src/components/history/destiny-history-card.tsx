@@ -21,6 +21,11 @@ const SUB_TYPE_CONFIG: Record<string, { label: string; icon: typeof baziIcon; co
     icon: baziIcon,
     colorClass: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
   },
+  'bazi-compatibility': {
+    label: '八字合盘',
+    icon: baziIcon,
+    colorClass: 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400',
+  },
   ziwei: {
     label: '紫微斗数',
     icon: ziweiIcon,
@@ -38,7 +43,9 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
   const config = SUB_TYPE_CONFIG[item.subType] || SUB_TYPE_CONFIG.bazi;
 
   const handleClick = () => {
-    router.push(`/destiny?tab=${item.subType}&historyId=${item.id}`);
+    // 合盘档案挂在八字工作区恢复，tab 映射到 bazi 并保留 historyId
+    const tab = item.subType === 'bazi-compatibility' ? 'bazi' : item.subType;
+    router.push(`/destiny?tab=${tab}&historyId=${item.id}`);
   };
 
   const handleDelete = (e: React.MouseEvent) => {

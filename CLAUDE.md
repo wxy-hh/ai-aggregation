@@ -394,3 +394,19 @@ EOF
 - 文件名使用英文，避免中文字符
 - 超过 500 行的文件分批写入
 - 写入后使用 `wc -l` 或 `head` 验证内容完整性
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues / PRD 使用 GitHub Issues（`gh` CLI，仓库 `wxy-hh/ai-aggregation`）。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+默认五态：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
