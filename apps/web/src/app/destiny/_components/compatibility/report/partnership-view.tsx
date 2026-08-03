@@ -305,7 +305,6 @@ export function PartnershipView({
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-slate-600 to-violet-600 text-white shadow-[0_8px_16px_-6px_rgba(100,116,139,0.55)]"
         idleClass="border-2 border-violet-500/40 bg-violet-50/80 text-violet-600 backdrop-blur-sm hover:scale-105 dark:border-violet-400/40 dark:bg-violet-500/10 dark:text-violet-300"
-        ctaClass="text-violet-600 dark:text-violet-300"
       />
     </div>
   );

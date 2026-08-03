@@ -258,7 +258,6 @@ export function MarriageView({
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-[0_8px_16px_-6px_rgba(79,70,229,0.55)]"
         idleClass="border-2 border-indigo-500/40 bg-indigo-50/80 text-indigo-600 backdrop-blur-sm hover:scale-105 dark:border-indigo-400/40 dark:bg-indigo-500/10 dark:text-indigo-300"
-        ctaClass="text-indigo-600 dark:text-indigo-300"
       />
     </div>
   );

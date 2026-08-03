@@ -2,7 +2,6 @@
 
 import React from 'react';
 import {
-  ArrowRight,
   ArrowUpRight,
   Briefcase,
   Check,
@@ -19,7 +18,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '../../layout/glass-card';
-import { destinySecondaryBtnClass } from '../../layout/destiny-result-header';
 import type {
   CompatibilityChartFacts,
   CompatibilityViewPayload,
@@ -381,9 +379,7 @@ export function ScoreBaseCaption({
 }) {
   return (
     <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-400 sm:text-[11px]">
-      <span className="font-medium text-slate-500 dark:text-slate-300">
-        {scoreLabel}
-      </span>
+      <span className="font-medium text-slate-500 dark:text-slate-300">{scoreLabel}</span>
       <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
       命盘底分 {baseScore}
     </p>
@@ -498,8 +494,7 @@ export function RelationHero({
 }
 
 /** 首屏左右等高行：hero + 侧卡统一 stretch，避免上下错位 */
-export const reportHeroRowClass =
-  'col-span-12 grid grid-cols-12 items-stretch gap-4 sm:gap-5';
+export const reportHeroRowClass = 'col-span-12 grid grid-cols-12 items-stretch gap-4 sm:gap-5';
 
 /** 首屏侧卡：填满行高，内部纵向排布 */
 export const reportSideCardClass = cn(
@@ -570,7 +565,14 @@ export function RelationScoreGauge({
               <stop offset="100%" stopColor={toColor} />
             </linearGradient>
           </defs>
-          <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="6" />
+          <circle
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke="rgba(148,163,184,0.16)"
+            strokeWidth="6"
+          />
           <circle
             cx="50"
             cy="50"
@@ -767,10 +769,8 @@ export function RelationDuoScoreVisual({
     });
   }, [theme]);
 
-  const dash =
-    t.linkStyle === 'dash' ? '4 5' : t.linkStyle === 'angular' ? '0' : undefined;
-  const linkOpacity =
-    t.linkStyle === 'dash' ? 0.72 : t.linkStyle === 'stable' ? 0.85 : 1;
+  const dash = t.linkStyle === 'dash' ? '4 5' : t.linkStyle === 'angular' ? '0' : undefined;
+  const linkOpacity = t.linkStyle === 'dash' ? 0.72 : t.linkStyle === 'stable' ? 0.85 : 1;
 
   return (
     <div
@@ -1042,10 +1042,42 @@ export function RelationDuoScoreVisual({
           />
         ))}
 
-        <circle cx="62" cy="100" r="38" fill="none" stroke={t.selfRing} strokeWidth="1" opacity="0.55" />
-        <circle cx="62" cy="100" r="44" fill="none" stroke={t.selfRingOuter} strokeWidth="0.8" opacity="0.35" />
-        <circle cx="258" cy="100" r="38" fill="none" stroke={t.partnerRing} strokeWidth="1" opacity="0.55" />
-        <circle cx="258" cy="100" r="44" fill="none" stroke={t.partnerRingOuter} strokeWidth="0.8" opacity="0.35" />
+        <circle
+          cx="62"
+          cy="100"
+          r="38"
+          fill="none"
+          stroke={t.selfRing}
+          strokeWidth="1"
+          opacity="0.55"
+        />
+        <circle
+          cx="62"
+          cy="100"
+          r="44"
+          fill="none"
+          stroke={t.selfRingOuter}
+          strokeWidth="0.8"
+          opacity="0.35"
+        />
+        <circle
+          cx="258"
+          cy="100"
+          r="38"
+          fill="none"
+          stroke={t.partnerRing}
+          strokeWidth="1"
+          opacity="0.55"
+        />
+        <circle
+          cx="258"
+          cy="100"
+          r="44"
+          fill="none"
+          stroke={t.partnerRingOuter}
+          strokeWidth="0.8"
+          opacity="0.35"
+        />
       </svg>
 
       <div
@@ -1071,14 +1103,25 @@ export function RelationDuoScoreVisual({
           t.centerShadow
         )}
       >
-        <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 100 100" aria-hidden>
+        <svg
+          className="absolute inset-0 h-full w-full -rotate-90"
+          viewBox="0 0 100 100"
+          aria-hidden
+        >
           <defs>
             <linearGradient id={ringId} x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor={t.ringFrom} />
               <stop offset="100%" stopColor={t.ringTo} />
             </linearGradient>
           </defs>
-          <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(148,163,184,0.16)" strokeWidth="3.2" />
+          <circle
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke="rgba(148,163,184,0.16)"
+            strokeWidth="3.2"
+          />
           <circle
             cx="50"
             cy="50"
@@ -1284,14 +1327,14 @@ export function RhythmTimeline({
 }) {
   if (layout === 'horizontal') {
     return (
-      <ol className="flex gap-3 overflow-x-auto pb-1 custom-scrollbar">
+      <ol className="flex h-full items-stretch gap-3 overflow-x-auto pb-1 custom-scrollbar">
         {rhythm.map((node, i) => {
           const Icon = rhythmIcon(node.tone);
           return (
             <li
               key={i}
               className={cn(
-                'min-w-[9.5rem] flex-1 rounded-2xl border border-white/55 bg-white/55 p-3.5 backdrop-blur-md',
+                'flex min-w-[9.5rem] flex-1 flex-col justify-start rounded-2xl border border-white/55 bg-white/55 p-3.5 backdrop-blur-md',
                 'shadow-[0_4px_14px_-8px_rgba(15,23,42,0.1)]',
                 'dark:border-white/10 dark:bg-slate-950/45'
               )}
@@ -1383,23 +1426,16 @@ export function AttractionsList({
               iconWrapClass
             )}
           >
-            {i % 2 === 0 ? (
-              <Sparkles className="h-3.5 w-3.5" />
-            ) : (
-              <Users className="h-3.5 w-3.5" />
-            )}
+            {i % 2 === 0 ? <Sparkles className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{a.title}</div>
+            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {a.title}
+            </div>
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               {a.detail}
             </p>
-            <WhyNote
-              id={`attr-${i}`}
-              why={a.why}
-              whyOpen={whyOpen}
-              onToggle={onToggleWhy}
-            />
+            <WhyNote id={`attr-${i}`} why={a.why} whyOpen={whyOpen} onToggle={onToggleWhy} />
           </div>
         </li>
       ))}
@@ -1444,12 +1480,7 @@ export function FrictionsList({
             <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
               {f.action || f.reaction}
             </p>
-            <WhyNote
-              id={`fric-${i}`}
-              why={f.why}
-              whyOpen={whyOpen}
-              onToggle={onToggleWhy}
-            />
+            <WhyNote id={`fric-${i}`} why={f.why} whyOpen={whyOpen} onToggle={onToggleWhy} />
           </div>
         </li>
       ))}
@@ -1465,7 +1496,6 @@ export function PrimaryActionBanner({
   disclaimers,
   doneClass,
   idleClass,
-  ctaClass,
 }: {
   title: string;
   action?: CompatibilityWeeklyAction;
@@ -1473,7 +1503,6 @@ export function PrimaryActionBanner({
   disclaimers: string[];
   doneClass: string;
   idleClass: string;
-  ctaClass?: string;
 }) {
   if (!action) {
     return disclaimers.length > 0 ? (
@@ -1519,21 +1548,6 @@ export function PrimaryActionBanner({
             {action.text}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            if (!action.done) onToggleAction(action.id);
-          }}
-          className={cn(
-            destinySecondaryBtnClass,
-            'h-11 shrink-0 gap-1.5 px-4 text-sm',
-            ctaClass
-          )}
-        >
-          加入本周计划
-          <ArrowRight className="h-3.5 w-3.5" />
-        </button>
       </GlassCard>
 
       {disclaimers.length > 0 ? (

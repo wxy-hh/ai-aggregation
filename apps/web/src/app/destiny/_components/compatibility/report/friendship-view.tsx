@@ -245,7 +245,6 @@ export function FriendshipView({
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_8px_16px_-6px_rgba(16,185,129,0.55)]"
         idleClass="border-2 border-emerald-500/40 bg-emerald-50/80 text-emerald-600 backdrop-blur-sm hover:scale-105 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-300"
-        ctaClass="text-emerald-600 dark:text-emerald-300"
       />
     </div>
   );

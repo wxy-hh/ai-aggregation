@@ -186,7 +186,6 @@ export function RomanceView({
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-[0_8px_16px_-6px_rgba(244,63,94,0.55)]"
         idleClass="border-2 border-rose-500/40 bg-rose-50/80 text-rose-600 backdrop-blur-sm hover:scale-105 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-300"
-        ctaClass="text-rose-600 dark:text-rose-300"
       />
     </div>
   );
