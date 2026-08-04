@@ -39,6 +39,8 @@ type BaseWorkspaceCache<TFormData, TFieldErrors, TErrorKind> = {
   blockingLoading: boolean;
   error: string | null;
   errorKind: TErrorKind | null;
+  /** 模块内部是否处于覆盖式流程（如八字合盘层），用于外层隐藏表单专属入口（模型切换/接力横幅） */
+  compatActive: boolean;
 };
 
 export type BaziWorkspaceCache = BaseWorkspaceCache<
@@ -118,6 +120,7 @@ function createDefaultBaziWorkspaceCache(): BaziWorkspaceCache {
     report: null,
     lockedSections: {},
     streamStatus: null,
+    compatActive: false,
   };
 }
 
@@ -138,6 +141,7 @@ function createDefaultZiweiWorkspaceCache(): ZiweiWorkspaceCache {
     streamStatus: null,
     tab: 'overview',
     activePalaceLabel: '命宫',
+    compatActive: false,
   };
 }
 
@@ -162,6 +166,7 @@ function createDefaultQimenWorkspaceCache(): QimenWorkspaceCache {
       chartSummary: 'idle',
     },
     sectionErrors: {},
+    compatActive: false,
   };
 }
 

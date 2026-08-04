@@ -208,6 +208,14 @@ export function BaziWorkspace({
   const { generate: generateCompatibility, abort: abortCompatibility } =
     useCompatibilityFlow();
 
+  // 同步合盘流程激活态到 store：合盘层是覆盖式全屏视图，外层需隐藏表单专属入口（模型切换/接力横幅）
+  useEffect(() => {
+    setWorkspaceState('bazi', (current) => {
+      const next = compatStep !== 'idle';
+      return current.compatActive === next ? {} : { compatActive: next };
+    });
+  }, [compatStep, setWorkspaceState]);
+
   // 订阅历史列表：用于本地态丢失后仍能回看「上次合盘」
   const historyItems = useHistoryStore((s) => s.items);
   const isHistoryReady = useHistoryStore((s) => s.isInitialized);
@@ -257,6 +265,10 @@ export function BaziWorkspace({
 
     // 合盘档案：直接进入独立合盘报告层
     if (historyItem.subType === 'bazi-compatibility') {
+      // 已处于合盘流程（含切 tab 后保留下来的流程态）时不再重复恢复。
+      // 恢复写入的是本地组件状态（compatStep 等），StrictMode/重挂载会丢失该状态，
+      // 因此这里保留 URL 的 historyId，待退出合盘层时统一清理（见 backFromCompatibility）。
+      if (compatStep !== 'idle') return;
       const form = historyItem.formData as {
         self?: BaziFormData;
         partner?: {
@@ -312,9 +324,6 @@ export function BaziWorkspace({
       } else {
         setCompatStep('partner-form');
       }
-      const url = new URL(window.location.href);
-      url.searchParams.delete('historyId');
-      window.history.replaceState({}, '', url.toString());
       return;
     }
 
@@ -772,6 +781,12 @@ export function BaziWorkspace({
     setCompatStep('idle');
     setCompatStatus(null);
     setCompatLoadingView(false);
+    // 合盘恢复依赖 URL 的 historyId（重挂载后重放），退出合盘层时清理，避免下次进入八字时误恢复
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('historyId')) {
+      url.searchParams.delete('historyId');
+      window.history.replaceState({}, '', url.toString());
+    }
     // 若个人报告已就绪，确保落在结果步，避免返回后只剩表单
     if (report || Object.keys(lockedSections || {}).length > 0) {
       setWorkspaceState('bazi', {

@@ -43,6 +43,9 @@ export default function HistoryPage() {
   // 从 store 获取状态和操作
   const filter = useHistoryStore((state) => state.filter);
   const isLoading = useHistoryStore((state) => state.isLoading);
+  // 订阅水合完成态：Dexie 异步水合会更新 items 但不改 filter/isLoading，
+  // 页面若不订阅则水合完成后不会重渲染，历史记录将一直显示为空
+  const isHistoryInitialized = useHistoryStore((state) => state.isInitialized);
   const setFilter = useHistoryStore((state) => state.setFilter);
   const getFilteredItems = useHistoryStore((state) => state.getFilteredItems);
   const getStats = useHistoryStore((state) => state.getStats);
@@ -63,8 +66,9 @@ export default function HistoryPage() {
     setIsHydrated(true);
   }, []);
 
-  const filteredHistory = isHydrated ? getFilteredItems() : [];
-  const stats = isHydrated
+  const historyReady = isHydrated && isHistoryInitialized;
+  const filteredHistory = historyReady ? getFilteredItems() : [];
+  const stats = historyReady
     ? getStats()
     : {
         total: 0,
@@ -250,7 +254,7 @@ export default function HistoryPage() {
 
         {/* 内容网格 */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6 custom-scrollbar">
-          {!isHydrated || isLoading ? (
+          {!historyReady || isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
