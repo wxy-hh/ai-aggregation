@@ -4,8 +4,10 @@ import type {
   AiUsageFeature,
   AiUsageRecordInput,
   NormalizedAiUsage,
+  ProfileUsageDetailItem,
   ProfileUsageItem,
   ProfileUsageSummary,
+  UsageSourceKind,
 } from '../../shared/src/types/ai-usage';
 
 const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
@@ -17,6 +19,101 @@ const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
   destiny: 'AI 命理大师',
   resume: '简历制作',
 };
+
+/** AI 命理大师展开明细固定顺序；「其他」兜底保证加总对齐 */
+const DESTINY_DETAIL_ORDER = [
+  { key: 'bazi', label: '八字' },
+  { key: 'bazi-compatibility', label: '八字合盘' },
+  { key: 'ziwei', label: '紫微斗数' },
+  { key: 'qimen', label: '奇门遁甲' },
+  { key: 'other', label: '其他' },
+] as const;
+
+type DetailBucketKey = (typeof DESTINY_DETAIL_ORDER)[number]['key'];
+
+type UsageBucket = {
+  totalTokens: number;
+  audioSeconds: number;
+  taskCount: number;
+  billableUnits: number;
+  billingStatus: string | null;
+};
+
+function emptyBucket(): UsageBucket {
+  return {
+    totalTokens: 0,
+    audioSeconds: 0,
+    taskCount: 0,
+    billableUnits: 0,
+    billingStatus: null,
+  };
+}
+
+function resolveSourceKind(bucket: UsageBucket): UsageSourceKind {
+  const kinds = [
+    bucket.totalTokens > 0 ? 'tokens' : null,
+    bucket.audioSeconds > 0 ? 'audio_seconds' : null,
+    bucket.taskCount > 0 ? 'tasks' : null,
+  ].filter(Boolean) as UsageSourceKind[];
+  return kinds.length > 1 ? 'mixed' : (kinds[0] ?? 'tokens');
+}
+
+function accumulateRecord(
+  bucket: UsageBucket,
+  record: {
+    feature: string;
+    totalTokens: number | null;
+    taskCount: number;
+    meterType: string | null;
+    billableUnits: number | null;
+    billingStatus: string | null;
+  }
+) {
+  const feature = record.feature as AiUsageFeature;
+  const isMediaTask =
+    record.meterType === 'image_task' ||
+    record.meterType === 'video_task' ||
+    ((feature === 'image' || feature === 'video') && record.meterType === null);
+  const isAudio = record.meterType === 'audio_seconds';
+  const isToken = record.meterType === 'tokens' || (!record.meterType && !isMediaTask);
+
+  if (isToken) {
+    bucket.totalTokens += record.totalTokens ?? record.billableUnits ?? 0;
+  }
+  if (isAudio) {
+    bucket.audioSeconds += record.billableUnits ?? record.totalTokens ?? 0;
+  }
+  if (isMediaTask) {
+    bucket.taskCount += record.taskCount;
+  }
+  bucket.billableUnits += record.billableUnits ?? 0;
+  bucket.billingStatus = record.billingStatus ?? bucket.billingStatus;
+}
+
+/**
+ * 将 destiny 用量归入五档明细。
+ * 合盘优先 action；历史记录用 metadata.reportType 回退。
+ */
+function resolveDestinyDetailKey(
+  action: string | null | undefined,
+  metadata: unknown
+): DetailBucketKey {
+  const reportType =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>).reportType
+      : undefined;
+
+  if (
+    action === 'destiny-compatibility-report' ||
+    reportType === 'bazi-compatibility'
+  ) {
+    return 'bazi-compatibility';
+  }
+  if (action === 'destiny-ziwei-report') return 'ziwei';
+  if (action?.startsWith('destiny-qimen')) return 'qimen';
+  if (action === 'destiny-report') return 'bazi';
+  return 'other';
+}
 
 function toInteger(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -189,84 +286,73 @@ export async function getProfileUsageSummary(
     },
     select: {
       feature: true,
+      action: true,
       totalTokens: true,
       taskCount: true,
       meterType: true,
       billableUnits: true,
       billingStatus: true,
+      metadata: true,
     },
   });
 
-  const grouped = new Map<
-    AiUsageFeature,
-    {
-      totalTokens: number;
-      audioSeconds: number;
-      taskCount: number;
-      billableUnits: number;
-      billingStatus: string | null;
-    }
-  >();
+  const grouped = new Map<AiUsageFeature, UsageBucket>();
+  const destinyDetails = new Map<DetailBucketKey, UsageBucket>();
+  for (const item of DESTINY_DETAIL_ORDER) {
+    destinyDetails.set(item.key, emptyBucket());
+  }
 
   for (const record of records) {
     const feature = record.feature as AiUsageFeature;
-    const current = grouped.get(feature) ?? {
-      totalTokens: 0,
-      audioSeconds: 0,
-      taskCount: 0,
-      billableUnits: 0,
-      billingStatus: null,
-    };
-
-    const isMediaTask =
-      record.meterType === 'image_task' ||
-      record.meterType === 'video_task' ||
-      ((feature === 'image' || feature === 'video') && record.meterType === null);
-    const isAudio = record.meterType === 'audio_seconds';
-    const isToken = record.meterType === 'tokens' || (!record.meterType && !isMediaTask);
-
-    // 三类计量严格分账，禁止把音频秒数或媒体任务次数累加到 Token 统计中。
-    if (isToken) {
-      current.totalTokens += record.totalTokens ?? record.billableUnits ?? 0;
-    }
-    if (isAudio) {
-      current.audioSeconds += record.billableUnits ?? record.totalTokens ?? 0;
-    }
-    if (isMediaTask) {
-      current.taskCount += record.taskCount;
-    }
-    current.billableUnits += record.billableUnits ?? 0;
-    current.billingStatus = record.billingStatus ?? current.billingStatus;
+    const current = grouped.get(feature) ?? emptyBucket();
+    accumulateRecord(current, record);
     grouped.set(feature, current);
+
+    if (feature === 'destiny') {
+      const detailKey = resolveDestinyDetailKey(record.action, record.metadata);
+      const detailBucket = destinyDetails.get(detailKey) ?? emptyBucket();
+      accumulateRecord(detailBucket, record);
+      destinyDetails.set(detailKey, detailBucket);
+    }
   }
 
   const items: ProfileUsageItem[] = (Object.keys(FEATURE_LABEL_MAP) as AiUsageFeature[]).map(
     (feature) => {
-      const current = grouped.get(feature) ?? {
-        totalTokens: 0,
-        audioSeconds: 0,
-        taskCount: 0,
-        billableUnits: 0,
-        billingStatus: null,
-      };
+      const current = grouped.get(feature) ?? emptyBucket();
 
-      const kinds = [
-        current.totalTokens > 0 ? 'tokens' : null,
-        current.audioSeconds > 0 ? 'audio_seconds' : null,
-        current.taskCount > 0 ? 'tasks' : null,
-      ].filter(Boolean) as ProfileUsageItem['sourceKind'][];
-
-      return {
+      const item: ProfileUsageItem = {
         feature,
         label: FEATURE_LABEL_MAP[feature],
         totalTokens: current.totalTokens,
         audioSeconds: current.audioSeconds,
         taskCount: current.taskCount,
         percent: 0,
-        sourceKind: kinds.length > 1 ? 'mixed' : (kinds[0] ?? 'tokens'),
+        sourceKind: resolveSourceKind(current),
         billableUnits: current.billableUnits,
         billingStatus: current.billingStatus as ProfileUsageItem['billingStatus'],
       };
+
+      if (feature === 'destiny') {
+        const details: ProfileUsageDetailItem[] = DESTINY_DETAIL_ORDER.map((def) => {
+          const bucket = destinyDetails.get(def.key) ?? emptyBucket();
+          return {
+            key: def.key,
+            label: def.label,
+            totalTokens: bucket.totalTokens,
+            audioSeconds: bucket.audioSeconds,
+            taskCount: bucket.taskCount,
+            sourceKind: resolveSourceKind(bucket),
+          };
+        }).filter(
+          (detail) =>
+            detail.totalTokens > 0 || detail.audioSeconds > 0 || detail.taskCount > 0
+        );
+        if (details.length > 0) {
+          item.details = details;
+        }
+      }
+
+      return item;
     }
   );
 

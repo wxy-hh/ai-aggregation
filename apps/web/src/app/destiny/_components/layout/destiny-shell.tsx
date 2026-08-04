@@ -27,7 +27,7 @@ import { BaziShareEntry } from '../share/bazi-share-entry';
 // import { ChartSectionNav } from '../visualization/chart-section-nav';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { PanelRightOpen } from 'lucide-react';
+import { HeartHandshake, PanelRightOpen } from 'lucide-react';
 import { ProfileSubtitle } from './profile-subtitle';
 
 export function DestinyShell({
@@ -45,6 +45,10 @@ export function DestinyShell({
   relayDraft = null,
   onRelayDraftHandled,
   onRelayDraftSent,
+  onStartCompatibility,
+  hasExistingCompatibility = false,
+  onViewExistingCompatibility,
+  existingCompatibilityLabel,
 }: {
   report: DestinyReport | null;
   partialReport?: PartialDestinyReport | null;
@@ -62,6 +66,14 @@ export function DestinyShell({
   onRelayDraftHandled?: (id: string) => void;
   /** 接力预填内容被顾问发送且成功提交后触发（REQ §4.6.4-5：发送成功才完成接力） */
   onRelayDraftSent?: (id: string) => void;
+  /** 开启八字合盘（四柱后入口） */
+  onStartCompatibility?: () => void;
+  /** 是否已有合盘结果可回看 */
+  hasExistingCompatibility?: boolean;
+  /** 回看已有合盘结果（不重算） */
+  onViewExistingCompatibility?: () => void;
+  /** 顶栏「查看合盘」按钮文案（含对象名时更清晰） */
+  existingCompatibilityLabel?: string;
 }) {
   const displayReport = report ?? partialReport ?? null;
   const subtitle = useMemo(() => {
@@ -144,6 +156,27 @@ export function DestinyShell({
                   </Button>
                 </>
               }
+              trailingActions={
+                activeModule === 'bazi' &&
+                hasExistingCompatibility &&
+                onViewExistingCompatibility ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onViewExistingCompatibility}
+                    className={cn(
+                      destinySecondaryBtnClass,
+                      'gap-1.5 text-blue-600 dark:text-blue-400'
+                    )}
+                  >
+                    <HeartHandshake className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="sm:hidden">合盘</span>
+                    <span className="hidden sm:inline">
+                      {existingCompatibilityLabel?.trim() || '查看合盘'}
+                    </span>
+                  </Button>
+                ) : null
+              }
             />
 
             {displayReport ? (
@@ -166,6 +199,15 @@ export function DestinyShell({
                   report={displayReport}
                   streaming={streaming}
                   onAskDecadeFortune={handleAskDecadeFortune}
+                  onStartCompatibility={
+                    activeModule === 'bazi' ? onStartCompatibility : undefined
+                  }
+                  hasExistingCompatibility={
+                    activeModule === 'bazi' ? hasExistingCompatibility : false
+                  }
+                  onViewExistingCompatibility={
+                    activeModule === 'bazi' ? onViewExistingCompatibility : undefined
+                  }
                   className="mt-3 sm:mt-4"
                 />
               </>

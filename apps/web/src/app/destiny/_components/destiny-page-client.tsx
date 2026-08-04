@@ -25,6 +25,8 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 
 export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
+    // 合盘档案从历史进入：tab=bazi-compatibility 时落到八字工作区
+    if (initialTab === 'bazi-compatibility') return 'bazi';
     if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
     return 'bazi';
   });
@@ -34,8 +36,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     setActiveModuleInStore(activeModule);
     return () => setActiveModuleInStore(null);
   }, [activeModule, setActiveModuleInStore]);
-  // 模型切换只在填表步骤显示，结果页不显示
-  const isFormStep = useDestinyWorkspaceStore((s) => s[activeModule].step === 'form');
+  // 模型切换只在填表步骤显示，结果页不显示；八字合盘层是覆盖式全屏视图，同样隐藏
+  const isFormStep = useDestinyWorkspaceStore(
+    (s) => s[activeModule].step === 'form' && !s[activeModule].compatActive
+  );
   // 紫微结果态:仅夜幕主题时移动端分段控件入夜;白昼与八字/奇门一致
   const ziweiInResult = useDestinyWorkspaceStore((s) => s.ziwei.step === 'result');
   const ziweiThemePref = useZiweiThemeStore((s) => s.pref);

@@ -63,6 +63,8 @@ export type DestinyResultHeaderProps = {
   recalculateLabel?: string;
   /** 主按钮左侧的次要操作（如八字「深度报告」） */
   leadingActions?: React.ReactNode;
+  /** 主按钮右侧的额外操作（如「查看合盘」） */
+  trailingActions?: React.ReactNode;
   className?: string;
 };
 
@@ -77,8 +79,11 @@ export function DestinyResultHeader({
   onRecalculate,
   recalculateLabel = '重新排盘',
   leadingActions,
+  trailingActions,
   className,
 }: DestinyResultHeaderProps) {
+  const hasActions = Boolean(leadingActions || onRecalculate || trailingActions);
+
   return (
     <header
       className={cn(
@@ -114,7 +119,7 @@ export function DestinyResultHeader({
         ) : null}
       </div>
 
-      {(leadingActions || onRecalculate) && (
+      {hasActions ? (
         <div className="relative z-10 flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
           {leadingActions}
           {onRecalculate ? (
@@ -126,8 +131,9 @@ export function DestinyResultHeader({
               {recalculateLabel}
             </Button>
           ) : null}
+          {trailingActions}
         </div>
-      )}
+      ) : null}
     </header>
   );
 }
