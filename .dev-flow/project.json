@@ -7,6 +7,7 @@
   },
   "protectedRoots": [
     "apps/web/src",
+    "apps/web/e2e",
     "apps/worker/src",
     "packages/shared",
     "packages/providers",
@@ -14,7 +15,13 @@
     "packages/queue",
     "packages/storage",
     "packages/logger",
-    "infra"
+    "packages/config-eslint",
+    "packages/config-typescript",
+    "infra/docker",
+    "infra/worker-rtasr",
+    "tooling/scripts",
+    "scripts",
+    "migrations"
   ],
   "schemaVersion": 1,
   "verification": {
@@ -24,6 +31,14 @@
       "typecheck"
     ],
     "commands": [
+      {
+        "args": [
+          "test"
+        ],
+        "command": "pnpm",
+        "cwd": ".",
+        "id": "unit"
+      },
       {
         "args": [
           "lint"
@@ -39,14 +54,6 @@
         "command": "pnpm",
         "cwd": ".",
         "id": "typecheck"
-      },
-      {
-        "args": [
-          "test"
-        ],
-        "command": "pnpm",
-        "cwd": ".",
-        "id": "unit"
       },
       {
         "args": [
