@@ -5,8 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
-import { AstrologyWorkspace } from './astrology/astrology-workspace';
-import { useAstrologyWorkspaceStore } from '@/stores/astrology-workspace-store';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
@@ -27,7 +25,7 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 
 export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
-    if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen' || initialTab === 'astrology') return initialTab;
+    if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
     return 'bazi';
   });
   // 同步激活模块到全局 store,供命理域外的全局 chrome(移动端顶栏/底栏)感知场景
@@ -37,12 +35,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     return () => setActiveModuleInStore(null);
   }, [activeModule, setActiveModuleInStore]);
   // 模型切换只在填表步骤显示，结果页不显示
-  // 八字/紫微/奇门走 destiny-workspace-store，星座寰宇走独立 astrology-workspace-store
-  const destinyFormStep = useDestinyWorkspaceStore((s) =>
-    activeModule === 'astrology' ? false : s[activeModule].step === 'form'
-  );
-  const astrologyStep = useAstrologyWorkspaceStore((s) => s.step);
-  const isFormStep = activeModule === 'astrology' ? astrologyStep === 'form' : destinyFormStep;
+  const isFormStep = useDestinyWorkspaceStore((s) => s[activeModule].step === 'form');
   // 紫微结果态:仅夜幕主题时移动端分段控件入夜;白昼与八字/奇门一致
   const ziweiInResult = useDestinyWorkspaceStore((s) => s.ziwei.step === 'result');
   const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
@@ -52,22 +45,20 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
-  const [astrologyLoading, setAstrologyLoading] = useState(false);
 
   // 接力：命理目标接收。文本绝不写入出生资料字段，仅以「待解读引用」呈现 + 三术数平级选择。
   const relay = useRelayReceive('destiny');
   const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
   const relaySourceType = relay.bundle?.items[0]?.sourceType;
 
-  // 各术数必要输入就绪：出生资料看八字/紫微/星座表单，所问之事看奇门 description
+  // 各术数必要输入就绪：出生资料看八字/紫微表单，所问之事看奇门 description
   const baziHasBirth = useDestinyWorkspaceStore((s) => Boolean(s.bazi.formData?.name?.trim()));
   const ziweiHasBirth = useDestinyWorkspaceStore((s) => Boolean(s.ziwei.formData?.name?.trim()));
   const qimenHasQuestion = useDestinyWorkspaceStore((s) =>
     Boolean(s.qimen.formData?.description?.trim())
   );
-  const astrologyHasBirth = useAstrologyWorkspaceStore((s) => Boolean(s.formData.name?.trim()));
   const relayReadinessCtx = {
-    hasBirthProfile: baziHasBirth || ziweiHasBirth || astrologyHasBirth,
+    hasBirthProfile: baziHasBirth || ziweiHasBirth,
     hasQuestion: qimenHasQuestion,
     hasCastTime: true, // 起局时间默认取当前时刻，不作为阻塞输入
   };
@@ -171,13 +162,6 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
           onLoadingChange={setQimenLoading}
         />
       </div>
-      <div className={cn('h-full w-full', activeModule !== 'astrology' && 'hidden')}>
-        <AstrologyWorkspace
-          isActive={activeModule === 'astrology'}
-          onModuleChange={setActiveModule}
-          onLoadingChange={setAstrologyLoading}
-        />
-      </div>
     </>
   );
 
@@ -186,7 +170,6 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
       { key: 'bazi' as const, label: '八字' },
       { key: 'ziwei' as const, label: '紫微' },
       { key: 'qimen' as const, label: '奇门' },
-      { key: 'astrology' as const, label: '星座' },
     ];
 
     return (
@@ -209,7 +192,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
               isZiweiNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
             )}
           >
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-3 gap-1">
               {mobileTabs.map((tab) => {
                 const active = activeModule === tab.key;
                 return (
@@ -270,14 +253,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     );
   }
 
-  const isLoading =
-    activeModule === 'bazi'
-      ? baziLoading
-      : activeModule === 'ziwei'
-        ? ziweiLoading
-        : activeModule === 'qimen'
-          ? qimenLoading
-          : astrologyLoading;
+  const isLoading = activeModule === 'bazi' ? baziLoading : activeModule === 'ziwei' ? ziweiLoading : qimenLoading;
 
   return (
     <DestinyNavProvider>

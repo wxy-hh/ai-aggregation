@@ -7,7 +7,7 @@ import type { DerivationMetadata } from '@repo/shared';
 
 export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny';
 
-export type DestinySubType = 'bazi' | 'ziwei' | 'qimen' | 'astrology';
+export type DestinySubType = 'bazi' | 'ziwei' | 'qimen';
 
 export interface BaseHistoryItem extends DerivationMetadata {
   id: string;

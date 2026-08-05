@@ -80,9 +80,6 @@ export type QimenWorkspaceCache = BaseWorkspaceCache<
   sectionErrors: Partial<Record<QimenAsyncSectionKey, string>>;
 };
 
-/** 由 destiny-workspace-store 管理的传统三术数模块键 */
-export type ManagedDestinyModuleKey = Extract<DestinyModuleKey, 'bazi' | 'ziwei' | 'qimen'>;
-
 export type DestinyWorkspaceCacheState = {
   bazi: BaziWorkspaceCache;
   ziwei: ZiweiWorkspaceCache;
@@ -95,15 +92,15 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   /** 当前激活的命理模块(由 DestinyPageClient 同步,供全局 chrome 感知场景,如移动端顶栏入夜) */
   activeModule: DestinyModuleKey | null;
   setActiveModule: (module: DestinyModuleKey | null) => void;
-  setWorkspaceState: <TModule extends ManagedDestinyModuleKey>(
+  setWorkspaceState: <TModule extends DestinyModuleKey>(
     module: TModule,
     patch:
       | Partial<DestinyWorkspaceCacheState[TModule]>
       | ((current: DestinyWorkspaceCacheState[TModule]) => Partial<DestinyWorkspaceCacheState[TModule]>)
   ) => void;
-  resetWorkspace: (module: ManagedDestinyModuleKey) => void;
-  restoreWorkspace: (module: ManagedDestinyModuleKey) => void;
-  markResultReady: (module: ManagedDestinyModuleKey) => void;
+  resetWorkspace: (module: DestinyModuleKey) => void;
+  restoreWorkspace: (module: DestinyModuleKey) => void;
+  markResultReady: (module: DestinyModuleKey) => void;
   resetAllWorkspaces: () => void;
 };
 

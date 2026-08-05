@@ -1,7 +1,6 @@
 'use client';
 
 import Image, { type StaticImageData } from 'next/image';
-import astrologyIcon from '@/assets/image/astrology.svg';
 import qimendunjiaIcon from '@/assets/image/qimendunjia.svg';
 import ziweiIcon from '@/assets/image/ziwei.svg';
 import { cn } from '@/lib/utils';
@@ -52,13 +51,9 @@ const QimenJiugongIcon: ComponentType<LeftNavIconProps> = ({ className, active, 
   <AssetImageIcon src={qimendunjiaIcon} className={className} active={active} night={night} />
 );
 
-const AstrologyChartIcon: ComponentType<LeftNavIconProps> = ({ className, active, night }) => (
-  <AssetImageIcon src={astrologyIcon} className={className} active={active} night={night} />
-);
-
 const BaziGridIcon: ComponentType<LeftNavIconProps> = ({ className }) => <LayoutGrid className={className} />;
 
-export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen' | 'astrology';
+export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen';
 
 const groups: Array<{
   title: string;
@@ -83,12 +78,6 @@ const groups: Array<{
         key: 'qimen',
         label: '奇门遁甲演化',
         icon: QimenJiugongIcon,
-        iconClassName: 'h-[22px] w-[22px]',
-      },
-      {
-        key: 'astrology',
-        label: '星座寰宇',
-        icon: AstrologyChartIcon,
         iconClassName: 'h-[22px] w-[22px]',
       },
     ],
