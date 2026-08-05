@@ -70,7 +70,8 @@
 
 - [x] 完成 Q2/Q3/Q4 决策落账。
 - [x] 修正需求文档「全球城市」口径为「P0 仅中国城市」。
-- [ ] 进入 planning 后，继续记录 plan-review / rollback / verification 阶段的新问题。
+- [x] 进入 planning 后，继续记录 plan-review / rollback / verification 阶段的新问题（P9 死锁、P11 交付快照冲突均已记录）。
+- [x] **最终收尾**：功能全部实现/审查/验证并提交（commit `d8c8446`），12 个 RU 全部 checkpoint，5 项 obligation 全部 satisfied。finalize 因 P11 的「干净基线」交付快照模型与「脏树起步 + 用户确认提交」冲突而无法生成 patch，经用户确认以 `dev_flow_abandon` 正常关闭 feature（代码完整保留，不丢任何工作）。dev-flow 全程治理记录（需求 REQ-001~012、12 RU 计划、三轮独立审查、checkpoint、验证）完整可查。
 
 ### P10.【交互体验】门禁确认强制一次性 token，不友好；应优先接受自然语言批准词
 - **现象**：approval/grill 门禁要求用户回复形如 `DF-GGRH7ZXSCOUH confirm` 的一次性 token 才能落账（provenance 需要）。我站在用户角度更想直接说「确认」「同意」等自然语言。实际：`confirm_approval` 支持 `确认/确认执行/approved/LGTM` 等批准词，但**对 provenance 的校验**让自然语言也常常落不了账——最终仍只能靠 token 行才成功。而且 `confirm_approval` 报 `APPROVAL_APPROVAL_NOT_EXPLICIT`（要批准词）、`respond_interaction` 报 `APPROVAL_SAME_TURN`（要晚于呈现回合），两条路径的口令与时机规则都不一致，用户很难一次说对。
@@ -97,8 +98,12 @@
 - **现象**：修订版计划 `record_artifact_with_trace` 后，`blockingFindings` 从 3 变为 0，无需逐条调用 disposition。审查投影里虽列出「Unresolved Blocking Findings」，但那是针对**旧 basis** 的；新 basis 的批次重新评估。
 - **建议**：文档里说明「修订计划并重登记即清空旧 basis 的 findings；新一轮批次决定是否仍有 blocking」，避免误以为要逐条手动关闭。
 
-### P9.【严重】结转 blocking finding 造成工具自相矛盾，规划阶段死锁（已解决，附完整排查与修法）
+### P11.【交付快照】delivery baseline 要求「干净基线起步」，与「在已有改动上开工」冲突
+- **现象**：星座寰宇 feature 在若干 destiny 文件已被修改的脏工作树上 start（`deliveryBaseline.dirtyPaths: []` 但实际有改动）。实现完成后我按用户要求 `git commit`，HEAD 从 `1104ed9` 移到 `d8c8446`，`finalize` 立即报 `DELIVERY_BASELINE_CHANGED`（Git HEAD changed after this feature started）。读 `mcp-server.mjs` 的 `createDeliverySnapshot` 可知：finalize 期望生成「`baseline.gitHead` 到当前**未提交**工作树」的 diff patch，因此**提交本身就会让 HEAD ≠ baseline.gitHead**，且不提交又会因脏树报 `DELIVERY_FILE_PREEXISTING_DIRTY` / `UNREGISTERED`——形成「提交也不行、不提交也不行」的两难。
+- **根因**：delivery 快照模型假设「feature 在干净基线上开始，finalize 时改动仍未提交」；与本仓库 git-workflow（提交需用户确认、feature 常在有改动的树上推进）不完全契合。
+- **建议**：1) finalize 支持「已提交」场景：以 `baseline.gitHead..HEAD` 的提交区间生成交付快照，而非强制未提交 diff；2) start 时若工作树脏，明确提示「先提交或 stash，或将既有改动登记为 pre-existing」；3) 文档化「提交时机」与 delivery baseline 的交互。
 
+### P9.【严重】结转 blocking finding 造成工具自相矛盾，规划阶段死锁（已解决，附完整排查与修法）
 > 这是用户点名要求完整记录的一次 dev-flow 死循环。下面是起因、排查过程、根因与最终解法。
 
 **现象（时间线）**
