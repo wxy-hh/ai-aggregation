@@ -22,10 +22,13 @@ import {
   DIMENSION_ICONS,
   DIMENSION_TONES,
   buildScoreHintText,
+  dimensionLevelClass,
+  dimensionLevelLabel,
   dimensionTileBaseClass,
   reportCardClass,
   reportHeroRowClass,
 } from './shared';
+import { calibrateScore } from '../score';
 import { cn } from '@/lib/utils';
 
 /** 合作仪表盘优先维度 */
@@ -167,6 +170,7 @@ export function PartnershipView({
           {ordered.map((d) => {
             const Icon = DIMENSION_ICONS[d.key] ?? Sparkles;
             const tone = DIMENSION_TONES[d.key] ?? DEFAULT_DIMENSION_TONE;
+            const calibrated = calibrateScore(d.value);
             return (
               <div
                 key={d.key}
@@ -196,11 +200,21 @@ export function PartnershipView({
                 </div>
                 <div
                   className={cn(
-                    'mt-1 text-2xl font-black tabular-nums',
-                    tone.score
+                    'mt-1 flex items-baseline gap-1.5',
+                    d.note ? 'justify-start' : 'justify-center'
                   )}
                 >
-                  {d.value}
+                  <span className={cn('text-2xl font-black tabular-nums', tone.score)}>
+                    {calibrated}
+                  </span>
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                      dimensionLevelClass(calibrated)
+                    )}
+                  >
+                    {dimensionLevelLabel(calibrated)}
+                  </span>
                 </div>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/55 dark:bg-slate-700/70">
                   <div
@@ -209,7 +223,7 @@ export function PartnershipView({
                       tone.bar
                     )}
                     style={{
-                      width: `${Math.min(100, Math.max(0, d.value))}%`,
+                      width: `${calibrated}%`,
                     }}
                   />
                 </div>

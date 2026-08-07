@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '../../layout/glass-card';
+import { calibrateScore } from '../score';
 import type {
   CompatibilityChartFacts,
   CompatibilityViewPayload,
@@ -1261,6 +1262,22 @@ export function NeedsColumn({
   );
 }
 
+/** 子分档位描述：展示口径下偏高/均衡/偏低（与主分同口径） */
+export function dimensionLevelLabel(calibrated: number): '偏高' | '均衡' | '偏低' {
+  return calibrated >= 75 ? '偏高' : calibrated >= 55 ? '均衡' : '偏低';
+}
+
+/** 子分档位徽章色 */
+export function dimensionLevelClass(calibrated: number): string {
+  if (calibrated >= 75) {
+    return 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300';
+  }
+  if (calibrated >= 55) {
+    return 'bg-slate-500/10 text-slate-500 dark:bg-slate-400/15 dark:text-slate-300';
+  }
+  return 'bg-amber-500/10 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300';
+}
+
 /** 六维网格：各视角共用，可覆盖列数与是否展示 note */
 export function DimensionGrid({
   dimensions,
@@ -1276,6 +1293,8 @@ export function DimensionGrid({
       {dimensions.map((d) => {
         const Icon = DIMENSION_ICONS[d.key] ?? Sparkles;
         const tone = DIMENSION_TONES[d.key] ?? DEFAULT_DIMENSION_TONE;
+        const calibrated = calibrateScore(d.value);
+        const levelLabel = dimensionLevelLabel(calibrated);
         return (
           <div key={d.key} className={cn(dimensionTileBaseClass, tone.tile)}>
             <div className="flex items-start justify-between gap-2">
@@ -1292,9 +1311,19 @@ export function DimensionGrid({
                   {d.label}
                 </span>
               </div>
-              <span className={cn('shrink-0 text-base font-bold tabular-nums', tone.score)}>
-                {d.value}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className={cn('text-base font-bold tabular-nums', tone.score)}>
+                  {calibrated}
+                </span>
+                <span
+                  className={cn(
+                    'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                    dimensionLevelClass(calibrated)
+                  )}
+                >
+                  {levelLabel}
+                </span>
+              </div>
             </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200/55 dark:bg-slate-700/70">
               <div
@@ -1302,7 +1331,7 @@ export function DimensionGrid({
                   'h-full rounded-full bg-gradient-to-r transition-[width] duration-500 ease-out',
                   tone.bar
                 )}
-                style={{ width: `${Math.min(100, Math.max(0, d.value))}%` }}
+                style={{ width: `${calibrated}%` }}
               />
             </div>
             {showNote && d.note ? (

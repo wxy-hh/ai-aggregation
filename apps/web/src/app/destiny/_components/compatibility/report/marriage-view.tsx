@@ -13,6 +13,8 @@ import { RELATION_HERO_TITLE } from '../constants';
 import {
   AttractionsList,
   DimensionGrid,
+  dimensionLevelClass,
+  dimensionLevelLabel,
   FrictionsList,
   NeedsColumn,
   PrimaryActionBanner,
@@ -25,6 +27,7 @@ import {
   reportHeroRowClass,
   reportSideCardClass,
 } from './shared';
+import { calibrateScore } from '../score';
 import { cn } from '@/lib/utils';
 
 /** 婚姻看板优先展示的维度 key（分工 / 财务 / 边界） */
@@ -129,6 +132,7 @@ export function MarriageView({
           {(boardDims.length > 0 ? boardDims : view.dimensions.slice(0, 3)).map(
             (d) => {
               const Icon = BOARD_ICON[d.key] ?? Sparkles;
+              const calibrated = calibrateScore(d.value);
               return (
                 <GlassCard
                   key={d.key}
@@ -150,15 +154,25 @@ export function MarriageView({
                         <div className="text-[11px] text-slate-400">经营重点</div>
                       </div>
                     </div>
-                    <span className="text-xl font-black tabular-nums text-indigo-600 dark:text-indigo-300">
-                      {d.value}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="text-xl font-black tabular-nums text-indigo-600 dark:text-indigo-300">
+                        {calibrated}
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                          dimensionLevelClass(calibrated)
+                        )}
+                      >
+                        {dimensionLevelLabel(calibrated)}
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-3 h-2 overflow-hidden rounded-full bg-indigo-100/70 dark:bg-indigo-950/50">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-amber-400 transition-[width] duration-500 ease-out"
                       style={{
-                        width: `${Math.min(100, Math.max(0, d.value))}%`,
+                        width: `${calibrated}%`,
                       }}
                     />
                   </div>

@@ -2,8 +2,9 @@ import type { CompatibilityChartFacts, RelationType } from './types';
 
 /**
  * 方案 B：双层分数（本地确定性，不经 LLM 改总分）
- * - 命盘底分 chartFacts.score：四视角共用
- * - 本视角适配分：底分 × 0.35 +（六维加权均值 + 关系事实偏置）× 0.65
+ * - 命盘底分 chartFacts.score：四视角共用（确定性 0-100，存储为原始值）
+ * - 本视角适配分：底分 × 0.32 +（六维加权均值 + 关系事实偏置）× 0.68，
+ *   再经 calibrateScore 标定到展示口径（差 30-45 / 中 55-70 / 高 75-88）
  *   关系偏置由日主异同、五行互补/相似、地支呼应、资料完整度等确定性信号推导
  */
 
@@ -80,17 +81,25 @@ type ChartSignals = {
   completeness: number;
 };
 
-function clampScore(n: number) {
-  return Math.max(22, Math.min(95, Math.round(n)));
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+/**
+ * 展示口径标定：把 raw 0-100 单调映射到目标分布锚点
+ * - 弱匹配 ~35 → ~44（差 30-45：差异大需协商）
+ * - 典型组合 ~55 → ~62（中 55-70：锚点「大多数组合落此区间」）
+ * - 强匹配 ~80 → ~84（高 75-88：默契基础较好）
+ * 主分与子分共用，保证口径一致。
+ */
+export function calibrateScore(raw: number): number {
+  const value = Number.isFinite(raw) ? raw : 50;
+  return Math.round(clamp(12 + value * 0.9, 30, 90));
+}
+
 function bandOf(score: number): ScoreBand {
   if (score >= 75) return 'high';
-  if (score >= 50) return 'mid';
+  if (score >= 55) return 'mid';
   return 'low';
 }
 
@@ -271,8 +280,9 @@ export type RelationFeelScoreResult = {
 
 /**
  * 本视角适配分 =
- *   命盘底分 × 0.35 + max(0,min(100, 六维加权均值 + 关系偏置)) × 0.65
- * 无六维时：底分 + 偏置 × 0.55（仍随关系类型分化）
+ *   calibrateScore( 命盘底分 × 0.32 + max(0,min(100, 六维加权均值 + 关系偏置)) × 0.68 )
+ * 无六维时：calibrateScore(底分 + 偏置 × 0.7)（仍随关系类型分化）
+ * 返回的 dimAverage 也按展示口径标定，与主分/子分保持一致。
  */
 export function computeRelationFeelScore(
   facts: Pick<
@@ -297,6 +307,7 @@ export function computeRelationFeelScore(
     blended = base * BASE_WEIGHT + adjustedDim * DIM_WEIGHT;
   }
 
-  const score = clampScore(blended);
-  return { score, scoreBand: bandOf(score), dimAverage, bias };
+  const score = calibrateScore(blended);
+  const calibratedDim = dimAverage == null ? null : calibrateScore(dimAverage);
+  return { score, scoreBand: bandOf(score), dimAverage: calibratedDim, bias };
 }
