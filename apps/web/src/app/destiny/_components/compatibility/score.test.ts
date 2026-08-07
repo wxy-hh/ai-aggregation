@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CompatibilityChartFacts } from './types';
 import {
+  calibrateScore,
   computeRelationBias,
   computeRelationFeelScore,
   extractChartSignals,
@@ -165,5 +166,77 @@ describe('computeRelationFeelScore (方案 B + 事实偏置)', () => {
     // 恋爱更吃互补（异日主），友谊更吃共鸣（同日主）
     expect(romanceDiff).toBeGreaterThan(romanceSame);
     expect(friendSame).toBeGreaterThan(friendDiff);
+  });
+});
+
+describe('calibrateScore 展示口径标定', () => {
+  it('映射命中目标分布锚点（差 30-45 / 中 55-70 / 高 75-88）', () => {
+    // 弱匹配 raw ~35
+    expect(calibrateScore(35)).toBeGreaterThanOrEqual(30);
+    expect(calibrateScore(35)).toBeLessThanOrEqual(45);
+    // 典型组合 raw ~55
+    const typical = calibrateScore(55);
+    expect(typical).toBeGreaterThanOrEqual(55);
+    expect(typical).toBeLessThanOrEqual(70);
+    // 强匹配 raw ~80
+    const strong = calibrateScore(80);
+    expect(strong).toBeGreaterThanOrEqual(75);
+    expect(strong).toBeLessThanOrEqual(90);
+  });
+
+  it('保持单调：弱 < 中 < 高', () => {
+    expect(calibrateScore(35)).toBeLessThan(calibrateScore(55));
+    expect(calibrateScore(55)).toBeLessThan(calibrateScore(80));
+  });
+
+  it('输入异常回退中带（50 → ~57）', () => {
+    expect(calibrateScore(NaN)).toBeGreaterThanOrEqual(55);
+    expect(calibrateScore(NaN)).toBeLessThanOrEqual(70);
+  });
+});
+
+describe('computeRelationFeelScore 标定后档位', () => {
+  const romanceKeys = ['expression', 'pace', 'intimacy', 'practical', 'repair', 'stability'];
+
+  it('典型输入（底分 55 / 六维 55）落中带', () => {
+    const typical = computeRelationFeelScore(
+      makeFacts({ score: 55 }),
+      'romance',
+      flatDims(romanceKeys, 55)
+    );
+    expect(typical.scoreBand).toBe('mid');
+    expect(typical.score).toBeGreaterThanOrEqual(55);
+    expect(typical.score).toBeLessThan(75);
+  });
+
+  it('强匹配（底分 75 / 六维 85）落高带', () => {
+    const strong = computeRelationFeelScore(
+      makeFacts({ score: 75 }),
+      'romance',
+      flatDims(romanceKeys, 85)
+    );
+    expect(strong.scoreBand).toBe('high');
+    expect(strong.score).toBeGreaterThanOrEqual(75);
+  });
+
+  it('弱匹配（底分 35 / 六维 35）落低带', () => {
+    const weak = computeRelationFeelScore(
+      makeFacts({ score: 35 }),
+      'romance',
+      flatDims(romanceKeys, 35)
+    );
+    expect(weak.scoreBand).toBe('low');
+    expect(weak.score).toBeLessThan(55);
+  });
+
+  it('dimAverage 返回展示口径值，与主分一致', () => {
+    const feel = computeRelationFeelScore(
+      makeFacts(),
+      'partnership',
+      flatDims(['alignment', 'decision', 'execution', 'feedback', 'risk', 'credit'], 66)
+    );
+    expect(feel.dimAverage).not.toBeNull();
+    expect(feel.dimAverage!).toBeGreaterThanOrEqual(55);
+    expect(feel.dimAverage!).toBeLessThanOrEqual(90);
   });
 });

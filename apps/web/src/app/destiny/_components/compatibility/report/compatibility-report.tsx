@@ -13,7 +13,7 @@ import {
   RELATION_OPTIONS,
   SCORE_BAND_COPY,
 } from '../constants';
-import { computeRelationFeelScore } from '../score';
+import { computeRelationFeelScore, calibrateScore } from '../score';
 import type { CompatibilityReport, RelationType } from '../types';
 import { CompatibilityShareEntry } from '../share/compatibility-share-entry';
 import { reportBarClass } from './shared';
@@ -131,7 +131,7 @@ export function CompatibilityReportView({
         band,
         scoreBand: feel.scoreBand,
         scoreShown,
-        baseScore: facts.score,
+        baseScore: calibrateScore(facts.score),
         partnerLabel,
         whyOpen,
         onToggleWhy: handleToggleWhy,

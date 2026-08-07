@@ -83,15 +83,15 @@ export const RELATION_LABEL: Record<RelationType, string> = {
 export const SCORE_BAND_COPY = {
   high: {
     title: '默契基础较好',
-    hint: '有自然顺畅之处，仍需把差异说清。',
+    hint: '结构契合点较多，属于少见的高契合组合；把差异说清会更稳。',
   },
   mid: {
     title: '互补可经营',
-    hint: '有吸引也有节奏差异，建议优先解决高频摩擦。',
+    hint: '大多数组合都落在这个区间，关系需要经营而非契合度差；有吸引也有节奏差异，建议优先解决高频摩擦。',
   },
   low: {
     title: '差异值得被看见',
-    hint: '需要更多协商与边界，这不是关系好坏的判定。',
+    hint: '需要更多协商与边界，这不代表关系注定不好，只是要多用点心。',
   },
 } as const;
 
