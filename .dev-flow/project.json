@@ -1,43 +1,18 @@
 {
-  "enforcement": {
-    "gitWriteRequiresLogicComplete": true,
-    "mode": "strict",
-    "oneActiveFeature": true,
-    "requireExplicitHumanReply": true
-  },
-  "protectedRoots": [
-    "apps/web/src",
-    "apps/web/e2e",
-    "apps/worker/src",
-    "packages/shared",
-    "packages/providers",
-    "packages/db",
-    "packages/queue",
-    "packages/storage",
-    "packages/logger",
-    "packages/config-eslint",
-    "packages/config-typescript",
-    "infra/docker",
-    "infra/worker-rtasr",
-    "tooling/scripts",
-    "scripts",
-    "migrations"
-  ],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "verification": {
-    "behaviorCommands": [
-      "unit",
-      "lint",
-      "typecheck"
-    ],
     "commands": [
       {
         "args": [
-          "test"
+          "typecheck"
         ],
         "command": "pnpm",
         "cwd": ".",
-        "id": "unit"
+        "id": "typecheck",
+        "provides": [
+          "targeted",
+          "behavior"
+        ]
       },
       {
         "args": [
@@ -45,32 +20,43 @@
         ],
         "command": "pnpm",
         "cwd": ".",
-        "id": "lint"
+        "id": "lint",
+        "provides": [
+          "targeted"
+        ]
       },
       {
         "args": [
-          "typecheck"
+          "test"
         ],
         "command": "pnpm",
         "cwd": ".",
-        "id": "typecheck"
-      },
-      {
-        "args": [
-          "build"
-        ],
-        "command": "pnpm",
-        "cwd": ".",
-        "id": "build"
-      },
-      {
-        "args": [
-          "test:e2e"
-        ],
-        "command": "pnpm",
-        "cwd": ".",
-        "id": "e2e"
+        "id": "test",
+        "provides": [
+          "behavior",
+          "integration",
+          "full"
+        ]
       }
+    ],
+    "preflightCommands": [
+      "typecheck"
     ]
-  }
+  },
+  "enforcement": {
+    "gitWriteRequiresLogicComplete": true,
+    "mode": "strict",
+    "oneActiveFeature": true,
+    "requireExplicitHumanReply": true
+  },
+  "governedRoots": [
+    "apps",
+    "packages",
+    "docs",
+    "infra",
+    "tooling",
+    "migrations",
+    "scripts",
+    "CONTEXT.md"
+  ]
 }

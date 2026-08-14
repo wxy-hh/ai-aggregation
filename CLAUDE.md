@@ -410,3 +410,63 @@ Issues 与 specs 以 Markdown 文件形式存放在 `.scratch/<feature-slug>/` �
 ### Domain docs
 
 单上下文布局：根目录 `CONTEXT.md` + `docs/adr/`。参见 `docs/agents/domain.md`。
+
+## Dev Flow 路线独立审计
+
+完成主任务的同时，你兼任 Dev Flow 流程审计员。审计目标是流程完整性，不是代码正确性。
+
+### 审计基准
+
+- 预期路线来自 `dev_flow_status`（currentStage）与 `dev_flow_inspect classification`（orderedRoute、level）。
+- 若 feature 未启动或 status 不可用，立即说明并停止声称流程合规。
+
+### 触发时机（任一即核对）
+
+1. 每次调用 dev-flow MCP 工具后。
+2. 每次阶段切换前（进入 code_review / verification / finalize 之前必查）。
+3. 用户要求进入下一阶段时，先核对上一阶段义务是否完成。
+
+### 核对方式
+
+以 `dev_flow_status` 的真实返回为准，逐项比对 orderedRoute：有无漏步、跳步、提前进入后置阶段，以及「未调用对应工具却声称完成」的情况。
+
+### 记录
+
+每次发现偏差，**立即**追加一条到 `devflow-issues/audit-log.md`：
+`[时间] 期望:X | 实际:Y | 类型:漏步/跳步/顺序错误/伪造完成 | 证据:<工具返回>`
+无偏差不写「无偏差」，避免噪音。
+
+### 总结
+
+feature 结束时在 `audit-log.md` 末尾输出「路线符合性总结」。
+
+## Dev Flow 优化落地审计
+
+新需求进行中，同步核对 `dev-flow/docs/优化清单.md` 的优化点是否在当前 dev-flow 版本落地。核验以实际工具行为为准（观察调用返回与状态），不以文档声明为准。表中「已解决判据」即落地时应呈现的信号；未落地按下方格式记入 `devflow-issues/audit-log.md`。
+
+### 核对清单
+
+| #   | 优化点                  | 已解决判据（核验信号）                                                                                                                                         |
+| --- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | grill 对抗性检查        | grill 提问附带「不选推荐的最强理由」（反向论证）；选项互斥且覆盖主要分支；推荐可被合理反驳                                                                     |
+| 2   | 显式决策修订            | 落账后改主意走显式 supersede（记录原因+来源事件+替代引用），非隐式另记并存结论；修订按语义 basis 精确失效下游证据                                              |
+| 3   | 决策批量合并            | 明确不做——仍保持一次一个互斥决策（不核验）                                                                                                                     |
+| 4   | planning TDD 豁免       | 每个 AC 有验证处置：被 TEST verifies 或全部覆盖 TASK 显式声明 non-behavioral（附理由+证据）；无行为 AC 不靠伪造形式 TEST；requirements-coverage 核验豁免合理性 |
+| 5   | planning 预检 dry-run   | 登记前有零副作用只读校验；一次聚合返回全部错误（非级联）；失败不留孤儿快照                                                                                     |
+| 6   | DAG 修订与并行          | 静态 DAG 保留；无依赖 RU 可并行激活；局部修订只失效受影响下游单元，checkpointed 且无关单元保留                                                                 |
+| 7   | plan_review attestation | attestation 绑定可信宿主事件；无法证明独立来源时 assurance 只显示多视角（multi-perspective）                                                                   |
+| 8   | unknown diff 诊断       | 全量重审触发时记录变更字段清单与未落入任何角色切片的字段，可经 inspect/审计查看                                                                                |
+| 9   | code review 记账与双轴  | blocking 修复有结构化记账（blocking 列表+修复引用）且 record_step 核对；full 深度分「实现质量+需求忠实度」双轴分离报告；固定审查基线                           |
+| 10  | verification 信任与修复 | browser/code-path-audit 验收绑定可信宿主事件（或明确降级标记）；验证期修改 governed 文件使 code_review 失效或回 implementation；命令超时可配置且超时≠失败      |
+| 11  | quality exception 时效  | finalize 校验 exception.fingerprint 与当前工作区一致，漂移即 stale 并重新呈现                                                                                  |
+| 12  | record_decision 弱绑定  | 决策记录携带匹配 eventId/事件文本/时间；conclusion 引用用户原话                                                                                                |
+| 13  | route-confirmation 配置 | 不绑整份配置；确认时独立检查路线能否执行（ADR-0015）                                                                                                           |
+| 14  | inspect 与门禁一致      | inspect 显示的 review blocking 与 record_step 实际判定一致（同源计算）                                                                                         |
+| 15  | excluded 路径报告       | finalize 交付报告列出 excluded 且内容仍变化的路径（提示不阻塞）                                                                                                |
+| 16  | 宿主授权时效            | 破坏性命令每次危险执行重新确认，不做长期自动放行（ADR-0004）                                                                                                   |
+| 17  | 轴/角色级重跑           | 已知未落地（记录为方向）；当前整步骤重开属保守正确，不作为缺陷上报                                                                                             |
+
+### 记录
+
+优化点未落地时记入 `devflow-issues/audit-log.md`：
+`[时间] 优化项:#N | 期望:<已解决判据> | 实际:<观察到的行为> | 类型:优化未落地 | 证据:<工具返回>`
