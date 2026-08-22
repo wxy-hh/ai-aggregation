@@ -5,6 +5,8 @@ import type { NextConfig } from 'next';
 import { PrismaPlugin } from '@prisma/nextjs-monorepo-workaround-plugin';
 
 const nextConfig: NextConfig = {
+  // Docker 部署时使用 standalone 输出，大幅减小产物体积
+  output: 'standalone',
   transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger'],
   // 避免 Next 打包 Prisma，确保 Query Engine 原生二进制在 Vercel 运行时可用
   serverExternalPackages: ['@prisma/client', 'prisma'],
