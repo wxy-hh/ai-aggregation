@@ -62,7 +62,7 @@ export interface DestinyHistoryItem extends BaseHistoryItem {
   model: string;
   formData: Record<string, unknown>;
   reportData: Record<string, unknown> | null;
-  profileSummary: {
+  profileSummary?: {
     name: string;
     gender: string;
     birthDate: string;

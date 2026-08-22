@@ -1,6 +1,20 @@
 import { z } from 'zod';
 import { mergeDecadeFortuneInsights, type BaziChartBasis } from '@repo/shared';
 import {
+  RequireCoreToneSchema,
+  RequireModuleSchema,
+  RequireProfileSchema,
+  RequireTenGodDomainSchema,
+  RequireTimelineItemSchema,
+  PillarSchema,
+  ElementSchema,
+  TenGodSchema,
+  LifeDimensionHighlightsSchema,
+  LifeDimensionSchema,
+  PatternInsightSchema,
+  BalanceInsightSchema,
+} from './destiny-domain-schema';
+import {
   buildDecadeFortuneInsights,
   fillDecadeFortuneInsightFallbacks,
 } from '@/lib/destiny/decade-fortune-insight';
@@ -77,76 +91,20 @@ const recoverableSectionKeys = new Set<RecoverableBaziSectionKey>([
   'timeline',
 ]);
 
-const ProfileSectionSchema = z.object({
-  name: z.string().trim().min(1),
-  genderLabel: z.string().trim().min(1),
-  birthText: z.string().trim().min(1),
-  locationText: z.string().trim().min(1),
-  lunarText: z.string().trim().min(1).optional(),
-});
+const ProfileSectionSchema = RequireProfileSchema;
 
-const CoreToneSectionSchema = z.object({
-  tag: z.string().trim().min(1).optional(),
-  chartSummary: z.string().trim().min(1).optional(),
-  headline: z.string().trim().min(1),
-  description: z.string().trim().min(1),
-});
-
-const PillarSchema = z.object({
-  stem: z.string().trim().min(1),
-  branch: z.string().trim().min(1),
-  label: z.string().trim().min(1),
-  element: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
-  tooltip: z.string().trim().min(1),
-});
+const CoreToneSectionSchema = RequireCoreToneSchema;
 
 const PillarCommentarySchema = z.object({
   label: z.string().trim().min(1),
   tooltip: z.string().trim().min(1),
 });
 
-const BalanceInsightSchema = z.object({
-  title: z.string().trim().min(1),
-  value: z.string().trim().min(1),
-  tooltip: z.string().trim().min(1),
-});
-
-const PatternInsightSchema = z.object({
-  label: z.string().trim().min(1),
-  tooltip: z.string().trim().min(1),
-});
-
-const LifeDimensionSchema = z.object({
-  key: z.enum(['career', 'wealth', 'health', 'love', 'wisdom']),
-  label: z.string().trim().min(1).optional(),
-  value: z.number(),
-  summary: z.string().trim().min(1).optional(),
-});
-
-const LifeDimensionHighlightsSchema = z.object({
-  strength: z.string().trim().min(1),
-  caution: z.string().trim().min(1),
-});
-
-const TenGodDomainSchema = z.object({
-  key: z.enum(['self', 'expression', 'wealth', 'order', 'resource']),
-  label: z.string().trim().min(1),
-  technicalLabel: z.string().trim().min(1),
-  value: z.number(),
-  description: z.string().trim().min(1),
-  positive: z.string().trim().optional(),
-  negative: z.string().trim().optional(),
-});
+const TenGodDomainSchema = RequireTenGodDomainSchema;
 
 const ElementsAndTenGodsCoreSectionSchema = z.object({
   elements: z
-    .array(
-      z.object({
-        key: z.enum(['metal', 'wood', 'water', 'fire', 'earth']),
-        label: z.string().trim().min(1).optional(),
-        value: z.number(),
-      })
-    )
+    .array(ElementSchema)
     .length(5)
     .superRefine((items, ctx) => {
       const keys = new Set(items.map((item) => item.key));
@@ -169,28 +127,9 @@ const ElementsAndTenGodsCoreSectionSchema = z.object({
     .length(4),
 });
 
-const ModuleSectionSchema = z.object({
-  title: z.string().trim().min(1),
-  summary: z.string().trim().min(1),
-  advantages: z.array(z.string().trim().min(1)).max(3).optional(),
-  suggestions: z.array(z.string().trim().min(1)).max(3).optional(),
-  bullets: z.array(z.string().trim().min(1)).max(4).optional(),
-});
+const ModuleSectionSchema = RequireModuleSchema({ withBulletsMax: 4 });
 
-const TimelineSectionSchema = z
-  .array(
-    z.object({
-      year: z.number().optional(),
-      title: z.string().trim().min(1),
-      summary: z.string().trim().min(1),
-      detail: z.object({
-        opportunities: z.array(z.string().trim()).default([]),
-        risks: z.array(z.string().trim()).default([]),
-        actions: z.array(z.string().trim()).default([]),
-      }).default({ opportunities: [], risks: [], actions: [] }),
-    })
-  )
-  .min(1);
+const TimelineSectionSchema = RequireTimelineItemSchema({ withMinLength: 1 });
 
 export type BaziSectionParseResult<K extends BaziSectionKey> = {
   payload: BaziSectionPayloadMap[K];

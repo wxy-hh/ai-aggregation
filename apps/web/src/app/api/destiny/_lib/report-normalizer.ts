@@ -1,5 +1,22 @@
 import { z } from 'zod';
 import type { BaziChartBasis } from '@repo/shared';
+import {
+  ProfileSchema,
+  CoreToneSchema,
+  BalanceInsightSchema,
+  PatternInsightSchema,
+  LifeDimensionSchema,
+  LifeDimensionHighlightsSchema,
+  TenGodDomainSchema,
+  PillarSchema,
+  ElementSchema,
+  TenGodSchema,
+  ModuleSchema,
+  TimelineItemSchema,
+  fiveElementTuple,
+  lifeDimensionTuple,
+  tenGodDomainTuple,
+} from './destiny-domain-schema';
 import type {
   DestinyCoreTone,
   DestinyLifeDimension,
@@ -16,102 +33,9 @@ import type {
   ZiweiPalace,
 } from '@/app/destiny/_components/types';
 
-const fiveElementTuple = ['metal', 'wood', 'water', 'fire', 'earth'] as const;
 const fiveElementOrder: FiveElementKey[] = [...fiveElementTuple];
-const lifeDimensionTuple = ['career', 'wealth', 'health', 'love', 'wisdom'] as const;
 const lifeDimensionOrder: LifeDimensionKey[] = [...lifeDimensionTuple];
-const tenGodDomainTuple = ['self', 'expression', 'wealth', 'order', 'resource'] as const;
 const tenGodDomainOrder: TenGodDomainKey[] = [...tenGodDomainTuple];
-
-const ProfileSchema = z.object({
-  name: z.string().min(1).optional(),
-  genderLabel: z.string().min(1).optional(),
-  birthText: z.string().min(1).optional(),
-  lunarText: z.string().min(1).optional(),
-  locationText: z.string().min(1).optional(),
-});
-
-const CoreToneSchema = z.object({
-  tag: z.string().optional(),
-  chartSummary: z.string().optional(),
-  headline: z.string().optional(),
-  description: z.string().optional(),
-});
-
-const BalanceInsightSchema = z.object({
-  title: z.string().min(1).optional(),
-  value: z.string().min(1).optional(),
-  tooltip: z.string().min(1).optional(),
-});
-
-const PatternInsightSchema = z.object({
-  label: z.string().min(1),
-  tooltip: z.string().min(1),
-});
-
-const LifeDimensionSchema = z.object({
-  key: z.enum(lifeDimensionTuple),
-  label: z.string().min(1).optional(),
-  value: z.number(),
-  summary: z.string().min(1).optional(),
-});
-
-const LifeDimensionHighlightsSchema = z.object({
-  strength: z.string().min(1).optional(),
-  caution: z.string().min(1).optional(),
-});
-
-const TenGodDomainSchema = z.object({
-  key: z.enum(tenGodDomainTuple),
-  label: z.string().min(1).optional(),
-  technicalLabel: z.string().min(1).optional(),
-  value: z.number(),
-  description: z.string().min(1).optional(),
-  positive: z.string().min(1).optional(),
-  negative: z.string().min(1).optional(),
-});
-
-const PillarSchema = z.object({
-  stem: z.string().min(1),
-  branch: z.string().min(1),
-  label: z.string().min(1),
-  element: z.enum(fiveElementTuple),
-  tooltip: z.string().min(1),
-});
-
-const ElementSchema = z.object({
-  key: z.enum(fiveElementTuple),
-  label: z.string().min(1).optional(),
-  value: z.number(),
-});
-
-const TenGodSchema = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  value: z.number(),
-  tooltip: z.string().min(1).optional(),
-});
-
-const ModuleSchema = z.object({
-  title: z.string(),
-  summary: z.string(),
-  advantages: z.array(z.string()).optional(),
-  suggestions: z.array(z.string()).optional(),
-  bullets: z.array(z.string()).optional(),
-});
-
-const TimelineItemSchema = z.object({
-  year: z.number().optional(),
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  detail: z
-    .object({
-      opportunities: z.array(z.string()).optional(),
-      risks: z.array(z.string()).optional(),
-      actions: z.array(z.string()).optional(),
-    })
-    .optional(),
-});
 
 const ZiweiPalaceSchema = z.object({
   key: z.string().min(1),

@@ -11,6 +11,7 @@ import {
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { encodeSseEvent, SSE_HEADERS } from '@/lib/utils/sse';
 import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
 import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
@@ -139,15 +140,6 @@ const RequestSchema = z.object({
 });
 
 const COPILOT_TIMEOUT_MS = 55000;
-const SSE_HEADERS = {
-  'Content-Type': 'text/event-stream; charset=utf-8',
-  'Cache-Control': 'no-cache, no-transform',
-  Connection: 'keep-alive',
-};
-
-function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
-}
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {

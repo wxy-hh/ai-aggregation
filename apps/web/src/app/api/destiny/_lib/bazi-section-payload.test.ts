@@ -56,7 +56,7 @@ describe('parseBaziSectionPayload', () => {
     expect(result.recovery).toBe('none');
     expect(result.payload.elements).toHaveLength(5);
     expect(result.payload.tenGods).toHaveLength(4);
-    expect(result.payload.balanceInsight).toEqual({ title: '', value: '', tooltip: '' });
+    expect(result.payload.balanceInsight).toEqual({ title: '命局偏强', value: '', tooltip: '' });
     expect(result.payload.patternHighlights).toEqual([]);
     expect(result.payload.lifeDimensionHighlights).toBeUndefined();
     expect(result.payload.tenGodDomains).toBeUndefined();

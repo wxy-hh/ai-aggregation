@@ -6,6 +6,7 @@ import { PersonalityIcon } from './icons/personality-icon';
 import { useShallow } from 'zustand/react/shallow';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { authFetch } from '@/lib/api/client';
+import { consumeSse, readSseErrorMessage } from '@/lib/utils/sse-client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -148,46 +149,6 @@ function displayError(kind: ZiweiErrorKind, fallback?: string): string {
     default:
       return '系统异常：紫微斗数分析失败，请稍后重试。';
   }
-}
-
-// ─── 流式解析 ───
-
-function parseStreamBlock(block: string): ZiweiStreamEvent | null {
-  const data = block
-    .split('\n')
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => line.slice(6))
-    .join('\n')
-    .trim();
-  if (!data) return null;
-  return JSON.parse(data) as ZiweiStreamEvent;
-}
-
-async function consumeStream(response: Response, onEvent: (event: ZiweiStreamEvent) => void) {
-  if (!response.body) throw new Error('响应体为空');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    let idx = buffer.indexOf('\n\n');
-    while (idx !== -1) {
-      const block = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 2);
-      const event = block ? parseStreamBlock(block) : null;
-      if (event) onEvent(event);
-      idx = buffer.indexOf('\n\n');
-    }
-  }
-
-  const tail = `${buffer}${decoder.decode()}`.trim();
-  const event = tail ? parseStreamBlock(tail) : null;
-  if (event) onEvent(event);
 }
 
 // ─── 主组件 ───
@@ -354,17 +315,14 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
 
       if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
-        const errText = await response
-          .json()
-          .then((j) => j?.error)
-          .catch(() => undefined);
+        const errText = await readSseErrorMessage(response);
         throw new Error(displayError(currentErrorKind, errText));
       }
 
       const receivedSections: ZiweiLockedSections = {};
       let sawComplete = false;
 
-      await consumeStream(response, (event) => {
+      await consumeSse<ZiweiStreamEvent>(response, { onEvent: (event) => {
         if (event.type === 'status') {
           setWorkspaceState('ziwei', { streamStatus: event.status });
           return;
@@ -449,7 +407,7 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
         if (event.type === 'error') {
           throw new Error(event.error);
         }
-      });
+      }});
 
       if (!sawComplete) {
         setWorkspaceState('ziwei', {
