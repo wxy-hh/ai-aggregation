@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { authFetch } from '@/lib/api/client';
+import { consumeSse, readSseErrorMessage } from '@/lib/utils/sse-client';
 import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
@@ -459,54 +460,6 @@ export function BaziWorkspace({
   const hasAnyDisplayableSection = (sections: BaziLockedSections) =>
     Object.keys(sections).length > 0;
 
-  const parseStreamBlock = (block: string, onEvent: (event: BaziStreamEvent) => void) => {
-    const data = block
-      .split('\n')
-      .filter((line) => line.startsWith('data: '))
-      .map((line) => line.slice(6))
-      .join('\n')
-      .trim();
-
-    if (!data) return;
-    onEvent(JSON.parse(data) as BaziStreamEvent);
-  };
-
-  const consumeStream = async (response: Response, onEvent: (event: BaziStreamEvent) => void) => {
-    if (!response.body) throw new Error('响应体为空');
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      let separatorIndex = buffer.indexOf('\n\n');
-      while (separatorIndex !== -1) {
-        const block = buffer.slice(0, separatorIndex).trim();
-        buffer = buffer.slice(separatorIndex + 2);
-        if (block) parseStreamBlock(block, onEvent);
-        separatorIndex = buffer.indexOf('\n\n');
-      }
-    }
-
-    const tail = `${buffer}${decoder.decode()}`.trim();
-    if (tail) {
-      parseStreamBlock(tail, onEvent);
-    }
-  };
-
-  const readErrorMessage = async (response: Response) => {
-    try {
-      const json = (await response.json()) as { error?: string };
-      return json.error;
-    } catch {
-      return undefined;
-    }
-  };
-
   const submit = async () => {
     const errors = validateForm(formData);
     setWorkspaceState('bazi', { fieldErrors: errors });
@@ -558,13 +511,13 @@ export function BaziWorkspace({
       if (!response.ok) {
         currentErrorKind = classifyResponseError(response.status);
         setWorkspaceState('bazi', { errorKind: currentErrorKind });
-        throw new Error(toDisplayError(currentErrorKind, await readErrorMessage(response)));
+        throw new Error(toDisplayError(currentErrorKind, await readSseErrorMessage(response)));
       }
 
       const receivedSections: BaziLockedSections = {};
       let sawComplete = false;
 
-      await consumeStream(response, (event) => {
+      await consumeSse<BaziStreamEvent>(response, { onEvent: (event) => {
         if (event.type === 'status') {
           setWorkspaceState('bazi', { streamStatus: event.status });
           return;
@@ -633,7 +586,7 @@ export function BaziWorkspace({
         if (event.type === 'error') {
           throw new Error(event.error);
         }
-      });
+      }});
 
       if (!sawComplete) {
         throw new Error('分析连接已中断，请稍后重试。');

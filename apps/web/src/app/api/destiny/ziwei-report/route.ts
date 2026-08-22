@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type {
   DestinyModule,
@@ -22,12 +21,17 @@ import {
   ModelUpstreamError,
   type ModelConfig,
 } from '@repo/shared';
-import { withAuth } from '@/lib/api/with-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { encodeSseEvent } from '@/lib/utils/sse';
 import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
 import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
-import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
+import { BillingError } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import {
+  createReportHandler,
+  defaultMapError,
+  type ReportGenerationAdapter,
+} from '../_lib/report-generation';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -181,82 +185,56 @@ function buildGroupSchema(moduleKey: 'love' | 'health') {
 
 // ─── 主入口 ───
 
-export async function POST(req: Request) {
-  return withAuth(req, async (user) => {
+const ZiweiReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
+  requestSchema: RequestSchema,
+
+  async generate(ctx, body) {
+    const parsed = body as z.infer<typeof RequestSchema>;
+
+    let config: ModelConfig;
     try {
-      const body = await req.json();
-      const parsed = RequestSchema.safeParse(body);
-      if (!parsed.success) {
-        return NextResponse.json(
-          {
-            error: '请求参数错误',
-            details: parsed.error.errors.map((item) => ({
-              path: item.path.join('.'),
-              message: item.message,
-            })),
-          },
-          { status: 400 }
-        );
-      }
-
-      let config: ModelConfig;
-      try {
-        config = resolveModelConfig(parsed.data.provider);
-      } catch (error) {
-        if (error instanceof ModelConfigError) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-        throw error;
-      }
-
-      const input: DestinyReportRequest = parsed.data;
-      const currentYear = new Date().getFullYear();
-      const billing =
-        user.role === 'admin'
-          ? null
-          : {
-              userId: user.id,
-              requestId: getBillingRequestId(req, body as Record<string, unknown>),
-            };
-
-      // Step 0: 本地排盘
-      let chartData: ZiweiChartData;
-      try {
-        chartData = computeZiweiChart(input);
-      } catch (chartError) {
-        return NextResponse.json(
-          {
-            error: `排盘计算失败：${chartError instanceof Error ? chartError.message : '未知错误'}`,
-          },
-          { status: 422 }
-        );
-      }
-
-      const stream = createZiweiStream({
-        input,
-        currentYear,
-        config,
-        userId: user.id,
-        billing,
-        chartData,
-      });
-
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-        },
-      });
+      config = resolveModelConfig(parsed.provider);
     } catch (error) {
-      if (error instanceof BillingError) return billingErrorResponse(error);
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : '测算失败，请稍后重试' },
-        { status: 500 }
+      if (error instanceof ModelConfigError) {
+        throw new Error(error.message);
+      }
+      throw error;
+    }
+
+    const input: DestinyReportRequest = parsed;
+    const currentYear = new Date().getFullYear();
+    const billing =
+      ctx.user.role === 'admin'
+        ? null
+        : {
+            userId: ctx.user.id,
+            requestId: getBillingRequestId(ctx.req, body as Record<string, unknown>),
+          };
+
+    // Step 0: 本地排盘
+    let chartData: ZiweiChartData;
+    try {
+      chartData = computeZiweiChart(input);
+    } catch (chartError) {
+      throw new Error(
+        `排盘计算失败：${chartError instanceof Error ? chartError.message : '未知错误'}`
       );
     }
-  });
-}
+
+    return createZiweiStream({
+      input,
+      currentYear,
+      config,
+      userId: ctx.user.id,
+      billing,
+      chartData,
+    });
+  },
+
+  mapError: defaultMapError,
+};
+
+export const POST = createReportHandler(ZiweiReportAdapter);
 
 // ─── SSE 流 ───
 
@@ -275,8 +253,6 @@ function createZiweiStream({
   billing: ZiweiBillingContext | null;
   chartData: ZiweiChartData;
 }) {
-  const encoder = new TextEncoder();
-
   return new ReadableStream({
     async start(controller) {
       const emittedSections = new Set<ZiweiSectionKey>();
@@ -286,7 +262,7 @@ function createZiweiStream({
 
       const send = (event: ZiweiStreamEvent) => {
         if (closed) return;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
       };
 
       try {

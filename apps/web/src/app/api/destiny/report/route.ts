@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
   buildBaziPromptPayload,
@@ -26,12 +25,16 @@ import {
 } from '../_lib/bazi-section-payload';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { BAZI_REPORT_JSON_SCHEMA } from '../_lib/bazi-json-schema';
-import { withAuth } from '@/lib/api/with-auth';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { encodeSseEvent } from '@/lib/utils/sse';
 import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
 import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
-import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import {
+  createReportHandler,
+  defaultMapError,
+  type ReportGenerationAdapter,
+} from '../_lib/report-generation';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -73,42 +76,31 @@ class UpstreamModelError extends Error {
   }
 }
 
-export async function POST(req: Request) {
-  return withAuth(req, async (user) => {
-    let reservation: { id: string } | null = null;
-    try {
-      const body = await req.json();
-      const parsed = RequestSchema.safeParse(body);
-      if (!parsed.success) {
-        return NextResponse.json(
-          {
-            error: '请求参数错误',
-            details: parsed.error.errors.map((item) => ({
-              path: item.path.join('.'),
-              message: item.message,
-            })),
-          },
-          { status: 400 }
-        );
-      }
+const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
+  requestSchema: RequestSchema,
 
+  async generate(ctx, body) {
+    const parsed = body as z.infer<typeof RequestSchema>;
+    let reservation: { id: string } | null = null;
+
+    try {
       let config: ModelConfig;
       try {
-        config = resolveModelConfig(parsed.data.provider);
+        config = resolveModelConfig(parsed.provider);
       } catch (error) {
         if (error instanceof ModelConfigError) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
+          throw new Error(error.message);
         }
         throw error;
       }
 
       const input: DestinyReportRequest = {
-        name: parsed.data.name,
-        gender: parsed.data.gender,
-        calendarType: parsed.data.calendarType,
-        birthDate: parsed.data.birthDate,
-        birthTime: parsed.data.birthTime,
-        location: parsed.data.location,
+        name: parsed.name,
+        gender: parsed.gender,
+        calendarType: parsed.calendarType,
+        birthDate: parsed.birthDate,
+        birthTime: parsed.birthTime,
+        location: parsed.location,
       };
       const currentYear = new Date().getFullYear();
       const basis = computeBaziChart(input, { referenceYear: currentYear });
@@ -116,12 +108,12 @@ export async function POST(req: Request) {
         { role: 'system' as const, content: buildStreamingSystemPrompt(currentYear) },
         { role: 'user' as const, content: buildUserPrompt(input, basis) },
       ];
-      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
       let inputUnits = 0;
       let outputLimit = REPORT_MAX_OUTPUT_TOKENS;
-      if (user.role !== 'admin') {
+      if (ctx.user.role !== 'admin') {
         const quota = await reserveChatQuota({
-          userId: user.id,
+          userId: ctx.user.id,
           requestId,
           feature: 'destiny',
           provider: config.provider,
@@ -134,25 +126,18 @@ export async function POST(req: Request) {
         inputUnits = quota.inputUnits;
         outputLimit = quota.outputLimit;
       }
-      const stream = createBaziStream({
+
+      return createBaziStream({
         input,
         currentYear,
         config,
-        userId: user.id,
+        userId: ctx.user.id,
         basis,
         messages,
         reservationId: reservation?.id,
         requestId,
         inputUnits,
         outputLimit,
-      });
-
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-        },
       });
     } catch (error) {
       if (reservation) {
@@ -162,16 +147,14 @@ export async function POST(req: Request) {
           meterType: 'tokens',
         }).catch((releaseError) => console.error('[destiny/report] 释放额度失败:', releaseError));
       }
-      if (error instanceof BillingError) return billingErrorResponse(error);
-      return NextResponse.json(
-        {
-          error: error instanceof Error ? error.message : '测算失败，请稍后重试',
-        },
-        { status: 500 }
-      );
+      throw error;
     }
-  });
-}
+  },
+
+  mapError: defaultMapError,
+};
+
+export const POST = createReportHandler(BaziReportAdapter);
 
 function createBaziStream({
   input,
@@ -196,12 +179,10 @@ function createBaziStream({
   inputUnits: number;
   outputLimit: number;
 }) {
-  const encoder = new TextEncoder();
-
   return new ReadableStream({
     async start(controller) {
       const send = (event: BaziStreamEvent) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
       };
 
       try {

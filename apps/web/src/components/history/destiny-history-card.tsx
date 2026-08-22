@@ -15,7 +15,10 @@ interface DestinyHistoryCardProps {
   onDelete?: (id: string) => void;
 }
 
-const SUB_TYPE_CONFIG: Record<string, { label: string; icon: typeof baziIcon; colorClass: string }> = {
+const SUB_TYPE_CONFIG: Record<
+  string,
+  { label: string; icon: typeof baziIcon; colorClass: string }
+> = {
   bazi: {
     label: '八字',
     icon: baziIcon,
@@ -70,7 +73,9 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${config.colorClass}`}>
+          <div
+            className={`w-8 h-8 rounded-lg flex items-center justify-center ${config.colorClass}`}
+          >
             <Image src={config.icon} alt={config.label} width={18} height={18} />
           </div>
           <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -82,7 +87,7 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
 
       <div className="flex items-center gap-2 mb-2">
         <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-          {item.profileSummary?.name}
+          {item.profileSummary?.name ?? '未知'}
         </span>
         {item.coreTone && (
           <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40">
@@ -92,7 +97,7 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
       </div>
 
       <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">
-        {item.profileSummary?.gender} · {item.profileSummary?.birthDate}
+        {item.profileSummary?.gender ?? ''} · {item.profileSummary?.birthDate ?? ''}
       </p>
 
       <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">

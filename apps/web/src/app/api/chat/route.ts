@@ -12,6 +12,7 @@ import { getDoubaoIncompleteWarning } from './doubao-warning';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import { encodeSseEvent, SSE_HEADERS, createSseResponse } from '@/lib/utils/sse';
 import {
   reserveChatQuota,
   releaseAiQuota,
@@ -38,24 +39,6 @@ type DoubaoContentPart =
   | { type: 'input_text'; text: string }
   | { type: 'input_image'; image_url: string }
   | { type: 'input_file'; file_id: string };
-
-const sseEncoder = new TextEncoder();
-const SSE_HEADERS = {
-  'Content-Type': 'text/event-stream; charset=utf-8',
-  'Cache-Control': 'no-cache, no-transform',
-  Connection: 'keep-alive',
-  'X-Accel-Buffering': 'no',
-};
-
-function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
-  return sseEncoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function createSseResponse(stream: ReadableStream<Uint8Array>) {
-  return new Response(stream, {
-    headers: SSE_HEADERS,
-  });
-}
 
 function createSseStreamFromTextStream(
   source: ReadableStream<Uint8Array>,
