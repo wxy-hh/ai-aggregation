@@ -31,16 +31,15 @@ ENV NODE_ENV=production
 
 RUN apk add --no-cache libc6-compat
 
+# 复制 node_modules（含 Prisma 引擎）
+# 注意：pnpm 的模块结构导致 .prisma / @prisma 不在顶层 node_modules，
+# 必须复制整个 node_modules 才能保证 Prisma 运行时引擎可用
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/packages ./packages
 COPY --from=base /app/apps/worker/dist ./apps/worker/dist
 COPY --from=base /app/apps/worker/package.json ./apps/worker/
 COPY --from=base /app/pnpm-lock.yaml ./
 COPY --from=base /app/package.json ./
-
-# Prisma 引擎二进制
-COPY --from=base /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=base /app/node_modules/@prisma ./node_modules/@prisma
 
 EXPOSE 3001
 

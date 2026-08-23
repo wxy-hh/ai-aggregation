@@ -556,7 +556,7 @@ openssl rand -hex 32
 
 | 文档 | 内容 |
 |------|------|
-| `DEPLOYMENT.md` | 本文：生产部署权威说明 |
+| `DEPLOYMENT.md` | 本文：生产部署权威说明（含 Vercel + Docker 自部署） |
 | `apps/worker/DEPLOY.md` | BullMQ Worker 部署 |
 | `docs/voice-realtime-setup.md` | 实时语音本地与生产 |
 | `docs/quick-start-cloud.md` | 本地用免费云服务开发 |
@@ -573,6 +573,535 @@ openssl rand -hex 32
 | 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres |
 | 2026-07-24 | 环境变量 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT |
 | 2026-07-24 | Cloudflare | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续 |
+| 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33） | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书 |
 
-生产地址：https://ai-aggregation-web.vercel.app  
+Vercel 生产地址：https://ai-aggregation-web.vercel.app
+Docker 生产地址：https://www.chunfen.ink  
 Vercel 项目：https://vercel.com/weixiaoyus-projects/ai-aggregation-web
+---
+
+## 14. Docker 自部署（腾讯云 / 自建服务器）
+
+> 适用于将项目部署到自有 Linux 服务器（腾讯云轻量、阿里云 ECS 等），使用 Docker Compose 运行全部服务。
+
+### 14.1 架构概览
+
+```
+用户浏览器
+    │
+    ▼ HTTPS (443)
+┌──────────────┐
+│  Nginx       │  SSL 终止 + 反向代理
+│  (ai-nginx)  │
+└──────┬───────┘
+       │ HTTP (3000)
+┌──────▼───────┐
+│  Web         │  Next.js standalone
+│  (ai-web)    │
+└──┬───────┬───┘
+   │       │
+   ▼       ▼
+┌──────┐ ┌──────┐
+│ PG   │ │Redis │
+└──────┘ └──────┘
+```
+
+### 14.2 服务器要求
+
+| 项目 | 最低要求 | 推荐 |
+|------|----------|------|
+| 操作系统 | Ubuntu 22.04+ | Ubuntu 24.04 LTS |
+| CPU | 2 核 | 4 核 |
+| 内存 | 2 GB | 4 GB |
+| 磁盘 | 20 GB | 40 GB+（Docker 镜像较大） |
+| 网络 | 开放 80、443、22 端口 | — |
+
+### 14.3 服务器初始化（首次）
+
+#### 1）安装 Docker
+
+```bash
+# 安装 Docker
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+# 重新登录生效，或执行 newgrp docker
+
+# 验证
+docker --version          # Docker version 24+
+docker compose version    # Docker Compose v2+
+```
+
+#### 2）安装 Node.js（仅用于数据库迁移）
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 安装 pnpm
+sudo npm install -g pnpm@10
+```
+
+#### 3）停止系统自带 Nginx（如有）
+
+```bash
+sudo systemctl stop nginx
+sudo systemctl disable nginx
+```
+
+### 14.4 上传代码到服务器
+
+#### 方式 A：通过 Git 拉取（推荐）
+
+```bash
+ssh ubuntu@<服务器IP>
+cd ~
+git clone https://gitee.com/bit-xiaoyu/ai-aggregation.git
+# 或
+git clone https://github.com/wxy-hh/ai-aggregation.git
+```
+
+#### 方式 B：打包上传
+
+```bash
+# 本地打包（排除无关文件）
+cd /path/to/ai-aggregation
+tar -czf /tmp/ai-aggregation-deploy.tar.gz \
+  --exclude='node_modules' \
+  --exclude='.next' \
+  --exclude='.turbo' \
+  --exclude='.git' \
+  --exclude='.codegraph' \
+  .
+
+# 上传到服务器
+scp /tmp/ai-aggregation-deploy.tar.gz ubuntu@<服务器IP>:~/
+
+# 服务器上解压
+ssh ubuntu@<服务器IP>
+cd ~
+mkdir -p ai-aggregation && cd ai-aggregation
+tar -xzf ~/ai-aggregation-deploy.tar.gz
+```
+
+### 14.5 配置环境变量
+
+```bash
+cd ~/ai-aggregation/infra/docker
+cp .env.prod.example .env.prod
+vim .env.prod
+```
+
+**必须修改的字段：**
+
+```bash
+# ---------- 数据库 ----------
+DATABASE_URL="postgresql://postgres:postgres@ai-aggregation-postgres:5432/ai_aggregation"
+
+# ---------- Redis ----------
+REDIS_HOST="ai-aggregation-redis"
+REDIS_PORT="6379"
+REDIS_PASSWORD=""
+
+# ---------- 应用地址（改为你的域名）----------
+NEXTAUTH_URL="https://www.your-domain.com"
+NEXT_PUBLIC_APP_URL="https://www.your-domain.com"
+
+# ---------- 安全密钥（务必修改默认值）----------
+AUTH_SECRET="$(openssl rand -hex 32)"
+ANONYMOUS_DEVICE_SALT="$(openssl rand -hex 16)"
+
+# ---------- AI 服务商 Key（按需填写）----------
+# 豆包（命理分析主力）
+ARK_API_KEY="你的火山方舟 Key"
+ARK_MODEL="doubao-seed-2-0-lite-260428"
+ARK_DESTINY_MODEL="doubao-seed-2-1-pro-260628"
+
+# DeepSeek（命理备选，Key 存在 DEEPSEEK_MODEL 变量中）
+DEEPSEEK_MODEL="sk-xxxxxxxx"
+
+# 讯飞（语音转写）
+XUNFEI_API_KEY="你的讯飞 Key"
+XUNFEI_API_SECRET="你的讯飞 Secret"
+XUNFEI_APP_ID="你的讯飞 App ID"
+XUNFEI_API_PASSWORD="你的讯飞密码"
+
+# 硅基流动（语音模型）
+SILICONFLOW_API_KEY="你的硅基流动 Key"
+```
+
+> **注意**：数据库和 Redis 的地址使用 Docker 容器名（`ai-aggregation-postgres`、`ai-aggregation-redis`），不是 `127.0.0.1`。容器间通过 Docker 网络通信。
+
+### 14.6 首次部署
+
+```bash
+cd ~/ai-aggregation/infra/docker
+
+# 1. 启动基础设施（PostgreSQL + Redis）
+docker compose up -d postgres redis
+
+# 2. 等待数据库就绪（约 10 秒）
+sleep 10
+
+# 3. 执行数据库迁移
+cd ~/ai-aggregation
+pnpm install --frozen-lockfile
+pnpm db:generate
+pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
+
+# 4. 回到 docker 目录构建并启动
+cd infra/docker
+
+# 构建镜像（首次约 10-15 分钟，后续有缓存会快很多）
+docker compose -f docker-compose.prod.yml build
+
+# 启动全部服务
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### 14.7 配置 SSL 证书（HTTPS）
+
+#### 1）申请证书
+
+```bash
+# 安装 certbot
+sudo apt-get update && sudo apt-get install -y certbot
+
+# 先停止占用 80 端口的服务
+docker stop ai-nginx
+
+# 申请证书（替换为你的域名）
+sudo certbot certonly --standalone \
+  -d www.your-domain.com \
+  --non-interactive \
+  --agree-tos \
+  --email admin@your-domain.com
+
+# 证书文件位置
+# /etc/letsencrypt/live/www.your-domain.com/fullchain.pem
+# /etc/letsencrypt/live/www.your-domain.com/privkey.pem
+```
+
+#### 2）将证书复制到 Docker 可访问的位置
+
+```bash
+cd ~/ai-aggregation/infra/docker
+
+# 创建目录并复制证书
+sudo mkdir -p certbot/conf/live/www.your-domain.com
+sudo cp /etc/letsencrypt/archive/www.your-domain.com/cert1.pem \
+  certbot/conf/live/www.your-domain.com/cert.pem
+sudo cp /etc/letsencrypt/archive/www.your-domain.com/chain1.pem \
+  certbot/conf/live/www.your-domain.com/chain.pem
+sudo cp /etc/letsencrypt/archive/www.your-domain.com/fullchain1.pem \
+  certbot/conf/live/www.your-domain.com/fullchain.pem
+sudo cp /etc/letsencrypt/archive/www.your-domain.com/privkey1.pem \
+  certbot/conf/live/www.your-domain.com/privkey.pem
+
+# 修正权限
+sudo chown -R ubuntu:ubuntu certbot/
+```
+
+#### 3）修改 nginx.conf 启用 SSL
+
+编辑 `infra/docker/nginx.conf`，找到以下注释并取消注释：
+
+```nginx
+# 替换 server_name
+server_name www.your-domain.com;
+
+# 取消 SSL 配置注释
+listen 443 ssl http2;
+ssl_certificate     /etc/letsencrypt/live/www.your-domain.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/www.your-domain.com/privkey.pem;
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers HIGH:!aNULL:!MD5;
+
+# 启用 HTTP → HTTPS 跳转（取消注释整个 server 块）
+server {
+    listen 80;
+    server_name www.your-domain.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+同时将所有 `proxy_pass http://web:3000` 替换为 `proxy_pass http://ai-web:3000`。
+
+#### 4）重启 Nginx
+
+```bash
+docker start ai-nginx
+```
+
+#### 5）设置证书自动续签
+
+```bash
+# 测试续签
+sudo certbot renew --dry-run
+
+# certbot 已自动创建 systemd timer，通常无需额外配置
+# 如需手动添加 cron：
+# echo "0 3 * * * certbot renew --quiet && docker restart ai-nginx" | sudo crontab -
+```
+
+### 14.8 日常更新部署
+
+本地改完代码后，有两种方式部署到服务器。**推荐方式一**。
+
+---
+
+#### 方式一：服务器直接 Git 拉取（推荐）
+
+适用于服务器已配置 Git 远程仓库的场景，操作最简单。
+
+**步骤 1：本地提交并推送代码**
+
+```bash
+# 在本地项目根目录
+git add .
+git commit -m "feat: 你改了什么"
+git push origin master
+```
+
+**步骤 2：SSH 登录服务器**
+
+```bash
+ssh ubuntu@124.223.40.33
+# 输入密码：woaini2244.
+```
+
+**步骤 3：拉取最新代码**
+
+```bash
+cd ~/ai-aggregation
+git pull origin master
+```
+
+**步骤 4：处理依赖和数据库变更（按需执行）**
+
+```bash
+# 如果 package.json 新增了依赖包，执行：
+pnpm install --frozen-lockfile
+
+# 如果修改了 Prisma schema（数据库表结构），执行：
+pnpm db:generate
+pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
+```
+
+> 没改依赖和数据库就跳过这一步。
+
+**步骤 5：重新构建镜像并重启容器**
+
+```bash
+cd ~/ai-aggregation/infra/docker
+
+# 构建新镜像（有缓存约 2-3 分钟，无缓存约 10-15 分钟）
+docker compose -f docker-compose.prod.yml build web
+
+# 强制重建容器，确保新代码生效
+docker compose -f docker-compose.prod.yml up -d --force-recreate nginx web
+```
+
+**步骤 6：验证部署**
+
+```bash
+# 检查容器状态（4 个容器都应为 Up）
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 查看 Web 日志确认无报错
+docker logs ai-web --tail 20
+
+# 浏览器访问 https://www.chunfen.ink 确认功能正常
+```
+
+**一行命令版（熟练后可用）：**
+
+```bash
+cd ~/ai-aggregation && git pull origin master && cd infra/docker && docker compose -f docker-compose.prod.yml build web && docker compose -f docker-compose.prod.yml up -d --force-recreate nginx web
+```
+
+---
+
+#### 方式二：本地打包上传（不用 Git）
+
+适用于服务器不方便联网拉代码、或想精确控制上传内容的场景。
+
+**步骤 1：本地打包代码**
+
+```bash
+# 在本地项目根目录执行
+tar -czf /tmp/ai-agg-deploy.tar.gz \
+  --exclude='node_modules' \
+  --exclude='.next' \
+  --exclude='.turbo' \
+  --exclude='.git' \
+  --exclude='.codegraph' \
+  .
+```
+
+**步骤 2：上传到服务器**
+
+```bash
+sshpass -p 'woaini2244.' scp -P 22 \
+  /tmp/ai-agg-deploy.tar.gz \
+  ubuntu@124.223.40.33:~/ai-aggregation/
+```
+
+**步骤 3：SSH 到服务器解压**
+
+```bash
+sshpass -p 'woaini2244.' ssh ubuntu@124.223.40.33
+cd ~/ai-aggregation
+tar -xzf ai-agg-deploy.tar.gz
+rm ai-agg-deploy.tar.gz
+```
+
+**步骤 4：处理依赖和数据库变更（按需执行）**
+
+```bash
+# 如果 package.json 新增了依赖包，执行：
+pnpm install --frozen-lockfile
+
+# 如果修改了 Prisma schema（数据库表结构），执行：
+pnpm db:generate
+pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
+```
+
+**步骤 5：重新构建镜像并重启容器**
+
+```bash
+cd ~/ai-aggregation/infra/docker
+
+# 构建新镜像
+docker compose -f docker-compose.prod.yml build web
+
+# 强制重建容器
+docker compose -f docker-compose.prod.yml up -d --force-recreate nginx web
+```
+
+**步骤 6：验证部署**
+
+```bash
+# 检查容器状态
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 查看 Web 日志
+docker logs ai-web --tail 20
+
+# 浏览器访问 https://www.chunfen.ink 确认功能正常
+```
+
+---
+
+#### 两种方式对比
+
+| | 方式一：Git Pull（推荐） | 方式二：本地打包上传 |
+|--|--|--|
+| 操作步骤 | 6 步 | 6 步 |
+| 本地操作 | git push（1 条命令） | tar 打包 + scp 上传（2 条命令） |
+| 服务器操作 | git pull（1 条命令） | scp 接收 + tar 解压（2 条命令） |
+| 速度 | 最快，增量拉取 | 需要全量打包和传输 |
+| 依赖条件 | 服务器有 git 权限 | 不需要，只要有 sshpass |
+| 适合场景 | 日常开发迭代 | 服务器无外网 git 访问权限 |
+
+> **提示**：`--force-recreate` 确保新的环境变量和镜像生效。如果不修改 `.env.prod` 且只是重启，可以用 `docker compose -f docker-compose.prod.yml restart nginx web` 代替。
+
+### 14.9 常用运维命令
+
+```bash
+# 查看服务状态
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 查看日志（实时跟踪）
+docker logs -f ai-web      # Web 应用日志
+docker logs -f ai-nginx    # Nginx 访问/错误日志
+
+# 进入容器调试
+docker exec -it ai-web sh
+docker exec -it ai-nginx sh
+
+# 重启单个服务
+docker restart ai-web
+
+# 停止全部服务
+cd ~/ai-aggregation/infra/docker
+docker compose -f docker-compose.prod.yml down
+
+# 启动全部服务
+docker compose -f docker-compose.prod.yml up -d
+
+# 查看磁盘使用
+docker system df
+```
+
+### 14.10 常见问题排查
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| Nginx 502 Bad Gateway | Web 容器未启动或崩溃 | `docker logs ai-web` 查看报错 |
+| Nginx 报 `host not found in upstream` | 容器名不对或未在同一网络 | 确认 `proxy_pass` 用 `ai-web`，且容器在 `docker_ai-net` |
+| Web 容器 `ECONNREFUSED 127.0.0.1:6379` | `.env.prod` 中 REDIS_HOST 用了 `127.0.0.1` | 改为 `ai-aggregation-redis`，然后 `--force-recreate` |
+| Web 容器 `ECONNREFUSED 127.0.0.1:5432` | `.env.prod` 中 DATABASE_URL 用了 `127.0.0.1` | 改为 `ai-aggregation-postgres`，然后 `--force-recreate` |
+| Docker build 报 `postinstall` 错误 | 根 `package.json` 有 `postinstall` 脚本 | 删除该脚本：`python3 -c "import json; ..."` 或在 Dockerfile 加 `--ignore-scripts` |
+| Docker build 报 `.prisma` not found | pnpm 模块结构导致 Prisma 文件不在预期路径 | Dockerfile 中用 `COPY --from=base /app/node_modules ./node_modules` 复制整个目录 |
+| HTTPS 证书报错 | 证书文件未挂载到容器 | 将 `/etc/letsencrypt/archive/` 下的文件复制到 `infra/docker/certbot/conf/` |
+| 端口 80 被占用 | 系统自带 nginx 未停止 | `sudo systemctl stop nginx && sudo systemctl disable nginx` |
+| 容器 unhealthy 但服务正常 | Next.js standalone 监听方式导致 wget 检查失败 | 可忽略，实际服务通过 nginx 代理正常工作 |
+| `git pull` 后构建失败 | 本地 Dockerfile 修改未同步 | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确 |
+
+### 14.11 数据库管理
+
+```bash
+# 查看迁移状态
+pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
+
+# 连接数据库（直接操作）
+docker exec -it ai-aggregation-postgres psql -U postgres -d ai_aggregation
+
+# 常用 psql 命令
+\dt              # 列出所有表
+\du              # 列出所有用户
+SELECT count(*) FROM users;   # 查询用户数
+```
+
+### 14.12 备份与恢复
+
+```bash
+# 备份数据库
+docker exec ai-aggregation-postgres pg_dump -U postgres ai_aggregation > backup_$(date +%Y%m%d).sql
+
+# 恢复数据库
+cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgres -ai_aggregation
+```
+
+### 14.13 部署验证清单
+
+```text
+[ ] 1. docker ps 显示 4 个容器运行中：ai-nginx, ai-web, ai-aggregation-postgres, ai-aggregation-redis
+[ ] 2. curl -s -o /dev/null -w '%{http_code}' http://localhost → 301（跳转 HTTPS）
+[ ] 3. curl -s -o /dev/null -w '%{http_code}' https://你的域名 → 200
+[ ] 4. 浏览器访问 https://你的域名/home → 页面正常加载
+[ ] 5. 注册 → 登录 → 查看个人中心 → 全部正常
+[ ] 6. AI 对话功能正常（豆包/DeepSeek）
+[ ] 7. docker logs ai-web 无报错
+[ ] 8. SSL 证书有效（浏览器地址栏显示锁图标）
+```
+
+### 14.14 环境变量说明
+
+| 变量 | 用途 | 必填 |
+|------|------|------|
+| `DATABASE_URL` | PostgreSQL 连接串 | ✅ |
+| `REDIS_HOST` | Redis 地址 | ✅ |
+| `REDIS_PORT` | Redis 端口 | ✅ |
+| `AUTH_SECRET` | NextAuth 加密密钥 | ✅ |
+| `ANONYMOUS_DEVICE_SALT` | 匿名用户设备指纹盐 | ✅ |
+| `NEXTAUTH_URL` | NextAuth 回调地址 | ✅ |
+| `NEXT_PUBLIC_APP_URL` | 前端可见的应用地址 | ✅ |
+| `ARK_API_KEY` | 火山方舟 API Key（豆包） | 命理分析需要 |
+| `DEEPSEEK_MODEL` | DeepSeek API Key（存错变量名） | 命理分析备选 |
+| `ZHIPU_API_KEY` | 智谱 API Key | 视频生成需要 |
+| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API | 语音转写需要 |
+| `SILICONFLOW_API_KEY` | 硅基流动 API Key | 语音模型需要 |
+| `AGNES_API_KEY` | Agnes 图像 API | 图像生成需要 |
+
+> **注意**：`DEEPSEEK_API_KEY` 在代码中未使用。DeepSeek 的 Key 实际存储在 `DEEPSEEK_MODEL` 变量中（`packages/shared/src/destiny-model-client.ts`）。
