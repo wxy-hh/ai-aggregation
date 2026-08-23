@@ -4,7 +4,7 @@ import type { NextConfig } from 'next';
 // @ts-expect-error 缺少类型声明
 import { PrismaPlugin } from '@prisma/nextjs-monorepo-workaround-plugin';
 
-// 构建时间：年月日时分格式，用于控制台输出判断更新是否成功
+// 构建时间：年月日时分格式（北京时间），用于控制台输出判断更新是否成功
 const BUILD_TIME = new Date().toLocaleString('zh-CN', {
   year: 'numeric',
   month: '2-digit',
@@ -12,6 +12,7 @@ const BUILD_TIME = new Date().toLocaleString('zh-CN', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
+  timeZone: 'Asia/Shanghai',
 });
 
 const nextConfig: NextConfig = {

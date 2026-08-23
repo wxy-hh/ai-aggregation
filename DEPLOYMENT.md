@@ -878,6 +878,31 @@ cd ~/ai-aggregation
 git pull origin master
 ```
 
+> **常见问题：git pull 报错 "Your local changes would be overwritten"**
+>
+> 如果服务器上有未提交的本地修改（如 Dockerfile），拉取会失败：
+> ```
+> error: Your local changes to the following files would be overwritten by merge:
+>         apps/web/Dockerfile
+>         apps/worker/Dockerfile
+> ```
+>
+> **解决方案**（推荐丢弃本地修改，用仓库版本）：
+> ```bash
+> # 丢弃指定文件的本地修改
+> git checkout -- apps/web/Dockerfile apps/worker/Dockerfile
+>
+> # 重新拉取
+> git pull origin master
+> ```
+>
+> **如果本地修改需要保留**：
+> ```bash
+> git stash
+> git pull origin master
+> git stash pop
+> ```
+
 **步骤 4：处理依赖和数据库变更（按需执行）**
 
 ```bash
