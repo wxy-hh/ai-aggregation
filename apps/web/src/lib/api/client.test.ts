@@ -80,9 +80,9 @@ describe('rawAuthFetch', () => {
     expect(callHeaders.get('Content-Type')).toBe('application/json');
   });
 
-  it('遇到 402 + QUOTA_EXHAUSTED 时不触发全局事件', async () => {
+  it('遇到 402 + QUOTA_LIMIT_REACHED 时不触发全局事件', async () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
-    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_EXHAUSTED' }), { status: 402 }));
+    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_LIMIT_REACHED' }), { status: 402 }));
 
     await rawAuthFetch('/api/test');
 
@@ -116,9 +116,9 @@ describe('rawAuthFetch', () => {
 });
 
 describe('authFetch', () => {
-  it('遇到 402 + QUOTA_EXHAUSTED 时触发全局事件', async () => {
+  it('遇到 402 + QUOTA_LIMIT_REACHED 时触发全局事件', async () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
-    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_EXHAUSTED' }), { status: 402 }));
+    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_LIMIT_REACHED' }), { status: 402 }));
 
     await authFetch('/api/test');
 
@@ -137,7 +137,7 @@ describe('authFetch', () => {
     expect(dispatchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('遇到 402 但 code 不是 QUOTA_EXHAUSTED 时不触发事件', async () => {
+  it('遇到 402 但 code 不是 QUOTA_LIMIT_REACHED 时不触发事件', async () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
     mockFetch(new Response(JSON.stringify({ code: 'OTHER_ERROR' }), { status: 402 }));
 
@@ -146,9 +146,9 @@ describe('authFetch', () => {
     expect(dispatchSpy).not.toHaveBeenCalled();
   });
 
-  it('遇到 429 + QUOTA_EXHAUSTED 时也触发全局事件', async () => {
+  it('遇到 429 + QUOTA_LIMIT_REACHED 时也触发全局事件', async () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
-    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_EXHAUSTED' }), { status: 429 }));
+    mockFetch(new Response(JSON.stringify({ code: 'QUOTA_LIMIT_REACHED' }), { status: 429 }));
 
     await authFetch('/api/test');
 

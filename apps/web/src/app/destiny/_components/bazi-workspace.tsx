@@ -793,7 +793,7 @@ export function BaziWorkspace({
       onError: (message) => {
         // 额度不足由全局 QuotaExhaustedDialog 承接；不写页内 error，已缓存视角仍可看
         const isQuota =
-          /额度不足|不足以处理|不足以开始|QUOTA_INSUFFICIENT|QUOTA_EXHAUSTED/i.test(
+          /额度不足|不足以处理|不足以开始|QUOTA_INSUFFICIENT|QUOTA_LIMIT_REACHED/i.test(
             message
           );
         setCompatError(isQuota ? null : message);

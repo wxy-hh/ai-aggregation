@@ -1,7 +1,7 @@
 import { useAuthStore } from '@/stores/auth-store';
 import { dispatchQuotaExhausted } from './quota-events';
 
-const QUOTA_EXHAUSTED_CODES = new Set(['QUOTA_INSUFFICIENT', 'QUOTA_EXHAUSTED']);
+const QUOTA_EXHAUSTED_CODES = new Set(['QUOTA_INSUFFICIENT', 'QUOTA_LIMIT_REACHED']);
 
 /** 从 Zustand store 读取当前 Access Token（非 React 环境可用） */
 export function getAccessToken(): string | null {

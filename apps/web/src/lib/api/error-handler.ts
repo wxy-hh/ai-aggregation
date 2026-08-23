@@ -30,7 +30,7 @@ export function parseApiError(error: unknown): ApiErrorDetails {
   const quotaCode = (error as { code?: string } | null | undefined)?.code;
   if (
     quotaCode === 'INSUFFICIENT_TOKENS' ||
-    quotaCode === 'QUOTA_EXHAUSTED' ||
+    quotaCode === 'QUOTA_LIMIT_REACHED' ||
     quotaCode === 'QUOTA_INSUFFICIENT'
   ) {
     return {

@@ -131,7 +131,7 @@ export function useCompatibilityFlow() {
           if (
             response.status === 402 ||
             code === 'QUOTA_INSUFFICIENT' ||
-            code === 'QUOTA_EXHAUSTED'
+            code === 'QUOTA_LIMIT_REACHED'
           ) {
             error.code = code || 'QUOTA_INSUFFICIENT';
           }
