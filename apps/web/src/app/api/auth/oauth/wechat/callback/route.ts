@@ -12,6 +12,7 @@ import {
 import { getWechatAccessToken, getWechatUserInfo } from '@/lib/auth/oauth';
 import { generateOAuthUsername } from '@/lib/auth/oauth-username';
 import { REGISTERED_FREE_TOKENS } from '@/lib/constants/quota';
+import { buildRedirectUrl } from '@/lib/auth/origin';
 
 const CLIENT_REDIRECT = '/home';
 
@@ -24,11 +25,11 @@ export async function GET(req: NextRequest) {
     // 验证 state
     const cookieState = req.cookies.get('oauth_state')?.value;
     if (!state || !cookieState || state !== cookieState) {
-      return Response.redirect(new URL('/login?error=oauth_state_mismatch', req.nextUrl.origin));
+      return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=oauth_state_mismatch'), req.url));
     }
 
     if (!code) {
-      return Response.redirect(new URL('/login?error=no_code', req.nextUrl.origin));
+      return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=no_code'), req.url));
     }
 
     // state 和 code 验证通过，清除 oauth_state cookie
@@ -109,13 +110,13 @@ export async function GET(req: NextRequest) {
       data: { userId: user!.id, token: refreshToken, expiresAt },
     });
 
-    const redirectUrl = new URL(CLIENT_REDIRECT, req.nextUrl.origin);
+    const redirectUrl = buildRedirectUrl(req, CLIENT_REDIRECT);
     await setRefreshTokenCookie(refreshToken, expiresAt);
     await setAuthKindCookie('user', expiresAt);
 
-    return Response.redirect(redirectUrl);
+    return Response.redirect(new URL(redirectUrl, req.url));
   } catch (error) {
     logger.error('微信 OAuth 回调失败', error instanceof Error ? error : undefined);
-    return Response.redirect(new URL('/login?error=oauth_failed', req.nextUrl.origin));
+    return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=oauth_failed'), req.url));
   }
 }

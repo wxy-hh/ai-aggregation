@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { getRefreshTokenFromCookie, clearRefreshTokenCookie, clearAuthKindCookie } from '@/lib/auth/jwt';
+import { buildRedirectUrl } from '@/lib/auth/origin';
 
 /** GET / POST 均可，清除 Cookie 后重定向到登录页 */
 export async function GET(req: NextRequest) {
@@ -45,5 +46,8 @@ async function handleLogout(req: NextRequest) {
     }
   }
 
-  return Response.redirect(new URL('/login?logout=1', req.nextUrl.origin));
+  // 使用请求头中的 Origin 或 Host 来构建正确的重定向 URL
+  // 避免在 Docker 环境中使用 req.nextUrl.origin 导致跳转到 0.0.0.0:3000
+  const redirectUrl = buildRedirectUrl(req, '/login?logout=1');
+  return Response.redirect(new URL(redirectUrl, req.url));
 }

@@ -606,6 +606,8 @@ Vercel 项目：https://vercel.com/weixiaoyus-projects/ai-aggregation-web
 └──────┘ └──────┘
 ```
 
+> 生产服务器信息已记录在 `infra/docker/server-info.md`（本地文件，不提交到仓库）。
+
 ### 14.2 服务器要求
 
 | 项目 | 最低要求 | 推荐 |

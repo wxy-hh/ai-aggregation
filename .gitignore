@@ -67,3 +67,6 @@ apps/web/ark-response-debug.json
 dump.rdb*
 .dev-flow*
 .env*
+
+# 本地服务器信息（含密码）
+infra/docker/server-info.md

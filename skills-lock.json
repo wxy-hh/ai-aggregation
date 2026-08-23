@@ -31,6 +31,12 @@
       "skillPath": "skills/engineering/domain-modeling/SKILL.md",
       "computedHash": "363cb0f53b0b431e7c00086ad1f823500b7e1b70b5616ee969c979f0934e9e6e"
     },
+    "ego-browser": {
+      "source": "citrolabs/ego-lite",
+      "sourceType": "github",
+      "skillPath": "skills/ego-browser/SKILL.md",
+      "computedHash": "b61cd5ca4d84fa6928a5afdea5d1d176844b675c05f9e922f67d28f630f0026c"
+    },
     "grill-me": {
       "source": "mattpocock/skills",
       "sourceType": "github",

@@ -327,6 +327,12 @@ docker-compose -f infra/docker/docker-compose.yml up -d
 
 ---
 
+## 生产服务器信息
+
+> 生产服务器连接信息（IP、密码、管理员账号等）已记录在 `infra/docker/server-info.md`（本地文件，不提交到仓库）。部署相关操作参见 `DEPLOYMENT.md` 第 14 章。
+
+---
+
 ## 常见问题与排查
 
 ### 1) `pnpm dev` 启动后页面请求报 500
