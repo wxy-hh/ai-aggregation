@@ -4,7 +4,21 @@ import type { NextConfig } from 'next';
 // @ts-expect-error 缺少类型声明
 import { PrismaPlugin } from '@prisma/nextjs-monorepo-workaround-plugin';
 
+// 构建时间：年月日时分格式，用于控制台输出判断更新是否成功
+const BUILD_TIME = new Date().toLocaleString('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 const nextConfig: NextConfig = {
+  // 构建时间环境变量，客户端可通过 process.env.BUILD_TIME 访问
+  env: {
+    BUILD_TIME,
+  },
   // Docker 部署时使用 standalone 输出，大幅减小产物体积
   output: 'standalone',
   transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger'],
