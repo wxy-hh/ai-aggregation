@@ -1,23 +1,18 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Box, Camera, Sparkles, Mountain, Zap, Palette, Film } from 'lucide-react';
-import { AGNES_STYLES, ImageModel } from '@/lib/constants/image-generation';
+import { Camera, Sparkles, Film } from 'lucide-react';
+import { AGNES_STYLES } from '@/lib/constants/image-generation';
 
-const styles = [
-  {
-    id: '3d-render',
-    name: '3D 渲染',
-    icon: <Box className="w-5 h-5" />,
-    color: 'text-blue-500',
-    gradient: 'from-blue-50/50 to-blue-100/50 dark:from-blue-900/10 dark:to-blue-900/30',
-    activeGradient: 'from-blue-100 to-blue-200 dark:from-blue-900/40 dark:to-blue-800/60',
-    borderColor: 'border-blue-200 dark:border-blue-800',
-    shadowColor: 'shadow-blue-500/10',
-  },
-  {
-    id: 'realistic',
-    name: '超写实',
+const STYLE_THEMES: Record<string, {
+  icon: React.ReactNode;
+  color: string;
+  gradient: string;
+  activeGradient: string;
+  borderColor: string;
+  shadowColor: string;
+}> = {
+  photographic: {
     icon: <Camera className="w-5 h-5" />,
     color: 'text-emerald-500',
     gradient:
@@ -27,29 +22,7 @@ const styles = [
     borderColor: 'border-emerald-200 dark:border-emerald-800',
     shadowColor: 'shadow-emerald-500/10',
   },
-  {
-    id: 'cyberpunk',
-    name: '赛博朋克',
-    icon: <Zap className="w-5 h-5" />,
-    color: 'text-purple-500',
-    gradient: 'from-purple-50/50 to-purple-100/50 dark:from-purple-900/10 dark:to-purple-900/30',
-    activeGradient: 'from-purple-100 to-purple-200 dark:from-purple-900/40 dark:to-purple-800/60',
-    borderColor: 'border-purple-200 dark:border-purple-800',
-    shadowColor: 'shadow-purple-500/10',
-  },
-  {
-    id: 'oil-painting',
-    name: '油画',
-    icon: <Palette className="w-5 h-5" />,
-    color: 'text-orange-500',
-    gradient: 'from-orange-50/50 to-orange-100/50 dark:from-orange-900/10 dark:to-orange-900/30',
-    activeGradient: 'from-orange-100 to-orange-200 dark:from-orange-900/40 dark:to-orange-800/60',
-    borderColor: 'border-orange-200 dark:border-orange-800',
-    shadowColor: 'shadow-orange-500/10',
-  },
-  {
-    id: 'anime',
-    name: '动漫',
+  anime: {
     icon: <Sparkles className="w-5 h-5" />,
     color: 'text-pink-500',
     gradient: 'from-pink-50/50 to-pink-100/50 dark:from-pink-900/10 dark:to-pink-900/30',
@@ -57,36 +30,27 @@ const styles = [
     borderColor: 'border-pink-200 dark:border-pink-800',
     shadowColor: 'shadow-pink-500/10',
   },
-  {
-    id: 'landscape',
-    name: '风景',
-    icon: <Mountain className="w-5 h-5" />,
-    color: 'text-cyan-500',
-    gradient: 'from-cyan-50/50 to-cyan-100/50 dark:from-cyan-900/10 dark:to-cyan-900/30',
-    activeGradient: 'from-cyan-100 to-cyan-200 dark:from-cyan-900/40 dark:to-cyan-800/60',
-    borderColor: 'border-cyan-200 dark:border-cyan-800',
-    shadowColor: 'shadow-cyan-500/10',
+  cinematic: {
+    icon: <Film className="w-5 h-5" />,
+    color: 'text-indigo-500',
+    gradient: 'from-indigo-50/50 to-indigo-100/50 dark:from-indigo-900/10 dark:to-indigo-900/30',
+    activeGradient: 'from-indigo-100 to-indigo-200 dark:from-indigo-900/40 dark:to-indigo-800/60',
+    borderColor: 'border-indigo-200 dark:border-indigo-800',
+    shadowColor: 'shadow-indigo-500/10',
   },
-];
+};
 
 export interface StyleSelectorProps {
   selected: string;
   onStyleChange: (style: string) => void;
-  model?: ImageModel;
 }
 
-export function StyleSelector({ selected, onStyleChange, model = 'kolors' }: StyleSelectorProps) {
-  // 根据模型决定使用哪个风格列表
-  const styleList = model === 'agnes'
-    ? AGNES_STYLES.map((s) => {
-        const theme = s.id === 'photographic'
-          ? { icon: <Camera className="w-5 h-5" />, color: 'text-emerald-500', gradient: 'from-emerald-50/50 to-emerald-100/50 dark:from-emerald-900/10 dark:to-emerald-900/30', activeGradient: 'from-emerald-100 to-emerald-200 dark:from-emerald-900/40 dark:to-emerald-800/60', borderColor: 'border-emerald-200 dark:border-emerald-800', shadowColor: 'shadow-emerald-500/10' }
-          : s.id === 'anime'
-          ? { icon: <Sparkles className="w-5 h-5" />, color: 'text-pink-500', gradient: 'from-pink-50/50 to-pink-100/50 dark:from-pink-900/10 dark:to-pink-900/30', activeGradient: 'from-pink-100 to-pink-200 dark:from-pink-900/40 dark:to-pink-800/60', borderColor: 'border-pink-200 dark:border-pink-800', shadowColor: 'shadow-pink-500/10' }
-          : { icon: <Film className="w-5 h-5" />, color: 'text-indigo-500', gradient: 'from-indigo-50/50 to-indigo-100/50 dark:from-indigo-900/10 dark:to-indigo-900/30', activeGradient: 'from-indigo-100 to-indigo-200 dark:from-indigo-900/40 dark:to-indigo-800/60', borderColor: 'border-indigo-200 dark:border-indigo-800', shadowColor: 'shadow-indigo-500/10' };
-        return { id: s.id, name: s.name, ...theme };
-      })
-    : styles; // 原有的 Kolors 6 种风格（保持不变）
+export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
+  const styleList = AGNES_STYLES.map((s) => ({
+    id: s.id,
+    name: s.name,
+    ...(STYLE_THEMES[s.id] ?? STYLE_THEMES.photographic),
+  }));
 
   return (
     <div className="space-y-3">

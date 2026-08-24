@@ -23,10 +23,7 @@ export interface ImageRestoreParams {
   negativePrompt?: string;
   style?: string;
   aspectRatio?: string;
-  steps?: number;
-  cfg?: number;
   seed?: string;
-  batchSize?: number;
   quality?: string;
 }
 
@@ -97,10 +94,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
       negativePrompt: item.negativePrompt,
       style: item.style,
       aspectRatio: item.aspectRatio,
-      steps: item.parameters?.steps as number | undefined,
-      cfg: item.parameters?.cfg as number | undefined,
       seed: item.parameters?.seed as string | undefined,
-      batchSize: item.parameters?.batchSize as number | undefined,
       quality: item.parameters?.quality as string | undefined,
     };
     onRestoreParams?.(params);
@@ -230,7 +224,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1535868463750-c78d9543614f?auto=format&fit=crop&w=400&q=80',
                   tags: ['Cyberpunk', 'Neon'],
                   prompt: '赛博朋克, 霓虹雨夜, 未来城市, 湿润地面反射',
-                  params: { ratio: '16:9', steps: 30, style: 'cyberpunk' },
+                  params: { ratio: '1024x576', style: 'cinematic' },
                 },
                 {
                   id: 2,
@@ -238,7 +232,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80',
                   tags: ['3D', 'Abstract'],
                   prompt: '3D渲染, 极简主义, 抽象几何, 柔和光影, 甚至配色',
-                  params: { ratio: '1:1', steps: 25, style: '3d-render' },
+                  params: { ratio: '1024x1024', style: 'photographic' },
                 },
                 {
                   id: 3,
@@ -246,7 +240,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&w=400&q=80',
                   tags: ['Nature', 'Epic'],
                   prompt: '史诗级风景, 广角大片, 晨雾, 壮丽山脉, 8k分辨率',
-                  params: { ratio: '16:9', steps: 40, style: 'landscape' },
+                  params: { ratio: '1024x576', style: 'cinematic' },
                 },
                 {
                   id: 4,
@@ -254,7 +248,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?auto=format&fit=crop&w=400&q=80',
                   tags: ['Art', 'Oil'],
                   prompt: '油画风格, 印象派, 浓厚笔触, 星空, 艺术杰作',
-                  params: { ratio: '3:4', steps: 35, style: 'oil-painting' },
+                  params: { ratio: '768x1024', style: 'anime' },
                 },
                 {
                   id: 5,
@@ -262,7 +256,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1515462277126-2dd0c162007a?auto=format&fit=crop&w=400&q=80',
                   tags: ['Dark', 'Mystery'],
                   prompt: '暗黑风格, 神秘氛围, 电影质感, 侧光, 悬疑',
-                  params: { ratio: '16:9', steps: 50, style: 'realistic' },
+                  params: { ratio: '1024x576', style: 'photographic' },
                 },
                 {
                   id: 6,
@@ -270,7 +264,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
                   tags: ['Portrait', 'Soft'],
                   prompt: '精美人像, 柔光摄影, 眼神光, 皮肤纹理, 浅景深',
-                  params: { ratio: '3:4', steps: 30, style: 'realistic' },
+                  params: { ratio: '768x1024', style: 'photographic' },
                 },
               ].map((item) => (
                 <div

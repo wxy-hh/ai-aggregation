@@ -130,7 +130,7 @@ ai-aggregation/
 | ---------------------- | ------------------------- |
 | `app/page.tsx`         | 首页                      |
 | `app/chat/page.tsx`    | 多模型 AI 对话页          |
-| `app/image/page.tsx`   | 图像生成页（Kolors 模型） |
+| `app/image/page.tsx`   | 图像生成页（Agnes Image 2.1 Flash 模型） |
 | `app/video/page.tsx`   | 视频生成页（CogVideoX）   |
 | `app/voice/`           | 语音转写页（录音 + 上传） |
 | `app/history/page.tsx` | 统一历史记录页            |
@@ -174,7 +174,7 @@ components/
 
 ```
 lib/
-├── api/         # API 请求封装（kolors、siliconflow 等）
+├── api/         # API 请求封装（agnes、siliconflow 等）
 ├── constants/   # 图像生成参数、模板常量
 ├── services/    # 业务逻辑服务层
 ├── storage/     # 客户端存储（localStorage）
@@ -214,7 +214,7 @@ lib/
 - 智谱 GLM（对话、视频生成 CogVideoX）
 - DeepSeek（对话）
 - 讯飞 / 阿里云 NLS（语音转写）
-- 硅基流动 Kolors（图像生成）
+- Agnes Image 2.1 Flash（图像生成）
 
 **工程化**
 
@@ -237,7 +237,7 @@ REDIS_PASSWORD=
 DASHSCOPE_API_KEY=         # 通义千问 API Key
 ZHIPU_API_KEY=             # 智谱 API Key
 DEEPSEEK_API_KEY=          # DeepSeek API Key
-SILICONFLOW_API_KEY=       # 硅基流动（Kolors 图像生成）
+SILICONFLOW_API_KEY=       # 硅基流动（语音转写）
 ```
 
 ### 环境变量分组说明

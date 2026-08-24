@@ -4,43 +4,26 @@ import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ASPECT_RATIOS, PARAM_CONSTRAINTS, AGNES_SIZE_OPTIONS, AGNES_QUALITIES, ImageModel } from '@/lib/constants/image-generation';
-import { Settings2, Dice5 } from 'lucide-react';
+import { AGNES_SIZE_OPTIONS, AGNES_QUALITIES } from '@/lib/constants/image-generation';
+import { Settings2, Dice5, Sparkles } from 'lucide-react';
 
 export interface SettingsPanelProps {
-  model?: ImageModel;
   ratio: string;
-  steps: number;
-  cfg: number;
   seed: string;
-  batchSize: number;
   quality?: string;
   onRatioChange: (ratio: string) => void;
-  onStepsChange: (steps: number) => void;
-  onCfgChange: (cfg: number) => void;
   onSeedChange: (seed: string) => void;
-  onBatchSizeChange: (size: number) => void;
   onQualityChange?: (quality: string) => void;
 }
 
 export function SettingsPanel({
-  model = 'kolors',
   ratio,
-  steps,
-  cfg,
   seed,
-  batchSize,
   quality = 'standard',
   onRatioChange,
-  onStepsChange,
-  onCfgChange,
   onSeedChange,
-  onBatchSizeChange,
   onQualityChange,
 }: SettingsPanelProps) {
-  // 根据模型选择尺寸列表
-  const ratioOptions = model === 'agnes' ? AGNES_SIZE_OPTIONS : ASPECT_RATIOS;
-
   return (
     <div className="space-y-6">
       {/* 参数设置头部 */}
@@ -49,16 +32,16 @@ export function SettingsPanel({
         <h3 className="font-bold text-slate-800 dark:text-white">参数配置</h3>
       </div>
 
-      {/* 宽高比 */}
+      {/* 尺寸 */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">画面比例</span>
+          <span className="text-slate-500 dark:text-slate-400 font-medium">画面尺寸</span>
           <span className="text-slate-900 dark:text-white font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-            {ratioOptions.find((r) => r.id === ratio)?.label || ratio}
+            {AGNES_SIZE_OPTIONS.find((r) => r.id === ratio)?.label || ratio}
           </span>
         </div>
         <div className="grid grid-cols-4 gap-2">
-          {ratioOptions.slice(0, 4).map((item) => (
+          {AGNES_SIZE_OPTIONS.slice(0, 4).map((item) => (
             <Button
               key={item.id}
               onClick={() => onRatioChange(item.id)}
@@ -74,124 +57,29 @@ export function SettingsPanel({
             </Button>
           ))}
         </div>
-        {ratioOptions.length > 4 && (
-          <div className="grid grid-cols-4 gap-2">
-            {ratioOptions.slice(4).map((item) => (
-              <Button
-                key={item.id}
-                onClick={() => onRatioChange(item.id)}
-                variant={ratio === item.id ? 'default' : 'outline'}
-                className={cn(
-                  'h-9 text-xs font-bold rounded-xl transition-all',
-                  ratio === item.id
-                    ? 'bg-blue-500 text-white shadow-md border-blue-500'
-                    : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-blue-300'
-                )}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* 仅 Kolors: Steps 和 CFG */}
-      {model === 'kolors' && (
-        <>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">生成质量 (Steps)</span>
-              <span className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded text-[10px]">
-                {steps}
-              </span>
-            </div>
-            <div className="px-1">
-              <Slider
-                value={[steps]}
-                max={PARAM_CONSTRAINTS.steps.max}
-                min={PARAM_CONSTRAINTS.steps.min}
-                step={PARAM_CONSTRAINTS.steps.step}
-                onValueChange={(vals) => onStepsChange(vals[0])}
-                className="py-2"
-              />
-            </div>
-            <div className="flex justify-between text-[10px] text-slate-400 px-1 font-mono">
-              <span>Speed ({PARAM_CONSTRAINTS.steps.min})</span>
-              <span>Quality ({PARAM_CONSTRAINTS.steps.max})</span>
-            </div>
-          </div>
-
-          {/* Guidance Scale (CFG) */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">引导强度 (CFG)</span>
-              <span className="text-purple-600 dark:text-purple-400 font-mono font-bold bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded text-[10px]">
-                {cfg}
-              </span>
-            </div>
-            <div className="px-1">
-              <Slider
-                value={[cfg]}
-                max={PARAM_CONSTRAINTS.guidanceScale.max}
-                min={PARAM_CONSTRAINTS.guidanceScale.min}
-                step={PARAM_CONSTRAINTS.guidanceScale.step}
-                onValueChange={(vals) => onCfgChange(vals[0])}
-                className="py-2"
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* 仅 Agnes: Quality 选择 */}
-      {model === 'agnes' && (
-        <div className="space-y-3">
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">画质</span>
-          <div className="grid grid-cols-2 gap-2">
-            {AGNES_QUALITIES.map((q) => (
-              <Button
-                key={q.id}
-                onClick={() => onQualityChange?.(q.id)}
-                variant={quality === q.id ? 'default' : 'outline'}
-                className={cn(
-                  'h-9 text-xs font-bold rounded-xl transition-all',
-                  quality === q.id
-                    ? 'bg-indigo-500 text-white shadow-md border-indigo-500'
-                    : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-indigo-300'
-                )}
-              >
-                {q.label}
-              </Button>
-            ))}
-          </div>
+      {/* Quality 选择 */}
+      <div className="space-y-3">
+        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">画质</span>
+        <div className="grid grid-cols-2 gap-2">
+          {AGNES_QUALITIES.map((q) => (
+            <Button
+              key={q.id}
+              onClick={() => onQualityChange?.(q.id)}
+              variant={quality === q.id ? 'default' : 'outline'}
+              className={cn(
+                'h-9 text-xs font-bold rounded-xl transition-all',
+                quality === q.id
+                  ? 'bg-indigo-500 text-white shadow-md border-indigo-500'
+                  : 'bg-white/50 dark:bg-slate-800/50 hover:bg-white hover:border-indigo-300'
+              )}
+            >
+              {q.label}
+            </Button>
+          ))}
         </div>
-      )}
-
-      {/* 批量生成 - 仅 Kolors 支持 */}
-      {model === 'kolors' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">生成数量</span>
-          </div>
-          <div className="grid grid-cols-4 gap-2 bg-slate-100/50 dark:bg-slate-900/50 p-1 rounded-xl backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
-            {[1, 2, 3, 4].map((size) => (
-              <Button
-                key={size}
-                onClick={() => onBatchSizeChange(size)}
-                variant={batchSize === size ? 'default' : 'ghost'}
-                className={cn(
-                  'text-xs h-7 font-bold transition-all duration-300 rounded-lg',
-                  batchSize === size
-                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-black/5 dark:ring-white/5'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50'
-                )}
-              >
-                {size}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* 种子输入 */}
       <div className="space-y-3">
@@ -214,6 +102,14 @@ export function SettingsPanel({
             <Dice5 className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      {/* 模型说明 */}
+      <div className="flex items-start gap-2 p-3 rounded-xl bg-slate-100/60 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-700/40">
+        <Sparkles className="w-3.5 h-3.5 mt-0.5 text-indigo-400 shrink-0" />
+        <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+          当前使用 Agnes Image 2.1 Flash 模型，生成速度快、质量稳定。
+        </p>
       </div>
     </div>
   );

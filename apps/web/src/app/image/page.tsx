@@ -11,18 +11,13 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ModelSwitcher } from '@/components/image/model-switcher';
-import { generateKolorsImage, downloadImage } from '@/lib/api/kolors';
-import { generateAgnesImage } from '@/lib/api/agnes';
+import { generateAgnesImage, downloadImage } from '@/lib/api/agnes';
 import {
-  DEFAULT_PARAMS,
-  ASPECT_RATIO_TO_SIZE,
-  STYLE_PROMPTS,
   PROMPT_TEMPLATES,
   AGNES_DEFAULT_PARAMS,
+  AGNES_MODEL_NAME,
   getImagePreviewBoxStyle,
   getRatioLabel,
-  ImageModel,
 } from '@/lib/constants/image-generation';
 import {
   Sparkles,
@@ -59,15 +54,10 @@ export default function ImagePage() {
   // 生成参数
   const [prompt, setPrompt] = useState<string>(PROMPT_TEMPLATES[0]);
   const [negativePrompt, setNegativePrompt] = useState<string>('');
-  const [style, setStyle] = useState<string>(DEFAULT_PARAMS.style);
-  const [ratio, setRatio] = useState<string>(DEFAULT_PARAMS.aspectRatio);
-  const [steps, setSteps] = useState<number>(DEFAULT_PARAMS.steps);
-  const [cfg, setCfg] = useState<number>(DEFAULT_PARAMS.guidanceScale);
+  const [style, setStyle] = useState<string>(AGNES_DEFAULT_PARAMS.style);
+  const [ratio, setRatio] = useState<string>(AGNES_DEFAULT_PARAMS.size);
   const [seed, setSeed] = useState<string>('');
-  const [batchSize, setBatchSize] = useState<number>(DEFAULT_PARAMS.batchSize);
 
-  // 模型选择
-  const [model, setModel] = useState<ImageModel>('kolors');
   // Agnes 专属参数
   const [quality, setQuality] = useState<string>(AGNES_DEFAULT_PARAMS.quality);
 
@@ -120,7 +110,7 @@ export default function ImagePage() {
         sourceType: 'image',
         sourceId: `image-result-${activeImageIndex}`,
         sourceTitle: prompt.slice(0, 30) || '生成图片',
-        sourceModel: model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash',
+        sourceModel: AGNES_MODEL_NAME === 'agnes-image-2.1-flash' ? 'Agnes Image 2.1 Flash' : 'Agnes',
         snapshotText: prompt,
         snapshotMediaUrl: activeGeneratedDataUrl,
       };
@@ -139,43 +129,19 @@ export default function ImagePage() {
     setCurrentStep('准备生成...');
 
     try {
-      let response;
-      if (model === 'kolors') {
-        // 根据风格补全提示词
-        const styleConfig = STYLE_PROMPTS[style as keyof typeof STYLE_PROMPTS];
-        const enhancedPrompt = styleConfig
-          ? `${styleConfig.prefix}${prompt}${styleConfig.suffix}`
-          : prompt;
+      setCurrentStep('正在生成...');
+      setProgress(10);
 
-        setCurrentStep('正在扩散生成...');
-        setProgress(10);
-
-        // 调用 Kolors 生成接口
-        response = await generateKolorsImage({
-          prompt: enhancedPrompt,
-          negativePrompt: negativePrompt || styleConfig?.negativePrompt,
-          imageSize: ASPECT_RATIO_TO_SIZE[ratio],
-          steps,
-          guidanceScale: cfg,
-          batchSize,
-          seed: seed ? parseInt(seed) : undefined,
-          style,
-        });
-      } else {
-        setCurrentStep('正在生成...');
-        setProgress(10);
-
-        // 调用 Agnes 生成接口
-        response = await generateAgnesImage({
-          prompt,
-          negativePrompt: negativePrompt || undefined,
-          size: ratio,
-          n: 1,
-          seed: seed ? parseInt(seed) : undefined,
-          style: style || undefined,
-          quality: quality as 'standard' | 'hd',
-        });
-      }
+      // 调用 Agnes 生成接口
+      const response = await generateAgnesImage({
+        prompt,
+        negativePrompt: negativePrompt || undefined,
+        size: ratio,
+        n: 1,
+        seed: seed ? parseInt(seed) : undefined,
+        style: style || undefined,
+        quality: quality as 'standard' | 'hd',
+      });
 
       setProgress(80);
       setCurrentStep('下载图片...');
@@ -201,13 +167,10 @@ export default function ImagePage() {
 
       // 保存到历史记录
       if (images.length > 0) {
-        const modelName = model === 'kolors' ? 'Kolors' : 'Agnes Image 2.1 Flash';
-        const params = model === 'kolors'
-          ? { steps, cfg, seed: seed || 'random', batchSize }
-          : { quality, seed: seed || 'random' };
+        const params = { quality, seed: seed || 'random' };
         const historyItem = {
           id: `image-${Date.now()}`,
-          ...createImageHistoryItem(prompt, images[0].historyUrl, modelName, {
+          ...createImageHistoryItem(prompt, images[0].historyUrl, 'Agnes Image 2.1 Flash', {
             negativePrompt,
             style,
             aspectRatio: ratio,
@@ -238,30 +201,13 @@ export default function ImagePage() {
       setProgress(0);
       setCurrentStep('');
     }
-  }, [prompt, negativePrompt, style, ratio, steps, cfg, seed, batchSize, model, quality, addHistoryItem, relay]);
+  }, [prompt, negativePrompt, style, ratio, seed, quality, addHistoryItem, relay]);
 
   // 随机灵感提示词
   const handleRandomPrompt = () => {
     const randomIndex = Math.floor(Math.random() * PROMPT_TEMPLATES.length);
     setPrompt(PROMPT_TEMPLATES[randomIndex]);
   };
-
-  // 模型切换时重置相关参数
-  const handleModelChange = useCallback((newModel: ImageModel) => {
-    setModel(newModel);
-    if (newModel === 'agnes') {
-      setStyle(AGNES_DEFAULT_PARAMS.style);
-      setRatio(AGNES_DEFAULT_PARAMS.size);
-      setQuality(AGNES_DEFAULT_PARAMS.quality);
-    } else {
-      setStyle(DEFAULT_PARAMS.style);
-      setRatio(DEFAULT_PARAMS.aspectRatio);
-      setSteps(DEFAULT_PARAMS.steps);
-      setCfg(DEFAULT_PARAMS.guidanceScale);
-    }
-    setBatchSize(DEFAULT_PARAMS.batchSize);
-    setSeed('');
-  }, []);
 
   // 预览框始终跟随当前选中的比例，生成 API 仍使用 ratio 参数
   const previewBoxStyle = getImagePreviewBoxStyle(ratio);
@@ -274,21 +220,21 @@ export default function ImagePage() {
   const quickStarts = [
     {
       label: '赛博朋克城市',
-      style: 'cyberpunk',
+      style: 'cinematic',
       icon: <Zap className="w-4 h-4 text-purple-500" />,
       prompt: '未来的赛博朋克城市街道，霓虹灯光，雨夜，高分辨率，电影质感',
     },
     {
       label: '梵高风格星空',
-      style: 'oil-painting',
+      style: 'anime',
       icon: <Palette className="w-4 h-4 text-orange-500" />,
       prompt: '梵高风格的星空，旋转的星云，深蓝色的夜空，金黄色的星星，油画质感',
     },
     {
-      label: '极简 3D 渲染',
-      style: '3d-render',
+      label: '极简人像摄影',
+      style: 'photographic',
       icon: <Box className="w-4 h-4 text-blue-500" />,
-      prompt: '极简主义风格的3D几何图形，柔和的灯光，淡雅的色彩，高质量渲染',
+      prompt: '极简主义风格的人像摄影，柔和的灯光，淡雅的色彩，高质量质感',
     },
   ];
 
@@ -303,10 +249,7 @@ export default function ImagePage() {
     if (params.negativePrompt !== undefined) setNegativePrompt(params.negativePrompt);
     if (params.style !== undefined) setStyle(params.style);
     if (params.aspectRatio !== undefined) setRatio(params.aspectRatio);
-    if (params.steps !== undefined) setSteps(params.steps);
-    if (params.cfg !== undefined) setCfg(params.cfg);
     if (params.seed !== undefined) setSeed(params.seed === 'random' ? '' : params.seed);
-    if (params.batchSize !== undefined) setBatchSize(params.batchSize);
     if (params.quality !== undefined) setQuality(params.quality);
   }, []);
 
@@ -379,23 +322,16 @@ export default function ImagePage() {
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
-      <StyleSelector selected={style} onStyleChange={setStyle} model={model} />
+      <StyleSelector selected={style} onStyleChange={setStyle} />
 
       <div className="bg-slate-200/50 dark:bg-slate-800/50 h-px w-full"></div>
 
       <SettingsPanel
-        model={model}
         ratio={ratio}
-        steps={steps}
-        cfg={cfg}
         seed={seed}
-        batchSize={batchSize}
         quality={quality}
         onRatioChange={setRatio}
-        onStepsChange={setSteps}
-        onCfgChange={setCfg}
         onSeedChange={setSeed}
-        onBatchSizeChange={setBatchSize}
         onQualityChange={setQuality}
       />
     </>
@@ -423,7 +359,6 @@ export default function ImagePage() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              <ModelSwitcher model={model} onModelChange={handleModelChange} />
               <Button
                 type="button"
                 variant="outline"
@@ -574,7 +509,7 @@ export default function ImagePage() {
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = generatedImages[activeImageIndex];
-                            link.download = `${model}-${Date.now()}.png`;
+                            link.download = `agnes-${Date.now()}.png`;
                             link.click();
                           }}
                           className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
@@ -739,9 +674,7 @@ export default function ImagePage() {
             }}
             onStyleApply={(params) => {
               if (params.ratio) setRatio(params.ratio);
-              if (params.steps) setSteps(params.steps);
               if (params.style) setStyle(params.style);
-              if (params.cfg) setCfg(params.cfg);
               // Optionally show a toast here
             }}
             onRestoreParams={handleRestoreParams}

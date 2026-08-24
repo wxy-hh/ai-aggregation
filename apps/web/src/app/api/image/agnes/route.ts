@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
       const data = await response.json();
 
-      // 转换为统一格式（与 Kolors 返回格式兼容）
+      // 转换为统一格式（images 数组，前端消费方一致）
       const imageData = data.data?.[0] || data.images?.[0];
       if (!imageData?.url) {
         throw new Error(`Unexpected Agnes API response: ${JSON.stringify(data).slice(0, 200)}`);

@@ -53,3 +53,16 @@ export async function generateAgnesImage(
 
   return response.json();
 }
+
+/**
+ * Download image from URL and convert to Blob
+ * 通过 BFF 代理下载，避免 CORS 限制
+ */
+export async function downloadImage(url: string): Promise<Blob> {
+  const proxyUrl = `/api/image/proxy?url=${encodeURIComponent(url)}`;
+  const response = await fetch(proxyUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download image: ${response.statusText}`);
+  }
+  return response.blob();
+}
