@@ -58,6 +58,7 @@ export function PartnershipView({
   whyOpen,
   onToggleWhy,
   onToggleAction,
+  scoreBasis,
 }: RelationViewProps) {
   const primaryAction = view.weeklyActions?.[0];
   const title =
@@ -99,6 +100,7 @@ export function PartnershipView({
           title={title}
           oneLiner={view.oneLiner}
           hintText={hintText}
+          scoreBasis={scoreBasis}
           whyOpen={whyOpen}
           onToggleWhy={onToggleWhy}
           visual={

@@ -109,12 +109,16 @@ export function computeHarmonyScore(
     number
   >;
 
-  // 五行互补：一方偏强另一方偏弱时记正向
+  // 五行互补：一方偏强另一方偏弱时记正向；同类五行量级接近（共同地基）同样记正向。
+  // 注意：不能只奖励相似——强互补对（如火旺遇金旺）按旧公式 |a-b| 反而得 0 分，
+  // 与注释语义相悖，是底分普遍偏低的根因。取「互补覆盖」与「共同地基」的较优者。
   let balance = 0;
   (Object.keys(selfMap) as FiveElementKey[]).forEach((key) => {
     const a = selfMap[key] ?? 0;
     const b = partnerMap[key] ?? 0;
-    balance += Math.max(0, 12 - Math.abs(a - b));
+    const gap = Math.abs(a - b);
+    const shared = Math.min(a, b);
+    balance += Math.max(Math.max(0, 12 - gap), Math.min(shared, 12));
   });
   const balanceScore = Math.min(40, Math.round((balance / (12 * 5)) * 40));
 

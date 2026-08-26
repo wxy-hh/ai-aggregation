@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CompatibilityChartFacts } from './types';
 import {
+  amplifyRelationBias,
+  buildScoreBasis,
   calibrateScore,
   computeRelationBias,
   computeRelationFeelScore,
@@ -166,6 +168,71 @@ describe('computeRelationFeelScore (方案 B + 事实偏置)', () => {
     // 恋爱更吃互补（异日主），友谊更吃共鸣（同日主）
     expect(romanceDiff).toBeGreaterThan(romanceSame);
     expect(friendSame).toBeGreaterThan(friendDiff);
+  });
+});
+
+describe('amplifyRelationBias 视角分差放大（仅优势侧）', () => {
+  it('高于均值的偏置被放大，低于均值的保持原值（不下压），分差被拉开', () => {
+    const signals = extractChartSignals(makeFacts());
+    const relations = ['romance', 'marriage', 'friendship', 'partnership'] as const;
+    const raw = relations.map((r) => computeRelationBias(r, signals));
+    const mean = raw.reduce((s, v) => s + v, 0) / raw.length;
+    const amplified = relations.map((r) => amplifyRelationBias(computeRelationBias(r, signals), signals));
+
+    relations.forEach((_, i) => {
+      if (raw[i] > mean) {
+        // 高于均值：以均值为中心放大
+        expect(amplified[i]).toBeGreaterThan(raw[i]);
+      } else {
+        // 低于（或等于）均值：原值保留，不被下压
+        expect(amplified[i]).toBe(raw[i]);
+      }
+    });
+
+    // 极差不小于原始值（实际 > 1.2 倍）
+    const rawSpread = Math.max(...raw) - Math.min(...raw);
+    const ampSpread = Math.max(...amplified) - Math.min(...amplified);
+    expect(ampSpread).toBeGreaterThan(rawSpread);
+  });
+
+  it('确定性：同一输入两次计算结果一致', () => {
+    const signals = extractChartSignals(makeFacts());
+    const a = amplifyRelationBias(computeRelationBias('romance', signals), signals);
+    const b = amplifyRelationBias(computeRelationBias('romance', signals), signals);
+    expect(a).toBe(b);
+  });
+});
+
+describe('buildScoreBasis 评分依据', () => {
+  it('输出三段式依据：底分构成 + 六维加权 + 视角修正，口径与主分一致', () => {
+    const facts = makeFacts();
+    const dims = flatDims(
+      ['alignment', 'decision', 'execution', 'feedback', 'risk', 'credit'],
+      66
+    );
+    const feel = computeRelationFeelScore(facts, 'partnership', dims);
+    const basis = buildScoreBasis(facts, 'partnership', feel);
+
+    expect(basis.basisLines.length).toBe(3);
+    // 底分行含结构信号描述
+    expect(basis.basisLines[0]).toContain('命盘底分');
+    expect(basis.basisLines[0]).toContain('四视角共用');
+    // 六维行
+    expect(basis.basisLines[1]).toContain('六维加权');
+    // 视角修正行带符号
+    expect(basis.basisLines[2]).toMatch(/视角修正 [+\-]/);
+    // 展示口径与主分一致：底分标定值应等于 calibrateScore(facts.score)
+    expect(basis.basePart).toBe(calibrateScore(facts.score));
+    // 六维展示口径与 feel.dimAverage 一致
+    expect(basis.dimPart).toBe(feel.dimAverage);
+  });
+
+  it('无维度时六维行为缺失，仅两段依据', () => {
+    const facts = makeFacts();
+    const feel = computeRelationFeelScore(facts, 'romance', []);
+    const basis = buildScoreBasis(facts, 'romance', feel);
+    expect(basis.dimPart).toBeNull();
+    expect(basis.basisLines.length).toBe(2);
   });
 });
 

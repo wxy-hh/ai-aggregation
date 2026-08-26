@@ -131,8 +131,8 @@ describe('CompatibilityReportView 四类关系差异化', () => {
     expect(screen.getByText('romance 一句话总结')).toBeInTheDocument();
     // 方案 B：中心展示适配标签 + 命盘底分（禁止「手感」）
     expect(screen.getByText('合拍指数')).toBeInTheDocument();
-    expect(screen.getByLabelText(/命盘底分 82/)).toBeInTheDocument();
-    // 子分同口径标定：情感表达 raw 72 → 展示 77；raw 低值 52 不再直接出现
+    expect(screen.getByLabelText(/命盘底分 80/)).toBeInTheDocument();
+    // 子分同口径标定：冲突修复 raw 70 → 展示 77；raw 低值 52 不再直接出现
     expect(screen.getByText('77')).toBeInTheDocument();
     expect(screen.queryByText('52')).not.toBeInTheDocument();
   });
@@ -279,7 +279,7 @@ describe('CompatibilityReportView 四类关系差异化', () => {
       />
     );
     expect(screen.getByText('合拍指数')).toBeInTheDocument();
-    expect(screen.getByLabelText(/命盘底分 82/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/命盘底分 80/)).toBeInTheDocument();
     romance.unmount();
 
     const friendship = render(
@@ -294,7 +294,7 @@ describe('CompatibilityReportView 四类关系差异化', () => {
       />
     );
     expect(screen.getByText('相处舒适度')).toBeInTheDocument();
-    expect(screen.getByLabelText(/命盘底分 82/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/命盘底分 80/)).toBeInTheDocument();
     friendship.unmount();
 
     render(
@@ -309,6 +309,6 @@ describe('CompatibilityReportView 四类关系差异化', () => {
       />
     );
     expect(screen.getByText('协作指数')).toBeInTheDocument();
-    expect(screen.getByLabelText(/命盘底分 82/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/命盘底分 80/)).toBeInTheDocument();
   });
 });

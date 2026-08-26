@@ -39,6 +39,7 @@ export function FriendshipView({
   whyOpen,
   onToggleWhy,
   onToggleAction,
+  scoreBasis,
 }: RelationViewProps) {
   const primaryAction = view.weeklyActions?.[0];
   const title =
@@ -77,6 +78,7 @@ export function FriendshipView({
           title={title}
           oneLiner={view.oneLiner}
           hintText={hintText}
+          scoreBasis={scoreBasis}
           whyOpen={whyOpen}
           onToggleWhy={onToggleWhy}
           visual={

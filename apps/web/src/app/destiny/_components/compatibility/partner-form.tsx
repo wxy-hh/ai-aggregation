@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Heart, Info, Shield, UserRound } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Check, ChevronsUpDown, Heart, Info, Shield, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { getPopularCities, searchCities } from '@repo/shared';
 import { RELATION_OPTIONS } from './constants';
 import type { PartnerProfileForm, RelationType } from './types';
 
@@ -94,6 +96,26 @@ export function CompatibilityPartnerForm({
 }: PartnerFormProps) {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+
+  // 城市搜索：Popover 开关 + 搜索词，与八字表单出生地点选择器同构
+  const [cityPopoverOpen, setCityPopoverOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState(value.location?.name ?? '');
+
+  // 外部回填（如历史档案恢复）时同步搜索框；Popover 打开时不覆盖用户正在输入的内容
+  useEffect(() => {
+    if (!cityPopoverOpen) {
+      setCityQuery(value.location?.name ?? '');
+    }
+    // 仅在外部 location 变化时同步
+  }, [value.location?.name]);
+
+  const cityResults = useMemo(() => {
+    const q = cityQuery.trim();
+    if (!q) return getPopularCities().slice(0, 8);
+    return searchCities(q, 20);
+  }, [cityQuery]);
+
+  const hasExactLocation = value.location != null && value.location.lat != null && value.location.lon != null;
 
   const relationMeta = RELATION_OPTIONS.find((r) => r.key === relationType)!;
 
@@ -393,22 +415,87 @@ export function CompatibilityPartnerForm({
                   </Field>
 
                   <Field label="出生地点（推荐，城市级）">
-                    <input
-                      value={value.location?.name ?? ''}
-                      disabled={submitting || value.locationSkipped}
-                      onChange={(e) =>
-                        onChange({
-                          location: { name: e.target.value, lat: null, lon: null },
-                          locationSkipped: false,
-                        })
-                      }
-                      placeholder="如：杭州"
-                      className={cn(inputClass, value.locationSkipped && 'opacity-50')}
-                    />
+                    <Popover open={cityPopoverOpen} onOpenChange={setCityPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          role="combobox"
+                          aria-expanded={cityPopoverOpen}
+                          disabled={submitting || value.locationSkipped}
+                          className={cn(
+                            'flex h-11 w-full items-center justify-between px-3 text-left text-sm font-normal',
+                            inputClass,
+                            !value.location?.name && 'text-slate-400 dark:text-slate-500',
+                            value.locationSkipped && 'opacity-50'
+                          )}
+                        >
+                          {value.location?.name || '搜索城市'}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] border border-slate-200/50 bg-white/95 p-0 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/95"
+                        align="start"
+                        side="bottom"
+                        sideOffset={4}
+                      >
+                        <div className="p-2">
+                          <input
+                            value={cityQuery}
+                            autoFocus
+                            onChange={(e) => setCityQuery(e.target.value)}
+                            placeholder="输入城市或地区名称..."
+                            className={cn(inputClass, 'mb-2')}
+                          />
+                          <div className="max-h-48 overflow-y-auto sm:max-h-56">
+                            {cityResults.length > 0 ? (
+                              cityResults.map((city, idx) => {
+                                const isSelected =
+                                  hasExactLocation &&
+                                  value.location?.lat === city.lat &&
+                                  value.location?.lon === city.lon;
+                                return (
+                                  <button
+                                    key={`${city.id}-${city.fullName}-${idx}`}
+                                    type="button"
+                                    className={cn(
+                                      'flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-200',
+                                      isSelected
+                                        ? 'bg-blue-500/10 font-medium text-blue-600 dark:text-blue-400'
+                                        : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800/50'
+                                    )}
+                                    onClick={() => {
+                                      onChange({
+                                        location: { name: city.fullName, lat: city.lat, lon: city.lon },
+                                        locationSkipped: false,
+                                      });
+                                      setCityQuery(city.fullName);
+                                      setCityPopoverOpen(false);
+                                    }}
+                                  >
+                                    {isSelected && <Check className="h-4 w-4 shrink-0 text-blue-500" />}
+                                    <span className={cn(!isSelected && 'ml-6')}>{city.fullName}</span>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <p className="px-3 py-6 text-center text-sm text-slate-400">
+                                未找到匹配的城市
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    {hasExactLocation ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        坐标 {value.location!.lat!.toFixed(2)}, {value.location!.lon!.toFixed(2)} · 用于真太阳时校准
+                      </p>
+                    ) : null}
                     <button
                       type="button"
                       disabled={submitting}
-                      className="mt-2 text-xs font-medium text-blue-600 dark:text-blue-400"
+                      className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400"
                       onClick={() =>
                         onChange({
                           locationSkipped: !value.locationSkipped,

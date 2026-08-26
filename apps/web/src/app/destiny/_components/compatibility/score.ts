@@ -64,9 +64,28 @@ const DIMENSION_WEIGHTS: Record<RelationType, Record<string, number>> = {
 
 const BASE_WEIGHT = 0.32;
 const DIM_WEIGHT = 0.68;
-/** 关系偏置可到 ±18，保证同盘四视角在六维接近时仍有可读分差 */
-const BIAS_MIN = -18;
-const BIAS_MAX = 18;
+/** 关系偏置经优势侧放大后可达 ±22，保证同盘四视角在六维接近时仍有可读分差 */
+const BIAS_MIN = -22;
+const BIAS_MAX = 22;
+/** 优势侧放大系数：仅放大高于四视角均值的偏置，低于均值的保持原值（不下压） */
+const BIAS_SPREAD_GAIN_UP = 1.8;
+
+const ALL_RELATIONS: RelationType[] = ['romance', 'marriage', 'friendship', 'partnership'];
+
+/**
+ * 放大四视角偏置的分差（只放大优势侧）：
+ * 原始偏置被混合权重(0.68)与展示标定双重稀释，有效传导仅 ~0.6，
+ * 导致同一命盘四个 tab 分数挤在一起。高于均值的偏置以均值为中心放大 ×GAIN，
+ * 低于均值的保持原值——避免把部分视角压得过低、让用户误读为「不合适」。
+ * 映射单调连续，视角排序不变，确定性可复现。
+ */
+export function amplifyRelationBias(rawBias: number, signals: ChartSignals): number {
+  const all = ALL_RELATIONS.map((r) => computeRelationBias(r, signals));
+  const mean = all.reduce((sum, v) => sum + v, 0) / all.length;
+  const amplified =
+    rawBias > mean ? mean + (rawBias - mean) * BIAS_SPREAD_GAIN_UP : rawBias;
+  return clamp(amplified, BIAS_MIN, BIAS_MAX);
+}
 
 type ChartSignals = {
   sameDayMaster: boolean;
@@ -87,14 +106,14 @@ function clamp(n: number, min: number, max: number) {
 
 /**
  * 展示口径标定：把 raw 0-100 单调映射到目标分布锚点
- * - 弱匹配 ~35 → ~44（差 30-45：差异大需协商）
- * - 典型组合 ~55 → ~62（中 55-70：锚点「大多数组合落此区间」）
- * - 强匹配 ~80 → ~84（高 75-88：默契基础较好）
+ * - 弱匹配 ~35 → ~45（差 30-45：差异大需协商）
+ * - 典型组合 ~55 → ~62（中带主体：避免典型组合被误读为「刚及格不及格线」）
+ * - 强匹配 ~80 → ~82（高 75-88：默契基础较好）
  * 主分与子分共用，保证口径一致。
  */
 export function calibrateScore(raw: number): number {
   const value = Number.isFinite(raw) ? raw : 50;
-  return Math.round(clamp(12 + value * 0.9, 30, 90));
+  return Math.round(clamp(16.4 + value * 0.82, 30, 90));
 }
 
 function bandOf(score: number): ScoreBand {
@@ -274,8 +293,15 @@ export type RelationFeelScoreResult = {
   score: number;
   scoreBand: ScoreBand;
   dimAverage: number | null;
-  /** 关系事实偏置（已钳制） */
+  /** 关系事实偏置（已钳制、已放大） */
   bias: number;
+  /** 评分依据：供前端展示「这个分怎么来的」，与 score 同口径（展示标定后） */
+  breakdown: {
+    /** 命盘底分（确定性结构分，四视角共用） */
+    base: number;
+    /** 六维加权均值 + 视角修正后的混合分（未标定的原始口径） */
+    blended: number;
+  };
 };
 
 /**
@@ -294,7 +320,11 @@ export function computeRelationFeelScore(
 ): RelationFeelScoreResult {
   const base = Math.max(0, Math.min(100, Number(facts.score) || 0));
   const signals = extractChartSignals(facts);
-  const bias = computeRelationBias(relationType, signals);
+  // 偏置以四视角均值为中心放大离散度：只拉开视角间差距，不移整体水平
+  const bias = amplifyRelationBias(
+    computeRelationBias(relationType, signals),
+    signals
+  );
   const dimAverage = weightedDimensionAverage(relationType, dimensions);
 
   let blended: number;
@@ -309,5 +339,77 @@ export function computeRelationFeelScore(
 
   const score = calibrateScore(blended);
   const calibratedDim = dimAverage == null ? null : calibrateScore(dimAverage);
-  return { score, scoreBand: bandOf(score), dimAverage: calibratedDim, bias };
+  return {
+    score,
+    scoreBand: bandOf(score),
+    dimAverage: calibratedDim,
+    bias,
+    breakdown: { base, blended },
+  };
 }
+
+/** 视角偏置的通俗解读：按放大后偏置的相对位置描述本视角适配方向 */
+function biasToneText(bias: number, meanBias: number): string {
+  const delta = bias - meanBias;
+  if (delta >= 6) return '结构信号对这个关系形态明显加分';
+  if (delta >= 2) return '结构信号对这种相处方式略有助益';
+  if (delta <= -6) return '结构信号在这个关系形态下需要更多经营';
+  if (delta <= -2) return '结构信号对这种相处方式稍有挑战';
+  return '结构信号与其他视角接近，无额外倾斜';
+}
+
+/**
+ * 评分依据：把总分拆成三段可读来源，随分数一起返回给展示层。
+ * - 命盘底分：五行互补/日主异同/地支呼应等确定性结构分（四视角共用）
+ * - 六维加权：AI 按该关系关键维度给出的加权均分
+ * - 视角修正：同一命盘在恋爱/婚姻/朋友/合作上的结构适配差
+ * 全部使用与主分一致的展示口径，确定性可复现。
+ */
+export function buildScoreBasis(
+  facts: Pick<
+    CompatibilityChartFacts,
+    'score' | 'self' | 'partner' | 'completeness'
+  >,
+  relationType: RelationType,
+  feel: RelationFeelScoreResult
+): {
+  basePart: number;
+  dimPart: number | null;
+  basisLines: string[];
+} {
+  const signals = extractChartSignals(facts);
+  const meanBias =
+    ALL_RELATIONS.reduce(
+      (sum, r) => sum + computeRelationBias(r, signals),
+      0
+    ) / ALL_RELATIONS.length;
+
+  // 展示口径：底分标定后、六维标定后，与主分一致
+  const basePart = calibrateScore(feel.breakdown.base);
+  const dimPart = feel.dimAverage;
+  const lines: string[] = [];
+
+  const overlap = signals.branchOverlap;
+  lines.push(
+    `命盘底分 ${basePart}：由双方五行互补${
+      signals.elementComplement >= 0.5 ? '较强' : signals.elementComplement >= 0.3 ? '中等' : '有限'
+    }、日主${signals.sameDayMaster ? '相同（表达相近）' : '不同（节奏互补）'}、地支呼应 ${overlap} 处等结构信号构成，四视角共用`
+  );
+  if (dimPart != null) {
+    lines.push(
+      `六维加权 ${dimPart}：按${RELATION_LABEL_ZH[relationType]}最看重的维度加权平均（如亲密需求/日常分工/决策节奏）`
+    );
+  }
+  lines.push(
+    `视角修正 ${feel.bias >= 0 ? '+' : ''}${Math.round(feel.bias * 10) / 10}：${biasToneText(feel.bias, meanBias)}`
+  );
+
+  return { basePart, dimPart, basisLines: lines };
+}
+
+const RELATION_LABEL_ZH: Record<RelationType, string> = {
+  romance: '恋爱',
+  marriage: '婚姻',
+  friendship: '朋友',
+  partnership: '合作',
+};

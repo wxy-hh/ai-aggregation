@@ -348,6 +348,16 @@ export function rhythmIconColor(tone: 'warm' | 'patience' | 'advance') {
   return 'text-amber-600';
 }
 
+/** 评分依据（由壳层按当前视角集中计算后下发） */
+export type ScoreBasis = {
+  /** 命盘底分（展示口径，四视角共用） */
+  basePart: number;
+  /** 六维加权均分（展示口径；无维度时 null） */
+  dimPart: number | null;
+  /** 三段式解释文案：底分构成 / 六维加权 / 视角修正 */
+  basisLines: string[];
+};
+
 /** 四视角共用的 Props：各 View 组件只关心当前激活视角的数据与交互回调 */
 export type RelationViewProps = {
   view: CompatibilityViewPayload;
@@ -364,6 +374,8 @@ export type RelationViewProps = {
   whyOpen: string | null;
   onToggleWhy: (id: string) => void;
   onToggleAction: (actionId: string) => void;
+  /** 总分评分依据：三段式来源拆解，供「为什么是这个分数」展示 */
+  scoreBasis?: ScoreBasis;
 };
 
 export function buildScoreHintText(bandHint: string, scoreHints: string[]) {
@@ -426,6 +438,7 @@ export function RelationHero({
   title,
   oneLiner,
   hintText,
+  scoreBasis,
   whyOpen,
   onToggleWhy,
   visual,
@@ -436,6 +449,7 @@ export function RelationHero({
   title: string;
   oneLiner: string;
   hintText: string;
+  scoreBasis?: ScoreBasis;
   whyOpen: string | null;
   onToggleWhy: (id: string) => void;
   visual: React.ReactNode;
@@ -448,7 +462,9 @@ export function RelationHero({
         'group relative col-span-12 h-full overflow-visible rounded-[1.5rem] p-5 sm:p-6 xl:col-span-8',
         'border backdrop-blur-xl lg:backdrop-blur-2xl',
         'transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] md:hover:-translate-y-0.5',
-        toneClass
+        toneClass,
+        // 展开评分依据时抬升整卡堆叠层级，防止弹层被后续玻璃卡遮挡
+        open && 'z-30'
       )}
     >
       <span
@@ -469,7 +485,7 @@ export function RelationHero({
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               {oneLiner}
             </p>
-            <WhyScoreToggle open={open} hintText={hintText} onToggle={() => onToggleWhy('score')} />
+            <WhyScoreToggle open={open} hintText={hintText} scoreBasis={scoreBasis} onToggle={() => onToggleWhy('score')} />
           </div>
           <div className="relative z-0 flex w-full justify-center lg:absolute lg:inset-y-0 lg:right-0 lg:flex lg:w-[56%] lg:items-center lg:justify-center">
             {visual}
@@ -485,7 +501,7 @@ export function RelationHero({
             <p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               {oneLiner}
             </p>
-            <WhyScoreToggle open={open} hintText={hintText} onToggle={() => onToggleWhy('score')} />
+            <WhyScoreToggle open={open} hintText={hintText} scoreBasis={scoreBasis} onToggle={() => onToggleWhy('score')} />
           </div>
           <div className="flex shrink-0 justify-center sm:justify-end">{visual}</div>
         </div>
@@ -506,10 +522,13 @@ export const reportSideCardClass = cn(
 function WhyScoreToggle({
   open,
   hintText,
+  scoreBasis,
   onToggle,
 }: {
   open: boolean;
   hintText: string;
+  /** 有值时展示结构化「评分依据」三段式，替代单行 hint */
+  scoreBasis?: ScoreBasis;
   onToggle: () => void;
 }) {
   return (
@@ -520,13 +539,29 @@ function WhyScoreToggle({
         onClick={onToggle}
         aria-expanded={open}
       >
-        为什么这么说？
+        这个分数怎么来的？
         <Info className="h-3.5 w-3.5 opacity-70" />
       </button>
       {open ? (
-        <p className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
-          {hintText}
-        </p>
+        scoreBasis ? (
+          <div className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3.5 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
+            <div className="space-y-2.5">
+              {scoreBasis.basisLines.map((line, i) => (
+                <p key={i} className="flex gap-1.5">
+                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-blue-400" aria-hidden />
+                  <span>{line}</span>
+                </p>
+              ))}
+            </div>
+            <p className="mt-3 border-t border-slate-200/70 pt-2.5 text-[11px] text-slate-400 dark:border-slate-700/60">
+              总分 ≈ 命盘底分 ×32% + 本视角维度表现 ×68%（含视角修正）；确定性算法可复现，非关系判决。
+            </p>
+          </div>
+        ) : (
+          <p className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
+            {hintText}
+          </p>
+        )
       ) : null}
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,7 @@ import {
   RELATION_OPTIONS,
   SCORE_BAND_COPY,
 } from '../constants';
-import { computeRelationFeelScore, calibrateScore } from '../score';
+import { computeRelationFeelScore, calibrateScore, buildScoreBasis } from '../score';
 import type { CompatibilityReport, RelationType } from '../types';
 import { CompatibilityShareEntry } from '../share/compatibility-share-entry';
 import { reportBarClass } from './shared';
@@ -70,8 +70,13 @@ export function CompatibilityReportView({
   // 本视角适配分：命盘底分 + 关系事实偏置 + 六维加权（确定性，随 tab 变化）
   const feel = view
     ? computeRelationFeelScore(facts, activeRelation, view.dimensions)
-    : { score: facts.score, scoreBand: facts.scoreBand, dimAverage: null, bias: 0 };
+    : { score: facts.score, scoreBand: facts.scoreBand, dimAverage: null, bias: 0, breakdown: { base: facts.score, blended: facts.score } };
   const band = SCORE_BAND_COPY[feel.scoreBand];
+  // 评分依据三段式：命盘底分 / 六维加权 / 视角修正，随视角切换重新计算
+  const scoreBasis = useMemo(
+    () => buildScoreBasis(facts, activeRelation, feel),
+    [facts, activeRelation, feel]
+  );
   const [whyOpen, setWhyOpen] = useState<string | null>(null);
   const [scoreShown, setScoreShown] = useState(0);
   const prefersReducedMotion = useReducedMotion();
@@ -136,6 +141,7 @@ export function CompatibilityReportView({
         whyOpen,
         onToggleWhy: handleToggleWhy,
         onToggleAction,
+        scoreBasis,
       }
     : null;
 
