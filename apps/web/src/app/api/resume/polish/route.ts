@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       // 豆包 Responses API Base URL
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
       // 使用 Lite 轻量模型（更快，成本更低）
-      const arkModel = process.env.ARK_MODEL || 'doubao-seed-2.0-lite';
+      const arkModel = process.env.ARK_MODEL || 'doubao-seed-evolving';
 
       if (!arkApiKey) {
         console.error('ARK_API_KEY 未配置');

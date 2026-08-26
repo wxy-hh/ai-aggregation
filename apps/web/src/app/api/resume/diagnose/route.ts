@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       const arkApiKey = process.env.ARK_API_KEY;
       // 豆包 Responses API Base URL
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-      const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260428';
+      const arkModel = process.env.ARK_MODEL || 'doubao-seed-evolving';
 
       if (!arkApiKey) {
         console.error('ARK_API_KEY 未配置');
@@ -495,9 +495,9 @@ function calculateRuleBasedScore(resume: any): number {
   // 加权计算总分
   const score = Math.round(
     dimensions.completeness * 0.3 +
-      dimensions.impact * 0.3 +
-      dimensions.keywordMatch * 0.2 +
-      dimensions.readability * 0.2
+    dimensions.impact * 0.3 +
+    dimensions.keywordMatch * 0.2 +
+    dimensions.readability * 0.2
   );
 
   return Math.min(100, Math.max(0, score));
@@ -536,7 +536,7 @@ function calculateDimensions(resume: any): {
   const avgDescLength =
     workExperiences.length > 0
       ? workExperiences.reduce((sum: number, exp: any) => sum + (exp.description?.length || 0), 0) /
-        workExperiences.length
+      workExperiences.length
       : 0;
   if (avgDescLength > 100) impact += 20;
   if (avgDescLength > 200) impact += 20;

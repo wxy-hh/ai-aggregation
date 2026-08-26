@@ -86,12 +86,12 @@ export function DestinyShell({
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotLaunch, setCopilotLaunch] = useState<DestinyCopilotLaunch>({});
 
-  const copilotReport = report;
+  // 使用 displayReport（report ?? partialReport）使 copilot 在流式传输期间也可用
+  const copilotReport = displayReport;
   const canOpenCopilot = Boolean(
     copilotReport?.profile &&
       copilotReport.pillars?.length &&
-      copilotReport.elements?.length &&
-      copilotReport.timeline?.length
+      copilotReport.elements?.length
   );
 
   // 接力草稿到达且命盘已就绪：打开顾问并仅预填输入框（绝不自动发送，REQ §4.6.4）
@@ -294,7 +294,7 @@ export function DestinyShell({
             setCopilotOpen(nextOpen);
             if (!nextOpen) setCopilotLaunch({});
           }}
-          report={copilotReport}
+          report={copilotReport as DestinyReport}
           focusDecade={copilotLaunch.focus ?? null}
           queuedQuestion={copilotLaunch.queuedQuestion ?? null}
           onQueuedQuestionHandled={() => {

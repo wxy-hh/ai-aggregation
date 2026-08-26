@@ -18,8 +18,8 @@ export const CHAT_MODEL_CATALOG: ModelCatalogItem[] = [
   {
     provider: 'doubao',
     providerLabel: '豆包',
-    model: 'doubao-seed-2-0-lite-260428',
-    label: 'Doubao Lite（轻量级）',
+    model: 'doubao-seed-evolving',
+    label: 'Doubao Evolving（最新模型）',
   },
   {
     provider: 'doubao',
@@ -30,4 +30,4 @@ export const CHAT_MODEL_CATALOG: ModelCatalogItem[] = [
 ];
 
 // 默认比较组合：讯飞 lite + 豆包 lite（modelKey 形式）
-export const DEFAULT_COMPARE_MODEL_KEYS = ['xunfei:lite', 'doubao:doubao-seed-2-0-lite-260428'];
+export const DEFAULT_COMPARE_MODEL_KEYS = ['xunfei:lite', 'doubao:doubao-seed-evolving'];

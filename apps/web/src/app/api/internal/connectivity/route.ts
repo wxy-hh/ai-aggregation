@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     /\/$/,
     ''
   );
-  const arkModel = process.env.ARK_MODEL || 'doubao-seed-2-0-lite-260215';
+  const arkModel = process.env.ARK_MODEL || 'doubao-seed-evolving';
   results.doubaoChat = await probeFetch({
     name: 'doubao-chat',
     url: `${arkBase}/chat/completions`,

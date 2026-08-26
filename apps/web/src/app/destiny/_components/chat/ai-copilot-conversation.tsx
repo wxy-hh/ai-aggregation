@@ -89,11 +89,16 @@ export function AICoPilotConversation({
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>(() => initialMessages());
   const sendingRef = useRef(false);
+  const messagesRef = useRef<Msg[]>(messages);
   const listRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
   // 记录本次 externalDraft 的 id 与文本，用于「发送成功才完成接力」判定（REQ §4.6.4-5）
   const externalDraftRef = useRef<{ id: string; text: string } | null>(null);
   const externalDraftSentRef = useRef<string | null>(null);
+  // 防止 queuedQuestion effect 重复触发（React 18 StrictMode 会导致 effect 执行两次）
+  const queuedQuestionSentRef = useRef<number | null>(null);
+  // 跟踪上一次的 sessionKey，仅在真正切换时才重置会话
+  const prevSessionKeyRef = useRef(sessionKey);
 
   const canSend = input.trim().length > 0;
   const ctxSummary = useMemo(() => buildCopilotContext(report), [report]);
@@ -105,6 +110,13 @@ export function AICoPilotConversation({
   }, [onSendingChange, sending]);
 
   useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    // 仅在 sessionKey 真正变化时才重置会话（避免 report 引用变化触发误重置）
+    if (prevSessionKeyRef.current === sessionKey) return;
+    prevSessionKeyRef.current = sessionKey;
     setInput('');
     setError(null);
     setMessages(initialMessages());
@@ -177,7 +189,7 @@ export function AICoPilotConversation({
       content: '',
       status: 'thinking',
     };
-    const nextMessages = [...messages, userMsg, thinkingMsg];
+    const nextMessages = [...messagesRef.current, userMsg, thinkingMsg];
     setMessages(nextMessages);
     scrollToBottom();
 
@@ -266,6 +278,9 @@ export function AICoPilotConversation({
 
   useEffect(() => {
     if (!queuedQuestion) return;
+    // 防止 React 18 StrictMode 重复触发同一问题的发送
+    if (queuedQuestionSentRef.current === queuedQuestion.id) return;
+    queuedQuestionSentRef.current = queuedQuestion.id;
     void sendQuestion(queuedQuestion.text);
     onQueuedQuestionHandled?.(queuedQuestion.id);
     // sessionKey 变化会重置会话后再消费新的快捷问题

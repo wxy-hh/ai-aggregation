@@ -116,7 +116,7 @@
 ├─────────────────────────────────────────────────────────┤
 │             火山引擎 ARK 大模型服务                       │
 │  ┌──────────────────────────────────────────────┐       │
-│  │  豆包 doubao-seed-2-0-lite-260428            │       │
+│  │  豆包 doubao-seed-evolving            │       │
 │  │  - 仅负责解释层 JSON 输出                     │       │
 │  │  - 严格沿用本地排盘真值，不再自行起盘           │       │
 │  │  - temperature: 0.2~0.3                     │       │
@@ -362,7 +362,7 @@ System Prompt："你是命理报告解读助手。基于给定报告摘要，回
 
 ### 8.1 模型选择
 
-- **火山引擎 ARK / 豆包 doubao-seed-2-0-lite-260428**
+- **火山引擎 ARK / 豆包 doubao-seed-evolving**
 - Reasoning Effort: `low`（八字命理不需要复杂推理，重点是结构化输出）
 - JSON 输出模式：`text.format.type = 'json_object'`
 
@@ -384,7 +384,7 @@ System Prompt："你是命理报告解读助手。基于给定报告摘要，回
 - `feature: 'destiny'`
 - `action: 'destiny-report'`
 - `provider: 'doubao'`
-- `model: 'doubao-seed-2-0-lite-260428'`
+- `model: 'doubao-seed-evolving'`
 - 记录 token 用量
 
 ---

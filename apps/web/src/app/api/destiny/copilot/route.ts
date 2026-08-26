@@ -85,36 +85,36 @@ const ReportSchema = z.object({
       bullets: z.array(z.string()).optional().default([]),
       advantages: z.array(z.string()).optional().default([]),
       suggestions: z.array(z.string()).optional().default([]),
-    }),
+    }).optional(),
     love: z.object({
       title: z.string(),
       summary: z.string(),
       bullets: z.array(z.string()).optional().default([]),
       advantages: z.array(z.string()).optional().default([]),
       suggestions: z.array(z.string()).optional().default([]),
-    }),
+    }).optional(),
     wealth: z.object({
       title: z.string(),
       summary: z.string(),
       bullets: z.array(z.string()).optional().default([]),
       advantages: z.array(z.string()).optional().default([]),
       suggestions: z.array(z.string()).optional().default([]),
-    }),
+    }).optional(),
     health: z.object({
       title: z.string(),
       summary: z.string(),
       bullets: z.array(z.string()).optional().default([]),
       advantages: z.array(z.string()).optional().default([]),
       suggestions: z.array(z.string()).optional().default([]),
-    }),
+    }).optional(),
     personality: z.object({
       title: z.string(),
       summary: z.string(),
       bullets: z.array(z.string()).optional().default([]),
       advantages: z.array(z.string()).optional().default([]),
       suggestions: z.array(z.string()).optional().default([]),
-    }),
-  }),
+    }).optional(),
+  }).optional(),
   timeline: z.array(
     z.object({
       year: z.number(),
@@ -126,7 +126,7 @@ const ReportSchema = z.object({
         actions: z.array(z.string()),
       }),
     })
-  ),
+  ).optional().default([]),
   baziBasis: z.any().optional(),
   ziweiPalaces: z.any().optional(),
   ziweiCenter: z.any().optional(),
@@ -139,7 +139,7 @@ const RequestSchema = z.object({
   provider: z.enum(['doubao', 'deepseek']).default('doubao'),
 });
 
-const COPILOT_TIMEOUT_MS = 55000;
+const COPILOT_TIMEOUT_MS = 100000;
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
@@ -179,7 +179,6 @@ export async function POST(req: Request) {
       );
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
       let inputUnits = 0;
-      let outputLimit = 2048;
       if (user.role !== 'admin') {
         const quota = await reserveChatQuota({
           userId,
@@ -193,7 +192,6 @@ export async function POST(req: Request) {
         });
         reservation = quota.reservation;
         inputUnits = quota.inputUnits;
-        outputLimit = quota.outputLimit;
       }
 
       return new Response(
@@ -204,7 +202,6 @@ export async function POST(req: Request) {
           reservationId: reservation?.id,
           requestId,
           inputUnits,
-          outputLimit,
           questionLength: parsed.data.question.length,
         }),
         { headers: SSE_HEADERS }
@@ -242,7 +239,6 @@ function createCopilotStream({
   reservationId,
   requestId,
   inputUnits,
-  outputLimit,
   questionLength,
 }: {
   config: ModelConfig;
@@ -251,92 +247,45 @@ function createCopilotStream({
   reservationId?: string;
   requestId: string;
   inputUnits: number;
-  outputLimit: number;
   questionLength: number;
 }) {
+  // 使用 pull() 模式：start() 立即 resolve 让 HTTP 响应头尽快发出，
+  // 数据在 pull() 中按需从上游异步生成器逐帧读取并 enqueue。
+  const streamIterator = streamModel({
+    config,
+    messages,
+    temperature: 0.3,
+    // 不传 maxTokens：doubao 的 max_output_tokens 同时限制 reasoning+output，
+    // reasoning 用完预算后 output 为 0。去掉限制由 timeout 自然截断。
+    timeoutMs: COPILOT_TIMEOUT_MS,
+  })[Symbol.asyncIterator]();
+
+  let usagePayload: unknown = null;
+  let outputText = '';
+
   return new ReadableStream<Uint8Array>({
-    async start(streamController) {
-      let usagePayload: unknown = null;
-      let outputText = '';
-
+    async pull(streamController) {
       try {
-        const stream = streamModel({
-          config,
-          messages,
-          temperature: 0.3,
-          maxTokens: outputLimit,
-          timeoutMs: COPILOT_TIMEOUT_MS,
-        });
-
-        for await (const ev of stream) {
-          if (ev.type === 'text-delta') {
-            outputText += ev.text;
-            streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: ev.text }));
-          } else if (ev.type === 'done') {
-            usagePayload = ev.rawUsage ?? usagePayload;
-            streamController.enqueue(encodeSseEvent({ type: 'done' }));
-          } else if (ev.type === 'error') {
-            throw new ModelUpstreamError(ev.error, 502);
-          }
+        const { value: ev, done } = await streamIterator.next();
+        if (done) {
+          // 流结束：结算配额并关闭
+          await settleUsage();
+          streamController.close();
+          return;
         }
 
-        if (reservationId) {
-          await settleAiQuota({
-            reservationId,
-            requestId,
-            feature: 'destiny',
-            action: 'destiny-copilot',
-            provider: config.provider,
-            model: config.model,
-            endpoint: '/api/destiny/copilot',
-            measurement: createTokenMeasurement(
-              usagePayload,
-              inputUnits + estimateOutputTokens(outputText)
-            ),
-            metadata: { questionLength, stream: true, provider: config.provider },
-          });
-        } else if (userId) {
-          await safeRecordAiUsage({
-            userId,
-            feature: 'destiny',
-            action: 'destiny-copilot',
-            provider: config.provider,
-            model: config.model,
-            endpoint: '/api/destiny/copilot',
-            usage: normalizeUsage(usagePayload),
-            metadata: {
-              questionLength,
-              stream: true,
-              provider: config.provider,
-            },
-          });
+        if (ev.type === 'text-delta') {
+          outputText += ev.text;
+          streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: ev.text }));
+        } else if (ev.type === 'done') {
+          usagePayload = ev.rawUsage ?? usagePayload;
+          streamController.enqueue(encodeSseEvent({ type: 'done' }));
+        } else if (ev.type === 'error') {
+          throw new ModelUpstreamError(ev.error, 502);
         }
       } catch (error) {
-        if (reservationId) {
-          if (outputText) {
-            await settleAiQuota({
-              reservationId,
-              requestId,
-              feature: 'destiny',
-              action: 'destiny-copilot',
-              provider: config.provider,
-              model: config.model,
-              endpoint: '/api/destiny/copilot',
-              measurement: createTokenMeasurement(
-                usagePayload,
-                inputUnits + estimateOutputTokens(outputText)
-              ),
-              status: 'partial',
-              metadata: { questionLength, stream: true, provider: config.provider },
-            });
-          } else {
-            await releaseAiQuota({
-              reservationId,
-              reason: '命理追问流式失败',
-              meterType: 'tokens',
-            });
-          }
-        }
+        // 结算配额（部分或释放）
+        await settleUsageOnError(error);
         streamController.enqueue(
           encodeSseEvent({
             type: 'error',
@@ -348,11 +297,76 @@ function createCopilotStream({
                   : '追问失败，请稍后重试',
           })
         );
-      } finally {
         streamController.close();
       }
     },
+
+    cancel() {
+      streamIterator.return?.(undefined);
+    },
   });
+
+  async function settleUsage() {
+    if (reservationId) {
+      await settleAiQuota({
+        reservationId,
+        requestId,
+        feature: 'destiny',
+        action: 'destiny-copilot',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/copilot',
+        measurement: createTokenMeasurement(
+          usagePayload,
+          inputUnits + estimateOutputTokens(outputText)
+        ),
+        metadata: { questionLength, stream: true, provider: config.provider },
+      });
+    } else if (userId) {
+      await safeRecordAiUsage({
+        userId,
+        feature: 'destiny',
+        action: 'destiny-copilot',
+        provider: config.provider,
+        model: config.model,
+        endpoint: '/api/destiny/copilot',
+        usage: normalizeUsage(usagePayload),
+        metadata: {
+          questionLength,
+          stream: true,
+          provider: config.provider,
+        },
+      });
+    }
+  }
+
+  async function settleUsageOnError(error: unknown) {
+    if (reservationId) {
+      if (outputText) {
+        await settleAiQuota({
+          reservationId,
+          requestId,
+          feature: 'destiny',
+          action: 'destiny-copilot',
+          provider: config.provider,
+          model: config.model,
+          endpoint: '/api/destiny/copilot',
+          measurement: createTokenMeasurement(
+            usagePayload,
+            inputUnits + estimateOutputTokens(outputText)
+          ),
+          status: 'partial',
+          metadata: { questionLength, stream: true, provider: config.provider },
+        });
+      } else {
+        await releaseAiQuota({
+          reservationId,
+          reason: '命理追问流式失败',
+          meterType: 'tokens',
+        });
+      }
+    }
+  }
 }
 
 function buildCopilotMessages(
@@ -543,6 +557,7 @@ function buildQuestionScopedInsights(
 ) {
   const q = question.toLowerCase();
   const pickedModules: Array<{ label: string; summary: string; bullets: string[] }> = [];
+  const reportModules = report.modules ?? {};
   const pushModule = (
     label: string,
     summary: string,
@@ -561,77 +576,79 @@ function buildQuestionScopedInsights(
     }
   };
 
-  if (/事业|工作|职业|升职|跳槽|offer|career|job/.test(q)) {
+  if (/事业|工作|职业|升职|跳槽|offer|career|job/.test(q) && reportModules.career) {
     pushModule(
       '事业',
-      report.modules.career.summary,
-      report.modules.career.advantages,
-      report.modules.career.suggestions,
-      report.modules.career.bullets
+      reportModules.career.summary,
+      reportModules.career.advantages,
+      reportModules.career.suggestions,
+      reportModules.career.bullets
     );
   }
-  if (/感情|爱情|婚|伴侣|恋爱|桃花|关系|love|relationship/.test(q)) {
+  if (/感情|爱情|婚|伴侣|恋爱|桃花|关系|love|relationship/.test(q) && reportModules.love) {
     pushModule(
       '感情',
-      report.modules.love.summary,
-      report.modules.love.advantages,
-      report.modules.love.suggestions,
-      report.modules.love.bullets
+      reportModules.love.summary,
+      reportModules.love.advantages,
+      reportModules.love.suggestions,
+      reportModules.love.bullets
     );
   }
-  if (/财|收入|钱|投资|副业|财富|wealth|money/.test(q)) {
+  if (/财|收入|钱|投资|副业|财富|wealth|money/.test(q) && reportModules.wealth) {
     pushModule(
       '财运',
-      report.modules.wealth.summary,
-      report.modules.wealth.advantages,
-      report.modules.wealth.suggestions,
-      report.modules.wealth.bullets
+      reportModules.wealth.summary,
+      reportModules.wealth.advantages,
+      reportModules.wealth.suggestions,
+      reportModules.wealth.bullets
     );
   }
-  if (/健康|睡眠|情绪|身体|medical|health/.test(q)) {
+  if (/健康|睡眠|情绪|身体|medical|health/.test(q) && reportModules.health) {
     pushModule(
       '健康',
-      report.modules.health.summary,
-      report.modules.health.advantages,
-      report.modules.health.suggestions,
-      report.modules.health.bullets
+      reportModules.health.summary,
+      reportModules.health.advantages,
+      reportModules.health.suggestions,
+      reportModules.health.bullets
     );
   }
-  if (/性格|人际|沟通|自己|状态|personality/.test(q)) {
+  if (/性格|人际|沟通|自己|状态|personality/.test(q) && reportModules.personality) {
     pushModule(
       '性格',
-      report.modules.personality.summary,
-      report.modules.personality.advantages,
-      report.modules.personality.suggestions,
-      report.modules.personality.bullets
+      reportModules.personality.summary,
+      reportModules.personality.advantages,
+      reportModules.personality.suggestions,
+      reportModules.personality.bullets
     );
   }
 
-  if (pickedModules.length === 0) {
+  if (pickedModules.length === 0 && reportModules.career) {
     pushModule(
       '事业',
-      report.modules.career.summary,
-      report.modules.career.advantages,
-      report.modules.career.suggestions,
-      report.modules.career.bullets
+      reportModules.career.summary,
+      reportModules.career.advantages,
+      reportModules.career.suggestions,
+      reportModules.career.bullets
     );
-    pushModule(
-      '感情',
-      report.modules.love.summary,
-      report.modules.love.advantages,
-      report.modules.love.suggestions,
-      report.modules.love.bullets
-    );
+    if (reportModules.love) {
+      pushModule(
+        '感情',
+        reportModules.love.summary,
+        reportModules.love.advantages,
+        reportModules.love.suggestions,
+        reportModules.love.bullets
+      );
+    }
   }
 
   const currentYear = new Date().getFullYear();
-  const timeline = [...report.timeline]
+  const timeline = [...(report.timeline ?? [])]
     .sort((a, b) => Math.abs(a.year - currentYear) - Math.abs(b.year - currentYear))
     .slice(0, 2)
     .map((item) => `${item.year}年 ${item.title}：${item.summary}`)
     .join('\n');
 
-  const modules = pickedModules
+  const pickedModulesText = pickedModules
     .slice(0, 2)
     .map(
       ({ label, summary, bullets }) =>
@@ -641,7 +658,7 @@ function buildQuestionScopedInsights(
 
   const decadeFortuneScoped = buildDecadeFortuneScopedBlock(report, question, focusDecadeName);
 
-  return [decadeFortuneScoped, `相关模块：\n${modules}`, `相关流年：\n${timeline}`]
+  return [decadeFortuneScoped, `相关模块：\n${pickedModulesText}`, `相关流年：\n${timeline}`]
     .filter(Boolean)
     .join('\n');
 }

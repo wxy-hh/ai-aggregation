@@ -1,6 +1,6 @@
 # 豆包（Doubao）八字报告完整提示词
 
-> 模型：`doubao-seed-2-0-lite-260428`
+> 模型：`doubao-seed-evolving`
 > 端点：`{ARK_BASE_URL}/responses`
 > 用途：八字命理解读的分区流式输出
 
@@ -14,7 +14,7 @@ Authorization: Bearer {ARK_API_KEY}
 Content-Type: application/json
 
 {
-  "model": "doubao-seed-2-0-lite-260428",
+  "model": "doubao-seed-evolving",
   "input": [
     { "role": "system", "content": "<system_prompt>" },
     { "role": "user", "content": "<user_prompt>" }
@@ -277,7 +277,10 @@ litePromptPayload（便于快速把握主轴）：
           "items": {
             "type": "object",
             "properties": {
-              "key": { "type": "string", "enum": ["self", "expression", "wealth", "order", "resource"] },
+              "key": {
+                "type": "string",
+                "enum": ["self", "expression", "wealth", "order", "resource"]
+              },
               "label": { "type": "string" },
               "technicalLabel": { "type": "string" },
               "value": { "type": "integer" },
@@ -310,7 +313,13 @@ litePromptPayload（便于快速把握主轴）：
           }
         }
       },
-      "required": ["lifeDimensions", "lifeDimensionHighlights", "tenGodDomains", "balanceInsight", "patternHighlights"],
+      "required": [
+        "lifeDimensions",
+        "lifeDimensionHighlights",
+        "tenGodDomains",
+        "balanceInsight",
+        "patternHighlights"
+      ],
       "additionalProperties": false
     },
     "modulePersonality": {
@@ -420,7 +429,7 @@ buildUserPrompt(input, basis)              ← deterministicFacts + litePromptPa
       │
       ▼
 POST {ARK}/responses
-  model: doubao-seed-2-0-lite-260428
+  model: doubao-seed-evolving
   temperature: 0.25
   text.format.type: json_schema
       │

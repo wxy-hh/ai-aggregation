@@ -78,7 +78,7 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
   doubao: {
     name: '豆包', // 显示名称
     models: [
-      { id: 'doubao-seed-2-0-lite-260428', label: 'Doubao Lite (轻量级)' }, // 轻量级版本
+      { id: 'doubao-seed-evolving', label: 'Doubao-Seed-Evolving' }, // 最新版本
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
     ],
   },
@@ -254,7 +254,6 @@ export default function ChatPage() {
       setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
       relay.setDraft(relayBundleText);
     }
-
   }, [relay.initialized, relay.bundle?.id]);
 
   // ============ 接力会话落点（M-3）============
@@ -842,67 +841,67 @@ export default function ChatPage() {
                         ) : (
                           // 单聊模式：单模型选择器
                           <div className="relative" ref={modelSelectorRef}>
-                          <button
-                            onClick={() => setShowModelSelector(!showModelSelector)}
-                            className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
-                          >
-                            <svg
-                              className="w-3.5 h-3.5 text-blue-500"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
+                            <button
+                              onClick={() => setShowModelSelector(!showModelSelector)}
+                              className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
                             >
-                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-                            </svg>
-                            <span>{currentModelLabel}</span>
-                            <svg
-                              className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 9l-7 7-7-7"
-                              />
-                            </svg>
-                          </button>
+                              <svg
+                                className="w-3.5 h-3.5 text-blue-500"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                              </svg>
+                              <span>{currentModelLabel}</span>
+                              <svg
+                                className={`w-3 h-3 text-slate-400 transition-transform ${showModelSelector ? 'rotate-180' : ''}`}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 9l-7 7-7-7"
+                                />
+                              </svg>
+                            </button>
 
-                          {/* 下拉列表 */}
-                          {showModelSelector && (
-                            <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
-                              {(
-                                Object.entries(MODELS) as [
-                                  ProviderName,
-                                  (typeof MODELS)[ProviderName],
-                                ][]
-                              ).map(([providerKey, config]) => (
-                                <div key={providerKey} className="px-2 py-1">
-                                  <div className="text-xs text-slate-400 font-medium px-2 py-1">
-                                    {config.name}
+                            {/* 下拉列表 */}
+                            {showModelSelector && (
+                              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
+                                {(
+                                  Object.entries(MODELS) as [
+                                    ProviderName,
+                                    (typeof MODELS)[ProviderName],
+                                  ][]
+                                ).map(([providerKey, config]) => (
+                                  <div key={providerKey} className="px-2 py-1">
+                                    <div className="text-xs text-slate-400 font-medium px-2 py-1">
+                                      {config.name}
+                                    </div>
+                                    {config.models.map((m) => (
+                                      <button
+                                        key={m.id}
+                                        onClick={() => {
+                                          handleSwitchProvider(providerKey, m.id);
+                                          setShowModelSelector(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                          provider === providerKey && model === m.id
+                                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                        }`}
+                                      >
+                                        {m.label}
+                                      </button>
+                                    ))}
                                   </div>
-                                  {config.models.map((m) => (
-                                    <button
-                                      key={m.id}
-                                      onClick={() => {
-                                        handleSwitchProvider(providerKey, m.id);
-                                        setShowModelSelector(false);
-                                      }}
-                                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                                        provider === providerKey && model === m.id
-                                          ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                                      }`}
-                                    >
-                                      {m.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -947,150 +946,150 @@ export default function ChatPage() {
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
-              {/* 错误显示 */}
-              {error && (
-                <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
-                  <strong>错误：</strong> {error.message}
-                </div>
-              )}
-
-              {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
-              <div
-                ref={messagesScrollRef}
-                className={cn(
-                  'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
-                  isEmptyChat
-                    ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
-                    : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
-                )}
-              >
-                {isEmptyChat ? (
-                  <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
-                    <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
-
-                    <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
-                      <div className="mb-8 flex flex-col items-center text-center">
-                        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
-                          <Bot className="h-8 w-8" />
-                        </div>
-                        <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                          智能对话助手
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {quickActions.map((action) => {
-                          const ActionIcon = action.icon;
-
-                          return (
-                            <button
-                              key={action.title}
-                              onClick={() => handleSend(action.prompt)}
-                              className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
-                            >
-                              <div
-                                className={cn(
-                                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                                  action.iconClassName
-                                )}
-                              >
-                                <ActionIcon className="h-5 w-5" />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
-                                  {action.title}
-                                </div>
-                                <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                  {action.description}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                          <FileText className="h-3.5 w-3.5 text-blue-500" />
-                          支持长文本分析
-                        </div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                          <Globe className="h-3.5 w-3.5 text-blue-500" />
-                          实时联网搜索
-                        </div>
-                        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
-                          <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                          企业级数据安全
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex w-full flex-col pt-2 pb-4">
-                    {displayMessages.map((msg) => (
-                      <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-              </div>
-              {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
-              {!isEmptyChat && (
-                <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
-                  aria-hidden
-                />
-              )}
-
-              {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
-              {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (
-                <div className="relative z-10 flex-none px-4 pt-2 sm:px-5">
-                  {relay.replaceCandidate ? (
-                    <ReferenceBar
-                      bundle={relay.replaceCandidate.incoming}
-                      isReplaceCandidate
-                      onConfirmReplace={relay.confirmReplace}
-                      onCancelReplace={relay.cancelReplace}
-                      onRemove={relay.remove}
-                    />
-                  ) : relay.bundle ? (
-                    <ReferenceBar
-                      bundle={relay.bundle}
-                      onViewSource={() => setRelayPreviewOpen(true)}
-                      onRemove={relay.remove}
-                      showFill={Boolean(relayBundleText) && !relayDraft}
-                      fillLabel={RELAY_COPY.referenceBar.fillInput}
-                      onFill={() => {
-                        if (relay.bundle) {
-                          setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
-                          relay.setDraft(relayBundleText);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900">
-                      {RELAY_COPY.referenceBar.invalid}
+                  {/* 错误显示 */}
+                  {error && (
+                    <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
+                      <strong>错误：</strong> {error.message}
                     </div>
                   )}
-                </div>
-              )}
 
-              {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
-              <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
-                <ChatInput
-                  onSend={handleSend}
-                  isLoading={isLoading}
-                  externalDraft={relayDraft}
-                  onExternalDraftConsumed={() => setRelayDraft(null)}
-                />
-              </div>
+                  {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
+                  <div
+                    ref={messagesScrollRef}
+                    className={cn(
+                      'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
+                      isEmptyChat
+                        ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
+                        : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
+                    )}
+                  >
+                    {isEmptyChat ? (
+                      <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
+                        <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
-              {/* 接力来源快照预览（只读） */}
-              <ReferenceSourcePreview
-                open={relayPreviewOpen}
-                onOpenChange={setRelayPreviewOpen}
-                item={relay.bundle?.items[0] ?? null}
-              />
+                        <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
+                          <div className="mb-8 flex flex-col items-center text-center">
+                            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                              <Bot className="h-8 w-8" />
+                            </div>
+                            <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                              智能对话助手
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {quickActions.map((action) => {
+                              const ActionIcon = action.icon;
+
+                              return (
+                                <button
+                                  key={action.title}
+                                  onClick={() => handleSend(action.prompt)}
+                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                                >
+                                  <div
+                                    className={cn(
+                                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                                      action.iconClassName
+                                    )}
+                                  >
+                                    <ActionIcon className="h-5 w-5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                      {action.title}
+                                    </div>
+                                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                      {action.description}
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                              <FileText className="h-3.5 w-3.5 text-blue-500" />
+                              支持长文本分析
+                            </div>
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                              <Globe className="h-3.5 w-3.5 text-blue-500" />
+                              实时联网搜索
+                            </div>
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                              <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                              企业级数据安全
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex w-full flex-col pt-2 pb-4">
+                        {displayMessages.map((msg) => (
+                          <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
+                        ))}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </div>
+                  {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
+                  {!isEmptyChat && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
+                      aria-hidden
+                    />
+                  )}
+
+                  {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
+                  {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (
+                    <div className="relative z-10 flex-none px-4 pt-2 sm:px-5">
+                      {relay.replaceCandidate ? (
+                        <ReferenceBar
+                          bundle={relay.replaceCandidate.incoming}
+                          isReplaceCandidate
+                          onConfirmReplace={relay.confirmReplace}
+                          onCancelReplace={relay.cancelReplace}
+                          onRemove={relay.remove}
+                        />
+                      ) : relay.bundle ? (
+                        <ReferenceBar
+                          bundle={relay.bundle}
+                          onViewSource={() => setRelayPreviewOpen(true)}
+                          onRemove={relay.remove}
+                          showFill={Boolean(relayBundleText) && !relayDraft}
+                          fillLabel={RELAY_COPY.referenceBar.fillInput}
+                          onFill={() => {
+                            if (relay.bundle) {
+                              setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
+                              relay.setDraft(relayBundleText);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 dark:border-white/10 dark:bg-slate-900">
+                          {RELAY_COPY.referenceBar.invalid}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
+                  <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
+                    <ChatInput
+                      onSend={handleSend}
+                      isLoading={isLoading}
+                      externalDraft={relayDraft}
+                      onExternalDraftConsumed={() => setRelayDraft(null)}
+                    />
+                  </div>
+
+                  {/* 接力来源快照预览（只读） */}
+                  <ReferenceSourcePreview
+                    open={relayPreviewOpen}
+                    onOpenChange={setRelayPreviewOpen}
+                    item={relay.bundle?.items[0] ?? null}
+                  />
                 </>
               )}
             </div>

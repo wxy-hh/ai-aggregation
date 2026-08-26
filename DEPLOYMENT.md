@@ -7,13 +7,13 @@
 
 ## 0. 先读这 30 秒
 
-| 服务 | 平台 | 是否阻塞登录注册 |
-|------|------|------------------|
-| Web（Next.js） | **Vercel** | **是** |
-| PostgreSQL | Prisma Postgres / Supabase / Neon | **是** |
-| Redis | Upstash | 否（登录不依赖；队列/部分异步能力需要） |
-| BullMQ Worker | Railway / Render | 否（奇门异步等需要） |
-| RTASR 实时语音网关 | Cloudflare Workers | 否（仅实时语音） |
+| 服务               | 平台                              | 是否阻塞登录注册                        |
+| ------------------ | --------------------------------- | --------------------------------------- |
+| Web（Next.js）     | **Vercel**                        | **是**                                  |
+| PostgreSQL         | Prisma Postgres / Supabase / Neon | **是**                                  |
+| Redis              | Upstash                           | 否（登录不依赖；队列/部分异步能力需要） |
+| BullMQ Worker      | Railway / Render                  | 否（奇门异步等需要）                    |
+| RTASR 实时语音网关 | Cloudflare Workers                | 否（仅实时语音）                        |
 
 **登录注册最小闭环 = Vercel Web + 可用 `DATABASE_URL` + `AUTH_SECRET` + 已执行 Prisma migrate。**
 
@@ -93,15 +93,15 @@ pnpm -v   # 10.x
 
 在 Vercel → Project → Settings → General：
 
-| 项 | 值 |
-|----|-----|
-| Framework | Next.js |
-| Root Directory | `apps/web` |
-| Node.js Version | **22.x** |
-| Install Command | `cd ../.. && pnpm install --frozen-lockfile` |
-| Build Command | `cd ../.. && pnpm turbo build --filter=@repo/web` |
-| Output Directory | `.next` |
-| Region | `hkg1`（与 `apps/web/vercel.json` 一致） |
+| 项               | 值                                                |
+| ---------------- | ------------------------------------------------- |
+| Framework        | Next.js                                           |
+| Root Directory   | `apps/web`                                        |
+| Node.js Version  | **22.x**                                          |
+| Install Command  | `cd ../.. && pnpm install --frozen-lockfile`      |
+| Build Command    | `cd ../.. && pnpm turbo build --filter=@repo/web` |
+| Output Directory | `.next`                                           |
+| Region           | `hkg1`（与 `apps/web/vercel.json` 一致）          |
 
 `apps/web/vercel.json` 内容应类似：
 
@@ -218,13 +218,13 @@ pnpm db:seed
 
 ### 5.1 登录注册最小集（必填）
 
-| 变量 | 示例/说明 | 必填 |
-|------|-----------|------|
-| `DATABASE_URL` | 生产 PostgreSQL 连接串 | **是** |
-| `AUTH_SECRET` | `openssl rand -hex 32` 生成，**勿用** `dev-secret` | **是** |
-| `ANONYMOUS_DEVICE_SALT` | `openssl rand -hex 16`，匿名设备指纹盐 | **是** |
-| `NEXTAUTH_URL` | `https://ai-aggregation-web.vercel.app` | 是 |
-| `NEXT_PUBLIC_APP_URL` | 同上（客户端可见） | 是 |
+| 变量                    | 示例/说明                                          | 必填   |
+| ----------------------- | -------------------------------------------------- | ------ |
+| `DATABASE_URL`          | 生产 PostgreSQL 连接串                             | **是** |
+| `AUTH_SECRET`           | `openssl rand -hex 32` 生成，**勿用** `dev-secret` | **是** |
+| `ANONYMOUS_DEVICE_SALT` | `openssl rand -hex 16`，匿名设备指纹盐             | **是** |
+| `NEXTAUTH_URL`          | `https://ai-aggregation-web.vercel.app`            | 是     |
+| `NEXT_PUBLIC_APP_URL`   | 同上（客户端可见）                                 | 是     |
 
 生成密钥：
 
@@ -236,48 +236,48 @@ openssl rand -hex 24   # BILLING_RECONCILE_SECRET / RTASR_GATEWAY_SECRET
 
 ### 5.2 Redis / 队列（推荐）
 
-| 变量 | 说明 |
-|------|------|
-| `REDIS_HOST` | Upstash host |
-| `REDIS_PORT` | 通常 `6379` |
-| `REDIS_PASSWORD` | Upstash password |
-| `REDIS_TLS` | 需要 TLS 时设 `true` |
-| `REDIS_URL` | 可选，`rediss://...` 优先于拆分字段 |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | 若接了 Upstash 集成会自动注入 |
-| `REDIS_KV_*` | Vercel Upstash 集成自动注入时可保留 |
+| 变量                                                  | 说明                                |
+| ----------------------------------------------------- | ----------------------------------- |
+| `REDIS_HOST`                                          | Upstash host                        |
+| `REDIS_PORT`                                          | 通常 `6379`                         |
+| `REDIS_PASSWORD`                                      | Upstash password                    |
+| `REDIS_TLS`                                           | 需要 TLS 时设 `true`                |
+| `REDIS_URL`                                           | 可选，`rediss://...` 优先于拆分字段 |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | 若接了 Upstash 集成会自动注入       |
+| `REDIS_KV_*`                                          | Vercel Upstash 集成自动注入时可保留 |
 
 ### 5.3 AI 与业务（按功能）
 
-| 变量 | 用途 |
-|------|------|
-| `DASHSCOPE_API_KEY` | 通义对话/图像 |
-| `ZHIPU_API_KEY` | 智谱对话/视频 |
-| `DEEPSEEK_API_KEY` | DeepSeek 对话 |
-| `DEEPSEEK_MODEL` | 命理等指定 DeepSeek 模型名（**不是** API Key） |
-| `ARK_API_KEY` | 豆包/火山方舟（对话/简历/命理） |
-| `ARK_BASE_URL` | 如 `https://ark.cn-beijing.volces.com/api/v3` |
-| `ARK_MODEL` | 默认对话模型 |
-| `ARK_DESTINY_MODEL` | 命理专用模型 |
-| `SILICONFLOW_API_KEY` | 硅基流动 / Kolors / SenseVoice |
-| `SILICONFLOW_API_URL` | 如 `https://api.siliconflow.cn/v1` |
-| `SILICONFLOW_DEFAULT_MODEL` | 如 `FunAudioLLM/SenseVoiceSmall` |
-| `XUNFEI_API_PASSWORD` | 讯飞 |
-| `XUNFEI_APP_ID` | 讯飞 AppId |
-| `XUNFEI_API_KEY` | 讯飞 API Key |
-| `XUNFEI_API_SECRET` | 讯飞 Secret（实时语音等） |
-| `AGNES_API_KEY` | Agnes 图像/视频 |
-| `AGNES_INFERENCE_API_URL` | Agnes 推理地址 |
-| `BILLING_RECONCILE_SECRET` | 计费对账内部接口 |
-| `RTASR_GATEWAY_SECRET` | 实时语音网关与 Web 共享密钥 |
-| `NEXT_PUBLIC_RTASR_GATEWAY_URL` | **`wss://`** 生产网关地址（见第 7 节） |
+| 变量                            | 用途                                           |
+| ------------------------------- | ---------------------------------------------- |
+| `DASHSCOPE_API_KEY`             | 通义对话/图像                                  |
+| `ZHIPU_API_KEY`                 | 智谱对话/视频                                  |
+| `DEEPSEEK_API_KEY`              | DeepSeek 对话                                  |
+| `DEEPSEEK_MODEL`                | 命理等指定 DeepSeek 模型名（**不是** API Key） |
+| `ARK_API_KEY`                   | 豆包/火山方舟（对话/简历/命理）                |
+| `ARK_BASE_URL`                  | 如 `https://ark.cn-beijing.volces.com/api/v3`  |
+| `ARK_MODEL`                     | 默认对话模型                                   |
+| `ARK_DESTINY_MODEL`             | 命理专用模型                                   |
+| `SILICONFLOW_API_KEY`           | 硅基流动 / Kolors / SenseVoice                 |
+| `SILICONFLOW_API_URL`           | 如 `https://api.siliconflow.cn/v1`             |
+| `SILICONFLOW_DEFAULT_MODEL`     | 如 `FunAudioLLM/SenseVoiceSmall`               |
+| `XUNFEI_API_PASSWORD`           | 讯飞                                           |
+| `XUNFEI_APP_ID`                 | 讯飞 AppId                                     |
+| `XUNFEI_API_KEY`                | 讯飞 API Key                                   |
+| `XUNFEI_API_SECRET`             | 讯飞 Secret（实时语音等）                      |
+| `AGNES_API_KEY`                 | Agnes 图像/视频                                |
+| `AGNES_INFERENCE_API_URL`       | Agnes 推理地址                                 |
+| `BILLING_RECONCILE_SECRET`      | 计费对账内部接口                               |
+| `RTASR_GATEWAY_SECRET`          | 实时语音网关与 Web 共享密钥                    |
+| `NEXT_PUBLIC_RTASR_GATEWAY_URL` | **`wss://`** 生产网关地址（见第 7 节）         |
 
 ### 5.4 可选 / 未配也能登录
 
-| 变量 | 说明 |
-|------|------|
-| `WECHAT_*` / `QQ_*` | OAuth 登录，本地也常未配 |
-| `S3_*` / `OSS_*` | 对象存储；反馈附件等 |
-| `ALLOWED_FILE_TYPES` / `MAX_FILE_SIZE` / `TEMP_UPLOAD_DIR` | 上传限制 |
+| 变量                                                       | 说明                     |
+| ---------------------------------------------------------- | ------------------------ |
+| `WECHAT_*` / `QQ_*`                                        | OAuth 登录，本地也常未配 |
+| `S3_*` / `OSS_*`                                           | 对象存储；反馈附件等     |
+| `ALLOWED_FILE_TYPES` / `MAX_FILE_SIZE` / `TEMP_UPLOAD_DIR` | 上传限制                 |
 
 ### 5.5 批量粘贴方式
 
@@ -445,7 +445,7 @@ await fetch(base + '/api/auth/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ username, password, name: 'verify' }),
-}).then(r => r.json());
+}).then((r) => r.json());
 // 期望 success: true, status 200
 
 // 2) 登录
@@ -453,13 +453,13 @@ const login = await fetch(base + '/api/auth/login', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ username, password }),
-}).then(r => r.json());
+}).then((r) => r.json());
 // 期望 data.accessToken
 
 // 3) me
 await fetch(base + '/api/auth/me', {
   headers: { Authorization: 'Bearer ' + login.data.accessToken },
-}).then(r => r.json());
+}).then((r) => r.json());
 // 期望 success: true
 ```
 
@@ -480,18 +480,18 @@ pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
 
 ### 9.5 常见失败对照
 
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| 注册/登录 500，日志 Prisma engine / Query Engine | monorepo 引擎未打进产物 | 确认 binaryTargets + PrismaPlugin + Redeploy |
-| 注册/登录 500，`host:5432` / P1001 | `DATABASE_URL` 无效 | 改成可达生产库并 Redeploy |
-| 注册 500，列/表不存在 | 未 migrate | `prisma migrate deploy` |
-| 改了 env 仍旧行为 | 未 Redeploy | Deployments → Redeploy |
-| 本地 curl 连不上 vercel.app | DNS/网络污染 | 用浏览器验证 |
-| 导入 env 报 ENV_CONFLICT | 变量已存在 | 搜索后编辑，勿重复 Add |
-| `/api/chat` 一直转圈/无响应（登录正常） | Redis 不可达 + ioredis offline queue 无限排队 | 已修：短超时、关闭 offline queue、限流 2.5s 放行；确认 `REDIS_URL`/`REDIS_HOST` 为 Upstash 且 `REDIS_TLS=true` |
-| 命理超时 | Hobby 60s / 长任务 | 升 Pro 或拆异步 + Worker |
-| 实时语音连不上 | 未部署 Worker 或 URL 非 wss | 第 7 节 |
-| `vercel deploy` 报 daemon.sock / error -102 | 本地 `.codegraph` 被打包 | 确保 `.vercelignore` 含 `.codegraph*` |
+| 现象                                             | 原因                                          | 处理                                                                                                           |
+| ------------------------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 注册/登录 500，日志 Prisma engine / Query Engine | monorepo 引擎未打进产物                       | 确认 binaryTargets + PrismaPlugin + Redeploy                                                                   |
+| 注册/登录 500，`host:5432` / P1001               | `DATABASE_URL` 无效                           | 改成可达生产库并 Redeploy                                                                                      |
+| 注册 500，列/表不存在                            | 未 migrate                                    | `prisma migrate deploy`                                                                                        |
+| 改了 env 仍旧行为                                | 未 Redeploy                                   | Deployments → Redeploy                                                                                         |
+| 本地 curl 连不上 vercel.app                      | DNS/网络污染                                  | 用浏览器验证                                                                                                   |
+| 导入 env 报 ENV_CONFLICT                         | 变量已存在                                    | 搜索后编辑，勿重复 Add                                                                                         |
+| `/api/chat` 一直转圈/无响应（登录正常）          | Redis 不可达 + ioredis offline queue 无限排队 | 已修：短超时、关闭 offline queue、限流 2.5s 放行；确认 `REDIS_URL`/`REDIS_HOST` 为 Upstash 且 `REDIS_TLS=true` |
+| 命理超时                                         | Hobby 60s / 长任务                            | 升 Pro 或拆异步 + Worker                                                                                       |
+| 实时语音连不上                                   | 未部署 Worker 或 URL 非 wss                   | 第 7 节                                                                                                        |
+| `vercel deploy` 报 daemon.sock / error -102      | 本地 `.codegraph` 被打包                      | 确保 `.vercelignore` 含 `.codegraph*`                                                                          |
 
 ---
 
@@ -554,30 +554,31 @@ openssl rand -hex 32
 
 ## 12. 相关文档
 
-| 文档 | 内容 |
-|------|------|
-| `DEPLOYMENT.md` | 本文：生产部署权威说明（含 Vercel + Docker 自部署） |
-| `apps/worker/DEPLOY.md` | BullMQ Worker 部署 |
-| `docs/voice-realtime-setup.md` | 实时语音本地与生产 |
-| `docs/quick-start-cloud.md` | 本地用免费云服务开发 |
-| `apps/web/.env.example` | 环境变量模板 |
-| `CLAUDE.md` | 项目结构与开发规范 |
+| 文档                           | 内容                                                |
+| ------------------------------ | --------------------------------------------------- |
+| `DEPLOYMENT.md`                | 本文：生产部署权威说明（含 Vercel + Docker 自部署） |
+| `apps/worker/DEPLOY.md`        | BullMQ Worker 部署                                  |
+| `docs/voice-realtime-setup.md` | 实时语音本地与生产                                  |
+| `docs/quick-start-cloud.md`    | 本地用免费云服务开发                                |
+| `apps/web/.env.example`        | 环境变量模板                                        |
+| `CLAUDE.md`                    | 项目结构与开发规范                                  |
 
 ---
 
 ## 13. 最近生产验证记录
 
-| 日期 | 部署 | 结果 |
-|------|------|------|
-| 2026-07-24 | `dpl_DMvV6fJJWxeUpNzJnM46xTevZ8pb` Ready | **chat 修复**：xunfei/doubao SSE 200 且返回 `text-delta`；根因 Redis 挂起 |
-| 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres |
-| 2026-07-24 | 环境变量 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT |
-| 2026-07-24 | Cloudflare | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续 |
-| 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33） | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书 |
+| 日期       | 部署                                     | 结果                                                                                                                   |
+| ---------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-24 | `dpl_DMvV6fJJWxeUpNzJnM46xTevZ8pb` Ready | **chat 修复**：xunfei/doubao SSE 200 且返回 `text-delta`；根因 Redis 挂起                                              |
+| 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready     | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres                                              |
+| 2026-07-24 | 环境变量                                 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT                                                     |
+| 2026-07-24 | Cloudflare                               | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续                                |
+| 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
 Docker 生产地址：https://www.chunfen.ink  
 Vercel 项目：https://vercel.com/weixiaoyus-projects/ai-aggregation-web
+
 ---
 
 ## 14. Docker 自部署（腾讯云 / 自建服务器）
@@ -610,13 +611,13 @@ Vercel 项目：https://vercel.com/weixiaoyus-projects/ai-aggregation-web
 
 ### 14.2 服务器要求
 
-| 项目 | 最低要求 | 推荐 |
-|------|----------|------|
-| 操作系统 | Ubuntu 22.04+ | Ubuntu 24.04 LTS |
-| CPU | 2 核 | 4 核 |
-| 内存 | 2 GB | 4 GB |
-| 磁盘 | 20 GB | 40 GB+（Docker 镜像较大） |
-| 网络 | 开放 80、443、22 端口 | — |
+| 项目     | 最低要求              | 推荐                      |
+| -------- | --------------------- | ------------------------- |
+| 操作系统 | Ubuntu 22.04+         | Ubuntu 24.04 LTS          |
+| CPU      | 2 核                  | 4 核                      |
+| 内存     | 2 GB                  | 4 GB                      |
+| 磁盘     | 20 GB                 | 40 GB+（Docker 镜像较大） |
+| 网络     | 开放 80、443、22 端口 | —                         |
 
 ### 14.3 服务器初始化（首次）
 
@@ -715,7 +716,7 @@ ANONYMOUS_DEVICE_SALT="$(openssl rand -hex 16)"
 # ---------- AI 服务商 Key（按需填写）----------
 # 豆包（命理分析主力）
 ARK_API_KEY="你的火山方舟 Key"
-ARK_MODEL="doubao-seed-2-0-lite-260428"
+ARK_MODEL="doubao-seed-evolving"
 ARK_DESTINY_MODEL="doubao-seed-2-1-pro-260628"
 
 # DeepSeek（命理备选，Key 存在 DEEPSEEK_MODEL 变量中）
@@ -881,6 +882,7 @@ git pull origin master
 > **常见问题：git pull 报错 "Your local changes would be overwritten"**
 >
 > 如果服务器上有未提交的本地修改（如 Dockerfile），拉取会失败：
+>
 > ```
 > error: Your local changes to the following files would be overwritten by merge:
 >         apps/web/Dockerfile
@@ -888,6 +890,7 @@ git pull origin master
 > ```
 >
 > **解决方案**（推荐丢弃本地修改，用仓库版本）：
+>
 > ```bash
 > # 丢弃指定文件的本地修改
 > git checkout -- apps/web/Dockerfile apps/worker/Dockerfile
@@ -897,6 +900,7 @@ git pull origin master
 > ```
 >
 > **如果本地修改需要保留**：
+>
 > ```bash
 > git stash
 > git pull origin master
@@ -1021,14 +1025,14 @@ docker logs ai-web --tail 20
 
 #### 两种方式对比
 
-| | 方式一：Git Pull（推荐） | 方式二：本地打包上传 |
-|--|--|--|
-| 操作步骤 | 6 步 | 6 步 |
-| 本地操作 | git push（1 条命令） | tar 打包 + scp 上传（2 条命令） |
-| 服务器操作 | git pull（1 条命令） | scp 接收 + tar 解压（2 条命令） |
-| 速度 | 最快，增量拉取 | 需要全量打包和传输 |
-| 依赖条件 | 服务器有 git 权限 | 不需要，只要有 sshpass |
-| 适合场景 | 日常开发迭代 | 服务器无外网 git 访问权限 |
+|            | 方式一：Git Pull（推荐） | 方式二：本地打包上传            |
+| ---------- | ------------------------ | ------------------------------- |
+| 操作步骤   | 6 步                     | 6 步                            |
+| 本地操作   | git push（1 条命令）     | tar 打包 + scp 上传（2 条命令） |
+| 服务器操作 | git pull（1 条命令）     | scp 接收 + tar 解压（2 条命令） |
+| 速度       | 最快，增量拉取           | 需要全量打包和传输              |
+| 依赖条件   | 服务器有 git 权限        | 不需要，只要有 sshpass          |
+| 适合场景   | 日常开发迭代             | 服务器无外网 git 访问权限       |
 
 > **提示**：`--force-recreate` 确保新的环境变量和镜像生效。如果不修改 `.env.prod` 且只是重启，可以用 `docker compose -f docker-compose.prod.yml restart nginx web` 代替。
 
@@ -1062,18 +1066,18 @@ docker system df
 
 ### 14.10 常见问题排查
 
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| Nginx 502 Bad Gateway | Web 容器未启动或崩溃 | `docker logs ai-web` 查看报错 |
-| Nginx 报 `host not found in upstream` | 容器名不对或未在同一网络 | 确认 `proxy_pass` 用 `ai-web`，且容器在 `docker_ai-net` |
-| Web 容器 `ECONNREFUSED 127.0.0.1:6379` | `.env.prod` 中 REDIS_HOST 用了 `127.0.0.1` | 改为 `ai-aggregation-redis`，然后 `--force-recreate` |
-| Web 容器 `ECONNREFUSED 127.0.0.1:5432` | `.env.prod` 中 DATABASE_URL 用了 `127.0.0.1` | 改为 `ai-aggregation-postgres`，然后 `--force-recreate` |
-| Docker build 报 `postinstall` 错误 | 根 `package.json` 有 `postinstall` 脚本 | 删除该脚本：`python3 -c "import json; ..."` 或在 Dockerfile 加 `--ignore-scripts` |
-| Docker build 报 `.prisma` not found | pnpm 模块结构导致 Prisma 文件不在预期路径 | Dockerfile 中用 `COPY --from=base /app/node_modules ./node_modules` 复制整个目录 |
-| HTTPS 证书报错 | 证书文件未挂载到容器 | 将 `/etc/letsencrypt/archive/` 下的文件复制到 `infra/docker/certbot/conf/` |
-| 端口 80 被占用 | 系统自带 nginx 未停止 | `sudo systemctl stop nginx && sudo systemctl disable nginx` |
-| 容器 unhealthy 但服务正常 | Next.js standalone 监听方式导致 wget 检查失败 | 可忽略，实际服务通过 nginx 代理正常工作 |
-| `git pull` 后构建失败 | 本地 Dockerfile 修改未同步 | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确 |
+| 现象                                   | 原因                                          | 处理                                                                              |
+| -------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------- |
+| Nginx 502 Bad Gateway                  | Web 容器未启动或崩溃                          | `docker logs ai-web` 查看报错                                                     |
+| Nginx 报 `host not found in upstream`  | 容器名不对或未在同一网络                      | 确认 `proxy_pass` 用 `ai-web`，且容器在 `docker_ai-net`                           |
+| Web 容器 `ECONNREFUSED 127.0.0.1:6379` | `.env.prod` 中 REDIS_HOST 用了 `127.0.0.1`    | 改为 `ai-aggregation-redis`，然后 `--force-recreate`                              |
+| Web 容器 `ECONNREFUSED 127.0.0.1:5432` | `.env.prod` 中 DATABASE_URL 用了 `127.0.0.1`  | 改为 `ai-aggregation-postgres`，然后 `--force-recreate`                           |
+| Docker build 报 `postinstall` 错误     | 根 `package.json` 有 `postinstall` 脚本       | 删除该脚本：`python3 -c "import json; ..."` 或在 Dockerfile 加 `--ignore-scripts` |
+| Docker build 报 `.prisma` not found    | pnpm 模块结构导致 Prisma 文件不在预期路径     | Dockerfile 中用 `COPY --from=base /app/node_modules ./node_modules` 复制整个目录  |
+| HTTPS 证书报错                         | 证书文件未挂载到容器                          | 将 `/etc/letsencrypt/archive/` 下的文件复制到 `infra/docker/certbot/conf/`        |
+| 端口 80 被占用                         | 系统自带 nginx 未停止                         | `sudo systemctl stop nginx && sudo systemctl disable nginx`                       |
+| 容器 unhealthy 但服务正常              | Next.js standalone 监听方式导致 wget 检查失败 | 可忽略，实际服务通过 nginx 代理正常工作                                           |
+| `git pull` 后构建失败                  | 本地 Dockerfile 修改未同步                    | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确                   |
 
 ### 14.11 数据库管理
 
@@ -1115,20 +1119,20 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 
 ### 14.14 环境变量说明
 
-| 变量 | 用途 | 必填 |
-|------|------|------|
-| `DATABASE_URL` | PostgreSQL 连接串 | ✅ |
-| `REDIS_HOST` | Redis 地址 | ✅ |
-| `REDIS_PORT` | Redis 端口 | ✅ |
-| `AUTH_SECRET` | NextAuth 加密密钥 | ✅ |
-| `ANONYMOUS_DEVICE_SALT` | 匿名用户设备指纹盐 | ✅ |
-| `NEXTAUTH_URL` | NextAuth 回调地址 | ✅ |
-| `NEXT_PUBLIC_APP_URL` | 前端可见的应用地址 | ✅ |
-| `ARK_API_KEY` | 火山方舟 API Key（豆包） | 命理分析需要 |
-| `DEEPSEEK_MODEL` | DeepSeek API Key（存错变量名） | 命理分析备选 |
-| `ZHIPU_API_KEY` | 智谱 API Key | 视频生成需要 |
-| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API | 语音转写需要 |
-| `SILICONFLOW_API_KEY` | 硅基流动 API Key | 语音模型需要 |
-| `AGNES_API_KEY` | Agnes 图像 API | 图像生成需要 |
+| 变量                        | 用途                           | 必填         |
+| --------------------------- | ------------------------------ | ------------ |
+| `DATABASE_URL`              | PostgreSQL 连接串              | ✅           |
+| `REDIS_HOST`                | Redis 地址                     | ✅           |
+| `REDIS_PORT`                | Redis 端口                     | ✅           |
+| `AUTH_SECRET`               | NextAuth 加密密钥              | ✅           |
+| `ANONYMOUS_DEVICE_SALT`     | 匿名用户设备指纹盐             | ✅           |
+| `NEXTAUTH_URL`              | NextAuth 回调地址              | ✅           |
+| `NEXT_PUBLIC_APP_URL`       | 前端可见的应用地址             | ✅           |
+| `ARK_API_KEY`               | 火山方舟 API Key（豆包）       | 命理分析需要 |
+| `DEEPSEEK_MODEL`            | DeepSeek API Key（存错变量名） | 命理分析备选 |
+| `ZHIPU_API_KEY`             | 智谱 API Key                   | 视频生成需要 |
+| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API                       | 语音转写需要 |
+| `SILICONFLOW_API_KEY`       | 硅基流动 API Key               | 语音模型需要 |
+| `AGNES_API_KEY`             | Agnes 图像 API                 | 图像生成需要 |
 
 > **注意**：`DEEPSEEK_API_KEY` 在代码中未使用。DeepSeek 的 Key 实际存储在 `DEEPSEEK_MODEL` 变量中（`packages/shared/src/destiny-model-client.ts`）。
