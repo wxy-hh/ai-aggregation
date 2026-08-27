@@ -287,9 +287,18 @@ export class QuotaManager {
 /**
  * 创建 Redis 客户端（Serverless 安全默认：短超时、无 offline queue）。
  * 连接/命令失败时由 RateLimiter.check 捕获并放行请求。
+ *
+ * 长驻进程（Next.js dev/standalone server）自愈：
+ * 默认 retryStrategy 放弃后 status='end'，配合 offline queue 会让后续命令
+ * 无限排队（每个请求都撞超时放行、限流静默失效）。
+ * 这里覆盖为持续重试（指数退避封顶 5s），保证单例客户端永远可恢复。
  */
 export function createRedisClient(): Redis {
-  const options = resolveRedisConnectionOptions(process.env);
+  const options = {
+    ...resolveRedisConnectionOptions(process.env),
+    // 覆盖短重试策略：长驻进程的单例客户端需要断线自愈能力
+    retryStrategy: (times: number) => Math.min(times * 200, 5000),
+  };
   const redis = new Redis(options);
 
   // 避免未处理 error 事件导致进程噪音；限流侧已失败放行
