@@ -32,8 +32,8 @@ import {
   useHistoryInitialized,
   useHistoryItems,
   useHistoryLoading,
-  useConversationsStore,
-} from '@/stores';
+} from '@/stores/history-store';
+import { useConversationsStore } from '@/stores/conversations-store';
 import type { HistoryItem, HistoryType, ImageHistoryItem } from '@/types/history';
 
 const TYPE_ICONS: Record<HistoryType, React.ComponentType<{ className?: string }>> = {

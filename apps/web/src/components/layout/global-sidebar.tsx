@@ -10,7 +10,7 @@ import { useState, useRef, useEffect } from 'react';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores';
+import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores/ui-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { SidebarAppLogo } from '@/components/layout/sidebar-app-logo';
 

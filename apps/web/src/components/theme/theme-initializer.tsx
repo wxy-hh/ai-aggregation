@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useSettingsStore } from '@/stores';
+import { useSettingsStore } from '@/stores/settings-store';
 
 /**
  * 主题初始化组件

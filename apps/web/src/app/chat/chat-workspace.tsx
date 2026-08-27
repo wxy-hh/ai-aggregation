@@ -18,13 +18,16 @@ import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 
 // ============ 导入状态管理 Store ============
+// 直接路径导入，避免 barrel 文件把无关 store 打进 chunk
 import {
   useConversationsStore, // 对话列表管理 Store（管理多个对话的创建、删除、切换）
+  type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
+} from '@/stores/conversations-store';
+import {
   useChatStore, // 当前对话的消息管理 Store（管理当前对话的消息、发送、加载状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
   type Message, // 消息类型定义
-  type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
-} from '@/stores';
+} from '@/stores/chat-store';
 
 // 并行对比运行时 store（管理对比模式、已选模型、轮次分支）
 import { useComparisonStore } from '@/stores/comparison-store';

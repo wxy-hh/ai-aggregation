@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * Store 协调器 —— 在应用生命周期中注册一次，负责监听跨 Store 事件并分发同步操作。
  *
@@ -12,6 +14,7 @@
  * 所有同步操作都携带 isSyncDelete=true 守卫，避免事件循环。
  */
 
+import { useEffect } from 'react';
 import { on, StoreEvents } from './store-events';
 import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
@@ -85,4 +88,14 @@ export function registerStoreCoordinator(): () => void {
   );
 
   return () => unsubs.forEach((unsub) => unsub());
+}
+
+/**
+ * 协调器挂载组件：在应用生命周期内注册一次，卸载时清理。
+ * 由 components/providers/store-coordinator.tsx 通过 dynamic 懒加载，
+ * 确保本模块（及其静态依赖 conversations/history 等 store）不进入 layout chunk。
+ */
+export function CoordinatorEffect() {
+  useEffect(() => registerStoreCoordinator(), []);
+  return null;
 }
