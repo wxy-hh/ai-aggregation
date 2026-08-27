@@ -1,5 +1,5 @@
 import { Queue, QueueOptions } from 'bullmq';
-import { resolveRedisConnectionOptions } from '@repo/shared/server';
+import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import {
   STTJobData,
   PPTJobData,
@@ -9,7 +9,7 @@ import {
 } from './jobs';
 
 const defaultQueueOptions: QueueOptions = {
-  connection: resolveRedisConnectionOptions(process.env),
+  connection: resolveBullMQConnectionOptions(process.env),
   defaultJobOptions: {
     attempts: 3,
     backoff: {

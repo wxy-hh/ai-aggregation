@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
-import { resolveRedisConnectionOptions } from '@repo/shared/server';
+import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import type { PPTJobData } from '@repo/queue';
 import PptxGenJS from 'pptxgenjs';
 
@@ -45,7 +45,7 @@ export const pptWorker = new Worker<PPTJobData>(
   },
   {
     autorun: false,
-    connection: resolveRedisConnectionOptions(process.env),
+    connection: resolveBullMQConnectionOptions(process.env),
     concurrency: 3,
   }
 );

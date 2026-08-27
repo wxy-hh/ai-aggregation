@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { prisma } from '@repo/db';
-import { resolveRedisConnectionOptions } from '@repo/shared/server';
+import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import type { ImageJobData } from '@repo/queue';
 
 export const imageWorker = new Worker<ImageJobData>(
@@ -41,7 +41,7 @@ export const imageWorker = new Worker<ImageJobData>(
   },
   {
     autorun: false,
-    connection: resolveRedisConnectionOptions(process.env),
+    connection: resolveBullMQConnectionOptions(process.env),
     concurrency: 3,
   }
 );

@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { QimenAnalysisStore } from '@repo/shared';
-import { resolveRedisConnectionOptions } from '@repo/shared/server';
+import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import type { QimenBaseJobData } from '@repo/queue';
 
 export const qimenBaseWorker = new Worker<QimenBaseJobData>(
@@ -40,7 +40,7 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
   },
   {
     autorun: false,
-    connection: resolveRedisConnectionOptions(process.env),
+    connection: resolveBullMQConnectionOptions(process.env),
     concurrency: 2,
   }
 );

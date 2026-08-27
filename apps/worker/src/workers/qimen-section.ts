@@ -16,7 +16,7 @@ import {
   generateQimenSectionResult,
   resolveModelConfig,
 } from '@repo/shared';
-import { resolveRedisConnectionOptions } from '@repo/shared/server';
+import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import type { QimenSectionJobData } from '@repo/queue';
 
 export const qimenSectionWorker = new Worker<QimenSectionJobData>(
@@ -216,7 +216,7 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
   },
   {
     autorun: false,
-    connection: resolveRedisConnectionOptions(process.env),
+    connection: resolveBullMQConnectionOptions(process.env),
     concurrency: 3,
   }
 );

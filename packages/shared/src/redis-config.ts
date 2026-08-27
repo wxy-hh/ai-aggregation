@@ -50,6 +50,26 @@ function isUsableRedisUrl(url: string | undefined): url is string {
 }
 
 export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
+  return resolveRedisConnectionOptionsWithMode(env, 'client');
+}
+
+/**
+ * BullMQ 队列专用连接配置。
+ *
+ * BullMQ Worker 依赖阻塞命令（bzpopmin / brpoplpush，默认阻塞约 5 秒等待新任务），
+ * 客户端模式的 commandTimeout 会让每个阻塞命令都抛 "Command timed out"
+ * 并触发无意义重试（功能不受影响但日志刷屏、浪费重试开销）。
+ * 队列连接因此放宽命令超时、关闭每请求重试限制（BullMQ 自身要求 maxRetriesPerRequest: null）。
+ */
+export function resolveBullMQConnectionOptions(env: RedisEnv): RedisOptions {
+  return resolveRedisConnectionOptionsWithMode(env, 'bullmq');
+}
+
+function resolveRedisConnectionOptionsWithMode(
+  env: RedisEnv,
+  mode: 'client' | 'bullmq'
+): RedisOptions {
+  const isBullMQ = mode === 'bullmq';
   const redisUrl = env.REDIS_URL?.trim();
   // Vercel Upstash 集成常见变量名
   const kvUrl = env.KV_URL?.trim() || env.REDIS_KV_URL?.trim();
@@ -89,9 +109,12 @@ export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
   const connectTimeout = env.REDIS_CONNECT_TIMEOUT
     ? parseInt(env.REDIS_CONNECT_TIMEOUT, 10)
     : 2000;
+  // BullMQ 阻塞命令需要长超时；客户端模式保持快速失败
   const commandTimeout = env.REDIS_COMMAND_TIMEOUT
     ? parseInt(env.REDIS_COMMAND_TIMEOUT, 10)
-    : 2000;
+    : isBullMQ
+      ? 60000
+      : 2000;
 
   // enableOfflineQueue：仅当显式 REDIS_ENABLE_OFFLINE_QUEUE=true 时开启
   const enableOfflineQueue = parseBoolean(env.REDIS_ENABLE_OFFLINE_QUEUE);
@@ -109,8 +132,10 @@ export function resolveRedisConnectionOptions(env: RedisEnv): RedisOptions {
         ? parseBoolean(env.REDIS_LAZY_CONNECT)
         : true,
     // null 表示不限制；未配置时用 1，连接失败快速抛错
-    maxRetriesPerRequest:
-      explicitMaxRetries !== null || env.REDIS_MAX_RETRIES_PER_REQUEST
+    // BullMQ 要求 maxRetriesPerRequest: null（阻塞命令不支持带限制重试）
+    maxRetriesPerRequest: isBullMQ
+      ? null
+      : explicitMaxRetries !== null || env.REDIS_MAX_RETRIES_PER_REQUEST
         ? explicitMaxRetries
         : 1,
     connectTimeout: Number.isNaN(connectTimeout) ? 2000 : connectTimeout,
