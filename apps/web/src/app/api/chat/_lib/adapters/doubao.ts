@@ -245,8 +245,21 @@ export class DoubaoAdapter implements ChatProviderAdapter {
             await billing.recordUsage(usage);
           }
 
+          // 上游流已关闭却没有任何结束事件：正常响应的最后必有
+          // response.done/completed/incomplete（含 usage），因此这里是异常
+          // （部署超时截断、网络中断或上游空流）。不能再静默补发 done——
+          // 前端会把空回答当作「调用成功」展示。
           if (!hasSentDone) {
-            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            if (!text) {
+              controller.enqueue(
+                encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
+              );
+            } else {
+              controller.enqueue(
+                encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
+              );
+              controller.enqueue(encodeSseEvent({ type: 'done' }));
+            }
           }
           controller.close();
         } catch (error) {

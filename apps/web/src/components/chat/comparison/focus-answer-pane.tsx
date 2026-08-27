@@ -88,6 +88,25 @@ const QueuedSkeleton = memo(function QueuedSkeleton() {
   );
 });
 
+/**
+ * 流式已开始但尚无任何文本时的占位提示。
+ * 豆包 Evolving 等推理型模型会先输出大量 reasoning 事件（本适配器忽略，
+ * 不转发给前端），首 token 延迟实测可达 13~60s，期间页面完全空白会被
+ * 误判为"模型无响应/不可用"，这里给出明确的等待提示。
+ */
+const ThinkingSkeleton = memo(function ThinkingSkeleton() {
+  return (
+    <div className="space-y-2.5 py-1">
+      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>模型思考中…（推理型模型首字较慢，请稍候）</span>
+      </div>
+      <div className="h-4 w-full animate-pulse rounded-md bg-slate-200/80 dark:bg-slate-700/80" />
+      <div className="h-4 w-[80%] animate-pulse rounded-md bg-slate-200/80 dark:bg-slate-700/80" />
+    </div>
+  );
+});
+
 function formatDuration(run: ModelRun): string | null {
   if (run.startedAt && run.completedAt) {
     return `${((run.completedAt - run.startedAt) / 1000).toFixed(1)} 秒`;
@@ -197,7 +216,7 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
       >
         {run.status === 'queued' && <QueuedSkeleton />}
         {run.status === 'streaming' &&
-          (run.content ? <StreamingContent content={run.content} /> : <QueuedSkeleton />)}
+          (run.content ? <StreamingContent content={run.content} /> : <ThinkingSkeleton />)}
         {(run.status === 'completed' || run.status === 'stopped') && (
           <>
             <MarkdownContent content={run.content} />

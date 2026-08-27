@@ -103,6 +103,14 @@ export async function consumeChatResponse(
     if (!isDone && rest.trim()) {
       processBlock(rest);
     }
+
+    // 流已关闭但仍未收到完成事件（done/[DONE]/error 都没有）：
+    // 视为上游被截断（部署超时、网络中断、上游空流）。
+    // 若此处静默返回，runModel 会把该请求标记为「已完成」且内容为空，
+    // 表现为"调用成功但没有返回任何内容"。改为显式抛错，让上层能重试。
+    if (!isDone) {
+      throw new Error('回答流被中断，未能完整接收，请重试');
+    }
   } finally {
     reader.releaseLock();
   }

@@ -15,7 +15,9 @@ import { GenericAdapter } from './_lib/adapters/generic';
 import type { ChatProviderAdapter } from './_lib/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// 豆包 Evolving 等推理型模型首 token 延迟可达 60s+（实测 13~60s 波动），
+// 60s 上限会在推理期截断 SSE 导致"调用成功但无内容"，与 destiny 对齐放宽到 300s。
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 function getAdapter(provider: ProviderName, billing: BillingManager): ChatProviderAdapter {
