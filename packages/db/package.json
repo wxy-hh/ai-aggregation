@@ -13,6 +13,7 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "test": "vitest run",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
@@ -30,6 +31,7 @@
     "@types/bcryptjs": "^3.0.0",
     "prisma": "^6.19.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.18"
   }
 }

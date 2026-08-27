@@ -1,12 +1,10 @@
 import { PolishRequestSchema } from '@/schemas/resume-editor.schema';
-import { ZodError } from 'zod';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
-import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
 import { getBillingRequestId } from '@/lib/billing/request-id';
-import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
 import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
+import { QuotaSession } from '@/lib/billing/quota-session';
 
 /**
  * POST /api/resume/polish
@@ -16,13 +14,11 @@ import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    const userId = user.id;
-    let reservation: { id: string } | null = null;
+    let session: QuotaSession | null = null;
 
     try {
       const body = await req.json();
 
-      // 使用 Zod schema 校验请求体
       const validationResult = PolishRequestSchema.safeParse(body);
 
       if (!validationResult.success) {
@@ -32,14 +28,8 @@ export async function POST(req: Request) {
         }));
 
         return new Response(
-          JSON.stringify({
-            error: '请求参数校验失败',
-            details: errors,
-          }),
-          {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          }
+          JSON.stringify({ error: '请求参数校验失败', details: errors }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
         );
       }
 
@@ -49,32 +39,26 @@ export async function POST(req: Request) {
         context,
         style = 'professional',
         language = 'zh-CN',
-        privacy = { allowContactFields: false },
       } = validationResult.data;
 
-      // 检查环境变量
       const arkApiKey = process.env.ARK_API_KEY;
-      // 豆包 Responses API Base URL
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-      // 使用 Lite 轻量模型（更快，成本更低）
       const arkModel = process.env.ARK_MODEL || 'doubao-seed-evolving';
 
       if (!arkApiKey) {
-        console.error('ARK_API_KEY 未配置');
         return new Response(JSON.stringify({ error: 'AI 服务配置错误' }), {
           status: 500,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      // 构建提示词
       const systemPrompt = buildSystemPrompt(style, language);
       const userPrompt = buildUserPrompt(text, context, target);
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      let outputLimit = 800;
-      if (user.role !== 'admin') {
-        const quota = await reserveChatQuota({
-          userId,
+
+      session = await QuotaSession.reserve(
+        {
+          userId: user.id,
           requestId,
           feature: 'resume',
           provider: 'doubao',
@@ -82,15 +66,14 @@ export async function POST(req: Request) {
           messages: [{ content: systemPrompt }, { content: userPrompt }],
           maxOutputTokens: 800,
           metadata: { target, textLength: text.length, style, language },
-        });
-        reservation = quota.reservation;
-        outputLimit = quota.outputLimit;
-      }
+        },
+        user.role
+      );
 
-      // 调用 ARK Responses API
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
 
+      let result: any;
       try {
         const response = await fetch(`${arkBaseUrl}/responses`, {
           method: 'POST',
@@ -101,22 +84,13 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             model: arkModel,
             input: [
-              {
-                role: 'system',
-                content: systemPrompt,
-              },
-              {
-                role: 'user',
-                content: userPrompt,
-              },
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
             ],
-            max_output_tokens: outputLimit, // 限制输出长度
+            max_output_tokens: session.outputLimit,
             temperature: 0.7,
             top_p: 0.9,
-            // 关键：禁用推理，直接输出结果
-            reasoning: {
-              effort: 'minimal', // minimal = 不思考，直接输出
-            },
+            reasoning: { effort: 'minimal' },
           }),
           signal: controller.signal,
         });
@@ -125,15 +99,7 @@ export async function POST(req: Request) {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('ARK API 错误:', response.status, errorText);
-
-          if (reservation) {
-            await releaseAiQuota({
-              reservationId: reservation.id,
-              reason: '简历润色上游失败',
-              meterType: 'tokens',
-            });
-          }
+          console.error('[resume/polish] ARK API 错误:', response.status, errorText);
 
           if (response.status === 429) {
             return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
@@ -148,99 +114,62 @@ export async function POST(req: Request) {
           });
         }
 
-        const result = await response.json();
-        console.log('ARK API 完整响应:', JSON.stringify(result, null, 2));
-
-        // 临时：写入文件以便调试
-        try {
-          const fs = require('fs');
-          const path = require('path');
-          const logPath = path.join(process.cwd(), 'ark-response-debug.json');
-          fs.writeFileSync(logPath, JSON.stringify(result, null, 2));
-          console.log('✅ 响应已保存到:', logPath);
-        } catch (e) {
-          console.error('写入调试文件失败:', e);
-        }
-
-        // 解析 ARK 响应
-        const optimizedText = extractOptimizedText(result);
-        console.log('提取的优化文本:', optimizedText);
-
-        const highlights = extractHighlights(optimizedText, text);
-
-        if (reservation) {
-          await settleAiQuota({
-            reservationId: reservation.id,
-            requestId,
-            feature: 'resume',
-            action: 'resume-polish',
-            provider: 'doubao',
-            model: arkModel,
-            endpoint: '/api/resume/polish',
-            measurement: createTokenMeasurement(result.usage ?? result.response?.usage),
-            metadata: { target, textLength: text.length, style, language },
-          });
-        }
-
-        return new Response(
-          JSON.stringify({
-            optimizedText,
-            highlights,
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+        result = await response.json();
       } catch (fetchError) {
         clearTimeout(timeoutId);
+        throw fetchError; // QuotaSession.release() 会在外层 catch 中处理
+      }
 
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          return new Response(JSON.stringify({ error: '请求超时，请重试' }), {
-            status: 408,
-            headers: { 'Content-Type': 'application/json' },
-          });
+      const optimizedText = extractOptimizedText(result);
+      const highlights = extractHighlights(optimizedText, text);
+
+      await session.settle(
+        {
+          action: 'resume-polish',
+          endpoint: '/api/resume/polish',
+          rawUsage: result.usage ?? result.response?.usage,
+          fallbackTokens: session.inputUnits,
+          metadata: { target, textLength: text.length, style, language },
+        },
+        {
+          feature: 'resume',
+          provider: 'doubao',
+          model: arkModel,
+          requestId,
         }
+      );
 
-        throw fetchError;
-      }
+      return new Response(
+        JSON.stringify({ optimizedText, highlights }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     } catch (error) {
-      if (error instanceof BillingError) {
-        return billingErrorResponse(error);
+      // 修复原 bug：AbortError 也会释放预留额度
+      if (session) {
+        await session.release({ reason: error instanceof Error ? error.message : '简历润色请求失败' });
       }
-      if (reservation) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          reason: '简历润色请求失败',
-          meterType: 'tokens',
-        }).catch((releaseError) => console.error('[resume/polish] 释放额度失败:', releaseError));
-      }
-      console.error('Polish API 错误:', error);
+
+      if (error instanceof BillingError) return billingErrorResponse(error);
 
       if (error instanceof AuthError) {
         if (error.code === 'FORBIDDEN') {
-          return new Response(JSON.stringify({ error: error.message }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return new Response(JSON.stringify({ error: error.message }), { status: 403 });
         }
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(JSON.stringify({ error: error.message }), { status: 401 });
       }
 
-      return new Response(JSON.stringify({ error: '服务器内部错误' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      if (error instanceof Error && error.name === 'AbortError') {
+        return new Response(JSON.stringify({ error: '请求超时，请重试' }), { status: 408 });
+      }
+
+      console.error('[resume/polish] 错误:', error);
+      return new Response(JSON.stringify({ error: '服务器内部错误' }), { status: 500 });
     }
   });
 }
 
-/**
- * 构建系统提示词（扩展润色版：丰富内容细节）
- */
+// ---- 以下辅助函数保持不变 ----
+
 function buildSystemPrompt(style: string, language: string): string {
   return `你是简历优化助手。根据用户的简短描述，扩展并丰富内容，补充合理的细节。
 
@@ -287,190 +216,71 @@ function buildSystemPrompt(style: string, language: string): string {
 4. 了解后端业务逻辑开发与接口联调`;
 }
 
-/**
- * 构建用户提示词（扩展润色版）
- */
 function buildUserPrompt(
   text: string,
   context?: { position?: string; industry?: string; company?: string },
   target?: string
 ): string {
   let prompt = `请扩展并优化以下简历内容，补充合理的细节和具体技术栈，直接输出结果：\n\n${text}`;
-
   if (context) {
     const parts: string[] = [];
     if (context.position) parts.push(context.position);
     if (context.industry) parts.push(context.industry);
     if (context.company) parts.push(context.company);
-    if (parts.length > 0) {
-      prompt += `\n\n参考背景：${parts.join('，')}`;
-    }
+    if (parts.length > 0) prompt += `\n\n参考背景：${parts.join('，')}`;
   }
-
   return prompt;
 }
 
-/**
- * 从 ARK 响应中提取优化后的文本
- * 支持 /responses 端点格式
- */
 function extractOptimizedText(result: any): string {
-  console.log('🔍 开始解析 ARK 响应');
-  console.log('📦 响应顶层键:', Object.keys(result));
-
-  // Responses API 格式: output 是数组
   if (Array.isArray(result.output)) {
-    console.log('✓ output 是数组，长度:', result.output.length);
-
-    // 查找 type='message' 的元素（这是最终答案）
-    for (let i = 0; i < result.output.length; i++) {
-      const outputItem = result.output[i];
-      console.log(`📦 output[${i}] 的 type:`, outputItem.type);
-
-      // 处理 message 类型（最终答案）
-      if (outputItem.type === 'message') {
-        console.log(`✅ 找到 message 类型的输出`);
-
-        // 检查 content 数组
-        if (Array.isArray(outputItem.content)) {
-          console.log(`✓ output[${i}].content 是数组，长度:`, outputItem.content.length);
-          for (let j = 0; j < outputItem.content.length; j++) {
-            const contentItem = outputItem.content[j];
-            console.log(`📦 output[${i}].content[${j}] 的 type:`, contentItem.type);
-
-            // 查找 text 类型的内容
-            if (contentItem.type === 'text' && contentItem.text) {
-              console.log(`✅ 成功：使用 output[${i}].content[${j}].text 路径`);
-              return contentItem.text.trim();
-            }
-
-            // 兼容其他可能的字段名
-            if (contentItem.text) {
-              console.log(`✅ 成功：使用 output[${i}].content[${j}].text 路径（无 type 检查）`);
-              return contentItem.text.trim();
-            }
-          }
+    for (const item of result.output) {
+      if (item.type === 'message' && Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (c.type === 'text' && c.text) return c.text.trim();
+          if (c.text) return c.text.trim();
         }
-
-        // 检查直接的 text 字段
-        if (outputItem.text) {
-          console.log(`✅ 成功：使用 output[${i}].text 路径`);
-          return outputItem.text.trim();
-        }
+        if (item.text) return item.text.trim();
       }
     }
-
-    // 如果没有找到 message 类型，再处理其他类型
-    for (let i = 0; i < result.output.length; i++) {
-      const outputItem = result.output[i];
-
-      // 跳过 reasoning 类型（推理过程，不是最终答案）
-      if (outputItem.type === 'reasoning') {
-        console.log(`⏭️  跳过 output[${i}]（类型为 reasoning，这是推理过程）`);
-        continue;
-      }
-
-      // 跳过 summary 类型的元素
-      if (outputItem.type === 'summary') {
-        console.log(`⏭️  跳过 output[${i}]（类型为 summary）`);
-        continue;
-      }
-
-      // 跳过 system 角色的元素
-      if (outputItem.role === 'system') {
-        console.log(`⏭️  跳过 output[${i}]（角色为 system）`);
-        continue;
-      }
-
-      // 检查 content 数组
-      if (Array.isArray(outputItem.content)) {
-        console.log(`✓ output[${i}].content 是数组，长度:`, outputItem.content.length);
-        for (let j = 0; j < outputItem.content.length; j++) {
-          const contentItem = outputItem.content[j];
-          console.log(`📦 output[${i}].content[${j}] 的 type:`, contentItem.type);
-
-          // 查找 text 类型的内容
-          if (contentItem.type === 'text' && contentItem.text) {
-            console.log(`✅ 成功：使用 output[${i}].content[${j}].text 路径`);
-            return contentItem.text.trim();
-          }
-
-          // 兼容其他可能的字段名
-          if (contentItem.text) {
-            console.log(`✅ 成功：使用 output[${i}].content[${j}].text 路径（无 type 检查）`);
-            return contentItem.text.trim();
-          }
+    for (const item of result.output) {
+      if (item.type === 'reasoning' || item.type === 'summary' || item.role === 'system') continue;
+      if (Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (c.type === 'text' && c.text) return c.text.trim();
+          if (c.text) return c.text.trim();
         }
       }
-
-      // 检查直接的 text 字段
-      if (outputItem.text) {
-        console.log(`✅ 成功：使用 output[${i}].text 路径`);
-        return outputItem.text.trim();
-      }
+      if (item.text) return item.text.trim();
     }
   }
-
-  // 格式 3: output 是对象
   if (result.output && typeof result.output === 'object' && !Array.isArray(result.output)) {
-    console.log('✓ output 是对象，键:', Object.keys(result.output));
-    if (result.output.text) {
-      console.log('✅ 成功：使用 output.text 路径');
-      return result.output.text.trim();
-    }
+    if (result.output.text) return result.output.text.trim();
   }
-
-  // 格式 4: 直接是字符串
-  if (typeof result === 'string') {
-    console.log('✅ 成功：结果本身是字符串');
-    return result.trim();
-  }
-
-  // 兜底：打印完整结构
-  console.error('❌ 失败：未知的 ARK 响应格式');
-  console.error('完整响应（前 1000 字符）:', JSON.stringify(result).substring(0, 1000));
-
-  // 如果响应未完成，给出更友好的错误提示
+  if (typeof result === 'string') return result.trim();
   if (result.status === 'incomplete') {
     return '[响应未完成] 模型输出被截断，请尝试缩短输入文本或稍后重试';
   }
-
   return '[解析失败] 无法从响应中提取文本内容';
 }
 
-/**
- * 提取优化亮点
- */
 function extractHighlights(optimizedText: string, originalText: string): string[] {
   const highlights: string[] = [];
-
-  // 检测是否添加了量化数据
   const hasNumbers = /\d+%|\d+[万千百十]|\d+[个项次]/.test(optimizedText);
   const originalHasNumbers = /\d+%|\d+[万千百十]|\d+[个项次]/.test(originalText);
-  if (hasNumbers && !originalHasNumbers) {
-    highlights.push('补充量化成果');
-  }
+  if (hasNumbers && !originalHasNumbers) highlights.push('补充量化成果');
 
-  // 检测是否使用了动作动词
   const actionVerbs = ['主导', '推动', '优化', '设计', '实现', '提升', '降低', '负责', '完成'];
-  const hasActionVerb = actionVerbs.some((verb) => optimizedText.startsWith(verb));
-  const originalHasActionVerb = actionVerbs.some((verb) => originalText.startsWith(verb));
-  if (hasActionVerb && !originalHasActionVerb) {
-    highlights.push('强化动作表达');
-  }
+  const hasActionVerb = actionVerbs.some((v) => optimizedText.startsWith(v));
+  const originalHasActionVerb = actionVerbs.some((v) => originalText.startsWith(v));
+  if (hasActionVerb && !originalHasActionVerb) highlights.push('强化动作表达');
 
-  // 检测长度变化
-  if (optimizedText.length > originalText.length * 1.2) {
-    highlights.push('补充细节描述');
-  }
+  if (optimizedText.length > originalText.length * 1.2) highlights.push('补充细节描述');
 
-  // 检测业务价值关键词
   const businessKeywords = ['业务', '用户', '效率', '成本', '收入', '体验', '质量'];
   const hasBusinessKeyword = businessKeywords.some((kw) => optimizedText.includes(kw));
   const originalHasBusinessKeyword = businessKeywords.some((kw) => originalText.includes(kw));
-  if (hasBusinessKeyword && !originalHasBusinessKeyword) {
-    highlights.push('强化业务价值表达');
-  }
+  if (hasBusinessKeyword && !originalHasBusinessKeyword) highlights.push('强化业务价值表达');
 
   return highlights.length > 0 ? highlights : ['优化表达方式'];
 }

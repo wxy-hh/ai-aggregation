@@ -1,8 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { useConversationsStore } from './conversations-store';
-import { useHistoryStore } from './history-store';
+import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { consumeChatResponse } from '@/lib/utils/chat-stream';
 import { authHeaders, authFetch } from '@/lib/api/client';
@@ -211,9 +210,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         attachment: null,
       });
 
-      // 同步到历史记录
+      // 同步到对话列表（通过事件总线，避免静态依赖）
       if (activeConversationId) {
-        useConversationsStore.getState().updateMessages(activeConversationId, newMessages);
+        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
       }
 
       try {
@@ -274,7 +273,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
           // 同步到对话列表
           if (activeConversationId) {
-            useConversationsStore.getState().updateMessages(activeConversationId, finalMessages);
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: finalMessages });
           }
 
           // 保存到历史记录（携带接力派生元数据，REQ-016「由某来源接力生成」）
@@ -292,7 +291,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
-            useHistoryStore.getState().addItem(historyItem);
+            emit(StoreEvents.CHAT_HISTORY_SAVED, { item: historyItem });
           }
 
           return { messages: finalMessages };
@@ -313,7 +312,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         set((state) => {
           const filteredMessages = state.messages.filter((msg) => msg.id !== assistantMessage.id);
           if (activeConversationId) {
-            useConversationsStore.getState().updateMessages(activeConversationId, filteredMessages);
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: filteredMessages });
           }
           return { messages: filteredMessages };
         });
@@ -376,7 +375,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
 
       if (activeConversationId) {
-        useConversationsStore.getState().updateMessages(activeConversationId, newMessages);
+        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
       }
 
       try {
@@ -427,7 +426,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             msg.id === assistantMessage.id ? { ...msg, isStreaming: false } : msg
           );
           if (activeConversationId) {
-            useConversationsStore.getState().updateMessages(activeConversationId, finalMessages);
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: finalMessages });
           }
           return { messages: finalMessages };
         });
@@ -438,7 +437,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         set((state) => {
           const filtered = state.messages.filter((msg) => msg.id !== assistantMessage.id);
           if (activeConversationId) {
-            useConversationsStore.getState().updateMessages(activeConversationId, filtered);
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: filtered });
           }
           return { messages: filtered };
         });

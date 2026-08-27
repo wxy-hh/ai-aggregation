@@ -2,9 +2,7 @@
  * 反馈附件上传 API
  * POST /api/feedback/[id]/attachments
  *
- * 存储策略（通过 STORAGE_PROVIDER 环境变量控制）：
- * - local（默认）: 本地文件系统，存储到 public/feedback-attachments/，零依赖
- * - s3: S3 兼容存储（阿里云 OSS / AWS S3 / Cloudflare R2 等）
+ * 存储策略通过 STORAGE_PROVIDER 环境变量控制（s3 或 local），由 createStorageProvider() 统一分发
  */
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
@@ -13,42 +11,10 @@ import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
 import { validateFile, ALLOWED_MIME_TYPES } from '@repo/shared';
 import { createStorageProvider } from '@repo/storage';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 
 const MAX_ATTACHMENTS = 5;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
-/** 本地存储目录 */
-const LOCAL_DIR = path.join(process.cwd(), 'public', 'feedback-attachments');
-
-/**
- * 上传到本地文件系统
- */
-async function uploadToLocal(file: File): Promise<string> {
-  if (!existsSync(LOCAL_DIR)) {
-    mkdirSync(LOCAL_DIR, { recursive: true });
-  }
-  const ext = file.name.split('.').pop() || 'png';
-  const uniqueName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  writeFileSync(path.join(LOCAL_DIR, uniqueName), buffer);
-  // 本地文件由 Next.js public/ 目录直接提供
-  return `/feedback-attachments/${uniqueName}`;
-}
-
-/**
- * 上传到 S3 兼容存储
- */
-async function uploadToS3(file: File, feedbackId: string): Promise<string> {
-  const storage = createStorageProvider();
-  const ext = file.name.split('.').pop() || 'png';
-  const uniqueName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-  const key = `feedback/${feedbackId}/${uniqueName}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  return storage.upload(key, buffer, file.type);
-}
 
 export async function POST(
   req: NextRequest,
@@ -96,13 +62,15 @@ export async function POST(
       }
     }
 
-    const isS3 = process.env.STORAGE_PROVIDER === 's3';
+    const storage = createStorageProvider();
 
     const attachments = await Promise.all(
       files.map(async (file) => {
-        const fileUrl = isS3
-          ? await uploadToS3(file, feedbackId)
-          : await uploadToLocal(file);
+        const ext = file.name.split('.').pop() || 'png';
+        const uniqueName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+        const key = `feedback/${feedbackId}/${uniqueName}`;
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const fileUrl = await storage.upload(key, buffer, file.type);
 
         return prisma.feedbackAttachment.create({
           data: { feedbackId, fileName: file.name, fileSize: file.size, fileType: file.type, fileUrl },

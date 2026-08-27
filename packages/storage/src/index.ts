@@ -1,3 +1,4 @@
+import path from 'path';
 import {
   S3Client,
   PutObjectCommand,
@@ -5,6 +6,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { LocalStorageProvider } from './local-provider';
 
 /**
  * 存储提供者接口
@@ -146,22 +148,35 @@ export class S3Provider implements StorageProvider {
 
 /**
  * 创建存储提供者实例
+ * 根据 STORAGE_PROVIDER 环境变量选择后端：
+ * - 's3'：S3 兼容存储（阿里云 OSS / MinIO 等）
+ * - 'local'（默认）：本地文件系统
  */
 export function createStorageProvider(): StorageProvider {
-  const config: S3Config = {
-    endpoint: process.env.S3_ENDPOINT || 'http://localhost:9000',
-    accessKeyId: process.env.S3_ACCESS_KEY || '',
-    accessKeySecret: process.env.S3_SECRET_KEY || '',
-    bucket: process.env.S3_BUCKET || 'ai-aggregation',
-    forcePathStyle: true,
-  };
+  const provider = process.env.STORAGE_PROVIDER || 'local';
 
-  if (!config.accessKeyId || !config.accessKeySecret) {
-    throw new Error('缺少存储配置: S3_ACCESS_KEY 或 S3_SECRET_KEY 未设置');
+  if (provider === 's3') {
+    const config: S3Config = {
+      endpoint: process.env.S3_ENDPOINT || 'http://localhost:9000',
+      accessKeyId: process.env.S3_ACCESS_KEY || '',
+      accessKeySecret: process.env.S3_SECRET_KEY || '',
+      bucket: process.env.S3_BUCKET || 'ai-aggregation',
+      forcePathStyle: true,
+    };
+
+    if (!config.accessKeyId || !config.accessKeySecret) {
+      throw new Error('缺少存储配置: S3_ACCESS_KEY 或 S3_SECRET_KEY 未设置');
+    }
+
+    return new S3Provider(config);
   }
 
-  return new S3Provider(config);
+  // 本地存储，零依赖
+  const localDir = process.env.LOCAL_STORAGE_DIR
+    || path.join(process.cwd(), 'public', 'feedback-attachments');
+  return new LocalStorageProvider(localDir);
 }
 
 // 导出别名以保持向后兼容
 export { S3Provider as OSSProvider };
+export { LocalStorageProvider };

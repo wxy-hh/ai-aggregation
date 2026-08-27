@@ -6,6 +6,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { createDexieStorage } from '@/lib/storage/zustand-dexie-storage';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
 import { authFetch } from '@/lib/api/client';
+import { emit, StoreEvents } from './store-events';
 
 // ==================== 类型定义 ====================
 
@@ -162,37 +163,13 @@ export const useHistoryStore = create<HistoryState>()(
           items: state.items.filter((item) => item.id !== id),
         }));
 
-        // 避免循环调用
+        // 通过事件总线同步（避免循环依赖）
         if (!_isSyncDelete) {
-          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
-          try {
-            const { markSourcesInvalidBySourceIds } = require('./relay-store');
-            markSourcesInvalidBySourceIds([id]);
-          } catch (e) {
-            console.warn('Failed to mark relay source invalid:', e);
-          }
+          emit(StoreEvents.CONVERSATION_DELETED, { id });
+          emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids: [id] });
 
-          // 同步删除 conversations-store 中的对应对话（chat 类型）
-          try {
-            const { useConversationsStore } = require('./conversations-store');
-            const conversationsStore = useConversationsStore.getState();
-            const conversation = conversationsStore.conversations.find((c: {id: string}) => c.id === id);
-            if (conversation) {
-              conversationsStore.deleteConversation(id, true);
-            }
-          } catch (e) {
-            console.warn('Failed to sync delete with conversations store:', e);
-          }
-
-          // 同步删除 audio-history-store 中的记录（voice 类型）
           if (itemToDelete?.type === 'voice') {
-            try {
-              const { useAudioHistoryStore } = require('./audio-history-store');
-              const audioHistoryStore = useAudioHistoryStore.getState();
-              audioHistoryStore.deleteItem(id);
-            } catch (e) {
-              console.warn('Failed to sync delete with audio history store:', e);
-            }
+            emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
           }
         }
       },
@@ -207,42 +184,17 @@ export const useHistoryStore = create<HistoryState>()(
           items: state.items.filter((item) => !ids.includes(item.id)),
         }));
 
-        // 避免循环调用
+        // 通过事件总线同步（避免循环依赖）
         if (!_isSyncDelete) {
-          // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
-          try {
-            const { markSourcesInvalidBySourceIds } = require('./relay-store');
-            markSourcesInvalidBySourceIds(ids);
-          } catch (e) {
-            console.warn('Failed to mark relay source invalid (batch):', e);
-          }
+          emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids });
 
-          // 同步删除 conversations-store 中的对应对话（chat 类型）
-          try {
-            const { useConversationsStore } = require('./conversations-store');
-            const conversationsStore = useConversationsStore.getState();
-            ids.forEach((id) => {
-              const conversation = conversationsStore.conversations.find((c: {id: string}) => c.id === id);
-              if (conversation) {
-                conversationsStore.deleteConversation(id, true);
-              }
-            });
-          } catch (e) {
-            console.warn('Failed to sync batch delete with conversations store:', e);
-          }
+          ids.forEach((id) => {
+            emit(StoreEvents.CONVERSATION_DELETED, { id });
+          });
 
-          // 同步删除 audio-history-store 中的记录（voice 类型）
-          if (voiceIdsToDelete.length > 0) {
-            try {
-              const { useAudioHistoryStore } = require('./audio-history-store');
-              const audioHistoryStore = useAudioHistoryStore.getState();
-              voiceIdsToDelete.forEach((id) => {
-                audioHistoryStore.deleteItem(id);
-              });
-            } catch (e) {
-              console.warn('Failed to sync batch delete with audio history store:', e);
-            }
-          }
+          voiceIdsToDelete.forEach((id) => {
+            emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
+          });
         }
       },
 
@@ -250,8 +202,8 @@ export const useHistoryStore = create<HistoryState>()(
       clearHistory: (type) => {
         // 获取要被删除的记录 ID，用于同步删除与接力失效标记
         const state = get();
-        const deletedIds = new Set(
-          state.items.filter((item) => (type ? item.type === type : true)).map((item) => item.id)
+        const deletedIds = Array.from(
+          new Set(state.items.filter((item) => (type ? item.type === type : true)).map((item) => item.id))
         );
         const chatIdsToDelete = type === 'chat' || !type
           ? state.items.filter((item) => (type ? item.type === type : item.type === 'chat')).map((item) => item.id)
@@ -268,39 +220,16 @@ export const useHistoryStore = create<HistoryState>()(
           set({ items: [] });
         }
 
-        // 同步标记接力引用来源已删除（快照仍可用，REQ-006）
-        try {
-          const { markSourcesInvalidBySourceIds } = require('./relay-store');
-          markSourcesInvalidBySourceIds(Array.from(deletedIds));
-        } catch (e) {
-          console.warn('Failed to mark relay source invalid (clear):', e);
-        }
+        // 通过事件总线同步（避免循环依赖）
+        emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids: deletedIds });
 
-        // 同步清空 conversations-store 中的对应对话（chat 类型）
-        if (chatIdsToDelete.length > 0) {
-          try {
-            const { useConversationsStore } = require('./conversations-store');
-            const conversationsStore = useConversationsStore.getState();
-            chatIdsToDelete.forEach((id) => {
-              conversationsStore.deleteConversation(id, true);
-            });
-          } catch (e) {
-            console.warn('Failed to sync clear history with conversations store:', e);
-          }
-        }
+        chatIdsToDelete.forEach((id) => {
+          emit(StoreEvents.CONVERSATION_DELETED, { id });
+        });
 
-        // 同步清空 audio-history-store 中的记录（voice 类型）
-        if (voiceIdsToDelete.length > 0) {
-          try {
-            const { useAudioHistoryStore } = require('./audio-history-store');
-            const audioHistoryStore = useAudioHistoryStore.getState();
-            voiceIdsToDelete.forEach((id) => {
-              audioHistoryStore.deleteItem(id);
-            });
-          } catch (e) {
-            console.warn('Failed to sync clear history with audio history store:', e);
-          }
-        }
+        voiceIdsToDelete.forEach((id) => {
+          emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
+        });
       },
 
       // 从服务器获取历史记录（远端未接入时保留本地 IndexedDB 数据）

@@ -9,12 +9,7 @@ import { withAuth } from '@/lib/api/with-auth';
 import { safeRecordAiUsage } from '@/lib/ai-usage';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
-import {
-  releaseAiQuota,
-  reserveChatQuota,
-  settleAiQuota,
-} from '@/lib/billing/quota-service';
-import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,8 +23,7 @@ interface OptimizePromptRequest {
 
 export async function POST(request: NextRequest) {
   return withAuth(request, async (user) => {
-    let reservation: { id: string } | null = null;
-    let billingSettled = false;
+    let session: QuotaSession | null = null;
 
     try {
       const body = (await request.json()) as OptimizePromptRequest;
@@ -66,53 +60,46 @@ ${duration ? `视频时长：${duration} 秒` : ''}
         { role: 'system' as const, content: systemPrompt },
         { role: 'user' as const, content: userPrompt },
       ];
-      let outputLimit = 500;
 
-      if (user.role !== 'admin') {
-        const quota = await reserveChatQuota({
+      session = await QuotaSession.reserve(
+        {
           userId: user.id,
           requestId,
           feature: 'video_prompt',
           provider: 'xunfei',
           model: 'lite',
           messages,
-          maxOutputTokens: outputLimit,
-          metadata: {
-            promptLength: prompt.length,
-            aspectRatio: aspectRatio || null,
-            duration,
-          },
-        });
-        reservation = quota.reservation;
-        outputLimit = quota.outputLimit;
-      }
+          maxOutputTokens: 500,
+          metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
+        },
+        user.role
+      );
 
       const result = await xunfeiChat({
         messages,
         model: 'lite',
         temperature: 0.7,
-        maxTokens: outputLimit,
+        maxTokens: session.outputLimit,
       });
 
-      if (reservation) {
-        await settleAiQuota({
-          reservationId: reservation.id,
-          requestId,
-          feature: 'video_prompt',
+      await session.settle(
+        {
           action: 'video-prompt-optimize',
+          endpoint: '/api/video/optimize-prompt',
+          rawUsage: result.usage,
+          fallbackTokens: session.inputUnits,
+          metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
+        },
+        {
+          feature: 'video_prompt',
           provider: 'xunfei',
           model: 'lite',
-          endpoint: '/api/video/optimize-prompt',
-          measurement: createTokenMeasurement(result.usage),
-          metadata: {
-            promptLength: prompt.length,
-            aspectRatio: aspectRatio || null,
-            duration,
-          },
-        });
-        billingSettled = true;
-      } else {
-        // 管理员不扣额度，但保留供应商真实 Token 统计。
+          requestId,
+        }
+      );
+
+      // 管理员免扣额度，但仍保留供应商真实 Token 统计。
+      if (!session.hasReservation) {
         await safeRecordAiUsage({
           userId: user.id,
           feature: 'video_prompt',
@@ -135,11 +122,7 @@ ${duration ? `视频时长：${duration} 秒` : ''}
                 rawUsage: result.usage,
               }
             : null,
-          metadata: {
-            promptLength: prompt.length,
-            aspectRatio: aspectRatio || null,
-            duration,
-          },
+          metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
         });
       }
 
@@ -148,12 +131,8 @@ ${duration ? `视频时长：${duration} 秒` : ''}
         original: prompt,
       });
     } catch (error) {
-      if (reservation && !billingSettled) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          meterType: 'tokens',
-          reason: '视频提示词优化请求失败',
-        }).catch((releaseError) => console.error('[video/optimize-prompt] 释放额度失败:', releaseError));
+      if (session) {
+        await session.release({ reason: '视频提示词优化请求失败' });
       }
 
       if (error instanceof BillingError) {

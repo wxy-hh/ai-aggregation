@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { emit, StoreEvents } from './store-events';
 import type { SelectedModel, ComparisonTurn } from '@/types/comparison';
 
 // ==================== 类型定义 ====================
@@ -267,17 +268,9 @@ export const useConversationsStore = create<ConversationsState>()(
                     };
                 });
 
-                // 同步删除 history-store 中的对应记录（避免循环调用）
+                // 通过事件总线同步删除 history-store（避免循环依赖）
                 if (!_isSyncDelete) {
-                    try {
-                        const { useHistoryStore } = require('./history-store');
-                        const historyStore = useHistoryStore.getState();
-                        // 直接删除，ID 现在是一致的
-                        historyStore.deleteItem(id, true); // 传入 true 表示是同步删除
-                    } catch (e) {
-                        // history-store 可能未初始化，忽略错误
-                        console.warn('Failed to sync delete with history store:', e);
-                    }
+                    emit(StoreEvents.CONVERSATION_DELETED, { id });
                 }
             },
         }),
