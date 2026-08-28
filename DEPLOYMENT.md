@@ -205,7 +205,15 @@ pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
 pnpm db:seed
 ```
 
-生产是否 seed 视需要；**登录注册不依赖 seed**。
+登录注册不依赖 seed；但**管理员账号（xkfy）依赖 seed**。执行前需配置：
+
+```bash
+export SEED_ADMIN_PASSWORD='你的管理员密码'   # seed.ts 要求，缺失会直接报错
+export DATABASE_URL='...生产连接串...'
+pnpm db:seed
+```
+
+> seed 使用 upsert：已存在的 `xkfy` 会被更新为 `role=admin` 并重置密码为 `SEED_ADMIN_PASSWORD`；未注册过则直接创建。
 
 ---
 
@@ -574,6 +582,7 @@ openssl rand -hex 32
 | 2026-07-24 | 环境变量                                 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT                                                     |
 | 2026-07-24 | Cloudflare                               | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续                                |
 | 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书 |
+| 2026-08-28 | 管理员权限排查 + Nginx 强制跳转          | **根因**：`http://` 访问时 Secure Cookie 被拒收 → 匿名登录覆盖管理员会话（账号权限本身已同步）；nginx 改为双 server 块（80 仅跳转 + 443 主站），全链路浏览器验证通过 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
 Docker 生产地址：https://www.chunfen.ink  
@@ -713,6 +722,10 @@ NEXT_PUBLIC_APP_URL="https://www.your-domain.com"
 AUTH_SECRET="$(openssl rand -hex 32)"
 ANONYMOUS_DEVICE_SALT="$(openssl rand -hex 16)"
 
+# ---------- 管理员初始化（seed 用，务必修改默认值）----------
+# 不配置则线上无法通过 seed 创建/升级管理员账号（xkfy），只能手动改库
+SEED_ADMIN_PASSWORD="你的管理员密码"
+
 # ---------- AI 服务商 Key（按需填写）----------
 # 豆包（命理分析主力）
 ARK_API_KEY="你的火山方舟 Key"
@@ -747,9 +760,19 @@ sleep 10
 
 # 3. 执行数据库迁移
 cd ~/ai-aggregation
+
+# 关键：Prisma CLI 不会读 infra/docker/.env.prod，必须显式提供 DATABASE_URL。
+# 容器名 ai-aggregation-postgres 在宿主机不可解析，需替换为 localhost
+# （前提：docker-compose 中 postgres 的 5432 端口已映射到宿主机）
+export DATABASE_URL="$(grep '^DATABASE_URL' infra/docker/.env.prod | head -1 | cut -d'=' -f2- | tr -d '"' | sed 's/ai-aggregation-postgres/localhost/')"
+
 pnpm install --frozen-lockfile
 pnpm db:generate
 pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
+
+# 3.1 初始化管理员账号（必须）
+# seed 会 upsert 超管 xkfy（role=admin）并赋予 quota；缺少 SEED_ADMIN_PASSWORD 会报错
+pnpm db:seed
 
 # 4. 回到 docker 目录构建并启动
 cd infra/docker
@@ -806,28 +829,42 @@ sudo chown -R ubuntu:ubuntu certbot/
 
 #### 3）修改 nginx.conf 启用 SSL
 
-编辑 `infra/docker/nginx.conf`，找到以下注释并取消注释：
+编辑 `infra/docker/nginx.conf`。**注意结构必须是双 server 块**：
+
+- **80 端口块**：只做 ACME 续签路径 + 301 跳转 HTTPS，**不代理业务流量**
+- **443 端口块**：真正的业务主站
 
 ```nginx
-# 替换 server_name
-server_name www.your-domain.com;
-
-# 取消 SSL 配置注释
-listen 443 ssl http2;
-ssl_certificate     /etc/letsencrypt/live/www.your-domain.com/fullchain.pem;
-ssl_certificate_key /etc/letsencrypt/live/www.your-domain.com/privkey.pem;
-ssl_protocols TLSv1.2 TLSv1.3;
-ssl_ciphers HIGH:!aNULL:!MD5;
-
-# 启用 HTTP → HTTPS 跳转（取消注释整个 server 块）
+# 80 端口块（模板已内置，替换域名即可）
 server {
-    listen 80;
+    listen 80 default_server;
     server_name www.your-domain.com;
-    return 301 https://$host$request_uri;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# 443 主站块：替换 server_name，取消 SSL 配置注释
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.your-domain.com;
+    ssl_certificate     /etc/letsencrypt/live/www.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 }
 ```
 
 同时将所有 `proxy_pass http://web:3000` 替换为 `proxy_pass http://ai-web:3000`。
+
+> **为什么必须双 server 块（血泪教训，2026-08-28 验证）**：
+> 生产环境 `NODE_ENV=production` 时登录 Cookie 带 `Secure` 属性，浏览器**拒收 HTTP 明文页面下发的 Secure Cookie**。如果 80 端口直接代理业务流量（如通过 `http://` 或裸域名访问），登录后 refresh_token 丢失 → 前端自动匿名登录兜底 → **刚登录的管理员身份被匿名用户覆盖**，表现为"登录成功但没有管理员权限"。曾因此误判为"线上账号权限未同步"，实际是 Nginx 缺少 HTTP→HTTPS 强制跳转。
 
 #### 4）重启 Nginx
 
@@ -914,11 +951,13 @@ git pull origin master
 pnpm install --frozen-lockfile
 
 # 如果修改了 Prisma schema（数据库表结构），执行：
+# 关键：Prisma CLI 不读 infra/docker/.env.prod，需显式 export（容器名替换为 localhost）
+export DATABASE_URL="$(grep '^DATABASE_URL' infra/docker/.env.prod | head -1 | cut -d'=' -f2- | tr -d '"' | sed 's/ai-aggregation-postgres/localhost/')"
 pnpm db:generate
 pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
 ```
 
-> 没改依赖和数据库就跳过这一步。
+> 没改依赖和数据库就跳过这一步。export 只对当前 SSH 会话有效，下次登录需重新执行。
 
 **步骤 5：重新构建镜像并重启容器**
 
@@ -993,6 +1032,8 @@ rm ai-agg-deploy.tar.gz
 pnpm install --frozen-lockfile
 
 # 如果修改了 Prisma schema（数据库表结构），执行：
+# 关键：Prisma CLI 不读 infra/docker/.env.prod，需显式 export（容器名替换为 localhost）
+export DATABASE_URL="$(grep '^DATABASE_URL' infra/docker/.env.prod | head -1 | cut -d'=' -f2- | tr -d '"' | sed 's/ai-aggregation-postgres/localhost/')"
 pnpm db:generate
 pnpm --filter @repo/db exec prisma migrate deploy --schema prisma/schema.prisma
 ```
@@ -1078,6 +1119,10 @@ docker system df
 | 端口 80 被占用                         | 系统自带 nginx 未停止                         | `sudo systemctl stop nginx && sudo systemctl disable nginx`                       |
 | 容器 unhealthy 但服务正常              | Next.js standalone 监听方式导致 wget 检查失败 | 可忽略，实际服务通过 nginx 代理正常工作                                           |
 | `git pull` 后构建失败                  | 本地 Dockerfile 修改未同步                    | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确                   |
+| `prisma migrate deploy` 报 P1012 `Environment variable not found: DATABASE_URL` | Prisma CLI 不读 `infra/docker/.env.prod`      | 先 `export DATABASE_URL`（容器名替换为 localhost），见 14.6 节                    |
+| 登录成功但没有管理员权限 / 登录后变成匿名用户 | 通过 `http://` 或裸域名访问，Secure Cookie 被浏览器拒收，匿名登录覆盖真实会话 | 确认 nginx 已启用 HTTP→HTTPS 强制跳转（14.7 节），一律用 `https://www.域名` 访问 |
+| `db:seed` 报错 `环境变量 SEED_ADMIN_PASSWORD 未配置` | `.env.prod` 缺少管理员初始化密码              | 在 `.env.prod` 添加 `SEED_ADMIN_PASSWORD` 后重新执行，见 14.5 节                  |
+| 线上 `xkfy` 不是 admin（无 seed 时）   | 首次部署未执行 seed                           | 短期：psql 手动 `UPDATE users SET role='admin' WHERE username='xkfy'`；长期：补 seed |
 
 ### 14.11 数据库管理
 
@@ -1110,11 +1155,13 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 [ ] 1. docker ps 显示 4 个容器运行中：ai-nginx, ai-web, ai-aggregation-postgres, ai-aggregation-redis
 [ ] 2. curl -s -o /dev/null -w '%{http_code}' http://localhost → 301（跳转 HTTPS）
 [ ] 3. curl -s -o /dev/null -w '%{http_code}' https://你的域名 → 200
-[ ] 4. 浏览器访问 https://你的域名/home → 页面正常加载
-[ ] 5. 注册 → 登录 → 查看个人中心 → 全部正常
-[ ] 6. AI 对话功能正常（豆包/DeepSeek）
-[ ] 7. docker logs ai-web 无报错
-[ ] 8. SSL 证书有效（浏览器地址栏显示锁图标）
+[ ] 4. curl -s -o /dev/null -w '%{http_code}' http://你的域名 → 301 跳转 https://www.域名（Secure Cookie 依赖）
+[ ] 5. 浏览器访问 https://你的域名/home → 页面正常加载
+[ ] 6. 注册 → 登录 → 查看个人中心 → 全部正常
+[ ] 7. 管理员账号登录后访问 /admin/users → 可进入管理页（不被重定向）
+[ ] 8. AI 对话功能正常（豆包/DeepSeek）
+[ ] 9. docker logs ai-web 无报错
+[ ] 10. SSL 证书有效（浏览器地址栏显示锁图标）
 ```
 
 ### 14.14 环境变量说明
@@ -1126,6 +1173,7 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 | `REDIS_PORT`                | Redis 端口                     | ✅           |
 | `AUTH_SECRET`               | NextAuth 加密密钥              | ✅           |
 | `ANONYMOUS_DEVICE_SALT`     | 匿名用户设备指纹盐             | ✅           |
+| `SEED_ADMIN_PASSWORD`       | 超管 xkfy 初始化密码（seed 用） | 管理员账号需要 |
 | `NEXTAUTH_URL`              | NextAuth 回调地址              | ✅           |
 | `NEXT_PUBLIC_APP_URL`       | 前端可见的应用地址             | ✅           |
 | `ARK_API_KEY`               | 火山方舟 API Key（豆包）       | 命理分析需要 |
