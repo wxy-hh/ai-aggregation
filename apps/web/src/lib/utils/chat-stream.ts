@@ -1,4 +1,60 @@
 // 消费聊天接口返回的标准 SSE 流
+// 事件协议以 @repo/shared 的 ChatStreamEvent 为唯一权威定义（见 chat-stream-contract），
+// 任何未在契约内的事件（未知类型、非标准帧）按「显式忽略」处理，不回调、不终止流。
+import { parseChatStreamEvent } from '@repo/shared';
+import { authFetch } from '@/lib/api/client';
+
+/**
+ * 统一聊天流编排（评审 C4：单聊 sendMessage/reload 与对比 runModel 三处重复收敛）。
+ *
+ * 职责：authFetch POST /api/chat → !ok 抛错（优先上游 error 文案）→ consumeChatResponse 消费。
+ * 调用方只负责：请求体构造、onChunk/onWarning 的 UI 更新、完成/错误/中止的语义映射。
+ * 返回流结束后的累计文本（供调用方完成动作与错误兜底）。
+ *
+ * 错误约定：
+ * - HTTP !ok：抛 Error（errorData.error 或 `请求失败: ${status}`）；
+ * - signal 中止：authFetch 抛出的 AbortError 原样透传（调用方按各自 Abort 语义处理）；
+ * - 流被截断（未收到 done/error）：consumeChatResponse 抛「回答流被中断」，原样透传。
+ */
+export interface StreamChatRequest {
+  /** POST 请求体（不含 method/signal 等 fetch 选项） */
+  body: Record<string, unknown>;
+  signal: AbortSignal;
+}
+
+export interface StreamChatResponseHandlers {
+  /** 每次收到增量时回调一次，参数为当前累计文本 */
+  onChunk?: (accumulatedText: string) => void;
+  onWarning?: (warning: string) => void;
+}
+
+export async function streamChatResponse(
+  request: StreamChatRequest,
+  handlers: StreamChatResponseHandlers
+): Promise<string> {
+  const response = await authFetch('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify(request.body),
+    signal: request.signal,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `请求失败: ${response.status}`);
+  }
+
+  let accumulated = '';
+  await consumeChatResponse(
+    response,
+    (chunk) => {
+      accumulated += chunk;
+      handlers.onChunk?.(accumulated);
+    },
+    handlers.onWarning
+  );
+  return accumulated;
+}
+
 export async function consumeChatResponse(
   response: Response,
   onChunk: (chunk: string) => void,
@@ -41,42 +97,32 @@ export async function consumeChatResponse(
     }
 
     try {
-      const data = JSON.parse(payload) as {
-        type?: string;
-        text?: string;
-        delta?: string;
-        error?: string;
-        warning?: string;
-      };
-
-      if (data.type === 'text-delta' && data.text) {
-        onChunk(data.text);
+      const event = parseChatStreamEvent(JSON.parse(payload));
+      if (!event) {
+        // 未知事件类型 / 非标准帧：显式忽略（不回调、不终止）。
+        // 只有 done/error/[DONE] 能终止流；EOF 仍未收到终止事件则按截断抛错。
         return;
       }
 
-      if (data.type === 'response.output_text.delta' && data.delta) {
-        onChunk(data.delta);
-        return;
-      }
-
-      if (data.type === 'done' || data.type === 'response.done') {
-        isDone = true;
-        return;
-      }
-
-      if (data.type === 'warning' && typeof data.warning === 'string') {
-        onWarning?.(data.warning);
-        return;
-      }
-
-      if (data.type === 'error') {
-        throw new Error(data.error || '流式响应失败');
+      switch (event.type) {
+        case 'text-delta':
+          onChunk(event.text);
+          return;
+        case 'warning':
+          onWarning?.(event.warning);
+          return;
+        case 'done':
+          isDone = true;
+          return;
+        case 'error':
+          throw new Error(event.error || '流式响应失败');
       }
     } catch (error) {
-      if (error instanceof Error && error.name !== 'SyntaxError') {
-        throw error;
+      // JSON.parse 的 SyntaxError：非 JSON 帧视为协议外数据，显式忽略
+      if (error instanceof Error && error.name === 'SyntaxError') {
+        return;
       }
-      onChunk(payload);
+      throw error;
     }
   };
 

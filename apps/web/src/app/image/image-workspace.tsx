@@ -140,7 +140,6 @@ export default function ImageWorkspace() {
         n: 1,
         seed: seed ? parseInt(seed) : undefined,
         style: style || undefined,
-        quality: quality as 'standard' | 'hd',
       });
 
       setProgress(80);

@@ -8,10 +8,9 @@
 import { streamText } from 'ai';
 import { createProvider } from '@repo/providers';
 import { normalizeUsage } from '@/lib/ai-usage';
-import { estimateOutputTokens } from '@/lib/billing/usage-measurement';
 import type { ChatContext, ChatProviderAdapter, StreamResult } from '../types';
 import { textStreamToSse } from '../sse';
-import type { BillingManager } from '../billing-manager';
+import { finalizeChatStream, type BillingManager } from '../billing-manager';
 import type { ProviderName } from '@repo/providers';
 
 export class GenericAdapter implements ChatProviderAdapter {
@@ -31,24 +30,33 @@ export class GenericAdapter implements ChatProviderAdapter {
       throw new Error('上游未返回流式响应体');
     }
 
+    // 累计输出文本：finalizeChatStream 需要它以计算输出估算兜底
+    let text = '';
     const sseStream = textStreamToSse(textResponse.body, {
+      onText: (chunk) => { text += chunk; },
       onDone: async () => {
+        let usage: unknown = null;
         try {
-          const usage = await result.totalUsage;
-          const normalized = normalizeUsage(usage);
-          if (this.billing.hasReservation) {
-            await this.billing.settle(normalized.rawUsage, this.billing.inputUnits);
-          } else {
-            await this.billing.recordUsage(normalized.rawUsage);
-          }
+          const total = await result.totalUsage;
+          usage = normalizeUsage(total).rawUsage;
         } catch (err) {
+          // usage 读取失败：走估算兜底结算，不静默跳过
           console.error('[chat] 读取 usage 失败:', err);
         }
+        await finalizeChatStream(this.billing, {
+          outcome: 'success',
+          usage,
+          outputText: text,
+        });
       },
-      onError: async () => {
-        if (this.billing.hasReservation && !this.billing.finalized) {
-          await this.billing.settle(null, this.billing.inputUnits);
-        }
+      onError: async (err) => {
+        // 有输出文本 → partial 结算；完全无输出 → 释放预留（取消应退款）
+        await finalizeChatStream(this.billing, {
+          outcome: text ? 'partial' : 'failed',
+          usage: null,
+          outputText: text,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       },
     });
 

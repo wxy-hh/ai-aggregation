@@ -11,7 +11,7 @@ import {
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { encodeSseEvent, SSE_HEADERS } from '@/lib/utils/sse';
+import { encodeChatSseEvent, SSE_HEADERS } from '@/lib/utils/sse';
 import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
 import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
@@ -276,10 +276,10 @@ function createCopilotStream({
 
         if (ev.type === 'text-delta') {
           outputText += ev.text;
-          streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: ev.text }));
+          streamController.enqueue(encodeChatSseEvent({ type: 'text-delta', text: ev.text }));
         } else if (ev.type === 'done') {
           usagePayload = ev.rawUsage ?? usagePayload;
-          streamController.enqueue(encodeSseEvent({ type: 'done' }));
+          streamController.enqueue(encodeChatSseEvent({ type: 'done' }));
         } else if (ev.type === 'error') {
           throw new ModelUpstreamError(ev.error, 502);
         }
@@ -287,7 +287,7 @@ function createCopilotStream({
         // 结算配额（部分或释放）
         await settleUsageOnError(error);
         streamController.enqueue(
-          encodeSseEvent({
+          encodeChatSseEvent({
             type: 'error',
             error:
               error instanceof Error && error.name === 'AbortError'
@@ -297,6 +297,9 @@ function createCopilotStream({
                   : '追问失败，请稍后重试',
           })
         );
+        // 对齐聊天契约终止序列：error 后同样补发 done，
+        // 确保「error 即终止」的消费方与依赖终止帧的消费方行为一致。
+        streamController.enqueue(encodeChatSseEvent({ type: 'done' }));
         streamController.close();
       }
     },

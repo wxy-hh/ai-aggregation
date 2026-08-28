@@ -27,6 +27,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
   return async function POST(req: Request) {
     const errorId = createErrorId();
     const startTime = Date.now();
+    // 提升到 try 外：初始化/适配器启动失败时也需释放预留（评审 C2：release 闭环）
+    let billing: Awaited<ReturnType<typeof createBillingManager>> | null = null;
 
     try {
       // 1. 鉴权
@@ -55,7 +57,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
       console.log('[chat] 请求参数:', { provider, model: modelName, messagesCount: messages.length });
 
       // 4. 配额管理
-      const billing = await createBillingManager({
+      billing = await createBillingManager({
         userId: user.id,
         errorId,
         provider,
@@ -86,6 +88,12 @@ export function createChatHandler(config: ChatHandlerConfig) {
       return createSseResponse(result.stream);
 
     } catch (error) {
+      // 流尚未开始（豆包文件未就绪、上游 401/429、适配器初始化失败等）：
+      // 释放预留额度，避免 reservation 永久泄漏。
+      // 响应已发出后的错误由 finalizeChatStream 在流内结算/释放，不会走到这里。
+      if (billing) {
+        await billing.release(error instanceof Error ? error.message : '聊天请求失败');
+      }
       return handleError(error, errorId, startTime);
     }
   };

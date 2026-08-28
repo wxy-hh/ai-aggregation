@@ -182,7 +182,7 @@ function createBaziStream({
   return new ReadableStream({
     async start(controller) {
       const send = (event: BaziStreamEvent) => {
-        controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
+        controller.enqueue(encodeSseEvent(event));
       };
 
       try {

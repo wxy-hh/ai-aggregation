@@ -11,10 +11,9 @@ import {
   type XunfeiMessage,
 } from '@repo/providers';
 import { normalizeUsage } from '@/lib/ai-usage';
-import { estimateOutputTokens } from '@/lib/billing/usage-measurement';
 import type { ChatContext, ChatProviderAdapter, StreamResult } from '../types';
 import { textStreamToSse, createSseResponse } from '../sse';
-import type { BillingManager } from '../billing-manager';
+import { finalizeChatStream, type BillingManager } from '../billing-manager';
 
 export class XunfeiAdapter implements ChatProviderAdapter {
   constructor(private billing: BillingManager) {}
@@ -35,25 +34,25 @@ export class XunfeiAdapter implements ChatProviderAdapter {
     const sseStream = textStreamToSse(rawStream, {
       onText: (chunk) => { text += chunk; },
       onDone: async () => {
-        if (this.billing.hasReservation) {
-          await this.billing.settle(usage, this.billing.inputUnits + estimateOutputTokens(text));
-        } else {
-          await this.billing.recordUsage(usage);
-        }
+        // 流正常结束：统一结算（success）
+        await finalizeChatStream(this.billing, {
+          outcome: 'success',
+          usage,
+          outputText: text,
+        });
       },
       onError: async (err) => {
         console.error('[chat] 讯飞流式错误:', {
           errorId: ctx.errorId,
           error: err instanceof Error ? err.message : String(err),
         });
-        if (this.billing.hasReservation) {
-          const status = text ? 'partial' : 'failed';
-          const fallback = this.billing.inputUnits + estimateOutputTokens(text);
-          // settle 内部会判断 finalized，这里强制结算
-          if (!this.billing.finalized) {
-            await this.billing.settle(usage, fallback);
-          }
-        }
+        // 有输出文本 → partial 结算；完全无输出 → 释放预留（取消应退款）
+        await finalizeChatStream(this.billing, {
+          outcome: text ? 'partial' : 'failed',
+          usage,
+          outputText: text,
+          reason: err instanceof Error ? err.message : String(err),
+        });
       },
     });
 

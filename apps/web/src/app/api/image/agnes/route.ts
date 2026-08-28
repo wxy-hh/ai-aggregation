@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
           response_format: 'url',
         },
       };
-      if (body.quality) apiBody.quality = body.quality;
+      // Agnes 文生图队列不支持 quality 参数，此处不传
       if (body.seed != null) apiBody.seed = body.seed;
       if (body.negative_prompt) apiBody.negative_prompt = body.negative_prompt;
 

@@ -17,7 +17,9 @@ export function getDoubaoIncompleteWarning(data: unknown): string | null {
     };
   };
 
-  if (payload.type !== 'response.done') {
+  // 上游可能以独立事件 response.incomplete 结束，也可能在 response.done 内携带
+  // incomplete 状态，两种形态都要识别（适配器对三者都调用本函数）。
+  if (payload.type !== 'response.done' && payload.type !== 'response.incomplete') {
     return null;
   }
 

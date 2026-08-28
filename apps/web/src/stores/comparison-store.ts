@@ -31,7 +31,7 @@ import {
   MIN_COMPARE_MODELS,
   MAX_COMPARE_MODELS,
 } from '@/lib/constants/chat-models';
-import { consumeChatResponse } from '@/lib/utils/chat-stream';
+import { streamChatResponse } from '@/lib/utils/chat-stream';
 import { authFetch } from '@/lib/api/client';
 import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
@@ -162,31 +162,27 @@ async function runModel(
       useComparisonStore.getState().turns.find((t) => t.id === turnId)?.runs[modelKey]
         ?.branchMessages ?? [];
 
-    const response = await authFetch('/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        messages: branch.map((m) => ({ role: m.role, content: m.content })),
-        provider: model.provider,
-        model: model.model,
-        requestId: billingReservation?.requestId,
-        reservationId: billingReservation?.reservationId,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `请求失败: ${response.status}`);
-    }
-
-    await consumeChatResponse(
-      response,
-      (chunk) => {
-        accumulated += chunk;
-        scheduleContentFlush(turnId, modelKey, accumulated);
+    // fetch → !ok 抛错 → SSE 消费已抽离（streamChatResponse，评审 C4），
+    // 本 store 只保留 RAF 节流与 stopped/failed 语义映射
+    await streamChatResponse(
+      {
+        body: {
+          messages: branch.map((m) => ({ role: m.role, content: m.content })),
+          provider: model.provider,
+          model: model.model,
+          requestId: billingReservation?.requestId,
+          reservationId: billingReservation?.reservationId,
+        },
+        signal: controller.signal,
       },
-      (warning) => {
-        updateRun(turnId, modelKey, (r) => ({ ...r, truncationWarning: warning }));
+      {
+        onChunk: (accumulatedText) => {
+          accumulated = accumulatedText;
+          scheduleContentFlush(turnId, modelKey, accumulatedText);
+        },
+        onWarning: (warning) => {
+          updateRun(turnId, modelKey, (r) => ({ ...r, truncationWarning: warning }));
+        },
       }
     );
 

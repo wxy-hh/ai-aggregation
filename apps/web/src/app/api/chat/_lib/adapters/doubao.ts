@@ -6,11 +6,10 @@
  */
 
 import { normalizeUsage } from '@/lib/ai-usage';
-import { estimateOutputTokens } from '@/lib/billing/usage-measurement';
 import { getDoubaoIncompleteWarning } from '../../doubao-warning';
 import type { ChatContext, ChatProviderAdapter, StreamResult } from '../types';
 import { encodeSseEvent, createSseResponse } from '../sse';
-import type { BillingManager } from '../billing-manager';
+import { finalizeChatStream, type BillingManager } from '../billing-manager';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 
 // 豆包多模态内容类型
@@ -120,13 +119,17 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     }
 
     const input = convertToDoubaoInput(ctx.messages);
+    // 不传 max_output_tokens：doubao-seed-evolving 等推理模型的该上限同时约束
+    // reasoning + 正文（与 destiny copilot 同一结论）。多轮对话中思考变长，
+    // 2048 预算会被 reasoning 独占（实测 reasoning_tokens=2048、正文=0），
+    // 上游返回 incomplete/length，适配器零文本分支向前端发 error，
+    // 表现为「第一轮正常、第二轮无返回」。超预留部分由结算侧 billing_pending 对账兜底。
     const requestBody = {
       model: ctx.model,
       input,
       stream: true,
       temperature: 0.7,
       top_p: 0.9,
-      max_output_tokens: this.billing.outputLimit,
     };
 
     console.log('[chat] 豆包 API 调用:', {
@@ -200,7 +203,8 @@ export class DoubaoAdapter implements ChatProviderAdapter {
                 const jsonStr = dataLine.slice(6);
                 if (jsonStr === '[DONE]') {
                   hasSentDone = true;
-                  controller.enqueue(encodeSseEvent({ type: 'done' }));
+                  // 不立即发送 done 事件：需等流结束后再检查是否有文本输出，
+                  // 若为空应发送 error 事件而非 done，避免前端展示空消息。
                   break;
                 }
 
@@ -227,7 +231,8 @@ export class DoubaoAdapter implements ChatProviderAdapter {
                   if (warning) {
                     controller.enqueue(encodeSseEvent({ type: 'warning', warning }));
                   }
-                  controller.enqueue(encodeSseEvent({ type: 'done' }));
+                  // 不立即发送 done 事件：需等流结束后再检查是否有文本输出，
+                  // 若为空应发送 error 事件而非 done，避免前端展示空消息。
                   break;
                 }
               } catch (e) {
@@ -238,36 +243,68 @@ export class DoubaoAdapter implements ChatProviderAdapter {
             if (hasSentDone) break;
           }
 
-          // 结算配额
-          if (billing.hasReservation) {
-            await billing.settle(usage, billing.inputUnits + estimateOutputTokens(text));
-          } else {
-            await billing.recordUsage(usage);
-          }
-
-          // 上游流已关闭却没有任何结束事件：正常响应的最后必有
-          // response.done/completed/incomplete（含 usage），因此这里是异常
-          // （部署超时截断、网络中断或上游空流）。不能再静默补发 done——
-          // 前端会把空回答当作「调用成功」展示。
-          if (!hasSentDone) {
+          // 上游流已关闭：判定完成态并统一结算（评审 C2：finalizeChatStream 唯一决策点）。
+          // 正常响应的最后必有 response.done/completed/incomplete（含 usage）；
+          // 若未收到任何结束事件即为异常（部署超时截断、网络中断或上游空流），
+          // 不能再静默补发 done——前端会把空回答当作「调用成功」展示。
+          if (hasSentDone) {
+            // 关键修复：即使收到 response.done，也要检查是否有文本输出。
+            // 若文本为空（模型成功完成但无输出），应标记为 failed 而非 success，
+            // 否则前端会把空回答当作「调用成功」展示为空消息。
             if (!text) {
+              // 上游空流：错误事件 + 释放预留（无产出不扣费，取消应退款）
               controller.enqueue(
                 encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
               );
+              await finalizeChatStream(billing, {
+                outcome: 'failed',
+                usage: null,
+                outputText: '',
+                reason: '模型未返回任何内容',
+              });
             } else {
-              controller.enqueue(
-                encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
-              );
+              // 有输出文本：发送 done 事件并结算为 success
               controller.enqueue(encodeSseEvent({ type: 'done' }));
+              await finalizeChatStream(billing, {
+                outcome: 'success',
+                usage,
+                outputText: text,
+              });
             }
+          } else if (text) {
+            // 截断但已有部分内容：先补发 warning + done 让前端正常收尾，按 partial 结算
+            controller.enqueue(
+              encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
+            );
+            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            await finalizeChatStream(billing, {
+              outcome: 'partial',
+              usage,
+              outputText: text,
+              reason: '上游流截断',
+            });
+          } else {
+            // 上游空流：错误事件 + 释放预留（无产出不扣费，取消应退款）
+            controller.enqueue(
+              encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
+            );
+            await finalizeChatStream(billing, {
+              outcome: 'failed',
+              usage: null,
+              outputText: '',
+              reason: '模型未返回任何内容',
+            });
           }
           controller.close();
         } catch (error) {
           console.error('[chat] 豆包流错误:', error);
-          if (billing.hasReservation && !billing.finalized) {
-            const fallback = billing.inputUnits + estimateOutputTokens(text);
-            await billing.settle(usage, fallback);
-          }
+          // 有输出文本 → partial 结算；完全无输出 → 释放预留（取消应退款）
+          await finalizeChatStream(billing, {
+            outcome: text ? 'partial' : 'failed',
+            usage,
+            outputText: text,
+            reason: error instanceof Error ? error.message : String(error),
+          });
           controller.error(error);
         } finally {
           reader.releaseLock();

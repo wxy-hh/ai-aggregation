@@ -4,7 +4,12 @@
  * 职责：
  * - 将原始文本流（ReadableStream<Uint8Array>）转换为 SSE 事件流
  * - 提供 SSE 编码、响应头、响应构造
+ *
+ * 事件协议：仅产出 @repo/shared 定义的 ChatStreamEvent（text-delta / done /
+ * warning / error），类型化签名拒绝任何未在契约内的事件。
  */
+
+import { encodeChatStreamEvent, type ChatStreamEvent } from '@repo/shared';
 
 const encoder = new TextEncoder();
 
@@ -15,8 +20,8 @@ export const SSE_HEADERS: Record<string, string> = {
   'X-Accel-Buffering': 'no',
 };
 
-export function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+export function encodeSseEvent(event: ChatStreamEvent): Uint8Array {
+  return encoder.encode(encodeChatStreamEvent(event));
 }
 
 export function createSseResponse(stream: ReadableStream<Uint8Array>): Response {

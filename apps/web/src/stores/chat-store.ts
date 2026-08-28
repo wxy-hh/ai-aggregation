@@ -3,8 +3,7 @@
 import { create } from 'zustand';
 import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
-import { consumeChatResponse } from '@/lib/utils/chat-stream';
-import { authHeaders, authFetch } from '@/lib/api/client';
+import { streamChatResponse } from '@/lib/utils/chat-stream';
 import type { DerivationMetadata } from '@repo/shared';
 
 // ==================== 类型定义 ====================
@@ -216,51 +215,40 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       try {
-        // ===== 5. 发起流式请求 =====
-        const response = await authFetch('/api/chat', {
-          method: 'POST',
-          body: JSON.stringify({
-            // 发送历史消息 + 新用户消息
-            messages: [...messages, userMessage].map((m) => ({
-              role: m.role,
-              content: m.content,
-              attachments: m.attachments,
-            })),
-            provider, // AI提供商
-            model, // 模型名称
-          }),
-          signal: abortController.signal, // 支持取消请求
-        });
-
-        // 检查响应状态
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `请求失败: ${response.status}`);
-        }
-
-        let accumulatedContent = ''; // 累积的AI回复内容
-
-        // ===== 6. 处理流式响应 =====
-        await consumeChatResponse(
-          response,
-          (chunk) => {
-            accumulatedContent += chunk;
-            // ===== 7. 实时更新UI =====
-            // 每次收到新数据就更新消息列表
-            set((state) => {
-              const updatedMessages = state.messages.map((msg) =>
-                // 找到AI消息并更新其内容
-                msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
-              );
-              return { messages: updatedMessages };
-            });
+        // ===== 5. 发起并消费流式请求（统一编排见 streamChatResponse，评审 C4） =====
+        // fetch → !ok 抛错 → SSE 消费已抽离，本 store 只保留 UI 更新与错误/中止语义映射
+        await streamChatResponse(
+          {
+            body: {
+              // 发送历史消息 + 新用户消息
+              messages: [...messages, userMessage].map((m) => ({
+                role: m.role,
+                content: m.content,
+                attachments: m.attachments,
+              })),
+              provider, // AI提供商
+              model, // 模型名称
+            },
+            signal: abortController.signal, // 支持取消请求
           },
-          (warning) => {
-            set((state) => ({
-              messages: state.messages.map((msg) =>
-                msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
-              ),
-            }));
+          {
+            // ===== 6/7. 实时更新UI：每次收到新数据就更新消息列表 =====
+            onChunk: (accumulatedText) => {
+              set((state) => {
+                const updatedMessages = state.messages.map((msg) =>
+                  // 找到AI消息并更新其内容
+                  msg.id === assistantMessage.id ? { ...msg, content: accumulatedText } : msg
+                );
+                return { messages: updatedMessages };
+              });
+            },
+            onWarning: (warning) => {
+              set((state) => ({
+                messages: state.messages.map((msg) =>
+                  msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
+                ),
+              }));
+            },
           }
         );
 
@@ -379,44 +367,34 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       try {
-        // ... 重复 fetch 逻辑 ...
-        // 为了减少代码重复，可以将 fetch 逻辑抽离，但这里直接写吧
-        const response = await authFetch('/api/chat', {
-          method: 'POST',
-          body: JSON.stringify({
-            messages: [...history, userMessage].map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-            provider,
-            model,
-          }),
-          signal: abortController.signal,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `请求失败: ${response.status}`);
-        }
-
-        let accumulatedContent = '';
-
-        await consumeChatResponse(
-          response,
-          (chunk) => {
-            accumulatedContent += chunk;
-            set((state) => ({
-              messages: state.messages.map((msg) =>
-                msg.id === assistantMessage.id ? { ...msg, content: accumulatedContent } : msg
-              ),
-            }));
+        // fetch → !ok 抛错 → SSE 消费已抽离（streamChatResponse，评审 C4）
+        await streamChatResponse(
+          {
+            body: {
+              messages: [...history, userMessage].map((m) => ({
+                role: m.role,
+                content: m.content,
+              })),
+              provider,
+              model,
+            },
+            signal: abortController.signal,
           },
-          (warning) => {
-            set((state) => ({
-              messages: state.messages.map((msg) =>
-                msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
-              ),
-            }));
+          {
+            onChunk: (accumulatedText) => {
+              set((state) => ({
+                messages: state.messages.map((msg) =>
+                  msg.id === assistantMessage.id ? { ...msg, content: accumulatedText } : msg
+                ),
+              }));
+            },
+            onWarning: (warning) => {
+              set((state) => ({
+                messages: state.messages.map((msg) =>
+                  msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
+                ),
+              }));
+            },
           }
         );
 

@@ -13,7 +13,6 @@ export interface AgnesGenerateParams {
   n?: number;
   seed?: number;
   style?: string;
-  quality?: 'standard' | 'hd';
 }
 
 export interface AgnesGenerateResponse {
@@ -41,7 +40,6 @@ export async function generateAgnesImage(
       n: params.n || 1,
       seed: params.seed,
       style: params.style || undefined,
-      quality: params.quality || 'standard',
       requestId,
     }),
   });

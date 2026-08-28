@@ -12,6 +12,9 @@
 
 // ─── 类型 ───
 
+import type { ChatStreamErrorEvent, ChatStreamTextDeltaEvent } from './chat-stream-contract';
+import { normalizeUsage } from './usage-normalize';
+
 export type DestinyProvider = 'doubao' | 'deepseek';
 
 export type ModelProtocol = 'ark-responses' | 'deepseek-chat';
@@ -35,10 +38,12 @@ export type ModelUsage = {
   totalTokens: number;
 };
 
+// text-delta / error 与聊天契约（见 chat-stream-contract.ts）同形同义，直接复用，
+// 保证事件名与字段单一来源；done 额外携带 usage（BFF 内部结算用，不外发到前端）。
 export type ModelStreamEvent =
-  | { type: 'text-delta'; text: string }
+  | ChatStreamTextDeltaEvent
   | { type: 'done'; usage: ModelUsage | null; rawUsage?: unknown }
-  | { type: 'error'; error: string };
+  | ChatStreamErrorEvent;
 
 export type JsonSchemaRef = {
   name: string;
@@ -149,27 +154,24 @@ export function mapModelError(status: number): string {
 
 // ─── 用量归一 ───
 
-function toFiniteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
 /**
- * 兼容 ARK（input_tokens/output_tokens 或 prompt_tokens/completion_tokens）
- * 与 DeepSeek（prompt_tokens/completion_tokens/total_tokens）的 usage 字段。
+ * Destiny 域简版用量归一：底层统一走全仓唯一实现 normalizeUsage
+ * （见 usage-normalize.ts，评审 C3），此处仅映射为 destiny 内部简版字段。
+ * 如需 cachedTokens/reasoningTokens 等全字段口径，直接用 normalizeUsage。
  */
 export function normalizeModelUsage(raw: unknown): ModelUsage | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const prompt = toFiniteNumber(r.prompt_tokens ?? r.input_tokens);
-  const completion = toFiniteNumber(r.completion_tokens ?? r.output_tokens);
-  const totalExplicit = toFiniteNumber(r.total_tokens);
-  const total = totalExplicit ?? (prompt != null || completion != null ? (prompt ?? 0) + (completion ?? 0) : null);
-
-  if (prompt == null && completion == null && total == null) return null;
+  const normalized = normalizeUsage(raw);
+  if (
+    normalized.inputTokens === null &&
+    normalized.outputTokens === null &&
+    normalized.totalTokens === null
+  ) {
+    return null;
+  }
   return {
-    promptTokens: prompt ?? 0,
-    completionTokens: completion ?? 0,
-    totalTokens: total ?? 0,
+    promptTokens: normalized.inputTokens ?? 0,
+    completionTokens: normalized.outputTokens ?? 0,
+    totalTokens: normalized.totalTokens ?? 0,
   };
 }
 

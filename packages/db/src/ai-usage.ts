@@ -8,7 +8,7 @@ import type {
   ProfileUsageItem,
   ProfileUsageSummary,
   UsageSourceKind,
-} from '../../shared/src/types/ai-usage';
+} from '@repo/shared';
 
 const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
   chat: '智能对话',
@@ -115,101 +115,9 @@ function resolveDestinyDetailKey(
   return 'other';
 }
 
-function toInteger(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.round(value));
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.round(parsed));
-    }
-  }
-
-  return null;
-}
-
-function pickTokenCount(...values: unknown[]): number | null {
-  for (const value of values) {
-    const result = toInteger(value);
-    if (result !== null) {
-      return result;
-    }
-  }
-
-  return null;
-}
-
-export function normalizeUsage(rawUsage: unknown): NormalizedAiUsage {
-  if (!rawUsage || typeof rawUsage !== 'object') {
-    return {
-      inputTokens: null,
-      outputTokens: null,
-      totalTokens: null,
-      cachedTokens: null,
-      reasoningTokens: null,
-      taskCount: 1,
-    };
-  }
-
-  const usage = rawUsage as Record<string, unknown>;
-  const inputDetails =
-    usage.input_tokens_details && typeof usage.input_tokens_details === 'object'
-      ? (usage.input_tokens_details as Record<string, unknown>)
-      : null;
-  const outputDetails =
-    usage.output_tokens_details && typeof usage.output_tokens_details === 'object'
-      ? (usage.output_tokens_details as Record<string, unknown>)
-      : null;
-  const inputTokenDetails =
-    usage.inputTokenDetails && typeof usage.inputTokenDetails === 'object'
-      ? (usage.inputTokenDetails as Record<string, unknown>)
-      : null;
-  const outputTokenDetails =
-    usage.outputTokenDetails && typeof usage.outputTokenDetails === 'object'
-      ? (usage.outputTokenDetails as Record<string, unknown>)
-      : null;
-
-  const inputTokens = pickTokenCount(
-    usage.inputTokens,
-    usage.input_tokens,
-    usage.promptTokens,
-    usage.prompt_tokens
-  );
-  const outputTokens = pickTokenCount(
-    usage.outputTokens,
-    usage.output_tokens,
-    usage.completionTokens,
-    usage.completion_tokens
-  );
-  const totalTokens = pickTokenCount(usage.totalTokens, usage.total_tokens);
-  const cachedTokens = pickTokenCount(
-    usage.cachedTokens,
-    usage.cachedInputTokens,
-    inputDetails?.cached_tokens,
-    inputTokenDetails?.cacheReadTokens
-  );
-  const reasoningTokens = pickTokenCount(
-    usage.reasoningTokens,
-    outputDetails?.reasoning_tokens,
-    outputTokenDetails?.reasoningTokens
-  );
-
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens:
-      totalTokens ??
-      (inputTokens !== null || outputTokens !== null
-        ? (inputTokens ?? 0) + (outputTokens ?? 0)
-        : null),
-    cachedTokens,
-    reasoningTokens,
-    taskCount: 1,
-    rawUsage,
-  };
-}
+// normalizeUsage 全仓唯一实现已迁移至 @repo/shared（评审 C3），此处 re-export
+// 保持 @repo/db 的所有既有调用方（web/worker 经 lib/ai-usage 等）路径不变。
+export { normalizeUsage } from '@repo/shared';
 
 export async function recordAiUsage(input: AiUsageRecordInput) {
   const usage =

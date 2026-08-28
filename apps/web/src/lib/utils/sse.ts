@@ -6,6 +6,8 @@
  * - 提供标准 SSE 响应头，避免各 route handler 重复定义
  */
 
+import { encodeChatStreamEvent, type ChatStreamEvent } from '@repo/shared';
+
 const encoder = new TextEncoder();
 
 export const SSE_HEADERS: Record<string, string> = {
@@ -16,10 +18,19 @@ export const SSE_HEADERS: Record<string, string> = {
 };
 
 /**
- * 将 SSE 事件 payload 编码为标准 SSE 帧字节
+ * 将 SSE 事件 payload 编码为标准 SSE 帧字节。
+ * 通用版本，用于非聊天契约协议（如 destiny 报告的 status/section-final 事件）。
  */
-export function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
+export function encodeSseEvent<T extends object>(payload: T): Uint8Array {
   return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+/**
+ * 聊天契约专用编码器：输入必须是 ChatStreamEvent（@repo/shared 定义），
+ * 输出帧与 consumeChatResponse 的解析产物同源，杜绝双端字符串漂移。
+ */
+export function encodeChatSseEvent(event: ChatStreamEvent): Uint8Array {
+  return encoder.encode(encodeChatStreamEvent(event));
 }
 
 /**
