@@ -28,6 +28,8 @@ export interface Attachment {
   status: AttachmentStatus;
   // 错误信息（仅在 status 为 'error' 时有值）
   error?: string;
+  // 来源标识（接力图片用：追踪接力来源，清空引用时清理）
+  sourceId?: string;
 }
 
 // 消息类型定义

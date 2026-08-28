@@ -52,6 +52,13 @@ interface ChatInputProps {
   externalDraft?: { id: string; text: string } | null;
   // 预填被消费后的回调（父组件清除活动草稿）
   onExternalDraftConsumed?: (id: string) => void;
+  // 跨模态接力：外部图片附件预填（图片生成页接力到对话时携带的 snapshotMediaUrl）
+  // 接力到达时作为附件直接显示，用户可删除或发送
+  externalAttachmentUrl?: string | null;
+  // 接力图片附件来源标识（用于追踪消费）
+  externalAttachmentSourceId?: string | null;
+  // 图片附件消费回调（父组件清除接力图片）
+  onExternalAttachmentConsumed?: (sourceId: string) => void;
 }
 
 // ============ 聊天输入组件 ============
@@ -60,7 +67,15 @@ interface ChatInputProps {
 // 2. 上传图片和文件附件（仅豆包模型支持）
 // 3. 处理键盘事件（如 Enter 发送）
 // 4. 显示附件预览和删除
-export function ChatInput({ onSend, isLoading, externalDraft, onExternalDraftConsumed }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  isLoading,
+  externalDraft,
+  onExternalDraftConsumed,
+  externalAttachmentUrl,
+  externalAttachmentSourceId,
+  onExternalAttachmentConsumed,
+}: ChatInputProps) {
   // ============ 组件内部状态 ============
 
   // 输入框的文本内容
@@ -139,6 +154,13 @@ export function ChatInput({ onSend, isLoading, externalDraft, onExternalDraftCon
     // 调用父组件传入的发送函数
     onSend(input);
 
+    // 发送后立即清理本地附件，避免被预填 effect 再次填回造成残留
+    // （接力图带 sourceId；同步清来源，不依赖异步发送结果）
+    if (attachment?.sourceId && onExternalAttachmentConsumed) {
+      onExternalAttachmentConsumed(attachment.sourceId);
+    }
+    setAttachment(null);
+
     // 清空输入框
     setInput('');
 
@@ -174,8 +196,34 @@ export function ChatInput({ onSend, isLoading, externalDraft, onExternalDraftCon
     }
     onExternalDraftConsumed?.(externalDraft.id);
     // 仅在草稿 id 变化时消费一次
-     
+
   }, [externalDraft?.id]);
+
+  // ============ 跨模态接力：外部图片附件预填 ============
+  // 图像生成页接力到对话时携带的 snapshotMediaUrl（DataURL）作为图片附件直接显示
+  // 用户可删除或发送，不影响本地上传流程
+  useEffect(() => {
+    if (!externalAttachmentUrl || !externalAttachmentSourceId) return;
+    // 已经是这张接力图，避免重复预填引发循环
+    if (attachment?.sourceId === externalAttachmentSourceId) return;
+    // 用户已自行上传其他附件（非接力图，无 sourceId），不覆盖
+    if (attachment && !attachment.sourceId) return;
+
+    // 创建图片附件对象（状态为 ready，无需额外上传）
+    const relayImage: Attachment = {
+      id: `relay-img-${externalAttachmentSourceId}`,
+      sourceId: externalAttachmentSourceId, // 追踪接力来源，便于消费后清理
+      type: 'image',
+      name: '接力图片',
+      status: 'ready',
+      imageUrl: externalAttachmentUrl, // DataURL 直接作为图片源
+    };
+
+    setAttachment(relayImage);
+    // 注意：预填成功不调用 onExternalAttachmentConsumed。
+    // 切换 provider 时 switchProvider 会清空 attachment，需靠 externalAttachmentSourceId
+    // 仍存活、由 effect 重新预填；来源清理统一在删除/发送成功/移除引用时处理。
+  }, [externalAttachmentUrl, externalAttachmentSourceId, attachment]);
 
   // ============ 图片上传处理 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
@@ -666,7 +714,11 @@ export function ChatInput({ onSend, isLoading, externalDraft, onExternalDraftCon
     // 无论远程删除是否成功，都要清除本地状态
     // 这样用户界面会立即更新，不会看到附件预览
     setAttachment(null);
-  }, [attachment, setAttachment]); // 依赖项：attachment 和 setAttachment
+    // 如果删除的是接力图片，清理来源追踪，避免重新预填
+    if (attachment?.sourceId && onExternalAttachmentConsumed) {
+      onExternalAttachmentConsumed(attachment.sourceId);
+    }
+  }, [attachment, setAttachment, onExternalAttachmentConsumed]); // 依赖项：attachment 和 setAttachment
 
   // ============ 格式化文件大小显示 ============
   // 将字节数转换为人类可读的格式（B、KB、MB）

@@ -217,6 +217,8 @@ export default function ChatWorkspace() {
     loadConversation, // 加载指定对话的消息到 Chat Store 的方法
     switchProvider, // 切换 AI 服务提供商和模型的方法
     reset, // 重置 Chat Store 状态的方法（清空消息等）
+    setAttachment, // 设置附件（清理接力图片用）
+    attachment, // 当前附件对象（清理接力图片用）
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -230,6 +232,8 @@ export default function ChatWorkspace() {
       loadConversation: state.loadConversation,
       switchProvider: state.switchProvider,
       reset: state.reset,
+      setAttachment: state.setAttachment,
+      attachment: state.attachment,
     }))
   );
 
@@ -246,16 +250,30 @@ export default function ChatWorkspace() {
   const relay = useRelayReceive('chat');
   // 承载传给 ChatInput 的外部草稿（id 用于只消费一次）
   const [relayDraft, setRelayDraft] = useState<{ id: string; text: string } | null>(null);
+  // 承载传给 ChatInput 的外部图片附件（来自图像生成页接力，snapshotMediaUrl）
+  const [relayAttachmentUrl, setRelayAttachmentUrl] = useState<string | null>(null);
+  const [relayAttachmentSourceId, setRelayAttachmentSourceId] = useState<string | null>(null);
   // 查看来源快照预览
   const [relayPreviewOpen, setRelayPreviewOpen] = useState(false);
   // 接力到达且有文本快照时，若当前输入为空则直接预填，非空则由「填入输入框」显式触发
   const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
+  const relayBundleMediaUrl = relay.bundle?.items[0]?.snapshotMediaUrl ?? '';
   useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
     // 接力上下文进入输入框：文本作为用户引导句（可编辑），不自动发送
     if (relayBundleText && !relay.draft) {
       setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
       relay.setDraft(relayBundleText);
+    }
+    // 接力图片进入附件列表：图像生成页接力到对话时携带 snapshotMediaUrl
+    // 仅当来源为 image 且包含媒体地址时处理（其他来源如文本/转写无媒体）
+    if (
+      relayBundleMediaUrl &&
+      relay.bundle.items[0]?.sourceType === 'image' &&
+      relay.bundle.items[0]?.sourceModule === 'image'
+    ) {
+      setRelayAttachmentUrl(relayBundleMediaUrl);
+      setRelayAttachmentSourceId(relay.bundle.id);
     }
   }, [relay.initialized, relay.bundle?.id]);
 
@@ -520,9 +538,16 @@ export default function ChatWorkspace() {
 
       // 发送消息（携带接力派生元数据，仅成功路径写入历史）
       const result = await sendMessage(content, derivation);
-      // 成功才完成接力（清引用+草稿）；失败/取消/早退保留引用允许原地重试
+      // 成功才完成接力（清引用+草稿+图片附件）；失败/取消/早退保留引用允许原地重试
       if (result === 'sent') {
         relay.commitExecution();
+        // 同时清理对话输入框中的接力图片附件
+        setRelayAttachmentUrl(null);
+        setRelayAttachmentSourceId(null);
+        // 清理 ChatStore 中的附件（如果仍是接力图片）
+        if (attachment?.sourceId === relay.bundle?.id) {
+          setAttachment(null);
+        }
       }
     },
     // 依赖项列表：这些值变化时，函数会重新创建
@@ -535,6 +560,7 @@ export default function ChatWorkspace() {
       loadConversation,
       sendMessage,
       relay,
+      attachment?.sourceId,
     ]
   );
 
@@ -1059,7 +1085,12 @@ export default function ChatWorkspace() {
                         <ReferenceBar
                           bundle={relay.bundle}
                           onViewSource={() => setRelayPreviewOpen(true)}
-                          onRemove={relay.remove}
+                          onRemove={() => {
+                            relay.remove();
+                            // 同步清理对话输入框中的接力图片附件
+                            setRelayAttachmentUrl(null);
+                            setRelayAttachmentSourceId(null);
+                          }}
                           showFill={Boolean(relayBundleText) && !relayDraft}
                           fillLabel={RELAY_COPY.referenceBar.fillInput}
                           onFill={() => {
@@ -1084,6 +1115,12 @@ export default function ChatWorkspace() {
                       isLoading={isLoading}
                       externalDraft={relayDraft}
                       onExternalDraftConsumed={() => setRelayDraft(null)}
+                      externalAttachmentUrl={relayAttachmentUrl}
+                      externalAttachmentSourceId={relayAttachmentSourceId}
+                      onExternalAttachmentConsumed={() => {
+                        setRelayAttachmentUrl(null);
+                        setRelayAttachmentSourceId(null);
+                      }}
                     />
                   </div>
 
