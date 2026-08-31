@@ -102,7 +102,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   // 移动端：模型切换嵌在各术数表单标题行右侧，与 sticky 分段控件不冲突。
   const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
     <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
-      <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6 xl:mr-[280px]">
+      <div className="mt-2 rounded-xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-3 py-2 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10">
         {relay.replaceCandidate ? (
           <ReferenceBar
             bundle={relay.replaceCandidate.incoming}
@@ -112,27 +112,32 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
             onRemove={relay.remove}
           />
         ) : relay.bundle ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
+          <div className="flex items-start gap-3">
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <span className="rounded-full bg-[#5D7CFA]/15 px-2 py-0.5 text-[10px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
                 {RELAY_COPY.destiny.pendingReference}
               </span>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="mb-1.5 text-[10px] text-slate-500 dark:text-slate-400">
                 {RELAY_COPY.destiny.prefillNote}
               </p>
-            </div>
-            <ReferenceBar
-              bundle={relay.bundle}
-              onRemove={relay.remove}
-              onViewSource={() => setRelayPreviewOpen(true)}
-            />
-            {relaySourceType && (
-              <RelayMethodPicker
-                sourceType={relaySourceType}
-                readinessCtx={relayReadinessCtx}
-                onPick={(methodId) => setActiveModule(methodId)}
+              <ReferenceBar
+                bundle={relay.bundle}
+                onRemove={relay.remove}
+                onViewSource={() => setRelayPreviewOpen(true)}
               />
-            )}
+              {relaySourceType && (
+                <div className="mt-2">
+                  <RelayMethodPicker
+                    sourceType={relaySourceType}
+                    readinessCtx={relayReadinessCtx}
+                    activeModule={activeModule}
+                    onPick={(methodId) => setActiveModule(methodId)}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         ) : relay.isInvalid ? (
           <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -312,13 +317,6 @@ function DestinyDesktopLayout({
         onModuleChange={onModuleChange}
         disabled={isLoading}
       />
-
-      {/* 模型切换入口：桌面端右上角悬浮，仅在填表步骤显示 */}
-      {isFormStep && (
-        <div className="fixed right-6 top-4 z-30">
-          <DestinyModelSwitcher />
-        </div>
-      )}
 
       <div className="h-full w-full">
         {relayBanner}

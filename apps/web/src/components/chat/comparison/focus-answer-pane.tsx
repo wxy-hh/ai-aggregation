@@ -52,6 +52,14 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
             </CodeBlock>
           );
         }
+        // 如果在 pre 标签内但没有语言标记，使用 CodeBlock 组件
+        if (!inline) {
+          return (
+            <CodeBlock language="text" className={className}>
+              {text.replace(/\n$/, '')}
+            </CodeBlock>
+          );
+        }
         return (
           <code
             className={cn(

@@ -102,7 +102,14 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 切换AI提供商和模型
     // 切换时会清空附件（因为不同提供商支持的附件类型可能不同）
-    switchProvider: (provider, model) => set({ provider, model, attachment: null }),
+    // 但保留接力图片（有 sourceId 的附件）以支持图片接力场景
+    switchProvider: (provider, model) =>
+      set((state) => ({
+        provider,
+        model,
+        // 只清空非接力图片（无 sourceId 的附件）
+        attachment: state.attachment?.sourceId ? state.attachment : null,
+      })),
 
     // 加载历史对话
     // 用于从对话列表切换到某个历史对话

@@ -10,10 +10,8 @@ import {
 } from '@repo/shared';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { encodeChatSseEvent, SSE_HEADERS } from '@/lib/utils/sse';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 
@@ -143,8 +141,7 @@ const COPILOT_TIMEOUT_MS = 100000;
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    const userId = user.id;
-    let reservation: { id: string } | null = null;
+    let session: QuotaSession | null = null;
 
     try {
       const body = await req.json();
@@ -178,41 +175,31 @@ export async function POST(req: Request) {
         parsed.data.focusDecadeName
       );
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      let inputUnits = 0;
-      if (user.role !== 'admin') {
-        const quota = await reserveChatQuota({
-          userId,
-          requestId,
-          feature: 'destiny',
-          provider: config.provider,
-          model: config.model,
-          messages,
-          maxOutputTokens: 2048,
-          metadata: { questionLength: parsed.data.question.length, stream: true },
-        });
-        reservation = quota.reservation;
-        inputUnits = quota.inputUnits;
-      }
+      session = await QuotaSession.reserve({
+        userId: user.id,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages,
+        maxOutputTokens: 2048,
+        metadata: { questionLength: parsed.data.question.length, stream: true },
+      }, user.role);
 
       return new Response(
         createCopilotStream({
           config,
           messages,
-          userId,
-          reservationId: reservation?.id,
+          userId: user.id,
+          session,
           requestId,
-          inputUnits,
           questionLength: parsed.data.question.length,
         }),
         { headers: SSE_HEADERS }
       );
     } catch (error) {
-      if (reservation) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          reason: '命理追问请求失败',
-          meterType: 'tokens',
-        }).catch((releaseError) => console.error('[destiny/copilot] 释放额度失败:', releaseError));
+      if (session) {
+        await session.release({ reason: '命理追问请求失败', meterType: 'tokens' });
       }
       if (error instanceof AuthError) {
         if (error.code === 'FORBIDDEN') {
@@ -236,17 +223,15 @@ function createCopilotStream({
   config,
   messages,
   userId,
-  reservationId,
+  session,
   requestId,
-  inputUnits,
   questionLength,
 }: {
   config: ModelConfig;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
   userId: string | null;
-  reservationId?: string;
+  session: QuotaSession;
   requestId: string;
-  inputUnits: number;
   questionLength: number;
 }) {
   // 使用 pull() 模式：start() 立即 resolve 让 HTTP 响应头尽快发出，
@@ -310,65 +295,35 @@ function createCopilotStream({
   });
 
   async function settleUsage() {
-    if (reservationId) {
-      await settleAiQuota({
-        reservationId,
-        requestId,
-        feature: 'destiny',
-        action: 'destiny-copilot',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/copilot',
-        measurement: createTokenMeasurement(
-          usagePayload,
-          inputUnits + estimateOutputTokens(outputText)
-        ),
-        metadata: { questionLength, stream: true, provider: config.provider },
-      });
-    } else if (userId) {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action: 'destiny-copilot',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/copilot',
-        usage: normalizeUsage(usagePayload),
-        metadata: {
-          questionLength,
-          stream: true,
-          provider: config.provider,
-        },
-      });
-    }
+    await session.finalize('success', {
+      requestId,
+      action: 'destiny-copilot',
+      endpoint: '/api/destiny/copilot',
+      usage: usagePayload,
+      outputText,
+      provider: config.provider,
+      model: config.model,
+      userId: userId ?? undefined,
+      feature: 'destiny',
+      metadata: { questionLength, stream: true, provider: config.provider },
+    });
   }
 
   async function settleUsageOnError(error: unknown) {
-    if (reservationId) {
-      if (outputText) {
-        await settleAiQuota({
-          reservationId,
-          requestId,
-          feature: 'destiny',
-          action: 'destiny-copilot',
-          provider: config.provider,
-          model: config.model,
-          endpoint: '/api/destiny/copilot',
-          measurement: createTokenMeasurement(
-            usagePayload,
-            inputUnits + estimateOutputTokens(outputText)
-          ),
-          status: 'partial',
-          metadata: { questionLength, stream: true, provider: config.provider },
-        });
-      } else {
-        await releaseAiQuota({
-          reservationId,
-          reason: '命理追问流式失败',
-          meterType: 'tokens',
-        });
-      }
-    }
+    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 finalizeChatStream 决策表）
+    await session.finalize(outputText ? 'partial' : 'failed', {
+      requestId,
+      action: 'destiny-copilot',
+      endpoint: '/api/destiny/copilot',
+      usage: usagePayload,
+      outputText,
+      reason: error instanceof Error ? error.message : '命理追问流式失败',
+      provider: config.provider,
+      model: config.model,
+      userId: userId ?? undefined,
+      feature: 'destiny',
+      metadata: { questionLength, stream: true, provider: config.provider },
+    });
   }
 }
 

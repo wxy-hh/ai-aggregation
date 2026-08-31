@@ -5,7 +5,7 @@
  * | 来源类型     | 对话     | 图像             | 语音   | 视频       | 命理         |
  * | 对话文本     | 上下文   | Prompt           | 不支持 | 视频描述   | 问题或背景   |
  * | 语音转写     | 上下文   | Prompt           | 不支持 | 视频描述   | 问题或背景   |
- * | 生成图片     | 图片附件 | 参考图或再次绘图 | 不支持 | 参考图     | 首版不支持   |
+ * | 生成图片     | 图片附件 | 再次绘图         | 不支持 | 参考图     | 首版不支持   |
  * | 生成视频     | 视频附件 | 首版不支持       | 不支持 | 再次创作   | 首版不支持   |
  * | 命理报告段落 | 上下文   | Prompt           | 不支持 | 视频描述   | 命理追问     |
  *
@@ -31,7 +31,6 @@ const SOURCE_CAPABILITY: RelaySourceCapability = {
   ],
   image: [
     { targetModule: 'chat', targetRole: 'context', field: 'chat_context', label: '在对话中分析' },
-    { targetModule: 'image', targetRole: 'reference_image', field: 'image_reference', label: '作为参考图' },
     { targetModule: 'image', targetRole: 'prompt', field: 'image_prompt', label: '再次绘图' },
     { targetModule: 'video', targetRole: 'reference_image', field: 'video_reference_image', label: '作为视频参考图' },
   ],

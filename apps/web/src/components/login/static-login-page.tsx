@@ -349,7 +349,7 @@ export function StaticLoginPage() {
           initial={prefersReducedMotion ? false : { opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           transition={motionTransition}
-          className="relative flex items-center overflow-hidden rounded-[2rem] border border-white/60 px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-8 shadow-[0_22px_70px_rgba(126,160,220,0.14)] sm:px-8 lg:h-[calc(100dvh-3rem)] lg:min-h-0 lg:items-stretch lg:overflow-x-hidden lg:overflow-y-auto lg:px-8 lg:py-8 xl:px-10"
+          className="relative flex items-center overflow-hidden rounded-[2rem] border border-white/60 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 shadow-[0_22px_70px_rgba(126,160,220,0.14)] sm:px-6 sm:pt-7 lg:h-[calc(100dvh-3rem)] lg:min-h-0 lg:items-stretch lg:overflow-x-hidden lg:overflow-y-auto lg:px-8 lg:py-8 xl:px-10"
         >
           {isDesktopViewport ? (
             <motion.button
@@ -389,11 +389,11 @@ export function StaticLoginPage() {
           ) : null}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_16%,rgba(255,255,255,0.96),transparent_26%),radial-gradient(circle_at_92%_2%,rgba(120,165,255,0.16),transparent_24%),radial-gradient(circle_at_78%_88%,rgba(167,193,255,0.18),transparent_26%),linear-gradient(140deg,rgba(255,255,255,0.76),rgba(247,250,255,0.84)_52%,rgba(240,245,255,0.9))]" />
           <div className="relative z-10 mx-auto flex w-full max-w-[34rem] shrink-0 flex-col justify-center lg:min-h-full lg:py-1">
-            <div className="mb-5 text-center lg:mb-6">
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-[2.65rem]">
+            <div className="mb-3 text-center lg:mb-4 sm:mb-4">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl lg:text-[2.65rem]">
                 欢迎回到 AI 聚合平台
               </h1>
-              <p className="mt-3 text-base leading-7 text-slate-500 sm:text-lg">
+              <p className="mt-2 text-sm leading-6 text-slate-500 sm:mt-3 sm:text-base sm:text-lg">
                 在一个入口中切换通义千问、智谱 GLM、DeepSeek 等多种能力。
               </p>
             </div>

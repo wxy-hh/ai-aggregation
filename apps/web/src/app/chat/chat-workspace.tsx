@@ -11,6 +11,7 @@ import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组�
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 // 跨模态接力：目标侧接收（引用条 + 预填 + 派生）
 import { ReferenceBar } from '@/components/relay/reference-bar';
 import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
@@ -274,23 +275,30 @@ export default function ChatWorkspace() {
     ) {
       setRelayAttachmentUrl(relayBundleMediaUrl);
       setRelayAttachmentSourceId(relay.bundle.id);
+      // 自动切换到豆包模型以支持图片附件
+      if (provider !== 'doubao') {
+        switchProvider('doubao', 'doubao-seed-evolving');
+        if (activeConversationId) {
+          updateConversationSettings(activeConversationId, 'doubao', 'doubao-seed-evolving');
+        }
+        toast.success('已自动切换到豆包模型以支持图片附件');
+      }
     }
-  }, [relay.initialized, relay.bundle?.id]);
+  }, [relay.initialized, relay.bundle?.id, provider, switchProvider, activeConversationId]);
 
   // ============ 接力会话落点（M-3）============
   // 目标=对话的接力到达时，若当前停在比较会话（消息存 turns 而非 messages），
-  // 新建一个单聊会话承载接力上下文，避免用户直接发送导致消息写错会话。
+  // 需切换到单聊承载，避免用户直接发送导致消息写错会话。
   // ?relayId= 已由 useRelayReceive 在 URL 参数 effect 前清掉，不会误入场景分支。
   useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
     if (!isLoaded) return;
-    const current = getCurrentConversation();
-    if (current?.mode === 'compare') {
-      const newId = createConversation(provider, model);
-      loadConversation(newId, [], provider, model || 'lite');
-      loadedIdRef.current = newId;
-    }
-  }, [relay.initialized, relay.bundle?.id, isLoaded]);
+    // 接力到达对话即视为跳入单聊语境：默认空态（comparisonStore.mode='compare'）或当前
+    // 停在对比视图时，切到单聊视图，使接力草稿与图片附件预填进 ChatInput（其自带
+    // externalDraft / externalAttachmentUrl 预填逻辑）。无需在此新建会话——
+    // handleSend 会在无当前会话或当前为对比会话时自动新建单聊会话兜底。
+    if (isCompareMode) setComparisonMode('single');
+  }, [relay.initialized, relay.bundle?.id, isLoaded, isCompareMode]);
 
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
@@ -975,13 +983,6 @@ export default function ChatWorkspace() {
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
-                  {/* 错误显示 */}
-                  {error && (
-                    <div className="mx-6 mt-4 flex-none rounded-2xl border border-red-200/80 bg-red-50/90 p-4 text-sm text-red-600 shadow-[0_8px_20px_rgba(229,67,80,0.08)] dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-300">
-                      <strong>错误：</strong> {error.message}
-                    </div>
-                  )}
-
                   {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
                   <div
                     ref={messagesScrollRef}

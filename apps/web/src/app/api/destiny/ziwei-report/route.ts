@@ -21,10 +21,8 @@ import {
   ModelUpstreamError,
   type ModelConfig,
 } from '@repo/shared';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { encodeSseEvent } from '@/lib/utils/sse';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { BillingError } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import {
@@ -386,62 +384,40 @@ async function generateQuickSections({
     { role: 'user' as const, content: buildUserPrompt(input, chartContext) },
   ];
   const requestId = billing ? `${billing.requestId}:quick` : null;
-  let reservation: { id: string } | null = null;
-  let inputUnits = 0;
-  let outputLimit = QUICK_MAX_TOKENS;
+  // 每个子流独立 QuotaSession（quick / full:a / full:b 各一个预留，勿合并）
+  const session = await QuotaSession.reserve({
+    userId,
+    requestId: requestId ?? '',
+    feature: 'destiny',
+    provider: config.provider,
+    model: config.model,
+    messages,
+    maxOutputTokens: QUICK_MAX_TOKENS,
+    metadata: { reportType: 'ziwei', stage: 'quick', currentYear },
+  }, billing ? undefined : 'admin');
 
   try {
-    if (billing && requestId) {
-      const quota = await reserveChatQuota({
-        userId: billing.userId,
-        requestId,
-        feature: 'destiny',
-        provider: config.provider,
-        model: config.model,
-        messages,
-        maxOutputTokens: QUICK_MAX_TOKENS,
-        metadata: { reportType: 'ziwei', stage: 'quick', currentYear },
-      });
-      reservation = quota.reservation;
-      inputUnits = quota.inputUnits;
-      outputLimit = quota.outputLimit;
-    }
     const result = await callModel({
       config,
       messages,
-      maxTokens: outputLimit,
+      maxTokens: session.outputLimit,
       temperature: 0.25,
       timeoutMs: QUICK_TIMEOUT_MS,
       json: { schema: { name: 'ziwei_quick', schema: QUICK_SCHEMA } },
     });
 
-    if (reservation && requestId) {
-      await settleAiQuota({
-        reservationId: reservation.id,
-        requestId,
-        feature: 'destiny',
-        action: 'destiny-ziwei-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/ziwei-report',
-        measurement: createTokenMeasurement(
-          extractArkUsage(result.raw),
-          inputUnits + estimateOutputTokens(result.text)
-        ),
-        metadata: { reportType: 'ziwei', stage: 'quick', currentYear, provider: config.provider },
-      });
-    } else {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action: 'destiny-ziwei-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/ziwei-report',
-        usage: normalizeUsage(extractArkUsage(result.raw)),
-        metadata: { stage: 'quick', currentYear, provider: config.provider },
-      });
-    }
+    await session.finalize('success', {
+      requestId: requestId ?? '',
+      action: 'destiny-ziwei-report',
+      endpoint: '/api/destiny/ziwei-report',
+      usage: extractArkUsage(result.raw),
+      outputText: result.text,
+      provider: config.provider,
+      model: config.model,
+      userId,
+      feature: 'destiny',
+      metadata: { reportType: 'ziwei', stage: 'quick', currentYear, provider: config.provider },
+    });
 
     const parsed = parseJson(result.text);
 
@@ -454,15 +430,8 @@ async function generateQuickSections({
     }
     return resultSections;
   } catch (error) {
-    if (reservation) {
-      await releaseAiQuota({
-        reservationId: reservation.id,
-        reason: '紫微快速解读调用失败',
-        meterType: 'tokens',
-      }).catch((releaseError) =>
-        console.error('[ziwei-report] 释放快速解读额度失败:', releaseError)
-      );
-    }
+    // callModel 非流式：失败时无可靠的部分输出语义（result.text 未产生），统一释放
+    await session.release({ reason: '紫微快速解读调用失败', meterType: 'tokens' });
     if (error instanceof BillingError) throw error;
     // quick 区块允许降级为空，但错误详情必须落日志，否则线上排查无迹可循
     console.warn(
@@ -565,62 +534,40 @@ async function generatePalaceGroup({
     { role: 'user' as const, content: buildUserPrompt(input, chartContext) },
   ];
   const requestId = billing ? `${billing.requestId}:${stage}` : null;
-  let reservation: { id: string } | null = null;
-  let inputUnits = 0;
-  let outputLimit = GROUP_MAX_TOKENS;
+  // 每个子流独立 QuotaSession（quick / full:a / full:b 各一个预留，勿合并）
+  const session = await QuotaSession.reserve({
+    userId,
+    requestId: requestId ?? '',
+    feature: 'destiny',
+    provider: config.provider,
+    model: config.model,
+    messages,
+    maxOutputTokens: GROUP_MAX_TOKENS,
+    metadata: { reportType: 'ziwei', stage, currentYear },
+  }, billing ? undefined : 'admin');
 
   try {
-    if (billing && requestId) {
-      const quota = await reserveChatQuota({
-        userId: billing.userId,
-        requestId,
-        feature: 'destiny',
-        provider: config.provider,
-        model: config.model,
-        messages,
-        maxOutputTokens: GROUP_MAX_TOKENS,
-        metadata: { reportType: 'ziwei', stage, currentYear },
-      });
-      reservation = quota.reservation;
-      inputUnits = quota.inputUnits;
-      outputLimit = quota.outputLimit;
-    }
     const result = await callModel({
       config,
       messages,
-      maxTokens: outputLimit,
+      maxTokens: session.outputLimit,
       temperature: 0.35,
       timeoutMs: GROUP_TIMEOUT_MS,
       json: { schema: { name: `ziwei_${moduleKey}_group`, schema: buildGroupSchema(moduleKey) } },
     });
 
-    if (reservation && requestId) {
-      await settleAiQuota({
-        reservationId: reservation.id,
-        requestId,
-        feature: 'destiny',
-        action: 'destiny-ziwei-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/ziwei-report',
-        measurement: createTokenMeasurement(
-          extractArkUsage(result.raw),
-          inputUnits + estimateOutputTokens(result.text)
-        ),
-        metadata: { reportType: 'ziwei', stage, currentYear, provider: config.provider },
-      });
-    } else {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action: 'destiny-ziwei-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/ziwei-report',
-        usage: normalizeUsage(extractArkUsage(result.raw)),
-        metadata: { stage, currentYear, provider: config.provider },
-      });
-    }
+    await session.finalize('success', {
+      requestId: requestId ?? '',
+      action: 'destiny-ziwei-report',
+      endpoint: '/api/destiny/ziwei-report',
+      usage: extractArkUsage(result.raw),
+      outputText: result.text,
+      provider: config.provider,
+      model: config.model,
+      userId,
+      feature: 'destiny',
+      metadata: { reportType: 'ziwei', stage, currentYear, provider: config.provider },
+    });
 
     const parsed = parseJson(result.text);
 
@@ -635,15 +582,8 @@ async function generatePalaceGroup({
     }
     return { palaceAnalysis, module };
   } catch (error) {
-    if (reservation) {
-      await releaseAiQuota({
-        reservationId: reservation.id,
-        reason: `紫微宫位解读（${stage}）调用失败`,
-        meterType: 'tokens',
-      }).catch((releaseError) =>
-        console.error(`[ziwei-report] 释放宫位解读额度失败（${stage}）:`, releaseError)
-      );
-    }
+    // callModel 非流式：失败时无可靠的部分输出语义（result.text 未产生），统一释放
+    await session.release({ reason: `紫微宫位解读（${stage}）调用失败`, meterType: 'tokens' });
     if (error instanceof BillingError) throw error;
     // 单组失败降级为空：合并后 palaceAnalysis 不满 12 项会被 emitSections 跳过，
     // 另一组成功生成的 love/health 不受影响

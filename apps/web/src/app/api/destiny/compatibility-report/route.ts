@@ -7,9 +7,7 @@ import {
   type ModelConfig,
 } from '@repo/shared';
 import { withAuth } from '@/lib/api/with-auth';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import {
@@ -90,7 +88,7 @@ function extractJsonObject(text: string): unknown {
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    let reservation: { id: string } | null = null;
+    let session: QuotaSession | null = null;
     try {
       const body = await req.json();
       const parsed = RequestSchema.safeParse(body);
@@ -167,28 +165,21 @@ export async function POST(req: Request) {
       ];
 
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      let inputUnits = 0;
-      let outputLimit = MAX_OUTPUT;
       // 首开与补生成视角均预扣额度；admin 免扣
-      if (user.role !== 'admin') {
-        const quota = await reserveChatQuota({
-          userId: user.id,
-          requestId,
-          feature: 'destiny',
-          provider: config.provider,
-          model: config.model,
-          messages,
-          maxOutputTokens: MAX_OUTPUT,
-          metadata: {
-            reportType: 'bazi-compatibility',
-            relationType,
-            viewOnly: parsed.data.viewOnly,
-          },
-        });
-        reservation = quota.reservation;
-        inputUnits = quota.inputUnits;
-        outputLimit = quota.outputLimit;
-      }
+      session = await QuotaSession.reserve({
+        userId: user.id,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages,
+        maxOutputTokens: MAX_OUTPUT,
+        metadata: {
+          reportType: 'bazi-compatibility',
+          relationType,
+          viewOnly: parsed.data.viewOnly,
+        },
+      }, user.role);
 
       const reportId = parsed.data.existingReportId || generateUUID();
       const stream = createStream({
@@ -201,10 +192,8 @@ export async function POST(req: Request) {
         partnerDisplayName: partnerName,
         reportId,
         sourceBaziHistoryId: parsed.data.sourceBaziHistoryId ?? null,
-        reservationId: reservation?.id,
+        session,
         requestId,
-        inputUnits,
-        outputLimit,
       });
 
       return new Response(stream, {
@@ -215,12 +204,8 @@ export async function POST(req: Request) {
         },
       });
     } catch (error) {
-      if (reservation) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          reason: '合盘请求初始化失败',
-          meterType: 'tokens',
-        }).catch((e) => console.error('[compatibility-report] 释放额度失败:', e));
+      if (session) {
+        await session.release({ reason: '合盘请求初始化失败', meterType: 'tokens' });
       }
       if (error instanceof BillingError) return billingErrorResponse(error);
       return NextResponse.json(
@@ -241,10 +226,8 @@ function createStream(args: {
   partnerDisplayName: string;
   reportId: string;
   sourceBaziHistoryId: string | null;
-  reservationId?: string;
+  session: QuotaSession;
   requestId: string;
-  inputUnits: number;
-  outputLimit: number;
 }) {
   const encoder = new TextEncoder();
   return new ReadableStream({
@@ -267,7 +250,7 @@ function createStream(args: {
             config: args.config,
             messages: args.messages,
             temperature: 0.35,
-            maxTokens: args.outputLimit,
+            maxTokens: args.session.outputLimit,
             timeoutMs: TIMEOUT_MS,
           });
 
@@ -309,50 +292,42 @@ function createStream(args: {
           sourceBaziHistoryId: args.sourceBaziHistoryId,
         };
 
-        if (args.reservationId) {
-          await settleAiQuota({
-            reservationId: args.reservationId,
-            requestId: args.requestId,
-            feature: 'destiny',
-            action: 'destiny-compatibility-report',
-            provider: args.config.provider,
-            model: args.config.model,
-            endpoint: '/api/destiny/compatibility-report',
-            measurement: createTokenMeasurement(
-              usagePayload,
-              args.inputUnits + estimateOutputTokens(textBuffer)
-            ),
-            metadata: {
-              reportType: 'bazi-compatibility',
-              relationType: args.relationType,
-            },
-          }).catch((e) => console.error('[compatibility-report] settle failed', e));
-        } else {
-          // admin 等无预留路径：仍记用量，便于个人中心分项归档
-          await safeRecordAiUsage({
-            userId: args.userId,
-            feature: 'destiny',
-            action: 'destiny-compatibility-report',
-            provider: args.config.provider,
-            model: args.config.model,
-            endpoint: '/api/destiny/compatibility-report',
-            usage: normalizeUsage(usagePayload),
-            metadata: {
-              reportType: 'bazi-compatibility',
-              relationType: args.relationType,
-            },
-          }).catch(() => undefined);
-        }
+        await args.session.finalize('success', {
+          requestId: args.requestId,
+          action: 'destiny-compatibility-report',
+          endpoint: '/api/destiny/compatibility-report',
+          usage: usagePayload,
+          outputText: textBuffer,
+          provider: args.config.provider,
+          model: args.config.model,
+          userId: args.userId,
+          feature: 'destiny',
+          metadata: {
+            reportType: 'bazi-compatibility',
+            relationType: args.relationType,
+          },
+        });
 
         send({ type: 'complete', report });
       } catch (error) {
-        if (args.reservationId) {
-          await releaseAiQuota({
-            reservationId: args.reservationId,
-            reason: '合盘流式失败',
-            meterType: 'tokens',
-          }).catch(() => undefined);
-        }
+        // 三态决策：已有部分输出按 partial 结算（不退款），完全无输出才释放。
+        // 修复历史漂移：此前 catch 无条件 release，用户收到大段报告后中断反而全额退款。
+        await args.session.finalize(textBuffer.trim() ? 'partial' : 'failed', {
+          requestId: args.requestId,
+          action: 'destiny-compatibility-report',
+          endpoint: '/api/destiny/compatibility-report',
+          usage: usagePayload,
+          outputText: textBuffer,
+          reason: '合盘流式失败',
+          provider: args.config.provider,
+          model: args.config.model,
+          userId: args.userId,
+          feature: 'destiny',
+          metadata: {
+            reportType: 'bazi-compatibility',
+            relationType: args.relationType,
+          },
+        });
         send({
           type: 'error',
           error: error instanceof Error ? error.message : '合盘生成失败',

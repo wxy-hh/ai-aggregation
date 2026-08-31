@@ -26,6 +26,8 @@ export interface RelayMethodPickerProps {
     hasQuestion?: boolean;
     hasCastTime?: boolean;
   };
+  /** 当前选中的术数 */
+  activeModule?: 'bazi' | 'ziwei' | 'qimen';
   onPick: (methodId: 'bazi' | 'ziwei' | 'qimen') => void;
   className?: string;
 }
@@ -33,6 +35,7 @@ export interface RelayMethodPickerProps {
 export function RelayMethodPicker({
   sourceType,
   readinessCtx,
+  activeModule,
   onPick,
   className,
 }: RelayMethodPickerProps) {
@@ -57,9 +60,12 @@ export function RelayMethodPicker({
             onClick={() => onPick(cap.id as 'bazi' | 'ziwei' | 'qimen')}
             className={cn(
               'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition-colors',
-              readiness === 'ready'
-                ? 'border-[#5D7CFA]/40 bg-[#5D7CFA]/10 text-[#3C58D8] hover:bg-[#5D7CFA]/15 dark:border-[#7D8CFF]/30 dark:bg-[#5D7CFA]/15 dark:text-[#9BADFF]'
-                : 'border-slate-200 bg-white/70 text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800'
+              // 选中状态：实心蓝色边框 + 深色背景 + 明显的视觉区分
+              activeModule === cap.id
+                ? 'border-[#5D7CFA] bg-[#5D7CFA]/30 text-[#3C58D8] shadow-sm shadow-[#5D7CFA]/20 dark:border-[#7D8CFF] dark:bg-[#5D7CFA]/40 dark:text-[#9BADFF] dark:shadow-[#7D8CFF]/10'
+                : readiness === 'ready'
+                  ? 'border-slate-200 bg-white/70 text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800'
+                  : 'border-slate-200 bg-white/70 text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:bg-slate-800'
             )}
           >
             {cap.label}

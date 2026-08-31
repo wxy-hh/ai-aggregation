@@ -25,10 +25,8 @@ import {
 } from '../_lib/bazi-section-payload';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { BAZI_REPORT_JSON_SCHEMA } from '../_lib/bazi-json-schema';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { encodeSseEvent } from '@/lib/utils/sse';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import {
   createReportHandler,
@@ -81,7 +79,6 @@ const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
 
   async generate(ctx, body) {
     const parsed = body as z.infer<typeof RequestSchema>;
-    let reservation: { id: string } | null = null;
 
     try {
       let config: ModelConfig;
@@ -109,23 +106,16 @@ const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
         { role: 'user' as const, content: buildUserPrompt(input, basis) },
       ];
       const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
-      let inputUnits = 0;
-      let outputLimit = REPORT_MAX_OUTPUT_TOKENS;
-      if (ctx.user.role !== 'admin') {
-        const quota = await reserveChatQuota({
-          userId: ctx.user.id,
-          requestId,
-          feature: 'destiny',
-          provider: config.provider,
-          model: config.model,
-          messages,
-          maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
-          metadata: { reportType: 'bazi', currentYear },
-        });
-        reservation = quota.reservation;
-        inputUnits = quota.inputUnits;
-        outputLimit = quota.outputLimit;
-      }
+      const session = await QuotaSession.reserve({
+        userId: ctx.user.id,
+        requestId,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        messages,
+        maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
+        metadata: { reportType: 'bazi', currentYear },
+      }, ctx.user.role);
 
       return createBaziStream({
         input,
@@ -134,19 +124,11 @@ const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
         userId: ctx.user.id,
         basis,
         messages,
-        reservationId: reservation?.id,
+        session,
         requestId,
-        inputUnits,
-        outputLimit,
       });
     } catch (error) {
-      if (reservation) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          reason: '八字报告请求初始化失败',
-          meterType: 'tokens',
-        }).catch((releaseError) => console.error('[destiny/report] 释放额度失败:', releaseError));
-      }
+      // QuotaSession.reserve 失败时 session 为 null，无需释放；其余错误向上抛给统一 handler
       throw error;
     }
   },
@@ -163,10 +145,8 @@ function createBaziStream({
   userId,
   basis,
   messages,
-  reservationId,
+  session,
   requestId,
-  inputUnits,
-  outputLimit,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
@@ -174,10 +154,8 @@ function createBaziStream({
   userId: string;
   basis: ReturnType<typeof computeBaziChart>;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
-  reservationId?: string;
+  session: QuotaSession;
   requestId: string;
-  inputUnits: number;
-  outputLimit: number;
 }) {
   return new ReadableStream({
     async start(controller) {
@@ -194,10 +172,8 @@ function createBaziStream({
           userId,
           basis,
           messages,
-          reservationId,
+          session,
           requestId,
-          inputUnits,
-          outputLimit,
           send,
         });
       } catch (error) {
@@ -219,10 +195,8 @@ async function streamBaziReport({
   userId,
   basis,
   messages,
-  reservationId,
+  session,
   requestId,
-  inputUnits,
-  outputLimit,
   send,
 }: {
   input: DestinyReportRequest;
@@ -231,10 +205,8 @@ async function streamBaziReport({
   userId: string;
   basis: ReturnType<typeof computeBaziChart>;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
-  reservationId?: string;
+  session: QuotaSession;
   requestId: string;
-  inputUnits: number;
-  outputLimit: number;
   send: (event: BaziStreamEvent) => void;
 }) {
   const controller = new AbortController();
@@ -309,7 +281,7 @@ async function streamBaziReport({
       config,
       messages,
       temperature: 0.25,
-      maxTokens: outputLimit,
+      maxTokens: session.outputLimit,
       timeoutMs: REPORT_TIMEOUT_MS,
       json: { schema: { name: 'bazi_interpretation_report', schema: BAZI_REPORT_JSON_SCHEMA } },
     });
@@ -382,65 +354,38 @@ async function streamBaziReport({
       report,
     });
 
-    if (reservationId) {
-      await settleAiQuota({
-        reservationId,
-        requestId,
-        feature: 'destiny',
-        action: 'destiny-report',
+    await session.finalize('success', {
+      requestId,
+      action: 'destiny-report',
+      endpoint: '/api/destiny/report',
+      usage: usagePayload,
+      outputText: textBuffer,
+      provider: config.provider,
+      model: config.model,
+      userId,
+      feature: 'destiny',
+      metadata: {
+        stage: 'single-stream',
+        currentYear,
         provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/report',
-        measurement: createTokenMeasurement(
-          usagePayload,
-          inputUnits + estimateOutputTokens(textBuffer)
-        ),
-        metadata: {
-          stage: 'single-stream',
-          currentYear,
-          provider: config.provider,
-          sectionCount: emittedSections.size,
-        },
-      });
-    } else {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action: 'destiny-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/report',
-        usage: normalizeUsage(usagePayload),
-        metadata: {
-          stage: 'single-stream',
-          currentYear,
-          provider: config.provider,
-          sectionCount: emittedSections.size,
-        },
-      });
-    }
+        sectionCount: emittedSections.size,
+      },
+    });
   } catch (error) {
-    if (reservationId) {
-      if (textBuffer) {
-        await settleAiQuota({
-          reservationId,
-          requestId,
-          feature: 'destiny',
-          action: 'destiny-report',
-          provider: config.provider,
-          model: config.model,
-          endpoint: '/api/destiny/report',
-          measurement: createTokenMeasurement(
-            usagePayload,
-            inputUnits + estimateOutputTokens(textBuffer)
-          ),
-          status: 'partial',
-          metadata: { stage: 'single-stream', currentYear, provider: config.provider },
-        });
-      } else {
-        await releaseAiQuota({ reservationId, reason: '八字报告流式失败', meterType: 'tokens' });
-      }
-    }
+    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 finalizeChatStream 决策表）
+    await session.finalize(textBuffer ? 'partial' : 'failed', {
+      requestId,
+      action: 'destiny-report',
+      endpoint: '/api/destiny/report',
+      usage: usagePayload,
+      outputText: textBuffer,
+      reason: error instanceof Error ? error.message : '八字报告流式失败',
+      provider: config.provider,
+      model: config.model,
+      userId,
+      feature: 'destiny',
+      metadata: { stage: 'single-stream', currentYear, provider: config.provider },
+    });
     throw error;
   } finally {
     clearTimeout(timeoutId);

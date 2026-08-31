@@ -28,7 +28,12 @@ import {
   settleAiQuota,
   useExistingAiQuota,
 } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, createAudioMeasurement } from '@/lib/billing/usage-measurement';
+import {
+  createTokenMeasurement,
+  createAudioMeasurement,
+  estimateOutputTokens,
+} from '@/lib/billing/usage-measurement';
+import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 
 export interface QuotaSessionReserveInput {
   userId: string;
@@ -57,6 +62,29 @@ export interface QuotaSessionReleaseInput {
   meterType?: MeterType;
 }
 
+/** 三态结算结果（对齐 chat 侧 ChatStreamFinish 的 outcome 语义） */
+export type QuotaOutcome = 'success' | 'partial' | 'failed';
+
+/** finalize 的上下文：结算元数据 + admin 无预留时的用量归档信息 */
+export interface QuotaFinalizeContext {
+  /** 计费幂等键（与 reserve 时一致或子流派生键） */
+  requestId: string;
+  action: AiUsageAction;
+  endpoint?: string;
+  /** 上游返回的 usage（可为 null，finalize 内部按估算兜底） */
+  usage: unknown;
+  /** 累计输出文本（partial/兜底估算用） */
+  outputText: string;
+  /** 失败/取消原因（release 记录用） */
+  reason?: string;
+  provider?: string | null;
+  model?: string | null;
+  /** admin 等无预留路径归档用量用 */
+  userId?: string;
+  feature?: ReserveFeature;
+  metadata?: Record<string, unknown>;
+}
+
 export class QuotaSession {
   private settled = false;
 
@@ -64,7 +92,8 @@ export class QuotaSession {
     public readonly reservationId: string,
     public readonly hasReservation: boolean,
     public readonly inputUnits: number,
-    public readonly outputLimit: number
+    public readonly outputLimit: number,
+    private readonly userId: string
   ) {}
 
   /**
@@ -75,7 +104,7 @@ export class QuotaSession {
     userRole?: string
   ): Promise<QuotaSession> {
     if (userRole === 'admin') {
-      return new QuotaSession('', false, 0, input.maxOutputTokens ?? 2048);
+      return new QuotaSession('', false, 0, input.maxOutputTokens ?? 2048, input.userId);
     }
 
     if (input.reservationId) {
@@ -90,7 +119,8 @@ export class QuotaSession {
         existing.id,
         true,
         inputUnits,
-        Number.isInteger(outputLimit) && outputLimit > 0 ? outputLimit : 2048
+        Number.isInteger(outputLimit) && outputLimit > 0 ? outputLimit : 2048,
+        input.userId
       );
     }
 
@@ -109,7 +139,8 @@ export class QuotaSession {
       quota.reservation.id,
       true,
       quota.inputUnits,
-      quota.outputLimit
+      quota.outputLimit,
+      input.userId
     );
   }
 
@@ -177,5 +208,54 @@ export class QuotaSession {
       this.settled = false;
       console.error('[QuotaSession] 额度释放失败:', error);
     }
+  }
+
+  /**
+   * 三态统一结算 — 唯一决策表（与 chat 侧 finalizeChatStream 对齐，评审 C1/C2）。
+   *
+   * - success → 按 usage（缺失时按输入估算 + 输出估算兜底）结算 status='success'；
+   * - partial → 流中断但已有部分输出：按同一兜底口径结算 status='partial'（不退款）；
+   * - failed  → 无任何产出：释放预留（取消应退款）。
+   *
+   * admin 等无预留会话：success/partial 降级为用量归档（safeRecordAiUsage），
+   * failed 自动跳过。settle/release 内部幂等（settled 守卫），重复调用安全。
+   */
+  async finalize(outcome: QuotaOutcome, ctx: QuotaFinalizeContext): Promise<void> {
+    if (outcome === 'failed') {
+      await this.release({ reason: ctx.reason ?? '流式失败', meterType: 'tokens' });
+      return;
+    }
+
+    if (!this.hasReservation) {
+      // 无预留路径（admin）：仍记用量，便于个人中心分项归档
+      if (!ctx.userId) return;
+      await safeRecordAiUsage({
+        userId: ctx.userId,
+        feature: ctx.feature ?? 'destiny',
+        action: ctx.action,
+        provider: ctx.provider,
+        model: ctx.model,
+        endpoint: ctx.endpoint,
+        usage: normalizeUsage(ctx.usage),
+        metadata: ctx.metadata,
+      });
+      return;
+    }
+
+    const fallbackTokens = this.inputUnits + estimateOutputTokens(ctx.outputText);
+    await this.settle({
+      action: ctx.action,
+      endpoint: ctx.endpoint,
+      rawUsage: ctx.usage,
+      fallbackTokens,
+      status: outcome === 'partial' ? 'partial' : 'success',
+      metadata: ctx.metadata,
+    }, {
+      feature: ctx.feature ?? 'destiny',
+      provider: ctx.provider,
+      model: ctx.model,
+      requestId: ctx.requestId,
+      userId: ctx.userId,
+    });
   }
 }

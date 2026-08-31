@@ -575,13 +575,13 @@ openssl rand -hex 32
 
 ## 13. 最近生产验证记录
 
-| 日期       | 部署                                     | 结果                                                                                                                   |
-| ---------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 2026-07-24 | `dpl_DMvV6fJJWxeUpNzJnM46xTevZ8pb` Ready | **chat 修复**：xunfei/doubao SSE 200 且返回 `text-delta`；根因 Redis 挂起                                              |
-| 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready     | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres                                              |
-| 2026-07-24 | 环境变量                                 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT                                                     |
-| 2026-07-24 | Cloudflare                               | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续                                |
-| 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书 |
+| 日期       | 部署                                     | 结果                                                                                                                                                                 |
+| ---------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-24 | `dpl_DMvV6fJJWxeUpNzJnM46xTevZ8pb` Ready | **chat 修复**：xunfei/doubao SSE 200 且返回 `text-delta`；根因 Redis 挂起                                                                                            |
+| 2026-07-24 | `Cw1eQYiViG7CB9RtYYUk9a3jLQbF` Ready     | register/login/me **200**；migrate **up to date**；生产库 Prisma Postgres                                                                                            |
+| 2026-07-24 | 环境变量                                 | 登录最小集 + 主流 AI/Redis/讯飞均已配置；重复导入返回 ENV_CONFLICT                                                                                                   |
+| 2026-07-24 | Cloudflare                               | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续                                                                              |
+| 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书                                               |
 | 2026-08-28 | 管理员权限排查 + Nginx 强制跳转          | **根因**：`http://` 访问时 Secure Cookie 被拒收 → 匿名登录覆盖管理员会话（账号权限本身已同步）；nginx 改为双 server 块（80 仅跳转 + 443 主站），全链路浏览器验证通过 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
@@ -906,7 +906,7 @@ git push origin master
 
 ```bash
 ssh ubuntu@124.223.40.33
-# 输入密码：woaini2244.
+# 输入密码：woaini2244..
 ```
 
 **步骤 3：拉取最新代码**
@@ -1011,7 +1011,7 @@ tar -czf /tmp/ai-agg-deploy.tar.gz \
 **步骤 2：上传到服务器**
 
 ```bash
-sshpass -p 'woaini2244.' scp -P 22 \
+sshpass -p 'woaini2244..' scp -P 22 \
   /tmp/ai-agg-deploy.tar.gz \
   ubuntu@124.223.40.33:~/ai-aggregation/
 ```
@@ -1019,7 +1019,7 @@ sshpass -p 'woaini2244.' scp -P 22 \
 **步骤 3：SSH 到服务器解压**
 
 ```bash
-sshpass -p 'woaini2244.' ssh ubuntu@124.223.40.33
+sshpass -p 'woaini2244..' ssh ubuntu@124.223.40.33
 cd ~/ai-aggregation
 tar -xzf ai-agg-deploy.tar.gz
 rm ai-agg-deploy.tar.gz
@@ -1107,22 +1107,22 @@ docker system df
 
 ### 14.10 常见问题排查
 
-| 现象                                   | 原因                                          | 处理                                                                              |
-| -------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------- |
-| Nginx 502 Bad Gateway                  | Web 容器未启动或崩溃                          | `docker logs ai-web` 查看报错                                                     |
-| Nginx 报 `host not found in upstream`  | 容器名不对或未在同一网络                      | 确认 `proxy_pass` 用 `ai-web`，且容器在 `docker_ai-net`                           |
-| Web 容器 `ECONNREFUSED 127.0.0.1:6379` | `.env.prod` 中 REDIS_HOST 用了 `127.0.0.1`    | 改为 `ai-aggregation-redis`，然后 `--force-recreate`                              |
-| Web 容器 `ECONNREFUSED 127.0.0.1:5432` | `.env.prod` 中 DATABASE_URL 用了 `127.0.0.1`  | 改为 `ai-aggregation-postgres`，然后 `--force-recreate`                           |
-| Docker build 报 `postinstall` 错误     | 根 `package.json` 有 `postinstall` 脚本       | 删除该脚本：`python3 -c "import json; ..."` 或在 Dockerfile 加 `--ignore-scripts` |
-| Docker build 报 `.prisma` not found    | pnpm 模块结构导致 Prisma 文件不在预期路径     | Dockerfile 中用 `COPY --from=base /app/node_modules ./node_modules` 复制整个目录  |
-| HTTPS 证书报错                         | 证书文件未挂载到容器                          | 将 `/etc/letsencrypt/archive/` 下的文件复制到 `infra/docker/certbot/conf/`        |
-| 端口 80 被占用                         | 系统自带 nginx 未停止                         | `sudo systemctl stop nginx && sudo systemctl disable nginx`                       |
-| 容器 unhealthy 但服务正常              | Next.js standalone 监听方式导致 wget 检查失败 | 可忽略，实际服务通过 nginx 代理正常工作                                           |
-| `git pull` 后构建失败                  | 本地 Dockerfile 修改未同步                    | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确                   |
-| `prisma migrate deploy` 报 P1012 `Environment variable not found: DATABASE_URL` | Prisma CLI 不读 `infra/docker/.env.prod`      | 先 `export DATABASE_URL`（容器名替换为 localhost），见 14.6 节                    |
-| 登录成功但没有管理员权限 / 登录后变成匿名用户 | 通过 `http://` 或裸域名访问，Secure Cookie 被浏览器拒收，匿名登录覆盖真实会话 | 确认 nginx 已启用 HTTP→HTTPS 强制跳转（14.7 节），一律用 `https://www.域名` 访问 |
-| `db:seed` 报错 `环境变量 SEED_ADMIN_PASSWORD 未配置` | `.env.prod` 缺少管理员初始化密码              | 在 `.env.prod` 添加 `SEED_ADMIN_PASSWORD` 后重新执行，见 14.5 节                  |
-| 线上 `xkfy` 不是 admin（无 seed 时）   | 首次部署未执行 seed                           | 短期：psql 手动 `UPDATE users SET role='admin' WHERE username='xkfy'`；长期：补 seed |
+| 现象                                                                            | 原因                                                                          | 处理                                                                                 |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Nginx 502 Bad Gateway                                                           | Web 容器未启动或崩溃                                                          | `docker logs ai-web` 查看报错                                                        |
+| Nginx 报 `host not found in upstream`                                           | 容器名不对或未在同一网络                                                      | 确认 `proxy_pass` 用 `ai-web`，且容器在 `docker_ai-net`                              |
+| Web 容器 `ECONNREFUSED 127.0.0.1:6379`                                          | `.env.prod` 中 REDIS_HOST 用了 `127.0.0.1`                                    | 改为 `ai-aggregation-redis`，然后 `--force-recreate`                                 |
+| Web 容器 `ECONNREFUSED 127.0.0.1:5432`                                          | `.env.prod` 中 DATABASE_URL 用了 `127.0.0.1`                                  | 改为 `ai-aggregation-postgres`，然后 `--force-recreate`                              |
+| Docker build 报 `postinstall` 错误                                              | 根 `package.json` 有 `postinstall` 脚本                                       | 删除该脚本：`python3 -c "import json; ..."` 或在 Dockerfile 加 `--ignore-scripts`    |
+| Docker build 报 `.prisma` not found                                             | pnpm 模块结构导致 Prisma 文件不在预期路径                                     | Dockerfile 中用 `COPY --from=base /app/node_modules ./node_modules` 复制整个目录     |
+| HTTPS 证书报错                                                                  | 证书文件未挂载到容器                                                          | 将 `/etc/letsencrypt/archive/` 下的文件复制到 `infra/docker/certbot/conf/`           |
+| 端口 80 被占用                                                                  | 系统自带 nginx 未停止                                                         | `sudo systemctl stop nginx && sudo systemctl disable nginx`                          |
+| 容器 unhealthy 但服务正常                                                       | Next.js standalone 监听方式导致 wget 检查失败                                 | 可忽略，实际服务通过 nginx 代理正常工作                                              |
+| `git pull` 后构建失败                                                           | 本地 Dockerfile 修改未同步                                                    | 确认 `apps/web/Dockerfile` 和 `apps/worker/Dockerfile` 内容正确                      |
+| `prisma migrate deploy` 报 P1012 `Environment variable not found: DATABASE_URL` | Prisma CLI 不读 `infra/docker/.env.prod`                                      | 先 `export DATABASE_URL`（容器名替换为 localhost），见 14.6 节                       |
+| 登录成功但没有管理员权限 / 登录后变成匿名用户                                   | 通过 `http://` 或裸域名访问，Secure Cookie 被浏览器拒收，匿名登录覆盖真实会话 | 确认 nginx 已启用 HTTP→HTTPS 强制跳转（14.7 节），一律用 `https://www.域名` 访问     |
+| `db:seed` 报错 `环境变量 SEED_ADMIN_PASSWORD 未配置`                            | `.env.prod` 缺少管理员初始化密码                                              | 在 `.env.prod` 添加 `SEED_ADMIN_PASSWORD` 后重新执行，见 14.5 节                     |
+| 线上 `xkfy` 不是 admin（无 seed 时）                                            | 首次部署未执行 seed                                                           | 短期：psql 手动 `UPDATE users SET role='admin' WHERE username='xkfy'`；长期：补 seed |
 
 ### 14.11 数据库管理
 
@@ -1166,21 +1166,21 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 
 ### 14.14 环境变量说明
 
-| 变量                        | 用途                           | 必填         |
-| --------------------------- | ------------------------------ | ------------ |
-| `DATABASE_URL`              | PostgreSQL 连接串              | ✅           |
-| `REDIS_HOST`                | Redis 地址                     | ✅           |
-| `REDIS_PORT`                | Redis 端口                     | ✅           |
-| `AUTH_SECRET`               | NextAuth 加密密钥              | ✅           |
-| `ANONYMOUS_DEVICE_SALT`     | 匿名用户设备指纹盐             | ✅           |
+| 变量                        | 用途                            | 必填           |
+| --------------------------- | ------------------------------- | -------------- |
+| `DATABASE_URL`              | PostgreSQL 连接串               | ✅             |
+| `REDIS_HOST`                | Redis 地址                      | ✅             |
+| `REDIS_PORT`                | Redis 端口                      | ✅             |
+| `AUTH_SECRET`               | NextAuth 加密密钥               | ✅             |
+| `ANONYMOUS_DEVICE_SALT`     | 匿名用户设备指纹盐              | ✅             |
 | `SEED_ADMIN_PASSWORD`       | 超管 xkfy 初始化密码（seed 用） | 管理员账号需要 |
-| `NEXTAUTH_URL`              | NextAuth 回调地址              | ✅           |
-| `NEXT_PUBLIC_APP_URL`       | 前端可见的应用地址             | ✅           |
-| `ARK_API_KEY`               | 火山方舟 API Key（豆包）       | 命理分析需要 |
-| `DEEPSEEK_MODEL`            | DeepSeek API Key（存错变量名） | 命理分析备选 |
-| `ZHIPU_API_KEY`             | 智谱 API Key                   | 视频生成需要 |
-| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API                       | 语音转写需要 |
-| `SILICONFLOW_API_KEY`       | 硅基流动 API Key               | 语音模型需要 |
-| `AGNES_API_KEY`             | Agnes 图像 API                 | 图像生成需要 |
+| `NEXTAUTH_URL`              | NextAuth 回调地址               | ✅             |
+| `NEXT_PUBLIC_APP_URL`       | 前端可见的应用地址              | ✅             |
+| `ARK_API_KEY`               | 火山方舟 API Key（豆包）        | 命理分析需要   |
+| `DEEPSEEK_MODEL`            | DeepSeek API Key（存错变量名）  | 命理分析备选   |
+| `ZHIPU_API_KEY`             | 智谱 API Key                    | 视频生成需要   |
+| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API                        | 语音转写需要   |
+| `SILICONFLOW_API_KEY`       | 硅基流动 API Key                | 语音模型需要   |
+| `AGNES_API_KEY`             | Agnes 图像 API                  | 图像生成需要   |
 
 > **注意**：`DEEPSEEK_API_KEY` 在代码中未使用。DeepSeek 的 Key 实际存储在 `DEEPSEEK_MODEL` 变量中（`packages/shared/src/destiny-model-client.ts`）。

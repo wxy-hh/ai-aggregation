@@ -3,7 +3,7 @@
  *
  * 说明：
  * - 统一认证、请求校验、错误映射、SSE 响应包装
- * - 生成逻辑与 quota 生命周期由 adapter 自行管理
+ * - 生成逻辑由 adapter 自行管理；配额生命周期统一走 QuotaSession（reserve → finalize 三态）
  * - bazi / ziwei 各提供一个 adapter 实现
  */
 

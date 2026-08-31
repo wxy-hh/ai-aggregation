@@ -32,12 +32,12 @@ describe('getAvailableTargets', () => {
     expect(modules).not.toContain('voice');
   });
 
-  it('图片来源不含命理目标，含参考图与再次绘图', () => {
+  it('图片来源不含命理目标与「作为参考图」（文生图不支持图生图），含再次绘图', () => {
     const targets = getAvailableTargets('image');
     const modules = targets.map((t) => t.targetModule);
     expect(modules).not.toContain('destiny');
     const fields = targets.map((t) => t.field);
-    expect(fields).toContain('image_reference');
+    expect(fields).not.toContain('image_reference');
     expect(fields).toContain('image_prompt');
     expect(fields).toContain('video_reference_image');
   });
