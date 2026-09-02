@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { StyleSelector } from '@/components/image/style-selector';
 import { SettingsPanel } from '@/components/image/settings-panel';
 import { CreativeCockpit, type ImageRestoreParams } from '@/components/image/creative-cockpit';
@@ -195,7 +196,19 @@ export default function ImageWorkspace() {
       }, 1000);
     } catch (err) {
       console.error('Generation error:', err);
-      setError(err instanceof Error ? err.message : '生成失败，请重试');
+      // 提取友好的错误消息
+      let errorMessage = '生成失败，请重试';
+      if (err instanceof Error) {
+        // 如果是上游返回的错误，直接使用
+        if (err.message.includes('暂时繁忙') || err.message.includes('服务繁忙')) {
+          errorMessage = 'Agnes 服务暂时繁忙，请稍后重试';
+        } else if (err.message.includes('API error')) {
+          errorMessage = '服务连接异常，请检查网络后重试';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      setError(errorMessage);
       setIsGenerating(false);
       setProgress(0);
       setCurrentStep('');
@@ -347,8 +360,10 @@ export default function ImageWorkspace() {
             <div className="absolute top-[40%] -left-[10%] w-[40%] h-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
           </div>
 
-          {/* 头部：透明磨砂，与页面径向渐变融为一体，避免白底拼接感 */}
-          <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
+          {/* 错误边界：包裹关键内容区域，防止页面崩溃 */}
+          <ErrorBoundary>
+            {/* 头部：透明磨砂，与页面径向渐变融为一体，避免白底拼接感 */}
+            <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊
@@ -663,6 +678,7 @@ export default function ImageWorkspace() {
               )}
             </div>
           </div>
+          </ErrorBoundary>
         </div>
 
         {/* 右侧边栏：创作灵感舱 */}

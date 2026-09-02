@@ -1,27 +1,25 @@
 import { z } from 'zod';
-import type {
-  DestinyModule,
-  DestinyReport,
-  DestinyReportRequest,
-  ZiweiLockedSections,
-  ZiweiSectionKey,
-  ZiweiStreamEvent,
-  ZiweiPalaceAnalysis,
-} from '@/app/destiny/_components/types';
 import {
   computeZiweiChart,
   buildZiweiPromptContext,
   type ZiweiChartData,
 } from '../_lib/ziwei-chart';
-import { extractArkUsage, extractJsonBlock } from '../_lib/ark-response';
+import { extractJsonBlock } from '../_lib/ark-response';
 import {
   resolveModelConfig,
   callModel,
   ModelConfigError,
   ModelUpstreamError,
+  type DestinyModule,
+  type DestinyReport,
+  type DestinyReportRequest,
+  type ZiweiLockedSections,
+  type ZiweiSectionKey,
+  type ZiweiStreamEvent,
+  type ZiweiPalaceAnalysis,
   type ModelConfig,
 } from '@repo/shared';
-import { encodeSseEvent } from '@/lib/utils/sse';
+import { encodeDestinySseEvent } from '@/lib/utils/sse';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { BillingError } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
@@ -260,7 +258,8 @@ function createZiweiStream({
 
       const send = (event: ZiweiStreamEvent) => {
         if (closed) return;
-        controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
+        // 契约版编码器：非 ZiweiStreamEvent 的事件编译期拒绝，不再需要 as unknown 断言
+        controller.enqueue(encodeDestinySseEvent(event));
       };
 
       try {
@@ -410,7 +409,7 @@ async function generateQuickSections({
       requestId: requestId ?? '',
       action: 'destiny-ziwei-report',
       endpoint: '/api/destiny/ziwei-report',
-      usage: extractArkUsage(result.raw),
+      usage: result.rawUsage,
       outputText: result.text,
       provider: config.provider,
       model: config.model,
@@ -560,7 +559,7 @@ async function generatePalaceGroup({
       requestId: requestId ?? '',
       action: 'destiny-ziwei-report',
       endpoint: '/api/destiny/ziwei-report',
-      usage: extractArkUsage(result.raw),
+      usage: result.rawUsage,
       outputText: result.text,
       provider: config.provider,
       model: config.model,

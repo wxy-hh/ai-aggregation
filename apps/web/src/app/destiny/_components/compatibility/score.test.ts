@@ -220,7 +220,7 @@ describe('buildScoreBasis 评分依据', () => {
     // 六维行
     expect(basis.basisLines[1]).toContain('六维加权');
     // 视角修正行带符号
-    expect(basis.basisLines[2]).toMatch(/视角修正 [+\-]/);
+    expect(basis.basisLines[2]).toMatch(/视角修正 [+-]/);
     // 展示口径与主分一致：底分标定值应等于 calibrateScore(facts.score)
     expect(basis.basePart).toBe(calibrateScore(facts.score));
     // 六维展示口径与 feel.dimAverage 一致

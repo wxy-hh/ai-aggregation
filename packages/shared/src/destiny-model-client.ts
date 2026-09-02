@@ -62,6 +62,8 @@ export type CallModelOptions = {
 export type CallModelResult = {
   text: string;
   usage: ModelUsage | null;
+  /** 供应商原始 usage（与 streamModel done 事件的 rawUsage 对称），供结算层提取 cached/reasoning 明细 */
+  rawUsage?: unknown;
   raw: unknown;
   /** 结束原因：doubao 取 incomplete_details.reason；deepseek 取 choices[0].finish_reason。调用方可据此做截断重试。 */
   finishReason?: string;
@@ -284,9 +286,11 @@ async function callArk(opts: CallModelOptions): Promise<CallModelResult> {
       typeof (incompleteDetails as Record<string, unknown>).reason === 'string'
         ? ((incompleteDetails as Record<string, unknown>).reason as string)
         : undefined;
+    const rawUsage = extractArkUsage(raw);
     return {
       text: extractArkText(raw),
-      usage: normalizeModelUsage(extractArkUsage(raw)),
+      usage: normalizeModelUsage(rawUsage),
+      rawUsage,
       raw,
       finishReason,
     };
@@ -329,6 +333,7 @@ async function callDeepSeek(opts: CallModelOptions): Promise<CallModelResult> {
     return {
       text: content,
       usage: normalizeModelUsage(raw.usage),
+      rawUsage: raw.usage ?? null,
       raw,
       finishReason,
     };

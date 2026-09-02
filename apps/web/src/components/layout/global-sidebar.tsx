@@ -14,6 +14,14 @@ import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores/ui-store
 import { useAuthStore } from '@/stores/auth-store';
 import { SidebarAppLogo } from '@/components/layout/sidebar-app-logo';
 
+// 底部折叠链接：基础尺寸 + 非激活态，三个入口（admin/历史/主题）共用
+const bottomLinkBaseCls =
+  'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md border shadow-sm transition-all duration-300';
+const bottomLinkStateCls =
+  'bg-white/45 dark:bg-slate-800/45 border-white/30 dark:border-slate-700/30 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95';
+const bottomLinkActiveCls =
+  'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105';
+
 export function GlobalSidebar() {
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
@@ -34,6 +42,9 @@ export function GlobalSidebar() {
   const [landingApp, setLandingApp] = useState<AppId | null>(null);
   const displayName = user?.name?.trim() || '个人中心';
   const avatarSrc = user?.avatar?.trim() || null;
+  
+  // 底部折叠状态
+  const [isBottomExpanded, setIsBottomExpanded] = useState(false);
 
   // 简单的路由匹配逻辑
   const isActive = (path: string) => {
@@ -107,7 +118,18 @@ export function GlobalSidebar() {
 
   return (
     <>
-      <aside className="w-[100px] bg-white dark:bg-[#111218] border-r border-slate-200 dark:border-slate-800/50 flex flex-col items-center py-6 h-screen flex-shrink-0 z-50 transition-colors duration-500 relative">
+      <aside className="w-[100px] h-screen flex-shrink-0 z-50 transition-all duration-500 relative flex flex-col items-center py-6">
+        {/* 悬浮玻璃侧边栏背景 */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/70 via-white/60 to-white/50 dark:from-slate-900/70 dark:via-slate-900/60 dark:to-slate-900/50 backdrop-blur-2xl border-r border-white/60 dark:border-white/10 shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)] rounded-r-3xl mx-2 my-4 pointer-events-none" />
+        
+        {/* 顶部高光切割线 */}
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 rounded-r-3xl mx-2 mt-4" />
+        
+        {/* 背光光晕层 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5 pointer-events-none rounded-r-3xl mx-2 my-4" />
+        
+        {/* 内容容器 */}
+        <div className="relative z-10 flex flex-col items-center w-full h-full">
         {/* Logo：星盘图形 + 柔和光晕 */}
         <Link
           href="/home"
@@ -226,45 +248,61 @@ export function GlobalSidebar() {
           </motion.button>
         </nav>
 
-        {/* 底部图标 */}
-        <div className="flex flex-col items-center gap-3 mt-auto w-full px-3 pt-4 pb-6 relative z-20 bg-slate-50 dark:bg-slate-900">
-          {user?.role === 'admin' && (
-            <Link
-              href="/admin/users"
-              aria-label="打开系统用户管理"
-              className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md border shadow-sm transition-all duration-300',
-                pathname === '/admin/users'
-                  ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105'
-                  : 'bg-white/45 dark:bg-slate-800/45 border-white/30 dark:border-slate-700/30 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
-              )}
-            >
-              <Shield className="w-5 h-5" />
-            </Link>
-          )}
+        {/* 底部智能折叠区域 */}
+        <div 
+          className="mt-auto w-full px-3 pb-6 relative z-20"
+          onMouseEnter={() => setIsBottomExpanded(true)}
+          onMouseLeave={() => setIsBottomExpanded(false)}
+        >
+          {/* 折叠内容 - 默认隐藏，鼠标移入展开 */}
+          <AnimatePresence>
+            {isBottomExpanded && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: 20, height: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="flex flex-col items-center gap-3 mb-4 overflow-hidden"
+              >
+                {user?.role === 'admin' && (
+                  <Link
+                    href="/admin/users"
+                    aria-label="打开系统用户管理"
+                    className={cn(
+                      bottomLinkBaseCls,
+                      pathname === '/admin/users' ? bottomLinkActiveCls : bottomLinkStateCls
+                    )}
+                  >
+                    <Shield className="w-5 h-5" />
+                  </Link>
+                )}
 
-          {/* 历史记录 */}
-          <Link
-            href="/history"
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300"
-          >
-            <Clock className="w-5 h-5" />
-          </Link>
+                {/* 历史记录 */}
+                <Link
+                  href="/history"
+                  className={cn(bottomLinkBaseCls, bottomLinkStateCls)}
+                >
+                  <Clock className="w-5 h-5" />
+                </Link>
 
-          {/* 主题切换 */}
-          <ThemeToggle className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300" />
+                {/* 主题切换 */}
+                <ThemeToggle className={cn(bottomLinkBaseCls, bottomLinkStateCls)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
+          {/* 头像 - 始终显示 */}
           <Link
             href="/profile"
             aria-label="打开个人中心"
-            className="group relative mt-2 flex flex-col items-center gap-1"
+            className="group relative flex flex-col items-center gap-1"
           >
             <div
               className={cn(
-                'relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border p-[2px] transition-all duration-300',
+                'relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border p-[2px] transition-all duration-300',
                 pathname === '/profile'
-                  ? 'border-[#7E96FF] bg-gradient-to-br from-[#6A82FF] via-[#88A0FF] to-[#A8B8FF] shadow-[0_10px_28px_rgba(93,124,250,0.38)]'
-                  : 'border-white/70 bg-white/60 shadow-[0_8px_24px_rgba(102,119,174,0.18)] hover:scale-105 hover:shadow-[0_12px_28px_rgba(93,124,250,0.26)] dark:border-slate-700/70 dark:bg-slate-800/80'
+                  ? 'border-[#7E96FF] bg-gradient-to-br from-[#6A82FF] via-[#88A0FF] to-[#A8B8FF] shadow-[0_10px_28px_rgba(93,124,250,0.38)] scale-105'
+                  : 'border-white/70 bg-white/60 shadow-[0_8px_24px_rgba(102,119,174,0.18)] hover:scale-110 hover:shadow-[0_12px_28px_rgba(93,124,250,0.26)] dark:border-slate-700/70 dark:bg-slate-800/80'
               )}
             >
               <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-white text-xs font-semibold text-slate-700 dark:bg-[#111827] dark:text-slate-100">
@@ -275,12 +313,28 @@ export function GlobalSidebar() {
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <User className="h-4 w-4" />
+                  <User className="h-5 w-5" />
                 )}
               </div>
+              
+              {/* 悬浮时的外发光效果 */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              
+              {/* 脉冲边框动画 - 作为展开提示 */}
+              <motion.div
+                className="absolute inset-0 rounded-full border-2 border-blue-500/50"
+                initial={{ scale: 1, opacity: 0 }}
+                animate={isBottomExpanded ? { scale: 1.3, opacity: 0 } : { scale: 1.2, opacity: 0.6 }}
+                transition={{ 
+                  duration: 1.5, 
+                  repeat: isBottomExpanded ? 0 : Infinity,
+                  repeatType: "reverse" 
+                }}
+              />
             </div>
           </Link>
         </div>
+      </div>
       </aside>
 
       {/* Toast通知 - 固定在顶部中央 */}

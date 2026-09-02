@@ -8,6 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from './code-block';
+import { SafeParagraph } from './markdown-utils';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { RelayAction } from '@/components/relay/relay-action';
@@ -261,6 +262,8 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
           </code>
         );
       },
+      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
+      p: SafeParagraph,
     }),
     []
   );

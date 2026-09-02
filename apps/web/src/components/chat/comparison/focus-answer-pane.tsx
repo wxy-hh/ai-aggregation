@@ -15,6 +15,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { Copy, Check, RotateCw, Square, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CodeBlock } from '../code-block';
+import { SafeParagraph } from '../markdown-utils';
 import type { ModelRun } from '@/types/comparison';
 import { RelayAction } from '@/components/relay/relay-action';
 import { RelayMenu } from '@/components/relay/relay-menu';
@@ -72,6 +73,12 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
           </code>
         );
       },
+      // 使用 pre 替代 p 作为代码块的父容器，避免 div 在 p 内的 HTML 规范问题
+      pre({ children }: any) {
+        return <>{children}</>;
+      },
+      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
+      p: SafeParagraph,
     }),
     []
   );

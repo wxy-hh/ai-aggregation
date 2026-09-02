@@ -4,8 +4,15 @@
  * 集成真太阳时修正（参考八字测算的 buildSolarCorrection 算法）
  */
 import { astro } from 'iztro';
-import { buildSolarCorrection, ZIWEI_BASE_GLOSSARY } from '@repo/shared';
-import type { DestinyReportRequest } from '@/app/destiny/_components/types';
+import {
+  buildSolarCorrection,
+  ZIWEI_BASE_GLOSSARY,
+  type DestinyReportRequest,
+  type ZiweiChartData,
+  type ZiweiChartPalace,
+  type ZiweiSihua,
+  type ZiweiStarInfo,
+} from '@repo/shared';
 
 // ─── 时辰映射（小时 → iztro timeIndex）───
 // iztro 的 timeIndex 顺序（经 iztro@2.5.8 源码与实测双重确认）：
@@ -61,66 +68,13 @@ const SIHUA_TABLE: Record<string, { lu: string; quan: string; ke: string; ji: st
   '癸': { lu: '破军', quan: '巨门', ke: '太阴', ji: '贪狼' },
 };
 
-// ─── 类型定义 ───
-
-export type ZiweiStarInfo = {
-  name: string;
-  type: string;       // major | soft | tough | adjective | tianma | lucun | flower | helper
-  brightness: string; // 庙 | 旺 | 得 | 平 | 利 | 陷 | 不
-};
-
-export type ZiweiChartPalace = {
-  name: string;
-  heavenlyStem: string;
-  earthlyBranch: string;
-  isBodyPalace: boolean;
-  isOriginalPalace: boolean;
-  majorStars: ZiweiStarInfo[];
-  minorStars: ZiweiStarInfo[];
-  adjectiveStars: ZiweiStarInfo[];
-  changsheng12: string;
-  stageRange: [number, number];
-  stageStem: string;
-  ages: number[];
-};
-
-export type ZiweiSihua = {
-  lu: string;
-  quan: string;
-  ke: string;
-  ji: string;
-};
-
-export type ZiweiChartData = {
-  // 基础信息
-  solarDate: string;
-  lunarDate: string;
-  chineseDate: string;
-  time: string;
-  timeRange: string;
-  sign: string;
-  zodiac: string;
-  yearStem: string;
-  yearBranch: string;
-
-  // 命盘核心
-  soulPalaceBranch: string;
-  bodyPalaceBranch: string;
-  soul: string;
-  body: string;
-  fiveElementsClass: string;
-
-  // 生年四化
-  sihua: ZiweiSihua;
-
-  // 十二宫
-  palaces: ZiweiChartPalace[];
-
-  // 真太阳时修正
-  solarCorrection?: string;
-
-  // 用户专属词汇解释表（基于命盘数据生成）
-  personalizedGlossary?: Record<string, string>;
+// 类型定义（ZiweiStarInfo / ZiweiChartPalace / ZiweiSihua / ZiweiChartData）
+// 已迁至 @repo/shared destiny-report.ts（架构评审 2.2 C2），此处直接导入复用
+export type {
+  ZiweiStarInfo,
+  ZiweiChartPalace,
+  ZiweiSihua,
+  ZiweiChartData,
 };
 
 // ─── 核心函数 ───

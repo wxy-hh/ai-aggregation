@@ -29,9 +29,11 @@ export function CodeBlock({ language, children, className }: CodeBlockProps) {
   };
 
   return (
-    <div className="relative group/code rounded-xl overflow-hidden bg-slate-900 mx-0">
+    <pre className="relative group/code rounded-xl overflow-hidden bg-slate-900 mx-0"
+    >
       {/* 顶部工具栏：显示语言和复制按钮 */}
-      <div className="flex items-center justify-between px-4 py-2 bg-slate-950/50 border-b border-white/10 text-xs text-slate-400">
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-950/50 border-b border-white/10 text-xs text-slate-400"
+      >
         {/* 左侧：编程语言标签 */}
         <span className="font-mono">{language}</span>
 
@@ -79,6 +81,6 @@ export function CodeBlock({ language, children, className }: CodeBlockProps) {
       <div className="overflow-x-auto">
         <code className={className}>{children}</code>
       </div>
-    </div>
+    </pre>
   );
 }

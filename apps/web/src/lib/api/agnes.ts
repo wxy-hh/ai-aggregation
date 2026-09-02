@@ -46,7 +46,12 @@ export async function generateAgnesImage(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.details || error.error || `Agnes API error: ${response.statusText}`);
+    // 将上游错误消息转换为更友好的提示
+    const userFriendlyMessage = error.details || error.error;
+    if (userFriendlyMessage) {
+      throw new Error(userFriendlyMessage);
+    }
+    throw new Error(`Agnes API error: ${response.statusText}`);
   }
 
   return response.json();

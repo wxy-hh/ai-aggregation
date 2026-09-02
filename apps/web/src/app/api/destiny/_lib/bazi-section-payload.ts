@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import { mergeDecadeFortuneInsights, type BaziChartBasis } from '@repo/shared';
+import {
+  mergeDecadeFortuneInsights,
+  type BaziChartBasis,
+  type BaziLockedSections,
+  type BaziSectionKey,
+  type BaziSectionPayloadMap,
+  type DestinyModule,
+  type DestinyReport,
+  type DestinyReportRequest,
+} from '@repo/shared';
 import {
   RequireCoreToneSchema,
   RequireModuleSchema,
@@ -18,14 +27,6 @@ import {
   buildDecadeFortuneInsights,
   fillDecadeFortuneInsightFallbacks,
 } from '@/lib/destiny/decade-fortune-insight';
-import type {
-  BaziLockedSections,
-  BaziSectionKey,
-  BaziSectionPayloadMap,
-  DestinyModule,
-  DestinyReport,
-  DestinyReportRequest,
-} from '@/app/destiny/_components/types';
 import { extractJsonBlock } from './ark-response';
 import { normalizeDestinyReport } from './report-normalizer';
 

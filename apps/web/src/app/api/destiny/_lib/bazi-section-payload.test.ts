@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DestinyReportRequest } from '@/app/destiny/_components/types';
+import type { DestinyReportRequest } from '@repo/shared';
 import { parseBaziSectionPayload } from './bazi-section-payload';
 
 const request: DestinyReportRequest = {

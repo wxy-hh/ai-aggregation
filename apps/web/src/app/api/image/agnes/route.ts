@@ -9,6 +9,11 @@ const AGNES_API_KEY = process.env.AGNES_API_KEY;
 const AGNES_API_URL =
   process.env.AGNES_INFERENCE_API_URL || 'https://apihub.agnes-ai.com/v1/images/generations';
 
+// 上游过载（429/5xx）退避重试：最多重试 2 次（对齐 destiny-model-client 的 callModel 模式）。
+// 幂等安全：重试发生在同一次请求内、beginMediaTask 幂等之后，计费只在成功后记一次。
+const RETRY_DELAYS_MS = [800, 2000];
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function POST(request: NextRequest) {
   return withAuth(request, async (user) => {
     const userId = user.id;
@@ -50,35 +55,66 @@ export async function POST(request: NextRequest) {
       if (body.seed != null) apiBody.seed = body.seed;
       if (body.negative_prompt) apiBody.negative_prompt = body.negative_prompt;
 
-      const response = await fetch(AGNES_API_URL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${AGNES_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(apiBody),
-      });
+      const invokeUpstream = async (): Promise<Record<string, unknown>> => {
+        const response = await fetch(AGNES_API_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${AGNES_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(apiBody),
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = new Error(errorText) as Error & { status: number };
+          error.status = response.status;
+          throw error;
+        }
+        return response.json();
+      };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        await failMediaTask(mediaTaskId, errorText);
-        // 上游服务过载时返回友好提示
-        if (response.status === 503) {
+      // 429 限流 / 5xx 过载时退避重试（最多重试 2 次，共 3 次尝试）
+      let data: Record<string, unknown> | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        try {
+          data = await invokeUpstream();
+          break;
+        } catch (err) {
+          lastError = err;
+          const status = (err as Error & { status?: number }).status ?? 0;
+          const retryable = status === 429 || status >= 500;
+          if (!retryable || attempt === RETRY_DELAYS_MS.length) break;
+          console.warn(
+            `[image/agnes] 第 ${attempt + 1} 次调用失败（status=${status}），${RETRY_DELAYS_MS[attempt]}ms 后重试`
+          );
+          await sleep(RETRY_DELAYS_MS[attempt]);
+        }
+      }
+
+      if (!data) {
+        const status = (lastError as Error & { status?: number })?.status ?? 0;
+        await failMediaTask(
+          mediaTaskId,
+          lastError instanceof Error ? lastError.message : '图片生成失败'
+        );
+        // 上游服务过载/限流时返回友好提示
+        if (status === 503 || status === 429) {
           return NextResponse.json(
             { error: 'Agnes 服务暂时繁忙，请稍后重试' },
             { status: 503 }
           );
         }
         return NextResponse.json(
-          { error: `Agnes API error: ${errorText}` },
-          { status: response.status }
+          { error: `Agnes API error: ${lastError instanceof Error ? lastError.message : String(lastError)}` },
+          { status: status || 500 }
         );
       }
 
-      const data = await response.json();
-
       // 转换为统一格式（images 数组，前端消费方一致）
-      const imageData = data.data?.[0] || data.images?.[0];
+      const dataArray = Array.isArray(data.data) ? (data.data as Array<Record<string, unknown>>) : [];
+      const imagesArray = Array.isArray(data.images) ? (data.images as Array<Record<string, unknown>>) : [];
+      const imageData = dataArray[0] || imagesArray[0];
       if (!imageData?.url) {
         throw new Error(`Unexpected Agnes API response: ${JSON.stringify(data).slice(0, 200)}`);
       }

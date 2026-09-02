@@ -6,17 +6,15 @@ import {
   streamModel,
   ModelConfigError,
   ModelUpstreamError,
+  type BaziStreamEvent,
+  type BaziSectionKey,
+  type BaziSectionPayloadMap,
+  type BaziLockedSections,
+  type DestinyReport,
+  type DestinyReportRequest,
+  type DestinyStreamStatus,
   type ModelConfig,
 } from '@repo/shared';
-import type {
-  BaziLockedSections,
-  BaziSectionKey,
-  BaziSectionPayloadMap,
-  BaziStreamEvent,
-  DestinyReport,
-  DestinyReportRequest,
-  DestinyStreamStatus,
-} from '@/app/destiny/_components/types';
 import {
   BAZI_MODEL_SECTION_ORDER,
   PRIMARY_SECTION_KEYS,
@@ -25,7 +23,7 @@ import {
 } from '../_lib/bazi-section-payload';
 import { normalizeDestinyReport } from '../_lib/report-normalizer';
 import { BAZI_REPORT_JSON_SCHEMA } from '../_lib/bazi-json-schema';
-import { encodeSseEvent } from '@/lib/utils/sse';
+import { encodeDestinySseEvent } from '@/lib/utils/sse';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import {
@@ -80,57 +78,52 @@ const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
   async generate(ctx, body) {
     const parsed = body as z.infer<typeof RequestSchema>;
 
+    let config: ModelConfig;
     try {
-      let config: ModelConfig;
-      try {
-        config = resolveModelConfig(parsed.provider);
-      } catch (error) {
-        if (error instanceof ModelConfigError) {
-          throw new Error(error.message);
-        }
-        throw error;
-      }
-
-      const input: DestinyReportRequest = {
-        name: parsed.name,
-        gender: parsed.gender,
-        calendarType: parsed.calendarType,
-        birthDate: parsed.birthDate,
-        birthTime: parsed.birthTime,
-        location: parsed.location,
-      };
-      const currentYear = new Date().getFullYear();
-      const basis = computeBaziChart(input, { referenceYear: currentYear });
-      const messages = [
-        { role: 'system' as const, content: buildStreamingSystemPrompt(currentYear) },
-        { role: 'user' as const, content: buildUserPrompt(input, basis) },
-      ];
-      const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
-      const session = await QuotaSession.reserve({
-        userId: ctx.user.id,
-        requestId,
-        feature: 'destiny',
-        provider: config.provider,
-        model: config.model,
-        messages,
-        maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
-        metadata: { reportType: 'bazi', currentYear },
-      }, ctx.user.role);
-
-      return createBaziStream({
-        input,
-        currentYear,
-        config,
-        userId: ctx.user.id,
-        basis,
-        messages,
-        session,
-        requestId,
-      });
+      config = resolveModelConfig(parsed.provider);
     } catch (error) {
-      // QuotaSession.reserve 失败时 session 为 null，无需释放；其余错误向上抛给统一 handler
+      if (error instanceof ModelConfigError) {
+        throw new Error(error.message);
+      }
       throw error;
     }
+
+    const input: DestinyReportRequest = {
+      name: parsed.name,
+      gender: parsed.gender,
+      calendarType: parsed.calendarType,
+      birthDate: parsed.birthDate,
+      birthTime: parsed.birthTime,
+      location: parsed.location,
+    };
+    const currentYear = new Date().getFullYear();
+    const basis = computeBaziChart(input, { referenceYear: currentYear });
+    const messages = [
+      { role: 'system' as const, content: buildStreamingSystemPrompt(currentYear) },
+      { role: 'user' as const, content: buildUserPrompt(input, basis) },
+    ];
+    const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
+    const session = await QuotaSession.reserve({
+      userId: ctx.user.id,
+      requestId,
+      feature: 'destiny',
+      provider: config.provider,
+      model: config.model,
+      messages,
+      maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
+      metadata: { reportType: 'bazi', currentYear },
+    }, ctx.user.role);
+
+    return createBaziStream({
+      input,
+      currentYear,
+      config,
+      userId: ctx.user.id,
+      basis,
+      messages,
+      session,
+      requestId,
+    });
   },
 
   mapError: defaultMapError,
@@ -160,7 +153,7 @@ function createBaziStream({
   return new ReadableStream({
     async start(controller) {
       const send = (event: BaziStreamEvent) => {
-        controller.enqueue(encodeSseEvent(event));
+        controller.enqueue(encodeDestinySseEvent(event));
       };
 
       try {

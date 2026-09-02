@@ -123,6 +123,7 @@ function modelResult(payload: unknown): CallModelResult {
   return {
     text: JSON.stringify(payload),
     usage: null,
+    rawUsage: { input_tokens: 1, output_tokens: 2 },
     raw: { usage: { input_tokens: 1, output_tokens: 2 } },
   };
 }

@@ -50,7 +50,7 @@ function StatusIcon({ status }: { status: ModelRunStatus }) {
     case 'completed':
       return <Check className={cn(cls, 'text-emerald-500')} />;
     case 'failed':
-      return <AlertCircle className={cn(cls, 'text-rose-500')} />;
+      return <AlertCircle className="h-6 w-6 text-rose-500" />;
     case 'stopped':
       return <Square className={cn(cls, 'text-slate-400')} />;
     default:
@@ -85,7 +85,7 @@ export const ModelStatusCard = memo(function ModelStatusCard({
   return (
     <div
       className={cn(
-        'group relative flex min-w-[180px] flex-col gap-2 rounded-2xl p-3 transition-all duration-200',
+        'group relative flex w-[200px] flex-col gap-2 rounded-2xl p-3 transition-all duration-200',
         'border bg-white/60 backdrop-blur-xl dark:bg-slate-900/60',
         'shadow-[0_4px_12px_-2px_rgba(76,95,154,0.08)]',
         isFocused
@@ -114,13 +114,18 @@ export const ModelStatusCard = memo(function ModelStatusCard({
         </span>
       </div>
 
-      {/* 状态行：图标 + 中文状态 + 耗时 */}
+      {/* 状态行：图标 + 中文状态 + 耗时 + 错误信息 */}
       <div className="flex items-center gap-1.5">
         <StatusIcon status={run.status} />
-        <span className={cn('text-xs font-medium', cfg.text)}>{cfg.label}</span>
+        {run.status !== 'failed' && (
+          <span className={cn('text-xs font-medium', cfg.text)}>{cfg.label}</span>
+        )}
         {duration && <span className="text-[11px] text-slate-400">{duration}</span>}
         {run.status === 'failed' && run.error && (
-          <span className="truncate text-[11px] text-rose-400" title={run.error}>
+          <span 
+            className="truncate text-[11px] text-rose-400" 
+            title={run.error}
+          >
             {run.error.split('：')[1] ?? run.error}
           </span>
         )}

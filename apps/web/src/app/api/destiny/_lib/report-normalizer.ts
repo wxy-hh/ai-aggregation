@@ -31,7 +31,7 @@ import type {
   TenGodDomainKey,
   ZiweiCenterInfo,
   ZiweiPalace,
-} from '@/app/destiny/_components/types';
+} from '@repo/shared';
 
 const fiveElementOrder: FiveElementKey[] = [...fiveElementTuple];
 const lifeDimensionOrder: LifeDimensionKey[] = [...lifeDimensionTuple];
