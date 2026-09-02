@@ -16,9 +16,9 @@ import { SidebarAppLogo } from '@/components/layout/sidebar-app-logo';
 
 // 底部折叠链接：基础尺寸 + 非激活态，三个入口（admin/历史/主题）共用
 const bottomLinkBaseCls =
-  'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md border shadow-sm transition-all duration-300';
+  'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-2xl border shadow-sm transition-all duration-300';
 const bottomLinkStateCls =
-  'bg-white/45 dark:bg-slate-800/45 border-white/30 dark:border-slate-700/30 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95';
+  'bg-white/45 dark:bg-slate-800/45 border-white/35 dark:border-slate-700/35 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95';
 const bottomLinkActiveCls =
   'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105';
 
@@ -159,7 +159,7 @@ export function GlobalSidebar() {
                   'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                   pathname === '/'
                     ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
-                    : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
+                    : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                 )}
               >
                 <Home className="w-5 h-5" strokeWidth={2} />
@@ -211,7 +211,7 @@ export function GlobalSidebar() {
                         'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                         active
                           ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
-                          : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
+                          : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                         // 着陆发光效果（当飞行完成且 isJustAdded 变为 false 时，我们可以触发 class 动画，但如果需要，依赖 css 动画关键帧更简单）
                       )}
                     >
@@ -242,27 +242,28 @@ export function GlobalSidebar() {
           <motion.button
             layout
             onClick={() => setAppsModal(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-md border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
           </motion.button>
         </nav>
 
-        {/* 底部智能折叠区域 */}
+        {/* 底部智能折叠区域 - 侧边栏自然延伸 */}
         <div 
           className="mt-auto w-full px-3 pb-6 relative z-20"
           onMouseEnter={() => setIsBottomExpanded(true)}
           onMouseLeave={() => setIsBottomExpanded(false)}
         >
-          {/* 折叠内容 - 默认隐藏，鼠标移入展开 */}
+          {/* 向上展开区域 - 悬浮玻璃卡片 */}
           <AnimatePresence>
             {isBottomExpanded && (
               <motion.div
-                initial={{ opacity: 0, y: 20, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: 'auto' }}
-                exit={{ opacity: 0, y: 20, height: 0 }}
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="flex flex-col items-center gap-3 mb-4 overflow-hidden"
+                className="bg-white/58 dark:bg-slate-900/58 backdrop-blur-xl border-t border-white/50 dark:border-white/20 rounded-r-3xl shadow-md shadow-indigo-500/15 flex flex-col items-center gap-3 py-4 px-2 mx-2 mb-4 overflow-hidden"
               >
                 {user?.role === 'admin' && (
                   <Link
