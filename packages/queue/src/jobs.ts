@@ -1,3 +1,5 @@
+import type { QimenAnalyzeRequest, QimenSectionKey, TaskType } from '@repo/shared';
+
 export interface STTJobData {
   taskId: string;
   userId: string;
@@ -20,36 +22,6 @@ export interface ImageJobData {
   style?: string;
 }
 
-type QimenQuestionCategory =
-  | 'career'
-  | 'wealth'
-  | 'love'
-  | 'health'
-  | 'decision'
-  | 'study'
-  | 'other';
-
-type QimenChartMethod = 'time' | 'daily';
-type QimenAnalysisFocus = 'short_term' | 'long_term' | 'risk_control';
-type QimenOutputStyle = 'professional' | 'plain';
-type QimenOutputLength = 'brief' | 'detailed';
-type QimenSectionKey = 'strategyOverview' | 'timingWindows' | 'chartSummary';
-
-type QimenAnalyzeRequest = {
-  context: {
-    datetime: string;
-    location: string;
-    chartMethod: QimenChartMethod;
-  };
-  question: {
-    category: QimenQuestionCategory;
-    description: string;
-    focus: QimenAnalysisFocus;
-    outputStyle: QimenOutputStyle;
-    outputLength: QimenOutputLength;
-  };
-};
-
 export interface QimenBaseJobData {
   analysisId: string;
   userId?: string;
@@ -68,10 +40,11 @@ export interface QimenSectionJobData {
   provider?: 'doubao' | 'deepseek';
 }
 
+// 任务名单一事实源约束：与 shared 的 TaskType 对齐（评审 C3），新增任务类型需两处同步
 export const JOB_NAMES = {
   STT: 'stt',
   PPT: 'ppt',
   IMAGE: 'image',
   QIMEN_BASE: 'qimen-base',
   QIMEN_SECTION: 'qimen-section',
-} as const;
+} as const satisfies Record<string, TaskType>;

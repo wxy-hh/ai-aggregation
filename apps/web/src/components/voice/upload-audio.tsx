@@ -9,8 +9,6 @@ import { translateText, isQuotaError } from '@/lib/api/translation';
 import { useHistoryActions, useHistoryInitialized } from '@/stores/audio-history-store';
 import { AudioHistoryItem } from '@/types/audio-history';
 import { withRetry, formatErrorMessage, RetryProgressTracker } from '@/lib/api/error-handler';
-import { useHistoryStore } from '@/stores/history-store';
-import { createVoiceHistoryItem } from '@/lib/utils/history-helpers';
 import { toast } from 'sonner';
 
 interface UploadAudioProps {
@@ -121,9 +119,6 @@ export function UploadAudio({
   restoredHistoryItem,
   onHistoryRestored,
 }: UploadAudioProps) {
-  // 统一历史记录
-  const addUnifiedHistoryItem = useHistoryStore((state) => state.addItem);
-
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [transcriptionResult, setTranscriptionResult] = useState<string | null>(null);
@@ -142,7 +137,7 @@ export function UploadAudio({
   const uploadMutation = useUploadVoice();
 
   // 获取历史记录 store 的 actions - 使用 selector hook 避免无限循环
-  const { createItem, updateItem, updateProcessingStatus, initializeService } = useHistoryActions();
+  const { createItem, updateProcessingStatus, initializeService } = useHistoryActions();
   const isInitialized = useHistoryInitialized();
 
   // 初始化历史记录服务
@@ -374,39 +369,7 @@ export function UploadAudio({
             transcriptionText,
           });
           console.log('✓ 历史记录已更新（转录完成）');
-
-          // 立即保存到统一历史记录系统（转录完成时）
-          // 🔧 修复：使用函数参数 file 而不是状态变量 selectedFile（避免闭包陷阱）
-          if (file && transcriptionText) {
-            // 获取音频时长（优先使用 audio 元素的 duration）
-            const duration = audio.duration || 0;
-            const durationStr =
-              duration > 0
-                ? `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, '0')}`
-                : '00:00';
-
-            const unifiedHistoryItem = {
-              id: historyId, // 使用相同的 ID，不添加前缀，便于同步删除
-              ...createVoiceHistoryItem(
-                file.name,
-                file.size,
-                durationStr,
-                transcriptionText,
-                'SenseVoice'
-              ),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-            addUnifiedHistoryItem(unifiedHistoryItem);
-            console.log('✓ 已保存到统一历史记录:', unifiedHistoryItem.id);
-          } else {
-            console.warn(
-              '⚠ 无法保存到统一历史记录: file=',
-              !!file,
-              ', transcriptionText=',
-              !!transcriptionText
-            );
-          }
+          // 统一历史摘要已由统一写路径（updateProcessingStatus）同步，组件不再手写 history-store
         } catch (error) {
           console.error('[UploadAudio] Failed to update history after transcription:', error);
           // 不影响主要流程

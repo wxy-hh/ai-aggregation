@@ -8,7 +8,6 @@
 
 import type { ProviderName } from '@repo/providers';
 import { createChatHandler } from './_lib/chat-handler';
-import { createBillingManager, type BillingManager } from './_lib/billing-manager';
 import { XunfeiAdapter } from './_lib/adapters/xunfei';
 import { DoubaoAdapter } from './_lib/adapters/doubao';
 import { GenericAdapter } from './_lib/adapters/generic';
@@ -20,18 +19,18 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
-function getAdapter(provider: ProviderName, billing: BillingManager): ChatProviderAdapter {
+function getAdapter(provider: ProviderName): ChatProviderAdapter {
   switch (provider) {
     case 'xunfei':
-      return new XunfeiAdapter(billing);
+      return new XunfeiAdapter();
     case 'doubao': {
       const arkApiKey = process.env.ARK_API_KEY;
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
       if (!arkApiKey) throw new Error('Missing ARK_API_KEY');
-      return new DoubaoAdapter(billing, arkApiKey, arkBaseUrl);
+      return new DoubaoAdapter(arkApiKey, arkBaseUrl);
     }
     default:
-      return new GenericAdapter(billing);
+      return new GenericAdapter();
   }
 }
 

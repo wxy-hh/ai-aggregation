@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
-import { streamChatResponse } from '@/lib/utils/chat-stream';
+import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import type { DerivationMetadata } from '@repo/shared';
 
 // ==================== 类型定义 ====================
@@ -71,12 +71,90 @@ export interface ChatState {
   reset: () => void; // 重置聊天状态
 }
 
+// ==================== 统一会话编排 ====================
+
+/** runChatStreamSession 依赖注入：把消息/错误/会话 id 的读写交给调用方（store），编排本身不含 store 引用，可单点测试 */
+export interface ChatStreamSessionDeps {
+  /** 用 updater 改消息列表，返回新列表（供完成/失败后同步到会话列表） */
+  updateMessages: (updater: (messages: Message[]) => Message[]) => Message[];
+  setError: (error: Error | null) => void;
+  activeConversationId: () => string | null;
+}
+
+export type ChatStreamOutcome = 'sent' | 'aborted' | 'failed';
+
+/**
+ * 单聊会话流统一编排（评审 C6：sendMessage / reload 共用，删除重复模板）。
+ *
+ * 职责：streamChatResponse（fetch → !ok 抛错 → SSE 消费）+ 完成/失败/中止的语义映射：
+ * - chunk/warning → 更新 assistant 消息；
+ * - 完成 → 移除 isStreaming 并同步到会话列表（emit CONVERSATION_UPDATED），回调 onDone；
+ * - AbortError → 返回 aborted，不设错误、不清消息（用户中断语义）；
+ * - 其他失败 → 设错误并移除空的 assistant 消息。
+ * 调用方只负责：deps 注入、请求体构造、前置校验与历史保存钩子。
+ */
+export async function runChatStreamSession(
+  deps: ChatStreamSessionDeps,
+  assistantId: string,
+  request: StreamChatRequest,
+  onDone?: (finalMessages: Message[]) => void
+): Promise<ChatStreamOutcome> {
+  try {
+    await streamChatResponse(request, {
+      onChunk: (text) => {
+        deps.updateMessages((messages) =>
+          messages.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
+        );
+      },
+      onWarning: (warning) => {
+        deps.updateMessages((messages) =>
+          messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
+        );
+      },
+    });
+
+    // 完成：移除 isStreaming 标记，同步到对话列表
+    const finalMessages = deps.updateMessages((messages) =>
+      messages.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+    );
+    const conversationId = deps.activeConversationId();
+    if (conversationId) {
+      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: finalMessages });
+    }
+    onDone?.(finalMessages);
+    return 'sent';
+  } catch (err) {
+    // 用户主动取消不算错误，也不清空已保留的 assistant 消息
+    if (err instanceof Error && err.name === 'AbortError') return 'aborted';
+
+    deps.setError(err instanceof Error ? err : new Error('未知错误'));
+    // 移除失败的 assistant 消息（没有成功生成）
+    const filtered = deps.updateMessages((messages) => messages.filter((m) => m.id !== assistantId));
+    const conversationId = deps.activeConversationId();
+    if (conversationId) {
+      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: filtered });
+    }
+    return 'failed';
+  }
+}
+
 // ==================== Store 实现 ====================
 
 export const useChatStore = create<ChatState>((set, get) => {
   // AbortController 实例：用于取消正在进行的网络请求
   // 不作为响应式状态，避免触发不必要的重新渲染
   let abortController: AbortController | null = null;
+
+  // 统一会话编排的依赖注入（评审 C6）：把消息/错误/当前会话 id 的读写交给 store
+  const sessionDeps = (): ChatStreamSessionDeps => ({
+    updateMessages: (updater) => {
+      const next = updater(get().messages);
+      set({ messages: next });
+      return next;
+    },
+    setError: (error) => set({ error }),
+    activeConversationId: () => get().activeConversationId,
+  });
 
   return {
     // ========== 初始状态 ==========
@@ -224,9 +302,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       try {
-        // ===== 5. 发起并消费流式请求（统一编排见 streamChatResponse，评审 C4） =====
-        // fetch → !ok 抛错 → SSE 消费已抽离，本 store 只保留 UI 更新与错误/中止语义映射
-        await streamChatResponse(
+        // ===== 4-9. 流式消费 + 完成/失败/中止的语义映射（统一编排 runChatStreamSession，评审 C6） =====
+        // 前置校验已在上方完成；历史保存/接力派生经 onDone 钩子
+        return await runChatStreamSession(
+          sessionDeps(),
+          assistantMessage.id,
           {
             body: {
               // 发送历史消息 + 新用户消息
@@ -240,80 +320,26 @@ export const useChatStore = create<ChatState>((set, get) => {
             },
             signal: abortController.signal, // 支持取消请求
           },
-          {
-            // ===== 6/7. 实时更新UI：每次收到新数据就更新消息列表 =====
-            onChunk: (accumulatedText) => {
-              set((state) => {
-                const updatedMessages = state.messages.map((msg) =>
-                  // 找到AI消息并更新其内容
-                  msg.id === assistantMessage.id ? { ...msg, content: accumulatedText } : msg
-                );
-                return { messages: updatedMessages };
-              });
-            },
-            onWarning: (warning) => {
-              set((state) => ({
-                messages: state.messages.map((msg) =>
-                  msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
+          (finalMessages) => {
+            // 保存到历史记录（携带接力派生元数据，REQ-016「由某来源接力生成」）
+            if (finalMessages.length >= 2 && activeConversationId) {
+              // 至少有一轮对话才保存
+              const historyItem = {
+                id: activeConversationId, // 使用对话ID作为历史记录ID
+                ...createChatHistoryItem(
+                  finalMessages.map((m) => ({ role: m.role, content: m.content })),
+                  provider,
+                  model || 'unknown'
                 ),
-              }));
-            },
+                // 接力派生：成功才记录（失败/取消时已由目标侧保留引用，不进此分支）
+                ...(derivation ?? {}),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              emit(StoreEvents.CHAT_HISTORY_SAVED, { item: historyItem });
+            }
           }
         );
-
-        // ===== 8. 流式传输完成 =====
-        set((state) => {
-          // 移除 isStreaming 标记，表示AI回复完成
-          const finalMessages = state.messages.map((msg) =>
-            msg.id === assistantMessage.id ? { ...msg, isStreaming: false } : msg
-          );
-
-          // 同步到对话列表
-          if (activeConversationId) {
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: finalMessages });
-          }
-
-          // 保存到历史记录（携带接力派生元数据，REQ-016「由某来源接力生成」）
-          if (finalMessages.length >= 2 && activeConversationId) {
-            // 至少有一轮对话才保存
-            const historyItem = {
-              id: activeConversationId, // 使用对话ID作为历史记录ID
-              ...createChatHistoryItem(
-                finalMessages.map((m) => ({ role: m.role, content: m.content })),
-                provider,
-                model || 'unknown'
-              ),
-              // 接力派生：成功才记录（失败/取消时已由目标侧保留引用，不进此分支）
-              ...(derivation ?? {}),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            };
-            emit(StoreEvents.CHAT_HISTORY_SAVED, { item: historyItem });
-          }
-
-          return { messages: finalMessages };
-        });
-
-        // 成功完成一轮对话，供目标侧 commit 接力（清引用+草稿）
-        return 'sent';
-      } catch (err) {
-        // ===== 9. 错误处理 =====
-        // 用户主动取消不算错误，但也不算成功发送（保留引用，REQ-016）
-        if (err instanceof Error && err.name === 'AbortError') return 'aborted';
-
-        // 设置错误信息
-        const error = err instanceof Error ? err : new Error('未知错误');
-        set({ error });
-
-        // 移除错误的AI消息（因为没有成功生成）
-        set((state) => {
-          const filteredMessages = state.messages.filter((msg) => msg.id !== assistantMessage.id);
-          if (activeConversationId) {
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: filteredMessages });
-          }
-          return { messages: filteredMessages };
-        });
-        return 'failed';
       } finally {
         // ===== 10. 清理工作 =====
         set({ isLoading: false }); // 重置加载状态
@@ -376,8 +402,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       try {
-        // fetch → !ok 抛错 → SSE 消费已抽离（streamChatResponse，评审 C4）
-        await streamChatResponse(
+        // 会话流统一编排（评审 C6），与 sendMessage 共用三态归一；
+        // reload 不需要历史保存钩子（沿用既有会话记录）
+        await runChatStreamSession(
+          sessionDeps(),
+          assistantMessage.id,
           {
             body: {
               messages: [...history, userMessage].map((m) => ({
@@ -388,46 +417,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               model,
             },
             signal: abortController.signal,
-          },
-          {
-            onChunk: (accumulatedText) => {
-              set((state) => ({
-                messages: state.messages.map((msg) =>
-                  msg.id === assistantMessage.id ? { ...msg, content: accumulatedText } : msg
-                ),
-              }));
-            },
-            onWarning: (warning) => {
-              set((state) => ({
-                messages: state.messages.map((msg) =>
-                  msg.id === assistantMessage.id ? { ...msg, truncationWarning: warning } : msg
-                ),
-              }));
-            },
           }
         );
-
-        // 完成
-        set((state) => {
-          const finalMessages = state.messages.map((msg) =>
-            msg.id === assistantMessage.id ? { ...msg, isStreaming: false } : msg
-          );
-          if (activeConversationId) {
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: finalMessages });
-          }
-          return { messages: finalMessages };
-        });
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-        set({ error: err instanceof Error ? err : new Error('未知错误') });
-        // revert
-        set((state) => {
-          const filtered = state.messages.filter((msg) => msg.id !== assistantMessage.id);
-          if (activeConversationId) {
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: filtered });
-          }
-          return { messages: filtered };
-        });
       } finally {
         set({ isLoading: false });
         abortController = null;

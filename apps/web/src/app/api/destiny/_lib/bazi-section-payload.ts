@@ -27,7 +27,7 @@ import {
   buildDecadeFortuneInsights,
   fillDecadeFortuneInsightFallbacks,
 } from '@/lib/destiny/decade-fortune-insight';
-import { extractJsonBlock } from './ark-response';
+import { extractJsonBlock } from '@repo/shared';
 import { normalizeDestinyReport } from './report-normalizer';
 
 export const BAZI_SECTION_ORDER = [

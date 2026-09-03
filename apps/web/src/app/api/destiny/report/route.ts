@@ -365,7 +365,7 @@ async function streamBaziReport({
       },
     });
   } catch (error) {
-    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 finalizeChatStream 决策表）
+    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 QuotaSession.finalize 决策表）
     await session.finalize(textBuffer ? 'partial' : 'failed', {
       requestId,
       action: 'destiny-report',

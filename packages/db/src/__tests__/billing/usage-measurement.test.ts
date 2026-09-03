@@ -4,7 +4,7 @@ import {
   createTaskMeasurement,
   createTokenMeasurement,
   estimateTextTokens,
-} from './usage-measurement';
+} from '../../billing/usage-measurement';
 
 describe('统一计量适配', () => {
   it('按供应商 token usage 作为文本结算依据', () => {

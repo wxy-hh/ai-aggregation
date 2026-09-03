@@ -80,6 +80,9 @@ importers:
       '@repo/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@repo/redis':
+        specifier: workspace:*
+        version: link:../../packages/redis
       '@repo/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -285,6 +288,9 @@ importers:
       '@repo/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@repo/redis':
+        specifier: workspace:*
+        version: link:../../packages/redis
       '@repo/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -443,11 +449,27 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
-  packages/shared:
+  packages/redis:
     dependencies:
+      '@repo/shared':
+        specifier: workspace:*
+        version: link:../shared
       ioredis:
         specifier: ^5.4.1
         version: 5.9.2
+    devDependencies:
+      '@repo/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@repo/config-typescript':
+        specifier: workspace:*
+        version: link:../config-typescript
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/shared:
+    dependencies:
       lunar-javascript:
         specifier: ^1.7.7
         version: 1.7.7
@@ -467,6 +489,9 @@ importers:
       '@repo/config-typescript':
         specifier: workspace:*
         version: link:../config-typescript
+      ioredis:
+        specifier: ^5.4.1
+        version: 5.9.2
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

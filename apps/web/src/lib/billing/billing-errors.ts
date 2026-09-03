@@ -1,16 +1,8 @@
-import type { BillingErrorCode } from '@repo/shared';
+import { BillingError } from '@repo/db';
 
-export class BillingError extends Error {
-  constructor(
-    public readonly code: BillingErrorCode,
-    message: string,
-    public readonly details?: Record<string, unknown>
-  ) {
-    super(message);
-    this.name = 'BillingError';
-  }
-}
+export { BillingError };
 
+// billingErrorResponse 依赖 web 的 Response，属于路由层，留在 web 侧实现。
 export function billingErrorResponse(error: BillingError, status = 402): Response {
   const responseStatus =
     error.code === 'REQUEST_IN_PROGRESS' || error.code === 'REQUEST_ALREADY_PROCESSED'

@@ -9,6 +9,14 @@ import {
   ProcessingStatus,
 } from '../types/audio-history';
 import { AudioHistoryService } from '../lib/services/audio-history-service';
+import {
+  createVoiceHistoryRecord,
+  updateVoiceHistoryItem,
+  updateVoiceProcessingStatus,
+  deleteVoiceHistoryRecord,
+  deleteVoiceHistoryRecords,
+  clearVoiceHistory,
+} from '../lib/services/voice-history-service';
 import { createIndexedDBStorage } from '../lib/storage';
 
 // ==================== 类型定义 ====================
@@ -40,7 +48,7 @@ export interface AudioHistoryState {
     translationText?: string
   ) => Promise<AudioHistoryItem>;
   updateItem: (id: string, updates: Partial<AudioHistoryItem>) => Promise<void>;
-  deleteItem: (id: string) => Promise<void>;
+  deleteItem: (id: string, _isSyncDelete?: boolean) => Promise<void>;
   deleteSelectedItems: () => Promise<void>;
   updateProcessingStatus: (
     id: string,
@@ -195,7 +203,12 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         set({ isLoading: true, error: null });
 
         try {
-          const item = await service.createFromUpload(file, transcriptionText, translationText);
+          // 统一写路径：同时写 audio 详情与统一历史摘要
+          const item = await createVoiceHistoryRecord(service, {
+            file,
+            transcriptionText,
+            translationText,
+          });
 
           set((state) => ({
             items: [item, ...state.items],
@@ -227,7 +240,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         }
 
         try {
-          const updatedItem = await service.updateItem(id, updates);
+          const updatedItem = await updateVoiceHistoryItem(service, id, updates);
 
           set((state) => ({
             items: state.items.map((item) => (item.id === id ? updatedItem : item)),
@@ -260,7 +273,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         }
 
         try {
-          const updatedItem = await service.updateProcessingStatus(id, status, data);
+          const updatedItem = await updateVoiceProcessingStatus(service, id, status, data);
 
           set((state) => ({
             items: state.items.map((item) => (item.id === id ? updatedItem : item)),
@@ -279,7 +292,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
       },
 
       // 删除历史记录
-      deleteItem: async (id: string) => {
+      deleteItem: async (id: string, _isSyncDelete = false) => {
         const { service, isInitialized } = get();
 
         if (!isInitialized || !service) {
@@ -288,22 +301,19 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         }
 
         try {
-          await service.deleteItem(id);
+          // 统一历史发起删除（isSyncDelete=true）只删本侧 audio，避免循环；
+          // 录音库发起删除走统一写路径：audio 详情与统一历史摘要一起删除
+          if (_isSyncDelete) {
+            await service.deleteItem(id);
+          } else {
+            await deleteVoiceHistoryRecord(service, id);
+          }
 
           set((state) => ({
             items: state.items.filter((item) => item.id !== id),
             currentItem: state.currentItem?.id === id ? null : state.currentItem,
             selectedIds: state.selectedIds.filter((selectedId) => selectedId !== id),
           }));
-
-          // 同步删除 history-store 中的对应记录
-          try {
-            const { useHistoryStore } = require('./history-store');
-            const historyStore = useHistoryStore.getState();
-            historyStore.deleteItem(id, true); // 传入 true 表示是同步删除，避免循环
-          } catch (e) {
-            console.warn('Failed to sync delete with history store:', e);
-          }
 
           // 更新统计信息
           get().loadStats();
@@ -332,7 +342,8 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         const idsToDelete = [...selectedIds];
 
         try {
-          await service.deleteMultiple(idsToDelete);
+          // 统一写路径：批量删除 audio 详情与统一历史摘要
+          await deleteVoiceHistoryRecords(service, idsToDelete);
 
           set((state) => ({
             items: state.items.filter((item) => !idsToDelete.includes(item.id)),
@@ -341,15 +352,6 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
               : state.currentItem,
             selectedIds: [],
           }));
-
-          // 同步删除 history-store 中的对应记录
-          try {
-            const { useHistoryStore } = require('./history-store');
-            const historyStore = useHistoryStore.getState();
-            historyStore.deleteItems(idsToDelete, true); // 传入 true 表示是同步删除，避免循环
-          } catch (e) {
-            console.warn('Failed to sync batch delete with history store:', e);
-          }
 
           // 更新统计信息
           get().loadStats();
@@ -450,7 +452,8 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         try {
           set({ isLoading: true, error: null });
 
-          await service.clearAll();
+          // 统一写路径：清 audio 存储 + 删除统一历史对应记录
+          await clearVoiceHistory(service, allIds);
 
           set({
             items: [],
@@ -464,17 +467,6 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
             },
             isLoading: false,
           });
-
-          // 同步删除 history-store 中的 voice 类型记录
-          if (allIds.length > 0) {
-            try {
-              const { useHistoryStore } = require('./history-store');
-              const historyStore = useHistoryStore.getState();
-              historyStore.deleteItems(allIds, true); // 传入 true 表示是同步删除，避免循环
-            } catch (e) {
-              console.warn('Failed to sync clear all with history store:', e);
-            }
-          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '清除历史记录失败';
           console.error('[AudioHistoryStore] Clear all error:', error);

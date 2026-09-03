@@ -3,19 +3,10 @@ import { BillingError } from '@/lib/billing/billing-errors';
 
 const mocks = vi.hoisted(() => ({
   xunfeiChat: vi.fn(),
-  reserveChatQuota: vi.fn(),
-  settleAiQuota: vi.fn(),
-  releaseAiQuota: vi.fn(),
+  reserve: vi.fn(),
+  settle: vi.fn(),
+  release: vi.fn(),
   safeRecordAiUsage: vi.fn(),
-  normalizeUsage: vi.fn((usage: { promptTokens?: number; completionTokens?: number; totalTokens?: number }) => ({
-    inputTokens: usage.promptTokens ?? null,
-    outputTokens: usage.completionTokens ?? null,
-    totalTokens: usage.totalTokens ?? null,
-    cachedTokens: null,
-    reasoningTokens: null,
-    taskCount: 1,
-    rawUsage: usage,
-  })),
   currentRole: 'user',
 }));
 
@@ -29,29 +20,42 @@ vi.mock('@/lib/api/with-auth', () => ({
     handler({ id: 'user_1', role: mocks.currentRole }, request)
   ),
 }));
-vi.mock('@/lib/billing/quota-service', () => ({
-  reserveChatQuota: mocks.reserveChatQuota,
-  settleAiQuota: mocks.settleAiQuota,
-  releaseAiQuota: mocks.releaseAiQuota,
+// route 统一走 QuotaSession（billing 已下沉 @repo/db），mock 会话本身而非下层计费函数
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: mocks.reserve },
 }));
 vi.mock('@/lib/ai-usage', () => ({
   safeRecordAiUsage: mocks.safeRecordAiUsage,
-  normalizeUsage: mocks.normalizeUsage,
 }));
 
 import { POST } from './route';
+
+function fakeSession(overrides: { outputLimit?: number; hasReservation?: boolean } = {}) {
+  const hasReservation = overrides.hasReservation ?? true;
+  return {
+    outputLimit: overrides.outputLimit ?? 320,
+    hasReservation,
+    inputUnits: 21,
+    // 模拟 QuotaSession.settle 的 hasReservation 守卫：admin 空会话不应触发结算
+    settle: vi.fn((...args: unknown[]) => {
+      if (hasReservation) return mocks.settle(...args);
+      return undefined;
+    }),
+    release: mocks.release,
+  };
+}
 
 describe('POST /api/video/optimize-prompt', () => {
   beforeEach(() => {
     mocks.currentRole = 'user';
     mocks.xunfeiChat.mockReset();
-    mocks.reserveChatQuota.mockReset();
-    mocks.settleAiQuota.mockReset();
-    mocks.releaseAiQuota.mockReset();
+    mocks.reserve.mockReset();
+    mocks.settle.mockReset();
+    mocks.release.mockReset();
     mocks.safeRecordAiUsage.mockReset();
-    mocks.reserveChatQuota.mockResolvedValue({ reservation: { id: 'reservation_1' }, outputLimit: 320 });
-    mocks.settleAiQuota.mockResolvedValue(undefined);
-    mocks.releaseAiQuota.mockResolvedValue(undefined);
+    mocks.reserve.mockResolvedValue(fakeSession());
+    mocks.settle.mockResolvedValue(undefined);
+    mocks.release.mockResolvedValue(undefined);
     mocks.xunfeiChat.mockResolvedValue({
       content: '电影感的城市夜景',
       usage: { promptTokens: 21, completionTokens: 12, totalTokens: 33 },
@@ -68,22 +72,26 @@ describe('POST /api/video/optimize-prompt', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.reserveChatQuota).toHaveBeenCalledWith(
-      expect.objectContaining({ feature: 'video_prompt', requestId: 'video-prompt-1' })
+    expect(mocks.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({ feature: 'video_prompt', requestId: 'video-prompt-1' }),
+      'user'
     );
     expect(mocks.xunfeiChat).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 320 }));
-    expect(mocks.settleAiQuota).toHaveBeenCalledWith(
+    expect(mocks.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'video-prompt-optimize',
+        rawUsage: expect.objectContaining({ totalTokens: 33 }),
+      }),
       expect.objectContaining({
         feature: 'video_prompt',
-        action: 'video-prompt-optimize',
-        reservationId: 'reservation_1',
-        measurement: expect.objectContaining({ meterType: 'tokens', sourceUnits: 33 }),
+        requestId: 'video-prompt-1',
       })
     );
   });
 
   it('管理员免扣额度但仍记录真实 Token 用量', async () => {
     mocks.currentRole = 'admin';
+    mocks.reserve.mockResolvedValue(fakeSession({ hasReservation: false }));
     const response = await POST(
       new Request('http://localhost/api/video/optimize-prompt', {
         method: 'POST',
@@ -92,7 +100,8 @@ describe('POST /api/video/optimize-prompt', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.reserveChatQuota).not.toHaveBeenCalled();
+    // QuotaSession.reserve 对 admin 也调用（返回空会话），只是不进入 settle
+    expect(mocks.settle).not.toHaveBeenCalled();
     expect(mocks.safeRecordAiUsage).toHaveBeenCalledWith(
       expect.objectContaining({
         meterType: 'tokens',
@@ -103,7 +112,7 @@ describe('POST /api/video/optimize-prompt', () => {
   });
 
   it('重复 requestId 已在执行时不调用供应商，并返回冲突状态', async () => {
-    mocks.reserveChatQuota.mockRejectedValue(
+    mocks.reserve.mockRejectedValue(
       new BillingError('REQUEST_IN_PROGRESS', '相同请求正在处理中，请勿重复提交', {
         requestId: 'video-prompt-1',
       })

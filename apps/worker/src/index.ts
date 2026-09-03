@@ -4,7 +4,8 @@ import {
   reconcilePendingQuotas,
   releaseExpiredQuotaReservations,
 } from '@repo/db';
-import { WorkerHeartbeatStore, getRedisConnectionSummary } from '@repo/shared/server';
+import { getRedisConnectionSummary } from '@repo/shared/server';
+import { WorkerHeartbeatStore, getRedisClient, shutdownRedisClient } from '@repo/redis';
 import { sttWorker } from './workers/stt';
 import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';
@@ -58,7 +59,7 @@ async function main() {
     redis: getRedisConnectionSummary(process.env),
   });
   isRunning = true;
-  const heartbeatStore = new WorkerHeartbeatStore();
+  const heartbeatStore = new WorkerHeartbeatStore(getRedisClient());
   const workers = [sttWorker, pptWorker, imageWorker, qimenBaseWorker, qimenSectionWorker];
 
   const shutdown = async (exitCode = 0) => {
@@ -79,7 +80,7 @@ async function main() {
     }
 
     await Promise.allSettled(workers.map((worker) => worker.close()));
-    await heartbeatStore.disconnect();
+    await shutdownRedisClient();
     isRunning = false;
     isShuttingDown = false;
     process.exit(exitCode);
@@ -126,7 +127,7 @@ async function main() {
       clearInterval(billingReconcileTimer);
       billingReconcileTimer = null;
     }
-    await heartbeatStore.disconnect();
+    await shutdownRedisClient();
     logger.error('Worker 启动失败', error instanceof Error ? error : new Error(String(error)));
     throw error;
   }

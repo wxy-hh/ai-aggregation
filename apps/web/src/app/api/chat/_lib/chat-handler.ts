@@ -9,18 +9,18 @@ import type { ProviderName } from '@repo/providers';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
-import { getRateLimiter } from '@repo/shared/server';
+import { getRateLimiter } from '@repo/redis';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
-import { createBillingManager } from './billing-manager';
 import type { ChatProviderAdapter } from './types';
 import { DoubaoFileNotReadyError, DoubaoApiError } from './adapters/doubao';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
-  getAdapter: (provider: ProviderName, billing: Awaited<ReturnType<typeof createBillingManager>>) => ChatProviderAdapter;
+  getAdapter: (provider: ProviderName) => ChatProviderAdapter;
 }
 
 export function createChatHandler(config: ChatHandlerConfig) {
@@ -28,7 +28,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
     const errorId = createErrorId();
     const startTime = Date.now();
     // 提升到 try 外：初始化/适配器启动失败时也需释放预留（评审 C2：release 闭环）
-    let billing: Awaited<ReturnType<typeof createBillingManager>> | null = null;
+    let session: QuotaSession | null = null;
 
     try {
       // 1. 鉴权
@@ -53,31 +53,50 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
       const modelName = model || getDefaultModel(provider);
+      const messagesCount = messages.length;
+      const attachmentCount = messages.reduce(
+        (count, m) => count + (m.attachments?.length ?? 0),
+        0
+      );
 
-      console.log('[chat] 请求参数:', { provider, model: modelName, messagesCount: messages.length });
+      console.log('[chat] 请求参数:', { provider, model: modelName, messagesCount });
 
-      // 4. 配额管理
-      billing = await createBillingManager({
+      // 4. 配额管理：QuotaSession 统一 reserve → finalize（评审 C1 唯一决策表）
+      const reservedSession = await QuotaSession.reserve({
         userId: user.id,
-        errorId,
-        provider,
-        model: modelName,
-        messages,
         requestId,
-        userRole: user.role,
+        feature: 'chat',
+        provider,
+        model: modelName,
+        messages,
+        metadata: { messagesCount, attachmentCount },
         reservationId,
-      });
+      }, user.role);
+      session = reservedSession;
 
-      // 5. 委派给适配器
-      const adapter = config.getAdapter(provider, billing);
-      const result = await adapter.stream({
+      // 5. 委派给适配器：adapter 只产流，结算物料经 onFinish 回传给 handler
+      const adapter = config.getAdapter(provider);
+      const stream = await adapter.stream({
         userId: user.id,
         provider,
         model: modelName,
         messages,
-        outputLimit: billing.outputLimit,
+        outputLimit: reservedSession.outputLimit,
         signal: req.signal,
         errorId,
+        onFinish: (finish) => reservedSession.finalize(finish.outcome, {
+          requestId,
+          action: 'chat-stream',
+          endpoint: '/api/chat',
+          usage: finish.usage,
+          outputText: finish.outputText,
+          reason: finish.reason,
+          provider,
+          model: modelName,
+          userId: user.id,
+          feature: 'chat',
+          metadata: { errorId, messagesCount, attachmentCount },
+        }),
       });
 
       console.log('[chat] 流开始', {
@@ -85,14 +104,17 @@ export function createChatHandler(config: ChatHandlerConfig) {
         duration: `${Date.now() - startTime}ms`,
       });
 
-      return createSseResponse(result.stream);
+      return createSseResponse(stream);
 
     } catch (error) {
       // 流尚未开始（豆包文件未就绪、上游 401/429、适配器初始化失败等）：
       // 释放预留额度，避免 reservation 永久泄漏。
-      // 响应已发出后的错误由 finalizeChatStream 在流内结算/释放，不会走到这里。
-      if (billing) {
-        await billing.release(error instanceof Error ? error.message : '聊天请求失败');
+      // 响应已发出后的错误由 onFinish → QuotaSession.finalize 在流内结算/释放，不会走到这里。
+      if (session) {
+        await session.release({
+          reason: error instanceof Error ? error.message : '聊天请求失败',
+          meterType: 'tokens',
+        });
       }
       return handleError(error, errorId, startTime);
     }

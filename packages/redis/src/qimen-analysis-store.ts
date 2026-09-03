@@ -1,14 +1,11 @@
 import type Redis from 'ioredis';
-import { createRedisClient } from './rate-limit';
 import type {
   QimenAnalysisBaseResult,
-  QimenAnalyzeRequest,
   QimenQuerySectionKey,
   QimenSectionKey,
   QimenSectionResponseMap,
   QimenSectionTaskStatus,
-} from './qimen-analysis';
-import type { DestinyProvider } from './destiny-model-client';
+} from '@repo/shared';
 
 const ANALYSIS_TTL_SECONDS = 24 * 60 * 60;
 
@@ -19,8 +16,12 @@ type QimenStatusSnapshot = {
   chartSummary: QimenSectionTaskStatus;
 };
 
+/**
+ * 奇门分析运行态存储。连接通过构造显式注入（共享进程内单例连接），
+ * 本模块不创建、不关闭连接。
+ */
 export class QimenAnalysisStore {
-  constructor(private readonly redis: Redis = createRedisClient()) {}
+  constructor(private readonly redis: Redis) {}
 
   async initializeAnalysis(analysisId: string) {
     const multi = this.redis.multi();
@@ -180,10 +181,6 @@ export class QimenAnalysisStore {
     };
   }
 
-  async disconnect() {
-    await this.redis.quit();
-  }
-
   private baseKey(analysisId: string) {
     return `qimen:analysis:${analysisId}:base`;
   }
@@ -204,10 +201,3 @@ export class QimenAnalysisStore {
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-export type QimenSectionJobPayload = {
-  analysisId: string;
-  sectionKey: QimenSectionKey;
-  input: QimenAnalyzeRequest;
-  provider?: DestinyProvider;
-};

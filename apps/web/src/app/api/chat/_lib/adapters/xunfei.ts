@@ -11,14 +11,11 @@ import {
   type XunfeiMessage,
 } from '@repo/providers';
 import { normalizeUsage } from '@/lib/ai-usage';
-import type { ChatContext, ChatProviderAdapter, StreamResult } from '../types';
-import { textStreamToSse, createSseResponse } from '../sse';
-import { finalizeChatStream, type BillingManager } from '../billing-manager';
+import type { ChatContext, ChatProviderAdapter } from '../types';
+import { textStreamToSse } from '../sse';
 
 export class XunfeiAdapter implements ChatProviderAdapter {
-  constructor(private billing: BillingManager) {}
-
-  async stream(ctx: ChatContext): Promise<StreamResult> {
+  async stream(ctx: ChatContext): Promise<ReadableStream<Uint8Array>> {
     let usage: ReturnType<typeof normalizeUsage> | null = null;
     let text = '';
 
@@ -26,7 +23,7 @@ export class XunfeiAdapter implements ChatProviderAdapter {
       model: ctx.model,
       messages: ctx.messages as XunfeiMessage[],
       stream: true,
-      maxTokens: this.billing.outputLimit,
+      maxTokens: ctx.outputLimit,
       signal: ctx.signal,
       onUsage: (u) => { usage = normalizeUsage(u); },
     });
@@ -34,20 +31,16 @@ export class XunfeiAdapter implements ChatProviderAdapter {
     const sseStream = textStreamToSse(rawStream, {
       onText: (chunk) => { text += chunk; },
       onDone: async () => {
-        // 流正常结束：统一结算（success）
-        await finalizeChatStream(this.billing, {
-          outcome: 'success',
-          usage,
-          outputText: text,
-        });
+        // 流正常结束：报告 success，结算交由 handler 侧 QuotaSession 处理
+        await ctx.onFinish({ outcome: 'success', usage, outputText: text });
       },
       onError: async (err) => {
         console.error('[chat] 讯飞流式错误:', {
           errorId: ctx.errorId,
           error: err instanceof Error ? err.message : String(err),
         });
-        // 有输出文本 → partial 结算；完全无输出 → 释放预留（取消应退款）
-        await finalizeChatStream(this.billing, {
+        // 有输出文本 → partial；完全无输出 → failed（取消应退款）
+        await ctx.onFinish({
           outcome: text ? 'partial' : 'failed',
           usage,
           outputText: text,
@@ -56,16 +49,6 @@ export class XunfeiAdapter implements ChatProviderAdapter {
       },
     });
 
-    return {
-      stream: sseStream,
-      getUsage: () => usage ? {
-        meterType: 'tokens' as const,
-        sourceUnits: usage.totalTokens ?? 0,
-        quotaUnits: usage.totalTokens ?? 0,
-        inputUnits: usage.inputTokens,
-        outputUnits: usage.outputTokens,
-        source: usage.totalTokens === null ? 'local_estimate' as const : 'provider' as const,
-      } : null,
-    };
+    return sseStream;
   }
 }

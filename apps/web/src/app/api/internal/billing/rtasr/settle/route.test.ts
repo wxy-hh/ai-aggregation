@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
   recordAiUsage: vi.fn(),
   settleAiQuota: vi.fn(),
   releaseAiQuota: vi.fn(),
+  createAudioMeasurement: vi.fn((seconds: number) => ({
+    meterType: 'audio_seconds' as const,
+    source: 'local_measurement' as const,
+    sourceUnits: seconds,
+    quotaUnits: seconds,
+  })),
 }));
 
 vi.mock('@repo/db', () => ({
@@ -14,6 +20,10 @@ vi.mock('@repo/db', () => ({
 vi.mock('@/lib/billing/quota-service', () => ({
   settleAiQuota: mocks.settleAiQuota,
   releaseAiQuota: mocks.releaseAiQuota,
+}));
+// usage-measurement 已下沉 @repo/db 并 re-export，此处补 mock 避免吃到 @repo/db 的整体 mock
+vi.mock('@/lib/billing/usage-measurement', () => ({
+  createAudioMeasurement: mocks.createAudioMeasurement,
 }));
 
 import { POST } from './route';

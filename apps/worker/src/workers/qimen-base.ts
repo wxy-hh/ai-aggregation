@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
-import { QimenAnalysisStore } from '@repo/shared';
+import { QimenAnalysisStore, getRedisClient } from '@repo/redis';
 import { resolveBullMQConnectionOptions } from '@repo/shared/server';
 import type { QimenBaseJobData } from '@repo/queue';
 
@@ -8,7 +8,7 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
   'qimen-base',
   async (job) => {
     const { analysisId, precomputedChart } = job.data;
-    const store = new QimenAnalysisStore();
+    const store = new QimenAnalysisStore(getRedisClient());
     const startedAt = Date.now();
 
     try {
@@ -34,8 +34,6 @@ export const qimenBaseWorker = new Worker<QimenBaseJobData>(
         durationMs: Date.now() - startedAt,
       });
       throw error;
-    } finally {
-      await store.disconnect();
     }
   },
   {

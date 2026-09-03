@@ -141,7 +141,7 @@ async function probeFetch(input: {
 async function probeRedis() {
   const t0 = Date.now();
   try {
-    const { createRedisClient } = await import('@repo/shared/server');
+    const { createRedisClient } = await import('@repo/redis');
     const redis = createRedisClient();
     try {
       // lazyConnect 默认开启时需显式 connect

@@ -16,17 +16,16 @@ const mocks = vi.hoisted(() => ({
   safeRecordAiUsage: vi.fn(),
 }));
 
-vi.mock('./quota-service', () => mocks);
-// 部分 mock：safeRecordAiUsage 换 spy（避免真连 DB），normalizeUsage 保留真实实现（兜底口径依赖它识别 total_tokens）
-vi.mock('@/lib/ai-usage', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai-usage')>();
-  return {
-    ...actual,
-    safeRecordAiUsage: mocks.safeRecordAiUsage,
-  };
-});
+vi.mock('../../billing/quota-service', () => ({
+  reserveChatQuota: mocks.reserveChatQuota,
+  releaseAiQuota: mocks.releaseAiQuota,
+  settleAiQuota: mocks.settleAiQuota,
+  useExistingAiQuota: mocks.useExistingAiQuota,
+}));
+// safeRecordAiUsage 换 spy（避免真连 DB）；normalizeUsage 保留真实实现（兜底口径依赖它识别 total_tokens）
+vi.mock('../../billing/ai-usage', () => ({ safeRecordAiUsage: mocks.safeRecordAiUsage }));
 
-import { QuotaSession } from './quota-session';
+import { QuotaSession } from '../../billing/quota-session';
 
 function makeReservedSession(inputUnits = 100, outputLimit = 2048): Promise<QuotaSession> {
   mocks.reserveChatQuota.mockResolvedValue({
@@ -112,7 +111,7 @@ describe('QuotaSession.finalize 三态决策矩阵', () => {
       expect(mocks.releaseAiQuota).not.toHaveBeenCalled();
     });
 
-    it('usage 为 null 时按 输入估算+输出文本估算 兜底结算（对齐 finalizeChatStream 口径）', async () => {
+    it('usage 为 null 时按 输入估算+输出文本估算 兜底结算（统一兜底口径）', async () => {
       const session = await makeReservedSession(100, 2048);
       await session.finalize('success', {
         requestId: 'req_1',

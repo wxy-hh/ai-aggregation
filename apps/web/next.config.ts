@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
   },
   // Docker 部署时使用 standalone 输出，大幅减小产物体积
   output: 'standalone',
-  transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger'],
+  transpilePackages: ['@repo/shared', '@repo/providers', '@repo/storage', '@repo/logger', '@repo/redis'],
   // 避免 Next 打包 Prisma，确保 Query Engine 原生二进制在 Vercel 运行时可用
   serverExternalPackages: ['@prisma/client', 'prisma'],
   // monorepo + pnpm 下把 Prisma 引擎二进制纳入 Vercel 文件追踪

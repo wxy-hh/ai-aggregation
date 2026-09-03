@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { QimenAnalysisStore, type QimenQuerySectionKey, type QimenSectionKey } from '@repo/shared';
+import type { QimenQuerySectionKey, QimenSectionKey } from '@repo/shared';
+import { QimenAnalysisStore, getRedisClient } from '@repo/redis';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
@@ -17,10 +18,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ sectionKey: string }> }
 ) {
-  const store = new QimenAnalysisStore();
+  const store = new QimenAnalysisStore(getRedisClient());
 
-  try {
-    const { searchParams } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
     const analysisId = searchParams.get('analysisId')?.trim();
     const { sectionKey: rawSectionKey } = await context.params;
     const sectionKey = rawSectionKey as QimenQuerySectionKey;
@@ -117,7 +117,4 @@ export async function GET(
       },
       { status: 202 }
     );
-  } finally {
-    await store.disconnect();
-  }
 }

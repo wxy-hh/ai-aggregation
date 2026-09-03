@@ -1,5 +1,4 @@
-import { Redis } from 'ioredis';
-import { resolveRedisConnectionOptions } from './redis-config';
+import type { Redis } from 'ioredis';
 
 /**
  * 限流配置
@@ -28,7 +27,10 @@ export interface RateLimitResult {
 }
 
 /**
- * Redis 限流器
+ * Redis 限流器。
+ *
+ * 纯契约：连接由构造显式注入，运行时不依赖具体连接生命周期。
+ * 带连接状态的单例工厂在 @repo/redis，这里只保留算法与类型。
  */
 export class RateLimiter {
   private redis: Redis;
@@ -166,7 +168,9 @@ export class RateLimiter {
 }
 
 /**
- * 用户配额管理器
+ * 用户配额管理器。
+ *
+ * 纯契约：连接由构造显式注入，不涉及连接生命周期。
  */
 export class QuotaManager {
   private redis: Redis;
@@ -282,84 +286,4 @@ export class QuotaManager {
       console.error('重置配额失败:', error);
     }
   }
-}
-
-/**
- * 创建 Redis 客户端（Serverless 安全默认：短超时、无 offline queue）。
- * 连接/命令失败时由 RateLimiter.check 捕获并放行请求。
- *
- * 长驻进程（Next.js dev/standalone server）自愈：
- * 默认 retryStrategy 放弃后 status='end'，配合 offline queue 会让后续命令
- * 无限排队（每个请求都撞超时放行、限流静默失效）。
- * 这里覆盖为持续重试（指数退避封顶 5s），保证单例客户端永远可恢复。
- */
-export function createRedisClient(): Redis {
-  const options = {
-    ...resolveRedisConnectionOptions(process.env),
-    // 覆盖短重试策略：长驻进程的单例客户端需要断线自愈能力
-    retryStrategy: (times: number) => Math.min(times * 200, 5000),
-  };
-  const redis = new Redis(options);
-
-  // 避免未处理 error 事件导致进程噪音；限流侧已失败放行
-  redis.on('error', (error) => {
-    console.error('[redis] 连接错误:', error instanceof Error ? error.message : error);
-  });
-
-  return redis;
-}
-
-/**
- * 默认限流器实例
- */
-let defaultRateLimiter: RateLimiter | null = null;
-let defaultQuotaManager: QuotaManager | null = null;
-
-/** Redis 完全不可用时的放行限流器，避免 Serverless 冷启动因建连崩溃 */
-class AllowAllRateLimiter extends RateLimiter {
-  constructor() {
-    // 传入空壳 redis 不会被调用；check 直接重写
-    super({} as Redis, { window: 60, limit: 10, prefix: 'api:ratelimit:noop' });
-  }
-
-  async check(_key: string): Promise<RateLimitResult> {
-    const now = Math.floor(Date.now() / 1000);
-    return {
-      allowed: true,
-      remaining: this['config'].limit,
-      reset: now + this['config'].window,
-      limit: this['config'].limit,
-    };
-  }
-}
-
-/**
- * 获取默认限流器
- */
-export function getRateLimiter(): RateLimiter {
-  if (!defaultRateLimiter) {
-    try {
-      const redis = createRedisClient();
-      defaultRateLimiter = new RateLimiter(redis, {
-        window: 60,
-        limit: 10,
-        prefix: 'api:ratelimit',
-      });
-    } catch (error) {
-      console.error('[redis] 创建限流器失败，使用放行模式:', error);
-      defaultRateLimiter = new AllowAllRateLimiter();
-    }
-  }
-  return defaultRateLimiter;
-}
-
-/**
- * 获取默认配额管理器
- */
-export function getQuotaManager(): QuotaManager {
-  if (!defaultQuotaManager) {
-    const redis = createRedisClient();
-    defaultQuotaManager = new QuotaManager(redis, 'user:quota');
-  }
-  return defaultQuotaManager;
 }

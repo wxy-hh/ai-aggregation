@@ -1,31 +1,24 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
+import { QuotaSession } from '@repo/db';
 import {
-  claimQuotaReservation,
-  getAvailableQuota,
-  markQuotaBillingPending,
-  normalizeUsage,
-  recordAiUsage,
-  releaseQuota,
-  reserveQuota,
-  settleQuota,
-} from '@repo/db';
-import {
-  QimenAnalysisStore,
-  estimateTextTokens,
   generateQimenSectionResult,
   resolveModelConfig,
 } from '@repo/shared';
 import { resolveBullMQConnectionOptions } from '@repo/shared/server';
+import { QimenAnalysisStore, getRedisClient } from '@repo/redis';
 import type { QimenSectionJobData } from '@repo/queue';
 
 export const qimenSectionWorker = new Worker<QimenSectionJobData>(
   'qimen-section',
   async (job) => {
     const { analysisId, sectionKey, input, userId } = job.data;
-    const store = new QimenAnalysisStore();
+    const store = new QimenAnalysisStore(getRedisClient());
     const startedAt = Date.now();
-    const billingState: { reservation: { id: string } | null } = { reservation: null };
+    // 结算会话：由 onRequestStart 创建，onRequestSuccess finalize / catch release。
+    // 评审 C3：与 web 端共用 QuotaSession，消除奇门 worker 手写 reserve/claim/settle 序列。
+    // 用对象 holder 承载会话：闭包内赋值不干扰顶层 catch 的属性类型窄化（TS 不会把属性判为 never）。
+    const billing = { session: null as QuotaSession | null };
 
     try {
       logger.info('处理奇门分块任务', { analysisId, sectionKey });
@@ -62,106 +55,54 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
           hooks: {
             onRequestStart: async (meta) => {
               logger.info('奇门模型请求开始', meta);
-              if (!userId || !job.data.billingRequestId) return;
+              if (!userId) return;
 
               const messages = Array.isArray(meta.messages)
                 ? (meta.messages as Array<{ content?: string }>)
                 : [];
-              const inputUnits = estimateTextTokens(messages);
               const maxOutputTokens = Number(meta.maxOutputTokens);
-              const availableUnits = await getAvailableQuota(userId);
               if (!Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0) {
                 throw new Error('奇门模型输出上限无效');
               }
-              if (availableUnits < inputUnits + 1) {
-                throw new Error('当前额度不足以处理奇门分析');
-              }
-              const outputLimit = Math.min(maxOutputTokens, availableUnits - inputUnits);
-              const quota = await reserveQuota({
+
+              // 有计费幂等键 = 普通用户预留扣费；无 = admin 免扣（空会话仅归档用量）。
+              // 与 web 路由同构：reserve → finalize/release 由 QuotaSession 统一决策（评审 C3）。
+              const isAdmin = !job.data.billingRequestId;
+              const requestId = job.data.billingRequestId ?? `qimen-${analysisId}-${sectionKey}`;
+              billing.session = await QuotaSession.reserve({
                 userId,
-                requestId: job.data.billingRequestId,
+                requestId,
                 feature: 'destiny',
                 provider: config.provider,
                 model: config.model,
-                estimatedUnits: inputUnits + outputLimit,
-                meterType: 'tokens',
-                metadata: { analysisId, sectionKey, inputEstimate: inputUnits, outputLimit },
-              });
-              if (!quota.success) {
-                throw new Error('当前额度不足以处理奇门分析');
-              }
-              if (quota.reservation.status !== 'reserved') {
-                throw new Error('奇门分析的额度预留已被处理，请重新发起任务');
-              }
-              const claim = await claimQuotaReservation({
-                userId,
-                reservationId: quota.reservation.id,
-              });
-              if (!claim.claimed || !claim.reservation) {
-                throw new Error('奇门分析请求正在处理或已完成，请勿重复执行');
-              }
-              billingState.reservation = claim.reservation;
-              return { maxOutputTokens: outputLimit };
+                messages,
+                maxOutputTokens,
+                metadata: { analysisId, sectionKey },
+              }, isAdmin ? 'admin' : undefined);
+
+              return billing.session.hasReservation
+                ? { maxOutputTokens: billing.session.outputLimit }
+                : undefined;
             },
             onRequestSuccess: async (meta) => {
               logger.info('奇门模型请求完成', meta);
-              if (!userId) return;
+              if (!billing.session) return;
               try {
                 const rawUsage = (
                   (meta as { payload?: unknown }).payload as Record<string, unknown>
                 )?.usage;
-                const usage = normalizeUsage(rawUsage);
-                if (billingState.reservation && job.data.billingRequestId) {
-                  const billing =
-                    usage.totalTokens === null
-                      ? await markQuotaBillingPending({
-                          reservationId: billingState.reservation.id,
-                          meterType: 'tokens',
-                          reason: '奇门供应商未返回可审计 Token 用量，等待后续对账',
-                        })
-                      : await settleQuota({
-                          reservationId: billingState.reservation.id,
-                          measurement: {
-                            meterType: 'tokens',
-                            sourceUnits: usage.totalTokens,
-                            quotaUnits: usage.totalTokens,
-                            inputUnits: usage.inputTokens,
-                            outputUnits: usage.outputTokens,
-                            source: 'provider',
-                            rawUsage,
-                          },
-                        });
-                  await recordAiUsage({
-                    userId,
-                    feature: 'destiny',
-                    action,
-                    provider: config.provider,
-                    model: config.model,
-                    endpoint: 'worker:qimen-section',
-                    requestId: job.data.billingRequestId,
-                    usage,
-                    status: billing.status === 'billing_pending' ? 'billing_pending' : 'success',
-                    meterType: 'tokens',
-                    billableUnits: billing.status === 'billing_pending' ? null : usage.totalTokens,
-                    billingStatus: billing.status,
-                    reservationId: billingState.reservation.id,
-                    metadata: {
-                      analysisId,
-                      sectionKey,
-                    },
-                  });
-                } else {
-                  await recordAiUsage({
-                    userId,
-                    feature: 'destiny',
-                    action,
-                    provider: config.provider,
-                    model: config.model,
-                    endpoint: 'worker:qimen-section',
-                    usage,
-                    metadata: { analysisId, sectionKey },
-                  });
-                }
+                await billing.session.finalize('success', {
+                  requestId: job.data.billingRequestId ?? `qimen-${analysisId}-${sectionKey}`,
+                  action,
+                  endpoint: 'worker:qimen-section',
+                  usage: rawUsage,
+                  outputText: '',
+                  provider: config.provider,
+                  model: config.model,
+                  userId,
+                  feature: 'destiny',
+                  metadata: { analysisId, sectionKey },
+                });
               } catch (usageError) {
                 logger.warn('奇门分块资源记录失败', {
                   analysisId,
@@ -193,14 +134,8 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
       });
       return result;
     } catch (error) {
-      if (billingState.reservation) {
-        await releaseQuota({
-          reservationId: billingState.reservation.id,
-          meterType: 'tokens',
-          reason: '奇门分块任务失败',
-        }).catch((releaseError) =>
-          logger.error('奇门分块额度释放失败', releaseError as Error, { analysisId, sectionKey })
-        );
+      if (billing.session) {
+        await billing.session.release({ reason: '奇门分块任务失败', meterType: 'tokens' });
       }
       const message = error instanceof Error ? error.message : '奇门分块生成失败';
       await store.markSectionFailed(analysisId, sectionKey, message);
@@ -210,8 +145,6 @@ export const qimenSectionWorker = new Worker<QimenSectionJobData>(
         durationMs: Date.now() - startedAt,
       });
       throw error;
-    } finally {
-      await store.disconnect();
     }
   },
   {

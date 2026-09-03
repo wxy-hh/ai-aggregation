@@ -9,12 +9,14 @@ import {
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
-import { getRateLimiter, RateLimiter, createRedisClient } from '@repo/shared/server';
+import { RateLimiter } from '@repo/shared/server';
+import { getRedisClient } from '@repo/redis';
 import { ANONYMOUS_FREE_TOKENS } from '@/lib/constants/quota';
 import { DEVICE_ID_REGEX } from '@/lib/constants/device';
 
-// 匿名用户创建速率限制：每 IP 每小时最多 30 次
-const anonymousCreationLimiter = new RateLimiter(createRedisClient(), {
+// 匿名用户创建速率限制：每 IP 每小时最多 30 次。
+// 注入进程级共享连接（@repo/redis 单例），避免每次模块加载新建连接泄漏。
+const anonymousCreationLimiter = new RateLimiter(getRedisClient(), {
   window: 3600,
   limit: 30,
   prefix: 'anonymous:create',

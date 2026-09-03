@@ -2,12 +2,11 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { logger } from '@repo/logger';
 import {
-  QimenAnalysisStore,
   qimenAnalyzeRequestSchema,
   computeQimenChart,
   type QimenSectionKey,
 } from '@repo/shared';
-import { WorkerHeartbeatStore } from '@repo/shared/server';
+import { QimenAnalysisStore, WorkerHeartbeatStore, getRedisClient } from '@repo/redis';
 import { qimenBaseQueue, qimenSectionQueue } from '@repo/queue';
 import { withAuth } from '@/lib/api/with-auth';
 import { getBillingRequestId } from '@/lib/billing/request-id';
@@ -19,8 +18,8 @@ const SECTION_KEYS: QimenSectionKey[] = ['strategyOverview', 'timingWindows', 'c
 
 export async function POST(request: Request) {
   return withAuth(request, async (user) => {
-    const store = new QimenAnalysisStore();
-    const heartbeatStore = new WorkerHeartbeatStore();
+    const store = new QimenAnalysisStore(getRedisClient());
+    const heartbeatStore = new WorkerHeartbeatStore(getRedisClient());
 
     try {
       const userId = user.id;
@@ -136,9 +135,6 @@ export async function POST(request: Request) {
         },
         { status: 500 }
       );
-    } finally {
-      await heartbeatStore.disconnect();
-      await store.disconnect();
     }
   });
 }

@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallModelOptions, CallModelResult } from '@repo/shared';
 
 // 通过 hoisted 引用控制每次测试的登录用户（admin 走 safeRecordAiUsage，非 admin 走预留/结算）
-const { mockUserRef } = vi.hoisted(() => ({
+const { mockUserRef, reserveMock } = vi.hoisted(() => ({
   mockUserRef: { current: { id: 'test-admin', role: 'admin' } as { id: string; role: string } },
+  reserveMock: vi.fn(),
 }));
 
 vi.mock('@/lib/api/with-auth', () => ({
@@ -18,10 +19,9 @@ vi.mock('@/lib/ai-usage', () => ({
   safeRecordAiUsage: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('@/lib/billing/quota-service', () => ({
-  reserveChatQuota: vi.fn(),
-  settleAiQuota: vi.fn(async () => undefined),
-  releaseAiQuota: vi.fn(async () => undefined),
+// route 统一走 QuotaSession（billing 已下沉 @repo/db），mock 会话本身而非下层计费函数
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: reserveMock },
 }));
 
 vi.mock('@/lib/billing/usage-measurement', () => ({
@@ -40,17 +40,9 @@ vi.mock('@repo/shared', async (importOriginal) => {
 
 import { POST } from './route';
 import { callModel } from '@repo/shared';
-import {
-  releaseAiQuota,
-  reserveChatQuota,
-  settleAiQuota,
-} from '@/lib/billing/quota-service';
 import { BillingError } from '@/lib/billing/billing-errors';
 
 const callModelMock = vi.mocked(callModel);
-const reserveChatQuotaMock = vi.mocked(reserveChatQuota);
-const settleAiQuotaMock = vi.mocked(settleAiQuota);
-const releaseAiQuotaMock = vi.mocked(releaseAiQuota);
 
 // ─── 测试数据 ───
 
@@ -182,17 +174,15 @@ describe('POST /api/destiny/ziwei-report（并行化）', () => {
     process.env.ARK_BASE_URL = 'https://ark.example.com/api/v3';
     mockUserRef.current = { id: 'test-admin', role: 'admin' };
     callModelMock.mockReset();
-    reserveChatQuotaMock.mockReset();
-    reserveChatQuotaMock.mockImplementation(
-      async ({ requestId }: { requestId: string }) =>
-        ({
-          reservation: { id: `res-${requestId}` },
-          inputUnits: 10,
-          outputLimit: 3500,
-        }) as never
-    );
-    settleAiQuotaMock.mockClear();
-    releaseAiQuotaMock.mockClear();
+    reserveMock.mockReset();
+    reserveMock.mockImplementation((input: { requestId?: string } = {}) => ({
+      outputLimit: 3500,
+      hasReservation: true,
+      inputUnits: 10,
+      requestId: input.requestId,
+      finalize: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   afterEach(() => {
@@ -322,27 +312,40 @@ describe('POST /api/destiny/ziwei-report（并行化）', () => {
 
     const events = await readSseEvents(await POST(createRequest()));
 
-    expect(reserveChatQuotaMock).toHaveBeenCalledTimes(3);
-    // 失败组（full:a）的预留必须释放，不能悬挂
-    expect(releaseAiQuotaMock).toHaveBeenCalledWith(
-      expect.objectContaining({ reservationId: 'res-req-test:full:a' })
+    expect(reserveMock).toHaveBeenCalledTimes(3);
+    const sessions = reserveMock.mock.results.map(
+      (r) => r.value as {
+        requestId?: string;
+        finalize: ReturnType<typeof vi.fn>;
+        release: ReturnType<typeof vi.fn>;
+      }
     );
+    // 失败组（full:a）的预留必须释放，不能悬挂
+    const failedGroup = sessions.find((s) => s.requestId?.endsWith('full:a'));
+    expect(failedGroup?.release).toHaveBeenCalled();
     // quick 与 full:b 成功结算
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(2);
+    const settledGroups = sessions.filter((s) => !s.requestId?.endsWith('full:a'));
+    expect(settledGroups.length).toBe(2);
+    for (const group of settledGroups) {
+      expect(group.finalize).toHaveBeenCalledTimes(1);
+    }
     expect(events.some((e) => e.type === 'complete')).toBe(true);
   });
 
   it('计费错误不降级：BillingError 上抛为 error 事件且不发送 complete', async () => {
     mockUserRef.current = { id: 'user-1', role: 'user' };
-    reserveChatQuotaMock.mockImplementation(async ({ requestId }: { requestId: string }) => {
-      if (requestId === 'req-test:quick') {
+    reserveMock.mockImplementation((input: { requestId?: string } = {}) => {
+      if (input.requestId === 'req-test:quick') {
         throw new BillingError('QUOTA_INSUFFICIENT', '当前额度不足，无法开始本次请求');
       }
       return {
-        reservation: { id: `res-${requestId}` },
-        inputUnits: 10,
         outputLimit: 3500,
-      } as never;
+        hasReservation: true,
+        inputUnits: 10,
+        requestId: input.requestId,
+        finalize: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      };
     });
     callModelMock.mockImplementation((opts: CallModelOptions) => {
       const name = opts.json?.schema?.name ?? '';

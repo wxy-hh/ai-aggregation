@@ -13,14 +13,25 @@ const mocks = vi.hoisted(() => ({
   settleQuota: vi.fn(),
 }));
 
-vi.mock('@repo/db', () => mocks);
+vi.mock('../../ai-usage', () => ({ recordAiUsage: mocks.recordAiUsage }));
+vi.mock('../../quota-ledger', () => ({
+  claimQuotaReservation: mocks.claimQuotaReservation,
+  getAvailableQuota: mocks.getAvailableQuota,
+  getQuotaReservation: mocks.getQuotaReservation,
+  markQuotaBillingPending: mocks.markQuotaBillingPending,
+  reconcilePendingQuota: mocks.reconcilePendingQuota,
+  reserveQuotaBatch: mocks.reserveQuotaBatch,
+  releaseQuota: mocks.releaseQuota,
+  reserveQuota: mocks.reserveQuota,
+  settleQuota: mocks.settleQuota,
+}));
 
 import {
   reserveAiQuota,
   reserveChatQuotaBatch,
   settleAiQuota,
   useExistingAiQuota,
-} from './quota-service';
+} from '../../billing/quota-service';
 
 describe('统一额度结算', () => {
   beforeEach(() => {

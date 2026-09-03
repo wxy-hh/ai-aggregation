@@ -7,9 +7,8 @@
 
 import { normalizeUsage } from '@/lib/ai-usage';
 import { getDoubaoIncompleteWarning } from '../../doubao-warning';
-import type { ChatContext, ChatProviderAdapter, StreamResult } from '../types';
-import { encodeSseEvent, createSseResponse } from '../sse';
-import { finalizeChatStream, type BillingManager } from '../billing-manager';
+import type { ChatContext, ChatProviderAdapter } from '../types';
+import { encodeSseEvent } from '../sse';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 
 // 豆包多模态内容类型
@@ -100,12 +99,11 @@ function parseDoubaoError(errorText: string): string {
 
 export class DoubaoAdapter implements ChatProviderAdapter {
   constructor(
-    private billing: BillingManager,
     private arkApiKey: string,
     private arkBaseUrl: string
   ) {}
 
-  async stream(ctx: ChatContext): Promise<StreamResult> {
+  async stream(ctx: ChatContext): Promise<ReadableStream<Uint8Array>> {
     // 等待文件附件就绪
     const fileAttachments = ctx.messages
       .flatMap((m) => m.attachments || [])
@@ -163,11 +161,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     }
 
     // 解析豆包 Responses API 的 SSE 流
-    const stream = this.parseDoubaoSseStream(response.body, ctx);
-    return {
-      stream,
-      getUsage: () => null, // usage 在流内部结算
-    };
+    return this.parseDoubaoSseStream(response.body, ctx);
   }
 
   private parseDoubaoSseStream(
@@ -178,7 +172,6 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     const decoder = new TextDecoder();
     let usage: ReturnType<typeof normalizeUsage> | null = null;
     let text = '';
-    const billing = this.billing;
 
     return new ReadableStream({
       async start(controller) {
@@ -243,7 +236,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
             if (hasSentDone) break;
           }
 
-          // 上游流已关闭：判定完成态并统一结算（评审 C2：finalizeChatStream 唯一决策点）。
+          // 上游流已关闭：判定完成态并报告给 handler（结算统一由 QuotaSession.finalize 处理，评审 C1）。
           // 正常响应的最后必有 response.done/completed/incomplete（含 usage）；
           // 若未收到任何结束事件即为异常（部署超时截断、网络中断或上游空流），
           // 不能再静默补发 done——前端会把空回答当作「调用成功」展示。
@@ -256,7 +249,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
               controller.enqueue(
                 encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
               );
-              await finalizeChatStream(billing, {
+              await ctx.onFinish({
                 outcome: 'failed',
                 usage: null,
                 outputText: '',
@@ -265,7 +258,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
             } else {
               // 有输出文本：发送 done 事件并结算为 success
               controller.enqueue(encodeSseEvent({ type: 'done' }));
-              await finalizeChatStream(billing, {
+              await ctx.onFinish({
                 outcome: 'success',
                 usage,
                 outputText: text,
@@ -277,7 +270,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
               encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
             );
             controller.enqueue(encodeSseEvent({ type: 'done' }));
-            await finalizeChatStream(billing, {
+            await ctx.onFinish({
               outcome: 'partial',
               usage,
               outputText: text,
@@ -288,7 +281,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
             controller.enqueue(
               encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
             );
-            await finalizeChatStream(billing, {
+            await ctx.onFinish({
               outcome: 'failed',
               usage: null,
               outputText: '',
@@ -298,8 +291,8 @@ export class DoubaoAdapter implements ChatProviderAdapter {
           controller.close();
         } catch (error) {
           console.error('[chat] 豆包流错误:', error);
-          // 有输出文本 → partial 结算；完全无输出 → 释放预留（取消应退款）
-          await finalizeChatStream(billing, {
+          // 有输出文本 → partial；完全无输出 → failed（取消应退款），结算交给 handler 侧 QuotaSession
+          await ctx.onFinish({
             outcome: text ? 'partial' : 'failed',
             usage,
             outputText: text,

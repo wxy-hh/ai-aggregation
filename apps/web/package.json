@@ -34,6 +34,7 @@
     "@repo/logger": "workspace:*",
     "@repo/providers": "workspace:*",
     "@repo/queue": "workspace:*",
+    "@repo/redis": "workspace:*",
     "@repo/shared": "workspace:*",
     "@repo/storage": "workspace:*",
     "@tanstack/react-query": "^5.62.8",

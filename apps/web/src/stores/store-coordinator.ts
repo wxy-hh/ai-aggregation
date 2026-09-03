@@ -55,7 +55,8 @@ export function registerStoreCoordinator(): () => void {
           const audioStore = useAudioHistoryStore.getState();
           ids.forEach((id) => {
             if (types[id] === 'voice') {
-              audioStore.deleteItem(id);
+              // 统一历史发起的删除：只删 audio 侧，避免双删循环
+              audioStore.deleteItem(id, true);
             }
           });
         } catch {
@@ -73,17 +74,27 @@ export function registerStoreCoordinator(): () => void {
     })
   );
 
-  // conversation:deleted → 同步删除 history-store
+  // conversation:deleted → 双向同步删除：
+  // conv 侧删除（侧边栏）→ 同步删 history；history 侧删除（历史页）→ 同步删 conv，
+  // 避免「历史已删、/chat 仍显示该对话」（bug 修复：此前只补删 history 自身，conversations 残留）。
   unsubs.push(
     on(StoreEvents.CONVERSATION_DELETED, ({ id }: { id: string }) => {
+      useConversationsStore.getState().deleteConversation(id, true);
       useHistoryStore.getState().deleteItem(id, true);
     })
   );
 
-  // audio-history:deleted → 同步删除 history-store
+  // audio-history:deleted → 同步删除 audio 侧记录（统一历史删除 voice 时下发）
+  // 之前这里又调 history.deleteItem(id, true) 只删了 history 自身，导致 audio 侧 IndexedDB
+  // 记录残留；改为删除 audio-history-store 本侧。
   unsubs.push(
     on(StoreEvents.AUDIO_HISTORY_DELETED, ({ id }: { id: string }) => {
-      useHistoryStore.getState().deleteItem(id, true);
+      try {
+        const { useAudioHistoryStore } = require('./audio-history-store');
+        useAudioHistoryStore.getState().deleteItem(id, true);
+      } catch {
+        // audio-history-store 可能未初始化
+      }
     })
   );
 

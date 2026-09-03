@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
+  extractJsonObject,
   resolveModelConfig,
   streamModel,
   ModelConfigError,
@@ -75,16 +76,6 @@ const RequestSchema = z.object({
 
 const MAX_OUTPUT = 8000;
 const TIMEOUT_MS = 120000;
-
-function extractJsonObject(text: string): unknown {
-  const cleaned = text.trim();
-  const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const body = (fenced?.[1] ?? cleaned).trim();
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('模型未返回有效 JSON');
-  return JSON.parse(body.slice(start, end + 1));
-}
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {

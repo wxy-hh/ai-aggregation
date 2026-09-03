@@ -4,8 +4,8 @@ import {
   buildZiweiPromptContext,
   type ZiweiChartData,
 } from '../_lib/ziwei-chart';
-import { extractJsonBlock } from '../_lib/ark-response';
 import {
+  extractJsonBlock,
   resolveModelConfig,
   callModel,
   ModelConfigError,
