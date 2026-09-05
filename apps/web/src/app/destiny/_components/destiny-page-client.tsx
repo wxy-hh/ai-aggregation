@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
-import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
 import { DestinyDesktopNav } from './layout/destiny-desktop-nav';

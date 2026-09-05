@@ -588,8 +588,8 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
                     信息输入
                   </span>
                 </div>
-                {/* 移动端：模型切换与标题同行右上；桌面端由页面右上悬浮入口承接 */}
-                <DestinyModelSwitcher size="compact" className="shrink-0 xl:hidden" />
+                {/* 模型切换与标题同行右上：各宽度均内嵌于标题行，桌面布局同步展示 */}
+                <DestinyModelSwitcher size="compact" className="shrink-0" />
               </div>
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 填写起局时空与问题描述，系统基于时家奇门进行演化分析
