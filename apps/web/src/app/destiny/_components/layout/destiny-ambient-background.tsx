@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils';
 
-export type DestinyAmbientTone = 'blue' | 'violet' | 'indigo';
+export type DestinyAmbientTone = 'blue' | 'violet' | 'indigo' | 'cosmos';
 
 const TONE_ORB_CLASS: Record<
   DestinyAmbientTone,
@@ -22,6 +22,12 @@ const TONE_ORB_CLASS: Record<
     primary: 'bg-indigo-400/30 dark:bg-indigo-500/20',
     secondary: 'bg-violet-400/20 dark:bg-violet-500/15',
     accent: 'bg-sky-300/15 dark:bg-sky-400/10',
+  },
+  // 星座寰宇：深空紫蓝 + 一点鎏金星芒（/24、/22、/14 不在 Tailwind 默认透明度刻度，必须用方括号任意值才会真正生效）
+  cosmos: {
+    primary: 'bg-indigo-400/30 dark:bg-indigo-400/[0.24]',
+    secondary: 'bg-violet-400/[0.24] dark:bg-violet-500/20',
+    accent: 'bg-amber-200/[0.22] dark:bg-amber-300/[0.14]',
   },
 };
 

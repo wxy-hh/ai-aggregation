@@ -53,7 +53,26 @@ const QimenJiugongIcon: ComponentType<LeftNavIconProps> = ({ className, active, 
 
 const BaziGridIcon: ComponentType<LeftNavIconProps> = ({ className }) => <LayoutGrid className={className} />;
 
-export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen';
+/** 星座寰宇：简洁星盘线稿（双环 + 地平/子午十字轴 + 中心星点） */
+const AstrologyChartIcon: ComponentType<LeftNavIconProps> = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="3.6" />
+    <path d="M3.5 12h4.8M15.7 12h4.8" />
+    <path d="M12 3.5v4.8M12 15.7v4.8" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export type DestinyModuleKey = 'bazi' | 'ziwei' | 'qimen' | 'astrology';
 
 const groups: Array<{
   title: string;
@@ -80,6 +99,7 @@ const groups: Array<{
         icon: QimenJiugongIcon,
         iconClassName: 'h-[22px] w-[22px]',
       },
+      { key: 'astrology', label: '星座寰宇', icon: AstrologyChartIcon },
     ],
   },
 ];

@@ -283,6 +283,17 @@ export function createDestinyHistoryItem(
           day: 'numeric',
         })
       : '未知';
+  } else if (subType === 'astrology') {
+    // 星座寰宇：隐私规格要求历史卡不得出现出生日期——gender 槽位复用为时间精度标签，
+    // birthDate 槽位复用为「生成日期」（历史卡展示「精度 · 生成日期」）
+    const af = formData as {
+      name?: string;
+      timePrecision?: string;
+    };
+    name = af.name?.trim() || '星盘主人';
+    genderLabel =
+      af.timePrecision === 'accurate' ? '准确到分钟' : af.timePrecision === 'approximate' ? '大约时段' : '时间未知';
+    birthDateText = `${now.getMonth() + 1}月${now.getDate()}日生成`;
   } else {
     name = (formData as { name?: string }).name || '未知';
     const birthDate =
@@ -294,7 +305,11 @@ export function createDestinyHistoryItem(
     genderLabel = gender === 'male' ? '男' : '女';
   }
 
-  const title = options?.title || `${name}的${subType === 'bazi' ? '八字' : subType === 'ziwei' ? '紫微斗数' : '奇门遁甲'}命理报告`;
+  const title =
+    options?.title ||
+    (subType === 'astrology'
+      ? `星座寰宇 · ${name}的本命星盘`
+      : `${name}的${subType === 'bazi' ? '八字' : subType === 'ziwei' ? '紫微斗数' : '奇门遁甲'}命理报告`);
   const preview = options?.preview || (name !== '未知' ? `姓名：${name}，出生：${birthDateText}` : `起局时间：${birthDateText}`);
   const coreTone = options?.coreTone || '命理分析';
 

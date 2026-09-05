@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
+import { AstrologyWorkspace } from './astrology-workspace';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
@@ -25,7 +26,13 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 
 export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
-    if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
+    if (
+      initialTab === 'bazi' ||
+      initialTab === 'ziwei' ||
+      initialTab === 'qimen' ||
+      initialTab === 'astrology'
+    )
+      return initialTab;
     return 'bazi';
   });
   // 同步激活模块到全局 store,供命理域外的全局 chrome(移动端顶栏/底栏)感知场景
@@ -162,6 +169,9 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
           onLoadingChange={setQimenLoading}
         />
       </div>
+      <div className={cn('h-full w-full', activeModule !== 'astrology' && 'hidden')}>
+        <AstrologyWorkspace isActive={activeModule === 'astrology'} />
+      </div>
     </>
   );
 
@@ -170,6 +180,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
       { key: 'bazi' as const, label: '八字' },
       { key: 'ziwei' as const, label: '紫微' },
       { key: 'qimen' as const, label: '奇门' },
+      { key: 'astrology' as const, label: '星座' },
     ];
 
     return (
@@ -192,7 +203,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
               isZiweiNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
             )}
           >
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               {mobileTabs.map((tab) => {
                 const active = activeModule === tab.key;
                 return (
@@ -253,7 +264,14 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     );
   }
 
-  const isLoading = activeModule === 'bazi' ? baziLoading : activeModule === 'ziwei' ? ziweiLoading : qimenLoading;
+  const isLoading =
+    activeModule === 'bazi'
+      ? baziLoading
+      : activeModule === 'ziwei'
+        ? ziweiLoading
+        : activeModule === 'qimen'
+          ? qimenLoading
+          : false;
 
   return (
     <DestinyNavProvider>

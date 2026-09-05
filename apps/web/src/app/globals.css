@@ -34,7 +34,7 @@
 
     --radius: 0.5rem;
 
-    /* Design System: Apple x Glass (Balanced Fusion) */
+    /* 设计系统：苹果级精致质感与拟态磨玻璃（平衡融合体系） */
     --ds-font-display:
       'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial,
       sans-serif;
@@ -116,9 +116,28 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* 浏览器表面品牌化（DESIGN.md 第 9 章）：文本选区与输入光标跟随品牌靛蓝，
+     深色模式提亮一档保证对比；这是「页面被建造而非组装」的最廉价信号 */
+  ::selection {
+    background: rgba(99, 102, 241, 0.24);
+  }
+  .dark ::selection {
+    background: rgba(129, 140, 248, 0.36);
+  }
+  input,
+  textarea,
+  [contenteditable='true'] {
+    caret-color: #4969e9;
+  }
+  .dark input,
+  .dark textarea,
+  .dark [contenteditable='true'] {
+    caret-color: #8b9dff;
+  }
 }
 
-/* Accessibility: Respect user's motion preferences */
+/* 无障碍：尊重用户的减弱动态偏好 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -130,7 +149,7 @@
   }
 }
 
-/* Gradient animation for text */
+/* 文本渐变流动动画 */
 @keyframes gradient {
   0%,
   100% {
@@ -146,7 +165,7 @@
   animation: gradient 3s ease infinite;
 }
 
-/* Loading animation for progress bar */
+/* 进度条加载动画 */
 @keyframes loading {
   0% {
     width: 0%;
@@ -162,7 +181,7 @@
   }
 }
 
-/* Design system component baseline */
+/* 设计系统组件基线规范 */
 @layer components {
   .ds-focusable:focus-visible {
     outline: 2px solid var(--ds-accent-blue);
@@ -337,7 +356,7 @@
   }
 }
 
-/* Glassmorphism utilities */
+/* 拟态玻璃工具类 */
 @layer utilities {
   .glass {
     background: var(--ds-glass-white);
@@ -354,9 +373,9 @@
   }
 }
 
-/* Markdown body styles - ensures tables, lists, etc. render correctly */
+/* Markdown 正文排版样式：确保表格、列表等正确渲染 */
 .markdown-body {
-  /* Table styles */
+  /* 表格样式 */
   table {
     width: 100%;
     border-collapse: collapse;
@@ -386,7 +405,7 @@
     background-color: hsl(var(--muted));
   }
 
-  /* List styles */
+  /* 列表样式 */
   ul {
     list-style-type: disc;
     padding-left: 1.5em;
@@ -408,7 +427,7 @@
     margin: 0.25em 0;
   }
 
-  /* Heading styles */
+  /* 标题样式 */
   h1 {
     font-size: 1.5em;
     font-weight: 700;
@@ -436,12 +455,12 @@
     margin: 0.5em 0 0.25em;
   }
 
-  /* Paragraph spacing */
+  /* 段落间距 */
   p {
     margin: 0.5em 0;
   }
 
-  /* Blockquote */
+  /* 引用块样式 */
   blockquote {
     border-left: 3px solid hsl(var(--primary));
     padding-left: 1em;
@@ -450,7 +469,7 @@
     font-style: italic;
   }
 
-  /* Horizontal rule */
+  /* 分割线 */
   hr {
     border: none;
     border-top: 1px solid hsl(var(--border));
@@ -516,11 +535,11 @@
   }
 }
 
-/* 宫位 staggered 入场 */
+/* 宫位交错逐阶入场 */
 @keyframes ziwei-palace-enter {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.96);
+    transform: translateY(12px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -575,9 +594,104 @@
   }
 }
 
-/* 星轨彗星粒子:reduced-motion 下隐藏(SMIL 不受 CSS 动画时长约束,需显式关闭) */
+/* 星轨彗星粒子：在减弱动态偏好开启时隐藏（SMIL 动画不受 CSS 时长约束，需显式关闭） */
 @media (prefers-reduced-motion: reduce) {
   .ziwei-comet {
     display: none;
+  }
+}
+
+/* 星座寰宇 · 主 CTA 星光扫过（关键时刻的仪式感；减少动态时不闪） */
+@keyframes acw-cta-shine {
+  0%,
+  58% {
+    transform: translateX(-160%) skewX(-18deg);
+    opacity: 0;
+  }
+  66% {
+    opacity: 0.9;
+  }
+  82%,
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+/* 星座寰宇 · 星盘轮慢速悬浮公转（3D 舞台外层；减少动态时静止） */
+@keyframes acw-float3d {
+  0%,
+  100% {
+    transform: rotateX(3.5deg) rotateY(-4.5deg);
+  }
+  50% {
+    transform: rotateX(-3deg) rotateY(4.5deg);
+  }
+}
+.acw-wheel-float {
+  animation: acw-float3d 14s ease-in-out infinite;
+}
+
+/* 星体光晕呼吸（珠宝感的「活」；减少动态时静止并取中间亮度） */
+@keyframes acw-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.92;
+  }
+}
+.acw-breathe {
+  animation: acw-breathe 4.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-wheel-float {
+    animation: none;
+  }
+  .acw-breathe {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* 星盘轮仪器表圈：正/反向平稳公转的装饰环（非数据层；呼吸与运转可感知）。
+   transform-box: fill-box 让 SVG <g> 以自身包围盒中心为转轴 */
+@keyframes acw-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.acw-orbit-cw {
+  animation: acw-orbit-spin 50s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.acw-orbit-ccw {
+  animation: acw-orbit-spin 75s linear infinite reverse;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* 相位能量流：一段亮弧沿相位线行进（pathLength 归一化 500，亮段 26）。
+   减少动态时静止（dashoffset 停在起点，线外无残影） */
+@keyframes acw-dash-flow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.acw-aspect-flow {
+  stroke-dashoffset: 500;
+  animation: acw-dash-flow 8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-orbit-cw,
+  .acw-orbit-ccw {
+    animation: none;
+  }
+  .acw-aspect-flow {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 0;
   }
 }

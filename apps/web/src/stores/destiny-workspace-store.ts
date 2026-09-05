@@ -4,6 +4,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createDefaultBaziFormData } from '@/app/destiny/_components/bazi-mappers';
 import { createDefaultQimenFormData } from '@/app/destiny/_components/qimen-mappers';
+import {
+  createDefaultAstrologyFormData,
+  type AstrologyFormData,
+} from '@/app/destiny/_components/astrology-types';
 import type { BaziFormData } from '@/app/destiny/_components/bazi-types';
 import type { QimenFormData } from '@/app/destiny/_components/qimen-types';
 import type {
@@ -20,6 +24,7 @@ import type {
   ZiweiChartData,
   ZiweiLockedSections,
 } from '@/app/destiny/_components/types';
+import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
 
 export type DestinyWorkspaceStep = 'form' | 'result';
@@ -80,10 +85,27 @@ export type QimenWorkspaceCache = BaseWorkspaceCache<
   sectionErrors: Partial<Record<QimenAsyncSectionKey, string>>;
 };
 
+export type AstrologyErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
+
+/** 星座寰宇工作区缓存（01 骨架；03 加入口视图；04 加表单步骤与真值缓存） */
+export type AstrologyWorkspaceCache = BaseWorkspaceCache<
+  AstrologyFormData,
+  Partial<Record<keyof AstrologyFormData, string>>,
+  AstrologyErrorKind
+> & {
+  /** 入口视图：首页（首次进入/重新测算）、两步表单（§6.2）或加载仪式（05：真值锁定后转场进结果页） */
+  entryView: 'home' | 'form' | 'loading';
+  /** 两步表单当前步骤（切模块保留进度） */
+  formStep: 1 | 2;
+  /** 提交后经唯一接缝计算的星盘真值（结果页/分享/问答的真值来源） */
+  chartFacts: AstrologyChartFacts | null;
+};
+
 export type DestinyWorkspaceCacheState = {
   bazi: BaziWorkspaceCache;
   ziwei: ZiweiWorkspaceCache;
   qimen: QimenWorkspaceCache;
+  astrology: AstrologyWorkspaceCache;
 };
 
 type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
@@ -165,11 +187,28 @@ function createDefaultQimenWorkspaceCache(): QimenWorkspaceCache {
   };
 }
 
+function createDefaultAstrologyWorkspaceCache(): AstrologyWorkspaceCache {
+  return {
+    step: 'form',
+    hasResult: false,
+    lastView: 'form',
+    entryView: 'home',
+    formStep: 1,
+    chartFacts: null,
+    formData: createDefaultAstrologyFormData(),
+    fieldErrors: {},
+    blockingLoading: false,
+    error: null,
+    errorKind: null,
+  };
+}
+
 export function createDefaultDestinyWorkspaceState(): DestinyWorkspaceCacheState {
   return {
     bazi: createDefaultBaziWorkspaceCache(),
     ziwei: createDefaultZiweiWorkspaceCache(),
     qimen: createDefaultQimenWorkspaceCache(),
+    astrology: createDefaultAstrologyWorkspaceCache(),
   };
 }
 

@@ -72,6 +72,11 @@ const config: Config = {
           'glass-white': 'var(--ds-glass-white)',
           'glass-dark': 'var(--ds-glass-dark)',
         },
+        // 夜幕文字色（DESIGN.md 2.6：深空蓝紫表面上的次要文字从表面色相调色，不落中性灰）
+        night: {
+          muted: '#A6AED2', // 次要文字（深空表面替代 dark:text-slate-400）
+          faint: '#828BB0', // 微弱文字/占位符（替代 dark:text-slate-500，深底对比度更高）
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
