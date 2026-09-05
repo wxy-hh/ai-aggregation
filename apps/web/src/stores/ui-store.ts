@@ -32,7 +32,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       // 初始状态
-      pinnedApps: sanitizePinnedApps(['chat', 'voice', 'image', 'video', 'resume', 'destiny']),
+      pinnedApps: sanitizePinnedApps(['chat', 'voice', 'image', 'video', 'destiny']),
       showAppsModal: false,
 
       // Actions
@@ -65,6 +65,18 @@ export const useUIStore = create<UIState>()(
     {
       name: 'ai-app-ui-storage', // 本地存储键名
       storage: createJSONStorage(() => localStorage),
+      version: 1,
+      // 迁移：简历制作从默认侧边栏菜单移除（仍可从应用弹窗手动添加）
+      migrate: (persistedState, version) => {
+        const prev = persistedState as Partial<UIState> | undefined;
+        if (version < 1) {
+          return {
+            ...prev,
+            pinnedApps: (prev?.pinnedApps ?? []).filter((id) => id !== 'resume'),
+          } as UIState;
+        }
+        return (prev ?? {}) as UIState;
+      },
       merge: (persistedState, currentState) => {
         const typedPersistedState = persistedState as Partial<UIState> | undefined;
 
