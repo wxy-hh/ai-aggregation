@@ -38,9 +38,15 @@ COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/packages ./packages
 COPY --from=base /app/apps/worker/dist ./apps/worker/dist
 COPY --from=base /app/apps/worker/package.json ./apps/worker/
+# pnpm 的隔离模块结构下，worker 的第三方依赖（tsx/bullmq 等）与 @repo/*
+# workspace 链接都位于 apps/worker/node_modules，不复制则运行时找不到依赖。
+COPY --from=base /app/apps/worker/node_modules ./apps/worker/node_modules
 COPY --from=base /app/pnpm-lock.yaml ./
 COPY --from=base /app/package.json ./
 
 EXPOSE 3001
 
-CMD ["node", "--import", "tsx", "apps/worker/dist/index.js"]
+# 工作目录切到 apps/worker，使 `node --import tsx` 能解析到上方复制进来的 tsx；
+# 入口用 dist/index.js（tsc noEmit:false 产物，纯 ESM JS）。
+WORKDIR /app/apps/worker
+CMD ["node", "--import", "tsx", "dist/index.js"]
