@@ -1019,7 +1019,7 @@ sshpass -p 'woaini2244..' scp -P 22 \
 **步骤 3：SSH 到服务器解压**
 
 ```bash
-sshpass -p 'woaini2244..' ssh ubuntu@124.223.40.33
+sshpass -p 'woaini2244.' ssh ubuntu@124.223.40.33
 cd ~/ai-aggregation
 tar -xzf ai-agg-deploy.tar.gz
 rm ai-agg-deploy.tar.gz
