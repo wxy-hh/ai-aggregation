@@ -12,7 +12,7 @@
  * 诚实性约束：
  * - 真值（chartFacts）在进入本组件前已锁定；四阶段只是把已完成的计算过程
  *   按最小仪式窗（3.2s，在 2.5–4s 区间）揭示出来，无虚假百分比。
- * - 第四阶段仅代表「解读请求已发出」，不等待 AI 全文。
+ * - 第四阶段代表「宇宙重点已整理完成」（本地基于星盘事实整理，无 AI 请求）。
  * - 失败时呈现安静恢复卡：资料已保留 + 失败类型 + 重新计算 / 返回修改资料。
  * - 无宫位盘第三阶段文案固定为「系统正在整理行星位置与关键相位」，不播放十二宫动画再隐藏。
  */
@@ -38,12 +38,12 @@ import type { AstrologyFormData } from '../astrology-types';
 
 const STAGE_2_AT = 800; // 行星依序点亮
 const STAGE_3_AT = 1800; // 宫位线与相位生长（无宫位：整理相位）
-const STAGE_4_AT = 2700; // 几何静止，解读请求已发出
+const STAGE_4_AT = 2700; // 几何静止，宇宙重点已整理完成
 const WINDOW_END_AT = 3200; // 仪式窗结束 → 转场
 
 type RitualStage = 1 | 2 | 3 | 4;
 
-/* ---------- 四段真实进度清单：前三段主语「系统」，第四段「AI」 ---------- */
+/* ---------- 四段真实进度清单：主语统一为「系统」 ---------- */
 
 function stageCopy(withHouses: boolean): Array<{ doing: string; done: string }> {
   return [
@@ -53,7 +53,7 @@ function stageCopy(withHouses: boolean): Array<{ doing: string; done: string }> 
       doing: withHouses ? '系统正在绘制十二宫与关键相位' : '系统正在整理行星位置与关键相位',
       done: withHouses ? '系统已绘制十二宫与关键相位' : '系统已整理行星位置与关键相位',
     },
-    { doing: 'AI 正在基于星盘事实整理宇宙重点', done: 'AI 解读请求已发出' },
+    { doing: '系统正在基于星盘事实整理宇宙重点', done: '宇宙重点已整理完成' },
   ];
 }
 
@@ -136,7 +136,7 @@ export function AstrologyRitualResult() {
 
   /**
    * 仪式推进：chartFacts 提交时已锁定（真实完成事件），这里按最小仪式窗播放揭示；
-   * 窗结束即 markResultReady 转场（第四阶段不代表等待 AI 全文）。
+   * 窗结束即 markResultReady 转场（第四阶段仅揭示已完成的本地整理，无外部解读请求）。
    * 减少动态：同样的真实节奏，只是盘面各层静态出现、转场退化为交叉淡入。
    */
   useEffect(() => {

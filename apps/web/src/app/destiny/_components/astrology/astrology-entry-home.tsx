@@ -101,10 +101,10 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                 </span>
               </h1>
               <p className="mt-3 text-base leading-relaxed text-slate-600 dark:text-indigo-100/80 sm:mt-4 sm:text-lg">
-                一分钟，洞悉你的性格底色、关系引力与生命潜能
+                一分钟，看懂你的性格底色、关系模式与本周行动
               </p>
               <p className="mt-2.5 hidden text-xs leading-relaxed text-slate-400 dark:text-night-faint sm:block">
-                星体位置为精密天文计算，解读由 AI 深度生成 · 用于自我探索与娱乐参考
+                星体位置为精密天文计算，解读基于星盘事实生成 · 用于自我探索与娱乐参考
               </p>
             </motion.header>
 
@@ -300,7 +300,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               <li>· 以出生日期、时间与地点，按回归黄道与地心视角计算十星体的真实位置。</li>
               <li>· 宫位采用整宫制；相位取合相、六合、刑相、拱相与对冲，按固定容许度表判定。</li>
               <li>· 出生时间未知时不计算上升、天顶与宫位，只展示整日内稳定的星座与主要相位。</li>
-              <li>· 星体位置为计算结果，解读由 AI 生成；用于自我探索与娱乐参考。</li>
+              <li>· 星体位置为计算结果，解读基于星盘事实生成；用于自我探索与娱乐参考。</li>
             </ul>
           </div>
         </DialogContent>
