@@ -21,6 +21,7 @@ import { approximateSunLongitude, approximateSunSign } from '@/lib/astrology/sol
 import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel, ZODIAC_CN } from './astrology-chart-wheel';
+import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { AstrologyWheelSceneSwitch, useWheelSceneAvailable } from './astrology-wheel-scene-switch';
 import { AstrologyStarfield } from './astrology-starfield';
@@ -238,7 +239,7 @@ export function AstrologyForm() {
                       className={cn(
                         'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300',
                         formStep === 1
-                          ? 'bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_0_12px_rgba(73,105,233,0.5)]'
+                          ? cn('text-white shadow-[0_0_12px_rgba(73,105,233,0.5)]', ASTROLOGY_CTA_GRADIENT_CLASS)
                           : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
                       )}
                     >
@@ -260,7 +261,8 @@ export function AstrologyForm() {
                   <div className="relative mx-1 h-0.5 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10" aria-hidden>
                     <div
                       className={cn(
-                        'h-full bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] transition-all duration-500',
+                        'h-full transition-all duration-500',
+                        ASTROLOGY_CTA_GRADIENT_CLASS,
                         formStep === 1 ? 'w-1/2' : 'w-full'
                       )}
                     />
@@ -271,7 +273,7 @@ export function AstrologyForm() {
                       className={cn(
                         'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300',
                         formStep === 2
-                          ? 'bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_0_12px_rgba(73,105,233,0.5)]'
+                          ? cn('text-white shadow-[0_0_12px_rgba(73,105,233,0.5)]', ASTROLOGY_CTA_GRADIENT_CLASS)
                           : 'border border-slate-200 bg-white/50 text-day-muted dark:border-white/10 dark:bg-white/5 dark:text-night-faint'
                       )}
                     >
@@ -337,19 +339,11 @@ export function AstrologyForm() {
                   将生成无宫位本命盘
                 </span>
               )}
-              <button
-                type="button"
+              <AstrologyCtaButton
+                size="lg"
                 onClick={formStep === 1 ? goNext : submit}
                 disabled={blockingLoading}
-                className={cn(
-                  'group relative inline-flex h-12 flex-1 items-center justify-center gap-2 overflow-hidden rounded-full px-8',
-                  'bg-gradient-to-r from-[#4969E9] via-[#5B6BF0] to-[#7C5CF6]',
-                  'text-base font-bold text-white',
-                  'shadow-[0_12px_32px_-8px_rgba(73,105,233,0.55)]',
-                  'transition-[transform,box-shadow] duration-200 hover:scale-[1.02] hover:shadow-[0_16px_40px_-8px_rgba(109,93,246,0.6)]',
-                  'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/45 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-0',
-                  'disabled:pointer-events-none disabled:opacity-40'
-                )}
+                className="group flex-1 hover:shadow-[0_16px_40px_-8px_rgba(109,93,246,0.6)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-0"
               >
                 {/* 星光扫过（纯装饰；减少动态时隐藏） */}
                 <span
@@ -368,7 +362,7 @@ export function AstrologyForm() {
                     绘制我的星盘
                   </>
                 )}
-              </button>
+              </AstrologyCtaButton>
             </div>
             {/* 移动端未知档标注（空间不足时放到条下） */}
             {formStep === 2 && formData.timePrecision === 'unknown' && (

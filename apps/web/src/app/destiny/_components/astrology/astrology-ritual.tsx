@@ -28,6 +28,7 @@ import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { AstrologyCtaButton } from './astrology-cta-button';
 import { AstrologyWheelSceneSwitch } from './astrology-wheel-scene-switch';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
@@ -246,14 +247,10 @@ export function AstrologyRitualResult() {
               星盘绘制未完成（{kindText}）。{error && error !== '' ? error : '可以重新计算，或返回检查出生资料。'}
             </p>
             <div className="mt-6 flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={retry}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-sm font-bold text-white shadow-[0_12px_32px_-8px_rgba(73,105,233,0.55)] transition-[transform,box-shadow] duration-200 hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/45"
-              >
+              <AstrologyCtaButton onClick={retry} className="h-12">
                 <RotateCcw className="h-4 w-4" strokeWidth={2.2} />
                 重新计算
-              </button>
+              </AstrologyCtaButton>
               <button
                 type="button"
                 onClick={backToForm}

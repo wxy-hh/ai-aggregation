@@ -19,6 +19,7 @@ import { searchCities, type AstroCity } from '@/lib/astrology/cities';
 import type { TimePrecision } from '@/lib/astrology/chart-facts';
 import { APPROXIMATE_SLOTS, formatUtcOffset, utcOffsetMinutesFor } from './astrology-mappers';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { AstrologyFieldError, type AstrologyFormStepProps } from './astrology-form-step1';
 
 /* ---------- 小型可视化钟面（辅助指示，不占主要视觉区） ---------- */
@@ -251,7 +252,10 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                 {active && (
                   <motion.span
                     layoutId="astrology-precision-pill"
-                    className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] shadow-[0_6px_16px_-4px_rgba(73,105,233,0.5)]"
+                    className={cn(
+                      'absolute inset-0 rounded-xl shadow-[0_6px_16px_-4px_rgba(73,105,233,0.5)]',
+                      ASTROLOGY_CTA_GRADIENT_CLASS
+                    )}
                     transition={reduceMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 320, damping: 30 }}
                   />
                 )}
@@ -360,7 +364,10 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                           'disabled:cursor-not-allowed disabled:opacity-60',
                           selected
-                            ? 'border-transparent bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_8px_20px_-6px_rgba(73,105,233,0.5)] ring-2 ring-indigo-400/30'
+                            ? cn(
+                                'border-transparent text-white shadow-[0_8px_20px_-6px_rgba(73,105,233,0.5)] ring-2 ring-indigo-400/30',
+                                ASTROLOGY_CTA_GRADIENT_CLASS
+                              )
                             : 'border-slate-200/90 bg-white/60 text-slate-600 hover:border-indigo-300/70 hover:text-indigo-600 dark:border-white/[0.12] dark:bg-white/5 dark:text-slate-300 dark:hover:border-indigo-300/40 dark:hover:text-indigo-200',
                           !selected && fieldErrors.approximateSlot && 'border-rose-300/70 dark:border-rose-400/40'
                         )}

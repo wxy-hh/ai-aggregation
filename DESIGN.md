@@ -252,7 +252,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 ### 8.1 按钮
 
 - 首选 `@/components/ui/button`（已品牌化：主变体渐变+发光阴影、`active:scale-[0.98]`、destructive 粉渐变、outline 白玻璃）。
-- 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。
+- 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。星座寰宇模块统一引 `astrology/_components/astrology-cta-button.tsx` 的 `<AstrologyCtaButton>`（按钮）与 `ASTROLOGY_CTA_GRADIENT_CLASS`（选中态胶囊等装饰渐变），不再手写色值。
 - 状态齐全：hover（上浮 -1px 或 scale 1.02）/ active（scale 0.98）/ focus-visible（2px ring）/ disabled（opacity-40，无动效）/ loading（Spinner + pointer-events-none）。
 - 尺寸：大 52px / 中 44px / 小 32px；移动端主操作不小于 44px。
 

@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
 import type { ModuleId, ModuleReading } from '@/lib/astrology/mock-interpretation';
 import { answerAstrologyQuestion, type QaCitation } from '@/lib/astrology/mock-qa';
+import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
 
 /** 引导问题（设计文档 §6.7 原文） */
 const GUIDE_QUESTIONS = [
@@ -285,7 +286,7 @@ function QaConversation({
               className={cn(
                 'max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
                 m.role === 'user'
-                  ? 'bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white'
+                  ? cn('text-white', ASTROLOGY_CTA_GRADIENT_CLASS)
                   : m.kind === 'blocked'
                     ? 'border border-amber-300/50 bg-amber-50/80 text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/[0.08] dark:text-amber-100'
                     : 'bg-slate-100/90 text-slate-700 dark:bg-white/[0.06] dark:text-slate-200'
@@ -389,14 +390,15 @@ function QaConversation({
             maxLength={120}
             className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
           />
-          <button
+          <AstrologyCtaButton
             type="submit"
+            size="icon"
             disabled={!draft.trim() || pending}
             aria-label="发送问题"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_8px_20px_-8px_rgba(73,105,233,0.55)] transition-[transform,opacity] hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/45 disabled:opacity-40 disabled:hover:scale-100"
+            className="shrink-0"
           >
             <SendHorizontal className="h-4 w-4" strokeWidth={2.2} />
-          </button>
+          </AstrologyCtaButton>
         </form>
       )}
     </div>

@@ -10,6 +10,7 @@ import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
 import { destinyPrimaryBtnClass } from '../layout/destiny-result-header';
 import { canShareFiles, useShareImage } from '../share/use-share-image';
 import { sanitizeShareFileName } from '../share/share-card-data';
+import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { AstrologyShareCard } from './astrology-share-card';
 import {
   buildAstrologyShareCardData,
@@ -70,7 +71,10 @@ function OptionSegment<T extends string>({
                 'flex h-9 items-center justify-center whitespace-nowrap rounded-full px-3 text-xs font-medium',
                 'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                 selected
-                  ? 'bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_6px_16px_-6px_rgba(73,105,233,0.55)]'
+                  ? cn(
+                      'text-white shadow-[0_6px_16px_-6px_rgba(73,105,233,0.55)]',
+                      ASTROLOGY_CTA_GRADIENT_CLASS
+                    )
                   : 'text-slate-500 hover:text-indigo-600 dark:text-night-muted dark:hover:text-indigo-200'
               )}
             >

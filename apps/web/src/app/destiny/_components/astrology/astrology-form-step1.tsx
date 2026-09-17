@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { approximateSunSign, ZODIAC_DATE_RANGE } from '@/lib/astrology/solar-longitude';
 import { isValidBirthDate } from './astrology-mappers';
 import { ZODIAC_CN, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import type { AstrologyFormData, AstrologyTopic } from '../astrology-types';
 
 /* ---------- 本地组件 ---------- */
@@ -304,7 +305,10 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                   'disabled:cursor-not-allowed disabled:opacity-60',
                   selected
-                    ? 'border-transparent bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_8px_20px_-6px_rgba(73,105,233,0.5)] ring-2 ring-indigo-400/30'
+                    ? cn(
+                        'border-transparent text-white shadow-[0_8px_20px_-6px_rgba(73,105,233,0.5)] ring-2 ring-indigo-400/30',
+                        ASTROLOGY_CTA_GRADIENT_CLASS
+                      )
                     : 'border-slate-200/90 bg-white/60 text-slate-600 hover:border-indigo-300/70 hover:text-indigo-600 dark:border-white/[0.12] dark:bg-white/5 dark:text-slate-300 dark:hover:border-indigo-300/40 dark:hover:text-indigo-200'
                 )}
               >

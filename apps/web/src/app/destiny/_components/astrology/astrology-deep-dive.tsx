@@ -26,6 +26,7 @@ import {
 } from '@/lib/astrology/mock-interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { formatDegreeMinute } from './astrology-mappers';
 
 /* ---------- 标签与视觉基调 ---------- */
@@ -177,7 +178,10 @@ export function AstrologyDeepDive({ facts, passport, onLocateBody }: AstrologyDe
                   <motion.span
                     layoutId="deep-tab-pill"
                     transition={reduceMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 420, damping: 34 }}
-                    className="absolute inset-0 rounded-full bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] shadow-[0_8px_20px_-8px_rgba(73,105,233,0.6)]"
+                    className={cn(
+                      'absolute inset-0 rounded-full shadow-[0_8px_20px_-8px_rgba(73,105,233,0.6)]',
+                      ASTROLOGY_CTA_GRADIENT_CLASS
+                    )}
                   />
                 )}
                 <span className="relative z-10">{t.label}</span>

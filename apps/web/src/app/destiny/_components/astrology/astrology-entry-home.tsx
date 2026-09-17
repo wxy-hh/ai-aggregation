@@ -22,6 +22,7 @@ import { restoreAstrologyFromHistory } from '@/lib/astrology/history';
 import { computeChartFacts, SAMPLE_PROFILE_ACCURATE } from '@/lib/astrology/mock-chart-facts';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { AstrologyCtaButton } from './astrology-cta-button';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { AstrologyStarfield } from './astrology-starfield';
 import { cn } from '@/lib/utils';
@@ -187,17 +188,10 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                     aria-hidden
                     className="pointer-events-none absolute -inset-1 rounded-full bg-gradient-to-r from-[#4969E9] via-[#7C5CF6] to-[#A855F7] opacity-35 blur-md transition-opacity duration-300 group-hover:opacity-70 motion-reduce:hidden"
                   />
-                  <button
-                    type="button"
+                  <AstrologyCtaButton
+                    size="lg"
                     onClick={onStart}
-                    className={cn(
-                      'relative inline-flex h-14 w-full items-center justify-center gap-2.5 overflow-hidden rounded-full px-8 sm:w-auto',
-                      'bg-gradient-to-r from-[#3B5BDB] via-[#5B6BF0] to-[#7C5CF6]',
-                      'text-base font-bold text-white tracking-wide',
-                      'shadow-[0_12px_30px_-6px_rgba(59,91,219,0.52)]',
-                      'transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_16px_38px_-6px_rgba(124,92,246,0.6)]',
-                      'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/45 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-0'
-                    )}
+                    className="h-14 w-full gap-2.5 tracking-wide hover:shadow-[0_16px_38px_-6px_rgba(124,92,246,0.6)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-0 sm:w-auto"
                   >
                     {/* 星光扫掠流光 */}
                     <span
@@ -210,7 +204,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                       className="h-[18px] w-[18px] transition-transform duration-200 group-hover:translate-x-1"
                       strokeWidth={2.4}
                     />
-                  </button>
+                  </AstrologyCtaButton>
                 </div>
 
                 <button

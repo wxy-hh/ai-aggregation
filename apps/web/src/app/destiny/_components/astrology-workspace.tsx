@@ -27,6 +27,7 @@ import { useAstrologyTempRecordStore } from '@/stores/astrology-temp-record';
 import { migrateTempRecordToHistory, restoreAstrologyFromHistory } from '@/lib/astrology/history';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { AstrologyEntryHome } from './astrology/astrology-entry-home';
+import { AstrologyCtaButton } from './astrology/astrology-cta-button';
 import { AstrologyForm } from './astrology/astrology-form';
 import { AstrologyRitualResult } from './astrology/astrology-ritual';
 import { cn } from '@/lib/utils';
@@ -139,14 +140,10 @@ export function AstrologyWorkspace({ isActive }: AstrologyWorkspaceProps) {
               >
                 不保存，会话结束后删除
               </button>
-              <button
-                type="button"
-                onClick={confirmMigration}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#4969E9] via-[#5B6BF0] to-[#7C5CF6] px-6 text-sm font-bold text-white shadow-[0_10px_24px_-8px_rgba(73,105,233,0.55)] transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/45"
-              >
+              <AstrologyCtaButton onClick={confirmMigration}>
                 <Sparkles className="h-4 w-4" strokeWidth={2} />
                 保存到历史记录
-              </button>
+              </AstrologyCtaButton>
             </div>
           </div>
         </DialogContent>
