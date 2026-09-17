@@ -121,6 +121,13 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                 aria-hidden
                 className="absolute inset-[4%] rounded-full bg-indigo-500/10 blur-3xl dark:bg-indigo-500/20"
               />
+              {/* 示例盘标注：设计文档 §6.2 义务；被动标注而非按钮——它是标签不是任务，做成可点胶囊会与主 CTA 争夺首屏焦点。
+                  放在盘面上方而非盘内/盘下：盘下会被点选后的 HUD 弹卡（-bottom-6）遮挡。
+                  盘内点选后可用 Escape / 点击盘面空白 / HUD 关闭按钮复原，无需再由这里承担复位职责 */}
+              <span className="mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-0.5 text-[11px] font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
+                示例星盘 · 可点选星体体验
+              </span>
+
               <AstrologyWheel3D className="relative">
                 <AstrologyChartWheel
                   facts={sampleFacts}
@@ -129,15 +136,6 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                   className="relative drop-shadow-[0_20px_48px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_24px_56px_rgba(2,6,23,0.65)]"
                 />
               </AstrologyWheel3D>
-
-              {/* 右上角交互提示状态胶囊 */}
-              <button
-                type="button"
-                onClick={() => setSampleSelectedBody(null)}
-                className="absolute right-2 top-2 z-20 rounded-full border border-indigo-200/90 bg-white/95 px-3 py-1 text-[11px] font-semibold tracking-wider text-indigo-600 shadow-sm backdrop-blur-md transition-all hover:scale-105 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200"
-              >
-                {sampleSelectedBody ? '✦ 点击盘面复原' : '✨ 点击宝珠或星座探索'}
-              </button>
 
               {/* 悬浮星体解读 HUD 胶囊卡片（点选任意星曜时从星盘下方优雅弹入） */}
               <AnimatePresence>
@@ -180,8 +178,9 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               transition={enter(0.32)}
               className="flex max-w-xl flex-col xl:col-start-1 xl:row-start-2 xl:self-start"
             >
-              {/* 主操作区：超新星聚能按钮 + 计算说明链接 */}
-              <div className="order-1 flex flex-col gap-3.5 sm:flex-row sm:items-center xl:order-2 xl:mt-8">
+              {/* 主操作区：超新星聚能按钮 + 计算说明链接。移动端与桌面端都排第一——CTA 是引导页的首要目标，
+                  不能在任何断点被价值卡压后（xl 上原为 order-2） */}
+              <div className="order-1 flex flex-col gap-3.5 sm:flex-row sm:items-center">
                 <div className="group relative inline-flex w-full sm:w-auto">
                   {/* 聚能脉冲微光（深浅双模呼吸） */}
                   <span
@@ -217,7 +216,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               </div>
 
               {/* 天体三律微晶徽章（替代呆板白卡片，通透轻盈） */}
-              <ul className="order-2 mt-7 grid gap-3 sm:grid-cols-3 sm:gap-3.5 xl:order-1 xl:mt-0">
+              <ul className="order-2 mt-7 grid gap-3 sm:grid-cols-3 sm:gap-3.5">
                 {VALUE_POINTS.map((v) => (
                   <li
                     key={v.title}
