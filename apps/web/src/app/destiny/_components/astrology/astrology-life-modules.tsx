@@ -292,7 +292,7 @@ function ModuleCard({
                         key={ref}
                         type="button"
                         onClick={() => onLocateBody(chip.body)}
-                        className="inline-flex min-h-8 items-center rounded-full border border-indigo-200/70 bg-white px-3 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+                        className="inline-flex min-h-11 items-center rounded-full border border-indigo-200/70 bg-white px-3 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
                       >
                         {chip.label}
                       </button>

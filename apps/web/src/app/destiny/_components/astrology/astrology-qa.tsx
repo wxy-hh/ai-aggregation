@@ -312,7 +312,7 @@ function QaConversation({
                   {m.citations.map((c, i) => {
                     const clickable = c.moduleId !== undefined || (c.body !== undefined && c.body !== null);
                     const cls =
-                      'inline-flex min-h-7 items-center rounded-full border px-2.5 text-[10px] font-medium';
+                      'inline-flex min-h-11 items-center rounded-full border px-2.5 text-[10px] font-medium';
                     return clickable ? (
                       <button
                         key={i}

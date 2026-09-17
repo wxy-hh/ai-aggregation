@@ -202,7 +202,7 @@ function PlanetFactCard({
             <span className="text-xs font-semibold text-slate-500 dark:text-night-muted">星体深度解构</span>
           )}
 
-          {/* 快捷星体点选胶囊 */}
+          {/* 快捷星体点选胶囊：热区 44×44（横排十颗，28×28 易误触） */}
           <div className="flex max-w-[190px] items-center gap-1 overflow-x-auto p-0.5 custom-scrollbar sm:max-w-[280px]">
             {allPlanets.map((p) => {
               const ItemGlyph = PLANET_GLYPH[p.body];
@@ -214,7 +214,7 @@ function PlanetFactCard({
                   onClick={() => onSelectBody(p.body)}
                   title={`${PLANET_CN[p.body]}在${ZODIAC_CN[p.sign]}`}
                   className={cn(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                     isCurrent
                       ? 'bg-indigo-600 text-white shadow-xs dark:bg-indigo-500'
                       : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
