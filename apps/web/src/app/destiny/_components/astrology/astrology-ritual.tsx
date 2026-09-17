@@ -33,6 +33,7 @@ import { AstrologyWheelSceneSwitch } from './astrology-wheel-scene-switch';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
 import { APPROXIMATE_SLOTS, mapFormToAstroProfile } from './astrology-mappers';
+import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
 
 /* ---------- 仪式节奏（最小仪式窗 3.2s，落在 2.5–4s 区间） ---------- */
@@ -151,18 +152,9 @@ export function AstrologyRitualResult() {
     return () => timers.forEach(clearTimeout);
   }, [phase, error, markResultReady]);
 
-  /**
-   * 相位切换时复位文档与工作区滚动：移动端 destiny 页是文档级滚动，
-   * 桌面端工作区是局部容器（.custom-scrollbar）滚动。
-   * 表单页滚到底部提交后 scrollTop 会残留，把仪式摘要行顶出视口；
-   * 仪式 → 结果转场同理，结果首屏必须从顶部 0px 开始呈现。
-   */
+  /** 相位切换时复位滚动：表单页滚到底提交后残留的 scrollTop 会把仪式摘要行与结果首屏顶出视口 */
   useEffect(() => {
-    window.scrollTo(0, 0);
-    const scrollContainers = document.querySelectorAll('.custom-scrollbar');
-    scrollContainers.forEach((container) => {
-      container.scrollTop = 0;
-    });
+    resetAstrologyScroll();
   }, [phase]);
 
   /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式转场，不在才重算 */

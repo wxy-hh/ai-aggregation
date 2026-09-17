@@ -70,6 +70,7 @@ import { TypewriterHeadline } from './astrology-typewriter-headline';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
 import { APPROXIMATE_SLOTS, formatDegreeMinute } from './astrology-mappers';
+import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
 
 /* ---------- 展示层小工具 ---------- */
@@ -367,11 +368,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
 
   /** 结果页首次呈现时复位局部与文档滚动位置，保证护照头与主轴处于视口核心 */
   useEffect(() => {
-    window.scrollTo(0, 0);
-    const scrollContainers = document.querySelectorAll('.custom-scrollbar');
-    scrollContainers.forEach((container) => {
-      container.scrollTop = 0;
-    });
+    resetAstrologyScroll();
   }, []);
 
   /** mock 解读（真值即时可得；流式节奏由下方打字机承担） */

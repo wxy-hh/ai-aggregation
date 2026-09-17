@@ -71,6 +71,14 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [pending, setPending] = useState(false);
   const idRef = useRef(0);
+  /** 模拟延迟的定时器句柄：卸载时清理，避免定时器落在已卸载组件上 */
+  const pendingTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (pendingTimerRef.current !== null) window.clearTimeout(pendingTimerRef.current);
+    },
+    []
+  );
   const asked = messages.filter((m) => m.role === 'user').length;
   const remaining = MAX_QUESTIONS - asked;
   const capped = remaining <= 0;
@@ -81,8 +89,9 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
     setMessages((prev) => [...prev, { id: ++idRef.current, role: 'user', text: q }]);
     setPending(true);
     // 模拟延迟节奏：短暂停顿后给出确定性回答（尊重减少动态：立即呈现）
-    setTimeout(
+    pendingTimerRef.current = window.setTimeout(
       () => {
+        pendingTimerRef.current = null;
         const answer = answerAstrologyQuestion(q, facts, modules);
         setMessages((prev) => [
           ...prev,
