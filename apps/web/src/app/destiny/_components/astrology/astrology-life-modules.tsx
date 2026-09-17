@@ -135,7 +135,7 @@ export function AstrologyLifeModules({ facts, modules, openId, onOpenChange, onL
     <section aria-label="五个生活模块">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">生活的五个切面</h3>
-        <span className="text-xs text-slate-400 dark:text-night-faint">每张卡都能展开依据，回看它来自盘面的哪个位置</span>
+        <span className="text-xs text-day-muted dark:text-night-faint">每张卡都能展开依据，回看它来自盘面的哪个位置</span>
       </div>
 
       {/* 桌面卡片栅格（非周卡奇数时三列、偶数时两列，本周卡通栏）；移动端单列 */}
@@ -224,7 +224,7 @@ function ModuleCard({
           </span>
         </span>
         <ChevronDown
-          className={cn('h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200', open && 'rotate-180')}
+          className={cn('h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint', open && 'rotate-180')}
           strokeWidth={2.2}
         />
       </button>

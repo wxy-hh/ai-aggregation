@@ -287,7 +287,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                         fieldErrors.birthTime
                           ? 'border-rose-400/80 focus:border-rose-400 focus:ring-rose-400/20 dark:border-rose-400/60'
                           : 'border-slate-200/90 focus:border-indigo-400 focus:ring-indigo-400/25 dark:border-white/[0.12] dark:focus:border-indigo-300/60 dark:focus:ring-indigo-300/20',
-                        formData.birthTime.hour === '' && 'text-slate-400 dark:text-night-faint'
+                        formData.birthTime.hour === '' && 'text-day-muted dark:text-night-faint'
                       )}
                     >
                       <option value="" disabled>
@@ -312,7 +312,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                         fieldErrors.birthTime
                           ? 'border-rose-400/80 focus:border-rose-400 focus:ring-rose-400/20 dark:border-rose-400/60'
                           : 'border-slate-200/90 focus:border-indigo-400 focus:ring-indigo-400/25 dark:border-white/[0.12] dark:focus:border-indigo-300/60 dark:focus:ring-indigo-300/20',
-                        formData.birthTime.minute === '' && 'text-slate-400 dark:text-night-faint'
+                        formData.birthTime.minute === '' && 'text-day-muted dark:text-night-faint'
                       )}
                     >
                       <option value="" disabled>
@@ -333,7 +333,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                   slot={null}
                 />
               </div>
-              <p className="mt-2 text-xs text-slate-400 dark:text-night-faint">
+              <p className="mt-2 text-xs text-day-muted dark:text-night-faint">
                 不默认当前时刻或任何推测值，以你填写的为准
               </p>
               <AstrologyFieldError message={fieldErrors.birthTime} />
@@ -366,7 +366,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                         )}
                       >
                         <span className="font-semibold">{s.label}</span>
-                        <span className={cn('text-[11px] font-normal leading-tight mt-0.5', selected ? 'text-white/80' : 'text-slate-400 dark:text-night-faint')}>
+                        <span className={cn('text-[11px] font-normal leading-tight mt-0.5', selected ? 'text-white/80' : 'text-day-muted dark:text-night-faint')}>
                           {s.rangeHint}
                         </span>
                       </button>
@@ -459,7 +459,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             onBlur={() => setCityOpen(false)}
             className={cn(
               'h-12 w-full rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 backdrop-blur-sm',
-              'shadow-[0_1px_3px_rgba(15,23,42,0.05)] placeholder:text-slate-400',
+              'shadow-[0_1px_3px_rgba(15,23,42,0.05)] placeholder:text-day-muted',
               'transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-0',
               'dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-night-faint',
               'disabled:cursor-not-allowed disabled:opacity-60',
@@ -502,14 +502,14 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                           )}
                         >
                           <span className="text-sm font-medium">{c.name}</span>
-                          <span className="text-xs text-slate-400 dark:text-night-faint">{c.timezone}</span>
+                          <span className="text-xs text-day-muted dark:text-night-faint">{c.timezone}</span>
                         </button>
                       </li>
                     );
                   })}
                 </ul>
               ) : (
-                <p className="px-4 py-3 text-xs text-slate-400 dark:text-night-faint">
+                <p className="px-4 py-3 text-xs text-day-muted dark:text-night-faint">
                   未找到该城市，请换中文名或拼音试试
                 </p>
               )}

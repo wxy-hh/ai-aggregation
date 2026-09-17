@@ -42,7 +42,7 @@ function OptionSegment<T extends string>({
       <div className="min-w-0">
         <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
         {hint ? (
-          <p className="mt-0.5 text-[10px] leading-snug text-slate-400 dark:text-night-faint">
+          <p className="mt-0.5 text-[10px] leading-snug text-day-muted dark:text-night-faint">
             {hint}
           </p>
         ) : null}

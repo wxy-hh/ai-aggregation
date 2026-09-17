@@ -38,7 +38,7 @@ function FieldLabel({
     >
       <Icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
       <span>{children}</span>
-      {optional && <span className="text-xs font-normal text-slate-400 dark:text-night-faint">（可选）</span>}
+      {optional && <span className="text-xs font-normal text-day-muted dark:text-night-faint">（可选）</span>}
     </label>
   );
 }
@@ -67,7 +67,7 @@ export function AstrologyFieldError({ message }: { message?: string }) {
 const inputShell = (hasError: boolean) =>
   cn(
     'h-12 w-full rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 backdrop-blur-sm',
-    'shadow-[0_1px_3px_rgba(15,23,42,0.05)] placeholder:text-slate-400',
+    'shadow-[0_1px_3px_rgba(15,23,42,0.05)] placeholder:text-day-muted',
     'transition-all duration-300',
     'focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-0',
     'dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-night-faint',
@@ -105,7 +105,7 @@ function SelectField({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
-        className={cn(inputShell(Boolean(hasError)), 'appearance-none pr-9', value === '' && 'text-slate-400 dark:text-night-faint')}
+        className={cn(inputShell(Boolean(hasError)), 'appearance-none pr-9', value === '' && 'text-day-muted dark:text-night-faint')}
       >
         <option value="" disabled>
           {placeholder}
@@ -119,7 +119,7 @@ function SelectField({
       <svg
         aria-hidden
         viewBox="0 0 16 16"
-        className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-night-faint"
+        className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-day-muted dark:text-night-faint"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.8"
@@ -245,7 +245,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             onChange={(v) => updateDatePart('day', v)}
           />
         </div>
-        <p className="mt-2 text-xs text-slate-400 dark:text-night-faint">现代占星以阳历生日计算</p>
+        <p className="mt-2 text-xs text-day-muted dark:text-night-faint">现代占星以阳历生日计算</p>
         <AstrologyFieldError message={birthDateError} />
 
         {/* 太阳星座预览条：日期合法时从卡片边缘克制浮出（深空微晶质感，只展示确定事实） */}
@@ -313,11 +313,11 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-slate-400 dark:text-night-faint">用于调整报告的阅读顺序，不改变盘面</p>
+        <p className="mt-2 text-xs text-day-muted dark:text-night-faint">用于调整报告的阅读顺序，不改变盘面</p>
       </div>
 
       {/* 隐私提示 */}
-      <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-400 dark:text-night-faint">
+      <p className="flex items-start gap-2 text-xs leading-relaxed text-day-muted dark:text-night-faint">
         <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
         出生资料仅用于本次星盘计算与统一历史记录中的该条结果，可在历史记录删除。
       </p>

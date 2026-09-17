@@ -109,7 +109,7 @@ export function AstrologyDeepDive({ facts, passport, onLocateBody }: AstrologyDe
       {/* 区标题 */}
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">深入你的星盘</h3>
-        <span className="text-xs text-slate-400 dark:text-night-faint">
+        <span className="text-xs text-day-muted dark:text-night-faint">
           完整盘面与关键相位——每一条都能定位回盘面的真实位置
         </span>
       </div>
@@ -226,7 +226,7 @@ function InventoryGroup({
     <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] dark:border-white/10 dark:bg-[#0D1226] sm:p-5">
       <div className="flex flex-wrap items-baseline gap-x-2.5">
         <h4 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h4>
-        {hint && <span className="text-[11px] text-slate-400 dark:text-night-faint">{hint}</span>}
+        {hint && <span className="text-[11px] text-day-muted dark:text-night-faint">{hint}</span>}
       </div>
       <div className="mt-3">{children}</div>
     </div>
@@ -279,7 +279,7 @@ function WheelInventory({
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">
                       {PLANET_CN[p.body]}
-                      <span className="ml-1.5 text-xs font-normal text-slate-400 dark:text-night-faint">
+                      <span className="ml-1.5 text-xs font-normal text-day-muted dark:text-night-faint">
                         {PLANET_THEME[p.body]}
                       </span>
                     </span>
@@ -330,7 +330,7 @@ function WheelInventory({
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">
                           {label}
-                          <span className="ml-1.5 text-xs font-normal text-slate-400 dark:text-night-faint">{desc}</span>
+                          <span className="ml-1.5 text-xs font-normal text-day-muted dark:text-night-faint">{desc}</span>
                         </span>
                       </span>
                       <span className="shrink-0 text-xs tabular-nums text-slate-500 dark:text-night-muted">
@@ -379,7 +379,7 @@ function WheelInventory({
                       </span>
                       {PLANET_CN[a.target]}
                     </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-night-faint">
+                    <span className="shrink-0 text-[11px] tabular-nums text-day-muted dark:text-night-faint">
                       {a.orb !== null && `偏差 ${a.orb.toFixed(1)}°`}
                       {a.strength !== null && ` · 强度 ${Math.round(a.strength * 100)}%`}
                     </span>
@@ -422,7 +422,7 @@ function KeyAspectsPanel({
 
   return (
     <div>
-      <p className="text-xs text-slate-400 dark:text-night-faint">
+      <p className="text-xs text-day-muted dark:text-night-faint">
         最有解释力的 {top.length} 条相位（按强度排序）——每条都说明能量关系、生活表现与一个可练习的小动作
       </p>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -469,7 +469,7 @@ function KeyAspectsPanel({
                             </span>
                             {PLANET_CN[a.target]}
                           </span>
-                          <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-night-faint">
+                          <span className="shrink-0 text-[11px] tabular-nums text-day-muted dark:text-night-faint">
                             {a.orb !== null && `偏差 ${a.orb.toFixed(1)}°`}
                             {a.strength !== null && ` · 强度 ${Math.round(a.strength * 100)}%`}
                           </span>
@@ -526,7 +526,7 @@ function KeyAspectCard({
           <TgtGlyph width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
           {PLANET_CN[a.target]}
         </span>
-        <span className="ml-auto text-[11px] tabular-nums text-slate-400 dark:text-night-faint">
+        <span className="ml-auto text-[11px] tabular-nums text-day-muted dark:text-night-faint">
           {a.orb !== null && `偏差 ${a.orb.toFixed(1)}°`}
         </span>
       </div>

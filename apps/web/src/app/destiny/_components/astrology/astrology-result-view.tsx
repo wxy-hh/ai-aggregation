@@ -216,7 +216,7 @@ function PlanetFactCard({
                     'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                     isCurrent
                       ? 'bg-indigo-600 text-white shadow-xs dark:bg-indigo-500'
-                      : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
+                      : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
                   )}
                 >
                   <ItemGlyph width={13} height={13} className={isCurrent ? 'stroke-white' : 'stroke-current'} />
@@ -229,7 +229,7 @@ function PlanetFactCard({
             type="button"
             onClick={onClose}
             aria-label="关闭事实卡"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
           >
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
@@ -282,7 +282,7 @@ function PlanetFactCard({
         {/* 关联相位 */}
         {aspects.length > 0 && (
           <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-            <p className="text-[11px] font-semibold text-slate-400 dark:text-night-faint">关联相位作用</p>
+            <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">关联相位作用</p>
             <ul className="mt-2 space-y-1.5">
               {aspects.map((a) => {
                 const other = a.source === body ? a.target : a.source;
@@ -310,7 +310,7 @@ function PlanetFactCard({
       {/* 底部：关联生活模块跳链 */}
       {relatedModuleIds.length > 0 && (
         <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-          <p className="text-[11px] font-semibold text-slate-400 dark:text-night-faint">在以下生活模块中被引用</p>
+          <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">在以下生活模块中被引用</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {relatedModuleIds.map((id) => {
               const m = modules.find((mod) => mod.id === id);
@@ -654,7 +654,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     transition={{ duration: reduceMotion ? 0.01 : 0.3 }}
                     className="mt-4 flex flex-wrap items-center gap-2"
                   >
-                    <span className="text-[11px] font-semibold tracking-wider text-slate-400 dark:text-night-faint">
+                    <span className="text-[11px] font-semibold tracking-wider text-day-muted dark:text-night-faint">
                       依据
                     </span>
                     {interpretation.headline.factReferences.map((r) => (
@@ -677,7 +677,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
                   {withHouses ? '大三要素' : '核心要素'}
                 </h3>
-                <span className="text-xs text-slate-400 dark:text-night-faint">
+                <span className="text-xs text-day-muted dark:text-night-faint">
                   {withHouses ? '太阳 · 月亮 · 上升' : '只展示可计算且稳定的要素'}
                 </span>
               </div>
@@ -724,7 +724,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                         </span>
                         <div>
                           <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
-                          <p className="text-[11px] text-slate-400 dark:text-night-faint">{card.subtitle}</p>
+                          <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
                         </div>
                       </div>
                       <p
@@ -789,7 +789,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
 
             <div className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">你的星盘</h3>
-              <span className="text-xs text-slate-400 dark:text-night-faint">点选任一星体，查看它在你生活里的样子</span>
+              <span className="text-xs text-day-muted dark:text-night-faint">点选任一星体，查看它在你生活里的样子</span>
             </div>
 
             <div className="relative mt-6 xl:mt-8 xl:grid xl:grid-cols-2 xl:items-center xl:gap-10">
@@ -840,7 +840,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                       <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
                         看不懂星盘？每一颗星的白话位置都在这里
                       </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400 dark:text-night-faint">
+                      <p className="mt-0.5 text-[11px] text-day-muted dark:text-night-faint">
                         点选星体可在右侧直接查看深度解读与相位
                       </p>
                       <ul className="mt-3 space-y-1">
@@ -1019,7 +1019,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   <Orbit className="h-4 w-4 text-indigo-500 dark:text-indigo-300 dark:drop-shadow-[0_0_6px_rgba(165,180,252,0.55)]" strokeWidth={1.9} />
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</h3>
                 </div>
-                <span className="text-[11px] font-medium text-slate-400 dark:text-night-faint">
+                <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
                   {withHouses ? '完整十二宫' : '稳定行星盘'}
                 </span>
               </div>

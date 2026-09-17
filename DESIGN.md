@@ -103,6 +103,7 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 - 正文/占位文本对比度 ≥ 4.5:1，大标题 ≥ 3:1。
 - 玻璃上的正文：浅色玻璃用 `slate-700` 以上，深色玻璃用 `slate-200` 以上；重要文字 Semibold 以上。
 - **彩色/深空表面上的次要文字从该表面色相调色，不落中性灰**：深空蓝紫表面用夜幕令牌 `dark:text-night-muted`（`#A6AED2`，次要）/ `dark:text-night-faint`（`#828BB0`，微弱与占位符），定义于 tailwind.config.ts `colors.night`；夜幕金局用 amber 调。`dark:text-slate-400` 只允许在中性 slate 表面上使用。
+- 浅色白昼表面的次要文字用 `text-day-muted`（`#64748B`，slate-500 档，白底对比度 ≈4.7:1，过 WCAG AA），定义于 tailwind.config.ts `colors.day`；与夜幕侧 `dark:text-night-faint` 配对使用，替代浅色模式下的 `text-slate-400` 次要文字（白底仅 ≈2.5:1，不达 AA）。
 
 ---
 

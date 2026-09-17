@@ -149,7 +149,7 @@ export function AstrologyForm() {
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
               {formStep === 1 ? '星座寰宇' : '上一步'}
             </button>
-            <span className="text-xs tracking-wide text-slate-400 dark:text-night-faint">出生资料 · 两步完成</span>
+            <span className="text-xs tracking-wide text-day-muted dark:text-night-faint">出生资料 · 两步完成</span>
           </header>
 
           <div className="mt-4 grid flex-1 gap-8 sm:mt-6 xl:grid-cols-[1.02fr_0.98fr] xl:gap-12">
@@ -249,7 +249,7 @@ export function AstrologyForm() {
                         'text-xs font-semibold tracking-wide transition-colors duration-200',
                         formStep === 1
                           ? 'text-slate-900 dark:text-white'
-                          : 'text-slate-400 dark:text-night-muted'
+                          : 'text-day-muted dark:text-night-muted'
                       )}
                     >
                       黄道历法基准
@@ -272,7 +272,7 @@ export function AstrologyForm() {
                         'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-300',
                         formStep === 2
                           ? 'bg-gradient-to-r from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_0_12px_rgba(73,105,233,0.5)]'
-                          : 'border border-slate-200 bg-white/50 text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-night-faint'
+                          : 'border border-slate-200 bg-white/50 text-day-muted dark:border-white/10 dark:bg-white/5 dark:text-night-faint'
                       )}
                     >
                       02
@@ -282,7 +282,7 @@ export function AstrologyForm() {
                         'text-xs font-semibold tracking-wide transition-colors duration-200',
                         formStep === 2
                           ? 'text-slate-900 dark:text-white'
-                          : 'text-slate-400 dark:text-night-muted'
+                          : 'text-day-muted dark:text-night-muted'
                       )}
                     >
                       地平经纬校准
@@ -333,7 +333,7 @@ export function AstrologyForm() {
               )}
               {/* 完全未知档：主按钮旁标注，提交仍可用（§6.3 表单即时反馈） */}
               {formStep === 2 && formData.timePrecision === 'unknown' && (
-                <span className="hidden shrink-0 text-xs text-slate-400 dark:text-night-faint sm:block">
+                <span className="hidden shrink-0 text-xs text-day-muted dark:text-night-faint sm:block">
                   将生成无宫位本命盘
                 </span>
               )}
@@ -372,7 +372,7 @@ export function AstrologyForm() {
             </div>
             {/* 移动端未知档标注（空间不足时放到条下） */}
             {formStep === 2 && formData.timePrecision === 'unknown' && (
-              <p className="mt-2 text-center text-xs text-slate-400 dark:text-night-faint sm:hidden">
+              <p className="mt-2 text-center text-xs text-day-muted dark:text-night-faint sm:hidden">
                 将生成无宫位本命盘
               </p>
             )}

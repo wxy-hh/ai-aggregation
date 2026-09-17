@@ -342,7 +342,7 @@ export function AstrologyRitualResult() {
                               ? 'font-semibold text-slate-900 dark:text-white'
                               : done
                                 ? 'text-slate-500 dark:text-night-muted'
-                                : 'text-slate-400 dark:text-night-faint'
+                                : 'text-day-muted dark:text-night-faint'
                           )}
                         >
                           {done ? s.done : s.doing}
@@ -351,7 +351,7 @@ export function AstrologyRitualResult() {
                     );
                   })}
                 </ol>
-                <p className="mt-6 text-center text-xs leading-relaxed text-slate-400 dark:text-night-faint xl:text-left">
+                <p className="mt-6 text-center text-xs leading-relaxed text-day-muted dark:text-night-faint xl:text-left">
                   进度由真实计算步骤推进，不设百分比
                 </p>
                 {/* 读屏状态宣布：阶段切换时朗读当前步骤（视觉清单逐字变化对读屏不友好，单独用活体区宣布） */}

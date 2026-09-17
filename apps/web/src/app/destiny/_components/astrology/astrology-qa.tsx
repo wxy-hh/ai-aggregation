@@ -142,7 +142,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
               className={cn(
                 'rounded-full px-2 py-0.5 text-[10px] font-semibold',
                 capped
-                  ? 'bg-slate-100 text-slate-400 dark:bg-white/[0.06] dark:text-night-faint'
+                  ? 'bg-slate-100 text-day-muted dark:bg-white/[0.06] dark:text-night-faint'
                   : asked > 0
                     ? 'bg-amber-100/80 text-amber-700 dark:bg-amber-400/[0.15] dark:text-amber-300'
                     : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
@@ -255,7 +255,7 @@ function QaConversation({
             className={cn(
               'rounded-full px-2 py-0.5 text-[10px] font-semibold',
               capped
-                ? 'bg-slate-100 text-slate-400 dark:bg-white/[0.06] dark:text-night-faint'
+                ? 'bg-slate-100 text-day-muted dark:bg-white/[0.06] dark:text-night-faint'
                 : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
             )}
           >
@@ -265,7 +265,7 @@ function QaConversation({
             type="button"
             onClick={onRequestClose}
             aria-label="收起星语问答"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
           >
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
@@ -275,7 +275,7 @@ function QaConversation({
       {/* 消息区 */}
       <div ref={listRef} className="max-h-[250px] min-h-[140px] flex-1 space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar">
         {messages.length === 0 && (
-          <p className="text-xs leading-relaxed text-slate-400 dark:text-night-faint">
+          <p className="text-xs leading-relaxed text-day-muted dark:text-night-faint">
             你的出生资料与盘面事实已作为上下文。可以问自己、关系、事业或某个相位——回答只引用盘面上已确认的事实。
           </p>
         )}
@@ -321,7 +321,7 @@ function QaConversation({
                     ) : (
                       <span
                         key={i}
-                        className={cn(cls, 'border-slate-300/50 text-slate-400 dark:border-white/[0.12] dark:text-night-faint')}
+                        className={cn(cls, 'border-slate-300/50 text-day-muted dark:border-white/[0.12] dark:text-night-faint')}
                       >
                         {c.label}
                       </span>
@@ -335,7 +335,7 @@ function QaConversation({
         {/* 组织回答中的轻量反馈 */}
         {pending && (
           <div className="flex justify-start">
-            <div className="flex items-center gap-1.5 rounded-2xl bg-slate-100/90 px-3.5 py-2.5 text-xs text-slate-400 dark:bg-white/[0.06] dark:text-night-faint">
+            <div className="flex items-center gap-1.5 rounded-2xl bg-slate-100/90 px-3.5 py-2.5 text-xs text-day-muted dark:bg-white/[0.06] dark:text-night-faint">
               {reduceMotion ? (
                 '正在组织回答…'
               ) : (
@@ -352,7 +352,7 @@ function QaConversation({
       {/* 引导问题（尚未提问且未达上限时展示） */}
       {asked === 0 && !capped && (
         <div className="flex flex-col gap-1.5 px-4 pb-3">
-          <p className="text-[11px] font-medium text-slate-400 dark:text-night-faint">你可以试着这样问：</p>
+          <p className="text-[11px] font-medium text-day-muted dark:text-night-faint">你可以试着这样问：</p>
           {GUIDE_QUESTIONS.map((q) => (
             <button
               key={q}
@@ -369,7 +369,7 @@ function QaConversation({
 
       {/* 输入区 / 上限提示 */}
       {capped ? (
-        <p className="border-t border-slate-100 px-4 py-3 text-xs leading-relaxed text-slate-400 dark:border-white/[0.08] dark:text-night-faint">
+        <p className="border-t border-slate-100 px-4 py-3 text-xs leading-relaxed text-day-muted dark:border-white/[0.08] dark:text-night-faint">
           本次星语问答已完成，可重新打开报告后继续探索。
         </p>
       ) : (
@@ -387,7 +387,7 @@ function QaConversation({
             placeholder="问一个关于你星盘的问题…"
             aria-label="星语问答输入框"
             maxLength={120}
-            className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100"
+            className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
           />
           <button
             type="submit"

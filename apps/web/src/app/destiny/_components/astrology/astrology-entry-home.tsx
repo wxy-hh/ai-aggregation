@@ -103,7 +103,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               <p className="mt-3 text-base leading-relaxed text-slate-600 dark:text-indigo-100/80 sm:mt-4 sm:text-lg">
                 一分钟，看懂你的性格底色、关系模式与本周行动
               </p>
-              <p className="mt-2.5 hidden text-xs leading-relaxed text-slate-400 dark:text-night-faint sm:block">
+              <p className="mt-2.5 hidden text-xs leading-relaxed text-day-muted dark:text-night-faint sm:block">
                 星体位置为精密天文计算，解读基于星盘事实生成 · 用于自我探索与娱乐参考
               </p>
             </motion.header>
@@ -158,7 +158,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                           e.stopPropagation();
                           setSampleSelectedBody(null);
                         }}
-                        className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                        className="rounded-full p-1 text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
                         aria-label="关闭星体解读"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -262,7 +262,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
           {recentRecord && (
             <div className="mt-10 flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur-md dark:border-white/10 dark:bg-white/5">
               <div className="min-w-0">
-                <p className="text-[11px] font-bold tracking-wider text-slate-400 dark:text-night-faint">
+                <p className="text-[11px] font-bold tracking-wider text-day-muted dark:text-night-faint">
                   星座寰宇 · {recentRecord.date}
                 </p>
                 <p className="mt-0.5 truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
