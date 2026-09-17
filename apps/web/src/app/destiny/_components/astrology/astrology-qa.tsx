@@ -170,7 +170,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
             type="button"
             onClick={() => setOpen(true)}
             aria-expanded={open}
-            aria-controls="astro-qa-conversation"
+            aria-controls={open ? 'astro-qa-conversation' : undefined}
             aria-haspopup={isDesktop ? undefined : 'dialog'}
             className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-indigo-300/60 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/30 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
           >
@@ -320,8 +320,8 @@ function QaConversation({
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {m.citations.map((c, i) => {
                     const clickable = c.moduleId !== undefined || (c.body !== undefined && c.body !== null);
-                    const cls =
-                      'inline-flex min-h-11 items-center rounded-full border px-2.5 text-[10px] font-medium';
+                    // 44px 热区只给可点的引用片；纯标签不是交互目标，保持紧凑（否则不可点胶囊白占高度）
+                    const cls = 'inline-flex items-center rounded-full border px-2.5 text-[10px] font-medium';
                     return clickable ? (
                       <button
                         key={i}
@@ -329,6 +329,7 @@ function QaConversation({
                         onClick={() => followCitation(c)}
                         className={cn(
                           cls,
+                          'min-h-11',
                           m.kind === 'blocked'
                             ? 'border-amber-300/60 text-amber-700 hover:bg-amber-100/70 dark:border-amber-300/30 dark:text-amber-200 dark:hover:bg-amber-400/10'
                             : 'border-indigo-300/50 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-300/25 dark:text-indigo-200 dark:hover:bg-indigo-400/10',

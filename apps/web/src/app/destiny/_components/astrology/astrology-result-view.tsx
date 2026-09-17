@@ -203,8 +203,11 @@ function PlanetFactCard({
             <span className="text-xs font-semibold text-slate-500 dark:text-night-muted">星体深度解构</span>
           )}
 
-          {/* 快捷星体点选胶囊：热区 44×44（横排十颗，28×28 易误触） */}
-          <div className="flex max-w-[190px] items-center gap-1 overflow-x-auto p-0.5 custom-scrollbar sm:max-w-[280px]">
+          {/* 快捷星体点选胶囊：热区 44×44（横排十颗，28×28 易误触）。
+              上限放宽到 226px（≈5 颗 + 第 6 颗露头）给横排「可滑动」视觉线索；
+              min-w-0 保证窄屏时先缩行、不挤两侧控件；不加 flex-1——行宽取内容与上限的较小值，
+              用 flex-1 会被中间余量（桌面右栏实测 253px）压到比上限更窄 */}
+          <div className="flex min-w-0 max-w-[226px] items-center gap-1 overflow-x-auto p-0.5 custom-scrollbar sm:max-w-[280px]">
             {allPlanets.map((p) => {
               const ItemGlyph = PLANET_GLYPH[p.body];
               const isCurrent = p.body === body;
@@ -322,7 +325,7 @@ function PlanetFactCard({
                   key={id}
                   type="button"
                   onClick={() => onLocateModule(id)}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-full border border-indigo-200/80 bg-white px-2.5 text-[11px] font-medium text-indigo-600 shadow-2xs transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-full border border-indigo-200/80 bg-white px-2.5 text-[11px] font-medium text-indigo-600 shadow-2xs transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
                 >
                   <span>{m.title}</span>
                   <ChevronRight className="h-3 w-3 opacity-60" />
