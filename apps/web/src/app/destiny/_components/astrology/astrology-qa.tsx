@@ -155,11 +155,14 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
           <p className="mt-2.5 text-xs leading-relaxed text-slate-500 dark:text-night-muted">
             带着你的星盘提问，回答只引用盘面已确认事实。
           </p>
+          {/* 展开态随 open 变化：桌面为原位展开（控件在展开后不再渲染），移动端为底部对话框抽屉 */}
           <button
             ref={entryRef}
             type="button"
             onClick={() => setOpen(true)}
-            aria-expanded={false}
+            aria-expanded={open}
+            aria-controls="astro-qa-conversation"
+            aria-haspopup={isDesktop ? undefined : 'dialog'}
             className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-indigo-300/60 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/30 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
           >
             {asked > 0 ? '继续提问' : '开始提问'}
@@ -273,8 +276,14 @@ function QaConversation({
         </div>
       </div>
 
-      {/* 消息区 */}
-      <div ref={listRef} className="max-h-[250px] min-h-[140px] flex-1 space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar">
+      {/* 消息区：role=log + polite 播报助手新回复；不用 assertive，避免抢读用户自己的提问与 pending 提示 */}
+      <div
+        ref={listRef}
+        role="log"
+        aria-live="polite"
+        aria-label="问答消息"
+        className="max-h-[250px] min-h-[140px] flex-1 space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar"
+      >
         {messages.length === 0 && (
           <p className="text-xs leading-relaxed text-day-muted dark:text-night-faint">
             你的出生资料与盘面事实已作为上下文。可以问自己、关系、事业或某个相位——回答只引用盘面上已确认的事实。

@@ -44,12 +44,13 @@ function FieldLabel({
   );
 }
 
-/** 字段错误：柔和玫瑰红一行说明，动画进出，不打断表单骨架 */
-export function AstrologyFieldError({ message }: { message?: string }) {
+/** 字段错误：柔和玫瑰红一行说明，动画进出，不打断表单骨架；id 供输入控件 aria-describedby 关联 */
+export function AstrologyFieldError({ id, message }: { id?: string; message?: string }) {
   return (
     <AnimatePresence initial={false}>
       {message && (
         <motion.p
+          id={id}
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
@@ -86,6 +87,7 @@ function SelectField({
   options,
   disabled,
   hasError,
+  describedBy,
   onChange,
   ariaLabel,
 }: {
@@ -95,6 +97,8 @@ function SelectField({
   options: Array<{ value: string; label: string }>;
   disabled?: boolean;
   hasError?: boolean;
+  /** 错误文案元素 id：仅在出错时由调用方传入，避免指向不存在的引用 */
+  describedBy?: string;
   onChange: (value: string) => void;
   ariaLabel: string;
 }) {
@@ -106,6 +110,8 @@ function SelectField({
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
+        aria-invalid={Boolean(hasError)}
+        aria-describedby={describedBy}
         className={cn(inputShell(Boolean(hasError)), 'appearance-none pr-9', value === '' && 'text-day-muted dark:text-night-faint')}
       >
         <option value="" disabled>
@@ -142,6 +148,9 @@ const TOPICS: Array<{ value: AstrologyTopic; label: string }> = [
 ];
 
 /* ---------- 第一步表单 ---------- */
+
+/** 日期三选共用同一行错误说明：稳定 id 供三个选择器以 aria-describedby 关联 */
+const BIRTH_DATE_ERROR_ID = 'astrology-birth-date-error';
 
 export type AstrologyFormStepProps = {
   formData: AstrologyFormData;
@@ -222,6 +231,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             ariaLabel="出生年份"
             disabled={disabled}
             hasError={Boolean(birthDateError)}
+            describedBy={birthDateError ? BIRTH_DATE_ERROR_ID : undefined}
             options={years.map((y) => ({ value: String(y), label: `${y} 年` }))}
             onChange={(v) => updateDatePart('year', v)}
           />
@@ -232,6 +242,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             ariaLabel="出生月份"
             disabled={disabled}
             hasError={Boolean(birthDateError)}
+            describedBy={birthDateError ? BIRTH_DATE_ERROR_ID : undefined}
             options={months.map((m) => ({ value: String(m), label: `${m} 月` }))}
             onChange={(v) => updateDatePart('month', v)}
           />
@@ -242,12 +253,13 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             ariaLabel="出生日"
             disabled={disabled}
             hasError={Boolean(birthDateError)}
+            describedBy={birthDateError ? BIRTH_DATE_ERROR_ID : undefined}
             options={days.map((d) => ({ value: String(d), label: `${d} 日` }))}
             onChange={(v) => updateDatePart('day', v)}
           />
         </div>
         <p className="mt-2 text-xs text-day-muted dark:text-night-faint">现代占星以阳历生日计算</p>
-        <AstrologyFieldError message={birthDateError} />
+        <AstrologyFieldError id={BIRTH_DATE_ERROR_ID} message={birthDateError} />
 
         {/* 太阳星座预览条：日期合法时从卡片边缘克制浮出（深空微晶质感，只展示确定事实） */}
         <AnimatePresence initial={false}>

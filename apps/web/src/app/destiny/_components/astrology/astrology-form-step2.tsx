@@ -141,6 +141,11 @@ const PRECISIONS: Array<{ value: TimePrecision; label: string }> = [
 
 /* ---------- 第二步表单 ---------- */
 
+/** 字段错误文案的稳定 id：对应输入控件以 aria-describedby 关联，出错时读屏能听到原因 */
+const BIRTH_TIME_ERROR_ID = 'astrology-birth-time-error';
+const APPROXIMATE_SLOT_ERROR_ID = 'astrology-approximate-slot-error';
+const LOCATION_ERROR_ID = 'astrology-city-error';
+
 export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }: AstrologyFormStepProps) {
   const reduceMotion = useReducedMotion();
   const [impactOpen, setImpactOpen] = useState(false);
@@ -280,12 +285,15 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
               <div className="flex items-center gap-4">
                 <div className="grid flex-1 grid-cols-2 gap-2.5">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">时</label>
+                    <label htmlFor="astrology-birth-hour" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">时</label>
                     <select
+                      id="astrology-birth-hour"
                       value={formData.birthTime.hour}
                       disabled={disabled}
                       onChange={(e) => patchTime('hour', e.target.value)}
                       aria-label="出生小时"
+                      aria-invalid={Boolean(fieldErrors.birthTime)}
+                      aria-describedby={fieldErrors.birthTime ? BIRTH_TIME_ERROR_ID : undefined}
                       className={cn(
                         'h-12 w-full appearance-none rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-300 focus:outline-none focus:ring-2 dark:bg-white/5 dark:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60',
                         fieldErrors.birthTime
@@ -305,12 +313,15 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">分</label>
+                    <label htmlFor="astrology-birth-minute" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">分</label>
                     <select
+                      id="astrology-birth-minute"
                       value={formData.birthTime.minute}
                       disabled={disabled}
                       onChange={(e) => patchTime('minute', e.target.value)}
                       aria-label="出生分钟"
+                      aria-invalid={Boolean(fieldErrors.birthTime)}
+                      aria-describedby={fieldErrors.birthTime ? BIRTH_TIME_ERROR_ID : undefined}
                       className={cn(
                         'h-12 w-full appearance-none rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors duration-300 focus:outline-none focus:ring-2 dark:bg-white/5 dark:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60',
                         fieldErrors.birthTime
@@ -340,14 +351,20 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
               <p className="mt-2 text-xs text-day-muted dark:text-night-faint">
                 不默认当前时刻或任何推测值，以你填写的为准
               </p>
-              <AstrologyFieldError message={fieldErrors.birthTime} />
+              <AstrologyFieldError id={BIRTH_TIME_ERROR_ID} message={fieldErrors.birthTime} />
             </div>
           )}
 
           {formData.timePrecision === 'approximate' && (
             <div>
               <div className="flex items-start gap-4">
-                <div className="grid flex-1 grid-cols-2 gap-2.5" role="radiogroup" aria-label="大约时段">
+                <div
+                  className="grid flex-1 grid-cols-2 gap-2.5"
+                  role="radiogroup"
+                  aria-label="大约时段"
+                  aria-invalid={Boolean(fieldErrors.approximateSlot)}
+                  aria-describedby={fieldErrors.approximateSlot ? APPROXIMATE_SLOT_ERROR_ID : undefined}
+                >
                   {APPROXIMATE_SLOTS.map((s) => {
                     const selected = formData.approximateSlot === s.value;
                     return (
@@ -383,7 +400,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                 {/* 时段弧带钟面 */}
                 <MiniClock hour={null} minute={null} slot={formData.approximateSlot || null} />
               </div>
-              <AstrologyFieldError message={fieldErrors.approximateSlot} />
+              <AstrologyFieldError id={APPROXIMATE_SLOT_ERROR_ID} message={fieldErrors.approximateSlot} />
               {/* 琥珀色正面徽章：正面表述，不用红色警告、不用百分比 */}
               <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3.5 py-2.5 text-xs leading-relaxed text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-200">
                 <SunMedium className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
@@ -443,6 +460,8 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             aria-autocomplete="list"
             aria-controls="astrology-city-listbox"
             aria-activedescendant={highlightedIndex >= 0 ? `city-opt-${highlightedIndex}` : undefined}
+            aria-invalid={Boolean(fieldErrors.location)}
+            aria-describedby={fieldErrors.location ? LOCATION_ERROR_ID : undefined}
             value={cityQuery}
             disabled={disabled}
             autoComplete="off"
@@ -523,7 +542,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             </div>
           )}
         </div>
-        <AstrologyFieldError message={fieldErrors.location} />
+        <AstrologyFieldError id={LOCATION_ERROR_ID} message={fieldErrors.location} />
 
         {/* 时区可读确认条 */}
         <AnimatePresence initial={false}>
