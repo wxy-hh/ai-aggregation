@@ -22,6 +22,7 @@ import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel, ZODIAC_CN } from './astrology-chart-wheel';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
+import { AstrologyWheelSceneSwitch, useWheelSceneAvailable } from './astrology-wheel-scene-switch';
 import { AstrologyStarfield } from './astrology-starfield';
 import { AstrologyFormStep1 } from './astrology-form-step1';
 import { AstrologyFormStep2 } from './astrology-form-step2';
@@ -45,6 +46,8 @@ const DELIVERABLES = [
 
 export function AstrologyForm() {
   const reduceMotion = useReducedMotion();
+  /** 星渊 WebGL 场景可用性：可用时桌面预览由 3D 场景接管，并关闭 CSS 视差避免双重倾斜（同结果页口径） */
+  const wheelSceneOk = useWheelSceneAvailable();
   const { formData, formStep, fieldErrors, blockingLoading, setWorkspaceState } =
     useDestinyWorkspaceStore(
       useShallow((s) => ({
@@ -174,11 +177,19 @@ export function AstrologyForm() {
               <div className="hidden xl:block">
                 <div className="relative mx-auto w-full max-w-[25rem]">
                   <div aria-hidden className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15" />
-                  <AstrologyWheel3D className="relative">
-                    <AstrologyChartWheel
+                  {/* 预览即所得：与结果页同一座「星渊」3D 星盘（纯展示，不可点选）；
+                      WebGL 不可用/加载中由 SVG 轮原地兜底，太阳滑动在两套渲染间语义一致 */}
+                  <AstrologyWheel3D className="relative" parallax={wheelSceneOk !== true}>
+                    <AstrologyWheelSceneSwitch
                       facts={sampleFacts}
                       planetOverrides={sunOverride}
-                      className="relative drop-shadow-[0_18px_42px_rgba(67,56,202,0.14)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.55)]"
+                      fallback={
+                        <AstrologyChartWheel
+                          facts={sampleFacts}
+                          planetOverrides={sunOverride}
+                          className="relative drop-shadow-[0_18px_42px_rgba(67,56,202,0.14)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.55)]"
+                        />
+                      }
                     />
                   </AstrologyWheel3D>
                 </div>

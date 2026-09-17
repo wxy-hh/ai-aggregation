@@ -28,6 +28,7 @@ import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { AstrologyWheelSceneSwitch } from './astrology-wheel-scene-switch';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
 import { APPROXIMATE_SLOTS, mapFormToAstroProfile } from './astrology-mappers';
@@ -189,7 +190,8 @@ export function AstrologyRitualResult() {
   const backToForm = () => setWorkspaceState('astrology', { entryView: 'form', error: null, errorKind: null });
 
   /** 共享星盘元素：同一 layoutId 在 ritual/result 两相位间做树内布局动画；
-   *  06 起结果相位透传点选交互（selectedBody/onSelectBody），仪式相位不传即为纯展示 */
+   *  06 起结果相位透传点选交互（selectedBody/onSelectBody），仪式相位不传即为纯展示；
+   *  结果相位升级「星渊」WebGL 场景（探测/加载失败自动回退 SVG 轮，兜底节点同源复用） */
   const wheelSlot = (
     slotClass: string,
     wheelProps?: { selectedBody: PlanetBody | null; onSelectBody: (body: PlanetBody | null) => void }
@@ -200,13 +202,29 @@ export function AstrologyRitualResult() {
         transition={reduceMotion ? { duration: 0.01 } : { duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
         className={cn(slotClass, '[transform-style:preserve-3d]')}
       >
-        <AstrologyChartWheel
-          facts={chartFacts}
-          revealStage={phase === 'ritual' ? stage : undefined}
-          selectedBody={wheelProps?.selectedBody ?? null}
-          onSelectBody={wheelProps?.onSelectBody}
-          className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
-        />
+        {phase === 'result' && wheelProps ? (
+          <AstrologyWheelSceneSwitch
+            facts={chartFacts}
+            selectedBody={wheelProps.selectedBody}
+            onSelectBody={wheelProps.onSelectBody}
+            fallback={
+              <AstrologyChartWheel
+                facts={chartFacts}
+                selectedBody={wheelProps.selectedBody}
+                onSelectBody={wheelProps.onSelectBody}
+                className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
+              />
+            }
+          />
+        ) : (
+          <AstrologyChartWheel
+            facts={chartFacts}
+            revealStage={phase === 'ritual' ? stage : undefined}
+            selectedBody={wheelProps?.selectedBody ?? null}
+            onSelectBody={wheelProps?.onSelectBody}
+            className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
+          />
+        )}
       </motion.div>
     ) : null;
 

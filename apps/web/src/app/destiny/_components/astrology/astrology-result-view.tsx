@@ -67,6 +67,7 @@ import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyShareEntry } from './astrology-share-entry';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
+import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
 import { APPROXIMATE_SLOTS, formatDegreeMinute } from './astrology-mappers';
 import type { AstrologyFormData } from '../astrology-types';
 
@@ -354,6 +355,8 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   );
 
   const [selectedBody, setSelectedBody] = useState<PlanetBody | null>(null);
+  /** WebGL 星渊场景可用性（null=探测中/不可用 → SVG 轮兜底并保持 DOM 视差） */
+  const wheelSceneOk = useWheelSceneAvailable();
   const [basisOpen, setBasisOpen] = useState(false);
   const [showAllTerms, setShowAllTerms] = useState(false);
   /** 白话清单默认只露前 4 颗（防长页）；展开后显示全部行星 */
@@ -793,8 +796,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               {/* 左列：轮盘主角 */}
               <div className="relative mx-auto w-full max-w-[min(100%,420px)] sm:max-w-[520px]">
                 <div aria-hidden className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15" />
-                {/* 3D 舞台包在 layoutId 穿入元素之外：不影响仪式→结果的穿入测量 */}
-                <AstrologyWheel3D className="relative">
+                {/* 3D 舞台包在 layoutId 穿入元素之外：不影响仪式→结果的穿入测量；
+                    WebGL 场景接管后关闭 DOM 指针视差（场景内有相机视差，避免双重倾斜） */}
+                <AstrologyWheel3D className="relative" parallax={wheelSceneOk !== true}>
                   {wheelSlot('relative mx-auto w-full', { selectedBody, onSelectBody: setSelectedBody })}
                 </AstrologyWheel3D>
               </div>

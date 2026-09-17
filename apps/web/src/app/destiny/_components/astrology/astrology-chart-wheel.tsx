@@ -12,7 +12,7 @@
  * 无宫位盘以白羊 0° 在左。03 工单为静态展示；点选交互在 06 工单扩展。
  */
 
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useId, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type {
@@ -144,9 +144,6 @@ const ASPECT_LINE_DIM: Record<AspectType, { className: string; dash?: string }> 
   conjunction: { className: 'stroke-amber-200/40 dark:stroke-white/25' },
 };
 
-/** 行星光晕渐变 id（defs 中按 PLANET_ORB 逐星生成）：星辉光晕 + 宝珠本体 */
-const PLANET_GLOW_ID = (body: PlanetBody) => `acw-orb-glow-${body}`;
-const PLANET_ORB_ID = (body: PlanetBody) => `acw-orb-${body}`;
 /** 十星列表（defs 生成用，顺序无关渲染） */
 const ALL_BODIES = Object.keys(PLANET_ORB) as PlanetBody[];
 
@@ -294,6 +291,16 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
   /** 悬停/聚焦中的星体（tooltip 与轻微放大共用） */
   const [hoveredBody, setHoveredBody] = useState<PlanetBody | null>(null);
 
+  /**
+   * 实例唯一 defs id 前缀（关键修复）：同页可存在多个星盘实例（表单页移动横条 + 桌面预览、
+   * 未知档无宫位圆盘等），若共用静态 id，url(#id) 会解析到文档首个匹配——首个匹配位于
+   * display:none 实例时 Chrome 不绘制其渐变/滤镜，导致可见实例盘心透明、整盘洗白。
+   */
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const gid = (name: string) => `acw-${name}-${uid}`;
+  const orbId = (b: PlanetBody) => gid(`orb-${b}`);
+  const glowId = (b: PlanetBody) => gid(`orb-glow-${b}`);
+
   /** 可见行星（sign 为 null = 不稳定隐藏，绝不虚构位置）与绝对黄经 */
   const visiblePlanets = useMemo(
     () =>
@@ -357,7 +364,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
       >
         <defs>
           {/* 天象仪深邃穹顶渐变：中心为可见的深蓝（非纯黑），保持宇宙纵深 */}
-          <radialGradient id="acw-obsidian-stage" cx="50%" cy="50%" r="50%">
+          <radialGradient id={gid('obsidian-stage')} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#0F1A42" />
             <stop offset="30%" stopColor="#0C1535" />
             <stop offset="55%" stopColor="#091028" />
@@ -365,50 +372,50 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             <stop offset="100%" stopColor="#040816" />
           </radialGradient>
           {/* 星云多中心深空能量层：大幅提升可见度，让深空有真实星云纵深 */}
-          <radialGradient id="acw-nebula-violet" cx="30%" cy="28%" r="62%">
+          <radialGradient id={gid('nebula-violet')} cx="30%" cy="28%" r="62%">
             <stop offset="0%" stopColor="#818CF8" stopOpacity="0.45" />
             <stop offset="38%" stopColor="#6366F1" stopOpacity="0.22" />
             <stop offset="70%" stopColor="#4338CA" stopOpacity="0.09" />
             <stop offset="100%" stopColor="#312E81" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id="acw-nebula-gold" cx="72%" cy="68%" r="55%">
+          <radialGradient id={gid('nebula-gold')} cx="72%" cy="68%" r="55%">
             <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.35" />
             <stop offset="42%" stopColor="#D97706" stopOpacity="0.16" />
             <stop offset="75%" stopColor="#92400E" stopOpacity="0.06" />
             <stop offset="100%" stopColor="#78350F" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id="acw-nebula-cyan" cx="68%" cy="25%" r="45%">
+          <radialGradient id={gid('nebula-cyan')} cx="68%" cy="25%" r="45%">
             <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.28" />
             <stop offset="50%" stopColor="#0284C7" stopOpacity="0.10" />
             <stop offset="100%" stopColor="#0369A1" stopOpacity="0" />
           </radialGradient>
           {/* 轮底光晕：深邃星空液态光晕，赋予盘面深邃纵深 */}
-          <radialGradient id="acw-halo" cx="50%" cy="50%" r="50%">
+          <radialGradient id={gid('halo')} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#818CF8" stopOpacity="0.25" />
             <stop offset="50%" stopColor="#6366F1" stopOpacity="0.12" />
             <stop offset="80%" stopColor="#4338CA" stopOpacity="0.04" />
             <stop offset="100%" stopColor="#1E1B4B" stopOpacity="0" />
           </radialGradient>
           {/* 中心微光核：温润的星核聚变柔光，杜绝刺眼白斑 */}
-          <radialGradient id="acw-core" cx="50%" cy="50%" r="50%">
+          <radialGradient id={gid('core')} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#FFFBEB" stopOpacity="0.88" />
             <stop offset="22%" stopColor="#FDE68A" stopOpacity="0.65" />
             <stop offset="48%" stopColor="#F59E0B" stopOpacity="0.30" />
             <stop offset="75%" stopColor="#6366F1" stopOpacity="0.08" />
             <stop offset="100%" stopColor="#4338CA" stopOpacity="0" />
           </radialGradient>
-          {/* 十星宝珠 + 星辉渐变（按 PLANET_ORB 逐星生成）：球体左上受光，外层日冕高光辐射 */}
+          {/* 十星宝珠 + 星辉渐变（defs 中按 PLANET_ORB 逐星生成）：球体左上受光，外层日冕高光辐射 */}
           {ALL_BODIES.map((b) => {
             const orb = PLANET_ORB[b];
             return (
               <Fragment key={b}>
-                <radialGradient id={PLANET_ORB_ID(b)} cx="32%" cy="28%" r="70%">
+                <radialGradient id={orbId(b)} cx="32%" cy="28%" r="70%">
                   <stop offset="0%" stopColor={orb.core} />
                   <stop offset="38%" stopColor={orb.mid} />
                   <stop offset="85%" stopColor={orb.edge} />
                   <stop offset="100%" stopColor={orb.edge} />
                 </radialGradient>
-                <radialGradient id={PLANET_GLOW_ID(b)} cx="50%" cy="50%" r="50%">
+                <radialGradient id={glowId(b)} cx="50%" cy="50%" r="50%">
                   <stop offset="0%" stopColor={orb.glow} stopOpacity="0.85" />
                   <stop offset="35%" stopColor={orb.glow} stopOpacity="0.45" />
                   <stop offset="68%" stopColor={orb.glow} stopOpacity="0.16" />
@@ -418,11 +425,11 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             );
           })}
           {/* 轮圈外缘柔光滤镜 */}
-          <filter id="acw-soft" x="-20%" y="-20%" width="140%" height="140%">
+          <filter id={gid('soft')} x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="5" />
           </filter>
           {/* 盘面边缘暗角渐变：让外圈自然过渡到表圈，消除硬切黑边 */}
-          <radialGradient id="acw-edge-vignette" cx="50%" cy="50%" r="50%">
+          <radialGradient id={gid('edge-vignette')} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="transparent" />
             <stop offset="72%" stopColor="transparent" />
             <stop offset="88%" stopColor="rgba(15,20,50,0.4)" />
@@ -430,7 +437,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             <stop offset="100%" stopColor="rgba(45,50,90,0.65)" />
           </radialGradient>
           {/* 星座环内凹阴影滤镜：赋予环带沉降的立体纵深感 */}
-          <filter id="acw-zodiac-inset" x="-5%" y="-5%" width="110%" height="110%">
+          <filter id={gid('zodiac-inset')} x="-5%" y="-5%" width="110%" height="110%">
             <feFlood floodColor="rgba(0,0,0,0.6)" result="black" />
             <feComposite in="black" in2="SourceGraphic" operator="in" result="shadow-shape" />
             <feGaussianBlur in="shadow-shape" stdDeviation="3" result="blur" />
@@ -441,21 +448,21 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             </feMerge>
           </filter>
           {/* 行星光芒柔化滤镜：微量模糊让宝珠边缘有光晕衍射 */}
-          <filter id="acw-star-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <filter id={gid('star-glow')} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="1.5" />
           </filter>
         </defs>
 
         {/* ═══ 盘面天穹基底：真正的「悬浮深空天象穹顶」 ═══ */}
         {/* 外圈极深黑曜石仪器表圈，带流金刻槽与精密天体机械质感 */}
-        <circle cx={CX} cy={CY} r={276} fill="url(#acw-obsidian-stage)" className="shadow-2xl" />
+        <circle cx={CX} cy={CY} r={276} fill={`url(#${gid('obsidian-stage')})`} className="shadow-2xl" />
         <circle cx={CX} cy={CY} r={276} fill="none" strokeWidth={1.5} stroke="rgba(245,212,134,0.45)" />
         <circle cx={CX} cy={CY} r={270} fill="none" strokeWidth={0.8} stroke="rgba(255,255,255,0.18)" strokeDasharray="1 3" />
 
         {/* 三重流动的液态星云光雾（紫晶、流金、幽蓝） */}
-        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill="url(#acw-nebula-violet)" />
-        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill="url(#acw-nebula-gold)" />
-        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill="url(#acw-nebula-cyan)" />
+        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill={`url(#${gid('nebula-violet')})`} />
+        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill={`url(#${gid('nebula-gold')})`} />
+        <circle cx={CX} cy={CY} r={R_ZODIAC_OUT} fill={`url(#${gid('nebula-cyan')})`} />
 
         {/* 盘内三层星尘（亮星/中星/暗星），赋予深空真实宇宙景深 */}
         {/* 亮星：1.0-1.3px, opacity 0.75-0.90 */}
@@ -498,11 +505,11 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
         ))}
 
         {/* 盘面边缘暗角过渡层：消除盘面到表圈之间的硬切黑边 */}
-        <circle cx={CX} cy={CY} r={276} fill="url(#acw-edge-vignette)" />
+        <circle cx={CX} cy={CY} r={276} fill={`url(#${gid('edge-vignette')})`} />
 
         {/* 盘心光核（缩小使内部空间更宽敞） */}
-        <circle cx={CX} cy={CY} r={80} fill="url(#acw-halo)" />
-        <circle cx={CX} cy={CY} r={28} fill="url(#acw-core)" />
+        <circle cx={CX} cy={CY} r={80} fill={`url(#${gid('halo')})`} />
+        <circle cx={CX} cy={CY} r={28} fill={`url(#${gid('core')})`} />
 
         {/* 黄道圈底衬：深空环带，应用内凹阴影产生浮雕纵深 */}
         <circle
@@ -512,7 +519,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
           fill="none"
           strokeWidth={R_ZODIAC_OUT - R_ZODIAC_IN}
           stroke="rgba(8,13,34,0.72)"
-          filter="url(#acw-zodiac-inset)"
+          filter={`url(#${gid('zodiac-inset')})`}
         />
 
         {/* ═══ 装饰表圈（非数据层，aria-hidden）：外环刻度点带三颗记号珠顺时针平稳公转、
@@ -523,7 +530,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             const [bx, by] = polar(deg, 270);
             return (
               <g key={deg}>
-                <circle cx={bx} cy={by} r={3} fill="rgba(245,212,134,0.25)" filter="url(#acw-soft)" />
+                <circle cx={bx} cy={by} r={3} fill="rgba(245,212,134,0.25)" filter={`url(#${gid('soft')})`} />
                 <circle cx={bx} cy={by} r={1.6} fill="#FDE68A" />
               </g>
             );
@@ -568,7 +575,8 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                 <Fragment key={`${a.source}-${a.target}-${a.type}`}>
                   <motion.path
                     fill="none"
-                    initial={revealing ? { opacity: 0 } : false}
+                    /* framer 动画 d 属性必须把 d 放进 initial，否则首帧写入字符串 "undefined" 触发浏览器告警 */
+                    initial={revealing ? { opacity: 0, d } : { d }}
                     animate={{ d, opacity: lineOpacity }}
                     transition={arcTransition}
                     strokeWidth={lineWidth}
@@ -580,7 +588,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                   {!reduceMotion && (selectedBody == null || connected) && (
                     <motion.path
                       fill="none"
-                      initial={revealing ? { opacity: 0 } : false}
+                      initial={revealing ? { opacity: 0, d } : { d }}
                       animate={{ d, opacity: lineOpacity }}
                       transition={arcTransition}
                       pathLength={500}
@@ -777,7 +785,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                 }
               >
                 {/* 符号常驻黄金星砂微晕托底 */}
-                <circle cx={gx} cy={gy} r={12} fill={isSignActive ? 'rgba(251,191,36,0.22)' : 'rgba(245,212,134,0.06)'} filter="url(#acw-soft)" />
+                <circle cx={gx} cy={gy} r={12} fill={isSignActive ? 'rgba(251,191,36,0.22)' : 'rgba(245,212,134,0.06)'} filter={`url(#${gid('soft')})`} />
                 <Glyph
                   x={gx - ZODIAC_ICON / 2}
                   y={gy - ZODIAC_ICON / 2}
@@ -874,7 +882,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
             {/* 盘心八面体黄金星芒印鉴 */}
             <path
               d="M280 264 C282 274 286 278 296 280 C286 282 282 286 280 296 C278 286 274 282 264 280 C274 278 278 274 280 264 Z"
-              fill="url(#acw-core)"
+              fill={`url(#${gid('core')})`}
               filter="drop-shadow(0 0 6px rgba(251,191,36,0.8))"
             />
             <circle cx={CX} cy={CY} r={2.5} fill="#FFFFFF" />
@@ -1020,7 +1028,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                   cx={0}
                   cy={0}
                   r={p.body === 'sun' ? 24 : p.body === 'moon' ? 20 : 17}
-                  fill={`url(#${PLANET_GLOW_ID(p.body)})`}
+                  fill={`url(#${glowId(p.body)})`}
                   className="acw-breathe pointer-events-none"
                   style={{ animationDelay: `${i * 0.7}s` }}
                 />
@@ -1043,7 +1051,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                   cx={0}
                   cy={0}
                   r={PLANET_ICON / 2 + 1}
-                  fill={`url(#${PLANET_ORB_ID(p.body)})`}
+                  fill={`url(#${orbId(p.body)})`}
                   strokeWidth={0.6}
                   stroke="rgba(255,255,255,0.35)"
                   className="drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]"

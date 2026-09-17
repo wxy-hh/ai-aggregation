@@ -219,8 +219,13 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 ### 6.4 动效技术选型
 
 - **framer-motion** 仅限：星盘（3D 舞台/轮盘/揭示序列）、video 面板、resume、global-sidebar、destiny 桌面导航。布局级共享元素转场用 `layoutId`。
+- **WebGL 场景用 react-three-fiber + drei + @react-three/postprocessing**（仅限星座结果页「星渊」深空星盘，`astrology-wheel-scene.tsx`）：动效全部走 `useFrame` 帧循环（相机/悬浮/闪烁/流光），不进 CSS keyframes 注册表；场景代码 `next/dynamic ssr:false` 按需分包，WebGL 探测失败或加载中一律回退 SVG 轮。
 - 其余域用 `tailwindcss-animate` 入场类（`animate-in fade-in slide-in-from-bottom-4` 等）+ CSS keyframes。
 - **3D 变换链必须全链 `preserve-3d`**：perspective 容器到 translateZ 子层之间任何一层缺 `[transform-style:preserve-3d]` 都会压扁 3D 并破坏 hit-test（真实点击错位事故已发生一次，见 astrology-ritual wheelSlot 修复）。
+- **R3F Canvas 在 transform 祖先内必须 `resize.offsetSize:true` + 尺寸守卫**：R3F 经 react-use-measure 以 `getBoundingClientRect` 测量容器（受祖先 transform 影响），`acw-wheel-float` 这类 3D 倾斜动画会让测量值随姿态透视压缩（实测 425→402×389）；且 CanvasImpl 的 layout effect 无依赖数组，组件每次重渲染（悬停 setState 即触发）都重放脏尺寸 → 整盘瞬缩后由守卫拉回（即「鼠标移入先放大又恢复」实证根因）。`offsetSize:true` 改读 offsetWidth/Height（布局值，免疫 transform），是源头修复；`astrology-wheel-scene.tsx` 的 `SizeGuard` 作为第二道防线仍是标配，新增 WebGL 场景两者必须同时具备。守卫要点：① 必须直接比对 R3F 内部 `state.size` 与容器布局盒——`setSize` 不保证改到 canvas CSS，只比 `clientWidth` 会漏检（实测 ±5px 漂移持续数秒不自愈）；② ResizeObserver 常驻监听 + 1s 心跳兜底，不能只靠挂载后的定时器窗口。
+- **指针驱动的 3D 场景必须 clamp pointer**：R3F 用 `offsetY ÷ state.size.height` 算指针，size 一旦被污染成矮值（实测 518×15.5），`pointer.y` 爆到 ±30+，任何乘在指针上的旋转/位移都会把场景转出视锥（即「鼠标移入黑屏」实证根因）。所有 `state.pointer` 参与的姿态计算必须先 `clamp(-1, 1)`，这是症状层最后防线（星渊 `SceneRig` 为参照实现）。
+- **framer 动画 SVG `d` 属性必须把 `d` 放进 `initial`**，否则首帧写入字符串 `"undefined"` 触发浏览器告警（astrology-chart-wheel 相位弧修复实例）。
+- **可复用 SVG 组件的 defs id 必须实例唯一**（`useId()` 前缀）：同页多实例时 `url(#id)` 解析到文档首个匹配，若首个匹配位于 `display:none` 实例内（如移动端横条轮的 `xl:hidden`），Chrome 不绘制其渐变/滤镜，可见实例整盘透明洗白（浅色主题下盘心变页面底色，实证于表单页预览轮）。`astrology-chart-wheel.tsx` 的 `gid()` 为参照实现。
 
 ### 6.5 reduce-motion 规则
 
@@ -228,6 +233,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 - 装饰性循环动画**显式关闭或静止**（`.acw-wheel-float` 静止、`.acw-breathe` 定格 0.7 亮度、`.acw-aspect-flow` 隐藏、`.ziwei-comet` display:none）。
 - SMIL/JS 驱动动画不受 CSS 时长约束，必须单独判 `useReducedMotion()`。
+- **WebGL 场景在 reduce-motion 下输出静态构图**：无入场推近/无漂浮/无视差/无闪烁/无流星，星体与相位保持完整可读（星渊场景 `reduceMotion` 分支为参照实现）。
 - 功能反馈（选中、展开）保留瞬时状态切换，不留 0.3s 残影。
 
 ---
@@ -301,9 +307,29 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | 八字 | Experience | 五行命盘 | 五行 orb 角光斑卡、`#5D7CFA` 雷达与选中、IO 揭示 |
 | 紫微 | Experience | 夜幕星宫 | 页级入夜、鎏金+紫微紫、宋体星曜、专属滚动条 |
 | 奇门 | Experience | 金色局盘 | amber 金系宫卡、多彩门星神煞 |
-| 星座寰宇 astrology | Experience | 悬浮天象仪 | 3D 视差星盘（十色宝珠/四元素光谱/能量弧光/表圈公转）、仪式揭示、金句主轴 |
+| 星座寰宇 astrology | Experience | 悬浮天象仪 | 「星渊」WebGL 深空星盘（星云/星野/宝珠溢光/相位流光）、仪式揭示、金句主轴 |
 
 新功能面加入时，先在此表登记模式与基调，再动手。
+
+### 10.1 星座结果页「星渊」WebGL 深空星盘（`astrology-wheel-scene.tsx`）
+
+**设计立意**：星盘不是一张平面图，而是一扇圆形舷窗——用户凑近看自己那片深空。浅色主题下深空圆窗与亮页形成「舷窗对比」，是有意的视觉锚点，不要把它调亮。
+
+**七层纵深**（从底到顶，装饰层永不参与事实表达）：
+
+1. 深渊底色 `#040713` + 压暗窗盘（Vignette 收拢视线）
+2. FBM 星云气（自定义 shader，低频缓慢涌动）
+3. 三层视差星野（mulberry32 种子确定性排布，独立闪烁相位，帧间/端间一致）
+4. 黄道玻璃蚀刻环（四元素扇区着色 + 自绘 SVG 符号）
+5. 相位能量弧（几何与 SVG 轮同口径，流光点循环）
+6. 十星自发光宝珠（ORB_PALETTE 十色色谱 + 光晕精灵 + 错峰呼吸，Bloom 真实溢光）
+7. 盘心星核 + 涟漪；偶发流星（13s 周期）
+
+**动效编排**：入场相机推近 17.5→14.2（影院揭幕，1.35s ease-out）→ 指针视差（±0.05rad）+ 14s 悬浮呼吸 → 点选星体触发超新星冲击波 + 寻星雷达环 + Html 胶囊标签。键盘可达：←→ 循环星体、Enter 选中、Esc 取消，契约与 SVG 轮一致（`selectedBody`/`onSelectBody` 不变）。
+
+**事实纪律**：行星角度/相位/宫位几何全部来自 `lib/astrology/wheel-scene-layout.ts`（纯函数，单测覆盖），与 SVG 轮同一映射口径（screenTheta=180-(lon-ascLon)）；装饰层（星野/星云/流星）只是氛围，永不编码事实。
+
+**降级链**（`astrology-wheel-scene-switch.tsx`）：SSR/首帧 → SVG 轮；WebGL 探测失败 → 永久 SVG；three chunk 加载中 → SVG 原地接管。三级之间无闪烁、无可访问性空洞。移动端 compact 档：粒子减半 + dpr 收敛 + 关闭 MSAA。
 
 ---
 
