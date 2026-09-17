@@ -20,7 +20,7 @@
  * 长文区域一律实体高对比底，仅护照头 Hero 用玻璃质感（§6.5 硬规则）。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ChevronDown,
@@ -66,6 +66,7 @@ import { AstrologyDeepDive } from './astrology-deep-dive';
 import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyShareEntry } from './astrology-share-entry';
+import { TypewriterHeadline } from './astrology-typewriter-headline';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
 import { APPROXIMATE_SLOTS, formatDegreeMinute } from './astrology-mappers';
@@ -377,26 +378,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const interpretation = useMemo(() => (chartFacts ? buildMockInterpretation(chartFacts) : null), [chartFacts]);
   const fullHeadline = interpretation?.headline?.text ?? '';
 
-  /** 主轴流式：逐字浮现（34ms/字）；减少动态立即完整呈现 */
-  const [typedCount, setTypedCount] = useState(0);
-  useEffect(() => {
-    if (!fullHeadline || reduceMotion) {
-      setTypedCount(fullHeadline.length);
-      return;
-    }
-    setTypedCount(0);
-    const timer = setInterval(() => {
-      setTypedCount((n) => {
-        if (n >= fullHeadline.length) {
-          clearInterval(timer);
-          return n;
-        }
-        return n + 1;
-      });
-    }, 34);
-    return () => clearInterval(timer);
-  }, [fullHeadline, reduceMotion]);
-  const headlineDone = fullHeadline.length > 0 && typedCount >= fullHeadline.length;
+  /** 主轴落定标记：逐字状态由 TypewriterHeadline 自持（隔离 34ms/字的高频重渲染），
+   *  父树只在落定那一刻重渲染一次；比对文案而不是布尔值，换主轴文案时自动回到未落定 */
+  const [doneHeadline, setDoneHeadline] = useState<string | null>(null);
+  const headlineDone = fullHeadline.length > 0 && doneHeadline === fullHeadline;
+  /** 落定回调：逐字完成时触发一次，驱动依据 chips 与三要素卡入场 */
+  const handleHeadlineDone = useCallback(() => setDoneHeadline(fullHeadline), [fullHeadline]);
 
   /** 选中星体的真值与关联相位（白话先行事实卡数据源） */
   const selectedPlacement = useMemo(() => {
@@ -609,44 +596,8 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注） ── */}
             {interpretation.headline && (
               <section className="mt-12" aria-label="你的核心主题">
-                {/* 读屏状态宣布：逐字浮现的中间态不透给读屏（逐字朗读是噪音），
-                    落定后由活体区一次性朗读完整主轴；视觉标题因此 aria-hidden */}
-                <p className="sr-only" role="status" aria-live="polite">
-                  {headlineDone ? fullHeadline : ''}
-                </p>
-                <h2
-                  aria-hidden="true"
-                  className="font-heading text-[clamp(40px,4vw,56px)] font-bold leading-[1.18] tracking-tight text-slate-900 dark:text-white"
-                >
-                  {(() => {
-                    // 视觉锚点：第一个逗号前的观察句用琥珀金渐变点亮，行动句保持高对比白/墨
-                    const splitIdx = fullHeadline.indexOf('，');
-                    const headLen = splitIdx > 0 ? splitIdx : 0;
-                    const typed = fullHeadline.slice(0, typedCount);
-                    const headPart = headLen > 0 ? typed.slice(0, headLen) : '';
-                    const restPart = headLen > 0 ? typed.slice(headLen) : typed;
-                    return (
-                      <>
-                        {headPart && (
-                          <span className="text-[#B47818] drop-shadow-[0_1px_1px_rgba(255,255,255,0.8)] dark:text-[#F3D17A] dark:drop-shadow-[0_2px_12px_rgba(243,209,122,0.25)]">
-                            {headPart}
-                          </span>
-                        )}
-                        {restPart}
-                      </>
-                    );
-                  })()}
-                  {!headlineDone && (
-                    <motion.span
-                      aria-hidden
-                      className="ml-1 inline-block text-indigo-400 dark:text-indigo-300"
-                      animate={reduceMotion ? {} : { opacity: [1, 0.15, 1] }}
-                      transition={{ duration: 0.8, repeat: Infinity }}
-                    >
-                      ✦
-                    </motion.span>
-                  )}
-                </h2>
+                {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡 */}
+                <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
                 {headlineDone && (
                   <motion.div
                     initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}

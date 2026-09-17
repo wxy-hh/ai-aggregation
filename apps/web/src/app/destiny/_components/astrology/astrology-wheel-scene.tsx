@@ -922,7 +922,10 @@ function SceneRig({ reduceMotion, children }: { reduceMotion: boolean; children:
  * 每次重渲染都重放该脏尺寸；已通过 resize.offsetSize:true 从源头免疫（见 Canvas props 注释）。
  * 本守卫是第二道防线：读容器布局盒（clientWidth/Height，不受 transform 影响），
  * canvas CSS / state.size 任一层偏差 >1px 即强制校正；
- * ResizeObserver + 1s 心跳常驻兜底，定时器只负责入场瞬态的高频窗口。 */
+ * 主防线是 ResizeObserver + resize/orientationchange（常驻，零轮询成本，覆盖容器尺寸净变化）；
+ * 心跳只兜「容器尺寸没变但内部 state 被污染」的最后缺口，并且是**有界**的：
+ * 连续 3 次无偏差即自行退场（稳定后不再有任何 1s 轮询），期间一旦发生校正就重置计数继续守护。
+ * 这不降低确定性自愈能力：尺寸真变时 RO 仍会触发，心跳只在入场瞬态窗口内额外把关。 */
 function SizeGuard() {
   const gl = useThree((s) => s.gl);
   const setSize = useThree((s) => s.setSize);
@@ -932,10 +935,11 @@ function SizeGuard() {
     const canvas = gl.domElement;
     const container = canvas.parentElement?.parentElement; // R3F wrapper → 场景容器
     if (!container) return;
+    /** 返回本次是否发生校正（心跳据此决定续命还是退场） */
     const check = () => {
       const w = container.clientWidth;
       const h = container.clientHeight;
-      if (w <= 1 || h <= 1) return;
+      if (w <= 1 || h <= 1) return false;
       const stateSize = store.getState().size;
       const cssDrift = Math.abs(canvas.clientWidth - w) > 1 || Math.abs(canvas.clientHeight - h) > 1;
       const stateDrift = Math.abs(stateSize.width - w) > 1 || Math.abs(stateSize.height - h) > 1;
@@ -945,16 +949,33 @@ function SizeGuard() {
         const rect = container.getBoundingClientRect();
         setSize(w, h, rect.top, rect.left);
         invalidate();
+        return true;
       }
+      return false;
     };
     check();
     // 挂载后多次复查，覆盖入场动画 / 字体换载 / 样式热更等瞬态落定时机
     const timers = [150, 400, 900, 1800, 3500].map((ms) => window.setTimeout(check, ms));
-    // 常驻监听容器尺寸：定时器结束后若再发生污染（如布局动画晚到），也能确定性自愈
-    const ro = new ResizeObserver(check);
+    // 主防线：常驻监听容器尺寸（定时器结束后若再发生污染，如布局动画晚到，也能确定性自愈）
+    const ro = new ResizeObserver(() => {
+      check();
+    });
     ro.observe(container);
-    // 心跳兜底：RO 对「容器尺寸净变化为零但内部 state 被污染」的场景不触发，1s 轮询封死最后缺口
-    const heartbeat = window.setInterval(check, 1000);
+    // 有界心跳：只兜 RO 覆盖不到的「容器尺寸净变化为零但内部 state 被污染」缺口。
+    // 连续 3 次无偏差即 clearInterval 自行退场；发生校正则计数清零继续守护；
+    // 页面隐藏期间跳过（不渲染就无所谓污染），容器不可测量（工作区被 display 隐藏）时同样不计数，
+    // 以免「隐藏期间空转 3 秒」把尚未完成入场把关的心跳提前送走。
+    let cleanBeats = 0;
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      if (container.clientWidth <= 1 || container.clientHeight <= 1) return;
+      if (check()) {
+        cleanBeats = 0;
+        return;
+      }
+      cleanBeats += 1;
+      if (cleanBeats >= 3) window.clearInterval(heartbeat);
+    }, 1000);
     window.addEventListener('resize', check);
     window.addEventListener('orientationchange', check);
     return () => {
@@ -965,6 +986,96 @@ function SizeGuard() {
       window.removeEventListener('orientationchange', check);
     };
   }, [gl, setSize, invalidate, store]);
+  return null;
+}
+
+/* ---------- 帧循环治理：不可见即停帧（离屏工作区 / 页面隐藏） ----------
+ * 为什么不改成 frameloop="demand"：本场景的常驻动画正是设计意图——SceneRig 14s 悬浮呼吸、
+ * 雷达环与 flare 自转、流星、星云 uTime 着色器、粒子流、星核涟漪；demand 会让它们在无交互时
+ * 全部静止，等于砍掉动效编排。正确做法是保留帧循环，只在「看不见」时整帧停摆。
+ * 两个条件必须「与」：页面可见 且 画布在视口内；任一为不可见即停，两项都可见才恢复。
+ * 不能写成两个独立开关（单项恢复就开渲染会互相覆盖，隐藏页里依然空转）：
+ * 1) 页面隐藏（visibilitychange）——切标签页/最小化时不再空转 GPU；
+ * 2) 画布离屏（IntersectionObserver，threshold 0）——命运模块四个工作区靠 display 常驻，
+ *    切到八字/紫微时星座场景仍留在文档里照常渲染，这一条是最大的收益点。
+ *
+ * 时钟时间轴：R3F v9 的 setFrameloop 内部会 clock.stop() 并把 clock.elapsedTime 归零，
+ * 而本场景不少动画以 elapsedTime 作绝对时间轴（入场推进 t0、星云/粒子流相位、流星 13s 周期、
+ * Shockwave 的 userData.t0 标记）——若只做暂停/恢复，恢复后它们会整体跳变或长时间停摆
+ * （被 if (t < 0) return 挡住）。因此暂停时记下时钟读数，恢复时把它拨回：
+ * 等价于「不可见期间时间轴冻结」，画面从原处继续；阻尼走的是 delta，而 clock.start() 后
+ * 首帧 delta 很小，所以既不会瞬时收敛也不会出现 NaN。
+ *
+ * 另：CanvasImpl 的 layout effect 无依赖数组，每次重渲染都会重放 configure()，
+ * 其中带默认 frameloop='always'，会把暂停状态顶掉；这里订阅 store，被外部改回就同步重新暂停；
+ * 暂停时还会清空残留的帧预算 frames，避免 R3F 的 loop 在 'never' 下仍跑掉一帧（见 pause 内注释）。 */
+function FrameloopGovernor() {
+  const gl = useThree((s) => s.gl);
+  const clock = useThree((s) => s.clock);
+  const setFrameloop = useThree((s) => s.setFrameloop);
+  const invalidate = useThree((s) => s.invalidate);
+  const store = useStore();
+
+  useEffect(() => {
+    let pageVisible = document.visibilityState !== 'hidden';
+    // 初始按「不可见」处理：等 IntersectionObserver 首次回调确认可见后才放行，
+    // 这样挂载即离屏（隐藏的工作区）时直接进入暂停，不产生任何多余帧
+    let inViewport = false;
+    let paused = false;
+    /** 暂停瞬间的时钟读数（恢复时拨回，见上方注释） */
+    let pausedElapsed = 0;
+
+    const pause = (captureClock: boolean) => {
+      if (captureClock) pausedElapsed = clock.elapsedTime;
+      paused = true;
+      setFrameloop('never');
+      // setFrameloop 已把时钟归零，这里把读数钉回暂停瞬间（无论从哪条路径进入暂停）
+      clock.elapsedTime = pausedElapsed;
+      // 再清掉可能残留的帧预算：R3F 的 loop 对 frames>0 的 root 仍会调用一次 update()，
+      // 而 update() 的 'never' 分支会拿 RAF 时间戳覆盖 clock.elapsedTime（时间轴被冲掉、
+      // delta 变成毫秒级巨值），清 0 即杜绝「暂停后还会跑一帧」的最后一种情况
+      const state = store.getState();
+      if (state.internal.frames > 0) store.setState({ internal: { ...state.internal, frames: 0 } });
+    };
+    const resume = () => {
+      paused = false;
+      setFrameloop('always'); // 内部 clock.start() 会归零时间轴
+      clock.elapsedTime = pausedElapsed; // 拨回暂停前读数：不可见期间时间冻结
+      invalidate(); // 帧循环此前已自行退出，立即补一帧（下一帧由帧循环接管）
+    };
+    const sync = () => {
+      if (pageVisible && inViewport) {
+        if (paused) resume();
+      } else if (!paused) {
+        pause(true);
+      }
+    };
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        inViewport = entries[entries.length - 1]?.isIntersecting ?? false;
+        sync();
+      },
+      { threshold: 0 }
+    );
+    const onVisibilityChange = () => {
+      pageVisible = document.visibilityState !== 'hidden';
+      sync();
+    };
+    io.observe(gl.domElement);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    // 外部把 frameloop 改回时（configure 重放）同步重新暂停，保证「暂停」是最终生效态
+    const unsubscribe = store.subscribe((state) => {
+      if (paused && state.frameloop !== 'never') pause(false);
+    });
+    sync(); // 挂载时若已隐藏 / 离屏 → 直接进入暂停
+    return () => {
+      io.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      unsubscribe();
+    };
+  }, [gl, clock, setFrameloop, invalidate, store]);
+
   return null;
 }
 
@@ -1047,6 +1158,8 @@ export function AstrologyWheelScene({
       >
         {/* 尺寸自愈守卫（见上方注释）：校正被布局瞬态污染且不自愈的内部测量 */}
         <SizeGuard />
+        {/* 帧循环治理（见上方注释）：页面隐藏或画布离屏时整帧停摆，可见时拨回时间轴继续 */}
+        <FrameloopGovernor />
         {/* 光照：环境光托底 + 主光塑形（自发光为主，光照只给球体体积感） */}
         <ambientLight intensity={0.5} />
         <directionalLight position={[4, 6, 8]} intensity={1.1} />
