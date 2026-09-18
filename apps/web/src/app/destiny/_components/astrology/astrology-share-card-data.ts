@@ -13,7 +13,7 @@
 
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
 import { PLANET_CN, ZODIAC_CN, ZODIAC_ORDER } from '@/lib/astrology/zh-names';
-import { truncateNickname } from '../share/share-card-data';
+import { sanitizeShareFileName, truncateNickname } from '../share/share-card-data';
 
 /** 分享海报卡数据（纯可序列化数据；符号组件由渲染层按 body 查表映射） */
 export interface AstrologyShareCardData {
@@ -40,6 +40,22 @@ const FALLBACK_DEGREE_IN_SIGN = 15;
 export function buildAstrologyShareUrl(origin: string): string {
   const base = origin.replace(/\/+$/, '');
   return `${base}/destiny?tab=astrology&utm_source=share_card&utm_medium=qrcode&utm_campaign=astrology`;
+}
+
+/** 匿名（或昵称为空）时的通用文件名：不含任何用户标识 */
+export const ASTROLOGY_SHARE_FILE_NAME = '星座寰宇-星语海报.png';
+
+/**
+ * 生成海报下载/分享文件名。
+ * 脱敏必须覆盖到文件名这最后一公里：卡片选择「匿名」后下载的图片名同样不得携带昵称，
+ * 一律回退固定通用名；非匿名模式保持「星座寰宇-昵称.png」现状（昵称沿用同一净化规则）。
+ */
+export function buildAstrologyShareFileName(options: {
+  nickname: string;
+  showNickname: boolean;
+}): string {
+  const nickname = options.showNickname ? options.nickname.trim() : '';
+  return nickname ? `星座寰宇-${sanitizeShareFileName(nickname)}.png` : ASTROLOGY_SHARE_FILE_NAME;
 }
 
 /** 生成日期格式化（本地时区，中文口径） */

@@ -45,7 +45,12 @@ const DELIVERABLES = [
 
 /* ---------- 表单容器 ---------- */
 
-export function AstrologyForm() {
+type AstrologyFormProps = {
+  /** 工作区激活态（默认 true）：模块切走时预览的星渊场景整帧停摆，不随后台帧循环空转 */
+  isActive?: boolean;
+};
+
+export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
   const reduceMotion = useReducedMotion();
   /** 星渊 WebGL 场景可用性：可用时桌面预览由 3D 场景接管，并关闭 CSS 视差避免双重倾斜（同结果页口径） */
   const wheelSceneOk = useWheelSceneAvailable();
@@ -101,7 +106,8 @@ export function AstrologyForm() {
     setWorkspaceState('astrology', { formStep: 2, fieldErrors: {} });
   };
 
-  /** 第二步「绘制我的星盘」：双步合并校验 → 真值接缝计算 → 进入加载仪式（05：真值锁定后由仪式页转场进结果页） */
+  /** 第二步「绘制我的星盘」：双步合并校验 → 真值接缝计算 → 进入加载仪式（05：真值锁定后由仪式页转场进结果页）
+   *  重算必重播：提交时 step 显式落回 form，工作区分发才不会停在结果页跳过仪式 */
   const submit = () => {
     const step1Errors = validateAstrologyStep1(formData);
     const errors = { ...step1Errors, ...validateAstrologyStep2(formData) };
@@ -117,11 +123,20 @@ export function AstrologyForm() {
     try {
       const chartFacts = computeChartFacts(profile);
       // 真值先锁定再进仪式：仪式四阶段是对已完成计算的揭示，不是虚构进度
-      setWorkspaceState('astrology', { chartFacts, entryView: 'loading', error: null, errorKind: null });
+      // step 显式回落 form：重算必重播——step 若仍停在 result，工作区分发会直接落进结果相位，仪式被跳过
+      setWorkspaceState('astrology', {
+        step: 'form',
+        chartFacts,
+        entryView: 'loading',
+        error: null,
+        errorKind: null,
+      });
       // 11 工单：真值完成即写入统一历史（匿名则入会话临时记录，登录确认后迁移）
       saveAstrologyHistoryRecord(formData, chartFacts);
     } catch {
+      // 失败态同样回落 form：失败卡与仪式同树承载，step 不回落会落在结果页
       setWorkspaceState('astrology', {
+        step: 'form',
         chartFacts: null,
         entryView: 'loading',
         error: '星盘计算出现异常，请重试',
@@ -179,11 +194,13 @@ export function AstrologyForm() {
                 <div className="relative mx-auto w-full max-w-[25rem]">
                   <div aria-hidden className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15" />
                   {/* 预览即所得：与结果页同一座「星渊」3D 星盘（纯展示，不可点选）；
-                      WebGL 不可用/加载中由 SVG 轮原地兜底，太阳滑动在两套渲染间语义一致 */}
+                      WebGL 不可用/加载中由 SVG 轮原地兜底，太阳滑动在两套渲染间语义一致；
+                      isActive 透传：模块切走时场景停摆，不在后台帧循环空转 */}
                   <AstrologyWheel3D className="relative" parallax={wheelSceneOk !== true}>
                     <AstrologyWheelSceneSwitch
                       facts={sampleFacts}
                       planetOverrides={sunOverride}
+                      isActive={isActive}
                       fallback={
                         <AstrologyChartWheel
                           facts={sampleFacts}

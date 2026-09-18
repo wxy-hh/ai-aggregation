@@ -493,7 +493,7 @@ function KeyAspectsPanel({
   );
 }
 
-/** 单张关键相位卡：序号 + 两端星体 + 类型徽章 + 强度条 + 三段式解读 + 定位入口 */
+/** 单张关键相位卡：两端星体 + 类型徽章 + 强度条 + 三段式解读 + 定位入口 */
 function KeyAspectCard({
   aspect: a,
   index,
@@ -518,11 +518,8 @@ function KeyAspectCard({
       transition={{ duration: 0.4, delay: (index % 2) * 0.06, ease: 'easeOut' }}
       className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] dark:border-white/10 dark:bg-[#0D1226] sm:p-5"
     >
-      {/* 标题行：序号 · 源星体 徽章 目标星体 · 偏差/强度 */}
+      {/* 标题行：源星体 徽章 目标星体 · 偏差/强度 */}
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-        <span className="font-heading text-xs font-bold tabular-nums text-slate-300 dark:text-slate-600">
-          {String(index + 1).padStart(2, '0')}
-        </span>
         <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
           <SrcGlyph width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
           {PLANET_CN[a.source]}

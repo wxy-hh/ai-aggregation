@@ -28,9 +28,11 @@ import {
   ChevronRight,
   Compass,
   Footprints,
+  MessageCircleQuestion,
   Moon as MoonIcon,
   Orbit,
   RotateCcw,
+  Share2,
   Sparkles,
   Sunrise,
   Sun as SunIcon,
@@ -65,7 +67,7 @@ import {
 import { AstrologyDeepDive } from './astrology-deep-dive';
 import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
-import { AstrologyShareEntry } from './astrology-share-entry';
+import { AstrologyShareEntry, isAstrologyShareAvailable } from './astrology-share-entry';
 import { TypewriterHeadline } from './astrology-typewriter-headline';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
@@ -339,6 +341,74 @@ function PlanetFactCard({
   );
 }
 
+/* ---------- 过渡期标识与移动端折叠 ---------- */
+
+/**
+ * 前端演示数据标识（过渡期徽章）：
+ * 星盘真值当前来自冻结样盘（lib/astrology/mock-chart-facts.ts，按时间精度返回固定档案、不读取出生日期与城市），
+ * 与表单预览条的真实太阳测算不同源；真实星历计算接入后删除本组件与三处调用点即可。
+ * 解释文案由护照卡旁的常驻说明承担，徽章自身文字足够，不再挂 title 提示。
+ */
+function DemoDataBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/70 bg-amber-100/50 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-amber-800 dark:border-amber-300/30 dark:bg-amber-300/[0.08] dark:text-amber-200">
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-300" />
+      前端演示数据
+    </span>
+  );
+}
+
+/**
+ * 移动端折叠壳（洞察轨密度）：<sm 默认收为一行摘要（标题 + chevron，热区 44px），
+ * sm 起摘要行隐藏、内容常显——桌面端保持现状展开，只有移动端默认折叠。
+ * hidden：内容自身会整块隐藏时（如主轴缺失的分享入口），摘要行必须同步跳过渲染，
+ * 否则移动端点开是一个空壳。
+ */
+function MobileCollapse({
+  title,
+  hint,
+  icon: Icon,
+  hidden = false,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  hidden?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  if (hidden) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex min-h-11 w-full items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-4 py-2.5 text-left transition-colors hover:border-indigo-300/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-white/10 dark:bg-[#0D1226] sm:hidden"
+      >
+        <Icon className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-sm font-bold',
+            open ? 'text-day-muted dark:text-night-faint' : 'text-slate-900 dark:text-white'
+          )}
+        >
+          {open ? '收起' : title}
+        </span>
+        {!open && hint && (
+          <span className="shrink-0 text-[11px] font-medium text-day-muted dark:text-night-faint">{hint}</span>
+        )}
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint', open && 'rotate-180')}
+          strokeWidth={2.2}
+        />
+      </button>
+      <div className={cn(open ? 'mt-2.5 sm:mt-0' : 'hidden sm:block')}>{children}</div>
+    </div>
+  );
+}
+
 /* ---------- 主组件 ---------- */
 
 export type AstrologyResultViewProps = {
@@ -368,6 +438,8 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const [showAllPlanets, setShowAllPlanets] = useState(false);
   /** 生活模块手风琴（托管在此：事实卡「相关模块」可反向展开定位，08） */
   const [openModuleId, setOpenModuleId] = useState<ModuleId | null>(null);
+  /** 移动端校准状态卡的折叠态（<sm 默认收起，桌面端不使用该状态） */
+  const [statusOpen, setStatusOpen] = useState(false);
 
   /** 结果页首次呈现时复位局部与文档滚动位置，保证护照头与主轴处于视口核心 */
   useEffect(() => {
@@ -384,6 +456,13 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const headlineDone = fullHeadline.length > 0 && doneHeadline === fullHeadline;
   /** 落定回调：逐字完成时触发一次，驱动依据 chips 与三要素卡入场 */
   const handleHeadlineDone = useCallback(() => setDoneHeadline(fullHeadline), [fullHeadline]);
+
+  /** 分享入口可用性：与 AstrologyShareEntry 内部同一判定（主轴缺失即整卡隐藏），
+   *  折叠壳据此同步跳过渲染，避免移动端留下「点开即空」的死入口 */
+  const shareAvailable = useMemo(
+    () => (chartFacts ? isAstrologyShareAvailable(chartFacts, fullHeadline, formData.name) : false),
+    [chartFacts, fullHeadline, formData.name]
+  );
 
   /** 选中星体的真值与关联相位（白话先行事实卡数据源） */
   const selectedPlacement = useMemo(() => {
@@ -447,6 +526,17 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const sunPlacement = chartFacts.planets.find((p) => p.body === 'sun');
   const name = formData.name.trim() || '星盘主人';
   const withHouses = interpretation.withHouses;
+
+  /** 月亮缺席说明：未知/约时档月亮当日跨座会被整颗隐藏，白话说明「为什么不在名单里」（诚实做到底）。
+   *  只在降级原因是已知两种时给对应文案，其余原因不写说明——宁缺毋假，不假定「缺时间」 */
+  const moonHiddenNote =
+    chartFacts.planets.find((p) => p.body === 'moon')?.sign === null
+      ? degradeReason === 'unstable-in-range'
+        ? '月亮在所选时段内跨越星座，无法判定，本次未列出。'
+        : degradeReason === 'time-unknown'
+          ? '月亮在出生当日跨越星座，缺少准确时间无法判定，本次未列出。'
+          : null
+      : null;
 
   /** 大三要素卡片数据（不可用项为 null，直接不渲染） */
   const bigThreeCards = [
@@ -532,6 +622,11 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide', badge.className)}>
                     {badge.text}
                   </span>
+                  {/* 过渡期显式标识：星盘真值来自冻结样盘，与表单预览的真实太阳测算不同源 */}
+                  <DemoDataBadge />
+                  <span className="text-[11px] leading-relaxed text-amber-800 dark:text-[#E7C873]/85">
+                    真实星历计算接入后，这里将展示你的专属星盘
+                  </span>
                 </div>
                 {/* 移动端突出太阳星座（§7.2 压缩护照）；桌面展示完整摘要行 */}
                 {sunPlacement?.sign && (
@@ -596,8 +691,14 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注） ── */}
             {interpretation.headline && (
               <section className="mt-12" aria-label="你的核心主题">
-                {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡 */}
-                <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
+                {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
+                    移动端降到 text-xl（字重与琥珀金渐变由组件内部保留），sm 起恢复 clamp(40px,4vw,56px) 原档位 */}
+                <div className="max-sm:[&_h2]:text-xl max-sm:[&_h2]:leading-[1.25]">
+                  <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <DemoDataBadge />
+                </div>
                 {headlineDone && (
                   <motion.div
                     initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
@@ -741,6 +842,8 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             <div className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">你的星盘</h3>
               <span className="text-xs text-day-muted dark:text-night-faint">点选任一星体，查看它在你生活里的样子</span>
+              {/* 过渡期显式标识：轮盘几何来自冻结样盘，非本人真值 */}
+              <DemoDataBadge />
             </div>
 
             <div className="relative mt-6 xl:mt-8 xl:grid xl:grid-cols-2 xl:items-center xl:gap-10">
@@ -836,6 +939,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                           );
                         })}
                       </ul>
+                      {/* 月亮缺席注明：无宫位档月亮跨座被整颗隐藏，白话说明为什么名单里没有它 */}
+                      {moonHiddenNote && (
+                        <p className="mt-2 text-[11px] leading-relaxed text-day-muted dark:text-night-faint">
+                          {moonHiddenNote}
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                         {/* 清单折叠：默认只露前 4 颗，展开看全部行星 */}
                         {textListItems.length > 4 && (
@@ -959,50 +1068,80 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             />
           </div>
 
-          {/* ═══ 右侧 4 栏洞察轨（桌面与首屏区同行 8+4，内容即首屏仪表盘；移动端单列排在模块后、深读前） ═══ */}
+          {/* ═══ 右侧 4 栏洞察轨（桌面与首屏区同行 8+4，内容即首屏仪表盘；移动端单列排在模块后、深读前。
+                  移动端三卡默认收为一行摘要（<sm），桌面端保持现状展开——首屏密度只压移动端） ═══ */}
           <aside className="order-4 min-w-0 space-y-4 xl:order-2 xl:col-span-4" aria-label="洞察轨">
             {/* 1. 星盘档案校准状态（合并原盘面范围与重新测算，消除重复卡片与双重紫色按钮） */}
-            <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]">
+            <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]">
               {/* 控制台顶缘星光（深色模式的一线辉光） */}
               <div aria-hidden className="pointer-events-none absolute inset-x-6 top-0 hidden h-px bg-gradient-to-r from-transparent via-indigo-300/40 to-transparent dark:block" />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Orbit className="h-4 w-4 text-indigo-500 dark:text-indigo-300 dark:drop-shadow-[0_0_6px_rgba(165,180,252,0.55)]" strokeWidth={1.9} />
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</h3>
-                </div>
-                <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
-                  {withHouses ? '完整十二宫' : '稳定行星盘'}
+              {/* 移动端折叠摘要行（标题 + 盘面档位 + chevron，热区 44px）；sm 起隐藏，标题回到卡内标题行 */}
+              <button
+                type="button"
+                onClick={() => setStatusOpen((v) => !v)}
+                aria-expanded={statusOpen}
+                className="flex min-h-11 w-full items-center justify-between gap-3 px-5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:hidden"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Orbit className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
+                  <span className="truncate text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</span>
                 </span>
-              </div>
-              <p className="mt-2.5 text-xs leading-relaxed text-slate-500 dark:text-night-muted">
-                {withHouses
-                  ? '当前为含宫位完整盘：行星、十二宫、轴线与主要相位已全部精确校准。'
-                  : degradeReason === 'unstable-in-range'
-                    ? '约时已降级为无宫位行星盘：上升、天顶与宫位在所选时段内不稳定，仅呈现高稳定事实。'
-                    : '当前为无宫位行星盘：呈现整日内稳定的行星星座与主要相位。补充出生时间可解锁上升与十二宫。'}
-              </p>
-              <div className="mt-3.5 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-                <button
-                  type="button"
-                  onClick={recalculate}
-                  className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/70 text-xs font-semibold text-slate-700 transition-all duration-150 hover:border-indigo-300/70 hover:bg-slate-100/90 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-indigo-400/30 dark:hover:bg-white/[0.08] dark:hover:text-white"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
-                  {withHouses ? '修改资料重新演算' : '补充资料或重校'}
-                </button>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
+                    {withHouses ? '完整十二宫' : '稳定行星盘'}
+                  </span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-day-muted transition-transform duration-200 dark:text-night-faint', statusOpen && 'rotate-180')}
+                    strokeWidth={2.2}
+                  />
+                </span>
+              </button>
+              {/* 卡体：桌面端常显；移动端随摘要行展开（同一份内容，不做两套排版） */}
+              <div className={cn('px-5 pb-5 sm:block sm:pt-5', !statusOpen && 'hidden')}>
+                <div className="hidden items-center justify-between sm:flex">
+                  <div className="flex items-center gap-2">
+                    <Orbit className="h-4 w-4 text-indigo-500 dark:text-indigo-300 dark:drop-shadow-[0_0_6px_rgba(165,180,252,0.55)]" strokeWidth={1.9} />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</h3>
+                  </div>
+                  <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
+                    {withHouses ? '完整十二宫' : '稳定行星盘'}
+                  </span>
+                </div>
+                <p className="mt-2.5 text-xs leading-relaxed text-slate-500 dark:text-night-muted">
+                  {withHouses
+                    ? '当前为含宫位完整盘：行星、十二宫、轴线与主要相位已全部精确校准。'
+                    : degradeReason === 'unstable-in-range'
+                      ? '约时已降级为无宫位行星盘：上升、天顶与宫位在所选时段内不稳定，仅呈现高稳定事实。'
+                      : '当前为无宫位行星盘：呈现整日内稳定的行星星座与主要相位。补充出生时间可解锁上升与十二宫。'}
+                </p>
+                <div className="mt-3.5 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={recalculate}
+                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/70 text-xs font-semibold text-slate-700 transition-all duration-150 hover:border-indigo-300/70 hover:bg-slate-100/90 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-indigo-400/30 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
+                    {withHouses ? '修改资料重新演算' : '补充资料或重校'}
+                  </button>
+                </div>
               </div>
             </section>
 
-            {/* 2. 分享星语海报（脱敏海报卡预览弹层；主轴缺失时入口自动隐藏） */}
-            <AstrologyShareEntry facts={chartFacts} headline={fullHeadline} name={formData.name} />
+            {/* 2. 分享星语海报（脱敏海报卡预览弹层；主轴缺失时入口与折叠壳一并隐藏） */}
+            <MobileCollapse title="分享星语海报" hint="脱敏海报" icon={Share2} hidden={!shareAvailable}>
+              <AstrologyShareEntry facts={chartFacts} headline={fullHeadline} name={formData.name} />
+            </MobileCollapse>
 
-            {/* 3. 星语问答（真功能：桌面内联面板 / 移动端底部抽屉，引用可定位） */}
-            <AstrologyQaEntry
-              facts={chartFacts}
-              modules={modules}
-              onLocateBody={handleLocateBody}
-              onLocateModule={handleLocateModule}
-            />
+            {/* 3. 星语问答（真功能：桌面内联面板 / 移动端底部抽屉，引用可定位）
+                摘要文案不计数：用户提问后剩余次数由面板内徽章呈现，静态文案不会与状态失配 */}
+            <MobileCollapse title="星语问答" hint="AI 解读问答" icon={MessageCircleQuestion}>
+              <AstrologyQaEntry
+                facts={chartFacts}
+                modules={modules}
+                onLocateBody={handleLocateBody}
+                onLocateModule={handleLocateModule}
+              />
+            </MobileCollapse>
           </aside>
         </div>
 

@@ -50,6 +50,7 @@ export function AstrologyWheelSceneSwitch({
   fallback,
   className,
   planetOverrides,
+  isActive = true,
 }: {
   facts: AstrologyChartFacts;
   selectedBody?: PlanetBody | null;
@@ -59,6 +60,8 @@ export function AstrologyWheelSceneSwitch({
   className?: string;
   /** 行星黄经覆盖（表单预览太阳滑动用，与 SVG 轮同语义） */
   planetOverrides?: Partial<Record<PlanetBody, number>>;
+  /** 工作区激活态（默认 true）：false 时星渊场景进入暂停，不随后台帧循环空转 */
+  isActive?: boolean;
 }) {
   const ok = useWheelSceneAvailable();
   const [sceneReady, setSceneReady] = useState(false);
@@ -78,6 +81,7 @@ export function AstrologyWheelSceneSwitch({
       onSelectBody={onSelectBody}
       className={className}
       planetOverrides={planetOverrides}
+      isActive={isActive}
     />
   );
 }

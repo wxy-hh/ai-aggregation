@@ -278,8 +278,9 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
+                    {/* 口径自述：预览条只按出生日期测算太阳星座，与结果页（含时间精度的完整盘）不同源 */}
                     <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                      太阳星座 · {ZODIAC_CN[sunSign]}
+                      太阳星座（按日期测算）· {ZODIAC_CN[sunSign]}
                     </span>
                     <span className="rounded-full border border-indigo-200/70 bg-indigo-50/90 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-300">
                       黄道经度已锁定

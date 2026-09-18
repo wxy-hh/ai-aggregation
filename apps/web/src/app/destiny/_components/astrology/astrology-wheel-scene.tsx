@@ -989,15 +989,17 @@ function SizeGuard() {
   return null;
 }
 
-/* ---------- 帧循环治理：不可见即停帧（离屏工作区 / 页面隐藏） ----------
+/* ---------- 帧循环治理：不可见即停帧（离屏工作区 / 页面隐藏 / 模块切走） ----------
  * 为什么不改成 frameloop="demand"：本场景的常驻动画正是设计意图——SceneRig 14s 悬浮呼吸、
  * 雷达环与 flare 自转、流星、星云 uTime 着色器、粒子流、星核涟漪；demand 会让它们在无交互时
  * 全部静止，等于砍掉动效编排。正确做法是保留帧循环，只在「看不见」时整帧停摆。
- * 两个条件必须「与」：页面可见 且 画布在视口内；任一为不可见即停，两项都可见才恢复。
- * 不能写成两个独立开关（单项恢复就开渲染会互相覆盖，隐藏页里依然空转）：
+ * 三个条件必须「与」：页面可见 且 画布在视口内 且 模块处于激活态；任一不满足即停，三项都满足才恢复。
+ * 不能写成三个独立开关（单项恢复就开渲染会互相覆盖，隐藏页里依然空转）：
  * 1) 页面隐藏（visibilitychange）——切标签页/最小化时不再空转 GPU；
  * 2) 画布离屏（IntersectionObserver，threshold 0）——命运模块四个工作区靠 display 常驻，
- *    切到八字/紫微时星座场景仍留在文档里照常渲染，这一条是最大的收益点。
+ *    切到八字/紫微时星座场景仍留在文档里照常渲染，这一条是最大的收益点；
+ * 3) 模块切走（isActive=false，工作区透传的模块级激活态）——不依赖观察器回调时机，
+ *    模块一被切走就立即停帧；桌面端与移动端同一口径，不按断点分别判断。
  *
  * 时钟时间轴：R3F v9 的 setFrameloop 内部会 clock.stop() 并把 clock.elapsedTime 归零，
  * 而本场景不少动画以 elapsedTime 作绝对时间轴（入场推进 t0、星云/粒子流相位、流星 13s 周期、
@@ -1009,7 +1011,7 @@ function SizeGuard() {
  * 另：CanvasImpl 的 layout effect 无依赖数组，每次重渲染都会重放 configure()，
  * 其中带默认 frameloop='always'，会把暂停状态顶掉；这里订阅 store，被外部改回就同步重新暂停；
  * 暂停时还会清空残留的帧预算 frames，避免 R3F 的 loop 在 'never' 下仍跑掉一帧（见 pause 内注释）。 */
-function FrameloopGovernor() {
+function FrameloopGovernor({ isActive }: { isActive: boolean }) {
   const gl = useThree((s) => s.gl);
   const clock = useThree((s) => s.clock);
   const setFrameloop = useThree((s) => s.setFrameloop);
@@ -1021,6 +1023,9 @@ function FrameloopGovernor() {
     // 初始按「不可见」处理：等 IntersectionObserver 首次回调确认可见后才放行，
     // 这样挂载即离屏（隐藏的工作区）时直接进入暂停，不产生任何多余帧
     let inViewport = false;
+    /** 模块激活态：isActive 变化会重跑本 effect，重跑时先按「不可见」暂停，
+     *  再由观察器首次回调放行（重复暂停只读取已钉住的时钟读数，时间轴不会漂移） */
+    const moduleActive = isActive;
     let paused = false;
     /** 暂停瞬间的时钟读数（恢复时拨回，见上方注释） */
     let pausedElapsed = 0;
@@ -1044,7 +1049,7 @@ function FrameloopGovernor() {
       invalidate(); // 帧循环此前已自行退出，立即补一帧（下一帧由帧循环接管）
     };
     const sync = () => {
-      if (pageVisible && inViewport) {
+      if (pageVisible && inViewport && moduleActive) {
         if (paused) resume();
       } else if (!paused) {
         pause(true);
@@ -1068,13 +1073,14 @@ function FrameloopGovernor() {
     const unsubscribe = store.subscribe((state) => {
       if (paused && state.frameloop !== 'never') pause(false);
     });
-    sync(); // 挂载时若已隐藏 / 离屏 → 直接进入暂停
+    sync(); // 挂载时若已隐藏 / 离屏 / 模块未激活 → 直接进入暂停
     return () => {
       io.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       unsubscribe();
     };
-  }, [gl, clock, setFrameloop, invalidate, store]);
+    // isActive 进依赖：模块激活态变化即重跑本 effect，按新状态重新同步（暂停/恢复仍走上面同一对函数）
+  }, [gl, clock, setFrameloop, invalidate, store, isActive]);
 
   return null;
 }
@@ -1087,6 +1093,7 @@ export function AstrologyWheelScene({
   selectedBody,
   onSelectBody,
   planetOverrides,
+  isActive = true,
 }: {
   facts: AstrologyChartFacts;
   className?: string;
@@ -1094,6 +1101,8 @@ export function AstrologyWheelScene({
   onSelectBody?: (body: PlanetBody | null) => void;
   /** 行星黄经覆盖（表单预览太阳滑动用，语义与 SVG 轮一致）：覆盖星体按真实黄经阻尼滑入 */
   planetOverrides?: Partial<Record<PlanetBody, number>>;
+  /** 工作区激活态（默认 true）：false 时整个帧循环停摆，模块切走后不在后台空转 GPU */
+  isActive?: boolean;
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   const layout = useMemo(() => buildWheelSceneLayout(facts, planetOverrides), [facts, planetOverrides]);
@@ -1158,8 +1167,8 @@ export function AstrologyWheelScene({
       >
         {/* 尺寸自愈守卫（见上方注释）：校正被布局瞬态污染且不自愈的内部测量 */}
         <SizeGuard />
-        {/* 帧循环治理（见上方注释）：页面隐藏或画布离屏时整帧停摆，可见时拨回时间轴继续 */}
-        <FrameloopGovernor />
+        {/* 帧循环治理（见上方注释）：页面隐藏 / 画布离屏 / 模块切走时整帧停摆，三项都可见时拨回时间轴继续 */}
+        <FrameloopGovernor isActive={isActive} />
         {/* 光照：环境光托底 + 主光塑形（自发光为主，光照只给球体体积感） */}
         <ambientLight intensity={0.5} />
         <directionalLight position={[4, 6, 8]} intensity={1.1} />

@@ -41,7 +41,7 @@ export function MobileBottomNav({ pathname, onMoreClick }: MobileBottomNavProps)
         'transition-[background-color,border-color] duration-500',
         night
           ? 'border-[#E7C873]/15 bg-[#0C1128]/90'
-          : 'border-slate-200/80 bg-white/94 dark:border-slate-800/70 dark:bg-[#111218]/94'
+          : 'border-slate-200/80 bg-white/[0.94] dark:border-slate-800/70 dark:bg-[#111218]/[0.94]'
       )}
     >
       <div className="grid grid-cols-5 gap-1">

@@ -271,12 +271,14 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 - 遮罩 `bg-slate-950/50 backdrop-blur-md`；主体 G-3 玻璃；入场 scale 0.95→1 + fade，200ms。
 - 移动端表单类弹层**一律底部抽屉**（`rounded-t-[28px]`、顶部抓手、安全区内边距），不用居中 Modal。
+- **决策记录（命理域信息型弹层）**：`lg`（1024）起用居中 Modal、`lg` 以下用底部抽屉——640-1023 的触屏平板保持抽屉形态（与 §5 的形态切换点一致）。居中断点的入场动效必须把居中位移烘进关键帧（`data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]` + `zoom-in-95`，同 shadcn dialog 标准模式），否则关键帧的 transform 会覆盖 `-translate-x/y-1/2`，弹层从右下偏半屏滑入再落位。
 - ESC 关闭 + 背景滚锁；焦点进入抽屉，关闭归还触发元素。
 
 ### 8.5 导航
 
 - 桌面侧边栏（global-sidebar）：白玻璃 `bg-white/80 border-white/30`，激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
-- 移动底部导航（mobile-bottom-nav）：`bg-white/94 dark:bg-slate-800/90 backdrop-blur-xl`，激活色带渐变，安全区内边距。
+- 移动底部导航（mobile-bottom-nav）：`bg-white/[0.94] dark:bg-[#111218]/[0.94] backdrop-blur-xl`，激活色带渐变，安全区内边距。
+- 斜杠透明度只能写刻度值（5 的倍数，如 `/90`、`/95`）或方括号任意值（如 `/[0.94]`）：裸写 `/94`、`/92` 这类非刻度值 Tailwind v3 不生成 CSS，样式静默丢失（本条由底栏 `bg-white/94` 的实际失效证实）。
 - 移动顶栏：fixed + blur-xl；紫微夜幕联动时变 `bg-[#0C1128]/85` + 金边（页级主题联动的唯一先例）。
 
 ---

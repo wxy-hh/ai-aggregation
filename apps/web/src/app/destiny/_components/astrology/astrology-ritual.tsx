@@ -15,6 +15,7 @@
  * - 第四阶段代表「宇宙重点已整理完成」（本地基于星盘事实整理，无 AI 请求）。
  * - 失败时呈现安静恢复卡：资料已保留 + 失败类型 + 重新计算 / 返回修改资料。
  * - 无宫位盘第三阶段文案固定为「系统正在整理行星位置与关键相位」，不播放十二宫动画再隐藏。
+ * - 仪式窗内可直接跳过：真值在进本组件前已锁定，跳过省掉的只是揭示动画，结果本身不变。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -115,7 +116,12 @@ function RitualWireframe() {
 
 /* ---------- 主组件 ---------- */
 
-export function AstrologyRitualResult() {
+type AstrologyRitualResultProps = {
+  /** 工作区激活态（默认 true）：模块切走时结果相位的星渊场景整帧停摆，不随后台帧循环空转 */
+  isActive?: boolean;
+};
+
+export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResultProps) {
   const reduceMotion = useReducedMotion();
   const { step, formData, chartFacts, error, errorKind, setWorkspaceState, markResultReady } =
     useDestinyWorkspaceStore(
@@ -140,6 +146,7 @@ export function AstrologyRitualResult() {
    * 仪式推进：chartFacts 提交时已锁定（真实完成事件），这里按最小仪式窗播放揭示；
    * 窗结束即 markResultReady 转场（第四阶段仅揭示已完成的本地整理，无外部解读请求）。
    * 减少动态：同样的真实节奏，只是盘面各层静态出现、转场退化为交叉淡入。
+   * cleanup 依赖 phase：跳过按钮把 phase 提前切到 result 时，四个定时器（含转场那一个）一并清掉。
    */
   useEffect(() => {
     if (phase !== 'ritual' || error) return;
@@ -157,30 +164,49 @@ export function AstrologyRitualResult() {
     resetAstrologyScroll();
   }, [phase]);
 
-  /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式转场，不在才重算 */
+  /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式转场，不在才重算。
+   *  step 一律回落 form：失败卡可能停在结果步，不回落则重算后 phase 仍是 result，直接跳过仪式 */
   const retry = () => {
     setStage(1);
     if (!chartFacts) {
       const profile = mapFormToAstroProfile(formData);
       if (!profile) {
-        setWorkspaceState('astrology', { entryView: 'form', error: null, errorKind: null });
+        setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
         return;
       }
       try {
         const chartFacts = computeChartFacts(profile);
-        setWorkspaceState('astrology', { chartFacts, error: null, errorKind: null });
+        setWorkspaceState('astrology', {
+          step: 'form',
+          entryView: 'loading',
+          chartFacts,
+          error: null,
+          errorKind: null,
+        });
         // 11 工单：重试补齐真值同样写入统一历史（同一逻辑记录覆盖更新）
         saveAstrologyHistoryRecord(formData, chartFacts);
       } catch {
-        setWorkspaceState('astrology', { error: '星盘计算出现异常，请重试', errorKind: 'unknown' });
+        setWorkspaceState('astrology', {
+          step: 'form',
+          entryView: 'loading',
+          error: '星盘计算出现异常，请重试',
+          errorKind: 'unknown',
+        });
         return;
       }
       return;
     }
-    setWorkspaceState('astrology', { error: null, errorKind: null });
+    // 真值已在：只重播仪式（entryView 回到 loading，确保工作区把仪式树留在前台）
+    setWorkspaceState('astrology', { step: 'form', entryView: 'loading', error: null, errorKind: null });
   };
 
-  const backToForm = () => setWorkspaceState('astrology', { entryView: 'form', error: null, errorKind: null });
+  /** 返回修改资料：step 一并回落 form，否则工作区分发仍停在结果页，按钮点了没反应 */
+  const backToForm = () =>
+    setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
+
+  /** 跳过仪式：真值早已锁定，这里只是立刻结束揭示动画（markResultReady 进结果相位）；
+   *  phase 随之变 result，进度定时器由推进 effect 的 cleanup（依赖 [phase]）自动清掉，不会重复转场 */
+  const skipRitual = () => markResultReady('astrology');
 
   /** 共享星盘元素：同一 layoutId 在 ritual/result 两相位间做树内布局动画；
    *  06 起结果相位透传点选交互（selectedBody/onSelectBody），仪式相位不传即为纯展示；
@@ -200,6 +226,7 @@ export function AstrologyRitualResult() {
             facts={chartFacts}
             selectedBody={wheelProps.selectedBody}
             onSelectBody={wheelProps.onSelectBody}
+            isActive={isActive}
             fallback={
               <AstrologyChartWheel
                 facts={chartFacts}
@@ -258,112 +285,131 @@ export function AstrologyRitualResult() {
     );
   }
 
-  /* ---------- 加载仪式相位 ---------- */
+  /* ---------- 读屏活体区（跨相位常驻） ---------- */
 
-  if (phase === 'ritual') {
-    return (
-      <DestinyPageScaffold withNavOffset tone="cosmos">
-        <AstrologyStarfield />
-        <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
-          <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 xl:justify-center xl:pb-10">
-            {/* 顶部：出生资料摘要行 */}
-            <p className="text-center text-xs font-medium tracking-wide text-slate-500 dark:text-night-muted">
-              {summaryLine(formData)}
-            </p>
+  /** 活体区文案：仪式期为当前阶段，转结果相位时变为完成宣告。
+   *  读屏器不播报 live region 与结果树同一次挂载的初始内容，只有同一节点的内容变化才会被读出——
+   *  因此该节点必须挂在相位分支之外（两个相位共用一个），不能各写一个。 */
+  const liveStatusText =
+    phase === 'result' ? '星盘已生成，正在展示你的结果' : (stages[stage - 1]?.doing ?? '');
 
-            <div className="mt-6 grid flex-1 items-center gap-8 sm:mt-8 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
-              {/* 中央星盘：移动端在上，桌面右列 */}
-              <div className="order-first xl:order-last">
-                <div className="relative mx-auto w-full max-w-[min(72vw,340px)] xl:max-w-[380px]">
-                  <div aria-hidden className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]" />
-                  {wheelSlot('relative mx-auto w-full')}
+  /* ---------- 统一返回壳：仪式（05）与结果（06）同树，星盘轮以 layoutId 连续转场 ---------- */
+
+  return (
+    <>
+      <p className="sr-only" role="status" aria-live="polite">
+        {liveStatusText}
+      </p>
+
+      {phase === 'ritual' ? (
+        /* ---------- 加载仪式相位 ---------- */
+        <DestinyPageScaffold withNavOffset tone="cosmos">
+          <AstrologyStarfield />
+          <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
+            <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 xl:justify-center xl:pb-10">
+              {/* 顶部：出生资料摘要行 */}
+              <p className="text-center text-xs font-medium tracking-wide text-slate-500 dark:text-night-muted">
+                {summaryLine(formData)}
+              </p>
+
+              <div className="mt-6 grid flex-1 items-center gap-8 sm:mt-8 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
+                {/* 中央星盘：移动端在上，桌面右列 */}
+                <div className="order-first xl:order-last">
+                  <div className="relative mx-auto w-full max-w-[min(72vw,340px)] xl:max-w-[380px]">
+                    <div aria-hidden className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]" />
+                    {wheelSlot('relative mx-auto w-full')}
+                  </div>
+                  {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画）；
+                      relative z-10：表圈 -inset-[5.5%] 外溢会压住盘下徽章（同表单页说明文字的原因） */}
+                  {!withHouses && stage >= 2 && (
+                    <motion.p
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="relative z-10 mt-3 text-center"
+                    >
+                      <span className="inline-block rounded-full border border-violet-300/40 bg-violet-200/20 px-3 py-1 text-[11px] font-semibold tracking-wider text-violet-600 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-300">
+                        无宫位行星盘
+                      </span>
+                    </motion.p>
+                  )}
                 </div>
-                {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画）；
-                    relative z-10：表圈 -inset-[5.5%] 外溢会压住盘下徽章（同表单页说明文字的原因） */}
-                {!withHouses && stage >= 2 && (
-                  <motion.p
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="relative z-10 mt-3 text-center"
-                  >
-                    <span className="inline-block rounded-full border border-violet-300/40 bg-violet-200/20 px-3 py-1 text-[11px] font-semibold tracking-wider text-violet-600 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-300">
-                      无宫位行星盘
-                    </span>
-                  </motion.p>
-                )}
-              </div>
 
-              {/* 左列（移动端下方）：四段真实进度清单 */}
-              <div className="mx-auto w-full max-w-md xl:mx-0">
-                <h1 className="text-center font-heading text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl xl:text-left">
-                  正在绘制你的星盘
-                </h1>
-                <ol className="mt-6 space-y-4">
-                  {stages.map((s, i) => {
-                    const num = (i + 1) as RitualStage;
-                    const done = stage > num;
-                    const current = stage === num;
-                    return (
-                      <li key={s.doing} className="flex items-center gap-3">
-                        {done ? (
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_4px_12px_-2px_rgba(73,105,233,0.5)]">
-                            <Check className="h-3.5 w-3.5" strokeWidth={2.6} />
-                          </span>
-                        ) : current ? (
-                          <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-                            <motion.span
-                              aria-hidden
-                              className="absolute inline-flex h-4 w-4 rounded-full bg-indigo-400/40 dark:bg-indigo-300/30"
-                              animate={reduceMotion ? {} : { scale: [1, 1.7, 1], opacity: [0.8, 0.2, 0.8] }}
-                              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-                            />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500 dark:bg-indigo-300" />
-                          </span>
-                        ) : (
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-                            <span className="h-2 w-2 rounded-full border border-slate-300 dark:border-white/20" />
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            'text-sm leading-relaxed transition-colors duration-300',
-                            current
-                              ? 'font-semibold text-slate-900 dark:text-white'
-                              : done
-                                ? 'text-slate-500 dark:text-night-muted'
-                                : 'text-day-muted dark:text-night-faint'
+                {/* 左列（移动端下方）：四段真实进度清单（阶段切换由上方常驻活体区宣布） */}
+                <div className="mx-auto w-full max-w-md xl:mx-0">
+                  <h1 className="text-center font-heading text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl xl:text-left">
+                    正在绘制你的星盘
+                  </h1>
+                  <ol className="mt-6 space-y-4">
+                    {stages.map((s, i) => {
+                      const num = (i + 1) as RitualStage;
+                      const done = stage > num;
+                      const current = stage === num;
+                      return (
+                        <li key={s.doing} className="flex items-center gap-3">
+                          {done ? (
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#4969E9] to-[#7C5CF6] text-white shadow-[0_4px_12px_-2px_rgba(73,105,233,0.5)]">
+                              <Check className="h-3.5 w-3.5" strokeWidth={2.6} />
+                            </span>
+                          ) : current ? (
+                            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+                              <motion.span
+                                aria-hidden
+                                className="absolute inline-flex h-4 w-4 rounded-full bg-indigo-400/40 dark:bg-indigo-300/30"
+                                animate={reduceMotion ? {} : { scale: [1, 1.7, 1], opacity: [0.8, 0.2, 0.8] }}
+                                transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                              />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500 dark:bg-indigo-300" />
+                            </span>
+                          ) : (
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                              <span className="h-2 w-2 rounded-full border border-slate-300 dark:border-white/20" />
+                            </span>
                           )}
-                        >
-                          {done ? s.done : s.doing}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ol>
-                <p className="mt-6 text-center text-xs leading-relaxed text-day-muted dark:text-night-faint xl:text-left">
-                  进度由真实计算步骤推进，不设百分比
-                </p>
-                {/* 读屏状态宣布：阶段切换时朗读当前步骤（视觉清单逐字变化对读屏不友好，单独用活体区宣布） */}
-                <p className="sr-only" role="status" aria-live="polite">
-                  {stages[stage - 1]?.doing ?? ''}
-                </p>
+                          <span
+                            className={cn(
+                              'text-sm leading-relaxed transition-colors duration-300',
+                              current
+                                ? 'font-semibold text-slate-900 dark:text-white'
+                                : done
+                                  ? 'text-slate-500 dark:text-night-muted'
+                                  : 'text-day-muted dark:text-night-faint'
+                            )}
+                          >
+                            {done ? s.done : s.doing}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  <p className="mt-6 text-center text-xs leading-relaxed text-day-muted dark:text-night-faint xl:text-left">
+                    进度由真实计算步骤推进，不设百分比
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </DestinyPageScaffold>
-    );
-  }
 
-  /* ---------- 结果相位（06：真实首屏——护照/主轴/三卡/交互轮；wheelSlot 插槽保持共享元素转场） ---------- */
-
-  return (
-    <DestinyPageScaffold withNavOffset tone="cosmos">
-      <AstrologyStarfield />
-      <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
-        <AstrologyResultView wheelSlot={wheelSlot} />
-      </div>
-    </DestinyPageScaffold>
+          {/* 跳过仪式：低调文字钮固定在右下角（移动端抬到全局底栏之上，桌面端贴视口右下）；
+              真值在进仪式前已锁定，跳过只省去揭示动画，结果本身不变；热区 ≥44px，减少动态下同样保留 */}
+          <button
+            type="button"
+            onClick={skipRitual}
+            aria-label="跳过仪式，直接查看结果"
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-xs font-medium text-day-muted transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 lg:bottom-6 lg:right-6 dark:text-night-faint dark:hover:text-indigo-200"
+          >
+            跳过
+          </button>
+        </DestinyPageScaffold>
+      ) : (
+        /* ---------- 结果相位（06：真实首屏——护照/主轴/三卡/交互轮；wheelSlot 插槽保持共享元素转场） ---------- */
+        <DestinyPageScaffold withNavOffset tone="cosmos">
+          <AstrologyStarfield />
+          <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
+            <AstrologyResultView wheelSlot={wheelSlot} />
+          </div>
+        </DestinyPageScaffold>
+      )}
+    </>
   );
 }

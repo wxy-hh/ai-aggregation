@@ -8,7 +8,8 @@
  * - 约时档只含已确定要素；
  * - headline 缺失返回 null（入口不渲染）；
  * - 缩略轮落点只含 sign 稳定行星，产物无 degree/house 字段；
- * - revision 直接绑定事实层 calculationRevision（重算后旧海报自然失效）。
+ * - revision 直接绑定事实层 calculationRevision（重算后旧海报自然失效）；
+ * - 下载文件名脱敏：匿名模式一律回退通用名，不携带昵称（非匿名模式维持现状）。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -18,7 +19,11 @@ import {
   SAMPLE_PROFILE_UNKNOWN,
   computeChartFacts,
 } from '@/lib/astrology/mock-chart-facts';
-import { buildAstrologyShareCardData, buildAstrologyShareUrl } from './astrology-share-card-data';
+import {
+  buildAstrologyShareCardData,
+  buildAstrologyShareFileName,
+  buildAstrologyShareUrl,
+} from './astrology-share-card-data';
 
 /** 准确档：完整盘（示例盘 1995-10-08 14:30 上海，太阳天秤/月亮白羊/上升水瓶） */
 const accurateFacts = computeChartFacts(SAMPLE_PROFILE_ACCURATE);
@@ -44,6 +49,46 @@ describe('buildAstrologyShareUrl', () => {
   it('origin 末尾斜杠不产生双斜杠', () => {
     expect(buildAstrologyShareUrl('https://example.com/')).toContain(
       'https://example.com/destiny?tab=astrology'
+    );
+  });
+});
+
+describe('buildAstrologyShareFileName（下载文件名脱敏）', () => {
+  it('匿名模式：文件名回退固定通用名，不含任何昵称片段', () => {
+    const fileName = buildAstrologyShareFileName({ nickname: '小宇', showNickname: false });
+    expect(fileName).toBe('星座寰宇-星语海报.png');
+    expect(fileName).not.toContain('小宇');
+  });
+
+  it('非匿名模式：文件名含昵称（维持现状）', () => {
+    expect(buildAstrologyShareFileName({ nickname: '星野', showNickname: true })).toBe(
+      '星座寰宇-星野.png'
+    );
+  });
+
+  it('非匿名模式的昵称仍沿用既有净化规则（剥离文件系统非法字符）', () => {
+    expect(buildAstrologyShareFileName({ nickname: '张/三:李', showNickname: true })).toBe(
+      '星座寰宇-张三李.png'
+    );
+  });
+
+  it('非匿名但昵称为空或纯空白时同样回退通用名', () => {
+    expect(buildAstrologyShareFileName({ nickname: '', showNickname: true })).toBe(
+      '星座寰宇-星语海报.png'
+    );
+    expect(buildAstrologyShareFileName({ nickname: '   ', showNickname: true })).toBe(
+      '星座寰宇-星语海报.png'
+    );
+  });
+
+  it('与卡片数据串联：匿名选项下文件名不含产物昵称（回归「星座寰宇-小宇.png」泄漏）', () => {
+    const data = buildAstrologyShareCardData(accurateFacts, { ...BASE_OPTIONS, name: '小宇' })!;
+    expect(buildAstrologyShareFileName({ nickname: data.nickname, showNickname: false })).toBe(
+      '星座寰宇-星语海报.png'
+    );
+    // 非匿名分支维持现状：昵称照常出现在文件名中
+    expect(buildAstrologyShareFileName({ nickname: data.nickname, showNickname: true })).toBe(
+      '星座寰宇-小宇.png'
     );
   });
 });

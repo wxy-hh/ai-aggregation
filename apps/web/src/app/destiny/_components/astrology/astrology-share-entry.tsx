@@ -9,11 +9,11 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
 import { destinyPrimaryBtnClass } from '../layout/destiny-result-header';
 import { canShareFiles, useShareImage } from '../share/use-share-image';
-import { sanitizeShareFileName } from '../share/share-card-data';
 import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { AstrologyShareCard } from './astrology-share-card';
 import {
   buildAstrologyShareCardData,
+  buildAstrologyShareFileName,
   type AstrologyShareCardData,
 } from './astrology-share-card-data';
 
@@ -21,6 +21,28 @@ import {
 const CARD_WIDTH = 375;
 /** 卡片逻辑高度（竖版 3:4） */
 const CARD_HEIGHT = 500;
+
+/** 可用性判定用的占位域名：只关心构建器是否返回卡片，与二维码落地址无关 */
+const AVAILABILITY_ORIGIN = 'https://placeholder.invalid';
+
+/**
+ * 分享入口可用性判定（导出给结果页折叠壳复用）：
+ * 与组件内部同一条件——主轴金句缺失即整卡隐藏（构建器同步返回空），
+ * 父级据此整块跳过渲染，避免移动端折叠壳留下「点开即空」的死入口。
+ */
+export function isAstrologyShareAvailable(
+  facts: AstrologyChartFacts,
+  headline: string,
+  name: string | null
+): boolean {
+  return (
+    buildAstrologyShareCardData(facts, {
+      name,
+      headline,
+      origin: AVAILABILITY_ORIGIN,
+    }) !== null
+  );
+}
 
 /** 选项分段控制器（radiogroup 语义，键盘可遍历，热区 ≥44px） */
 function OptionSegment<T extends string>({
@@ -121,12 +143,7 @@ export function AstrologyShareEntry({
 
   // 主轴标语缺失时整个入口不渲染，避免生成半成品卡片（构建器同步返回空）
   const available = useMemo(
-    () =>
-      buildAstrologyShareCardData(facts, {
-        name,
-        headline,
-        origin: 'https://placeholder.invalid',
-      }) !== null,
+    () => isAstrologyShareAvailable(facts, headline, name),
     [facts, headline, name]
   );
 
@@ -187,9 +204,11 @@ export function AstrologyShareEntry({
     }
   }, [open, facts, headline, name]);
 
-  const fileName = cardData?.nickname
-    ? `星座寰宇-${sanitizeShareFileName(cardData.nickname)}.png`
-    : '星座寰宇-星语海报.png';
+  // 文件名同样受脱敏选项约束：匿名模式下不得携带昵称（脱敏覆盖到下载的最后一公里）
+  const fileName = buildAstrologyShareFileName({
+    nickname: cardData?.nickname ?? '',
+    showNickname,
+  });
 
   const handleDownload = useCallback(async () => {
     if (!cardRef.current) return;
@@ -250,16 +269,19 @@ export function AstrologyShareEntry({
         <DialogContent
           contentAnimation="none"
           className={cn(
-            // 移动端：底部抽屉；桌面端：居中弹层（与八字分享卡同一布局模式）
+            // 移动端（lg 以下，含触屏平板）：底部抽屉；lg 起：居中弹层（与八字分享卡同一布局模式）
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 gap-0 p-0',
             'rounded-t-[28px] rounded-b-none border border-white/60 pb-[env(safe-area-inset-bottom)]',
             'bg-white/85 backdrop-blur-2xl',
             'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(73,105,233,0.18)]',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
-            'sm:inset-x-auto sm:bottom-auto sm:left-[50%] sm:top-[50%] sm:w-auto sm:-translate-x-1/2 sm:-translate-y-1/2',
-            'sm:rounded-[32px] sm:pb-0',
-            'sm:data-[state=open]:slide-in-from-bottom-0 sm:data-[state=open]:zoom-in-95',
+            'lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:w-auto lg:-translate-x-1/2 lg:-translate-y-1/2',
+            'lg:rounded-[32px] lg:pb-0',
+            // 居中断点：入场的关键帧会整体覆盖 -translate-x/y-1/2，居中位移必须烘进关键帧
+            // （slide-in-from-left-1/2 + top-[48%]），否则元素从右下偏半屏滑入再落位
+            'lg:data-[state=open]:slide-in-from-left-1/2 lg:data-[state=open]:slide-in-from-top-[48%] lg:data-[state=open]:zoom-in-95',
+            'lg:data-[state=closed]:slide-out-to-left-1/2 lg:data-[state=closed]:slide-out-to-top-[48%] lg:data-[state=closed]:zoom-out-95',
             // 暗色玻璃：透明度必须方括号写法（Tailwind v3 裸 /92 不生成 CSS）
             'dark:border-white/10 dark:bg-[#0D1226]/[0.92]'
           )}

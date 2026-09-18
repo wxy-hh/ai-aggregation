@@ -126,7 +126,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                   z-10 必须保留：3D 舞台的磨砂表圈是 -inset-[5.5%]（外扩约 27px），会盖到盘上方的标注，
                   且轮盘在 DOM 顺序上靠后、自带层叠上下文，不抬升就会把标注文字压在弧线下面。
                   盘内点选后可用 Escape / 点击盘面空白 / HUD 关闭按钮复原，无需再由这里承担复位职责 */}
-              <span className="relative z-10 mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-0.5 text-[11px] font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
+              <span className="relative z-10 mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-1 text-xs font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
                 示例星盘 · 可点选星体体验
               </span>
 
@@ -139,15 +139,17 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                 />
               </AstrologyWheel3D>
 
-              {/* 悬浮星体解读 HUD 胶囊卡片（点选任意星曜时从星盘下方优雅弹入） */}
+              {/* 悬浮星体解读 HUD 胶囊卡片（点选任意星曜时从星盘下方优雅弹入）。
+                  居中位移必须收进 motion 的 x（framer 内联 transform 会覆盖 Tailwind 的 -translate-x-1/2，
+                  实测移动端卡片右溢出至屏外），className 里不能再写 translate-x 工具类 */}
               <AnimatePresence>
                 {sampleSelectedBody && (
                   <motion.div
-                    initial={{ opacity: 0, y: 14, scale: 0.94 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    initial={{ opacity: 0, y: 14, scale: 0.94, x: '-50%' }}
+                    animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96, x: '-50%' }}
                     transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] -translate-x-1/2 rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl dark:border-indigo-400/30 dark:bg-[#0D122E]/95 dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
+                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl dark:border-indigo-400/30 dark:bg-[#0D122E]/95 dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold tracking-wide text-indigo-600 dark:text-indigo-300">
@@ -276,17 +278,42 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
         </div>
       </div>
 
-      {/* 了解计算方式：轻量底部抽屉 */}
+      {/* 了解计算方式：lg 以下为底部抽屉（抓手 + 安全区），lg 起为居中 Modal（G-3 玻璃 + scale 0.95→1 入场）。
+          DESIGN §5 规定 lg(1024) 才是移动/桌面形态切换点，640-1023 的触屏平板保持底部抽屉；
+          几何与动效全部走断点类，弹层内容只有一份 */}
       <Dialog open={howItWorksOpen} onOpenChange={setHowItWorksOpen}>
         <DialogContent
+          contentAnimation="none"
           className={cn(
-            'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 sm:inset-x-6 sm:bottom-6 sm:rounded-[28px]',
-            'rounded-t-[28px] border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
-            'bg-white/90 backdrop-blur-2xl dark:border-white/10 dark:bg-[#0D1226]/[0.92]',
-            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom'
+            // lg 以下：底部抽屉
+            'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 gap-0 p-0',
+            'rounded-t-[28px] rounded-b-none border border-white/60 pb-[env(safe-area-inset-bottom)]',
+            // lg 起：居中 Modal（列宽 max-w-lg，避免宽屏下信息密度过低）
+            'lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:w-[calc(100%-3rem)] lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px] lg:pb-0',
+            // G-3 玻璃：自上而下渐隐 + 顶部 1px 高光线（深色档落在星盘深空 #0D1226 一脉）
+            'bg-gradient-to-b from-white/95 via-white/85 to-white/70 backdrop-blur-2xl',
+            'dark:border-white/10 dark:from-[#0D1226]/[0.96] dark:via-[#0C1124]/[0.93] dark:to-[#0B1020]/[0.90]',
+            'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.28)]',
+            // 入场 200ms（tailwindcss-animate 的 duration-* 与核心 transition-duration 同名，且被
+            // data-[state=open]:animate-in 的属性选择器压过，故用内联样式写死动画时长）
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom',
+            // 居中断点：入场关键帧会整体覆盖 -translate-x/y-1/2，居中位移必须烘进关键帧
+            // （slide-in-from-left-1/2 + top-[48%]，同 shadcn dialog 标准模式），
+            // 否则元素从右下偏半屏滑入再落位
+            'lg:data-[state=open]:slide-in-from-left-1/2 lg:data-[state=open]:slide-in-from-top-[48%] lg:data-[state=open]:zoom-in-95',
+            'lg:data-[state=closed]:slide-out-to-left-1/2 lg:data-[state=closed]:slide-out-to-top-[48%] lg:data-[state=closed]:zoom-out-95'
           )}
+          style={{ animationDuration: '200ms' }}
         >
-          <div className="px-6 py-6">
+          {/* lg 以下抓手（仅抽屉形态出现） */}
+          <div aria-hidden className="mx-auto mt-3 h-1 w-10 rounded-full bg-slate-300/70 dark:bg-white/15 lg:hidden" />
+          <div className="relative px-6 pb-6 pt-3 lg:py-6">
+            {/* 顶部高光线：G-3 壳层的材质边缘（仅居中 Modal 形态） */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-6 top-0 hidden h-px bg-gradient-to-r from-transparent via-white/70 to-transparent dark:via-white/15 lg:block"
+            />
             <DialogTitle className="font-heading text-lg font-bold text-slate-900 dark:text-white">
               星盘如何计算
             </DialogTitle>

@@ -41,7 +41,7 @@ export function MobileHeader({ pathname }: MobileHeaderProps) {
         'transition-[background-color,border-color] duration-500',
         night
           ? 'border-[#E7C873]/15 bg-[#0C1128]/85'
-          : 'border-slate-200/80 bg-white/92 dark:border-slate-800/70 dark:bg-[#111218]/92'
+          : 'border-slate-200/80 bg-white/[0.92] dark:border-slate-800/70 dark:bg-[#111218]/[0.92]'
       )}
     >
       <div className="flex items-center gap-3">
