@@ -166,7 +166,11 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
   const districtFallback = useMemo(() => {
     const q = cityQuery.trim();
     if (q === '' || cityResults.length > 0 || !DISTRICT_SUFFIX_RE.test(q)) return null;
-    const matched = ASTRO_CITIES.filter((c) => q.includes(c.name));
+    // 命中可能不止一个（「北京市朝阳区」同时含「北京」与辽宁「朝阳」）：
+    // 按出现位置靠前、名称更长排序，让「已按 X 匹配」优先落在省市前缀上
+    const matched = ASTRO_CITIES.filter((c) => q.includes(c.name)).sort(
+      (a, b) => q.indexOf(a.name) - q.indexOf(b.name) || b.name.length - a.name.length
+    );
     return matched.length > 0 ? { query: matched[0].name, results: matched.slice(0, 8) } : null;
   }, [cityQuery, cityResults]);
 
@@ -482,7 +486,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             value={cityQuery}
             disabled={disabled}
             autoComplete="off"
-            placeholder="搜索城市中文名或拼音，如：郑州 / zz"
+            placeholder="搜索城市中文名，如：周口 / 蚌埠"
             onKeyDown={handleCityKeyDown}
             onChange={(e) => {
               setCityQuery(e.target.value);
@@ -563,7 +567,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                 <p className="px-4 py-3 text-xs leading-relaxed text-day-muted dark:text-night-faint">
                   {districtLike
                     ? '无需精确到区县，输入所在城市即可，如：郑州'
-                    : '未找到该城市，试试换中文名或拼音'}
+                    : '未找到该城市，试试城市中文名，如：周口'}
                 </p>
               )}
             </div>

@@ -1,9 +1,14 @@
 /**
- * cities.ts —— 出生城市搜索的 mock 数据源（前端先行期）
+ * cities.ts —— 出生城市搜索的数据源（前端先行期）
  *
  * 设计文档 §6.3：城市必须精确匹配选中（保存城市、经纬度与 IANA 时区），
  * 禁止仅以国家名或当前位置作为精确出生地。生产接入地点服务后仅替换本表。
+ *
+ * 组成：手写 curated 表（主要城市 + 国际城市 + 拼音别名）+ 生成的中国地级行政区表
+ * （cities-china.ts，覆盖周口、蚌埠等地级市）。搜索按中文名包含或拼音前缀匹配。
  */
+
+import { CHINA_PREFECTURE_CITIES } from './cities-china';
 
 export interface AstroCity {
   /** 城市中文名 */
@@ -18,8 +23,8 @@ export interface AstroCity {
   aliases: string[];
 }
 
-/** 国内主要城市 + 常用国际城市（中国统一 UTC+8，IANA 口径） */
-export const ASTRO_CITIES: AstroCity[] = [
+/** 国内主要城市 + 常用国际城市（中国统一 UTC+8，IANA 口径；含拼音别名，手写维护） */
+const CURATED_CITIES: AstroCity[] = [
   { name: '北京', lat: 39.9042, lon: 116.4074, timezone: 'Asia/Shanghai', aliases: ['beijing', 'bj'] },
   { name: '上海', lat: 31.2304, lon: 121.4737, timezone: 'Asia/Shanghai', aliases: ['shanghai', 'sh'] },
   { name: '广州', lat: 23.1291, lon: 113.2644, timezone: 'Asia/Shanghai', aliases: ['guangzhou', 'gz'] },
@@ -65,11 +70,24 @@ export const ASTRO_CITIES: AstroCity[] = [
   { name: '悉尼', lat: -33.8688, lon: 151.2093, timezone: 'Australia/Sydney', aliases: ['xini', 'sydney', 'xn'] },
 ];
 
-/** 城市搜索：中文名包含或别名前缀匹配；返回前 8 条候选 */
+/** 全量城市表：手写 curated（含拼音别名与国际城市）+ 生成的中国地级行政区 */
+export const ASTRO_CITIES: AstroCity[] = [...CURATED_CITIES, ...CHINA_PREFECTURE_CITIES];
+
+/**
+ * 城市搜索：中文名包含或拼音前缀匹配；返回前 8 条候选。
+ * 「市」后缀归一化：用户常输「周口市」「北京市」——数据里存的是不带后缀的短名，
+ * 先按原样匹配，没有结果时去掉尾部「市」再匹配一轮。
+ */
 export function searchCities(query: string): AstroCity[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return ASTRO_CITIES.filter(
-    (c) => c.name.includes(q) || c.aliases.some((a) => a.startsWith(q))
-  ).slice(0, 8);
+  const raw = query.trim().toLowerCase();
+  if (!raw) return [];
+  const queries = raw.endsWith('市') ? [raw, raw.slice(0, -1)] : [raw];
+  const matched: AstroCity[] = [];
+  for (const q of queries) {
+    for (const c of ASTRO_CITIES) {
+      if (matched.includes(c)) continue;
+      if (c.name.includes(q) || c.aliases.some((a) => a.startsWith(q))) matched.push(c);
+    }
+  }
+  return matched.slice(0, 8);
 }
