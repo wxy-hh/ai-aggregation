@@ -194,11 +194,13 @@ export function AstrologyForm() {
                     />
                   </AstrologyWheel3D>
                 </div>
-                <p className="mt-3 text-center text-xs leading-relaxed text-slate-500 dark:text-night-muted">
+                {/* relative z-10：3D 舞台的磨砂表圈是 -inset-[5.5%]（外溢约 22px），会洗掉盘下的说明文字，
+                    且轮盘容器是定位元素、在绘制顺序上高于后方的静态文本，不抬升就会被弧线压住 */}
+                <p className="relative z-10 mt-3 text-center text-xs leading-relaxed text-slate-500 dark:text-night-muted">
                   {sunSignName ? (
                     <>
                       太阳已滑入<span className="font-semibold text-indigo-500 dark:text-indigo-300">{sunSignName}</span>
-                      · 其余星体为示例状态
+                      {' · 其余星体为示例状态'}
                     </>
                   ) : (
                     '示例星盘 · 填完阳历日期后，太阳将滑向你的星座'

@@ -278,13 +278,14 @@ export function AstrologyRitualResult() {
                   <div aria-hidden className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]" />
                   {wheelSlot('relative mx-auto w-full')}
                 </div>
-                {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画） */}
+                {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画）；
+                    relative z-10：表圈 -inset-[5.5%] 外溢会压住盘下徽章（同表单页说明文字的原因） */}
                 {!withHouses && stage >= 2 && (
                   <motion.p
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="mt-3 text-center"
+                    className="relative z-10 mt-3 text-center"
                   >
                     <span className="inline-block rounded-full border border-violet-300/40 bg-violet-200/20 px-3 py-1 text-[11px] font-semibold tracking-wider text-violet-600 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-300">
                       无宫位行星盘
