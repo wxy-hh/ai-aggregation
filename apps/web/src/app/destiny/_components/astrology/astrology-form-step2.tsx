@@ -15,7 +15,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowUp, CheckCircle2, ChevronDown, Clock3, Info, MapPin, SunMedium } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { computeChartFacts, SAMPLE_PROFILE_UNKNOWN } from '@/lib/astrology/mock-chart-facts';
-import { searchCities, type AstroCity } from '@/lib/astrology/cities';
+import { ASTRO_CITIES, searchCities, type AstroCity } from '@/lib/astrology/cities';
 import type { TimePrecision } from '@/lib/astrology/chart-facts';
 import { APPROXIMATE_SLOTS, formatUtcOffset, utcOffsetMinutesFor } from './astrology-mappers';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
@@ -155,12 +155,29 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
   const [cityOpen, setCityOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const cityResults = useMemo(() => searchCities(cityQuery), [cityQuery]);
+
+  /* 区县级输入兜底：用户常把「郑州金水区」「金水区」当城市填。
+     星盘按城市级精度计算即可（上升/宫位受经度影响远小于出生时间误差），
+     所以当输入以区/县/镇/乡/街道结尾时，在输入里反查已知城市名：
+     如「郑州金水区」→ 命中「郑州」直接给候选；「上海市浦东新区」→ 命中「上海」；
+     一个都命中不到（如只填「金水区」）则给「无需精确到区县」的引导文案。 */
+  const DISTRICT_SUFFIX_RE = /[区县镇乡街道旗]$/;
+  const districtLike = DISTRICT_SUFFIX_RE.test(cityQuery.trim());
+  const districtFallback = useMemo(() => {
+    const q = cityQuery.trim();
+    if (q === '' || cityResults.length > 0 || !DISTRICT_SUFFIX_RE.test(q)) return null;
+    const matched = ASTRO_CITIES.filter((c) => q.includes(c.name));
+    return matched.length > 0 ? { query: matched[0].name, results: matched.slice(0, 8) } : null;
+  }, [cityQuery, cityResults]);
+
+  /** 实际展示的候选：正常搜索结果优先，区县级输入退回反查命中的城市 */
+  const visibleResults = cityResults.length > 0 ? cityResults : (districtFallback?.results ?? []);
   const citySelected =
     formData.location.name !== '' && formData.location.lat !== null && formData.location.timezone !== null;
 
-  /** 键盘导航支持（上下方向键游标、回车选择、Esc 关闭） */
+  /** 键盘导航支持（上下方向键游标、回车选择、Esc 关闭）；候选与展示列表同源（含区县兜底结果） */
   const handleCityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!cityOpen || cityResults.length === 0) {
+    if (!cityOpen || visibleResults.length === 0) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         setCityOpen(true);
@@ -171,15 +188,15 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex((prev) => (prev + 1) % cityResults.length);
+      setHighlightedIndex((prev) => (prev + 1) % visibleResults.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIndex((prev) => (prev - 1 + cityResults.length) % cityResults.length);
+      setHighlightedIndex((prev) => (prev - 1 + visibleResults.length) % visibleResults.length);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const targetIndex = highlightedIndex >= 0 ? highlightedIndex : 0;
-      if (cityResults[targetIndex]) {
-        selectCity(cityResults[targetIndex]);
+      if (visibleResults[targetIndex]) {
+        selectCity(visibleResults[targetIndex]);
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -456,7 +473,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             id="astrology-city-input"
             type="text"
             role="combobox"
-            aria-expanded={cityOpen && cityResults.length > 0 && !citySelected}
+            aria-expanded={cityOpen && visibleResults.length > 0 && !citySelected}
             aria-autocomplete="list"
             aria-controls="astrology-city-listbox"
             aria-activedescendant={highlightedIndex >= 0 ? `city-opt-${highlightedIndex}` : undefined}
@@ -465,7 +482,7 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             value={cityQuery}
             disabled={disabled}
             autoComplete="off"
-            placeholder="搜索城市中文名或拼音，从候选中选择"
+            placeholder="搜索城市中文名或拼音，如：郑州 / zz"
             onKeyDown={handleCityKeyDown}
             onChange={(e) => {
               setCityQuery(e.target.value);
@@ -499,50 +516,67 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
           {/* 候选列表（onMouseDown 阻止 blur 先关列表） */}
           {cityOpen && cityQuery.trim() !== '' && !citySelected && (
             <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 shadow-[0_16px_40px_-12px_rgba(15,23,42,0.25)] backdrop-blur-xl dark:border-white/[0.12] dark:bg-[#0D1226]/95">
-              {cityResults.length > 0 ? (
-                <ul
-                  id="astrology-city-listbox"
-                  role="listbox"
-                  aria-label="城市候选列表"
-                  className="max-h-56 overflow-y-auto py-1.5 custom-scrollbar"
-                >
-                  {cityResults.map((c, idx) => {
-                    const isHighlighted = highlightedIndex === idx;
-                    return (
-                      <li key={c.name} role="none">
-                        <button
-                          id={`city-opt-${idx}`}
-                          type="button"
-                          role="option"
-                          aria-selected={isHighlighted}
-                          onMouseEnter={() => setHighlightedIndex(idx)}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            selectCity(c);
-                          }}
-                          className={cn(
-                            'flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors',
-                            isHighlighted
-                              ? 'bg-indigo-50/90 text-indigo-700 dark:bg-indigo-400/20 dark:text-indigo-200'
-                              : 'text-slate-700 hover:bg-indigo-50/60 dark:text-slate-200 dark:hover:bg-indigo-400/10'
-                          )}
-                        >
-                          <span className="text-sm font-medium">{c.name}</span>
-                          <span className="text-xs text-day-muted dark:text-night-faint">{c.timezone}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+              {visibleResults.length > 0 ? (
+                <>
+                  {/* 区县级输入命中兜底：说明候选是按去掉行政后缀的词搜出来的 */}
+                  {cityResults.length === 0 && districtFallback && (
+                    <p className="border-b border-slate-100 px-4 py-2 text-[11px] leading-relaxed text-day-muted dark:border-white/[0.06] dark:text-night-faint">
+                      无需精确到区县，已按「{districtFallback.query}」为你匹配：
+                    </p>
+                  )}
+                  <ul
+                    id="astrology-city-listbox"
+                    role="listbox"
+                    aria-label="城市候选列表"
+                    className="max-h-56 overflow-y-auto py-1.5 custom-scrollbar"
+                  >
+                    {visibleResults.map((c, idx) => {
+                      const isHighlighted = highlightedIndex === idx;
+                      return (
+                        <li key={c.name} role="none">
+                          <button
+                            id={`city-opt-${idx}`}
+                            type="button"
+                            role="option"
+                            aria-selected={isHighlighted}
+                            onMouseEnter={() => setHighlightedIndex(idx)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              selectCity(c);
+                            }}
+                            className={cn(
+                              'flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition-colors',
+                              isHighlighted
+                                ? 'bg-indigo-50/90 text-indigo-700 dark:bg-indigo-400/20 dark:text-indigo-200'
+                                : 'text-slate-700 hover:bg-indigo-50/60 dark:text-slate-200 dark:hover:bg-indigo-400/10'
+                            )}
+                          >
+                            <span className="text-sm font-medium">{c.name}</span>
+                            <span className="text-xs text-day-muted dark:text-night-faint">{c.timezone}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
               ) : (
-                <p className="px-4 py-3 text-xs text-day-muted dark:text-night-faint">
-                  未找到该城市，请换中文名或拼音试试
+                <p className="px-4 py-3 text-xs leading-relaxed text-day-muted dark:text-night-faint">
+                  {districtLike
+                    ? '无需精确到区县，输入所在城市即可，如：郑州'
+                    : '未找到该城市，试试换中文名或拼音'}
                 </p>
               )}
             </div>
           )}
         </div>
         <AstrologyFieldError id={LOCATION_ERROR_ID} message={fieldErrors.location} />
+
+        {/* 空闲态精度说明：提前讲清「城市级即可」，避免用户去搜区县名搜不到 */}
+        {!fieldErrors.location && !citySelected && (
+          <p className="pt-2 text-xs leading-relaxed text-day-muted dark:text-night-faint">
+            精确到城市即可，无需填写区县；从候选中选择后自动校准时区
+          </p>
+        )}
 
         {/* 时区可读确认条 */}
         <AnimatePresence initial={false}>
