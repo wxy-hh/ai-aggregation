@@ -123,8 +123,10 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               />
               {/* 示例盘标注：设计文档 §6.2 义务；被动标注而非按钮——它是标签不是任务，做成可点胶囊会与主 CTA 争夺首屏焦点。
                   放在盘面上方而非盘内/盘下：盘下会被点选后的 HUD 弹卡（-bottom-6）遮挡。
+                  z-10 必须保留：3D 舞台的磨砂表圈是 -inset-[5.5%]（外扩约 27px），会盖到盘上方的标注，
+                  且轮盘在 DOM 顺序上靠后、自带层叠上下文，不抬升就会把标注文字压在弧线下面。
                   盘内点选后可用 Escape / 点击盘面空白 / HUD 关闭按钮复原，无需再由这里承担复位职责 */}
-              <span className="mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-0.5 text-[11px] font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
+              <span className="relative z-10 mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-0.5 text-[11px] font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
                 示例星盘 · 可点选星体体验
               </span>
 
