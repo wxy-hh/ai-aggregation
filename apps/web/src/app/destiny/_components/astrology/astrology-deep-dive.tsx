@@ -28,6 +28,7 @@ import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
 import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { formatDegreeMinute } from './astrology-mappers';
+import { scrollAstrologyToTop } from './astrology-scroll';
 
 /* ---------- 标签与视觉基调 ---------- */
 
@@ -103,7 +104,8 @@ export function AstrologyDeepDive({ facts, passport, onLocateBody }: AstrologyDe
     }
   };
 
-  const backToTop = () => window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  /** 回到顶部：桌面端工作区是局部容器滚动，window.scrollTo 单独调不到，必须走共享 helper */
+  const backToTop = () => scrollAstrologyToTop(reduceMotion ? 'auto' : 'smooth');
 
   return (
     <section className="mt-12 sm:mt-14" aria-label="深入你的星盘">
