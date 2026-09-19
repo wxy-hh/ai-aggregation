@@ -58,7 +58,11 @@ function MiniClock({
     const [x1, y1] = clockPolar(startH * 30, r);
     const [x2, y2] = clockPolar(endH * 30, r);
     const largeArc = endH * 30 - startH * 30 > 180 ? 1 : 0;
-    return { d: `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`, start: [x1, y1] as const, end: [x2, y2] as const };
+    return {
+      d: `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`,
+      start: [x1, y1] as const,
+      end: [x2, y2] as const,
+    };
   }, [slot]);
 
   const hasHands = hour !== null && minute !== null;
@@ -72,7 +76,9 @@ function MiniClock({
       viewBox="0 0 120 120"
       className="h-24 w-24 shrink-0 sm:h-28 sm:w-28"
       role="img"
-      aria-label={hasHands ? `已选时刻 ${hour}:${String(minute).padStart(2, '0')}` : '出生时刻钟面预览'}
+      aria-label={
+        hasHands ? `已选时刻 ${hour}:${String(minute).padStart(2, '0')}` : '出生时刻钟面预览'
+      }
     >
       {/* 表盘底：浅色仪表感，深色星空校准仪 */}
       <circle
@@ -96,7 +102,11 @@ function MiniClock({
             y2={y2}
             strokeWidth={major ? 1.6 : 0.8}
             strokeLinecap="round"
-            className={major ? 'stroke-slate-500/70 dark:stroke-indigo-200/50' : 'stroke-slate-300 dark:stroke-indigo-200/20'}
+            className={
+              major
+                ? 'stroke-slate-500/70 dark:stroke-indigo-200/50'
+                : 'stroke-slate-300 dark:stroke-indigo-200/20'
+            }
           />
         );
       })}
@@ -112,21 +122,60 @@ function MiniClock({
             className="stroke-indigo-400/45 dark:stroke-indigo-300/40"
             initial={false}
             animate={reduceMotion ? { opacity: 0.6 } : { opacity: [0.4, 0.75, 0.4] }}
-            transition={reduceMotion ? { duration: 0.01 } : { duration: 8.5, repeat: Infinity, ease: 'easeInOut' }}
+            transition={
+              reduceMotion
+                ? { duration: 0.01 }
+                : { duration: 8.5, repeat: Infinity, ease: 'easeInOut' }
+            }
           />
-          <circle cx={arc.start[0]} cy={arc.start[1]} r={3.2} className="fill-indigo-500 dark:fill-indigo-300" />
-          <circle cx={arc.end[0]} cy={arc.end[1]} r={3.2} className="fill-indigo-500 dark:fill-indigo-300" />
+          <circle
+            cx={arc.start[0]}
+            cy={arc.start[1]}
+            r={3.2}
+            className="fill-indigo-500 dark:fill-indigo-300"
+          />
+          <circle
+            cx={arc.end[0]}
+            cy={arc.end[1]}
+            r={3.2}
+            className="fill-indigo-500 dark:fill-indigo-300"
+          />
         </g>
       )}
 
       {/* 指针（仅准确档已选时分；深色下发光） */}
       {hasHands && (
         <g className="dark:[filter:drop-shadow(0_0_5px_rgba(129,140,248,0.85))]">
-          <line x1={CLOCK_C} y1={CLOCK_C} x2={hx} y2={hy} strokeWidth={3.4} strokeLinecap="round" className="stroke-indigo-600 dark:stroke-indigo-300" />
-          <line x1={CLOCK_C} y1={CLOCK_C} x2={mx} y2={my} strokeWidth={2.2} strokeLinecap="round" className="stroke-violet-500 dark:stroke-violet-300" />
+          <line
+            x1={CLOCK_C}
+            y1={CLOCK_C}
+            x2={hx}
+            y2={hy}
+            strokeWidth={3.4}
+            strokeLinecap="round"
+            className="stroke-indigo-600 dark:stroke-indigo-300"
+          />
+          <line
+            x1={CLOCK_C}
+            y1={CLOCK_C}
+            x2={mx}
+            y2={my}
+            strokeWidth={2.2}
+            strokeLinecap="round"
+            className="stroke-violet-500 dark:stroke-violet-300"
+          />
         </g>
       )}
-      <circle cx={CLOCK_C} cy={CLOCK_C} r={hasHands ? 3 : 2} className={hasHands ? 'fill-indigo-600 dark:fill-indigo-300' : 'fill-slate-300 dark:fill-indigo-200/30'} />
+      <circle
+        cx={CLOCK_C}
+        cy={CLOCK_C}
+        r={hasHands ? 3 : 2}
+        className={
+          hasHands
+            ? 'fill-indigo-600 dark:fill-indigo-300'
+            : 'fill-slate-300 dark:fill-indigo-200/30'
+        }
+      />
     </svg>
   );
 }
@@ -146,7 +195,12 @@ const BIRTH_TIME_ERROR_ID = 'astrology-birth-time-error';
 const APPROXIMATE_SLOT_ERROR_ID = 'astrology-approximate-slot-error';
 const LOCATION_ERROR_ID = 'astrology-city-error';
 
-export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }: AstrologyFormStepProps) {
+export function AstrologyFormStep2({
+  formData,
+  fieldErrors,
+  disabled,
+  onPatch,
+}: AstrologyFormStepProps) {
   const reduceMotion = useReducedMotion();
   const [impactOpen, setImpactOpen] = useState(false);
 
@@ -177,7 +231,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
   /** 实际展示的候选：正常搜索结果优先，区县级输入退回反查命中的城市 */
   const visibleResults = cityResults.length > 0 ? cityResults : (districtFallback?.results ?? []);
   const citySelected =
-    formData.location.name !== '' && formData.location.lat !== null && formData.location.timezone !== null;
+    formData.location.name !== '' &&
+    formData.location.lat !== null &&
+    formData.location.timezone !== null;
 
   /** 键盘导航支持（上下方向键游标、回车选择、Esc 关闭）；候选与展示列表同源（含区县兜底结果） */
   const handleCityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -225,7 +281,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
     setCityQuery(city.name);
     setCityOpen(false);
     setHighlightedIndex(-1);
-    onPatch({ location: { name: city.name, lat: city.lat, lon: city.lon, timezone: city.timezone } });
+    onPatch({
+      location: { name: city.name, lat: city.lat, lon: city.lon, timezone: city.timezone },
+    });
   };
 
   const patchTime = (key: 'hour' | 'minute', value: string) => {
@@ -272,7 +330,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                   'relative flex h-11 items-center justify-center rounded-xl text-[13px] font-medium sm:text-sm',
                   'transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                   'disabled:cursor-not-allowed disabled:opacity-60',
-                  active ? 'text-white' : 'text-slate-500 hover:text-indigo-600 dark:text-night-muted dark:hover:text-indigo-200'
+                  active
+                    ? 'text-white'
+                    : 'text-slate-500 hover:text-indigo-600 dark:text-night-muted dark:hover:text-indigo-200'
                 )}
               >
                 {active && (
@@ -282,7 +342,11 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                       'absolute inset-0 rounded-xl shadow-[0_6px_16px_-4px_rgba(73,105,233,0.5)]',
                       ASTROLOGY_CTA_GRADIENT_CLASS
                     )}
-                    transition={reduceMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 320, damping: 30 }}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0.01 }
+                        : { type: 'spring', stiffness: 320, damping: 30 }
+                    }
                   />
                 )}
                 <span className="relative z-10">{p.label}</span>
@@ -306,7 +370,12 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
               <div className="flex items-center gap-4">
                 <div className="grid flex-1 grid-cols-2 gap-2.5">
                   <div>
-                    <label htmlFor="astrology-birth-hour" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">时</label>
+                    <label
+                      htmlFor="astrology-birth-hour"
+                      className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted"
+                    >
+                      时
+                    </label>
                     <select
                       id="astrology-birth-hour"
                       value={formData.birthTime.hour}
@@ -334,7 +403,12 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="astrology-birth-minute" className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted">分</label>
+                    <label
+                      htmlFor="astrology-birth-minute"
+                      className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-night-muted"
+                    >
+                      分
+                    </label>
                     <select
                       id="astrology-birth-minute"
                       value={formData.birthTime.minute}
@@ -384,7 +458,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                   role="radiogroup"
                   aria-label="大约时段"
                   aria-invalid={Boolean(fieldErrors.approximateSlot)}
-                  aria-describedby={fieldErrors.approximateSlot ? APPROXIMATE_SLOT_ERROR_ID : undefined}
+                  aria-describedby={
+                    fieldErrors.approximateSlot ? APPROXIMATE_SLOT_ERROR_ID : undefined
+                  }
                 >
                   {APPROXIMATE_SLOTS.map((s) => {
                     const selected = formData.approximateSlot === s.value;
@@ -407,11 +483,18 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                                 ASTROLOGY_CTA_GRADIENT_CLASS
                               )
                             : 'border-slate-200/90 bg-white/60 text-slate-600 hover:border-indigo-300/70 hover:text-indigo-600 dark:border-white/[0.12] dark:bg-white/5 dark:text-slate-300 dark:hover:border-indigo-300/40 dark:hover:text-indigo-200',
-                          !selected && fieldErrors.approximateSlot && 'border-rose-300/70 dark:border-rose-400/40'
+                          !selected &&
+                            fieldErrors.approximateSlot &&
+                            'border-rose-300/70 dark:border-rose-400/40'
                         )}
                       >
                         <span className="font-semibold">{s.label}</span>
-                        <span className={cn('text-[11px] font-normal leading-tight mt-0.5', selected ? 'text-white/80' : 'text-day-muted dark:text-night-faint')}>
+                        <span
+                          className={cn(
+                            'text-[11px] font-normal leading-tight mt-0.5',
+                            selected ? 'text-white/80' : 'text-day-muted dark:text-night-faint'
+                          )}
+                        >
                           {s.rangeHint}
                         </span>
                       </button>
@@ -421,7 +504,10 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                 {/* 时段弧带钟面 */}
                 <MiniClock hour={null} minute={null} slot={formData.approximateSlot || null} />
               </div>
-              <AstrologyFieldError id={APPROXIMATE_SLOT_ERROR_ID} message={fieldErrors.approximateSlot} />
+              <AstrologyFieldError
+                id={APPROXIMATE_SLOT_ERROR_ID}
+                message={fieldErrors.approximateSlot}
+              />
               {/* 琥珀色正面徽章：正面表述，不用红色警告、不用百分比 */}
               <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3.5 py-2.5 text-xs leading-relaxed text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-200">
                 <SunMedium className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
@@ -439,7 +525,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                 </div>
                 <div className="grid flex-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">本次可看到</p>
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      本次可看到
+                    </p>
                     <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-slate-500 dark:text-night-muted">
                       <li>· 太阳、月亮与行星星座</li>
                       <li>· 主要相位关系</li>
@@ -480,13 +568,15 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             aria-expanded={cityOpen && visibleResults.length > 0 && !citySelected}
             aria-autocomplete="list"
             aria-controls="astrology-city-listbox"
-            aria-activedescendant={highlightedIndex >= 0 ? `city-opt-${highlightedIndex}` : undefined}
+            aria-activedescendant={
+              highlightedIndex >= 0 ? `city-opt-${highlightedIndex}` : undefined
+            }
             aria-invalid={Boolean(fieldErrors.location)}
             aria-describedby={fieldErrors.location ? LOCATION_ERROR_ID : undefined}
             value={cityQuery}
             disabled={disabled}
             autoComplete="off"
-            placeholder="搜索城市中文名，如：周口 / 蚌埠"
+            placeholder="搜索城市中文名，如：北京/郑州"
             onKeyDown={handleCityKeyDown}
             onChange={(e) => {
               setCityQuery(e.target.value);
@@ -556,7 +646,9 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
                             )}
                           >
                             <span className="text-sm font-medium">{c.name}</span>
-                            <span className="text-xs text-day-muted dark:text-night-faint">{c.timezone}</span>
+                            <span className="text-xs text-day-muted dark:text-night-faint">
+                              {c.timezone}
+                            </span>
                           </button>
                         </li>
                       );
@@ -613,7 +705,10 @@ export function AstrologyFormStep2({ formData, fieldErrors, disabled, onPatch }:
             <Info className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
             这些资料会如何影响星盘
           </span>
-          <ChevronDown className={cn('h-4 w-4 transition-transform duration-200', impactOpen && 'rotate-180')} strokeWidth={1.9} />
+          <ChevronDown
+            className={cn('h-4 w-4 transition-transform duration-200', impactOpen && 'rotate-180')}
+            strokeWidth={1.9}
+          />
         </button>
         <AnimatePresence initial={false}>
           {impactOpen && (
