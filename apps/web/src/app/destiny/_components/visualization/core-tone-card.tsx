@@ -24,7 +24,7 @@ export function CoreToneCard({
           <div
             className={cn(
               'flex h-9 w-9 items-center justify-center rounded-xl',
-              'border border-white/60 bg-white/78 shadow-[0_8px_20px_-16px_rgba(47,107,255,0.35)]',
+              'border border-white/60 bg-white/[0.78] shadow-[0_8px_20px_-16px_rgba(47,107,255,0.35)]',
               'dark:border-white/[0.08] dark:bg-[#1E293B]/60',
               'sm:h-10 sm:w-10'
             )}
@@ -81,7 +81,7 @@ export function CoreToneCard({
 
           {/* 详细描述（已从主标题抽离白话句时仍展示全文） */}
           {display.description ? (
-            <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2.5 dark:border-white/10 dark:bg-slate-950/50">
+            <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white/[0.92] px-3 py-2.5 dark:border-white/10 dark:bg-slate-950/50">
               <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 {display.description}
               </p>

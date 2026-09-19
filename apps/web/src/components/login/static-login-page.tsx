@@ -215,7 +215,7 @@ export function StaticLoginPage() {
               repeat: Number.POSITIVE_INFINITY,
               ease: 'easeInOut',
             }}
-            className="absolute left-1/2 top-[44%] h-[24rem] w-[24rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#9ec4ff]/26 blur-3xl xl:h-[28rem] xl:w-[28rem]"
+            className="absolute left-1/2 top-[44%] h-[24rem] w-[24rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#9ec4ff]/[0.26] blur-3xl xl:h-[28rem] xl:w-[28rem]"
           />
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.46)_0%,rgba(255,255,255,0.12)_22%,transparent_42%,transparent_62%,rgba(145,188,255,0.22)_100%)]" />
           <div className="absolute inset-x-[8%] top-0 h-[26%] rounded-b-[3rem] bg-[linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0))] blur-2xl opacity-90" />
@@ -357,7 +357,7 @@ export function StaticLoginPage() {
               aria-expanded={isLeftPanelExpanded}
               aria-controls="login-left-panel-content"
               aria-label={isLeftPanelExpanded ? '收起左侧区域' : '展开左侧区域'}
-              className="absolute left-0 top-1/2 z-20 flex h-12 min-w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#eef4ff]/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(244,249,255,0.58))] px-0 text-[#7588ab] shadow-[0_8px_18px_rgba(120,153,218,0.08),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl transition-all hover:border-white/88 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(247,251,255,0.68))] hover:text-slate-900"
+              className="absolute left-0 top-1/2 z-20 flex h-12 min-w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[#eef4ff]/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(244,249,255,0.58))] px-0 text-[#7588ab] shadow-[0_8px_18px_rgba(120,153,218,0.08),inset_0_1px_0_rgba(255,255,255,0.75)] backdrop-blur-xl transition-all hover:border-white/[0.88] hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(247,251,255,0.68))] hover:text-slate-900"
               onClick={() => {
                 setHasManualLeftPanelPreference(true);
                 setIsLeftPanelExpanded((value) => !value);
@@ -439,7 +439,7 @@ export function StaticLoginPage() {
                     >
                       用户名
                     </Label>
-                    <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+                    <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
                       <User className="h-5 w-5 text-[#8ea0bc]" />
                       <Input
                         id="login-username"
@@ -460,7 +460,7 @@ export function StaticLoginPage() {
                     >
                       密码
                     </Label>
-                    <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+                    <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
                       <Lock className="h-5 w-5 text-[#8ea0bc]" />
                       <Input
                         id="login-password"
@@ -522,7 +522,7 @@ export function StaticLoginPage() {
                           type="button"
                           aria-label="使用微信登录"
                           disabled={oauthRedirecting !== null}
-                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/[0.82] text-[#10b555] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
                           onClick={() => {
                             if (!oauthConfig?.wechat) {
                               toast.error('微信登录未配置，请联系管理员');
@@ -544,7 +544,7 @@ export function StaticLoginPage() {
                           type="button"
                           aria-label="使用 QQ 登录"
                           disabled={oauthRedirecting !== null}
-                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/82 text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
+                          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#d7e2f3] bg-white/[0.82] text-[#24a7ef] shadow-[0_10px_24px_rgba(122,154,218,0.10)] transition-transform hover:-translate-y-0.5 hover:bg-white disabled:opacity-50"
                           onClick={() => {
                             if (!oauthConfig?.qq) {
                               toast.error('QQ 登录未配置，请联系管理员');

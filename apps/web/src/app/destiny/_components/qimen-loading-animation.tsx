@@ -462,8 +462,8 @@ export function QimenLoadingAnimation({
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-transparent">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(153,184,234,0.14),rgba(153,184,234,0)_62%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/14 via-white/5 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-white/5 via-white/2 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-white/[0.14] via-white/5 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-white/5 via-white/[0.02] to-transparent" />
 
       <div
         ref={hostRef}
@@ -482,7 +482,7 @@ export function QimenLoadingAnimation({
           <p className="max-w-[560px] text-[13px] text-[#afbfdf] md:text-[14px]">{subMessage}</p>
 
           {showProgressHint ? (
-            <div className="mt-1 flex items-center gap-2.5 rounded-full border border-white/22 bg-white/8 px-3 py-1.5 text-[12px] text-[#9fb7e4] backdrop-blur-sm">
+            <div className="mt-1 flex items-center gap-2.5 rounded-full border border-white/[0.22] bg-white/[0.08] px-3 py-1.5 text-[12px] text-[#9fb7e4] backdrop-blur-sm">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#c8dcff]" />
               <span>{PROGRESS_TEXTS[progressIndex]}</span>
             </div>

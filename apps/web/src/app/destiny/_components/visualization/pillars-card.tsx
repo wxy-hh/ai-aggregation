@@ -15,7 +15,7 @@ const elementStyles: Record<
     bg: 'bg-amber-50/70 dark:bg-amber-950/30',
     text: 'text-amber-700 dark:text-amber-300',
     ring: 'ring-amber-200/60 dark:ring-amber-800/30',
-    orb: 'from-amber-500/14 to-orange-500/8',
+    orb: 'from-amber-500/[0.14] to-orange-500/[0.08]',
     hoverClass:
       'hover:border-amber-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(245,158,11,0.14),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -23,7 +23,7 @@ const elementStyles: Record<
     bg: 'bg-emerald-50/70 dark:bg-emerald-950/30',
     text: 'text-emerald-700 dark:text-emerald-300',
     ring: 'ring-emerald-200/60 dark:ring-emerald-800/30',
-    orb: 'from-emerald-500/14 to-teal-500/8',
+    orb: 'from-emerald-500/[0.14] to-teal-500/[0.08]',
     hoverClass:
       'hover:border-emerald-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(16,185,129,0.14),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -31,7 +31,7 @@ const elementStyles: Record<
     bg: 'bg-slate-50/70 dark:bg-slate-800/40',
     text: 'text-slate-700 dark:text-slate-300',
     ring: 'ring-slate-200/60 dark:ring-white/5',
-    orb: 'from-blue-500/12 to-slate-400/8',
+    orb: 'from-blue-500/[0.12] to-slate-400/[0.08]',
     hoverClass:
       'hover:border-slate-300/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(59,130,246,0.12),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -39,7 +39,7 @@ const elementStyles: Record<
     bg: 'bg-rose-50/70 dark:bg-rose-950/30',
     text: 'text-rose-700 dark:text-rose-300',
     ring: 'ring-rose-200/60 dark:ring-rose-800/30',
-    orb: 'from-rose-500/14 to-orange-500/8',
+    orb: 'from-rose-500/[0.14] to-orange-500/[0.08]',
     hoverClass:
       'hover:border-rose-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(244,63,94,0.14),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -47,7 +47,7 @@ const elementStyles: Record<
     bg: 'bg-stone-50/70 dark:bg-stone-950/30',
     text: 'text-stone-700 dark:text-stone-300',
     ring: 'ring-stone-200/60 dark:ring-stone-800/30',
-    orb: 'from-stone-500/12 to-amber-600/8',
+    orb: 'from-stone-500/[0.12] to-amber-600/[0.08]',
     hoverClass:
       'hover:border-stone-300/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(120,113,108,0.12),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -162,11 +162,11 @@ export function PillarsCard({
                 'px-3 py-3 sm:px-4 sm:py-4 text-left',
                 'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]',
                 isInteractive && pillarCardMotionClass,
-                isInteractive && 'hover:bg-white/72 dark:hover:bg-slate-800/55',
+                isInteractive && 'hover:bg-white/[0.72] dark:hover:bg-slate-800/55',
                 isInteractive && style.hoverClass,
                 !isInteractive && 'cursor-default',
                 isFocus
-                  ? 'bg-[#5D7CFA]/6 dark:bg-[#5D7CFA]/15 ring-[3px] ring-[#5D7CFA]/75 dark:ring-[#5D7CFA]/40 shadow-lg hover:ring-[#5D7CFA]/85'
+                  ? 'bg-[#5D7CFA]/[0.06] dark:bg-[#5D7CFA]/15 ring-[3px] ring-[#5D7CFA]/75 dark:ring-[#5D7CFA]/40 shadow-lg hover:ring-[#5D7CFA]/85'
                   : 'bg-white/55 dark:bg-slate-800/40'
               )}
             >
@@ -276,8 +276,8 @@ export function PillarsCard({
               </PopoverTrigger>
               <PopoverContent
                 className={cn(
-                  'w-72 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/88 dark:bg-slate-900/90 backdrop-blur-[26px]',
-                  'ring-1 ring-[#5D7CFA]/12 dark:ring-[#5D7CFA]/20',
+                  'w-72 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/[0.88] dark:bg-slate-900/90 backdrop-blur-[26px]',
+                  'ring-1 ring-[#5D7CFA]/[0.12] dark:ring-[#5D7CFA]/20',
                   'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)] dark:shadow-[0_28px_70px_-30px_rgba(0,0,0,0.55)]',
                   'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
                   'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'

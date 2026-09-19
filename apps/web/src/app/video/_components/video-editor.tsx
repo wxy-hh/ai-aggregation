@@ -164,7 +164,7 @@ export function VideoEditor() {
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -right-[10%] -top-[20%] h-[50%] w-[50%] rounded-full bg-blue-400/10 blur-[100px]" />
           <div className="absolute -left-[10%] top-[40%] h-[40%] w-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
-          <div className="absolute bottom-0 left-1/3 h-[30%] w-[35%] rounded-full bg-cyan-400/8 blur-[90px]" />
+          <div className="absolute bottom-0 left-1/3 h-[30%] w-[35%] rounded-full bg-cyan-400/[0.08] blur-[90px]" />
         </div>
 
         {/* 顶栏：透明磨砂，与页面渐变一体 */}

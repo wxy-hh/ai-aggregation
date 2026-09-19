@@ -108,9 +108,9 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
       >
         <div className="pointer-events-none absolute inset-0 rounded-[24px] [mask-image:linear-gradient(to_bottom,black_35%,transparent_100%)] sm:rounded-[28px]" />
         <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-85 dark:via-white/20" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/26 via-white/8 to-transparent dark:from-white/6 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.26] via-white/[0.08] to-transparent dark:from-white/[0.06] dark:via-transparent" />
         <div className="pointer-events-none absolute -right-8 -top-12 h-28 w-28 rounded-full bg-[rgba(191,219,254,0.24)] blur-3xl dark:hidden" />
-        <DialogClose className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[rgba(255,255,255,0.65)] bg-white/76 text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.10)] transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[rgba(59,130,246,0.20)] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+        <DialogClose className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[rgba(255,255,255,0.65)] bg-white/[0.76] text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.10)] transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[rgba(59,130,246,0.20)] dark:border-white/10 dark:bg-slate-900/[0.72] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
           <span className="text-[18px] leading-none">&times;</span>
           <span className="sr-only">关闭</span>
         </DialogClose>
@@ -133,9 +133,9 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
 
           <div className="grid gap-4">
             <div className="relative overflow-hidden rounded-[22px] border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.58),rgba(255,255,255,0.38))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_16px_28px_-24px_rgba(59,130,246,0.14)] backdrop-blur-[18px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.76),rgba(15,23,42,0.6))] sm:rounded-[24px]">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/24 to-transparent dark:from-white/5" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.24] to-transparent dark:from-white/5" />
               <div className="relative flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 bg-white/80 text-[#1D46DB] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_20px_-18px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-slate-900/72 dark:text-[#A8BAFF]">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 bg-white/80 text-[#1D46DB] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_20px_-18px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-slate-900/[0.72] dark:text-[#A8BAFF]">
                   <UserRound className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">

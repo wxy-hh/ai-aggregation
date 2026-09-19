@@ -38,7 +38,7 @@ const variantClass: Record<GlassCardVariant, string> = {
   solid: cn(
     'rounded-[24px] sm:rounded-[28px] border border-slate-200/80 bg-white/95',
     'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04)]',
-    'dark:border-white/10 dark:bg-slate-900/92'
+    'dark:border-white/10 dark:bg-slate-900/[0.92]'
   ),
 };
 

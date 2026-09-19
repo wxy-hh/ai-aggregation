@@ -45,8 +45,8 @@ const AttachmentPreview = memo(function AttachmentPreview({
 
   if (attachment.type === 'file') {
     return (
-      <div className="mb-2 flex items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2.5 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/72">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/12">
+      <div className="mb-2 flex items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2.5 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/[0.72]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/[0.12]">
           <svg
             className="w-4 h-4 text-red-300"
             fill="none"
@@ -358,18 +358,18 @@ const AIAvatar = memo(function AIAvatar() {
         aria-hidden
         className={cn(
           'pointer-events-none absolute -inset-2 rounded-[20px]',
-          'bg-gradient-to-br from-blue-400/22 via-indigo-400/14 to-cyan-400/20',
+          'bg-gradient-to-br from-blue-400/[0.22] via-indigo-400/[0.14] to-cyan-400/20',
           'blur-[7px] motion-safe:animate-avatar-glow-breathe',
-          'dark:from-blue-500/28 dark:via-indigo-500/18 dark:to-cyan-500/22'
+          'dark:from-blue-500/[0.28] dark:via-indigo-500/[0.18] dark:to-cyan-500/[0.22]'
         )}
       />
       <div
         className={cn(
           'relative z-[1] flex h-10 w-10 items-center justify-center rounded-2xl',
-          'border border-blue-200/55 bg-gradient-to-br from-blue-500/14 via-indigo-500/10 to-cyan-500/14',
+          'border border-blue-200/55 bg-gradient-to-br from-blue-500/[0.14] via-indigo-500/10 to-cyan-500/[0.14]',
           'text-blue-600 backdrop-blur-xl',
           'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.45),0_6px_16px_-6px_rgba(59,130,246,0.14)]',
-          'dark:border-blue-500/22 dark:from-blue-500/18 dark:via-indigo-500/12 dark:to-cyan-500/16',
+          'dark:border-blue-500/[0.22] dark:from-blue-500/[0.18] dark:via-indigo-500/[0.12] dark:to-cyan-500/[0.16]',
           'dark:text-blue-300',
           'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_6px_16px_-6px_rgba(59,130,246,0.1)]'
         )}

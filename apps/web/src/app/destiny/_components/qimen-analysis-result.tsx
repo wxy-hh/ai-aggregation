@@ -96,8 +96,8 @@ const META_INFO_TONE_MAP: Record<
   }
 > = {
   time: {
-    card: 'border-cyan-200/60 dark:border-cyan-700/30 bg-gradient-to-br from-white/92 via-white/70 to-cyan-50/50 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-cyan-950/28 hover:border-cyan-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(6,182,212,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-    orb: 'from-cyan-500/22 to-blue-500/12',
+    card: 'border-cyan-200/60 dark:border-cyan-700/30 bg-gradient-to-br from-white/[0.92] via-white/70 to-cyan-50/50 dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-cyan-950/[0.28] hover:border-cyan-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(6,182,212,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    orb: 'from-cyan-500/[0.22] to-blue-500/[0.12]',
     iconShell:
       'border-cyan-200/70 bg-gradient-to-br from-cyan-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(6,182,212,0.28)] dark:border-cyan-500/25 dark:from-cyan-950/55 dark:to-slate-900/65',
     title: 'text-cyan-950 dark:text-cyan-50',
@@ -105,8 +105,8 @@ const META_INFO_TONE_MAP: Record<
     iconColor: '#0891b2',
   },
   layout: {
-    card: 'border-emerald-200/60 dark:border-emerald-700/30 bg-gradient-to-br from-white/92 via-white/70 to-emerald-50/48 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-emerald-950/28 hover:border-emerald-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(16,185,129,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-    orb: 'from-emerald-500/20 to-teal-500/12',
+    card: 'border-emerald-200/60 dark:border-emerald-700/30 bg-gradient-to-br from-white/[0.92] via-white/70 to-emerald-50/[0.48] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-emerald-950/[0.28] hover:border-emerald-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(16,185,129,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    orb: 'from-emerald-500/20 to-teal-500/[0.12]',
     iconShell:
       'border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(16,185,129,0.24)] dark:border-emerald-500/25 dark:from-emerald-950/55 dark:to-slate-900/65',
     title: 'text-emerald-950 dark:text-emerald-50',
@@ -114,8 +114,8 @@ const META_INFO_TONE_MAP: Record<
     iconColor: '#059669',
   },
   stems: {
-    card: 'border-slate-300/70 dark:border-slate-600/30 bg-gradient-to-br from-white/92 via-white/70 to-slate-100/45 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-slate-800/40 hover:border-slate-400/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(71,85,105,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-    orb: 'from-slate-400/16 to-indigo-300/8',
+    card: 'border-slate-300/70 dark:border-slate-600/30 bg-gradient-to-br from-white/[0.92] via-white/70 to-slate-100/45 dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-slate-800/40 hover:border-slate-400/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(71,85,105,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    orb: 'from-slate-400/[0.16] to-indigo-300/[0.08]',
     iconShell:
       'border-slate-200/80 bg-gradient-to-br from-slate-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(100,116,139,0.18)] dark:border-slate-500/25 dark:from-slate-800/55 dark:to-slate-900/65',
     title: 'text-slate-900 dark:text-slate-50',
@@ -123,8 +123,8 @@ const META_INFO_TONE_MAP: Record<
     iconColor: '#64748b',
   },
   leaders: {
-    card: 'border-amber-200/60 dark:border-amber-700/30 bg-gradient-to-br from-white/92 via-white/70 to-amber-50/50 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-amber-950/30 hover:border-amber-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(245,158,11,0.24),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-    orb: 'from-amber-500/22 to-orange-500/12',
+    card: 'border-amber-200/60 dark:border-amber-700/30 bg-gradient-to-br from-white/[0.92] via-white/70 to-amber-50/50 dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-amber-950/30 hover:border-amber-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(245,158,11,0.24),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    orb: 'from-amber-500/[0.22] to-orange-500/[0.12]',
     iconShell:
       'border-amber-200/70 bg-gradient-to-br from-amber-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(245,158,11,0.28)] dark:border-amber-500/25 dark:from-amber-950/55 dark:to-slate-900/65',
     title: 'text-amber-950 dark:text-amber-50',
@@ -132,16 +132,16 @@ const META_INFO_TONE_MAP: Record<
     iconColor: '#d97706',
   },
   void: {
-    card: 'border-rose-200/55 dark:border-rose-700/28 bg-gradient-to-br from-white/92 via-white/70 to-rose-50/42 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-rose-950/26 hover:border-rose-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(244,63,94,0.2),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-    orb: 'from-rose-400/18 to-pink-400/10',
+    card: 'border-rose-200/55 dark:border-rose-700/[0.28] bg-gradient-to-br from-white/[0.92] via-white/70 to-rose-50/[0.42] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-rose-950/[0.26] hover:border-rose-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(244,63,94,0.2),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    orb: 'from-rose-400/[0.18] to-pink-400/10',
     iconShell:
-      'border-rose-200/70 bg-gradient-to-br from-rose-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(244,63,94,0.22)] dark:border-rose-500/22 dark:from-rose-950/50 dark:to-slate-900/65',
+      'border-rose-200/70 bg-gradient-to-br from-rose-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(244,63,94,0.22)] dark:border-rose-500/[0.22] dark:from-rose-950/50 dark:to-slate-900/65',
     title: 'text-rose-900 dark:text-rose-100',
     hint: 'text-rose-700/80 dark:text-rose-300/80',
     iconColor: '#e11d48',
   },
   horse: {
-    card: 'border-violet-200/60 dark:border-violet-700/30 bg-gradient-to-br from-white/92 via-white/70 to-violet-50/48 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-violet-950/28 hover:border-violet-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(139,92,246,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
+    card: 'border-violet-200/60 dark:border-violet-700/30 bg-gradient-to-br from-white/[0.92] via-white/70 to-violet-50/[0.48] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-violet-950/[0.28] hover:border-violet-300/70 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(139,92,246,0.22),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
     orb: 'from-violet-500/20 to-fuchsia-500/10',
     iconShell:
       'border-violet-200/70 bg-gradient-to-br from-violet-50/95 to-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_16px_-6px_rgba(139,92,246,0.26)] dark:border-violet-500/25 dark:from-violet-950/55 dark:to-slate-900/65',
@@ -172,7 +172,7 @@ function MetaInfoCard({
         'group relative flex h-full min-h-[5.75rem] overflow-hidden rounded-2xl border p-3.5 sm:min-h-[5.5rem] sm:p-4',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_4px_12px_-2px_rgba(15,23,42,0.05)]',
         'transition-all duration-200 transform-gpu hover:-translate-y-0.5',
-        'supports-[backdrop-filter]:bg-white/78 dark:supports-[backdrop-filter]:bg-slate-900/72',
+        'supports-[backdrop-filter]:bg-white/[0.78] dark:supports-[backdrop-filter]:bg-slate-900/[0.72]',
         tone.card,
         className
       )}
@@ -387,71 +387,71 @@ const WUXING_PALACE_PALETTE: Record<string, PalaceCellTone> = {
   木: {
     card: cn(
       'border-emerald-200/55',
-      'bg-gradient-to-br from-white/95 via-emerald-50/22 to-emerald-100/38',
+      'bg-gradient-to-br from-white/95 via-emerald-50/[0.22] to-emerald-100/[0.38]',
       'hover:border-emerald-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(16,185,129,0.16)]',
-      'dark:border-emerald-700/28 dark:from-slate-900/90 dark:via-emerald-950/18 dark:to-emerald-950/14'
+      'dark:border-emerald-700/[0.28] dark:from-slate-900/90 dark:via-emerald-950/[0.18] dark:to-emerald-950/[0.14]'
     ),
-    orb: 'from-emerald-500/18 to-teal-400/10',
+    orb: 'from-emerald-500/[0.18] to-teal-400/10',
     godChip:
-      'border-emerald-200/65 bg-emerald-50/88 text-emerald-800 dark:border-emerald-600/28 dark:bg-emerald-950/42 dark:text-emerald-300',
+      'border-emerald-200/65 bg-emerald-50/[0.88] text-emerald-800 dark:border-emerald-600/[0.28] dark:bg-emerald-950/[0.42] dark:text-emerald-300',
     dirChip:
-      'border-emerald-200/45 bg-white/78 text-emerald-700/85 dark:border-emerald-700/22 dark:bg-slate-900/55 dark:text-emerald-300/85',
+      'border-emerald-200/45 bg-white/[0.78] text-emerald-700/85 dark:border-emerald-700/[0.22] dark:bg-slate-900/55 dark:text-emerald-300/85',
     activeRing: 'ring-1 ring-emerald-500/55 shadow-[0_0_0_1px_rgba(16,185,129,0.22)]',
   },
   火: {
     card: cn(
       'border-orange-200/55',
-      'bg-gradient-to-br from-white/95 via-orange-50/22 to-rose-50/32',
+      'bg-gradient-to-br from-white/95 via-orange-50/[0.22] to-rose-50/[0.32]',
       'hover:border-orange-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(249,115,22,0.16)]',
-      'dark:border-orange-700/28 dark:from-slate-900/90 dark:via-orange-950/18 dark:to-rose-950/14'
+      'dark:border-orange-700/[0.28] dark:from-slate-900/90 dark:via-orange-950/[0.18] dark:to-rose-950/[0.14]'
     ),
-    orb: 'from-orange-500/18 to-rose-400/10',
+    orb: 'from-orange-500/[0.18] to-rose-400/10',
     godChip:
-      'border-orange-200/65 bg-orange-50/88 text-orange-800 dark:border-orange-600/28 dark:bg-orange-950/42 dark:text-orange-300',
+      'border-orange-200/65 bg-orange-50/[0.88] text-orange-800 dark:border-orange-600/[0.28] dark:bg-orange-950/[0.42] dark:text-orange-300',
     dirChip:
-      'border-orange-200/45 bg-white/78 text-orange-700/85 dark:border-orange-700/22 dark:bg-slate-900/55 dark:text-orange-300/85',
+      'border-orange-200/45 bg-white/[0.78] text-orange-700/85 dark:border-orange-700/[0.22] dark:bg-slate-900/55 dark:text-orange-300/85',
     activeRing: 'ring-1 ring-orange-500/55 shadow-[0_0_0_1px_rgba(249,115,22,0.22)]',
   },
   土: {
     card: cn(
       'border-stone-200/60',
-      'bg-gradient-to-br from-white/95 via-stone-50/22 to-amber-50/28',
+      'bg-gradient-to-br from-white/95 via-stone-50/[0.22] to-amber-50/[0.28]',
       'hover:border-stone-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(120,113,108,0.14)]',
-      'dark:border-stone-600/30 dark:from-slate-900/90 dark:via-stone-900/20 dark:to-amber-950/12'
+      'dark:border-stone-600/30 dark:from-slate-900/90 dark:via-stone-900/20 dark:to-amber-950/[0.12]'
     ),
-    orb: 'from-stone-400/16 to-amber-300/8',
+    orb: 'from-stone-400/[0.16] to-amber-300/[0.08]',
     godChip:
-      'border-stone-200/65 bg-stone-50/88 text-stone-700 dark:border-stone-600/28 dark:bg-stone-900/42 dark:text-stone-300',
+      'border-stone-200/65 bg-stone-50/[0.88] text-stone-700 dark:border-stone-600/[0.28] dark:bg-stone-900/[0.42] dark:text-stone-300',
     dirChip:
-      'border-stone-200/45 bg-white/78 text-stone-600/90 dark:border-stone-600/25 dark:bg-slate-900/55 dark:text-stone-400/90',
+      'border-stone-200/45 bg-white/[0.78] text-stone-600/90 dark:border-stone-600/25 dark:bg-slate-900/55 dark:text-stone-400/90',
     activeRing: 'ring-1 ring-stone-500/50 shadow-[0_0_0_1px_rgba(120,113,108,0.2)]',
   },
   金: {
     card: cn(
       'border-slate-300/60',
-      'bg-gradient-to-br from-white/95 via-slate-50/25 to-indigo-50/28',
+      'bg-gradient-to-br from-white/95 via-slate-50/25 to-indigo-50/[0.28]',
       'hover:border-slate-400/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(100,116,139,0.14)]',
-      'dark:border-slate-600/32 dark:from-slate-900/90 dark:via-slate-900/78 dark:to-indigo-950/16'
+      'dark:border-slate-600/[0.32] dark:from-slate-900/90 dark:via-slate-900/[0.78] dark:to-indigo-950/[0.16]'
     ),
-    orb: 'from-slate-400/14 to-indigo-400/10',
+    orb: 'from-slate-400/[0.14] to-indigo-400/10',
     godChip:
-      'border-slate-200/70 bg-slate-50/88 text-slate-700 dark:border-slate-500/28 dark:bg-slate-800/50 dark:text-slate-300',
+      'border-slate-200/70 bg-slate-50/[0.88] text-slate-700 dark:border-slate-500/[0.28] dark:bg-slate-800/50 dark:text-slate-300',
     dirChip:
-      'border-slate-200/50 bg-white/78 text-slate-600/90 dark:border-slate-600/28 dark:bg-slate-900/55 dark:text-slate-400/90',
+      'border-slate-200/50 bg-white/[0.78] text-slate-600/90 dark:border-slate-600/[0.28] dark:bg-slate-900/55 dark:text-slate-400/90',
     activeRing: 'ring-1 ring-slate-500/50 shadow-[0_0_0_1px_rgba(100,116,139,0.2)]',
   },
   水: {
     card: cn(
       'border-cyan-200/55',
-      'bg-gradient-to-br from-white/95 via-cyan-50/22 to-blue-50/32',
+      'bg-gradient-to-br from-white/95 via-cyan-50/[0.22] to-blue-50/[0.32]',
       'hover:border-cyan-300/65 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(6,182,212,0.16)]',
-      'dark:border-cyan-700/28 dark:from-slate-900/90 dark:via-cyan-950/18 dark:to-blue-950/14'
+      'dark:border-cyan-700/[0.28] dark:from-slate-900/90 dark:via-cyan-950/[0.18] dark:to-blue-950/[0.14]'
     ),
-    orb: 'from-cyan-500/18 to-blue-400/10',
+    orb: 'from-cyan-500/[0.18] to-blue-400/10',
     godChip:
-      'border-cyan-200/65 bg-cyan-50/88 text-cyan-800 dark:border-cyan-600/28 dark:bg-cyan-950/42 dark:text-cyan-300',
+      'border-cyan-200/65 bg-cyan-50/[0.88] text-cyan-800 dark:border-cyan-600/[0.28] dark:bg-cyan-950/[0.42] dark:text-cyan-300',
     dirChip:
-      'border-cyan-200/45 bg-white/78 text-cyan-700/85 dark:border-cyan-700/22 dark:bg-slate-900/55 dark:text-cyan-300/85',
+      'border-cyan-200/45 bg-white/[0.78] text-cyan-700/85 dark:border-cyan-700/[0.22] dark:bg-slate-900/55 dark:text-cyan-300/85',
     activeRing: 'ring-1 ring-cyan-500/55 shadow-[0_0_0_1px_rgba(6,182,212,0.22)]',
   },
 };
@@ -463,7 +463,7 @@ const CENTER_PALACE_TONE: PalaceCellTone = {
     'hover:border-slate-400/80 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_14px_24px_-10px_rgba(100,116,139,0.14)]',
     'dark:border-slate-600/55 dark:from-slate-800/55 dark:via-slate-900/75 dark:to-slate-800/50'
   ),
-  orb: 'from-slate-400/16 to-slate-300/8',
+  orb: 'from-slate-400/[0.16] to-slate-300/[0.08]',
   godChip:
     'border-slate-200/70 bg-white/80 text-slate-500 dark:border-slate-600/50 dark:bg-slate-800/70 dark:text-slate-400',
   dirChip:
@@ -476,9 +476,9 @@ const VALUE_PALACE_TONE: PalaceCellTone = {
     'border-amber-300/70',
     'bg-gradient-to-br from-white/95 via-amber-50/55 to-amber-100/45',
     'hover:border-amber-400/80 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_14px_24px_-10px_rgba(245,158,11,0.22)]',
-    'dark:border-amber-600/35 dark:from-slate-900/92 dark:via-amber-950/35 dark:to-amber-950/20'
+    'dark:border-amber-600/35 dark:from-slate-900/[0.92] dark:via-amber-950/35 dark:to-amber-950/20'
   ),
-  orb: 'from-amber-500/22 to-orange-400/12',
+  orb: 'from-amber-500/[0.22] to-orange-400/[0.12]',
   godChip:
     'border-amber-200/70 bg-amber-50/90 text-amber-800 dark:border-amber-600/30 dark:bg-amber-950/50 dark:text-amber-300',
   dirChip:
@@ -491,9 +491,9 @@ const VOID_PALACE_TONE: PalaceCellTone = {
     'border-rose-200/65',
     'bg-gradient-to-br from-white/95 via-rose-50/40 to-rose-100/35',
     'hover:border-rose-300/75 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(244,63,94,0.18)]',
-    'dark:border-rose-700/30 dark:from-slate-900/92 dark:via-rose-950/28 dark:to-rose-950/18'
+    'dark:border-rose-700/30 dark:from-slate-900/[0.92] dark:via-rose-950/[0.28] dark:to-rose-950/[0.18]'
   ),
-  orb: 'from-rose-400/18 to-pink-400/10',
+  orb: 'from-rose-400/[0.18] to-pink-400/10',
   godChip:
     'border-rose-200/65 bg-rose-50/90 text-rose-700 dark:border-rose-600/30 dark:bg-rose-950/45 dark:text-rose-300',
   dirChip:
@@ -504,11 +504,11 @@ const VOID_PALACE_TONE: PalaceCellTone = {
 const HORSE_PALACE_TONE: PalaceCellTone = {
   card: cn(
     'border-violet-200/65',
-    'bg-gradient-to-br from-white/95 via-violet-50/38 to-violet-100/32',
+    'bg-gradient-to-br from-white/95 via-violet-50/[0.38] to-violet-100/[0.32]',
     'hover:border-violet-300/75 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.38),0_14px_24px_-10px_rgba(139,92,246,0.18)]',
-    'dark:border-violet-700/30 dark:from-slate-900/92 dark:via-violet-950/28 dark:to-violet-950/18'
+    'dark:border-violet-700/30 dark:from-slate-900/[0.92] dark:via-violet-950/[0.28] dark:to-violet-950/[0.18]'
   ),
-  orb: 'from-violet-500/18 to-fuchsia-400/10',
+  orb: 'from-violet-500/[0.18] to-fuchsia-400/10',
   godChip:
     'border-violet-200/65 bg-violet-50/90 text-violet-700 dark:border-violet-600/30 dark:bg-violet-950/45 dark:text-violet-300',
   dirChip:
@@ -525,7 +525,7 @@ const PALACE_CELL_BASE_CLASS = cn(
   'shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_4px_12px_-2px_rgba(15,23,42,0.05)]',
   'transition-all duration-200 transform-gpu hover:-translate-y-0.5',
   'min-h-[110px] sm:min-h-[140px] lg:min-h-[168px]',
-  'supports-[backdrop-filter]:bg-white/78 dark:supports-[backdrop-filter]:bg-slate-900/72'
+  'supports-[backdrop-filter]:bg-white/[0.78] dark:supports-[backdrop-filter]:bg-slate-900/[0.72]'
 );
 
 function getPalaceCellTone(cell: QimenBoardCell): PalaceCellTone {
@@ -783,36 +783,36 @@ const WUXING_DETAIL_ACCENT: Record<
   { orb: string; border: string; title: string; metaChip: string }
 > = {
   木: {
-    orb: 'from-emerald-500/22 to-teal-500/10',
-    border: 'border-emerald-200/55 dark:border-emerald-600/28',
+    orb: 'from-emerald-500/[0.22] to-teal-500/10',
+    border: 'border-emerald-200/55 dark:border-emerald-600/[0.28]',
     title: 'text-emerald-950 dark:text-emerald-50',
     metaChip:
       'border-emerald-200/60 bg-emerald-50/80 text-emerald-800 dark:border-emerald-600/30 dark:bg-emerald-950/40 dark:text-emerald-300',
   },
   火: {
-    orb: 'from-orange-500/22 to-rose-500/10',
-    border: 'border-orange-200/55 dark:border-orange-600/28',
+    orb: 'from-orange-500/[0.22] to-rose-500/10',
+    border: 'border-orange-200/55 dark:border-orange-600/[0.28]',
     title: 'text-orange-950 dark:text-orange-50',
     metaChip:
       'border-orange-200/60 bg-orange-50/80 text-orange-800 dark:border-orange-600/30 dark:bg-orange-950/40 dark:text-orange-300',
   },
   土: {
     orb: 'from-amber-500/20 to-stone-500/10',
-    border: 'border-amber-200/55 dark:border-amber-600/28',
+    border: 'border-amber-200/55 dark:border-amber-600/[0.28]',
     title: 'text-amber-950 dark:text-amber-50',
     metaChip:
       'border-amber-200/60 bg-amber-50/80 text-amber-900 dark:border-amber-600/30 dark:bg-amber-950/40 dark:text-amber-300',
   },
   金: {
     orb: 'from-slate-400/20 to-indigo-400/10',
-    border: 'border-slate-200/60 dark:border-slate-500/28',
+    border: 'border-slate-200/60 dark:border-slate-500/[0.28]',
     title: 'text-slate-900 dark:text-slate-50',
     metaChip:
       'border-slate-200/65 bg-slate-50/85 text-slate-700 dark:border-slate-500/30 dark:bg-slate-800/50 dark:text-slate-300',
   },
   水: {
-    orb: 'from-cyan-500/22 to-blue-500/10',
-    border: 'border-cyan-200/55 dark:border-cyan-600/28',
+    orb: 'from-cyan-500/[0.22] to-blue-500/10',
+    border: 'border-cyan-200/55 dark:border-cyan-600/[0.28]',
     title: 'text-cyan-950 dark:text-cyan-50',
     metaChip:
       'border-cyan-200/60 bg-cyan-50/80 text-cyan-900 dark:border-cyan-600/30 dark:bg-cyan-950/40 dark:text-cyan-300',
@@ -845,7 +845,7 @@ function PalaceStatItem({
       className={cn(
         'rounded-xl border border-white/65 bg-white/60 px-2.5 py-2',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]',
-        'dark:border-white/8 dark:bg-slate-900/45'
+        'dark:border-white/[0.08] dark:bg-slate-900/45'
       )}
     >
       <div className="text-[10px] font-semibold tracking-wide text-slate-500 dark:text-slate-400">
@@ -883,10 +883,10 @@ function QimenPalaceDetailPanel({
     <div
       className={cn(
         'relative mb-4 mt-4 overflow-hidden rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4',
-        'bg-gradient-to-br from-white/92 via-white/78 to-indigo-50/25',
+        'bg-gradient-to-br from-white/[0.92] via-white/[0.78] to-indigo-50/25',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_28px_-12px_rgba(59,130,246,0.18)]',
-        'backdrop-blur-md supports-[backdrop-filter]:bg-white/72',
-        'dark:from-slate-900/92 dark:via-slate-900/78 dark:to-indigo-950/22 dark:shadow-none',
+        'backdrop-blur-md supports-[backdrop-filter]:bg-white/[0.72]',
+        'dark:from-slate-900/[0.92] dark:via-slate-900/[0.78] dark:to-indigo-950/[0.22] dark:shadow-none',
         accent.border
       )}
     >
@@ -1248,40 +1248,40 @@ const AI_INSIGHT_TONE_MAP: Record<
 > = {
   indigo: {
     panel:
-      'border-indigo-200/55 dark:border-indigo-600/28 bg-gradient-to-br from-white/92 via-white/72 to-indigo-50/40 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-indigo-950/28',
-    orb: 'from-indigo-500/18 to-violet-400/10',
+      'border-indigo-200/55 dark:border-indigo-600/[0.28] bg-gradient-to-br from-white/[0.92] via-white/[0.72] to-indigo-50/40 dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-indigo-950/[0.28]',
+    orb: 'from-indigo-500/[0.18] to-violet-400/10',
     iconShell:
       'border-indigo-200/70 bg-gradient-to-br from-indigo-50/95 to-white/85 dark:border-indigo-500/25 dark:from-indigo-950/55 dark:to-slate-900/65',
     title: 'text-indigo-950 dark:text-indigo-50',
   },
   rose: {
     panel:
-      'border-rose-200/55 dark:border-rose-600/28 bg-gradient-to-br from-white/92 via-white/72 to-rose-50/38 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-rose-950/26',
-    orb: 'from-rose-500/16 to-pink-400/10',
+      'border-rose-200/55 dark:border-rose-600/[0.28] bg-gradient-to-br from-white/[0.92] via-white/[0.72] to-rose-50/[0.38] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-rose-950/[0.26]',
+    orb: 'from-rose-500/[0.16] to-pink-400/10',
     iconShell:
       'border-rose-200/70 bg-gradient-to-br from-rose-50/95 to-white/85 dark:border-rose-500/25 dark:from-rose-950/55 dark:to-slate-900/65',
     title: 'text-rose-950 dark:text-rose-50',
   },
   violet: {
     panel:
-      'border-violet-200/55 dark:border-violet-600/28 bg-gradient-to-br from-white/92 via-white/72 to-violet-50/38 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-violet-950/26',
-    orb: 'from-violet-500/18 to-purple-400/10',
+      'border-violet-200/55 dark:border-violet-600/[0.28] bg-gradient-to-br from-white/[0.92] via-white/[0.72] to-violet-50/[0.38] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-violet-950/[0.26]',
+    orb: 'from-violet-500/[0.18] to-purple-400/10',
     iconShell:
       'border-violet-200/70 bg-gradient-to-br from-violet-50/95 to-white/85 dark:border-violet-500/25 dark:from-violet-950/55 dark:to-slate-900/65',
     title: 'text-violet-950 dark:text-violet-50',
   },
   slate: {
     panel:
-      'border-slate-200/60 dark:border-slate-600/30 bg-gradient-to-br from-white/92 via-white/72 to-slate-100/40 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-slate-800/35',
-    orb: 'from-slate-400/14 to-indigo-300/8',
+      'border-slate-200/60 dark:border-slate-600/30 bg-gradient-to-br from-white/[0.92] via-white/[0.72] to-slate-100/40 dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-slate-800/35',
+    orb: 'from-slate-400/[0.14] to-indigo-300/[0.08]',
     iconShell:
       'border-slate-200/75 bg-gradient-to-br from-slate-50/95 to-white/85 dark:border-slate-500/25 dark:from-slate-800/55 dark:to-slate-900/65',
     title: 'text-slate-900 dark:text-slate-50',
   },
   emerald: {
     panel:
-      'border-emerald-200/55 dark:border-emerald-600/28 bg-gradient-to-br from-white/92 via-white/72 to-emerald-50/38 dark:from-slate-900/92 dark:via-slate-900/75 dark:to-emerald-950/26',
-    orb: 'from-emerald-500/16 to-teal-400/10',
+      'border-emerald-200/55 dark:border-emerald-600/[0.28] bg-gradient-to-br from-white/[0.92] via-white/[0.72] to-emerald-50/[0.38] dark:from-slate-900/[0.92] dark:via-slate-900/75 dark:to-emerald-950/[0.26]',
+    orb: 'from-emerald-500/[0.16] to-teal-400/10',
     iconShell:
       'border-emerald-200/70 bg-gradient-to-br from-emerald-50/95 to-white/85 dark:border-emerald-500/25 dark:from-emerald-950/55 dark:to-slate-900/65',
     title: 'text-emerald-950 dark:text-emerald-50',
@@ -1355,7 +1355,7 @@ function AiInsightPanel({
       className={cn(
         'relative overflow-hidden rounded-2xl border p-3.5 sm:p-4',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_14px_-6px_rgba(15,23,42,0.06)]',
-        'supports-[backdrop-filter]:bg-white/78 dark:supports-[backdrop-filter]:bg-slate-900/72',
+        'supports-[backdrop-filter]:bg-white/[0.78] dark:supports-[backdrop-filter]:bg-slate-900/[0.72]',
         theme.panel,
         className
       )}
@@ -1799,7 +1799,7 @@ export function QimenAnalysisResult({
               aria-hidden
             />
             <span
-              className="pointer-events-none absolute -left-16 -top-16 h-44 w-44 rounded-full bg-gradient-to-br from-violet-500/12 to-indigo-400/8 blur-3xl"
+              className="pointer-events-none absolute -left-16 -top-16 h-44 w-44 rounded-full bg-gradient-to-br from-violet-500/[0.12] to-indigo-400/[0.08] blur-3xl"
               aria-hidden
             />
             <div className="relative z-10">
@@ -1962,7 +1962,7 @@ export function QimenAnalysisResult({
                     (paragraph, idx) => (
                       <p
                         key={`assessment-${idx}`}
-                        className="rounded-xl border border-white/60 bg-white/50 px-2.5 py-2 text-sm text-slate-700 dark:border-white/8 dark:bg-slate-900/35 dark:text-slate-300"
+                        className="rounded-xl border border-white/60 bg-white/50 px-2.5 py-2 text-sm text-slate-700 dark:border-white/[0.08] dark:bg-slate-900/35 dark:text-slate-300"
                       >
                         <QimenPalaceLinkedText
                           text={paragraph}

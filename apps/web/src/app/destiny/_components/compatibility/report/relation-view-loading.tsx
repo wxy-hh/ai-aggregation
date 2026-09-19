@@ -60,7 +60,7 @@ const THEMES: Record<RelationType, ThemeConfig> = {
     shell:
       'border-indigo-200/55 bg-gradient-to-br from-white/80 via-indigo-50/45 to-amber-50/25 dark:border-indigo-400/15 dark:from-slate-900/85 dark:via-indigo-950/40 dark:to-amber-950/15',
     glowA: 'bg-indigo-400/25',
-    glowB: 'bg-amber-300/18',
+    glowB: 'bg-amber-300/[0.18]',
     accent: 'text-indigo-600 dark:text-indigo-300',
     ring: 'border-indigo-300/50 dark:border-indigo-400/25',
     chip: 'border-indigo-200/50 bg-indigo-500/10 text-indigo-600 dark:border-indigo-400/20 dark:bg-indigo-400/15 dark:text-indigo-300',
@@ -78,8 +78,8 @@ const THEMES: Record<RelationType, ThemeConfig> = {
     tips: ['联系是否轻松', '互助不绑架', '边界与互惠'],
     shell:
       'border-emerald-200/55 bg-gradient-to-br from-white/80 via-emerald-50/45 to-teal-50/25 dark:border-emerald-400/15 dark:from-slate-900/85 dark:via-emerald-950/35 dark:to-teal-950/15',
-    glowA: 'bg-emerald-400/22',
-    glowB: 'bg-teal-300/18',
+    glowA: 'bg-emerald-400/[0.22]',
+    glowB: 'bg-teal-300/[0.18]',
     accent: 'text-emerald-600 dark:text-emerald-300',
     ring: 'border-emerald-300/50 dark:border-emerald-400/25',
     chip: 'border-emerald-200/50 bg-emerald-500/10 text-emerald-600 dark:border-emerald-400/20 dark:bg-emerald-400/15 dark:text-emerald-300',
@@ -97,8 +97,8 @@ const THEMES: Record<RelationType, ThemeConfig> = {
     tips: ['目标是否同向', '谁拍板谁执行', '风险与信用边界'],
     shell:
       'border-violet-200/55 bg-gradient-to-br from-white/80 via-slate-50/50 to-violet-50/30 dark:border-violet-400/15 dark:from-slate-900/85 dark:via-slate-900/70 dark:to-violet-950/25',
-    glowA: 'bg-violet-400/22',
-    glowB: 'bg-slate-400/16',
+    glowA: 'bg-violet-400/[0.22]',
+    glowB: 'bg-slate-400/[0.16]',
     accent: 'text-violet-600 dark:text-violet-300',
     ring: 'border-violet-300/50 dark:border-violet-400/25',
     chip: 'border-violet-200/50 bg-violet-500/10 text-violet-600 dark:border-violet-400/20 dark:bg-violet-400/15 dark:text-violet-300',

@@ -116,7 +116,7 @@ const EmptyState = memo(function EmptyState({ modelCount }: { modelCount: number
       <div className="relative">
         <span
           aria-hidden
-          className="pointer-events-none absolute -inset-4 rounded-full bg-gradient-to-br from-blue-400/20 via-indigo-400/14 to-cyan-400/20 blur-2xl"
+          className="pointer-events-none absolute -inset-4 rounded-full bg-gradient-to-br from-blue-400/20 via-indigo-400/[0.14] to-cyan-400/20 blur-2xl"
         />
         <div className="relative flex h-16 w-16 items-center justify-center rounded-3xl border border-white/60 bg-white/70 text-blue-600 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-slate-800/70 dark:text-blue-300">
           <GitCompareArrows className="h-8 w-8" />

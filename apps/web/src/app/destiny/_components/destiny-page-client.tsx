@@ -325,7 +325,7 @@ function DestinyDesktopLayout({
           <div className="absolute inset-0 z-[35] overflow-hidden">
             <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
-              <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/4 to-transparent blur-2xl xl:block" />
+              <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/[0.04] to-transparent blur-2xl xl:block" />
               <div className="relative h-full w-full transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
                 <QimenLoadingAnimation />
               </div>

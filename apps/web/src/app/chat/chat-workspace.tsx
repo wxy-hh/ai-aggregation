@@ -907,7 +907,7 @@ export default function ChatWorkspace() {
 
                             {/* 下拉列表 */}
                             {showModelSelector && (
-                              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/92">
+                              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/[0.92]">
                                 {(
                                   Object.entries(MODELS) as [
                                     ProviderName,
@@ -1015,7 +1015,7 @@ export default function ChatWorkspace() {
                                 <button
                                   key={action.title}
                                   onClick={() => handleSend(action.prompt)}
-                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/84 p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/82 dark:hover:border-blue-500/30"
+                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
                                 >
                                   <div
                                     className={cn(
@@ -1039,15 +1039,15 @@ export default function ChatWorkspace() {
                           </div>
 
                           <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
                               <FileText className="h-3.5 w-3.5 text-blue-500" />
                               支持长文本分析
                             </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
                               <Globe className="h-3.5 w-3.5 text-blue-500" />
                               实时联网搜索
                             </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/78 px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/78 dark:text-slate-300">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
                               <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
                               企业级数据安全
                             </div>

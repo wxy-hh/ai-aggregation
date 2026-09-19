@@ -187,7 +187,7 @@ export function ReportRightRail({
 
   /** 长文阅读区：实体底、无边框 */
   const readSurfaceClass = cn(
-    'mt-3 rounded-xl bg-white/92 px-2 py-0.5 sm:mt-3.5 sm:px-4 sm:py-0.5',
+    'mt-3 rounded-xl bg-white/[0.92] px-2 py-0.5 sm:mt-3.5 sm:px-4 sm:py-0.5',
     'dark:bg-slate-950/65'
   );
 
@@ -410,7 +410,7 @@ export function ReportRightRail({
                         {/* 展开的详细内容 */}
                         {isExpanded && (
                           <div className="ml-0 mt-2 space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200 sm:mt-3 sm:space-y-3">
-                            <div className="rounded-lg border-l-2 border-l-emerald-400/45 bg-emerald-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-emerald-950/18">
+                            <div className="rounded-lg border-l-2 border-l-emerald-400/45 bg-emerald-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-emerald-950/[0.18]">
                               <div className="text-[11px] font-extrabold text-emerald-700 sm:text-xs dark:text-emerald-300">
                                 机会
                               </div>
@@ -426,7 +426,7 @@ export function ReportRightRail({
                                 ))}
                               </ul>
                             </div>
-                            <div className="rounded-lg border-l-2 border-l-amber-400/45 bg-amber-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-amber-950/18">
+                            <div className="rounded-lg border-l-2 border-l-amber-400/45 bg-amber-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-amber-950/[0.18]">
                               <div className="text-[11px] font-extrabold text-amber-700 sm:text-xs dark:text-amber-300">
                                 风险
                               </div>
@@ -442,7 +442,7 @@ export function ReportRightRail({
                                 ))}
                               </ul>
                             </div>
-                            <div className="rounded-lg border-l-2 border-l-blue-400/45 bg-blue-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-blue-950/18">
+                            <div className="rounded-lg border-l-2 border-l-blue-400/45 bg-blue-50/45 py-2 pl-2.5 pr-2 sm:py-2.5 sm:pl-3 dark:bg-blue-950/[0.18]">
                               <div className="text-[11px] font-extrabold text-blue-700 sm:text-xs dark:text-blue-300">
                                 行动建议
                               </div>

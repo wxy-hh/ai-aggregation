@@ -107,7 +107,7 @@ export function RomanceView({
         className={cn(reportCardClass, 'col-span-12 xl:col-span-8')}
       >
         <div className="mb-4 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/12 text-rose-500">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/[0.12] text-rose-500">
             <Sparkles className="h-3.5 w-3.5" />
           </span>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">

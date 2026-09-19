@@ -277,7 +277,7 @@ export function DecadeFortuneCard({
                         'mt-2 h-8 min-h-8 w-full gap-1 rounded-lg px-2.5 text-[11px] font-semibold',
                         'bg-[#5D7CFA]/10 text-[#4969E9] shadow-none',
                         'ring-1 ring-inset ring-[#5D7CFA]/25',
-                        'hover:bg-[#5D7CFA]/16 hover:brightness-100 dark:bg-[#5D7CFA]/18 dark:text-[#9BADFF] dark:ring-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/26'
+                        'hover:bg-[#5D7CFA]/[0.16] hover:brightness-100 dark:bg-[#5D7CFA]/[0.18] dark:text-[#9BADFF] dark:ring-[#5D7CFA]/30 dark:hover:bg-[#5D7CFA]/[0.26]'
                       )}
                       onClick={() => {
                         setOpenDecadeIndex(null);
@@ -321,7 +321,7 @@ function AiExclusiveBadge({ className }: { className?: string }) {
     <span
       title="可一键追问，AI 将只围绕该步大运作答"
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-full border border-[#5D7CFA]/20 bg-gradient-to-r from-[#4969E9]/12 to-[#7B8FFF]/12 px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#5D7CFA] dark:border-[#9BADFF]/25 dark:from-[#4969E9]/20 dark:to-[#7B8FFF]/20 dark:text-[#9BADFF]',
+        'inline-flex items-center gap-0.5 rounded-full border border-[#5D7CFA]/20 bg-gradient-to-r from-[#4969E9]/[0.12] to-[#7B8FFF]/[0.12] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#5D7CFA] dark:border-[#9BADFF]/25 dark:from-[#4969E9]/20 dark:to-[#7B8FFF]/20 dark:text-[#9BADFF]',
         className
       )}
     >

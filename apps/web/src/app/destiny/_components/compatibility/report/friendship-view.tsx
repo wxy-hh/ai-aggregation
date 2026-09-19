@@ -96,7 +96,7 @@ export function FriendshipView({
         <GlassCard variant="standard" className={reportSideCardClass}>
           <div className="mb-4 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/12 text-teal-600">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-500/[0.12] text-teal-600">
                 <MessageCircle className="h-3.5 w-3.5" />
               </span>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
@@ -129,7 +129,7 @@ export function FriendshipView({
               )}
             >
               <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500/[0.12] text-emerald-600 dark:text-emerald-300">
                   {i % 2 === 0 ? (
                     <Sparkles className="h-3.5 w-3.5" />
                   ) : (
@@ -162,7 +162,7 @@ export function FriendshipView({
         className={cn(reportCardClass, 'col-span-12 xl:col-span-8')}
       >
         <div className="mb-4 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.12] text-emerald-600">
             <Sparkles className="h-3.5 w-3.5" />
           </span>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">

@@ -273,7 +273,7 @@ export function PartnershipView({
         className={cn(reportCardClass, 'col-span-12 lg:col-span-7')}
       >
         <div className="mb-4 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/12 text-violet-600">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/[0.12] text-violet-600">
             <MessageCircle className="h-3.5 w-3.5" />
           </span>
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">

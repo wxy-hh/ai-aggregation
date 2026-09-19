@@ -146,7 +146,7 @@ export function MarriageView({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/12 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/[0.12] text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300">
                         <Icon className="h-4 w-4" />
                       </span>
                       <div>

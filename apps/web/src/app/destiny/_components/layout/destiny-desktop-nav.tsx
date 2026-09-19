@@ -130,7 +130,7 @@ export function DestinyDesktopNav({
                 'focus-visible:outline-none focus-visible:ring-2',
                 night
                   ? 'border-[#E7C873]/20 bg-[#0C1128]/90 shadow-[8px_0_32px_-12px_rgba(3,6,18,0.7)] hover:w-12 hover:shadow-[12px_0_36px_-10px_rgba(139,92,246,0.35)] focus-visible:ring-[#A78BFA]/40'
-                  : 'border-white/70 bg-white/92 shadow-[8px_0_32px_-12px_rgba(15,23,42,0.22)] hover:w-12 hover:shadow-[12px_0_36px_-10px_rgba(73,105,233,0.28)] focus-visible:ring-[#4969E9]/30 dark:border-white/10 dark:bg-slate-900/92'
+                  : 'border-white/70 bg-white/[0.92] shadow-[8px_0_32px_-12px_rgba(15,23,42,0.22)] hover:w-12 hover:shadow-[12px_0_36px_-10px_rgba(73,105,233,0.28)] focus-visible:ring-[#4969E9]/30 dark:border-white/10 dark:bg-slate-900/[0.92]'
               )}
               initial={{ x: -56, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}

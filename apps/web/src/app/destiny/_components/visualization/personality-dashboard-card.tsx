@@ -31,7 +31,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
     track: 'rgba(99, 102, 241, 0.1)',
     accentEdgeClass: 'border-l-indigo-400/35',
     iconClass: 'text-indigo-500/80 dark:text-indigo-300/80',
-    orbClass: 'from-indigo-500/14 to-violet-500/10',
+    orbClass: 'from-indigo-500/[0.14] to-violet-500/10',
     hoverClass:
       'hover:border-indigo-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(99,102,241,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -42,7 +42,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
     track: 'rgba(14, 165, 233, 0.1)',
     accentEdgeClass: 'border-l-sky-400/35',
     iconClass: 'text-sky-500/80 dark:text-sky-300/80',
-    orbClass: 'from-sky-500/14 to-cyan-500/10',
+    orbClass: 'from-sky-500/[0.14] to-cyan-500/10',
     hoverClass:
       'hover:border-sky-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(14,165,233,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -53,7 +53,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
     track: 'rgba(245, 158, 11, 0.1)',
     accentEdgeClass: 'border-l-amber-400/35',
     iconClass: 'text-amber-600/75 dark:text-amber-300/75',
-    orbClass: 'from-amber-500/14 to-orange-500/10',
+    orbClass: 'from-amber-500/[0.14] to-orange-500/10',
     hoverClass:
       'hover:border-amber-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(245,158,11,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -64,7 +64,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
     track: 'rgba(100, 116, 139, 0.1)',
     accentEdgeClass: 'border-l-slate-400/35',
     iconClass: 'text-slate-500/80 dark:text-slate-300/75',
-    orbClass: 'from-slate-400/12 to-sky-300/8',
+    orbClass: 'from-slate-400/[0.12] to-sky-300/[0.08]',
     hoverClass:
       'hover:border-slate-300/60 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(100,116,139,0.14),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -75,7 +75,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
     track: 'rgba(16, 185, 129, 0.1)',
     accentEdgeClass: 'border-l-emerald-400/35',
     iconClass: 'text-emerald-500/80 dark:text-emerald-300/80',
-    orbClass: 'from-emerald-500/14 to-teal-500/10',
+    orbClass: 'from-emerald-500/[0.14] to-teal-500/10',
     hoverClass:
       'hover:border-emerald-200/55 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_20px_-8px_rgba(16,185,129,0.16),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   },
@@ -87,11 +87,11 @@ const domainCardShellClass = cn(
   'bg-white/40 px-3.5 py-3.5 backdrop-blur-md transform-gpu',
   'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]',
   'transition-all duration-200',
-  'hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/58',
+  'hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/[0.58]',
   'hover:shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
   'active:translate-y-0 active:scale-[0.995]',
   'motion-reduce:transition-none motion-reduce:hover:transform-none',
-  'dark:border-white/[0.07] dark:bg-slate-900/28 dark:hover:bg-slate-900/40',
+  'dark:border-white/[0.07] dark:bg-slate-900/[0.28] dark:hover:bg-slate-900/40',
   'sm:rounded-[20px] sm:px-4 sm:py-4'
 );
 
@@ -143,10 +143,10 @@ export function PersonalityDashboardCard({
       className={cn(
         'overflow-hidden p-4 sm:p-5',
         // 中屏也保持透光，避免 lg 以下退化为实色白底
-        '!bg-white/38 !from-white/48 !via-white/24 !to-white/10',
+        '!bg-white/[0.38] !from-white/[0.48] !via-white/[0.24] !to-white/10',
         'supports-[backdrop-filter]:!bg-white/30',
-        'dark:!bg-slate-900/40 dark:!from-slate-900/55 dark:!via-slate-900/30 dark:!to-slate-900/12',
-        'dark:supports-[backdrop-filter]:!bg-slate-900/32',
+        'dark:!bg-slate-900/40 dark:!from-slate-900/55 dark:!via-slate-900/30 dark:!to-slate-900/[0.12]',
+        'dark:supports-[backdrop-filter]:!bg-slate-900/[0.32]',
         className
       )}
     >
@@ -159,11 +159,11 @@ export function PersonalityDashboardCard({
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -right-24 top-8 z-0 h-52 w-52 rounded-full bg-violet-400/18 blur-3xl dark:bg-violet-500/14"
+        className="pointer-events-none absolute -right-24 top-8 z-0 h-52 w-52 rounded-full bg-violet-400/[0.18] blur-3xl dark:bg-violet-500/[0.14]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -left-20 bottom-4 z-0 h-44 w-44 rounded-full bg-blue-400/14 blur-3xl dark:bg-blue-500/12"
+        className="pointer-events-none absolute -left-20 bottom-4 z-0 h-44 w-44 rounded-full bg-blue-400/[0.14] blur-3xl dark:bg-blue-500/[0.12]"
         aria-hidden
       />
 

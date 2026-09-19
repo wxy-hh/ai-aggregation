@@ -263,7 +263,7 @@ export function GlobalSidebar() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="bg-white/58 dark:bg-slate-900/58 backdrop-blur-xl border-t border-white/50 dark:border-white/20 rounded-r-3xl shadow-md shadow-indigo-500/15 flex flex-col items-center gap-3 py-4 px-2 mx-2 mb-4 overflow-hidden"
+                className="bg-white/[0.58] dark:bg-slate-900/[0.58] backdrop-blur-xl border-t border-white/50 dark:border-white/20 rounded-r-3xl shadow-md shadow-indigo-500/15 flex flex-col items-center gap-3 py-4 px-2 mx-2 mb-4 overflow-hidden"
               >
                 {user?.role === 'admin' && (
                   <Link

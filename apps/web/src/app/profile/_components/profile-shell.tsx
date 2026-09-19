@@ -796,7 +796,7 @@ export function ProfileShell() {
             backgroundPosition: 'center, center',
           }}
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/40 via-white/15 to-transparent dark:from-blue-500/8 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-blue-100/40 via-white/15 to-transparent dark:from-blue-500/[0.08] dark:via-transparent" />
 
         <div className="relative mx-auto flex w-full max-w-[1400px] flex-col">
           {/* 页头：扁平处理，不与大内容卡争夺视觉重心 */}

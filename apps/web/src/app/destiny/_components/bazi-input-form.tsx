@@ -38,10 +38,10 @@ const minuteOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2,
 
 const shellClass = cn(
   'relative overflow-hidden rounded-[32px] border border-white/60 p-4 sm:p-6 md:p-8',
-  'bg-gradient-to-b from-white/72 via-white/42 to-white/16',
+  'bg-gradient-to-b from-white/[0.72] via-white/[0.42] to-white/[0.16]',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.14),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
   'backdrop-blur-xl lg:backdrop-blur-2xl',
-  'dark:border-white/10 dark:from-slate-900/72 dark:via-slate-900/38 dark:to-slate-900/12'
+  'dark:border-white/10 dark:from-slate-900/[0.72] dark:via-slate-900/[0.38] dark:to-slate-900/[0.12]'
 );
 
 const panelClass = cn(

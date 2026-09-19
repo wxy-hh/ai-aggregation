@@ -35,7 +35,7 @@ const ROW_SURFACE =
   'rounded-[24px] border border-[rgba(255,255,255,0.65)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.58))] shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_16px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[16px] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_24px_32px_-24px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.74),rgba(15,23,42,0.58))]';
 
 const SEARCH_INPUT_CLASSES =
-  'h-[48px] w-full rounded-[12px] border border-[rgba(255,255,255,0.72)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0.78))] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),var(--home-shadow-sm)] outline-none transition-[box-shadow,border-color,background-color] duration-200 placeholder:text-[var(--home-color-text-quaternary)] focus:border-[#BFDBFE] focus:bg-white focus:shadow-[0_0_0_2px_rgba(59,130,246,0.20),inset_0_1px_0_rgba(255,255,255,0.92),0_6px_16px_rgba(78,99,160,0.12)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.64))] dark:text-slate-200 dark:focus:border-[#3B82F6]/40 dark:focus:bg-slate-900/78';
+  'h-[48px] w-full rounded-[12px] border border-[rgba(255,255,255,0.72)] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,255,255,0.78))] pl-10 pr-4 text-[14px] text-[var(--home-color-text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),var(--home-shadow-sm)] outline-none transition-[box-shadow,border-color,background-color] duration-200 placeholder:text-[var(--home-color-text-quaternary)] focus:border-[#BFDBFE] focus:bg-white focus:shadow-[0_0_0_2px_rgba(59,130,246,0.20),inset_0_1px_0_rgba(255,255,255,0.92),0_6px_16px_rgba(78,99,160,0.12)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.64))] dark:text-slate-200 dark:focus:border-[#3B82F6]/40 dark:focus:bg-slate-900/[0.78]';
 
 const TABLE_ACTION_BUTTON_CLASSES =
   'inline-flex h-8 min-w-[56px] shrink-0 items-center justify-center whitespace-nowrap rounded-[10px] border px-3 text-[12px] font-semibold transition-[background-color,box-shadow,color] duration-200';
@@ -68,7 +68,7 @@ function RoleBadge({ role }: { role: string }) {
         'inline-flex rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_12px_22px_-20px_rgba(59,130,246,0.18)]',
         role === '管理员'
           ? 'border-[#BFD1FF] bg-[#EEF3FF] text-[#255DFF] dark:border-[#2D4FA3] dark:bg-[#1B2D57]/65 dark:text-[#BFD0FF]'
-          : 'border-slate-200/90 bg-white/82 text-slate-600 dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300'
+          : 'border-slate-200/90 bg-white/[0.82] text-slate-600 dark:border-white/10 dark:bg-slate-900/[0.72] dark:text-slate-300'
       )}
     >
       {role}
@@ -306,7 +306,7 @@ export function UserManagementShell() {
               'radial-gradient(960px 520px at 80% 18%, rgba(99,102,241,0.1) 0%, rgba(99,102,241,0.04) 30%, rgba(99,102,241,0) 62%)',
           }}
         />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#DBEAFE]/70 via-white/20 to-transparent dark:from-blue-500/8 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#DBEAFE]/70 via-white/20 to-transparent dark:from-blue-500/[0.08] dark:via-transparent" />
 
         <div className="relative mx-auto flex w-full max-w-[1400px] flex-col">
           <header
@@ -365,7 +365,7 @@ export function UserManagementShell() {
           >
             <div className="pointer-events-none absolute inset-0 rounded-[32px] [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)]" />
             <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-80 dark:via-white/20" />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/28 via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.28] via-white/10 to-transparent dark:from-white/5 dark:via-transparent" />
             <div className="pointer-events-none absolute -left-8 bottom-4 h-32 w-32 rounded-full bg-[rgba(233,213,255,0.24)] blur-3xl dark:hidden" />
 
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

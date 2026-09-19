@@ -17,7 +17,7 @@ const ELEMENT_LABELS: Record<FiveElementKey, string> = {
 
 /** 进度条轨道（略深底，衬托实色填充） */
 const SOFT_BAR_TRACK =
-  'bg-slate-200/80 ring-1 ring-inset ring-slate-300/35 dark:bg-slate-800/80 dark:ring-white/8';
+  'bg-slate-200/80 ring-1 ring-inset ring-slate-300/35 dark:bg-slate-800/80 dark:ring-white/[0.08]';
 
 /** 最高项末端柔光，避免整段洗白 */
 const SOFT_BAR_SHINE =
@@ -317,11 +317,11 @@ export function DataOverviewCard({
   return (
     <GlassCard className={cn('relative shrink-0 overflow-hidden p-4 sm:p-5', className)}>
       <div
-        className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-indigo-400/12 blur-3xl dark:bg-indigo-500/18"
+        className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-indigo-400/[0.12] blur-3xl dark:bg-indigo-500/[0.18]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -left-6 bottom-4 h-24 w-24 rounded-full bg-emerald-400/10 blur-3xl dark:bg-emerald-500/12"
+        className="pointer-events-none absolute -left-6 bottom-4 h-24 w-24 rounded-full bg-emerald-400/10 blur-3xl dark:bg-emerald-500/[0.12]"
         aria-hidden
       />
 
@@ -453,7 +453,7 @@ export function DataOverviewCard({
               className={cn(
                 'inline-flex min-h-8 items-center gap-0.5 rounded-full px-2.5 text-[11px] font-bold transition-colors',
                 showTenGodDetail
-                  ? 'bg-[#5D7CFA]/12 text-[#5D7CFA] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]'
+                  ? 'bg-[#5D7CFA]/[0.12] text-[#5D7CFA] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]'
                   : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
               )}
             >
@@ -590,10 +590,10 @@ function MetricPanel({
   return (
     <div
       className={cn(
-        'flex h-full flex-col rounded-[20px] border border-white/55 bg-white/72 p-3 sm:p-3.5',
+        'flex h-full flex-col rounded-[20px] border border-white/55 bg-white/[0.72] p-3 sm:p-3.5',
         'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04)]',
         'ring-1 ring-inset ring-white/50',
-        'dark:border-white/8 dark:bg-slate-900/45 dark:ring-white/5'
+        'dark:border-white/[0.08] dark:bg-slate-900/45 dark:ring-white/5'
       )}
     >
       <div className="flex min-h-8 items-center justify-between gap-2">

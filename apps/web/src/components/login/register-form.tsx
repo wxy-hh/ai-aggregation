@@ -79,7 +79,7 @@ export function RegisterForm() {
         <Label htmlFor="register-username" className="text-base font-semibold text-slate-900">
           用户名
         </Label>
-        <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+        <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
           <User className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-username"
@@ -97,7 +97,7 @@ export function RegisterForm() {
         <Label htmlFor="register-password" className="text-base font-semibold text-slate-900">
           密码
         </Label>
-        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
           <Lock className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-password"
@@ -120,7 +120,7 @@ export function RegisterForm() {
         <Label htmlFor="register-confirm-password" className="text-base font-semibold text-slate-900">
           确认密码
         </Label>
-        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/74 px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/88">
+        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
           <Lock className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-confirm-password"

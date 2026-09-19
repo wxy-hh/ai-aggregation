@@ -76,7 +76,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-rose-400/15 dark:from-rose-950/35 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-rose-400/25'
     ),
-    iconWrap: 'bg-rose-500/12 text-rose-500 dark:bg-rose-400/15 dark:text-rose-300',
+    iconWrap: 'bg-rose-500/[0.12] text-rose-500 dark:bg-rose-400/15 dark:text-rose-300',
     score: 'text-rose-500 dark:text-rose-300',
     bar: 'from-rose-400 to-rose-500',
   },
@@ -87,7 +87,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-sky-400/15 dark:from-sky-950/35 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-sky-400/25'
     ),
-    iconWrap: 'bg-sky-500/12 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300',
+    iconWrap: 'bg-sky-500/[0.12] text-sky-600 dark:bg-sky-400/15 dark:text-sky-300',
     score: 'text-sky-600 dark:text-sky-300',
     bar: 'from-sky-400 to-cyan-500',
   },
@@ -98,7 +98,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-violet-400/15 dark:from-violet-950/35 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-violet-400/25'
     ),
-    iconWrap: 'bg-violet-500/12 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300',
+    iconWrap: 'bg-violet-500/[0.12] text-violet-600 dark:bg-violet-400/15 dark:text-violet-300',
     score: 'text-violet-600 dark:text-violet-300',
     bar: 'from-violet-400 to-indigo-500',
   },
@@ -109,7 +109,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-amber-400/15 dark:from-amber-950/30 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-amber-400/25'
     ),
-    iconWrap: 'bg-amber-500/12 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
+    iconWrap: 'bg-amber-500/[0.12] text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
     score: 'text-amber-600 dark:text-amber-300',
     bar: 'from-amber-400 to-orange-500',
   },
@@ -120,7 +120,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-teal-400/15 dark:from-teal-950/35 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-teal-400/25'
     ),
-    iconWrap: 'bg-teal-500/12 text-teal-600 dark:bg-teal-400/15 dark:text-teal-300',
+    iconWrap: 'bg-teal-500/[0.12] text-teal-600 dark:bg-teal-400/15 dark:text-teal-300',
     score: 'text-teal-600 dark:text-teal-300',
     bar: 'from-teal-400 to-emerald-500',
   },
@@ -131,7 +131,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'dark:border-indigo-400/15 dark:from-indigo-950/35 dark:via-slate-950/40 dark:to-slate-950/30',
       'dark:hover:border-indigo-400/25'
     ),
-    iconWrap: 'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
+    iconWrap: 'bg-indigo-500/[0.12] text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
     score: 'text-indigo-600 dark:text-indigo-300',
     bar: 'from-indigo-400 to-blue-500',
   },
@@ -142,7 +142,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-rose-300/55 hover:shadow-[0_8px_18px_-10px_rgba(244,63,94,0.16)]',
       'dark:border-rose-400/15 dark:from-rose-950/35 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-rose-500/12 text-rose-500 dark:bg-rose-400/15 dark:text-rose-300',
+    iconWrap: 'bg-rose-500/[0.12] text-rose-500 dark:bg-rose-400/15 dark:text-rose-300',
     score: 'text-rose-500 dark:text-rose-300',
     bar: 'from-rose-400 to-pink-500',
   },
@@ -152,7 +152,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-orange-300/55 hover:shadow-[0_8px_18px_-10px_rgba(249,115,22,0.14)]',
       'dark:border-orange-400/15 dark:from-orange-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-orange-500/12 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300',
+    iconWrap: 'bg-orange-500/[0.12] text-orange-600 dark:bg-orange-400/15 dark:text-orange-300',
     score: 'text-orange-600 dark:text-orange-300',
     bar: 'from-orange-400 to-amber-500',
   },
@@ -162,7 +162,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-emerald-300/55 hover:shadow-[0_8px_18px_-10px_rgba(16,185,129,0.14)]',
       'dark:border-emerald-400/15 dark:from-emerald-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+    iconWrap: 'bg-emerald-500/[0.12] text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
     score: 'text-emerald-600 dark:text-emerald-300',
     bar: 'from-emerald-400 to-teal-500',
   },
@@ -172,7 +172,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-slate-300/60 hover:shadow-[0_8px_18px_-10px_rgba(100,116,139,0.14)]',
       'dark:border-slate-500/20 dark:from-slate-900/50 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-slate-500/12 text-slate-600 dark:bg-slate-400/15 dark:text-slate-300',
+    iconWrap: 'bg-slate-500/[0.12] text-slate-600 dark:bg-slate-400/15 dark:text-slate-300',
     score: 'text-slate-600 dark:text-slate-300',
     bar: 'from-slate-400 to-slate-500',
   },
@@ -182,7 +182,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-fuchsia-300/55 hover:shadow-[0_8px_18px_-10px_rgba(217,70,239,0.14)]',
       'dark:border-fuchsia-400/15 dark:from-fuchsia-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-fuchsia-500/12 text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300',
+    iconWrap: 'bg-fuchsia-500/[0.12] text-fuchsia-600 dark:bg-fuchsia-400/15 dark:text-fuchsia-300',
     score: 'text-fuchsia-600 dark:text-fuchsia-300',
     bar: 'from-fuchsia-400 to-violet-500',
   },
@@ -192,7 +192,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-blue-300/55 hover:shadow-[0_8px_18px_-10px_rgba(59,130,246,0.14)]',
       'dark:border-blue-400/15 dark:from-blue-950/35 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-blue-500/12 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
+    iconWrap: 'bg-blue-500/[0.12] text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
     score: 'text-blue-600 dark:text-blue-300',
     bar: 'from-blue-400 to-indigo-500',
   },
@@ -202,7 +202,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-cyan-300/55 hover:shadow-[0_8px_18px_-10px_rgba(6,182,212,0.14)]',
       'dark:border-cyan-400/15 dark:from-cyan-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-cyan-500/12 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
+    iconWrap: 'bg-cyan-500/[0.12] text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
     score: 'text-cyan-600 dark:text-cyan-300',
     bar: 'from-cyan-400 to-sky-500',
   },
@@ -212,7 +212,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-pink-300/55 hover:shadow-[0_8px_18px_-10px_rgba(236,72,153,0.14)]',
       'dark:border-pink-400/15 dark:from-pink-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-pink-500/12 text-pink-600 dark:bg-pink-400/15 dark:text-pink-300',
+    iconWrap: 'bg-pink-500/[0.12] text-pink-600 dark:bg-pink-400/15 dark:text-pink-300',
     score: 'text-pink-600 dark:text-pink-300',
     bar: 'from-pink-400 to-rose-500',
   },
@@ -222,7 +222,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-purple-300/55 hover:shadow-[0_8px_18px_-10px_rgba(168,85,247,0.14)]',
       'dark:border-purple-400/15 dark:from-purple-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-purple-500/12 text-purple-600 dark:bg-purple-400/15 dark:text-purple-300',
+    iconWrap: 'bg-purple-500/[0.12] text-purple-600 dark:bg-purple-400/15 dark:text-purple-300',
     score: 'text-purple-600 dark:text-purple-300',
     bar: 'from-purple-400 to-fuchsia-500',
   },
@@ -232,7 +232,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-indigo-300/55 hover:shadow-[0_8px_18px_-10px_rgba(99,102,241,0.14)]',
       'dark:border-indigo-400/15 dark:from-indigo-950/35 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-indigo-500/12 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
+    iconWrap: 'bg-indigo-500/[0.12] text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300',
     score: 'text-indigo-600 dark:text-indigo-300',
     bar: 'from-indigo-400 to-violet-500',
   },
@@ -242,7 +242,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-sky-300/55 hover:shadow-[0_8px_18px_-10px_rgba(14,165,233,0.14)]',
       'dark:border-sky-400/15 dark:from-sky-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-sky-500/12 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300',
+    iconWrap: 'bg-sky-500/[0.12] text-sky-600 dark:bg-sky-400/15 dark:text-sky-300',
     score: 'text-sky-600 dark:text-sky-300',
     bar: 'from-sky-400 to-blue-500',
   },
@@ -252,7 +252,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-amber-300/55 hover:shadow-[0_8px_18px_-10px_rgba(245,158,11,0.14)]',
       'dark:border-amber-400/15 dark:from-amber-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-amber-500/12 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
+    iconWrap: 'bg-amber-500/[0.12] text-amber-600 dark:bg-amber-400/15 dark:text-amber-300',
     score: 'text-amber-600 dark:text-amber-300',
     bar: 'from-amber-400 to-yellow-500',
   },
@@ -262,7 +262,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-cyan-300/55 hover:shadow-[0_8px_18px_-10px_rgba(6,182,212,0.14)]',
       'dark:border-cyan-400/15 dark:from-cyan-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-cyan-500/12 text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
+    iconWrap: 'bg-cyan-500/[0.12] text-cyan-600 dark:bg-cyan-400/15 dark:text-cyan-300',
     score: 'text-cyan-600 dark:text-cyan-300',
     bar: 'from-cyan-400 to-teal-500',
   },
@@ -272,7 +272,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-orange-300/55 hover:shadow-[0_8px_18px_-10px_rgba(249,115,22,0.14)]',
       'dark:border-orange-400/15 dark:from-orange-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-orange-500/12 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300',
+    iconWrap: 'bg-orange-500/[0.12] text-orange-600 dark:bg-orange-400/15 dark:text-orange-300',
     score: 'text-orange-600 dark:text-orange-300',
     bar: 'from-orange-400 to-rose-400',
   },
@@ -282,7 +282,7 @@ export const DIMENSION_TONES: Record<string, DimensionTone> = {
       'hover:border-emerald-300/55 hover:shadow-[0_8px_18px_-10px_rgba(16,185,129,0.14)]',
       'dark:border-emerald-400/15 dark:from-emerald-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
     ),
-    iconWrap: 'bg-emerald-500/12 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+    iconWrap: 'bg-emerald-500/[0.12] text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
     score: 'text-emerald-600 dark:text-emerald-300',
     bar: 'from-emerald-400 to-green-500',
   },
@@ -294,7 +294,7 @@ export const DEFAULT_DIMENSION_TONE: DimensionTone = {
     'hover:border-blue-300/55 hover:shadow-[0_8px_18px_-10px_rgba(59,130,246,0.14)]',
     'dark:border-blue-400/15 dark:from-blue-950/30 dark:via-slate-950/40 dark:to-slate-950/30'
   ),
-  iconWrap: 'bg-blue-500/12 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
+  iconWrap: 'bg-blue-500/[0.12] text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
   score: 'text-blue-600 dark:text-blue-300',
   bar: 'from-blue-400 to-indigo-500',
 };

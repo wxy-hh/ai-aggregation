@@ -93,11 +93,11 @@ export function BaziBasisCard({
     >
       {/* DESIGN.md：卡片背光晕，衬托 G-3 玻璃质感 */}
       <div
-        className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#5D7CFA]/14 blur-3xl dark:bg-[#5D7CFA]/20"
+        className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#5D7CFA]/[0.14] blur-3xl dark:bg-[#5D7CFA]/20"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -left-6 bottom-0 h-28 w-28 rounded-full bg-indigo-400/8 blur-3xl dark:bg-indigo-500/12"
+        className="pointer-events-none absolute -left-6 bottom-0 h-28 w-28 rounded-full bg-indigo-400/[0.08] blur-3xl dark:bg-indigo-500/[0.12]"
         aria-hidden
       />
 
@@ -266,7 +266,7 @@ export function BaziBasisCard({
                           {pillar.label}
                         </span>
                         {isDay ? (
-                          <span className="rounded-full bg-[#5D7CFA]/12 px-1.5 py-0.5 text-[9px] font-bold text-[#5D7CFA] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
+                          <span className="rounded-full bg-[#5D7CFA]/[0.12] px-1.5 py-0.5 text-[9px] font-bold text-[#5D7CFA] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
                             日主
                           </span>
                         ) : null}
@@ -353,7 +353,7 @@ function CorrectionBreakdown({
           className={cn(
             'rounded-full px-2 py-0.5 text-[10px] font-semibold',
             step.highlight
-              ? 'bg-[#5D7CFA]/12 text-[#5D7CFA] ring-1 ring-[#5D7CFA]/25 dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]'
+              ? 'bg-[#5D7CFA]/[0.12] text-[#5D7CFA] ring-1 ring-[#5D7CFA]/25 dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]'
               : 'bg-slate-100/90 text-slate-600 dark:bg-slate-700/60 dark:text-slate-300'
           )}
         >
@@ -387,7 +387,7 @@ function SolarTermTimeline({
             className={cn(
               'rounded-xl border px-3 py-2.5 transition-colors',
               'active' in term && term.active
-                ? 'border-[#5D7CFA]/35 bg-[#5D7CFA]/8 dark:border-[#9BADFF]/30 dark:bg-[#5D7CFA]/12'
+                ? 'border-[#5D7CFA]/35 bg-[#5D7CFA]/[0.08] dark:border-[#9BADFF]/30 dark:bg-[#5D7CFA]/[0.12]'
                 : 'border-transparent bg-white/50 dark:bg-slate-900/30'
             )}
           >

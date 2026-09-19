@@ -10,9 +10,9 @@ export const destinyG3ShellClass = cn(
   'bg-gradient-to-b from-white/60 via-white/30 to-white/10',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
   'backdrop-blur-xl lg:backdrop-blur-2xl',
-  'bg-white/92 lg:from-white/60 lg:via-white/30 lg:to-white/10 lg:bg-transparent',
+  'bg-white/[0.92] lg:from-white/60 lg:via-white/30 lg:to-white/10 lg:bg-transparent',
   'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10',
-  'dark:bg-slate-900/92 lg:dark:bg-transparent'
+  'dark:bg-slate-900/[0.92] lg:dark:bg-transparent'
 );
 
 /** 结果内容区略紧凑的 G-3 壳（奇门等分块内容） */

@@ -116,7 +116,7 @@ export function AICoPilotDrawer({
               <motion.button
                 type="button"
                 aria-label="关闭追问面板"
-                className="absolute inset-0 bg-slate-900/22"
+                className="absolute inset-0 bg-slate-900/[0.22]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}

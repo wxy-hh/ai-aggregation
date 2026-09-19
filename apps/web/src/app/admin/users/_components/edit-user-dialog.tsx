@@ -64,9 +64,9 @@ function SettingCard({
         className
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/24 to-transparent dark:from-white/5" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.24] to-transparent dark:from-white/5" />
       <div className="relative flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 bg-white/80 text-[#1D46DB] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_20px_-18px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-slate-900/72 dark:text-[#A8BAFF]">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/70 bg-white/80 text-[#1D46DB] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_20px_-18px_rgba(59,130,246,0.22)] dark:border-white/10 dark:bg-slate-900/[0.72] dark:text-[#A8BAFF]">
           <span className="flex h-4 w-4 items-center justify-center">{icon}</span>
         </div>
         <div className="min-w-0 flex-1">
@@ -110,14 +110,14 @@ function RoleOption({
         disabled && 'opacity-55 select-none',
         selected
           ? 'border-[#93C5FD] bg-[linear-gradient(180deg,#F8FBFF_0%,#EEF5FF_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.88),0_12px_22px_-20px_rgba(59,130,246,0.24)]'
-          : 'border-[rgba(255,255,255,0.70)] bg-white/74 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_12px_22px_-20px_rgba(59,130,246,0.16)]'
+          : 'border-[rgba(255,255,255,0.70)] bg-white/[0.74] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_12px_22px_-20px_rgba(59,130,246,0.16)]'
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-[12px] bg-white/92 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_18px_-18px_rgba(15,23,42,0.16)]',
+              'flex h-9 w-9 items-center justify-center rounded-[12px] bg-white/[0.92] shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_18px_-18px_rgba(15,23,42,0.16)]',
               selected ? 'text-[#255DFF]' : 'text-slate-900'
             )}
           >
@@ -200,9 +200,9 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess, currentUse
       >
         <div className="pointer-events-none absolute inset-0 rounded-[24px] [mask-image:linear-gradient(to_bottom,black_35%,transparent_100%)] sm:rounded-[28px]" />
         <div className="pointer-events-none absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent opacity-85 dark:via-white/20" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/26 via-white/8 to-transparent dark:from-white/6 dark:via-transparent" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.26] via-white/[0.08] to-transparent dark:from-white/[0.06] dark:via-transparent" />
         <div className="pointer-events-none absolute -right-8 -top-12 h-28 w-28 rounded-full bg-[rgba(191,219,254,0.24)] blur-3xl dark:hidden" />
-        <DialogClose className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[rgba(255,255,255,0.65)] bg-white/76 text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.10)] transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[rgba(59,130,246,0.20)] dark:border-white/10 dark:bg-slate-900/72 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+        <DialogClose className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[rgba(255,255,255,0.65)] bg-white/[0.76] text-slate-500 shadow-[0_8px_20px_rgba(76,95,154,0.10)] transition-colors hover:bg-white hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[rgba(59,130,246,0.20)] dark:border-white/10 dark:bg-slate-900/[0.72] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
           <span className="text-[18px] leading-none">&times;</span>
           <span className="sr-only">关闭</span>
         </DialogClose>
@@ -218,7 +218,7 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess, currentUse
 
         <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="relative overflow-hidden rounded-[20px] border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(90deg,rgba(255,255,255,0.82),rgba(255,255,255,0.64),rgba(255,255,255,0.56))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[18px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] sm:rounded-[22px]">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/18 to-transparent dark:from-white/5" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/[0.18] to-transparent dark:from-white/5" />
             <div className="relative flex flex-col gap-3">
               <div className="flex items-center gap-3">
                 <div
@@ -288,7 +288,7 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess, currentUse
                 title="Token 额度管理"
                 description="手动输入或使用快捷按钮调整额度，点击保存修改后生效。"
               >
-                <div className="flex flex-col gap-3 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72">
+                <div className="flex flex-col gap-3 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/[0.76] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/[0.72]">
                   <div className={cn(ADMIN_FIELD_SHELL_CLASSES, 'min-h-[48px] px-0')}>
                     <WalletCards
                       className={cn(ADMIN_FIELD_ICON_CLASSES, 'left-3.5 h-5 w-5 -translate-y-1/2')}
@@ -337,7 +337,7 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess, currentUse
                 title="账号状态"
                 description="禁用后用户将无法登录系统。"
               >
-                <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/76 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/72">
+                <div className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(255,255,255,0.70)] bg-white/[0.76] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.84),0_14px_22px_-20px_rgba(59,130,246,0.16)] dark:border-white/10 dark:bg-slate-900/[0.72]">
                   <div>
                     <p className="text-[16px] font-semibold text-slate-950 dark:text-white">
                       {accountEnabled ? '账号启用中' : '账号已禁用'}
