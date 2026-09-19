@@ -27,6 +27,7 @@ import {
   buildMockInterpretation,
   pickHeadline,
   planetPlainSentence,
+  requestInterpretation,
 } from './mock-interpretation';
 import type { PlanetBody, ZodiacSign } from './chart-facts';
 
@@ -341,5 +342,44 @@ describe('关注主题排序 orderModulesByTopic', () => {
   it('priority 为 null 或已在首位时原样返回', () => {
     expect(orderModulesByTopic(modules, null).map((m) => m.id)).toEqual(baseIds);
     expect(orderModulesByTopic(modules, baseIds[0]).map((m) => m.id)).toEqual(baseIds);
+  });
+});
+
+/* ---------- 12 工单：解读异步接缝 ---------- */
+
+describe('requestInterpretation（异步解读接缝）', () => {
+  /** 本组夹具（与同步口径同源，取完整盘与无宫位盘两档） */
+  const accurateFacts = computeChartFacts(SAMPLE_PROFILE_ACCURATE);
+  const unknownFacts = computeChartFacts(SAMPLE_PROFILE_UNKNOWN);
+
+  it('resolve 的解读与同步口径等价（同一真值必得同一解读）', async () => {
+    const payload = await requestInterpretation(accurateFacts);
+    const sync = buildMockInterpretation(accurateFacts);
+    expect(payload.headline).toEqual(sync.headline);
+    expect(payload.bigThree).toEqual(sync.bigThree);
+    expect(payload.withHouses).toBe(sync.withHouses);
+
+    // 生活模块同源：模块 id 序列一致，非周模块逐字段一致（周模块含当周日期区间，只比结构与行动）
+    const syncModules = buildModuleReadings(accurateFacts, new Date());
+    expect(payload.modules.map((m) => m.id)).toEqual(syncModules.map((m) => m.id));
+    for (const m of payload.modules.filter((mod) => mod.id !== 'week')) {
+      expect(m).toEqual(syncModules.find((s) => s.id === m.id));
+    }
+    const week = payload.modules.find((m) => m.id === 'week');
+    expect(week?.weekly?.action).toBeTruthy();
+    expect(week?.summary).toMatch(/^\d{1,2} 月 \d{1,2} 日 – \d{1,2} 月 \d{1,2} 日/);
+  });
+
+  it('无宫位档：上升解读缺项为 null，模块随事实降级', async () => {
+    const payload = await requestInterpretation(unknownFacts);
+    expect(payload.withHouses).toBe(false);
+    expect(payload.bigThree.ascendant).toBeNull();
+    expect(payload.modules.length).toBeGreaterThan(0);
+  });
+
+  it('延迟在下界之上（模拟真实 AI 时序，结果页分区加载据此可验证）', async () => {
+    const startedAt = Date.now();
+    await requestInterpretation(accurateFacts);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(800);
   });
 });

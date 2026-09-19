@@ -3,8 +3,12 @@
  *
  * 依据设计文档 docs/designs/2026-07-26-constellation-universe-design.md §9.3「推荐数据模型」
  * 的八实体字段清单定义类型；本文件只承载类型与接口签名，不包含任何实现与 AI 生成内容。
- * 前端先行期以 mock 实现交付（见 ./mock-chart-facts.ts 的 computeChartFacts），
+ * 前端先行期以 mock 实现交付（见 ./mock-chart-facts.ts 的 computeChartFacts / requestChartFacts），
  * 真实计算域上线后仅需替换该绑定，消费方（表单/结果页/星盘轮/历史）不改。
+ *
+ * 两条接缝的分工（12 工单异步接缝改造）：
+ * - 提交链路走异步接缝 requestChartFacts（真值在仪式窗内到达，转场等它就位）；
+ * - 示例盘 / 预览盘走同步 computeChartFacts（入口首页与表单预览需要即时盘面）。
  *
  * 计算口径固定（文档 §9.2）：
  * - 黄道体系：回归黄道（tropical）；观测视角：地心。
@@ -306,10 +310,22 @@ export interface AstrologyChartFacts {
 }
 
 /**
- * 占星真值计算域接口（唯一新接缝）：
- * 输入出生档案，输出不可变星盘事实层。前端先行期使用 mock 实现（mock-chart-facts.ts），
+ * 占星真值计算域同步接口（示例盘 / 预览盘专用）：
+ * 输入出生档案，立即输出不可变星盘事实层。前端先行期使用 mock 实现（mock-chart-facts.ts），
  * 真实计算域上线后替换实现绑定，接口不变。
+ * 注意：提交链路不用本接口——提交走下面的异步接缝 RequestChartFacts。
  */
 export interface ComputeChartFacts {
   (profile: AstroBirthProfile): AstrologyChartFacts;
+}
+
+/**
+ * 占星真值计算域异步接口（提交链路唯一接缝）：
+ * 输入出生档案，异步输出不可变星盘事实层（Promise）。真实计算域上线后替换实现绑定，
+ * 消费方（表单提交 / 仪式等待室 / 结果页）不改。
+ * 前端先行期由 mock-chart-facts.ts 的 requestChartFacts 实现：内部仍走同步 computeChartFacts
+ * （同一冻结口径），外包一层随机延迟模拟真实网络时序。
+ */
+export interface RequestChartFacts {
+  (profile: AstroBirthProfile): Promise<AstrologyChartFacts>;
 }

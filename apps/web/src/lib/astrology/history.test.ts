@@ -10,6 +10,7 @@ import {
   buildAstrologyLogicalId,
   buildAstrologyHistoryItem,
   saveAstrologyHistoryRecord,
+  updateAstrologyHistoryInterpretation,
   migrateTempRecordToHistory,
   restoreAstrologyFromHistory,
   type AstrologyReportPayload,
@@ -196,6 +197,62 @@ describe('migrateTempRecordToHistory（登录确认迁移）', () => {
 
   it('没有临时记录时返回 false', () => {
     expect(migrateTempRecordToHistory()).toBe(false);
+  });
+});
+
+/* ---------- 12 工单：解读到达后的合并更新（异步写入策略） ---------- */
+
+describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
+  it('已登录：同一条逻辑记录的摘要由日月兜底换成主轴金句，修订与时间戳不动', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const saved = saveAstrologyHistoryRecord(baseForm, facts);
+    // 提交时解读未到：摘要为日月星座组合兜底
+    expect(saved.preview).toMatch(/^太阳.+· 月亮/);
+
+    const merged = updateAstrologyHistoryInterpretation(baseForm, facts, '心里那团火是真的，练习把它慢慢烧。');
+    expect(merged).toBe(true);
+
+    const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
+    expect(after.preview).toBe('心里那团火是真的，练习把它慢慢烧。');
+    expect(after.createdAt).toBe(saved.createdAt);
+    // 不是新一次测算：修订号与快照数组不动
+    expect(payloadOf(after).revision).toBe(1);
+    expect(payloadOf(after).revisions).toEqual([]);
+  });
+
+  it('匿名：会话临时记录同样被覆盖更新', () => {
+    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    const saved = saveAstrologyHistoryRecord(baseForm, facts);
+
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '主轴金句')).toBe(true);
+    expect(useAstrologyTempRecordStore.getState().tempRecord?.preview).toBe('主轴金句');
+    expect(useAstrologyTempRecordStore.getState().tempRecord?.createdAt).toBe(saved.createdAt);
+  });
+
+  it('主轴缺失（null）时保留兜底摘要，不影响记录', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const saved = saveAstrologyHistoryRecord(baseForm, facts);
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, null)).toBe(true);
+    const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
+    expect(after.preview).toBe(saved.preview);
+  });
+
+  it('记录已不在（未登录无临时记录）时静默跳过', () => {
+    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '主轴金句')).toBe(false);
+    expect(useAstrologyTempRecordStore.getState().tempRecord).toBeNull();
+  });
+
+  it('重算换新真值后，上一份迟到的解读不得改写新记录', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const saved = saveAstrologyHistoryRecord(baseForm, facts);
+    // 新一次测算：真值换新（calculatedAt 前进），记录已指向新修订
+    const newerFacts = { ...facts, calculatedAt: new Date(Date.parse(facts.calculatedAt) + 60_000).toISOString() };
+    saveAstrologyHistoryRecord(baseForm, newerFacts);
+
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '上一份解读')).toBe(false);
+    const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
+    expect(after.preview).not.toBe('上一份解读');
   });
 });
 

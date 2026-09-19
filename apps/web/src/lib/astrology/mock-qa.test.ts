@@ -15,7 +15,7 @@ import {
   computeChartFacts,
 } from './mock-chart-facts';
 import { buildModuleReadings } from './mock-interpretation';
-import { answerAstrologyQuestion, detectSensitiveTopic } from './mock-qa';
+import { answerAstrologyQuestion, detectSensitiveTopic, requestAstrologyAnswer } from './mock-qa';
 
 const ABSOLUTE_WORDS = ['一定', '必然', '注定', '绝对', '永远', '必定', '肯定会', '命定'];
 
@@ -133,5 +133,27 @@ describe('降级路径不泄露隐藏事实（09 联动）', () => {
       // 回答正文不得出现隐藏事实的具体值（允许「宫位已隐藏」类政策说明词）
       expect(a.text, q).not.toMatch(/上升[白羊金双巨蟹狮处秤蝎射摩水双鱼]{2}座/);
     }
+  });
+});
+
+/* ---------- 12 工单：问答异步接缝 ---------- */
+
+describe('requestAstrologyAnswer（异步问答接缝）', () => {
+  it('延迟后返回，且与同步引擎的确定性回答完全一致', async () => {
+    const question = '我的优势是什么';
+    const startedAt = Date.now();
+    const answer = await requestAstrologyAnswer(question, accurateFacts, accurateModules);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(350);
+    expect(answer).toEqual(answerAstrologyQuestion(question, accurateFacts, accurateModules));
+    // 同一问题连问两次：延迟不改变确定性
+    const again = await requestAstrologyAnswer(question, accurateFacts, accurateModules);
+    expect(again.text).toBe(answer.text);
+    expect(again.citations).toEqual(answer.citations);
+  });
+
+  it('敏感主题经异步接缝仍走拦截态话术', async () => {
+    const answer = await requestAstrologyAnswer('我该不该去看病？', accurateFacts, accurateModules);
+    expect(answer.kind).toBe('blocked');
+    expect(answer.text).toContain('不能据此作出医疗、财务或法律判断');
   });
 });

@@ -213,6 +213,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | `acw-breathe` | 4.6s | 星体光晕呼吸（错峰 i*0.7s） |
 | `acw-orbit-cw / ccw` | 220s / 340s 反向 | 星盘仪器表圈公转（`transform-box: fill-box`） |
 | `acw-dash-flow` + `.acw-aspect-flow` | 8s | 相位能量流光（pathLength 500，亮段 26，错峰 i*-1.15s） |
+| `acw-soft-breathe` + `.acw-skeleton-breathe` / `.acw-thinking-dot` | 2.4s / 1.2s | 异步等待态呼吸（解读分区骨架块、问答思考三点；仅透明度变化，reduce-motion 下静态定格 0.7） |
 | `ziwei-twinkle / spin-slow / spin-rev / dash-flow` | — | 紫微星闪、刻度环缓旋、星轨流光 |
 | `ziwei-palace-enter / fade-up` | — | 宫位 staggered 入场、内容揭示 |
 | `ziwei-breathe / related-glow / active-glow` | — | 星云呼吸、三方四正鎏金辉光、选中宫紫微紫辉光 |

@@ -17,6 +17,7 @@ import {
   type ModuleId,
   type ModuleReading,
 } from './mock-interpretation';
+import { mockNetworkDelay } from './mock-latency';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from './zh-names';
 
 /* ---------- 敏感主题识别（§6.7：医疗 / 财务 / 法律） ---------- */
@@ -245,3 +246,26 @@ export function answerAstrologyQuestion(
     citations: moduleCitations(m, facts),
   };
 }
+
+/* ---------- 异步接缝（12 工单） ---------- */
+
+/** 问答请求的模拟网络延迟区间（毫秒）：真实 AI 问答上线后由真实往返取代 */
+const QA_LATENCY_MS = { min: 500, max: 900 } as const;
+
+/**
+ * 问答异步接缝：输入问题 + 盘面真值 + 生活模块解读，异步输出回答。
+ * 真实 AI 问答接入后替换本绑定即可，消费方（等待气泡 / 3 问配额 / 引用定位）不改。
+ */
+export interface RequestAstrologyAnswer {
+  (question: string, facts: AstrologyChartFacts, modules: ModuleReading[]): Promise<AstrologyQaAnswer>;
+}
+
+/**
+ * 问答 mock 异步实现：内部仍由同步引擎产出（同一问题 + 同一份真值 → 同一回答，
+ * 确定性不因延迟改变），外包 500–900ms 随机延迟模拟真实往返——
+ * 等待期由问答面板渲染「正在思考」气泡并锁住输入。
+ */
+export const requestAstrologyAnswer: RequestAstrologyAnswer = async (question, facts, modules) => {
+  await mockNetworkDelay(QA_LATENCY_MS.min, QA_LATENCY_MS.max);
+  return answerAstrologyQuestion(question, facts, modules);
+};

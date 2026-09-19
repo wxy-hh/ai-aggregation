@@ -1,21 +1,24 @@
 'use client';
 
 /**
- * astrology-ritual.tsx —— 加载仪式 + 共享元素转场 + 结果首屏挂载（设计文档 §6.4/§6.5，05/06 工单）
+ * astrology-ritual.tsx —— 加载仪式（等待室）+ 共享元素转场 + 结果首屏挂载（设计文档 §6.4/§6.5，05/06 工单）
  *
  * 结构决策（为什么加载与结果住在同一组件树）：
- * 真值锁定即转场，加载页星盘要「连续放大、位移并落定为首屏星盘轮」。
- * 本组件同时承载 ritual / result 两个相位，星盘轮以 layoutId 在同一棵树内做
- * 布局动画——无卸载、无跳帧的共享元素转场（减少动态时退化为交叉淡入）。
- * 结果相位由 AstrologyResultView 承载（06：护照/主轴/三卡/交互轮），wheelSlot 插槽传入。
+ * 转场时加载页星盘要「连续放大、位移并落定为首屏星盘轮」。本组件同时承载 ritual / result
+ * 两个相位，星盘轮以 layoutId 在同一棵树内做布局动画——无卸载、无跳帧的共享元素转场
+ * （减少动态时退化为交叉淡入）。结果相位由 AstrologyResultView 承载（06：护照/主轴/三卡/交互轮），
+ * wheelSlot 插槽传入。
  *
- * 诚实性约束：
- * - 真值（chartFacts）在进入本组件前已锁定；四阶段只是把已完成的计算过程
- *   按最小仪式窗（3.2s，在 2.5–4s 区间）揭示出来，无虚假百分比。
+ * 诚实性约束（12 工单起改「等待室」语义）：
+ * - 真值（chartFacts）由异步接缝在仪式窗内送达（mock 600–900ms）：提交即进本组件，四阶段
+ *   按最小仪式窗（3.2s，在 2.5–4s 区间）播放；转场条件是「仪式窗已走满 **且** 真值已就位」，
+ *   两者都满足才 markResultReady 进结果页。
+ * - 仪式窗走满而真值未就位（真实计算域慢时）：停在第四阶段文案，并如实加一行「最后校准中…」，
+ *   真值一到立即转场；不用假进度与假完成糊弄。
  * - 第四阶段代表「宇宙重点已整理完成」（本地基于星盘事实整理，无 AI 请求）。
- * - 失败时呈现安静恢复卡：资料已保留 + 失败类型 + 重新计算 / 返回修改资料。
+ * - 失败时呈现安静恢复卡：资料已保留 + 失败类型 + 重新计算 / 返回修改资料，不再自动转场。
  * - 无宫位盘第三阶段文案固定为「系统正在整理行星位置与关键相位」，不播放十二宫动画再隐藏。
- * - 仪式窗内可直接跳过：真值在进本组件前已锁定，跳过省掉的只是揭示动画，结果本身不变。
+ * - 跳过按钮语义为「跳过动画」：真值已就位才可直达（未就位时无结果可看，置灰并给出 aria 说明）。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -24,7 +27,11 @@ import { Check, Pencil, RotateCcw } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
-import { computeChartFacts } from '@/lib/astrology/mock-chart-facts';
+import {
+  chartFactsErrorKind,
+  isLatestChartFactsRequest,
+  startChartFactsRequest,
+} from '@/lib/astrology/chart-request';
 import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
@@ -42,7 +49,7 @@ import type { AstrologyFormData } from '../astrology-types';
 const STAGE_2_AT = 800; // 行星依序点亮
 const STAGE_3_AT = 1800; // 宫位线与相位生长（无宫位：整理相位）
 const STAGE_4_AT = 2700; // 几何静止，宇宙重点已整理完成
-const WINDOW_END_AT = 3200; // 仪式窗结束 → 转场
+const WINDOW_END_AT = 3200; // 最小仪式窗走满 → 真值若已就位即转场（未就位则进等待室）
 
 type RitualStage = 1 | 2 | 3 | 4;
 
@@ -114,6 +121,22 @@ function RitualWireframe() {
   );
 }
 
+/* ---------- 真值在途的坐标框架占位（等待室；与失败卡同源的同心圆几何，不虚构行星位置） ---------- */
+
+/**
+ * 真值在途的同心圆底衬：只画天文坐标框架（与 RitualWireframe 同一几何与描边档），
+ * 既避免轮盘位宽高塌陷导致下方文案位移，也不在真值到达前虚构任何行星位置。
+ */
+function RitualFramePlaceholder() {
+  return (
+    <svg viewBox="0 0 200 200" className="relative h-auto w-full" aria-hidden>
+      <circle cx={100} cy={100} r={94} fill="none" strokeWidth={1} className="stroke-slate-400/50 dark:stroke-white/15" />
+      <circle cx={100} cy={100} r={72} fill="none" strokeWidth={0.8} className="stroke-slate-400/45 dark:stroke-white/[0.12]" />
+      <circle cx={100} cy={100} r={46} fill="none" strokeWidth={0.7} className="stroke-slate-400/40 dark:stroke-white/10" />
+    </svg>
+  );
+}
+
 /* ---------- 主组件 ---------- */
 
 type AstrologyRitualResultProps = {
@@ -138,15 +161,23 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
 
   const phase = step === 'result' ? 'result' : 'ritual';
   const [stage, setStage] = useState<RitualStage>(1);
+  /** 最小仪式窗是否已走满（3.2s 到点置真）；转场还要求真值已就位，两者都满足才进结果页 */
+  const [windowElapsed, setWindowElapsed] = useState(false);
 
+  /** 真值是否已到手：null 表示在途（等待室期间既不是失败、也不是可展示的结果） */
+  const factsReady = chartFacts !== null;
+  /** 含宫位与否取自事实层；真值在途时未知，第三阶段文案先用中性的「整理行星位置与关键相位」，
+   *  真值一到（约 900ms，早于第三阶段 1800ms）即按真实盘面口径纠正 */
   const withHouses = chartFacts?.dataCompleteness === 'with-houses';
   const stages = useMemo(() => stageCopy(Boolean(withHouses)), [withHouses]);
+  /** 等待室状态：仪式窗已满而真值未到——如实说明在等最后一环，不假装已完成 */
+  const waitingForFacts = windowElapsed && !factsReady;
 
   /**
-   * 仪式推进：chartFacts 提交时已锁定（真实完成事件），这里按最小仪式窗播放揭示；
-   * 窗结束即 markResultReady 转场（第四阶段仅揭示已完成的本地整理，无外部解读请求）。
+   * 仪式推进：四阶段节奏不变（800/1800/2700ms），第 3200ms 只标记「仪式窗已走满」，
+   * 转场由下方闸门判定（避免窗口一到就带着在途真值进结果页）。
    * 减少动态：同样的真实节奏，只是盘面各层静态出现、转场退化为交叉淡入。
-   * cleanup 依赖 phase：跳过按钮把 phase 提前切到 result 时，四个定时器（含转场那一个）一并清掉。
+   * cleanup 依赖 phase：跳过按钮把 phase 提前切到 result 时，四个定时器一并清掉。
    */
   useEffect(() => {
     if (phase !== 'ritual' || error) return;
@@ -154,59 +185,80 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
       setTimeout(() => setStage(2), STAGE_2_AT),
       setTimeout(() => setStage(3), STAGE_3_AT),
       setTimeout(() => setStage(4), STAGE_4_AT),
-      setTimeout(() => markResultReady('astrology'), WINDOW_END_AT),
+      setTimeout(() => setWindowElapsed(true), WINDOW_END_AT),
     ];
     return () => timers.forEach(clearTimeout);
-  }, [phase, error, markResultReady]);
+  }, [phase, error]);
+
+  /**
+   * 转场闸门（等待室语义）：仪式窗走满 **且** 真值已就位才转场。
+   * - 真值先到（mock 600–900ms，早于 3.2s 窗）：按原节奏在窗满那一瞬转场；
+   * - 仪式窗先满（真实计算域慢时）：停在第四阶段 + 「最后校准中…」，真值一到立即转场；
+   * - 失败：error 非空时不转场，由既有失败恢复卡接管。
+   */
+  useEffect(() => {
+    if (phase !== 'ritual' || error || !windowElapsed || !factsReady) return;
+    markResultReady('astrology');
+  }, [phase, error, windowElapsed, factsReady, markResultReady]);
 
   /** 相位切换时复位滚动：表单页滚到底提交后残留的 scrollTop 会把仪式摘要行与结果首屏顶出视口 */
   useEffect(() => {
     resetAstrologyScroll();
   }, [phase]);
 
-  /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式转场，不在才重算。
+  /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式，不在才重新请求。
    *  step 一律回落 form：失败卡可能停在结果步，不回落则重算后 phase 仍是 result，直接跳过仪式 */
   const retry = () => {
     setStage(1);
-    if (!chartFacts) {
-      const profile = mapFormToAstroProfile(formData);
-      if (!profile) {
-        setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
-        return;
-      }
-      try {
-        const chartFacts = computeChartFacts(profile);
-        setWorkspaceState('astrology', {
-          step: 'form',
-          entryView: 'loading',
-          chartFacts,
-          error: null,
-          errorKind: null,
-        });
+    setWindowElapsed(false);
+    if (chartFacts) {
+      // 真值已在：只重播仪式（entryView 回到 loading，确保工作区把仪式树留在前台）
+      setWorkspaceState('astrology', { step: 'form', entryView: 'loading', error: null, errorKind: null });
+      return;
+    }
+    const profile = mapFormToAstroProfile(formData);
+    if (!profile) {
+      setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
+      return;
+    }
+    // 真值仍缺：重走异步接缝（chartFacts 保持 null 表示在途，仪式等待室重新计时）
+    setWorkspaceState('astrology', {
+      step: 'form',
+      entryView: 'loading',
+      chartFacts: null,
+      error: null,
+      errorKind: null,
+    });
+    const { token, result } = startChartFactsRequest(profile);
+    result
+      .then((facts) => {
+        // 过期响应丢弃：连续重试时先发的响应不得覆盖后发的结果
+        if (!isLatestChartFactsRequest(token)) return;
+        setWorkspaceState('astrology', { chartFacts: facts, error: null, errorKind: null });
         // 11 工单：重试补齐真值同样写入统一历史（同一逻辑记录覆盖更新）
-        saveAstrologyHistoryRecord(formData, chartFacts);
-      } catch {
+        saveAstrologyHistoryRecord(formData, facts);
+      })
+      .catch((error: unknown) => {
+        if (!isLatestChartFactsRequest(token)) return;
         setWorkspaceState('astrology', {
           step: 'form',
           entryView: 'loading',
           error: '星盘计算出现异常，请重试',
-          errorKind: 'unknown',
+          errorKind: chartFactsErrorKind(error),
         });
-        return;
-      }
-      return;
-    }
-    // 真值已在：只重播仪式（entryView 回到 loading，确保工作区把仪式树留在前台）
-    setWorkspaceState('astrology', { step: 'form', entryView: 'loading', error: null, errorKind: null });
+      });
   };
 
   /** 返回修改资料：step 一并回落 form，否则工作区分发仍停在结果页，按钮点了没反应 */
   const backToForm = () =>
     setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
 
-  /** 跳过仪式：真值早已锁定，这里只是立刻结束揭示动画（markResultReady 进结果相位）；
+  /** 跳过动画：真值已就位才可直达（未就位时无结果可看，按钮置灰并给出 aria 说明）；
    *  phase 随之变 result，进度定时器由推进 effect 的 cleanup（依赖 [phase]）自动清掉，不会重复转场 */
-  const skipRitual = () => markResultReady('astrology');
+  const skipRitual = () => {
+    if (!factsReady) return;
+    markResultReady('astrology');
+  };
 
   /** 共享星盘元素：同一 layoutId 在 ritual/result 两相位间做树内布局动画；
    *  06 起结果相位透传点选交互（selectedBody/onSelectBody），仪式相位不传即为纯展示；
@@ -250,7 +302,9 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
 
   /* ---------- 失败恢复卡（安静：无整页红色、无破碎特效） ---------- */
 
-  if (error || !chartFacts) {
+  /* 真值在途（chartFacts=null 且无 error）是等待室状态，不落失败卡；
+     result 相位却无真值理论上不可达（markResultReady 已由转场闸门守住），仍按失败兜底，不留空白页 */
+  if (error || (phase === 'result' && !factsReady)) {
     const kindText =
       errorKind === 'model' ? '服务繁忙' : errorKind === 'timeout' ? '请求超时' : errorKind === 'validation' ? '资料校验未通过' : '网络中断或计算异常';
     return (
@@ -287,11 +341,15 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
 
   /* ---------- 读屏活体区（跨相位常驻） ---------- */
 
-  /** 活体区文案：仪式期为当前阶段，转结果相位时变为完成宣告。
+  /** 活体区文案：仪式期为当前阶段，等待室为「最后校准中…」，转结果相位时变为完成宣告。
    *  读屏器不播报 live region 与结果树同一次挂载的初始内容，只有同一节点的内容变化才会被读出——
    *  因此该节点必须挂在相位分支之外（两个相位共用一个），不能各写一个。 */
   const liveStatusText =
-    phase === 'result' ? '星盘已生成，正在展示你的结果' : (stages[stage - 1]?.doing ?? '');
+    phase === 'result'
+      ? '星盘已生成，正在展示你的结果'
+      : waitingForFacts
+        ? '最后校准中…'
+        : (stages[stage - 1]?.doing ?? '');
 
   /* ---------- 统一返回壳：仪式（05）与结果（06）同树，星盘轮以 layoutId 连续转场 ---------- */
 
@@ -317,11 +375,13 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                 <div className="order-first xl:order-last">
                   <div className="relative mx-auto w-full max-w-[min(72vw,340px)] xl:max-w-[380px]">
                     <div aria-hidden className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]" />
-                    {wheelSlot('relative mx-auto w-full')}
+                    {/* 真值在途：先立同心圆坐标框架（不虚构行星位置、不塌陷宽高），真值一到即由星盘轮接管同一位置 */}
+                    {factsReady ? wheelSlot('relative mx-auto w-full') : <RitualFramePlaceholder />}
                   </div>
                   {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画）；
+                      真值在途时含宫位与否未知，徽章等真值到达再判（否则完整盘会先亮出「无宫位」徽章）；
                       relative z-10：表圈 -inset-[5.5%] 外溢会压住盘下徽章（同表单页说明文字的原因） */}
-                  {!withHouses && stage >= 2 && (
+                  {factsReady && !withHouses && stage >= 2 && (
                     <motion.p
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -382,6 +442,12 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                       );
                     })}
                   </ol>
+                  {/* 等待室：仪式窗已走满而真值未到（真实计算域慢时）——如实说明还在等最后一环 */}
+                  {waitingForFacts && (
+                    <p className="mt-5 text-center text-xs font-medium leading-relaxed text-indigo-600 dark:text-indigo-300 xl:text-left">
+                      最后校准中…
+                    </p>
+                  )}
                   <p className="mt-6 text-center text-xs leading-relaxed text-day-muted dark:text-night-faint xl:text-left">
                     进度由真实计算步骤推进，不设百分比
                   </p>
@@ -390,15 +456,17 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
             </div>
           </div>
 
-          {/* 跳过仪式：低调文字钮固定在右下角（移动端抬到全局底栏之上，桌面端贴视口右下）；
-              真值在进仪式前已锁定，跳过只省去揭示动画，结果本身不变；热区 ≥44px，减少动态下同样保留 */}
+          {/* 跳过动画：低调文字钮固定在右下角（移动端抬到全局底栏之上，桌面端贴视口右下）；
+              只在真值已就位时可直达——未就位时无结果可看，按钮置灰并由 aria-label 说明原因；
+              热区 ≥44px，减少动态下同样保留 */}
           <button
             type="button"
             onClick={skipRitual}
-            aria-label="跳过仪式，直接查看结果"
-            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-xs font-medium text-day-muted transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 lg:bottom-6 lg:right-6 dark:text-night-faint dark:hover:text-indigo-200"
+            disabled={!factsReady}
+            aria-label={factsReady ? '跳过动画，直接查看结果' : '星盘仍在计算，稍后才能跳过动画'}
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-xs font-medium text-day-muted transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:pointer-events-none disabled:opacity-40 lg:bottom-6 lg:right-6 dark:text-night-faint dark:hover:text-indigo-200"
           >
-            跳过
+            跳过动画
           </button>
         </DestinyPageScaffold>
       ) : (

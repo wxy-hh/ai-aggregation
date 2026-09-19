@@ -5,8 +5,10 @@
  *
  * - 仅在报告完成后出现（结果页洞察轨内）；问答状态以 calculatedAt 作 key，重算即重置，不跨报告携带。
  * - 每份报告每个会话最多 3 个用户问题（首问 + 2 次追问），达到上限给出文档原文提示。
- * - 回答由 mock 引擎产出（只引用已确认事实的模块名/事实标签，不绝对化）；
+ * - 回答由 mock 引擎经异步接缝产出（只引用已确认事实的模块名/事实标签，不绝对化）；
  *   敏感主题（医疗/财务/法律）走拦截态话术 + 自我观察方向。
+ * - 12 工单起异步：发送后用户气泡立即入列，回答位渲染「正在思考」等待气泡（三点呼吸，
+ *   减少动态时静态），等待期锁住输入与发送；回答到达即替换等待气泡。
  * - 形态：桌面端（≥1280px）在洞察轨内联展开对话面板（不新开页面、不遮挡星盘轮）；
  *   移动端使用既有底部抽屉（Dialog 底部滑入，关闭后焦点自动返回触发按钮）。
  * - 引用片可点击：模块引用定位到对应生活模块，事实引用定位回星盘轮星体（移动端先关抽屉再定位）。
@@ -14,12 +16,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Loader2, MessageCircleQuestion, SendHorizontal, X } from 'lucide-react';
+import { MessageCircleQuestion, SendHorizontal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
 import type { ModuleId, ModuleReading } from '@/lib/astrology/mock-interpretation';
-import { answerAstrologyQuestion, type QaCitation } from '@/lib/astrology/mock-qa';
+import { requestAstrologyAnswer, type QaCitation } from '@/lib/astrology/mock-qa';
 import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
 
 /** 引导问题（设计文档 §6.7 原文） */
@@ -63,7 +65,6 @@ export type AstrologyQaEntryProps = {
 export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule }: AstrologyQaEntryProps) {
   const [open, setOpen] = useState(false);
   const isDesktop = useIsDesktop();
-  const reduceMotion = useReducedMotion();
   const entryRef = useRef<HTMLButtonElement>(null);
 
   /** 对话状态托管在入口层：面板/抽屉开关不丢消息，3 问上限不被「关掉重开」绕过；
@@ -71,14 +72,16 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [pending, setPending] = useState(false);
   const idRef = useRef(0);
-  /** 模拟延迟的定时器句柄：卸载时清理，避免定时器落在已卸载组件上 */
-  const pendingTimerRef = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (pendingTimerRef.current !== null) window.clearTimeout(pendingTimerRef.current);
-    },
-    []
-  );
+  /** 在途问答的令牌：回答到达时只有最新一次请求允许落进消息列表（同一条等待气泡不得被串批覆盖） */
+  const requestTokenRef = useRef(0);
+  /** 卸载标记：问答在途时切走模块（组件卸载）后不再写状态 */
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
   const asked = messages.filter((m) => m.role === 'user').length;
   const remaining = MAX_QUESTIONS - asked;
   const capped = remaining <= 0;
@@ -88,19 +91,26 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
     if (!q || capped || pending) return;
     setMessages((prev) => [...prev, { id: ++idRef.current, role: 'user', text: q }]);
     setPending(true);
-    // 模拟延迟节奏：短暂停顿后给出确定性回答（尊重减少动态：立即呈现）
-    pendingTimerRef.current = window.setTimeout(
-      () => {
-        pendingTimerRef.current = null;
-        const answer = answerAstrologyQuestion(q, facts, modules);
+    const token = ++requestTokenRef.current;
+    // 真实时序来自异步接缝（mock 500–900ms 模拟往返）：等待期由「正在思考」气泡承担反馈
+    requestAstrologyAnswer(q, facts, modules)
+      .then((answer) => {
+        if (!aliveRef.current || token !== requestTokenRef.current) return;
         setMessages((prev) => [
           ...prev,
           { id: ++idRef.current, role: 'assistant', text: answer.text, kind: answer.kind, citations: answer.citations },
         ]);
         setPending(false);
-      },
-      reduceMotion ? 0 : 520
-    );
+      })
+      .catch(() => {
+        if (!aliveRef.current || token !== requestTokenRef.current) return;
+        // 失败也要解开输入锁，否则面板会永远停在等待态（真实 AI 接入后按错误类型细分话术）
+        setMessages((prev) => [
+          ...prev,
+          { id: ++idRef.current, role: 'assistant', text: '这次没能取回回答，可以稍后换一种问法再试一次。' },
+        ]);
+        setPending(false);
+      });
   };
 
   /** 关闭内联面板后焦点返回触发按钮（抽屉由 Dialog 自带焦点归还） */
@@ -352,18 +362,20 @@ function QaConversation({
             </div>
           </div>
         ))}
-        {/* 组织回答中的轻量反馈 */}
+        {/* 回答在途：等待气泡（三点呼吸，减少动态时静态）——回答到达即被真实气泡替换 */}
         {pending && (
           <div className="flex justify-start">
-            <div className="flex items-center gap-1.5 rounded-2xl bg-slate-100/90 px-3.5 py-2.5 text-xs text-day-muted dark:bg-white/[0.06] dark:text-night-faint">
-              {reduceMotion ? (
-                '正在组织回答…'
-              ) : (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
-                  正在对照你的盘面…
-                </>
-              )}
+            <div className="flex items-center gap-2 rounded-2xl bg-slate-100/90 px-3.5 py-2.5 text-xs text-day-muted dark:bg-white/[0.06] dark:text-night-faint">
+              <span aria-hidden className="flex items-center gap-1">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="acw-thinking-dot h-1.5 w-1.5 rounded-full bg-indigo-400 dark:bg-indigo-300/80"
+                    style={{ animationDelay: `${i * 0.16}s` }}
+                  />
+                ))}
+              </span>
+              正在思考…
             </div>
           </div>
         )}
@@ -407,7 +419,8 @@ function QaConversation({
             placeholder="问一个关于你星盘的问题…"
             aria-label="星语问答输入框"
             maxLength={120}
-            className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
+            disabled={pending}
+            className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
           />
           <AstrologyCtaButton
             type="submit"

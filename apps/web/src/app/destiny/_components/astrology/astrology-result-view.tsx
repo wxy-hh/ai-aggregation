@@ -15,7 +15,13 @@
  * 移动端保持单列叙事：护照 → 主轴 → 大三 → 本周入口 → 星盘轮 → 模块 → 洞察轨 → 深读
  * （DOM 顺序即移动叙事顺序，桌面双栏由 order 工具类重排，读屏顺序不打乱）。
  *
- * 诚实性约束：事实层只读 chartFacts；解读层来自 mock 解读库（buildMockInterpretation），
+ * 分区加载（12 工单异步接缝）：
+ * - 事实层（chartFacts）驱动的区块立即渲染：护照头、交互星盘轮、白话清单、术语表、深度区；
+ * - 解读层（requestInterpretation，1000–1500ms）驱动的区块先渲染夜色系呼吸骨架：主轴金句、
+ *   大三要素、本周行动入口、生活模块、洞察轨的分享与问答卡，解读到达即用既有入场语言替换；
+ * - 金句区按金句档位预留 min-height，骨架替换时不产生布局跳动。
+ *
+ * 诚实性约束：事实层只读 chartFacts；解读层来自解读接缝（mock 实现 buildMockInterpretation），
  * 文案全部「倾向/可能/练习」式不绝对化；不可用要素缺项为 null，不预留占位、不伪装待定。
  * 长文区域一律实体高对比底，仅护照头 Hero 用玻璃质感（§6.5 硬规则）。
  */
@@ -48,15 +54,16 @@ import {
   MOON_READINGS,
   PLANET_THEME,
   SUN_READINGS,
-  buildMockInterpretation,
-  buildModuleReadings,
   moduleIdsForBody,
   orderModulesByTopic,
   planetPlainSentence,
+  requestInterpretation,
+  type AstrologyInterpretation,
   type ElementReading,
   type ModuleId,
   type ModuleReading,
 } from '@/lib/astrology/mock-interpretation';
+import { updateAstrologyHistoryInterpretation } from '@/lib/astrology/history';
 import {
   ASPECT_CN,
   PLANET_CN,
@@ -409,6 +416,109 @@ function MobileCollapse({
   );
 }
 
+/* ---------- 分区骨架（解读在途时的等待态；DESIGN.md 6.3 呼吸档，减少动态下静态定格） ---------- */
+
+/** 骨架块：夜色系呼吸块（浅色 slate / 深色夜面微光），纯占位不参与事实表达 */
+function SkeletonBlock({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn('acw-skeleton-breathe rounded-lg bg-slate-200/60 dark:bg-white/[0.07]', className)}
+    />
+  );
+}
+
+/** 主轴金句骨架：按金句档位预留 min-height（防解读到达时布局跳动），两行呼吸块 */
+function HeadlineSkeleton() {
+  return (
+    <div aria-hidden className="min-h-[5.5rem] sm:min-h-[8rem]">
+      <SkeletonBlock className="h-6 w-[85%] sm:h-10 sm:w-[78%]" />
+      <SkeletonBlock className="mt-3 h-6 w-[60%] sm:mt-4 sm:h-10 sm:w-[55%]" />
+    </div>
+  );
+}
+
+/** 大三要素骨架：三卡位（与完整盘同栏数），卡内块高对齐真实卡的图标行 + 正文行 */
+function BigThreeSkeleton() {
+  return (
+    <div aria-hidden className="mt-4 grid gap-3 sm:grid-cols-3">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-[#0D1226]"
+        >
+          <div className="flex items-center gap-2">
+            <SkeletonBlock className="h-8 w-8 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <SkeletonBlock className="h-3.5 w-16" />
+              <SkeletonBlock className="mt-1.5 h-2.5 w-10" />
+            </div>
+          </div>
+          <SkeletonBlock className="mt-3.5 h-3 w-24" />
+          <SkeletonBlock className="mt-4 h-3 w-full" />
+          <SkeletonBlock className="mt-2 h-3 w-4/5" />
+          <SkeletonBlock className="mt-3 h-3 w-2/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 生活模块骨架：真实章节的标题行 + 卡片块（标题是结构，先立起来不误导内容） */
+function LifeModulesSkeleton() {
+  return (
+    <section aria-label="五个生活模块" aria-busy="true">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">生活的五个切面</h3>
+        <span className="text-xs text-day-muted dark:text-night-faint">每张卡都能展开依据，回看它来自盘面的哪个位置</span>
+      </div>
+      <div aria-hidden className="mt-5 grid gap-3 xl:grid-cols-2 xl:gap-4">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-[#0D1226] sm:p-5"
+          >
+            <div className="flex items-center gap-3">
+              <SkeletonBlock className="h-9 w-9 rounded-full" />
+              <div className="min-w-0 flex-1">
+                <SkeletonBlock className="h-3.5 w-24" />
+                <div className="mt-1.5 flex gap-1.5">
+                  <SkeletonBlock className="h-4 w-12 rounded-full" />
+                  <SkeletonBlock className="h-4 w-16 rounded-full" />
+                </div>
+              </div>
+            </div>
+            <SkeletonBlock className="mt-4 h-3 w-full" />
+            <SkeletonBlock className="mt-2 h-3 w-11/12" />
+            <SkeletonBlock className="mt-2 h-3 w-3/5" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** 洞察轨卡片骨架：分享星语海报与星语问答两张卡解读在途时的同档占位（避免整轨跳动） */
+function RailCardSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <SkeletonBlock className="h-4 w-4 rounded-full" />
+          <SkeletonBlock className="h-4 w-20" />
+        </div>
+        <SkeletonBlock className="h-4 w-14 rounded-full" />
+      </div>
+      <SkeletonBlock className="mt-3 h-3 w-full" />
+      <SkeletonBlock className="mt-2 h-3 w-3/5" />
+      <SkeletonBlock className="mt-3.5 h-11 w-full rounded-full" />
+    </div>
+  );
+}
+
 /* ---------- 主组件 ---------- */
 
 export type AstrologyResultViewProps = {
@@ -446,8 +556,33 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
     resetAstrologyScroll();
   }, []);
 
-  /** mock 解读（真值即时可得；流式节奏由下方打字机承担） */
-  const interpretation = useMemo(() => (chartFacts ? buildMockInterpretation(chartFacts) : null), [chartFacts]);
+  /**
+   * 解读接缝（异步）：真值先渲染，解读后到——到达前由分区骨架占位。
+   * 请求随 chartFacts 变化重发；组件卸载或真值切换时丢弃在途响应（cancelled）。
+   * 解读到达后顺手把低敏摘要合并进同一条历史记录（12 工单异步写入策略）。
+   */
+  const [interpretation, setInterpretation] = useState<AstrologyInterpretation | null>(null);
+  useEffect(() => {
+    if (!chartFacts) {
+      setInterpretation(null);
+      return;
+    }
+    let cancelled = false;
+    setInterpretation(null);
+    requestInterpretation(chartFacts)
+      .then((payload) => {
+        if (cancelled) return;
+        setInterpretation(payload);
+        updateAstrologyHistoryInterpretation(formData, chartFacts, payload.headline?.text ?? null);
+      })
+      .catch(() => {
+        // 解读失败不阻塞事实层：分区骨架保持在场，用户可「重新演算」重试（真实 AI 接入后在此落失败态）
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chartFacts, formData]);
+
   const fullHeadline = interpretation?.headline?.text ?? '';
 
   /** 主轴落定标记：逐字状态由 TypewriterHeadline 自持（隔离 34ms/字的高频重渲染），
@@ -499,33 +634,34 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
       }));
   }, [chartFacts]);
 
-  /** 五大生活模块解读（统一在此计算：列表渲染与事实卡反向定位共用同一份数据）。
+  /** 五大生活模块解读（解读接缝产出，统一在此排序：列表渲染与事实卡反向定位共用同一份数据）。
    *  关注主题（表单 step1）只调整阅读顺序：映射到对应模块并提到首位，盘面与文案不变。 */
   const modules = useMemo(() => {
-    if (!chartFacts) return [];
+    if (!interpretation) return [];
     const topicToModule: Record<string, ModuleId> = { self: 'who', love: 'love', career: 'career', recent: 'week' };
     const priority = formData.topic ? (topicToModule[formData.topic] ?? null) : null;
-    return orderModulesByTopic(buildModuleReadings(chartFacts, new Date()), priority);
-  }, [chartFacts, formData.topic]);
+    return orderModulesByTopic(interpretation.modules, priority);
+  }, [interpretation, formData.topic]);
   /** 本周行动入口文案（移动端首屏 compact 卡；行运不可用时为 null，入口整块隐藏） */
   const weeklyAction = useMemo(
     () => modules.find((m) => m.id === 'week')?.weekly?.action ?? null,
     [modules]
   );
-  /** 选中星体 → 引用它的生活模块（事实卡「相关模块」chips，08 反向定位） */
+  /** 选中星体 → 引用它的生活模块（事实卡「相关模块」chips，08 反向定位；解读在途时为空，chips 随解读到达出现） */
   const relatedModuleIds = useMemo(
     () => (selectedBody ? moduleIdsForBody(modules, selectedBody) : []),
     [modules, selectedBody]
   );
 
-  if (!chartFacts || !interpretation) return null;
+  if (!chartFacts) return null;
 
   const badge = precisionBadge(formData, chartFacts);
   /** 无宫位降级原因：time-unknown（完全未知）/ unstable-in-range（约时不稳定）；含宫位盘为 null */
   const degradeReason = chartFacts.factStability.houses.reason;
   const sunPlacement = chartFacts.planets.find((p) => p.body === 'sun');
   const name = formData.name.trim() || '星盘主人';
-  const withHouses = interpretation.withHouses;
+  /** 含宫位与否取自事实层（与解读层 withHouses 同源）：解读在途时章节标题与降级说明也已可渲染 */
+  const withHouses = chartFacts.dataCompleteness === 'with-houses';
 
   /** 月亮缺席说明：未知/约时档月亮当日跨座会被整颗隐藏，白话说明「为什么不在名单里」（诚实做到底）。
    *  只在降级原因是已知两种时给对应文案，其余原因不写说明——宁缺毋假，不假定「缺时间」 */
@@ -538,15 +674,15 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           : null
       : null;
 
-  /** 大三要素卡片数据（不可用项为 null，直接不渲染） */
+  /** 大三要素卡片数据（不可用项为 null，直接不渲染；解读在途时整体为空，由骨架占位） */
   const bigThreeCards = [
-    interpretation.bigThree.sun && sunPlacement?.sign
+    interpretation?.bigThree.sun && sunPlacement?.sign
       ? { key: 'sun' as const, title: '太阳', subtitle: '核心气质', Icon: SunIcon, reading: interpretation.bigThree.sun, term: placementTermLine(chartFacts, 'sun') }
       : null,
-    interpretation.bigThree.moon
+    interpretation?.bigThree.moon
       ? { key: 'moon' as const, title: '月亮', subtitle: '内在情绪', Icon: MoonIcon, reading: interpretation.bigThree.moon, term: placementTermLine(chartFacts, 'moon') }
       : null,
-    interpretation.bigThree.ascendant
+    interpretation?.bigThree.ascendant
       ? { key: 'ascendant' as const, title: '上升', subtitle: '外在表达', Icon: Sunrise, reading: interpretation.bigThree.ascendant, term: placementTermLine(chartFacts, 'ascendant') }
       : null,
   ].filter((c): c is NonNullable<typeof c> => c !== null);
@@ -688,8 +824,16 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               </div>
             </header>
 
-            {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注） ── */}
-            {interpretation.headline && (
+            {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注）。
+                    解读在途：按金句档位预留 min-height 的呼吸骨架；解读无主轴（真值不足）时整段不渲染 ── */}
+            {interpretation === null ? (
+              <section className="mt-12" aria-label="你的核心主题">
+                <HeadlineSkeleton />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <DemoDataBadge />
+                </div>
+              </section>
+            ) : interpretation.headline ? (
               <section className="mt-12" aria-label="你的核心主题">
                 {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
                     移动端降到 text-xl（字重与琥珀金渐变由组件内部保留），sm 起恢复 clamp(40px,4vw,56px) 原档位 */}
@@ -721,7 +865,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   </motion.div>
                 )}
               </section>
-            )}
+            ) : null}
 
             {/* ── 3. 大三要素（主轴落定后 40ms 间隔上浮；时间未知切「核心要素」） ── */}
             <section className="mt-12" aria-label={withHouses ? '大三要素' : '核心要素'}>
@@ -740,68 +884,74 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     : '出生时间未知，上升与宫位已隐藏——以下结论只基于整日内稳定的事实，不猜测、不补算。'}
                 </p>
               )}
-              <div className={cn('mt-4 grid gap-3', bigThreeCols)}>
-                {bigThreeCards.map((card, i) => (
-                  <motion.article
-                    key={card.key}
-                    initial={reduceMotion || !headlineDone ? false : { opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={
-                      reduceMotion
-                        ? { duration: 0.01 }
-                        : { duration: 0.4, delay: headlineDone ? i * 0.04 + 0.05 : 0, ease: 'easeOut' }
-                    }
-                    className={cn(
-                      'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
-                      // 太阳为天生主角：鎏金描边 + 金色光晕；其余星卡保持靛紫体系
-                      card.key === 'sun'
-                        ? 'border-amber-300/70 shadow-[0_10px_30px_-14px_rgba(180,133,42,0.35)] hover:shadow-[0_20px_44px_-14px_rgba(180,133,42,0.45)] dark:border-[#E7C873]/35 dark:shadow-[0_12px_36px_-14px_rgba(231,200,115,0.30)] dark:hover:shadow-[0_22px_50px_-14px_rgba(231,200,115,0.40)]'
-                        : 'border-slate-200/80 shadow-[0_10px_30px_-18px_rgba(30,41,82,0.25)] hover:shadow-[0_20px_44px_-18px_rgba(73,105,233,0.35)] dark:border-white/10 dark:hover:border-indigo-300/25',
-                      !headlineDone && !reduceMotion && 'opacity-0',
-                      // 单卡聚光：横向排版（左识别区 + 右解读区），不留空栅格
-                      bigThreeSolo && 'sm:flex sm:items-start sm:gap-6 sm:p-6'
-                    )}
-                  >
-                    <div className={cn(bigThreeSolo && 'sm:w-44 sm:shrink-0')}>
-                      <div className="flex items-center gap-2">
-                        <span
+              {/* 解读在途：三卡位骨架（完整盘口径）；解读到达即由真实卡替换（含降级档的栏数自适应） */}
+              {interpretation === null ? (
+                <BigThreeSkeleton />
+              ) : (
+                <div className={cn('mt-4 grid gap-3', bigThreeCols)}>
+                  {bigThreeCards.map((card, i) => (
+                    <motion.article
+                      key={card.key}
+                      initial={reduceMotion || !headlineDone ? false : { opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={
+                        reduceMotion
+                          ? { duration: 0.01 }
+                          : { duration: 0.4, delay: headlineDone ? i * 0.04 + 0.05 : 0, ease: 'easeOut' }
+                      }
+                      className={cn(
+                        'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
+                        // 太阳为天生主角：鎏金描边 + 金色光晕；其余星卡保持靛紫体系
+                        card.key === 'sun'
+                          ? 'border-amber-300/70 shadow-[0_10px_30px_-14px_rgba(180,133,42,0.35)] hover:shadow-[0_20px_44px_-14px_rgba(180,133,42,0.45)] dark:border-[#E7C873]/35 dark:shadow-[0_12px_36px_-14px_rgba(231,200,115,0.30)] dark:hover:shadow-[0_22px_50px_-14px_rgba(231,200,115,0.40)]'
+                          : 'border-slate-200/80 shadow-[0_10px_30px_-18px_rgba(30,41,82,0.25)] hover:shadow-[0_20px_44px_-18px_rgba(73,105,233,0.35)] dark:border-white/10 dark:hover:border-indigo-300/25',
+                        !headlineDone && !reduceMotion && 'opacity-0',
+                        // 单卡聚光：横向排版（左识别区 + 右解读区），不留空栅格
+                        bigThreeSolo && 'sm:flex sm:items-start sm:gap-6 sm:p-6'
+                      )}
+                    >
+                      <div className={cn(bigThreeSolo && 'sm:w-44 sm:shrink-0')}>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              'flex h-8 w-8 items-center justify-center rounded-full',
+                              card.key === 'sun'
+                                ? 'bg-amber-100/90 text-[#B4852A] dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
+                                : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
+                            )}
+                          >
+                            <card.Icon className="h-4 w-4" strokeWidth={1.9} />
+                          </span>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
+                            <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
+                          </div>
+                        </div>
+                        <p
                           className={cn(
-                            'flex h-8 w-8 items-center justify-center rounded-full',
-                            card.key === 'sun'
-                              ? 'bg-amber-100/90 text-[#B4852A] dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
-                              : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
+                            'mt-3 text-[11px] font-semibold tracking-wide',
+                            card.key === 'sun' ? 'text-[#B4852A] dark:text-[#E7C873]' : 'text-indigo-500 dark:text-indigo-300/90'
                           )}
                         >
-                          <card.Icon className="h-4 w-4" strokeWidth={1.9} />
-                        </span>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
-                          <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
-                        </div>
+                          {card.term}
+                        </p>
                       </div>
-                      <p
-                        className={cn(
-                          'mt-3 text-[11px] font-semibold tracking-wide',
-                          card.key === 'sun' ? 'text-[#B4852A] dark:text-[#E7C873]' : 'text-indigo-500 dark:text-indigo-300/90'
-                        )}
-                      >
-                        {card.term}
-                      </p>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={cn('mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200', bigThreeSolo && 'sm:mt-0')}>{card.reading.plain}</p>
-                      <p className="mt-2.5 border-t border-slate-100 pt-2.5 text-xs leading-relaxed text-slate-500 dark:border-white/[0.08] dark:text-night-muted">
-                        {card.reading.action}
-                      </p>
-                    </div>
-                  </motion.article>
-                ))}
-              </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={cn('mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200', bigThreeSolo && 'sm:mt-0')}>{card.reading.plain}</p>
+                        <p className="mt-2.5 border-t border-slate-100 pt-2.5 text-xs leading-relaxed text-slate-500 dark:border-white/[0.08] dark:text-night-muted">
+                          {card.reading.action}
+                        </p>
+                      </div>
+                    </motion.article>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* ── 3.5 本周行动入口（仅移动端 <xl；设计文档 §6.5 移动端顺序：护照 → 主轴 → 大三要素 → 本周行动入口，星盘轮位于首屏下方。
-                    点击展开并定位到下方「本周宇宙提示」模块的行动三角；行运不可用时整块隐藏，不假装有数据） ── */}
-            {weeklyAction && (
+                    点击展开并定位到下方「本周宇宙提示」模块的行动三角；行运不可用时整块隐藏，不假装有数据。
+                    解读在途：同高档位骨架占位，避免星盘轮章节带随入口出现而整体下移） ── */}
+            {weeklyAction ? (
               <button
                 type="button"
                 onClick={() => handleLocateModule('week')}
@@ -824,7 +974,18 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-indigo-400 dark:text-indigo-300/70" strokeWidth={2.2} />
               </button>
-            )}
+            ) : interpretation === null ? (
+              <div
+                aria-hidden
+                className="mt-6 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/85 px-4 py-2.5 shadow-sm dark:border-white/10 dark:bg-[#0D1226]/80 xl:hidden"
+              >
+                <SkeletonBlock className="h-9 w-9 rounded-full" />
+                <span className="min-w-0 flex-1">
+                  <SkeletonBlock className="h-2.5 w-16" />
+                  <SkeletonBlock className="mt-2 h-3 w-2/3" />
+                </span>
+              </div>
+            ) : null}
           </div>
 
           {/* ── 4. 交互星盘轮（全宽章节带：深邃星空与液态微光渐变舞台；轮盘主角居左 + 白话清单居右，点选事实卡落于带内下方。
@@ -1057,15 +1218,20 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             </AnimatePresence>
           </section>
 
-          {/* ── 5. 五大生活模块与本周行动三角（07；全宽两列卡片栅格；事实片点击定位回轮；手风琴状态托管） ── */}
+          {/* ── 5. 五大生活模块与本周行动三角（07；全宽两列卡片栅格；事实片点击定位回轮；手风琴状态托管）
+                  解读在途：同构骨架占位（章节标题先立），解读到达即由真实卡替换 ── */}
           <div className="order-3 min-w-0 xl:order-4 xl:col-span-12">
-            <AstrologyLifeModules
-              facts={chartFacts}
-              modules={modules}
-              openId={openModuleId}
-              onOpenChange={setOpenModuleId}
-              onLocateBody={handleLocateBody}
-            />
+            {interpretation === null ? (
+              <LifeModulesSkeleton />
+            ) : (
+              <AstrologyLifeModules
+                facts={chartFacts}
+                modules={modules}
+                openId={openModuleId}
+                onOpenChange={setOpenModuleId}
+                onLocateBody={handleLocateBody}
+              />
+            )}
           </div>
 
           {/* ═══ 右侧 4 栏洞察轨（桌面与首屏区同行 8+4，内容即首屏仪表盘；移动端单列排在模块后、深读前。
@@ -1127,21 +1293,31 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               </div>
             </section>
 
-            {/* 2. 分享星语海报（脱敏海报卡预览弹层；主轴缺失时入口与折叠壳一并隐藏） */}
-            <MobileCollapse title="分享星语海报" hint="脱敏海报" icon={Share2} hidden={!shareAvailable}>
-              <AstrologyShareEntry facts={chartFacts} headline={fullHeadline} name={formData.name} />
-            </MobileCollapse>
+            {/* 2. 分享星语海报（脱敏海报卡预览弹层；主轴缺失时入口与折叠壳一并隐藏。
+                   解读在途：同档卡片骨架占位，避免洞察轨在解读到达时整体下移） */}
+            {interpretation === null ? (
+              <RailCardSkeleton />
+            ) : (
+              <MobileCollapse title="分享星语海报" hint="脱敏海报" icon={Share2} hidden={!shareAvailable}>
+                <AstrologyShareEntry facts={chartFacts} headline={fullHeadline} name={formData.name} />
+              </MobileCollapse>
+            )}
 
             {/* 3. 星语问答（真功能：桌面内联面板 / 移动端底部抽屉，引用可定位）
-                摘要文案不计数：用户提问后剩余次数由面板内徽章呈现，静态文案不会与状态失配 */}
-            <MobileCollapse title="星语问答" hint="AI 解读问答" icon={MessageCircleQuestion}>
-              <AstrologyQaEntry
-                facts={chartFacts}
-                modules={modules}
-                onLocateBody={handleLocateBody}
-                onLocateModule={handleLocateModule}
-              />
-            </MobileCollapse>
+                摘要文案不计数：用户提问后剩余次数由面板内徽章呈现，静态文案不会与状态失配。
+                解读在途：问答只引用已确认的模块事实，模块未就绪时先占位骨架（不出「无模块可引用」的假答案） */}
+            {interpretation === null ? (
+              <RailCardSkeleton />
+            ) : (
+              <MobileCollapse title="星语问答" hint="AI 解读问答" icon={MessageCircleQuestion}>
+                <AstrologyQaEntry
+                  facts={chartFacts}
+                  modules={modules}
+                  onLocateBody={handleLocateBody}
+                  onLocateModule={handleLocateModule}
+                />
+              </MobileCollapse>
+            )}
           </aside>
         </div>
 

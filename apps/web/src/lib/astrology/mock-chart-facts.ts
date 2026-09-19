@@ -1,8 +1,10 @@
 /**
  * mock-chart-facts.ts —— 星座寰宇 · 占星真值计算域 mock 实现（前端先行期）
  *
- * 接缝接口：computeChartFacts(profile: AstroBirthProfile): AstrologyChartFacts
- * （类型与接口见 ./chart-facts.ts）。真实计算域上线后替换本绑定即可，消费方不改。
+ * 接缝接口（类型与接口见 ./chart-facts.ts）：
+ * - requestChartFacts(profile): Promise<AstrologyChartFacts> —— 提交链路（异步，外包随机延迟）
+ * - computeChartFacts(profile): AstrologyChartFacts —— 示例盘 / 预览盘（同步，即时盘面）
+ * 真实计算域上线后替换本文件的两个绑定即可，消费方不改。
  *
  * 实现方式：三档时间精度各冻结一份「代表性档案」（由 scripts/freeze-sample-chart.mjs
  * 真实计算后冻结，非手工摆位），mock 在运行时按时间精度执行稳定性打包策略：
@@ -28,10 +30,12 @@ import type {
   PlacementStability,
   PlanetBody,
   PlanetPlacement,
+  RequestChartFacts,
   StabilityStatus,
   ZodiacSign,
 } from './chart-facts';
 import { ORB_TABLE } from './chart-facts';
+import { mockNetworkDelay } from './mock-latency';
 
 // ---------- 冻结真值档案数据结构 ----------
 
@@ -1227,7 +1231,7 @@ function buildUnknownChart(): AstrologyChartFacts {
 // ---------- 接缝实现 ----------
 
 /**
- * 占星真值计算域 mock 实现（唯一接缝绑定）。
+ * 占星真值计算域 mock 实现（同步绑定：示例盘与预览盘）。
  * 注意：mock 按时间精度返回冻结的代表性档案，不读取具体出生日期/城市；
  * 真实计算域上线后按 profile 全量计算，接口与消费方不变。
  */
@@ -1240,6 +1244,19 @@ export const computeChartFacts: ComputeChartFacts = (profile) => {
     case 'unknown':
       return buildUnknownChart();
   }
+};
+
+/** 真值请求的模拟网络延迟区间（毫秒）：真实计算域上线后由真实往返取代 */
+const CHART_FACTS_LATENCY_MS = { min: 600, max: 900 } as const;
+
+/**
+ * 占星真值计算域 mock 实现（异步绑定：提交链路）。
+ * 内部仍走同步 computeChartFacts（同一冻结口径），只在外包一层 600–900ms 随机延迟模拟网络时序，
+ * 让「仪式窗走满 且 真值就位」的双条件转场在假数据下可被真实验证。
+ */
+export const requestChartFacts: RequestChartFacts = async (profile) => {
+  await mockNetworkDelay(CHART_FACTS_LATENCY_MS.min, CHART_FACTS_LATENCY_MS.max);
+  return computeChartFacts(profile);
 };
 
 // ---------- 冻结代表性档案（供测试与示例盘预览引用） ----------

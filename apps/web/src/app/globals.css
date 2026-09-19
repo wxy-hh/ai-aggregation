@@ -695,3 +695,28 @@
     opacity: 0;
   }
 }
+
+/* 异步等待态的柔和呼吸（骨架块与问答思考点共用；12 工单异步接缝）。
+   仅透明度变化，不改变布局；减少动态时静止定格在中档亮度 */
+@keyframes acw-soft-breathe {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.acw-skeleton-breathe {
+  animation: acw-soft-breathe 2.4s ease-in-out infinite;
+}
+.acw-thinking-dot {
+  animation: acw-soft-breathe 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-skeleton-breathe,
+  .acw-thinking-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}

@@ -11,7 +11,7 @@
  *
  * 文案铁律（设计文档 §8.0/§9）：用「倾向/可能/练习」而非命定措辞；
  * 不出现「一定/必然/注定/绝对/永远」；先结论后术语；不虚构不稳定事实。
- * 真实 AI 解读接入后仅需替换 buildMockInterpretation 的实现绑定，消费方不改。
+ * 真实 AI 解读接入后仅需替换 requestInterpretation（异步接缝）/ buildMockInterpretation 的实现绑定，消费方不改。
  */
 
 import type {
@@ -23,6 +23,7 @@ import type {
 } from './chart-facts';
 import { approximateSunLongitude } from './solar-longitude';
 import { separation, signOfLongitude } from './mock-chart-facts';
+import { mockNetworkDelay } from './mock-latency';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN, ZODIAC_ORDER } from './zh-names';
 
 /* ---------- 基础映射（展示层白话词汇，事实层只存代码标识） ---------- */
@@ -753,3 +754,40 @@ export function orderModulesByTopic(modules: ModuleReading[], priority: ModuleId
   if (idx <= 0) return modules;
   return [modules[idx], ...modules.slice(0, idx), ...modules.slice(idx + 1)];
 }
+
+/* ═══════════════════════ 12 工单：解读异步接缝（真值之后的第二条异步链路） ═══════════════════════
+ *
+ * 真值 ⇒ 解读是纯映射：同一份事实必得同一份解读，异步只承担真实 AI 的往返时序。
+ * 结果页按此分区加载：事实驱动区块（护照/星盘轮/白话清单/相位表）立即可见，
+ * 本接缝驱动的区块（主轴金句/大三要素/生活模块/洞察轨分享与问答）先渲染骨架占位。
+ */
+
+/**
+ * 解读层接缝输出：主轴 + 大三要素 + 五大生活模块。
+ * headline / bigThree / withHouses 与 AstrologyMockInterpretation 同源（真实 AI 接入后同样按此形状返回）。
+ */
+export interface AstrologyInterpretation extends AstrologyMockInterpretation {
+  /** 五大生活模块（固定顺序；事实不足的模块缺项，界面不渲染占位） */
+  modules: ModuleReading[];
+}
+
+/** 解读层异步接缝：输入真值，异步输出解读 */
+export interface RequestInterpretation {
+  (facts: AstrologyChartFacts): Promise<AstrologyInterpretation>;
+}
+
+/** 解读请求的模拟网络延迟区间（毫秒）：真实 AI 解读上线后由真实往返取代 */
+const INTERPRETATION_LATENCY_MS = { min: 1000, max: 1500 } as const;
+
+/**
+ * 解读层 mock 异步实现（接缝绑定）：内部仍由同步映射组装（buildMockInterpretation +
+ * buildModuleReadings，同一冻结口径），外包 1000–1500ms 随机延迟模拟真实 AI 时序，
+ * 让结果页「事实先到、解读后到」的分区加载在假数据下可被真实验证。
+ */
+export const requestInterpretation: RequestInterpretation = async (facts) => {
+  await mockNetworkDelay(INTERPRETATION_LATENCY_MS.min, INTERPRETATION_LATENCY_MS.max);
+  return {
+    ...buildMockInterpretation(facts),
+    modules: buildModuleReadings(facts, new Date()),
+  };
+};

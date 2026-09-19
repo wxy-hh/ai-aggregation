@@ -93,11 +93,11 @@ export type AstrologyWorkspaceCache = BaseWorkspaceCache<
   Partial<Record<keyof AstrologyFormData, string>>,
   AstrologyErrorKind
 > & {
-  /** 入口视图：首页（首次进入/重新测算）、两步表单（§6.2）或加载仪式（05：真值锁定后转场进结果页） */
+  /** 入口视图：首页（首次进入/重新测算）、两步表单（§6.2）或加载仪式（05：真值在仪式窗内送达，双条件满足即转场进结果页） */
   entryView: 'home' | 'form' | 'loading';
   /** 两步表单当前步骤（切模块保留进度） */
   formStep: 1 | 2;
-  /** 提交后经唯一接缝计算的星盘真值（结果页/分享/问答的真值来源） */
+  /** 提交后经异步接缝送达的星盘真值（结果页/分享/问答的真值来源）；null = 真值在途（仪式等待室） */
   chartFacts: AstrologyChartFacts | null;
 };
 
