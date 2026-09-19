@@ -4,7 +4,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    // 服务端计算域（chart-engine.ts / zodiac-geometry.ts / timezone.ts）会被
+    // scripts/freeze-sample-chart.mjs 以 Node 原生 TS 运行时直接引入，故这几个模块内
+    // 对本地模块使用显式 .ts 扩展名导入
+    "allowImportingTsExtensions": true
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]

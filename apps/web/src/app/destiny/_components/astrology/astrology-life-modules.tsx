@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
-import type { ModuleId, ModuleReading } from '@/lib/astrology/mock-interpretation';
+import type { ModuleId, ModuleReading } from '@/lib/astrology/interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 
 /** 模块图标（lucide，视觉锚点不替代文字） */
@@ -109,6 +109,14 @@ function factChipOf(ref: string, facts: AstrologyChartFacts): { label: string; b
   if (parts[0] === 'house') {
     const house = facts.houses.find((h) => h.number === Number(parts[1]));
     return { label: house ? `第 ${house.number} 宫 · ${ZODIAC_CN[house.sign]}` : `第 ${parts[1]} 宫`, body: null };
+  }
+  if (parts[0] === 'transit') {
+    // 行运引用：标签标注「行运」，定位目标取本命一方（行运星体不在本命盘轮上）
+    const [, transiting, type, target] = parts;
+    return {
+      label: `行运${PLANET_CN[transiting as PlanetBody] ?? transiting} ${ASPECT_CN[type as keyof typeof ASPECT_CN] ?? type} 本命${PLANET_CN[target as PlanetBody] ?? target}`,
+      body: (target as PlanetBody) ?? null,
+    };
   }
   return { label: ref, body: null };
 }

@@ -44,6 +44,7 @@
     "@types/react-window": "^2.0.0",
     "ai": "^6.0.50",
     "bcryptjs": "^3.0.3",
+    "circular-natal-horoscope-js": "1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "dexie": "^4.3.0",

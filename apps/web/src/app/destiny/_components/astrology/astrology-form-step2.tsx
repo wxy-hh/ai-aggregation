@@ -14,7 +14,7 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowUp, CheckCircle2, ChevronDown, Clock3, Info, MapPin, SunMedium } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { computeChartFacts, SAMPLE_PROFILE_UNKNOWN } from '@/lib/astrology/mock-chart-facts';
+import { SAMPLE_CHART_UNKNOWN } from '@/lib/astrology/sample-chart';
 import { ASTRO_CITIES, searchCities, type AstroCity } from '@/lib/astrology/cities';
 import type { TimePrecision } from '@/lib/astrology/chart-facts';
 import { APPROXIMATE_SLOTS, formatUtcOffset, utcOffsetMinutesFor } from './astrology-mappers';
@@ -293,9 +293,9 @@ export function AstrologyFormStep2({
   const hourSelected = formData.birthTime.hour !== '';
   const minuteSelected = formData.birthTime.minute !== '';
 
-  /** 完全未知档的无宫位示例圆盘（真正看得清的视觉锚点，非装饰） */
+  /** 完全未知档的无宫位示例圆盘（真实计算域冻结档案，真正看得清的视觉锚点，非装饰） */
   const unknownFacts = useMemo(
-    () => (formData.timePrecision === 'unknown' ? computeChartFacts(SAMPLE_PROFILE_UNKNOWN) : null),
+    () => (formData.timePrecision === 'unknown' ? SAMPLE_CHART_UNKNOWN : null),
     [formData.timePrecision]
   );
 
@@ -656,11 +656,18 @@ export function AstrologyFormStep2({
                   </ul>
                 </>
               ) : (
-                <p className="px-4 py-3 text-xs leading-relaxed text-day-muted dark:text-night-faint">
-                  {districtLike
-                    ? '无需精确到区县，输入所在城市即可，如：郑州'
-                    : '未找到该城市，试试城市中文名，如：周口'}
-                </p>
+                <div className="space-y-1 px-4 py-3 text-xs leading-relaxed text-day-muted dark:text-night-faint">
+                  <p>
+                    {districtLike
+                      ? '无需精确到区县，输入所在城市即可，如：郑州'
+                      : '未找到该城市，试试城市中文名，如：周口'}
+                  </p>
+                  {/* 本期覆盖口径如实告知（story 24）：搜不到时不假装支持境外任意城市 */}
+                  <p>本期收录中国城市（含港澳台）与 11 个常用国际城市，其他境外城市暂未支持。</p>
+                  <p>
+                    国际城市：东京、首尔、新加坡、伦敦、巴黎、柏林、纽约、洛杉矶、旧金山、温哥华、悉尼。
+                  </p>
+                </div>
               )}
             </div>
           )}

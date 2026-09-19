@@ -4,7 +4,7 @@
  * astrology-chart-wheel.tsx —— 星盘轮渲染组件（全模块视觉主角）
  *
  * 消费 02 工单的 AstrologyChartFacts（唯一真值接缝），渲染成品级本命星盘：
- * 外圈 60 刻度 / 十二宫格 + 星座符号环 / 整宫制宫位号 / 十星体节点（符号 + 度数）/
+ * 外圈 60 刻度 / 十二宫格 + 星座符号环 / 宫位号（宫界取真实宫头度数） / 十星体节点（符号 + 度数）/
  * 低密度相位连线 / 上升·天顶轴线。无宫位档（dataCompleteness = without-houses）
  * 自动切换为无宫位行星星座圆盘（不画宫位分割、数字与轴线，不虚构事实）。
  *
@@ -609,7 +609,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
           </g>
         )}
 
-        {/* ═══ 宫位环：整宫制宫界 + 宫位号（无宫位档与揭示阶段 1/2 不画，绝不留空位轮廓） ═══ */}
+        {/* ═══ 宫位环：宫界落在真实宫头（整宫制为星座起点，Placidus 为回填宫头度数）+ 宫位号 ═══ */}
         {withHouses && stage >= 3 && facts.houses.length === 12 && (
           <g>
             <motion.circle
@@ -624,12 +624,15 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
               transition={{ duration: 0.3 }}
             />
             {facts.houses.map((h, i) => {
-              const cuspLon = ZODIAC_ORDER.indexOf(h.sign) * 30;
+              const cuspLon = ZODIAC_ORDER.indexOf(h.sign) * 30 + h.cuspDegree;
               const theta = screenTheta(cuspLon, ascLon);
               const [x1, y1] = polar(theta, R_HOUSE_IN);
               const [x2, y2] = polar(theta, R_ZODIAC_IN);
-              // 宫位号放在本宫格中心
-              const midTheta = screenTheta(cuspLon + 15, ascLon);
+              // 宫位号放在本宫格中心：不等宫制取与下一宫头的中点（整宫制等价于宫头 +15°）
+              const next = facts.houses[(i + 1) % 12];
+              const nextLon = ZODIAC_ORDER.indexOf(next.sign) * 30 + next.cuspDegree;
+              const spanDeg = ((((nextLon - cuspLon) % 360) + 360) % 360) || 30;
+              const midTheta = screenTheta(cuspLon + spanDeg / 2, ascLon);
               const [nx, ny] = polar(midTheta, R_HOUSE_NUM);
               return (
                 <g key={h.number}>

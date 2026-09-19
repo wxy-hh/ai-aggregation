@@ -1,14 +1,15 @@
 'use client';
 
 /**
- * astrology-qa.tsx —— 星语问答（设计文档 §6.7，10 工单）
+ * astrology-qa.tsx —— 星语问答（设计文档 §6.7，10 工单建；04 工单切真实问答路由）
  *
  * - 仅在报告完成后出现（结果页洞察轨内）；问答状态以 calculatedAt 作 key，重算即重置，不跨报告携带。
- * - 每份报告每个会话最多 3 个用户问题（首问 + 2 次追问），达到上限给出文档原文提示。
- * - 回答由 mock 引擎经异步接缝产出（只引用已确认事实的模块名/事实标签，不绝对化）；
- *   敏感主题（医疗/财务/法律）走拦截态话术 + 自我观察方向。
- * - 12 工单起异步：发送后用户气泡立即入列，回答位渲染「正在思考」等待气泡（三点呼吸，
- *   减少动态时静态），等待期锁住输入与发送；回答到达即替换等待气泡。
+ * - 每份报告每个会话最多 3 个用户问题（首问 + 2 次追问）：面板计数拦截，服务端按请求携带的
+ *   已提问数二次强制，两层一致；达到上限给出文档原文提示。
+ * - 回答由真实 LLM 经异步接缝产出（POST /api/destiny/astrology/copilot，协议见 qa-events.ts）：
+ *   正文增量在等待气泡内逐字浮现，终帧替换为完整回答（引用只落在白名单事实与报告模块上，不绝对化）；
+ *   敏感主题（医疗/财务/法律）由服务端前置拦截，返回安全话术 + 自我观察方向（琥珀色气泡）。
+ * - 发送后用户气泡立即入列，等待期锁住输入与发送；回答到达即替换等待气泡。
  * - 形态：桌面端（≥1280px）在洞察轨内联展开对话面板（不新开页面、不遮挡星盘轮）；
  *   移动端使用既有底部抽屉（Dialog 底部滑入，关闭后焦点自动返回触发按钮）。
  * - 引用片可点击：模块引用定位到对应生活模块，事实引用定位回星盘轮星体（移动端先关抽屉再定位）。
@@ -20,8 +21,13 @@ import { MessageCircleQuestion, SendHorizontal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
-import type { ModuleId, ModuleReading } from '@/lib/astrology/mock-interpretation';
-import { requestAstrologyAnswer, type QaCitation } from '@/lib/astrology/mock-qa';
+import type { ModuleId, ModuleReading } from '@/lib/astrology/interpretation';
+import { ASTROLOGY_QA_MAX_QUESTIONS, type QaCitation } from '@/lib/astrology/qa-events';
+import {
+  abortAstrologyQaRequest,
+  astrologyQaErrorMessage,
+  requestAstrologyAnswer,
+} from '@/lib/astrology/qa-request';
 import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
 
 /** 引导问题（设计文档 §6.7 原文） */
@@ -30,9 +36,6 @@ const GUIDE_QUESTIONS = [
   '本周工作中适合主动争取什么？',
   '这个相位如何影响我的表达？',
 ];
-
-/** P0 上限：每份报告每个会话最多 3 个用户问题 */
-const MAX_QUESTIONS = 3;
 
 interface QaMessage {
   id: number;
@@ -71,19 +74,22 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
    *  重算后结果页整体重挂载（entryView 流转），状态自然随新报告重置，不跨报告携带 */
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [pending, setPending] = useState(false);
+  /** 流式正文（等待气泡内逐字浮现）：终帧到达即被完整回答替换 */
+  const [streaming, setStreaming] = useState('');
   const idRef = useRef(0);
   /** 在途问答的令牌：回答到达时只有最新一次请求允许落进消息列表（同一条等待气泡不得被串批覆盖） */
   const requestTokenRef = useRef(0);
-  /** 卸载标记：问答在途时切走模块（组件卸载）后不再写状态 */
+  /** 卸载标记：问答在途时切走模块（组件卸载）后不再写状态；在途请求一并取消 */
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      abortAstrologyQaRequest();
     };
   }, []);
   const asked = messages.filter((m) => m.role === 'user').length;
-  const remaining = MAX_QUESTIONS - asked;
+  const remaining = ASTROLOGY_QA_MAX_QUESTIONS - asked;
   const capped = remaining <= 0;
 
   const send = (text: string) => {
@@ -91,9 +97,17 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
     if (!q || capped || pending) return;
     setMessages((prev) => [...prev, { id: ++idRef.current, role: 'user', text: q }]);
     setPending(true);
+    setStreaming('');
     const token = ++requestTokenRef.current;
-    // 真实时序来自异步接缝（mock 500–900ms 模拟往返）：等待期由「正在思考」气泡承担反馈
-    requestAstrologyAnswer(q, facts, modules)
+    // 真实问答：正文增量边到边渲染（等待气泡内逐字浮现），终帧给完整回答与白名单引用；
+    // 已提问数随请求上行，服务端按同一上限二次强制。
+    requestAstrologyAnswer(q, facts, modules, {
+      askedCount: asked,
+      onDelta: (delta) => {
+        if (!aliveRef.current || token !== requestTokenRef.current) return;
+        setStreaming((prev) => prev + delta);
+      },
+    })
       .then((answer) => {
         if (!aliveRef.current || token !== requestTokenRef.current) return;
         setMessages((prev) => [
@@ -101,15 +115,17 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
           { id: ++idRef.current, role: 'assistant', text: answer.text, kind: answer.kind, citations: answer.citations },
         ]);
         setPending(false);
+        setStreaming('');
       })
-      .catch(() => {
+      .catch((error) => {
         if (!aliveRef.current || token !== requestTokenRef.current) return;
-        // 失败也要解开输入锁，否则面板会永远停在等待态（真实 AI 接入后按错误类型细分话术）
+        // 失败也要解开输入锁，否则面板会永远停在等待态；超限 / 额度不足沿用服务端中文提示
         setMessages((prev) => [
           ...prev,
-          { id: ++idRef.current, role: 'assistant', text: '这次没能取回回答，可以稍后换一种问法再试一次。' },
+          { id: ++idRef.current, role: 'assistant', text: astrologyQaErrorMessage(error) },
         ]);
         setPending(false);
+        setStreaming('');
       });
   };
 
@@ -122,6 +138,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
   const conversationProps = {
     messages,
     pending,
+    streaming,
     remaining,
     capped,
     onSend: send,
@@ -219,6 +236,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
 function QaConversation({
   messages,
   pending,
+  streaming,
   remaining,
   capped,
   onSend,
@@ -228,6 +246,8 @@ function QaConversation({
 }: {
   messages: QaMessage[];
   pending: boolean;
+  /** 流式正文（等待气泡内逐字浮现；空串时显示「正在思考」） */
+  streaming: string;
   remaining: number;
   capped: boolean;
   onSend: (text: string) => void;
@@ -238,12 +258,12 @@ function QaConversation({
   const reduceMotion = useReducedMotion();
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
-  const asked = MAX_QUESTIONS - remaining;
+  const asked = ASTROLOGY_QA_MAX_QUESTIONS - remaining;
 
-  /** 新消息时滚动到列表底部 */
+  /** 新消息 / 流式正文更新时滚动到列表底部 */
   useEffect(() => {
     listRef.current?.lastElementChild?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'end' });
-  }, [messages, pending, reduceMotion]);
+  }, [messages, pending, streaming, reduceMotion]);
 
   const sendDraft = () => {
     onSend(draft);
@@ -362,20 +382,40 @@ function QaConversation({
             </div>
           </div>
         ))}
-        {/* 回答在途：等待气泡（三点呼吸，减少动态时静态）——回答到达即被真实气泡替换 */}
+        {/* 回答在途：等待气泡（三点呼吸，减少动态时静态）；真实回答到达即被完整气泡替换。
+            正文增量已到时在同一气泡内逐字浮现（aria-live="off"：逐字跳动不逐帧播报，
+            完整回答作为新消息由 role=log 的 polite 播报一次） */}
         {pending && (
           <div className="flex justify-start">
-            <div className="flex items-center gap-2 rounded-2xl bg-slate-100/90 px-3.5 py-2.5 text-xs text-day-muted dark:bg-white/[0.06] dark:text-night-faint">
-              <span aria-hidden className="flex items-center gap-1">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="acw-thinking-dot h-1.5 w-1.5 rounded-full bg-indigo-400 dark:bg-indigo-300/80"
-                    style={{ animationDelay: `${i * 0.16}s` }}
-                  />
-                ))}
-              </span>
-              正在思考…
+            <div
+              aria-live={streaming ? 'off' : undefined}
+              className={cn(
+                'max-w-[88%] rounded-2xl px-3.5 py-2.5',
+                streaming
+                  ? 'bg-slate-100/90 text-sm leading-relaxed text-slate-700 dark:bg-white/[0.06] dark:text-slate-200'
+                  : 'flex items-center gap-2 text-xs text-day-muted dark:text-night-faint'
+              )}
+            >
+              {streaming ? (
+                streaming.split('\n').map((line, i) => (
+                  <p key={i} className={i > 0 ? 'mt-1.5' : undefined}>
+                    {line}
+                  </p>
+                ))
+              ) : (
+                <>
+                  <span aria-hidden className="flex items-center gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="acw-thinking-dot h-1.5 w-1.5 rounded-full bg-indigo-400 dark:bg-indigo-300/80"
+                        style={{ animationDelay: `${i * 0.16}s` }}
+                      />
+                    ))}
+                  </span>
+                  正在思考…
+                </>
+              )}
             </div>
           </div>
         )}

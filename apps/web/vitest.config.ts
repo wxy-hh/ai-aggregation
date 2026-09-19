@@ -2,6 +2,9 @@ import { defineConfig, configDefaults } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  // 与 Next.js 同一套 JSX 运行时（自动导入 react/jsx-runtime）：
+  // 组件测试直接渲染不显式 import React 的组件，不必为测试给生产组件补 import
+  esbuild: { jsx: 'automatic' },
   test: {
     globals: true,
     environment: 'happy-dom',

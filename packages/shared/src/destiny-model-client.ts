@@ -6,6 +6,7 @@
 //   - deepseek：DeepSeek 官方 Chat Completions（POST {baseUrl}/chat/completions）
 // 提供非流式 callModel、流式 streamModel、配置解析 resolveModelConfig、
 // 错误映射 mapModelError、用量归一 normalizeModelUsage。
+// ARK 推理强度按调用方显式声明（ModelReasoningEffort，缺省 'low' 与历史一致）。
 //
 // 安全约定：密钥仅来自 process.env；错误信息不回显任何 key；非 2xx 不向上游回显 errText。
 // ============================================
@@ -45,6 +46,15 @@ export type JsonSchemaRef = {
   schema: Record<string, unknown>;
 };
 
+/**
+ * ARK（火山方舟 Responses）推理强度，决定为「思考」留多少输出预算：
+ * - 'low'（默认）：保留既有口径，适合需要权衡与推理的任务（八字 / 奇门 / 紫微等）；
+ * - 'minimal'：不产出推理摘要（实测 reasoning_tokens=0），把输出预算全部留给正文，
+ *   适合「把既定事实翻译成文案」这类不需要深推理的任务（星座解读 / 星语问答）。
+ * 仅 doubao 分支生效：DeepSeek 协议没有对应参数，该字段被忽略（思考模式由模型侧决定）。
+ */
+export type ModelReasoningEffort = 'minimal' | 'low';
+
 export type CallModelOptions = {
   config: ModelConfig;
   messages: ModelMessage[];
@@ -52,6 +62,8 @@ export type CallModelOptions = {
   temperature?: number;
   timeoutMs: number;
   json?: { schema?: JsonSchemaRef };
+  /** ARK 推理强度（缺省 'low'，与改造前完全一致；DeepSeek 分支忽略） */
+  reasoningEffort?: ModelReasoningEffort;
 };
 
 export type CallModelResult = {
@@ -69,6 +81,8 @@ export type StreamModelOptions = {
   maxTokens?: number;
   timeoutMs: number;
   json?: { schema?: JsonSchemaRef };
+  /** ARK 推理强度（缺省 'low'，与改造前完全一致；DeepSeek 分支忽略） */
+  reasoningEffort?: ModelReasoningEffort;
 };
 
 // ─── 默认配置 ───
@@ -249,7 +263,7 @@ function injectJsonSchemaSample(messages: ModelMessage[], schema: JsonSchemaRef)
 // ─── 非流式 callModel ───
 
 async function callArk(opts: CallModelOptions): Promise<CallModelResult> {
-  const { config, messages, maxTokens, temperature, timeoutMs, json } = opts;
+  const { config, messages, maxTokens, temperature, timeoutMs, json, reasoningEffort } = opts;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -264,7 +278,8 @@ async function callArk(opts: CallModelOptions): Promise<CallModelResult> {
         input: messages,
         ...(typeof temperature === 'number' ? { temperature } : {}),
         max_output_tokens: maxTokens,
-        reasoning: { effort: 'low' },
+        // 推理强度缺省 'low'：只有显式传入的调用方才改变口径（见 ModelReasoningEffort）
+        reasoning: { effort: reasoningEffort ?? 'low' },
         text: json?.schema
           ? { format: { type: 'json_schema', name: json.schema.name, schema: json.schema.schema } }
           : { format: { type: 'json_object' } },
@@ -393,7 +408,7 @@ function parseSseFrames(buffer: string): { frames: SseFrame[]; rest: string } {
 }
 
 async function* streamArk(opts: StreamModelOptions): AsyncGenerator<ModelStreamEvent> {
-  const { config, messages, temperature, maxTokens, timeoutMs, json } = opts;
+  const { config, messages, temperature, maxTokens, timeoutMs, json, reasoningEffort } = opts;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -409,7 +424,8 @@ async function* streamArk(opts: StreamModelOptions): AsyncGenerator<ModelStreamE
         stream: true,
         ...(typeof temperature === 'number' ? { temperature } : {}),
         ...(typeof maxTokens === 'number' ? { max_output_tokens: maxTokens } : {}),
-        reasoning: { effort: 'low' },
+        // 推理强度缺省 'low'：星座解读/问答这类「翻译事实」任务显式传 'minimal'，避免推理吃光输出预算
+        reasoning: { effort: reasoningEffort ?? 'low' },
         ...(json?.schema
           ? { text: { format: { type: 'json_schema', name: json.schema.name, schema: json.schema.schema } } }
           : {}),

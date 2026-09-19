@@ -3,27 +3,32 @@
  *
  * 依据设计文档 docs/designs/2026-07-26-constellation-universe-design.md §9.3「推荐数据模型」
  * 的八实体字段清单定义类型；本文件只承载类型与接口签名，不包含任何实现与 AI 生成内容。
- * 前端先行期以 mock 实现交付（见 ./mock-chart-facts.ts 的 computeChartFacts / requestChartFacts），
- * 真实计算域上线后仅需替换该绑定，消费方（表单/结果页/星盘轮/历史）不改。
+ * 真实实现见 ./chart-engine.ts（服务端：circular-natal-horoscope-js 星历）；
+ * 示例盘 / 预览盘使用 ./sample-chart.ts 的预冻结产物（该冻结档案由真实引擎产出，
+ * 可复现性由 sample-chart.test.ts 守住）。
  *
- * 两条接缝的分工（12 工单异步接缝改造）：
- * - 提交链路走异步接缝 requestChartFacts（真值在仪式窗内到达，转场等它就位）；
+ * 接缝分工（12 工单异步接缝改造；02 工单起提交链路走真实报告流）：
+ * - 提交链路走服务端报告流 POST /api/destiny/astrology/report（协议见 ./report-events.ts，
+ *   调用侧守则见 ./chart-request.ts）：chart-facts 帧即真值，真值在仪式窗内到达，转场等它就位；
  * - 示例盘 / 预览盘走同步 computeChartFacts（入口首页与表单预览需要即时盘面）。
  *
  * 计算口径固定（文档 §9.2）：
  * - 黄道体系：回归黄道（tropical）；观测视角：地心。
+ * - 宫制：Placidus 为默认；任一宫头缺失、非有限值或十二宫顺序无法闭合时回退整宫制
+ *   （Whole Sign）并在 factStability 标注；无宫位档 houseSystem 为 null。
  * - 相位只算合相/六合/刑相/拱相/对冲；容许度冻结为合相、对冲 8°、刑相、拱相 6°、
  *   六合 4°，由 orbTableVersion 标识（见 ORB_TABLE）。
  * - 稳定性规则：大约时段保存原始半开区间 [localStart, localEnd)，对所有面向用户的事实
  *   执行全区间稳定性校验；不稳定的度数、月亮、相位、角点、宫位一律为 null（不生成伪单值），
  *   不取区间中点或 12:00 等任意时刻补算。时间未知以当地民用日 [00:00, 次日 00:00) 计，
  *   不计算上升、天顶、宫位，仅展示整日内稳定的星座与主要相位。
+ * - 行运：以请求时刻所在自然周（周一 00:00 UTC 起）为窗口按日采样，产出 TransitFact[]。
  */
 
 /** 时间精度三档：准确到分钟 / 大约时段 / 完全未知（文档 §6.3，只有三档，无第四档） */
 export type TimePrecision = 'accurate' | 'approximate' | 'unknown';
 
-/** 宫位制：Placidus 为文档默认，Whole Sign（整宫制）为文档规定的回退制；mock 阶段采用整宫制 */
+/** 宫位制：Placidus 为文档默认，Whole Sign（整宫制）为规定的高纬回退制 */
 export type HouseSystem = 'whole-sign' | 'placidus';
 
 /** 盘面范围：含宫位 / 不含宫位（文档 §8.4 宇宙护照标签） */
@@ -146,7 +151,7 @@ export interface PlanetPlacement {
   sign: ZodiacSign | null;
   /** 星座内度数（0-30）；null = 度数不稳定或不可得（约时仅整数度、未知档不展示度数） */
   degree: number | null;
-  /** 宫位号（1-12，整宫制）；无宫位档为 null */
+  /** 宫位号（1-12）：Placidus 取宫位区间归属，整宫制取相对上升星座的位移；无宫位档为 null */
   house: number | null;
   /** 逆行状态；隐藏的星体为 null */
   retrograde: boolean | null;
@@ -165,12 +170,12 @@ export interface AngleFact {
   stability: PlacementStability;
 }
 
-/** 宫位事实（整宫制：宫头即星座起始 0°） */
+/** 宫位事实（十二宫逐一输出；宫头即该宫起点黄经） */
 export interface HouseFact {
   number: number;
   /** 宫头星座；无宫位档整体不输出 */
   sign: ZodiacSign;
-  /** 宫头度数（整宫制固定为 0；Placidus 实现后回填） */
+  /** 宫头星座内度数：Placidus 为真实宫头度数，整宫制固定为 0（宫头即星座起始） */
   cuspDegree: number;
   stability: PlacementStability;
 }
@@ -191,8 +196,10 @@ export interface AspectFact {
 }
 
 /**
- * 实体五：行运事实（文档 §9.3，P1 近期星运使用）。
- * 首期 P0 只输出本命盘，不产出 TransitFact（本类型为接缝预留）。
+ * 实体五：行运事实（文档 §9.3）。
+ * 由计算域以「请求时刻所在自然周（周一 00:00 UTC 起）」为窗口按日采样产出：
+ * startsAt / endsAt 为该行运相位落在容许度内的 UTC 时段（与窗口取交集）；
+ * theme 为固定词汇表生成的短主题（非 AI 内容，解读层可改写文案但不得改变事实）。
  */
 export interface TransitFact {
   startsAt: string;
@@ -289,7 +296,7 @@ export interface AstrologyChartFacts {
   houseSystem: HouseSystem | null;
   /** 计算时刻（ISO） */
   calculatedAt: string;
-  /** 占星计算引擎版本（mock 为冻结口径版本） */
+  /** 占星计算引擎版本（冻结示例盘与真实计算域同源，由冻结脚本固化） */
   engineVersion: string;
   /** 相位容许度表版本（文档 §9.2，由 orbTableVersion 标识） */
   orbTableVersion: string;
@@ -304,6 +311,12 @@ export interface AstrologyChartFacts {
   /** 十二宫；无宫位档为空数组（不留空占位） */
   houses: HouseFact[];
   aspects: AspectFact[];
+  /**
+   * 行运事实（文档 §9.3 实体五）：以计算时刻所在自然周为窗口；本命落点度数不稳定时
+   * 不产出对应行运，未知时间档整体为空数组（文档 §11.1：行运不可用则隐藏本周行动三角）。
+   * 冻结示例盘不含行运（示例仅展示本命盘），该字段为空数组。
+   */
+  transits: TransitFact[];
   factStability: FactStability;
   /** 盘面范围：含宫位 / 不含宫位 */
   dataCompleteness: DataCompleteness;
@@ -311,21 +324,10 @@ export interface AstrologyChartFacts {
 
 /**
  * 占星真值计算域同步接口（示例盘 / 预览盘专用）：
- * 输入出生档案，立即输出不可变星盘事实层。前端先行期使用 mock 实现（mock-chart-facts.ts），
- * 真实计算域上线后替换实现绑定，接口不变。
- * 注意：提交链路不用本接口——提交走下面的异步接缝 RequestChartFacts。
+ * 输入出生档案，立即输出不可变星盘事实层。
+ * 真实实现见 ./chart-engine.ts（仅服务端）；示例盘与前端预览使用 ./sample-chart.ts 的冻结产物。
+ * 注意：提交链路不用本接口——提交走服务端报告流的 chart-facts 帧（./chart-request.ts）。
  */
 export interface ComputeChartFacts {
   (profile: AstroBirthProfile): AstrologyChartFacts;
-}
-
-/**
- * 占星真值计算域异步接口（提交链路唯一接缝）：
- * 输入出生档案，异步输出不可变星盘事实层（Promise）。真实计算域上线后替换实现绑定，
- * 消费方（表单提交 / 仪式等待室 / 结果页）不改。
- * 前端先行期由 mock-chart-facts.ts 的 requestChartFacts 实现：内部仍走同步 computeChartFacts
- * （同一冻结口径），外包一层随机延迟模拟真实网络时序。
- */
-export interface RequestChartFacts {
-  (profile: AstroBirthProfile): Promise<AstrologyChartFacts>;
 }

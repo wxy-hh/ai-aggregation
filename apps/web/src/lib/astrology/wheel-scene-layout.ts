@@ -318,15 +318,18 @@ export function buildWheelSceneLayout(
     };
   });
 
-  /** 整宫制宫位（仅完整盘）：宫界线 + 宫位号 */
+  /** 宫位（仅完整盘）：宫界线落在真实宫头，宫位号放在本宫格中心 */
   const houses: HouseCusp3D[] =
     withHouses && facts.houses.length === 12
-      ? facts.houses.map((h) => {
-          const cuspLon = ZODIAC_ORDER.indexOf(h.sign) * 30;
+      ? facts.houses.map((h, i) => {
+          const cuspLon = ZODIAC_ORDER.indexOf(h.sign) * 30 + h.cuspDegree;
+          const next = facts.houses[(i + 1) % 12];
+          const nextLon = ZODIAC_ORDER.indexOf(next.sign) * 30 + next.cuspDegree;
+          const spanDeg = ((((nextLon - cuspLon) % 360) + 360) % 360) || 30;
           const theta = screenTheta(cuspLon, ascLon);
           const [x1, y1] = polar(theta, SCENE_R.houseIn);
           const [x2, y2] = polar(theta, SCENE_R.zodiacIn);
-          const [nx, ny] = polar(screenTheta(cuspLon + 15, ascLon), SCENE_R.houseNum);
+          const [nx, ny] = polar(screenTheta(cuspLon + spanDeg / 2, ascLon), SCENE_R.houseNum);
           return {
             number: h.number,
             boundary: [toWorld(x1, y1, 0.05), toWorld(x2, y2, 0.05)],

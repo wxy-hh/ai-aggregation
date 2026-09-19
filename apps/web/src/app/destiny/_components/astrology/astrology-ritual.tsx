@@ -9,13 +9,15 @@
  * （减少动态时退化为交叉淡入）。结果相位由 AstrologyResultView 承载（06：护照/主轴/三卡/交互轮），
  * wheelSlot 插槽传入。
  *
- * 诚实性约束（12 工单起改「等待室」语义）：
- * - 真值（chartFacts）由异步接缝在仪式窗内送达（mock 600–900ms）：提交即进本组件，四阶段
- *   按最小仪式窗（3.2s，在 2.5–4s 区间）播放；转场条件是「仪式窗已走满 **且** 真值已就位」，
- *   两者都满足才 markResultReady 进结果页。
- * - 仪式窗走满而真值未就位（真实计算域慢时）：停在第四阶段文案，并如实加一行「最后校准中…」，
- *   真值一到立即转场；不用假进度与假完成糊弄。
- * - 第四阶段代表「宇宙重点已整理完成」（本地基于星盘事实整理，无 AI 请求）。
+ * 诚实性约束（02 工单起由真实报告流事件驱动；03 工单按设计文档 §6.4 调整转场口径）：
+ * - 真值（chart-facts 帧）由报告流在仪式窗内送达：提交即进本组件，四段视觉节奏照常播放，
+ *   但第四段（解读层）只在真值到达后才揭幕——真值未到时进度停在第三段「进行中」，
+ *   不亮第四段、也不宣称算完（chart-facts 是前三段唯一的完成证据）；
+ * - 转场条件是「仪式窗已走满 **且** 真值已就位」：真值锁定即离开加载页进入结果页，**不等待 AI 全文**
+ *   （设计文档 §6.4：结果页先渲染星盘轮与骨架，主轴与各模块文案流式浮现；加载页第四阶段仅代表
+ *   「解读请求已发出」）。解读到达 / 降级 / 超时都在结果页由分区事件与诚实失败卡承接；
+ * - 仪式窗走满而真值未到（真实计算域慢时）：停在第三阶段，并如实加一行「最后校准中…」，
+ *   真值一到立即推进。
  * - 失败时呈现安静恢复卡：资料已保留 + 失败类型 + 重新计算 / 返回修改资料，不再自动转场。
  * - 无宫位盘第三阶段文案固定为「系统正在整理行星位置与关键相位」，不播放十二宫动画再隐藏。
  * - 跳过按钮语义为「跳过动画」：真值已就位才可直达（未就位时无结果可看，置灰并给出 aria 说明）。
@@ -40,7 +42,7 @@ import { AstrologyCtaButton } from './astrology-cta-button';
 import { AstrologyWheelSceneSwitch } from './astrology-wheel-scene-switch';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
-import { APPROXIMATE_SLOTS, mapFormToAstroProfile } from './astrology-mappers';
+import { APPROXIMATE_SLOTS } from './astrology-mappers';
 import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
 
@@ -53,9 +55,12 @@ const WINDOW_END_AT = 3200; // 最小仪式窗走满 → 真值若已就位即�
 
 type RitualStage = 1 | 2 | 3 | 4;
 
-/* ---------- 四段真实进度清单：主语统一为「系统」 ---------- */
+/* ---------- 四段真实进度清单：前三段主语「系统」，第四段为解读层（AI 整理） ---------- */
 
-function stageCopy(withHouses: boolean): Array<{ doing: string; done: string }> {
+function stageCopy(
+  withHouses: boolean,
+  interpretationUnavailable: boolean
+): Array<{ doing: string; done: string }> {
   return [
     { doing: '系统正在校准出生地与当地时区', done: '系统已校准出生地与当地时区' },
     { doing: '系统正在定位行星与月亮', done: '系统已定位行星与月亮' },
@@ -63,7 +68,11 @@ function stageCopy(withHouses: boolean): Array<{ doing: string; done: string }> 
       doing: withHouses ? '系统正在绘制十二宫与关键相位' : '系统正在整理行星位置与关键相位',
       done: withHouses ? '系统已绘制十二宫与关键相位' : '系统已整理行星位置与关键相位',
     },
-    { doing: '系统正在基于星盘事实整理宇宙重点', done: '宇宙重点已整理完成' },
+    {
+      doing: 'AI 正在基于星盘事实整理宇宙重点',
+      // 解读降级（本票 LLM 未接入 / 额度不足）时如实收尾，不写「已整理完成」
+      done: interpretationUnavailable ? '宇宙重点整理暂不可用' : '宇宙重点已整理完成',
+    },
   ];
 }
 
@@ -146,7 +155,7 @@ type AstrologyRitualResultProps = {
 
 export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResultProps) {
   const reduceMotion = useReducedMotion();
-  const { step, formData, chartFacts, error, errorKind, setWorkspaceState, markResultReady } =
+  const { step, formData, chartFacts, error, errorKind, interpretation, setWorkspaceState, markResultReady } =
     useDestinyWorkspaceStore(
       useShallow((s) => ({
         step: s.astrology.step,
@@ -154,46 +163,59 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
         chartFacts: s.astrology.chartFacts,
         error: s.astrology.error,
         errorKind: s.astrology.errorKind,
+        interpretation: s.astrology.interpretation,
         setWorkspaceState: s.setWorkspaceState,
         markResultReady: s.markResultReady,
       }))
     );
 
   const phase = step === 'result' ? 'result' : 'ritual';
-  const [stage, setStage] = useState<RitualStage>(1);
-  /** 最小仪式窗是否已走满（3.2s 到点置真）；转场还要求真值已就位，两者都满足才进结果页 */
+  /** 时间轴节奏（视觉推进）：只决定第几段被点亮，是否算完成由真实事件说了算 */
+  const [timelineStage, setTimelineStage] = useState<RitualStage>(1);
+  /** 最小仪式窗是否已走满（3.2s 到点置真）；转场还要求真值与解读结论都已就位 */
   const [windowElapsed, setWindowElapsed] = useState(false);
 
   /** 真值是否已到手：null 表示在途（等待室期间既不是失败、也不是可展示的结果） */
   const factsReady = chartFacts !== null;
+  /** 解读层是否已有结论（unavailable 或 ready）：仅用于第四段的完成态文案，不再是转场条件 */
+  const interpretationSettled = interpretation.status === 'unavailable' || interpretation.status === 'ready';
+  const interpretationUnavailable = interpretation.status === 'unavailable';
   /** 含宫位与否取自事实层；真值在途时未知，第三阶段文案先用中性的「整理行星位置与关键相位」，
-   *  真值一到（约 900ms，早于第三阶段 1800ms）即按真实盘面口径纠正 */
+   *  真值一到即按真实盘面口径纠正 */
   const withHouses = chartFacts?.dataCompleteness === 'with-houses';
-  const stages = useMemo(() => stageCopy(Boolean(withHouses)), [withHouses]);
-  /** 等待室状态：仪式窗已满而真值未到——如实说明在等最后一环，不假装已完成 */
-  const waitingForFacts = windowElapsed && !factsReady;
-
+  const stages = useMemo(
+    () => stageCopy(Boolean(withHouses), interpretationUnavailable),
+    [withHouses, interpretationUnavailable]
+  );
   /**
-   * 仪式推进：四阶段节奏不变（800/1800/2700ms），第 3200ms 只标记「仪式窗已走满」，
-   * 转场由下方闸门判定（避免窗口一到就带着在途真值进结果页）。
-   * 减少动态：同样的真实节奏，只是盘面各层静态出现、转场退化为交叉淡入。
-   * cleanup 依赖 phase：跳过按钮把 phase 提前切到 result 时，四个定时器一并清掉。
+   * 展示阶段 = 时间轴节奏 ∩ 真实事件：真值未到时不亮起第四段（解读层还没有真值可基于），
+   * 第三段保持「进行中」直到 chart-facts 到达；chart-facts 一到，前三段即视为完成
+   * （服务端校准时区 / 定位行星 / 绘制宫位三步在同一请求内完成，只有这一帧是它们的完成证据）。
    */
+  const stage: RitualStage = factsReady ? timelineStage : (Math.min(timelineStage, 3) as RitualStage);
+  /** 某一段是否已完成：第四段额外要求解读结论收口（且必须已经走到第四段，避免结论先到时抢跑） */
+  const stageDone = (num: RitualStage) => stage > num || (num === 4 && stage === 4 && interpretationSettled);
+  /** 等待室：仪式窗已满而真值未到——如实说明在等最后一环，不假装已完成 */
+  const waitingForFacts = windowElapsed && !factsReady;
+  /** 阶段推进：四段节奏不变（800/1800/2700ms），第 3200ms 只标记「仪式窗已走满」，
+   *  转场由下方闸门判定（避免窗口一到就带着在途真值进结果页）。
+   *  减少动态：同样的真实节奏，只是盘面各层静态出现、转场退化为交叉淡入。
+   *  cleanup 依赖 phase：跳过按钮把 phase 提前切到 result 时，四个定时器一并清掉。 */
   useEffect(() => {
     if (phase !== 'ritual' || error) return;
     const timers = [
-      setTimeout(() => setStage(2), STAGE_2_AT),
-      setTimeout(() => setStage(3), STAGE_3_AT),
-      setTimeout(() => setStage(4), STAGE_4_AT),
+      setTimeout(() => setTimelineStage(2), STAGE_2_AT),
+      setTimeout(() => setTimelineStage(3), STAGE_3_AT),
+      setTimeout(() => setTimelineStage(4), STAGE_4_AT),
       setTimeout(() => setWindowElapsed(true), WINDOW_END_AT),
     ];
     return () => timers.forEach(clearTimeout);
   }, [phase, error]);
 
   /**
-   * 转场闸门（等待室语义）：仪式窗走满 **且** 真值已就位才转场。
-   * - 真值先到（mock 600–900ms，早于 3.2s 窗）：按原节奏在窗满那一瞬转场；
-   * - 仪式窗先满（真实计算域慢时）：停在第四阶段 + 「最后校准中…」，真值一到立即转场；
+   * 转场闸门（等待室语义）：仪式窗走满 **且** 真值已就位即转场（设计文档 §6.4：不等待 AI 全文）。
+   * - 真值先到（真实路由约百毫秒级）：按原节奏在窗满那一瞬转场，解读文案在结果页流式浮现；
+   * - 仪式窗先满：停在等待室并如实说明在等真值，真值一到立即转场；
    * - 失败：error 非空时不转场，由既有失败恢复卡接管。
    */
   useEffect(() => {
@@ -209,19 +231,15 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
   /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式，不在才重新请求。
    *  step 一律回落 form：失败卡可能停在结果步，不回落则重算后 phase 仍是 result，直接跳过仪式 */
   const retry = () => {
-    setStage(1);
+    setTimelineStage(1);
     setWindowElapsed(false);
     if (chartFacts) {
       // 真值已在：只重播仪式（entryView 回到 loading，确保工作区把仪式树留在前台）
       setWorkspaceState('astrology', { step: 'form', entryView: 'loading', error: null, errorKind: null });
       return;
     }
-    const profile = mapFormToAstroProfile(formData);
-    if (!profile) {
-      setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
-      return;
-    }
-    // 真值仍缺：重走异步接缝（chartFacts 保持 null 表示在途，仪式等待室重新计时）
+    // 真值仍缺：重走报告流接缝（chartFacts 保持 null 表示在途，仪式等待室重新计时；
+    // 解读状态由接缝置回「在途」，结论只认本次流）
     setWorkspaceState('astrology', {
       step: 'form',
       entryView: 'loading',
@@ -229,7 +247,7 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
       error: null,
       errorKind: null,
     });
-    const { token, result } = startChartFactsRequest(profile);
+    const { token, result } = startChartFactsRequest(formData);
     result
       .then((facts) => {
         // 过期响应丢弃：连续重试时先发的响应不得覆盖后发的结果
@@ -403,8 +421,8 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                   <ol className="mt-6 space-y-4">
                     {stages.map((s, i) => {
                       const num = (i + 1) as RitualStage;
-                      const done = stage > num;
-                      const current = stage === num;
+                      const done = stageDone(num);
+                      const current = stage === num && !done;
                       return (
                         <li key={s.doing} className="flex items-center gap-3">
                           {done ? (
@@ -442,7 +460,8 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                       );
                     })}
                   </ol>
-                  {/* 等待室：仪式窗已走满而真值未到（真实计算域慢时）——如实说明还在等最后一环 */}
+                  {/* 等待室：仪式窗已走满而真值未到（真实计算域慢时）——如实说明在等哪一环。
+                      解读层层不在此等待：真值锁定即转场，解读文案在结果页分区涌现（设计文档 §6.4） */}
                   {waitingForFacts && (
                     <p className="mt-5 text-center text-xs font-medium leading-relaxed text-indigo-600 dark:text-indigo-300 xl:text-left">
                       最后校准中…

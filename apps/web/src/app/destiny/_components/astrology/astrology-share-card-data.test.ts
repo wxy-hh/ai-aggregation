@@ -13,12 +13,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { computeChartFacts } from '@/lib/astrology/chart-engine';
 import {
   SAMPLE_PROFILE_ACCURATE,
   SAMPLE_PROFILE_APPROXIMATE,
   SAMPLE_PROFILE_UNKNOWN,
-  computeChartFacts,
-} from '@/lib/astrology/mock-chart-facts';
+} from '@/lib/astrology/sample-chart';
 import {
   buildAstrologyShareCardData,
   buildAstrologyShareFileName,

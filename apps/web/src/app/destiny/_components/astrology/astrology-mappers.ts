@@ -1,6 +1,9 @@
 /**
  * astrology-mappers.ts —— 星座寰宇表单 → 出生档案（AstroBirthProfile）的映射与校验
  *
+ * 口径唯一性：本模块同时被前端表单与报告路由（app/api/destiny/astrology/_lib/astrology-report-request.ts）
+ * 引用——时区偏移、历史夏令时、约时区间与 DST 歧义的选择只允许有一处实现，前后端不得各写一套。
+ *
  * 校验规则（设计文档 §6.3 表单即时反馈）：
  * - 阳历出生日期必填；非法/未来日期即时在字段下反馈，不阻断骨架
  * - 出生城市必须精确选中（经纬度与 IANA 时区齐全），模糊文本不允许提交

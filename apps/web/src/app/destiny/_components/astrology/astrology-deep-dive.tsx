@@ -3,6 +3,10 @@
 /**
  * astrology-deep-dive.tsx —— P0 深度区：星盘轮（完整盘面清单）与关键相位（设计文档 §6.6，08 工单）
  *
+ * 03 工单：关键相位的三段式文案改由 AI 分区产出（报告流 transits.keyAspects → interpretation.ts 的
+ * resolveKeyAspectList 与真值相位合并）。分区未到显示同档等待文案，解读降级显示诚实说明——
+ * 事实层的相位总表（星盘轮标签）始终可用，不受解读层影响。
+ *
  * 位于结果页五大生活模块之后（首屏之外的全宽区）。只提供两个页内标签：
  * - 「星盘轮」：行星落点 / 轴线与宫位 / 相位总表的完整盘面清单（白话先行、术语俱全），
  *   点击任意行星或相位行可定位回首屏交互轮并选中对应星体；无宫位档不出现轴线与宫位组（不置灰占位）。
@@ -19,11 +23,12 @@ import { ArrowUp, ChevronDown, Footprints, LocateFixed, Star, Sunrise } from 'lu
 import { cn } from '@/lib/utils';
 import type { AspectType, AstrologyChartFacts, PlanetBody, ZodiacSign } from '@/lib/astrology/chart-facts';
 import {
-  buildKeyAspects,
+  KEY_ASPECT_TOP_LIMIT,
   planetPlainSentence,
   PLANET_THEME,
   type KeyAspectReading,
-} from '@/lib/astrology/mock-interpretation';
+  type KeyAspectReference,
+} from '@/lib/astrology/interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
 import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
@@ -77,14 +82,25 @@ export type DeepDivePassport = {
   badgeClassName: string;
 };
 
+/** 关键相位解读可用性（03 工单：由报告流分区驱动；pending = 分区未到，unavailable = 解读降级） */
+export type KeyAspectsAvailability = {
+  status: 'pending' | 'ready' | 'unavailable';
+  /** 有 AI 三段式解读的稳定相位（强度降序，最多 5 条） */
+  top: KeyAspectReading[];
+  /** 其余稳定相位（仅事实，供完整列表展开） */
+  rest: KeyAspectReference[];
+};
+
 export type AstrologyDeepDiveProps = {
   facts: AstrologyChartFacts;
   passport: DeepDivePassport;
+  /** 关键相位分区（AI 三段式 + 真值相位合并的结果） */
+  keyAspects: KeyAspectsAvailability;
   /** 定位回首屏交互轮：选中星体并平滑滚动（angle/house 传 null 仅滚动） */
   onLocateBody: (body: PlanetBody | null) => void;
 };
 
-export function AstrologyDeepDive({ facts, passport, onLocateBody }: AstrologyDeepDiveProps) {
+export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }: AstrologyDeepDiveProps) {
   const reduceMotion = useReducedMotion();
   const [tab, setTab] = useState<DeepTab>('wheel');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -209,7 +225,7 @@ export function AstrologyDeepDive({ facts, passport, onLocateBody }: AstrologyDe
           {tab === 'wheel' ? (
             <WheelInventory facts={facts} onLocateBody={onLocateBody} />
           ) : (
-            <KeyAspectsPanel facts={facts} onLocateBody={onLocateBody} />
+            <KeyAspectsPanel keyAspects={keyAspects} onLocateBody={onLocateBody} />
           )}
         </motion.div>
       </AnimatePresence>
@@ -317,7 +333,10 @@ function WheelInventory({
       <div className="space-y-4">
         {/* 轴线与宫位（无宫位档整组缺项，不置灰占位） */}
         {withHouses && (
-          <InventoryGroup title="轴线与宫位" hint="整宫制 · 宫头即星座起点">
+          <InventoryGroup
+            title="轴线与宫位"
+            hint={facts.houseSystem === 'placidus' ? '普拉西德制 · 真实宫头度数' : '整宫制 · 宫头即星座起点'}
+          >
             <ul className="grid gap-1 sm:grid-cols-2">
               {[
                 { label: '上升', desc: '外在表达', angle: ascendant, Icon: Sunrise },
@@ -407,15 +426,29 @@ function WheelInventory({
 /* ---------- 面板二：关键相位 ---------- */
 
 function KeyAspectsPanel({
-  facts,
+  keyAspects,
   onLocateBody,
 }: {
-  facts: AstrologyChartFacts;
+  keyAspects: KeyAspectsAvailability;
   onLocateBody: (body: PlanetBody | null) => void;
 }) {
   const reduceMotion = useReducedMotion();
   const [showRest, setShowRest] = useState(false);
-  const { top, rest } = useMemo(() => buildKeyAspects(facts), [facts]);
+  const { status, top, rest } = keyAspects;
+
+  // 解读分区未到 / 解读降级：如实说明等待或不可用，绝不拿模板文案充数
+  if (status !== 'ready') {
+    return (
+      <div
+        aria-busy={status === 'pending' ? 'true' : undefined}
+        className="rounded-2xl border border-slate-200/80 bg-white p-5 text-sm leading-relaxed text-slate-500 dark:border-white/10 dark:bg-[#0D1226] dark:text-night-muted"
+      >
+        {status === 'pending'
+          ? '关键相位解读正在生成——每条相位都会说明能量关系、生活表现与一个可练习的小动作。'
+          : '关键相位解读本次没有生成（AI 解读未完成，可回上方重试）。左列「星盘轮」里的相位总表是事实层数据，始终可用。'}
+      </div>
+    );
+  }
 
   // 稳定相位一条都没有时如实说明（理论上罕见；绝不凑数虚构）
   if (top.length === 0) {
@@ -429,7 +462,7 @@ function KeyAspectsPanel({
   return (
     <div>
       <p className="text-xs text-day-muted dark:text-night-faint">
-        最有解释力的 {top.length} 条相位（按强度排序）——每条都说明能量关系、生活表现与一个可练习的小动作
+        最有解释力的 {Math.min(top.length, KEY_ASPECT_TOP_LIMIT)} 条相位（按强度排序）——每条都说明能量关系、生活表现与一个可练习的小动作
       </p>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         {top.map((a, i) => (

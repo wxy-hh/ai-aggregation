@@ -21,7 +21,10 @@
 
 import { useAuthStore } from '@/stores/auth-store';
 import { useHistoryStore } from '@/stores/history-store';
-import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import {
+  createIdleAstrologyInterpretation,
+  useDestinyWorkspaceStore,
+} from '@/stores/destiny-workspace-store';
 import { useAstrologyTempRecordStore } from '@/stores/astrology-temp-record';
 import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import type { DestinyHistoryItem } from '@/types/history';
@@ -206,6 +209,9 @@ export function saveAstrologyHistoryRecord(
  * 把解读摘要（黄金主轴）合并覆盖进去。修订号、快照数组与时间戳一律不动——
  * 这不是新一次测算，只是同一次记录的低敏摘要补全。
  *
+ * 03 工单起生产调用方为结果页：解读主轴分区（headline）到达时把金句作为低敏摘要合并进记录
+ * （真值写入路径不受影响，见 saveAstrologyHistoryRecord）。
+ *
  * 身份校验用 calculatedAt + calculationRevision：重算会换上新真值（新 calculatedAt），
  * 上一份迟到的解读不得改写新记录。
  * @returns 是否完成合并（记录已删或被新修订替换时为 false，静默跳过）
@@ -284,6 +290,8 @@ export function restoreAstrologyFromHistory(historyId: string): boolean {
     lastView: 'result',
     hasResult: true,
     chartFacts: payload.chartFacts,
+    // 恢复的是旧结果：解读层回到未发起态（本次会话没有再请求解读，不假装在途）
+    interpretation: createIdleAstrologyInterpretation(),
     formData: item.formData as unknown as AstrologyFormData,
     fieldErrors: {},
     error: null,

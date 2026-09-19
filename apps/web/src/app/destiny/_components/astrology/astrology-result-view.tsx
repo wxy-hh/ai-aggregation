@@ -15,14 +15,15 @@
  * 移动端保持单列叙事：护照 → 主轴 → 大三 → 本周入口 → 星盘轮 → 模块 → 洞察轨 → 深读
  * （DOM 顺序即移动叙事顺序，桌面双栏由 order 工具类重排，读屏顺序不打乱）。
  *
- * 分区加载（12 工单异步接缝）：
+ * 分区加载（02 工单：真值来自报告流，解读层按工作区状态分支）：
  * - 事实层（chartFacts）驱动的区块立即渲染：护照头、交互星盘轮、白话清单、术语表、深度区；
- * - 解读层（requestInterpretation，1000–1500ms）驱动的区块先渲染夜色系呼吸骨架：主轴金句、
- *   大三要素、本周行动入口、生活模块、洞察轨的分享与问答卡，解读到达即用既有入场语言替换；
+ * - 解读层状态（工作区 interpretation）：在途 → 夜色系呼吸骨架（主轴金句、大三要素、本周行动入口、
+ *   生活模块、洞察轨分享与问答卡）；暂不可用（LLM 未接入 / 额度不足 / 未取得结论）→ 文案区落
+ *   诚实的「解读暂不可用」卡并把解读驱动区块整块收起，事实层照常可交互；
  * - 金句区按金句档位预留 min-height，骨架替换时不产生布局跳动。
  *
- * 诚实性约束：事实层只读 chartFacts；解读层来自解读接缝（mock 实现 buildMockInterpretation），
- * 文案全部「倾向/可能/练习」式不绝对化；不可用要素缺项为 null，不预留占位、不伪装待定。
+ * 诚实性约束：事实层只读 chartFacts；解读内容只来自解读层事件（03 工单的流式分区），
+ * 绝不用模板/mock 文案冒充产出；不可用要素缺项为 null，不预留占位、不伪装待定。
  * 长文区域一律实体高对比底，仅护照头 Hero 用玻璃质感（§6.5 硬规则）。
  */
 
@@ -46,23 +47,25 @@ import {
 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
+import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import type { AstrologyChartFacts, PlanetBody, ZodiacSign } from '@/lib/astrology/chart-facts';
 import {
   ASPECT_PLAIN,
   ASCENDANT_READINGS,
+  attachWeeklyGuidance,
   MOON_READINGS,
-  PLANET_THEME,
-  SUN_READINGS,
   moduleIdsForBody,
   orderModulesByTopic,
+  PLANET_THEME,
   planetPlainSentence,
-  requestInterpretation,
-  type AstrologyInterpretation,
+  resolveKeyAspectList,
+  SUN_READINGS,
   type ElementReading,
   type ModuleId,
   type ModuleReading,
-} from '@/lib/astrology/mock-interpretation';
+} from '@/lib/astrology/interpretation';
+import { chartFactsErrorKind, isLatestChartFactsRequest, startChartFactsRequest } from '@/lib/astrology/chart-request';
 import { updateAstrologyHistoryInterpretation } from '@/lib/astrology/history';
 import {
   ASPECT_CN,
@@ -72,6 +75,7 @@ import {
   ZODIAC_GLYPH,
 } from './astrology-chart-wheel';
 import { AstrologyDeepDive } from './astrology-deep-dive';
+import { AstrologyInterpretationNotice } from './astrology-interpretation-notice';
 import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyShareEntry, isAstrologyShareAvailable } from './astrology-share-entry';
@@ -116,6 +120,13 @@ function precisionBadge(formData: AstrologyFormData, facts: AstrologyChartFacts)
   };
 }
 
+/** 口径行里的宫制文案：普拉西德制为默认，整宫制为高纬回退，无宫位为降级盘 */
+function houseSystemLabel(facts: AstrologyChartFacts): string {
+  if (facts.houseSystem === 'placidus') return '普拉西德制';
+  if (facts.houseSystem === 'whole-sign') return '整宫制';
+  return '无宫位';
+}
+
 /** 资料摘要行（真实表单数据，与仪式页摘要同口径） */
 function summaryText(formData: AstrologyFormData): string {
   const d = formData.birthDate;
@@ -146,6 +157,11 @@ function refLabel(ref: string, facts: AstrologyChartFacts): string {
   if (parts[0] === 'aspect') {
     const [, source, type, target] = parts;
     return `${PLANET_CN[source as PlanetBody] ?? source}${ASPECT_CN[type as keyof typeof ASPECT_CN] ?? type}${PLANET_CN[target as PlanetBody] ?? target}`;
+  }
+  if (parts[0] === 'transit') {
+    // 行运引用（本月天象）：标注「行运」，与本命相位区分
+    const [, transiting, type, target] = parts;
+    return `行运${PLANET_CN[transiting as PlanetBody] ?? transiting}${ASPECT_CN[type as keyof typeof ASPECT_CN] ?? type}${PLANET_CN[target as PlanetBody] ?? target}`;
   }
   return ref;
 }
@@ -348,22 +364,7 @@ function PlanetFactCard({
   );
 }
 
-/* ---------- 过渡期标识与移动端折叠 ---------- */
-
-/**
- * 前端演示数据标识（过渡期徽章）：
- * 星盘真值当前来自冻结样盘（lib/astrology/mock-chart-facts.ts，按时间精度返回固定档案、不读取出生日期与城市），
- * 与表单预览条的真实太阳测算不同源；真实星历计算接入后删除本组件与三处调用点即可。
- * 解释文案由护照卡旁的常驻说明承担，徽章自身文字足够，不再挂 title 提示。
- */
-function DemoDataBadge() {
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/70 bg-amber-100/50 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-amber-800 dark:border-amber-300/30 dark:bg-amber-300/[0.08] dark:text-amber-200">
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-300" />
-      前端演示数据
-    </span>
-  );
-}
+/* ---------- 移动端折叠 ---------- */
 
 /**
  * 移动端折叠壳（洞察轨密度）：<sm 默认收为一行摘要（标题 + chevron，热区 44px），
@@ -531,13 +532,15 @@ export type AstrologyResultViewProps = {
 
 export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const reduceMotion = useReducedMotion();
-  const { formData, chartFacts, setWorkspaceState } = useDestinyWorkspaceStore(
-    useShallow((s) => ({
-      formData: s.astrology.formData,
-      chartFacts: s.astrology.chartFacts,
-      setWorkspaceState: s.setWorkspaceState,
-    }))
-  );
+  const { formData, chartFacts, interpretation: interpretationState, setWorkspaceState } =
+    useDestinyWorkspaceStore(
+      useShallow((s) => ({
+        formData: s.astrology.formData,
+        chartFacts: s.astrology.chartFacts,
+        interpretation: s.astrology.interpretation,
+        setWorkspaceState: s.setWorkspaceState,
+      }))
+    );
 
   const [selectedBody, setSelectedBody] = useState<PlanetBody | null>(null);
   /** WebGL 星渊场景可用性（null=探测中/不可用 → SVG 轮兜底并保持 DOM 视差） */
@@ -557,33 +560,45 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   }, []);
 
   /**
-   * 解读接缝（异步）：真值先渲染，解读后到——到达前由分区骨架占位。
-   * 请求随 chartFacts 变化重发；组件卸载或真值切换时丢弃在途响应（cancelled）。
-   * 解读到达后顺手把低敏摘要合并进同一条历史记录（12 工单异步写入策略）。
+   * 解读层内容（主轴 / 大三要素 / 五大模块 / 本周三角与关键相位）：03 工单由报告流分区事件
+   * 逐区填充（headline → bigThree → modules → transits 落进工作区 interpretation.report）。
+   * 分区未到达时对应区块按骨架占位；解读降级时整块收起并落诚实的「解读暂不可用」卡，
+   * 绝不用模板文案冒充产出。
    */
-  const [interpretation, setInterpretation] = useState<AstrologyInterpretation | null>(null);
-  useEffect(() => {
-    if (!chartFacts) {
-      setInterpretation(null);
-      return;
-    }
-    let cancelled = false;
-    setInterpretation(null);
-    requestInterpretation(chartFacts)
-      .then((payload) => {
-        if (cancelled) return;
-        setInterpretation(payload);
-        updateAstrologyHistoryInterpretation(formData, chartFacts, payload.headline?.text ?? null);
-      })
-      .catch(() => {
-        // 解读失败不阻塞事实层：分区骨架保持在场，用户可「重新演算」重试（真实 AI 接入后在此落失败态）
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [chartFacts, formData]);
+  const interpretation = interpretationState.report;
+  /** 五大生活模块（解读分区 + 本周三角组装；关注主题只调整阅读顺序，不改变盘面与文案） */
+  const modules = useMemo(() => {
+    if (!interpretation) return [];
+    const merged = attachWeeklyGuidance(interpretation.modules, interpretation.transits);
+    const topicToModule: Record<string, ModuleId> = { self: 'who', love: 'love', career: 'career', recent: 'week' };
+    const priority = formData.topic ? (topicToModule[formData.topic] ?? null) : null;
+    return orderModulesByTopic(merged, priority);
+  }, [interpretation, formData.topic]);
+  /** 大三要素与模块分区是否已到达（未到达时按分区骨架占位） */
+  const bigThree = interpretation?.bigThree ?? null;
+  const modulesArrived = interpretation !== null && interpretation.modules.length > 0;
 
-  const fullHeadline = interpretation?.headline?.text ?? '';
+  /** 关键相位（深度区）：AI 三段式文案与真值相位按引用键合并，只认盘面稳定存在的相位 */
+  const keyAspects = useMemo(() => {
+    if (!chartFacts) return { status: 'pending' as const, top: [], rest: [] };
+    if (interpretation?.transits) {
+      const { top, rest } = resolveKeyAspectList(chartFacts, interpretation.transits.keyAspects);
+      return { status: 'ready' as const, top, rest };
+    }
+    // 分区未到（含已就绪但 transits 仍在途）：按等待态说明；只有解读层确认降级才说不生成
+    return {
+      status: interpretationState.status === 'unavailable' ? ('unavailable' as const) : ('pending' as const),
+      top: [],
+      rest: [],
+    };
+  }, [chartFacts, interpretation, interpretationState.status]);
+
+  /** 解读在途（骨架可展示）与解读降级（诚实卡）的判定：有内容即为就绪，二者互斥 */
+  const interpretationPending = interpretation === null && interpretationState.status === 'pending';
+  const interpretationUnavailable = interpretation === null && !interpretationPending;
+
+  const headlineReading = interpretation?.headline ?? null;
+  const fullHeadline = headlineReading?.text ?? '';
 
   /** 主轴落定标记：逐字状态由 TypewriterHeadline 自持（隔离 34ms/字的高频重渲染），
    *  父树只在落定那一刻重渲染一次；比对文案而不是布尔值，换主轴文案时自动回到未落定 */
@@ -634,14 +649,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
       }));
   }, [chartFacts]);
 
-  /** 五大生活模块解读（解读接缝产出，统一在此排序：列表渲染与事实卡反向定位共用同一份数据）。
-   *  关注主题（表单 step1）只调整阅读顺序：映射到对应模块并提到首位，盘面与文案不变。 */
-  const modules = useMemo(() => {
-    if (!interpretation) return [];
-    const topicToModule: Record<string, ModuleId> = { self: 'who', love: 'love', career: 'career', recent: 'week' };
-    const priority = formData.topic ? (topicToModule[formData.topic] ?? null) : null;
-    return orderModulesByTopic(interpretation.modules, priority);
-  }, [interpretation, formData.topic]);
+  /** 解读主轴到达即把低敏摘要合并进本地统一历史记录（同一条逻辑记录，修订号不动） */
+  useEffect(() => {
+    if (!chartFacts || !fullHeadline) return;
+    updateAstrologyHistoryInterpretation(formData, chartFacts, fullHeadline);
+  }, [chartFacts, fullHeadline, formData]);
+
   /** 本周行动入口文案（移动端首屏 compact 卡；行运不可用时为 null，入口整块隐藏） */
   const weeklyAction = useMemo(
     () => modules.find((m) => m.id === 'week')?.weekly?.action ?? null,
@@ -674,16 +687,16 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           : null
       : null;
 
-  /** 大三要素卡片数据（不可用项为 null，直接不渲染；解读在途时整体为空，由骨架占位） */
+  /** 大三要素卡片数据（分区未到达或不可用项为 null，直接不渲染；分区未到由骨架占位） */
   const bigThreeCards = [
-    interpretation?.bigThree.sun && sunPlacement?.sign
-      ? { key: 'sun' as const, title: '太阳', subtitle: '核心气质', Icon: SunIcon, reading: interpretation.bigThree.sun, term: placementTermLine(chartFacts, 'sun') }
+    bigThree?.sun && sunPlacement?.sign
+      ? { key: 'sun' as const, title: '太阳', subtitle: '核心气质', Icon: SunIcon, reading: bigThree.sun, term: placementTermLine(chartFacts, 'sun') }
       : null,
-    interpretation?.bigThree.moon
-      ? { key: 'moon' as const, title: '月亮', subtitle: '内在情绪', Icon: MoonIcon, reading: interpretation.bigThree.moon, term: placementTermLine(chartFacts, 'moon') }
+    bigThree?.moon
+      ? { key: 'moon' as const, title: '月亮', subtitle: '内在情绪', Icon: MoonIcon, reading: bigThree.moon, term: placementTermLine(chartFacts, 'moon') }
       : null,
-    interpretation?.bigThree.ascendant
-      ? { key: 'ascendant' as const, title: '上升', subtitle: '外在表达', Icon: Sunrise, reading: interpretation.bigThree.ascendant, term: placementTermLine(chartFacts, 'ascendant') }
+    bigThree?.ascendant
+      ? { key: 'ascendant' as const, title: '上升', subtitle: '外在表达', Icon: Sunrise, reading: bigThree.ascendant, term: placementTermLine(chartFacts, 'ascendant') }
       : null,
   ].filter((c): c is NonNullable<typeof c> => c !== null);
 
@@ -717,6 +730,26 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
         block: 'center',
       });
     }, delay);
+  };
+
+  /**
+   * 重试解读（工单 14：真值不重算）：重走报告流——服务端真值重算结果与本盘确定性一致
+   * （单盘约 150ms，近乎零成本），因此工作区保留既有 chartFacts：历史记录合并依赖它的
+   * calculatedAt 锚点，重试不应把它换成新一次计算的时间戳。
+   */
+  const retryInterpretation = () => {
+    if (!chartFacts) return;
+    const { token, result } = startChartFactsRequest(formData);
+    result.then(
+      () => {
+        // 真值重算结果确定性一致：不写回工作区（保留历史锚点），解读分区随流继续填充
+        if (!isLatestChartFactsRequest(token)) return;
+      },
+      () => {
+        // 失败由接缝落成「解读未完成」结论（工作区 error 不动：星盘与已到达分区照常展示）
+        if (!isLatestChartFactsRequest(token)) return;
+      }
+    );
   };
 
   return (
@@ -758,11 +791,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide', badge.className)}>
                     {badge.text}
                   </span>
-                  {/* 过渡期显式标识：星盘真值来自冻结样盘，与表单预览的真实太阳测算不同源 */}
-                  <DemoDataBadge />
-                  <span className="text-[11px] leading-relaxed text-amber-800 dark:text-[#E7C873]/85">
-                    真实星历计算接入后，这里将展示你的专属星盘
-                  </span>
+                  {/* 解读与问答的模型口径（与八字/紫微/奇门同一个控制器）：结果页可直接切换，
+                      切换后「重试解读」与后续提问即用新模型；compact 形态最小，热区仍 ≥44 */}
+                  <DestinyModelSwitcher size="compact" className="ml-auto" />
                 </div>
                 {/* 移动端突出太阳星座（§7.2 压缩护照）；桌面展示完整摘要行 */}
                 {sunPlacement?.sign && (
@@ -813,7 +844,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                         <div className="flex gap-2 border-t border-slate-200/70 pt-2 dark:border-white/[0.08]">
                           <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">口径</dt>
                           <dd>
-                            回归黄道 · {withHouses ? '整宫制' : '无宫位行星盘'} · 容许度表 {chartFacts.orbTableVersion} ·
+                            回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位行星盘'} · 容许度表 {chartFacts.orbTableVersion} ·
                             引擎 {chartFacts.engineVersion} · 修订 {chartFacts.calculationRevision}
                           </dd>
                         </div>
@@ -825,133 +856,141 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             </header>
 
             {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注）。
-                    解读在途：按金句档位预留 min-height 的呼吸骨架；解读无主轴（真值不足）时整段不渲染 ── */}
-            {interpretation === null ? (
-              <section className="mt-12" aria-label="你的核心主题">
-                <HeadlineSkeleton />
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <DemoDataBadge />
-                </div>
-              </section>
-            ) : interpretation.headline ? (
-              <section className="mt-12" aria-label="你的核心主题">
-                {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
-                    移动端降到 text-xl（字重与琥珀金渐变由组件内部保留），sm 起恢复 clamp(40px,4vw,56px) 原档位 */}
-                <div className="max-sm:[&_h2]:text-xl max-sm:[&_h2]:leading-[1.25]">
-                  <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <DemoDataBadge />
-                </div>
-                {headlineDone && (
-                  <motion.div
-                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: reduceMotion ? 0.01 : 0.3 }}
-                    className="mt-4 flex flex-wrap items-center gap-2"
-                  >
-                    <span className="text-[11px] font-semibold tracking-wider text-day-muted dark:text-night-faint">
-                      依据
-                    </span>
-                    {interpretation.headline.factReferences.map((r) => (
-                      <span
-                        key={r}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-xs dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500/80 dark:bg-amber-300" />
-                        {refLabel(r, chartFacts)}
-                      </span>
-                    ))}
-                  </motion.div>
-                )}
-              </section>
-            ) : null}
-
-            {/* ── 3. 大三要素（主轴落定后 40ms 间隔上浮；时间未知切「核心要素」） ── */}
-            <section className="mt-12" aria-label={withHouses ? '大三要素' : '核心要素'}>
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
-                  {withHouses ? '大三要素' : '核心要素'}
-                </h3>
-                <span className="text-xs text-day-muted dark:text-night-faint">
-                  {withHouses ? '太阳 · 月亮 · 上升' : '只展示可计算且稳定的要素'}
-                </span>
+                    解读降级：诚实的「解读暂不可用」卡 + 重试解读（真值不重算）；
+                    分区未到：按金句档位预留 min-height 的呼吸骨架 ── */}
+            {interpretationUnavailable ? (
+              <div className="mt-12">
+                <AstrologyInterpretationNotice
+                  reason={interpretationState.reason}
+                  onRetry={retryInterpretation}
+                />
               </div>
-              {!withHouses && (
-                <p className="mt-2 rounded-2xl border border-violet-300/40 bg-violet-50/70 px-4 py-2.5 text-xs leading-relaxed text-violet-700 dark:border-violet-300/20 dark:bg-violet-400/[0.08] dark:text-violet-200">
-                  {degradeReason === 'unstable-in-range'
-                    ? '所选时段内上升与宫位不稳定，已按无宫位范围展示——以下结论只基于区间内稳定的事实，不取中点、不补算。'
-                    : '出生时间未知，上升与宫位已隐藏——以下结论只基于整日内稳定的事实，不猜测、不补算。'}
-                </p>
-              )}
-              {/* 解读在途：三卡位骨架（完整盘口径）；解读到达即由真实卡替换（含降级档的栏数自适应） */}
-              {interpretation === null ? (
-                <BigThreeSkeleton />
-              ) : (
-                <div className={cn('mt-4 grid gap-3', bigThreeCols)}>
-                  {bigThreeCards.map((card, i) => (
-                    <motion.article
-                      key={card.key}
-                      initial={reduceMotion || !headlineDone ? false : { opacity: 0, y: 14 }}
+            ) : (
+              headlineReading ? (
+                <section className="mt-12" aria-label="你的核心主题">
+                  {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
+                      移动端降到 text-xl（字重与琥珀金渐变由组件内部保留），sm 起恢复 clamp(40px,4vw,56px) 原档位 */}
+                  <div className="max-sm:[&_h2]:text-xl max-sm:[&_h2]:leading-[1.25]">
+                    <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
+                  </div>
+                  {headlineDone && (
+                    <motion.div
+                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={
-                        reduceMotion
-                          ? { duration: 0.01 }
-                          : { duration: 0.4, delay: headlineDone ? i * 0.04 + 0.05 : 0, ease: 'easeOut' }
-                      }
-                      className={cn(
-                        'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
-                        // 太阳为天生主角：鎏金描边 + 金色光晕；其余星卡保持靛紫体系
-                        card.key === 'sun'
-                          ? 'border-amber-300/70 shadow-[0_10px_30px_-14px_rgba(180,133,42,0.35)] hover:shadow-[0_20px_44px_-14px_rgba(180,133,42,0.45)] dark:border-[#E7C873]/35 dark:shadow-[0_12px_36px_-14px_rgba(231,200,115,0.30)] dark:hover:shadow-[0_22px_50px_-14px_rgba(231,200,115,0.40)]'
-                          : 'border-slate-200/80 shadow-[0_10px_30px_-18px_rgba(30,41,82,0.25)] hover:shadow-[0_20px_44px_-18px_rgba(73,105,233,0.35)] dark:border-white/10 dark:hover:border-indigo-300/25',
-                        !headlineDone && !reduceMotion && 'opacity-0',
-                        // 单卡聚光：横向排版（左识别区 + 右解读区），不留空栅格
-                        bigThreeSolo && 'sm:flex sm:items-start sm:gap-6 sm:p-6'
-                      )}
+                      transition={{ duration: reduceMotion ? 0.01 : 0.3 }}
+                      className="mt-4 flex flex-wrap items-center gap-2"
                     >
-                      <div className={cn(bigThreeSolo && 'sm:w-44 sm:shrink-0')}>
-                        <div className="flex items-center gap-2">
-                          <span
+                      <span className="text-[11px] font-semibold tracking-wider text-day-muted dark:text-night-faint">
+                        依据
+                      </span>
+                      {headlineReading.factReferences.map((r) => (
+                        <span
+                          key={r}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-xs dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500/80 dark:bg-amber-300" />
+                          {refLabel(r, chartFacts)}
+                        </span>
+                      ))}
+                    </motion.div>
+                  )}
+                </section>
+              ) : (
+                <section className="mt-12" aria-label="你的核心主题">
+                  <HeadlineSkeleton />
+                </section>
+              )
+            )}
+
+            {/* ── 3. 大三要素（主轴落定后 40ms 间隔上浮；时间未知切「核心要素」）。
+                    解读降级时不占据篇幅：事实层说明与星盘轮已完整呈现盘面，解读区由上方的诚实卡统一说明。
+                    解读在途：三卡位骨架（完整盘口径）；解读到达即由真实卡替换（含降级档的栏数自适应） ── */}
+            {interpretationUnavailable ? null : (
+              <section className="mt-12" aria-label={withHouses ? '大三要素' : '核心要素'}>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
+                    {withHouses ? '大三要素' : '核心要素'}
+                  </h3>
+                  <span className="text-xs text-day-muted dark:text-night-faint">
+                    {withHouses ? '太阳 · 月亮 · 上升' : '只展示可计算且稳定的要素'}
+                  </span>
+                </div>
+                {!withHouses && (
+                  <p className="mt-2 rounded-2xl border border-violet-300/40 bg-violet-50/70 px-4 py-2.5 text-xs leading-relaxed text-violet-700 dark:border-violet-300/20 dark:bg-violet-400/[0.08] dark:text-violet-200">
+                    {degradeReason === 'unstable-in-range'
+                      ? '所选时段内上升与宫位不稳定，已按无宫位范围展示——以下结论只基于区间内稳定的事实，不取中点、不补算。'
+                      : '出生时间未知，上升与宫位已隐藏——以下结论只基于整日内稳定的事实，不猜测、不补算。'}
+                  </p>
+                )}
+                {/* 分区未到：三卡位骨架（完整盘口径）；分区到达即由真实卡替换（含降级档的栏数自适应） */}
+                {bigThree === null ? (
+                  <BigThreeSkeleton />
+                ) : (
+                  <div className={cn('mt-4 grid gap-3', bigThreeCols)}>
+                    {bigThreeCards.map((card, i) => (
+                      <motion.article
+                        key={card.key}
+                        initial={reduceMotion || !headlineDone ? false : { opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={
+                          reduceMotion
+                            ? { duration: 0.01 }
+                            : { duration: 0.4, delay: headlineDone ? i * 0.04 + 0.05 : 0, ease: 'easeOut' }
+                        }
+                        className={cn(
+                          'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
+                          // 太阳为天生主角：鎏金描边 + 金色光晕；其余星卡保持靛紫体系
+                          card.key === 'sun'
+                            ? 'border-amber-300/70 shadow-[0_10px_30px_-14px_rgba(180,133,42,0.35)] hover:shadow-[0_20px_44px_-14px_rgba(180,133,42,0.45)] dark:border-[#E7C873]/35 dark:shadow-[0_12px_36px_-14px_rgba(231,200,115,0.30)] dark:hover:shadow-[0_22px_50px_-14px_rgba(231,200,115,0.40)]'
+                            : 'border-slate-200/80 shadow-[0_10px_30px_-18px_rgba(30,41,82,0.25)] hover:shadow-[0_20px_44px_-18px_rgba(73,105,233,0.35)] dark:border-white/10 dark:hover:border-indigo-300/25',
+                          !headlineDone && !reduceMotion && 'opacity-0',
+                          // 单卡聚光：横向排版（左识别区 + 右解读区），不留空栅格
+                          bigThreeSolo && 'sm:flex sm:items-start sm:gap-6 sm:p-6'
+                        )}
+                      >
+                        <div className={cn(bigThreeSolo && 'sm:w-44 sm:shrink-0')}>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                'flex h-8 w-8 items-center justify-center rounded-full',
+                                card.key === 'sun'
+                                  ? 'bg-amber-100/90 text-[#B4852A] dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
+                                  : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
+                              )}
+                            >
+                              <card.Icon className="h-4 w-4" strokeWidth={1.9} />
+                            </span>
+                            <div>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
+                              <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
+                            </div>
+                          </div>
+                          <p
                             className={cn(
-                              'flex h-8 w-8 items-center justify-center rounded-full',
-                              card.key === 'sun'
-                                ? 'bg-amber-100/90 text-[#B4852A] dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
-                                : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
+                              'mt-3 text-[11px] font-semibold tracking-wide',
+                              card.key === 'sun' ? 'text-[#B4852A] dark:text-[#E7C873]' : 'text-indigo-500 dark:text-indigo-300/90'
                             )}
                           >
-                            <card.Icon className="h-4 w-4" strokeWidth={1.9} />
-                          </span>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
-                            <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
-                          </div>
+                            {card.term}
+                          </p>
                         </div>
-                        <p
-                          className={cn(
-                            'mt-3 text-[11px] font-semibold tracking-wide',
-                            card.key === 'sun' ? 'text-[#B4852A] dark:text-[#E7C873]' : 'text-indigo-500 dark:text-indigo-300/90'
-                          )}
-                        >
-                          {card.term}
-                        </p>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={cn('mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200', bigThreeSolo && 'sm:mt-0')}>{card.reading.plain}</p>
-                        <p className="mt-2.5 border-t border-slate-100 pt-2.5 text-xs leading-relaxed text-slate-500 dark:border-white/[0.08] dark:text-night-muted">
-                          {card.reading.action}
-                        </p>
-                      </div>
-                    </motion.article>
-                  ))}
-                </div>
-              )}
-            </section>
+                        <div className="min-w-0 flex-1">
+                          <p className={cn('mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200', bigThreeSolo && 'sm:mt-0')}>{card.reading.plain}</p>
+                          <p className="mt-2.5 border-t border-slate-100 pt-2.5 text-xs leading-relaxed text-slate-500 dark:border-white/[0.08] dark:text-night-muted">
+                            {card.reading.action}
+                          </p>
+                        </div>
+                      </motion.article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* ── 3.5 本周行动入口（仅移动端 <xl；设计文档 §6.5 移动端顺序：护照 → 主轴 → 大三要素 → 本周行动入口，星盘轮位于首屏下方。
                     点击展开并定位到下方「本周宇宙提示」模块的行动三角；行运不可用时整块隐藏，不假装有数据。
-                    解读在途：同高档位骨架占位，避免星盘轮章节带随入口出现而整体下移） ── */}
-            {weeklyAction ? (
+                    解读在途：同高档位骨架占位，避免星盘轮章节带随入口出现而整体下移；解读降级：整块隐藏 ── */}
+            {interpretationUnavailable ? null : weeklyAction ? (
               <button
                 type="button"
                 onClick={() => handleLocateModule('week')}
@@ -1003,8 +1042,6 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             <div className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">你的星盘</h3>
               <span className="text-xs text-day-muted dark:text-night-faint">点选任一星体，查看它在你生活里的样子</span>
-              {/* 过渡期显式标识：轮盘几何来自冻结样盘，非本人真值 */}
-              <DemoDataBadge />
             </div>
 
             <div className="relative mt-6 xl:mt-8 xl:grid xl:grid-cols-2 xl:items-center xl:gap-10">
@@ -1157,7 +1194,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                                   </li>
                                 ))}
                               <li className="border-t border-slate-200/70 pt-2 dark:border-white/[0.08]">
-                                回归黄道 · {withHouses ? '整宫制' : '无宫位'} · 容许度表 {chartFacts.orbTableVersion}
+                                回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位'} · 容许度表 {chartFacts.orbTableVersion}
                               </li>
                             </ul>
                           </motion.div>
@@ -1219,9 +1256,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           </section>
 
           {/* ── 5. 五大生活模块与本周行动三角（07；全宽两列卡片栅格；事实片点击定位回轮；手风琴状态托管）
-                  解读在途：同构骨架占位（章节标题先立），解读到达即由真实卡替换 ── */}
+                  模块分区未到：同构骨架占位（章节标题先立）；分区到达即由真实卡替换；解读降级：整段不渲染 ── */}
           <div className="order-3 min-w-0 xl:order-4 xl:col-span-12">
-            {interpretation === null ? (
+            {interpretationUnavailable ? null : !modulesArrived ? (
               <LifeModulesSkeleton />
             ) : (
               <AstrologyLifeModules
@@ -1294,8 +1331,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             </section>
 
             {/* 2. 分享星语海报（脱敏海报卡预览弹层；主轴缺失时入口与折叠壳一并隐藏。
-                   解读在途：同档卡片骨架占位，避免洞察轨在解读到达时整体下移） */}
-            {interpretation === null ? (
+                   主轴分区未到：同档卡片骨架占位，避免洞察轨在解读到达时整体下移；解读降级：整卡隐藏
+                   ——分享卡的主语是主轴金句，没有解读就没有可分享的一句话，不做空入口） */}
+            {interpretationUnavailable ? null : headlineReading === null ? (
               <RailCardSkeleton />
             ) : (
               <MobileCollapse title="分享星语海报" hint="脱敏海报" icon={Share2} hidden={!shareAvailable}>
@@ -1305,8 +1343,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
 
             {/* 3. 星语问答（真功能：桌面内联面板 / 移动端底部抽屉，引用可定位）
                 摘要文案不计数：用户提问后剩余次数由面板内徽章呈现，静态文案不会与状态失配。
-                解读在途：问答只引用已确认的模块事实，模块未就绪时先占位骨架（不出「无模块可引用」的假答案） */}
-            {interpretation === null ? (
+                模块分区未到：问答只引用已确认的模块事实，先占位骨架（不出「无模块可引用」的假答案）；
+                解读降级：整卡隐藏（模块事实不在，问答无可引用真值） */}
+            {interpretationUnavailable ? null : !modulesArrived ? (
               <RailCardSkeleton />
             ) : (
               <MobileCollapse title="星语问答" hint="AI 解读问答" icon={MessageCircleQuestion}>
@@ -1324,6 +1363,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
         {/* ═══ 6. P0 深度区（08：全宽，星盘轮完整清单 / 关键相位两个页内标签） ═══ */}
         <AstrologyDeepDive
           facts={chartFacts}
+          keyAspects={keyAspects}
           passport={{
             name,
             sunSign: sunPlacement?.sign ?? null,

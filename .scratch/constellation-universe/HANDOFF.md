@@ -67,6 +67,11 @@
   - `apps/web/src/lib/astrology/mock-qa.ts` — 规则路由式问答 `answerAstrologyQuestion`（敏感拦截 + 事实引用 citations）
 - 前端消费点：`astrology-result-view.tsx`（解读）、`astrology-qa.tsx`（问答）—— 接模型时只换这两个取数来源
 
+> **T5 追记（星座寰宇 · 真实 API 接入，本节的三个 mock 模块已全部删除）**：真值改由服务端
+> `lib/astrology/chart-engine.ts` 计算并经报告流 `app/api/destiny/astrology/report/route.ts` 下发；
+> 解读改由 LLM 流式产出四分区；问答的敏感规则迁到服务端 `_lib/astrology-qa-safety.ts`。
+> 本节「纯本地、零模型」的描述只反映当时状态，现行口径见 `docs/features/2026-09-19-constellation-real-api/feature.md`。
+
 ### 其他命理盘 —— 已真实接入豆包/DeepSeek（现成范式，直接抄）
 
 - 路由：八字 `app/api/destiny/report/route.ts`、紫微 `api/destiny/ziwei-report/route.ts`、奇门 `api/destiny/qimen/`、copilot `api/destiny/copilot/`

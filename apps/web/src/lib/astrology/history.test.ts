@@ -16,7 +16,8 @@ import {
   type AstrologyReportPayload,
   type AstrologyRevisionSnapshot,
 } from './history';
-import { computeChartFacts, SAMPLE_PROFILE_ACCURATE } from './mock-chart-facts';
+import { computeChartFacts } from './chart-engine';
+import { SAMPLE_PROFILE_ACCURATE } from './sample-chart';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { DestinyHistoryItem } from '@/types/history';
 import { useAuthStore } from '@/stores/auth-store';

@@ -11,7 +11,7 @@
  * 5. 纯正中文注释，遵循全量清洁原则。
  */
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Crosshair, MessageCircle, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
@@ -19,27 +19,38 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { useHistoryStore } from '@/stores/history-store';
 import { useAstrologyTempRecordStore } from '@/stores/astrology-temp-record';
 import { restoreAstrologyFromHistory } from '@/lib/astrology/history';
-import { computeChartFacts, SAMPLE_PROFILE_ACCURATE } from '@/lib/astrology/mock-chart-facts';
+import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
+import { PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
+import { formatDegreeMinute } from './astrology-mappers';
 import { AstrologyChartWheel } from './astrology-chart-wheel';
 import { AstrologyCtaButton } from './astrology-cta-button';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { AstrologyStarfield } from './astrology-starfield';
 import { cn } from '@/lib/utils';
 
-/** 示例星盘十星共振微解读字典（点选星体时悬浮呈现，展现真实计算与洞察深度） */
-const SAMPLE_PLANET_INSIGHTS: Record<PlanetBody, { title: string; desc: string }> = {
-  sun: { title: '太阳 · 天秤座 14°42′', desc: '核心人格：温和优雅的平衡者，在协作与审美追求中映射出自身价值。' },
-  moon: { title: '月亮 · 白羊座 06°18′', desc: '内在情绪：直率纯粹的行动力本能，渴望最直接、最真实的真实表达。' },
-  mercury: { title: '水星 · 天秤座 20°05′', desc: '思维模式：严谨客观与多重视角权衡，善于换位思考与沟通调解。' },
-  venus: { title: '金星 · 天蝎座 27°12′', desc: '情感引力：深邃而专注的灵魂共鸣，追寻毫无保留且纯粹的真实联结。' },
-  mars: { title: '火星 · 天蝎座 02°36′', desc: '行动意志：极强的沉淀力与蓄势爆发力，坚韧执着，不达目标誓不罢休。' },
-  jupiter: { title: '木星 · 射手座 13°50′', desc: '机遇远见：天生开阔的探索哲学与乐观视野，对知识与未知充满热忱。' },
-  saturn: { title: '土星 · 双鱼座 19°24′', desc: '人生课题：将灵性与直觉落地为现实结构，在慈悲中修筑清晰的人生边界。' },
-  uranus: { title: '天王星 · 摩羯座 26°44′', desc: '世代特质：在传统体制中发起严谨务实的革新，重塑底层秩序与规则。' },
-  neptune: { title: '海王星 · 摩羯座 22°55′', desc: '潜意识流：将深层理想主义注入世俗现实，融化教条冰霜，赋予世界温情。' },
-  pluto: { title: '冥王星 · 天蝎座 28°30′', desc: '蜕变动能：直面心智幽暗处后的绝地重生，具备极其强大的自我重构能力。' },
+/** 示例星盘十星共振微解读字典（点选星体时悬浮呈现，展现真实计算与洞察深度）；
+ *  标题里的星座与度数一律由冻结事实层实时拼装，避免示例盘与文案漂移 */
+const SAMPLE_PLANET_INSIGHTS: Record<PlanetBody, string> = {
+  sun: '核心人格：温和优雅的平衡者，在协作与审美追求中映射出自身价值。',
+  moon: '内在情绪：直率纯粹的行动力本能，渴望最直接、最真实的真实表达。',
+  mercury: '思维模式：严谨客观与多重视角权衡，善于换位思考与沟通调解。',
+  venus: '情感引力：以审美与和谐为锚的亲密方式，在关系中寻找不费力的平衡。',
+  mars: '行动意志：极强的沉淀力与蓄势爆发力，坚韧执着，不达目标誓不罢休。',
+  jupiter: '机遇远见：天生开阔的探索哲学与乐观视野，对知识与未知充满热忱。',
+  saturn: '人生课题：将灵性与直觉落地为现实结构，在慈悲中修筑清晰的人生边界。',
+  uranus: '世代特质：在传统体制中发起严谨务实的革新，重塑底层秩序与规则。',
+  neptune: '潜意识流：将深层理想主义注入世俗现实，融化教条冰霜，赋予世界温情。',
+  pluto: '蜕变动能：直面心智幽暗处后的绝地重生，具备极其强大的自我重构能力。',
 };
+
+/** 示例盘星体卡标题：由冻结事实层拼装星座与度数（事实缺失时只留星体名） */
+function sampleInsightTitle(body: PlanetBody, facts: typeof SAMPLE_CHART_ACCURATE): string {
+  const planet = facts.planets.find((p) => p.body === body);
+  if (!planet || !planet.sign) return PLANET_CN[body];
+  const degree = planet.degree !== null ? ` ${formatDegreeMinute(planet.degree)}` : '';
+  return `${PLANET_CN[body]} · ${ZODIAC_CN[planet.sign]}${degree}`;
+}
 
 /** 三个天体核心价值点（图标 + 标题 + 精炼白话，体现天文学真值与严谨边界） */
 const VALUE_POINTS = [
@@ -66,8 +77,8 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
   /** 首页示例盘探索状态：允许用户自由点选星体体验星盘共振交互 */
   const [sampleSelectedBody, setSampleSelectedBody] = useState<PlanetBody | null>(null);
 
-  /** 示例盘：02 冻结档案（1995-10-08 14:30 上海，真实计算口径），组件级常量 */
-  const sampleFacts = useMemo(() => computeChartFacts(SAMPLE_PROFILE_ACCURATE), []);
+  /** 示例盘：真实计算域冻结档案（1995-10-08 14:30 上海，见 lib/astrology/sample-chart.ts），组件级常量 */
+  const sampleFacts = SAMPLE_CHART_ACCURATE;
 
   /** 低敏最近记录卡：统一历史里的最新星座寰宇记录；匿名会话的临时记录也算（仅当前会话可见） */
   const historyRecord = useHistoryStore((s) =>
@@ -153,7 +164,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold tracking-wide text-indigo-600 dark:text-indigo-300">
-                        ✦ {SAMPLE_PLANET_INSIGHTS[sampleSelectedBody].title}
+                        ✦ {sampleInsightTitle(sampleSelectedBody, sampleFacts)}
                       </span>
                       <button
                         type="button"
@@ -168,7 +179,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                       </button>
                     </div>
                     <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-indigo-100/80">
-                      {SAMPLE_PLANET_INSIGHTS[sampleSelectedBody].desc}
+                      {SAMPLE_PLANET_INSIGHTS[sampleSelectedBody]}
                     </p>
                   </motion.div>
                 )}
@@ -320,7 +331,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
             <DialogDescription className="sr-only">星盘真值的计算口径与降级规则说明</DialogDescription>
             <ul className="mt-4 space-y-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               <li>· 以出生日期、时间与地点，按回归黄道与地心视角计算十星体的真实位置。</li>
-              <li>· 宫位采用整宫制；相位取合相、六合、刑相、拱相与对冲，按固定容许度表判定。</li>
+              <li>· 宫位采用普拉西德制，高纬出生地无法计算时自动回退整宫制；相位取合相、六合、刑相、拱相与对冲，按固定容许度表判定。</li>
               <li>· 出生时间未知时不计算上升、天顶与宫位，只展示整日内稳定的星座与主要相位。</li>
               <li>· 星体位置为计算结果，解读基于星盘事实生成；用于自我探索与娱乐参考。</li>
             </ul>
