@@ -492,7 +492,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             </span>
           </div>
 
-          {/* Message Bubble */}
+          {/* 消息气泡 */}
           <div
             ref={bubbleRef}
             onContextMenu={!isUser ? relay.onContextMenu : undefined}

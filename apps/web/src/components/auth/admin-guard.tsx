@@ -12,20 +12,21 @@ interface AdminGuardProps {
  * 管理员权限守卫组件。
  * - 未登录：useRequireAuth 自动重定向到 /login
  * - 已登录但非 admin：重定向到 /home
- * - 加载中：显示 loading 占位
+ * - 认证引导未结束（status !== 'ready'）：显示 loading 占位
  */
 export function AdminGuard({ children }: AdminGuardProps) {
-  const { isAdmin, isLoading, isAuthenticated } = useRequireAuth();
+  const { isAdmin, status, isAuthenticated } = useRequireAuth();
   const router = useRouter();
+  const isReady = status === 'ready';
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated && !isAdmin) {
+    if (isReady && isAuthenticated && !isAdmin) {
       router.replace('/home');
     }
-  }, [isLoading, isAuthenticated, isAdmin, router]);
+  }, [isReady, isAuthenticated, isAdmin, router]);
 
-  // 加载中或未认证时显示 loading，useRequireAuth 会处理重定向
-  if (isLoading || !isAuthenticated || !isAdmin) {
+  // 引导未结束或未认证时显示 loading，useRequireAuth 会处理重定向
+  if (!isReady || !isAuthenticated || !isAdmin) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#f8faff]">
         <div className="text-center">

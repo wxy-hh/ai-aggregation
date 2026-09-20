@@ -10,9 +10,10 @@ interface AuthGuardProps {
 
 /** 客户端认证守卫：未登录时显示 fallback 并重定向到 /login */
 export function AuthGuard({ children, fallback }: AuthGuardProps) {
-  const { isAuthenticated, isLoading } = useRequireAuth();
+  const { isAuthenticated, status } = useRequireAuth();
 
-  if (isLoading || !isAuthenticated) {
+  // 引导未结束（status !== 'ready'）时只能显示加载态：此时 isAuthenticated 还不是结论
+  if (status !== 'ready' || !isAuthenticated) {
     return <>{fallback ?? <DefaultLoading />}</>;
   }
 

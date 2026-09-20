@@ -697,7 +697,7 @@ export function ProfileShell() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const accessToken = useAuthStore((state) => state.accessToken);
-  const authLoading = useAuthStore((state) => state.isLoading);
+  const authStatus = useAuthStore((state) => state.status);
   const fetchUser = useAuthStore((state) => state.fetchUser);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -728,8 +728,8 @@ export function ProfileShell() {
   const tokenTotal = isAdminUser ? 20000 : (usage?.quota?.grantedUnits ?? 0);
 
   useEffect(() => {
-    // 等待 auth 初始化完成，避免用过期 token 触发不必要的 401 刷新
-    if (!accessToken || authLoading) {
+    // 等待 auth 引导结束（status 为 ready）再取用量，避免用过期 token 触发不必要的 401 刷新
+    if (!accessToken || authStatus !== 'ready') {
       setUsage(null);
       setUsageLoading(false);
       setUsageError(null);
@@ -765,7 +765,7 @@ export function ProfileShell() {
       // React StrictMode 会先清理再重新执行 effect，这里需要及时释放请求锁。
       fetchingUsageRef.current = false;
     };
-  }, [accessToken, authLoading]);
+  }, [accessToken, authStatus]);
 
   return (
     <>

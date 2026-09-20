@@ -104,7 +104,7 @@ function drawPalaceMarker(
   ctx.lineWidth = 1;
 
   if (kind === 'door') {
-    // diamond marker: emphasizes "门" gateway semantics
+    // 菱形标记：强调「门」的关卡/入口语义
     ctx.beginPath();
     ctx.moveTo(0, -size);
     ctx.lineTo(size, 0);
@@ -114,7 +114,7 @@ function drawPalaceMarker(
     ctx.fill();
     ctx.stroke();
   } else {
-    // triangle marker: emphasizes "神" directional force semantics
+    // 三角形标记：强调「神」的方位/力度语义
     ctx.beginPath();
     ctx.moveTo(0, -size * 1.1);
     ctx.lineTo(size * 0.92, size * 0.88);

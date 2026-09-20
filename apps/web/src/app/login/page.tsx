@@ -1,13 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense } from 'react';
 import { StaticLoginPage } from '@/components/login/static-login-page';
-import { useAuthStore } from '@/stores/auth-store';
-
-function getAuthHydrated() {
-  return useAuthStore.persist?.hasHydrated?.() ?? true;
-}
+import { useRedirectRealUserToHome } from '@/hooks/use-auth';
 
 function LoginSpinner() {
   return (
@@ -18,28 +13,12 @@ function LoginSpinner() {
 }
 
 function LoginPageContent() {
-  const router = useRouter();
-  const [hydrated, setHydrated] = useState(getAuthHydrated);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const isAnonymous = useAuthStore((s) => s.user?.isAnonymous === true);
+  // 真实登录用户（非匿名）不应停留在登录页：命中即跳 /home。
+  // 判定依据只有 auth store 的引导状态 + 身份（见 useRedirectRealUserToHome），
+  // 不再依赖持久化水合的内部生命周期；未登录/匿名用户直接渲染表单，不额外等待匿名引导。
+  const isRedirecting = useRedirectRealUserToHome();
 
-  useEffect(() => {
-    const onFinishHydration = useAuthStore.persist?.onFinishHydration;
-
-    if (hydrated || !onFinishHydration) return;
-
-    const unsub = onFinishHydration(() => setHydrated(true));
-    return unsub;
-  }, [hydrated]);
-
-  useEffect(() => {
-    // 仅真实登录用户自动跳 /home；匿名用户停留以便输入账号密码切换为真实登录
-    if (hydrated && isAuthenticated && !isAnonymous) {
-      router.replace('/home');
-    }
-  }, [hydrated, isAuthenticated, isAnonymous, router]);
-
-  if (!hydrated) {
+  if (isRedirecting) {
     return <LoginSpinner />;
   }
 

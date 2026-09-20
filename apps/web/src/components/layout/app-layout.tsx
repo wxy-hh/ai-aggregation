@@ -14,11 +14,12 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { isLoading } = useAuth();
+  const { status } = useAuth();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  if (isLoading) {
+  // 认证引导未结束：先显示加载态，避免用过期身份渲染工作台
+  if (status !== 'ready') {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-[#f8faff] dark:bg-[#0A0B10]">
         <div className="text-center">
