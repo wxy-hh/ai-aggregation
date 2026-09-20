@@ -13,6 +13,10 @@ vi.mock('@/lib/api/with-auth', () => ({
 }));
 
 vi.mock('@/lib/billing/quota-service', () => mocks);
+// 路由经 QuotaSession（@repo/db）预留额度：mock 该接缝，使「额度不足」按预期抛出
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: mocks.reserveChatQuota },
+}));
 vi.mock('@/lib/billing/request-id', () => ({ getBillingRequestId: () => 'resume-diagnose-quota' }));
 
 import { POST } from './route';
