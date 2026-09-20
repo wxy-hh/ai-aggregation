@@ -280,7 +280,8 @@ SILICONFLOW_API_KEY=       # 硅基流动（语音转写）
 
 - 使用 **Zustand** 管理全局状态
 - 使用 `useShallow` 避免不必要的重渲染
-- Store 从 `@/stores` 统一导入
+- Store 也用**直接路径导入**（如 `@/stores/auth-store`），与下方「导入规范」一致；不要走 `@/stores` barrel
+  （`apps/web/src/stores/index.ts` 是历史遗留的统一出口，只重导出了 8 个 store 且已无任何引用）
 
 ### 导入规范
 
