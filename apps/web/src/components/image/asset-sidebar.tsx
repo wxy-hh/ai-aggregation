@@ -18,7 +18,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
   return (
     <div
       className={cn(
-        'hidden lg:flex flex-col h-full bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl border-l border-white/20 dark:border-white/5 w-80 shrink-0',
+        'hidden lg:flex flex-col h-full bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl backdrop-saturate-150 border-l border-white/20 dark:border-white/5 w-80 shrink-0',
         className
       )}
     >
@@ -41,7 +41,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
             </h3>
           </div>
 
-          <div className="relative group p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl hover:shadow-md transition-all cursor-pointer backdrop-blur-sm">
+          <div className="relative group p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl hover:shadow-md transition-all cursor-pointer backdrop-blur-sm backdrop-saturate-150">
             <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-blue-500 rounded-r-full"></div>
 
             <div className="flex items-start gap-3">
@@ -87,7 +87,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
 
                 {/* 遮罩层 */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <button className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/30 transition-colors shadow-lg">
+                  <button className="p-2 bg-white/20 backdrop-blur-md backdrop-saturate-150 rounded-full text-white hover:bg-white/30 transition-colors shadow-lg">
                     <Eye className="w-4 h-4" />
                   </button>
                 </div>
@@ -98,8 +98,8 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
       </div>
 
       {/* 页脚：GPU 额度 */}
-      <div className="p-4 border-t border-white/20 dark:border-white/5 bg-white/20 dark:bg-slate-900/20 backdrop-blur-md">
-        <div className="bg-white/50 dark:bg-slate-800/50 border border-white/50 dark:border-white/10 rounded-xl p-3 shadow-sm backdrop-blur-sm">
+      <div className="p-4 border-t border-white/20 dark:border-white/5 bg-white/20 dark:bg-slate-900/20 backdrop-blur-md backdrop-saturate-150">
+        <div className="bg-white/50 dark:bg-slate-800/50 border border-white/50 dark:border-white/10 rounded-xl p-3 shadow-sm backdrop-blur-sm backdrop-saturate-150">
           <div className="flex items-center gap-2 mb-2">
             <Cpu className="w-3.5 h-3.5 text-blue-500" />
             <div className="flex items-center justify-between flex-1 text-xs font-bold text-blue-600 dark:text-blue-400">

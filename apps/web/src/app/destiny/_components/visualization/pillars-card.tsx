@@ -276,7 +276,7 @@ export function PillarsCard({
               </PopoverTrigger>
               <PopoverContent
                 className={cn(
-                  'w-72 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/[0.88] dark:bg-slate-900/90 backdrop-blur-[26px]',
+                  'w-72 rounded-2xl border border-slate-200/90 dark:border-white/10 bg-white/[0.88] dark:bg-slate-900/90 backdrop-blur-[26px] backdrop-saturate-150',
                   'ring-1 ring-[#5D7CFA]/[0.12] dark:ring-[#5D7CFA]/20',
                   'shadow-[0_28px_70px_-30px_rgba(15,23,42,0.45)] dark:shadow-[0_28px_70px_-30px_rgba(0,0,0,0.55)]',
                   'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',

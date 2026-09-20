@@ -173,7 +173,7 @@ function DuoLinkVisual({
         </div>
         <div
           className={cn(
-            'relative flex h-14 w-14 items-center justify-center rounded-full border bg-white/70 backdrop-blur-md dark:bg-slate-900/70',
+            'relative flex h-14 w-14 items-center justify-center rounded-full border bg-white/70 backdrop-blur-md backdrop-saturate-150 dark:bg-slate-900/70',
             t.ring
           )}
         >
@@ -231,7 +231,7 @@ export function RelationViewLoading({
       aria-busy="true"
       className={cn(
         'relative overflow-hidden rounded-[28px] border p-5 sm:p-7',
-        'backdrop-blur-2xl supports-[backdrop-filter]:bg-white/50',
+        'backdrop-blur-2xl backdrop-saturate-150 supports-[backdrop-filter]:bg-white/50',
         'shadow-[0_20px_40px_-15px_rgba(15,23,42,0.12),0_8px_20px_-10px_rgba(59,130,246,0.08)]',
         'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px',
         'before:bg-gradient-to-r before:from-transparent before:via-white/70 before:to-transparent',
@@ -257,7 +257,7 @@ export function RelationViewLoading({
           <div className="min-w-0">
             <div
               className={cn(
-                'mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-sm',
+                'mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-sm backdrop-saturate-150',
                 t.chip
               )}
             >

@@ -482,7 +482,7 @@ export function QimenLoadingAnimation({
           <p className="max-w-[560px] text-[13px] text-[#afbfdf] md:text-[14px]">{subMessage}</p>
 
           {showProgressHint ? (
-            <div className="mt-1 flex items-center gap-2.5 rounded-full border border-white/[0.22] bg-white/[0.08] px-3 py-1.5 text-[12px] text-[#9fb7e4] backdrop-blur-sm">
+            <div className="mt-1 flex items-center gap-2.5 rounded-full border border-white/[0.22] bg-white/[0.08] px-3 py-1.5 text-[12px] text-[#9fb7e4] backdrop-blur-sm backdrop-saturate-150">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#c8dcff]" />
               <span>{PROGRESS_TEXTS[progressIndex]}</span>
             </div>

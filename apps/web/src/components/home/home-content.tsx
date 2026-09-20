@@ -119,12 +119,12 @@ export function HomeContent() {
   }, [router, setInput, currentInspiration]);
 
   return (
-    <div className="flex h-full w-full flex-col lg:flex-row bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto custom-scrollbar lg:overflow-hidden font-sans">
+    <div className="flex h-full w-full flex-col lg:flex-row home-aurora-base text-slate-900 dark:text-slate-100 overflow-y-auto custom-scrollbar lg:overflow-hidden font-sans">
       {/* 
         二级侧边栏（发现） 
         基于 "Image 1" 描述：左侧侧边栏包含 "发现"、搜索、工具等。
       */}
-      <aside className="w-full lg:w-[280px] h-auto lg:h-full flex flex-col p-4 lg:p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-b lg:border-b-0 lg:border-r border-slate-200/50 dark:border-slate-800/50 z-10 flex-shrink-0">
+      <aside className="w-full lg:w-[280px] h-auto lg:h-full flex flex-col p-4 lg:p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 border-b lg:border-b-0 lg:border-r border-white/50 dark:border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] z-10 flex-shrink-0">
         <h2 className="text-xl font-bold mb-6 flex items-center gap-2">发现</h2>
 
         {/* 搜索 */}
@@ -241,17 +241,16 @@ export function HomeContent() {
 
       {/* 主内容 */}
       <main className="flex-1 h-auto lg:h-full overflow-y-auto custom-scrollbar relative">
-        {/* 背景元素 */}
-        <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-blue-100/50 to-transparent dark:from-blue-900/10 dark:to-transparent -z-10 pointer-events-none"></div>
-        <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/30 dark:bg-purple-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"></div>
+        {/* 背景光斑：透明度恒定（0.20）、慢速漂移错相位，透过 hero 玻璃形成均匀折射（DESIGN.md §6.3 home-aurora-drift） */}
+        <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/[0.20] dark:bg-purple-900/[0.20] rounded-full blur-3xl -z-10 animate-home-aurora-drift pointer-events-none"></div>
         <div
-          className="absolute top-40 left-40 w-72 h-72 bg-blue-200/30 dark:bg-blue-900/20 rounded-full blur-3xl -z-10 animate-pulse pointer-events-none"
-          style={{ animationDelay: '2s' }}
+          className="absolute top-40 left-40 w-72 h-72 bg-blue-200/[0.20] dark:bg-blue-900/[0.20] rounded-full blur-3xl -z-10 animate-home-aurora-drift pointer-events-none"
+          style={{ animationDuration: '24s', animationDelay: '-9s' }}
         ></div>
 
         <div className="max-w-[1400px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
           {/* 具有高级深色混合效果的主视觉区域卡片 */}
-          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl rounded-[28px] lg:rounded-[48px] p-6 sm:p-8 lg:p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-10 lg:mb-16 relative overflow-hidden group/hero">
+          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl backdrop-saturate-150 rounded-[28px] lg:rounded-[48px] p-6 sm:p-8 lg:p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-10 lg:mb-16 relative overflow-hidden group/hero">
             {/* 渐变边框遮罩 - 创建“融合边缘”效果 */}
             <div className="absolute inset-0 rounded-[48px] border border-white/60 dark:border-white/10 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] pointer-events-none"></div>
 
@@ -263,11 +262,6 @@ export function HomeContent() {
 
             {/* 头部 */}
             <div className="text-center mb-16 relative z-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold tracking-wider mb-6">
-                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                AI PRODUCTIVITY SUITE
-              </div>
-
               <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black mb-4 lg:mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
                 开启您的 AI{' '}
                 <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
@@ -294,6 +288,7 @@ export function HomeContent() {
                 icon={MessageSquare}
                 color="text-blue-600"
                 gradient="from-blue-500/20 to-cyan-500/20"
+                hoverBorder="hover:border-blue-200 dark:hover:border-blue-800/60"
                 buttonText="新建对话"
                 buttonIcon={Plus}
               />
@@ -304,6 +299,7 @@ export function HomeContent() {
                 icon={Mic}
                 color="text-purple-600"
                 gradient="from-purple-500/20 to-pink-500/20"
+                hoverBorder="hover:border-purple-200 dark:hover:border-purple-800/60"
                 buttonText="开始会议纪要"
                 buttonIcon={ArrowRight}
               />
@@ -314,6 +310,7 @@ export function HomeContent() {
                 icon={ImageIcon}
                 color="text-pink-600"
                 gradient="from-pink-500/20 to-rose-500/20"
+                hoverBorder="hover:border-pink-200 dark:hover:border-pink-800/60"
                 buttonText="开始创作"
                 buttonIcon={PenTool}
               />
@@ -414,35 +411,46 @@ function FeatureCard({
   icon: Icon,
   color,
   gradient,
+  hoverBorder,
   buttonText,
   buttonIcon: ButtonIcon,
 }: any) {
   return (
-    <div className="relative overflow-hidden bg-white dark:bg-slate-900 rounded-[32px] p-8 shadow-xl hover:shadow-2xl transition-all duration-300 group border border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700">
-      {/* 渐变背景光圈 */}
+    // 整卡即链接：hover 反馈必须可兑现（此前仅内部小按钮可点，hover 是假交互）
+    <Link href={href} className="block group h-full">
       <div
-        className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${gradient} blur-3xl rounded-full translate-x-12 -translate-y-12 opacity-50 group-hover:opacity-100 transition-opacity duration-500`}
-      ></div>
-
-      <div
-        className={`w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300 ${color}`}
+        className={`relative overflow-hidden h-full bg-white dark:bg-slate-900 rounded-[24px] p-8 shadow-xl transition-all duration-300 border border-slate-100 dark:border-slate-800 hover:-translate-y-0.5 hover:shadow-2xl ${hoverBorder}`}
       >
-        <Icon className="w-7 h-7" />
-      </div>
-
-      <h3 className="text-2xl font-bold mb-3">{title}</h3>
-      <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-8 min-h-[48px]">
-        {description}
-      </p>
-
-      <Link href={href}>
+        {/* 渐变背景光圈 */}
         <div
-          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 font-semibold text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${color}`}
+          className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${gradient} blur-3xl rounded-full translate-x-12 -translate-y-12 opacity-50 group-hover:opacity-100 transition-opacity duration-500`}
+        ></div>
+
+        {/* 顶部边缘捕光：与 hero 同语法的 1px 高光带，深色下为卡缘主折射暗示（DESIGN.md §4.1 边缘高光） */}
+        <div className="pointer-events-none absolute top-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-white/90 dark:via-white/15 to-transparent"></div>
+
+        {/* hover 扫光：一道高光掠过卡面，做 LiquidGlass 的折射暗示（纯 CSS，DESIGN.md §8.3） */}
+        <div className="pointer-events-none absolute inset-0 -translate-x-full -skew-x-12 bg-gradient-to-r from-transparent via-white/35 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full dark:via-white/10"></div>
+
+        <div
+          className={`w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform duration-300 ${color}`}
+        >
+          <Icon className="w-7 h-7" />
+        </div>
+
+        <h3 className="text-2xl font-bold mb-3">{title}</h3>
+        <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-8 min-h-[48px]">
+          {description}
+        </p>
+
+        {/* CTA 芯片：深色改为玻璃芯片（white/10+white/15 描边），避免 slate-800 趴在 slate-900 上发闷 */}
+        <div
+          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-50 dark:bg-white/10 border border-transparent dark:border-white/15 dark:backdrop-blur-sm font-semibold text-sm group-hover:bg-slate-100 dark:group-hover:bg-white/15 transition-colors ${color}`}
         >
           {buttonText}
-          <ButtonIcon className="w-4 h-4" />
+          <ButtonIcon className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5" />
         </div>
-      </Link>
-    </div>
+      </div>
+    </Link>
   );
 }

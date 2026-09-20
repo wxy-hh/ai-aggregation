@@ -24,7 +24,7 @@ export function NegativePrompt({ value, onChange }: NegativePromptProps) {
   };
 
   return (
-    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden backdrop-blur-sm bg-white/50 dark:bg-slate-800/50">
+    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden backdrop-blur-sm backdrop-saturate-150 bg-white/50 dark:bg-slate-800/50">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full px-4 py-3 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/50 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 transition-colors cursor-pointer"

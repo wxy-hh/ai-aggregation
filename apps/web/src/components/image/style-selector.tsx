@@ -66,7 +66,7 @@ export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
             onClick={() => onStyleChange(style.id)}
             className={cn(
               'relative p-2.5 rounded-xl transition-all duration-300 cursor-pointer group flex flex-col items-center gap-2',
-              'border backdrop-blur-sm bg-gradient-to-br',
+              'border backdrop-blur-sm backdrop-saturate-150 bg-gradient-to-br',
               selected === style.id
                 ? `${style.activeGradient} ${style.borderColor} shadow-lg ${style.shadowColor} scale-[1.02] ring-1 ring-inset ring-white/20`
                 : `${style.gradient} border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:shadow-md hover:-translate-y-0.5`

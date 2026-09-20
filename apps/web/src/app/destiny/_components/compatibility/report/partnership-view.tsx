@@ -92,7 +92,7 @@ export function PartnershipView({
             'dark:hover:border-slate-400/30'
           )}
           eyebrow={
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-slate-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 backdrop-blur-sm dark:border-slate-400/20 dark:bg-slate-400/15 dark:text-slate-300">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-slate-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 backdrop-blur-sm backdrop-saturate-150 dark:border-slate-400/20 dark:bg-slate-400/15 dark:text-slate-300">
               <Briefcase className="h-3 w-3" />
               协作决策台
             </div>
@@ -320,7 +320,7 @@ export function PartnershipView({
         onToggleAction={onToggleAction}
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-slate-600 to-violet-600 text-white shadow-[0_8px_16px_-6px_rgba(100,116,139,0.55)]"
-        idleClass="border-2 border-violet-500/40 bg-violet-50/80 text-violet-600 backdrop-blur-sm hover:scale-105 dark:border-violet-400/40 dark:bg-violet-500/10 dark:text-violet-300"
+        idleClass="border-2 border-violet-500/40 bg-violet-50/80 text-violet-600 backdrop-blur-sm backdrop-saturate-150 hover:scale-105 dark:border-violet-400/40 dark:bg-violet-500/10 dark:text-violet-300"
       />
     </div>
   );

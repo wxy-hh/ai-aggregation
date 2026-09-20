@@ -84,7 +84,7 @@ const DOMAIN_THEME: Record<TenGodDomainKey, DomainTheme> = {
 /** 与紫微宫位/模块卡片一致的悬停位移与阴影层级 */
 const domainCardShellClass = cn(
   'group relative overflow-hidden rounded-[18px] border border-slate-200/45 border-l-[3px]',
-  'bg-white/40 px-3.5 py-3.5 backdrop-blur-md transform-gpu',
+  'bg-white/40 px-3.5 py-3.5 backdrop-blur-md backdrop-saturate-150 transform-gpu',
   'shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04),0_2px_6px_-1px_rgba(15,23,42,0.03)]',
   'transition-all duration-200',
   'hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/[0.58]',
@@ -210,7 +210,7 @@ export function PersonalityDashboardCard({
                       <div
                         className={cn(
                           'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
-                          'border border-white/70 bg-white/55 backdrop-blur-sm',
+                          'border border-white/70 bg-white/55 backdrop-blur-sm backdrop-saturate-150',
                           'transition-transform duration-200 group-hover:scale-105',
                           'dark:border-white/[0.08] dark:bg-slate-800/45'
                         )}
@@ -287,7 +287,7 @@ export function PersonalityDashboardCard({
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={`ten-god-domain-skeleton-${index}`}
-                  className="rounded-[18px] border border-slate-200/40 bg-white/35 px-4 py-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-800/30 sm:rounded-[20px]"
+                  className="rounded-[18px] border border-slate-200/40 bg-white/35 px-4 py-4 backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-slate-800/30 sm:rounded-[20px]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="h-4 w-40 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/50" />

@@ -549,7 +549,7 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
           <AstrologyStarfield />
           {isNight && <AstrologyNightNebula />}
           <div className="relative z-10 flex h-full min-h-0 items-center justify-center overflow-y-auto custom-scrollbar px-6">
-            <div className="night-card w-full max-w-sm rounded-[28px] border border-white/60 bg-white/85 p-8 text-center shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0D1226]/[0.88]">
+            <div className="night-card w-full max-w-sm rounded-[28px] border border-white/60 bg-white/85 p-8 text-center shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/[0.88]">
               <RitualWireframe />
               <h2 className="mt-6 font-heading text-lg font-bold text-slate-900 dark:text-white">
                 别担心，出生资料已保留

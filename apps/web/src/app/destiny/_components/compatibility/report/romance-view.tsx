@@ -64,7 +64,7 @@ export function RomanceView({
             'dark:hover:border-rose-400/25'
           )}
           eyebrow={
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-rose-200/50 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-rose-500 backdrop-blur-sm dark:border-rose-400/20 dark:bg-rose-400/15 dark:text-rose-300">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-rose-200/50 bg-rose-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-rose-500 backdrop-blur-sm backdrop-saturate-150 dark:border-rose-400/20 dark:bg-rose-400/15 dark:text-rose-300">
               <Heart className="h-3 w-3" />
               恋爱靠近方式
             </div>
@@ -187,7 +187,7 @@ export function RomanceView({
         onToggleAction={onToggleAction}
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-rose-500 to-rose-600 text-white shadow-[0_8px_16px_-6px_rgba(244,63,94,0.55)]"
-        idleClass="border-2 border-rose-500/40 bg-rose-50/80 text-rose-600 backdrop-blur-sm hover:scale-105 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-300"
+        idleClass="border-2 border-rose-500/40 bg-rose-50/80 text-rose-600 backdrop-blur-sm backdrop-saturate-150 hover:scale-105 dark:border-rose-400/40 dark:bg-rose-500/10 dark:text-rose-300"
       />
     </div>
   );

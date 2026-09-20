@@ -218,7 +218,7 @@ export function CompatibilityReportView({
 
               <span
                 className={cn(
-                  'rounded-full border px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-sm',
+                  'rounded-full border px-2.5 py-0.5 text-[11px] font-semibold backdrop-blur-sm backdrop-saturate-150',
                   RELATION_BADGE[activeRelation]
                 )}
               >
@@ -226,12 +226,12 @@ export function CompatibilityReportView({
               </span>
 
               {facts.completeness.labels[0] ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 backdrop-blur-sm dark:border-amber-400/20 dark:text-amber-300">
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 backdrop-blur-sm backdrop-saturate-150 dark:border-amber-400/20 dark:text-amber-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]" />
                   {facts.completeness.labels[0]}
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/40 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 backdrop-blur-sm dark:border-emerald-400/20 dark:text-emerald-300">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/40 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 backdrop-blur-sm backdrop-saturate-150 dark:border-emerald-400/20 dark:text-emerald-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.55)]" />
                   双方资料完整
                 </span>
@@ -239,7 +239,7 @@ export function CompatibilityReportView({
             </div>
 
             {focusLabel ? (
-              <div className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/60 bg-white/50 px-3 text-[11px] font-medium text-slate-500 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
+              <div className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/60 bg-white/50 px-3 text-[11px] font-medium text-slate-500 backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-400">
                 当前关注：{focusLabel}
               </div>
             ) : null}
@@ -248,7 +248,7 @@ export function CompatibilityReportView({
           {/* 关系类型 Tabs：未缓存直接请求，无二次确认 */}
           <div
             className={cn(
-              'flex gap-0 overflow-x-auto hide-scrollbar rounded-2xl border border-white/50 bg-white/45 px-1 backdrop-blur-xl',
+              'flex gap-0 overflow-x-auto hide-scrollbar rounded-2xl border border-white/50 bg-white/45 px-1 backdrop-blur-xl backdrop-saturate-150',
               'supports-[backdrop-filter]:bg-white/35',
               'dark:border-white/10 dark:bg-slate-900/50 dark:supports-[backdrop-filter]:bg-slate-900/40'
             )}
@@ -307,7 +307,7 @@ export function CompatibilityReportView({
               role="alert"
               className={cn(
                 'rounded-2xl border border-rose-200/60 px-4 py-3 text-sm leading-relaxed',
-                'bg-rose-50/70 text-rose-700 backdrop-blur-xl',
+                'bg-rose-50/70 text-rose-700 backdrop-blur-xl backdrop-saturate-150',
                 'dark:border-rose-400/20 dark:bg-rose-950/40 dark:text-rose-200'
               )}
             >

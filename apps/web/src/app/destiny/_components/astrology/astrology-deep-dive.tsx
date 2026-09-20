@@ -135,7 +135,7 @@ export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }:
 
       {/* 迷你护照条：随本区粘性悬浮，不丢失身份与返回路径（§6.6） */}
       <div className="sticky top-3 z-20 mt-5 flex justify-center">
-        <div className="flex max-w-full items-center gap-2.5 rounded-full border border-white/70 bg-white/90 py-1.5 pl-2.5 pr-2 shadow-[0_12px_36px_-12px_rgba(30,41,82,0.30)] ring-1 ring-black/[0.03] backdrop-blur-2xl transition-all duration-300 hover:shadow-[0_16px_44px_-12px_rgba(79,70,229,0.35)] dark:border-white/[0.14] dark:bg-[#0B1021]/[0.92] dark:ring-white/[0.05] dark:shadow-[0_16px_40px_-14px_rgba(0,0,0,0.85)]">
+        <div className="flex max-w-full items-center gap-2.5 rounded-full border border-white/70 bg-white/90 py-1.5 pl-2.5 pr-2 shadow-[0_12px_36px_-12px_rgba(30,41,82,0.30)] ring-1 ring-black/[0.03] backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 hover:shadow-[0_16px_44px_-12px_rgba(79,70,229,0.35)] dark:border-white/[0.14] dark:bg-[#0B1021]/[0.92] dark:ring-white/[0.05] dark:shadow-[0_16px_40px_-14px_rgba(0,0,0,0.85)]">
           {passport.sunSign && (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500/[0.12] shadow-xs dark:bg-indigo-400/[0.14]">
               {(() => {

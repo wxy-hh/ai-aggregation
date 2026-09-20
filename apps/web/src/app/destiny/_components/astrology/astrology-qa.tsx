@@ -237,7 +237,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
             className={cn(
               'inset-x-0 bottom-0 top-auto flex max-h-[82vh] w-full max-w-none translate-x-0 translate-y-0 flex-col',
               'rounded-t-[28px] border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
-              'bg-white/95 backdrop-blur-2xl dark:border-white/10 dark:bg-[#0D1226]/95',
+              'bg-white/95 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/95',
               'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom'
             )}
           >

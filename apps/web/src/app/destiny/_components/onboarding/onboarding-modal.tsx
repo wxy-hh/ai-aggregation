@@ -103,7 +103,7 @@ export function OnboardingModal({
           {/* 背景磨砂容器（参考图：引导弹框.png） */}
           <div
             className={cn(
-              'rounded-[36px] border border-white/80 dark:border-white/10 bg-white/85 dark:bg-slate-900/85 backdrop-blur-[32px]',
+              'rounded-[36px] border border-white/80 dark:border-white/10 bg-white/85 dark:bg-slate-900/85 backdrop-blur-[32px] backdrop-saturate-150',
               'shadow-[0_35px_110px_-40px_rgba(47,107,255,0.30)]'
             )}
           >

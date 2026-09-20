@@ -1,6 +1,6 @@
 # DESIGN.md — AI 聚合平台设计系统
 
-> 本文档是全局视觉与交互主题的唯一标准。所有数值与代码一一对应：`apps/web/src/app/globals.css`、`apps/web/tailwind.config.ts`、`apps/web/src/styles/`（scrollbar.css / ziwei-theme.css / home-light-tokens.css）。
+> 本文档是全局视觉与交互主题的唯一标准。所有数值与代码一一对应：`apps/web/src/app/globals.css`、`apps/web/tailwind.config.ts`、`apps/web/src/styles/`（scrollbar.css / ziwei-theme.css）。
 > 规则：新增 UI 必须先查本文档；文档与代码冲突时，改代码对齐文档或改文档记录新决策，二者不得长期分叉。
 
 ---
@@ -143,20 +143,26 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 
 | 档 | 参数 | 用途 |
 | --- | --- | --- |
-| G-1 轻量 | `bg-white/40 dark:bg-slate-900/40 backdrop-blur-md` + 1px 半透边 | 工具按钮、小面板 |
-| G-2 标准 | `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl` + `border-white/50 dark:border-white/10` | 卡片、输入坞、抽屉 |
-| G-3 深度 | `from-white/60 via-white/20 to-transparent backdrop-blur-2xl`（dark: `slate-900/60→/20`）+ 顶部 1px 高光线 | hero 大卡、主容器壳、Modal |
+| G-1 轻量 | `bg-white/40 dark:bg-slate-900/40 backdrop-blur-md backdrop-saturate-150` + 1px 半透边 | 工具按钮、小面板 |
+| G-2 标准 | `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150` + `border-white/50 dark:border-white/10` | 卡片、输入坞、抽屉 |
+| G-3 深度 | `from-white/60 via-white/20 to-transparent backdrop-blur-2xl backdrop-saturate-150`（dark: `slate-900/60→/20`）+ 顶部 1px 高光线 | hero 大卡、主容器壳、Modal |
 
 通用工具类：`.glass` / `.glass-dark`（globals.css）；ds-* 组件类（`.ds-card-glass`、`.ds-modal` 等）供营销/工作台页复用。
 
 规则：
 - **玻璃不套玻璃**：G-3 壳内的子卡用实色/半透色，不再开 blur。
+- **玻璃公式 = blur + saturate(150%)**：只 blur 不 saturate 时，底色被白罩+模糊压成白板（「改了没变化」的物理原因）；saturate 让玻璃后的色彩透出来，是材质对比度的主来源，比继续拔底色透明度有效且不脏。压暗遮罩（`bg-slate-900/x + blur-[2px]` 一类，为白色浮字压对比度）**不是玻璃面**，不加 saturate；折叠/禁用态要清玻璃时用 `!backdrop-saturate-100` 归零（Tailwind 按字母序输出，裸 `backdrop-saturate-100` 排在 150 前会被覆盖，必须带 important）。
+- **明度阶梯**：同一页面的玻璃面按职能取档拉开层次——导航/侧栏 G-2 最实 → 内容区实卡（§8.3）居中 → hero/主容器 G-3 最透；不在档外自造中间值（`white/45`、`white/[0.58]` 这类野值禁止）。
+- **边缘高光**：G-2/G-3 壳层带 1px 顶部高光线（绝对定位渐变线或 inset box-shadow；参照 home hero 壳与 global-sidebar 壳的实现），让玻璃边缘「利」起来；实卡深色面同样补 1px 捕光线（`via-white/15` 渐变线，参照 home `FeatureCard`）。
+- **折射内容统一**：以全页静态极光底（/home 的 `.home-aurora-base`）保证各玻璃面磨到同一张底。极光底布局原则——**每个玻璃面后方都要有一团色可磨**：左缘一团纵贯侧栏（`26% 58% at 5% 46%`）、右上一团垫 hero（`88% 16%`）、中下一团垫卡片区（`58% 72%`）；初版三团挤在角落、侧栏后面是白板，已重排（品牌色系 10%~14% 透明度，初版 8% 实测过淡上调）。背景光斑只做慢速漂移、透明度恒定，不用 `animate-pulse` 呼吸（明暗闪烁会破坏均匀）。
 - 大面积滚动区、长文阅读区**不开** `backdrop-blur`（性能 + 可读性）。
 - 玻璃边框是材质高光边缘（`border-white/60` 方向），不与厚重阴影叠加宣告海拔——阴影/边框二选一为主。
 
 ### 4.2 命理环境光系统（`app/destiny/_components/layout/destiny-ambient-background.tsx`）
 
 destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue / violet / indigo / cosmos）+ 48px 网格纹（radial mask 淡出）。700ms 交叉渐变完成「入夜」。新命理页面**必须复用**此底座，不自造背景。
+
+命理域玻璃面统一走 §4.1 玻璃公式（blur + saturate(150%)，2026-09 全域补齐），集中配方只维护三处：`destiny-result-header.tsx` 的 `destinyG3ShellClass` / `destinyG3ContentShellClass`、`glass-card.tsx` 的 variant 表——新页面引用这三处即自动合规，不手写玻璃类。
 
 ### 4.3 阴影哲学
 
@@ -210,6 +216,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | 前缀/名称 | 时长 | 用途 |
 | --- | --- | --- |
 | 全局 `gradient` / `loading` / `accordion-*` / `avatar-glow-breathe` | 3s / 1.5s / 0.2s / 3.4s | 渐变文字流动、进度条、手风琴、头像光晕 |
+| `home-aurora-drift` | 18s/24s 错相位 | /home hero 光斑慢速漂移（透明度恒定 ≤0.20，初版 0.14 实测过淡上调；只动 transform，reduce-motion 由全局兜底静止） |
 | `acw-cta-shine` | ~4s 一次 | 星座主 CTA 星光扫过（仪式时刻） |
 | `acw-float3d` + `.acw-wheel-float` | 14s | 星盘 3D 舞台悬浮公转（±3.5°/±4.5°） |
 | `acw-breathe` | 4.6s | 星体光晕呼吸（错峰 i*0.7s） |
@@ -271,6 +278,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 工具域：`bg-white dark:bg-slate-800 rounded-2xl border` 实卡为主（滚动性能）。
 - 命理域：G-3 三档——hero `rounded-[28px]→[32px]`、standard `[24px]→[28px]`、compact `rounded-2xl bg-white/85`。
 - hover：上浮 2px + 阴影升一档；卡片内不写「大数字+小标签」的 hero-metric 模板。
+- **可点击卡片必须整卡是链接**（不允许只有内部按钮可点、卡面 hover 却点不动）；功能卡 hover 可加一道扫光（斜切高光掠过 `via-white/35 dark:via-white/10`、700ms，参照 home `FeatureCard`）做 LiquidGlass 折射暗示。卡内 CTA 芯片深色态用玻璃芯片（`dark:bg-white/10 dark:border-white/15 dark:backdrop-blur-sm`），不用 `slate-800` 实色趴在 `slate-900` 卡面上（只隔半档发闷）。
 
 ### 8.4 浮层（Modal / Drawer / 底部抽屉）
 
@@ -281,7 +289,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 ### 8.5 导航
 
-- 桌面侧边栏（global-sidebar）：白玻璃 `bg-white/80 border-white/30`，激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
+- 桌面侧边栏（global-sidebar）：G-2 均匀玻璃 `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-white/50` + 顶部 1px 高光切割线，图标按钮 G-1（`bg-white/40 backdrop-blur-md`），激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
 - 移动底部导航（mobile-bottom-nav）：`bg-white/[0.94] dark:bg-[#111218]/[0.94] backdrop-blur-xl`，激活色带渐变，安全区内边距。
 - 斜杠透明度只能写刻度值（5 的倍数，如 `/90`、`/95`）或方括号任意值（如 `/[0.94]`）：裸写 `/94`、`/92` 这类非刻度值 Tailwind v3 不生成 CSS，样式静默丢失（本条由底栏 `bg-white/94` 的实际失效证实）。
 - 移动顶栏：fixed + blur-xl；紫微夜幕联动时变 `bg-[#0C1128]/85` + 金边（页级主题联动的唯一先例）。
@@ -305,9 +313,9 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 | 域 | 模式 | 一句话基调 | 标志装置 |
 | --- | --- | --- | --- |
-| 首页 home | Operate | 轻盈玻璃门户 | 48px 圆角 hero 玻璃壳、三色渐变大标题、三功能卡双色光晕 |
+| 首页 home | Operate | 轻盈玻璃门户 | 全页静态极光底（左缘/右上/中下三团，玻璃面后方必有色可磨）、48px 圆角 hero 玻璃壳、玻璃面统一 saturate(150%)、三色渐变大标题、三功能卡双色光晕、`home-aurora-drift` 漂移光斑 |
 | 对话 chat | Operate | 通透工作台 | 28px 玻璃主壳、流式光标（蓝条 pulse）、快捷动作四色图标卡 |
-| 绘图 image | Operate | 画廊工具台 | 风格九宫格渐变卡、底部 sticky 生成栏 |
+| 绘图 image | Operate | 画廊工具台 | indigo/blue ambient 底 + 双光斑 0.14（紫斑纵贯配置栏、蓝斑垫画布）、玻璃面统一 saturate(150%)、风格九宫格渐变卡、底部 sticky 生成栏 |
 | 视频 video | Operate | 演播预览间 | 三色渐变播放钮、时间轴+缩略图序列、spring 侧栏 |
 | 语音 voice | Operate | 录音棚 | 录音 ping 圆点+红色计时横幅、波形条、上传进度流光 |
 | 历史 history | Operate | 档案馆 | 瀑布流卡、全屏黑玻璃预览层 |

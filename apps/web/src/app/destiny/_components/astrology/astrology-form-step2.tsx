@@ -538,7 +538,7 @@ export function AstrologyFormStep2({
           )}
 
           {formData.timePrecision === 'unknown' && unknownFacts && (
-            <div className="rounded-2xl border border-indigo-200/90 bg-white/80 p-4 shadow-sm backdrop-blur-md dark:border-indigo-300/20 dark:bg-[#0B1026]/90 dark:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.6)]">
+            <div className="rounded-2xl border border-indigo-200/90 bg-white/80 p-4 shadow-sm backdrop-blur-md backdrop-saturate-150 dark:border-indigo-300/20 dark:bg-[#0B1026]/90 dark:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.6)]">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 {/* 无宫位行星环圆盘：约 40% 卡宽，真正看得清的视觉锚点 */}
                 <div className="mx-auto w-32 shrink-0 sm:w-[38%] sm:max-w-40">
@@ -616,7 +616,7 @@ export function AstrologyFormStep2({
             }}
             onBlur={() => setCityOpen(false)}
             className={cn(
-              'h-12 w-full rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 backdrop-blur-sm',
+              'h-12 w-full rounded-xl border bg-white/70 px-4 text-[15px] text-slate-800 backdrop-blur-sm backdrop-saturate-150',
               'shadow-[0_1px_3px_rgba(15,23,42,0.05)] placeholder:text-day-muted',
               'transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-0',
               'dark:bg-white/5 dark:text-slate-100 dark:placeholder:text-night-faint',
@@ -630,7 +630,7 @@ export function AstrologyFormStep2({
           />
           {/* 候选列表（onMouseDown 阻止 blur 先关列表） */}
           {cityOpen && cityQuery.trim() !== '' && !citySelected && (
-            <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 shadow-[0_16px_40px_-12px_rgba(15,23,42,0.25)] backdrop-blur-xl dark:border-white/[0.12] dark:bg-[#0D1226]/95">
+            <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 shadow-[0_16px_40px_-12px_rgba(15,23,42,0.25)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/[0.12] dark:bg-[#0D1226]/95">
               {visibleResults.length > 0 ? (
                 <>
                   {/* 区县级输入命中兜底：说明候选是按去掉行政后缀的词搜出来的 */}

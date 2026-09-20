@@ -272,7 +272,7 @@ export function AstrologyShareEntry({
             // 移动端（lg 以下，含触屏平板）：底部抽屉；lg 起：居中弹层（与八字分享卡同一布局模式）
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 gap-0 p-0',
             'rounded-t-[28px] rounded-b-none border border-white/60 pb-[env(safe-area-inset-bottom)]',
-            'bg-white/85 backdrop-blur-2xl',
+            'bg-white/85 backdrop-blur-2xl backdrop-saturate-150',
             'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(73,105,233,0.18)]',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',

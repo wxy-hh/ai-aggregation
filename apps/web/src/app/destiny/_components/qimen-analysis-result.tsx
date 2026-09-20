@@ -202,7 +202,7 @@ function MetaInfoCard({
       <div className="relative z-10 flex w-full items-center gap-3">
         <div
           className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ring-1 ring-white/60 backdrop-blur-md dark:ring-white/10',
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ring-1 ring-white/60 backdrop-blur-md backdrop-saturate-150 dark:ring-white/10',
             tone.iconShell
           )}
         >
@@ -610,7 +610,7 @@ function QimenPalaceCell({
         {!isCenter ? (
           <span
             className={cn(
-              'max-w-[4.5rem] truncate rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm sm:max-w-none',
+              'max-w-[4.5rem] truncate rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm backdrop-saturate-150 sm:max-w-none',
               tone.godChip
             )}
           >
@@ -622,7 +622,7 @@ function QimenPalaceCell({
       {!isCenter ? (
         <div
           className={cn(
-            'absolute right-1.5 top-7 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm sm:right-2 sm:top-8',
+            'absolute right-1.5 top-7 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium backdrop-blur-sm backdrop-saturate-150 sm:right-2 sm:top-8',
             tone.dirChip
           )}
         >
@@ -667,7 +667,7 @@ function QimenPalaceCell({
       <div
         className={cn(
           'relative z-10 mt-auto flex items-center justify-between rounded-xl border px-2 py-1.5',
-          'border-white/70 bg-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-sm',
+          'border-white/70 bg-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-sm backdrop-saturate-150',
           'dark:border-white/10 dark:bg-slate-900/50'
         )}
       >
@@ -885,7 +885,7 @@ function QimenPalaceDetailPanel({
         'relative mb-4 mt-4 overflow-hidden rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4',
         'bg-gradient-to-br from-white/[0.92] via-white/[0.78] to-indigo-50/25',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_28px_-12px_rgba(59,130,246,0.18)]',
-        'backdrop-blur-md supports-[backdrop-filter]:bg-white/[0.72]',
+        'backdrop-blur-md backdrop-saturate-150 supports-[backdrop-filter]:bg-white/[0.72]',
         'dark:from-slate-900/[0.92] dark:via-slate-900/[0.78] dark:to-indigo-950/[0.22] dark:shadow-none',
         accent.border
       )}
@@ -1064,7 +1064,7 @@ function QimenBoardLegend() {
         'group/legend mt-4 overflow-hidden rounded-2xl border',
         'border-white/70 bg-gradient-to-br from-white/75 via-white/55 to-slate-50/30',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.75),0_6px_18px_-8px_rgba(59,130,246,0.1)]',
-        'backdrop-blur-md dark:border-slate-600/40 dark:from-slate-900/70 dark:via-slate-900/55 dark:to-slate-950/30'
+        'backdrop-blur-md backdrop-saturate-150 dark:border-slate-600/40 dark:from-slate-900/70 dark:via-slate-900/55 dark:to-slate-950/30'
       )}
     >
       <summary
@@ -1873,7 +1873,7 @@ export function QimenAnalysisResult({
               'relative z-30 overflow-hidden rounded-[24px] border border-white/70 p-4 md:p-5',
               'bg-gradient-to-br from-white/55 via-white/40 to-indigo-50/20',
               'shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_8px_20px_-10px_rgba(59,130,246,0.08)]',
-              'backdrop-blur-md dark:border-slate-700/50 dark:from-slate-900/60 dark:via-slate-900/50 dark:to-indigo-950/15 dark:shadow-none'
+              'backdrop-blur-md backdrop-saturate-150 dark:border-slate-700/50 dark:from-slate-900/60 dark:via-slate-900/50 dark:to-indigo-950/15 dark:shadow-none'
             )}
           >
             <span
@@ -1884,7 +1884,7 @@ export function QimenAnalysisResult({
               <h3 className="text-sm font-bold tracking-wide text-[#1D2B70] dark:text-slate-200">
                 洛书九宫盘
               </h3>
-              <span className="shrink-0 rounded-full border border-indigo-200/60 bg-indigo-50/90 px-3 py-1 text-xs font-semibold text-indigo-600 backdrop-blur-sm dark:border-indigo-500/25 dark:bg-indigo-950/45 dark:text-indigo-300">
+              <span className="shrink-0 rounded-full border border-indigo-200/60 bg-indigo-50/90 px-3 py-1 text-xs font-semibold text-indigo-600 backdrop-blur-sm backdrop-saturate-150 dark:border-indigo-500/25 dark:bg-indigo-950/45 dark:text-indigo-300">
                 {baseResult ? '默认值符落宫 · 点击切换' : '完整盘局完成后展示'}
               </span>
             </div>
@@ -1934,7 +1934,7 @@ export function QimenAnalysisResult({
 
           </div>
 
-          <aside className="relative z-10 overflow-hidden rounded-[24px] border border-white/75 bg-gradient-to-br from-white/55 via-white/45 to-indigo-50/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_8px_24px_-10px_rgba(59,130,246,0.1)] backdrop-blur-xl md:p-5 dark:border-slate-700/50 dark:from-slate-900/60 dark:via-slate-900/50 dark:to-indigo-950/15">
+          <aside className="relative z-10 overflow-hidden rounded-[24px] border border-white/75 bg-gradient-to-br from-white/55 via-white/45 to-indigo-50/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_8px_24px_-10px_rgba(59,130,246,0.1)] backdrop-blur-xl backdrop-saturate-150 md:p-5 dark:border-slate-700/50 dark:from-slate-900/60 dark:via-slate-900/50 dark:to-indigo-950/15">
             <span
               className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent dark:via-white/15"
               aria-hidden

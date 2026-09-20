@@ -41,7 +41,7 @@ export function DestinyModelSwitcher({
       role="radiogroup"
       aria-label="选择测算模型"
       className={cn(
-        'inline-flex items-center rounded-full border border-slate-200/60 bg-white/50 backdrop-blur-xl',
+        'inline-flex items-center rounded-full border border-slate-200/60 bg-white/50 backdrop-blur-xl backdrop-saturate-150',
         'dark:border-slate-800/60 dark:bg-slate-900/50',
         compact ? 'p-0.5 text-xs' : 'p-1 text-sm',
         className

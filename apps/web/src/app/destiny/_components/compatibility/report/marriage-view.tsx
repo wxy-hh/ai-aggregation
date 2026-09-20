@@ -86,7 +86,7 @@ export function MarriageView({
             'dark:hover:border-indigo-400/25'
           )}
           eyebrow={
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-indigo-200/50 bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 backdrop-blur-sm dark:border-indigo-400/20 dark:bg-indigo-400/15 dark:text-indigo-300">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-indigo-200/50 bg-indigo-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 backdrop-blur-sm backdrop-saturate-150 dark:border-indigo-400/20 dark:bg-indigo-400/15 dark:text-indigo-300">
               <Home className="h-3 w-3" />
               共同生活经营
             </div>
@@ -273,7 +273,7 @@ export function MarriageView({
         onToggleAction={onToggleAction}
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-[0_8px_16px_-6px_rgba(79,70,229,0.55)]"
-        idleClass="border-2 border-indigo-500/40 bg-indigo-50/80 text-indigo-600 backdrop-blur-sm hover:scale-105 dark:border-indigo-400/40 dark:bg-indigo-500/10 dark:text-indigo-300"
+        idleClass="border-2 border-indigo-500/40 bg-indigo-50/80 text-indigo-600 backdrop-blur-sm backdrop-saturate-150 hover:scale-105 dark:border-indigo-400/40 dark:bg-indigo-500/10 dark:text-indigo-300"
       />
     </div>
   );

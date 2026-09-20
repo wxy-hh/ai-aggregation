@@ -92,7 +92,7 @@ export function SettingsPanel({
             value={seed}
             onChange={(e) => onSeedChange(e.target.value)}
             placeholder="留空为随机 (-1)"
-            className="w-full h-9 pl-3 pr-8 py-2 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border-slate-200 dark:border-slate-700 text-xs font-mono focus-visible:ring-indigo-500/20 focus-visible:border-indigo-500 transition-all group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
+            className="w-full h-9 pl-3 pr-8 py-2 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm backdrop-saturate-150 border-slate-200 dark:border-slate-700 text-xs font-mono focus-visible:ring-indigo-500/20 focus-visible:border-indigo-500 transition-all group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
           />
           <button
             onClick={() => onSeedChange(String(Math.floor(Math.random() * 1000000000)))}

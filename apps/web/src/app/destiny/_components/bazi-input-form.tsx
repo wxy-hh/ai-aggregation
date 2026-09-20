@@ -40,13 +40,13 @@ const shellClass = cn(
   'relative overflow-hidden rounded-[32px] border border-white/60 p-4 sm:p-6 md:p-8',
   'bg-gradient-to-b from-white/[0.72] via-white/[0.42] to-white/[0.16]',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.14),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
-  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  'backdrop-blur-xl backdrop-saturate-150 lg:backdrop-blur-2xl',
   'dark:border-white/10 dark:from-slate-900/[0.72] dark:via-slate-900/[0.38] dark:to-slate-900/[0.12]'
 );
 
 const panelClass = cn(
   'relative overflow-hidden rounded-3xl border border-white/55 px-4 py-4 sm:px-6 sm:py-6',
-  'bg-white/70 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.05)] backdrop-blur-lg',
+  'bg-white/70 shadow-[0_4px_12px_-2px_rgba(15,23,42,0.05)] backdrop-blur-lg backdrop-saturate-150',
   'dark:border-white/10 dark:bg-slate-900/65'
 );
 
@@ -63,7 +63,7 @@ const inputClass = cn(
 
 const segmentListClass = cn(
   'grid h-11 grid-cols-2 rounded-xl border border-slate-200/50 bg-white/40 p-1',
-  'shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] backdrop-blur-md',
+  'shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] backdrop-blur-md backdrop-saturate-150',
   'dark:border-white/10 dark:bg-slate-900/40'
 );
 
@@ -76,13 +76,13 @@ const segmentTriggerClass = cn(
 );
 
 const popoverContentClass = cn(
-  'border border-slate-200/50 bg-white/95 p-0 backdrop-blur-2xl',
+  'border border-slate-200/50 bg-white/95 p-0 backdrop-blur-2xl backdrop-saturate-150',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
   'dark:border-white/10 dark:bg-slate-900/95'
 );
 
 const selectContentClass = cn(
-  'border border-slate-200/50 bg-white/95 backdrop-blur-2xl',
+  'border border-slate-200/50 bg-white/95 backdrop-blur-2xl backdrop-saturate-150',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
   'dark:border-white/10 dark:bg-slate-900/95'
 );
@@ -99,7 +99,7 @@ const primaryBtnClass = cn(
 
 const secondaryBtnClass = cn(
   'relative min-h-11 overflow-hidden rounded-full border border-slate-200/50 px-6 text-sm font-semibold',
-  'bg-white/40 text-slate-700 backdrop-blur-xl',
+  'bg-white/40 text-slate-700 backdrop-blur-xl backdrop-saturate-150',
   'shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_1px_1px_0_rgba(0,0,0,0.02)]',
   'transition-all duration-200',
   'hover:scale-[1.02] hover:bg-white/60 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)]',

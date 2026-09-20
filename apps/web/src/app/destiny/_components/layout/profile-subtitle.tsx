@@ -3,8 +3,7 @@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
-const SUBTITLE_CLASS =
-  'text-sm leading-relaxed text-slate-600 dark:text-slate-300';
+const SUBTITLE_CLASS = 'text-sm leading-relaxed text-slate-600 dark:text-slate-300';
 
 /** 顶栏命例摘要：过长时单行截断，点击展开完整信息 */
 export function ProfileSubtitle({ text, className }: { text: string; className?: string }) {
@@ -20,7 +19,7 @@ export function ProfileSubtitle({ text, className }: { text: string; className?:
         <button
           type="button"
           className={cn(
-            'block w-full min-h-9 text-left',
+            'block w-full min-h-8 text-left',
             SUBTITLE_CLASS,
             'line-clamp-1 rounded-lg px-0.5 -mx-0.5',
             'hover:text-slate-800 dark:hover:text-slate-100',

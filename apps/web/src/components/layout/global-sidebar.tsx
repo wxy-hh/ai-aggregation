@@ -14,11 +14,11 @@ import { usePinnedApps, useShowAppsModal, useUIActions } from '@/stores/ui-store
 import { useAuthStore } from '@/stores/auth-store';
 import { SidebarAppLogo } from '@/components/layout/sidebar-app-logo';
 
-// 底部折叠链接：基础尺寸 + 非激活态，三个入口（admin/历史/主题）共用
+// 底部折叠链接：基础尺寸 + 非激活态，三个入口（admin/历史/主题）共用；玻璃取 G-1 档（white/40 + blur-md）
 const bottomLinkBaseCls =
-  'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-2xl border shadow-sm transition-all duration-300';
+  'w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-md backdrop-saturate-150 border shadow-sm transition-all duration-300';
 const bottomLinkStateCls =
-  'bg-white/45 dark:bg-slate-800/45 border-white/35 dark:border-slate-700/35 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95';
+  'bg-white/40 dark:bg-slate-800/40 border-white/40 dark:border-slate-700/40 text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95';
 const bottomLinkActiveCls =
   'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] border-transparent text-white shadow-lg shadow-indigo-500/35 scale-105';
 
@@ -119,8 +119,8 @@ export function GlobalSidebar() {
   return (
     <>
       <aside className="w-[100px] h-screen flex-shrink-0 z-50 transition-all duration-500 relative flex flex-col items-center py-6">
-        {/* 悬浮玻璃侧边栏背景 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/70 via-white/60 to-white/50 dark:from-slate-900/70 dark:via-slate-900/60 dark:to-slate-900/50 backdrop-blur-2xl border-r border-white/60 dark:border-white/10 shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)] rounded-r-3xl mx-2 my-4 pointer-events-none" />
+        {/* 悬浮玻璃侧边栏背景：G-2 档均匀玻璃（white/60 + blur-xl），折射与二级侧栏一致 */}
+        <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 border-r border-white/50 dark:border-white/10 shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] rounded-r-3xl mx-2 my-4 pointer-events-none" />
         
         {/* 顶部高光切割线 */}
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 rounded-r-3xl mx-2 mt-4" />
@@ -159,7 +159,7 @@ export function GlobalSidebar() {
                   'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                   pathname === '/'
                     ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
-                    : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
+                    : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md backdrop-saturate-150 border border-white/40 dark:border-slate-700/40 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                 )}
               >
                 <Home className="w-5 h-5" strokeWidth={2} />
@@ -211,7 +211,7 @@ export function GlobalSidebar() {
                         'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 relative',
                         active
                           ? 'bg-gradient-to-br from-[#5D7CFA] to-[#7D91FF] text-white shadow-lg shadow-indigo-500/35 scale-105'
-                          : 'bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
+                          : 'bg-white/40 dark:bg-slate-800/40 backdrop-blur-md backdrop-saturate-150 border border-white/40 dark:border-slate-700/40 shadow-sm text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95'
                         // 着陆发光效果（当飞行完成且 isJustAdded 变为 false 时，我们可以触发 class 动画，但如果需要，依赖 css 动画关键帧更简单）
                       )}
                     >
@@ -242,7 +242,7 @@ export function GlobalSidebar() {
           <motion.button
             layout
             onClick={() => setAppsModal(true)}
-            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/45 dark:bg-slate-800/45 backdrop-blur-xl border border-white/30 dark:border-slate-700/30 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
+            className="w-10 h-10 rounded-xl flex items-center justify-center bg-white/40 dark:bg-slate-800/40 backdrop-blur-md backdrop-saturate-150 border border-white/40 dark:border-slate-700/40 shadow-sm text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800 hover:shadow-lg hover:shadow-indigo-200/40 dark:hover:shadow-black/50 hover:text-[#5D7CFA] dark:hover:text-[#91A4FF] hover:scale-105 active:scale-95 transition-all duration-300 group mt-2 mx-auto"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
           </motion.button>
@@ -263,7 +263,7 @@ export function GlobalSidebar() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="bg-white/[0.58] dark:bg-slate-900/[0.58] backdrop-blur-xl border-t border-white/50 dark:border-white/20 rounded-r-3xl shadow-md shadow-indigo-500/15 flex flex-col items-center gap-3 py-4 px-2 mx-2 mb-4 overflow-hidden"
+                className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 border-t border-white/50 dark:border-white/10 rounded-r-3xl shadow-md shadow-indigo-500/15 flex flex-col items-center gap-3 py-4 px-2 mx-2 mb-4 overflow-hidden"
               >
                 {user?.role === 'admin' && (
                   <Link
@@ -345,7 +345,7 @@ export function GlobalSidebar() {
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -30 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-5 py-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border border-white/30 dark:border-slate-700 shadow-2xl rounded-2xl whitespace-nowrap"
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 px-5 py-3 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md backdrop-saturate-150 border border-white/30 dark:border-slate-700 shadow-2xl rounded-2xl whitespace-nowrap"
           >
             <div className="w-5 h-5 rounded-full bg-[#6D86FF] flex items-center justify-center text-white">
               <Check className="w-3 h-3" strokeWidth={3} />

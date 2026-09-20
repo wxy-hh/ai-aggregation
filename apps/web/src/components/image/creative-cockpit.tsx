@@ -111,8 +111,8 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
       {/* 玻璃外壳 */}
       <div
         className={cn(
-          'absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-3xl border-l border-white/20 dark:border-white/5 shadow-[-20px_0_50px_rgba(0,0,0,0.1)] transition-all duration-500',
-          isCollapsed && 'bg-transparent backdrop-blur-none border-none shadow-none'
+          'absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-3xl backdrop-saturate-150 border-l border-white/20 dark:border-white/5 shadow-[-20px_0_50px_rgba(0,0,0,0.1)] transition-all duration-500',
+          isCollapsed && 'bg-transparent backdrop-blur-none !backdrop-saturate-100 border-none shadow-none'
         )}
       />
 
@@ -179,7 +179,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                   onClick={() => onPromptAppend?.(item.text)}
                   className={cn(
                     'relative overflow-hidden rounded-xl p-3 text-left transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5 cursor-pointer group/chip',
-                    'border backdrop-blur-md bg-white/40 dark:bg-slate-800/40',
+                    'border backdrop-blur-md backdrop-saturate-150 bg-white/40 dark:bg-slate-800/40',
                     item.border
                   )}
                 >
@@ -287,7 +287,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                       {item.tags.map((tag, i) => (
                         <span
                           key={i}
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded shadow-[0_0_10px_rgba(255,255,255,0.3)] bg-gradient-to-r from-white/20 to-white/10 text-white border border-white/20 backdrop-blur-md"
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded shadow-[0_0_10px_rgba(255,255,255,0.3)] bg-gradient-to-r from-white/20 to-white/10 text-white border border-white/20 backdrop-blur-md backdrop-saturate-150"
                         >
                           {tag}
                         </span>

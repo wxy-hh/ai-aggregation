@@ -92,7 +92,7 @@ export function AstrologyNightToggle() {
       {showInvite && (
         <div
           role="status"
-          className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-indigo-200/60 bg-white/95 p-3 text-xs leading-relaxed shadow-[0_16px_40px_-16px_rgba(30,41,82,0.3)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0D1226]/95"
+          className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-indigo-200/60 bg-white/95 p-3 text-xs leading-relaxed shadow-[0_16px_40px_-16px_rgba(30,41,82,0.3)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/95"
         >
           <span
             aria-hidden

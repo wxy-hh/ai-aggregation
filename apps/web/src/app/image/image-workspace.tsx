@@ -308,20 +308,20 @@ export default function ImageWorkspace() {
           <Textarea
             value={prompt}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
-            className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
+            className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm backdrop-saturate-150 border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
             placeholder="描述你想要生成的画面..."
           />
           <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={() => setPrompt('')}
-              className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+              className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm transition-colors"
               title="清空提示词"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <button
               onClick={handleRandomPrompt}
-              className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md shadow-sm transition-colors"
+              className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm transition-colors"
               title="随机灵感"
             >
               <Dice5 className="w-4 h-4" />
@@ -356,14 +356,14 @@ export default function ImageWorkspace() {
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
           {/* 装饰性背景元素 */}
           <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-            <div className="absolute -top-[20%] -right-[10%] w-[50%] h-[50%] rounded-full bg-blue-400/10 blur-[100px]" />
-            <div className="absolute top-[40%] -left-[10%] w-[40%] h-[40%] rounded-full bg-purple-400/10 blur-[100px]" />
+            <div className="absolute top-[18%] -right-[8%] w-[55%] h-[55%] rounded-full bg-blue-400/[0.14] blur-[100px]" />
+            <div className="absolute top-[8%] -left-[12%] w-[48%] h-[66%] rounded-full bg-purple-400/[0.14] blur-[100px]" />
           </div>
 
           {/* 错误边界：包裹关键内容区域，防止页面崩溃 */}
           <ErrorBoundary>
             {/* 头部：透明磨砂，与页面径向渐变融为一体，避免白底拼接感 */}
-            <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
+            <header className="relative z-10 flex flex-none items-center justify-between px-4 py-4 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-white/20 md:px-6 dark:supports-[backdrop-filter]:bg-slate-950/15">
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Ai 创作工坊
@@ -389,13 +389,13 @@ export default function ImageWorkspace() {
           {/* 内容区域：拆分视图 */}
           <div className="flex-1 flex overflow-hidden z-10">
             {/* 左侧面板：设置与提示词 */}
-            <div className="hidden lg:flex w-80 md:w-96 flex-none flex-col border-r border-white/20 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl overflow-y-auto custom-scrollbar">
+            <div className="hidden lg:flex w-80 md:w-96 flex-none flex-col border-r border-white/20 dark:border-white/5 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl backdrop-saturate-150 overflow-y-auto custom-scrollbar">
               <div className="p-6 space-y-8">
                 {renderParameterPanel()}
               </div>
 
               {/* 吸底生成按钮 */}
-              <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-gradient-to-t from-white/90 via-white/80 to-transparent dark:from-slate-900/90 dark:via-slate-900/80 dark:to-transparent backdrop-blur-sm z-10 pb-8">
+              <div className="p-6 pt-0 mt-auto sticky bottom-0 bg-gradient-to-t from-white/90 via-white/80 to-transparent dark:from-slate-900/90 dark:via-slate-900/80 dark:to-transparent backdrop-blur-sm backdrop-saturate-150 z-10 pb-8">
                 {error && (
                   <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400">
                     {error}
@@ -438,7 +438,7 @@ export default function ImageWorkspace() {
               ></div>
 
               <div className="w-full max-w-3xl lg:hidden mb-6 relative z-10">
-                <div className="space-y-4 rounded-3xl border border-white/40 bg-white/70 p-4 shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-slate-900/70">
+                <div className="space-y-4 rounded-3xl border border-white/40 bg-white/70 p-4 shadow-lg backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-slate-900/70">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
@@ -517,7 +517,7 @@ export default function ImageWorkspace() {
                           disabled={resultRelay.disabled}
                           disabledReason={resultRelay.disabledReason}
                           onClick={resultRelay.openAtTrigger}
-                          className="h-11 w-11 rounded-full border border-white/20 bg-white/20 p-3 text-white shadow-lg backdrop-blur-md hover:bg-white/30"
+                          className="h-11 w-11 rounded-full border border-white/20 bg-white/20 p-3 text-white shadow-lg backdrop-blur-md backdrop-saturate-150 hover:bg-white/30"
                         />
                         <button
                           onClick={() => {
@@ -526,7 +526,7 @@ export default function ImageWorkspace() {
                             link.download = `agnes-${Date.now()}.png`;
                             link.click();
                           }}
-                          className="p-3 bg-white/20 backdrop-blur-md hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
+                          className="p-3 bg-white/20 backdrop-blur-md backdrop-saturate-150 hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
                           title="下载图片"
                         >
                           <Download className="w-5 h-5" />
@@ -595,7 +595,7 @@ export default function ImageWorkspace() {
                 {isGenerating && (
                   <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-3xl overflow-hidden">
                     {/* 背景模糊 */}
-                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-md" />
+                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-md backdrop-saturate-150" />
 
                     {/* 进度环 */}
                     <div className="relative z-10 w-40 h-40 mb-8">
@@ -630,7 +630,7 @@ export default function ImageWorkspace() {
                     </div>
 
                     {/* 状态徽章 */}
-                    <div className="relative z-10 flex items-center gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl px-6 py-3 rounded-full shadow-2xl border border-white/20 ring-1 ring-black/5">
+                    <div className="relative z-10 flex items-center gap-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl backdrop-saturate-150 px-6 py-3 rounded-full shadow-2xl border border-white/20 ring-1 ring-black/5">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.8)]"></span>
                         <span className="font-bold text-slate-800 dark:text-white text-sm">

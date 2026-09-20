@@ -856,7 +856,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           {/* ═══ 主栏 8 栏（与洞察轨同行构成首屏）：护照头 → 主轴 → 大三要素 ═══ */}
           <div className="order-1 min-w-0 xl:col-span-8">
             {/* ── 1. 宇宙护照头（天命档案微晶印鉴；极淡扫描光入场一次；night-card 供夜幕观星鎏金描边覆盖） ── */}
-            <header className="night-card relative overflow-hidden rounded-[24px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:p-6">
+            <header className="night-card relative overflow-hidden rounded-[24px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:p-6">
               {/* 背景微星轨经纬装饰线 */}
               <div
                 aria-hidden
@@ -1133,7 +1133,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 type="button"
                 onClick={() => handleLocateModule('week')}
                 className={cn(
-                  'mt-6 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur-sm xl:hidden',
+                  'mt-6 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur-sm backdrop-saturate-150 xl:hidden',
                   'transition-all duration-200 active:scale-[0.98] hover:border-indigo-300 hover:bg-slate-50/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                   'dark:border-white/10 dark:bg-[#0D1226]/80 dark:hover:bg-[#121832]'
                 )}
@@ -1216,7 +1216,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               </div>
 
               {/* 右列：等价文本清单与星体深度解构台（桌面端原位切换，彻底消除底部撑开与页面跳动） */}
-              <div className="mt-6 min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_44px_-24px_rgba(30,41,82,0.25)] backdrop-blur-sm dark:border-white/[0.12] dark:bg-[#0C1124]/[0.90] dark:shadow-[0_20px_50px_-24px_rgba(0,0,0,0.85)] sm:p-5 xl:mt-0 xl:flex xl:min-h-[500px] xl:flex-col">
+              <div className="mt-6 min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_44px_-24px_rgba(30,41,82,0.25)] backdrop-blur-sm backdrop-saturate-150 dark:border-white/[0.12] dark:bg-[#0C1124]/[0.90] dark:shadow-[0_20px_50px_-24px_rgba(0,0,0,0.85)] sm:p-5 xl:mt-0 xl:flex xl:min-h-[500px] xl:flex-col">
                 <AnimatePresence mode="wait" initial={false}>
                   {selectedPlacement?.sign && selectedBody ? (
                     <motion.div
@@ -1404,7 +1404,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: '100%' }}
                     transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto custom-scrollbar rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0E1430]/95"
+                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto custom-scrollbar rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0E1430]/95"
                     role="dialog"
                     aria-label={`${PLANET_CN[selectedBody]}事实卡`}
                   >

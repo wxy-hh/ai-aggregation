@@ -184,7 +184,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
             {/* 视觉区：移动端在上（紧凑横条），桌面右列 sticky 持续展示 */}
             <aside className="order-first xl:order-last xl:self-start xl:sticky xl:top-6">
               {/* 移动端紧凑横条：小轮 + 价值摘要（小轮加盘面底衬，深色下不消融） */}
-              <div className="flex items-center gap-4 rounded-2xl border border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04] xl:hidden">
+              <div className="flex items-center gap-4 rounded-2xl border border-white/60 bg-white/60 px-4 py-3 backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-white/[0.04] xl:hidden">
                 <div className="w-20 shrink-0 rounded-full bg-white/85 p-1 ring-1 ring-indigo-200/60 dark:bg-white/[0.07] dark:ring-indigo-300/20">
                   <AstrologyChartWheel facts={sampleFacts} planetOverrides={sunOverride} />
                 </div>
@@ -236,7 +236,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
                   )}
                 </p>
 
-                <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-[#0B1026]/75">
+                <div className="mt-5 rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-[#0B1026]/75">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-bold tracking-wider text-slate-700 dark:text-slate-200">天象档案待解构清单</p>
                     <span className="rounded-full border border-indigo-200/80 bg-indigo-50/80 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-300">
@@ -261,7 +261,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
             </aside>
 
             {/* 表单卡：高对比实体卡，像被星图照亮的档案页 */}
-            <section className="h-fit rounded-[28px] border border-white/60 bg-white/80 p-6 shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0D1226]/85 dark:shadow-[0_24px_64px_-24px_rgba(2,6,23,0.8)] sm:p-8">
+            <section className="h-fit rounded-[28px] border border-white/60 bg-white/80 p-6 shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/85 dark:shadow-[0_24px_64px_-24px_rgba(2,6,23,0.8)] sm:p-8">
               {/* 天体星轨双轴校准轨 */}
               <div className="mb-7">
                 <div className="flex items-center justify-between gap-2 pb-3">
@@ -353,7 +353,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
           {/* 主操作位：移动端 fixed 抬升避开全局底部导航（移动端命运页为文档级滚动，sticky 无效）；
               桌面端在内部滚动容器内 sticky 贴底。预留安全区，不是第二条底部导航 */}
           <div className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 px-5 pb-2 pt-2 sm:px-8 xl:sticky xl:inset-x-auto xl:bottom-0 xl:mt-8 xl:px-0 xl:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_-8px_32px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0B1024]/90 dark:shadow-[0_-12px_40px_-16px_rgba(2,6,23,0.8)]">
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_-8px_32px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0B1024]/90 dark:shadow-[0_-12px_40px_-16px_rgba(2,6,23,0.8)]">
               {formStep === 2 && (
                 <button
                   type="button"

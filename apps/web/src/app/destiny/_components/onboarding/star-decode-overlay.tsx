@@ -189,7 +189,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
     <div
       className={cn(
         'z-50 flex items-center justify-center',
-        'bg-[#F1F5F9]/75 backdrop-blur-[12px] dark:bg-[#111218]/75',
+        'bg-[#F1F5F9]/75 backdrop-blur-[12px] backdrop-saturate-150 dark:bg-[#111218]/75',
         'animate-in fade-in duration-200',
         // 桌面端：相对于工作区定位
         'lg:absolute lg:inset-0',
@@ -217,7 +217,7 @@ export function StarDecodeOverlay({ open }: { open: boolean }) {
         {/* 玻璃圆环 + 中心文案 */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="relative">
-            <div className="h-[340px] w-[340px] rounded-full border border-[color:var(--ds-glass-stroke-light)] bg-[color:var(--ds-glass-white)] backdrop-blur-[20px] shadow-[var(--ds-shadow-3)]" />
+            <div className="h-[340px] w-[340px] rounded-full border border-[color:var(--ds-glass-stroke-light)] bg-[color:var(--ds-glass-white)] backdrop-blur-[20px] backdrop-saturate-150 shadow-[var(--ds-shadow-3)]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="px-6 text-center">
                 <div className="text-xs font-bold tracking-[0.12em] text-[#3C58D8]">星空解码中</div>

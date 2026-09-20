@@ -70,7 +70,7 @@ export function FriendshipView({
             'dark:hover:border-emerald-400/25'
           )}
           eyebrow={
-            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200/50 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 backdrop-blur-sm dark:border-emerald-400/20 dark:bg-emerald-400/15 dark:text-emerald-300">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200/50 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 backdrop-blur-sm backdrop-saturate-150 dark:border-emerald-400/20 dark:bg-emerald-400/15 dark:text-emerald-300">
               <Users className="h-3 w-3" />
               轻松相处 · 留有余地
             </div>
@@ -221,7 +221,7 @@ export function FriendshipView({
           {view.frictions.map((f, i) => (
             <div
               key={i}
-              className="rounded-2xl border border-teal-100/60 bg-white/50 p-3.5 backdrop-blur-md dark:border-teal-400/10 dark:bg-slate-950/40"
+              className="rounded-2xl border border-teal-100/60 bg-white/50 p-3.5 backdrop-blur-md backdrop-saturate-150 dark:border-teal-400/10 dark:bg-slate-950/40"
             >
               <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {f.trigger}
@@ -246,7 +246,7 @@ export function FriendshipView({
         onToggleAction={onToggleAction}
         disclaimers={view.disclaimers}
         doneClass="bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_8px_16px_-6px_rgba(16,185,129,0.55)]"
-        idleClass="border-2 border-emerald-500/40 bg-emerald-50/80 text-emerald-600 backdrop-blur-sm hover:scale-105 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-300"
+        idleClass="border-2 border-emerald-500/40 bg-emerald-50/80 text-emerald-600 backdrop-blur-sm backdrop-saturate-150 hover:scale-105 dark:border-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-300"
       />
     </div>
   );

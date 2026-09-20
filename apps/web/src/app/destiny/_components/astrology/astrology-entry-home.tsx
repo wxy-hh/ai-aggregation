@@ -160,7 +160,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                     animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
                     exit={{ opacity: 0, y: 8, scale: 0.96, x: '-50%' }}
                     transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl dark:border-indigo-400/30 dark:bg-[#0D122E]/95 dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
+                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl backdrop-saturate-150 dark:border-indigo-400/30 dark:bg-[#0D122E]/95 dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold tracking-wide text-indigo-600 dark:text-indigo-300">
@@ -236,7 +236,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                   <li
                     key={v.title}
                     className={cn(
-                      'group relative flex items-start gap-3 rounded-2xl border p-3.5 backdrop-blur-md transition-all duration-200 sm:flex-col sm:gap-2.5',
+                      'group relative flex items-start gap-3 rounded-2xl border p-3.5 backdrop-blur-md backdrop-saturate-150 transition-all duration-200 sm:flex-col sm:gap-2.5',
                       'border-white/70 bg-white/50 hover:bg-white/75 hover:shadow-[0_6px_20px_-6px_rgba(99,102,241,0.12)]',
                       'dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06] dark:hover:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.5)]'
                     )}
@@ -257,7 +257,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               </ul>
 
               {/* 时间未知提示：精致的折叠提示胶囊 */}
-              <div className="order-3 mt-6 inline-flex items-center gap-2 rounded-full border border-amber-200/50 bg-amber-50/50 px-3.5 py-1.5 backdrop-blur-sm dark:border-amber-400/15 dark:bg-amber-400/[0.05]">
+              <div className="order-3 mt-6 inline-flex items-center gap-2 rounded-full border border-amber-200/50 bg-amber-50/50 px-3.5 py-1.5 backdrop-blur-sm backdrop-saturate-150 dark:border-amber-400/15 dark:bg-amber-400/[0.05]">
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#B4852A] dark:text-[#E7C873]" strokeWidth={2} />
                 <span className="text-xs font-medium text-amber-900/80 dark:text-amber-200/90">
                   出生时间未知？太阳与月亮仍精准定位，将智能隐藏上升与十二宫
@@ -268,7 +268,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
 
           {/* 最近记录卡：低敏摘要，有记录才展示 */}
           {recentRecord && (
-            <div className="mt-10 flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+            <div className="mt-10 flex items-center justify-between gap-4 rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur-md backdrop-saturate-150 dark:border-white/10 dark:bg-white/5">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold tracking-wider text-day-muted dark:text-night-faint">
                   星座寰宇 · {recentRecord.date}
@@ -302,7 +302,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
             // lg 起：居中 Modal（列宽 max-w-lg，避免宽屏下信息密度过低）
             'lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:w-[calc(100%-3rem)] lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px] lg:pb-0',
             // G-3 玻璃：自上而下渐隐 + 顶部 1px 高光线（深色档落在星盘深空 #0D1226 一脉）
-            'bg-gradient-to-b from-white/95 via-white/85 to-white/70 backdrop-blur-2xl',
+            'bg-gradient-to-b from-white/95 via-white/85 to-white/70 backdrop-blur-2xl backdrop-saturate-150',
             'dark:border-white/10 dark:from-[#0D1226]/[0.96] dark:via-[#0C1124]/[0.93] dark:to-[#0B1020]/[0.90]',
             'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.28)]',
             // 入场 200ms（tailwindcss-animate 的 duration-* 与核心 transition-duration 同名，且被

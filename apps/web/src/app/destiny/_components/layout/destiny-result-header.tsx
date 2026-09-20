@@ -9,7 +9,7 @@ export const destinyG3ShellClass = cn(
   'relative overflow-hidden rounded-[32px] border border-white/60',
   'bg-gradient-to-b from-white/60 via-white/30 to-white/10',
   'shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
-  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  'backdrop-blur-xl backdrop-saturate-150 lg:backdrop-blur-2xl',
   'bg-white/[0.92] lg:from-white/60 lg:via-white/30 lg:to-white/10 lg:bg-transparent',
   'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10',
   'dark:bg-slate-900/[0.92] lg:dark:bg-transparent'
@@ -17,7 +17,7 @@ export const destinyG3ShellClass = cn(
 
 /** 结果内容区略紧凑的 G-3 壳（奇门等分块内容） */
 export const destinyG3ContentShellClass = cn(
-  'relative overflow-hidden rounded-[24px] border border-white/60 p-4 backdrop-blur-xl sm:rounded-[28px] sm:p-5 md:p-6',
+  'relative overflow-hidden rounded-[24px] border border-white/60 p-4 backdrop-blur-xl backdrop-saturate-150 sm:rounded-[28px] sm:p-5 md:p-6',
   'bg-gradient-to-b from-white/60 via-white/30 to-white/10',
   'shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
   'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10',
@@ -34,7 +34,7 @@ export const destinyPrimaryBtnClass = cn(
 
 export const destinySecondaryBtnClass = cn(
   'min-h-11 rounded-full border border-slate-200/50 bg-white/40 px-4 text-sm font-semibold text-slate-700',
-  'backdrop-blur-xl shadow-[0_1px_2px_0_rgba(0,0,0,0.03)]',
+  'backdrop-blur-xl backdrop-saturate-150 shadow-[0_1px_2px_0_rgba(0,0,0,0.03)]',
   'transition-all duration-200 hover:scale-[1.02] hover:bg-white/60',
   'dark:border-slate-800/50 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:bg-slate-800/60'
 );

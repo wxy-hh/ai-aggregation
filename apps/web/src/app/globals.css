@@ -177,6 +177,46 @@
   animation: gradient 3s ease infinite;
 }
 
+/* ═══ /home 极光底与漂移光斑（DESIGN.md §4.1 明度阶梯 / §6.3 注册动画）═══
+   全页静态极光底：所有玻璃面磨同一张底，从根上保证折射均匀；
+   光斑布局原则：每个玻璃面后方都要有一团色可磨——左缘一团纵贯侧栏、
+   右上一团垫 hero、中下一团垫卡片区（初版挤在角落，侧栏后面是白板）；
+   光斑透明度恒定（≤0.20）、只动 transform，拒绝 animate-pulse 式的呼吸闪烁 */
+.home-aurora-base {
+  background-color: #f3f5fa;
+  background-image:
+    radial-gradient(26% 58% at 5% 46%, rgba(125, 145, 255, 0.13), transparent 70%),
+    radial-gradient(38% 34% at 88% 16%, rgba(196, 181, 253, 0.11), transparent 70%),
+    radial-gradient(44% 36% at 58% 72%, rgba(147, 197, 253, 0.1), transparent 70%);
+}
+.dark .home-aurora-base {
+  background-color: #020617; /* 与 dark:bg-slate-950 一致 */
+  background-image:
+    radial-gradient(26% 58% at 5% 46%, rgba(93, 124, 250, 0.14), transparent 70%),
+    radial-gradient(38% 34% at 88% 16%, rgba(167, 139, 250, 0.11), transparent 70%),
+    radial-gradient(44% 36% at 58% 72%, rgba(59, 130, 246, 0.1), transparent 70%);
+}
+
+@keyframes home-aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(4%, -3%, 0) scale(1.06);
+  }
+  66% {
+    transform: translate3d(-3%, 2%, 0) scale(0.97);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.animate-home-aurora-drift {
+  animation: home-aurora-drift 18s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
 /* 进度条加载动画 */
 @keyframes loading {
   0% {

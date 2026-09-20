@@ -83,7 +83,7 @@ export function AstrologyWheel3D({
           {/* 第 1 层：磨砂表圈（降低白色对比度，避免与深色盘面硬切） */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -inset-[5.5%] rounded-full border border-white/50 bg-gradient-to-br from-white/50 via-indigo-50/20 to-amber-100/15 p-1.5 shadow-[0_16px_48px_-12px_rgba(30,41,82,0.18),inset_0_1px_6px_rgba(255,255,255,0.7),inset_0_-3px_10px_rgba(30,41,82,0.10)] backdrop-blur-md dark:border-white/12 dark:from-white/[0.06] dark:via-indigo-950/20 dark:to-amber-900/[0.06] dark:shadow-[0_20px_60px_-16px_rgba(0,0,0,0.7),inset_0_1px_3px_rgba(255,255,255,0.12)]"
+            className="pointer-events-none absolute -inset-[5.5%] rounded-full border border-white/50 bg-gradient-to-br from-white/50 via-indigo-50/20 to-amber-100/15 p-1.5 shadow-[0_16px_48px_-12px_rgba(30,41,82,0.18),inset_0_1px_6px_rgba(255,255,255,0.7),inset_0_-3px_10px_rgba(30,41,82,0.10)] backdrop-blur-md backdrop-saturate-150 dark:border-white/12 dark:from-white/[0.06] dark:via-indigo-950/20 dark:to-amber-900/[0.06] dark:shadow-[0_20px_60px_-16px_rgba(0,0,0,0.7),inset_0_1px_3px_rgba(255,255,255,0.12)]"
             style={{ transform: 'translateZ(-16px)' }}
           >
             {/* 表圈内缘微导轨 */}

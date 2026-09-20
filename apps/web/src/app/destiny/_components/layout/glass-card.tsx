@@ -28,7 +28,7 @@ const variantClass: Record<GlassCardVariant, string> = {
     'dark:shadow-[0_14px_32px_rgba(0,0,0,0.22)]'
   ),
   compact: cn(
-    'rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl',
+    'rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl backdrop-saturate-150',
     'shadow-[0_1px_2px_rgba(15,23,42,0.06)]',
     'supports-[backdrop-filter]:bg-white/80',
     'dark:border-white/10 dark:bg-slate-900/75 dark:shadow-[0_2px_10px_rgba(0,0,0,0.18)]',

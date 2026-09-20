@@ -118,7 +118,7 @@ export function AstrologyWorkspace({ isActive }: AstrologyWorkspaceProps) {
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 sm:inset-x-6 sm:bottom-6 sm:rounded-[28px]',
             'rounded-t-[28px] border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
             // 注意：/92 不在 Tailwind v3 默认透明度刻度（仅 5 的倍数），必须用方括号写法，否则暗色背景静默丢失
-            'bg-white/90 backdrop-blur-2xl dark:border-white/10 dark:bg-[#0D1226]/[0.92]',
+            'bg-white/90 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/[0.92]',
             'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom'
           )}
         >

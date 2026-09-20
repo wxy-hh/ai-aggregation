@@ -207,7 +207,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         {/* 移动端分段控件(紫微/星座结果态入夜) */}
         <div
           className={cn(
-            'sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-2xl transition-[background-color,border-color] duration-500',
+            'sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,border-color] duration-500',
             isResultNight
               ? 'border-[#E7C873]/15 bg-[#0C1128]/85'
               : 'border-white/50 bg-white/75 dark:border-white/10 dark:bg-slate-900/75'
@@ -253,7 +253,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
 
           {activeModule === 'qimen' && qimenLoading ? (
             <div
-              className="fixed inset-x-0 z-10 overflow-hidden bg-white/70 backdrop-blur-[10px] dark:bg-slate-950/70"
+              className="fixed inset-x-0 z-10 overflow-hidden bg-white/70 backdrop-blur-[10px] backdrop-saturate-150 dark:bg-slate-950/70"
               style={{
                 top: 'calc(env(safe-area-inset-top) + 4.5rem)',
                 bottom: 'calc(env(safe-area-inset-bottom) + 5.5rem)',
@@ -349,7 +349,7 @@ function DestinyDesktopLayout({
 
         {activeModule === 'qimen' && qimenLoading && (
           <div className="absolute inset-0 z-[35] overflow-hidden">
-            <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] dark:bg-slate-950/20">
+            <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] backdrop-saturate-150 dark:bg-slate-950/20">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
               <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/[0.04] to-transparent blur-2xl xl:block" />
               <div className="relative h-full w-full transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">

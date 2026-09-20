@@ -251,7 +251,7 @@ export function DestinyShell({
           className={cn(
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0',
             'rounded-t-[24px] sm:rounded-t-[32px] rounded-b-none border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
-            'bg-white/80 backdrop-blur-2xl',
+            'bg-white/80 backdrop-blur-2xl backdrop-saturate-150',
             'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(59,130,246,0.15),inset_0_1px_0_0_rgba(255,255,255,0.1)]',
             'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
             'dark:border-white/10 dark:bg-slate-900/85'

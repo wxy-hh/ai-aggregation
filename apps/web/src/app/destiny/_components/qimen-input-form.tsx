@@ -133,7 +133,7 @@ const shellClass = cn(
   'relative overflow-hidden rounded-[32px] border border-white/60 p-4 sm:p-6 md:p-8',
   'bg-gradient-to-b from-white/60 via-white/30 to-white/10',
   'shadow-[0_20px_40px_-15px_rgba(124,58,237,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)]',
-  'backdrop-blur-xl lg:backdrop-blur-2xl',
+  'backdrop-blur-xl backdrop-saturate-150 lg:backdrop-blur-2xl',
   'bg-white/[0.92] lg:from-white/60 lg:via-white/30 lg:to-white/10 lg:bg-transparent',
   'dark:border-white/10 dark:from-slate-900/60 dark:via-slate-900/30 dark:to-slate-900/10',
   'dark:bg-slate-900/[0.92] lg:dark:bg-transparent'
@@ -502,7 +502,7 @@ export function QimenInputForm({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-10 rounded-full border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm px-3 text-[11px] font-semibold text-[#445ECC] dark:text-indigo-400 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:border-white/80 dark:hover:border-white/20 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)]"
+                  className="h-10 rounded-full border-white/60 dark:border-white/10 bg-white/40 dark:bg-slate-800/40 backdrop-blur-sm backdrop-saturate-150 px-3 text-[11px] font-semibold text-[#445ECC] dark:text-indigo-400 hover:bg-white/60 dark:hover:bg-slate-800/60 hover:border-white/80 dark:hover:border-white/20 transition-all duration-200 shadow-[0_2px_8px_rgba(93,124,250,0.08)]"
                   onClick={handleCopyTemplate}
                   disabled={submitting}
                 >
@@ -621,7 +621,7 @@ export function QimenInputForm({
       </div>
 
       {error && (
-        <div className="mt-5 rounded-[20px] border border-rose-200/50 bg-gradient-to-br from-rose-50/60 via-rose-50/40 to-transparent backdrop-blur-sm px-4 py-3 text-sm text-rose-700 shadow-[0_4px_16px_rgba(244,63,94,0.08)] dark:border-rose-500/25 dark:from-rose-950/30 dark:via-rose-950/15 dark:to-transparent dark:text-rose-300">
+        <div className="mt-5 rounded-[20px] border border-rose-200/50 bg-gradient-to-br from-rose-50/60 via-rose-50/40 to-transparent backdrop-blur-sm backdrop-saturate-150 px-4 py-3 text-sm text-rose-700 shadow-[0_4px_16px_rgba(244,63,94,0.08)] dark:border-rose-500/25 dark:from-rose-950/30 dark:via-rose-950/15 dark:to-transparent dark:text-rose-300">
           {error}
         </div>
       )}

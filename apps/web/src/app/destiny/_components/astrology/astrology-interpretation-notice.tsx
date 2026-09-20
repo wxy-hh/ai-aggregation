@@ -76,7 +76,7 @@ export function AstrologyInterpretationNotice({
   return (
     <section
       aria-label="AI 解读状态"
-      className="rounded-[24px] border border-white/60 bg-white/85 p-5 shadow-[0_18px_48px_-24px_rgba(30,41,82,0.22)] backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-[#0D1226]/[0.88]"
+      className="rounded-[24px] border border-white/60 bg-white/85 p-5 shadow-[0_18px_48px_-24px_rgba(30,41,82,0.22)] backdrop-blur-xl backdrop-saturate-150 sm:p-6 dark:border-white/10 dark:bg-[#0D1226]/[0.88]"
     >
       <div className="flex items-start gap-3">
         <span

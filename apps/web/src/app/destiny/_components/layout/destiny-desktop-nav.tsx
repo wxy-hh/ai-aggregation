@@ -19,14 +19,14 @@ const HIDE_X = -(DESTINY_NAV_WIDTH_PX + DESTINY_NAV_LEFT_PX);
 /** 紫微结果态的入夜面板壳(暮色三段式的中间调:浅侧栏 → 深子导航 → 深空内容) */
 const nightNavShellClass = cn(
   'relative overflow-hidden rounded-[32px] border border-[#E7C873]/15',
-  'bg-[#0C1128]/85 backdrop-blur-xl lg:backdrop-blur-2xl',
+  'bg-[#0C1128]/85 backdrop-blur-xl backdrop-saturate-150 lg:backdrop-blur-2xl',
   'shadow-[0_20px_40px_-16px_rgba(3,6,18,0.7),0_0_40px_rgba(139,92,246,0.10)]'
 );
 
 const toggleBtnClass = cn(
   'flex h-8 w-8 items-center justify-center rounded-full',
   'border border-white/55 bg-white/80 text-slate-400 shadow-[0_4px_12px_-6px_rgba(15,23,42,0.18)]',
-  'backdrop-blur-sm transition-[color,background-color,border-color,box-shadow] duration-200',
+  'backdrop-blur-sm backdrop-saturate-150 transition-[color,background-color,border-color,box-shadow] duration-200',
   'hover:border-white/80 hover:bg-white/95 hover:text-slate-600 hover:shadow-[0_6px_16px_-8px_rgba(15,23,42,0.22)]',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/20',
   'dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-500',
@@ -138,7 +138,7 @@ export function DestinyDesktopNav({
               className={cn(
                 'pointer-events-auto group relative ml-0 flex min-h-[112px] w-11 flex-col items-center justify-center gap-1.5',
                 'rounded-r-[22px] border border-l-0',
-                'py-4 pl-1 pr-1.5 backdrop-blur-xl transition-[transform,box-shadow,background-color,border-color] duration-200',
+                'py-4 pl-1 pr-1.5 backdrop-blur-xl backdrop-saturate-150 transition-[transform,box-shadow,background-color,border-color] duration-200',
                 'focus-visible:outline-none focus-visible:ring-2',
                 night
                   ? 'border-[#E7C873]/20 bg-[#0C1128]/90 shadow-[8px_0_32px_-12px_rgba(3,6,18,0.7)] hover:w-12 hover:shadow-[12px_0_36px_-10px_rgba(139,92,246,0.35)] focus-visible:ring-[#A78BFA]/40'

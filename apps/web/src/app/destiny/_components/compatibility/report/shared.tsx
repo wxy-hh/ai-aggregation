@@ -36,7 +36,7 @@ export const reportCardClass = cn(
 
 /** 摘要条 / 次级玻璃条 */
 export const reportBarClass = cn(
-  'rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur-xl',
+  'rounded-2xl border border-white/60 bg-white/70 px-4 py-3 backdrop-blur-xl backdrop-saturate-150',
   'shadow-[0_4px_16px_-8px_rgba(15,23,42,0.08)]',
   'supports-[backdrop-filter]:bg-white/55',
   'dark:border-white/10 dark:bg-slate-900/70 dark:supports-[backdrop-filter]:bg-slate-900/55',
@@ -46,7 +46,7 @@ export const reportBarClass = cn(
 
 /** 维度小格基础：低光玻璃，不叠 blur（避免玻璃套玻璃） */
 export const dimensionTileBaseClass = cn(
-  'rounded-2xl border p-3.5 backdrop-blur-md',
+  'rounded-2xl border p-3.5 backdrop-blur-md backdrop-saturate-150',
   'shadow-[0_1px_2px_0_rgba(15,23,42,0.03)]',
   'transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)]',
   'md:hover:-translate-y-0.5'
@@ -422,7 +422,7 @@ export function WhyNote({
         为什么
       </button>
       {whyOpen === id ? (
-        <p className="mt-1.5 rounded-xl border border-white/50 bg-white/60 p-2 text-[11px] leading-relaxed text-slate-500 backdrop-blur-md dark:border-white/5 dark:bg-slate-950/50 dark:text-slate-400">
+        <p className="mt-1.5 rounded-xl border border-white/50 bg-white/60 p-2 text-[11px] leading-relaxed text-slate-500 backdrop-blur-md backdrop-saturate-150 dark:border-white/5 dark:bg-slate-950/50 dark:text-slate-400">
           {why}
         </p>
       ) : null}
@@ -460,7 +460,7 @@ export function RelationHero({
       className={cn(
         // h-full：与右侧节奏/KPI 并排时拉伸对齐，不留上下错位
         'group relative col-span-12 h-full overflow-visible rounded-[1.5rem] p-5 sm:p-6 xl:col-span-8',
-        'border backdrop-blur-xl lg:backdrop-blur-2xl',
+        'border backdrop-blur-xl backdrop-saturate-150 lg:backdrop-blur-2xl',
         'transition-all duration-200 ease-[cubic-bezier(0.2,0.8,0.2,1)] md:hover:-translate-y-0.5',
         toneClass,
         // 展开评分依据时抬升整卡堆叠层级，防止弹层被后续玻璃卡遮挡
@@ -544,7 +544,7 @@ function WhyScoreToggle({
       </button>
       {open ? (
         scoreBasis ? (
-          <div className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3.5 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
+          <div className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3.5 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
             <div className="space-y-2.5">
               {scoreBasis.basisLines.map((line, i) => (
                 <p key={i} className="flex gap-1.5">
@@ -558,7 +558,7 @@ function WhyScoreToggle({
             </p>
           </div>
         ) : (
-          <p className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
+          <p className="relative z-20 mt-2 w-full max-w-md rounded-xl border border-white/70 bg-white/95 p-3 text-xs leading-relaxed text-slate-500 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-slate-950/95 dark:text-slate-400 lg:absolute lg:left-0 lg:top-full lg:mt-1">
             {hintText}
           </p>
         )
@@ -1135,7 +1135,7 @@ export function RelationDuoScoreVisual({
 
       <div
         className={cn(
-          'absolute left-1/2 top-1/2 z-[3] flex h-[6.5rem] w-[6.5rem] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-white/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90 sm:h-[7.75rem] sm:w-[7.75rem]',
+          'absolute left-1/2 top-1/2 z-[3] flex h-[6.5rem] w-[6.5rem] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-white/70 bg-white/90 backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-slate-900/90 sm:h-[7.75rem] sm:w-[7.75rem]',
           t.centerShadow
         )}
       >
@@ -1398,7 +1398,7 @@ export function RhythmTimeline({
             <li
               key={i}
               className={cn(
-                'flex min-w-[9.5rem] flex-1 flex-col justify-start rounded-2xl border border-white/55 bg-white/55 p-3.5 backdrop-blur-md',
+                'flex min-w-[9.5rem] flex-1 flex-col justify-start rounded-2xl border border-white/55 bg-white/55 p-3.5 backdrop-blur-md backdrop-saturate-150',
                 'shadow-[0_4px_14px_-8px_rgba(15,23,42,0.1)]',
                 'dark:border-white/10 dark:bg-slate-950/45'
               )}

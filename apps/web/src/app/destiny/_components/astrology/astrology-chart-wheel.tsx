@@ -1126,7 +1126,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
       {interactive && activePlanet && activePos && (
         <div
           aria-hidden
-          className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/90 px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10 backdrop-blur-xl"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/90 px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10 backdrop-blur-xl backdrop-saturate-150"
           style={{
             left: `${(activePos[0] / 560) * 100}%`,
             top: `${(activePos[1] / 560) * 100}%`,

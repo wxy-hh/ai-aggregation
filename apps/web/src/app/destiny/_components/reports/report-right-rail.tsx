@@ -187,7 +187,7 @@ export function ReportRightRail({
 
   /** 长文阅读区：实体底、无边框 */
   const readSurfaceClass = cn(
-    'mt-3 rounded-xl bg-white/[0.92] px-2 py-0.5 sm:mt-3.5 sm:px-4 sm:py-0.5',
+    'mt-3 rounded-xl bg-white/[0.92] px-2 py-3 sm:mt-3.5 sm:px-4 sm:py-4',
     'dark:bg-slate-950/65'
   );
 

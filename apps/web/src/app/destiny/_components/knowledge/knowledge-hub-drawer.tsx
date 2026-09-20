@@ -66,7 +66,7 @@ export function KnowledgeHubDrawer({
         </DialogDescription>
         <div
           className={cn(
-            'rounded-[30px] border border-white/35 bg-white/45 backdrop-blur-[32px]',
+            'rounded-[30px] border border-white/35 bg-white/45 backdrop-blur-[32px] backdrop-saturate-150',
             'shadow-[0_30px_90px_-30px_rgba(15,23,42,0.28)] overflow-hidden'
           )}
         >
