@@ -4,8 +4,7 @@
  * 锁定的外部行为（04 工单）：
  * - 敏感话题（医疗/财务/法律）由服务端确定性规则前置拦截：只推一个正常回答帧（kind='blocked'），
  *   不过 LLM、不预留也不结算额度；
- * - 每报告上限在服务端强制：以 Redis 计数为准（请求体 askedCount 只作 UI 提示，不采信），
- *   超限返回 429 + 明确中文提示且不过 LLM、不计费；
+ * - 次数不设每报告上限：能问几次只由账号额度决定（额度不足走 402 计费口径）；
  * - 正常问题：SSE 流式推送正文增量，终帧携带完整回答与白名单收敛后的引用；额度预留 → 成功结算
  *   （usage 归一化），失败释放 / 部分结算，管理员跳过预留；
  * - 引用白名单：模型编造的键（不在事实层允许表内）与未在报告中的模块一律丢弃；
@@ -19,7 +18,7 @@ import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
 import type { ModuleReading } from '@/lib/astrology/interpretation';
 
 // 通过 hoisted 引用控制每次测试的登录用户（admin 跳过额度预留，普通用户走预留→结算）
-const { mockUserRef, streamModelRef, qaLimitRef } = vi.hoisted(() => ({
+const { mockUserRef, streamModelRef } = vi.hoisted(() => ({
   mockUserRef: {
     current: { id: 'test-user', role: 'user', isAnonymous: true } as {
       id: string;
@@ -35,22 +34,6 @@ const { mockUserRef, streamModelRef, qaLimitRef } = vi.hoisted(() => ({
     /** 记录调用入参（模型、协议、温度、输出上限、json schema） */
     calls: [] as Array<Record<string, unknown>>,
   },
-  qaLimitRef: {
-    /** 服务端每报告上限的计数结果（默认放行；真实实现走 Redis，单测注入假结果） */
-    result: { allowed: true, used: 1, remaining: 2, degraded: false },
-    calls: [] as Array<{ userId: string; reportFingerprint: string }>,
-  },
-}));
-
-// 每报告上限：真实实现要连 Redis，单测在模块边界替换为可控桩（计数逻辑本身另有单测）
-vi.mock('../_lib/astrology-qa-limit', () => ({
-  consumeAstrologyQaQuota: vi.fn(async (userId: string, facts: { calculationRevision: string; calculatedAt: string }) => {
-    qaLimitRef.calls.push({
-      userId,
-      reportFingerprint: `${facts.calculationRevision}|${facts.calculatedAt}`,
-    });
-    return qaLimitRef.result;
-  }),
 }));
 
 vi.mock('@/lib/api/with-auth', () => ({
@@ -166,7 +149,6 @@ function buildBody(overrides: Record<string, unknown> = {}) {
   return {
     report: { facts: ACCURATE_FACTS, modules: ACCURATE_MODULES },
     question: QUESTION,
-    askedCount: 0,
     timePrecision: 'accurate',
     ...overrides,
   };
@@ -235,8 +217,6 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     streamModelRef.calls = [];
     streamModelRef.error = null;
     streamModelRef.chunks = [];
-    qaLimitRef.calls = [];
-    qaLimitRef.result = { allowed: true, used: 1, remaining: 2, degraded: false };
     reserveChatQuotaMock.mockResolvedValue({
       reservation: { id: 'reservation-1' },
       inputUnits: 900,
@@ -282,30 +262,14 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(streamModelMock).not.toHaveBeenCalled();
   });
 
-  it('每报告上限：服务端计数超限 → 429，明确中文提示且不计费（不采信请求体 askedCount）', async () => {
-    // 请求体谎报 askedCount=0：服务端仍按自己的计数拒绝
-    qaLimitRef.result = { allowed: false, used: 4, remaining: 0, degraded: false };
-    const response = await postCopilot(buildBody({ askedCount: 0 }));
-
-    expect(response.status).toBe(429);
-    const payload = (await response.json()) as { error?: string; code?: string };
-    expect(payload.code).toBe('QA_LIMIT_REACHED');
-    expect(payload.error).toContain('本次星语问答已完成');
-    expect(payload.error).toContain('重新打开报告');
-    expect(streamModelMock).not.toHaveBeenCalled();
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
-    // 计数按「服务端用户 + 报告标识」进行，与客户端上报的已提问数无关
-    expect(qaLimitRef.calls[0].userId).toBe('test-user');
-    expect(qaLimitRef.calls[0].reportFingerprint).toContain(ACCURATE_FACTS.calculationRevision);
-  });
-
-  it('请求体 askedCount 只作 UI 提示：服务端计数未超限即照常回答', async () => {
-    // 客户端上报一个荒谬的大数（例如 UI 状态错乱）：服务端不据此拒绝
-    primeStream(answerPayload(ACCURATE_FACTS));
-    const events = await readSseEvents(await postCopilot(buildBody({ askedCount: 99 })));
-
-    expect(events[events.length - 1].type).toBe('answer');
-    expect(streamModelMock).toHaveBeenCalledTimes(1);
+  it('同一份报告不设次数上限：连续提问每次都照常回答（次数只由额度约束）', async () => {
+    // 请求体不携带任何已提问数：服务端只按额度裁决，不做每报告计数拦截
+    for (let i = 0; i < 4; i += 1) {
+      primeStream(answerPayload(ACCURATE_FACTS));
+      const events = await readSseEvents(await postCopilot());
+      expect(events[events.length - 1].type).toBe('answer');
+    }
+    expect(streamModelMock).toHaveBeenCalledTimes(4);
   });
 
   it('正常问题：正文增量流式推送，终帧给出回答与白名单引用', async () => {
@@ -539,11 +503,10 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(citations.every((item) => !item.refKey || !/^(angle|house):/.test(item.refKey))).toBe(true);
   });
 
-  it('请求体校验：问题为空、缺盘面事实、已提问数非法、provider 非法一律 400', async () => {
+  it('请求体校验：问题为空、缺盘面事实、provider 非法一律 400', async () => {
     const cases: Array<Record<string, unknown>> = [
       buildBody({ question: '   ' }),
-      { report: { modules: ACCURATE_MODULES }, question: QUESTION, askedCount: 0 },
-      buildBody({ askedCount: -1 }),
+      { report: { modules: ACCURATE_MODULES }, question: QUESTION },
       buildBody({ provider: 'gpt' }),
     ];
 
@@ -593,7 +556,6 @@ describe('客户端接缝 → 问答路由（全链路）', () => {
     const deltas: string[] = [];
 
     const answer = await requestAstrologyAnswer(QUESTION, ACCURATE_FACTS, ACCURATE_MODULES, {
-      askedCount: 0,
       onDelta: (text) => deltas.push(text),
     });
 
@@ -605,9 +567,7 @@ describe('客户端接缝 → 问答路由（全链路）', () => {
   });
 
   it('敏感问题：同一路径返回安全话术，且未调用模型、未预留额度', async () => {
-    const answer = await requestAstrologyAnswer('我该不该去看病？', ACCURATE_FACTS, ACCURATE_MODULES, {
-      askedCount: 0,
-    });
+    const answer = await requestAstrologyAnswer('我该不该去看病？', ACCURATE_FACTS, ACCURATE_MODULES, {});
 
     expect(answer.kind).toBe('blocked');
     expect(answer.text).toContain('不能据此作出医疗、财务或法律判断');
@@ -615,15 +575,18 @@ describe('客户端接缝 → 问答路由（全链路）', () => {
     expect(reserveChatQuotaMock).not.toHaveBeenCalled();
   });
 
-  it('超限：同一路径返回明确中文提示（面板据此展示并禁止继续提问）', async () => {
-    // 服务端计数已超限（请求体仍报 3，服务端不采信）
-    qaLimitRef.result = { allowed: false, used: 4, remaining: 0, degraded: false };
-    const error = await requestAstrologyAnswer(QUESTION, ACCURATE_FACTS, ACCURATE_MODULES, {
-      askedCount: 3,
-    }).catch((caught: unknown) => caught);
+  it('额度不足：同一路径按 402 口径返回服务端中文提示（面板据此展示，全局弹框另行提示）', async () => {
+    const { BillingError } = await import('@/lib/billing/billing-errors');
+    reserveChatQuotaMock.mockRejectedValueOnce(
+      new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', { requestId: 'req-1' })
+    );
+    const error = await requestAstrologyAnswer(QUESTION, ACCURATE_FACTS, ACCURATE_MODULES, {}).catch(
+      (caught: unknown) => caught
+    );
 
     expect(error).toBeInstanceOf(AstrologyQaRequestError);
-    expect((error as AstrologyQaRequestError).kind).toBe('limit');
-    expect(astrologyQaErrorMessage(error)).toContain('本次星语问答已完成');
+    expect((error as AstrologyQaRequestError).kind).toBe('quota');
+    expect(astrologyQaErrorMessage(error)).toContain('额度不足');
+    expect(streamModelMock).not.toHaveBeenCalled();
   });
 });

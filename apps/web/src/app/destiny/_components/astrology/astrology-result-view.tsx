@@ -47,7 +47,6 @@ import {
 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import type { AstrologyChartFacts, PlanetBody, ZodiacSign } from '@/lib/astrology/chart-facts';
 import {
@@ -65,7 +64,11 @@ import {
   type ModuleId,
   type ModuleReading,
 } from '@/lib/astrology/interpretation';
-import { chartFactsErrorKind, isLatestChartFactsRequest, startChartFactsRequest } from '@/lib/astrology/chart-request';
+import {
+  chartFactsErrorKind,
+  isLatestChartFactsRequest,
+  startChartFactsRequest,
+} from '@/lib/astrology/chart-request';
 import { updateAstrologyHistoryInterpretation } from '@/lib/astrology/history';
 import {
   ASPECT_CN,
@@ -79,6 +82,7 @@ import { AstrologyInterpretationNotice } from './astrology-interpretation-notice
 import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyShareEntry, isAstrologyShareAvailable } from './astrology-share-entry';
+import { AstrologyNightToggle } from './astrology-night-toggle';
 import { TypewriterHeadline } from './astrology-typewriter-headline';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
@@ -97,7 +101,10 @@ function formatCalculatedAt(iso: string): string {
 
 /** 时间精度标签（沿用表单语义色：准确靛蓝 / 约时琥珀 / 未知月光紫）；
  *  约时降级（区间内角点不稳定 → 无宫位范围）必须如实标注「部分盘面范围不稳定」（§6.2） */
-function precisionBadge(formData: AstrologyFormData, facts: AstrologyChartFacts): { text: string; className: string } {
+function precisionBadge(
+  formData: AstrologyFormData,
+  facts: AstrologyChartFacts
+): { text: string; className: string } {
   if (formData.timePrecision === 'accurate') {
     return {
       text: '准确到分钟',
@@ -170,11 +177,15 @@ function refLabel(ref: string, facts: AstrologyChartFacts): string {
 function placementTermLine(facts: AstrologyChartFacts, key: 'sun' | 'moon' | 'ascendant'): string {
   if (key === 'ascendant') {
     const a = facts.angles.ascendant;
-    return a.sign ? `${ZODIAC_CN[a.sign]}${a.degree !== null ? ` ${formatDegreeMinute(a.degree)}` : ''}` : '';
+    return a.sign
+      ? `${ZODIAC_CN[a.sign]}${a.degree !== null ? ` ${formatDegreeMinute(a.degree)}` : ''}`
+      : '';
   }
   const p = facts.planets.find((pl) => pl.body === key);
   if (!p?.sign) return '';
-  const bits = [`${ZODIAC_CN[p.sign]}${p.degree !== null ? ` ${formatDegreeMinute(p.degree)}` : ''}`];
+  const bits = [
+    `${ZODIAC_CN[p.sign]}${p.degree !== null ? ` ${formatDegreeMinute(p.degree)}` : ''}`,
+  ];
   if (p.house !== null) bits.push(`第 ${p.house} 宫`);
   if (p.retrograde) bits.push('逆行中');
   return bits.join(' · ');
@@ -225,7 +236,9 @@ function PlanetFactCard({
               <span>全部星体</span>
             </button>
           ) : (
-            <span className="text-xs font-semibold text-slate-500 dark:text-night-muted">星体深度解构</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-night-muted">
+              星体深度解构
+            </span>
           )}
 
           {/* 快捷星体点选胶囊：热区 44×44（横排十颗，28×28 易误触）。
@@ -249,7 +262,11 @@ function PlanetFactCard({
                       : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
                   )}
                 >
-                  <ItemGlyph width={13} height={13} className={isCurrent ? 'stroke-white' : 'stroke-current'} />
+                  <ItemGlyph
+                    width={13}
+                    height={13}
+                    className={isCurrent ? 'stroke-white' : 'stroke-current'}
+                  />
                 </button>
               );
             })}
@@ -282,7 +299,9 @@ function PlanetFactCard({
               )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-night-faint">
-              <span className="font-medium text-indigo-600 dark:text-indigo-300">{PLANET_THEME[body]}</span>
+              <span className="font-medium text-indigo-600 dark:text-indigo-300">
+                {PLANET_THEME[body]}
+              </span>
               {placement.house !== null && <span>· 第 {placement.house} 宫</span>}
               {placement.retrograde === true && (
                 <span className="rounded-full bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
@@ -312,7 +331,9 @@ function PlanetFactCard({
         {/* 关联相位 */}
         {aspects.length > 0 && (
           <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-            <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">关联相位作用</p>
+            <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">
+              关联相位作用
+            </p>
             <ul className="mt-2 space-y-1.5">
               {aspects.map((a) => {
                 const other = a.source === body ? a.target : a.source;
@@ -321,10 +342,14 @@ function PlanetFactCard({
                     key={`${a.source}-${a.target}-${a.type}`}
                     className="flex items-start gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300"
                   >
-                    <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-indigo-500 dark:text-indigo-300" strokeWidth={2} />
+                    <Sparkles
+                      className="mt-0.5 h-3 w-3 shrink-0 text-indigo-500 dark:text-indigo-300"
+                      strokeWidth={2}
+                    />
                     <span>
                       <span className="font-semibold text-slate-800 dark:text-slate-100">
-                        与{PLANET_CN[other]}{ASPECT_CN[a.type]}
+                        与{PLANET_CN[other]}
+                        {ASPECT_CN[a.type]}
                         {a.orb !== null && `（偏差 ${a.orb.toFixed(1)}°）`}
                       </span>
                       ——{ASPECT_PLAIN[a.type]}
@@ -340,7 +365,9 @@ function PlanetFactCard({
       {/* 底部：关联生活模块跳链 */}
       {relatedModuleIds.length > 0 && (
         <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-          <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">在以下生活模块中被引用</p>
+          <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">
+            在以下生活模块中被引用
+          </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {relatedModuleIds.map((id) => {
               const m = modules.find((mod) => mod.id === id);
@@ -371,24 +398,31 @@ function PlanetFactCard({
  * sm 起摘要行隐藏、内容常显——桌面端保持现状展开，只有移动端默认折叠。
  * hidden：内容自身会整块隐藏时（如主轴缺失的分享入口），摘要行必须同步跳过渲染，
  * 否则移动端点开是一个空壳。
+ * className / bodyClassName：给外壳与内容层补桌面端布局类（如星语问答卡在洞察轨里撑满剩余高度）。
  */
 function MobileCollapse({
   title,
   hint,
   icon: Icon,
   hidden = false,
+  className,
+  bodyClassName,
   children,
 }: {
   title: string;
   hint?: string;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   hidden?: boolean;
+  /** 外壳附加类（桌面端撑满时用 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col） */
+  className?: string;
+  /** 内容层附加类（与外壳同为伸缩容器，内容卡才能以 flex-1 占满剩余高度） */
+  bodyClassName?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   if (hidden) return null;
   return (
-    <div>
+    <div className={className}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -405,14 +439,21 @@ function MobileCollapse({
           {open ? '收起' : title}
         </span>
         {!open && hint && (
-          <span className="shrink-0 text-[11px] font-medium text-day-muted dark:text-night-faint">{hint}</span>
+          <span className="shrink-0 text-[11px] font-medium text-day-muted dark:text-night-faint">
+            {hint}
+          </span>
         )}
         <ChevronDown
-          className={cn('h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint', open && 'rotate-180')}
+          className={cn(
+            'h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint',
+            open && 'rotate-180'
+          )}
           strokeWidth={2.2}
         />
       </button>
-      <div className={cn(open ? 'mt-2.5 sm:mt-0' : 'hidden sm:block')}>{children}</div>
+      <div className={cn(open ? 'mt-2.5 sm:mt-0' : 'hidden sm:block', bodyClassName)}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -424,7 +465,10 @@ function SkeletonBlock({ className }: { className?: string }) {
   return (
     <div
       aria-hidden
-      className={cn('acw-skeleton-breathe rounded-lg bg-slate-200/60 dark:bg-white/[0.07]', className)}
+      className={cn(
+        'acw-skeleton-breathe rounded-lg bg-slate-200/60 dark:bg-white/[0.07]',
+        className
+      )}
     />
   );
 }
@@ -470,8 +514,12 @@ function LifeModulesSkeleton() {
   return (
     <section aria-label="五个生活模块" aria-busy="true">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">生活的五个切面</h3>
-        <span className="text-xs text-day-muted dark:text-night-faint">每张卡都能展开依据，回看它来自盘面的哪个位置</span>
+        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
+          生活的五个切面
+        </h3>
+        <span className="text-xs text-day-muted dark:text-night-faint">
+          每张卡都能展开依据，回看它来自盘面的哪个位置
+        </span>
       </div>
       <div aria-hidden className="mt-5 grid gap-3 xl:grid-cols-2 xl:gap-4">
         {[0, 1].map((i) => (
@@ -526,21 +574,28 @@ export type AstrologyResultViewProps = {
   /** 05 转场插槽：同一 layoutId 的星盘轮在这里落定（附带 06 点选交互参数） */
   wheelSlot: (
     slotClass: string,
-    wheelProps?: { selectedBody: PlanetBody | null; onSelectBody: (body: PlanetBody | null) => void }
+    wheelProps?: {
+      selectedBody: PlanetBody | null;
+      onSelectBody: (body: PlanetBody | null) => void;
+    }
   ) => React.ReactNode;
 };
 
 export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const reduceMotion = useReducedMotion();
-  const { formData, chartFacts, interpretation: interpretationState, setWorkspaceState } =
-    useDestinyWorkspaceStore(
-      useShallow((s) => ({
-        formData: s.astrology.formData,
-        chartFacts: s.astrology.chartFacts,
-        interpretation: s.astrology.interpretation,
-        setWorkspaceState: s.setWorkspaceState,
-      }))
-    );
+  const {
+    formData,
+    chartFacts,
+    interpretation: interpretationState,
+    setWorkspaceState,
+  } = useDestinyWorkspaceStore(
+    useShallow((s) => ({
+      formData: s.astrology.formData,
+      chartFacts: s.astrology.chartFacts,
+      interpretation: s.astrology.interpretation,
+      setWorkspaceState: s.setWorkspaceState,
+    }))
+  );
 
   const [selectedBody, setSelectedBody] = useState<PlanetBody | null>(null);
   /** WebGL 星渊场景可用性（null=探测中/不可用 → SVG 轮兜底并保持 DOM 视差） */
@@ -570,7 +625,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const modules = useMemo(() => {
     if (!interpretation) return [];
     const merged = attachWeeklyGuidance(interpretation.modules, interpretation.transits);
-    const topicToModule: Record<string, ModuleId> = { self: 'who', love: 'love', career: 'career', recent: 'week' };
+    const topicToModule: Record<string, ModuleId> = {
+      self: 'who',
+      love: 'love',
+      career: 'career',
+      recent: 'week',
+    };
     const priority = formData.topic ? (topicToModule[formData.topic] ?? null) : null;
     return orderModulesByTopic(merged, priority);
   }, [interpretation, formData.topic]);
@@ -587,7 +647,10 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
     }
     // 分区未到（含已就绪但 transits 仍在途）：按等待态说明；只有解读层确认降级才说不生成
     return {
-      status: interpretationState.status === 'unavailable' ? ('unavailable' as const) : ('pending' as const),
+      status:
+        interpretationState.status === 'unavailable'
+          ? ('unavailable' as const)
+          : ('pending' as const),
       top: [],
       rest: [],
     };
@@ -622,7 +685,9 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const selectedAspects = useMemo(() => {
     if (!chartFacts || !selectedBody) return [];
     return chartFacts.aspects
-      .filter((a) => a.stability === 'stable' && (a.source === selectedBody || a.target === selectedBody))
+      .filter(
+        (a) => a.stability === 'stable' && (a.source === selectedBody || a.target === selectedBody)
+      )
       .slice(0, 3);
   }, [chartFacts, selectedBody]);
 
@@ -649,11 +714,13 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
       }));
   }, [chartFacts]);
 
-  /** 解读主轴到达即把低敏摘要合并进本地统一历史记录（同一条逻辑记录，修订号不动） */
+  /** 解读分区到达即合并进本地统一历史记录（同一条逻辑记录，修订号不动）：
+   *  首帧主轴先落低敏摘要，模块与行运随后逐区补齐整份解读——历史恢复时据此回填结果页，
+   *  点开旧记录看到的是当时那份结果，而不是「只存了真值、解读待接入」 */
   useEffect(() => {
-    if (!chartFacts || !fullHeadline) return;
-    updateAstrologyHistoryInterpretation(formData, chartFacts, fullHeadline);
-  }, [chartFacts, fullHeadline, formData]);
+    if (!chartFacts || !interpretation) return;
+    updateAstrologyHistoryInterpretation(formData, chartFacts, interpretation);
+  }, [chartFacts, interpretation, formData]);
 
   /** 本周行动入口文案（移动端首屏 compact 卡；行运不可用时为 null，入口整块隐藏） */
   const weeklyAction = useMemo(
@@ -690,25 +757,55 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   /** 大三要素卡片数据（分区未到达或不可用项为 null，直接不渲染；分区未到由骨架占位） */
   const bigThreeCards = [
     bigThree?.sun && sunPlacement?.sign
-      ? { key: 'sun' as const, title: '太阳', subtitle: '核心气质', Icon: SunIcon, reading: bigThree.sun, term: placementTermLine(chartFacts, 'sun') }
+      ? {
+          key: 'sun' as const,
+          title: '太阳',
+          subtitle: '核心气质',
+          Icon: SunIcon,
+          reading: bigThree.sun,
+          term: placementTermLine(chartFacts, 'sun'),
+        }
       : null,
     bigThree?.moon
-      ? { key: 'moon' as const, title: '月亮', subtitle: '内在情绪', Icon: MoonIcon, reading: bigThree.moon, term: placementTermLine(chartFacts, 'moon') }
+      ? {
+          key: 'moon' as const,
+          title: '月亮',
+          subtitle: '内在情绪',
+          Icon: MoonIcon,
+          reading: bigThree.moon,
+          term: placementTermLine(chartFacts, 'moon'),
+        }
       : null,
     bigThree?.ascendant
-      ? { key: 'ascendant' as const, title: '上升', subtitle: '外在表达', Icon: Sunrise, reading: bigThree.ascendant, term: placementTermLine(chartFacts, 'ascendant') }
+      ? {
+          key: 'ascendant' as const,
+          title: '上升',
+          subtitle: '外在表达',
+          Icon: Sunrise,
+          reading: bigThree.ascendant,
+          term: placementTermLine(chartFacts, 'ascendant'),
+        }
       : null,
   ].filter((c): c is NonNullable<typeof c> => c !== null);
 
   /** 降级档只剩 1-2 张要素卡时栅格按数量自适应（单卡横向聚光排版），不留空栅格 */
   const bigThreeCols =
-    bigThreeCards.length === 1 ? 'sm:grid-cols-1' : bigThreeCards.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3';
+    bigThreeCards.length === 1
+      ? 'sm:grid-cols-1'
+      : bigThreeCards.length === 2
+        ? 'sm:grid-cols-2'
+        : 'sm:grid-cols-3';
   /** 仅一张要素卡（时间未知档常见）：横向聚光排版开关 */
   const bigThreeSolo = bigThreeCards.length === 1;
 
   /** 重新测算：回表单并保留已填资料（step 一并回到 form，否则工作区分发仍停在结果页） */
   const recalculate = () =>
-    setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
+    setWorkspaceState('astrology', {
+      step: 'form',
+      entryView: 'form',
+      error: null,
+      errorKind: null,
+    });
 
   /** 模块事实片定位：选中星体并平滑滚回星盘轮区（angle/house 类引用仅滚动不选星体） */
   const handleLocateBody = (body: PlanetBody | null) => {
@@ -758,8 +855,8 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
         <div className="grid gap-12 xl:grid-cols-12">
           {/* ═══ 主栏 8 栏（与洞察轨同行构成首屏）：护照头 → 主轴 → 大三要素 ═══ */}
           <div className="order-1 min-w-0 xl:col-span-8">
-            {/* ── 1. 宇宙护照头（天命档案微晶印鉴；极淡扫描光入场一次） ── */}
-            <header className="relative overflow-hidden rounded-[24px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:p-6">
+            {/* ── 1. 宇宙护照头（天命档案微晶印鉴；极淡扫描光入场一次；night-card 供夜幕观星鎏金描边覆盖） ── */}
+            <header className="night-card relative overflow-hidden rounded-[24px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:p-6">
               {/* 背景微星轨经纬装饰线 */}
               <div
                 aria-hidden
@@ -788,26 +885,41 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                       {name}的宇宙护照
                     </h1>
                   </div>
-                  <span className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide', badge.className)}>
+                  <span
+                    className={cn(
+                      'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide',
+                      badge.className
+                    )}
+                  >
                     {badge.text}
                   </span>
-                  {/* 解读与问答的模型口径（与八字/紫微/奇门同一个控制器）：结果页可直接切换，
-                      切换后「重试解读」与后续提问即用新模型；compact 形态最小，热区仍 ≥44 */}
-                  <DestinyModelSwitcher size="compact" className="ml-auto" />
+                  {/* 模型控制器只在填表步骤提供（与八字/紫微/奇门同一口径）：结果页报告已按当时
+                      选定的模型产出，此处不再给切换入口，避免出现与当前报告不符的模型口径 */}
+                  {/* 「夜幕观星」切换：护照头行内右端，移动端随 flex-wrap 自然换行不挤压标题 */}
+                  <div className="ml-auto">
+                    <AstrologyNightToggle />
+                  </div>
                 </div>
                 {/* 移动端突出太阳星座（§7.2 压缩护照）；桌面展示完整摘要行 */}
                 {sunPlacement?.sign && (
                   <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-indigo-700 dark:text-indigo-200 xl:hidden">
                     {(() => {
                       const Glyph = ZODIAC_GLYPH[sunPlacement.sign];
-                      return <Glyph width={16} height={16} className="stroke-indigo-500 dark:stroke-indigo-300" />;
+                      return (
+                        <Glyph
+                          width={16}
+                          height={16}
+                          className="stroke-indigo-500 dark:stroke-indigo-300"
+                        />
+                      );
                     })()}
                     太阳 · {ZODIAC_CN[sunPlacement.sign]}
                   </p>
                 )}
                 <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-night-muted sm:text-sm">
                   {summaryText(formData)}
-                  {formatCalculatedAt(chartFacts.calculatedAt) && ` · 计算于 ${formatCalculatedAt(chartFacts.calculatedAt)}`}
+                  {formatCalculatedAt(chartFacts.calculatedAt) &&
+                    ` · 计算于 ${formatCalculatedAt(chartFacts.calculatedAt)}`}
                 </p>
 
                 {/* 盘面依据：可展开计算口径（实体底，非玻璃） */}
@@ -818,7 +930,13 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
                 >
                   盘面依据
-                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', basisOpen && 'rotate-180')} strokeWidth={2.2} />
+                  <ChevronDown
+                    className={cn(
+                      'h-3.5 w-3.5 transition-transform duration-200',
+                      basisOpen && 'rotate-180'
+                    )}
+                    strokeWidth={2.2}
+                  />
                 </button>
                 <AnimatePresence initial={false}>
                   {basisOpen && (
@@ -836,16 +954,21 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                           const label = k === 'sun' ? '太阳' : k === 'moon' ? '月亮' : '上升';
                           return (
                             <div key={k} className="flex gap-2">
-                              <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">{label}</dt>
+                              <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">
+                                {label}
+                              </dt>
                               <dd>{term}</dd>
                             </div>
                           );
                         })}
                         <div className="flex gap-2 border-t border-slate-200/70 pt-2 dark:border-white/[0.08]">
-                          <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">口径</dt>
+                          <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">
+                            口径
+                          </dt>
                           <dd>
-                            回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位行星盘'} · 容许度表 {chartFacts.orbTableVersion} ·
-                            引擎 {chartFacts.engineVersion} · 修订 {chartFacts.calculationRevision}
+                            回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位行星盘'}{' '}
+                            · 容许度表 {chartFacts.orbTableVersion} · 引擎{' '}
+                            {chartFacts.engineVersion} · 修订 {chartFacts.calculationRevision}
                           </dd>
                         </div>
                       </dl>
@@ -865,41 +988,39 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   onRetry={retryInterpretation}
                 />
               </div>
-            ) : (
-              headlineReading ? (
-                <section className="mt-12" aria-label="你的核心主题">
-                  {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
+            ) : headlineReading ? (
+              <section className="mt-12" aria-label="你的核心主题">
+                {/* 逐字机自持状态与定时器（隔离 34ms/字的高频重渲染），落定后回调一次驱动下方依据与三卡。
                       移动端降到 text-xl（字重与琥珀金渐变由组件内部保留），sm 起恢复 clamp(40px,4vw,56px) 原档位 */}
-                  <div className="max-sm:[&_h2]:text-xl max-sm:[&_h2]:leading-[1.25]">
-                    <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
-                  </div>
-                  {headlineDone && (
-                    <motion.div
-                      initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: reduceMotion ? 0.01 : 0.3 }}
-                      className="mt-4 flex flex-wrap items-center gap-2"
-                    >
-                      <span className="text-[11px] font-semibold tracking-wider text-day-muted dark:text-night-faint">
-                        依据
+                <div className="max-sm:[&_h2]:text-xl max-sm:[&_h2]:leading-[1.25]">
+                  <TypewriterHeadline text={fullHeadline} onDone={handleHeadlineDone} />
+                </div>
+                {headlineDone && (
+                  <motion.div
+                    initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: reduceMotion ? 0.01 : 0.3 }}
+                    className="mt-4 flex flex-wrap items-center gap-2"
+                  >
+                    <span className="text-[11px] font-semibold tracking-wider text-day-muted dark:text-night-faint">
+                      依据
+                    </span>
+                    {headlineReading.factReferences.map((r) => (
+                      <span
+                        key={r}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-xs dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500/80 dark:bg-amber-300" />
+                        {refLabel(r, chartFacts)}
                       </span>
-                      {headlineReading.factReferences.map((r) => (
-                        <span
-                          key={r}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-xs dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200"
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500/80 dark:bg-amber-300" />
-                          {refLabel(r, chartFacts)}
-                        </span>
-                      ))}
-                    </motion.div>
-                  )}
-                </section>
-              ) : (
-                <section className="mt-12" aria-label="你的核心主题">
-                  <HeadlineSkeleton />
-                </section>
-              )
+                    ))}
+                  </motion.div>
+                )}
+              </section>
+            ) : (
+              <section className="mt-12" aria-label="你的核心主题">
+                <HeadlineSkeleton />
+              </section>
             )}
 
             {/* ── 3. 大三要素（主轴落定后 40ms 间隔上浮；时间未知切「核心要素」）。
@@ -935,7 +1056,11 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                         transition={
                           reduceMotion
                             ? { duration: 0.01 }
-                            : { duration: 0.4, delay: headlineDone ? i * 0.04 + 0.05 : 0, ease: 'easeOut' }
+                            : {
+                                duration: 0.4,
+                                delay: headlineDone ? i * 0.04 + 0.05 : 0,
+                                ease: 'easeOut',
+                              }
                         }
                         className={cn(
                           'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
@@ -961,21 +1086,34 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                               <card.Icon className="h-4 w-4" strokeWidth={1.9} />
                             </span>
                             <div>
-                              <p className="text-sm font-bold text-slate-900 dark:text-white">{card.title}</p>
-                              <p className="text-[11px] text-day-muted dark:text-night-faint">{card.subtitle}</p>
+                              <p className="text-sm font-bold text-slate-900 dark:text-white">
+                                {card.title}
+                              </p>
+                              <p className="text-[11px] text-day-muted dark:text-night-faint">
+                                {card.subtitle}
+                              </p>
                             </div>
                           </div>
                           <p
                             className={cn(
                               'mt-3 text-[11px] font-semibold tracking-wide',
-                              card.key === 'sun' ? 'text-[#B4852A] dark:text-[#E7C873]' : 'text-indigo-500 dark:text-indigo-300/90'
+                              card.key === 'sun'
+                                ? 'text-[#B4852A] dark:text-[#E7C873]'
+                                : 'text-indigo-500 dark:text-indigo-300/90'
                             )}
                           >
                             {card.term}
                           </p>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className={cn('mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200', bigThreeSolo && 'sm:mt-0')}>{card.reading.plain}</p>
+                          <p
+                            className={cn(
+                              'mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-200',
+                              bigThreeSolo && 'sm:mt-0'
+                            )}
+                          >
+                            {card.reading.plain}
+                          </p>
                           <p className="mt-2.5 border-t border-slate-100 pt-2.5 text-xs leading-relaxed text-slate-500 dark:border-white/[0.08] dark:text-night-muted">
                             {card.reading.action}
                           </p>
@@ -1011,7 +1149,10 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     {weeklyAction}
                   </span>
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-indigo-400 dark:text-indigo-300/70" strokeWidth={2.2} />
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-indigo-400 dark:text-indigo-300/70"
+                  strokeWidth={2.2}
+                />
               </button>
             ) : interpretation === null ? (
               <div
@@ -1035,23 +1176,42 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             className="order-2 relative -mx-5 overflow-hidden border-y border-indigo-100/80 bg-[radial-gradient(ellipse_at_top_left,rgba(224,231,255,0.7),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(245,243,255,0.8),transparent_50%),linear-gradient(135deg,#F6F8FF_0%,#FFFFFF_50%,#F3F5FF_100%)] p-5 shadow-[0_24px_64px_-32px_rgba(30,41,82,0.15)] dark:border-white/[0.08] dark:bg-[radial-gradient(ellipse_at_20%_20%,rgba(67,56,202,0.18),transparent_48%),radial-gradient(ellipse_at_80%_80%,rgba(147,51,234,0.12),transparent_48%),linear-gradient(155deg,#040711_0%,#080D1D_50%,#0C132B_100%)] sm:mx-0 sm:rounded-[32px] sm:border sm:p-8 xl:order-3 xl:col-span-12 xl:p-10"
           >
             {/* 章节带氛围：顶缘微晶星光线 + 轮盘列后方双层液态星云辉光（纯装饰） */}
-            <div aria-hidden className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-indigo-400/60 to-transparent dark:via-indigo-300/40" />
-            <div aria-hidden className="pointer-events-none absolute -left-28 top-1/2 hidden h-[480px] w-[480px] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.18)_0%,rgba(147,51,234,0.10)_45%,transparent_70%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(129,140,248,0.22)_0%,rgba(168,85,247,0.14)_50%,transparent_72%)] xl:block" />
-            <div aria-hidden className="pointer-events-none absolute -right-20 -bottom-20 hidden h-[380px] w-[380px] rounded-full bg-indigo-400/10 blur-3xl dark:bg-sky-500/[0.08] xl:block" />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-indigo-400/60 to-transparent dark:via-indigo-300/40"
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -left-28 top-1/2 hidden h-[480px] w-[480px] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.18)_0%,rgba(147,51,234,0.10)_45%,transparent_70%)] blur-3xl dark:bg-[radial-gradient(circle,rgba(129,140,248,0.22)_0%,rgba(168,85,247,0.14)_50%,transparent_72%)] xl:block"
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-20 -bottom-20 hidden h-[380px] w-[380px] rounded-full bg-indigo-400/10 blur-3xl dark:bg-sky-500/[0.08] xl:block"
+            />
 
             <div className="relative flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">你的星盘</h3>
-              <span className="text-xs text-day-muted dark:text-night-faint">点选任一星体，查看它在你生活里的样子</span>
+              <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
+                你的星盘
+              </h3>
+              <span className="text-xs text-day-muted dark:text-night-faint">
+                点选任一星体，查看它在你生活里的样子
+              </span>
             </div>
 
             <div className="relative mt-6 xl:mt-8 xl:grid xl:grid-cols-2 xl:items-center xl:gap-10">
               {/* 左列：轮盘主角 */}
               <div className="relative mx-auto w-full max-w-[min(100%,420px)] sm:max-w-[520px]">
-                <div aria-hidden className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15" />
+                <div
+                  aria-hidden
+                  className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15"
+                />
                 {/* 3D 舞台包在 layoutId 穿入元素之外：不影响仪式→结果的穿入测量；
                     WebGL 场景接管后关闭 DOM 指针视差（场景内有相机视差，避免双重倾斜） */}
                 <AstrologyWheel3D className="relative" parallax={wheelSceneOk !== true}>
-                  {wheelSlot('relative mx-auto w-full', { selectedBody, onSelectBody: setSelectedBody })}
+                  {wheelSlot('relative mx-auto w-full', {
+                    selectedBody,
+                    onSelectBody: setSelectedBody,
+                  })}
                 </AstrologyWheel3D>
               </div>
 
@@ -1069,7 +1229,11 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     >
                       <PlanetFactCard
                         body={selectedBody}
-                        placement={selectedPlacement as NonNullable<typeof selectedPlacement> & { sign: ZodiacSign }}
+                        placement={
+                          selectedPlacement as NonNullable<typeof selectedPlacement> & {
+                            sign: ZodiacSign;
+                          }
+                        }
                         reading={selectedReading}
                         aspects={selectedAspects}
                         relatedModuleIds={relatedModuleIds}
@@ -1096,46 +1260,49 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                         点选星体可在右侧直接查看深度解读与相位
                       </p>
                       <ul className="mt-3 space-y-1">
-                        {(showAllPlanets ? textListItems : textListItems.slice(0, 4)).map((item) => {
-                          const Glyph = PLANET_GLYPH[item.body];
-                          const active = selectedBody === item.body;
-                          return (
-                            <li key={item.body}>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedBody(active ? null : item.body)}
-                                aria-pressed={active}
-                                className={cn(
-                                  'flex min-h-11 w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
-                                  active
-                                    ? 'bg-indigo-50 dark:bg-indigo-400/10'
-                                    : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'
-                                )}
-                              >
-                                <Glyph
-                                  width={15}
-                                  height={15}
+                        {(showAllPlanets ? textListItems : textListItems.slice(0, 4)).map(
+                          (item) => {
+                            const Glyph = PLANET_GLYPH[item.body];
+                            const active = selectedBody === item.body;
+                            return (
+                              <li key={item.body}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedBody(active ? null : item.body)}
+                                  aria-pressed={active}
                                   className={cn(
-                                    'mt-1 shrink-0',
+                                    'flex min-h-11 w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
                                     active
-                                      ? 'stroke-indigo-500 dark:stroke-indigo-300'
-                                      : 'stroke-slate-400 dark:stroke-slate-500'
+                                      ? 'bg-indigo-50 dark:bg-indigo-400/10'
+                                      : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                                   )}
-                                />
-                                <span className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 sm:text-sm">
-                                  <span className="font-semibold text-slate-800 dark:text-slate-100">
-                                    {PLANET_CN[item.body]}在{ZODIAC_CN[item.sign]}
-                                    {item.degree !== null && ` ${formatDegreeMinute(item.degree)}`}
-                                    {item.house !== null && ` · 第 ${item.house} 宫`}
-                                    {item.retrograde === true && ' · 逆行中'}
+                                >
+                                  <Glyph
+                                    width={15}
+                                    height={15}
+                                    className={cn(
+                                      'mt-1 shrink-0',
+                                      active
+                                        ? 'stroke-indigo-500 dark:stroke-indigo-300'
+                                        : 'stroke-slate-400 dark:stroke-slate-500'
+                                    )}
+                                  />
+                                  <span className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 sm:text-sm">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                      {PLANET_CN[item.body]}在{ZODIAC_CN[item.sign]}
+                                      {item.degree !== null &&
+                                        ` ${formatDegreeMinute(item.degree)}`}
+                                      {item.house !== null && ` · 第 ${item.house} 宫`}
+                                      {item.retrograde === true && ' · 逆行中'}
+                                    </span>
+                                    <br />
+                                    {item.plain}
                                   </span>
-                                  <br />
-                                  {item.plain}
-                                </span>
-                              </button>
-                            </li>
-                          );
-                        })}
+                                </button>
+                              </li>
+                            );
+                          }
+                        )}
                       </ul>
                       {/* 月亮缺席注明：无宫位档月亮跨座被整颗隐藏，白话说明为什么名单里没有它 */}
                       {moonHiddenNote && (
@@ -1152,9 +1319,14 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                             aria-expanded={showAllPlanets}
                             className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
                           >
-                            {showAllPlanets ? '收起清单' : `展开其余 ${textListItems.length - 4} 颗星`}
+                            {showAllPlanets
+                              ? '收起清单'
+                              : `展开其余 ${textListItems.length - 4} 颗星`}
                             <ChevronDown
-                              className={cn('h-3.5 w-3.5 transition-transform duration-200', showAllPlanets && 'rotate-180')}
+                              className={cn(
+                                'h-3.5 w-3.5 transition-transform duration-200',
+                                showAllPlanets && 'rotate-180'
+                              )}
                               strokeWidth={2.2}
                             />
                           </button>
@@ -1168,7 +1340,10 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                         >
                           {showAllTerms ? '收起术语数据' : '查看全部术语数据'}
                           <ChevronDown
-                            className={cn('h-3.5 w-3.5 transition-transform duration-200', showAllTerms && 'rotate-180')}
+                            className={cn(
+                              'h-3.5 w-3.5 transition-transform duration-200',
+                              showAllTerms && 'rotate-180'
+                            )}
                             strokeWidth={2.2}
                           />
                         </button>
@@ -1189,12 +1364,14 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                                   <li key={`${a.source}-${a.target}-${a.type}`}>
                                     {PLANET_CN[a.source]} {ASPECT_CN[a.type]} {PLANET_CN[a.target]}
                                     {a.orb !== null && ` · 偏差 ${a.orb.toFixed(1)}°`}
-                                    {a.strength !== null && ` · 强度 ${Math.round(a.strength * 100)}%`}
+                                    {a.strength !== null &&
+                                      ` · 强度 ${Math.round(a.strength * 100)}%`}
                                     ——{ASPECT_PLAIN[a.type]}
                                   </li>
                                 ))}
                               <li className="border-t border-slate-200/70 pt-2 dark:border-white/[0.08]">
-                                回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位'} · 容许度表 {chartFacts.orbTableVersion}
+                                回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位'} ·
+                                容许度表 {chartFacts.orbTableVersion}
                               </li>
                             </ul>
                           </motion.div>
@@ -1235,7 +1412,11 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     <div className="mx-auto -mt-1 mb-3 h-1 w-10 rounded-full bg-slate-300/80 dark:bg-slate-600/80" />
                     <PlanetFactCard
                       body={selectedBody}
-                      placement={selectedPlacement as NonNullable<typeof selectedPlacement> & { sign: ZodiacSign }}
+                      placement={
+                        selectedPlacement as NonNullable<typeof selectedPlacement> & {
+                          sign: ZodiacSign;
+                        }
+                      }
                       reading={selectedReading}
                       aspects={selectedAspects}
                       relatedModuleIds={relatedModuleIds}
@@ -1273,11 +1454,19 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
 
           {/* ═══ 右侧 4 栏洞察轨（桌面与首屏区同行 8+4，内容即首屏仪表盘；移动端单列排在模块后、深读前。
                   移动端三卡默认收为一行摘要（<sm），桌面端保持现状展开——首屏密度只压移动端） ═══ */}
-          <aside className="order-4 min-w-0 space-y-4 xl:order-2 xl:col-span-4" aria-label="洞察轨">
+          {/* 桌面端洞察轨为纵向伸缩容器：星语问答卡展开后可撑满本行剩余高度，
+              底部与左栏要素卡底部齐平（整轨高度即首屏行高，由左栏内容决定） */}
+          <aside
+            className="order-4 min-w-0 space-y-4 xl:order-2 xl:col-span-4 xl:flex xl:flex-col"
+            aria-label="洞察轨"
+          >
             {/* 1. 星盘档案校准状态（合并原盘面范围与重新测算，消除重复卡片与双重紫色按钮） */}
             <section className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]">
               {/* 控制台顶缘星光（深色模式的一线辉光） */}
-              <div aria-hidden className="pointer-events-none absolute inset-x-6 top-0 hidden h-px bg-gradient-to-r from-transparent via-indigo-300/40 to-transparent dark:block" />
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-6 top-0 hidden h-px bg-gradient-to-r from-transparent via-indigo-300/40 to-transparent dark:block"
+              />
               {/* 移动端折叠摘要行（标题 + 盘面档位 + chevron，热区 44px）；sm 起隐藏，标题回到卡内标题行 */}
               <button
                 type="button"
@@ -1286,15 +1475,23 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 className="flex min-h-11 w-full items-center justify-between gap-3 px-5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:hidden"
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <Orbit className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
-                  <span className="truncate text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</span>
+                  <Orbit
+                    className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300"
+                    strokeWidth={1.9}
+                  />
+                  <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                    星盘校准状态
+                  </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
                     {withHouses ? '完整十二宫' : '稳定行星盘'}
                   </span>
                   <ChevronDown
-                    className={cn('h-4 w-4 text-day-muted transition-transform duration-200 dark:text-night-faint', statusOpen && 'rotate-180')}
+                    className={cn(
+                      'h-4 w-4 text-day-muted transition-transform duration-200 dark:text-night-faint',
+                      statusOpen && 'rotate-180'
+                    )}
                     strokeWidth={2.2}
                   />
                 </span>
@@ -1303,8 +1500,13 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               <div className={cn('px-5 pb-5 sm:block sm:pt-5', !statusOpen && 'hidden')}>
                 <div className="hidden items-center justify-between sm:flex">
                   <div className="flex items-center gap-2">
-                    <Orbit className="h-4 w-4 text-indigo-500 dark:text-indigo-300 dark:drop-shadow-[0_0_6px_rgba(165,180,252,0.55)]" strokeWidth={1.9} />
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">星盘校准状态</h3>
+                    <Orbit
+                      className="h-4 w-4 text-indigo-500 dark:text-indigo-300 dark:drop-shadow-[0_0_6px_rgba(165,180,252,0.55)]"
+                      strokeWidth={1.9}
+                    />
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      星盘校准状态
+                    </h3>
                   </div>
                   <span className="text-[11px] font-medium text-day-muted dark:text-night-faint">
                     {withHouses ? '完整十二宫' : '稳定行星盘'}
@@ -1336,19 +1538,37 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             {interpretationUnavailable ? null : headlineReading === null ? (
               <RailCardSkeleton />
             ) : (
-              <MobileCollapse title="分享星语海报" hint="脱敏海报" icon={Share2} hidden={!shareAvailable}>
-                <AstrologyShareEntry facts={chartFacts} headline={fullHeadline} name={formData.name} />
+              <MobileCollapse
+                title="分享星语海报"
+                hint="脱敏海报"
+                icon={Share2}
+                hidden={!shareAvailable}
+              >
+                <AstrologyShareEntry
+                  facts={chartFacts}
+                  headline={fullHeadline}
+                  name={formData.name}
+                />
               </MobileCollapse>
             )}
 
             {/* 3. 星语问答（真功能：桌面内联面板 / 移动端底部抽屉，引用可定位）
-                摘要文案不计数：用户提问后剩余次数由面板内徽章呈现，静态文案不会与状态失配。
+                摘要文案不计数：剩余次数由面板内徽章呈现（按账号可用额度折算，不设每报告上限），
+                静态文案不会与状态失配。
+                桌面端展开问答舱后撑满本轨剩余高度：面板底部与左栏要素卡底部齐平（收拢态不撑高，
+                卡片保持内容高度）。折叠壳的两层都要参与伸缩，内容卡才能以 flex-1 吃到剩余高度。
                 模块分区未到：问答只引用已确认的模块事实，先占位骨架（不出「无模块可引用」的假答案）；
                 解读降级：整卡隐藏（模块事实不在，问答无可引用真值） */}
             {interpretationUnavailable ? null : !modulesArrived ? (
               <RailCardSkeleton />
             ) : (
-              <MobileCollapse title="星语问答" hint="AI 解读问答" icon={MessageCircleQuestion}>
+              <MobileCollapse
+                title="星语问答"
+                hint="AI 解读问答"
+                icon={MessageCircleQuestion}
+                className="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+                bodyClassName="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+              >
                 <AstrologyQaEntry
                   facts={chartFacts}
                   modules={modules}

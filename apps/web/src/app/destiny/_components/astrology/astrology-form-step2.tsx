@@ -10,7 +10,7 @@
  * 下方为全球城市搜索（必须精确选中）与时区可读确认条、资料影响可展开说明。
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowUp, CheckCircle2, ChevronDown, Clock3, Info, MapPin, SunMedium } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -203,6 +203,27 @@ export function AstrologyFormStep2({
 }: AstrologyFormStepProps) {
   const reduceMotion = useReducedMotion();
   const [impactOpen, setImpactOpen] = useState(false);
+  /** 步骤根节点：校验失败时在步骤内部按「本步字段顺序」找第一个出错的控件聚焦 */
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 提交校验失败后聚焦第一个出错的控件（按本步 DOM 顺序：出生时刻 → 大约时段 → 出生城市）。
+   * birthDate 的错在第一步、提交时已切回第一步，由那一步负责聚焦，这里不抢。
+   * 依赖 fieldErrors 的对象身份：每次失败 store 都换新对象，连续点提交同样会把焦点带回来。
+   */
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    if (fieldErrors.birthTime) {
+      root.querySelector<HTMLSelectElement>('#astrology-birth-hour')?.focus();
+    } else if (fieldErrors.approximateSlot) {
+      root
+        .querySelector<HTMLButtonElement>('[role="radiogroup"][aria-label="大约时段"] [role="radio"][aria-checked="true"], [role="radiogroup"][aria-label="大约时段"] [role="radio"]')
+        ?.focus();
+    } else if (fieldErrors.location) {
+      root.querySelector<HTMLInputElement>('#astrology-city-input')?.focus();
+    }
+  }, [fieldErrors]);
 
   /* 城市搜索本地态：输入文字留在本地，只有精确选中才写入 store */
   const [cityQuery, setCityQuery] = useState(formData.location.name);
@@ -304,7 +325,7 @@ export function AstrologyFormStep2({
     : { duration: 0.18, ease: [0.32, 0.72, 0, 1] as const };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={rootRef} className="flex flex-col gap-6">
       {/* 时间精度三档（固定三档，无第四档） */}
       <div>
         <span className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">

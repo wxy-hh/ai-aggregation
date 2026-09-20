@@ -30,6 +30,7 @@ import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
 import type { DestinyHistoryItem } from '@/types/history';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { AstrologyChartFacts, TimePrecision } from './chart-facts';
+import type { AstrologyInterpretationReport } from './interpretation';
 import { ZODIAC_CN } from './zh-names';
 
 /** 历史记录 model 字段的诚实标注：星盘真值为本地计算引擎产出 */
@@ -50,6 +51,12 @@ export interface AstrologyReportPayload {
   recalculatedAt: string;
   timePrecision: TimePrecision;
   revisions: AstrologyRevisionSnapshot[];
+  /**
+   * 本修订的解读分区（03 工单解读层产出，逐区到达时合并写入）：
+   * 历史恢复直接回填结果页，用户点开旧记录看到的就是当时那份解读，而不是「解读待接入」。
+   * 缺省 = 该记录生成时还没有保存解读（改动前落库的旧记录 / 解读失败降级）。
+   */
+  interpretation?: AstrologyInterpretationReport | null;
 }
 
 /** 旧修订快照最多保留份数（超出丢弃最旧，控制本地存储体积） */
@@ -206,11 +213,12 @@ export function saveAstrologyHistoryRecord(
 /**
  * 解读到达后的合并更新（12 工单异步写入策略）：
  * 提交时先落真值记录（至少保证「有真值」）；解读晚到时，若同一条逻辑记录仍在，
- * 把解读摘要（黄金主轴）合并覆盖进去。修订号、快照数组与时间戳一律不动——
- * 这不是新一次测算，只是同一次记录的低敏摘要补全。
+ * 把解读分区（主轴 / 大三要素 / 生活模块 / 本周行运）与低敏摘要合并覆盖进去。
+ * 修订号、快照数组与时间戳一律不动——这不是新一次测算，只是同一次记录的解读补全。
  *
- * 03 工单起生产调用方为结果页：解读主轴分区（headline）到达时把金句作为低敏摘要合并进记录
- * （真值写入路径不受影响，见 saveAstrologyHistoryRecord）。
+ * 生产调用方为结果页：每有分区到达就写一次（首帧主轴先落摘要，后续模块与行运逐区补齐），
+ * 最终整份解读留在记录里——用户从入口首页或全局历史页点回来，看到的就是当时那份结果，
+ * 而不是「只存了真值、解读待接入」（见 restoreAstrologyFromHistory）。
  *
  * 身份校验用 calculatedAt + calculationRevision：重算会换上新真值（新 calculatedAt），
  * 上一份迟到的解读不得改写新记录。
@@ -219,7 +227,7 @@ export function saveAstrologyHistoryRecord(
 export function updateAstrologyHistoryInterpretation(
   formData: AstrologyFormData,
   chartFacts: AstrologyChartFacts,
-  headlineText: string | null
+  interpretation: AstrologyInterpretationReport
 ): boolean {
   const id = buildAstrologyLogicalId(formData);
   const stored = useHistoryStore.getState().getItemById(id);
@@ -236,8 +244,18 @@ export function updateAstrologyHistoryInterpretation(
     return false;
   }
 
-  const { title, preview, coreTone } = buildTitleAndPreview(formData, chartFacts, headlineText);
-  const next: DestinyHistoryItem = { ...target, title, preview, coreTone };
+  const { title, preview, coreTone } = buildTitleAndPreview(
+    formData,
+    chartFacts,
+    interpretation.headline?.text ?? null
+  );
+  const next: DestinyHistoryItem = {
+    ...target,
+    title,
+    preview,
+    coreTone,
+    reportData: { ...payload, interpretation } as unknown as Record<string, unknown>,
+  };
   // 覆盖更新同一逻辑记录：登录用户进统一历史，匿名用户进会话临时记录（两条链路一致）
   if (stored) {
     useHistoryStore.getState().addItem(next);
@@ -276,6 +294,12 @@ export function migrateTempRecordToHistory(): boolean {
 /**
  * 从统一历史（或匿名临时记录）恢复该次结果：
  * 入口首页「继续查看」与全局历史页卡片（historyId 参数）共用一个恢复函数。
+ *
+ * 解读层口径：
+ * - 记录里存了当时的解读（interpretation，含主轴）→ 回填为 ready，结果页直接呈现那次的结果，
+ *   不重跑模型、不再显示「解读待接入」；
+ * - 记录里没有解读（本次改动前落库的旧记录 / 当时解读被降级）→ 回到未发起态，
+ *   结果页给诚实的说明与「重试解读」入口，绝不假装在途。
  */
 export function restoreAstrologyFromHistory(historyId: string): boolean {
   const fromHistory = useHistoryStore.getState().getItemById(historyId);
@@ -285,13 +309,17 @@ export function restoreAstrologyFromHistory(historyId: string): boolean {
   const payload = item.reportData as unknown as AstrologyReportPayload | null;
   if (!payload?.chartFacts) return false;
 
+  const savedInterpretation =
+    payload.interpretation && payload.interpretation.headline ? payload.interpretation : null;
+
   useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
     step: 'result',
     lastView: 'result',
     hasResult: true,
     chartFacts: payload.chartFacts,
-    // 恢复的是旧结果：解读层回到未发起态（本次会话没有再请求解读，不假装在途）
-    interpretation: createIdleAstrologyInterpretation(),
+    interpretation: savedInterpretation
+      ? { status: 'ready' as const, reason: null, report: savedInterpretation }
+      : createIdleAstrologyInterpretation(),
     formData: item.formData as unknown as AstrologyFormData,
     fieldErrors: {},
     error: null,

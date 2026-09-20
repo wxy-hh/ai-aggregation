@@ -576,7 +576,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                   <motion.path
                     fill="none"
                     /* framer 动画 d 属性必须把 d 放进 initial，否则首帧写入字符串 "undefined" 触发浏览器告警 */
-                    initial={revealing ? { opacity: 0, d } : { d }}
+                    initial={revealing ? { opacity: 0, d } : { d, opacity: lineOpacity }}
                     animate={{ d, opacity: lineOpacity }}
                     transition={arcTransition}
                     strokeWidth={lineWidth}
@@ -588,7 +588,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                   {!reduceMotion && (selectedBody == null || connected) && (
                     <motion.path
                       fill="none"
-                      initial={revealing ? { opacity: 0, d } : { d }}
+                      initial={revealing ? { opacity: 0, d } : { d, opacity: lineOpacity }}
                       animate={{ d, opacity: lineOpacity }}
                       transition={arcTransition}
                       pathLength={500}
@@ -619,7 +619,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
               fill="none"
               strokeWidth={0.9}
               stroke="rgba(245,212,134,0.22)"
-              initial={revealing ? { opacity: 0 } : false}
+              initial={revealing ? { opacity: 0 } : { opacity: 1 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
             />
@@ -644,7 +644,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                     y2={y2}
                     strokeWidth={0.8}
                     stroke="rgba(245,212,134,0.25)"
-                    initial={revealing ? { pathLength: 0, opacity: 0.4 } : false}
+                    initial={revealing ? { pathLength: 0, opacity: 0.4 } : { pathLength: 1, opacity: 1 }}
                     animate={{ pathLength: 1, opacity: 1 }}
                     transition={revealing ? { duration: 0.5, delay: i * 0.04, ease: 'easeOut' } : { duration: 0.01 }}
                   />
@@ -654,7 +654,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                     textAnchor="middle"
                     dominantBaseline="central"
                     className="fill-amber-300/80 text-[10px] font-bold tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-                    initial={revealing ? { opacity: 0 } : false}
+                    initial={revealing ? { opacity: 0 } : { opacity: 1 }}
                     animate={{ opacity: 1 }}
                     transition={revealing ? { duration: 0.3, delay: 0.3 + i * 0.04 } : { duration: 0.01 }}
                   >
@@ -694,7 +694,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                             stroke="#FBBF24"
                             strokeOpacity={0.85}
                             filter="drop-shadow(0 0 3px rgba(251,191,36,0.6))"
-                            initial={revealing ? { pathLength: 0 } : false}
+                            initial={revealing ? { pathLength: 0 } : { pathLength: 1 }}
                             animate={{ pathLength: 1 }}
                             transition={revealing ? { duration: 0.6, ease: 'easeOut' } : { duration: 0.01 }}
                           />
@@ -704,7 +704,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                             textAnchor="middle"
                             dominantBaseline="central"
                             className="fill-amber-300 text-[11px] font-bold tracking-widest drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
-                            initial={revealing ? { opacity: 0 } : false}
+                            initial={revealing ? { opacity: 0 } : { opacity: 1 }}
                             animate={{ opacity: 1 }}
                             transition={revealing ? { duration: 0.3, delay: 0.5 } : { duration: 0.01 }}
                           >
@@ -719,8 +719,11 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
           </g>
         )}
 
-        {/* ═══ 坐标框架（星座环 + 刻度）：揭示阶段一轻微脉冲，之后静止 ═══ */}
+        {/* ═══ 坐标框架（星座环 + 刻度）：揭示阶段一轻微脉冲，之后静止。
+                显式给 initial：不给时 framer 会从 undefined 动画到 1 并打警告（控制台噪音）；
+                非揭示态直接用 1 起手，静态调用不产生任何入场动画 ═══ */}
         <motion.g
+          initial={revealing ? { opacity: 0.5 } : { opacity: 1 }}
           animate={revealing && stage === 1 ? { opacity: [0.5, 1, 0.5] } : { opacity: 1 }}
           transition={revealing && stage === 1 ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.3 }}
         >
@@ -921,7 +924,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
               return (
                 <motion.g
                   key={p.body}
-                  initial={revealing ? { opacity: 0, scale: 0.4, x: px, y: py } : false}
+                  initial={revealing ? { opacity: 0, scale: 0.4, x: px, y: py } : { x: px, y: py, opacity: nodeOpacity, scale: nodeScale }}
                   animate={{ x: px, y: py, opacity: nodeOpacity, scale: nodeScale }}
                   transition={
                     revealing

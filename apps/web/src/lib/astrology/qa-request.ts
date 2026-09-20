@@ -2,12 +2,13 @@
  * qa-request.ts —— 星座寰宇 · 星语问答调用侧守则（04 工单接缝切换）
  *
  * 面板/抽屉（astrology-qa.tsx）只通过本模块提问，避免多处各写一遍时序、失败映射与文案：
- * - 请求体为报告上下文（盘面事实 + 生活模块）+ 用户问题 + 本报告已提问数 + 当前 provider；
+ * - 请求体为报告上下文（盘面事实 + 生活模块）+ 用户问题 + 当前 provider；不设每报告次数上限，
+ *   次数由账号额度（服务端计费）约束；
  * - 正文增量经 onDelta 回调（气泡内逐字浮现），answer 帧给出完整回答（kind / text / citations）；
  * - 令牌单调递增：新提问让位旧请求（旧的增量与结论一律丢弃，调用方按令牌过滤可见状态）；
  * - 中断：流意外关闭按失败收口，绝不把半句正文当成答案；
- * - 失败映射：超 3 问 'limit'、额度不足 'quota'、鉴权 'auth'、请求体不合法 'validation'、
- *   服务端失败 'model'、被取代 'aborted'，其余 'unknown'。
+ * - 失败映射：额度不足 'quota'（authFetch 同时唤起全局额度弹框）、鉴权 'auth'、
+ *   请求体不合法 'validation'、服务端失败 'model'、被取代 'aborted'，其余 'unknown'。
  *
  * 服务端口径见 app/api/destiny/astrology/copilot/route.ts（协议见 ./qa-events.ts）。
  */
@@ -29,7 +30,6 @@ export const QA_RETRY_MESSAGE = '这次没能取回回答，可以稍后换一�
 const QA_ABORTED_MESSAGE = '已取消本次提问。';
 
 export type AstrologyQaErrorKind =
-  | 'limit'
   | 'quota'
   | 'auth'
   | 'validation'
@@ -48,17 +48,15 @@ export class AstrologyQaRequestError extends Error {
   }
 }
 
-/** 失败 → 可见中文文案：额度 / 超限 / 鉴权沿用服务端提示，其余给中性重试话术 */
+/** 失败 → 可见中文文案：额度 / 鉴权沿用服务端提示，其余给中性重试话术 */
 export function astrologyQaErrorMessage(error: unknown): string {
   if (!(error instanceof AstrologyQaRequestError)) return QA_RETRY_MESSAGE;
-  if (error.kind === 'limit' || error.kind === 'quota' || error.kind === 'auth') return error.message;
+  if (error.kind === 'quota' || error.kind === 'auth') return error.message;
   if (error.kind === 'aborted') return QA_ABORTED_MESSAGE;
   return QA_RETRY_MESSAGE;
 }
 
 export type AstrologyQaRequestOptions = {
-  /** 本报告已提问数（服务端据此强制 3 问上限，两层一致） */
-  askedCount: number;
   /** 正文增量回调（流式浮现；过期请求的增量不会送达） */
   onDelta?: (text: string) => void;
 };
@@ -99,7 +97,6 @@ export function startAstrologyQaRequest(
     question,
     facts,
     modules,
-    askedCount: options.askedCount,
     onDelta: options.onDelta,
   });
 
@@ -185,7 +182,6 @@ async function consumeQaStream(context: {
   question: string;
   facts: AstrologyChartFacts;
   modules: ModuleReading[];
-  askedCount: number;
   onDelta?: (text: string) => void;
 }): Promise<void> {
   const { token, controller, deferred } = context;
@@ -196,7 +192,6 @@ async function consumeQaStream(context: {
       body: JSON.stringify({
         report: { facts: context.facts, modules: context.modules },
         question: context.question,
-        askedCount: context.askedCount,
         timePrecision: currentTimePrecision(),
         provider: currentProvider(),
       }),
@@ -270,17 +265,15 @@ async function requestErrorFromResponse(response: Response): Promise<AstrologyQa
   }
 
   const kind: AstrologyQaErrorKind =
-    response.status === 429 && code === 'QA_LIMIT_REACHED'
-      ? 'limit'
-      : response.status === 402 || code === 'QUOTA_INSUFFICIENT'
-        ? 'quota'
-        : response.status === 401 || response.status === 403
-          ? 'auth'
-          : response.status === 400
-            ? 'validation'
-            : response.status >= 500
-              ? 'model'
-              : 'unknown';
+    response.status === 402 || code === 'QUOTA_INSUFFICIENT'
+      ? 'quota'
+      : response.status === 401 || response.status === 403
+        ? 'auth'
+        : response.status === 400
+          ? 'validation'
+          : response.status >= 500
+            ? 'model'
+            : 'unknown';
   return new AstrologyQaRequestError(kind, message);
 }
 

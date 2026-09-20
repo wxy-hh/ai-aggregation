@@ -32,7 +32,10 @@ import type { ModuleId, ModuleReading } from '@/lib/astrology/interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 
 /** 模块图标（lucide，视觉锚点不替代文字） */
-const MODULE_ICON: Record<ModuleId, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
+const MODULE_ICON: Record<
+  ModuleId,
+  React.ComponentType<{ className?: string; strokeWidth?: number }>
+> = {
   who: UserRound,
   love: Heart,
   career: Briefcase,
@@ -54,43 +57,57 @@ const MODULE_THEME: Record<
     iconWrap: 'bg-amber-100/90 text-amber-700 dark:bg-amber-400/[0.14] dark:text-amber-300',
     hoverBorder: 'hover:border-amber-300/40 dark:hover:border-amber-400/20',
     scenarioBg: 'bg-amber-50/80 text-amber-900 dark:bg-amber-400/[0.07] dark:text-amber-200',
-    badgeBg: 'border-amber-200/60 bg-amber-50/70 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300',
+    badgeBg:
+      'border-amber-200/60 bg-amber-50/70 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300',
   },
   love: {
     iconWrap: 'bg-rose-100/90 text-rose-700 dark:bg-rose-400/[0.14] dark:text-rose-300',
     hoverBorder: 'hover:border-rose-300/40 dark:hover:border-rose-400/20',
     scenarioBg: 'bg-rose-50/80 text-rose-900 dark:bg-rose-400/[0.07] dark:text-rose-200',
-    badgeBg: 'border-rose-200/60 bg-rose-50/70 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300',
+    badgeBg:
+      'border-rose-200/60 bg-rose-50/70 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300',
   },
   career: {
     iconWrap: 'bg-sky-100/90 text-sky-700 dark:bg-sky-400/[0.14] dark:text-sky-300',
     hoverBorder: 'hover:border-sky-300/40 dark:hover:border-sky-400/20',
     scenarioBg: 'bg-sky-50/80 text-sky-900 dark:bg-sky-400/[0.07] dark:text-sky-200',
-    badgeBg: 'border-sky-200/60 bg-sky-50/70 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300',
+    badgeBg:
+      'border-sky-200/60 bg-sky-50/70 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300',
   },
   strengths: {
     iconWrap: 'bg-indigo-100/90 text-indigo-700 dark:bg-indigo-400/[0.14] dark:text-indigo-300',
     hoverBorder: 'hover:border-indigo-300/40 dark:hover:border-indigo-400/20',
     scenarioBg: 'bg-indigo-50/80 text-indigo-900 dark:bg-indigo-400/[0.07] dark:text-indigo-200',
-    badgeBg: 'border-indigo-200/60 bg-indigo-50/70 text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-300',
+    badgeBg:
+      'border-indigo-200/60 bg-indigo-50/70 text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-300',
   },
   week: {
     iconWrap: 'bg-emerald-100/90 text-emerald-700 dark:bg-emerald-400/[0.14] dark:text-emerald-300',
     hoverBorder: 'hover:border-emerald-300/40 dark:hover:border-emerald-400/20',
-    scenarioBg: 'bg-emerald-50/80 text-emerald-900 dark:bg-emerald-400/[0.07] dark:text-emerald-200',
-    badgeBg: 'border-emerald-200/60 bg-emerald-50/70 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300',
+    scenarioBg:
+      'bg-emerald-50/80 text-emerald-900 dark:bg-emerald-400/[0.07] dark:text-emerald-200',
+    badgeBg:
+      'border-emerald-200/60 bg-emerald-50/70 text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300',
   },
 };
 
 /** 事实引用键 → 事实片标签与轮上定位目标（angle/house 只滚动不选星体） */
-function factChipOf(ref: string, facts: AstrologyChartFacts): { label: string; body: PlanetBody | null } {
+function factChipOf(
+  ref: string,
+  facts: AstrologyChartFacts
+): { label: string; body: PlanetBody | null } {
   const parts = ref.split(':');
   if (parts[0] === 'planet') {
     const body = parts[1] as PlanetBody;
     const placement = facts.planets.find((p) => p.body === body);
     const base = PLANET_CN[body] ?? body;
     return {
-      label: parts[2] === 'retrograde' ? `${base} 逆行` : placement?.sign ? `${base} · ${ZODIAC_CN[placement.sign]}` : base,
+      label:
+        parts[2] === 'retrograde'
+          ? `${base} 逆行`
+          : placement?.sign
+            ? `${base} · ${ZODIAC_CN[placement.sign]}`
+            : base,
       body,
     };
   }
@@ -102,13 +119,17 @@ function factChipOf(ref: string, facts: AstrologyChartFacts): { label: string; b
     };
   }
   if (parts[0] === 'angle') {
-    const sign = parts[1] === 'ascendant' ? facts.angles.ascendant.sign : facts.angles.midheaven.sign;
+    const sign =
+      parts[1] === 'ascendant' ? facts.angles.ascendant.sign : facts.angles.midheaven.sign;
     const base = parts[1] === 'ascendant' ? '上升' : '天顶';
     return { label: sign ? `${base} · ${ZODIAC_CN[sign]}` : base, body: null };
   }
   if (parts[0] === 'house') {
     const house = facts.houses.find((h) => h.number === Number(parts[1]));
-    return { label: house ? `第 ${house.number} 宫 · ${ZODIAC_CN[house.sign]}` : `第 ${parts[1]} 宫`, body: null };
+    return {
+      label: house ? `第 ${house.number} 宫 · ${ZODIAC_CN[house.sign]}` : `第 ${parts[1]} 宫`,
+      body: null,
+    };
   }
   if (parts[0] === 'transit') {
     // 行运引用：标签标注「行运」，定位目标取本命一方（行运星体不在本命盘轮上）
@@ -132,7 +153,13 @@ export type AstrologyLifeModulesProps = {
   onLocateBody: (body: PlanetBody | null) => void;
 };
 
-export function AstrologyLifeModules({ facts, modules, openId, onOpenChange, onLocateBody }: AstrologyLifeModulesProps) {
+export function AstrologyLifeModules({
+  facts,
+  modules,
+  openId,
+  onOpenChange,
+  onLocateBody,
+}: AstrologyLifeModulesProps) {
   const reduceMotion = useReducedMotion();
   // 降级档会缺模块卡（如无宫位档缺关系模块）：非周卡数为奇时桌面改三列，避免两列栅格留出半格空白
   const oddNonWeek = modules.filter((m) => m.id !== 'week').length % 2 === 1;
@@ -142,12 +169,18 @@ export function AstrologyLifeModules({ facts, modules, openId, onOpenChange, onL
   return (
     <section aria-label="五个生活模块">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">生活的五个切面</h3>
-        <span className="text-xs text-day-muted dark:text-night-faint">每张卡都能展开依据，回看它来自盘面的哪个位置</span>
+        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
+          生活的五个切面
+        </h3>
+        <span className="text-xs text-day-muted dark:text-night-faint">
+          每张卡都能展开依据，回看它来自盘面的哪个位置
+        </span>
       </div>
 
       {/* 桌面卡片栅格（非周卡奇数时三列、偶数时两列，本周卡通栏）；移动端单列 */}
-      <div className={cn('mt-5 grid gap-3 xl:gap-4', oddNonWeek ? 'xl:grid-cols-3' : 'xl:grid-cols-2')}>
+      <div
+        className={cn('mt-5 grid gap-3 xl:gap-4', oddNonWeek ? 'xl:grid-cols-3' : 'xl:grid-cols-2')}
+      >
         {modules.map((m, i) => (
           <ModuleCard
             key={m.id}
@@ -202,7 +235,8 @@ function ModuleCard({
       viewport={{ once: true, margin: '-40px' }}
       transition={{ duration: 0.4, delay: (index % 3) * 0.06, ease: 'easeOut' }}
       className={cn(
-        'rounded-2xl border border-slate-200/80 bg-white transition-all duration-300 shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] hover:shadow-[0_18px_40px_-20px_rgba(79,70,229,0.28)] dark:border-white/10 dark:bg-[#0D1226] dark:hover:border-indigo-400/25 dark:hover:shadow-[0_20px_48px_-20px_rgba(0,0,0,0.85)]',
+        // night-card：夜幕观星下的鎏金描边覆盖标记（globals.css .astrology-night 作用域）
+        'night-card rounded-2xl border border-slate-200/80 bg-white transition-all duration-300 shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] hover:shadow-[0_18px_40px_-20px_rgba(79,70,229,0.28)] dark:border-white/10 dark:bg-[#0D1226] dark:hover:border-indigo-400/25 dark:hover:shadow-[0_20px_48px_-20px_rgba(0,0,0,0.85)]',
         theme.hoverBorder,
         // 本周卡通栏：行动三角三栏需要完整宽度
         m.id === 'week' && weekSpanClass
@@ -215,7 +249,12 @@ function ModuleCard({
         aria-expanded={open}
         className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:px-5"
       >
-        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', theme.iconWrap)}>
+        <span
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+            theme.iconWrap
+          )}
+        >
           <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />
         </span>
         <span className="min-w-0 flex-1">
@@ -232,16 +271,26 @@ function ModuleCard({
           </span>
         </span>
         <ChevronDown
-          className={cn('h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint', open && 'rotate-180')}
+          className={cn(
+            'h-4 w-4 shrink-0 text-day-muted transition-transform duration-200 dark:text-night-faint',
+            open && 'rotate-180'
+          )}
           strokeWidth={2.2}
         />
       </button>
 
       {/* 正文区：桌面常显；移动端前三张常显、后两张随展开（一次一张） */}
-      <div className={cn('px-4 pb-4 sm:px-5 sm:pb-5', !open && collapsedOnMobile && 'hidden xl:block')}>
+      <div
+        className={cn('px-4 pb-4 sm:px-5 sm:pb-5', !open && collapsedOnMobile && 'hidden xl:block')}
+      >
         <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">{m.summary}</p>
         {m.scenario && (
-          <p className={cn('mt-2 rounded-xl px-3.5 py-2.5 text-xs leading-relaxed', theme.scenarioBg)}>
+          <p
+            className={cn(
+              'mt-2 rounded-xl px-3.5 py-2.5 text-xs leading-relaxed',
+              theme.scenarioBg
+            )}
+          >
             {m.scenario}
           </p>
         )}
@@ -251,19 +300,36 @@ function ModuleCard({
           (m.weekly ? (
             // 周区间与行运说明已并入主摘要，此处只保留行动三角本体
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                {[
-                  { Icon: Sparkles, label: '机会', text: m.weekly.opportunity, tone: 'text-emerald-600 dark:text-emerald-300' },
-                  { Icon: Eye, label: '留意', text: m.weekly.caution, tone: 'text-amber-600 dark:text-amber-300' },
-                  { Icon: Footprints, label: '行动', text: m.weekly.action, tone: 'text-indigo-600 dark:text-indigo-300' },
-                ].map(({ Icon: TIcon, label, text, tone }) => (
-                  <div key={label} className="rounded-xl bg-slate-50/90 p-3 dark:bg-white/[0.04]">
-                    <p className={cn('flex items-center gap-1.5 text-xs font-bold', tone)}>
-                      <TIcon className="h-3.5 w-3.5" strokeWidth={2} />
-                      {label}
-                    </p>
-                    <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{text}</p>
-                  </div>
-                ))}
+              {[
+                {
+                  Icon: Sparkles,
+                  label: '机会',
+                  text: m.weekly.opportunity,
+                  tone: 'text-emerald-600 dark:text-emerald-300',
+                },
+                {
+                  Icon: Eye,
+                  label: '留意',
+                  text: m.weekly.caution,
+                  tone: 'text-amber-600 dark:text-amber-300',
+                },
+                {
+                  Icon: Footprints,
+                  label: '行动',
+                  text: m.weekly.action,
+                  tone: 'text-indigo-600 dark:text-indigo-300',
+                },
+              ].map(({ Icon: TIcon, label, text, tone }) => (
+                <div key={label} className="rounded-xl bg-slate-50/90 p-3 dark:bg-white/[0.04]">
+                  <p className={cn('flex items-center gap-1.5 text-xs font-bold', tone)}>
+                    <TIcon className="h-3.5 w-3.5" strokeWidth={2} />
+                    {label}
+                  </p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                    {text}
+                  </p>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="mt-3 rounded-xl bg-slate-50/90 px-3.5 py-2.5 text-xs leading-relaxed text-slate-500 dark:bg-white/[0.04] dark:text-night-muted">

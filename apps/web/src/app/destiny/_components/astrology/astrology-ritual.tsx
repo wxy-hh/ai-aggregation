@@ -29,6 +29,9 @@ import { Check, Pencil, RotateCcw } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
+import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 import {
   chartFactsErrorKind,
   isLatestChartFactsRequest,
@@ -36,12 +39,14 @@ import {
 } from '@/lib/astrology/chart-request';
 import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
+import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
-import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { AstrologyChartWheel, ZODIAC_GLYPH } from './astrology-chart-wheel';
 import { AstrologyCtaButton } from './astrology-cta-button';
-import { AstrologyWheelSceneSwitch } from './astrology-wheel-scene-switch';
+import { AstrologyWheelSceneSwitch, preloadWheelScene } from './astrology-wheel-scene-switch';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
+import { AstrologyNightNebula } from './astrology-night-nebula';
 import { APPROXIMATE_SLOTS } from './astrology-mappers';
 import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
@@ -82,7 +87,11 @@ function summaryLine(formData: AstrologyFormData): string {
   const d = formData.birthDate;
   const date = d ? `${d.year} 年 ${d.month} 月 ${d.day} 日` : '';
   let time = '时间未知';
-  if (formData.timePrecision === 'accurate' && formData.birthTime.hour !== '' && formData.birthTime.minute !== '') {
+  if (
+    formData.timePrecision === 'accurate' &&
+    formData.birthTime.hour !== '' &&
+    formData.birthTime.minute !== ''
+  ) {
     time = `${formData.birthTime.hour.padStart(2, '0')}:${formData.birthTime.minute.padStart(2, '0')}`;
   } else if (formData.timePrecision === 'approximate' && formData.approximateSlot) {
     const slot = APPROXIMATE_SLOTS.find((s) => s.value === formData.approximateSlot);
@@ -99,9 +108,30 @@ function RitualWireframe() {
   return (
     <div className="relative mx-auto h-40 w-40">
       <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden>
-        <circle cx={100} cy={100} r={94} fill="none" strokeWidth={1} className="stroke-slate-400/50 dark:stroke-white/15" />
-        <circle cx={100} cy={100} r={72} fill="none" strokeWidth={0.8} className="stroke-slate-400/45 dark:stroke-white/[0.12]" />
-        <circle cx={100} cy={100} r={46} fill="none" strokeWidth={0.7} className="stroke-slate-400/40 dark:stroke-white/10" />
+        <circle
+          cx={100}
+          cy={100}
+          r={94}
+          fill="none"
+          strokeWidth={1}
+          className="stroke-slate-400/50 dark:stroke-white/15"
+        />
+        <circle
+          cx={100}
+          cy={100}
+          r={72}
+          fill="none"
+          strokeWidth={0.8}
+          className="stroke-slate-400/45 dark:stroke-white/[0.12]"
+        />
+        <circle
+          cx={100}
+          cy={100}
+          r={46}
+          fill="none"
+          strokeWidth={0.7}
+          className="stroke-slate-400/40 dark:stroke-white/10"
+        />
         {ticks.map((deg) => {
           const rad = (deg * Math.PI) / 180;
           const major = deg % 90 === 0;
@@ -130,18 +160,164 @@ function RitualWireframe() {
   );
 }
 
-/* ---------- 真值在途的坐标框架占位（等待室；与失败卡同源的同心圆几何，不虚构行星位置） ---------- */
+/* ---------- 真值在途的坐标框架占位（等待室；只画仪器本体，不虚构行星位置） ---------- */
+
+/** 与 astrology-chart-wheel 同档的盘面几何（占位与真轮同尺寸同色系，交接时外框不跳动） */
+const FRAME_CX = 280;
+const FRAME_CY = 280;
+const FRAME_R_OUT = 276;
+const FRAME_R_ZODIAC_OUT = 245;
+const FRAME_R_ZODIAC_IN = 200;
+const FRAME_R_GLYPH = 222.5;
+const FRAME_GLYPH_SIZE = 20;
 
 /**
- * 真值在途的同心圆底衬：只画天文坐标框架（与 RitualWireframe 同一几何与描边档），
- * 既避免轮盘位宽高塌陷导致下方文案位移，也不在真值到达前虚构任何行星位置。
+ * 真值在途的「绘制中」框架：先把天象仪本体立起来——深空盘面、表圈、黄道十二宫环与度数刻度、
+ * 盘心光核；行星 / 宫位 / 相位这些真值驱动的图层等真值到达后再逐层落位。
+ *
+ * 为什么不是一圈空心圆：提交后到真值回来之间会有几百毫秒到一两秒，等待期只画细线同心圆
+ * 会让轮盘位看上去是「空白」（反馈原文）。这里把仪器本体先画满：等待期看到的是「盘面已立、
+ * 正在定位行星」，真值一到即由星盘轮在同一位置接管（同几何同色系，不跳变）。
+ * 全部为静态几何：不含任何虚构的行星位置、宫位或相位。
  */
 function RitualFramePlaceholder() {
+  const polar = (thetaDeg: number, r: number): [number, number] => {
+    const rad = (thetaDeg * Math.PI) / 180;
+    return [FRAME_CX + r * Math.cos(rad), FRAME_CY + r * Math.sin(rad)];
+  };
+  /** 黄经 → 屏幕角（与星盘轮同一约定：白羊 0° 在左，黄经沿屏幕向下增长） */
+  const screenTheta = (deg: number) => 180 - deg;
+  const signDegrees = Array.from({ length: 12 }, (_, i) => i * 30);
+  const tickDegrees = Array.from({ length: 60 }, (_, i) => i * 6);
+
   return (
-    <svg viewBox="0 0 200 200" className="relative h-auto w-full" aria-hidden>
-      <circle cx={100} cy={100} r={94} fill="none" strokeWidth={1} className="stroke-slate-400/50 dark:stroke-white/15" />
-      <circle cx={100} cy={100} r={72} fill="none" strokeWidth={0.8} className="stroke-slate-400/45 dark:stroke-white/[0.12]" />
-      <circle cx={100} cy={100} r={46} fill="none" strokeWidth={0.7} className="stroke-slate-400/40 dark:stroke-white/10" />
+    <svg
+      viewBox="0 0 560 560"
+      className="relative h-auto w-full"
+      aria-hidden
+      data-testid="astrology-wheel-frame"
+    >
+      <defs>
+        {/* 深空穹顶渐变（与星盘轮同色档） */}
+        <radialGradient id="acw-ritual-frame-disc" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#0F1A42" />
+          <stop offset="30%" stopColor="#0C1535" />
+          <stop offset="55%" stopColor="#091028" />
+          <stop offset="80%" stopColor="#060A1E" />
+          <stop offset="100%" stopColor="#040816" />
+        </radialGradient>
+        <radialGradient id="acw-ritual-frame-halo" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#818CF8" stopOpacity="0.22" />
+          <stop offset="55%" stopColor="#6366F1" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="#1E1B4B" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="acw-ritual-frame-core" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFFBEB" stopOpacity="0.88" />
+          <stop offset="22%" stopColor="#FDE68A" stopOpacity="0.6" />
+          <stop offset="48%" stopColor="#F59E0B" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#4338CA" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      {/* 深空盘面 + 仪器表圈 */}
+      <circle cx={FRAME_CX} cy={FRAME_CY} r={FRAME_R_OUT} fill="url(#acw-ritual-frame-disc)" />
+      <circle
+        cx={FRAME_CX}
+        cy={FRAME_CY}
+        r={FRAME_R_OUT}
+        fill="none"
+        strokeWidth={1.5}
+        stroke="rgba(245,212,134,0.45)"
+      />
+      <circle
+        cx={FRAME_CX}
+        cy={FRAME_CY}
+        r={270}
+        fill="none"
+        strokeWidth={0.8}
+        stroke="rgba(255,255,255,0.18)"
+        strokeDasharray="1 3"
+      />
+
+      {/* 盘心光核 */}
+      <circle cx={FRAME_CX} cy={FRAME_CY} r={80} fill="url(#acw-ritual-frame-halo)" />
+      <circle cx={FRAME_CX} cy={FRAME_CY} r={26} fill="url(#acw-ritual-frame-core)" />
+
+      {/* 黄道环底衬与内外沿 */}
+      <circle
+        cx={FRAME_CX}
+        cy={FRAME_CY}
+        r={(FRAME_R_ZODIAC_OUT + FRAME_R_ZODIAC_IN) / 2}
+        fill="none"
+        strokeWidth={FRAME_R_ZODIAC_OUT - FRAME_R_ZODIAC_IN}
+        stroke="rgba(8,13,34,0.72)"
+      />
+      <circle
+        cx={FRAME_CX}
+        cy={FRAME_CY}
+        r={FRAME_R_ZODIAC_OUT}
+        fill="none"
+        strokeWidth={1.2}
+        stroke="rgba(245,212,134,0.30)"
+      />
+      <circle
+        cx={FRAME_CX}
+        cy={FRAME_CY}
+        r={FRAME_R_ZODIAC_IN}
+        fill="none"
+        strokeWidth={1}
+        stroke="rgba(245,212,134,0.20)"
+      />
+
+      {/* 度数刻度（每 6°） */}
+      {tickDegrees.map((deg) => {
+        const [x1, y1] = polar(screenTheta(deg), FRAME_R_ZODIAC_OUT);
+        const [x2, y2] = polar(screenTheta(deg), FRAME_R_ZODIAC_OUT - 7);
+        return (
+          <line
+            key={`tick-${deg}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            strokeWidth={0.8}
+            stroke="rgba(245,212,134,0.28)"
+          />
+        );
+      })}
+
+      {/* 十二宫界线 + 星座符号 */}
+      {signDegrees.map((deg) => {
+        const [x1, y1] = polar(screenTheta(deg), FRAME_R_ZODIAC_IN);
+        const [x2, y2] = polar(screenTheta(deg), FRAME_R_ZODIAC_OUT);
+        return (
+          <line
+            key={`boundary-${deg}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            strokeWidth={1}
+            stroke="rgba(245,212,134,0.42)"
+          />
+        );
+      })}
+      {signDegrees.map((deg, i) => {
+        const Glyph = ZODIAC_GLYPH[ZODIAC_ORDER[i]];
+        const [gx, gy] = polar(screenTheta(deg + 15), FRAME_R_GLYPH);
+        return (
+          <g key={`glyph-${deg}`}>
+            <circle cx={gx} cy={gy} r={12} fill="rgba(245,212,134,0.06)" />
+            <Glyph
+              x={gx - FRAME_GLYPH_SIZE / 2}
+              y={gy - FRAME_GLYPH_SIZE / 2}
+              width={FRAME_GLYPH_SIZE}
+              height={FRAME_GLYPH_SIZE}
+              className="text-amber-200/75"
+            />
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -155,21 +331,34 @@ type AstrologyRitualResultProps = {
 
 export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResultProps) {
   const reduceMotion = useReducedMotion();
-  const { step, formData, chartFacts, error, errorKind, interpretation, setWorkspaceState, markResultReady } =
-    useDestinyWorkspaceStore(
-      useShallow((s) => ({
-        step: s.astrology.step,
-        formData: s.astrology.formData,
-        chartFacts: s.astrology.chartFacts,
-        error: s.astrology.error,
-        errorKind: s.astrology.errorKind,
-        interpretation: s.astrology.interpretation,
-        setWorkspaceState: s.setWorkspaceState,
-        markResultReady: s.markResultReady,
-      }))
-    );
+  const {
+    step,
+    formData,
+    chartFacts,
+    error,
+    errorKind,
+    interpretation,
+    setWorkspaceState,
+    markResultReady,
+  } = useDestinyWorkspaceStore(
+    useShallow((s) => ({
+      step: s.astrology.step,
+      formData: s.astrology.formData,
+      chartFacts: s.astrology.chartFacts,
+      error: s.astrology.error,
+      errorKind: s.astrology.errorKind,
+      interpretation: s.astrology.interpretation,
+      setWorkspaceState: s.setWorkspaceState,
+      markResultReady: s.markResultReady,
+    }))
+  );
 
   const phase = step === 'result' ? 'result' : 'ritual';
+
+  /** 「夜幕观星」结果页主题：手动偏好优先，缺省跟随全局明暗（仅作用于结果相位与失败恢复卡，仪式相位不动） */
+  const nightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const systemResolved = useSettingsStore((s) => s.resolvedTheme);
+  const isNight = resolveAstrologyNightTheme(nightPref, systemResolved) === 'night';
   /** 时间轴节奏（视觉推进）：只决定第几段被点亮，是否算完成由真实事件说了算 */
   const [timelineStage, setTimelineStage] = useState<RitualStage>(1);
   /** 最小仪式窗是否已走满（3.2s 到点置真）；转场还要求真值与解读结论都已就位 */
@@ -178,7 +367,8 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
   /** 真值是否已到手：null 表示在途（等待室期间既不是失败、也不是可展示的结果） */
   const factsReady = chartFacts !== null;
   /** 解读层是否已有结论（unavailable 或 ready）：仅用于第四段的完成态文案，不再是转场条件 */
-  const interpretationSettled = interpretation.status === 'unavailable' || interpretation.status === 'ready';
+  const interpretationSettled =
+    interpretation.status === 'unavailable' || interpretation.status === 'ready';
   const interpretationUnavailable = interpretation.status === 'unavailable';
   /** 含宫位与否取自事实层；真值在途时未知，第三阶段文案先用中性的「整理行星位置与关键相位」，
    *  真值一到即按真实盘面口径纠正 */
@@ -192,9 +382,12 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
    * 第三段保持「进行中」直到 chart-facts 到达；chart-facts 一到，前三段即视为完成
    * （服务端校准时区 / 定位行星 / 绘制宫位三步在同一请求内完成，只有这一帧是它们的完成证据）。
    */
-  const stage: RitualStage = factsReady ? timelineStage : (Math.min(timelineStage, 3) as RitualStage);
+  const stage: RitualStage = factsReady
+    ? timelineStage
+    : (Math.min(timelineStage, 3) as RitualStage);
   /** 某一段是否已完成：第四段额外要求解读结论收口（且必须已经走到第四段，避免结论先到时抢跑） */
-  const stageDone = (num: RitualStage) => stage > num || (num === 4 && stage === 4 && interpretationSettled);
+  const stageDone = (num: RitualStage) =>
+    stage > num || (num === 4 && stage === 4 && interpretationSettled);
   /** 等待室：仪式窗已满而真值未到——如实说明在等最后一环，不假装已完成 */
   const waitingForFacts = windowElapsed && !factsReady;
   /** 阶段推进：四段节奏不变（800/1800/2700ms），第 3200ms 只标记「仪式窗已走满」，
@@ -228,6 +421,11 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
     resetAstrologyScroll();
   }, [phase]);
 
+  /** 预热星渊场景代码块：仪式这几秒顺手把 three.js 拉下来，结果页首屏不必再等它 */
+  useEffect(() => {
+    preloadWheelScene();
+  }, []);
+
   /** 失败恢复：重新计算只重走已缺失的环节——真值在则只重播仪式，不在才重新请求。
    *  step 一律回落 form：失败卡可能停在结果步，不回落则重算后 phase 仍是 result，直接跳过仪式 */
   const retry = () => {
@@ -235,7 +433,12 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
     setWindowElapsed(false);
     if (chartFacts) {
       // 真值已在：只重播仪式（entryView 回到 loading，确保工作区把仪式树留在前台）
-      setWorkspaceState('astrology', { step: 'form', entryView: 'loading', error: null, errorKind: null });
+      setWorkspaceState('astrology', {
+        step: 'form',
+        entryView: 'loading',
+        error: null,
+        errorKind: null,
+      });
       return;
     }
     // 真值仍缺：重走报告流接缝（chartFacts 保持 null 表示在途，仪式等待室重新计时；
@@ -269,7 +472,12 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
 
   /** 返回修改资料：step 一并回落 form，否则工作区分发仍停在结果页，按钮点了没反应 */
   const backToForm = () =>
-    setWorkspaceState('astrology', { step: 'form', entryView: 'form', error: null, errorKind: null });
+    setWorkspaceState('astrology', {
+      step: 'form',
+      entryView: 'form',
+      error: null,
+      errorKind: null,
+    });
 
   /** 跳过动画：真值已就位才可直达（未就位时无结果可看，按钮置灰并给出 aria 说明）；
    *  phase 随之变 result，进度定时器由推进 effect 的 cleanup（依赖 [phase]）自动清掉，不会重复转场 */
@@ -283,7 +491,10 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
    *  结果相位升级「星渊」WebGL 场景（探测/加载失败自动回退 SVG 轮，兜底节点同源复用） */
   const wheelSlot = (
     slotClass: string,
-    wheelProps?: { selectedBody: PlanetBody | null; onSelectBody: (body: PlanetBody | null) => void }
+    wheelProps?: {
+      selectedBody: PlanetBody | null;
+      onSelectBody: (body: PlanetBody | null) => void;
+    }
   ) =>
     chartFacts ? (
       <motion.div
@@ -324,32 +535,43 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
      result 相位却无真值理论上不可达（markResultReady 已由转场闸门守住），仍按失败兜底，不留空白页 */
   if (error || (phase === 'result' && !factsReady)) {
     const kindText =
-      errorKind === 'model' ? '服务繁忙' : errorKind === 'timeout' ? '请求超时' : errorKind === 'validation' ? '资料校验未通过' : '网络中断或计算异常';
+      errorKind === 'model'
+        ? '服务繁忙'
+        : errorKind === 'timeout'
+          ? '请求超时'
+          : errorKind === 'validation'
+            ? '资料校验未通过'
+            : '网络中断或计算异常';
     return (
-      <DestinyPageScaffold withNavOffset tone="cosmos">
-        <AstrologyStarfield />
-        <div className="relative z-10 flex h-full min-h-0 items-center justify-center overflow-y-auto px-6">
-          <div className="w-full max-w-sm rounded-[28px] border border-white/60 bg-white/85 p-8 text-center shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0D1226]/[0.88]">
-            <RitualWireframe />
-            <h2 className="mt-6 font-heading text-lg font-bold text-slate-900 dark:text-white">
-              别担心，出生资料已保留
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-night-muted">
-              星盘绘制未完成（{kindText}）。{error && error !== '' ? error : '可以重新计算，或返回检查出生资料。'}
-            </p>
-            <div className="mt-6 flex flex-col gap-2.5">
-              <AstrologyCtaButton onClick={retry} className="h-12">
-                <RotateCcw className="h-4 w-4" strokeWidth={2.2} />
-                重新计算
-              </AstrologyCtaButton>
-              <button
-                type="button"
-                onClick={backToForm}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-full text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-muted dark:hover:text-indigo-200"
-              >
-                <Pencil className="h-4 w-4" strokeWidth={1.9} />
-                返回修改资料
-              </button>
+      <DestinyPageScaffold withNavOffset tone="cosmos" night={isNight}>
+        {/* 夜幕观星：局部嵌套 dark 类翻转星野与全部 dark: 样式，星云只在夜幕态叠加 */}
+        <div className={cn('relative h-full min-h-0', isNight && 'dark astrology-night')}>
+          <AstrologyStarfield />
+          {isNight && <AstrologyNightNebula />}
+          <div className="relative z-10 flex h-full min-h-0 items-center justify-center overflow-y-auto px-6">
+            <div className="night-card w-full max-w-sm rounded-[28px] border border-white/60 bg-white/85 p-8 text-center shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0D1226]/[0.88]">
+              <RitualWireframe />
+              <h2 className="mt-6 font-heading text-lg font-bold text-slate-900 dark:text-white">
+                别担心，出生资料已保留
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-night-muted">
+                星盘绘制未完成（{kindText}）。
+                {error && error !== '' ? error : '可以重新计算，或返回检查出生资料。'}
+              </p>
+              <div className="mt-6 flex flex-col gap-2.5">
+                <AstrologyCtaButton onClick={retry} className="h-12">
+                  <RotateCcw className="h-4 w-4" strokeWidth={2.2} />
+                  重新计算
+                </AstrologyCtaButton>
+                <button
+                  type="button"
+                  onClick={backToForm}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-muted dark:hover:text-indigo-200"
+                >
+                  <Pencil className="h-4 w-4" strokeWidth={1.9} />
+                  返回修改资料
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -392,7 +614,10 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                 {/* 中央星盘：移动端在上，桌面右列 */}
                 <div className="order-first xl:order-last">
                   <div className="relative mx-auto w-full max-w-[min(72vw,340px)] xl:max-w-[380px]">
-                    <div aria-hidden className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]" />
+                    <div
+                      aria-hidden
+                      className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]"
+                    />
                     {/* 真值在途：先立同心圆坐标框架（不虚构行星位置、不塌陷宽高），真值一到即由星盘轮接管同一位置 */}
                     {factsReady ? wheelSlot('relative mx-auto w-full') : <RitualFramePlaceholder />}
                   </div>
@@ -434,7 +659,11 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                               <motion.span
                                 aria-hidden
                                 className="absolute inline-flex h-4 w-4 rounded-full bg-indigo-400/40 dark:bg-indigo-300/30"
-                                animate={reduceMotion ? {} : { scale: [1, 1.7, 1], opacity: [0.8, 0.2, 0.8] }}
+                                animate={
+                                  reduceMotion
+                                    ? {}
+                                    : { scale: [1, 1.7, 1], opacity: [0.8, 0.2, 0.8] }
+                                }
                                 transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
                               />
                               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500 dark:bg-indigo-300" />
@@ -490,10 +719,14 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
         </DestinyPageScaffold>
       ) : (
         /* ---------- 结果相位（06：真实首屏——护照/主轴/三卡/交互轮；wheelSlot 插槽保持共享元素转场） ---------- */
-        <DestinyPageScaffold withNavOffset tone="cosmos">
-          <AstrologyStarfield />
-          <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
-            <AstrologyResultView wheelSlot={wheelSlot} />
+        <DestinyPageScaffold withNavOffset tone="cosmos" night={isNight}>
+          {/* 夜幕观星：局部嵌套 dark 类翻转星野与全部 dark: 样式，星云只在夜幕态叠加 */}
+          <div className={cn('relative h-full min-h-0', isNight && 'dark astrology-night')}>
+            <AstrologyStarfield />
+            {isNight && <AstrologyNightNebula />}
+            <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
+              <AstrologyResultView wheelSlot={wheelSlot} />
+            </div>
           </div>
         </DestinyPageScaffold>
       )}

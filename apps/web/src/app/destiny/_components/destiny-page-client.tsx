@@ -15,6 +15,8 @@ import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
+import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
+import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 // 跨模态接力：「待解读引用」领域级入口（REQ-011）
@@ -49,6 +51,18 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
   const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
   const isZiweiNight = activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night';
+  // 星座寰宇「夜幕观星」同理：结果页与失败恢复卡入夜时，分段控件同步入夜保持可读
+  const astrologyNightScene = useDestinyWorkspaceStore(
+    (s) =>
+      s.astrology.step === 'result' ||
+      (s.astrology.entryView === 'loading' && Boolean(s.astrology.error))
+  );
+  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const isAstrologyNight =
+    activeModule === 'astrology' &&
+    astrologyNightScene &&
+    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+  const isResultNight = isZiweiNight || isAstrologyNight;
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
@@ -103,48 +117,49 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   // 引用文本绝不写入出生资料字段；仅在表单步展示（结果步由顾问 externalDraft 接管）。
   // 桌面端：xl 起给左侧 nav 与右上模型切换器让位（与 DestinyPageScaffold 的 withNavOffset 对齐）；
   // 移动端：模型切换嵌在各术数表单标题行右侧，与 sticky 分段控件不冲突。
-  const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
-    <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
-      <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6 xl:mr-[280px]">
-        {relay.replaceCandidate ? (
-          <ReferenceBar
-            bundle={relay.replaceCandidate.incoming}
-            isReplaceCandidate
-            onConfirmReplace={relay.confirmReplace}
-            onCancelReplace={relay.cancelReplace}
-            onRemove={relay.remove}
-          />
-        ) : relay.bundle ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
-                {RELAY_COPY.destiny.pendingReference}
-              </span>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {RELAY_COPY.destiny.prefillNote}
-              </p>
-            </div>
+  const relayBanner =
+    (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
+      <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
+        <div className="mx-4 mt-3 rounded-2xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-4 py-3 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10 sm:mx-6 xl:mr-[280px]">
+          {relay.replaceCandidate ? (
             <ReferenceBar
-              bundle={relay.bundle}
+              bundle={relay.replaceCandidate.incoming}
+              isReplaceCandidate
+              onConfirmReplace={relay.confirmReplace}
+              onCancelReplace={relay.cancelReplace}
               onRemove={relay.remove}
-              onViewSource={() => setRelayPreviewOpen(true)}
             />
-            {relaySourceType && (
-              <RelayMethodPicker
-                sourceType={relaySourceType}
-                readinessCtx={relayReadinessCtx}
-                onPick={(methodId) => setActiveModule(methodId)}
+          ) : relay.bundle ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-[#5D7CFA]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#3C58D8] dark:bg-[#5D7CFA]/20 dark:text-[#9BADFF]">
+                  {RELAY_COPY.destiny.pendingReference}
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {RELAY_COPY.destiny.prefillNote}
+                </p>
+              </div>
+              <ReferenceBar
+                bundle={relay.bundle}
+                onRemove={relay.remove}
+                onViewSource={() => setRelayPreviewOpen(true)}
               />
-            )}
-          </div>
-        ) : relay.isInvalid ? (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
-            {RELAY_COPY.referenceBar.invalid}
-          </p>
-        ) : null}
+              {relaySourceType && (
+                <RelayMethodPicker
+                  sourceType={relaySourceType}
+                  readinessCtx={relayReadinessCtx}
+                  onPick={(methodId) => setActiveModule(methodId)}
+                />
+              )}
+            </div>
+          ) : relay.isInvalid ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {RELAY_COPY.referenceBar.invalid}
+            </p>
+          ) : null}
+        </div>
       </div>
-    </div>
-  ) : null;
+    ) : null;
 
   // 所有工作区始终挂载，仅通过 CSS 显隐切换，确保后台请求不中断
   const workspaceElements = (
@@ -158,16 +173,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         />
       </div>
       <div className={cn('h-full w-full', activeModule !== 'ziwei' && 'hidden')}>
-        <ZiweiWorkspace
-          isActive={activeModule === 'ziwei'}
-          onLoadingChange={setZiweiLoading}
-        />
+        <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
       </div>
       <div className={cn('h-full w-full', activeModule !== 'qimen' && 'hidden')}>
-        <QimenWorkspace
-          isActive={activeModule === 'qimen'}
-          onLoadingChange={setQimenLoading}
-        />
+        <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />
       </div>
       <div className={cn('h-full w-full', activeModule !== 'astrology' && 'hidden')}>
         <AstrologyWorkspace isActive={activeModule === 'astrology'} />
@@ -188,11 +197,11 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
         style={{ minHeight: '100dvh' }}
       >
-        {/* 移动端分段控件(紫微结果态入夜) */}
+        {/* 移动端分段控件(紫微/星座结果态入夜) */}
         <div
           className={cn(
             'sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-2xl transition-[background-color,border-color] duration-500',
-            isZiweiNight
+            isResultNight
               ? 'border-[#E7C873]/15 bg-[#0C1128]/85'
               : 'border-white/50 bg-white/75 dark:border-white/10 dark:bg-slate-900/75'
           )}
@@ -200,7 +209,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
           <div
             className={cn(
               'rounded-[999px] p-1 transition-colors duration-500',
-              isZiweiNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
+              isResultNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
             )}
           >
             <div className="grid grid-cols-4 gap-1">
@@ -214,10 +223,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
                     className={cn(
                       'rounded-[999px] px-4 py-2 text-sm font-semibold transition-all duration-200',
                       active
-                        ? isZiweiNight
+                        ? isResultNight
                           ? 'bg-[#A78BFA]/15 text-[#C4B5FD] shadow-[0_0_16px_rgba(139,92,246,0.25)]'
                           : 'bg-white text-[#5D7CFA] shadow-sm dark:bg-slate-700 dark:text-[#9BADFF]'
-                        : isZiweiNight
+                        : isResultNight
                           ? 'text-[#8B87A0] hover:text-[#C9C4D8]'
                           : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     )}

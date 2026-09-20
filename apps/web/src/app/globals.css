@@ -54,8 +54,12 @@
     --ds-glass-dark: rgba(20, 20, 24, 0.56);
 
     /* 字体变量：使用系统字体栈替代 Google Fonts（避免网络不可用导致构建失败） */
-    --font-dm-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-space-grotesk: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-dm-sans:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
+    --font-space-grotesk:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
     --ds-glass-stroke-light: rgba(255, 255, 255, 0.45);
     --ds-glass-stroke-dark: rgba(255, 255, 255, 0.18);
     --ds-neo-highlight: rgba(255, 255, 255, 0.65);
@@ -495,8 +499,8 @@
 :root {
   /* 宋体展示字:macOS/iOS 宋体 → 安卓思源宋体 → Windows 中易宋体 */
   --font-song:
-    'Songti SC', 'STSongti-SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC',
-    'SimSun', serif;
+    'Songti SC', 'STSongti-SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC',
+    'Noto Serif CJK SC', 'SimSun', serif;
 }
 
 @layer utilities {
@@ -718,5 +722,81 @@
   .acw-thinking-dot {
     animation: none;
     opacity: 0.7;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   星座寰宇「夜幕观星」结果页暗夜模式
+   - 机制：结果页容器嵌套 dark 类翻转全部 dark: 样式（星野自动切午夜深空+流星），
+     本块只负责「夜幕降临」的增量氛围——紫金双调星云、鎏金描边卡片、金辉底盘
+   - 审美原则：高级感来自克制——透明度 ≤0.12，光斑仅 3 处，金色只做点缀
+   - 全部动效在 prefers-reduced-motion 下静止
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 夜幕底画布：比星野默认更深半档、带紫调的深空渐变（星野缺席的失败卡等处兜底） */
+.astrology-night {
+  background: radial-gradient(115% 85% at 50% 0%, #12142e 0%, #0a0e22 48%, #05070f 100%);
+}
+
+/* 星云呼吸（比 ziwei-breathe 更缓更轻：夜幕是凝视场景，不是仪式场景） */
+@keyframes astrology-nebula-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: scale(1.06);
+  }
+}
+.astrology-night-nebula {
+  animation: astrology-nebula-breathe 16s ease-in-out infinite;
+}
+
+/* 邀请气泡的鎏金脉冲（仅首访白昼态一次，引起注意但不喧闹） */
+@keyframes astrology-invite-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(231, 200, 115, 0.38);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(231, 200, 115, 0);
+  }
+}
+.astrology-invite-pulse {
+  animation: astrology-invite-pulse 1.8s ease-in-out infinite;
+}
+
+/* 夜幕卡片质感：鎏金淡描边 + 深空下沉阴影 + 顶部微光内边
+   （暗夜里纯黑阴影不可读，靠「描边色温 + 内发光」让卡片浮在星幕上） */
+.astrology-night .night-card {
+  border-color: rgba(231, 200, 115, 0.14);
+  box-shadow:
+    0 24px 64px -24px rgba(2, 6, 23, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 星盘底盘金辉：夜幕下轮盘像悬在观星台上，底盘泛一层暖金星轨余晖 */
+.astrology-night .night-wheel-glow {
+  background: radial-gradient(
+    ellipse,
+    rgba(231, 200, 115, 0.12),
+    rgba(76, 60, 180, 0.1) 55%,
+    transparent 75%
+  );
+}
+
+/* 夜幕切换钮的鎏金质感（夜幕态下的按钮本体） */
+.astrology-night .night-toggle {
+  border-color: rgba(231, 200, 115, 0.32);
+  color: #e7c873;
+  box-shadow: 0 0 14px rgba(231, 200, 115, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .astrology-night-nebula,
+  .astrology-invite-pulse {
+    animation: none;
   }
 }

@@ -102,22 +102,12 @@ describe('AstrologyResultView（解读分区渲染）', () => {
     expect(screen.queryByText('AI 解读没有完成')).toBeNull();
   });
 
-  it('结果页可切换模型：切换写回工作区（重试解读与后续提问随新模型）', async () => {
+  it('结果页不提供模型控制器：报告已按填表时选定的模型产出，结果页不给切换入口', () => {
     primeWorkspace(null, 'pending');
     renderResult();
 
-    // 入口在护照头附近（与八字/紫微/奇门同一控制器：分段单选，默认豆包）
-    const switcher = screen.getByRole('radiogroup', { name: '选择测算模型' });
-    expect(switcher).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '豆包' })).toHaveAttribute('aria-checked', 'true');
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('radio', { name: 'DeepSeek' }));
-    });
-
-    expect(screen.getByRole('radio', { name: 'DeepSeek' })).toHaveAttribute('aria-checked', 'true');
-    // 工作区 provider 即请求携带的模型口径：重试解读 / 提问随切换生效
-    expect(useDestinyWorkspaceStore.getState().provider).toBe('deepseek');
+    // 模型控制器只出现在填表步骤（桌面右上悬浮 / 移动端标题行），结果页整体无此控件
+    expect(screen.queryByRole('radiogroup', { name: '选择测算模型' })).toBeNull();
   });
 
   it('分区逐区到达：主轴先浮现，大三要素与生活模块随后替换骨架', async () => {
@@ -224,5 +214,9 @@ describe('AstrologyResultView（解读分区渲染）', () => {
     expect(payload(after).revision).toBe(payload(before).revision);
     expect(payload(after).revisions).toHaveLength(payload(before).revisions.length);
     expect(after.createdAt).toBe(before.createdAt);
+    // 解读分区一并落进记录：历史页点回来能还原这份结果，而不是只剩真值
+    const savedInterpretation = (after.reportData as unknown as { interpretation?: { headline?: { text: string } } })
+      .interpretation;
+    expect(savedInterpretation?.headline?.text).toBe(HEADLINE.text);
   });
 });

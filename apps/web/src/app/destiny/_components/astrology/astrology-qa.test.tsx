@@ -4,8 +4,9 @@
  * 锁定的外部行为（面板/抽屉结构不动，只有回答来源换实现）：
  * - 发送后用户气泡立即入列、等待气泡锁住输入；回答到达即替换等待气泡并渲染引用片；
  * - 流式正文增量在等待气泡内逐字浮现（「正在思考…」随之让位）；
- * - 失败给中文提示并解开输入锁（超限 / 额度不足沿用服务端提示）；
- * - 每份报告 3 问上限在面板层拦截：达到上限后输入区替换为文档原文提示，不再发起请求。
+ * - 失败给中文提示并解开输入锁（额度不足沿用服务端提示）；
+ * - 次数不设每报告上限：徽章只反映可用额度（够则报次数、不受限说不限次数、不够说额度不足），
+ *   输入区永远可用——额度不够时由服务端 402 + 全局额度弹框提示，面板不私自拦人。
  */
 
 import '@testing-library/jest-dom/vitest';
@@ -19,14 +20,27 @@ vi.mock('@/lib/astrology/qa-request', async (importOriginal) => {
   return { ...actual, requestAstrologyAnswer: vi.fn() };
 });
 
+// 可用额度来自 /api/profile/usage：本用例集只替换取数，折算口径走真实实现
+vi.mock('@/lib/api/profile', () => ({ fetchProfileUsageSummary: vi.fn() }));
+
+import type { ProfileUsageSummary } from '@repo/shared';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyQaRequestError, requestAstrologyAnswer } from '@/lib/astrology/qa-request';
-import type { AstrologyQaAnswer } from '@/lib/astrology/qa-events';
+import { ASTROLOGY_QA_QUESTION_UNITS, type AstrologyQaAnswer } from '@/lib/astrology/qa-events';
 import { computeChartFacts } from '@/lib/astrology/chart-engine';
 import { SAMPLE_PROFILE_ACCURATE } from '@/lib/astrology/sample-chart';
 import type { ModuleReading } from '@/lib/astrology/interpretation';
+import { fetchProfileUsageSummary } from '@/lib/api/profile';
 
 const requestAstrologyAnswerMock = vi.mocked(requestAstrologyAnswer);
+const fetchProfileUsageSummaryMock = vi.mocked(fetchProfileUsageSummary);
+
+/** 额度查询的最小返回（只用到 tokenRemaining；null = 管理员不受额度限制） */
+function quotaSummary(tokenRemaining: number | null): ProfileUsageSummary {
+  return { totalTokens: 0, totalAudioSeconds: 0, totalTaskCount: 0, features: [], tokenRemaining };
+}
+/** 额度充裕：徽章按额度折算报次数（100 次） */
+const ABUNDANT_QUOTA = quotaSummary(ASTROLOGY_QA_QUESTION_UNITS * 100);
 
 const FACTS = computeChartFacts(SAMPLE_PROFILE_ACCURATE);
 /** 生活模块夹具：真实报告里由模型产出，面板只把它们透传给问答接缝 */
@@ -77,20 +91,19 @@ async function ask(user: ReturnType<typeof userEvent.setup>, text: string) {
 describe('AstrologyQaEntry（真实问答接缝）', () => {
   beforeEach(() => {
     requestAstrologyAnswerMock.mockReset();
+    // 默认额度充裕：徽章按额度折算报次数，额度场景各自覆盖
+    fetchProfileUsageSummaryMock.mockReset();
+    fetchProfileUsageSummaryMock.mockResolvedValue(ABUNDANT_QUOTA);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('提问 → 等待气泡 → 回答与引用片替换等待气泡，已提问数随请求上行', async () => {
+  it('提问 → 等待气泡 → 回答与引用片替换等待气泡，请求携带报告上下文', async () => {
     const user = userEvent.setup();
     const pending = deferred<AstrologyQaAnswer>();
-    let askedCount = -1;
-    requestAstrologyAnswerMock.mockImplementation((_q, _f, _m, options) => {
-      askedCount = options.askedCount;
-      return pending.promise;
-    });
+    requestAstrologyAnswerMock.mockImplementation(() => pending.promise);
 
     renderEntry();
     await openConversation(user);
@@ -98,8 +111,8 @@ describe('AstrologyQaEntry（真实问答接缝）', () => {
 
     expect(screen.getByText(QUESTION)).toBeInTheDocument();
     expect(screen.getByText('正在思考…')).toBeInTheDocument();
-    expect(askedCount).toBe(0);
     expect(requestAstrologyAnswerMock.mock.calls[0][1]).toBe(FACTS);
+    expect(requestAstrologyAnswerMock.mock.calls[0][0]).toBe(QUESTION);
 
     await act(async () => {
       pending.resolve(ANSWER);
@@ -108,7 +121,8 @@ describe('AstrologyQaEntry（真实问答接缝）', () => {
     expect(await screen.findByText('你在关系里最需要的是被认真回应。')).toBeInTheDocument();
     expect(screen.queryByText('正在思考…')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关系如何运作' })).toBeInTheDocument();
-    expect(screen.getAllByText('还可问 2 次').length).toBeGreaterThan(0);
+    // 额度未变（100 次）：问过一轮后徽章报剩余额度次数，不设每报告上限
+    expect(screen.getAllByText('还可问 100 次').length).toBeGreaterThan(0);
   });
 
   it('流式正文增量在等待气泡内逐字浮现（「正在思考…」让位）', async () => {
@@ -137,44 +151,88 @@ describe('AstrologyQaEntry（真实问答接缝）', () => {
     expect(await screen.findByText('你先看关系里的节奏，再决定要不要加速。')).toBeInTheDocument();
   });
 
-  it('失败：给中文提示并解开输入锁（超限沿用服务端提示）', async () => {
+  it('失败：给中文提示并解开输入锁（额度不足沿用服务端提示）', async () => {
     const user = userEvent.setup();
     requestAstrologyAnswerMock.mockRejectedValue(
-      new AstrologyQaRequestError('limit', '本次星语问答已完成，可重新打开报告后继续探索。')
+      new AstrologyQaRequestError('quota', '当前额度不足以处理本次对话')
     );
 
     renderEntry();
     await openConversation(user);
     await ask(user, QUESTION);
 
-    expect(
-      await screen.findByText('本次星语问答已完成，可重新打开报告后继续探索。')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('当前额度不足以处理本次对话')).toBeInTheDocument();
     expect(screen.queryByText('正在思考…')).not.toBeInTheDocument();
     // 失败后输入仍可用（不锁死在等待态）
     expect(screen.getByLabelText('星语问答输入框')).not.toBeDisabled();
   });
 
-  it('3 问上限：面板层拦截，输入区替换为文档原文提示且不再发起请求', async () => {
+  it('不设每报告上限：连问多轮都照常派发请求，输入区一直在', async () => {
     const user = userEvent.setup();
     requestAstrologyAnswerMock.mockResolvedValue(ANSWER);
 
     renderEntry();
     await openConversation(user);
-    const questions = ['第一个问题', '第二个问题', '第三个问题'];
+    const questions = ['第一个问题', '第二个问题', '第三个问题', '第四个问题'];
     for (const [index, question] of questions.entries()) {
       await ask(user, question);
       await vi.waitFor(() =>
         expect(screen.getAllByText('你在关系里最需要的是被认真回应。')).toHaveLength(index + 1)
       );
       expect(requestAstrologyAnswerMock).toHaveBeenCalledTimes(index + 1);
-      expect(requestAstrologyAnswerMock.mock.calls[index][3]).toMatchObject({ askedCount: index });
     }
 
-    expect(screen.getByText('本次星语问答已完成，可重新打开报告后继续探索。')).toBeInTheDocument();
-    expect(screen.queryByLabelText('星语问答输入框')).not.toBeInTheDocument();
-    expect(requestAstrologyAnswerMock).toHaveBeenCalledTimes(3);
-    // 已达上限：提问不再被派发
-    expect(screen.queryByRole('button', { name: '发送问题' })).not.toBeInTheDocument();
+    // 次数只由额度决定：没有「已完成 3 问」这类按报告封顶的拦截面
+    expect(screen.queryByText(/已完成/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('星语问答输入框')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发送问题' })).toBeInTheDocument();
+  });
+
+  it('剩余次数按可用额度折算：额度只够再问一次时按 1 次呈现', async () => {
+    const user = userEvent.setup();
+    fetchProfileUsageSummaryMock.mockResolvedValue(quotaSummary(ASTROLOGY_QA_QUESTION_UNITS));
+
+    renderEntry();
+    // 额度取到即按额度折算：还没提问就已经如实说明只够一次
+    expect(await screen.findByText('还可问 1 次')).toBeInTheDocument();
+
+    await openConversation(user);
+    expect(screen.getAllByText('还可问 1 次').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/每份报告/)).not.toBeInTheDocument();
+  });
+
+  it('额度见底：徽章如实说「额度不足」，输入区照常可用（由服务端 402 + 全局弹框提示）', async () => {
+    const user = userEvent.setup();
+    fetchProfileUsageSummaryMock.mockResolvedValue(quotaSummary(100));
+
+    renderEntry();
+    expect(await screen.findByText('额度不足')).toBeInTheDocument();
+
+    await openConversation(user);
+    // 与对话 / 语音等模块同一条链路：面板不藏输入、不私自拦人，提交后由服务端与全局弹框裁决
+    expect(screen.getByLabelText('星语问答输入框')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: '发送问题' })).toBeInTheDocument();
+  });
+
+  it('额度取不到时不越权提示：徽章报「不限次数」，提问照常可行（服务端仍是裁决方）', async () => {
+    const user = userEvent.setup();
+    fetchProfileUsageSummaryMock.mockRejectedValue(new Error('额度查询失败'));
+
+    renderEntry();
+    expect(await screen.findByText('不限次数')).toBeInTheDocument();
+
+    await openConversation(user);
+    expect(screen.getByLabelText('星语问答输入框')).not.toBeDisabled();
+  });
+
+  it('额度不受限（管理员 / tokenRemaining 为 null）：徽章显示「不限次数」', async () => {
+    const user = userEvent.setup();
+    fetchProfileUsageSummaryMock.mockResolvedValue(quotaSummary(null));
+
+    renderEntry();
+    expect(await screen.findByText('不限次数')).toBeInTheDocument();
+
+    await openConversation(user);
+    expect(screen.getAllByText('不限次数').length).toBeGreaterThan(0);
   });
 });

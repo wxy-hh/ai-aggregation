@@ -4,6 +4,17 @@
 > 历史工单细节归档：`.scratch/constellation-universe/HANDOFF-archive-2026-09-04.md`（01–13 验收史、P0 视觉、3D 舞台、天象仪重做、布局重构、工具链套路全在里面，别重写本文档已有的结论）。
 > 设计文档：`docs/designs/2026-07-26-constellation-universe-design.md`（V1.6）；全局主题文档：项目根 `DESIGN.md`（已含「星渊」章节 10.1 与 6.4/6.5 的 WebGL 规则，改 UI 必须同步更新它）。
 
+## 2026-09-20 本轮新增：结果页「夜幕观星」暗夜模式
+
+- 机制：结果页/失败卡容器嵌套 `dark` 类（Tailwind class 策略）局部翻转全部 `dark:` 样式，星野自动切午夜深空+流星；`.astrology-night` 标记类只做增量氛围（紫金双调星云 `astrology-night-nebula.tsx`、`night-card` 鎏金描边卡、`night-wheel-glow` 底盘金辉，均在 globals.css 作用域块内）。
+- 偏好：`stores/astrology-night-theme-store.ts`（persist key `astrology-result-theme`，pref/inviteSeen）+ `lib/utils/astrology-night-theme.ts`。**硬边界**：`dark:` 是祖先级联，全局暗时 html.dark 无法局部撤销 → 白昼视图在全局暗下不可交付；契约 = 全局暗恒夜幕且切换钮不渲染（`astrology-night-toggle.tsx` 早退 null），偏好只在全局亮时生效。与紫微 zw-* 变量体系是有意的能力差。
+- 入夜联动面（少一处就会出现亮玻璃压夜底的可读性事故）：桌面左导航 `destiny-desktop-nav.tsx`、移动分段控件 `destiny-page-client.tsx`（`isResultNight`）、移动全局顶/底栏 `mobile-header.tsx`/`mobile-bottom-nav.tsx`——星座侧必须走 resolve 判定（白昼态 chrome 不入夜）。
+- 失败卡场景判定：`step==='result' || (entryView==='loading' && error)`。
+- 验收：vitest 466 全绿（含新增 resolve×4/store×2/组件×4）、eslint 净、typecheck 0 错；截图 `/tmp/qa/night-0*.png`（白昼+邀请气泡/夜景/星盘金辉/刷新持久化/移动夜景/reduce-motion/导航修复/移动 chrome 日夜）。
+- **prettier 注意**：子代理对 5 个旧文件跑了 `prettier --write`（它们 HEAD 上本就不 prettier-clean），引入约 960 行纯排版 churn 混在本轮与星渊未提交改动里，review 用 `git diff -w`；提交前必须问用户。
+- 截图套路：`/tmp/qa/night-mode-accept.cjs`，直达 `/destiny?tab=astrology`；切换钮选择器用 `button.night-toggle`（紫微按钮 aria-label 同名，会误匹配）。
+
+
 ## 2026-09-07 本轮新增：结果页星盘升级为「星渊」WebGL 场景
 
 - 起因：用户对 SVG 星盘不满（要星空/3D/动效/神秘感）。方案 = 三层 R3F 深空场景，计划文件在会话 plans 目录（carnage-magik-jay-garrick.md），已批准。

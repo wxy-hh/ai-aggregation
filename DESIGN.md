@@ -217,6 +217,8 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | `ziwei-twinkle / spin-slow / spin-rev / dash-flow` | — | 紫微星闪、刻度环缓旋、星轨流光 |
 | `ziwei-palace-enter / fade-up` | — | 宫位 staggered 入场、内容揭示 |
 | `ziwei-breathe / related-glow / active-glow` | — | 星云呼吸、三方四正鎏金辉光、选中宫紫微紫辉光 |
+| `astrology-nebula-breathe` | 16s/20s/24s 错相位 | 「夜幕观星」紫金双调星云呼吸（透明度 ≤0.14，reduce-motion 静止） |
+| `astrology-invite-pulse` | 1.8s | 「夜幕观星」首访邀请鎏金脉冲（仅一次，reduce-motion 静止） |
 
 ### 6.4 动效技术选型
 
@@ -334,6 +336,22 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 **事实纪律**：行星角度/相位/宫位几何全部来自 `lib/astrology/wheel-scene-layout.ts`（纯函数，单测覆盖），与 SVG 轮同一映射口径（screenTheta=180-(lon-ascLon)）；装饰层（星野/星云/流星）只是氛围，永不编码事实。
 
 **降级链**（`astrology-wheel-scene-switch.tsx`）：SSR/首帧 → SVG 轮；WebGL 探测失败 → 永久 SVG；three chunk 加载中 → SVG 原地接管。三级之间无闪烁、无可访问性空洞。移动端 compact 档：粒子减半 + dpr 收敛 + 关闭 MSAA。
+
+### 10.2 星座结果页「夜幕观星」暗夜模式（`.astrology-night`）
+
+**设计立意**：星盘属于夜空。白昼是「阅读报告」，夜幕是「凝视星盘」——同一份事实，两种观看姿态。视觉语言保持星座寰宇自己的深空基因，不引入紫微的 zw-* 宋体星宫体系。
+
+**机制与硬边界**（为什么是嵌套 `dark` 而不是第二套主题变量）：Tailwind `darkMode: 'class'`，结果页容器嵌套 `dark` 类即可让全部 `dark:` 样式局部翻转——星野自动切午夜深空、流星自动出现，零组件改动。`.astrology-night` 标记类只做「夜幕降临」的增量氛围，不重写已有深色样式。代价是 `dark:` 为祖先级联：全局暗色时 `<html>` 自带 `.dark`，页内无法局部撤销，**白昼视图在全局暗色下不可交付**——因此契约是「全局暗 → 恒夜幕（且为增强版），切换钮不渲染；手动偏好仅在全局亮时生效」，与紫微 zw-* 变量体系（暗全局下仍可白昼）是有意的能力差。
+
+**增量氛围三层**（globals.css `.astrology-night` 作用域，全部克制在底色层）：
+
+1. 紫金双调星云：紫微 / 恒星金 / 靛蓝三处呼吸光斑（16s/20s/24s 错相位，透明度 ≤0.14），暮色不是均匀的黑，是有远近的天；
+2. `night-card` 鎏金描边卡：暗夜纯黑阴影不可读，用「`rgba(231,200,115,0.14)` 描边色温 + 深空下沉阴影 + 顶部微光内边」让卡片浮在星幕上——只覆盖护照头与生活模块卡，大三要素卡已有日金/靛紫双色阴影体系，不抹平；
+3. `night-wheel-glow` 底盘金辉：轮盘像悬在观星台上，底盘泛暖金星轨余晖。
+
+**纪律**：切换钮热区 ≥44px、aria-label 中文；星云/邀请脉冲在 reduce-motion 下静止；作用范围仅结果相位与失败恢复卡，表单/仪式相位不夜幕化（填写是日光下的事）；星渊 WebGL 场景本体不随开关变化（它始终是深空，是舷窗不是皮肤）。
+
+**入夜联动面**（夜幕不是内容区自己的事，周边 chrome 必须同步，否则亮玻璃浮在夜底上文字不可读）：桌面左导航（`destiny-desktop-nav.tsx` 的 `night` 条件并入星座结果态）、移动端分段控件（`destiny-page-client.tsx` 的 `isResultNight`）、移动端全局顶栏/底栏（`mobile-header.tsx` / `mobile-bottom-nav.tsx`）——与紫微入夜同一联动面，但星座侧必须经 `resolveAstrologyNightTheme` 判定（白昼态结果页是亮玻璃，chrome 不得入夜；紫微侧 chrome 不看偏好是既有口径，未动）。
 
 ---
 

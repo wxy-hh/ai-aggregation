@@ -4,14 +4,16 @@
  * astrology-interpretation-notice.tsx —— 文案区「解读暂不可用」卡（02 工单建卡，03 工单加失败重试）
  *
  * 何时出现：报告流给出 interpretation-unavailable（原因档 quota / model / not-wired）、本次提交
- * 没有任何解读分区到达（流中断），或从历史记录恢复的旧结果（解读未发起）。
+ * 没有任何解读分区到达（流中断），或从历史记录恢复的旧记录里没有存解读（解读未发起）。
  *
  * 诚实性约束：
  * - 不给「解读整理中」的无尽骨架——没有解读在途时就必须说出来；
  * - 不显示任何模板/mock 文案冒充 AI 产出（mock 文案库只做提示词样例与测试金样）；
  * - 只对解读层降级说话：明确告知星盘事实已经生成、可照常查看与点选，避免用户误以为整份报告失败；
  * - 提供「重试解读」入口（真值不重算：重试只重跑解读链路，星盘确定性一致）；
- * - 额度原因额外给登录 / 查看额度引导（额度耗尽对话框由接缝另行唤起，两处文案不重复报错）。
+ * - 额度原因额外给登录 / 查看额度引导（额度耗尽对话框由接缝另行唤起，两处文案不重复报错）；
+ * - 「记录里没有解读」档照实说清：解读服务早已接入，此处缺的是这份旧记录当时没存下的解读，
+ *   不写「正在接入中」这种已经不符合事实的说明。
  */
 
 import Link from 'next/link';
@@ -19,7 +21,8 @@ import { LockKeyhole, RefreshCw, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
 import type { AstrologyInterpretationReason } from '@/stores/destiny-workspace-store';
 
-type NoticeVariant = 'quota' | 'not-wired' | 'model' | 'unknown';
+/** not-saved：记录里没有存解读（旧记录 / 本次会话没有请求解读），与服务端原因档 not-wired 同槽位 */
+type NoticeVariant = 'quota' | 'not-saved' | 'model' | 'unknown';
 
 type NoticeContent = {
   title: string;
@@ -38,10 +41,10 @@ const NOTICE_CONTENT: Record<NoticeVariant, NoticeContent> = {
     body: '本次 AI 解读超时或没有通过校验，暂时无法给出文案。你的星盘已经按真实星历算好——行星落点、宫位与关键相位都可以照常查看与点选。',
     hint: '可以点「重试解读」再试一次：重试只重新生成解读，星盘不会重算。',
   },
-  'not-wired': {
-    title: '解读暂不可用',
-    body: 'AI 解读正在接入中，本次先呈现你的真实星盘：行星落点、宫位与关键相位都可照常查看与点选。',
-    hint: '解读上线后，这份星盘会补上性格与生活的可读解读。',
+  'not-saved': {
+    title: '这份记录只保存了星盘',
+    body: '这条记录保存的是星盘真值——行星落点、宫位与关键相位都可以照常查看与点选；当时的 AI 解读没有随记录一起保存，所以本次没有解读内容可以还原。',
+    hint: '点「重试解读」可以为这份星盘补上解读：只重新生成解读，星盘不会重算。',
   },
   unknown: {
     title: '解读暂时不可用',
@@ -54,7 +57,7 @@ export function AstrologyInterpretationNotice({
   reason,
   onRetry,
 }: {
-  /** 降级原因档；null（未发起解读，如历史恢复）按「未接入」口径说明 */
+  /** 降级原因档；null（本次会话未发起解读，如历史恢复）按「记录里没有存解读」口径说明 */
   reason: AstrologyInterpretationReason | null;
   /** 重试解读（重走报告流，真值确定性一致不重算）；缺省时不渲染重试入口 */
   onRetry?: () => void;
@@ -67,7 +70,7 @@ export function AstrologyInterpretationNotice({
         ? 'model'
         : reason === 'unknown'
           ? 'unknown'
-          : 'not-wired';
+          : 'not-saved';
   const content = NOTICE_CONTENT[variant];
 
   return (

@@ -17,6 +17,7 @@ import {
   type AstrologyRevisionSnapshot,
 } from './history';
 import { computeChartFacts } from './chart-engine';
+import type { AstrologyInterpretationReport } from './interpretation';
 import { SAMPLE_PROFILE_ACCURATE } from './sample-chart';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { DestinyHistoryItem } from '@/types/history';
@@ -45,6 +46,28 @@ const facts = computeChartFacts(SAMPLE_PROFILE_ACCURATE);
 function payloadOf(item: DestinyHistoryItem): AstrologyReportPayload {
   return item.reportData as unknown as AstrologyReportPayload;
 }
+
+/** 解读分区夹具：按需给主轴与生活模块（其余分区走同一份存储逻辑，用不到就不铺） */
+function interpretationFixture(
+  headlineText: string | null,
+  modules: AstrologyInterpretationReport['modules'] = []
+): AstrologyInterpretationReport {
+  return {
+    headline: headlineText ? { text: headlineText, factReferences: ['planet:sun:sign', 'planet:moon:sign'] } : null,
+    bigThree: null,
+    modules,
+    transits: null,
+  };
+}
+
+const moduleFixture: AstrologyInterpretationReport['modules'][number] = {
+  id: 'love',
+  title: '关系如何运作',
+  summary: '在关系里需要被稳定回应。',
+  tags: ['月亮 天蝎'],
+  action: '先说感受，再谈事情。',
+  factReferences: ['planet:moon:sign'],
+};
 
 beforeEach(() => {
   // 每个用例前重置三个相关 store，避免互相污染
@@ -210,7 +233,11 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
     // 提交时解读未到：摘要为日月星座组合兜底
     expect(saved.preview).toMatch(/^太阳.+· 月亮/);
 
-    const merged = updateAstrologyHistoryInterpretation(baseForm, facts, '心里那团火是真的，练习把它慢慢烧。');
+    const merged = updateAstrologyHistoryInterpretation(
+      baseForm,
+      facts,
+      interpretationFixture('心里那团火是真的，练习把它慢慢烧。')
+    );
     expect(merged).toBe(true);
 
     const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
@@ -221,11 +248,22 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
     expect(payloadOf(after).revisions).toEqual([]);
   });
 
+  it('整份解读分区随记录保存（历史恢复据此还原结果页）', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const saved = saveAstrologyHistoryRecord(baseForm, facts);
+    const report = interpretationFixture('主轴金句', [moduleFixture]);
+
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, report)).toBe(true);
+    expect(payloadOf(useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem).interpretation).toEqual(
+      report
+    );
+  });
+
   it('匿名：会话临时记录同样被覆盖更新', () => {
     useAuthStore.setState({ user: { isAnonymous: true } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
 
-    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '主轴金句')).toBe(true);
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture('主轴金句'))).toBe(true);
     expect(useAstrologyTempRecordStore.getState().tempRecord?.preview).toBe('主轴金句');
     expect(useAstrologyTempRecordStore.getState().tempRecord?.createdAt).toBe(saved.createdAt);
   });
@@ -233,14 +271,14 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   it('主轴缺失（null）时保留兜底摘要，不影响记录', () => {
     useAuthStore.setState({ user: { isAnonymous: false } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
-    expect(updateAstrologyHistoryInterpretation(baseForm, facts, null)).toBe(true);
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture(null))).toBe(true);
     const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
     expect(after.preview).toBe(saved.preview);
   });
 
   it('记录已不在（未登录无临时记录）时静默跳过', () => {
     useAuthStore.setState({ user: { isAnonymous: true } as never });
-    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '主轴金句')).toBe(false);
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture('主轴金句'))).toBe(false);
     expect(useAstrologyTempRecordStore.getState().tempRecord).toBeNull();
   });
 
@@ -251,7 +289,7 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
     const newerFacts = { ...facts, calculatedAt: new Date(Date.parse(facts.calculatedAt) + 60_000).toISOString() };
     saveAstrologyHistoryRecord(baseForm, newerFacts);
 
-    expect(updateAstrologyHistoryInterpretation(baseForm, facts, '上一份解读')).toBe(false);
+    expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture('上一份解读'))).toBe(false);
     const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
     expect(after.preview).not.toBe('上一份解读');
   });
@@ -275,6 +313,28 @@ describe('restoreAstrologyFromHistory（从历史重开结果页）', () => {
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     expect(restoreAstrologyFromHistory(item.id)).toBe(true);
     expect(useDestinyWorkspaceStore.getState().astrology.step).toBe('result');
+  });
+
+  it('记录里存了解读：恢复为 ready，结果页直接呈现当时那份结果', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const item = saveAstrologyHistoryRecord(baseForm, facts);
+    const report = interpretationFixture('主轴金句', [moduleFixture]);
+    updateAstrologyHistoryInterpretation(baseForm, facts, report);
+
+    expect(restoreAstrologyFromHistory(item.id)).toBe(true);
+    const state = useDestinyWorkspaceStore.getState().astrology;
+    expect(state.interpretation.status).toBe('ready');
+    expect(state.interpretation.report).toEqual(report);
+  });
+
+  it('记录里没有解读（改动前的旧记录）：回到未发起态，不假装在途', () => {
+    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    const item = saveAstrologyHistoryRecord(baseForm, facts);
+
+    expect(restoreAstrologyFromHistory(item.id)).toBe(true);
+    const state = useDestinyWorkspaceStore.getState().astrology;
+    expect(state.interpretation.status).toBe('idle');
+    expect(state.interpretation.report).toBeNull();
   });
 
   it('非星座寰宇记录或不存在的 id：不恢复', () => {

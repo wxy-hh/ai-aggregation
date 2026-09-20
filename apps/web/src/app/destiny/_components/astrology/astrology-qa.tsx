@@ -4,8 +4,10 @@
  * astrology-qa.tsx —— 星语问答（设计文档 §6.7，10 工单建；04 工单切真实问答路由）
  *
  * - 仅在报告完成后出现（结果页洞察轨内）；问答状态以 calculatedAt 作 key，重算即重置，不跨报告携带。
- * - 每份报告每个会话最多 3 个用户问题（首问 + 2 次追问）：面板计数拦截，服务端按请求携带的
- *   已提问数二次强制，两层一致；达到上限给出文档原文提示。
+ * - 次数只受账号可用额度约束（不设每报告上限）：徽章上的「还可问 N 次」由可用额度折算
+ *   （见 astrology-qa-capacity.ts），额度不受限时显示「不限次数」。
+ *   额度不够时输入区照常可用——提交后服务端按既有计费口径返回 402，由全局额度弹框提示
+ *   （与对话/语音等模块同一条链路，不在面板层私自拦人）。
  * - 回答由真实 LLM 经异步接缝产出（POST /api/destiny/astrology/copilot，协议见 qa-events.ts）：
  *   正文增量在等待气泡内逐字浮现，终帧替换为完整回答（引用只落在白名单事实与报告模块上，不绝对化）；
  *   敏感主题（医疗/财务/法律）由服务端前置拦截，返回安全话术 + 自我观察方向（琥珀色气泡）。
@@ -22,13 +24,14 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
 import type { ModuleId, ModuleReading } from '@/lib/astrology/interpretation';
-import { ASTROLOGY_QA_MAX_QUESTIONS, type QaCitation } from '@/lib/astrology/qa-events';
+import type { QaCitation } from '@/lib/astrology/qa-events';
 import {
   abortAstrologyQaRequest,
   astrologyQaErrorMessage,
   requestAstrologyAnswer,
 } from '@/lib/astrology/qa-request';
 import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
+import { useAstrologyQaQuestionCapacity } from './astrology-qa-capacity';
 
 /** 引导问题（设计文档 §6.7 原文） */
 const GUIDE_QUESTIONS = [
@@ -36,6 +39,35 @@ const GUIDE_QUESTIONS = [
   '本周工作中适合主动争取什么？',
   '这个相位如何影响我的表达？',
 ];
+
+/** 提问能力口径：次数只由账号可用额度决定 */
+type QaCapacity = {
+  /** 本报告已提问数（仅用于引导问题与徽章配色） */
+  asked: number;
+  /** 可用额度还能问几次；null = 额度不受限（管理员 / 查不到额度） */
+  remaining: number | null;
+};
+
+/**
+ * 徽章文案：额度够就报次数、不受限就说不限次数、不够一次就说额度不足。
+ * 不做每报告次数限制——额度是唯一的硬约束（服务端计费口径）。
+ */
+function questionBadgeText({ remaining }: QaCapacity): string {
+  if (remaining === null) return '不限次数';
+  if (remaining <= 0) return '额度不足';
+  return `还可问 ${remaining} 次`;
+}
+
+/** 徽章配色：额度不足橙色告警、已开问与不限次数用中性/靛蓝（两处徽章同款） */
+function questionBadgeClass({ asked, remaining }: QaCapacity): string {
+  if (remaining !== null && remaining <= 0) {
+    return 'bg-amber-100/80 text-amber-700 dark:bg-amber-400/[0.15] dark:text-amber-300';
+  }
+  if (asked > 0) {
+    return 'bg-amber-100/80 text-amber-700 dark:bg-amber-400/[0.15] dark:text-amber-300';
+  }
+  return 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300';
+}
 
 interface QaMessage {
   id: number;
@@ -70,7 +102,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
   const isDesktop = useIsDesktop();
   const entryRef = useRef<HTMLButtonElement>(null);
 
-  /** 对话状态托管在入口层：面板/抽屉开关不丢消息，3 问上限不被「关掉重开」绕过；
+  /** 对话状态托管在入口层：面板/抽屉开关不丢消息；
    *  重算后结果页整体重挂载（entryView 流转），状态自然随新报告重置，不跨报告携带 */
   const [messages, setMessages] = useState<QaMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -89,20 +121,19 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
     };
   }, []);
   const asked = messages.filter((m) => m.role === 'user').length;
-  const remaining = ASTROLOGY_QA_MAX_QUESTIONS - asked;
-  const capped = remaining <= 0;
+  /** 可用额度折算的提问能力（null = 管理员不受额度限制 / 额度取不到 → 显示「不限次数」） */
+  const capacity: QaCapacity = { asked, remaining: useAstrologyQaQuestionCapacity(asked) };
 
   const send = (text: string) => {
     const q = text.trim();
-    if (!q || capped || pending) return;
+    if (!q || pending) return;
     setMessages((prev) => [...prev, { id: ++idRef.current, role: 'user', text: q }]);
     setPending(true);
     setStreaming('');
     const token = ++requestTokenRef.current;
     // 真实问答：正文增量边到边渲染（等待气泡内逐字浮现），终帧给完整回答与白名单引用；
-    // 已提问数随请求上行，服务端按同一上限二次强制。
+    // 额度不足时服务端返回 402，接缝按中文提示落进气泡，同时由全局弹框提示（authFetch 统一派发）。
     requestAstrologyAnswer(q, facts, modules, {
-      askedCount: asked,
       onDelta: (delta) => {
         if (!aliveRef.current || token !== requestTokenRef.current) return;
         setStreaming((prev) => prev + delta);
@@ -139,8 +170,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
     messages,
     pending,
     streaming,
-    remaining,
-    capped,
+    capacity,
     onSend: send,
     onLocateBody,
     onLocateModule,
@@ -151,7 +181,9 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
       aria-label="星语问答"
       className={cn(
         'relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs transition-all duration-300 dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]',
-        open && isDesktop ? 'p-0' : 'p-5'
+        open && isDesktop ? 'p-0' : 'p-5',
+        // 桌面端展开问答舱后随洞察轨撑满剩余高度：面板底部与左侧要素卡底部齐平（见结果页洞察轨）
+        open && isDesktop && 'xl:min-h-0 xl:flex-1'
       )}
     >
       <div
@@ -161,7 +193,8 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
 
       {/* 桌面端：点击开始提问后，卡片原位蜕变为问答舱，彻底消除套娃边框与重复标题 */}
       {open && isDesktop ? (
-        <div id="astro-qa-conversation">
+        /* h-full：卡片在洞察轨内被撑满时，问答舱（表头 / 可滚动消息区 / 输入区）跟着占满整卡 */
+        <div id="astro-qa-conversation" className="h-full">
           <QaConversation {...conversationProps} onRequestClose={closeInline} />
         </div>
       ) : (
@@ -175,21 +208,12 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
               />
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">星语问答</h3>
             </div>
-            <span
-              className={cn(
-                'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                capped
-                  ? 'bg-slate-100 text-day-muted dark:bg-white/[0.06] dark:text-night-faint'
-                  : asked > 0
-                    ? 'bg-amber-100/80 text-amber-700 dark:bg-amber-400/[0.15] dark:text-amber-300'
-                    : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
-              )}
-            >
-              {capped ? '已完成 3 问' : asked > 0 ? `还可问 ${remaining} 次` : '每份报告 3 问'}
+            <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', questionBadgeClass(capacity))}>
+              {questionBadgeText(capacity)}
             </span>
           </div>
           <p className="mt-2.5 text-xs leading-relaxed text-slate-500 dark:text-night-muted">
-            带着你的星盘提问，回答只引用盘面已确认事实。
+            带着你的星盘提问，回答只引用盘面已确认事实，次数与账号额度共用。
           </p>
           {/* 展开态随 open 变化：桌面为原位展开（控件在展开后不再渲染），移动端为底部对话框抽屉 */}
           <button
@@ -219,7 +243,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
           >
             <DialogTitle className="sr-only">星语问答</DialogTitle>
             <DialogDescription className="sr-only">
-              围绕当前星盘报告提问，回答只引用已确认事实，每份报告最多 3 问。
+              围绕当前星盘报告提问，回答只引用已确认事实，提问次数与账号额度共用。
             </DialogDescription>
             <div id="astro-qa-conversation" className="min-h-0 flex-1">
               <QaConversation {...conversationProps} onRequestClose={() => setOpen(false)} />
@@ -237,8 +261,7 @@ function QaConversation({
   messages,
   pending,
   streaming,
-  remaining,
-  capped,
+  capacity,
   onSend,
   onLocateBody,
   onLocateModule,
@@ -248,8 +271,8 @@ function QaConversation({
   pending: boolean;
   /** 流式正文（等待气泡内逐字浮现；空串时显示「正在思考」） */
   streaming: string;
-  remaining: number;
-  capped: boolean;
+  /** 剩余次数口径（按可用额度折算；见入口层与 astrology-qa-capacity.ts） */
+  capacity: QaCapacity;
   onSend: (text: string) => void;
   onLocateBody: (body: PlanetBody | null) => void;
   onLocateModule: (id: ModuleId) => void;
@@ -258,7 +281,7 @@ function QaConversation({
   const reduceMotion = useReducedMotion();
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
-  const asked = ASTROLOGY_QA_MAX_QUESTIONS - remaining;
+  const { asked } = capacity;
 
   /** 新消息 / 流式正文更新时滚动到列表底部 */
   useEffect(() => {
@@ -294,15 +317,8 @@ function QaConversation({
           <p className="text-sm font-bold text-slate-900 dark:text-white">星语问答</p>
         </div>
         <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'rounded-full px-2 py-0.5 text-[10px] font-semibold',
-              capped
-                ? 'bg-slate-100 text-day-muted dark:bg-white/[0.06] dark:text-night-faint'
-                : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
-            )}
-          >
-            {capped ? '已完成 3 问' : `还可问 ${remaining} 次`}
+          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', questionBadgeClass(capacity))}>
+            {questionBadgeText(capacity)}
           </span>
           <button
             type="button"
@@ -315,13 +331,17 @@ function QaConversation({
         </div>
       </div>
 
-      {/* 消息区：role=log + polite 播报助手新回复；不用 assertive，避免抢读用户自己的提问与 pending 提示 */}
+      {/* 消息区：role=log + polite 播报助手新回复；不用 assertive，避免抢读用户自己的提问与 pending 提示。
+          移动端抽屉限高 250px；桌面端（xl）改由洞察轨行高决定上限，长回答在区内滚动：
+          - contain:size 让消息内容不参与面板的固有高度——否则长回答会把整行撑高，
+            左栏（护照 / 主轴 / 要素卡）底下就多出一大片空白；
+          - 面板高度全部来自 flex 链（洞察轨行高由左栏决定），max-h-none 放开 250px 上限让消息区吃满剩余高度。 */}
       <div
         ref={listRef}
         role="log"
         aria-live="polite"
         aria-label="问答消息"
-        className="max-h-[250px] min-h-[140px] flex-1 space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar"
+        className="max-h-[250px] min-h-[140px] flex-1 space-y-3 overflow-y-auto px-4 py-3 custom-scrollbar xl:max-h-none xl:[contain:size]"
       >
         {messages.length === 0 && (
           <p className="text-xs leading-relaxed text-day-muted dark:text-night-faint">
@@ -421,8 +441,8 @@ function QaConversation({
         )}
       </div>
 
-      {/* 引导问题（尚未提问且未达上限时展示） */}
-      {asked === 0 && !capped && (
+      {/* 引导问题（本报告尚未提问时展示） */}
+      {asked === 0 && (
         <div className="flex flex-col gap-1.5 px-4 pb-3">
           <p className="text-[11px] font-medium text-day-muted dark:text-night-faint">你可以试着这样问：</p>
           {GUIDE_QUESTIONS.map((q) => (
@@ -439,40 +459,35 @@ function QaConversation({
         </div>
       )}
 
-      {/* 输入区 / 上限提示 */}
-      {capped ? (
-        <p className="border-t border-slate-100 px-4 py-3 text-xs leading-relaxed text-day-muted dark:border-white/[0.08] dark:text-night-faint">
-          本次星语问答已完成，可重新打开报告后继续探索。
-        </p>
-      ) : (
-        <form
-          className="flex items-center gap-2 border-t border-slate-100 px-3 py-2.5 dark:border-white/[0.08]"
-          onSubmit={(e) => {
-            e.preventDefault();
-            sendDraft();
-          }}
+      {/* 输入区：没有每报告次数上限，输入永远可用；额度不足由服务端 402 + 全局额度弹框提示
+          （与对话 / 语音等模块同一条链路，面板不私自拦人） */}
+      <form
+        className="flex items-center gap-2 border-t border-slate-100 px-3 py-2.5 dark:border-white/[0.08]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendDraft();
+        }}
+      >
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="问一个关于你星盘的问题…"
+          aria-label="星语问答输入框"
+          maxLength={120}
+          disabled={pending}
+          className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
+        />
+        <AstrologyCtaButton
+          type="submit"
+          size="icon"
+          disabled={!draft.trim() || pending}
+          aria-label="发送问题"
+          className="shrink-0"
         >
-          <input
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="问一个关于你星盘的问题…"
-            aria-label="星语问答输入框"
-            maxLength={120}
-            disabled={pending}
-            className="h-10 min-w-0 flex-1 rounded-full border border-slate-200/90 bg-white/70 px-4 text-sm text-slate-800 placeholder:text-day-muted focus:outline-none focus:ring-2 focus:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/[0.12] dark:bg-white/[0.05] dark:text-slate-100 dark:placeholder:text-night-faint"
-          />
-          <AstrologyCtaButton
-            type="submit"
-            size="icon"
-            disabled={!draft.trim() || pending}
-            aria-label="发送问题"
-            className="shrink-0"
-          >
-            <SendHorizontal className="h-4 w-4" strokeWidth={2.2} />
-          </AstrologyCtaButton>
-        </form>
-      )}
+          <SendHorizontal className="h-4 w-4" strokeWidth={2.2} />
+        </AstrologyCtaButton>
+      </form>
     </div>
   );
 }

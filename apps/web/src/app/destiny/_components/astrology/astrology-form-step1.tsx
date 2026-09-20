@@ -8,7 +8,7 @@
  * 本组件为受控组件：数据与错误都在工作区 store，这里只负责呈现与转发修改。
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CalendarDays, Compass, Lock, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -163,6 +163,19 @@ export type AstrologyFormStepProps = {
 export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }: AstrologyFormStepProps) {
   const reduceMotion = useReducedMotion();
   const birthDateError = fieldErrors.birthDate;
+  /** 步骤根节点：校验失败时在步骤内部找第一个出错的控件聚焦（键盘/读屏用户不必自己找） */
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 提交校验失败后聚焦第一个出错的控件（本步只有出生日期）。
+   * 依赖 fieldErrors 的对象身份：每次校验失败 store 都会换一个新对象，
+   * 因此「连续两次点继续」同样会把焦点带回来；校验通过时下发空对象，effect 不命中分支。
+   */
+  useEffect(() => {
+    if (fieldErrors.birthDate) {
+      rootRef.current?.querySelector<HTMLSelectElement>('#astrology-birth-year')?.focus();
+    }
+  }, [fieldErrors]);
 
   /** 日期部分选择本地态：三项齐全才写入 store（保证 birthDate 要么完整要么 null） */
   const [partial, setPartial] = useState<{ year: number | ''; month: number | ''; day: number | '' }>(() => ({
@@ -199,7 +212,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
   const SunSignGlyph = sunSign ? ZODIAC_GLYPH[sunSign] : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={rootRef} className="flex flex-col gap-6">
       {/* 昵称（可选） */}
       <div>
         <FieldLabel icon={User} htmlFor="astrology-name-input" optional>

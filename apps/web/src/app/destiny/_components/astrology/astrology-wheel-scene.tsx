@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useStore, useThree, type ThreeEvent } from '@react-three/fiber';
+import { installThreeConsoleFilter } from './three-console-filter';
 import { Html, Line } from '@react-three/drei';
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -35,6 +36,15 @@ import {
 } from '@/lib/astrology/wheel-scene-layout';
 import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
 import { cn } from '@/lib/utils';
+
+/* ---------- 场景挂载前的控制台治理 ---------- */
+
+/**
+ * 在 Canvas 首次创建（r3f 内部 new THREE.Clock()）之前装好 three 控制台过滤，
+ * 静默 three@0.185 对 Clock 的已知弃用警告（详见 ./three-console-filter.ts）。
+ * 本模块是星渊场景的唯一入口，模块求值先于任何 Canvas 渲染，时序成立。
+ */
+installThreeConsoleFilter();
 
 /* ---------- 确定性伪随机（星野排布必须帧间/端间一致，禁止 Math.random） ---------- */
 
@@ -1085,6 +1095,23 @@ function FrameloopGovernor({ isActive }: { isActive: boolean }) {
   return null;
 }
 
+/**
+ * 首帧信号：场景真正画出第一帧后回调一次。
+ * 外层（wheel-scene-switch）据此撤下 SVG 兜底——在那之前撤会露出空窗，
+ * 就是「星盘要等一两秒才画出来」的来源。info.render.frame 在每帧渲染后自增，
+ * 因此在帧回调里看到它 ≥1，说明上一帧已经画完。
+ */
+function FirstFrameSignal({ onPainted }: { onPainted: () => void }) {
+  const gl = useThree((state) => state.gl);
+  const fired = useRef(false);
+  useFrame(() => {
+    if (fired.current || gl.info.render.frame < 1) return;
+    fired.current = true;
+    onPainted();
+  });
+  return null;
+}
+
 /* ---------- 根组件：画布 + 键盘可达 + 交互契约（selectedBody/onSelectBody 不变） ---------- */
 
 export function AstrologyWheelScene({
@@ -1094,6 +1121,7 @@ export function AstrologyWheelScene({
   onSelectBody,
   planetOverrides,
   isActive = true,
+  onReady,
 }: {
   facts: AstrologyChartFacts;
   className?: string;
@@ -1103,6 +1131,8 @@ export function AstrologyWheelScene({
   planetOverrides?: Partial<Record<PlanetBody, number>>;
   /** 工作区激活态（默认 true）：false 时整个帧循环停摆，模块切走后不在后台空转 GPU */
   isActive?: boolean;
+  /** 首帧已画出且入场淡入完成：调用方据此撤下 SVG 兜底（交接期两套并存，盘面不会先消失） */
+  onReady?: () => void;
 }) {
   const reduceMotion = useReducedMotion() ?? false;
   const layout = useMemo(() => buildWheelSceneLayout(facts, planetOverrides), [facts, planetOverrides]);
@@ -1113,6 +1143,16 @@ export function AstrologyWheelScene({
 
   // 卸载时归还鼠标指针样式
   useEffect(() => () => { document.body.style.cursor = ''; }, []);
+
+  /** 首帧与入场淡入都完成才算「可交接」：两者都到位才回调 onReady（只回调一次） */
+  const [framePainted, setFramePainted] = useState(false);
+  const [fadedIn, setFadedIn] = useState(false);
+  const readyNotified = useRef(false);
+  useEffect(() => {
+    if (readyNotified.current || !framePainted || !fadedIn) return;
+    readyNotified.current = true;
+    onReady?.();
+  }, [framePainted, fadedIn, onReady]);
 
   const bodies = useMemo(() => layout.planets.map((p) => p.body), [layout.planets]);
   const interactive = Boolean(onSelectBody);
@@ -1140,6 +1180,7 @@ export function AstrologyWheelScene({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={reduceMotion ? { duration: 0.01 } : { duration: 0.8, delay: 0.12, ease: 'easeOut' }}
+      onAnimationComplete={() => setFadedIn(true)}
       className={cn(
         'relative aspect-square w-full select-none overflow-hidden rounded-full bg-[#040713]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50',
@@ -1169,6 +1210,8 @@ export function AstrologyWheelScene({
         <SizeGuard />
         {/* 帧循环治理（见上方注释）：页面隐藏 / 画布离屏 / 模块切走时整帧停摆，三项都可见时拨回时间轴继续 */}
         <FrameloopGovernor isActive={isActive} />
+        {/* 首帧信号：画完第一帧才让外层撤下 SVG 兜底（见 FirstFrameSignal） */}
+        <FirstFrameSignal onPainted={() => setFramePainted(true)} />
         {/* 光照：环境光托底 + 主光塑形（自发光为主，光照只给球体体积感） */}
         <ambientLight intensity={0.5} />
         <directionalLight position={[4, 6, 8]} intensity={1.1} />

@@ -102,7 +102,6 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     authFetchMock.mockResolvedValue(stream.response);
 
     const { token, result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {
-      askedCount: 0,
       onDelta: (text) => deltas.push(text),
     });
     expect(isLatestAstrologyQaRequest(token)).toBe(true);
@@ -111,16 +110,14 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     const [, init] = authFetchMock.mock.calls[0];
     expect(init?.method).toBe('POST');
     expect(init?.signal).toBeTruthy();
-    // 请求体携带报告上下文（盘面事实 + 生活模块）、问题、已提问数与模型口径
+    // 请求体携带报告上下文（盘面事实 + 生活模块）、问题与模型口径（不设每报告次数上限）
     const body = JSON.parse(init!.body as string) as {
       report: { facts: AstrologyChartFacts; modules: ModuleReading[] };
       question: string;
-      askedCount: number;
       timePrecision: string;
       provider: string;
     };
     expect(body.question).toBe(QUESTION);
-    expect(body.askedCount).toBe(0);
     expect(body.provider).toBe('doubao');
     expect(body.timePrecision).toBe('accurate');
     expect(body.report.facts.calculationRevision).toBe(FACTS.calculationRevision);
@@ -152,7 +149,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     const stream = manualSseStream();
     authFetchMock.mockResolvedValue(stream.response);
 
-    const { result } = startAstrologyQaRequest('我该不该去看病？', FACTS, MODULES, { askedCount: 1 });
+    const { result } = startAstrologyQaRequest('我该不该去看病？', FACTS, MODULES, {});
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
     stream.push({
       type: 'answer',
@@ -172,12 +169,11 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     const stream = manualSseStream();
     authFetchMock.mockResolvedValue(stream.response);
 
-    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, { askedCount: 2 });
+    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {});
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
 
     const body = JSON.parse(authFetchMock.mock.calls[0][1]!.body as string) as Record<string, unknown>;
     expect(body.provider).toBe('deepseek');
-    expect(body.askedCount).toBe(2);
 
     stream.push({ type: 'error', error: '问答暂时不可用' });
     stream.close();
@@ -191,7 +187,6 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     authFetchMock.mockResolvedValue(stream.response);
 
     const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {
-      askedCount: 0,
       onDelta: (text) => deltas.push(text),
     });
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
@@ -212,11 +207,9 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     authFetchMock.mockResolvedValueOnce(stale.response).mockResolvedValueOnce(fresh.response);
 
     const first = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {
-      askedCount: 0,
       onDelta: (text) => staleDeltas.push(text),
     });
     const second = startAstrologyQaRequest('本周工作中适合主动争取什么？', FACTS, MODULES, {
-      askedCount: 1,
       onDelta: (text) => freshDeltas.push(text),
     });
     expect(isLatestAstrologyQaRequest(first.token)).toBe(false);
@@ -245,7 +238,6 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     authFetchMock.mockResolvedValue(stream.response);
 
     const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {
-      askedCount: 0,
       onDelta: (text) => deltas.push(text),
     });
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
@@ -260,7 +252,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     expect(deltas).toEqual([]);
   });
 
-  it('失败映射：额度 402 → quota，超限 429 → limit，400 → validation，5xx → model，401 → auth', async () => {
+  it('失败映射：额度 402 → quota，400 → validation，5xx → model，401 → auth', async () => {
     const cases: Array<{ response: Response; kind: string; messagePart: string }> = [
       {
         response: new Response(
@@ -269,17 +261,6 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
         ),
         kind: 'quota',
         messagePart: '额度不足',
-      },
-      {
-        response: new Response(
-          JSON.stringify({
-            error: '本次星语问答已完成，可重新打开报告后继续探索。',
-            code: 'QA_LIMIT_REACHED',
-          }),
-          { status: 429 }
-        ),
-        kind: 'limit',
-        messagePart: '本次星语问答已完成',
       },
       {
         response: new Response(
@@ -306,7 +287,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
 
     for (const item of cases) {
       authFetchMock.mockResolvedValueOnce(item.response);
-      const error = await requestAstrologyAnswer(QUESTION, FACTS, MODULES, { askedCount: 0 }).catch(
+      const error = await requestAstrologyAnswer(QUESTION, FACTS, MODULES, {}).catch(
         (e: unknown) => e
       );
       expect(errorOf(error).kind, item.messagePart).toBe(item.kind);
@@ -318,7 +299,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     const stream = manualSseStream();
     authFetchMock.mockResolvedValue(stream.response);
 
-    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, { askedCount: 0 });
+    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {});
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
     stream.push({ type: 'error', error: '问答超时，请稍后重试' });
     stream.close();
@@ -332,7 +313,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
     const stream = manualSseStream();
     authFetchMock.mockResolvedValue(stream.response);
 
-    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, { askedCount: 0 });
+    const { result } = startAstrologyQaRequest(QUESTION, FACTS, MODULES, {});
     await vi.waitFor(() => expect(authFetchMock).toHaveBeenCalledTimes(1));
     const frame = `data: ${JSON.stringify({
       type: 'answer',
@@ -347,13 +328,7 @@ describe('startAstrologyQaRequest（真实 SSE 问答接缝）', () => {
 });
 
 describe('astrologyQaErrorMessage（可见文案一律中文）', () => {
-  it('额度 / 超限沿用服务端提示，其余给中性重试话术', () => {
-    const limit = new AstrologyQaRequestError(
-      'limit',
-      '本次星语问答已完成，可重新打开报告后继续探索。'
-    );
-    expect(astrologyQaErrorMessage(limit)).toBe('本次星语问答已完成，可重新打开报告后继续探索。');
-
+  it('额度沿用服务端提示，其余给中性重试话术', () => {
     const quota = new AstrologyQaRequestError('quota', '当前额度不足以处理本次对话');
     expect(astrologyQaErrorMessage(quota)).toBe('当前额度不足以处理本次对话');
 

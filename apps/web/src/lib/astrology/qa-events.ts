@@ -18,8 +18,16 @@ import type { AspectType, AstrologyChartFacts, PlanetBody } from './chart-facts'
 import type { ModuleId } from './interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from './zh-names';
 
-/** P0 上限：每份报告每个会话最多 3 个用户问题（服务端强制，前端同步计数 UI） */
-export const ASTROLOGY_QA_MAX_QUESTIONS = 3;
+/**
+ * 单次提问的额度预算（tokens，用于把账号可用额度折算成「还能问几次」）。
+ *
+ * 这两部分是一次提问在服务端预留口径下的占用：
+ * - 提问提示词输入：系统提示词 + 事实层负载 + 生活模块 + 问题（满配含宫位盘实测约 4.8k tokens，
+ *   降级档负载更小，此处按满配取值）；
+ * - 回答输出上限：路由按 ASTROLOGY_QA_MAX_OUTPUT_TOKENS（2048）预留，即使实际回答更短也先占满。
+ * 折算口径偏保守：宁可少报一次，也不承诺问不出来的额度（额度终究由服务端在提问时裁决）。
+ */
+export const ASTROLOGY_QA_QUESTION_UNITS = 7_000;
 
 /** 单次回答最多展示的引用片数（多引用会稀释焦点，也与模块依据片同量级） */
 export const MAX_QA_CITATIONS = 3;

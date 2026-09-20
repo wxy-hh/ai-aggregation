@@ -152,11 +152,6 @@ export const AstrologyQaRequestSchema = z.object({
     modules: z.array(AstrologyModuleSchema).max(5, '生活模块数量超出范围').default([]),
   }),
   question: z.string().trim().min(1, '问题不能为空').max(200, '问题过长，请精简后再问'),
-  /**
-   * 本报告已提问数：仅供客户端 UI 提示（剩余次数徽章与输入区收起）。
-   * 服务端上限以 Redis 计数为准（见 _lib/astrology-qa-limit.ts），不采信该字段。
-   */
-  askedCount: z.number().int('已提问次数不合法').min(0, '已提问次数不合法'),
   /** 出生时间精度（提示词降级口径）；缺省按盘面范围推导 */
   timePrecision: z.enum(['accurate', 'approximate', 'unknown']).optional(),
   provider: z.enum(['doubao', 'deepseek']).default('doubao'),

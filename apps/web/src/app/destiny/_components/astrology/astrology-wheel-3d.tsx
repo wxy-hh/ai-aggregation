@@ -52,22 +52,34 @@ export function AstrologyWheel3D({
             }
           : undefined
       }
-      onPointerLeave={parallaxOn ? () => { px.set(0.5); py.set(0.5); } : undefined}
+      onPointerLeave={
+        parallaxOn
+          ? () => {
+              px.set(0.5);
+              py.set(0.5);
+            }
+          : undefined
+      }
     >
-      {/* ═══ 地面引力透镜投影：悬浮天象仪的深度锚点（Z:-80px） ═══ */}
+      {/* ═══ 地面引力透镜投影：悬浮天象仪的深度锚点（Z:-80px；night-wheel-glow 供夜幕观星金辉覆盖） ═══ */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-[8%] bottom-[-4%] h-[16%] rounded-[100%] bg-[radial-gradient(ellipse,rgba(79,70,229,0.28),transparent_72%)] blur-2xl dark:bg-[radial-gradient(ellipse,rgba(3,7,24,0.85),transparent_75%)]"
+        className="night-wheel-glow pointer-events-none absolute inset-x-[8%] bottom-[-4%] h-[16%] rounded-[100%] bg-[radial-gradient(ellipse,rgba(79,70,229,0.28),transparent_72%)] blur-2xl dark:bg-[radial-gradient(ellipse,rgba(3,7,24,0.85),transparent_75%)]"
         style={{ transform: 'translateZ(-80px)' }}
       />
 
-      <div className={cn('h-full w-full [transform-style:preserve-3d]', idle && !reduceMotion && 'acw-wheel-float')}>
+      <div
+        className={cn(
+          'h-full w-full [transform-style:preserve-3d]',
+          idle && !reduceMotion && 'acw-wheel-float'
+        )}
+      >
         <motion.div
           className="relative h-full w-full [transform-style:preserve-3d]"
           style={parallaxOn ? { rotateX: rx, rotateY: ry } : undefined}
         >
           {/* ═══ 浑天仪外壳层级（精简为 3 层，消除多余装饰） ═══ */}
-          
+
           {/* 第 1 层：磨砂表圈（降低白色对比度，避免与深色盘面硬切） */}
           <div
             aria-hidden
@@ -123,4 +135,3 @@ export function AstrologyWheel3D({
     </div>
   );
 }
-

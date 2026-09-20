@@ -10,10 +10,9 @@
  *   失败：error（中文说明，此后流关闭）
  *
  * 前置拦截顺序（铁律）：
- * 1. 请求体校验（400）→ 2. 每报告上限（服务端按 Redis 计数强制，超限 429 + 明确中文提示；
- *    请求体的 askedCount 只作客户端 UI 提示，服务端不采信；计数后端不可用时放行并记日志）
- *    → 3. 敏感话题（医疗/财务/法律）确定性拦截（不预留额度、不调用模型）
- *    → 4. 模型配置 → 5. 额度预留 → 6. 流式回答。
+ * 1. 请求体校验（400）→ 2. 敏感话题（医疗/财务/法律）确定性拦截（不预留额度、不调用模型）
+ *    → 3. 模型配置 → 4. 额度预留 → 5. 流式回答。
+ * 次数不设每报告上限：能问几次只由账号额度决定（额度不足即下面的 402，前端弹既有额度对话框）。
  *
  * 额度（与八字 copilot / 星座报告同口径）：
  * - 提问前 reserveChatQuota（管理员跳过，免预留）；成功按真实 usage 结算（usage 缺失时按本地估算
@@ -67,7 +66,6 @@ import {
   type AstrologyQaRequestBody,
 } from '../_lib/astrology-qa-request';
 import { buildBlockedAnswer, detectSensitiveTopic } from '../_lib/astrology-qa-safety';
-import { consumeAstrologyQaQuota } from '../_lib/astrology-qa-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -104,17 +102,7 @@ export async function POST(req: Request) {
 
       const { report, question, provider } = parsed.data;
 
-      // 每报告上限：服务端按 Redis 计数强制（请求体的 askedCount 只用于客户端 UI 提示，不采信）
-      const limit = await consumeAstrologyQaQuota(user.id, report.facts);
-      if (!limit.allowed) {
-        return NextResponse.json(
-          {
-            error: '本次星语问答已完成，可重新打开报告后继续探索。',
-            code: 'QA_LIMIT_REACHED',
-          },
-          { status: 429 }
-        );
-      }
+      // 次数只受账号额度约束（下方额度预留），不再设每报告上限
 
       // 敏感话题（医疗 / 财务 / 法律）确定性前置拦截：不过 LLM、不预留额度、不计费
       const sensitiveTopic = detectSensitiveTopic(question);

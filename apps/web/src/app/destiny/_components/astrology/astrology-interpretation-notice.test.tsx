@@ -3,7 +3,7 @@
  *
  * 锁定的外部行为：
  * - 额度不足：给登录 / 查看额度引导（匿名给登录入口，登录用户给额度入口）；
- * - 解读未接入：中性「即将上线」口径，不给额度入口；
+ * - 记录里没存解读：照实说「这份记录只保存了星盘」，不写「解读正在接入中」这种与事实不符的话；
  * - 未取得结论：如实说没拿到结论，不写「整理中」这类会让用户干等的话；
  * - 解读未完成（超时/校验不过）：说明可重试，并给出「重试解读」入口（重试只补解读）；
  * - 各口径都明确告知星盘事实可用、可照常查看与点选。
@@ -55,13 +55,17 @@ describe('AstrologyInterpretationNotice', () => {
     expect(screen.getByRole('link', { name: /查看我的额度/ })).toHaveAttribute('href', '/profile');
   });
 
-  it('解读未接入：中性口径，不给额度入口', () => {
+  it('记录里没存解读：照实说明缺的是这份记录的解读，不给额度入口', () => {
     setAnonymousUser(true);
-    render(<AstrologyInterpretationNotice reason="not-wired" />);
+    render(<AstrologyInterpretationNotice reason="not-wired" onRetry={() => {}} />);
 
-    expect(screen.getByText('解读暂不可用')).toBeInTheDocument();
-    expect(screen.getByText(/AI 解读正在接入中/)).toBeInTheDocument();
+    expect(screen.getByText('这份记录只保存了星盘')).toBeInTheDocument();
+    expect(screen.getByText(/当时的 AI 解读没有随记录一起保存/)).toBeInTheDocument();
+    // 解读服务早已接入：不再出现「正在接入中」这种与事实不符的说明，也不引导去充值
+    expect(screen.queryByText(/正在接入中/)).toBeNull();
     expect(screen.queryByRole('link')).toBeNull();
+    // 这份记录仍可补解读：入口在，且不会重算星盘
+    expect(screen.getByRole('button', { name: /重试解读/ })).toBeInTheDocument();
   });
 
   it('未取得结论 / 未发起：不写「整理中」，如实说明可重新测算', () => {
@@ -71,10 +75,10 @@ describe('AstrologyInterpretationNotice', () => {
     expect(screen.getByText(/没有取到解读结论/)).toBeInTheDocument();
     unmount();
 
-    // 从历史恢复的旧结果：reason 为 null，同样按「尚无解读」口径说明
+    // 从历史恢复的旧记录（没有存解读）：reason 为 null，按同一口径说明
     render(<AstrologyInterpretationNotice reason={null} />);
     expect(screen.queryByText(/整理中/)).toBeNull();
-    expect(screen.getByRole('heading', { name: '解读暂不可用' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '这份记录只保存了星盘' })).toBeInTheDocument();
   });
 
   it('解读未完成：如实说明可重试，重试按钮回调生效', () => {

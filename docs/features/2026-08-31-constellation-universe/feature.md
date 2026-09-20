@@ -125,5 +125,5 @@
 
 - 术语统一使用设计文档 §16 术语表（本命盘、大三要素、宫位、相位、行运、时间精度）；界面不出现英文占星术语。
 - 「黄金主轴样例库」（20–30 条）是内容验收基准，需在 AI 提示词联调前建立。
-- 设计稿级 HTML 页面（含 Playwright 截图验收管线）在 `docs/designs/assets/constellation-universe/` 另有沉淀，可作为视觉参照但非像素级目标。
+- 设计稿级 HTML 页面（含 Playwright 截图验收管线）曾沉淀于 `docs/designs/assets/constellation-universe/`，已随本功能定稿退役删除（设计文档 V1.6 明确不设像素级交付稿）；历史版本可从 git 找回。
 - 所有用户可见文本与代码注释使用中文；移动端优先；最小改动，不做 git 提交。

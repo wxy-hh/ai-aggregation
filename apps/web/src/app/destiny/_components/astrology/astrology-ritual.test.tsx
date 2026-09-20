@@ -74,6 +74,23 @@ describe('AstrologyRitualResult（仪式转场闸门）', () => {
     expect(screen.getByText('AI 正在基于星盘事实整理宇宙重点')).toBeInTheDocument();
   });
 
+  it('真值在途：轮盘位先立起「绘制中」的仪器本体（不是空心圆），真值到后由星盘轮接管', () => {
+    primeWorkspace({ chartFacts: null });
+    const { rerender } = render(<AstrologyRitualResult />);
+
+    // 真值未到：仪器框架（深空盘面 + 黄道环 + 星座符号）已在，轮盘位不是空白
+    expect(screen.getByTestId('astrology-wheel-frame')).toBeInTheDocument();
+    expect(screen.queryByLabelText('本命星盘')).toBeNull();
+
+    // 真值到达：框架让位给真正的星盘轮
+    act(() => {
+      useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', { chartFacts: SAMPLE_CHART_ACCURATE });
+    });
+    rerender(<AstrologyRitualResult />);
+    expect(screen.queryByTestId('astrology-wheel-frame')).toBeNull();
+    expect(screen.getByLabelText('本命星盘')).toBeInTheDocument();
+  });
+
   it('真值已到即转场（不等待解读全文）：解读在途时也照常进结果页', () => {
     primeWorkspace({
       chartFacts: SAMPLE_CHART_ACCURATE,
