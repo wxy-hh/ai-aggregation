@@ -91,7 +91,7 @@ function OptionSegment<T extends string>({
               onClick={() => onChange(option.value)}
               className={cn(
                 'flex h-9 items-center justify-center whitespace-nowrap rounded-full px-3 text-xs font-medium',
-                'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                'transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
                 selected
                   ? cn(
                       'text-white shadow-[0_6px_16px_-6px_rgba(73,105,233,0.55)]',
@@ -258,7 +258,7 @@ export function AstrologyShareEntry({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="relative mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-indigo-200/90 bg-indigo-50/70 text-sm font-semibold text-indigo-700 transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-100/80 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-400/30 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20"
+          className="relative mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 overflow-hidden rounded-full border border-indigo-200/90 bg-indigo-50/70 text-sm font-semibold text-indigo-700 transition-all duration-200 hover:border-indigo-300 hover:bg-indigo-100/80 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-400/30 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20"
         >
           <Share2 className="h-4 w-4" strokeWidth={2} />
           生成分享卡
@@ -268,6 +268,7 @@ export function AstrologyShareEntry({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           contentAnimation="none"
+          overlayClassName="bg-slate-950/50 backdrop-blur-md"
           className={cn(
             // 移动端（lg 以下，含触屏平板）：底部抽屉；lg 起：居中弹层（与八字分享卡同一布局模式）
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 gap-0 p-0',

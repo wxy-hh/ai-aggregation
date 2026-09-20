@@ -223,7 +223,7 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
             aria-expanded={open}
             aria-controls={open ? 'astro-qa-conversation' : undefined}
             aria-haspopup={isDesktop ? undefined : 'dialog'}
-            className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-indigo-300/60 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/30 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+            className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-full border border-indigo-300/60 text-sm font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/30 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
           >
             {asked > 0 ? '继续提问' : '开始提问'}
           </button>
@@ -234,10 +234,12 @@ export function AstrologyQaEntry({ facts, modules, onLocateBody, onLocateModule 
       {!isDesktop && (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent
+            contentAnimation="none"
+            overlayClassName="bg-slate-950/50 backdrop-blur-md"
             className={cn(
               'inset-x-0 bottom-0 top-auto flex max-h-[82vh] w-full max-w-none translate-x-0 translate-y-0 flex-col',
               'rounded-t-[28px] border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',
-              'bg-white/95 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/95',
+              'bg-white/95 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/[0.92]',
               'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom'
             )}
           >
@@ -324,7 +326,7 @@ function QaConversation({
             type="button"
             onClick={onRequestClose}
             aria-label="收起星语问答"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
           >
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
@@ -383,7 +385,7 @@ function QaConversation({
                           m.kind === 'blocked'
                             ? 'border-amber-300/60 text-amber-700 hover:bg-amber-100/70 dark:border-amber-300/30 dark:text-amber-200 dark:hover:bg-amber-400/10'
                             : 'border-indigo-300/50 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-300/25 dark:text-indigo-200 dark:hover:bg-indigo-400/10',
-                          'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40'
+                          'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent'
                         )}
                       >
                         {c.label}
@@ -451,7 +453,7 @@ function QaConversation({
               type="button"
               onClick={() => onSend(q)}
               disabled={pending}
-              className="rounded-xl border border-indigo-100/80 bg-indigo-50/40 px-3 py-2 text-left text-xs leading-relaxed text-indigo-700 transition-colors hover:bg-indigo-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:opacity-50 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+              className="rounded-xl border border-indigo-100/80 bg-indigo-50/40 px-3 py-2 text-left text-xs leading-relaxed text-indigo-700 transition-colors hover:bg-indigo-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-50 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
             >
               {q}
             </button>

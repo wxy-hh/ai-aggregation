@@ -172,7 +172,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
             <button
               type="button"
               onClick={formStep === 1 ? backToHome : backToStep1}
-              className="-ml-2 flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-muted dark:hover:text-indigo-200"
+              className="-ml-2 flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-muted dark:hover:text-indigo-200"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2} />
               {formStep === 1 ? '星座寰宇' : '上一步'}
@@ -261,7 +261,7 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
             </aside>
 
             {/* 表单卡：高对比实体卡，像被星图照亮的档案页 */}
-            <section className="h-fit rounded-[28px] border border-white/60 bg-white/80 p-6 shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/85 dark:shadow-[0_24px_64px_-24px_rgba(2,6,23,0.8)] sm:p-8">
+            <section className="h-fit rounded-[28px] border border-white/60 bg-white/80 p-6 shadow-[0_24px_64px_-24px_rgba(30,41,82,0.25)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/[0.88] dark:shadow-[0_24px_64px_-24px_rgba(2,6,23,0.8)] sm:p-8">
               {/* 天体星轨双轴校准轨 */}
               <div className="mb-7">
                 <div className="flex items-center justify-between gap-2 pb-3">
@@ -353,13 +353,13 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
           {/* 主操作位：移动端 fixed 抬升避开全局底部导航（移动端命运页为文档级滚动，sticky 无效）；
               桌面端在内部滚动容器内 sticky 贴底。预留安全区，不是第二条底部导航 */}
           <div className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-20 px-5 pb-2 pt-2 sm:px-8 xl:sticky xl:inset-x-auto xl:bottom-0 xl:mt-8 xl:px-0 xl:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_-8px_32px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0B1024]/90 dark:shadow-[0_-12px_40px_-16px_rgba(2,6,23,0.8)]">
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-[0_-8px_32px_-8px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0B1024]/[0.88] dark:shadow-[0_-12px_40px_-16px_rgba(2,6,23,0.8)]">
               {formStep === 2 && (
                 <button
                   type="button"
                   onClick={backToStep1}
                   disabled={blockingLoading}
-                  className="flex min-h-12 shrink-0 items-center justify-center rounded-full px-5 text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:opacity-50 dark:text-night-muted dark:hover:text-indigo-200"
+                  className="flex min-h-12 shrink-0 items-center justify-center rounded-full px-5 text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:opacity-50 dark:text-night-muted dark:hover:text-indigo-200"
                 >
                   返回上一步
                 </button>

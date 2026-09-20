@@ -230,7 +230,7 @@ function PlanetFactCard({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
+              className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-muted dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               <span>全部星体</span>
@@ -256,7 +256,7 @@ function PlanetFactCard({
                   onClick={() => onSelectBody(p.body)}
                   title={`${PLANET_CN[p.body]}在${ZODIAC_CN[p.sign]}`}
                   className={cn(
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
                     isCurrent
                       ? 'bg-indigo-600 text-white shadow-xs dark:bg-indigo-500'
                       : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
@@ -276,7 +276,7 @@ function PlanetFactCard({
             type="button"
             onClick={onClose}
             aria-label="关闭事实卡"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
           >
             <X className="h-4 w-4" strokeWidth={2} />
           </button>
@@ -293,7 +293,7 @@ function PlanetFactCard({
                 {PLANET_CN[body]} · {ZODIAC_CN[placement.sign]}
               </h4>
               {placement.degree !== null && (
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
                   {formatDegreeMinute(placement.degree)}
                 </span>
               )}
@@ -377,7 +377,7 @@ function PlanetFactCard({
                   key={id}
                   type="button"
                   onClick={() => onLocateModule(id)}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-full border border-indigo-200/80 bg-white px-2.5 text-[11px] font-medium text-indigo-600 shadow-2xs transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-full border border-indigo-200/80 bg-white px-2.5 text-[11px] font-medium text-indigo-600 shadow-2xs transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
                 >
                   <span>{m.title}</span>
                   <ChevronRight className="h-3 w-3 opacity-60" />
@@ -427,7 +427,7 @@ function MobileCollapse({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-4 py-2.5 text-left transition-colors hover:border-indigo-300/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-white/10 dark:bg-[#0D1226] sm:hidden"
+        className="flex min-h-11 w-full items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white px-4 py-2.5 text-left transition-colors hover:border-indigo-300/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-white/10 dark:bg-[#0D1226] sm:hidden"
       >
         <Icon className="h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-300" strokeWidth={1.9} />
         <span
@@ -856,7 +856,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           {/* ═══ 主栏 8 栏（与洞察轨同行构成首屏）：护照头 → 主轴 → 大三要素 ═══ */}
           <div className="order-1 min-w-0 xl:col-span-8">
             {/* ── 1. 宇宙护照头（天命档案微晶印鉴；极淡扫描光入场一次；night-card 供夜幕观星鎏金描边覆盖） ── */}
-            <header className="night-card relative overflow-hidden rounded-[24px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:p-6">
+            <header className="night-card relative overflow-hidden rounded-[28px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:rounded-[32px] sm:p-6">
+              {/* 玻璃壳顶端 1px 高光线（G-3 玻璃语言；夜幕为极淡白） */}
+              <span
+                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent dark:via-white/20"
+                aria-hidden="true"
+              />
               {/* 背景微星轨经纬装饰线 */}
               <div
                 aria-hidden
@@ -927,7 +932,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   type="button"
                   onClick={() => setBasisOpen((v) => !v)}
                   aria-expanded={basisOpen}
-                  className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
+                  className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
                 >
                   盘面依据
                   <ChevronDown
@@ -947,7 +952,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                       transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: 'easeOut' }}
                       className="overflow-hidden"
                     >
-                      <dl className="mt-2 space-y-1.5 rounded-2xl bg-slate-50/90 p-4 text-xs leading-relaxed text-slate-600 dark:bg-[#0B1020] dark:text-slate-300">
+                      <dl className="mt-2 space-y-1.5 rounded-2xl bg-slate-50/90 p-4 text-xs leading-relaxed text-slate-600 dark:bg-[#090E20] dark:text-slate-300">
                         {(['sun', 'moon', 'ascendant'] as const).map((k) => {
                           const term = placementTermLine(chartFacts, k);
                           if (!term) return null;
@@ -1063,7 +1068,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                               }
                         }
                         className={cn(
-                          'group rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-1 dark:bg-[#0D1226]',
+                          'group relative rounded-2xl border bg-white p-4 transition-all duration-300 hover:-translate-y-0.5 dark:bg-[#0D1226]',
                           // 太阳为天生主角：鎏金描边 + 金色光晕；其余星卡保持靛紫体系
                           card.key === 'sun'
                             ? 'border-amber-300/70 shadow-[0_10px_30px_-14px_rgba(180,133,42,0.35)] hover:shadow-[0_20px_44px_-14px_rgba(180,133,42,0.45)] dark:border-[#E7C873]/35 dark:shadow-[0_12px_36px_-14px_rgba(231,200,115,0.30)] dark:hover:shadow-[0_22px_50px_-14px_rgba(231,200,115,0.40)]'
@@ -1079,7 +1084,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                               className={cn(
                                 'flex h-8 w-8 items-center justify-center rounded-full',
                                 card.key === 'sun'
-                                  ? 'bg-amber-100/90 text-[#B4852A] dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
+                                  ? 'bg-amber-100/90 text-amber-700 dark:bg-[#E7C873]/[0.14] dark:text-[#E7C873]'
                                   : 'bg-indigo-100/80 text-indigo-600 dark:bg-indigo-400/[0.12] dark:text-indigo-300'
                               )}
                             >
@@ -1098,7 +1103,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                             className={cn(
                               'mt-3 text-[11px] font-semibold tracking-wide',
                               card.key === 'sun'
-                                ? 'text-[#B4852A] dark:text-[#E7C873]'
+                                ? 'text-amber-700 dark:text-[#E7C873]'
                                 : 'text-indigo-500 dark:text-indigo-300/90'
                             )}
                           >
@@ -1118,6 +1123,14 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                             {card.reading.action}
                           </p>
                         </div>
+                        {/* 整卡可点：卡面上浮即承诺可点（DESIGN §4.4 可点击卡片整卡可点），
+                            点击在星盘轮上定位这颗星体；上升不是可选星体，只滚到轮盘区不选中 */}
+                        <button
+                          type="button"
+                          onClick={() => handleLocateBody(card.key === 'ascendant' ? null : card.key)}
+                          aria-label={`在星盘轮上查看${card.title}`}
+                          className="absolute inset-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+                        />
                       </motion.article>
                     ))}
                   </div>
@@ -1134,7 +1147,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 onClick={() => handleLocateModule('week')}
                 className={cn(
                   'mt-6 flex min-h-[52px] w-full items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/85 px-4 py-2.5 text-left shadow-sm backdrop-blur-sm backdrop-saturate-150 xl:hidden',
-                  'transition-all duration-200 active:scale-[0.98] hover:border-indigo-300 hover:bg-slate-50/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                  'transition-all duration-200 active:scale-[0.98] hover:border-indigo-300 hover:bg-slate-50/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
                   'dark:border-white/10 dark:bg-[#0D1226]/80 dark:hover:bg-[#121832]'
                 )}
               >
@@ -1173,7 +1186,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
           <section
             id="astrology-wheel-section"
             aria-label="交互星盘轮"
-            className="order-2 relative -mx-5 overflow-hidden border-y border-indigo-100/80 bg-[radial-gradient(ellipse_at_top_left,rgba(224,231,255,0.7),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(245,243,255,0.8),transparent_50%),linear-gradient(135deg,#F6F8FF_0%,#FFFFFF_50%,#F3F5FF_100%)] p-5 shadow-[0_24px_64px_-32px_rgba(30,41,82,0.15)] dark:border-white/[0.08] dark:bg-[radial-gradient(ellipse_at_20%_20%,rgba(67,56,202,0.18),transparent_48%),radial-gradient(ellipse_at_80%_80%,rgba(147,51,234,0.12),transparent_48%),linear-gradient(155deg,#040711_0%,#080D1D_50%,#0C132B_100%)] sm:mx-0 sm:rounded-[32px] sm:border sm:p-8 xl:order-3 xl:col-span-12 xl:p-10"
+            className="order-2 relative -mx-5 overflow-hidden border-y border-indigo-100/80 bg-[radial-gradient(ellipse_at_top_left,rgba(224,231,255,0.7),transparent_50%),radial-gradient(ellipse_at_bottom_right,rgba(245,243,255,0.8),transparent_50%),linear-gradient(135deg,#F6F8FF_0%,#FFFFFF_50%,#F3F5FF_100%)] p-5 shadow-[0_24px_64px_-32px_rgba(30,41,82,0.15)] dark:border-white/[0.08] dark:bg-[radial-gradient(ellipse_at_20%_20%,rgba(67,56,202,0.18),transparent_48%),radial-gradient(ellipse_at_80%_80%,rgba(147,51,234,0.12),transparent_48%),linear-gradient(155deg,#040711_0%,#090E20_50%,#0C132B_100%)] sm:mx-0 sm:rounded-[32px] sm:border sm:p-8 xl:order-3 xl:col-span-12 xl:p-10"
           >
             {/* 章节带氛围：顶缘微晶星光线 + 轮盘列后方双层液态星云辉光（纯装饰） */}
             <div
@@ -1216,7 +1229,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
               </div>
 
               {/* 右列：等价文本清单与星体深度解构台（桌面端原位切换，彻底消除底部撑开与页面跳动） */}
-              <div className="mt-6 min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_44px_-24px_rgba(30,41,82,0.25)] backdrop-blur-sm backdrop-saturate-150 dark:border-white/[0.12] dark:bg-[#0C1124]/[0.90] dark:shadow-[0_20px_50px_-24px_rgba(0,0,0,0.85)] sm:p-5 xl:mt-0 xl:flex xl:min-h-[500px] xl:flex-col">
+              <div className="mt-6 min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_44px_-24px_rgba(30,41,82,0.25)] dark:border-white/[0.12] dark:bg-[#0D1226]/[0.88] dark:shadow-[0_20px_50px_-24px_rgba(0,0,0,0.85)] sm:p-5 xl:mt-0 xl:flex xl:min-h-[500px] xl:flex-col">
                 <AnimatePresence mode="wait" initial={false}>
                   {selectedPlacement?.sign && selectedBody ? (
                     <motion.div
@@ -1271,7 +1284,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                                   onClick={() => setSelectedBody(active ? null : item.body)}
                                   aria-pressed={active}
                                   className={cn(
-                                    'flex min-h-11 w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                                    'flex min-h-11 w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
                                     active
                                       ? 'bg-indigo-50 dark:bg-indigo-400/10'
                                       : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'
@@ -1288,7 +1301,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                                     )}
                                   />
                                   <span className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 sm:text-sm">
-                                    <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                    <span className="font-semibold tabular-nums text-slate-800 dark:text-slate-100">
                                       {PLANET_CN[item.body]}在{ZODIAC_CN[item.sign]}
                                       {item.degree !== null &&
                                         ` ${formatDegreeMinute(item.degree)}`}
@@ -1317,7 +1330,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                             type="button"
                             onClick={() => setShowAllPlanets((v) => !v)}
                             aria-expanded={showAllPlanets}
-                            className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
+                            className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
                           >
                             {showAllPlanets
                               ? '收起清单'
@@ -1336,7 +1349,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                           type="button"
                           onClick={() => setShowAllTerms((v) => !v)}
                           aria-expanded={showAllTerms}
-                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
                         >
                           {showAllTerms ? '收起术语数据' : '查看全部术语数据'}
                           <ChevronDown
@@ -1357,7 +1370,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                             transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: 'easeOut' }}
                             className="overflow-hidden"
                           >
-                            <ul className="mt-2 space-y-1.5 rounded-xl bg-slate-50/90 p-3.5 text-[11px] leading-relaxed text-slate-500 dark:bg-[#0B1020] dark:text-night-muted">
+                            <ul className="mt-2 space-y-1.5 rounded-xl bg-slate-50/90 p-3.5 text-[11px] leading-relaxed text-slate-500 dark:bg-[#090E20] dark:text-night-muted">
                               {chartFacts.aspects
                                 .filter((a) => a.stability === 'stable')
                                 .map((a) => (
@@ -1394,7 +1407,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     onClick={() => setSelectedBody(null)}
-                    className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-xs"
+                    className="fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-md"
                     aria-hidden
                   />
                   {/* 底部抽屉主体 */}
@@ -1404,7 +1417,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: '100%' }}
                     transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto custom-scrollbar rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0E1430]/95"
+                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto custom-scrollbar rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0E1430]/[0.92]"
                     role="dialog"
                     aria-label={`${PLANET_CN[selectedBody]}事实卡`}
                   >
@@ -1472,7 +1485,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                 type="button"
                 onClick={() => setStatusOpen((v) => !v)}
                 aria-expanded={statusOpen}
-                className="flex min-h-11 w-full items-center justify-between gap-3 px-5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:hidden"
+                className="flex min-h-11 w-full items-center justify-between gap-3 px-5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent sm:hidden"
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <Orbit
@@ -1523,7 +1536,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                   <button
                     type="button"
                     onClick={recalculate}
-                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/70 text-xs font-semibold text-slate-700 transition-all duration-150 hover:border-indigo-300/70 hover:bg-slate-100/90 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-indigo-400/30 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-slate-50/70 text-xs font-semibold text-slate-700 transition-all duration-150 hover:border-indigo-300/70 hover:bg-slate-100/90 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300 dark:hover:border-indigo-400/30 dark:hover:bg-white/[0.08] dark:hover:text-white"
                   >
                     <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
                     {withHouses ? '修改资料重新演算' : '补充资料或重校'}

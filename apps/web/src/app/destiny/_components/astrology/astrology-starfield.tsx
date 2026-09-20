@@ -163,7 +163,7 @@ export function AstrologyStarfield({ seed = 20260806 }: { seed?: number }) {
           key={s.key}
           className={cn(
             'absolute rounded-full bg-slate-400/40 dark:bg-white',
-            s.twinkle && 'animate-pulse motion-reduce:animate-none'
+            s.twinkle && 'animate-astrology-twinkle'
           )}
           style={{
             left: `${s.left}%`,
@@ -180,7 +180,7 @@ export function AstrologyStarfield({ seed = 20260806 }: { seed?: number }) {
       {nearStars.map((s) => (
         <span
           key={`near-${s.key}`}
-          className="absolute animate-pulse rounded-full bg-indigo-300/60 motion-reduce:animate-none dark:bg-white"
+          className="absolute animate-astrology-twinkle rounded-full bg-indigo-300/60 dark:bg-white"
           style={{
             left: `${s.left}%`,
             top: `${s.top}%`,
@@ -208,7 +208,6 @@ export function AstrologyStarfield({ seed = 20260806 }: { seed?: number }) {
           }}
         />
       ))}
-      <style>{`@keyframes acw-meteor { 0% { transform: translateX(0) rotate(-38deg); opacity: 0; } 3% { opacity: 0.9; } 9% { transform: translateX(-190px) rotate(-38deg); opacity: 0; } 100% { transform: translateX(-190px) rotate(-38deg); opacity: 0; } }`}</style>
     </div>
   );
 }

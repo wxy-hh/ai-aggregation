@@ -137,7 +137,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                   z-10 必须保留：3D 舞台的磨砂表圈是 -inset-[5.5%]（外扩约 27px），会盖到盘上方的标注，
                   且轮盘在 DOM 顺序上靠后、自带层叠上下文，不抬升就会把标注文字压在弧线下面。
                   盘内点选后可用 Escape / 点击盘面空白 / HUD 关闭按钮复原，无需再由这里承担复位职责 */}
-              <span className="relative z-10 mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-1 text-xs font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/90 dark:text-indigo-200">
+              <span className="relative z-10 mx-auto mb-2.5 block w-fit rounded-full border border-indigo-200/90 bg-white/90 px-3 py-1 text-xs font-semibold tracking-wider text-indigo-600 dark:border-indigo-300/30 dark:bg-[#0D1230]/[0.88] dark:text-indigo-200">
                 示例星盘 · 可点选星体体验
               </span>
 
@@ -160,7 +160,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                     animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
                     exit={{ opacity: 0, y: 8, scale: 0.96, x: '-50%' }}
                     transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl backdrop-saturate-150 dark:border-indigo-400/30 dark:bg-[#0D122E]/95 dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
+                    className="absolute -bottom-6 left-1/2 z-20 w-[92%] max-w-[360px] rounded-2xl border border-indigo-200/90 bg-white/95 p-3.5 shadow-[0_16px_40px_-8px_rgba(79,70,229,0.25)] backdrop-blur-2xl backdrop-saturate-150 dark:border-indigo-400/30 dark:bg-[#0D122E]/[0.92] dark:shadow-[0_16px_44px_-8px_rgba(2,6,23,0.75)]"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold tracking-wide text-indigo-600 dark:text-indigo-300">
@@ -280,7 +280,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
               <button
                 type="button"
                 onClick={() => restoreAstrologyFromHistory(recentRecord.id)}
-                className="min-h-11 shrink-0 rounded-full px-3 text-xs font-medium text-indigo-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:text-indigo-200"
+                className="min-h-11 shrink-0 rounded-full px-3 text-xs font-medium text-indigo-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:text-indigo-200"
               >
                 继续查看
               </button>
@@ -303,7 +303,7 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
             'lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:w-[calc(100%-3rem)] lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px] lg:pb-0',
             // G-3 玻璃：自上而下渐隐 + 顶部 1px 高光线（深色档落在星盘深空 #0D1226 一脉）
             'bg-gradient-to-b from-white/95 via-white/85 to-white/70 backdrop-blur-2xl backdrop-saturate-150',
-            'dark:border-white/10 dark:from-[#0D1226]/[0.96] dark:via-[#0C1124]/[0.93] dark:to-[#0B1020]/[0.90]',
+            'dark:border-white/10 dark:from-[#0D1226]/[0.96] dark:via-[#0D1226]/[0.92] dark:to-[#090E20]/[0.88]',
             'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.28)]',
             // 入场 200ms（tailwindcss-animate 的 duration-* 与核心 transition-duration 同名，且被
             // data-[state=open]:animate-in 的属性选择器压过，故用内联样式写死动画时长）

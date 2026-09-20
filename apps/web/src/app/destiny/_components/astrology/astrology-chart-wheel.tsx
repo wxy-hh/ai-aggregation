@@ -139,7 +139,7 @@ const ASPECT_LINE_CLASS: Record<AspectType, { className: string; dash?: string }
 const ASPECT_LINE_DIM: Record<AspectType, { className: string; dash?: string }> = {
   opposition: { className: 'stroke-indigo-200/35 dark:stroke-white/20' },
   trine: { className: 'stroke-amber-200/35 dark:stroke-[#FDE68A]/25' },
-  square: { className: 'stroke-indigo-200/30 dark:stroke-white/18' },
+  square: { className: 'stroke-indigo-200/30 dark:stroke-white/[0.18]' },
   sextile: { className: 'stroke-amber-200/30 dark:stroke-[#FDE68A]/20', dash: '3 5' },
   conjunction: { className: 'stroke-amber-200/40 dark:stroke-white/25' },
 };
@@ -1012,7 +1012,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
                       <circle cx={0} cy={0} r={19} fill="none" strokeWidth={1.6} stroke={PLANET_ORB[p.body].glow} />
 
                       {/* 选中超新星十字星芒（自转放射光线） */}
-                      <g className="animate-[spin_18s_linear_infinite]">
+                      <g className="animate-acw-spin-slow">
                         <line x1={-30} y1={0} x2={30} y2={0} strokeWidth={1} stroke={PLANET_ORB[p.body].glow} strokeOpacity={0.85} />
                         <line x1={0} y1={-30} x2={0} y2={30} strokeWidth={1} stroke={PLANET_ORB[p.body].glow} strokeOpacity={0.85} />
                       </g>
@@ -1126,7 +1126,7 @@ export function AstrologyChartWheel({ facts, className, planetOverrides, revealS
       {interactive && activePlanet && activePos && (
         <div
           aria-hidden
-          className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/90 px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10 backdrop-blur-xl backdrop-saturate-150"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/[0.88] px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10 backdrop-blur-xl backdrop-saturate-150"
           style={{
             left: `${(activePos[0] / 560) * 100}%`,
             top: `${(activePos[1] / 560) * 100}%`,

@@ -566,7 +566,7 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                 <button
                   type="button"
                   onClick={backToForm}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-night-muted dark:hover:text-indigo-200"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-full text-sm font-medium text-slate-500 transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-muted dark:hover:text-indigo-200"
                 >
                   <Pencil className="h-4 w-4" strokeWidth={1.9} />
                   返回修改资料
@@ -712,7 +712,7 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
             onClick={skipRitual}
             disabled={!factsReady}
             aria-label={factsReady ? '跳过动画，直接查看结果' : '星盘仍在计算，稍后才能跳过动画'}
-            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-xs font-medium text-day-muted transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:pointer-events-none disabled:opacity-40 lg:bottom-6 lg:right-6 dark:text-night-faint dark:hover:text-indigo-200"
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-11 min-w-11 items-center justify-center px-3 text-xs font-medium text-day-muted transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:pointer-events-none disabled:opacity-40 lg:bottom-6 lg:right-6 dark:text-night-faint dark:hover:text-indigo-200"
           >
             跳过动画
           </button>

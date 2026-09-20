@@ -25,7 +25,7 @@ const nightNavShellClass = cn(
 
 const toggleBtnClass = cn(
   'flex h-8 w-8 items-center justify-center rounded-full',
-  'border border-white/55 bg-white/80 text-slate-400 shadow-[0_4px_12px_-6px_rgba(15,23,42,0.18)]',
+  'border border-white/50 bg-white/80 text-slate-400 shadow-[0_4px_12px_-6px_rgba(15,23,42,0.18)]',
   'backdrop-blur-sm backdrop-saturate-150 transition-[color,background-color,border-color,box-shadow] duration-200',
   'hover:border-white/80 hover:bg-white/95 hover:text-slate-600 hover:shadow-[0_6px_16px_-8px_rgba(15,23,42,0.22)]',
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4969E9]/20',

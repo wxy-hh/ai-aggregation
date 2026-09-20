@@ -79,7 +79,7 @@ export function AstrologyNightToggle() {
         className={cn(
           'night-toggle inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
           'border-indigo-200/70 bg-white/70 text-indigo-600 hover:bg-indigo-50',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
           'dark:border-indigo-300/20 dark:bg-white/[0.06] dark:text-indigo-200 dark:hover:bg-white/[0.1]',
           showInvite && 'astrology-invite-pulse'
         )}
@@ -92,7 +92,7 @@ export function AstrologyNightToggle() {
       {showInvite && (
         <div
           role="status"
-          className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-indigo-200/60 bg-white/95 p-3 text-xs leading-relaxed shadow-[0_16px_40px_-16px_rgba(30,41,82,0.3)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/95"
+          className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-indigo-200/60 bg-white/95 p-3 text-xs leading-relaxed shadow-[0_16px_40px_-16px_rgba(30,41,82,0.3)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:bg-[#0D1226]/[0.92]"
         >
           <span
             aria-hidden

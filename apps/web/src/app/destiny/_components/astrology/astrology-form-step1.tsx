@@ -285,7 +285,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
               transition={reduceMotion ? { duration: 0.01 } : { duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
               className="overflow-hidden"
             >
-              <div className="mt-3 flex items-center gap-3.5 rounded-2xl border border-indigo-200/90 bg-white/80 p-3.5 shadow-[0_8px_20px_-6px_rgba(73,105,233,0.12)] backdrop-blur-md backdrop-saturate-150 dark:border-indigo-300/20 dark:bg-[#0B1026]/90 dark:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.6)]">
+              <div className="mt-3 flex items-center gap-3.5 rounded-2xl border border-indigo-200/90 bg-white/80 p-3.5 shadow-[0_8px_20px_-6px_rgba(73,105,233,0.12)] backdrop-blur-md backdrop-saturate-150 dark:border-indigo-300/20 dark:bg-[#0B1026]/[0.88] dark:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.6)]">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-100/90 bg-indigo-50/80 text-indigo-600 shadow-sm dark:border-indigo-300/20 dark:bg-white/5 dark:text-indigo-300">
                   <SunSignGlyph className="h-6 w-6" />
                 </span>
@@ -328,7 +328,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
                 className={cn(
                   'flex h-11 items-center justify-center rounded-full border text-sm font-medium',
                   'transition-all duration-200 active:scale-[0.97]',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
                   'disabled:cursor-not-allowed disabled:opacity-60',
                   selected
                     ? cn(

@@ -790,7 +790,7 @@ function PlanetOrb({
         <Html position={[0, orbR + 0.34, 0.1]} center zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
           <div
             aria-hidden
-            className="whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/90 px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10"
+            className="whitespace-nowrap rounded-full border border-amber-300/40 bg-[#0A0E24]/[0.88] px-3.5 py-1 text-xs font-bold text-amber-200 shadow-[0_8px_32px_-6px_rgba(0,0,0,0.85)] ring-1 ring-white/10"
           >
             ✦ {PLANET_CN[node.body]} · {ZODIAC_CN[node.sign]}
             {node.degree !== null ? ` ${Math.floor(node.degree)}°` : ''}

@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { LockKeyhole, RefreshCw, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
 import type { AstrologyInterpretationReason } from '@/stores/destiny-workspace-store';
+import { AstrologyCtaButton } from './astrology-cta-button';
 
 /** not-saved：记录里没有存解读（旧记录 / 本次会话没有请求解读），与服务端原因档 not-wired 同槽位 */
 type NoticeVariant = 'quota' | 'not-saved' | 'model' | 'unknown';
@@ -101,19 +102,15 @@ export function AstrologyInterpretationNotice({
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2.5">
             {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-indigo-300/70 bg-indigo-50/80 px-4 text-sm font-semibold text-indigo-600 transition-colors hover:border-indigo-400 hover:bg-indigo-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
-              >
+              <AstrologyCtaButton onClick={onRetry}>
                 <RefreshCw className="h-4 w-4" strokeWidth={2} />
                 重试解读
-              </button>
+              </AstrologyCtaButton>
             )}
             {variant === 'quota' && (
               <Link
                 href={isAnonymous ? '/login' : '/profile'}
-                className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-300/70 bg-indigo-50/80 px-4 text-sm font-semibold text-indigo-600 transition-colors hover:border-indigo-400 hover:bg-indigo-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
+                className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-300/70 bg-indigo-50/80 px-4 text-sm font-semibold text-indigo-600 transition-colors hover:border-indigo-400 hover:bg-indigo-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
               >
                 {isAnonymous ? '使用账号密码登录，获得更多额度' : '查看我的额度'}
               </Link>

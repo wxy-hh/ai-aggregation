@@ -715,6 +715,32 @@
   transform-origin: center;
 }
 
+/* 星盘轮差速环：18s / 36s / 48s 三档平稳公转（任意值 animate-[spin_18s…] 的语义化替代）。
+   与 acw-orbit-* 分开：那对是 SVG <g> 专用（带 transform-box: fill-box），
+   这里的宿主是 HTML 环层（绝对定位 + translateZ），只覆写 animation，不动变换盒与转轴。
+   18s 选中星芒自转 / 36s 前层天球赤道环正向 / 48s 黄道差速环反向 */
+@keyframes acw-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-acw-spin-slow {
+  animation: acw-ring-spin 18s linear infinite;
+}
+.animate-acw-spin-slower {
+  animation: acw-ring-spin 36s linear infinite;
+}
+.animate-acw-spin-slowest-reverse {
+  animation: acw-ring-spin 48s linear infinite reverse;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-acw-spin-slow,
+  .animate-acw-spin-slower,
+  .animate-acw-spin-slowest-reverse {
+    animation: none;
+  }
+}
+
 /* 相位能量流：一段亮弧沿相位线行进（pathLength 归一化 500，亮段 26）。
    减少动态时静止（dashoffset 停在起点，线外无残影） */
 @keyframes acw-dash-flow {
@@ -760,6 +786,47 @@
   .acw-thinking-dot {
     animation: none;
     opacity: 0.7;
+  }
+}
+
+/* 星座寰宇星野星点闪烁：透明度只在窄区间内呼吸（0.35↔0.7），不做全闪烁——
+   animate-pulse（1↔0.5）是流式光标专用，装饰星点不再借用。
+   时长与延迟由组件按星点各自错峰内联注入（此处只兜底默认档）；减少动态时静止在自身内联透明度 */
+@keyframes astrology-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+.animate-astrology-twinkle {
+  animation: astrology-twinkle 8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-astrology-twinkle {
+    animation: none;
+  }
+}
+
+/* 深色主题偶发流星：一道亮痕自右上斜掠向左下（参数与组件内联 <style> 原样一致，
+   从 astrology-starfield 运行时注入迁入全局表，进入 keyframes 注册表） */
+@keyframes acw-meteor {
+  0% {
+    transform: translateX(0) rotate(-38deg);
+    opacity: 0;
+  }
+  3% {
+    opacity: 0.9;
+  }
+  9% {
+    transform: translateX(-190px) rotate(-38deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-190px) rotate(-38deg);
+    opacity: 0;
   }
 }
 

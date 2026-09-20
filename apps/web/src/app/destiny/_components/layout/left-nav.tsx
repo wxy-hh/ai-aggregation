@@ -158,7 +158,7 @@ export function LeftNav({
             <div
               className={cn(
                 'text-[11px] font-bold tracking-[0.18em] uppercase mb-3 transition-colors duration-500',
-                night ? 'text-[#6E6A86]' : 'text-slate-400 dark:text-slate-500'
+                night ? 'text-[#6E6A86]' : 'text-day-muted dark:text-slate-500'
               )}
             >
               {g.title}
@@ -178,7 +178,7 @@ export function LeftNav({
                       !active &&
                         (night
                           ? 'hover:border-white/10 hover:bg-white/5'
-                          : 'hover:border-white/60 dark:hover:border-white/10 hover:bg-white/45 dark:hover:bg-slate-800/45'),
+                          : 'hover:border-white/60 dark:hover:border-white/10 hover:bg-white/40 dark:hover:bg-slate-800/40'),
                       active &&
                         (night
                           ? 'border-[#A78BFA]/35 bg-[#A78BFA]/15 text-[#EDE7DA] shadow-[0_0_20px_rgba(139,92,246,0.15)]'

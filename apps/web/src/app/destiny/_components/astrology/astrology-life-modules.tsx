@@ -48,42 +48,36 @@ const MODULE_THEME: Record<
   ModuleId,
   {
     iconWrap: string;
-    hoverBorder: string;
     scenarioBg: string;
     badgeBg: string;
   }
 > = {
   who: {
     iconWrap: 'bg-amber-100/90 text-amber-700 dark:bg-amber-400/[0.14] dark:text-amber-300',
-    hoverBorder: 'hover:border-amber-300/40 dark:hover:border-amber-400/20',
     scenarioBg: 'bg-amber-50/80 text-amber-900 dark:bg-amber-400/[0.07] dark:text-amber-200',
     badgeBg:
       'border-amber-200/60 bg-amber-50/70 text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300',
   },
   love: {
     iconWrap: 'bg-rose-100/90 text-rose-700 dark:bg-rose-400/[0.14] dark:text-rose-300',
-    hoverBorder: 'hover:border-rose-300/40 dark:hover:border-rose-400/20',
     scenarioBg: 'bg-rose-50/80 text-rose-900 dark:bg-rose-400/[0.07] dark:text-rose-200',
     badgeBg:
       'border-rose-200/60 bg-rose-50/70 text-rose-700 dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-300',
   },
   career: {
     iconWrap: 'bg-sky-100/90 text-sky-700 dark:bg-sky-400/[0.14] dark:text-sky-300',
-    hoverBorder: 'hover:border-sky-300/40 dark:hover:border-sky-400/20',
     scenarioBg: 'bg-sky-50/80 text-sky-900 dark:bg-sky-400/[0.07] dark:text-sky-200',
     badgeBg:
       'border-sky-200/60 bg-sky-50/70 text-sky-700 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-300',
   },
   strengths: {
     iconWrap: 'bg-indigo-100/90 text-indigo-700 dark:bg-indigo-400/[0.14] dark:text-indigo-300',
-    hoverBorder: 'hover:border-indigo-300/40 dark:hover:border-indigo-400/20',
     scenarioBg: 'bg-indigo-50/80 text-indigo-900 dark:bg-indigo-400/[0.07] dark:text-indigo-200',
     badgeBg:
       'border-indigo-200/60 bg-indigo-50/70 text-indigo-700 dark:border-indigo-400/20 dark:bg-indigo-400/10 dark:text-indigo-300',
   },
   week: {
     iconWrap: 'bg-emerald-100/90 text-emerald-700 dark:bg-emerald-400/[0.14] dark:text-emerald-300',
-    hoverBorder: 'hover:border-emerald-300/40 dark:hover:border-emerald-400/20',
     scenarioBg:
       'bg-emerald-50/80 text-emerald-900 dark:bg-emerald-400/[0.07] dark:text-emerald-200',
     badgeBg:
@@ -236,8 +230,7 @@ function ModuleCard({
       transition={{ duration: 0.4, delay: (index % 3) * 0.06, ease: 'easeOut' }}
       className={cn(
         // night-card：夜幕观星下的鎏金描边覆盖标记（globals.css .astrology-night 作用域）
-        'night-card rounded-2xl border border-slate-200/80 bg-white transition-all duration-300 shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] hover:shadow-[0_18px_40px_-20px_rgba(79,70,229,0.28)] dark:border-white/10 dark:bg-[#0D1226] dark:hover:border-indigo-400/25 dark:hover:shadow-[0_20px_48px_-20px_rgba(0,0,0,0.85)]',
-        theme.hoverBorder,
+        'night-card rounded-2xl border border-slate-200/80 bg-white shadow-[0_10px_30px_-20px_rgba(30,41,82,0.25)] dark:border-white/10 dark:bg-[#0D1226]',
         // 本周卡通栏：行动三角三栏需要完整宽度
         m.id === 'week' && weekSpanClass
       )}
@@ -247,7 +240,7 @@ function ModuleCard({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:px-5"
+        className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04] sm:px-5"
       >
         <span
           className={cn(
@@ -354,7 +347,7 @@ function ModuleCard({
               transition={{ duration: reduceMotion ? 0.01 : 0.26, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mt-3 rounded-xl bg-slate-50/90 p-3.5 dark:bg-[#0B1020]">
+              <div className="mt-3 rounded-xl bg-slate-50/90 p-3.5 dark:bg-[#090E20]">
                 <p className="text-[11px] font-semibold text-slate-500 dark:text-night-muted">
                   依据（点击可在星盘轮上定位）
                 </p>
@@ -366,7 +359,7 @@ function ModuleCard({
                         key={ref}
                         type="button"
                         onClick={() => onLocateBody(chip.body)}
-                        className="inline-flex min-h-11 items-center rounded-full border border-indigo-200/70 bg-white px-3 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+                        className="inline-flex min-h-11 items-center rounded-full border border-indigo-200/70 bg-white px-3 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
                       >
                         {chip.label}
                       </button>

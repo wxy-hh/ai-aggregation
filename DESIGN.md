@@ -53,7 +53,7 @@
 | `blue-600` → `indigo-500` → `cyan-500` | 三色斜渐变（仅限首页 hero 标题、视频播放钮两类大焦点） | home-content、video preview |
 | `#2F6BFF` | 简历域品牌蓝（得分环） | resume |
 | `#E7C873` 鎏金 / `#A78BFA` 紫微紫 | 紫微夜幕主题双主色 | ziwei-theme.css |
-| `#D9A84E` / `#E7C873` 琥珀金 | 星盘主轴金句渐变、分享卡 | astrology |
+| `#B47818`（白昼）/ `#F3D17A`（夜幕）琥珀金 | 星盘主轴金句（纯色实现——登记渐变色 `#D9A84E`/`#E7C873` 在白昼底仅 1.94:1/1.45:1 不可读，降深后 3.32:1 过大标题线）；术语小字白昼用 `text-amber-700`（≥4.5:1）、夜幕 `#E7C873` | astrology typewriter-headline、result-view |
 
 shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 渐变 + `shadow-[0_10px_24px_rgba(93,124,250,0.32)]`，`active:scale-[0.98]`。**直接引 `@/components/ui/button`，不要另写渐变按钮**。
 
@@ -65,7 +65,7 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 | 通用深色卡 | `slate-950 / slate-900` | chat 抽屉、image/video 深色区、home 深卡 |
 | 命理白昼层 | `linear-gradient(165deg,#F8FAFF→#EEF2F9→#E9EEF6)` | destiny 浅色氛围底 |
 | 命理夜幕层 | dark: `#07080D→#0C0E16→#10131C`；入夜 radial: `#10152E→#0A0E20→#06081A` | destiny-ambient-background |
-| 星盘深空 | `#0D1226`（玻璃 `/[0.88]`）、盘面 `#090E20` | astrology 结果页/章节带 |
+| 星盘深空 | `#0D1226`（玻璃 `/[0.88]`）、盘面 `#090E20`；玻璃底座透明度统一 `/[0.88]`、`/[0.92]` 两档（0.85/0.90/0.93/0.95 已归并）；登记特案值：`#0E1430`（移动抽屉底）、`#121832`（hover 档）、`#040711→#0C132B`（舞台渐变起讫）、`/80`、`/75`、`/[0.96]` | astrology 结果页/章节带 |
 | 紫微夜幕面板 | `rgba(12,17,40,0.85)` | ziwei-theme.css |
 
 ### 2.4 命理专用色板
@@ -96,7 +96,7 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 ### 2.5 渐变使用规则
 
 - 渐变只允许三种职能：**品牌识别**（Logo）、**主行动**（CTA 按钮）、**仪式焦点**（hero 标题/金句/播放钮）。装饰性渐变文本禁止扩散。
-- 渐变文字（`bg-clip-text text-transparent`）全项目白名单仅 6 处：global-sidebar Logo、home hero 标题、video 播放键、destiny 主基调卡、astrology 主轴金句与分享卡。新增需评审。
+- 渐变文字（`bg-clip-text text-transparent`）全项目白名单仅 6 处：global-sidebar Logo、home hero 标题、video 播放键、destiny 主基调卡、astrology 主轴金句与分享卡。新增需评审。其中 astrology 两处当前为**纯色琥珀金实现**（白昼 `#B47818`，登记渐变色白昼对比度不足，见 §2.2），未占用 `bg-clip-text`；改回渐变实现需重新过对比度。
 
 ### 2.6 对比度与文字调色
 
@@ -134,6 +134,7 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 - 标题字距下限 `-0.03em`，不超收；H1 级才允许 `tracking-tighter`。
 - 标题上方**禁止 eyebrow/kicker 小标签**，标题自己说话；副注放标题右侧或下方。
 - 标题间距遵守「上宽下窄」：标题上方间距 > 下方间距（章节间距 `mt-12`，标题到内容 `mt-4/mt-6`）。
+- 导出物豁免：分享海报/分享卡是导出图片物（`astrology-share-card` 等），其 eyebrow 小标签与 8–10px 微字不受本节 eyebrow 禁令与微字下限约束；页面内排印仍全部适用。
 
 ---
 
@@ -164,6 +165,8 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 命理域玻璃面统一走 §4.1 玻璃公式（blur + saturate(150%)，2026-09 全域补齐），集中配方只维护三处：`destiny-result-header.tsx` 的 `destinyG3ShellClass` / `destinyG3ContentShellClass`、`glass-card.tsx` 的 variant 表——新页面引用这三处即自动合规，不手写玻璃类。
 
+登记例外：astrology 结果页 7 处玻璃面为模块手写配方（夜空专用渐变底，集中配方的白系渐变不适用）——护照头、本周入口、移动抽屉（result-view）、interpretation-notice、night-toggle、share-entry、deep-dive sticky 条；均已按 §4.1 公式带 saturate(150%)，改造时保持公式同步，不回引集中配方。
+
 ### 4.3 阴影哲学
 
 阴影是 Z 轴高度，不是装饰。偏移与模糊正比于悬浮高度；避免高透明度「脏黑」单层阴影，深色表面上的阴影加深不加大。常用档位：
@@ -171,6 +174,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 卡片静置：`shadow-[0_4px_12px_-2px_rgba(15,23,42,0.04)]` 级
 - 悬浮/磁吸：`shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08)]` 级
 - 主 CTA/聚焦：`shadow-[0_10px_24px_rgba(93,124,250,0.32)]`（品牌蓝发光）
+- 深空域登记档（astrology 结果页）：深空蓝紫面上的静置卡阴影用 `rgba(30,41,82,0.25~0.35)`（蓝紫面吃光，通用 0.04–0.08 档在深空底上等于没有），深色面允许 `rgba(0,0,0,0.85)` 单层加深；工具域仍守上表。
 - 命理夜幕：阴影换为辉光（`box-shadow: 0 0 Npx rgba(231,200,115,…)` 鎏金 / `rgba(167,139,250,…)` 紫微紫）
 
 ### 4.4 圆角档位（按容器大小取档，不凭感觉）
@@ -228,10 +232,13 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | `ziwei-breathe / related-glow / active-glow` | — | 星云呼吸、三方四正鎏金辉光、选中宫紫微紫辉光 |
 | `astrology-nebula-breathe` | 16s/20s/24s 错相位 | 「夜幕观星」紫金双调星云呼吸（透明度 ≤0.14，reduce-motion 静止） |
 | `astrology-invite-pulse` | 1.8s | 「夜幕观星」首访邀请鎏金脉冲（仅一次，reduce-motion 静止） |
+| `astrology-twinkle` + `.animate-astrology-twinkle` | 默认 8s，组件错峰 | 星野星点闪烁（opacity 0.35↔0.7 窄带呼吸，不做 0↔1 全闪烁——替代曾滥用的 `animate-pulse`，reduce-motion 静止） |
+| `acw-ring-spin` + `.animate-acw-spin-slow` / `-slower` / `-slowest-reverse` | 18s / 36s / 48s 反向 | 星盘 HTML 环层自转（wheel-3d 双环、chart-wheel 环；`acw-orbit-cw/ccw` 是 SVG `fill-box` 专用，勿混用到 HTML 层） |
+| `acw-meteor` | 3s 亮痕 / 9s 归零 | 星野流星（自组件内联 `<style>` 收编进 globals.css，参数原样） |
 
 ### 6.4 动效技术选型
 
-- **framer-motion** 仅限：星盘（3D 舞台/轮盘/揭示序列）、video 面板、resume、global-sidebar、destiny 桌面导航。布局级共享元素转场用 `layoutId`。
+- **framer-motion** 仅限：星盘（3D 舞台/轮盘/揭示序列）、destiny 结果页内容卡入场（astrology 结果视图等）、video 面板、resume、global-sidebar、destiny 桌面导航。布局级共享元素转场用 `layoutId`。
 - **WebGL 场景用 react-three-fiber + drei + @react-three/postprocessing**（仅限星座结果页「星渊」深空星盘，`astrology-wheel-scene.tsx`）：动效全部走 `useFrame` 帧循环（相机/悬浮/闪烁/流光），不进 CSS keyframes 注册表；场景代码 `next/dynamic ssr:false` 按需分包，WebGL 探测失败或加载中一律回退 SVG 轮。
 - 其余域用 `tailwindcss-animate` 入场类（`animate-in fade-in slide-in-from-bottom-4` 等）+ CSS keyframes。
 - **3D 变换链必须全链 `preserve-3d`**：perspective 容器到 translateZ 子层之间任何一层缺 `[transform-style:preserve-3d]` 都会压扁 3D 并破坏 hit-test（真实点击错位事故已发生一次，见 astrology-ritual wheelSlot 修复）。
@@ -279,6 +286,8 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 命理域：G-3 三档——hero `rounded-[28px]→[32px]`、standard `[24px]→[28px]`、compact `rounded-2xl bg-white/85`。
 - hover：上浮 2px + 阴影升一档；卡片内不写「大数字+小标签」的 hero-metric 模板。
 - **可点击卡片必须整卡是链接**（不允许只有内部按钮可点、卡面 hover 却点不动）；功能卡 hover 可加一道扫光（斜切高光掠过 `via-white/35 dark:via-white/10`、700ms，参照 home `FeatureCard`）做 LiquidGlass 折射暗示。卡内 CTA 芯片深色态用玻璃芯片（`dark:bg-white/10 dark:border-white/15 dark:backdrop-blur-sm`），不用 `slate-800` 实色趴在 `slate-900` 卡面上（只隔半档发闷）。
+- 口径登记：astrology 结果页内容卡统一取 compact 档（`rounded-2xl`，32 处）——结果页信息密度优先，不升 standard 档。
+- 非链接型可点卡（点击触发页内定位等动作、不跳转）用「兄弟节点 `absolute inset-0` 按钮 + `aria-label`」模式（参照 astrology 三要素卡），不用 `role="button"` 包裹正文（保住读屏正文流）；无动作的卡片不得加 hover 位移（假交互，生活模块卡已按此收敛）。
 
 ### 8.4 浮层（Modal / Drawer / 底部抽屉）
 

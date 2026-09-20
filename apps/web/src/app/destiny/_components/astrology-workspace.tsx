@@ -114,6 +114,8 @@ export function AstrologyWorkspace({ isActive }: AstrologyWorkspaceProps) {
           挂在工作区根部，入口首页/表单/结果页任意视图下登录都能询问 */}
       <Dialog open={migrationOpen} onOpenChange={setMigrationOpen}>
         <DialogContent
+          contentAnimation="none"
+          overlayClassName="bg-slate-950/50 backdrop-blur-md"
           className={cn(
             'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 sm:inset-x-6 sm:bottom-6 sm:rounded-[28px]',
             'rounded-t-[28px] border border-white/60 p-0 pb-[env(safe-area-inset-bottom)]',

@@ -135,7 +135,7 @@ export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }:
 
       {/* 迷你护照条：随本区粘性悬浮，不丢失身份与返回路径（§6.6） */}
       <div className="sticky top-3 z-20 mt-5 flex justify-center">
-        <div className="flex max-w-full items-center gap-2.5 rounded-full border border-white/70 bg-white/90 py-1.5 pl-2.5 pr-2 shadow-[0_12px_36px_-12px_rgba(30,41,82,0.30)] ring-1 ring-black/[0.03] backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 hover:shadow-[0_16px_44px_-12px_rgba(79,70,229,0.35)] dark:border-white/[0.14] dark:bg-[#0B1021]/[0.92] dark:ring-white/[0.05] dark:shadow-[0_16px_40px_-14px_rgba(0,0,0,0.85)]">
+        <div className="flex max-w-full items-center gap-2.5 rounded-full border border-white/70 bg-white/90 py-1.5 pl-2.5 pr-2 shadow-[0_12px_36px_-12px_rgba(30,41,82,0.30)] ring-1 ring-black/[0.03] backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 hover:shadow-[0_16px_44px_-12px_rgba(79,70,229,0.35)] dark:border-white/[0.14] dark:bg-[#090E20]/[0.92] dark:ring-white/[0.05] dark:shadow-[0_16px_40px_-14px_rgba(0,0,0,0.85)]">
           {passport.sunSign && (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500/[0.12] shadow-xs dark:bg-indigo-400/[0.14]">
               {(() => {
@@ -156,7 +156,7 @@ export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }:
           <button
             type="button"
             onClick={backToTop}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/[0.08]"
+            className="flex min-h-11 shrink-0 items-center gap-1 rounded-full px-3 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/[0.08]"
           >
             <ArrowUp className="h-3.5 w-3.5" strokeWidth={2.2} />
             回到顶部
@@ -188,7 +188,7 @@ export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }:
                 tabIndex={active ? 0 : -1}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  'relative min-h-10 rounded-full px-5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 sm:px-7',
+                  'relative min-h-11 rounded-full px-5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent sm:px-7',
                   active ? 'text-white' : 'text-slate-500 hover:text-slate-700 dark:text-night-muted dark:hover:text-slate-200'
                 )}
               >
@@ -289,7 +289,7 @@ function WheelInventory({
                 <button
                   type="button"
                   onClick={() => onLocateBody(p.body)}
-                  className="group flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.04]"
+                  className="group flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover:bg-indigo-100 dark:bg-white/[0.06] dark:group-hover:bg-indigo-400/[0.12]">
                     <Glyph
@@ -347,7 +347,7 @@ function WheelInventory({
                     <button
                       type="button"
                       onClick={() => onLocateBody(null)}
-                      className="group flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.04]"
+                      className="group flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04]"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover:bg-indigo-100 dark:bg-white/[0.06] dark:group-hover:bg-indigo-400/[0.12]">
                         <Icon className="h-4 w-4 text-slate-500 transition-colors group-hover:text-indigo-500 dark:text-night-muted dark:group-hover:text-indigo-300" strokeWidth={1.9} />
@@ -395,7 +395,7 @@ function WheelInventory({
                   <button
                     type="button"
                     onClick={() => onLocateBody(a.source)}
-                    className="group flex min-h-11 w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.04]"
+                    className="group flex min-h-11 w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04]"
                   >
                     <span className="min-w-0 flex-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
                       {PLANET_CN[a.source]}
@@ -477,7 +477,7 @@ function KeyAspectsPanel({
             type="button"
             onClick={() => setShowRest((v) => !v)}
             aria-expanded={showRest}
-            className="mt-5 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:text-indigo-300 dark:hover:bg-white/[0.06] sm:min-h-0 sm:py-1.5"
+            className="mt-5 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/[0.06] sm:min-h-0 sm:py-1.5"
           >
             {showRest ? '收起完整相位列表' : `展开其余 ${rest.length} 条相位`}
             <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200', showRest && 'rotate-180')} strokeWidth={2.2} />
@@ -499,7 +499,7 @@ function KeyAspectsPanel({
                         <button
                           type="button"
                           onClick={() => onLocateBody(a.source)}
-                          className="group flex min-h-11 w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:hover:bg-white/[0.04]"
+                          className="group flex min-h-11 w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04]"
                         >
                           <span className="min-w-0 flex-1 text-sm font-semibold text-slate-800 dark:text-slate-100">
                             {PLANET_CN[a.source]}
@@ -595,7 +595,7 @@ function KeyAspectCard({
       <button
         type="button"
         onClick={() => onLocateBody(a.source)}
-        className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-indigo-200/70 px-3 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-indigo-300/20 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
+        className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-indigo-200/70 px-3 text-[11px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/20 dark:text-indigo-200 dark:hover:bg-indigo-400/10"
       >
         <LocateFixed className="h-3.5 w-3.5" strokeWidth={2} />
         在星盘轮上查看
