@@ -36,7 +36,9 @@ services:
     networks:
       - ai-net
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      # 必须写 127.0.0.1：容器内 localhost 解析到 ::1，而 next-server 只监听 0.0.0.0:3000（IPv4），
+      # 用 localhost 会得到 Connection refused，容器会长期显示 unhealthy（应用本身正常）
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
