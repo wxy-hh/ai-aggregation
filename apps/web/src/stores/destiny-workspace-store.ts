@@ -4,6 +4,10 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createDefaultBaziFormData } from '@/app/destiny/_components/bazi-mappers';
 import { createDefaultQimenFormData } from '@/app/destiny/_components/qimen-mappers';
+import {
+  createDefaultAstrologyFormData,
+  type AstrologyFormData,
+} from '@/app/destiny/_components/astrology-types';
 import type { BaziFormData } from '@/app/destiny/_components/bazi-types';
 import type { QimenFormData } from '@/app/destiny/_components/qimen-types';
 import type {
@@ -20,6 +24,8 @@ import type {
   ZiweiChartData,
   ZiweiLockedSections,
 } from '@/app/destiny/_components/types';
+import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
+import type { AstrologyInterpretationReport } from '@/lib/astrology/interpretation';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
 
 export type DestinyWorkspaceStep = 'form' | 'result';
@@ -82,10 +88,61 @@ export type QimenWorkspaceCache = BaseWorkspaceCache<
   sectionErrors: Partial<Record<QimenAsyncSectionKey, string>>;
 };
 
+export type AstrologyErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
+
+/** 解读层状态：未发起 / 在途 / 暂不可用（降级）/ 就绪（03 工单：分区事件到达后为 ready） */
+export type AstrologyInterpretationStatus = 'idle' | 'pending' | 'unavailable' | 'ready';
+
+/**
+ * 解读暂不可用的原因档：
+ * 额度不足 / 解读服务未接入 / 解读未完成（模型超时、报错、校验不过）/ 未取得结论。
+ */
+export type AstrologyInterpretationReason = 'quota' | 'not-wired' | 'model' | 'unknown';
+
+/**
+ * 解读层状态 + 原因 + 已到达的解读内容。
+ * - status 'pending'：流已发起、分区未到（结果页按分区骨架占位）
+ * - status 'ready'：至少一个分区已到达（03 工单：分区陆续填充，界面逐区替换骨架）
+ * - status 'unavailable'：解读层降级（report 同时清空，绝不留半份冒充产出）
+ */
+export type AstrologyInterpretationState = {
+  status: AstrologyInterpretationStatus;
+  reason: AstrologyInterpretationReason | null;
+  /** 累计到达的解读分区（未到达的分区为 null / 空数组） */
+  report: AstrologyInterpretationReport | null;
+};
+
+/** 解读层默认态：未发起（首次进入 / 从历史记录恢复的旧结果） */
+export function createIdleAstrologyInterpretation(): AstrologyInterpretationState {
+  return { status: 'idle', reason: null, report: null };
+}
+
+/** 星座寰宇工作区缓存（01 骨架；03 加入口视图；04 加表单步骤与真值缓存） */
+export type AstrologyWorkspaceCache = BaseWorkspaceCache<
+  AstrologyFormData,
+  Partial<Record<keyof AstrologyFormData, string>>,
+  AstrologyErrorKind
+> & {
+  /** 入口视图：首页（首次进入/重新测算）、两步表单（§6.2）或加载仪式（05：真值在仪式窗内送达，双条件满足即转场进结果页） */
+  entryView: 'home' | 'form' | 'loading';
+  /** 两步表单当前步骤（切模块保留进度） */
+  formStep: 1 | 2;
+  /** 提交后经异步接缝送达的星盘真值（结果页/分享/问答的真值来源）；null = 真值在途（仪式等待室） */
+  chartFacts: AstrologyChartFacts | null;
+  /**
+   * 解读层状态（02 工单建立，03 工单接入 LLM 后启用 ready）：真值到达后由报告流事件驱动——
+   * 解读分区事件把 status 推进到 ready 并累计 report；interpretation-unavailable 把它落为
+   * unavailable 并清空 report（解读失败绝不留半份冒充产出）。结果页据此逐区渲染骨架 / 内容 /
+   * 诚实的「解读暂不可用」卡。
+   */
+  interpretation: AstrologyInterpretationState;
+};
+
 export type DestinyWorkspaceCacheState = {
   bazi: BaziWorkspaceCache;
   ziwei: ZiweiWorkspaceCache;
   qimen: QimenWorkspaceCache;
+  astrology: AstrologyWorkspaceCache;
 };
 
 type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
@@ -170,11 +227,30 @@ function createDefaultQimenWorkspaceCache(): QimenWorkspaceCache {
   };
 }
 
+function createDefaultAstrologyWorkspaceCache(): AstrologyWorkspaceCache {
+  return {
+    step: 'form',
+    hasResult: false,
+    lastView: 'form',
+    entryView: 'home',
+    formStep: 1,
+    chartFacts: null,
+    interpretation: createIdleAstrologyInterpretation(),
+    formData: createDefaultAstrologyFormData(),
+    fieldErrors: {},
+    blockingLoading: false,
+    error: null,
+    errorKind: null,
+    compatActive: false,
+  };
+}
+
 export function createDefaultDestinyWorkspaceState(): DestinyWorkspaceCacheState {
   return {
     bazi: createDefaultBaziWorkspaceCache(),
     ziwei: createDefaultZiweiWorkspaceCache(),
     qimen: createDefaultQimenWorkspaceCache(),
+    astrology: createDefaultAstrologyWorkspaceCache(),
   };
 }
 

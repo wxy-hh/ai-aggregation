@@ -70,9 +70,13 @@ const DialogContent = React.forwardRef<
     >
       {children}
       {showClose && (
-        <DialogPrimitive.Close className="absolute right-4 top-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all duration-300 hover:scale-110 active:scale-95 group focus:outline-none disabled:pointer-events-none">
+        <DialogPrimitive.Close
+          aria-label="关闭"
+          className="absolute right-4 top-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all duration-300 hover:scale-110 active:scale-95 group focus:outline-none disabled:pointer-events-none"
+        >
           <X className="h-5 w-5 transition-transform duration-500 group-hover:rotate-90" />
-          <span className="sr-only">Close</span>
+          {/* 读屏文案用中文：项目要求用户可见文本全中文，别让 Radix 的默认英文 "Close" 漏给读屏用户 */}
+          <span className="sr-only">关闭</span>
         </DialogPrimitive.Close>
       )}
     </DialogPrimitive.Content>

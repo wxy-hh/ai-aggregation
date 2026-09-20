@@ -9,6 +9,7 @@ import { DerivationBadge } from './derivation-badge';
 import baziIcon from '@/assets/image/bazi.svg';
 import ziweiIcon from '@/assets/image/ziwei.svg';
 import qimendunjiaIcon from '@/assets/image/qimendunjia.svg';
+import xingpanIcon from '@/assets/image/xingpan.svg';
 
 interface DestinyHistoryCardProps {
   item: DestinyHistoryItem;
@@ -38,6 +39,12 @@ const SUB_TYPE_CONFIG: Record<
     label: '奇门遁甲',
     icon: qimendunjiaIcon,
     colorClass: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+  },
+  // 星座寰宇（11 工单）：星盘图标 + 靛蓝，与模块主色一致
+  astrology: {
+    label: '星座寰宇',
+    icon: xingpanIcon,
+    colorClass: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
   },
 };
 

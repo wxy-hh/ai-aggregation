@@ -4,6 +4,9 @@ import React from 'react';
 import { APP_CONFIGS } from './apps-modal';
 import { Sparkles } from 'lucide-react';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
+import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 import { cn } from '@/lib/utils';
 
 interface MobileHeaderProps {
@@ -32,7 +35,19 @@ export function MobileHeader({ pathname }: MobileHeaderProps) {
   const ziweiNightInStore = useDestinyWorkspaceStore(
     (s) => s.activeModule === 'ziwei' && s.ziwei.step === 'result'
   );
-  const night = pathname.startsWith('/destiny') && ziweiNightInStore;
+  // 星座寰宇「夜幕观星」同理，但须尊重解析后的昼/夜——白昼态结果页是亮玻璃，chrome 不能入夜
+  const astrologyNightScene = useDestinyWorkspaceStore(
+    (s) =>
+      s.activeModule === 'astrology' &&
+      (s.astrology.step === 'result' ||
+        (s.astrology.entryView === 'loading' && Boolean(s.astrology.error)))
+  );
+  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
+  const astrologyNight =
+    astrologyNightScene &&
+    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+  const night = pathname.startsWith('/destiny') && (ziweiNightInStore || astrologyNight);
 
   return (
     <header

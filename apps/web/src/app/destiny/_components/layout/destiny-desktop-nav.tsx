@@ -4,15 +4,13 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { LeftNav, type DestinyModuleKey } from './left-nav';
 import { destinyG3ShellClass } from './destiny-result-header';
-import {
-  DESTINY_NAV_LEFT_PX,
-  DESTINY_NAV_WIDTH_PX,
-  useDestinyNav,
-} from './destiny-nav-context';
+import { DESTINY_NAV_LEFT_PX, DESTINY_NAV_WIDTH_PX, useDestinyNav } from './destiny-nav-context';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
+import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
+import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 import { cn } from '@/lib/utils';
 
 const PANEL_EASE = [0.32, 0.72, 0, 1] as const;
@@ -60,15 +58,25 @@ export function DestinyDesktopNav({
   const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
   const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
   const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
-  const night = activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night';
+  // 星座寰宇「夜幕观星」同理：结果页与失败恢复卡入夜时，导航玻璃同步入夜保持文字可读
+  const astrologyNightScene = useDestinyWorkspaceStore(
+    (s) =>
+      s.astrology.step === 'result' ||
+      (s.astrology.entryView === 'loading' && Boolean(s.astrology.error))
+  );
+  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const astrologyNight =
+    activeModule === 'astrology' &&
+    astrologyNightScene &&
+    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+  const night =
+    (activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night') || astrologyNight;
 
   const panelTransition = reduceMotion
     ? { duration: 0.01 }
     : { type: 'spring' as const, damping: 34, stiffness: 400, mass: 0.82 };
 
-  const chipTransition = reduceMotion
-    ? { duration: 0.01 }
-    : { duration: 0.26, ease: PANEL_EASE };
+  const chipTransition = reduceMotion ? { duration: 0.01 } : { duration: 0.26, ease: PANEL_EASE };
 
   return (
     <>
@@ -102,7 +110,11 @@ export function DestinyDesktopNav({
             aria-expanded
             disabled={disabled}
             onClick={toggleCollapsed}
-            className={cn(toggleBtnClass, 'absolute -right-2 top-[34px] z-10', night && toggleBtnNightClass)}
+            className={cn(
+              toggleBtnClass,
+              'absolute -right-2 top-[34px] z-10',
+              night && toggleBtnNightClass
+            )}
           >
             <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
           </button>

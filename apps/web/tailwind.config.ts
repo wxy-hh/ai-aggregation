@@ -72,6 +72,15 @@ const config: Config = {
           'glass-white': 'var(--ds-glass-white)',
           'glass-dark': 'var(--ds-glass-dark)',
         },
+        // 夜幕文字色（DESIGN.md 2.6：深空蓝紫表面上的次要文字从表面色相调色，不落中性灰）
+        night: {
+          muted: '#A6AED2', // 次要文字（深空表面替代 dark:text-slate-400）
+          faint: '#828BB0', // 微弱文字/占位符（替代 dark:text-slate-500，深底对比度更高）
+        },
+        // 白昼文字色（与 night 配对：浅色模式次要文字统一 slate-500 档，白底对比度 ≈4.7:1，过 WCAG AA）
+        day: {
+          muted: '#64748B', // 浅色模式次要文字/功能图标（替代 text-slate-400）
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

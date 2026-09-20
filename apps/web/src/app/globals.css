@@ -34,7 +34,7 @@
 
     --radius: 0.5rem;
 
-    /* Design System: Apple x Glass (Balanced Fusion) */
+    /* 设计系统：苹果级精致质感与拟态磨玻璃（平衡融合体系） */
     --ds-font-display:
       'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial,
       sans-serif;
@@ -54,8 +54,12 @@
     --ds-glass-dark: rgba(20, 20, 24, 0.56);
 
     /* 字体变量：使用系统字体栈替代 Google Fonts（避免网络不可用导致构建失败） */
-    --font-dm-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-space-grotesk: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-dm-sans:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
+    --font-space-grotesk:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
     --ds-glass-stroke-light: rgba(255, 255, 255, 0.45);
     --ds-glass-stroke-dark: rgba(255, 255, 255, 0.18);
     --ds-neo-highlight: rgba(255, 255, 255, 0.65);
@@ -116,9 +120,28 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* 浏览器表面品牌化（DESIGN.md 第 9 章）：文本选区与输入光标跟随品牌靛蓝，
+     深色模式提亮一档保证对比；这是「页面被建造而非组装」的最廉价信号 */
+  ::selection {
+    background: rgba(99, 102, 241, 0.24);
+  }
+  .dark ::selection {
+    background: rgba(129, 140, 248, 0.36);
+  }
+  input,
+  textarea,
+  [contenteditable='true'] {
+    caret-color: #4969e9;
+  }
+  .dark input,
+  .dark textarea,
+  .dark [contenteditable='true'] {
+    caret-color: #8b9dff;
+  }
 }
 
-/* Accessibility: Respect user's motion preferences */
+/* 无障碍：尊重用户的减弱动态偏好 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -130,7 +153,7 @@
   }
 }
 
-/* Gradient animation for text */
+/* 文本渐变流动动画 */
 @keyframes gradient {
   0%,
   100% {
@@ -146,7 +169,7 @@
   animation: gradient 3s ease infinite;
 }
 
-/* Loading animation for progress bar */
+/* 进度条加载动画 */
 @keyframes loading {
   0% {
     width: 0%;
@@ -162,7 +185,7 @@
   }
 }
 
-/* Design system component baseline */
+/* 设计系统组件基线规范 */
 @layer components {
   .ds-focusable:focus-visible {
     outline: 2px solid var(--ds-accent-blue);
@@ -337,7 +360,7 @@
   }
 }
 
-/* Glassmorphism utilities */
+/* 拟态玻璃工具类 */
 @layer utilities {
   .glass {
     background: var(--ds-glass-white);
@@ -354,9 +377,9 @@
   }
 }
 
-/* Markdown body styles - ensures tables, lists, etc. render correctly */
+/* Markdown 正文排版样式：确保表格、列表等正确渲染 */
 .markdown-body {
-  /* Table styles */
+  /* 表格样式 */
   table {
     width: 100%;
     border-collapse: collapse;
@@ -386,7 +409,7 @@
     background-color: hsl(var(--muted));
   }
 
-  /* List styles */
+  /* 列表样式 */
   ul {
     list-style-type: disc;
     padding-left: 1.5em;
@@ -408,7 +431,7 @@
     margin: 0.25em 0;
   }
 
-  /* Heading styles */
+  /* 标题样式 */
   h1 {
     font-size: 1.5em;
     font-weight: 700;
@@ -436,12 +459,12 @@
     margin: 0.5em 0 0.25em;
   }
 
-  /* Paragraph spacing */
+  /* 段落间距 */
   p {
     margin: 0.5em 0;
   }
 
-  /* Blockquote */
+  /* 引用块样式 */
   blockquote {
     border-left: 3px solid hsl(var(--primary));
     padding-left: 1em;
@@ -450,7 +473,7 @@
     font-style: italic;
   }
 
-  /* Horizontal rule */
+  /* 分割线 */
   hr {
     border: none;
     border-top: 1px solid hsl(var(--border));
@@ -476,8 +499,8 @@
 :root {
   /* 宋体展示字:macOS/iOS 宋体 → 安卓思源宋体 → Windows 中易宋体 */
   --font-song:
-    'Songti SC', 'STSongti-SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC',
-    'SimSun', serif;
+    'Songti SC', 'STSongti-SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC',
+    'Noto Serif CJK SC', 'SimSun', serif;
 }
 
 @layer utilities {
@@ -516,11 +539,11 @@
   }
 }
 
-/* 宫位 staggered 入场 */
+/* 宫位交错逐阶入场 */
 @keyframes ziwei-palace-enter {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.96);
+    transform: translateY(12px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -575,9 +598,205 @@
   }
 }
 
-/* 星轨彗星粒子:reduced-motion 下隐藏(SMIL 不受 CSS 动画时长约束,需显式关闭) */
+/* 星轨彗星粒子：在减弱动态偏好开启时隐藏（SMIL 动画不受 CSS 时长约束，需显式关闭） */
 @media (prefers-reduced-motion: reduce) {
   .ziwei-comet {
     display: none;
+  }
+}
+
+/* 星座寰宇 · 主 CTA 星光扫过（关键时刻的仪式感；减少动态时不闪） */
+@keyframes acw-cta-shine {
+  0%,
+  58% {
+    transform: translateX(-160%) skewX(-18deg);
+    opacity: 0;
+  }
+  66% {
+    opacity: 0.9;
+  }
+  82%,
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+/* 星座寰宇 · 星盘轮慢速悬浮公转（3D 舞台外层；减少动态时静止） */
+@keyframes acw-float3d {
+  0%,
+  100% {
+    transform: rotateX(3.5deg) rotateY(-4.5deg);
+  }
+  50% {
+    transform: rotateX(-3deg) rotateY(4.5deg);
+  }
+}
+.acw-wheel-float {
+  animation: acw-float3d 14s ease-in-out infinite;
+}
+
+/* 星体光晕呼吸（珠宝感的「活」；减少动态时静止并取中间亮度） */
+@keyframes acw-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.92;
+  }
+}
+.acw-breathe {
+  animation: acw-breathe 4.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-wheel-float {
+    animation: none;
+  }
+  .acw-breathe {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* 星盘轮仪器表圈：正/反向平稳公转的装饰环（非数据层；呼吸与运转可感知）。
+   transform-box: fill-box 让 SVG <g> 以自身包围盒中心为转轴 */
+@keyframes acw-orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.acw-orbit-cw {
+  animation: acw-orbit-spin 50s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.acw-orbit-ccw {
+  animation: acw-orbit-spin 75s linear infinite reverse;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* 相位能量流：一段亮弧沿相位线行进（pathLength 归一化 500，亮段 26）。
+   减少动态时静止（dashoffset 停在起点，线外无残影） */
+@keyframes acw-dash-flow {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.acw-aspect-flow {
+  stroke-dashoffset: 500;
+  animation: acw-dash-flow 8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-orbit-cw,
+  .acw-orbit-ccw {
+    animation: none;
+  }
+  .acw-aspect-flow {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* 异步等待态的柔和呼吸（骨架块与问答思考点共用；12 工单异步接缝）。
+   仅透明度变化，不改变布局；减少动态时静止定格在中档亮度 */
+@keyframes acw-soft-breathe {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.acw-skeleton-breathe {
+  animation: acw-soft-breathe 2.4s ease-in-out infinite;
+}
+.acw-thinking-dot {
+  animation: acw-soft-breathe 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .acw-skeleton-breathe,
+  .acw-thinking-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   星座寰宇「夜幕观星」结果页暗夜模式
+   - 机制：结果页容器嵌套 dark 类翻转全部 dark: 样式（星野自动切午夜深空+流星），
+     本块只负责「夜幕降临」的增量氛围——紫金双调星云、鎏金描边卡片、金辉底盘
+   - 审美原则：高级感来自克制——透明度 ≤0.12，光斑仅 3 处，金色只做点缀
+   - 全部动效在 prefers-reduced-motion 下静止
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 夜幕底画布：比星野默认更深半档、带紫调的深空渐变（星野缺席的失败卡等处兜底） */
+.astrology-night {
+  background: radial-gradient(115% 85% at 50% 0%, #12142e 0%, #0a0e22 48%, #05070f 100%);
+}
+
+/* 星云呼吸（比 ziwei-breathe 更缓更轻：夜幕是凝视场景，不是仪式场景） */
+@keyframes astrology-nebula-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.78;
+    transform: scale(1.06);
+  }
+}
+.astrology-night-nebula {
+  animation: astrology-nebula-breathe 16s ease-in-out infinite;
+}
+
+/* 邀请气泡的鎏金脉冲（仅首访白昼态一次，引起注意但不喧闹） */
+@keyframes astrology-invite-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(231, 200, 115, 0.38);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(231, 200, 115, 0);
+  }
+}
+.astrology-invite-pulse {
+  animation: astrology-invite-pulse 1.8s ease-in-out infinite;
+}
+
+/* 夜幕卡片质感：鎏金淡描边 + 深空下沉阴影 + 顶部微光内边
+   （暗夜里纯黑阴影不可读，靠「描边色温 + 内发光」让卡片浮在星幕上） */
+.astrology-night .night-card {
+  border-color: rgba(231, 200, 115, 0.14);
+  box-shadow:
+    0 24px 64px -24px rgba(2, 6, 23, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 星盘底盘金辉：夜幕下轮盘像悬在观星台上，底盘泛一层暖金星轨余晖 */
+.astrology-night .night-wheel-glow {
+  background: radial-gradient(
+    ellipse,
+    rgba(231, 200, 115, 0.12),
+    rgba(76, 60, 180, 0.1) 55%,
+    transparent 75%
+  );
+}
+
+/* 夜幕切换钮的鎏金质感（夜幕态下的按钮本体） */
+.astrology-night .night-toggle {
+  border-color: rgba(231, 200, 115, 0.32);
+  color: #e7c873;
+  box-shadow: 0 0 14px rgba(231, 200, 115, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .astrology-night-nebula,
+  .astrology-invite-pulse {
+    animation: none;
   }
 }

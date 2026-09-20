@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BaziWorkspace } from './bazi-workspace';
 import { ZiweiWorkspace } from './ziwei-workspace';
 import { QimenWorkspace } from './qimen-workspace';
+import { AstrologyWorkspace } from './astrology-workspace';
 import { QimenLoadingAnimation } from './qimen-loading-animation';
 import type { DestinyModuleKey } from './layout/left-nav';
 import { DestinyDesktopNav } from './layout/destiny-desktop-nav';
@@ -13,6 +14,8 @@ import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
+import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
+import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 // 跨模态接力：「待解读引用」领域级入口（REQ-011）
@@ -26,7 +29,13 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const [activeModule, setActiveModule] = useState<DestinyModuleKey>(() => {
     // 合盘档案从历史进入：tab=bazi-compatibility 时落到八字工作区
     if (initialTab === 'bazi-compatibility') return 'bazi';
-    if (initialTab === 'bazi' || initialTab === 'ziwei' || initialTab === 'qimen') return initialTab;
+    if (
+      initialTab === 'bazi' ||
+      initialTab === 'ziwei' ||
+      initialTab === 'qimen' ||
+      initialTab === 'astrology'
+    )
+      return initialTab;
     return 'bazi';
   });
   // 同步激活模块到全局 store,供命理域外的全局 chrome(移动端顶栏/底栏)感知场景
@@ -45,6 +54,18 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
   const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
   const ziweiTheme = resolveZiweiTheme(ziweiThemePref, systemResolvedTheme);
   const isZiweiNight = activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night';
+  // 星座寰宇「夜幕观星」同理：结果页与失败恢复卡入夜时，分段控件同步入夜保持可读
+  const astrologyNightScene = useDestinyWorkspaceStore(
+    (s) =>
+      s.astrology.step === 'result' ||
+      (s.astrology.entryView === 'loading' && Boolean(s.astrology.error))
+  );
+  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const isAstrologyNight =
+    activeModule === 'astrology' &&
+    astrologyNightScene &&
+    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+  const isResultNight = isZiweiNight || isAstrologyNight;
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);
   const [ziweiLoading, setZiweiLoading] = useState(false);
@@ -159,16 +180,13 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         />
       </div>
       <div className={cn('h-full w-full', activeModule !== 'ziwei' && 'hidden')}>
-        <ZiweiWorkspace
-          isActive={activeModule === 'ziwei'}
-          onLoadingChange={setZiweiLoading}
-        />
+        <ZiweiWorkspace isActive={activeModule === 'ziwei'} onLoadingChange={setZiweiLoading} />
       </div>
       <div className={cn('h-full w-full', activeModule !== 'qimen' && 'hidden')}>
-        <QimenWorkspace
-          isActive={activeModule === 'qimen'}
-          onLoadingChange={setQimenLoading}
-        />
+        <QimenWorkspace isActive={activeModule === 'qimen'} onLoadingChange={setQimenLoading} />
+      </div>
+      <div className={cn('h-full w-full', activeModule !== 'astrology' && 'hidden')}>
+        <AstrologyWorkspace isActive={activeModule === 'astrology'} />
       </div>
     </>
   );
@@ -178,6 +196,7 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
       { key: 'bazi' as const, label: '八字' },
       { key: 'ziwei' as const, label: '紫微' },
       { key: 'qimen' as const, label: '奇门' },
+      { key: 'astrology' as const, label: '星座' },
     ];
 
     return (
@@ -185,11 +204,11 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent"
         style={{ minHeight: '100dvh' }}
       >
-        {/* 移动端分段控件(紫微结果态入夜) */}
+        {/* 移动端分段控件(紫微/星座结果态入夜) */}
         <div
           className={cn(
             'sticky top-0 z-20 border-b px-4 py-3 backdrop-blur-2xl transition-[background-color,border-color] duration-500',
-            isZiweiNight
+            isResultNight
               ? 'border-[#E7C873]/15 bg-[#0C1128]/85'
               : 'border-white/50 bg-white/75 dark:border-white/10 dark:bg-slate-900/75'
           )}
@@ -197,10 +216,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
           <div
             className={cn(
               'rounded-[999px] p-1 transition-colors duration-500',
-              isZiweiNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
+              isResultNight ? 'bg-white/5' : 'bg-slate-100/80 dark:bg-slate-800/80'
             )}
           >
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-4 gap-1">
               {mobileTabs.map((tab) => {
                 const active = activeModule === tab.key;
                 return (
@@ -211,10 +230,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
                     className={cn(
                       'rounded-[999px] px-4 py-2 text-sm font-semibold transition-all duration-200',
                       active
-                        ? isZiweiNight
+                        ? isResultNight
                           ? 'bg-[#A78BFA]/15 text-[#C4B5FD] shadow-[0_0_16px_rgba(139,92,246,0.25)]'
                           : 'bg-white text-[#5D7CFA] shadow-sm dark:bg-slate-700 dark:text-[#9BADFF]'
-                        : isZiweiNight
+                        : isResultNight
                           ? 'text-[#8B87A0] hover:text-[#C9C4D8]'
                           : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     )}
@@ -261,7 +280,14 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
     );
   }
 
-  const isLoading = activeModule === 'bazi' ? baziLoading : activeModule === 'ziwei' ? ziweiLoading : qimenLoading;
+  const isLoading =
+    activeModule === 'bazi'
+      ? baziLoading
+      : activeModule === 'ziwei'
+        ? ziweiLoading
+        : activeModule === 'qimen'
+          ? qimenLoading
+          : false;
 
   return (
     <DestinyNavProvider>

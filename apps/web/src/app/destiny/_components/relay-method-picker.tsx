@@ -17,6 +17,7 @@ import {
   computeDestinyReadiness,
 } from '@/lib/relay/destiny-capabilities';
 import type { RelayContentType } from '@repo/shared';
+import type { DestinyModuleKey } from './layout/left-nav';
 
 export interface RelayMethodPickerProps {
   sourceType: RelayContentType;
@@ -27,7 +28,7 @@ export interface RelayMethodPickerProps {
     hasCastTime?: boolean;
   };
   /** 当前选中的术数 */
-  activeModule?: 'bazi' | 'ziwei' | 'qimen';
+  activeModule?: DestinyModuleKey;
   onPick: (methodId: 'bazi' | 'ziwei' | 'qimen') => void;
   className?: string;
 }

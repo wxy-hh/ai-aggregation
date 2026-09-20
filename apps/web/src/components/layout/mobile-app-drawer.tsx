@@ -3,7 +3,7 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
-import { APP_CONFIGS } from './apps-modal';
+import { APP_CONFIGS, type AppIconComponent } from './apps-modal';
 import {
   ChevronRight,
   CircleUserRound,
@@ -53,7 +53,7 @@ const QUICK_LINKS = [
 
 const drawerApps = APP_CONFIGS.filter((app) => !PRIMARY_APP_IDS.has(app.id));
 
-const APP_ICON_OVERRIDES: Partial<Record<(typeof drawerApps)[number]['id'], React.ElementType>> = {};
+const APP_ICON_OVERRIDES: Partial<Record<(typeof drawerApps)[number]['id'], AppIconComponent>> = {};
 
 const QUICK_LINK_ICON_STYLES: Record<
   (typeof QUICK_LINKS)[number]['href'],
@@ -100,7 +100,7 @@ function DrawerIconTile({
   disabled = false,
   size = 'md',
 }: {
-  icon: React.ElementType;
+  icon: AppIconComponent;
   iconBg?: string;
   iconColor?: string;
   iconRing?: string;

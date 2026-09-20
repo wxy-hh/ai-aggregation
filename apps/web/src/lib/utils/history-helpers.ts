@@ -302,6 +302,17 @@ export function createDestinyHistoryItem(
       : '未知';
     const g = cf.partner?.gender;
     genderLabel = g === 'male' ? '男' : g === 'female' ? '女' : '合盘';
+  } else if (subType === 'astrology') {
+    // 星座寰宇：隐私规格要求历史卡不得出现出生日期——gender 槽位复用为时间精度标签，
+    // birthDate 槽位复用为「生成日期」（历史卡展示「精度 · 生成日期」）
+    const af = formData as {
+      name?: string;
+      timePrecision?: string;
+    };
+    name = af.name?.trim() || '星盘主人';
+    genderLabel =
+      af.timePrecision === 'accurate' ? '准确到分钟' : af.timePrecision === 'approximate' ? '大约时段' : '时间未知';
+    birthDateText = `${now.getMonth() + 1}月${now.getDate()}日生成`;
   } else {
     name = (formData as { name?: string }).name || '未知';
     const birthDate =
@@ -318,14 +329,18 @@ export function createDestinyHistoryItem(
       ? '八字'
       : subType === 'ziwei'
         ? '紫微斗数'
-        : subType === 'bazi-compatibility'
-          ? '八字合盘'
-          : '奇门遁甲';
+        : subType === 'astrology'
+          ? '星座寰宇'
+          : subType === 'bazi-compatibility'
+            ? '八字合盘'
+            : '奇门遁甲';
   const title =
     options?.title ||
-    (subType === 'bazi-compatibility'
-      ? `${name} · 合盘`
-      : `${name}的${subTypeLabel}命理报告`);
+    (subType === 'astrology'
+      ? `星座寰宇 · ${name}的本命星盘`
+      : subType === 'bazi-compatibility'
+        ? `${name} · 合盘`
+        : `${name}的${subTypeLabel}命理报告`);
   const preview =
     options?.preview ||
     (subType === 'bazi-compatibility'

@@ -44,6 +44,14 @@ export function encodeDestinySseEvent(
 }
 
 /**
+ * 将 SSE 事件 payload 编码为标准 SSE 帧字节
+ * （星座寰宇等尚未纳入共享契约的链路使用）
+ */
+export function encodeSseEvent(payload: Record<string, unknown>): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+/**
  * 用标准 SSE 响应头包裹 ReadableStream
  */
 export function createSseResponse(stream: ReadableStream<Uint8Array>): Response {

@@ -111,12 +111,15 @@ export type AppId =
   | '3d'
   | 'feedback';
 
+// 应用图标组件类型：lucide 图标与自定义图标组件都满足该签名
+export type AppIconComponent = React.ComponentType<{ className?: string; strokeWidth?: number }>;
+
 interface AppConfig {
   id: AppId;
   label: string;
   description: string;
   disabledDescription?: string;
-  icon: React.ElementType;
+  icon: AppIconComponent;
   category: 'core' | 'productivity' | 'creative';
   href: string;
   iconColor: string;
