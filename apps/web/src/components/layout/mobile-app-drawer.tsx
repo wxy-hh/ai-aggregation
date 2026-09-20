@@ -155,7 +155,7 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
             </DialogDescription>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-4">
+          <div className="min-h-0 flex-1 overflow-y-auto sidebar-scrollbar overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-4">
             <section className="space-y-3">
               <h3 className="px-1 text-[11px] font-semibold tracking-[0.05em] text-slate-500 dark:text-slate-400">
                 应用入口

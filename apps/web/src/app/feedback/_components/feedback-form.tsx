@@ -143,7 +143,7 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
 
       <div className={cn(
-        'relative w-full sm:w-[520px] max-h-[90vh] sm:max-h-[85vh] overflow-y-auto hide-scrollbar',
+        'relative w-full sm:w-[520px] max-h-[90vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar',
         'bg-white dark:bg-[#1a1f3a]',
         'rounded-t-3xl sm:rounded-3xl',
         'border border-[#E8ECF5] dark:border-[#2d3454]',

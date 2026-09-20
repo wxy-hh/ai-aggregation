@@ -245,7 +245,7 @@ function PlanetFactCard({
               上限放宽到 226px（≈5 颗 + 第 6 颗露头）给横排「可滑动」视觉线索；
               min-w-0 保证窄屏时先缩行、不挤两侧控件；不加 flex-1——行宽取内容与上限的较小值，
               用 flex-1 会被中间余量（桌面右栏实测 253px）压到比上限更窄 */}
-          <div className="flex min-w-0 max-w-[226px] items-center gap-1 overflow-x-auto p-0.5 custom-scrollbar sm:max-w-[280px]">
+          <div className="flex min-w-0 max-w-[226px] items-center gap-1 overflow-x-auto p-0.5 hide-scrollbar sm:max-w-[280px]">
             {allPlanets.map((p) => {
               const ItemGlyph = PLANET_GLYPH[p.body];
               const isCurrent = p.body === body;
@@ -1404,7 +1404,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: '100%' }}
                     transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0E1430]/95"
+                    className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 max-h-[82vh] overflow-y-auto custom-scrollbar rounded-[24px] border border-white/40 bg-white/95 p-5 shadow-[0_24px_60px_-15px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-white/10 dark:bg-[#0E1430]/95"
                     role="dialog"
                     aria-label={`${PLANET_CN[selectedBody]}事实卡`}
                   >

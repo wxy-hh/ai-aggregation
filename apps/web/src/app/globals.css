@@ -139,6 +139,14 @@
   .dark [contenteditable='true'] {
     caret-color: #8b9dff;
   }
+
+  /* 链接/文字按钮下划线统一（DESIGN.md §9）：offset 4px + 装饰色 40% 透明度。
+     未加下划线时两条属性均不生效；组件可用 underline-offset / decoration 工具类覆盖 */
+  a,
+  button {
+    text-underline-offset: 4px;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  }
 }
 
 /* 无障碍：尊重用户的减弱动态偏好 */
@@ -478,16 +486,6 @@
     border: none;
     border-top: 1px solid hsl(var(--border));
     margin: 1.5em 0;
-  }
-}
-
-@layer utilities {
-  .hide-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .hide-scrollbar::-webkit-scrollbar {
-    display: none;
   }
 }
 

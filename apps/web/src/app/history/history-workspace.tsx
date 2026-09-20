@@ -183,7 +183,7 @@ export default function HistoryWorkspace() {
           {/* 选项卡 */}
           <div
             data-testid="history-tabs"
-            className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full overflow-x-auto"
+            className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full overflow-x-auto hide-scrollbar"
           >
             {tabs.map((tab) => (
               <Button

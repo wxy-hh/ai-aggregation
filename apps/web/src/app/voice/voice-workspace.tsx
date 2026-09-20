@@ -683,7 +683,7 @@ function VoicePageContent() {
               查看上传音频历史并恢复转写结果
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto p-4">
+          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar p-4">
             <RecordingLibrary onHistoryItemClick={handleHistoryItemClick} />
           </div>
         </DialogContent>

@@ -414,7 +414,7 @@ export function QimenInputForm({
                       className="mb-2"
                       autoFocus
                     />
-                    <div className="max-h-48 overflow-y-auto">
+                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
                       {cityResults.length > 0 ? (
                         cityResults.map((city, idx) => {
                           const isSelected =

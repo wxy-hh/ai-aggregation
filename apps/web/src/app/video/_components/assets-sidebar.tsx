@@ -57,7 +57,7 @@ export function AssetsSidebar({
             {/* 资源列表模拟 */}
             <div
               className={cn(
-                'flex-1 overflow-y-auto no-scrollbar',
+                'flex-1 overflow-y-auto custom-scrollbar',
                 showToggle ? 'flex flex-col gap-3 px-2' : 'grid grid-cols-2 gap-3'
               )}
             >

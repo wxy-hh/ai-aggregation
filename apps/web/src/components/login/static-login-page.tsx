@@ -143,7 +143,7 @@ export function StaticLoginPage() {
       };
 
   return (
-    <div className="h-[100dvh] min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-[linear-gradient(120deg,#fcfdff_0%,#f5f9ff_38%,#eef5ff_100%)] text-slate-950">
+    <div className="h-[100dvh] min-h-[100dvh] overflow-x-hidden overflow-y-auto custom-scrollbar bg-[linear-gradient(120deg,#fcfdff_0%,#f5f9ff_38%,#eef5ff_100%)] text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(255,255,255,0.96),transparent_24%),radial-gradient(circle_at_78%_8%,rgba(183,211,255,0.34),transparent_24%),radial-gradient(circle_at_72%_74%,rgba(196,230,255,0.22),transparent_20%),radial-gradient(circle_at_28%_88%,rgba(224,240,255,0.68),transparent_22%)]" />
       <motion.div
         data-testid="login-page-shell"
@@ -349,7 +349,7 @@ export function StaticLoginPage() {
           initial={prefersReducedMotion ? false : { opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           transition={motionTransition}
-          className="relative flex items-center overflow-hidden rounded-[2rem] border border-white/60 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 shadow-[0_22px_70px_rgba(126,160,220,0.14)] sm:px-6 sm:pt-7 lg:h-[calc(100dvh-3rem)] lg:min-h-0 lg:items-stretch lg:overflow-x-hidden lg:overflow-y-auto lg:px-8 lg:py-8 xl:px-10"
+          className="relative flex items-center overflow-hidden rounded-[2rem] border border-white/60 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 shadow-[0_22px_70px_rgba(126,160,220,0.14)] sm:px-6 sm:pt-7 lg:h-[calc(100dvh-3rem)] lg:min-h-0 lg:items-stretch lg:overflow-x-hidden lg:overflow-y-auto custom-scrollbar lg:px-8 lg:py-8 xl:px-10"
         >
           {isDesktopViewport ? (
             <motion.button

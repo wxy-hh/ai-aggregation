@@ -114,7 +114,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
   const hasVideo = !!videoUrl;
 
   return (
-    <div className="w-full overflow-x-auto pb-1">
+    <div className="w-full overflow-x-auto hide-scrollbar pb-1">
       <div className="flex min-w-[720px] flex-col gap-4 md:min-w-0">
       {/* 主控制条 */}
         <div
@@ -214,7 +214,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
               className="overflow-hidden"
             >
               <div className="rounded-[32px] border border-white/50 bg-white/45 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40">
-                <div className="h-20 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                <div className="h-20 flex items-center gap-1 overflow-x-auto hide-scrollbar">
                   {hasVideo ? (
                     // 实际帧预览（占位）
                     [...Array(24)].map((_, i) => (

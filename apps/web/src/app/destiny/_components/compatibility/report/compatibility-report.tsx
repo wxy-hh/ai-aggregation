@@ -248,7 +248,7 @@ export function CompatibilityReportView({
           {/* 关系类型 Tabs：未缓存直接请求，无二次确认 */}
           <div
             className={cn(
-              'flex gap-0 overflow-x-auto rounded-2xl border border-white/50 bg-white/45 px-1 backdrop-blur-xl',
+              'flex gap-0 overflow-x-auto hide-scrollbar rounded-2xl border border-white/50 bg-white/45 px-1 backdrop-blur-xl',
               'supports-[backdrop-filter]:bg-white/35',
               'dark:border-white/10 dark:bg-slate-900/50 dark:supports-[backdrop-filter]:bg-slate-900/40'
             )}

@@ -1654,7 +1654,7 @@ function StarIntroDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('zw-dialog max-h-[80vh] max-w-md overflow-y-auto rounded-[24px]')}
+        className={cn('zw-dialog max-h-[80vh] max-w-md overflow-y-auto custom-scrollbar ziwei-night-scrollbar rounded-[24px]')}
       >
         <span className="zw-gold-divider-soft" aria-hidden />
         <DialogTitle className="zw-text-1 font-song text-base font-bold">星曜入门指南</DialogTitle>
@@ -1864,7 +1864,7 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
   const totalCount = allStars.length;
 
   return (
-    <div ref={scrollRef} className="relative -mr-1 h-full overflow-y-auto pr-1">
+    <div ref={scrollRef} className="relative -mr-1 h-full overflow-y-auto custom-scrollbar ziwei-night-scrollbar pr-1">
       {/* 标题与搜索 */}
       <div className="zw-sticky-head sticky top-0 z-10 rounded-lg p-2">
         <div className="mb-2 flex items-end justify-between">

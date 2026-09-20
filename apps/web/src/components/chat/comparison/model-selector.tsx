@@ -136,7 +136,7 @@ export const ModelSelector = memo(function ModelSelector({ variant = 'header' }:
             <DialogHeader>
               <DialogTitle className="text-base">选择对比模型</DialogTitle>
             </DialogHeader>
-            <div className="overflow-y-auto pb-2">
+            <div className="overflow-y-auto custom-scrollbar pb-2">
               <ModelPickerList />
             </div>
           </DialogContent>

@@ -119,7 +119,7 @@ export function HomeContent() {
   }, [router, setInput, currentInspiration]);
 
   return (
-    <div className="flex h-full w-full flex-col lg:flex-row bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden font-sans">
+    <div className="flex h-full w-full flex-col lg:flex-row bg-[#F3F5FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto custom-scrollbar lg:overflow-hidden font-sans">
       {/* 
         二级侧边栏（发现） 
         基于 "Image 1" 描述：左侧侧边栏包含 "发现"、搜索、工具等。
@@ -204,7 +204,7 @@ export function HomeContent() {
         </div>
 
         {/* 最近文件 */}
-        <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto no-scrollbar -mx-2 px-2">
+        <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2">
           <div className="flex items-center justify-between mb-4 mt-1">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               最近文件

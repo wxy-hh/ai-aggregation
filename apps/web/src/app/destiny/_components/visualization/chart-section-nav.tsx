@@ -77,7 +77,7 @@ export function ChartSectionNav({
     <nav
       aria-label="盘面区块导航"
       className={cn(
-        'flex min-h-11 shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto',
+        'flex min-h-11 shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto hide-scrollbar',
         '[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
         className
       )}

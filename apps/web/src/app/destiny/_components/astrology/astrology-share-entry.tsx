@@ -295,7 +295,7 @@ export function AstrologyShareEntry({
             </DialogDescription>
           </div>
 
-          <div className="max-h-[92vh] overflow-y-auto px-4 py-4 sm:px-6">
+          <div className="max-h-[92vh] overflow-y-auto custom-scrollbar px-4 py-4 sm:px-6">
             {/* 预览容器：按可用宽高取较小缩放比，导出节点保持 375×500 原始尺寸 */}
             <div
               ref={measurePreviewBox}

@@ -1391,7 +1391,7 @@ export function RhythmTimeline({
 }) {
   if (layout === 'horizontal') {
     return (
-      <ol className="flex h-full items-stretch gap-3 overflow-x-auto pb-1 custom-scrollbar">
+      <ol className="flex h-full items-stretch gap-3 overflow-x-auto pb-1 hide-scrollbar">
         {rhythm.map((node, i) => {
           const Icon = rhythmIcon(node.tone);
           return (

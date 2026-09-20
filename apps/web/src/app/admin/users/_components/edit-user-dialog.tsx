@@ -216,7 +216,7 @@ export function EditUserDialog({ open, onOpenChange, user, onSuccess, currentUse
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar pr-1">
           <div className="relative overflow-hidden rounded-[20px] border border-[rgba(255,255,255,0.60)] bg-[linear-gradient(90deg,rgba(255,255,255,0.82),rgba(255,255,255,0.64),rgba(255,255,255,0.56))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_14px_28px_-24px_rgba(59,130,246,0.18)] backdrop-blur-[18px] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] sm:rounded-[22px]">
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/[0.18] to-transparent dark:from-white/5" />
             <div className="relative flex flex-col gap-3">

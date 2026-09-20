@@ -769,7 +769,7 @@ export function ProfileShell() {
 
   return (
     <>
-      <div className="relative min-h-full w-full overflow-y-auto overflow-x-hidden bg-[#F3F5FA] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-10 lg:py-10">
+      <div className="relative min-h-full w-full overflow-y-auto custom-scrollbar overflow-x-hidden bg-[#F3F5FA] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-10 lg:py-10">
         {/* 背景光斑效果 - 对齐 home 规范 */}
         <div
           className="pointer-events-none absolute inset-0 -z-10 dark:hidden"

@@ -285,7 +285,7 @@ export function UserManagementShell() {
 
   return (
     <>
-      <div className="relative min-h-full w-full overflow-y-auto overflow-x-hidden bg-[var(--home-color-page-bg)] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-8 lg:py-10">
+      <div className="relative min-h-full w-full overflow-y-auto custom-scrollbar overflow-x-hidden bg-[var(--home-color-page-bg)] px-4 pb-8 pt-6 dark:bg-slate-950 sm:px-6 lg:px-8 lg:py-10">
         <div
           className="pointer-events-none absolute inset-0 -z-10 dark:hidden"
           aria-hidden

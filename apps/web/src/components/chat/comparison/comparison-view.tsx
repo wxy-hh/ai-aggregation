@@ -67,7 +67,7 @@ const TurnSection = memo(function TurnSection({
             正在比较 {focusedCount}/{runs.length}，左右切换查看全部
           </p>
           <Tabs defaultValue={turn.focusSlots.left}>
-            <TabsList className="mb-2 h-auto w-full justify-start gap-1 overflow-x-auto bg-white/50 p-1 dark:bg-slate-800/50">
+            <TabsList className="mb-2 h-auto w-full justify-start gap-1 overflow-x-auto hide-scrollbar bg-white/50 p-1 dark:bg-slate-800/50">
               {runs.map((run) => (
                 <TabsTrigger
                   key={run.modelKey}

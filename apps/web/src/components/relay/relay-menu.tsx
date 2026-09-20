@@ -138,7 +138,7 @@ export function RelayMenu({
             <DialogDescription className="sr-only">{RELAY_COPY.menuTitle}</DialogDescription>
           </div>
           <div
-            className="max-h-[85vh] overflow-y-auto p-3"
+            className="max-h-[85vh] overflow-y-auto custom-scrollbar p-3"
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
           >
             {renderItems()}

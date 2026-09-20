@@ -266,7 +266,7 @@ export function DestinyShell({
               查看测算报告、流年趋势和 AI 追问
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto px-3 sm:px-4 py-3 sm:py-4">
+          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar px-3 sm:px-4 py-3 sm:py-4">
             <GlassCard variant="compact" className="w-full p-3 sm:p-4">
               {displayReport ? (
                 <ReportRightRail

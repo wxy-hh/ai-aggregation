@@ -15,7 +15,7 @@ export default function ResumeEntryPage() {
 
   return (
     <AppLayout>
-      <div className="flex-1 relative overflow-y-auto bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-slate-900 dark:via-blue-950/30 dark:to-purple-950/20">
+      <div className="flex-1 relative overflow-y-auto custom-scrollbar bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20 dark:from-slate-900 dark:via-blue-950/30 dark:to-purple-950/20">
         {/* 主内容区 */}
         <div className="relative z-10 flex flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20 min-h-full">
           {/* 标题区域 */}

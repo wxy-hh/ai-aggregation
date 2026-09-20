@@ -149,7 +149,7 @@ export function PrivacyNoticeDialog({ isOpen, onClose, onAccept }: PrivacyNotice
               </div>
 
               {/* 内容区域 */}
-              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
                 {/* AI 功能说明 */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">

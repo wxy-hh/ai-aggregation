@@ -1409,7 +1409,7 @@ function QimenPalaceLinkedText({
               key={`${segment}-${index}`}
               type="button"
               onClick={() => onPalaceClick(segment)}
-              className="mx-0.5 inline-flex items-center rounded-md border border-indigo-200/70 bg-indigo-50/90 px-1 py-px text-[13px] font-semibold text-indigo-800 underline-offset-2 transition-colors hover:border-indigo-300 hover:bg-indigo-100/90 hover:underline dark:border-indigo-500/35 dark:bg-indigo-950/50 dark:text-indigo-300"
+              className="mx-0.5 inline-flex items-center rounded-md border border-indigo-200/70 bg-indigo-50/90 px-1 py-px text-[13px] font-semibold text-indigo-800 underline-offset-4 transition-colors hover:border-indigo-300 hover:bg-indigo-100/90 hover:underline dark:border-indigo-500/35 dark:bg-indigo-950/50 dark:text-indigo-300"
             >
               {segment}
             </button>

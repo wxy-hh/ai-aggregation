@@ -1147,7 +1147,7 @@ export default function ChatWorkspace() {
                 在移动端快速切换历史会话
               </DialogDescription>
             </div>
-            <div className="max-h-[78vh] overflow-y-auto p-4 flex flex-col gap-4">
+            <div className="max-h-[78vh] overflow-y-auto custom-scrollbar p-4 flex flex-col gap-4">
               {renderConversationList(() => setShowConversationDrawer(false))}
             </div>
           </DialogContent>
@@ -1163,7 +1163,7 @@ export default function ChatWorkspace() {
                 选择当前对话使用的模型与提供商
               </DialogDescription>
             </div>
-            <div className="max-h-[78vh] overflow-y-auto px-4 py-4">
+            <div className="max-h-[78vh] overflow-y-auto custom-scrollbar px-4 py-4">
               {renderModelOptions(() => setShowMobileModelDrawer(false))}
             </div>
           </DialogContent>

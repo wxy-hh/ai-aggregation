@@ -51,7 +51,7 @@
 | 页面框架 | `components/layout/app-layout.tsx` | AppLayout + AuthGuard |
 | 导航系统 | `components/layout/apps-modal.tsx` | APP_CONFIGS 统一注册 |
 | API 模式 | `lib/api/responses.ts` | ApiError / createSuccessResponse |
-| 设计系统 | `docs/DESIGN.md` | 玻璃拟态 + 靛蓝主题 + 暗色模式 |
+| 设计系统 | `DESIGN.md`（根目录） | 玻璃拟态 + 靛蓝主题 + 暗色模式 |
 
 ### 2.2 建设目标
 
@@ -861,7 +861,7 @@ apps/web/src/app/feedback/
 | 回复 API | `app/api/feedback/[id]/reply/route.ts` | 回复创建逻辑 |
 | Prisma Schema | `packages/db/prisma/schema.prisma` | Feedback 等模型定义 |
 | 导航配置 | `components/layout/apps-modal.tsx` | APP_CONFIGS 注册模式 |
-| 设计规范 | `docs/DESIGN.md` | 玻璃拟态、色彩、排版 |
+| 设计规范 | `DESIGN.md`（根目录） | 玻璃拟态、色彩、排版 |
 
 ## 附录 B：关键设计决策记录
 

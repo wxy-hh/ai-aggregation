@@ -1,4 +1,4 @@
-/* Custom scrollbar for better aesthetics */
+/* 通用细滚动条：半透灰圆角滑块，适配大多数滚动容器 */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -62,13 +62,14 @@
   background-clip: padding-box;
 }
 
-/* Hide scrollbar for clean look but keep functionality */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
+/* 隐藏滚动条但保留滚动功能（规范类名 hide-scrollbar，见 DESIGN.md §9）。
+   注意：本文件无 @tailwind 指令，不能包 @layer，须写为普通 CSS */
+.hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes cursor-blink {

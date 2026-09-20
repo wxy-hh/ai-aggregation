@@ -154,7 +154,7 @@ export function AIAssistantPanel() {
   };
 
   return (
-    <div className="h-full p-6 space-y-6 overflow-y-auto">
+    <div className="h-full p-6 space-y-6 overflow-y-auto custom-scrollbar">
       {/* 标题 */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}

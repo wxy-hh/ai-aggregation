@@ -86,7 +86,7 @@ export function CompatibilityGeneratingView({
         <button
           type="button"
           onClick={onCancel}
-          className="mt-8 text-sm font-medium text-slate-500 underline-offset-2 hover:underline"
+          className="mt-8 text-sm font-medium text-slate-500 underline-offset-4 hover:underline"
         >
           返回修改资料（报告会继续尝试生成）
         </button>

@@ -43,7 +43,7 @@ export function ReferenceSourcePreview({ open, onOpenChange, item }: ReferenceSo
         <div
           ref={bodyRef}
           tabIndex={-1}
-          className="max-h-[70vh] overflow-y-auto p-5 outline-none"
+          className="max-h-[70vh] overflow-y-auto custom-scrollbar p-5 outline-none"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.25rem)' }}
         >
           {item.snapshotMediaUrl && !item.mediaInvalid ? (

@@ -124,7 +124,7 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar pr-1">
           {error ? (
             <div className="mb-4 rounded-[16px] border border-rose-200/90 bg-rose-50/90 px-4 py-3 text-[14px] text-rose-600 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
               {error}

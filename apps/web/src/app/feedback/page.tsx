@@ -285,7 +285,7 @@ export default function FeedbackPage() {
           </div>
 
           {/* 内容区 */}
-          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-16 flex-1 overflow-y-auto">
+          <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-16 flex-1 overflow-y-auto custom-scrollbar">
             <FeedbackList
               items={feedbacks}
               loading={loading}

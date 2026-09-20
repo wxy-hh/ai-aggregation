@@ -427,7 +427,7 @@ export default function ImageWorkspace() {
             </div>
 
             {/* 中间：预览区域 */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center relative">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 flex flex-col items-center justify-start lg:justify-center relative">
               {/* 背景网格纹理 - 更淡 */}
               <div
                 className="absolute inset-0 opacity-[0.02] dark:opacity-[0.05] pointer-events-none"
@@ -708,7 +708,7 @@ export default function ImageWorkspace() {
               调整风格、排除内容和生成参数
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto p-4 space-y-6">{renderParameterPanel()}</div>
+          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar p-4 space-y-6">{renderParameterPanel()}</div>
         </DialogContent>
       </Dialog>
 

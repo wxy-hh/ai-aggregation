@@ -130,7 +130,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
             </div>
 
             {/* AI 助手面板内容 */}
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto custom-scrollbar">
               <AIAssistantPanel />
             </div>
           </motion.div>

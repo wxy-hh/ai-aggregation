@@ -106,7 +106,7 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
         </Button>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory no-scrollbar sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4 sm:gap-4 lg:gap-6">
+      <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4 sm:gap-4 lg:gap-6">
         {showSkeleton &&
           Array.from({ length: 3 }).map((_, index) => (
             <RecentCreationSkeleton key={`skeleton-${index}`} />

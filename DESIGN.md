@@ -117,6 +117,8 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 | 标题 `font-heading` | `--font-space-grotesk` → Inter → 系统 sans（当前与正文同源，靠字重/字距区分层级） | 产品页标题、chat 标题与 markdown 标题、destiny 全系标题 |
 | 展示宋体 `font-song` | `--font-song`：Songti SC → Noto Serif SC → SimSun | **仅限紫微**星曜名与盘面标题（东方器物感） |
 
+> 实现机制：`font-sans` / `font-heading` 定义于 `tailwind.config.ts` 的 `fontFamily`；`font-song` 是 `globals.css` 里的 utility 类（`.font-song`），不在 `fontFamily` 中，不要去 tailwind.config 里找。
+
 ### 3.2 字号与字重阶梯
 
 | 层级 | 规格 | 用途 |
@@ -152,7 +154,7 @@ shadcn `button.tsx` 已品牌化：default 变体 = `from-primary to-[#7B8FFF]` 
 - 大面积滚动区、长文阅读区**不开** `backdrop-blur`（性能 + 可读性）。
 - 玻璃边框是材质高光边缘（`border-white/60` 方向），不与厚重阴影叠加宣告海拔——阴影/边框二选一为主。
 
-### 4.2 命理环境光系统（`destiny-ambient-background.tsx`）
+### 4.2 命理环境光系统（`app/destiny/_components/layout/destiny-ambient-background.tsx`）
 
 destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue / violet / indigo / cosmos）+ 48px 网格纹（radial mask 淡出）。700ms 交叉渐变完成「入夜」。新命理页面**必须复用**此底座，不自造背景。
 
@@ -255,7 +257,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 ### 8.1 按钮
 
 - 首选 `@/components/ui/button`（已品牌化：主变体渐变+发光阴影、`active:scale-[0.98]`、destructive 粉渐变、outline 白玻璃）。
-- 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。星座寰宇模块统一引 `astrology/_components/astrology-cta-button.tsx` 的 `<AstrologyCtaButton>`（按钮）与 `ASTROLOGY_CTA_GRADIENT_CLASS`（选中态胶囊等装饰渐变），不再手写色值。
+- 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。星座寰宇模块统一引 `app/destiny/_components/astrology/astrology-cta-button.tsx` 的 `<AstrologyCtaButton>`（按钮）与 `ASTROLOGY_CTA_GRADIENT_CLASS`（选中态胶囊等装饰渐变），不再手写色值。
 - 状态齐全：hover（上浮 -1px 或 scale 1.02）/ active（scale 0.98）/ focus-visible（2px ring）/ disabled（opacity-40，无动效）/ loading（Spinner + pointer-events-none）。
 - 尺寸：大 52px / 中 44px / 小 32px；移动端主操作不小于 44px。
 
@@ -293,9 +295,9 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | 焦点环 | `focus-visible` 2px 实色描边 + offset；ds-focusable 用 `--ds-accent-blue` | ✅ 已覆盖 |
 | 文本选区 `::selection` | 品牌靛蓝底（`rgba(99,102,241,0.24)` 浅色 / `rgba(129,140,248,0.36)` 深色），文字保持高对比 | ✅ 已实施（globals.css base 层） |
 | 输入光标 `caret-color` | 表单域 `#4969E9`（dark `#8B9DFF`） | ✅ 已实施（globals.css base 层） |
-| 滚动条 | `styles/scrollbar.css`：custom-scrollbar / sidebar-scrollbar / hide-scrollbar / ziwei-night-scrollbar；滚动容器必须引用其一 | ✅ 已有体系（引用覆盖率待查） |
+| 滚动条 | `styles/scrollbar.css`：custom-scrollbar / sidebar-scrollbar / hide-scrollbar / ziwei-night-scrollbar；滚动容器必须引用其一 | ✅ 已有体系且全量覆盖（四类齐备于 scrollbar.css，滚动容器引用覆盖率 100%） |
 | 数字 | 表格/度数/计时强制 `tabular-nums` | ✅ 星盘/语音已覆盖 |
-| 链接下划线 | 链接/文字按钮统一 `underline-offset: 4px` + 装饰色 40% 透明度 | 🟡 部分覆盖（button.tsx、entry-home、奇门），未全局统一 |
+| 链接下划线 | 链接/文字按钮统一 `underline-offset: 4px` + 装饰色 40% 透明度 | ✅ 已全局统一（globals.css base 层兜底 `a`/`button`，组件可用工具类覆盖） |
 
 ---
 
@@ -315,9 +317,9 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | 奇门 | Experience | 金色局盘 | amber 金系宫卡、多彩门星神煞 |
 | 星座寰宇 astrology | Experience | 悬浮天象仪 | 「星渊」WebGL 深空星盘（星云/星野/宝珠溢光/相位流光）、仪式揭示、金句主轴 |
 
-新功能面加入时，先在此表登记模式与基调，再动手。
+新功能面加入时，先在此表登记模式与基调，再动手。认证/账号/管理/调试类系统页（login / register / forgot-password / reset-password / profile / admin / feedback / debug-history）不入册，默认按 Operate 模式执行。
 
-### 10.1 星座结果页「星渊」WebGL 深空星盘（`astrology-wheel-scene.tsx`）
+### 10.1 星座结果页「星渊」WebGL 深空星盘（`app/destiny/_components/astrology/astrology-wheel-scene.tsx`）
 
 **设计立意**：星盘不是一张平面图，而是一扇圆形舷窗——用户凑近看自己那片深空。浅色主题下深空圆窗与亮页形成「舷窗对比」，是有意的视觉锚点，不要把它调亮。
 

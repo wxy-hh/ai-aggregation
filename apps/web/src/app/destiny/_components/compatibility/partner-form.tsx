@@ -447,7 +447,7 @@ export function CompatibilityPartnerForm({
                             placeholder="输入城市或地区名称..."
                             className={cn(inputClass, 'mb-2')}
                           />
-                          <div className="max-h-48 overflow-y-auto sm:max-h-56">
+                          <div className="max-h-48 overflow-y-auto custom-scrollbar sm:max-h-56">
                             {cityResults.length > 0 ? (
                               cityResults.map((city, idx) => {
                                 const isSelected =

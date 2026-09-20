@@ -81,7 +81,7 @@ export function ConfigPanel({
   return (
     <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-transparent transition-colors">
       {/* 滚动内容区 */}
-      <div className="no-scrollbar w-full min-w-0 flex-1 space-y-7 overflow-y-auto px-5 py-6 lg:px-6">
+      <div className="w-full min-w-0 flex-1 space-y-7 overflow-y-auto custom-scrollbar px-5 py-6 lg:px-6">
         <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
           创作参数
         </h2>
@@ -129,7 +129,7 @@ export function ConfigPanel({
               onChange={(e) => setPrompt(e.target.value)}
               disabled={isGenerating}
               placeholder="描述你想要生成的视频画面，例如：一只金色的鲤鱼在星空中游动，鳞片闪烁着微光，背景是深蓝色的银河系..."
-              className="min-h-[140px] max-h-[200px] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 py-4 pr-3 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]"
+              className="min-h-[140px] max-h-[200px] w-full resize-none overflow-y-auto custom-scrollbar border-0 bg-transparent px-4 py-4 pr-3 text-sm leading-relaxed shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]"
             />
             <div className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-slate-100/80 bg-white/85 px-2 py-0.5 text-[10px] font-mono text-slate-400 dark:border-slate-800 dark:bg-slate-950/60">
               {prompt.length}/500

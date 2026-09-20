@@ -183,7 +183,7 @@ export function VideoEditor() {
         {/* 主界面内容区 */}
         <main className="relative z-10 flex flex-1 overflow-hidden">
           {/* 左侧面板：G-2 磨砂玻璃 */}
-          <aside className="no-scrollbar z-10 hidden w-full max-w-[400px] flex-shrink-0 flex-col overflow-y-auto border-r border-white/25 bg-white/40 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 lg:flex lg:w-[400px] xl:w-[433px]">
+          <aside className="z-10 hidden w-full max-w-[400px] flex-shrink-0 flex-col overflow-y-auto custom-scrollbar border-r border-white/25 bg-white/40 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/40 lg:flex lg:w-[400px] xl:w-[433px]">
             <ConfigPanel
               prompt={prompt}
               setPrompt={setPrompt}
@@ -300,7 +300,7 @@ export function VideoEditor() {
               在移动端集中调整视频生成配置
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto">
+          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar">
             <ConfigPanel
               prompt={prompt}
               setPrompt={setPrompt}
@@ -334,7 +334,7 @@ export function VideoEditor() {
               查看参考资源与占位素材
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto px-5 py-4">
+          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar px-5 py-4">
             <AssetsSidebar defaultOpen showToggle={false} />
           </div>
         </DialogContent>

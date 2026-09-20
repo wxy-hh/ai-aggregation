@@ -120,7 +120,7 @@ export function PreviewViewport() {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full flex flex-col items-center overflow-y-auto py-8"
+      className="w-full h-full flex flex-col items-center overflow-y-auto custom-scrollbar py-8"
     >
       {/* 操作按钮组 */}
       <motion.div

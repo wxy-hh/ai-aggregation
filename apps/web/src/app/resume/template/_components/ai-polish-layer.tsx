@@ -159,7 +159,7 @@ export function AIPolishLayer({
               {/* 内容区域 */}
               <div
                 id="polish-dialog-description"
-                className="p-6 space-y-4 overflow-y-auto max-h-[calc(80vh-180px)]"
+                className="p-6 space-y-4 overflow-y-auto custom-scrollbar max-h-[calc(80vh-180px)]"
               >
                 {/* 原始文本 */}
                 <div>

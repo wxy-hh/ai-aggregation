@@ -198,7 +198,7 @@ export function CompatibilityShareEntry({
             </DialogDescription>
           </div>
 
-          <div className="max-h-[92vh] overflow-y-auto px-4 py-4 sm:px-6">
+          <div className="max-h-[92vh] overflow-y-auto custom-scrollbar px-4 py-4 sm:px-6">
             <div
               ref={measurePreviewBox}
               className="flex h-[52vh] w-full items-center justify-center sm:h-[62vh]"

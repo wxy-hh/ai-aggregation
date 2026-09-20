@@ -125,7 +125,7 @@ export function TemplateSwitcher({
               aria-label="选择简历模板"
               className="
                 absolute top-full right-0 mt-2
-                w-80 max-h-96 overflow-y-auto
+                w-80 max-h-96 overflow-y-auto custom-scrollbar
                 bg-white/95 dark:bg-slate-800/95
                 backdrop-blur-[20px]
                 border border-white/60 dark:border-slate-700/60

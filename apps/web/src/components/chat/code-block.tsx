@@ -78,7 +78,7 @@ export function CodeBlock({ language, children, className }: CodeBlockProps) {
       </div>
 
       {/* 代码内容区域：支持横向滚动 */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto custom-scrollbar">
         <code className={className}>{children}</code>
       </div>
     </pre>

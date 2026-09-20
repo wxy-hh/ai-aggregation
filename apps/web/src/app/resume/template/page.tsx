@@ -54,7 +54,7 @@ export default function ResumeTemplatePage() {
         {/* 桌面端布局（>=1024px）：三栏/双栏布局 */}
         <div className="hidden lg:flex relative z-10 h-full">
           {/* 左侧：内容编辑区 */}
-          <div className="no-print edit-panel w-[380px] xl:w-[380px] 2xl:w-[420px] flex-shrink-0 overflow-y-auto">
+          <div className="no-print edit-panel w-[380px] xl:w-[380px] 2xl:w-[420px] flex-shrink-0 overflow-y-auto custom-scrollbar">
             <ContentPanel />
           </div>
 
@@ -64,7 +64,7 @@ export default function ResumeTemplatePage() {
           </div>
 
           {/* 右侧：AI 诊断中心（仅在 >=1440px 显示） */}
-          <div className="no-print ai-panel hidden xl:block w-[360px] 2xl:w-[400px] flex-shrink-0 overflow-y-auto">
+          <div className="no-print ai-panel hidden xl:block w-[360px] 2xl:w-[400px] flex-shrink-0 overflow-y-auto custom-scrollbar">
             <AIAssistantPanel />
           </div>
         </div>
