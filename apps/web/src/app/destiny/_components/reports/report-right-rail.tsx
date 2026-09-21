@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import type { BaziLockedSections, DestinyStreamStatus, PartialDestinyReport } from '../types';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Briefcase, Heart, Sparkles, Stethoscope, Wallet } from 'lucide-react';
+import { Briefcase, ChevronDown, Heart, Sparkles, Stethoscope, Wallet } from 'lucide-react';
 // 跨模态接力：报告稳定段落作为来源（REQ-012）
 import { RelayAction } from '@/components/relay/relay-action';
 import { RelayMenu } from '@/components/relay/relay-menu';
@@ -380,6 +380,7 @@ export function ReportRightRail({
                         {/* 年份标题（可点击展开） */}
                         <button
                           type="button"
+                          aria-expanded={isExpanded}
                           onClick={() => handleYearToggle(t.year, isExpanded)}
                           className={cn(
                             'w-full min-h-11 rounded-lg text-left transition',
@@ -401,8 +402,17 @@ export function ReportRightRail({
                             >
                               {t.year} · {t.title}
                             </span>
+                            {/* 展开指示：摘要不再截断，改由箭头承担「可展开看机会/风险/建议」的提示 */}
+                            <ChevronDown
+                              aria-hidden
+                              className={cn(
+                                'ml-auto h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform duration-200',
+                                isExpanded && 'rotate-180'
+                              )}
+                            />
                           </div>
-                          <p className="mt-1 text-[11px] sm:text-xs text-slate-500 line-clamp-2">
+                          {/* 摘要不截断：流年概述是这一段的主信息，截断后展开也读不到完整句（移动端无 hover 可用） */}
+                          <p className="mt-1 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
                             {t.summary}
                           </p>
                         </button>

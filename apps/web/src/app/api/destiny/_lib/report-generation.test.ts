@@ -170,3 +170,155 @@ describe('defaultMapError', () => {
     expect(defaultMapError(undefined)).toBe('测算失败，请稍后重试');
   });
 });
+
+import { createQuotaStreamReporter, withQuotaStream } from './report-generation';
+
+describe('withQuotaStream 结算管道', () => {
+  const baseContext = {
+    requestId: 'req-1',
+    action: 'destiny-report' as const,
+    endpoint: '/api/destiny/test',
+  };
+
+  it('正常完整流：触发 finalize(success)', async () => {
+    const session = { finalize: vi.fn().mockResolvedValue(undefined) } as any;
+    const reporter = createQuotaStreamReporter();
+
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        reporter.appendOutputText('正文部分');
+        reporter.setUsage({ total_tokens: 100 });
+        reporter.markCompleted();
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.close();
+      },
+    });
+
+    const stream = withQuotaStream(source, { session, context: baseContext }, reporter);
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(session.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        requestId: 'req-1',
+        action: 'destiny-report',
+        outputText: '正文部分',
+        usage: { total_tokens: 100 },
+      })
+    );
+  });
+
+  it('有输出文本但流异常报错：触发 finalize(partial)', async () => {
+    const session = { finalize: vi.fn().mockResolvedValue(undefined) } as any;
+    const reporter = createQuotaStreamReporter();
+
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        reporter.appendOutputText('已输出部分文本');
+        controller.enqueue(new Uint8Array([1]));
+        controller.error(new Error('上游网络中断'));
+      },
+    });
+
+    const stream = withQuotaStream(source, { session, context: baseContext }, reporter);
+    const reader = stream.getReader();
+
+    await expect(async () => {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }).rejects.toThrow('上游网络中断');
+
+    expect(session.finalize).toHaveBeenCalledWith(
+      'partial',
+      expect.objectContaining({
+        requestId: 'req-1',
+        outputText: '已输出部分文本',
+        reason: '上游网络中断',
+      })
+    );
+  });
+
+  it('空流未产出文本即报错：触发 finalize(failed)', async () => {
+    const session = { finalize: vi.fn().mockResolvedValue(undefined) } as any;
+    const reporter = createQuotaStreamReporter();
+
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('模型首包超时'));
+      },
+    });
+
+    const stream = withQuotaStream(source, { session, context: baseContext }, reporter);
+    const reader = stream.getReader();
+
+    await expect(async () => {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }).rejects.toThrow('模型首包超时');
+
+    expect(session.finalize).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({
+        requestId: 'req-1',
+        outputText: '',
+        reason: '模型首包超时',
+      })
+    );
+  });
+
+  it('客户端主动 cancel：根据已积累文本正确结算', async () => {
+    const session = { finalize: vi.fn().mockResolvedValue(undefined) } as any;
+    const reporter = createQuotaStreamReporter();
+
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        reporter.appendOutputText('部分正文');
+        controller.enqueue(new Uint8Array([1]));
+      },
+    });
+
+    const stream = withQuotaStream(source, { session, context: baseContext }, reporter);
+    const reader = stream.getReader();
+    await reader.read();
+    await reader.cancel('用户主动离开');
+
+    expect(session.finalize).toHaveBeenCalledWith(
+      'partial',
+      expect.objectContaining({
+        requestId: 'req-1',
+        outputText: '部分正文',
+        reason: '用户主动离开',
+      })
+    );
+  });
+
+  it('延迟赋值 session holder：若未分配 session 则安全跳过 finalize', async () => {
+    const holder = { current: null };
+    const reporter = createQuotaStreamReporter();
+
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+        controller.close();
+      },
+    });
+
+    const stream = withQuotaStream(source, { session: holder, context: baseContext }, reporter);
+    const reader = stream.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+  });
+});

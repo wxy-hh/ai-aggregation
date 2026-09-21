@@ -286,7 +286,10 @@ export const useComparisonStore = create<ComparisonState>()(
       input: '',
       error: null,
 
-      setMode: (mode) => set({ mode }),
+      setMode: (mode) => {
+        useConversationsStore.getState().switchMode(mode);
+        set({ mode });
+      },
 
       setInput: (value) => set({ input: value }),
 
@@ -545,11 +548,9 @@ export const useComparisonStore = create<ComparisonState>()(
     {
       name: 'ai-chat-comparison',
       storage: createJSONStorage(() => localStorage),
-      // 仅持久化模式、已选模型与当前会话 id；turns 以 conversations-store 为权威，避免双写
+      // 仅持久化已选模型配置；mode 与 activeComparisonId 统一由 conversations-store 作为单一权威持久化，杜绝双写撕裂
       partialize: (state) => ({
-        mode: state.mode,
         selectedModels: state.selectedModels,
-        activeComparisonId: state.activeComparisonId,
       }),
     }
   )
@@ -557,7 +558,8 @@ export const useComparisonStore = create<ComparisonState>()(
 
 // ==================== 选择器（useShallow 避免不必要重渲染） ====================
 
-export const useComparisonMode = () => useComparisonStore((s) => s.mode);
+// 模式权威来自 conversations-store（单一事实源 SSOT）
+export const useComparisonMode = () => useConversationsStore((s) => s.mode);
 export const useSelectedModels = () => useComparisonStore((s) => s.selectedModels);
 export const useComparisonTurns = () => useComparisonStore((s) => s.turns);
 export const useComparisonInput = () => useComparisonStore((s) => s.input);

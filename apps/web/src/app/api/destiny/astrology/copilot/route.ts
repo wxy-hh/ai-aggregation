@@ -14,10 +14,9 @@
  *    → 3. 模型配置 → 4. 额度预留 → 5. 流式回答。
  * 次数不设每报告上限：能问几次只由账号额度决定（额度不足即下面的 402，前端弹既有额度对话框）。
  *
- * 额度（与八字 copilot / 星座报告同口径）：
- * - 提问前 reserveChatQuota（管理员跳过，免预留）；成功按真实 usage 结算（usage 缺失时按本地估算
- *   兜底）；流失败时——已产出文本按 partial 部分结算，一个字都没产出则整额释放；
- *   结算本身失败只记日志（用量由对账兜底），不改写已送达的回答；
+ * 额度与生命周期（收敛至 QuotaSession 统一决策表与 withQuotaStream 管道）：
+ * - 提问前由 QuotaSession.reserve 预留配额（管理员跳过，免预留）；
+ * - 成功按真实 usage 结算；流失败或截断按 partial 部分结算，一个字没出整额释放；
  * - 预留不足（BillingError QUOTA_INSUFFICIENT）按既有口径返回 402，由前端唤起额度引导。
  *
  * 回答质量与合规：
@@ -41,11 +40,14 @@ import { buildFactReferenceKeys } from '@/lib/astrology/interpretation';
 import { buildQaCitations } from '@/lib/astrology/qa-events';
 import { startOfNaturalWeekUtc } from '@/lib/astrology/chart-engine';
 import { selectActiveTransits } from '@/lib/astrology/transit-selection';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
+import {
+  createQuotaStreamReporter,
+  withQuotaStream,
+  type QuotaStreamSessionReporter,
+} from '../../_lib/report-generation';
 import { buildAstrologyPromptPayload } from '../_lib/astrology-prompt';
 import {
   AstrologyQaAnswerError,
@@ -82,7 +84,7 @@ const ASTROLOGY_QA_TEMPERATURE = 0.3;
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    let reservation: { id: string } | null = null;
+    let session: QuotaSession | null = null;
 
     try {
       const body = await req.json();
@@ -155,10 +157,10 @@ export async function POST(req: Request) {
       ];
 
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      let inputUnits = 0;
-      let outputLimit = ASTROLOGY_QA_MAX_OUTPUT_TOKENS;
-      if (user.role !== 'admin') {
-        const quota = await reserveChatQuota({
+
+      // 额度预留（管理员跳过扣费，保留用量会话归档）
+      session = await QuotaSession.reserve(
+        {
           userId: user.id,
           requestId,
           feature: 'destiny',
@@ -167,35 +169,48 @@ export async function POST(req: Request) {
           messages,
           maxOutputTokens: ASTROLOGY_QA_MAX_OUTPUT_TOKENS,
           metadata: { reportType: 'astrology', stream: true },
-        });
-        reservation = quota.reservation;
-        inputUnits = quota.inputUnits;
-        outputLimit = quota.outputLimit;
-      }
-
-      return new Response(
-        createQaStream({
-          config,
-          messages,
-          facts: report.facts,
-          modules: report.modules,
-          allowedRefs,
-          userId: user.id,
-          reservationId: reservation?.id,
-          requestId,
-          inputUnits,
-          outputLimit,
-          questionLength: question.length,
-        }),
-        { headers: SSE_HEADERS }
+        },
+        user.role
       );
+
+      const reporter = createQuotaStreamReporter();
+      const rawStream = createQaStream({
+        config,
+        messages,
+        facts: report.facts,
+        modules: report.modules,
+        allowedRefs,
+        outputLimit: session.outputLimit,
+        reporter,
+      });
+
+      const quotaManagedStream = withQuotaStream(
+        rawStream,
+        {
+          session,
+          context: {
+            requestId,
+            action: 'destiny-copilot',
+            endpoint: '/api/destiny/astrology/copilot',
+            userId: user.id,
+            feature: 'destiny',
+            provider: config.provider,
+            model: config.model,
+            metadata: {
+              reportType: 'astrology',
+              stream: true,
+              questionLength: question.length,
+            },
+          },
+          logLabel: 'astrology/copilot',
+        },
+        reporter
+      );
+
+      return new Response(quotaManagedStream, { headers: SSE_HEADERS });
     } catch (error) {
-      if (reservation) {
-        await releaseAiQuota({
-          reservationId: reservation.id,
-          reason: '星语问答请求失败',
-          meterType: 'tokens',
-        }).catch((releaseError) => console.error('[astrology/copilot] 释放额度失败:', releaseError));
+      if (session) {
+        await session.release({ reason: '星语问答请求失败', meterType: 'tokens' });
       }
       if (error instanceof AuthError) {
         return NextResponse.json(
@@ -227,7 +242,7 @@ function createBlockedStream(answer: ReturnType<typeof buildBlockedAnswer>) {
 
 /**
  * 问答流：正文增量边流边推，终帧给出完整回答与白名单收敛后的引用。
- * 一切失败都推 error 帧（不拼装任何兜底回答），并按已产出文本结算 / 释放预留。
+ * 外部管道 withQuotaStream 统一托管三态结算与异常释放。
  */
 function createQaStream({
   config,
@@ -235,91 +250,20 @@ function createQaStream({
   facts,
   modules,
   allowedRefs,
-  userId,
-  reservationId,
-  requestId,
-  inputUnits,
   outputLimit,
-  questionLength,
+  reporter,
 }: {
   config: ModelConfig;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
   facts: AstrologyQaRequestBody['report']['facts'];
   modules: AstrologyQaRequestBody['report']['modules'];
   allowedRefs: Set<string>;
-  userId: string;
-  reservationId?: string;
-  requestId: string;
-  inputUnits: number;
   outputLimit: number;
-  questionLength: number;
+  reporter: QuotaStreamSessionReporter;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(streamController) {
       const scanner = createAnswerTextScanner();
-      let settled = false;
-      let usagePayload: unknown = null;
-
-      const metadata = {
-        reportType: 'astrology',
-        stream: true,
-        questionLength,
-        provider: config.provider,
-      };
-
-      /** 结算（成功 / 部分）：usage 缺失时按本地估算兜底（与八字 / 星座报告同口径） */
-      const settle = async (status: 'success' | 'partial') => {
-        if (settled) return;
-        settled = true;
-        if (!reservationId) {
-          await safeRecordAiUsage({
-            userId,
-            feature: 'destiny',
-            action: 'destiny-copilot',
-            provider: config.provider,
-            model: config.model,
-            endpoint: '/api/destiny/astrology/copilot',
-            usage: normalizeUsage(usagePayload),
-            metadata,
-          });
-          return;
-        }
-        await settleAiQuota({
-          reservationId,
-          requestId,
-          feature: 'destiny',
-          action: 'destiny-copilot',
-          provider: config.provider,
-          model: config.model,
-          endpoint: '/api/destiny/astrology/copilot',
-          measurement: createTokenMeasurement(
-            usagePayload,
-            inputUnits + estimateOutputTokens(scanner.raw())
-          ),
-          status,
-          metadata,
-        });
-      };
-
-      const release = async () => {
-        if (settled) return;
-        settled = true;
-        if (reservationId) {
-          await releaseAiQuota({ reservationId, reason: '星语问答流式失败', meterType: 'tokens' });
-        }
-      };
-
-      /**
-       * 结算/释放失败只记日志：记账问题不得改变已送达的回答，也不得在 answer 帧之后再补发失败帧
-       * （用量丢失由对账按预留兜底）。
-       */
-      const settleSafely = async (run: () => Promise<void>, label: string) => {
-        try {
-          await run();
-        } catch (error) {
-          console.error(`[astrology/copilot] ${label}失败（用量由对账兜底）:`, error);
-        }
-      };
 
       try {
         const stream = streamModel({
@@ -337,12 +281,13 @@ function createQaStream({
 
         for await (const event of stream) {
           if (event.type === 'text-delta') {
+            reporter.appendOutputText(event.text);
             const delta = scanner.push(event.text);
             if (delta) {
               streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: delta }));
             }
           } else if (event.type === 'done') {
-            usagePayload = event.rawUsage ?? usagePayload;
+            reporter.setUsage(event.rawUsage);
           } else if (event.type === 'error') {
             throw new ModelUpstreamError(event.error, 502);
           }
@@ -361,14 +306,8 @@ function createQaStream({
             answer: { kind: 'answer', text: parsed.text, citations },
           } as unknown as Record<string, unknown>)
         );
-        // 终帧即结论：结算失败只记日志，绝不在结论之后再补发任何帧
-        await settleSafely(() => settle('success'), '结算');
+        reporter.markCompleted();
       } catch (error) {
-        // 已产出文本按部分结算，一个字都没有则整额释放（与八字 copilot 同口径）；失败同样只记日志
-        await settleSafely(
-          () => (scanner.raw().trim() ? settle('partial') : release()),
-          '失败结算'
-        );
         const message =
           error instanceof ModelUpstreamError || error instanceof AstrologyQaAnswerError
             ? error.message

@@ -6,7 +6,7 @@
  * 职责：工作区 store 读写、两步状态机（横滑 250ms、返回保留已填内容）、
  * 右侧（移动端为上方）成品星盘预览——填完阳历日期后太阳节点滑向真实星座位置、
  * 「你将获得」价值摘要、sticky 底部操作位（预留安全区，不是第二条底部导航）。
- * 提交链路（02 工单起接真实报告流）：内联校验 → startChartFactsRequest（唯一真值接缝，请求体为表单同形数据）
+ * 提交链路（02 工单起接真实报告流）：内联校验 → astrologySession.submit（唯一真值接缝，请求体为表单同形数据）
  * → 真值在途期间进入仪式等待室（chartFacts 置 null）→ chart-facts 帧到达即写入 chartFacts 并落统一历史。
  * 预览盘为同步链路（引用 sample-chart.ts 的真实计算域冻结示例盘），与提交真值两回事。
  */
@@ -18,13 +18,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
-import {
-  chartFactsErrorKind,
-  isLatestChartFactsRequest,
-  startChartFactsRequest,
-} from '@/lib/astrology/chart-request';
+import { astrologySession } from '@/lib/astrology/chart-request';
 import { approximateSunLongitude, approximateSunSign } from '@/lib/astrology/solar-longitude';
-import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel, ZODIAC_CN } from './astrology-chart-wheel';
 import { ASTROLOGY_CTA_GRADIENT_CLASS, AstrologyCtaButton } from './astrology-cta-button';
@@ -124,40 +119,14 @@ export function AstrologyForm({ isActive = true }: AstrologyFormProps) {
       return;
     }
 
-    // 提交即进仪式：chartFacts 置 null 表示真值在途（仪式按「仪式窗走满 且 真值就位」双条件转场），
-    // step 显式回落 form：重算必重播——step 若仍停在 result，工作区分发会直接落进结果相位，仪式被跳过
-    setWorkspaceState('astrology', {
-      step: 'form',
-      chartFacts: null,
-      entryView: 'loading',
-      error: null,
-      errorKind: null,
-    });
-
-    const { token, result } = startChartFactsRequest(formData);
-    result
-      .then((chartFacts) => {
-        // 过期响应丢弃：连续提交时先发的响应不得覆盖后发的结果
-        if (!isLatestChartFactsRequest(token)) return;
-        setWorkspaceState('astrology', { chartFacts, error: null, errorKind: null });
-        // 11 工单：真值完成即写入统一历史（匿名则入会话临时记录，登录确认后迁移）——
-        // 解读摘要待 03 工单解读接入后由结果页合并覆盖进同一条记录（updateAstrologyHistoryInterpretation）
-        saveAstrologyHistoryRecord(formData, chartFacts);
-      })
-      .catch((error: unknown) => {
-        if (!isLatestChartFactsRequest(token)) return;
-        // 失败态同样回落 form：失败卡与仪式同树承载，step 不回落会落在结果页
-        setWorkspaceState('astrology', {
-          step: 'form',
-          chartFacts: null,
-          entryView: 'loading',
-          error: '星盘计算出现异常，请重试',
-          errorKind: chartFactsErrorKind(error),
-        });
-      });
+    // 提交即开启会话：由深模块自闭环工作区 loading 状态、真值落地、历史记录与失败恢复
+    void astrologySession.submit(formData).catch(() => {});
   };
 
-  const backToHome = () => setWorkspaceState('astrology', { entryView: 'home' });
+  const backToHome = () => {
+    astrologySession.abort('返回首页');
+    setWorkspaceState('astrology', { entryView: 'home' });
+  };
   const backToStep1 = () => setWorkspaceState('astrology', { formStep: 1, fieldErrors: {} });
 
   return (

@@ -18,6 +18,7 @@ vi.mock('@/lib/api/client', () => ({ authFetch: vi.fn() }));
 import { authFetch } from '@/lib/api/client';
 import { onQuotaExhausted } from '@/lib/api/quota-events';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useAstrologyTempRecordStore } from '@/stores/astrology-temp-record';
 import { createDefaultAstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import { SAMPLE_CHART_ACCURATE, SAMPLE_CHART_UNKNOWN } from './sample-chart';
@@ -26,6 +27,7 @@ import {
   CHART_FACTS_TIMEOUT_MS,
   ChartFactsRequestError,
   INTERPRETATION_SIGNAL_TIMEOUT_MS,
+  astrologySession,
   chartFactsErrorKind,
   isLatestChartFactsRequest,
   parseSseFrame,
@@ -95,11 +97,14 @@ function interpretationOf() {
 
 describe('startChartFactsRequest（真实 SSE 报告流接缝）', () => {
   beforeEach(() => {
+    astrologySession.abort();
     useDestinyWorkspaceStore.getState().resetWorkspace('astrology');
+    useAstrologyTempRecordStore.setState({ tempRecord: null });
     authFetchMock.mockReset();
   });
 
   afterEach(() => {
+    astrologySession.abort();
     useDestinyWorkspaceStore.getState().resetWorkspace('astrology');
   });
 
@@ -437,5 +442,192 @@ describe('startChartFactsRequest（真实 SSE 报告流接缝）', () => {
     });
     expect(parseSseFrame('event: ping\ndata: {"type":"complete"}')).toEqual({ type: 'complete' });
     expect(parseSseFrame('data: 不是 JSON')).toBeNull();
+  });
+});
+
+describe('astrologySession 深模块（面向意图的统一生命周期门面）', () => {
+  beforeEach(() => {
+    astrologySession.abort();
+    useDestinyWorkspaceStore.getState().resetWorkspace('astrology');
+    useAstrologyTempRecordStore.setState({ tempRecord: null });
+    authFetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    astrologySession.abort();
+  });
+
+  it('submit：自动置 loading 态，真值到达自动落库历史与更新工作区', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    const submitPromise = astrologySession.submit(FORM_DATA);
+
+    // 自动重置为 loading 仪式态
+    expect(useDestinyWorkspaceStore.getState().astrology.entryView).toBe('loading');
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts).toBeNull();
+
+    // 推送首帧真值
+    stream.push({ type: 'chart-facts', facts: SAMPLE_CHART_ACCURATE });
+    const facts = await submitPromise;
+    expect(facts).toEqual(SAMPLE_CHART_ACCURATE);
+
+    // 工作区真值就绪
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts).toEqual(SAMPLE_CHART_ACCURATE);
+
+    // 自动落库统一历史记录
+    const tempRecord = useAstrologyTempRecordStore.getState().tempRecord;
+    expect(tempRecord).toBeTruthy();
+    expect(tempRecord?.reportData).toMatchObject({
+      chartFacts: expect.objectContaining({ calculatedAt: SAMPLE_CHART_ACCURATE.calculatedAt }),
+    });
+
+    // 推送解读分区，自动同步历史摘要
+    stream.push({
+      type: 'headline',
+      headline: { text: '勇敢走向未知的领域。', factReferences: ['planet:sun:sign'] },
+    });
+    await vi.waitFor(() => {
+      expect(useAstrologyTempRecordStore.getState().tempRecord?.preview).toBe('勇敢走向未知的领域。');
+    });
+
+    stream.push({ type: 'complete' });
+    stream.close();
+  });
+
+  it('retryFacts：失败态下重试，重新进入 loading 并在失败时自动写回 errorKind', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    const retryPromise = astrologySession.retryFacts(FORM_DATA, { timeoutMs: 30 });
+    expect(useDestinyWorkspaceStore.getState().astrology.entryView).toBe('loading');
+
+    // 超时拒绝后，工作区自动被深模块置为失败状态
+    await expect(retryPromise).rejects.toThrow('星盘真值请求超时');
+    expect(useDestinyWorkspaceStore.getState().astrology.error).toBe('星盘计算出现异常，请重试');
+    expect(useDestinyWorkspaceStore.getState().astrology.errorKind).toBe('timeout');
+  });
+
+  it('retryInterpretation：模式 1 锚点冻结，保持既有 chartFacts，仅置 pending 并增量覆盖历史', async () => {
+    // 预置已有真值（模拟结果页状态）
+    useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
+      step: 'result',
+      entryView: 'form',
+      chartFacts: SAMPLE_CHART_ACCURATE,
+      interpretation: { status: 'unavailable', reason: 'model', report: null },
+    });
+    // 预置初次历史记录
+    const { saveAstrologyHistoryRecord } = await import('./history');
+    saveAstrologyHistoryRecord(FORM_DATA, SAMPLE_CHART_ACCURATE);
+    const initialRecord = useAstrologyTempRecordStore.getState().tempRecord;
+    expect(initialRecord).toBeTruthy();
+
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    // 发起重试解读
+    const retryPromise = astrologySession.retryInterpretation(FORM_DATA);
+
+    // 锚点冻结：step 与 chartFacts 不动，仅 interpretation 重置为 pending
+    expect(useDestinyWorkspaceStore.getState().astrology.step).toBe('result');
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts).toEqual(SAMPLE_CHART_ACCURATE);
+    expect(useDestinyWorkspaceStore.getState().astrology.interpretation.status).toBe('pending');
+
+    // 服务端下发真值第一帧：时间戳稍有变化（模拟重新计算）
+    const recalculatedFacts = {
+      ...SAMPLE_CHART_ACCURATE,
+      calculatedAt: '2099-01-01T00:00:00.000Z',
+    };
+    stream.push({ type: 'chart-facts', facts: recalculatedFacts });
+
+    await retryPromise;
+
+    // 工作区 chartFacts 依然锁定初次锚点，未被篡改
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts?.calculatedAt).toBe(
+      SAMPLE_CHART_ACCURATE.calculatedAt
+    );
+
+    // 推送新解读分区
+    stream.push({
+      type: 'headline',
+      headline: { text: '重试后的新主轴金句。', factReferences: ['planet:sun:sign'] },
+    });
+
+    // 历史记录成功基于既有锚点完成合并覆盖
+    await vi.waitFor(() => {
+      expect(useAstrologyTempRecordStore.getState().tempRecord?.preview).toBe('重试后的新主轴金句。');
+    });
+
+    stream.push({ type: 'complete' });
+    stream.close();
+  });
+
+  it('abort：显式中断在途流，后续数据帧被丢弃', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    void astrologySession.submit(FORM_DATA);
+    expect(useDestinyWorkspaceStore.getState().astrology.entryView).toBe('loading');
+
+    // 用户中途退出或离开视图
+    astrologySession.abort('离开视图');
+
+    // 随后到达的数据帧因令牌过期直接被忽略
+    stream.push({ type: 'chart-facts', facts: SAMPLE_CHART_ACCURATE });
+    stream.close();
+
+    // 工作区真值依然为 null，未被迟到帧篡改
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts).toBeNull();
+  });
+
+  it('submit：300ms 内连击防抖，复用在途请求 Promise 并仅触发一次网络请求', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    // 模拟 100ms 内连续点击 2 次
+    const promise1 = astrologySession.submit(FORM_DATA);
+    const promise2 = astrologySession.submit(FORM_DATA);
+
+    // 防抖机制应返回同一个在途 Promise，且网络请求仅发起一次
+    expect(promise1).toBe(promise2);
+    expect(authFetchMock).toHaveBeenCalledTimes(1);
+
+    stream.push({ type: 'chart-facts', facts: SAMPLE_CHART_ACCURATE });
+    const [facts1, facts2] = await Promise.all([promise1, promise2]);
+    expect(facts1).toEqual(SAMPLE_CHART_ACCURATE);
+    expect(facts2).toEqual(SAMPLE_CHART_ACCURATE);
+
+    stream.push({ type: 'complete' });
+    stream.close();
+  });
+
+  it('防御重复真值帧：收到多帧 chart-facts 时仅首次落库历史，避免冗余更新', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValue(stream.response);
+
+    const submitPromise = astrologySession.submit(FORM_DATA);
+
+    // 推送第一帧真值
+    stream.push({ type: 'chart-facts', facts: SAMPLE_CHART_ACCURATE });
+    await submitPromise;
+
+    const firstCreatedAt = useAstrologyTempRecordStore.getState().tempRecord?.createdAt;
+    expect(firstCreatedAt).toBeTruthy();
+
+    // 模拟服务端意外推送第二帧（时间戳变化）
+    const duplicateFacts = {
+      ...SAMPLE_CHART_ACCURATE,
+      calculatedAt: '2099-01-01T00:00:00.000Z',
+    };
+    stream.push({ type: 'chart-facts', facts: duplicateFacts });
+
+    // 工作区真值保持第一帧，未被第二帧篡改
+    expect(useDestinyWorkspaceStore.getState().astrology.chartFacts?.calculatedAt).toBe(
+      SAMPLE_CHART_ACCURATE.calculatedAt
+    );
+    expect(useAstrologyTempRecordStore.getState().tempRecord?.createdAt).toBe(firstCreatedAt);
+
+    stream.push({ type: 'complete' });
+    stream.close();
   });
 });

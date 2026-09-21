@@ -31,7 +31,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Compass,
   Footprints,
@@ -43,7 +42,6 @@ import {
   Sparkles,
   Sunrise,
   Sun as SunIcon,
-  X,
 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -56,7 +54,6 @@ import {
   MOON_READINGS,
   moduleIdsForBody,
   orderModulesByTopic,
-  PLANET_THEME,
   planetPlainSentence,
   resolveKeyAspectList,
   SUN_READINGS,
@@ -64,11 +61,7 @@ import {
   type ModuleId,
   type ModuleReading,
 } from '@/lib/astrology/interpretation';
-import {
-  chartFactsErrorKind,
-  isLatestChartFactsRequest,
-  startChartFactsRequest,
-} from '@/lib/astrology/chart-request';
+import { astrologySession } from '@/lib/astrology/chart-request';
 import { updateAstrologyHistoryInterpretation } from '@/lib/astrology/history';
 import {
   ASPECT_CN,
@@ -82,71 +75,28 @@ import { AstrologyInterpretationNotice } from './astrology-interpretation-notice
 import { AstrologyLifeModules } from './astrology-life-modules';
 import { AstrologyQaEntry } from './astrology-qa';
 import { AstrologyShareEntry, isAstrologyShareAvailable } from './astrology-share-entry';
-import { AstrologyNightToggle } from './astrology-night-toggle';
 import { TypewriterHeadline } from './astrology-typewriter-headline';
 import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
-import { APPROXIMATE_SLOTS, formatDegreeMinute } from './astrology-mappers';
+import { formatDegreeMinute } from './astrology-mappers';
 import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
+import {
+  AstrologyPassportHeader,
+  houseSystemLabel,
+  placementTermLine,
+  precisionBadge,
+} from './astrology-passport-header';
+import { PlanetFactCard } from './astrology-planet-fact-card';
+import {
+  HeadlineSkeleton,
+  BigThreeSkeleton,
+  LifeModulesSkeleton,
+  RailCardSkeleton,
+  SkeletonBlock,
+} from './astrology-skeletons';
 
 /* ---------- 展示层小工具 ---------- */
-
-/** 计算时刻格式化（护照头「计算于」） */
-function formatCalculatedAt(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** 时间精度标签（沿用表单语义色：准确靛蓝 / 约时琥珀 / 未知月光紫）；
- *  约时降级（区间内角点不稳定 → 无宫位范围）必须如实标注「部分盘面范围不稳定」（§6.2） */
-function precisionBadge(
-  formData: AstrologyFormData,
-  facts: AstrologyChartFacts
-): { text: string; className: string } {
-  if (formData.timePrecision === 'accurate') {
-    return {
-      text: '准确到分钟',
-      className:
-        'border-indigo-300/50 bg-indigo-100/60 text-indigo-700 dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200',
-    };
-  }
-  if (formData.timePrecision === 'approximate') {
-    const degraded = facts.factStability.houses.reason === 'unstable-in-range';
-    return {
-      text: degraded ? '约时 · 部分盘面范围不稳定' : '大约时段 · 已校验稳定性',
-      className:
-        'border-amber-300/50 bg-amber-100/60 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-200',
-    };
-  }
-  return {
-    text: '时间未知 · 无宫位行星盘',
-    className:
-      'border-violet-300/50 bg-violet-100/60 text-violet-700 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-200',
-  };
-}
-
-/** 口径行里的宫制文案：普拉西德制为默认，整宫制为高纬回退，无宫位为降级盘 */
-function houseSystemLabel(facts: AstrologyChartFacts): string {
-  if (facts.houseSystem === 'placidus') return '普拉西德制';
-  if (facts.houseSystem === 'whole-sign') return '整宫制';
-  return '无宫位';
-}
-
-/** 资料摘要行（真实表单数据，与仪式页摘要同口径） */
-function summaryText(formData: AstrologyFormData): string {
-  const d = formData.birthDate;
-  const date = d ? `${d.year} 年 ${d.month} 月 ${d.day} 日` : '';
-  let time = '时间未知';
-  if (formData.timePrecision === 'accurate' && formData.birthTime.hour !== '') {
-    time = `${formData.birthTime.hour.padStart(2, '0')}:${(formData.birthTime.minute || '0').padStart(2, '0')}`;
-  } else if (formData.timePrecision === 'approximate' && formData.approximateSlot) {
-    const slot = APPROXIMATE_SLOTS.find((s) => s.value === formData.approximateSlot);
-    time = `约 ${slot?.label ?? formData.approximateSlot}`;
-  }
-  return [date, time, formData.location.name].filter(Boolean).join(' · ');
-}
 
 /** 主轴真值引用键 → 中文依据标签（「依据：太阳天秤 × 月亮巨蟹」） */
 function refLabel(ref: string, facts: AstrologyChartFacts): string {
@@ -173,223 +123,6 @@ function refLabel(ref: string, facts: AstrologyChartFacts): string {
   return ref;
 }
 
-/** 三要素卡的术语层（太阳/月亮/上升各自取数，缺项不渲染） */
-function placementTermLine(facts: AstrologyChartFacts, key: 'sun' | 'moon' | 'ascendant'): string {
-  if (key === 'ascendant') {
-    const a = facts.angles.ascendant;
-    return a.sign
-      ? `${ZODIAC_CN[a.sign]}${a.degree !== null ? ` ${formatDegreeMinute(a.degree)}` : ''}`
-      : '';
-  }
-  const p = facts.planets.find((pl) => pl.body === key);
-  if (!p?.sign) return '';
-  const bits = [
-    `${ZODIAC_CN[p.sign]}${p.degree !== null ? ` ${formatDegreeMinute(p.degree)}` : ''}`,
-  ];
-  if (p.house !== null) bits.push(`第 ${p.house} 宫`);
-  if (p.retrograde) bits.push('逆行中');
-  return bits.join(' · ');
-}
-
-/* ---------- 星体深度解构卡组件 ---------- */
-
-/** 星体深度解构卡（在桌面端内嵌于右栏，移动端作为浮动抽屉呈现；彻底杜绝页面上下跳动） */
-function PlanetFactCard({
-  body,
-  placement,
-  reading,
-  aspects,
-  relatedModuleIds,
-  modules,
-  allPlanets,
-  onSelectBody,
-  onLocateModule,
-  onClose,
-  isDrawer = false,
-}: {
-  body: PlanetBody;
-  placement: NonNullable<AstrologyChartFacts['planets'][number]> & { sign: ZodiacSign };
-  reading: ElementReading | null;
-  aspects: AstrologyChartFacts['aspects'];
-  relatedModuleIds: ModuleId[];
-  modules: ModuleReading[];
-  allPlanets: { body: PlanetBody; sign: ZodiacSign }[];
-  onSelectBody: (b: PlanetBody) => void;
-  onLocateModule: (id: ModuleId) => void;
-  onClose: () => void;
-  isDrawer?: boolean;
-}) {
-  const Glyph = PLANET_GLYPH[body];
-
-  return (
-    <div className="flex h-full flex-col justify-between">
-      <div>
-        {/* 顶部操作与快速切换条 */}
-        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/[0.08]">
-          {!isDrawer ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-muted dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              <span>全部星体</span>
-            </button>
-          ) : (
-            <span className="text-xs font-semibold text-slate-500 dark:text-night-muted">
-              星体深度解构
-            </span>
-          )}
-
-          {/* 快捷星体点选胶囊：热区 44×44（横排十颗，28×28 易误触）。
-              上限放宽到 226px（≈5 颗 + 第 6 颗露头）给横排「可滑动」视觉线索；
-              min-w-0 保证窄屏时先缩行、不挤两侧控件；不加 flex-1——行宽取内容与上限的较小值，
-              用 flex-1 会被中间余量（桌面右栏实测 253px）压到比上限更窄 */}
-          <div className="flex min-w-0 max-w-[226px] items-center gap-1 overflow-x-auto p-0.5 hide-scrollbar sm:max-w-[280px]">
-            {allPlanets.map((p) => {
-              const ItemGlyph = PLANET_GLYPH[p.body];
-              const isCurrent = p.body === body;
-              return (
-                <button
-                  key={p.body}
-                  type="button"
-                  onClick={() => onSelectBody(p.body)}
-                  title={`${PLANET_CN[p.body]}在${ZODIAC_CN[p.sign]}`}
-                  className={cn(
-                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent',
-                    isCurrent
-                      ? 'bg-indigo-600 text-white shadow-xs dark:bg-indigo-500'
-                      : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
-                  )}
-                >
-                  <ItemGlyph
-                    width={13}
-                    height={13}
-                    className={isCurrent ? 'stroke-white' : 'stroke-current'}
-                  />
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭事实卡"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-day-muted transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200"
-          >
-            <X className="h-4 w-4" strokeWidth={2} />
-          </button>
-        </div>
-
-        {/* 核心身份徽印 */}
-        <div className="mt-4 flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-indigo-200/70 bg-indigo-50/80 text-indigo-600 shadow-xs dark:border-indigo-300/20 dark:bg-indigo-400/10 dark:text-indigo-300">
-            <Glyph width={22} height={22} className="stroke-current" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-base font-bold text-slate-900 dark:text-white">
-                {PLANET_CN[body]} · {ZODIAC_CN[placement.sign]}
-              </h4>
-              {placement.degree !== null && (
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-slate-600 dark:bg-white/[0.06] dark:text-slate-300">
-                  {formatDegreeMinute(placement.degree)}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-night-faint">
-              <span className="font-medium text-indigo-600 dark:text-indigo-300">
-                {PLANET_THEME[body]}
-              </span>
-              {placement.house !== null && <span>· 第 {placement.house} 宫</span>}
-              {placement.retrograde === true && (
-                <span className="rounded-full bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
-                  逆行中
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 白话主句气泡 */}
-        <div className="mt-4 rounded-xl border border-indigo-100/80 bg-indigo-50/40 p-3.5 text-xs leading-relaxed text-slate-700 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-slate-200 sm:text-sm">
-          {planetPlainSentence(body, placement.sign)}
-        </div>
-
-        {/* 若有日/月要素扩展解读 */}
-        {reading && (
-          <div className="mt-3 space-y-1.5 rounded-xl bg-slate-50/70 p-3 text-xs leading-relaxed text-slate-600 dark:bg-[#090D1C] dark:text-night-muted">
-            <p className="text-slate-800 dark:text-slate-200">{reading.plain}</p>
-            <p className="flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-300">
-              <Compass className="h-3 w-3 shrink-0" />
-              <span>建议：{reading.action}</span>
-            </p>
-          </div>
-        )}
-
-        {/* 关联相位 */}
-        {aspects.length > 0 && (
-          <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-            <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">
-              关联相位作用
-            </p>
-            <ul className="mt-2 space-y-1.5">
-              {aspects.map((a) => {
-                const other = a.source === body ? a.target : a.source;
-                return (
-                  <li
-                    key={`${a.source}-${a.target}-${a.type}`}
-                    className="flex items-start gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300"
-                  >
-                    <Sparkles
-                      className="mt-0.5 h-3 w-3 shrink-0 text-indigo-500 dark:text-indigo-300"
-                      strokeWidth={2}
-                    />
-                    <span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-100">
-                        与{PLANET_CN[other]}
-                        {ASPECT_CN[a.type]}
-                        {a.orb !== null && `（偏差 ${a.orb.toFixed(1)}°）`}
-                      </span>
-                      ——{ASPECT_PLAIN[a.type]}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* 底部：关联生活模块跳链 */}
-      {relatedModuleIds.length > 0 && (
-        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.08]">
-          <p className="text-[11px] font-semibold text-day-muted dark:text-night-faint">
-            在以下生活模块中被引用
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {relatedModuleIds.map((id) => {
-              const m = modules.find((mod) => mod.id === id);
-              if (!m) return null;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onLocateModule(id)}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-full border border-indigo-200/80 bg-white px-2.5 text-[11px] font-medium text-indigo-600 shadow-2xs transition-colors hover:border-indigo-400 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/20 dark:bg-white/[0.04] dark:text-indigo-200 dark:hover:bg-indigo-400/10"
-                >
-                  <span>{m.title}</span>
-                  <ChevronRight className="h-3 w-3 opacity-60" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ---------- 移动端折叠 ---------- */
 
@@ -458,115 +191,6 @@ function MobileCollapse({
   );
 }
 
-/* ---------- 分区骨架（解读在途时的等待态；DESIGN.md 6.3 呼吸档，减少动态下静态定格） ---------- */
-
-/** 骨架块：夜色系呼吸块（浅色 slate / 深色夜面微光），纯占位不参与事实表达 */
-function SkeletonBlock({ className }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        'acw-skeleton-breathe rounded-lg bg-slate-200/60 dark:bg-white/[0.07]',
-        className
-      )}
-    />
-  );
-}
-
-/** 主轴金句骨架：按金句档位预留 min-height（防解读到达时布局跳动），两行呼吸块 */
-function HeadlineSkeleton() {
-  return (
-    <div aria-hidden className="min-h-[5.5rem] sm:min-h-[8rem]">
-      <SkeletonBlock className="h-6 w-[85%] sm:h-10 sm:w-[78%]" />
-      <SkeletonBlock className="mt-3 h-6 w-[60%] sm:mt-4 sm:h-10 sm:w-[55%]" />
-    </div>
-  );
-}
-
-/** 大三要素骨架：三卡位（与完整盘同栏数），卡内块高对齐真实卡的图标行 + 正文行 */
-function BigThreeSkeleton() {
-  return (
-    <div aria-hidden className="mt-4 grid gap-3 sm:grid-cols-3">
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-[#0D1226]"
-        >
-          <div className="flex items-center gap-2">
-            <SkeletonBlock className="h-8 w-8 rounded-full" />
-            <div className="min-w-0 flex-1">
-              <SkeletonBlock className="h-3.5 w-16" />
-              <SkeletonBlock className="mt-1.5 h-2.5 w-10" />
-            </div>
-          </div>
-          <SkeletonBlock className="mt-3.5 h-3 w-24" />
-          <SkeletonBlock className="mt-4 h-3 w-full" />
-          <SkeletonBlock className="mt-2 h-3 w-4/5" />
-          <SkeletonBlock className="mt-3 h-3 w-2/3" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** 生活模块骨架：真实章节的标题行 + 卡片块（标题是结构，先立起来不误导内容） */
-function LifeModulesSkeleton() {
-  return (
-    <section aria-label="五个生活模块" aria-busy="true">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="font-heading text-lg font-bold text-slate-900 dark:text-white">
-          生活的五个切面
-        </h3>
-        <span className="text-xs text-day-muted dark:text-night-faint">
-          每张卡都能展开依据，回看它来自盘面的哪个位置
-        </span>
-      </div>
-      <div aria-hidden className="mt-5 grid gap-3 xl:grid-cols-2 xl:gap-4">
-        {[0, 1].map((i) => (
-          <div
-            key={i}
-            className="rounded-2xl border border-slate-200/80 bg-white p-4 dark:border-white/10 dark:bg-[#0D1226] sm:p-5"
-          >
-            <div className="flex items-center gap-3">
-              <SkeletonBlock className="h-9 w-9 rounded-full" />
-              <div className="min-w-0 flex-1">
-                <SkeletonBlock className="h-3.5 w-24" />
-                <div className="mt-1.5 flex gap-1.5">
-                  <SkeletonBlock className="h-4 w-12 rounded-full" />
-                  <SkeletonBlock className="h-4 w-16 rounded-full" />
-                </div>
-              </div>
-            </div>
-            <SkeletonBlock className="mt-4 h-3 w-full" />
-            <SkeletonBlock className="mt-2 h-3 w-11/12" />
-            <SkeletonBlock className="mt-2 h-3 w-3/5" />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/** 洞察轨卡片骨架：分享星语海报与星语问答两张卡解读在途时的同档占位（避免整轨跳动） */
-function RailCardSkeleton() {
-  return (
-    <div
-      aria-hidden
-      className="rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-white/10 dark:bg-[#0D1226] dark:shadow-[inset_0_1px_0_rgba(196,181,253,0.10)]"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <SkeletonBlock className="h-4 w-4 rounded-full" />
-          <SkeletonBlock className="h-4 w-20" />
-        </div>
-        <SkeletonBlock className="h-4 w-14 rounded-full" />
-      </div>
-      <SkeletonBlock className="mt-3 h-3 w-full" />
-      <SkeletonBlock className="mt-2 h-3 w-3/5" />
-      <SkeletonBlock className="mt-3.5 h-11 w-full rounded-full" />
-    </div>
-  );
-}
 
 /* ---------- 主组件 ---------- */
 
@@ -600,7 +224,6 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   const [selectedBody, setSelectedBody] = useState<PlanetBody | null>(null);
   /** WebGL 星渊场景可用性（null=探测中/不可用 → SVG 轮兜底并保持 DOM 视差） */
   const wheelSceneOk = useWheelSceneAvailable();
-  const [basisOpen, setBasisOpen] = useState(false);
   const [showAllTerms, setShowAllTerms] = useState(false);
   /** 白话清单默认只露前 4 颗（防长页）；展开后显示全部行星 */
   const [showAllPlanets, setShowAllPlanets] = useState(false);
@@ -715,8 +338,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
   }, [chartFacts]);
 
   /** 解读分区到达即合并进本地统一历史记录（同一条逻辑记录，修订号不动）：
-   *  首帧主轴先落低敏摘要，模块与行运随后逐区补齐整份解读——历史恢复时据此回填结果页，
-   *  点开旧记录看到的是当时那份结果，而不是「只存了真值、解读待接入」 */
+   *  作为兜底与离线恢复接缝，与深模块内部同步保持双保险幂等 */
   useEffect(() => {
     if (!chartFacts || !interpretation) return;
     updateAstrologyHistoryInterpretation(formData, chartFacts, interpretation);
@@ -835,18 +457,7 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
    * calculatedAt 锚点，重试不应把它换成新一次计算的时间戳。
    */
   const retryInterpretation = () => {
-    if (!chartFacts) return;
-    const { token, result } = startChartFactsRequest(formData);
-    result.then(
-      () => {
-        // 真值重算结果确定性一致：不写回工作区（保留历史锚点），解读分区随流继续填充
-        if (!isLatestChartFactsRequest(token)) return;
-      },
-      () => {
-        // 失败由接缝落成「解读未完成」结论（工作区 error 不动：星盘与已到达分区照常展示）
-        if (!isLatestChartFactsRequest(token)) return;
-      }
-    );
+    void astrologySession.retryInterpretation(formData).catch(() => {});
   };
 
   return (
@@ -855,133 +466,12 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
         <div className="grid gap-12 xl:grid-cols-12">
           {/* ═══ 主栏 8 栏（与洞察轨同行构成首屏）：护照头 → 主轴 → 大三要素 ═══ */}
           <div className="order-1 min-w-0 xl:col-span-8">
-            {/* ── 1. 宇宙护照头（天命档案微晶印鉴；极淡扫描光入场一次；night-card 供夜幕观星鎏金描边覆盖） ── */}
-            <header className="night-card relative overflow-hidden rounded-[28px] border border-white/70 bg-gradient-to-br from-white/90 via-white/80 to-indigo-50/30 p-5 shadow-[0_20px_56px_-28px_rgba(30,41,82,0.22)] backdrop-blur-xl backdrop-saturate-150 dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.04] dark:to-indigo-950/20 sm:rounded-[32px] sm:p-6">
-              {/* 玻璃壳顶端 1px 高光线（G-3 玻璃语言；夜幕为极淡白） */}
-              <span
-                className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/60 to-transparent dark:via-white/20"
-                aria-hidden="true"
-              />
-              {/* 背景微星轨经纬装饰线 */}
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full border border-indigo-400/10 dark:border-indigo-300/[0.06]"
-              />
-              <div
-                aria-hidden
-                className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full border border-indigo-400/15 dark:border-indigo-300/[0.08]"
-              />
-              {!reduceMotion && (
-                <motion.div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-indigo-300/25 to-transparent dark:via-indigo-200/[0.12]"
-                  initial={{ x: '-140%' }}
-                  animate={{ x: '560%' }}
-                  transition={{ duration: 1.25, ease: 'easeOut', delay: 0.15 }}
-                />
-              )}
-              <div className="relative">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-indigo-200/80 bg-indigo-50/80 text-indigo-600 shadow-xs dark:border-indigo-300/20 dark:bg-indigo-400/10 dark:text-indigo-300">
-                      <Compass className="h-4 w-4" strokeWidth={2} />
-                    </span>
-                    <h1 className="font-heading text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
-                      {name}的宇宙护照
-                    </h1>
-                  </div>
-                  <span
-                    className={cn(
-                      'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide',
-                      badge.className
-                    )}
-                  >
-                    {badge.text}
-                  </span>
-                  {/* 模型控制器只在填表步骤提供（与八字/紫微/奇门同一口径）：结果页报告已按当时
-                      选定的模型产出，此处不再给切换入口，避免出现与当前报告不符的模型口径 */}
-                  {/* 「夜幕观星」切换：护照头行内右端，移动端随 flex-wrap 自然换行不挤压标题 */}
-                  <div className="ml-auto">
-                    <AstrologyNightToggle />
-                  </div>
-                </div>
-                {/* 移动端突出太阳星座（§7.2 压缩护照）；桌面展示完整摘要行 */}
-                {sunPlacement?.sign && (
-                  <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-indigo-700 dark:text-indigo-200 xl:hidden">
-                    {(() => {
-                      const Glyph = ZODIAC_GLYPH[sunPlacement.sign];
-                      return (
-                        <Glyph
-                          width={16}
-                          height={16}
-                          className="stroke-indigo-500 dark:stroke-indigo-300"
-                        />
-                      );
-                    })()}
-                    太阳 · {ZODIAC_CN[sunPlacement.sign]}
-                  </p>
-                )}
-                <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-night-muted sm:text-sm">
-                  {summaryText(formData)}
-                  {formatCalculatedAt(chartFacts.calculatedAt) &&
-                    ` · 计算于 ${formatCalculatedAt(chartFacts.calculatedAt)}`}
-                </p>
-
-                {/* 盘面依据：可展开计算口径（实体底，非玻璃） */}
-                <button
-                  type="button"
-                  onClick={() => setBasisOpen((v) => !v)}
-                  aria-expanded={basisOpen}
-                  className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-semibold text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:text-indigo-300 dark:hover:bg-white/5 sm:min-h-0 sm:py-1.5"
-                >
-                  盘面依据
-                  <ChevronDown
-                    className={cn(
-                      'h-3.5 w-3.5 transition-transform duration-200',
-                      basisOpen && 'rotate-180'
-                    )}
-                    strokeWidth={2.2}
-                  />
-                </button>
-                <AnimatePresence initial={false}>
-                  {basisOpen && (
-                    <motion.div
-                      initial={reduceMotion ? { opacity: 1 } : { height: 0, opacity: 0 }}
-                      animate={reduceMotion ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
-                      exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-                      transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: 'easeOut' }}
-                      className="overflow-hidden"
-                    >
-                      <dl className="mt-2 space-y-1.5 rounded-2xl bg-slate-50/90 p-4 text-xs leading-relaxed text-slate-600 dark:bg-[#090E20] dark:text-slate-300">
-                        {(['sun', 'moon', 'ascendant'] as const).map((k) => {
-                          const term = placementTermLine(chartFacts, k);
-                          if (!term) return null;
-                          const label = k === 'sun' ? '太阳' : k === 'moon' ? '月亮' : '上升';
-                          return (
-                            <div key={k} className="flex gap-2">
-                              <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">
-                                {label}
-                              </dt>
-                              <dd>{term}</dd>
-                            </div>
-                          );
-                        })}
-                        <div className="flex gap-2 border-t border-slate-200/70 pt-2 dark:border-white/[0.08]">
-                          <dt className="w-10 shrink-0 font-semibold text-slate-700 dark:text-slate-200">
-                            口径
-                          </dt>
-                          <dd>
-                            回归黄道 · {withHouses ? houseSystemLabel(chartFacts) : '无宫位行星盘'}{' '}
-                            · 容许度表 {chartFacts.orbTableVersion} · 引擎{' '}
-                            {chartFacts.engineVersion} · 修订 {chartFacts.calculationRevision}
-                          </dd>
-                        </div>
-                      </dl>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </header>
+            {/* ── 1. 宇宙护照头（天命档案微晶印鉴，下沉深组件自闭环依据折叠） ── */}
+            <AstrologyPassportHeader
+              formData={formData}
+              chartFacts={chartFacts}
+              reduceMotion={Boolean(reduceMotion)}
+            />
 
             {/* ── 2. 一句主轴（阅读焦点；逐字浮现，≥2 项真值依据标注）。
                     解读降级：诚实的「解读暂不可用」卡 + 重试解读（真值不重算）；

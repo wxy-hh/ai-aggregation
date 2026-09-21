@@ -82,7 +82,10 @@ export function DestinyDesktopNav({
     <>
       <motion.div
         className={cn(
-          'absolute left-6 top-6 bottom-6 z-20 hidden w-[280px] xl:block',
+          // 显隐断点对齐 DESIGN.md §5：lg（1024）是「侧边栏 ↔ 底部导航」切换点，
+          // 与 useBreakpoint 的 desktop 判定、全局侧边栏同一口径；
+          // 用 xl（1280）会在 1024–1279 出现左侧导航与移动端分段控件双缺的断层
+          'absolute left-6 top-6 bottom-6 z-20 hidden w-[280px] lg:block',
           disabled && 'pointer-events-none opacity-50'
         )}
         initial={false}
@@ -125,7 +128,7 @@ export function DestinyDesktopNav({
         {collapsed && !disabled ? (
           <motion.div
             key="destiny-nav-expand"
-            className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden xl:flex items-center"
+            className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden lg:flex items-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

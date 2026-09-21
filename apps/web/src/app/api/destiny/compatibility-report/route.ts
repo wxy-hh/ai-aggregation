@@ -1,16 +1,27 @@
-import { NextResponse } from 'next/server';
+/**
+ * compatibility-report/route.ts —— 八字合盘报告流式生成端点
+ *
+ * 架构规范：
+ * - 正向引用 @repo/shared 权威契约，杜绝逆向依赖前端组件目录；
+ * - 接入 createReportHandler 标准工厂，统一处理鉴权、参数校验、异常响应与 SSE 包装；
+ * - 接入 withQuotaStream 统一计费流管道，自动闭环完成（success）、截断（partial）与失败整额释放（failed）。
+ */
+
 import { z } from 'zod';
 import {
   extractJsonObject,
   resolveModelConfig,
   streamModel,
   ModelConfigError,
+  type CompatibilityReport,
+  type CompatibilityStreamEvent,
+  type RelationType,
   type ModelConfig,
 } from '@repo/shared';
-import { withAuth } from '@/lib/api/with-auth';
 import { QuotaSession } from '@/lib/billing/quota-session';
-import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import { encodeSseEvent } from '@/lib/utils/sse';
+import { generateUUID } from '@/lib/utils/uuid';
 import {
   buildCompatibilityChartFacts,
   buildLiteFactsForPrompt,
@@ -20,12 +31,14 @@ import {
   buildCompatibilitySystemPrompt,
   normalizeCompatibilityView,
 } from '../_lib/compatibility-normalizer';
-import type {
-  CompatibilityReport,
-  CompatibilityStreamEvent,
-  RelationType,
-} from '@/app/destiny/_components/compatibility/types';
-import { generateUUID } from '@/lib/utils/uuid';
+import {
+  createReportHandler,
+  createQuotaStreamReporter,
+  withQuotaStream,
+  defaultMapError,
+  type ReportGenerationAdapter,
+  type ReportGenerationContext,
+} from '../_lib/report-generation';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -74,90 +87,77 @@ const RequestSchema = z.object({
   }),
 });
 
+type CompatibilityRequestBody = z.infer<typeof RequestSchema>;
+
 const MAX_OUTPUT = 8000;
 const TIMEOUT_MS = 120000;
 
-export async function POST(req: Request) {
-  return withAuth(req, async (user) => {
-    let session: QuotaSession | null = null;
-    try {
-      const body = await req.json();
-      const parsed = RequestSchema.safeParse(body);
-      if (!parsed.success) {
-        return NextResponse.json(
-          {
-            error: '请求参数错误',
-            details: parsed.error.errors.map((item) => ({
-              path: item.path.join('.'),
-              message: item.message,
-            })),
-          },
-          { status: 400 }
-        );
-      }
-
-      let config: ModelConfig;
-      try {
-        config = resolveModelConfig(parsed.data.provider);
-      } catch (error) {
-        if (error instanceof ModelConfigError) {
-          return NextResponse.json({ error: error.message }, { status: 500 });
+/** 构建八字合盘个人资料输入结构体，消除重复映射代码异味 */
+function buildCompatibilityPersonInput(
+  person: z.infer<typeof PersonSchema>,
+  defaultName = 'TA'
+): CompatibilityPersonInput {
+  return {
+    name: person.name?.trim() || defaultName,
+    gender: person.gender ?? null,
+    calendarType: person.calendarType,
+    birthDate: person.birthDate,
+    birthTime: person.birthTime ?? null,
+    location: person.location
+      ? {
+          name: person.location.name,
+          lat: person.location.lat ?? null,
+          lon: person.location.lon ?? null,
         }
-        throw error;
-      }
+      : null,
+  };
+}
 
-      const selfInput: CompatibilityPersonInput = {
-        name: parsed.data.self.name,
-        gender: parsed.data.self.gender ?? null,
-        calendarType: parsed.data.self.calendarType,
-        birthDate: parsed.data.self.birthDate,
-        birthTime: parsed.data.self.birthTime ?? null,
-        location: parsed.data.self.location
-          ? {
-              name: parsed.data.self.location.name,
-              lat: parsed.data.self.location.lat ?? null,
-              lon: parsed.data.self.location.lon ?? null,
-            }
-          : null,
-      };
+/**
+ * 八字合盘标准报告生成适配器
+ */
+const compatibilityReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
+  requestSchema: RequestSchema,
 
-      const partnerName = parsed.data.partner.name?.trim() || 'TA';
-      const partnerInput: CompatibilityPersonInput = {
-        name: partnerName,
-        gender: parsed.data.partner.gender ?? null,
-        calendarType: parsed.data.partner.calendarType,
-        birthDate: parsed.data.partner.birthDate,
-        birthTime: parsed.data.partner.birthTime ?? null,
-        location: parsed.data.partner.location
-          ? {
-              name: parsed.data.partner.location.name,
-              lat: parsed.data.partner.location.lat ?? null,
-              lon: parsed.data.partner.location.lon ?? null,
-            }
-          : null,
-      };
+  mapError(error: unknown): string {
+    if (error instanceof ModelConfigError) {
+      return error.message;
+    }
+    return defaultMapError(error);
+  },
 
-      const relationType = parsed.data.relationType as RelationType;
-      const facts = buildCompatibilityChartFacts({ self: selfInput, partner: partnerInput });
-      const lite = buildLiteFactsForPrompt(facts);
-      const system = buildCompatibilitySystemPrompt(relationType);
-      const userPrompt = [
-        '双方命盘事实（只可引用，不可编造时柱）：',
-        JSON.stringify(lite, null, 2),
-        parsed.data.focusTags?.length
-          ? `用户当前关心：${parsed.data.focusTags.join('、')}`
-          : '用户未额外标注关心点。',
-        '请按系统要求输出 JSON。',
-      ].join('\n');
+  async generate(ctx: ReportGenerationContext, rawBody: unknown): Promise<ReadableStream<Uint8Array>> {
+    const body = rawBody as CompatibilityRequestBody;
+    const { req, user } = ctx;
 
-      const messages = [
-        { role: 'system' as const, content: system },
-        { role: 'user' as const, content: userPrompt },
-      ];
+    const config: ModelConfig = resolveModelConfig(body.provider);
 
-      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      // 首开与补生成视角均预扣额度；admin 免扣
-      session = await QuotaSession.reserve({
+    const selfInput = buildCompatibilityPersonInput(body.self, '我');
+    const partnerInput = buildCompatibilityPersonInput(body.partner, 'TA');
+
+    const relationType = body.relationType as RelationType;
+    const facts = buildCompatibilityChartFacts({ self: selfInput, partner: partnerInput });
+    const lite = buildLiteFactsForPrompt(facts);
+    const system = buildCompatibilitySystemPrompt(relationType);
+    const userPrompt = [
+      '双方命盘事实（只可引用，不可编造时柱）：',
+      JSON.stringify(lite, null, 2),
+      body.focusTags?.length
+        ? `用户当前关心：${body.focusTags.join('、')}`
+        : '用户未额外标注关心点。',
+      '请按系统要求输出 JSON。',
+    ].join('\n');
+
+    const messages = [
+      { role: 'system' as const, content: system },
+      { role: 'user' as const, content: userPrompt },
+    ];
+
+    const requestId = getBillingRequestId(req, body as unknown as Record<string, unknown>);
+
+    // 预留额度（管理员免扣跳过）
+    const session = await QuotaSession.reserve(
+      {
         userId: user.id,
         requestId,
         feature: 'destiny',
@@ -168,164 +168,109 @@ export async function POST(req: Request) {
         metadata: {
           reportType: 'bazi-compatibility',
           relationType,
-          viewOnly: parsed.data.viewOnly,
+          viewOnly: body.viewOnly,
         },
-      }, user.role);
+      },
+      user.role
+    );
 
-      const reportId = parsed.data.existingReportId || generateUUID();
-      const stream = createStream({
-        config,
-        userId: user.id,
-        messages,
-        facts,
-        relationType,
-        focusTags: parsed.data.focusTags ?? [],
-        partnerDisplayName: partnerName,
-        reportId,
-        sourceBaziHistoryId: parsed.data.sourceBaziHistoryId ?? null,
-        session,
-        requestId,
-      });
+    const reportId = body.existingReportId || generateUUID();
+    const reporter = createQuotaStreamReporter();
 
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream; charset=utf-8',
-          'Cache-Control': 'no-cache, no-transform',
-          Connection: 'keep-alive',
-        },
-      });
-    } catch (error) {
-      if (session) {
-        await session.release({ reason: '合盘请求初始化失败', meterType: 'tokens' });
-      }
-      if (error instanceof BillingError) return billingErrorResponse(error);
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : '合盘失败，请稍后重试' },
-        { status: 500 }
-      );
-    }
-  });
-}
-
-function createStream(args: {
-  config: ModelConfig;
-  userId: string;
-  messages: Array<{ role: 'system' | 'user'; content: string }>;
-  facts: ReturnType<typeof buildCompatibilityChartFacts>;
-  relationType: RelationType;
-  focusTags: string[];
-  partnerDisplayName: string;
-  reportId: string;
-  sourceBaziHistoryId: string | null;
-  session: QuotaSession;
-  requestId: string;
-}) {
-  const encoder = new TextEncoder();
-  return new ReadableStream({
-    async start(controller) {
-      const send = (event: CompatibilityStreamEvent) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-      };
-
-      let textBuffer = '';
-      let usagePayload: unknown;
-
-      try {
-        send({ type: 'status', status: 'validating' });
-        send({ type: 'status', status: 'charting' });
-        send({ type: 'section-final', sectionKey: 'chartFacts', payload: args.facts });
-        send({ type: 'status', status: 'analyzing' });
+    // 构建原始业务输出流
+    const rawStream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: CompatibilityStreamEvent) => {
+          controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
+        };
 
         try {
+          send({ type: 'status', status: 'validating' });
+          send({ type: 'status', status: 'charting' });
+          send({ type: 'section-final', sectionKey: 'chartFacts', payload: facts });
+          send({ type: 'status', status: 'analyzing' });
+
           const stream = streamModel({
-            config: args.config,
-            messages: args.messages,
+            config,
+            messages,
             temperature: 0.35,
-            maxTokens: args.session.outputLimit,
+            maxTokens: session.outputLimit,
             timeoutMs: TIMEOUT_MS,
           });
 
           for await (const ev of stream) {
             if (ev.type === 'text-delta') {
-              textBuffer += ev.text;
+              reporter.appendOutputText(ev.text);
             } else if (ev.type === 'done') {
-              usagePayload = ev.rawUsage ?? usagePayload;
+              reporter.setUsage(ev.rawUsage);
             } else if (ev.type === 'error') {
               throw new Error(ev.error);
             }
           }
-        } catch (modelError) {
-          console.error('[compatibility-report] model error, using fallback view', modelError);
-          textBuffer = '';
-        }
 
-        let raw: unknown = {};
-        if (textBuffer.trim()) {
+          const outputText = reporter.getOutputText();
+          if (!outputText.trim()) {
+            throw new Error('模型服务未产出有效解读内容');
+          }
+
+          let raw: unknown = {};
           try {
-            raw = extractJsonObject(textBuffer);
+            raw = extractJsonObject(outputText);
           } catch {
             raw = {};
           }
+
+          const view = normalizeCompatibilityView(raw, relationType, facts);
+          send({ type: 'section-final', sectionKey: 'view', payload: view });
+          send({ type: 'status', status: 'finalizing' });
+
+          const report: CompatibilityReport = {
+            id: reportId,
+            relationType,
+            focusTags: body.focusTags ?? [],
+            chartFacts: facts,
+            views: { [relationType]: view },
+            partnerDisplayName: partnerInput.name,
+            createdAt: new Date().toISOString(),
+            sourceBaziHistoryId: body.sourceBaziHistoryId ?? null,
+          };
+
+          send({ type: 'complete', report });
+          reporter.markCompleted();
+        } catch (error) {
+          send({
+            type: 'error',
+            error: error instanceof Error ? error.message : '合盘生成失败',
+          });
+        } finally {
+          controller.close();
         }
+      },
+    });
 
-        const view = normalizeCompatibilityView(raw, args.relationType, args.facts);
-        send({ type: 'section-final', sectionKey: 'view', payload: view });
-        send({ type: 'status', status: 'finalizing' });
-
-        const report: CompatibilityReport = {
-          id: args.reportId,
-          relationType: args.relationType,
-          focusTags: args.focusTags,
-          chartFacts: args.facts,
-          views: { [args.relationType]: view },
-          partnerDisplayName: args.partnerDisplayName,
-          createdAt: new Date().toISOString(),
-          sourceBaziHistoryId: args.sourceBaziHistoryId,
-        };
-
-        await args.session.finalize('success', {
-          requestId: args.requestId,
+    // 由通用流式计费管道托管流的生命周期与自动结算
+    return withQuotaStream(
+      rawStream,
+      {
+        session,
+        context: {
+          requestId,
           action: 'destiny-compatibility-report',
           endpoint: '/api/destiny/compatibility-report',
-          usage: usagePayload,
-          outputText: textBuffer,
-          provider: args.config.provider,
-          model: args.config.model,
-          userId: args.userId,
+          provider: config.provider,
+          model: config.model,
+          userId: user.id,
           feature: 'destiny',
           metadata: {
             reportType: 'bazi-compatibility',
-            relationType: args.relationType,
+            relationType,
           },
-        });
+        },
+        logLabel: 'compatibility-report',
+      },
+      reporter
+    );
+  },
+};
 
-        send({ type: 'complete', report });
-      } catch (error) {
-        // 三态决策：已有部分输出按 partial 结算（不退款），完全无输出才释放。
-        // 修复历史漂移：此前 catch 无条件 release，用户收到大段报告后中断反而全额退款。
-        await args.session.finalize(textBuffer.trim() ? 'partial' : 'failed', {
-          requestId: args.requestId,
-          action: 'destiny-compatibility-report',
-          endpoint: '/api/destiny/compatibility-report',
-          usage: usagePayload,
-          outputText: textBuffer,
-          reason: '合盘流式失败',
-          provider: args.config.provider,
-          model: args.config.model,
-          userId: args.userId,
-          feature: 'destiny',
-          metadata: {
-            reportType: 'bazi-compatibility',
-            relationType: args.relationType,
-          },
-        });
-        send({
-          type: 'error',
-          error: error instanceof Error ? error.message : '合盘生成失败',
-        });
-      } finally {
-        controller.close();
-      }
-    },
-  });
-}
+export const POST = createReportHandler(compatibilityReportAdapter);

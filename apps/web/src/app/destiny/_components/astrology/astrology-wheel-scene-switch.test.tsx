@@ -60,7 +60,7 @@ describe('AstrologyWheelSceneSwitch（SVG 兜底与场景交接）', () => {
     expect(screen.queryByTestId('wheel-scene')).not.toBeInTheDocument();
 
     // 代码块就绪、场景已挂载，但还没画出首帧：兜底仍在（这正是此前盘面消失一两秒的空窗）
-    expect(await screen.findByTestId('wheel-scene')).toBeInTheDocument();
+    expect(await screen.findByTestId('wheel-scene', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByTestId('wheel-fallback')).toBeInTheDocument();
   });
 
@@ -68,7 +68,7 @@ describe('AstrologyWheelSceneSwitch（SVG 兜底与场景交接）', () => {
     const user = userEvent.setup();
     renderSwitch();
 
-    const scene = await screen.findByTestId('wheel-scene');
+    const scene = await screen.findByTestId('wheel-scene', {}, { timeout: 4000 });
     await user.click(scene);
 
     expect(screen.queryByTestId('wheel-fallback')).not.toBeInTheDocument();

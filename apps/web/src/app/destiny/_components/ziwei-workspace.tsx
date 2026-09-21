@@ -71,7 +71,7 @@ type PanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
 
 const TAB_OPTIONS: Array<{ key: PanelTab; label: string }> = [
   { key: 'overview', label: '命理总论' },
-  { key: 'timeline', label: '大限流年' },
+  { key: 'timeline', label: '大运流年' },
   { key: 'relations', label: '六亲缘分' },
   { key: 'glossary', label: '星曜百科' },
 ];
@@ -322,92 +322,94 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
       const receivedSections: ZiweiLockedSections = {};
       let sawComplete = false;
 
-      await consumeSse<ZiweiStreamEvent>(response, { onEvent: (event) => {
-        if (event.type === 'status') {
-          setWorkspaceState('ziwei', { streamStatus: event.status });
-          return;
-        }
-
-        if (event.type === 'section-final') {
-          if (receivedSections[event.sectionKey]) return;
-
-          const key = event.sectionKey as keyof ZiweiLockedSections;
-          let payload = event.payload;
-
-          // 将 AI 返回的宫位标签（如"父母宫"）归一化为 iztro 名称（如"父母"）
-          if (event.sectionKey === 'palaceAnalysis' && Array.isArray(event.payload)) {
-            payload = (event.payload as ZiweiPalaceAnalysis[]).map((item) => ({
-              ...item,
-              label: normalizePalaceLabel(item.label),
-            }));
+      await consumeSse<ZiweiStreamEvent>(response, {
+        onEvent: (event) => {
+          if (event.type === 'status') {
+            setWorkspaceState('ziwei', { streamStatus: event.status });
+            return;
           }
 
-          (receivedSections as Record<string, unknown>)[event.sectionKey] = payload;
+          if (event.type === 'section-final') {
+            if (receivedSections[event.sectionKey]) return;
 
-          setWorkspaceState('ziwei', (current) => ({
-            lockedSections: current.lockedSections[event.sectionKey]
-              ? current.lockedSections
-              : { ...current.lockedSections, [event.sectionKey]: payload },
-            chartData:
-              event.sectionKey === 'chartData'
-                ? (event.payload as ZiweiChartData)
-                : current.chartData,
-            blockingLoading: false,
-            activePalaceLabel:
-              event.sectionKey === 'palaceAnalysis' &&
-              Array.isArray(payload) &&
-              (payload as ZiweiPalaceAnalysis[])[0]?.label
-                ? (payload as ZiweiPalaceAnalysis[])[0].label
-                : current.activePalaceLabel,
-          }));
-          markResultReady('ziwei');
-          return;
-        }
+            const key = event.sectionKey as keyof ZiweiLockedSections;
+            let payload = event.payload;
 
-        if (event.type === 'complete') {
-          sawComplete = true;
-          setWorkspaceState('ziwei', (current) => ({
-            report: event.report,
-            streaming: false,
-            streamStatus: null,
-          }));
-          markResultReady('ziwei');
-
-          // 保存到历史记录（包含 chartData 和 lockedSections 以便恢复时重建完整状态）
-          const currentState = useDestinyWorkspaceStore.getState().ziwei;
-          const enhancedReportData = {
-            report: event.report,
-            chartData: currentState.chartData,
-            lockedSections: currentState.lockedSections,
-          };
-          const previewText =
-            event.report.coreTone?.headline ||
-            event.report.coreTone?.description ||
-            '紫微斗数星盘分析';
-          const historyItem = createDestinyHistoryItem(
-            'ziwei',
-            formData as unknown as Record<string, unknown>,
-            enhancedReportData as unknown as Record<string, unknown>,
-            'doubao-seed-2-0',
-            {
-              id: currentHistoryIdRef.current || undefined,
-              title: `${formData.name}的紫微斗数命理报告`,
-              preview: previewText.slice(0, 150),
-              coreTone: event.report.coreTone?.tag || '紫微斗数',
-              // 接力派生：记录来源（REQ-013）；紫微无顾问，生成命盘即完成接力
-              derivation: relay.prepareExecution(),
+            // 将 AI 返回的宫位标签（如"父母宫"）归一化为 iztro 名称（如"父母"）
+            if (event.sectionKey === 'palaceAnalysis' && Array.isArray(event.payload)) {
+              payload = (event.payload as ZiweiPalaceAnalysis[]).map((item) => ({
+                ...item,
+                label: normalizePalaceLabel(item.label),
+              }));
             }
-          );
-          useHistoryStore.getState().addItem(historyItem);
-          // 紫微承接语义：生成命盘成功即完成接力（清引用+草稿，REQ-016/§4.6.4 紫微裁剪）
-          relay.commitExecution();
-          return;
-        }
 
-        if (event.type === 'error') {
-          throw new Error(event.error);
-        }
-      }});
+            (receivedSections as Record<string, unknown>)[event.sectionKey] = payload;
+
+            setWorkspaceState('ziwei', (current) => ({
+              lockedSections: current.lockedSections[event.sectionKey]
+                ? current.lockedSections
+                : { ...current.lockedSections, [event.sectionKey]: payload },
+              chartData:
+                event.sectionKey === 'chartData'
+                  ? (event.payload as ZiweiChartData)
+                  : current.chartData,
+              blockingLoading: false,
+              activePalaceLabel:
+                event.sectionKey === 'palaceAnalysis' &&
+                Array.isArray(payload) &&
+                (payload as ZiweiPalaceAnalysis[])[0]?.label
+                  ? (payload as ZiweiPalaceAnalysis[])[0].label
+                  : current.activePalaceLabel,
+            }));
+            markResultReady('ziwei');
+            return;
+          }
+
+          if (event.type === 'complete') {
+            sawComplete = true;
+            setWorkspaceState('ziwei', (current) => ({
+              report: event.report,
+              streaming: false,
+              streamStatus: null,
+            }));
+            markResultReady('ziwei');
+
+            // 保存到历史记录（包含 chartData 和 lockedSections 以便恢复时重建完整状态）
+            const currentState = useDestinyWorkspaceStore.getState().ziwei;
+            const enhancedReportData = {
+              report: event.report,
+              chartData: currentState.chartData,
+              lockedSections: currentState.lockedSections,
+            };
+            const previewText =
+              event.report.coreTone?.headline ||
+              event.report.coreTone?.description ||
+              '紫微斗数星盘分析';
+            const historyItem = createDestinyHistoryItem(
+              'ziwei',
+              formData as unknown as Record<string, unknown>,
+              enhancedReportData as unknown as Record<string, unknown>,
+              'doubao-seed-2-0',
+              {
+                id: currentHistoryIdRef.current || undefined,
+                title: `${formData.name}的紫微斗数命理报告`,
+                preview: previewText.slice(0, 150),
+                coreTone: event.report.coreTone?.tag || '紫微斗数',
+                // 接力派生：记录来源（REQ-013）；紫微无顾问，生成命盘即完成接力
+                derivation: relay.prepareExecution(),
+              }
+            );
+            useHistoryStore.getState().addItem(historyItem);
+            // 紫微承接语义：生成命盘成功即完成接力（清引用+草稿，REQ-016/§4.6.4 紫微裁剪）
+            relay.commitExecution();
+            return;
+          }
+
+          if (event.type === 'error') {
+            throw new Error(event.error);
+          }
+        },
+      });
 
       if (!sawComplete) {
         setWorkspaceState('ziwei', {
@@ -1063,7 +1065,12 @@ function RightPanel({
 }: RightPanelProps) {
   return (
     <section
-      className={cn(panelClass, 'flex flex-col overflow-hidden xl:max-h-[calc(100vh-12rem)]')}
+      className={cn(
+        panelClass,
+        // 桌面端面板高度自适应可视区（100vh 减去工作区 p-6 的上下内边距），吸附后与左侧导航上下齐平；
+        // 内容更长时交给内部滚动区，避免按内容高度收短后面板下方留出大片空白
+        'flex flex-col overflow-hidden xl:h-[calc(100vh-3rem)]'
+      )}
     >
       <span className="zw-gold-divider" aria-hidden />
 
@@ -1654,7 +1661,9 @@ function StarIntroDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn('zw-dialog max-h-[80vh] max-w-md overflow-y-auto custom-scrollbar ziwei-night-scrollbar rounded-[24px]')}
+        className={cn(
+          'zw-dialog max-h-[80vh] max-w-md overflow-y-auto custom-scrollbar ziwei-night-scrollbar rounded-[24px]'
+        )}
       >
         <span className="zw-gold-divider-soft" aria-hidden />
         <DialogTitle className="zw-text-1 font-song text-base font-bold">星曜入门指南</DialogTitle>
@@ -1864,7 +1873,10 @@ function GlossaryTab({ chartData }: { chartData: ZiweiChartData }) {
   const totalCount = allStars.length;
 
   return (
-    <div ref={scrollRef} className="relative -mr-1 h-full overflow-y-auto custom-scrollbar ziwei-night-scrollbar pr-1">
+    <div
+      ref={scrollRef}
+      className="relative -mr-1 h-full overflow-y-auto custom-scrollbar ziwei-night-scrollbar pr-1"
+    >
       {/* 标题与搜索 */}
       <div className="zw-sticky-head sticky top-0 z-10 rounded-lg p-2">
         <div className="mb-2 flex items-end justify-between">

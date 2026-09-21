@@ -119,14 +119,16 @@ export function GlobalSidebar() {
   return (
     <>
       <aside className="w-[100px] h-screen flex-shrink-0 z-50 transition-all duration-500 relative flex flex-col items-center py-6">
-        {/* 悬浮玻璃侧边栏背景：G-2 档均匀玻璃（white/60 + blur-xl），折射与二级侧栏一致 */}
-        <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 border-r border-white/50 dark:border-white/10 shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] rounded-r-3xl mx-2 my-4 pointer-events-none" />
-        
-        {/* 顶部高光切割线 */}
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50 rounded-r-3xl mx-2 mt-4" />
-        
+        {/* 悬浮玻璃侧边栏背景：G-2 档均匀玻璃（white/60 + blur-xl）。
+            整块四角全圆角 + 整圈 1px 描边，四周留白对称——不做单边 border-r 切分、
+            不留直角贴边，避免与相邻面板形成「两层边框」的割裂感（DESIGN.md §8.5） */}
+        <div className="absolute inset-y-4 left-2.5 right-2.5 rounded-[28px] border border-white/50 dark:border-white/10 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 shadow-[0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] pointer-events-none" />
+
+        {/* 顶部高光切割线（对齐悬浮卡上沿） */}
+        <div className="pointer-events-none absolute inset-x-2.5 top-4 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50" />
+
         {/* 背光光晕层 */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5 pointer-events-none rounded-r-3xl mx-2 my-4" />
+        <div className="pointer-events-none absolute inset-y-4 left-2.5 right-2.5 rounded-[28px] bg-gradient-to-br from-blue-500/5 via-transparent to-purple-500/5" />
         
         {/* 内容容器 */}
         <div className="relative z-10 flex flex-col items-center w-full h-full">

@@ -20,7 +20,7 @@ import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
 import { aspectRefKey, buildFactReferenceKeys } from '@/lib/astrology/interpretation';
 
 // 通过 hoisted 引用控制每次测试的登录用户（admin 跳过额度预留，普通用户走预留→结算）
-const { mockUserRef, streamModelRef } = vi.hoisted(() => ({
+const { mockUserRef, streamModelRef, quotaSessionMocks } = vi.hoisted(() => ({
   mockUserRef: {
     current: { id: 'test-user', role: 'user', isAnonymous: true } as {
       id: string;
@@ -35,6 +35,10 @@ const { mockUserRef, streamModelRef } = vi.hoisted(() => ({
     error: null as string | null,
     /** 记录调用入参（模型、协议、温度、输出上限、json schema） */
     calls: [] as Array<Record<string, unknown>>,
+  },
+  quotaSessionMocks: {
+    reserve: vi.fn(),
+    finalize: vi.fn(),
   },
 }));
 
@@ -59,6 +63,94 @@ vi.mock('@/lib/billing/quota-service', async (importOriginal) => {
     settleAiQuota: vi.fn(async () => undefined),
     releaseAiQuota: vi.fn(async () => undefined),
   };
+});
+
+// 路由重构至 QuotaSession：mock 该接缝并委托给既有 quota-service mock
+vi.mock('@/lib/billing/quota-session', async () => {
+  const { reserveChatQuota, releaseAiQuota, settleAiQuota } = await import('@/lib/billing/quota-service');
+  const { safeRecordAiUsage, normalizeUsage } = await import('@/lib/ai-usage');
+  const { createTokenMeasurement, estimateOutputTokens } = await import('@/lib/billing/usage-measurement');
+
+  class MockQuotaSession {
+    reservationId: string;
+    hasReservation: boolean;
+    inputUnits: number;
+    outputLimit: number;
+    userId: string;
+
+    constructor(
+      reservationId: string,
+      hasReservation: boolean,
+      inputUnits = 1200,
+      outputLimit = 6000,
+      userId = 'test-user'
+    ) {
+      this.reservationId = reservationId;
+      this.hasReservation = hasReservation;
+      this.inputUnits = inputUnits;
+      this.outputLimit = outputLimit;
+      this.userId = userId;
+    }
+
+    static reserve = vi.fn(async (input: any, role?: string) => {
+      quotaSessionMocks.reserve(input, role);
+      if (role === 'admin') {
+        return new MockQuotaSession('', false, 0, input.maxOutputTokens ?? 8000, input.userId);
+      }
+      const quota = await reserveChatQuota(input);
+      return new MockQuotaSession(
+        quota.reservation.id,
+        true,
+        quota.inputUnits,
+        quota.outputLimit,
+        input.userId
+      );
+    });
+
+    finalize = vi.fn(async (outcome: string, ctx: any) => {
+      quotaSessionMocks.finalize(outcome, ctx);
+      if (outcome === 'failed') {
+        await releaseAiQuota({
+          reservationId: this.reservationId,
+          reason: ctx.reason,
+          meterType: 'tokens',
+        });
+        return;
+      }
+      if (!this.hasReservation) {
+        if (ctx.userId) {
+          await safeRecordAiUsage({
+            userId: ctx.userId,
+            feature: ctx.feature ?? 'destiny',
+            action: ctx.action,
+            provider: ctx.provider,
+            model: ctx.model,
+            endpoint: ctx.endpoint,
+            usage: normalizeUsage(ctx.usage),
+            metadata: ctx.metadata,
+          });
+        }
+        return;
+      }
+      await settleAiQuota({
+        reservationId: this.reservationId,
+        requestId: ctx.requestId,
+        feature: ctx.feature ?? 'destiny',
+        action: ctx.action,
+        provider: ctx.provider,
+        model: ctx.model,
+        endpoint: ctx.endpoint,
+        measurement: createTokenMeasurement(
+          ctx.usage,
+          this.inputUnits + estimateOutputTokens(ctx.outputText)
+        ),
+        status: outcome === 'partial' ? 'partial' : 'success',
+        metadata: ctx.metadata,
+      });
+    });
+  }
+
+  return { QuotaSession: MockQuotaSession };
 });
 
 // 全链路用例把客户端接缝的 HTTP 调用转交给真实路由 handler（其余用例不经过此 mock）

@@ -16,10 +16,9 @@
  * - 解读失败只降级解读层，绝不下发 error 事件把星盘一起冲掉（error 仅用于真值阶段的失败）；
  * - 分区顺序固定：headline → bigThree → modules → transits（扫描器缓存乱序分区，按序释放）。
  *
- * 额度（与八字 report 同口径）：
- * - 解读前 reserveChatQuota（管理员跳过，免预留）；成功按真实 usage 结算（usage 缺失时按
- *   createTokenMeasurement 的本地估算兜底）；流失败时——已产出部分文本按 partial 部分结算，
- *   一个字都没产出则整额释放；
+ * 额度与生命周期（收敛至 QuotaSession 统一决策表与 withQuotaStream 管道）：
+ * - 解读前由 QuotaSession.reserve 预留配额（管理员跳过，免预留）；
+ * - 成功按真实 usage 结算（缺失时按输入与输出估算兜底）；流失败或截断按 partial 部分结算，一个字没出整额释放；
  * - 预留不足（BillingError QUOTA_INSUFFICIENT）只降级解读层，星盘照常下发。
  *
  * 鉴权与请求校验复用八字 report 同一工厂（createReportHandler）：未登录 401、请求体不合法 400。
@@ -42,14 +41,15 @@ import {
 } from '@/lib/astrology/interpretation';
 import { selectActiveTransits } from '@/lib/astrology/transit-selection';
 import { encodeSseEvent } from '@/lib/utils/sse';
-import { releaseAiQuota, reserveChatQuota, settleAiQuota } from '@/lib/billing/quota-service';
-import { createTokenMeasurement, estimateOutputTokens } from '@/lib/billing/usage-measurement';
+import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
-import { normalizeUsage, safeRecordAiUsage } from '@/lib/ai-usage';
 import { BillingError } from '@/lib/billing/billing-errors';
 import {
+  createQuotaStreamReporter,
   createReportHandler,
   defaultMapError,
+  withQuotaStream,
+  type QuotaStreamSessionReporter,
   type ReportGenerationAdapter,
   type ReportGenerationContext,
 } from '../../_lib/report-generation';
@@ -114,12 +114,26 @@ export const POST = createReportHandler(AstrologyReportAdapter);
  * 报告流：真值先行，随后流式分区（headline → bigThree → modules → transits），最后 complete。
  * 解读阶段的一切失败都收敛为 interpretation-unavailable(reason='model')——真值已经下发，
  * 文案区显示诚实失败卡与重试入口，绝不用任何模板文案冒充产出。
+ * 配额与用量通过 withQuotaStream 统一管道托管生命周期。
  */
 function createAstrologyReportStream(
   ctx: ReportGenerationContext,
   body: AstrologyReportRequestBody
 ): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
+  const billingHolder = { current: null as QuotaSession | null };
+  const reporter = createQuotaStreamReporter();
+  const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
+
+  // 预解析模型配置供计费上下文与后续解读使用
+  let preResolvedConfig: ModelConfig | null = null;
+  let preResolvedConfigError: unknown = null;
+  try {
+    preResolvedConfig = resolveModelConfig(body.provider);
+  } catch (error) {
+    preResolvedConfigError = error;
+  }
+
+  const sourceStream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: AstrologyReportEvent) => {
         controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
@@ -132,19 +146,17 @@ function createAstrologyReportStream(
         factsDelivered = true;
 
         // ── 解读阶段：模型配置 → 额度预留 → 流式分区 ──
-        let config: ModelConfig;
-        try {
-          config = resolveModelConfig(body.provider);
-        } catch (error) {
+        if (preResolvedConfigError) {
           // 模型未配置属于服务端配置问题：如实告诉用户解读暂不可用，星盘照常
-          if (error instanceof ModelConfigError) {
-            console.error('[astrology/report] 模型配置缺失:', error.message);
+          if (preResolvedConfigError instanceof ModelConfigError) {
+            console.error('[astrology/report] 模型配置缺失:', preResolvedConfigError.message);
             send({ type: 'interpretation-unavailable', reason: 'model' });
             send({ type: 'complete' });
             return;
           }
-          throw error;
+          throw preResolvedConfigError;
         }
+        const config = preResolvedConfig!;
 
         const week = startOfNaturalWeekUtc(Date.now());
         const selectedTransits = selectActiveTransits(facts, {
@@ -183,13 +195,9 @@ function createAstrologyReportStream(
           },
         ];
 
-        const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
-        let reservationId: string | undefined;
-        let inputUnits = 0;
-        let outputLimit = ASTROLOGY_REPORT_MAX_OUTPUT_TOKENS;
-        if (ctx.user.role !== 'admin') {
-          try {
-            const quota = await reserveChatQuota({
+        try {
+          const session = await QuotaSession.reserve(
+            {
               userId: ctx.user.id,
               requestId,
               feature: 'destiny',
@@ -198,19 +206,18 @@ function createAstrologyReportStream(
               messages,
               maxOutputTokens: ASTROLOGY_REPORT_MAX_OUTPUT_TOKENS,
               metadata: { reportType: 'astrology', timePrecision: body.timePrecision },
-            });
-            reservationId = quota.reservation.id;
-            inputUnits = quota.inputUnits;
-            outputLimit = quota.outputLimit;
-          } catch (error) {
-            if (error instanceof BillingError && error.code === 'QUOTA_INSUFFICIENT') {
-              // 额度不足只降级解读层：星盘已下发，前端给锁定卡与额度引导
-              send({ type: 'interpretation-unavailable', reason: 'quota' });
-              send({ type: 'complete' });
-              return;
-            }
-            throw error;
+            },
+            ctx.user.role
+          );
+          billingHolder.current = session;
+        } catch (error) {
+          if (error instanceof BillingError && error.code === 'QUOTA_INSUFFICIENT') {
+            // 额度不足只降级解读层：星盘已下发，前端给锁定卡与额度引导
+            send({ type: 'interpretation-unavailable', reason: 'quota' });
+            send({ type: 'complete' });
+            return;
           }
+          throw error;
         }
 
         await streamInterpretation({
@@ -219,11 +226,8 @@ function createAstrologyReportStream(
           selectedTransits,
           sectionContext,
           send,
-          userId: ctx.user.id,
-          reservationId,
-          requestId,
-          inputUnits,
-          outputLimit,
+          reporter,
+          outputLimit: billingHolder.current?.outputLimit ?? ASTROLOGY_REPORT_MAX_OUTPUT_TOKENS,
         });
       } catch (error) {
         console.error('[astrology/report] 报告流中断:', error);
@@ -246,19 +250,39 @@ function createAstrologyReportStream(
       }
     },
   });
+
+  return withQuotaStream(
+    sourceStream,
+    {
+      session: billingHolder,
+      context: {
+        requestId,
+        action: 'destiny-report',
+        endpoint: '/api/destiny/astrology/report',
+        userId: ctx.user.id,
+        feature: 'destiny',
+        provider: preResolvedConfig?.provider ?? (body.provider || 'doubao'),
+        model: preResolvedConfig?.model ?? 'doubao-seed-evolving',
+        metadata: {
+          reportType: 'astrology',
+          timePrecision: body.timePrecision,
+          stage: 'final_report',
+        },
+      },
+      logLabel: 'astrology/report',
+    },
+    reporter
+  );
 }
 
-/** 解读执行：流式读取 → 分区推送 → complete → 额度结算（失败路径由调用方推降级事件） */
+/** 解读执行：流式读取 → 分区推送 → complete，由外层 withQuotaStream 统一托管三态结算 */
 async function streamInterpretation({
   config,
   messages,
   selectedTransits,
   sectionContext,
   send,
-  userId,
-  reservationId,
-  requestId,
-  inputUnits,
+  reporter,
   outputLimit,
 }: {
   config: ModelConfig;
@@ -266,10 +290,7 @@ async function streamInterpretation({
   selectedTransits: ReturnType<typeof selectActiveTransits>;
   sectionContext: SectionValidationContext;
   send: (event: AstrologyReportEvent) => void;
-  userId: string;
-  reservationId?: string;
-  requestId: string;
-  inputUnits: number;
+  reporter: QuotaStreamSessionReporter;
   outputLimit: number;
 }): Promise<void> {
   const scanner = createReportSectionScanner();
@@ -293,111 +314,39 @@ async function streamInterpretation({
     }
   };
 
-  const metadata = {
-    stage: 'single-stream',
-    reportType: 'astrology',
-    provider: config.provider,
-    transitCount: selectedTransits.length,
-  };
-  let textBuffer = '';
-  let usagePayload: unknown = null;
-  let settled = false;
+  const stream = streamModel({
+    config,
+    messages,
+    temperature: ASTROLOGY_REPORT_TEMPERATURE,
+    maxTokens: outputLimit,
+    timeoutMs: ASTROLOGY_REPORT_TIMEOUT_MS,
+    // 解读是「把已确认事实翻译成生活语言」，不需要深推理：推理摘要会吃掉输出预算，
+    // 匿名档（10000 额度）曾因此整额耗尽、一帧正文都出不来（T5 验收实测 reasoning_tokens 占满 max_output_tokens）
+    reasoningEffort: 'minimal',
+    json: {
+      schema: { name: ASTROLOGY_REPORT_SCHEMA_NAME, schema: ASTROLOGY_REPORT_JSON_SCHEMA },
+    },
+  });
 
-  /** 结算（成功 / 部分）：usage 缺失时按本地估算兜底（与八字同口径） */
-  const settle = async (status: 'success' | 'partial') => {
-    if (settled) return;
-    settled = true;
-    if (!reservationId) {
-      await safeRecordAiUsage({
-        userId,
-        feature: 'destiny',
-        action: 'destiny-report',
-        provider: config.provider,
-        model: config.model,
-        endpoint: '/api/destiny/astrology/report',
-        usage: normalizeUsage(usagePayload),
-        metadata,
-      });
-      return;
+  for await (const event of stream) {
+    if (event.type === 'text-delta') {
+      reporter.appendOutputText(event.text);
+      emitSections(scanner.push(event.text));
+    } else if (event.type === 'done') {
+      reporter.setUsage(event.rawUsage);
+    } else if (event.type === 'error') {
+      throw new ModelUpstreamError(event.error, 502);
     }
-    await settleAiQuota({
-      reservationId,
-      requestId,
-      feature: 'destiny',
-      action: 'destiny-report',
-      provider: config.provider,
-      model: config.model,
-      endpoint: '/api/destiny/astrology/report',
-      measurement: createTokenMeasurement(usagePayload, inputUnits + estimateOutputTokens(textBuffer)),
-      status,
-      metadata,
-    });
-  };
-
-  const release = async () => {
-    if (settled) return;
-    settled = true;
-    if (reservationId) {
-      await releaseAiQuota({ reservationId, reason: '星座解读流式失败', meterType: 'tokens' });
-    }
-  };
-
-  /**
-   * 结算/释放失败只记日志：结算是服务端记账，出问题不得改变用户可见的解读结论——
-   * 若把异常抛回外层 catch，会再发一次 interpretation-unavailable + 第二个 complete，
-   * 把已经完整送达的解读结论清掉（用量丢失由对账按预留兜底）。
-   */
-  const settleSafely = async (run: () => Promise<void>, label: string) => {
-    try {
-      await run();
-    } catch (error) {
-      console.error(`[astrology/report] ${label}失败（用量由对账兜底）:`, error);
-    }
-  };
-
-  try {
-    const stream = streamModel({
-      config,
-      messages,
-      temperature: ASTROLOGY_REPORT_TEMPERATURE,
-      maxTokens: outputLimit,
-      timeoutMs: ASTROLOGY_REPORT_TIMEOUT_MS,
-      // 解读是「把已确认事实翻译成生活语言」，不需要深推理：推理摘要会吃掉输出预算，
-      // 匿名档（10000 额度）曾因此整额耗尽、一帧正文都出不来（T5 验收实测 reasoning_tokens 占满 max_output_tokens）
-      reasoningEffort: 'minimal',
-      json: {
-        schema: { name: ASTROLOGY_REPORT_SCHEMA_NAME, schema: ASTROLOGY_REPORT_JSON_SCHEMA },
-      },
-    });
-
-    for await (const event of stream) {
-      if (event.type === 'text-delta') {
-        textBuffer += event.text;
-        emitSections(scanner.push(event.text));
-      } else if (event.type === 'done') {
-        usagePayload = event.rawUsage ?? usagePayload;
-      } else if (event.type === 'error') {
-        throw new ModelUpstreamError(event.error, 502);
-      }
-    }
-
-    // 收尾：四个分区必须齐备（截断输出 / 校验失败一律诚实降级，不做任何文案兜底）
-    emitSections(scanner.push(''));
-    const missing = [...scanner.missingKeys(), ...scanner.pendingKeys()];
-    if (missing.length > 0) {
-      throw new AstrologyReportSectionError('transits', `模型分区输出不完整：缺少 ${missing.join('、')}`);
-    }
-
-    // 先收流再结算（与八字 report 同序）：结算是服务端记账，不阻塞用户看到 complete；
-    // complete 每流只发一次——结算失败既不补发 complete，也不降级解读层
-    send({ type: 'complete' });
-    await settleSafely(() => settle('success'), '结算');
-  } catch (error) {
-    // 已产出文本按部分结算，一个字都没有则整额释放（与八字 report 同口径）；失败同样只记日志
-    await settleSafely(
-      () => (textBuffer.trim() ? settle('partial') : release()),
-      '失败结算'
-    );
-    throw error;
   }
+
+  // 收尾：四个分区必须齐备（截断输出 / 校验失败一律诚实降级，不做任何文案兜底）
+  emitSections(scanner.push(''));
+  const missing = [...scanner.missingKeys(), ...scanner.pendingKeys()];
+  if (missing.length > 0) {
+    throw new AstrologyReportSectionError('transits', `模型分区输出不完整：缺少 ${missing.join('、')}`);
+  }
+
+  // 标记完成并下发 complete 事件；外部管道据此触发 success 结算
+  send({ type: 'complete' });
+  reporter.markCompleted();
 }

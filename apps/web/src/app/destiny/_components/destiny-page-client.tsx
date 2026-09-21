@@ -118,10 +118,10 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
 
   // 接力「待解读引用」横幅：替换确认 / 活动引用 + 术数平级选择 / 失效提示。
   // 引用文本绝不写入出生资料字段；仅在表单步展示（结果步由顾问 externalDraft 接管）。
-  // 桌面端：xl 起给左侧 nav 与右上模型切换器让位（与 DestinyPageScaffold 的 withNavOffset 对齐）；
+  // 桌面端：lg 起给左侧 nav 让位（与 DestinyPageScaffold 的 withNavOffset 对齐）；
   // 移动端：模型切换嵌在各术数表单标题行右侧，与 sticky 分段控件不冲突。
   const relayBanner = (relay.replaceCandidate || relay.bundle || relay.isInvalid) && isFormStep ? (
-    <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
+    <div className="transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:pl-[var(--destiny-nav-offset,304px)]">
       <div className="mt-2 rounded-xl border border-[#5D7CFA]/20 bg-[#5D7CFA]/5 px-3 py-2 dark:border-[#7D8CFF]/20 dark:bg-[#5D7CFA]/10">
         {relay.replaceCandidate ? (
           <ReferenceBar
@@ -351,8 +351,8 @@ function DestinyDesktopLayout({
           <div className="absolute inset-0 z-[35] overflow-hidden">
             <div className="relative h-full w-full bg-white/10 backdrop-blur-[14px] backdrop-saturate-150 dark:bg-slate-950/20">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(255,255,255,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(133,167,255,0.12),transparent_34%),linear-gradient(90deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0.06)_20%,rgba(255,255,255,0.02)_32%,rgba(255,255,255,0)_46%)]" />
-              <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/[0.04] to-transparent blur-2xl xl:block" />
-              <div className="relative h-full w-full transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] xl:pl-[var(--destiny-nav-offset,304px)]">
+              <div className="pointer-events-none absolute inset-y-0 left-[var(--destiny-nav-offset,304px)] hidden w-20 -translate-x-4 bg-gradient-to-r from-white/10 via-white/[0.04] to-transparent blur-2xl lg:block" />
+              <div className="relative h-full w-full transition-[padding-left] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:pl-[var(--destiny-nav-offset,304px)]">
                 <QimenLoadingAnimation />
               </div>
             </div>

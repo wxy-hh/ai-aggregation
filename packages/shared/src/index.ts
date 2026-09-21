@@ -18,6 +18,7 @@ export * from './destiny-stream-contract';
 export * from './usage-normalize';
 export * from './token-estimate';
 export * from './model-json';
+export * from './compatibility-contract';
 
 // 城市经纬度数据 (用于八字测算真太阳时修正)
 export * from './data/china-cities';

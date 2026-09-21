@@ -19,19 +19,18 @@ import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 
 // ============ 导入状态管理 Store ============
-// 直接路径导入，避免 barrel 文件把无关 store 打进 chunk
+// 直接路径导入，避免桶文件把无关状态库打进代码块
 import {
-  useConversationsStore, // 对话列表管理 Store（管理多个对话的创建、删除、切换）
+  useConversationsStore, // 会话列表与编排中枢 Store
+  useConversationsActions, // 编排中枢统一操作方法
   type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
 } from '@/stores/conversations-store';
 import {
-  useChatStore, // 当前对话的消息管理 Store（管理当前对话的消息、发送、加载状态）
+  useChatStore, // 当前单聊消息管理 Store（管理当前单聊的消息、发送与流式状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
   type Message, // 消息类型定义
 } from '@/stores/chat-store';
 
-// 并行对比运行时 store（管理对比模式、已选模型、轮次分支）
-import { useComparisonStore } from '@/stores/comparison-store';
 // 对比模式类型（'single' | 'compare'）
 import type { ComparisonMode } from '@/types/comparison';
 
@@ -118,7 +117,7 @@ function ModeSegmentedControl({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200',
+              'inline-flex min-h-[44px] items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 focus:outline-none',
               active
                 ? 'bg-blue-500 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.4)]'
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
@@ -166,60 +165,57 @@ export default function ChatWorkspace() {
   // 防止 useEffect 重复执行初始化逻辑
   const hasInitialized = useRef(false);
 
-  // ============ 从 Conversations Store 获取状态和方法 ============
-  // Conversations Store 负责管理所有对话的列表、创建、删除、切换等操作
+  // ============ 从 Conversations Store（编排中枢）获取状态和方法 ============
+  // 会话中枢作为全局唯一的活动会话与模式权威（单一事实源 SSOT）
 
   // 获取所有对话列表（数组）
-  // 每个对话包含：id、标题、消息列表、创建时间等信息
   const conversations = useConversationsStore((state) => state.conversations);
 
   // 获取当前激活的对话 ID
-  // 用于高亮显示左侧列表中的当前对话
   const currentConversationId = useConversationsStore((state) => state.currentConversationId);
 
   // 获取数据是否已从本地存储加载完成的标志
-  // 在数据加载完成前，显示加载动画
   const isLoaded = useConversationsStore((state) => state.isLoaded);
 
-  // 使用 useShallow 批量获取 Store 中的方法
-  // useShallow 会进行浅比较，只有当这些方法引用变化时才重新渲染
-  // 这样可以避免不必要的组件重渲染，提升性能
-  const {
-    createConversation, // 创建新对话的方法
-    switchConversation, // 切换到指定对话的方法
-    deleteConversation, // 删除指定对话的方法
-    findEmptyConversation, // 查找空对话（没有消息的对话）的方法
-    getGroupedConversations, // 获取按时间分组的对话列表（今天、昨天、更早等）
-    getCurrentConversation, // 获取当前激活的对话对象
-    updateConversationSettings, // 更新对话设置（如切换模型）的方法
-  } = useConversationsStore(
-    useShallow((state) => ({
-      createConversation: state.createConversation,
-      switchConversation: state.switchConversation,
-      deleteConversation: state.deleteConversation,
-      findEmptyConversation: state.findEmptyConversation,
-      getGroupedConversations: state.getGroupedConversations,
-      getCurrentConversation: state.getCurrentConversation,
-      updateConversationSettings: state.updateConversationSettings,
-    }))
-  );
+  // 当前全局模式权威：单聊 / 并行对比
+  const comparisonMode = useConversationsStore((state) => state.mode);
+  const isCompareMode = comparisonMode === 'compare';
 
-  // ============ 从 Chat Store 获取状态和方法 ============
-  // Chat Store 负责管理当前对话的消息、发送、加载状态等
+  // 批量获取会话编排中枢操作方法（浅比较优化）
   const {
-    messages, // 当前对话的所有消息列表（数组）
-    isLoading, // 是否正在等待 AI 回复（显示加载动画）
-    error, // 错误信息对象（如果发生错误）
-    provider, // 当前使用的 AI 服务提供商（如 'xunfei'、'doubao'）
-    model, // 当前使用的具体模型 ID（如 'lite'、'generalv3.5'）
-    activeConversationId, // Chat Store 中当前激活的对话 ID
-    sendMessage, // 发送消息的方法（会调用 API 并更新消息列表）
-    reload, // 重新生成最后一条 AI 回复的方法
-    loadConversation, // 加载指定对话的消息到 Chat Store 的方法
-    switchProvider, // 切换 AI 服务提供商和模型的方法
-    reset, // 重置 Chat Store 状态的方法（清空消息等）
-    setAttachment, // 设置附件（清理接力图片用）
-    attachment, // 当前附件对象（清理接力图片用）
+    createConversation,
+    switchConversation,
+    deleteConversation,
+    findEmptyConversation,
+    getGroupedConversations,
+    getCurrentConversation,
+    updateConversationSettings,
+    switchMode,
+    startNewSession,
+    openComparisonSession,
+    openHistorySession,
+    prepareRelaySession,
+  } = useConversationsActions();
+
+  // 模式切换别名，兼容分段控制器命名
+  const setComparisonMode = switchMode;
+
+  // ============ 从 Chat Store 获取单聊状态和方法 ============
+  // Chat Store 负责管理单聊会话的消息、流式输出、附件与发送状态
+  const {
+    messages,
+    isLoading,
+    error,
+    provider,
+    model,
+    activeConversationId,
+    sendMessage,
+    reload,
+    loadConversation,
+    switchProvider,
+    reset,
+    setAttachment,
+    attachment,
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -237,14 +233,6 @@ export default function ChatWorkspace() {
       attachment: state.attachment,
     }))
   );
-
-  // ============ 从 Comparison Store 获取对比模式状态 ============
-  // Comparison Store 负责并行对比模式的模式切换、已选模型与轮次分支
-  const comparisonMode = useComparisonStore((state) => state.mode); // 当前模式：单聊 / 并行对比
-  const setComparisonMode = useComparisonStore((state) => state.setMode); // 切换模式
-  const loadComparison = useComparisonStore((state) => state.loadComparison); // 载入比较会话
-  const startNewComparison = useComparisonStore((state) => state.startNewComparison); // 新建比较会话
-  const isCompareMode = comparisonMode === 'compare'; // 是否处于并行对比模式
 
   // ============ 跨模态接力：对话目标接收 ============
   // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
@@ -286,19 +274,13 @@ export default function ChatWorkspace() {
     }
   }, [relay.initialized, relay.bundle?.id, provider, switchProvider, activeConversationId]);
 
-  // ============ 接力会话落点（M-3）============
-  // 目标=对话的接力到达时，若当前停在比较会话（消息存 turns 而非 messages），
-  // 需切换到单聊承载，避免用户直接发送导致消息写错会话。
-  // ?relayId= 已由 useRelayReceive 在 URL 参数 effect 前清掉，不会误入场景分支。
+  // ============ 接力会话落点保证（E-1 契约）============
+  // 目标=对话的接力到达时，由中枢保证处于单聊模式且存在有效单聊会话承载
   useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
     if (!isLoaded) return;
-    // 接力到达对话即视为跳入单聊语境：默认空态（comparisonStore.mode='compare'）或当前
-    // 停在对比视图时，切到单聊视图，使接力草稿与图片附件预填进 ChatInput（其自带
-    // externalDraft / externalAttachmentUrl 预填逻辑）。无需在此新建会话——
-    // handleSend 会在无当前会话或当前为对比会话时自动新建单聊会话兜底。
-    if (isCompareMode) setComparisonMode('single');
-  }, [relay.initialized, relay.bundle?.id, isLoaded, isCompareMode]);
+    prepareRelaySession();
+  }, [relay.initialized, relay.bundle?.id, isLoaded, prepareRelaySession]);
 
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
@@ -338,148 +320,37 @@ export default function ChatWorkspace() {
     const comparisonId = urlParams.get('comparisonId');
 
     if (comparisonId) {
-      // ============ 场景0：重新打开比较会话 ============
-      // 用户从历史记录页点击某条「多模型对比」记录，跳转到这里
-      // 切到对比模式并载入该比较会话（turns 分支由 comparison-store 恢复）
-      setComparisonMode('compare');
-      loadComparison(comparisonId);
-      // 同步高亮侧栏对应会话
-      switchConversation(comparisonId);
-
-      // 清除 URL 参数，保持 URL 干净
+      // 场景 0：外部唤起对比会话（E-1 契约）
+      openComparisonSession(comparisonId);
       window.history.replaceState({}, '', '/chat');
     } else if (historyId) {
-      // ============ 场景1：从历史记录加载对话 ============
-      // 用户从历史记录页面点击某条聊天记录，跳转到这里
-      console.log('[ChatWorkspace] Loading from history:', historyId);
-
-      // 动态导入 history-store（按需加载，减少初始包体积）
+      // 场景 1：外部从历史记录唤起单聊会话（E-1 契约）
       import('@/stores/history-store').then(({ useHistoryStore }) => {
-        // 从历史记录 Store 中查找指定 ID 的记录
         const historyItem = useHistoryStore.getState().getItemById(historyId);
-
-        // 检查是否找到了对应的聊天历史记录
         if (historyItem && historyItem.type === 'chat') {
-          console.log('[ChatWorkspace] Found chat history item:', historyItem);
-
-          // 将历史记录转换为聊天记录类型
-          const chatItem = historyItem as import('@/types/history').ChatHistoryItem;
-
-          // 获取历史记录中使用的 AI 提供商和模型（如果没有则使用默认值）
-          const newProvider = (chatItem.provider || 'xunfei') as ProviderName;
-          const newModel = chatItem.model || 'lite';
-
-          // 创建一个新的对话（用于承载历史消息）
-          const newConvId = createConversation(newProvider, newModel);
-
-          // 将历史消息转换为当前系统的消息格式
-          // 每条消息需要有唯一的 id、角色（user/assistant）和内容
-          const historyMessages: Message[] = chatItem.messages.map((msg, index) => ({
-            id: `${newConvId}-msg-${index}`, // 生成唯一 ID
-            role: msg.role, // 'user' 或 'assistant'
-            content: msg.content, // 消息内容
-          }));
-
-          // 将历史消息加载到 Chat Store 中
-          loadConversation(newConvId, historyMessages, newProvider, newModel);
-
-          // 记录已加载的对话 ID，防止重复加载
-          loadedIdRef.current = newConvId;
-
-          console.log('[ChatWorkspace] Loaded history conversation:', newConvId);
-        } else {
-          // 如果没找到或类型不对，输出警告
-          console.warn('[ChatWorkspace] History item not found or not chat type:', historyId);
+          openHistorySession(historyItem as import('@/types/history').ChatHistoryItem);
         }
       });
-
-      // 清除 URL 中的参数，保持 URL 干净
-      // 使用 replaceState 不会触发页面刷新
       window.history.replaceState({}, '', '/chat');
     } else if (isNewConversation) {
-      // ============ 场景2：创建新对话 ============
-      // 用户点击了"新建对话"按钮，URL 中有 ?new=true
-
-      // 先查找是否已经有空对话（没有消息的对话）
-      const emptyConversation = findEmptyConversation();
-
-      if (emptyConversation) {
-        // 如果有空对话，直接切换到它（避免创建太多空对话）
-        switchConversation(emptyConversation.id);
-      } else {
-        // 如果没有空对话，创建一个新的
-        createConversation();
-      }
-
-      // 清除 URL 参数
+      // 场景 2：统一新建会话（E-1 契约）
+      startNewSession();
       window.history.replaceState({}, '', '/chat');
-    } else if (!currentConversationId && conversations.length > 0) {
-      // ============ 场景3：默认加载第一个对话 ============
-      // 如果没有当前对话，但有历史对话列表，就加载第一个
-      switchConversation(conversations[0].id);
-    }
-  }, [
-    // 依赖项列表：当这些值变化时，useEffect 会重新执行
-    isLoaded, // 数据加载状态
-    conversations, // 对话列表
-    currentConversationId, // 当前对话 ID
-    createConversation, // 创建对话方法
-    switchConversation, // 切换对话方法
-    findEmptyConversation, // 查找空对话方法
-    loadConversation, // 加载对话方法
-    setComparisonMode, // 切换对比模式方法
-    loadComparison, // 载入比较会话方法
-  ]);
-
-  // ============ 对话切换时加载消息 ============
-  // 当用户切换到不同的对话时，需要将该对话的消息加载到 Chat Store 中
-
-  // 使用 ref 记录当前已加载的对话 ID，防止重复加载
-  const loadedIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // 如果数据还没加载完成，不执行
-    if (!isLoaded) return;
-
-    // 如果当前没有选中任何对话
-    if (!currentConversationId) {
-      // 如果之前有加载过对话，需要重置 Chat Store
-      if (loadedIdRef.current) {
-        reset(); // 清空消息列表等状态
-        loadedIdRef.current = null; // 清空已加载标记
-      }
-      return;
-    }
-
-    // 如果当前对话 ID 和已加载的 ID 不同，说明需要加载新对话
-    if (currentConversationId !== loadedIdRef.current) {
-      // 从对话列表中找到当前对话的完整信息
-      const conv = conversations.find((c) => c.id === currentConversationId);
-
-      if (conv) {
-        // 比较会话：不加载到单聊 Chat Store，交由 comparison-store 接管，
-        // 避免把空的 messages 覆盖进单聊消息（对比模式分支数据放在 turns 中）
-        if (conv.mode === 'compare') {
-          loadedIdRef.current = currentConversationId;
-          return;
-        }
-
-        // 将对话的消息加载到 Chat Store
-        // 需要传入：对话 ID、消息列表、AI 提供商、模型
-        loadConversation(conv.id, conv.messages as Message[], conv.provider, conv.model);
-
-        // 更新已加载标记，防止重复加载
-        loadedIdRef.current = currentConversationId;
+    } else if (!currentConversationId && comparisonMode === 'single') {
+      // 场景 3：单聊模式且无当前指针时，若存在单聊历史则默认加载首个单聊会话
+      const firstSingle = conversations.find(c => c.mode !== 'compare');
+      if (firstSingle) {
+        switchConversation(firstSingle.id);
       }
     }
-    // 如果 ID 相同，说明已经加载过了，不需要重复加载
-    // Chat Store 内部会处理消息的更新
   }, [
-    currentConversationId, // 当前对话 ID 变化时触发
-    conversations, // 对话列表变化时触发（可能有新消息）
-    isLoaded, // 数据加载状态
-    loadConversation, // 加载对话方法
-    reset, // 重置方法
+    isLoaded,
+    conversations,
+    currentConversationId,
+    startNewSession,
+    switchConversation,
+    openComparisonSession,
+    openHistorySession,
   ]);
 
   // 点击外部关闭模型选择器
@@ -539,9 +410,6 @@ export default function ChatWorkspace() {
         // 立即加载这个新对话到 Chat Store
         // 传入空消息列表 []，因为是新对话
         loadConversation(newId, [], provider, model || 'lite'); // 确保 model 有默认值
-
-        // 更新已加载标记，防止 useEffect 重复加载
-        loadedIdRef.current = newId;
       }
 
       // 发送消息（携带接力派生元数据，仅成功路径写入历史）
@@ -572,36 +440,11 @@ export default function ChatWorkspace() {
     ]
   );
 
-  // ============ 新建对话处理函数 ============
-  // 用户点击"新建对话"按钮时调用
+  // ============ 新建会话处理函数 ============
+  // 用户点击"新建对话"按钮时调用，由中枢根据全局模式权威统一执行新建契约
   const handleNewConversation = useCallback(() => {
-    // 并行对比模式：新建比较会话（保持 mode='compare'），不走单聊创建逻辑
-    if (isCompareMode) {
-      startNewComparison();
-      return;
-    }
-
-    // 单聊模式：先查找是否已经有空对话（没有消息的对话）
-    const emptyConversation = findEmptyConversation();
-
-    if (emptyConversation) {
-      // 如果有空对话，直接切换到它
-      // 这样可以避免创建太多空对话，节省存储空间
-      switchConversation(emptyConversation.id);
-    } else {
-      // 如果没有空对话，创建一个新的
-      // 使用当前选中的 AI 提供商和模型
-      createConversation(provider, model);
-    }
-  }, [
-    isCompareMode,
-    startNewComparison,
-    findEmptyConversation,
-    switchConversation,
-    createConversation,
-    provider,
-    model,
-  ]);
+    startNewSession();
+  }, [startNewSession]);
 
   // ============ 切换 AI 提供商和模型 ============
   // 用户在模型选择器中选择不同的模型时调用
@@ -733,16 +576,8 @@ export default function ChatWorkspace() {
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50'
                       )}
                       onClick={() => {
-                        // 按会话类型分流：比较会话载入 turns 分支并切到对比模式，
-                        // 单聊会话切回单聊模式（自动加载副作用会加载其消息）
-                        if (isCompare) {
-                          setComparisonMode('compare');
-                          loadComparison(item.id);
-                          switchConversation(item.id); // 仅用于侧栏高亮
-                        } else {
-                          setComparisonMode('single');
-                          switchConversation(item.id);
-                        }
+                        // 由会话中枢统一处理模式流转、数据加载与流式交叉中止
+                        switchConversation(item.id);
                         onSelect?.();
                       }}
                     >

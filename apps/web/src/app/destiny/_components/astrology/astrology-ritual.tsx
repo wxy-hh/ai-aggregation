@@ -32,12 +32,7 @@ import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
 import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
-import {
-  chartFactsErrorKind,
-  isLatestChartFactsRequest,
-  startChartFactsRequest,
-} from '@/lib/astrology/chart-request';
-import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
+import { astrologySession } from '@/lib/astrology/chart-request';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
@@ -441,43 +436,20 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
       });
       return;
     }
-    // 真值仍缺：重走报告流接缝（chartFacts 保持 null 表示在途，仪式等待室重新计时；
-    // 解读状态由接缝置回「在途」，结论只认本次流）
-    setWorkspaceState('astrology', {
-      step: 'form',
-      entryView: 'loading',
-      chartFacts: null,
-      error: null,
-      errorKind: null,
-    });
-    const { token, result } = startChartFactsRequest(formData);
-    result
-      .then((facts) => {
-        // 过期响应丢弃：连续重试时先发的响应不得覆盖后发的结果
-        if (!isLatestChartFactsRequest(token)) return;
-        setWorkspaceState('astrology', { chartFacts: facts, error: null, errorKind: null });
-        // 11 工单：重试补齐真值同样写入统一历史（同一逻辑记录覆盖更新）
-        saveAstrologyHistoryRecord(formData, facts);
-      })
-      .catch((error: unknown) => {
-        if (!isLatestChartFactsRequest(token)) return;
-        setWorkspaceState('astrology', {
-          step: 'form',
-          entryView: 'loading',
-          error: '星盘计算出现异常，请重试',
-          errorKind: chartFactsErrorKind(error),
-        });
-      });
+    // 真值仍缺：由深模块自闭环发起真值重试流与历史落盘
+    void astrologySession.retryFacts(formData).catch(() => {});
   };
 
-  /** 返回修改资料：step 一并回落 form，否则工作区分发仍停在结果页，按钮点了没反应 */
-  const backToForm = () =>
+  /** 返回修改资料：中止在途流并回落 form，否则工作区分发仍停在结果页，按钮点了没反应 */
+  const backToForm = () => {
+    astrologySession.abort('返回修改资料');
     setWorkspaceState('astrology', {
       step: 'form',
       entryView: 'form',
       error: null,
       errorKind: null,
     });
+  };
 
   /** 跳过动画：真值已就位才可直达（未就位时无结果可看，按钮置灰并给出 aria 说明）；
    *  phase 随之变 result，进度定时器由推进 effect 的 cleanup（依赖 [phase]）自动清掉，不会重复转场 */

@@ -31,8 +31,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F5F7FA] dark:bg-[#0A0B10] transition-colors duration-500 lg:flex-row">
-      <div className="hidden lg:block lg:h-screen lg:shrink-0">
+    <div
+      className="flex min-h-screen flex-col bg-[#F5F7FA] dark:bg-[#0A0B10] transition-colors duration-500 lg:flex-row"
+      style={{ ['--app-global-nav-w' as string]: '100px' }}
+    >
+      {/* 桌面全局导航：悬浮层（fixed）不占文档流，页面底色/环境光延伸到它下方；
+          页面内容由 main 的左侧内边距让位（DESIGN.md §8.5） */}
+      <div className="fixed inset-y-0 left-0 z-50 hidden w-[var(--app-global-nav-w)] lg:block">
         <GlobalSidebar />
       </div>
 
@@ -40,7 +45,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <MobileHeader pathname={pathname} />
       </div>
 
-      <main className="relative flex min-h-screen flex-1 overflow-x-hidden pt-[calc(env(safe-area-inset-top)+4.5rem)] pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:h-screen lg:overflow-hidden lg:pt-0 lg:pb-0">
+      <main className="relative flex min-h-screen flex-1 overflow-x-hidden pt-[calc(env(safe-area-inset-top)+4.5rem)] pb-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:h-screen lg:overflow-hidden lg:pt-0 lg:pb-0 lg:pl-[var(--app-global-nav-w)]">
         {children}
       </main>
 

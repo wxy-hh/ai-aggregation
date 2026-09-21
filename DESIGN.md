@@ -298,7 +298,8 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 ### 8.5 导航
 
-- 桌面侧边栏（global-sidebar）：G-2 均匀玻璃 `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-white/50` + 顶部 1px 高光切割线，图标按钮 G-1（`bg-white/40 backdrop-blur-md`），激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
+- 桌面全局导航（global-sidebar）：**悬浮卡**——`fixed` 覆盖在页面左缘之上（不占文档流），卡体四周留白（上/下 16px、左/右 10px）、四角 `rounded-[28px]` 全圆角、整圈 `border-white/50 dark:border-white/10` 描边 + 顶部 1px 高光切割线；**不写单边 `border-r` 切分、不留直角贴边**，否则与相邻面板形成「两层边框」割裂感（2026-09 修正）。材质 G-2 均匀玻璃 `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150`，图标按钮 G-1（`bg-white/40 backdrop-blur-md`），激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
+- 全局导航宽度单一来源：`--app-global-nav-w`（100px，定义于 `app-layout.tsx` 根节点）；内容让位由 `main` 的 `lg:pl-[var(--app-global-nav-w)]` 承担。命理页页面级环境底（`DestinyAmbientBackground`）在桌面端改取视口级定位（`lg:fixed`）铺到导航下方，使悬浮玻璃后有色可磨、页面底色不在导航右缘断一刀；**入夜（夜幕）态保持 `absolute` 不铺**（全局导航未随夜幕联动，维持亮玻璃底与既有分界，见 §10.2 联动面）。
 - 移动底部导航（mobile-bottom-nav）：`bg-white/[0.94] dark:bg-[#111218]/[0.94] backdrop-blur-xl`，激活色带渐变，安全区内边距。
 - 斜杠透明度只能写刻度值（5 的倍数，如 `/90`、`/95`）或方括号任意值（如 `/[0.94]`）：裸写 `/94`、`/92` 这类非刻度值 Tailwind v3 不生成 CSS，样式静默丢失（本条由底栏 `bg-white/94` 的实际失效证实）。
 - 移动顶栏：fixed + blur-xl；紫微夜幕联动时变 `bg-[#0C1128]/85` + 金边（页级主题联动的唯一先例）。
