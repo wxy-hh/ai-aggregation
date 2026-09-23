@@ -14,8 +14,7 @@ import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
-import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
-import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
+import { useAstrologyNightResolved } from '@/stores/astrology-night-theme-store';
 import { cn } from '@/lib/utils';
 import { useBreakpoint } from '@/hooks/use-breakpoint';
 // 跨模态接力：「待解读引用」领域级入口（REQ-011）
@@ -60,11 +59,11 @@ export function DestinyPageClient({ initialTab }: { initialTab?: string }) {
       s.astrology.step === 'result' ||
       (s.astrology.entryView === 'loading' && Boolean(s.astrology.error))
   );
-  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const astrologyNightResolved = useAstrologyNightResolved();
   const isAstrologyNight =
     activeModule === 'astrology' &&
     astrologyNightScene &&
-    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+    astrologyNightResolved === 'night';
   const isResultNight = isZiweiNight || isAstrologyNight;
   const [qimenLoading, setQimenLoading] = useState(false);
   const [baziLoading, setBaziLoading] = useState(false);

@@ -9,8 +9,7 @@ import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
-import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
-import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
+import { useAstrologyNightResolved } from '@/stores/astrology-night-theme-store';
 import { cn } from '@/lib/utils';
 
 const PANEL_EASE = [0.32, 0.72, 0, 1] as const;
@@ -64,11 +63,11 @@ export function DestinyDesktopNav({
       s.astrology.step === 'result' ||
       (s.astrology.entryView === 'loading' && Boolean(s.astrology.error))
   );
-  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
+  const astrologyNightResolved = useAstrologyNightResolved();
   const astrologyNight =
     activeModule === 'astrology' &&
     astrologyNightScene &&
-    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+    astrologyNightResolved === 'night';
   const night =
     (activeModule === 'ziwei' && ziweiInResult && ziweiTheme === 'night') || astrologyNight;
 

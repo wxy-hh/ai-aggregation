@@ -29,9 +29,7 @@ import { Check, Pencil, RotateCcw } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
-import { useSettingsStore } from '@/stores/settings-store';
-import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
-import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
+import { useAstrologyNightResolved } from '@/stores/astrology-night-theme-store';
 import { astrologySession } from '@/lib/astrology/chart-request';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
@@ -329,9 +327,7 @@ export function AstrologyRitualResult() {
   const phase = step === 'result' ? 'result' : 'ritual';
 
   /** 「夜幕观星」结果页主题：手动偏好优先，缺省跟随全局明暗（仅作用于结果相位与失败恢复卡，仪式相位不动） */
-  const nightPref = useAstrologyNightThemeStore((s) => s.pref);
-  const systemResolved = useSettingsStore((s) => s.resolvedTheme);
-  const isNight = resolveAstrologyNightTheme(nightPref, systemResolved) === 'night';
+  const isNight = useAstrologyNightResolved() === 'night';
   /** 时间轴节奏（视觉推进）：只决定第几段被点亮，是否算完成由真实事件说了算 */
   const [timelineStage, setTimelineStage] = useState<RitualStage>(1);
   /** 最小仪式窗是否已走满（3.2s 到点置真）；转场还要求真值与解读结论都已就位 */

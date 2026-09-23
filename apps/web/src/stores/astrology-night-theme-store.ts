@@ -2,7 +2,12 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { AstrologyNightPref } from '@/lib/utils/astrology-night-theme';
+import { useSettingsStore } from '@/stores/settings-store';
+import {
+  resolveAstrologyNightTheme,
+  type AstrologyNightPref,
+  type AstrologyNightResolved,
+} from '@/lib/utils/astrology-night-theme';
 
 // ==================== 类型定义 ====================
 
@@ -42,3 +47,12 @@ export const useAstrologyNightThemeStore = create<AstrologyNightThemeState>()(
     }
   )
 );
+
+// ==================== 派生 Hook ====================
+
+/** 星座寰宇夜幕派生选择器：手动偏好 + 全局明暗 → 最终昼夜（消费方不再各自接线） */
+export function useAstrologyNightResolved(): AstrologyNightResolved {
+  const pref = useAstrologyNightThemeStore((s) => s.pref);
+  const systemResolved = useSettingsStore((s) => s.resolvedTheme);
+  return resolveAstrologyNightTheme(pref, systemResolved);
+}

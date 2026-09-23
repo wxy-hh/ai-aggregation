@@ -19,17 +19,11 @@ import {
   useDestinyWorkspaceStore,
   type AstrologyErrorKind,
   type AstrologyInterpretationReason,
+  type AstrologyInterpretationSectionPatch,
   type AstrologyInterpretationState,
 } from '@/stores/destiny-workspace-store';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { AstrologyChartFacts } from './chart-facts';
-import type {
-  AstrologyBigThree,
-  AstrologyHeadline,
-  AstrologyInterpretationReport,
-  AstrologyTransitsSection,
-  ModuleReading,
-} from './interpretation';
 import type { AstrologyReportEvent } from './report-events';
 
 /** 报告流端点（协议见 ./report-events.ts） */
@@ -104,17 +98,10 @@ function executeSession(
 
   if (mode === 'retryInterpretation') {
     // 模式 1：解读重试，锚点冻结，保持既有 chartFacts 与结果页布局，仅解读层进入 pending 骨架
-    writeInterpretation({ status: 'pending', reason: null, report: null });
+    useDestinyWorkspaceStore.getState().beginAstrologyInterpretationRetry();
   } else {
-    // 全新提交或真值重试：重置为 loading 仪式态，清空历史真值与错误
-    useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
-      step: 'form',
-      chartFacts: null,
-      entryView: 'loading',
-      error: null,
-      errorKind: null,
-    });
-    writeInterpretation({ status: 'pending', reason: null, report: null });
+    // 全新提交或真值重试：重置为 loading 仪式态，清空历史真值与错误，重置解读为 pending
+    useDestinyWorkspaceStore.getState().beginAstrologySession();
   }
 
   const facts = createDeferred<AstrologyChartFacts>();
@@ -184,13 +171,9 @@ export const astrologySession = {
         return facts;
       } catch (error) {
         if (isLatestChartFactsRequest(token)) {
-          useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
-            step: 'form',
-            chartFacts: null,
-            entryView: 'loading',
-            error: '星盘计算出现异常，请重试',
-            errorKind: chartFactsErrorKind(error),
-          });
+          useDestinyWorkspaceStore
+            .getState()
+            .failAstrologySession('星盘计算出现异常，请重试', chartFactsErrorKind(error));
         }
         throw error;
       } finally {
@@ -217,13 +200,9 @@ export const astrologySession = {
       return facts;
     } catch (error) {
       if (isLatestChartFactsRequest(token)) {
-        useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
-          step: 'form',
-          chartFacts: null,
-          entryView: 'loading',
-          error: '星盘计算出现异常，请重试',
-          errorKind: chartFactsErrorKind(error),
-        });
+        useDestinyWorkspaceStore
+          .getState()
+          .failAstrologySession('星盘计算出现异常，请重试', chartFactsErrorKind(error));
       }
       throw error;
     }
@@ -423,11 +402,7 @@ async function consumeReportStream(
             }
             // 全新提交或真值重试：真值就绪，写入工作区并自动落库历史记录
             activeFacts = event.facts;
-            useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
-              chartFacts: event.facts,
-              error: null,
-              errorKind: null,
-            });
+            useDestinyWorkspaceStore.getState().applyAstrologyChartFacts(event.facts);
             saveAstrologyHistoryRecord(formData, event.facts);
             facts.resolve(event.facts);
           }
@@ -500,33 +475,11 @@ function currentProvider(): string {
 }
 
 /**
- * 解读分区到达：累计进工作区 report 并把状态推进到 ready（界面逐区替换骨架）。
+ * 解读分区到达：调 store 具名 action 累积合入解读报告并推进就绪。
  * 重复到达的分区覆盖同名字段，未到达的分区保持 null / 空数组（界面按分区骨架占位）。
  */
-function applyInterpretationSection(section: {
-  headline?: AstrologyHeadline;
-  bigThree?: AstrologyBigThree;
-  modules?: ModuleReading[];
-  transits?: AstrologyTransitsSection;
-}): void {
-  useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', (current) => {
-    const previous = current.interpretation;
-    // 已降级（unavailable）或未发起（idle）时不接受迟到分区：结论只认本次流
-    if (previous.status !== 'pending' && previous.status !== 'ready') return {};
-    const report: AstrologyInterpretationReport = {
-      headline: section.headline ?? previous.report?.headline ?? null,
-      bigThree: section.bigThree ?? previous.report?.bigThree ?? null,
-      modules: section.modules ?? previous.report?.modules ?? [],
-      transits: section.transits ?? previous.report?.transits ?? null,
-    };
-    return {
-      interpretation: { status: 'ready', reason: null, report } satisfies AstrologyInterpretationState,
-    };
-  });
-}
-
-function writeInterpretation(next: AstrologyInterpretationState): void {
-  useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', { interpretation: next });
+function applyInterpretationSection(section: AstrologyInterpretationSectionPatch): void {
+  useDestinyWorkspaceStore.getState().applyAstrologyInterpretationSection(section);
 }
 
 /**
@@ -534,7 +487,11 @@ function writeInterpretation(next: AstrologyInterpretationState): void {
  * 同时清空已到达的分区：解读失败绝不留半份冒充产出（界面给诚实失败卡 + 重试）。
  */
 function settleInterpretation(reason: AstrologyInterpretationReason): void {
-  writeInterpretation({ status: 'unavailable', reason, report: null });
+  useDestinyWorkspaceStore.getState().settleAstrologyInterpretation({
+    status: 'unavailable',
+    reason,
+    report: null,
+  });
   if (reason === 'quota') dispatchQuotaExhausted();
 }
 

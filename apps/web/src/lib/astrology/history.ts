@@ -312,18 +312,14 @@ export function restoreAstrologyFromHistory(historyId: string): boolean {
   const savedInterpretation =
     payload.interpretation && payload.interpretation.headline ? payload.interpretation : null;
 
-  useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
-    step: 'result',
-    lastView: 'result',
-    hasResult: true,
-    chartFacts: payload.chartFacts,
-    interpretation: savedInterpretation
-      ? { status: 'ready' as const, reason: null, report: savedInterpretation }
-      : createIdleAstrologyInterpretation(),
+  const interpretation = savedInterpretation
+    ? { status: 'ready' as const, reason: null, report: savedInterpretation }
+    : createIdleAstrologyInterpretation();
+
+  useDestinyWorkspaceStore.getState().restoreAstrologyWorkspace({
     formData: item.formData as unknown as AstrologyFormData,
-    fieldErrors: {},
-    error: null,
-    errorKind: null,
+    chartFacts: payload.chartFacts,
+    interpretation,
   });
   return true;
 }

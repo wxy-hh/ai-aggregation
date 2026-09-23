@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { MoonStar, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
-import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
+import {
+  useAstrologyNightResolved,
+  useAstrologyNightThemeStore,
+} from '@/stores/astrology-night-theme-store';
 
 // ═══════════════════════════════════════════════════════════════
 //  星座寰宇结果页主题切换 —「白昼 ⇄ 夜幕观星」
@@ -20,13 +22,12 @@ import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
 const INVITE_TIMEOUT_MS = 5000;
 
 export function AstrologyNightToggle() {
-  const pref = useAstrologyNightThemeStore((s) => s.pref);
   const inviteSeen = useAstrologyNightThemeStore((s) => s.inviteSeen);
   const setPref = useAstrologyNightThemeStore((s) => s.setPref);
   const markInviteSeen = useAstrologyNightThemeStore((s) => s.markInviteSeen);
   const systemResolved = useSettingsStore((s) => s.resolvedTheme);
 
-  const resolved = resolveAstrologyNightTheme(pref, systemResolved);
+  const resolved = useAstrologyNightResolved();
   const isNight = resolved === 'night';
 
   const [showInvite, setShowInvite] = useState(false);

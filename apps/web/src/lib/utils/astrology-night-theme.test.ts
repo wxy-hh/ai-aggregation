@@ -40,3 +40,33 @@ describe('useAstrologyNightThemeStore 持久化范围', () => {
     expect(useAstrologyNightThemeStore.getState().pref).toBeNull();
   });
 });
+
+describe('useAstrologyNightResolved 派生 hook', () => {
+  it('正确响应手动偏好与全局明暗的派生组合', async () => {
+    const { renderHook, act } = await import('@testing-library/react');
+    const { useAstrologyNightResolved, useAstrologyNightThemeStore } = await import(
+      '@/stores/astrology-night-theme-store'
+    );
+    const { useSettingsStore } = await import('@/stores/settings-store');
+
+    act(() => {
+      useAstrologyNightThemeStore.getState().clearPref();
+      useSettingsStore.setState({ resolvedTheme: 'light' });
+    });
+
+    const { result } = renderHook(() => useAstrologyNightResolved());
+    expect(result.current).toBe('day');
+
+    act(() => {
+      useAstrologyNightThemeStore.getState().setPref('night');
+    });
+    expect(result.current).toBe('night');
+
+    act(() => {
+      useAstrologyNightThemeStore.getState().clearPref();
+      useSettingsStore.setState({ resolvedTheme: 'dark' });
+    });
+    expect(result.current).toBe('night');
+  });
+});
+

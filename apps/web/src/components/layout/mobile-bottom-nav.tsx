@@ -4,9 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Home, Bot, PenTool, AudioWaveform, MoreHorizontal } from 'lucide-react';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
-import { useSettingsStore } from '@/stores/settings-store';
-import { useAstrologyNightThemeStore } from '@/stores/astrology-night-theme-store';
-import { resolveAstrologyNightTheme } from '@/lib/utils/astrology-night-theme';
+import { useAstrologyNightResolved } from '@/stores/astrology-night-theme-store';
 import { cn } from '@/lib/utils';
 
 interface MobileBottomNavProps {
@@ -41,11 +39,8 @@ export function MobileBottomNav({ pathname, onMoreClick }: MobileBottomNavProps)
       (s.astrology.step === 'result' ||
         (s.astrology.entryView === 'loading' && Boolean(s.astrology.error)))
   );
-  const astrologyNightPref = useAstrologyNightThemeStore((s) => s.pref);
-  const systemResolvedTheme = useSettingsStore((s) => s.resolvedTheme);
-  const astrologyNight =
-    astrologyNightScene &&
-    resolveAstrologyNightTheme(astrologyNightPref, systemResolvedTheme) === 'night';
+  const astrologyNightResolved = useAstrologyNightResolved();
+  const astrologyNight = astrologyNightScene && astrologyNightResolved === 'night';
   const night = pathname.startsWith('/destiny') && (ziweiNightInStore || astrologyNight);
 
   return (

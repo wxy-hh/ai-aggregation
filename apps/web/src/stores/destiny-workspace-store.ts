@@ -25,7 +25,13 @@ import type {
   ZiweiLockedSections,
 } from '@/app/destiny/_components/types';
 import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
-import type { AstrologyInterpretationReport } from '@/lib/astrology/interpretation';
+import type {
+  AstrologyBigThree,
+  AstrologyHeadline,
+  AstrologyInterpretationReport,
+  AstrologyTransitsSection,
+  ModuleReading,
+} from '@/lib/astrology/interpretation';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
 
 export type DestinyWorkspaceStep = 'form' | 'result';
@@ -35,6 +41,14 @@ export type BaziErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
+
+/** 星座寰宇解读分区增量补丁 */
+export type AstrologyInterpretationSectionPatch = {
+  headline?: AstrologyHeadline;
+  bigThree?: AstrologyBigThree;
+  modules?: ModuleReading[];
+  transits?: AstrologyTransitsSection;
+};
 
 type BaseWorkspaceCache<TFormData, TFieldErrors, TErrorKind> = {
   step: DestinyWorkspaceStep;
@@ -161,6 +175,24 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   restoreWorkspace: (module: DestinyModuleKey) => void;
   markResultReady: (module: DestinyModuleKey) => void;
   resetAllWorkspaces: () => void;
+  /** 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪 */
+  beginAstrologySession: () => void;
+  /** 解读重试：重置解读为待就绪，保持星盘真值与布局不动 */
+  beginAstrologyInterpretationRetry: () => void;
+  /** 星盘会话失败：记录失败错误与原因档，保持解读状态不动 */
+  failAstrologySession: (error: string, errorKind: AstrologyErrorKind) => void;
+  /** 星盘真值送达：写入真值数据并清理错误 */
+  applyAstrologyChartFacts: (facts: AstrologyChartFacts) => void;
+  /** 解读分区送达：累积合入解读报告并推进至就绪（非待就绪/就绪时拒绝迟到分区） */
+  applyAstrologyInterpretationSection: (section: AstrologyInterpretationSectionPatch) => void;
+  /** 落定解读状态：设置最终解读状态 */
+  settleAstrologyInterpretation: (next: AstrologyInterpretationState) => void;
+  /** 从历史记录恢复星座寰宇工作区：直达结果视图并回填真值与解读 */
+  restoreAstrologyWorkspace: (payload: {
+    formData: AstrologyFormData;
+    chartFacts: AstrologyChartFacts;
+    interpretation: AstrologyInterpretationState;
+  }) => void;
 };
 
 function createDefaultBaziWorkspaceCache(): BaziWorkspaceCache {
@@ -312,6 +344,112 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
         set((state) => ({
           ...createDefaultDestinyWorkspaceState(),
           provider: state.provider,
+        })),
+
+      // 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪
+      beginAstrologySession: () =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            step: 'form',
+            chartFacts: null,
+            entryView: 'loading',
+            error: null,
+            errorKind: null,
+            interpretation: { status: 'pending', reason: null, report: null },
+          },
+        })),
+
+      // 解读重试：重置解读为待就绪，保持星盘真值与布局不动
+      beginAstrologyInterpretationRetry: () =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            interpretation: { status: 'pending', reason: null, report: null },
+          },
+        })),
+
+      // 星盘会话失败：记录失败错误与原因档，保持解读状态不动
+      failAstrologySession: (error, errorKind) =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            step: 'form',
+            chartFacts: null,
+            entryView: 'loading',
+            error,
+            errorKind,
+          },
+        })),
+
+      // 星盘真值送达：写入真值数据并清理错误
+      applyAstrologyChartFacts: (facts) =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            chartFacts: facts,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 解读分区送达：累积合入解读报告并推进至就绪（非待就绪/就绪时拒绝迟到分区）
+      applyAstrologyInterpretationSection: (section) =>
+        set((state) => {
+          const previous = state.astrology.interpretation;
+          // 已降级（unavailable）或未发起（idle）时不接受迟到分区：结论只认本次流
+          if (previous.status !== 'pending' && previous.status !== 'ready') {
+            return state;
+          }
+          const report: AstrologyInterpretationReport = {
+            headline: section.headline ?? previous.report?.headline ?? null,
+            bigThree: section.bigThree ?? previous.report?.bigThree ?? null,
+            modules: section.modules ?? previous.report?.modules ?? [],
+            transits: section.transits ?? previous.report?.transits ?? null,
+          };
+          return {
+            ...state,
+            astrology: {
+              ...state.astrology,
+              interpretation: {
+                status: 'ready',
+                reason: null,
+                report,
+              },
+            },
+          };
+        }),
+
+      // 落定解读状态：设置最终解读状态
+      settleAstrologyInterpretation: (next) =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            interpretation: next,
+          },
+        })),
+
+      // 从历史记录恢复星座寰宇工作区：直达结果视图并回填真值与解读
+      restoreAstrologyWorkspace: (payload) =>
+        set((state) => ({
+          ...state,
+          astrology: {
+            ...state.astrology,
+            step: 'result',
+            lastView: 'result',
+            hasResult: true,
+            chartFacts: payload.chartFacts,
+            interpretation: payload.interpretation,
+            formData: payload.formData,
+            fieldErrors: {},
+            error: null,
+            errorKind: null,
+          },
         })),
     }),
     {
