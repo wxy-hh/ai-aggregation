@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils';
 import {
   ASPECT_CN,
   PLANET_CN,
-  PLANET_GLYPH,
   ZODIAC_CN,
 } from './astrology-chart-wheel';
+import { PlanetGlyph } from './astrology-glyphs';
 import { formatDegreeMinute } from './astrology-mappers';
 import {
   ASPECT_PLAIN,
@@ -109,8 +109,6 @@ export function PlanetFactCard({
     return null;
   }
 
-  const Glyph = PLANET_GLYPH[body];
-
   return (
     <div className="flex h-full flex-col justify-between">
       <div>
@@ -134,7 +132,6 @@ export function PlanetFactCard({
           {/* 快捷星体点选胶囊：热区 44×44，防误触横排滚动 */}
           <div className="flex min-w-0 max-w-[226px] items-center gap-1 overflow-x-auto p-0.5 hide-scrollbar sm:max-w-[280px]">
             {allPlanets.map((p) => {
-              const ItemGlyph = PLANET_GLYPH[p.body];
               const isCurrent = p.body === body;
               return (
                 <button
@@ -149,7 +146,8 @@ export function PlanetFactCard({
                       : 'text-day-muted hover:bg-slate-100 hover:text-slate-700 dark:text-night-faint dark:hover:bg-white/[0.08] dark:hover:text-slate-200'
                   )}
                 >
-                  <ItemGlyph
+                  <PlanetGlyph
+                    body={p.body}
                     width={13}
                     height={13}
                     className={isCurrent ? 'stroke-white' : 'stroke-current'}
@@ -172,7 +170,7 @@ export function PlanetFactCard({
         {/* 核心身份徽印 */}
         <div className="mt-4 flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-indigo-200/70 bg-indigo-50/80 text-indigo-600 shadow-xs dark:border-indigo-300/20 dark:bg-indigo-400/10 dark:text-indigo-300">
-            <Glyph width={22} height={22} className="stroke-current" />
+            <PlanetGlyph body={body} width={22} height={22} className="stroke-current" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">

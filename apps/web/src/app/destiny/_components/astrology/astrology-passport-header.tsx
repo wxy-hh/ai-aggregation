@@ -15,9 +15,15 @@ import { ChevronDown, Compass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AstrologyFormData } from '@/app/destiny/_components/astrology-types';
 import type { AstrologyChartFacts } from '@/lib/astrology/chart-facts';
-import { ZODIAC_CN, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { ZODIAC_CN } from './astrology-chart-wheel';
+import { ZodiacSignGlyph } from './astrology-glyphs';
 import { AstrologyNightToggle } from './astrology-night-toggle';
-import { APPROXIMATE_SLOTS, formatDegreeMinute } from './astrology-mappers';
+import {
+  birthSummary,
+  houseSystemLabel,
+  placementTermLine,
+  precisionBadge,
+} from '@/lib/astrology/presentation';
 
 export type AstrologyPassportHeaderProps = {
   formData: AstrologyFormData;
@@ -30,76 +36,6 @@ function formatCalculatedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** 时间精度标签（沿用表单语义色：准确靛蓝 / 约时琥珀 / 未知月光紫）；
- *  约时降级（区间内角点不稳定 → 无宫位范围）必须如实标注「部分盘面范围不稳定」（§6.2） */
-export function precisionBadge(
-  formData: AstrologyFormData,
-  facts: AstrologyChartFacts
-): { text: string; className: string } {
-  if (formData.timePrecision === 'accurate') {
-    return {
-      text: '准确到分钟',
-      className:
-        'border-indigo-300/50 bg-indigo-100/60 text-indigo-700 dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200',
-    };
-  }
-  if (formData.timePrecision === 'approximate') {
-    const degraded = facts.factStability.houses.reason === 'unstable-in-range';
-    return {
-      text: degraded ? '约时 · 部分盘面范围不稳定' : '大约时段 · 已校验稳定性',
-      className:
-        'border-amber-300/50 bg-amber-100/60 text-amber-700 dark:border-amber-300/25 dark:bg-amber-400/10 dark:text-amber-200',
-    };
-  }
-  return {
-    text: '时间未知 · 无宫位行星盘',
-    className:
-      'border-violet-300/50 bg-violet-100/60 text-violet-700 dark:border-violet-300/25 dark:bg-violet-400/10 dark:text-violet-200',
-  };
-}
-
-/** 口径行里的宫制文案：普拉西德制为默认，整宫制为高纬回退，无宫位为降级盘 */
-export function houseSystemLabel(facts: AstrologyChartFacts): string {
-  if (facts.houseSystem === 'placidus') return '普拉西德制';
-  if (facts.houseSystem === 'whole-sign') return '整宫制';
-  return '无宫位';
-}
-
-/** 资料摘要行（真实表单数据，与仪式页摘要同口径） */
-function summaryText(formData: AstrologyFormData): string {
-  const d = formData.birthDate;
-  const date = d ? `${d.year} 年 ${d.month} 月 ${d.day} 日` : '';
-  let time = '时间未知';
-  if (formData.timePrecision === 'accurate' && formData.birthTime.hour !== '') {
-    time = `${formData.birthTime.hour.padStart(2, '0')}:${(formData.birthTime.minute || '0').padStart(2, '0')}`;
-  } else if (formData.timePrecision === 'approximate' && formData.approximateSlot) {
-    const slot = APPROXIMATE_SLOTS.find((s) => s.value === formData.approximateSlot);
-    time = `约 ${slot?.label ?? formData.approximateSlot}`;
-  }
-  return [date, time, formData.location.name].filter(Boolean).join(' · ');
-}
-
-/** 三要素卡的术语层（太阳/月亮/上升各自取数，缺项不渲染） */
-export function placementTermLine(
-  facts: AstrologyChartFacts,
-  key: 'sun' | 'moon' | 'ascendant'
-): string {
-  if (key === 'ascendant') {
-    const a = facts.angles.ascendant;
-    return a.sign
-      ? `${ZODIAC_CN[a.sign]}${a.degree !== null ? ` ${formatDegreeMinute(a.degree)}` : ''}`
-      : '';
-  }
-  const p = facts.planets.find((pl) => pl.body === key);
-  if (!p?.sign) return '';
-  const bits = [
-    `${ZODIAC_CN[p.sign]}${p.degree !== null ? ` ${formatDegreeMinute(p.degree)}` : ''}`,
-  ];
-  if (p.house !== null) bits.push(`第 ${p.house} 宫`);
-  if (p.retrograde) bits.push('逆行中');
-  return bits.join(' · ');
 }
 
 /**
@@ -169,22 +105,18 @@ export function AstrologyPassportHeader({
         {/* 移动端突出太阳星座；桌面端展示完整摘要行 */}
         {sunPlacement?.sign && (
           <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-indigo-700 dark:text-indigo-200 xl:hidden">
-            {(() => {
-              const Glyph = ZODIAC_GLYPH[sunPlacement.sign];
-              return (
-                <Glyph
-                  width={16}
-                  height={16}
-                  className="stroke-indigo-500 dark:stroke-indigo-300"
-                />
-              );
-            })()}
+            <ZodiacSignGlyph
+              sign={sunPlacement.sign}
+              width={16}
+              height={16}
+              className="stroke-indigo-500 dark:stroke-indigo-300"
+            />
             太阳 · {ZODIAC_CN[sunPlacement.sign]}
           </p>
         )}
 
         <p className="mt-2 text-xs leading-relaxed text-slate-500 dark:text-night-muted sm:text-sm">
-          {summaryText(formData)}
+          {birthSummary(formData)}
           {formatCalculatedAt(chartFacts.calculatedAt) &&
             ` · 计算于 ${formatCalculatedAt(chartFacts.calculatedAt)}`}
         </p>

@@ -14,7 +14,8 @@ import { CalendarDays, Compass, Lock, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { approximateSunSign, ZODIAC_DATE_RANGE } from '@/lib/astrology/solar-longitude';
 import { isValidBirthDate } from './astrology-mappers';
-import { ZODIAC_CN, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { ZODIAC_CN } from './astrology-chart-wheel';
+import { ZodiacSignGlyph } from './astrology-glyphs';
 import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import type { AstrologyFormData, AstrologyTopic } from '../astrology-types';
 
@@ -209,7 +210,6 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
 
   const dateReady = isValidBirthDate(formData.birthDate);
   const sunSign = dateReady ? approximateSunSign(formData.birthDate!) : null;
-  const SunSignGlyph = sunSign ? ZODIAC_GLYPH[sunSign] : null;
 
   return (
     <div ref={rootRef} className="flex flex-col gap-6">
@@ -276,7 +276,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
 
         {/* 太阳星座预览条：日期合法时从卡片边缘克制浮出（深空微晶质感，只展示确定事实） */}
         <AnimatePresence initial={false}>
-          {dateReady && sunSign && SunSignGlyph && (
+          {dateReady && sunSign && (
             <motion.div
               key={sunSign}
               initial={{ opacity: 0, y: -6, height: 0 }}
@@ -287,7 +287,7 @@ export function AstrologyFormStep1({ formData, fieldErrors, disabled, onPatch }:
             >
               <div className="mt-3 flex items-center gap-3.5 rounded-2xl border border-indigo-200/90 bg-white/80 p-3.5 shadow-[0_8px_20px_-6px_rgba(73,105,233,0.12)] backdrop-blur-md backdrop-saturate-150 dark:border-indigo-300/20 dark:bg-[#0B1026]/[0.88] dark:shadow-[0_8px_24px_-6px_rgba(2,6,23,0.6)]">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-100/90 bg-indigo-50/80 text-indigo-600 shadow-sm dark:border-indigo-300/20 dark:bg-white/5 dark:text-indigo-300">
-                  <SunSignGlyph className="h-6 w-6" />
+                  <ZodiacSignGlyph sign={sunSign} className="h-6 w-6" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

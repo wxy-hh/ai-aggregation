@@ -3,6 +3,7 @@
 // 避免 Unicode 占星字符在部分系统字体缺字形的问题；供星盘轮、事实卡、分享卡复用。
 
 import type { ComponentType, SVGProps } from 'react';
+import type { PlanetBody, ZodiacSign } from '@/lib/astrology/chart-facts';
 
 /** 符号即 SVG：支持嵌套进星盘轮（x/y/width/height）与独立使用（className 着色） */
 export type AstrologyGlyphProps = SVGProps<SVGSVGElement>;
@@ -190,3 +191,54 @@ export const PiscesGlyph = createGlyph([
   'M16.6 4.6 C19.8 9 19.8 15 16.6 19.4',
   'M5 12 H19',
 ]);
+
+/* ═══════════════ 符号映射表与组件封装 ═══════════════ */
+
+/** 十星体符号映射表 */
+export const PLANET_GLYPH: Record<PlanetBody, ComponentType<AstrologyGlyphProps>> = {
+  sun: SunGlyph,
+  moon: MoonGlyph,
+  mercury: MercuryGlyph,
+  venus: VenusGlyph,
+  mars: MarsGlyph,
+  jupiter: JupiterGlyph,
+  saturn: SaturnGlyph,
+  uranus: UranusGlyph,
+  neptune: NeptuneGlyph,
+  pluto: PlutoGlyph,
+};
+
+/** 十二星座符号映射表 */
+export const ZODIAC_GLYPH: Record<ZodiacSign, ComponentType<AstrologyGlyphProps>> = {
+  aries: AriesGlyph,
+  taurus: TaurusGlyph,
+  gemini: GeminiGlyph,
+  cancer: CancerGlyph,
+  leo: LeoGlyph,
+  virgo: VirgoGlyph,
+  libra: LibraGlyph,
+  scorpio: ScorpioGlyph,
+  sagittarius: SagittariusGlyph,
+  capricorn: CapricornGlyph,
+  aquarius: AquariusGlyph,
+  pisces: PiscesGlyph,
+};
+
+/** 星体符号组件：封装星体符号查表样板，支持透传 SVG 属性 */
+export function PlanetGlyph({
+  body,
+  ...props
+}: { body: PlanetBody } & AstrologyGlyphProps) {
+  const Glyph = PLANET_GLYPH[body];
+  return <Glyph {...props} />;
+}
+
+/** 星座符号组件：封装星座符号查表样板，支持透传 SVG 属性 */
+export function ZodiacSignGlyph({
+  sign,
+  ...props
+}: { sign: ZodiacSign } & AstrologyGlyphProps) {
+  const Glyph = ZODIAC_GLYPH[sign];
+  return <Glyph {...props} />;
+}
+

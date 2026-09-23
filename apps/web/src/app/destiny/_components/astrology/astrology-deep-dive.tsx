@@ -30,7 +30,7 @@ import {
   type KeyAspectReference,
 } from '@/lib/astrology/interpretation';
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
-import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { PlanetGlyph, ZodiacSignGlyph } from './astrology-glyphs';
 import { ASTROLOGY_CTA_GRADIENT_CLASS } from './astrology-cta-button';
 import { formatDegreeMinute } from './astrology-mappers';
 import { scrollAstrologyToTop } from './astrology-scroll';
@@ -138,10 +138,7 @@ export function AstrologyDeepDive({ facts, passport, keyAspects, onLocateBody }:
         <div className="flex max-w-full items-center gap-2.5 rounded-full border border-white/70 bg-white/90 py-1.5 pl-2.5 pr-2 shadow-[0_12px_36px_-12px_rgba(30,41,82,0.30)] ring-1 ring-black/[0.03] backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 hover:shadow-[0_16px_44px_-12px_rgba(79,70,229,0.35)] dark:border-white/[0.14] dark:bg-[#090E20]/[0.92] dark:ring-white/[0.05] dark:shadow-[0_16px_40px_-14px_rgba(0,0,0,0.85)]">
           {passport.sunSign && (
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500/[0.12] shadow-xs dark:bg-indigo-400/[0.14]">
-              {(() => {
-                const Glyph = ZODIAC_GLYPH[passport.sunSign];
-                return <Glyph width={14} height={14} className="stroke-indigo-600 dark:stroke-indigo-300" />;
-              })()}
+              <ZodiacSignGlyph sign={passport.sunSign} width={14} height={14} className="stroke-indigo-600 dark:stroke-indigo-300" />
             </span>
           )}
           <span className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{passport.name}</span>
@@ -283,7 +280,6 @@ function WheelInventory({
       <InventoryGroup title="行星落点" hint="点击任一行，在首屏星盘轮上查看它的位置">
         <ul className="grid gap-1 lg:grid-cols-2">
           {planets.map((p) => {
-            const Glyph = PLANET_GLYPH[p.body];
             return (
               <li key={p.body}>
                 <button
@@ -292,7 +288,8 @@ function WheelInventory({
                   className="group flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-2 text-left transition-colors hover:bg-indigo-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:hover:bg-white/[0.04]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 transition-colors group-hover:bg-indigo-100 dark:bg-white/[0.06] dark:group-hover:bg-indigo-400/[0.12]">
-                    <Glyph
+                    <PlanetGlyph
+                      body={p.body}
                       width={15}
                       height={15}
                       className="stroke-slate-500 transition-colors group-hover:stroke-indigo-500 dark:stroke-slate-400 dark:group-hover:stroke-indigo-300"
@@ -369,18 +366,15 @@ function WheelInventory({
             </ul>
             {/* 十二宫头一览（静态事实，不参与点选；全宽卡内六列排布） */}
             <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-6">
-              {facts.houses.map((h) => {
-                const Glyph = ZODIAC_GLYPH[h.sign];
-                return (
-                  <div
-                    key={h.number}
-                    className="flex items-center gap-1.5 rounded-lg bg-slate-50/90 px-2.5 py-1.5 text-[11px] text-slate-500 dark:bg-white/[0.04] dark:text-night-muted"
-                  >
-                    <Glyph width={11} height={11} className="shrink-0 stroke-slate-400 dark:stroke-slate-500" />
-                    第 {h.number} 宫 · {ZODIAC_CN[h.sign]}
-                  </div>
-                );
-              })}
+              {facts.houses.map((h) => (
+                <div
+                  key={h.number}
+                  className="flex items-center gap-1.5 rounded-lg bg-slate-50/90 px-2.5 py-1.5 text-[11px] text-slate-500 dark:bg-white/[0.04] dark:text-night-muted"
+                >
+                  <ZodiacSignGlyph width={11} height={11} sign={h.sign} className="shrink-0 stroke-slate-400 dark:stroke-slate-500" />
+                  第 {h.number} 宫 · {ZODIAC_CN[h.sign]}
+                </div>
+              ))}
             </div>
           </InventoryGroup>
         )}
@@ -539,8 +533,6 @@ function KeyAspectCard({
   reduceMotion: boolean;
 }) {
   const tone = ASPECT_TONE[a.type];
-  const SrcGlyph = PLANET_GLYPH[a.source];
-  const TgtGlyph = PLANET_GLYPH[a.target];
   const strengthPct = Math.round((a.strength ?? 0) * 100);
 
   return (
@@ -554,12 +546,12 @@ function KeyAspectCard({
       {/* 标题行：源星体 徽章 目标星体 · 偏差/强度 */}
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
         <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
-          <SrcGlyph width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
+          <PlanetGlyph body={a.source} width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
           {PLANET_CN[a.source]}
         </span>
         <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', tone.chip)}>{ASPECT_CN[a.type]}</span>
         <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
-          <TgtGlyph width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
+          <PlanetGlyph body={a.target} width={15} height={15} className="stroke-indigo-500 dark:stroke-indigo-300" />
           {PLANET_CN[a.target]}
         </span>
         <span className="ml-auto text-[11px] tabular-nums text-day-muted dark:text-night-faint">

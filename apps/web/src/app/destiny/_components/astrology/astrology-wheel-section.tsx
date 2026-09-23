@@ -24,13 +24,13 @@ import {
 import {
   ASPECT_CN,
   PLANET_CN,
-  PLANET_GLYPH,
   ZODIAC_CN,
 } from './astrology-chart-wheel';
+import { PlanetGlyph } from './astrology-glyphs';
 import { AstrologyWheel } from './astrology-wheel';
 import { AstrologyWheelTransition } from './astrology-wheel-transition';
 import { formatDegreeMinute } from './astrology-mappers';
-import { houseSystemLabel } from './astrology-passport-header';
+import { houseSystemLabel } from '@/lib/astrology/presentation';
 import { findSignPlacement, PlanetFactCard } from './astrology-planet-fact-card';
 
 export type AstrologyWheelSectionProps = {
@@ -164,7 +164,6 @@ export function AstrologyWheelSection({
                 <ul className="mt-3 space-y-1">
                   {(showAllPlanets ? textListItems : textListItems.slice(0, 4)).map(
                     (item) => {
-                      const Glyph = PLANET_GLYPH[item.body];
                       const active = selectedBody === item.body;
                       return (
                         <li key={item.body}>
@@ -179,7 +178,8 @@ export function AstrologyWheelSection({
                                 : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'
                             )}
                           >
-                            <Glyph
+                            <PlanetGlyph
+                              body={item.body}
                               width={15}
                               height={15}
                               className={cn(

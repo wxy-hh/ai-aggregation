@@ -21,65 +21,15 @@ import type {
   PlanetBody,
   ZodiacSign,
 } from '@/lib/astrology/chart-facts';
-import {
-  SunGlyph,
-  MoonGlyph,
-  MercuryGlyph,
-  VenusGlyph,
-  MarsGlyph,
-  JupiterGlyph,
-  SaturnGlyph,
-  UranusGlyph,
-  NeptuneGlyph,
-  PlutoGlyph,
-  AriesGlyph,
-  TaurusGlyph,
-  GeminiGlyph,
-  CancerGlyph,
-  LeoGlyph,
-  VirgoGlyph,
-  LibraGlyph,
-  ScorpioGlyph,
-  SagittariusGlyph,
-  CapricornGlyph,
-  AquariusGlyph,
-  PiscesGlyph,
-  type AstrologyGlyphProps,
-} from './astrology-glyphs';
+/* 符号映射定义集中于 ./astrology-glyphs（符号的家）；此处 re-export 保持既有导入点兼容 */
+import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-glyphs';
+export { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-glyphs';
 
 /* ---------- 中文名与符号映射（展示层负责转中文，事实层只存代码标识） ---------- */
 
 /* 中文名词汇表集中于 @/lib/astrology/zh-names（lib 层共享）；此处 re-export 保持既有导入点不变 */
 import { ASPECT_CN, PLANET_CN, ZODIAC_CN, ZODIAC_ORDER } from '@/lib/astrology/zh-names';
 export { ASPECT_CN, PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
-
-export const PLANET_GLYPH: Record<PlanetBody, React.ComponentType<AstrologyGlyphProps>> = {
-  sun: SunGlyph,
-  moon: MoonGlyph,
-  mercury: MercuryGlyph,
-  venus: VenusGlyph,
-  mars: MarsGlyph,
-  jupiter: JupiterGlyph,
-  saturn: SaturnGlyph,
-  uranus: UranusGlyph,
-  neptune: NeptuneGlyph,
-  pluto: PlutoGlyph,
-};
-
-export const ZODIAC_GLYPH: Record<ZodiacSign, React.ComponentType<AstrologyGlyphProps>> = {
-  aries: AriesGlyph,
-  taurus: TaurusGlyph,
-  gemini: GeminiGlyph,
-  cancer: CancerGlyph,
-  leo: LeoGlyph,
-  virgo: VirgoGlyph,
-  libra: LibraGlyph,
-  scorpio: ScorpioGlyph,
-  sagittarius: SagittariusGlyph,
-  capricorn: CapricornGlyph,
-  aquarius: AquariusGlyph,
-  pisces: PiscesGlyph,
-};
 
 /** 行星天体高奢配色（能量星核 + 极光镜面高光 + 高温日冕光晕）：
  *  彻底告别扁平糖豆与生硬小圆，每颗星体都具备天体发射光、星核聚变与外围日冕辐射。

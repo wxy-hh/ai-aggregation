@@ -5,7 +5,7 @@ import { Sunrise } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
-import { PLANET_GLYPH, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { PlanetGlyph, ZodiacSignGlyph } from './astrology-glyphs';
 import type { AstrologyShareCardData } from './astrology-share-card-data';
 import { NOISE_TEXTURE_DATA_URI } from '../share/noise-texture';
 
@@ -105,11 +105,11 @@ function AstrologyPosterWheel({ planets }: { planets: AstrologyShareCardData['wh
       })}
       {/* 十二星座 glyph（每区居中一个） */}
       {ZODIAC_ORDER.map((sign, i) => {
-        const Glyph = ZODIAC_GLYPH[sign];
         const [gx, gy] = polarOnWheel(i * 30 + 15, R_ZODIAC);
         return (
-          <Glyph
+          <ZodiacSignGlyph
             key={sign}
+            sign={sign}
             x={gx - 6.5}
             y={gy - 6.5}
             width={13}
@@ -120,14 +120,13 @@ function AstrologyPosterWheel({ planets }: { planets: AstrologyShareCardData['wh
       })}
       {/* 行星落点：同色光晕圆点打底（烘焙式 glow，不依赖滤镜）+ glyph */}
       {planets.map((p) => {
-        const Glyph = PLANET_GLYPH[p.body];
         const color = POSTER_PLANET_COLOR[p.body];
         const [px, py] = polarOnWheel(p.longitude, R_PLANET);
         return (
           <g key={p.body}>
             <circle cx={px} cy={py} r={9} fill={color} opacity={0.16} />
             <circle cx={px} cy={py} r={4.5} fill={color} opacity={0.22} />
-            <Glyph x={px - 7} y={py - 7} width={14} height={14} style={{ color }} />
+            <PlanetGlyph body={p.body} x={px - 7} y={py - 7} width={14} height={14} style={{ color }} />
           </g>
         );
       })}
@@ -140,13 +139,12 @@ function AstrologyPosterWheel({ planets }: { planets: AstrologyShareCardData['wh
 /** 匿名别名：昵称为空或用户选择匿名时展示（与结果页「星盘主人」口径一致） */
 const ANONYMOUS_ALIAS = '星盘主人';
 
-/** 要素胶囊 glyph：太阳/月亮用占星符号，上升用日出图标（结果页大三要素同款） */
+/** 要素胶囊符号：太阳/月亮用占星符号，上升用日出图标（结果页大三要素同款） */
 function ElementGlyph({ elementKey }: { elementKey: 'sun' | 'moon' | 'ascendant' }) {
   if (elementKey === 'ascendant') {
     return <Sunrise width={15} height={15} strokeWidth={1.9} style={{ color: '#A5B4FC' }} />;
   }
-  const Glyph = PLANET_GLYPH[elementKey];
-  return <Glyph width={15} height={15} style={{ color: POSTER_PLANET_COLOR[elementKey] }} />;
+  return <PlanetGlyph body={elementKey} width={15} height={15} style={{ color: POSTER_PLANET_COLOR[elementKey] }} />;
 }
 
 export const AstrologyShareCard = forwardRef<
@@ -215,7 +213,7 @@ export const AstrologyShareCard = forwardRef<
           className="absolute inset-0 opacity-[0.04]"
           style={{ backgroundImage: `url("${NOISE_TEXTURE_DATA_URI}")` }}
         />
-        {/* 顶部高光线（hairline） */}
+        {/* 顶部高光细线 */}
         <div className="absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       </div>
 

@@ -31,7 +31,8 @@ import {
   PLANET_CN,
   ZODIAC_CN,
 } from './astrology-chart-wheel';
-import { AstrologyPassportHeader, placementTermLine } from './astrology-passport-header';
+import { AstrologyPassportHeader } from './astrology-passport-header';
+import { placementTermLine } from '@/lib/astrology/presentation';
 import { AstrologyInterpretationNotice } from './astrology-interpretation-notice';
 import { TypewriterHeadline } from './astrology-typewriter-headline';
 import {

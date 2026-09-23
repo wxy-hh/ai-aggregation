@@ -36,16 +36,17 @@ import { astrologySession } from '@/lib/astrology/chart-request';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
-import { AstrologyChartWheel, ZODIAC_GLYPH } from './astrology-chart-wheel';
+import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { ZodiacSignGlyph } from './astrology-glyphs';
 import { AstrologyCtaButton } from './astrology-cta-button';
 import { preloadWheelScene } from './astrology-wheel';
 import { AstrologyWheelTransition } from './astrology-wheel-transition';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
 import { AstrologyNightNebula } from './astrology-night-nebula';
-import { APPROXIMATE_SLOTS } from './astrology-mappers';
 import { resetAstrologyScroll } from './astrology-scroll';
 import type { AstrologyFormData } from '../astrology-types';
+import { birthSummary } from '@/lib/astrology/presentation';
 
 /* ---------- 仪式节奏（最小仪式窗 3.2s，落在 2.5–4s 区间） ---------- */
 
@@ -75,25 +76,6 @@ function stageCopy(
       done: interpretationUnavailable ? '宇宙重点整理暂不可用' : '宇宙重点已整理完成',
     },
   ];
-}
-
-/** 顶部出生资料摘要行（真实表单数据） */
-function summaryLine(formData: AstrologyFormData): string {
-  const name = formData.name.trim() || '本次星盘';
-  const d = formData.birthDate;
-  const date = d ? `${d.year} 年 ${d.month} 月 ${d.day} 日` : '';
-  let time = '时间未知';
-  if (
-    formData.timePrecision === 'accurate' &&
-    formData.birthTime.hour !== '' &&
-    formData.birthTime.minute !== ''
-  ) {
-    time = `${formData.birthTime.hour.padStart(2, '0')}:${formData.birthTime.minute.padStart(2, '0')}`;
-  } else if (formData.timePrecision === 'approximate' && formData.approximateSlot) {
-    const slot = APPROXIMATE_SLOTS.find((s) => s.value === formData.approximateSlot);
-    time = `约 ${slot?.label ?? formData.approximateSlot}`;
-  }
-  return [name, date, time, formData.location.name].filter(Boolean).join(' · ');
 }
 
 /* ---------- 失败恢复卡的细线骨架（停在天文坐标框架，不虚构行星位置） ---------- */
@@ -299,12 +281,12 @@ function RitualFramePlaceholder() {
         );
       })}
       {signDegrees.map((deg, i) => {
-        const Glyph = ZODIAC_GLYPH[ZODIAC_ORDER[i]];
         const [gx, gy] = polar(screenTheta(deg + 15), FRAME_R_GLYPH);
         return (
           <g key={`glyph-${deg}`}>
             <circle cx={gx} cy={gy} r={12} fill="rgba(245,212,134,0.06)" />
-            <Glyph
+            <ZodiacSignGlyph
+              sign={ZODIAC_ORDER[i]}
               x={gx - FRAME_GLYPH_SIZE / 2}
               y={gy - FRAME_GLYPH_SIZE / 2}
               width={FRAME_GLYPH_SIZE}
@@ -532,7 +514,7 @@ export function AstrologyRitualResult() {
             <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-6 sm:px-8 xl:justify-center xl:pb-10">
               {/* 顶部：出生资料摘要行 */}
               <p className="text-center text-xs font-medium tracking-wide text-slate-500 dark:text-night-muted">
-                {summaryLine(formData)}
+                {birthSummary(formData, { name: formData.name.trim() || '本次星盘' })}
               </p>
 
               <div className="mt-6 grid flex-1 items-center gap-8 sm:mt-8 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
