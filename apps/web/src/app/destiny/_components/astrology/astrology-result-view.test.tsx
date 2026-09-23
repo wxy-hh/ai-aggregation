@@ -7,6 +7,7 @@
  * - 本周行动三角在 transits 分区到达后出现，行动文案取自三角；
  * - 解读降级：目标区段收起并落诚实的「解读暂不可用」卡 + 「重试解读」入口，
  *   重试重走报告流且不重算真值（工作区真值保持既有对象，历史锚点不漂移）。
+ * - 注：原「解读主轴到达：低敏摘要合并进本地历史记录」用例已迁移，由 chart-request.test.ts 与 history.test.ts 覆盖，视图层不再冗余写历史。
  */
 
 import '@testing-library/jest-dom/vitest';
@@ -17,8 +18,6 @@ vi.mock('@/lib/api/client', () => ({ authFetch: vi.fn() }));
 
 import { authFetch } from '@/lib/api/client';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
-import { useAstrologyTempRecordStore } from '@/stores/astrology-temp-record';
-import { saveAstrologyHistoryRecord } from '@/lib/astrology/history';
 import type { AstrologyInterpretationReport } from '@/lib/astrology/interpretation';
 import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
 import { createDefaultAstrologyFormData } from '../astrology-types';
@@ -192,31 +191,5 @@ describe('AstrologyResultView（解读分区渲染）', () => {
     act(() => {
       controller.close();
     });
-  });
-
-  it('解读主轴到达：低敏摘要合并进本地历史记录（同一条记录，不新增修订）', async () => {
-    const formData = { ...createDefaultAstrologyFormData(), name: '小宇', topic: 'self' as const };
-    // 真值先落记录（匿名用户走会话级临时记录，与提交链路同口径）
-    useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', { formData });
-    saveAstrologyHistoryRecord(formData, SAMPLE_CHART_ACCURATE);
-    const before = useAstrologyTempRecordStore.getState().tempRecord!;
-    expect(before.preview).not.toBe(HEADLINE.text);
-
-    primeWorkspace({ headline: HEADLINE, bigThree: null, modules: [], transits: null }, 'ready');
-    renderResult();
-    await screen.findByText(HEADLINE.text, {}, { timeout: TYPEWRITER_WAIT_MS });
-
-    const after = useAstrologyTempRecordStore.getState().tempRecord!;
-    expect(after.id).toBe(before.id);
-    expect(after.preview).toBe(HEADLINE.text);
-    // 不是新一次测算：修订号与快照不动，创建时间保持不变
-    const payload = (p: typeof before) => p.reportData as unknown as { revision: number; revisions: unknown[] };
-    expect(payload(after).revision).toBe(payload(before).revision);
-    expect(payload(after).revisions).toHaveLength(payload(before).revisions.length);
-    expect(after.createdAt).toBe(before.createdAt);
-    // 解读分区一并落进记录：历史页点回来能还原这份结果，而不是只剩真值
-    const savedInterpretation = (after.reportData as unknown as { interpretation?: { headline?: { text: string } } })
-      .interpretation;
-    expect(savedInterpretation?.headline?.text).toBe(HEADLINE.text);
   });
 });
