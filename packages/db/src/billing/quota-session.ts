@@ -230,6 +230,7 @@ export class QuotaSession {
     if (!this.hasReservation) {
       // 无预留路径（admin）：仍记用量，便于个人中心分项归档
       if (!ctx.userId) return;
+      const usage = normalizeUsage(ctx.usage);
       await safeRecordAiUsage({
         userId: ctx.userId,
         feature: ctx.feature ?? 'destiny',
@@ -237,7 +238,13 @@ export class QuotaSession {
         provider: ctx.provider,
         model: ctx.model,
         endpoint: ctx.endpoint,
-        usage: normalizeUsage(ctx.usage),
+        // requestId 必传：缺省时 recordAiUsage 退化为 create，重试会产生重复审计行
+        requestId: ctx.requestId,
+        meterType: 'tokens',
+        billableUnits: usage.totalTokens,
+        billingStatus: 'settled',
+        status: outcome === 'partial' ? 'partial' : 'success',
+        usage,
         metadata: ctx.metadata,
       });
       return;

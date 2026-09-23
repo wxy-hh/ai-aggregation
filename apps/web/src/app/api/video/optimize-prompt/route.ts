@@ -6,10 +6,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { xunfeiChat } from '@repo/providers';
 import { withAuth } from '@/lib/api/with-auth';
-import { safeRecordAiUsage } from '@/lib/ai-usage';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
-import { QuotaSession } from '@/lib/billing/quota-session';
+import { withQuotaUnary } from '@/lib/billing/with-quota-unary';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,8 +22,6 @@ interface OptimizePromptRequest {
 
 export async function POST(request: NextRequest) {
   return withAuth(request, async (user) => {
-    let session: QuotaSession | null = null;
-
     try {
       const body = (await request.json()) as OptimizePromptRequest;
       const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
@@ -61,8 +58,8 @@ ${duration ? `视频时长：${duration} 秒` : ''}
         { role: 'user' as const, content: userPrompt },
       ];
 
-      session = await QuotaSession.reserve(
-        {
+      const responseData = await withQuotaUnary({
+        reserve: {
           userId: user.id,
           requestId,
           feature: 'video_prompt',
@@ -72,69 +69,38 @@ ${duration ? `视频时长：${duration} 秒` : ''}
           maxOutputTokens: 500,
           metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
         },
-        user.role
-      );
-
-      const result = await xunfeiChat({
-        messages,
-        model: 'lite',
-        temperature: 0.7,
-        maxTokens: session.outputLimit,
-      });
-
-      await session.settle(
-        {
+        userRole: user.role,
+        finalize: {
+          requestId,
           action: 'video-prompt-optimize',
           endpoint: '/api/video/optimize-prompt',
-          rawUsage: result.usage,
-          fallbackTokens: session.inputUnits,
-          metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
-        },
-        {
-          feature: 'video_prompt',
-          provider: 'xunfei',
-          model: 'lite',
-          requestId,
-        }
-      );
-
-      // 管理员免扣额度，但仍保留供应商真实 Token 统计。
-      if (!session.hasReservation) {
-        await safeRecordAiUsage({
           userId: user.id,
           feature: 'video_prompt',
-          action: 'video-prompt-optimize',
           provider: 'xunfei',
           model: 'lite',
-          endpoint: '/api/video/optimize-prompt',
-          requestId,
-          meterType: 'tokens',
-          billableUnits: result.usage?.totalTokens ?? null,
-          billingStatus: 'settled',
-          usage: result.usage
-            ? {
-                inputTokens: result.usage.promptTokens,
-                outputTokens: result.usage.completionTokens,
-                totalTokens: result.usage.totalTokens,
-                cachedTokens: null,
-                reasoningTokens: null,
-                taskCount: 1,
-                rawUsage: result.usage,
-              }
-            : null,
           metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
-        });
-      }
+        },
+        run: async (session) => {
+          const result = await xunfeiChat({
+            messages,
+            model: 'lite',
+            temperature: 0.7,
+            maxTokens: session.outputLimit,
+          });
 
-      return NextResponse.json({
-        optimizedPrompt: result.content.trim(),
-        original: prompt,
+          return {
+            value: {
+              optimizedPrompt: result.content.trim(),
+              original: prompt,
+            },
+            usage: result.usage,
+            outputText: result.content,
+          };
+        },
       });
-    } catch (error) {
-      if (session) {
-        await session.release({ reason: '视频提示词优化请求失败' });
-      }
 
+      return NextResponse.json(responseData);
+    } catch (error) {
       if (error instanceof BillingError) {
         return billingErrorResponse(error, 402);
       }

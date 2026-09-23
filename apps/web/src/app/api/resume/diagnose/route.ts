@@ -4,7 +4,21 @@ import { AuthError } from '@/lib/auth/errors';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
-import { QuotaSession } from '@/lib/billing/quota-session';
+import { withQuotaUnary } from '@/lib/billing/with-quota-unary';
+
+class ResumeDiagnoseRateLimitError extends Error {
+  constructor(message: string = '请求过于频繁，请稍后再试') {
+    super(message);
+    this.name = 'ResumeDiagnoseRateLimitError';
+  }
+}
+
+class ResumeDiagnoseFallbackError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResumeDiagnoseFallbackError';
+  }
+}
 
 /**
  * POST /api/resume/diagnose
@@ -14,7 +28,7 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    let session: QuotaSession | null = null;
+    let resumeForFallback: any = null;
 
     try {
       const body = await req.json();
@@ -37,6 +51,7 @@ export async function POST(req: Request) {
         jobDescription,
         privacy = { allowContactFields: false },
       } = validationResult.data;
+      resumeForFallback = resume;
 
       const arkApiKey = process.env.ARK_API_KEY;
       const arkBaseUrl = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
@@ -50,8 +65,8 @@ export async function POST(req: Request) {
       const userPrompt = buildUserPrompt(resume, jobDescription, privacy);
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
 
-      session = await QuotaSession.reserve(
-        {
+      const diagnosisResult = await withQuotaUnary({
+        reserve: {
           userId: user.id,
           requestId,
           feature: 'resume',
@@ -61,87 +76,85 @@ export async function POST(req: Request) {
           maxOutputTokens: 1200,
           metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
         },
-        user.role
-      );
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
-
-      let result: any;
-      try {
-        const response = await fetch(`${arkBaseUrl}/responses`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${arkApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: arkModel,
-            input: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            max_output_tokens: session.outputLimit,
-            temperature: 0.7,
-            top_p: 0.9,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          if (response.status === 429) {
-            await session.release({ reason: '简历诊断上游限流' });
-            return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
-              status: 429,
-              headers: { 'Content-Type': 'application/json' },
-            });
-          }
-
-          // 其他 HTTP 错误：回退到规则引擎
-          await session.release({ reason: '简历诊断上游失败' });
-          return await fallbackDiagnose(resume);
-        }
-
-        result = await response.json();
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          // 超时：回退到规则引擎
-          await session.release({ reason: '简历诊断超时' });
-          return await fallbackDiagnose(resume);
-        }
-
-        throw fetchError; // 其他错误由外层 catch 处理
-      }
-
-      const diagnosisResult = extractDiagnosisResult(result);
-
-      await session.settle(
-        {
+        userRole: user.role,
+        finalize: {
+          requestId,
           action: 'resume-diagnose',
           endpoint: '/api/resume/diagnose',
-          rawUsage: result.usage ?? result.response?.usage,
-          fallbackTokens: session.inputUnits,
-          metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
-        },
-        {
+          userId: user.id,
           feature: 'resume',
           provider: 'doubao',
           model: arkModel,
-          requestId,
-        }
-      );
+          metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
+        },
+        run: async (session) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
+
+          let result: any;
+          try {
+            const response = await fetch(`${arkBaseUrl}/responses`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${arkApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: arkModel,
+                input: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                max_output_tokens: session.outputLimit,
+                temperature: 0.7,
+                top_p: 0.9,
+              }),
+              signal: controller.signal,
+            });
+
+            if (!response.ok) {
+              if (response.status === 429) {
+                throw new ResumeDiagnoseRateLimitError('请求过于频繁，请稍后再试');
+              }
+
+              // 其他 HTTP 错误：回退到规则引擎
+              throw new ResumeDiagnoseFallbackError('简历诊断上游失败');
+            }
+
+            result = await response.json();
+          } catch (fetchError) {
+            if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+              // 超时：回退到规则引擎
+              throw new ResumeDiagnoseFallbackError('简历诊断超时');
+            }
+            throw fetchError;
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
+          const extracted = extractDiagnosisResult(result);
+          return {
+            value: { ...extracted, fallback: false },
+            usage: result.usage ?? result.response?.usage,
+            outputText: JSON.stringify(extracted),
+          };
+        },
+      });
 
       return new Response(
-        JSON.stringify({ ...diagnosisResult, fallback: false }),
+        JSON.stringify(diagnosisResult),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     } catch (error) {
-      if (session) {
-        await session.release({ reason: error instanceof Error ? error.message : '简历诊断请求失败' });
+      if (error instanceof ResumeDiagnoseRateLimitError) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (error instanceof ResumeDiagnoseFallbackError && resumeForFallback) {
+        return await fallbackDiagnose(resumeForFallback);
       }
 
       if (error instanceof BillingError) return billingErrorResponse(error);

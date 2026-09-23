@@ -4,7 +4,14 @@ import { AuthError } from '@/lib/auth/errors';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { getResumeAiTimeoutMs } from '@/lib/resume/ai-timeout';
-import { QuotaSession } from '@/lib/billing/quota-session';
+import { withQuotaUnary } from '@/lib/billing/with-quota-unary';
+
+class ResumePolishError extends Error {
+  constructor(message: string, public readonly statusCode: number) {
+    super(message);
+    this.name = 'ResumePolishError';
+  }
+}
 
 /**
  * POST /api/resume/polish
@@ -14,8 +21,6 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 
 export async function POST(req: Request) {
   return withAuth(req, async (user) => {
-    let session: QuotaSession | null = null;
-
     try {
       const body = await req.json();
 
@@ -56,8 +61,8 @@ export async function POST(req: Request) {
       const userPrompt = buildUserPrompt(text, context, target);
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
 
-      session = await QuotaSession.reserve(
-        {
+      const resultData = await withQuotaUnary({
+        reserve: {
           userId: user.id,
           requestId,
           feature: 'resume',
@@ -67,86 +72,80 @@ export async function POST(req: Request) {
           maxOutputTokens: 800,
           metadata: { target, textLength: text.length, style, language },
         },
-        user.role
-      );
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
-
-      let result: any;
-      try {
-        const response = await fetch(`${arkBaseUrl}/responses`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${arkApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: arkModel,
-            input: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            max_output_tokens: session.outputLimit,
-            temperature: 0.7,
-            top_p: 0.9,
-            reasoning: { effort: 'minimal' },
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[resume/polish] ARK API 错误:', response.status, errorText);
-
-          if (response.status === 429) {
-            return new Response(JSON.stringify({ error: '请求过于频繁，请稍后再试' }), {
-              status: 429,
-              headers: { 'Content-Type': 'application/json' },
-            });
-          }
-
-          return new Response(JSON.stringify({ error: 'AI 服务暂时不可用' }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-
-        result = await response.json();
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        throw fetchError; // QuotaSession.release() 会在外层 catch 中处理
-      }
-
-      const optimizedText = extractOptimizedText(result);
-      const highlights = extractHighlights(optimizedText, text);
-
-      await session.settle(
-        {
+        userRole: user.role,
+        finalize: {
+          requestId,
           action: 'resume-polish',
           endpoint: '/api/resume/polish',
-          rawUsage: result.usage ?? result.response?.usage,
-          fallbackTokens: session.inputUnits,
-          metadata: { target, textLength: text.length, style, language },
-        },
-        {
+          userId: user.id,
           feature: 'resume',
           provider: 'doubao',
           model: arkModel,
-          requestId,
-        }
-      );
+          metadata: { target, textLength: text.length, style, language },
+        },
+        run: async (session) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), getResumeAiTimeoutMs());
 
-      return new Response(
-        JSON.stringify({ optimizedText, highlights }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      );
+          let result: any;
+          try {
+            const response = await fetch(`${arkBaseUrl}/responses`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${arkApiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: arkModel,
+                input: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                max_output_tokens: session.outputLimit,
+                temperature: 0.7,
+                top_p: 0.9,
+                reasoning: { effort: 'minimal' },
+              }),
+              signal: controller.signal,
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('[resume/polish] ARK API 错误:', response.status, errorText);
+
+              if (response.status === 429) {
+                throw new ResumePolishError('请求过于频繁，请稍后再试', 429);
+              }
+
+              throw new ResumePolishError('AI 服务暂时不可用', 500);
+            }
+
+            result = await response.json();
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
+          const optimizedText = extractOptimizedText(result);
+          const highlights = extractHighlights(optimizedText, text);
+
+          return {
+            value: { optimizedText, highlights },
+            usage: result.usage ?? result.response?.usage,
+            outputText: optimizedText,
+          };
+        },
+      });
+
+      return new Response(JSON.stringify(resultData), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     } catch (error) {
-      // 修复原 bug：AbortError 也会释放预留额度
-      if (session) {
-        await session.release({ reason: error instanceof Error ? error.message : '简历润色请求失败' });
+      if (error instanceof ResumePolishError) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: error.statusCode,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
 
       if (error instanceof BillingError) return billingErrorResponse(error);

@@ -3,7 +3,7 @@ import { xunfeiChat } from '@repo/providers';
 import { withAuth } from '@/lib/api/with-auth';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
-import { QuotaSession } from '@/lib/billing/quota-session';
+import { withQuotaUnary } from '@/lib/billing/with-quota-unary';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,8 +16,6 @@ interface TranslateRequest {
 
 export async function POST(request: NextRequest) {
   return withAuth(request, async (user) => {
-    let session: QuotaSession | null = null;
-
     try {
       const body: TranslateRequest = await request.json();
       const { text, sourceLanguage = 'Chinese', targetLanguage = 'English' } = body;
@@ -39,8 +37,8 @@ ${text}`;
 
       const requestId = getBillingRequestId(request, body as unknown as Record<string, unknown>);
 
-      session = await QuotaSession.reserve(
-        {
+      const responseData = await withQuotaUnary({
+        reserve: {
           userId: user.id,
           requestId,
           feature: 'voice',
@@ -50,43 +48,40 @@ ${text}`;
           maxOutputTokens: 4096,
           metadata: { textLength: text.length, sourceLanguage, targetLanguage },
         },
-        user.role
-      );
-
-      const result = await xunfeiChat({
-        model: 'lite',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        maxTokens: session.outputLimit,
-      });
-
-      await session.settle(
-        {
+        userRole: user.role,
+        finalize: {
+          requestId,
           action: 'voice-translate',
           endpoint: '/api/voice/translate',
-          rawUsage: result.usage,
-          fallbackTokens: session.inputUnits,
-          metadata: { textLength: text.length, sourceLanguage, targetLanguage },
-        },
-        {
+          userId: user.id,
           feature: 'voice',
           provider: 'xunfei',
           model: 'lite',
-          requestId,
-        }
-      );
+          metadata: { textLength: text.length, sourceLanguage, targetLanguage },
+        },
+        run: async (session) => {
+          const result = await xunfeiChat({
+            model: 'lite',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            maxTokens: session.outputLimit,
+          });
 
-      return NextResponse.json({
-        translatedText: result.content.trim(),
-        sourceLanguage,
-        targetLanguage,
-        usage: result.usage,
+          return {
+            value: {
+              translatedText: result.content.trim(),
+              sourceLanguage,
+              targetLanguage,
+              usage: result.usage,
+            },
+            usage: result.usage,
+            outputText: result.content,
+          };
+        },
       });
-    } catch (error) {
-      if (session) {
-        await session.release({ reason: '语音翻译请求失败' });
-      }
 
+      return NextResponse.json(responseData);
+    } catch (error) {
       if (error instanceof BillingError) return billingErrorResponse(error);
 
       console.error('[voice/translate] 翻译失败:', error);

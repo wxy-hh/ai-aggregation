@@ -42,6 +42,52 @@ function fakeSession(overrides: { outputLimit?: number; hasReservation?: boolean
       return undefined;
     }),
     release: mocks.release,
+    finalize: vi.fn(async (outcome: string, ctx: any) => {
+      if (outcome === 'failed') {
+        return mocks.release({ reason: ctx.reason });
+      }
+      if (!hasReservation) {
+        return mocks.safeRecordAiUsage({
+          userId: ctx.userId,
+          feature: ctx.feature,
+          action: ctx.action,
+          provider: ctx.provider,
+          model: ctx.model,
+          endpoint: ctx.endpoint,
+          requestId: ctx.requestId,
+          meterType: 'tokens',
+          billableUnits: ctx.usage?.totalTokens ?? null,
+          billingStatus: 'settled',
+          usage: ctx.usage
+            ? {
+                inputTokens: ctx.usage.promptTokens,
+                outputTokens: ctx.usage.completionTokens,
+                totalTokens: ctx.usage.totalTokens,
+                cachedTokens: null,
+                reasoningTokens: null,
+                taskCount: 1,
+                rawUsage: ctx.usage,
+              }
+            : null,
+          metadata: ctx.metadata,
+        });
+      }
+      return mocks.settle(
+        {
+          action: ctx.action,
+          endpoint: ctx.endpoint,
+          rawUsage: ctx.usage,
+          fallbackTokens: 21,
+          metadata: ctx.metadata,
+        },
+        {
+          feature: ctx.feature,
+          provider: ctx.provider,
+          model: ctx.model,
+          requestId: ctx.requestId,
+        }
+      );
+    }),
   };
 }
 

@@ -162,6 +162,14 @@ describe('QuotaSession.finalize 三态决策矩阵', () => {
       });
 
       expect(mocks.safeRecordAiUsage).toHaveBeenCalledTimes(1);
+      // 审计字段与 settle 路径对齐：requestId（upsert 幂等键）/ meterType / billableUnits / billingStatus / status
+      expect(mocks.safeRecordAiUsage.mock.calls[0][0]).toMatchObject({
+        requestId: 'req_1',
+        meterType: 'tokens',
+        billableUnits: 300,
+        billingStatus: 'settled',
+        status: 'success',
+      });
       expect(mocks.settleAiQuota).not.toHaveBeenCalled();
       expect(mocks.releaseAiQuota).not.toHaveBeenCalled();
     });
@@ -177,6 +185,11 @@ describe('QuotaSession.finalize 三态决策矩阵', () => {
       });
 
       expect(mocks.safeRecordAiUsage).toHaveBeenCalledTimes(1);
+      expect(mocks.safeRecordAiUsage.mock.calls[0][0]).toMatchObject({
+        requestId: 'req_1',
+        status: 'partial',
+        billableUnits: null,
+      });
       expect(mocks.settleAiQuota).not.toHaveBeenCalled();
     });
 
