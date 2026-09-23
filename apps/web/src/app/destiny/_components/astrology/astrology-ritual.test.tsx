@@ -20,15 +20,14 @@ vi.mock('./astrology-result-view', () => ({
   AstrologyResultView: () => <div data-testid="astrology-result-view" />,
 }));
 
-import { AstrologyRitualResult } from './astrology-ritual';
+import { AstrologyRitualResult, ASTROLOGY_RITUAL_TIMING } from './astrology-ritual';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import type { AstrologyInterpretationState } from '@/stores/destiny-workspace-store';
 import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
 
-/** 最小仪式窗（与组件内 WINDOW_END_AT 同档，落在 2.5–4s 区间） */
-const WINDOW_END_MS = 3_200;
-/** 第四段揭幕时刻（组件内 STAGE_4_AT） */
-const STAGE_4_MS = 2_700;
+/** 最小仪式窗与第四段揭幕时刻：与组件同一来源（ASTROLOGY_RITUAL_TIMING），不再各自双写 */
+const WINDOW_END_MS = ASTROLOGY_RITUAL_TIMING.WINDOW_END_AT;
+const STAGE_4_MS = ASTROLOGY_RITUAL_TIMING.STAGE_4_AT;
 
 function primeWorkspace(patch: {
   chartFacts?: typeof SAMPLE_CHART_ACCURATE | null;

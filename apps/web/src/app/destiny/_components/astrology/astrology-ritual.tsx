@@ -48,10 +48,15 @@ import { birthSummary } from '@/lib/astrology/presentation';
 
 /* ---------- 仪式节奏（最小仪式窗 3.2s，落在 2.5–4s 区间） ---------- */
 
-const STAGE_2_AT = 800; // 行星依序点亮
-const STAGE_3_AT = 1800; // 宫位线与相位生长（无宫位：整理相位）
-const STAGE_4_AT = 2700; // 几何静止，宇宙重点已整理完成
-const WINDOW_END_AT = 3200; // 最小仪式窗走满 → 真值若已就位即转场（未就位则进等待室）
+/** 仪式四段节奏与最小仪式窗（毫秒）：导出供测试对齐同一来源，改动节奏时测试不会静默失真 */
+export const ASTROLOGY_RITUAL_TIMING = {
+  STAGE_2_AT: 800, // 行星依序点亮
+  STAGE_3_AT: 1800, // 宫位线与相位生长（无宫位：整理相位）
+  STAGE_4_AT: 2700, // 几何静止，宇宙重点已整理完成
+  WINDOW_END_AT: 3200, // 最小仪式窗走满 → 真值若已就位即转场（未就位则进等待室）
+} as const;
+
+const { STAGE_2_AT, STAGE_3_AT, STAGE_4_AT, WINDOW_END_AT } = ASTROLOGY_RITUAL_TIMING;
 
 type RitualStage = 1 | 2 | 3 | 4;
 
