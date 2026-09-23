@@ -9,7 +9,7 @@
  * - 呈现要素扩展建议、关联相位影响以及生活模块反向跳链。
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Compass, Sparkles, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -21,8 +21,11 @@ import {
 import { formatDegreeMinute } from './astrology-mappers';
 import {
   ASPECT_PLAIN,
+  MOON_READINGS,
+  moduleIdsForBody,
   PLANET_THEME,
   planetPlainSentence,
+  SUN_READINGS,
   type ElementReading,
   type ModuleId,
   type ModuleReading,
@@ -30,18 +33,29 @@ import {
 import type {
   AstrologyChartFacts,
   PlanetBody,
+  PlanetPlacement,
   ZodiacSign,
 } from '@/lib/astrology/chart-facts';
 
+/** 有效落位（sign 非空）查找：WheelSection 的切卡判定与卡片内派生共用同一口径 */
+export function findSignPlacement(
+  facts: AstrologyChartFacts,
+  body: PlanetBody
+): (PlanetPlacement & { sign: ZodiacSign }) | null {
+  return (
+    facts.planets.find(
+      (p): p is PlanetPlacement & { sign: ZodiacSign } => p.body === body && p.sign !== null
+    ) ?? null
+  );
+}
+
 export type PlanetFactCardProps = {
   body: PlanetBody;
-  placement: NonNullable<AstrologyChartFacts['planets'][number]> & { sign: ZodiacSign };
-  reading: ElementReading | null;
-  aspects: AstrologyChartFacts['aspects'];
-  relatedModuleIds: ModuleId[];
+  /** 星盘事实真值：placement/aspects/allPlanets 全部由此内收派生 */
+  facts: AstrologyChartFacts;
+  /** 生活模块解读数组：relatedModuleIds 由 moduleIdsForBody 内收反查 */
   modules: ModuleReading[];
-  allPlanets: { body: PlanetBody; sign: ZodiacSign }[];
-  onSelectBody: (b: PlanetBody) => void;
+  onSelectBody: (b: PlanetBody | null) => void;
   onLocateModule: (id: ModuleId) => void;
   onClose: () => void;
   isDrawer?: boolean;
@@ -52,17 +66,49 @@ export type PlanetFactCardProps = {
  */
 export function PlanetFactCard({
   body,
-  placement,
-  reading,
-  aspects,
-  relatedModuleIds,
+  facts,
   modules,
-  allPlanets,
   onSelectBody,
   onLocateModule,
   onClose,
   isDrawer = false,
 }: PlanetFactCardProps) {
+  const placement = useMemo(() => findSignPlacement(facts, body), [facts, body]);
+
+  const aspects = useMemo(
+    () =>
+      facts.aspects
+        .filter(
+          (a) => a.stability === 'stable' && (a.source === body || a.target === body)
+        )
+        .slice(0, 3),
+    [facts, body]
+  );
+
+  const reading: ElementReading | null = useMemo(() => {
+    if (!placement) return null;
+    if (body === 'sun') return SUN_READINGS[placement.sign];
+    if (body === 'moon') return MOON_READINGS[placement.sign];
+    return null;
+  }, [placement, body]);
+
+  const relatedModuleIds = useMemo(
+    () => moduleIdsForBody(modules, body),
+    [modules, body]
+  );
+
+  const allPlanets = useMemo(
+    () =>
+      facts.planets
+        .filter((p): p is PlanetPlacement & { sign: ZodiacSign } => p.sign !== null)
+        .map((p) => ({ body: p.body, sign: p.sign })),
+    [facts]
+  );
+
+  if (!placement) {
+    return null;
+  }
+
   const Glyph = PLANET_GLYPH[body];
 
   return (

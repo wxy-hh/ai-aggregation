@@ -14,14 +14,10 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { AstrologyChartFacts, PlanetBody, ZodiacSign } from '@/lib/astrology/chart-facts';
+import type { AstrologyChartFacts, PlanetBody } from '@/lib/astrology/chart-facts';
 import {
   ASPECT_PLAIN,
-  MOON_READINGS,
-  moduleIdsForBody,
   planetPlainSentence,
-  SUN_READINGS,
-  type ElementReading,
   type ModuleId,
   type ModuleReading,
 } from '@/lib/astrology/interpretation';
@@ -35,7 +31,7 @@ import { AstrologyWheel } from './astrology-wheel';
 import { AstrologyWheelTransition } from './astrology-wheel-transition';
 import { formatDegreeMinute } from './astrology-mappers';
 import { houseSystemLabel } from './astrology-passport-header';
-import { PlanetFactCard } from './astrology-planet-fact-card';
+import { findSignPlacement, PlanetFactCard } from './astrology-planet-fact-card';
 
 export type AstrologyWheelSectionProps = {
   chartFacts: AstrologyChartFacts;
@@ -61,29 +57,6 @@ export function AstrologyWheelSection({
   const withHouses = chartFacts.dataCompleteness === 'with-houses';
   const degradeReason = chartFacts.factStability.houses.reason;
 
-  /** 选中星体的真值与关联相位（白话先行事实卡数据源） */
-  const selectedPlacement = useMemo(() => {
-    if (!chartFacts || !selectedBody) return null;
-    return chartFacts.planets.find((p) => p.body === selectedBody && p.sign !== null) ?? null;
-  }, [chartFacts, selectedBody]);
-
-  const selectedAspects = useMemo(() => {
-    if (!chartFacts || !selectedBody) return [];
-    return chartFacts.aspects
-      .filter(
-        (a) => a.stability === 'stable' && (a.source === selectedBody || a.target === selectedBody)
-      )
-      .slice(0, 3);
-  }, [chartFacts, selectedBody]);
-
-  /** 选中星体的大三要素解读（若属于日/月则附白话+动作层） */
-  const selectedReading: ElementReading | null = useMemo(() => {
-    if (!selectedPlacement?.sign) return null;
-    if (selectedBody === 'sun') return SUN_READINGS[selectedPlacement.sign];
-    if (selectedBody === 'moon') return MOON_READINGS[selectedPlacement.sign];
-    return null;
-  }, [selectedPlacement, selectedBody]);
-
   /** 等价文本清单（白话默认；点击行联动轮上选中） */
   const textListItems = useMemo(() => {
     if (!chartFacts) return [];
@@ -98,12 +71,6 @@ export function AstrologyWheelSection({
         plain: planetPlainSentence(p.body, p.sign!),
       }));
   }, [chartFacts]);
-
-  /** 选中星体 → 引用它的生活模块（事实卡「相关模块」标签，反向定位；解读在途时为空，标签随解读到达出现） */
-  const relatedModuleIds = useMemo(
-    () => (selectedBody ? moduleIdsForBody(modules, selectedBody) : []),
-    [modules, selectedBody]
-  );
 
   /** 月亮缺席说明：未知/约时档月亮当日跨座会被整颗隐藏，白话说明「为什么不在名单里」（诚实做到底）。
    *  只在降级原因是已知两种时给对应文案，其余原因不写说明——宁缺毋假，不假定「缺时间」 */
@@ -161,7 +128,7 @@ export function AstrologyWheelSection({
         {/* 右列：等价文本清单与星体深度解构台（桌面端原位切换，彻底消除底部撑开与页面跳动） */}
         <div className="mt-6 min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_16px_44px_-24px_rgba(30,41,82,0.25)] dark:border-white/[0.12] dark:bg-[#0D1226]/[0.88] dark:shadow-[0_20px_50px_-24px_rgba(0,0,0,0.85)] sm:p-5 xl:mt-0 xl:flex xl:min-h-[500px] xl:flex-col">
           <AnimatePresence mode="wait" initial={false}>
-            {selectedPlacement?.sign && selectedBody ? (
+            {selectedBody != null && findSignPlacement(chartFacts, selectedBody) != null ? (
               <motion.div
                 key={selectedBody}
                 initial={reduceMotion ? { opacity: 1 } : { opacity: 0, scale: 0.98 }}
@@ -172,17 +139,9 @@ export function AstrologyWheelSection({
               >
                 <PlanetFactCard
                   body={selectedBody}
-                  placement={
-                    selectedPlacement as NonNullable<typeof selectedPlacement> & {
-                      sign: ZodiacSign;
-                    }
-                  }
-                  reading={selectedReading}
-                  aspects={selectedAspects}
-                  relatedModuleIds={relatedModuleIds}
+                  facts={chartFacts}
                   modules={modules}
-                  allPlanets={textListItems}
-                  onSelectBody={(b) => onSelectBody(b)}
+                  onSelectBody={onSelectBody}
                   onLocateModule={onLocateModule}
                   onClose={() => onSelectBody(null)}
                 />
@@ -328,7 +287,7 @@ export function AstrologyWheelSection({
 
       {/* 移动端专属浮动抽屉（<xl）：悬浮于视口底部，绝不撑大或推挤 DOM 文档流，彻底杜绝跳动 */}
       <AnimatePresence>
-        {selectedPlacement?.sign && selectedBody && (
+        {selectedBody != null && findSignPlacement(chartFacts, selectedBody) != null && (
           <div className="xl:hidden">
             {/* 背景微晶暗色遮罩 */}
             <motion.div
@@ -355,17 +314,9 @@ export function AstrologyWheelSection({
               <div className="mx-auto -mt-1 mb-3 h-1 w-10 rounded-full bg-slate-300/80 dark:bg-slate-600/80" />
               <PlanetFactCard
                 body={selectedBody}
-                placement={
-                  selectedPlacement as NonNullable<typeof selectedPlacement> & {
-                    sign: ZodiacSign;
-                  }
-                }
-                reading={selectedReading}
-                aspects={selectedAspects}
-                relatedModuleIds={relatedModuleIds}
+                facts={chartFacts}
                 modules={modules}
-                allPlanets={textListItems}
-                onSelectBody={(b) => onSelectBody(b)}
+                onSelectBody={onSelectBody}
                 onLocateModule={(id) => {
                   onSelectBody(null);
                   onLocateModule(id);
