@@ -73,7 +73,7 @@ function primeWorkspace(interpretation: AstrologyInterpretationReport | null, st
 }
 
 function renderResult() {
-  return render(<AstrologyResultView wheelSlot={() => <div data-testid="wheel-slot" />} />);
+  return render(<AstrologyResultView />);
 }
 
 describe('AstrologyResultView（解读分区渲染）', () => {

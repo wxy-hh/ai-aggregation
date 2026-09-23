@@ -23,9 +23,8 @@ import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
 import { PLANET_CN, ZODIAC_CN } from '@/lib/astrology/zh-names';
 import type { PlanetBody } from '@/lib/astrology/chart-facts';
 import { formatDegreeMinute } from './astrology-mappers';
-import { AstrologyChartWheel } from './astrology-chart-wheel';
+import { AstrologyWheel } from './astrology-wheel';
 import { AstrologyCtaButton } from './astrology-cta-button';
-import { AstrologyWheel3D } from './astrology-wheel-3d';
 import { AstrologyStarfield } from './astrology-starfield';
 import { cn } from '@/lib/utils';
 
@@ -141,14 +140,13 @@ export function AstrologyEntryHome({ onStart }: { onStart: () => void }) {
                 示例星盘 · 可点选星体体验
               </span>
 
-              <AstrologyWheel3D className="relative">
-                <AstrologyChartWheel
-                  facts={sampleFacts}
-                  selectedBody={sampleSelectedBody}
-                  onSelectBody={setSampleSelectedBody}
-                  className="relative drop-shadow-[0_20px_48px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_24px_56px_rgba(2,6,23,0.65)]"
-                />
-              </AstrologyWheel3D>
+              <AstrologyWheel
+                scene={false}
+                facts={sampleFacts}
+                selectedBody={sampleSelectedBody}
+                onSelectBody={setSampleSelectedBody}
+                className="relative"
+              />
 
               {/* 悬浮星体解读 HUD 胶囊卡片（点选任意星曜时从星盘下方优雅弹入）。
                   居中位移必须收进 motion 的 x（framer 内联 transform 会覆盖 Tailwind 的 -translate-x-1/2，

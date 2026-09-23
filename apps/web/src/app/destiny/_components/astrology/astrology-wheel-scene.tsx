@@ -1008,7 +1008,7 @@ function SizeGuard() {
  * 1) 页面隐藏（visibilitychange）——切标签页/最小化时不再空转 GPU；
  * 2) 画布离屏（IntersectionObserver，threshold 0）——命运模块四个工作区靠 display 常驻，
  *    切到八字/紫微时星座场景仍留在文档里照常渲染，这一条是最大的收益点；
- * 3) 模块切走（isActive=false，工作区透传的模块级激活态）——不依赖观察器回调时机，
+ * 3) 模块切走（isActive=false，由深模块 AstrologyWheel 自行订阅 store 传入）——不依赖观察器回调时机，
  *    模块一被切走就立即停帧；桌面端与移动端同一口径，不按断点分别判断。
  *
  * 时钟时间轴：R3F v9 的 setFrameloop 内部会 clock.stop() 并把 clock.elapsedTime 归零，
@@ -1129,7 +1129,7 @@ export function AstrologyWheelScene({
   onSelectBody?: (body: PlanetBody | null) => void;
   /** 行星黄经覆盖（表单预览太阳滑动用，语义与 SVG 轮一致）：覆盖星体按真实黄经阻尼滑入 */
   planetOverrides?: Partial<Record<PlanetBody, number>>;
-  /** 工作区激活态（默认 true）：false 时整个帧循环停摆，模块切走后不在后台空转 GPU */
+  /** 工作区激活态（默认 true，由深模块 AstrologyWheel 订阅 store 传入）：false 时整个帧循环停摆，模块切走后不在后台空转 GPU */
   isActive?: boolean;
   /** 首帧已画出且入场淡入完成：调用方据此撤下 SVG 兜底（交接期两套并存，盘面不会先消失） */
   onReady?: () => void;
@@ -1197,7 +1197,7 @@ export function AstrologyWheelScene({
         dpr={compact ? [1, 1.5] : [1, 1.75]}
         camera={{ position: [0, 0, 17.5], fov: 40, near: 0.1, far: 60 }}
         gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-        // offsetSize:true 是硬性要求：AstrologyWheel3D 祖先层有 acw-wheel-float 3D 倾斜动画，
+        // offsetSize:true 是硬性要求：AstrologyWheel 祖先舞台层有 acw-wheel-float 3D 倾斜动画，
         // 而 react-use-measure 默认走 getBoundingClientRect（受 transform 透视压缩影响），
         // 一旦在倾斜姿态下测得 402×389 之类的脏值，CanvasImpl 无依赖数组的 layout effect
         // 会在每次重渲染（悬停 setHovered 即触发）时重放脏尺寸 → 整盘瞬缩后由 SizeGuard 拉回，

@@ -35,18 +35,7 @@ import { AstrologyWheelSection } from './astrology-wheel-section';
 import { AstrologyLifeModulesSection } from './astrology-life-modules-section';
 import { AstrologyInsightsSection } from './astrology-insights-section';
 
-export type AstrologyResultViewProps = {
-  /** 转场插槽：同一 layoutId 的星盘轮在这里落定（附带点选交互参数） */
-  wheelSlot: (
-    slotClass: string,
-    wheelProps?: {
-      selectedBody: PlanetBody | null;
-      onSelectBody: (body: PlanetBody | null) => void;
-    }
-  ) => React.ReactNode;
-};
-
-export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
+export function AstrologyResultView() {
   const reduceMotion = useReducedMotion();
   const {
     formData,
@@ -180,7 +169,6 @@ export function AstrologyResultView({ wheelSlot }: AstrologyResultViewProps) {
             selectedBody={selectedBody}
             onSelectBody={setSelectedBody}
             onLocateModule={handleLocateModule}
-            wheelSlot={wheelSlot}
             reduceMotion={reduceMotion}
           />
 

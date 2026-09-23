@@ -101,13 +101,13 @@ export function AstrologyWorkspace({ isActive }: AstrologyWorkspaceProps) {
           onStart={() => setWorkspaceState('astrology', { entryView: 'form' })}
         />
       ) : step === 'form' && entryView === 'form' ? (
-        // 04 工单：两步出生资料表单（基本资料 → 时间校准台）
-        // isActive 同样透传：表单预览的星渊场景在模块切走时停摆（与仪式/结果相位同口径）
-        <AstrologyForm isActive={isActive} />
+        // 两步出生资料表单（基本资料 → 时间校准台）
+        // 星渊场景激活态已由深模块 AstrologyWheel 自行订阅 store，无需层层透传
+        <AstrologyForm />
       ) : (
         // 加载仪式（entryView=loading）与结果页（step=result）同树承载，星盘共享元素转场
-        // isActive 透传给星渊场景：模块切走（工作区仅 hidden 常驻）时整帧停摆，不在后台空转
-        <AstrologyRitualResult isActive={isActive} />
+        // 星渊场景激活态已由深模块 AstrologyWheel 自行订阅 store，无需层层透传
+        <AstrologyRitualResult />
       )}
 
       {/* 登录迁移确认：底部抽屉形态（与模块内其他弹层一致），明确说明临时记录的归宿；

@@ -7,7 +7,7 @@
  * 转场时加载页星盘要「连续放大、位移并落定为首屏星盘轮」。本组件同时承载 ritual / result
  * 两个相位，星盘轮以 layoutId 在同一棵树内做布局动画——无卸载、无跳帧的共享元素转场
  * （减少动态时退化为交叉淡入）。结果相位由 AstrologyResultView 承载（06：护照/主轴/三卡/交互轮），
- * wheelSlot 插槽传入。
+ * 星盘轮由深模块自主承载并经 AstrologyWheelTransition 共享元素转场。
  *
  * 诚实性约束（02 工单起由真实报告流事件驱动；03 工单按设计文档 §6.4 调整转场口径）：
  * - 真值（chart-facts 帧）由报告流在仪式窗内送达：提交即进本组件，四段视觉节奏照常播放，
@@ -38,7 +38,8 @@ import { ZODIAC_ORDER } from '@/lib/astrology/zh-names';
 import { DestinyPageScaffold } from '../layout/destiny-page-scaffold';
 import { AstrologyChartWheel, ZODIAC_GLYPH } from './astrology-chart-wheel';
 import { AstrologyCtaButton } from './astrology-cta-button';
-import { AstrologyWheelSceneSwitch, preloadWheelScene } from './astrology-wheel-scene-switch';
+import { preloadWheelScene } from './astrology-wheel';
+import { AstrologyWheelTransition } from './astrology-wheel-transition';
 import { AstrologyResultView } from './astrology-result-view';
 import { AstrologyStarfield } from './astrology-starfield';
 import { AstrologyNightNebula } from './astrology-night-nebula';
@@ -319,12 +320,7 @@ function RitualFramePlaceholder() {
 
 /* ---------- 主组件 ---------- */
 
-type AstrologyRitualResultProps = {
-  /** 工作区激活态（默认 true）：模块切走时结果相位的星渊场景整帧停摆，不随后台帧循环空转 */
-  isActive?: boolean;
-};
-
-export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResultProps) {
+export function AstrologyRitualResult() {
   const reduceMotion = useReducedMotion();
   const {
     step,
@@ -458,49 +454,6 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
     markResultReady('astrology');
   };
 
-  /** 共享星盘元素：同一 layoutId 在 ritual/result 两相位间做树内布局动画；
-   *  06 起结果相位透传点选交互（selectedBody/onSelectBody），仪式相位不传即为纯展示；
-   *  结果相位升级「星渊」WebGL 场景（探测/加载失败自动回退 SVG 轮，兜底节点同源复用） */
-  const wheelSlot = (
-    slotClass: string,
-    wheelProps?: {
-      selectedBody: PlanetBody | null;
-      onSelectBody: (body: PlanetBody | null) => void;
-    }
-  ) =>
-    chartFacts ? (
-      <motion.div
-        layoutId={reduceMotion ? undefined : 'astrology-wheel'}
-        transition={reduceMotion ? { duration: 0.01 } : { duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
-        className={cn(slotClass, '[transform-style:preserve-3d]')}
-      >
-        {phase === 'result' && wheelProps ? (
-          <AstrologyWheelSceneSwitch
-            facts={chartFacts}
-            selectedBody={wheelProps.selectedBody}
-            onSelectBody={wheelProps.onSelectBody}
-            isActive={isActive}
-            fallback={
-              <AstrologyChartWheel
-                facts={chartFacts}
-                selectedBody={wheelProps.selectedBody}
-                onSelectBody={wheelProps.onSelectBody}
-                className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
-              />
-            }
-          />
-        ) : (
-          <AstrologyChartWheel
-            facts={chartFacts}
-            revealStage={phase === 'ritual' ? stage : undefined}
-            selectedBody={wheelProps?.selectedBody ?? null}
-            onSelectBody={wheelProps?.onSelectBody}
-            className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
-          />
-        )}
-      </motion.div>
-    ) : null;
-
   /* ---------- 失败恢复卡（安静：无整页红色、无破碎特效） ---------- */
 
   /* 真值在途（chartFacts=null 且无 error）是等待室状态，不落失败卡；
@@ -591,7 +544,17 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
                       className="absolute inset-[8%] rounded-full bg-indigo-400/[0.12] blur-2xl dark:bg-indigo-500/[0.18]"
                     />
                     {/* 真值在途：先立同心圆坐标框架（不虚构行星位置、不塌陷宽高），真值一到即由星盘轮接管同一位置 */}
-                    {factsReady ? wheelSlot('relative mx-auto w-full') : <RitualFramePlaceholder />}
+                    {factsReady && chartFacts ? (
+                      <AstrologyWheelTransition className="relative mx-auto w-full">
+                        <AstrologyChartWheel
+                          facts={chartFacts}
+                          revealStage={stage}
+                          className="drop-shadow-[0_18px_42px_rgba(67,56,202,0.16)] dark:drop-shadow-[0_18px_48px_rgba(2,6,23,0.6)]"
+                        />
+                      </AstrologyWheelTransition>
+                    ) : (
+                      <RitualFramePlaceholder />
+                    )}
                   </div>
                   {/* 无宫位档：月光紫范围徽章（第三阶段起伴随，不播十二宫动画）；
                       真值在途时含宫位与否未知，徽章等真值到达再判（否则完整盘会先亮出「无宫位」徽章）；
@@ -690,14 +653,14 @@ export function AstrologyRitualResult({ isActive = true }: AstrologyRitualResult
           </button>
         </DestinyPageScaffold>
       ) : (
-        /* ---------- 结果相位（06：真实首屏——护照/主轴/三卡/交互轮；wheelSlot 插槽保持共享元素转场） ---------- */
+        /* ---------- 结果相位（06：真实首屏——护照/主轴/三卡/交互轮；AstrologyWheelTransition 保持共享元素转场） ---------- */
         <DestinyPageScaffold withNavOffset tone="cosmos" night={isNight}>
           {/* 夜幕观星：局部嵌套 dark 类翻转星野与全部 dark: 样式，星云只在夜幕态叠加 */}
           <div className={cn('relative h-full min-h-0', isNight && 'dark astrology-night')}>
             <AstrologyStarfield />
             {isNight && <AstrologyNightNebula />}
             <div className="relative z-10 h-full min-h-0 overflow-y-auto custom-scrollbar">
-              <AstrologyResultView wheelSlot={wheelSlot} />
+              <AstrologyResultView />
             </div>
           </div>
         </DestinyPageScaffold>

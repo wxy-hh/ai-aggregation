@@ -25,3 +25,18 @@
 ### 视角补生成
 对同一合盘档案，首次未覆盖的关系视角按需生成解读。  
 与首开合盘一样消耗额度；已缓存视角的纯切换不请求、不扣费。
+
+## 星座寰宇 / Astrology
+
+### 星盘轮
+星座模块渲染星盘事实的唯一深模块（`<AstrologyWheel />`）。  
+内部收敛 WebGL 场景探测、按需分包、三级降级、3D 浑天仪舞台包装与激活态（`isActive`）全局 store 订阅。
+
+### 星渊场景
+基于 WebGL/Three.js 的深空星盘 3D 交互场景（`AstrologyWheelScene`）。  
+通过首帧就绪状态机（`scenePainted`）实现自 SVG 兜底平滑交接，模块切走时通过帧循环停摆（`FrameloopGovernor`）停止 GPU 空转。
+
+### SVG 星盘轮
+基于矢量图形的标准星盘展示组件（`AstrologyChartWheel`）。  
+用于仪式阶段揭秘动画、移动端表单缩略图、WebGL 不可用时的无缝兜底以及入口首页示例盘（`scene={false}` 模式）。
+

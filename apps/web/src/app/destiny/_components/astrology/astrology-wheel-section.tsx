@@ -4,7 +4,7 @@
  * astrology-wheel-section.tsx —— 结果页交互星盘轮章节带（3D 舞台 + 白话清单 + 事实解构台 + 移动端抽屉）
  *
  * 承接星盘章节段（全宽深色渐变舞台）全部内容：
- * 1. 3D 轮盘主角（透传 wheelSlot，支持 WebGL 场景探针与视差控制）
+ * 1. 3D 轮盘主角（基于深模块 AstrologyWheel 与 AstrologyWheelTransition，自适应 WebGL 场景与视差控制）
  * 2. 右列等价文本清单与星体解构台（桌面端原位切换，无跳动撑高）
  * 3. 移动端浮动事实卡抽屉（悬浮视口底部，绝不挤压 DOM 流）
  * 4. 内联 50+ 行星体反查与相位派生 useMemo 群下沉自持
@@ -31,8 +31,8 @@ import {
   PLANET_GLYPH,
   ZODIAC_CN,
 } from './astrology-chart-wheel';
-import { AstrologyWheel3D } from './astrology-wheel-3d';
-import { useWheelSceneAvailable } from './astrology-wheel-scene-switch';
+import { AstrologyWheel } from './astrology-wheel';
+import { AstrologyWheelTransition } from './astrology-wheel-transition';
 import { formatDegreeMinute } from './astrology-mappers';
 import { houseSystemLabel } from './astrology-passport-header';
 import { PlanetFactCard } from './astrology-planet-fact-card';
@@ -43,13 +43,6 @@ export type AstrologyWheelSectionProps = {
   selectedBody: PlanetBody | null;
   onSelectBody: (body: PlanetBody | null) => void;
   onLocateModule: (id: ModuleId) => void;
-  wheelSlot: (
-    slotClass: string,
-    wheelProps?: {
-      selectedBody: PlanetBody | null;
-      onSelectBody: (body: PlanetBody | null) => void;
-    }
-  ) => React.ReactNode;
   reduceMotion: boolean | null;
 };
 
@@ -59,11 +52,8 @@ export function AstrologyWheelSection({
   selectedBody,
   onSelectBody,
   onLocateModule,
-  wheelSlot,
   reduceMotion,
 }: AstrologyWheelSectionProps) {
-  /** WebGL 星渊场景可用性（null=探测中/不可用 → SVG 轮兜底并保持 DOM 视差） */
-  const wheelSceneOk = useWheelSceneAvailable();
   const [showAllTerms, setShowAllTerms] = useState(false);
   /** 白话清单默认只露前 4 颗（防长页）；展开后显示全部行星 */
   const [showAllPlanets, setShowAllPlanets] = useState(false);
@@ -162,14 +152,10 @@ export function AstrologyWheelSection({
             aria-hidden
             className="absolute inset-[6%] rounded-full bg-indigo-400/10 blur-2xl dark:bg-indigo-500/15"
           />
-          {/* 3D 舞台包在 layoutId 穿入元素之外：不影响仪式→结果的穿入测量；
-              WebGL 场景接管后关闭 DOM 指针视差（场景内有相机视差，避免双重倾斜） */}
-          <AstrologyWheel3D className="relative" parallax={wheelSceneOk !== true}>
-            {wheelSlot('relative mx-auto w-full', {
-              selectedBody,
-              onSelectBody,
-            })}
-          </AstrologyWheel3D>
+          {/* 3D 舞台与视差互斥已内收深模块，转场外壳不影响穿入测量 */}
+          <AstrologyWheelTransition className="relative mx-auto w-full">
+            <AstrologyWheel facts={chartFacts} selectedBody={selectedBody} onSelectBody={onSelectBody} />
+          </AstrologyWheelTransition>
         </div>
 
         {/* 右列：等价文本清单与星体深度解构台（桌面端原位切换，彻底消除底部撑开与页面跳动） */}
