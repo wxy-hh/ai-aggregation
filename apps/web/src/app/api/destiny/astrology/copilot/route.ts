@@ -14,9 +14,9 @@
  *    → 3. 模型配置 → 4. 额度预留 → 5. 流式回答。
  * 次数不设每报告上限：能问几次只由账号额度决定（额度不足即下面的 402，前端弹既有额度对话框）。
  *
- * 额度与生命周期（收敛至 QuotaSession 统一决策表与 withQuotaStream 管道）：
+ * 额度与生命周期（收敛至 QuotaSession 统一决策表与 quota-stream 管道）：
  * - 提问前由 QuotaSession.reserve 预留配额（管理员跳过，免预留）；
- * - 成功按真实 usage 结算；流失败或截断按 partial 部分结算，一个字没出整额释放；
+ * - 成功按真实 usage 结算；流失败或截断按显式声明结算，未产出正文整额释放；
  * - 预留不足（BillingError QUOTA_INSUFFICIENT）按既有口径返回 402，由前端唤起额度引导。
  *
  * 回答质量与合规：
@@ -44,10 +44,9 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import {
-  createQuotaStreamReporter,
-  withQuotaStream,
-  type QuotaStreamSessionReporter,
-} from '../../_lib/report-generation';
+  createQuotaStream,
+  type QuotaStreamControl,
+} from '../../_lib/quota-stream';
 import { buildAstrologyPromptPayload } from '../_lib/astrology-prompt';
 import {
   AstrologyQaAnswerError,
@@ -173,7 +172,25 @@ export async function POST(req: Request) {
         user.role
       );
 
-      const reporter = createQuotaStreamReporter();
+      const { control, wrap } = createQuotaStream({
+        context: {
+          requestId,
+          action: 'destiny-copilot',
+          endpoint: '/api/destiny/astrology/copilot',
+          userId: user.id,
+          feature: 'destiny',
+          provider: config.provider,
+          model: config.model,
+          metadata: {
+            reportType: 'astrology',
+            stream: true,
+            questionLength: question.length,
+          },
+        },
+        logLabel: 'astrology/copilot',
+      });
+      control.bindSession(session);
+
       const rawStream = createQaStream({
         config,
         messages,
@@ -181,33 +198,10 @@ export async function POST(req: Request) {
         modules: report.modules,
         allowedRefs,
         outputLimit: session.outputLimit,
-        reporter,
+        control,
       });
 
-      const quotaManagedStream = withQuotaStream(
-        rawStream,
-        {
-          session,
-          context: {
-            requestId,
-            action: 'destiny-copilot',
-            endpoint: '/api/destiny/astrology/copilot',
-            userId: user.id,
-            feature: 'destiny',
-            provider: config.provider,
-            model: config.model,
-            metadata: {
-              reportType: 'astrology',
-              stream: true,
-              questionLength: question.length,
-            },
-          },
-          logLabel: 'astrology/copilot',
-        },
-        reporter
-      );
-
-      return new Response(quotaManagedStream, { headers: SSE_HEADERS });
+      return new Response(wrap(rawStream), { headers: SSE_HEADERS });
     } catch (error) {
       if (session) {
         await session.release({ reason: '星语问答请求失败', meterType: 'tokens' });
@@ -242,7 +236,7 @@ function createBlockedStream(answer: ReturnType<typeof buildBlockedAnswer>) {
 
 /**
  * 问答流：正文增量边流边推，终帧给出完整回答与白名单收敛后的引用。
- * 外部管道 withQuotaStream 统一托管三态结算与异常释放。
+ * 外部管道 createQuotaStream 统一托管终态结算与异常释放。
  */
 function createQaStream({
   config,
@@ -251,7 +245,7 @@ function createQaStream({
   modules,
   allowedRefs,
   outputLimit,
-  reporter,
+  control,
 }: {
   config: ModelConfig;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
@@ -259,11 +253,12 @@ function createQaStream({
   modules: AstrologyQaRequestBody['report']['modules'];
   allowedRefs: Set<string>;
   outputLimit: number;
-  reporter: QuotaStreamSessionReporter;
+  control: QuotaStreamControl;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(streamController) {
       const scanner = createAnswerTextScanner();
+      let rawUsage: unknown = null;
 
       try {
         const stream = streamModel({
@@ -281,13 +276,13 @@ function createQaStream({
 
         for await (const event of stream) {
           if (event.type === 'text-delta') {
-            reporter.appendOutputText(event.text);
+            control.appendOutputText(event.text);
             const delta = scanner.push(event.text);
             if (delta) {
               streamController.enqueue(encodeSseEvent({ type: 'text-delta', text: delta }));
             }
           } else if (event.type === 'done') {
-            reporter.setUsage(event.rawUsage);
+            rawUsage = event.rawUsage;
           } else if (event.type === 'error') {
             throw new ModelUpstreamError(event.error, 502);
           }
@@ -306,7 +301,7 @@ function createQaStream({
             answer: { kind: 'answer', text: parsed.text, citations },
           } as unknown as Record<string, unknown>)
         );
-        reporter.markCompleted();
+        await control.finish({ outcome: 'success', usage: rawUsage });
       } catch (error) {
         const message =
           error instanceof ModelUpstreamError || error instanceof AstrologyQaAnswerError
@@ -320,6 +315,7 @@ function createQaStream({
             error: message,
           } as unknown as Record<string, unknown>)
         );
+        await control.finish({ outcome: 'failed', reason: message });
       } finally {
         streamController.close();
       }

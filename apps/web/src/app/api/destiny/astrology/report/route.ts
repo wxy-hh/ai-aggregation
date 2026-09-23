@@ -16,9 +16,9 @@
  * - 解读失败只降级解读层，绝不下发 error 事件把星盘一起冲掉（error 仅用于真值阶段的失败）；
  * - 分区顺序固定：headline → bigThree → modules → transits（扫描器缓存乱序分区，按序释放）。
  *
- * 额度与生命周期（收敛至 QuotaSession 统一决策表与 withQuotaStream 管道）：
+ * 额度与生命周期（收敛至 QuotaSession 统一决策表与 quota-stream 管道）：
  * - 解读前由 QuotaSession.reserve 预留配额（管理员跳过，免预留）；
- * - 成功按真实 usage 结算（缺失时按输入与输出估算兜底）；流失败或截断按 partial 部分结算，一个字没出整额释放；
+ * - 成功按真实 usage 结算（缺失时按输入与输出估算兜底）；流失败或截断按显式声明结算，未产出正文整额释放；
  * - 预留不足（BillingError QUOTA_INSUFFICIENT）只降级解读层，星盘照常下发。
  *
  * 鉴权与请求校验复用八字 report 同一工厂（createReportHandler）：未登录 401、请求体不合法 400。
@@ -37,7 +37,6 @@ import {
   buildFactReferenceKeys,
   buildTransitNote,
   formatWeekRange,
-  transitRefKey,
 } from '@/lib/astrology/interpretation';
 import { selectActiveTransits } from '@/lib/astrology/transit-selection';
 import { encodeSseEvent } from '@/lib/utils/sse';
@@ -45,14 +44,15 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { BillingError } from '@/lib/billing/billing-errors';
 import {
-  createQuotaStreamReporter,
   createReportHandler,
   defaultMapError,
-  withQuotaStream,
-  type QuotaStreamSessionReporter,
   type ReportGenerationAdapter,
   type ReportGenerationContext,
 } from '../../_lib/report-generation';
+import {
+  createQuotaStream,
+  type QuotaStreamControl,
+} from '../../_lib/quota-stream';
 import {
   AstrologyReportRequestError,
   AstrologyReportRequestSchema,
@@ -114,14 +114,12 @@ export const POST = createReportHandler(AstrologyReportAdapter);
  * 报告流：真值先行，随后流式分区（headline → bigThree → modules → transits），最后 complete。
  * 解读阶段的一切失败都收敛为 interpretation-unavailable(reason='model')——真值已经下发，
  * 文案区显示诚实失败卡与重试入口，绝不用任何模板文案冒充产出。
- * 配额与用量通过 withQuotaStream 统一管道托管生命周期。
+ * 配额与用量通过 createQuotaStream 统一管道托管生命周期。
  */
 function createAstrologyReportStream(
   ctx: ReportGenerationContext,
   body: AstrologyReportRequestBody
 ): ReadableStream<Uint8Array> {
-  const billingHolder = { current: null as QuotaSession | null };
-  const reporter = createQuotaStreamReporter();
   const requestId = getBillingRequestId(ctx.req, body as Record<string, unknown>);
 
   // 预解析模型配置供计费上下文与后续解读使用
@@ -133,9 +131,38 @@ function createAstrologyReportStream(
     preResolvedConfigError = error;
   }
 
+  const { control, wrap } = createQuotaStream({
+    context: {
+      requestId,
+      action: 'destiny-report',
+      endpoint: '/api/destiny/astrology/report',
+      userId: ctx.user.id,
+      feature: 'destiny',
+      provider: preResolvedConfig?.provider ?? (body.provider || 'doubao'),
+      model: preResolvedConfig?.model ?? 'doubao-seed-evolving',
+      metadata: {
+        reportType: 'astrology',
+        timePrecision: body.timePrecision,
+        stage: 'final_report',
+      },
+    },
+    logLabel: 'astrology/report',
+  });
+
   const sourceStream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      let sectionsSent = 0;
+      // 提升到流作用域：catch 分支需要按"会话是否已绑定"决定是否声明终态
+      let session: QuotaSession | null = null;
       const send = (event: AstrologyReportEvent) => {
+        if (
+          event.type === 'headline' ||
+          event.type === 'bigThree' ||
+          event.type === 'modules' ||
+          event.type === 'transits'
+        ) {
+          sectionsSent += 1;
+        }
         controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
       };
       let factsDelivered = false;
@@ -196,7 +223,7 @@ function createAstrologyReportStream(
         ];
 
         try {
-          const session = await QuotaSession.reserve(
+          session = await QuotaSession.reserve(
             {
               userId: ctx.user.id,
               requestId,
@@ -209,7 +236,7 @@ function createAstrologyReportStream(
             },
             ctx.user.role
           );
-          billingHolder.current = session;
+          control.bindSession(session);
         } catch (error) {
           if (error instanceof BillingError && error.code === 'QUOTA_INSUFFICIENT') {
             // 额度不足只降级解读层：星盘已下发，前端给锁定卡与额度引导
@@ -226,8 +253,8 @@ function createAstrologyReportStream(
           selectedTransits,
           sectionContext,
           send,
-          reporter,
-          outputLimit: billingHolder.current?.outputLimit ?? ASTROLOGY_REPORT_MAX_OUTPUT_TOKENS,
+          control,
+          outputLimit: session.outputLimit,
         });
       } catch (error) {
         console.error('[astrology/report] 报告流中断:', error);
@@ -235,6 +262,11 @@ function createAstrologyReportStream(
           // 真值已下发：失败只落在解读层（前端据此显示诚实失败卡 + 重试）
           send({ type: 'interpretation-unavailable', reason: 'model' });
           send({ type: 'complete' });
+          // 仅当预留已完成才声明终态；预留前的故障（配置/行运构造等）无会话可结算，静默跳过
+          if (session) {
+            const reason = error instanceof Error ? error.message : '解读生成中断';
+            await control.finish({ outcome: sectionsSent > 0 ? 'partial' : 'failed', reason });
+          }
         } else {
           send({
             type: 'error',
@@ -251,38 +283,17 @@ function createAstrologyReportStream(
     },
   });
 
-  return withQuotaStream(
-    sourceStream,
-    {
-      session: billingHolder,
-      context: {
-        requestId,
-        action: 'destiny-report',
-        endpoint: '/api/destiny/astrology/report',
-        userId: ctx.user.id,
-        feature: 'destiny',
-        provider: preResolvedConfig?.provider ?? (body.provider || 'doubao'),
-        model: preResolvedConfig?.model ?? 'doubao-seed-evolving',
-        metadata: {
-          reportType: 'astrology',
-          timePrecision: body.timePrecision,
-          stage: 'final_report',
-        },
-      },
-      logLabel: 'astrology/report',
-    },
-    reporter
-  );
+  return wrap(sourceStream);
 }
 
-/** 解读执行：流式读取 → 分区推送 → complete，由外层 withQuotaStream 统一托管三态结算 */
+/** 解读执行：流式读取 → 分区推送 → complete，由外层 quota-stream 统一托管终态结算 */
 async function streamInterpretation({
   config,
   messages,
   selectedTransits,
   sectionContext,
   send,
-  reporter,
+  control,
   outputLimit,
 }: {
   config: ModelConfig;
@@ -290,7 +301,7 @@ async function streamInterpretation({
   selectedTransits: ReturnType<typeof selectActiveTransits>;
   sectionContext: SectionValidationContext;
   send: (event: AstrologyReportEvent) => void;
-  reporter: QuotaStreamSessionReporter;
+  control: QuotaStreamControl;
   outputLimit: number;
 }): Promise<void> {
   const scanner = createReportSectionScanner();
@@ -314,6 +325,8 @@ async function streamInterpretation({
     }
   };
 
+  let rawUsage: unknown = null;
+
   const stream = streamModel({
     config,
     messages,
@@ -330,10 +343,10 @@ async function streamInterpretation({
 
   for await (const event of stream) {
     if (event.type === 'text-delta') {
-      reporter.appendOutputText(event.text);
+      control.appendOutputText(event.text);
       emitSections(scanner.push(event.text));
     } else if (event.type === 'done') {
-      reporter.setUsage(event.rawUsage);
+      rawUsage = event.rawUsage;
     } else if (event.type === 'error') {
       throw new ModelUpstreamError(event.error, 502);
     }
@@ -346,7 +359,7 @@ async function streamInterpretation({
     throw new AstrologyReportSectionError('transits', `模型分区输出不完整：缺少 ${missing.join('、')}`);
   }
 
-  // 标记完成并下发 complete 事件；外部管道据此触发 success 结算
+  // 标记完成并下发 complete 事件；显式触发 success 结算
   send({ type: 'complete' });
-  reporter.markCompleted();
+  await control.finish({ outcome: 'success', usage: rawUsage });
 }

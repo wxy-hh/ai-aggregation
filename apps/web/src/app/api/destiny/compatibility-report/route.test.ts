@@ -212,7 +212,7 @@ describe('POST /api/destiny/compatibility-report', () => {
     );
   });
 
-  it('模型中途异常但已吐出部分文本：流内推送 error 事件，按 partial 结算已产生部分', async () => {
+  it('模型中途异常但已吐出部分文本：流内推送 error 事件，平台承担成本按 failed 结算释放预留', async () => {
     streamModelMock.mockReturnValue(
       (async function* () {
         yield { type: 'text-delta', text: '{"oneLiner":"一部分内容' };
@@ -232,9 +232,9 @@ describe('POST /api/destiny/compatibility-report', () => {
 
     expect(events.some((e) => e.type === 'error')).toBe(true);
 
-    // 已有部分输出：触发 partial 结算（保护平台成本）
+    // 用户只看到错误卡：必须按 failed 结算并释放预留额度（平台承担上游成本）
     expect(finalizeMock).toHaveBeenCalledWith(
-      'partial',
+      'failed',
       expect.objectContaining({
         action: 'destiny-compatibility-report',
         outputText: '{"oneLiner":"一部分内容',

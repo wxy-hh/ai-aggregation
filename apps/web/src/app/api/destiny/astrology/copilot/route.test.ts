@@ -505,7 +505,7 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(answer.citations[0].label).toContain('行运');
   });
 
-  it('上游报错：不产出兜底文案，已产出文本按 partial 结算', async () => {
+  it('上游报错：不产出兜底文案，推错误事件并整额释放预留（平台承担成本）', async () => {
     const payload = answerPayload(ACCURATE_FACTS);
     const full = JSON.stringify(payload);
     // 只推正文一部分后上游报错
@@ -516,9 +516,9 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
 
     expect(events[events.length - 1].type).toBe('error');
     expect(events[events.length - 1].error).toBe('模型服务暂时不可用，请稍后重试');
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock.mock.calls[0][0]).toMatchObject({ status: 'partial' });
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    // 用户只看到错误卡：必须按 failed 结算并整额释放预留（平台承担上游成本）
+    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
+    expect(settleAiQuotaMock).not.toHaveBeenCalled();
   });
 
   it('一个字都没产出就失败：整额释放预留', async () => {
@@ -532,7 +532,7 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(settleAiQuotaMock).not.toHaveBeenCalled();
   });
 
-  it('模型输出不是合法 JSON：诚实报错，不拼装任何回答（已产出的原始输入按部分结算）', async () => {
+  it('模型输出不是合法 JSON：诚实报错，不拼装任何回答，推错误事件并整额释放预留', async () => {
     streamModelRef.chunks = chunked('抱歉，我无法回答这个问题。');
     streamModelRef.error = null;
 
@@ -540,10 +540,9 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
 
     expect(events.map((event) => event.type)).toEqual(['error']);
     expect(events[0].error).toContain('回答');
-    // 上游为这段输出计了费：按部分结算（而不是整额释放）
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock.mock.calls[0][0]).toMatchObject({ status: 'partial' });
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    // 用户只看到错误卡：整额释放预留（而不是误扣费）
+    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
+    expect(settleAiQuotaMock).not.toHaveBeenCalled();
   });
 
   it('模型配置缺失：500 且不预留额度', async () => {

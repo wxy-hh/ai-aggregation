@@ -4,7 +4,7 @@
  * 架构规范：
  * - 正向引用 @repo/shared 权威契约，杜绝逆向依赖前端组件目录；
  * - 接入 createReportHandler 标准工厂，统一处理鉴权、参数校验、异常响应与 SSE 包装；
- * - 接入 withQuotaStream 统一计费流管道，自动闭环完成（success）、截断（partial）与失败整额释放（failed）。
+ * - 接入 createQuotaStream 统一计费流管道，通过显式 finish 声明闭环完成（success）、截断（partial）与失败整额释放（failed）。
  */
 
 import { z } from 'zod';
@@ -33,12 +33,14 @@ import {
 } from '../_lib/compatibility-normalizer';
 import {
   createReportHandler,
-  createQuotaStreamReporter,
-  withQuotaStream,
   defaultMapError,
   type ReportGenerationAdapter,
   type ReportGenerationContext,
 } from '../_lib/report-generation';
+import {
+  createQuotaStream,
+  type QuotaStreamControl,
+} from '../_lib/quota-stream';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -78,7 +80,7 @@ const RequestSchema = z.object({
   relationType: z.enum(['romance', 'marriage', 'friendship', 'partnership']).default('romance'),
   focusTags: z.array(z.string()).optional().default([]),
   provider: z.enum(['doubao', 'deepseek']).default('doubao'),
-  /** 仅生成指定视角（Tab 按需）；与首开一样预扣并结算额度 */
+  /** 仅生成指定视角（标签页按需）；与首开一样预扣并结算额度 */
   viewOnly: z.boolean().optional().default(false),
   existingReportId: z.string().optional(),
   sourceBaziHistoryId: z.string().nullable().optional(),
@@ -175,7 +177,24 @@ const compatibilityReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Ar
     );
 
     const reportId = body.existingReportId || generateUUID();
-    const reporter = createQuotaStreamReporter();
+
+    const { control, wrap } = createQuotaStream({
+      context: {
+        requestId,
+        action: 'destiny-compatibility-report',
+        endpoint: '/api/destiny/compatibility-report',
+        provider: config.provider,
+        model: config.model,
+        userId: user.id,
+        feature: 'destiny',
+        metadata: {
+          reportType: 'bazi-compatibility',
+          relationType,
+        },
+      },
+      logLabel: 'compatibility-report',
+    });
+    control.bindSession(session);
 
     // 构建原始业务输出流
     const rawStream = new ReadableStream<Uint8Array>({
@@ -183,6 +202,7 @@ const compatibilityReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Ar
         const send = (event: CompatibilityStreamEvent) => {
           controller.enqueue(encodeSseEvent(event as unknown as Record<string, unknown>));
         };
+        let rawUsage: unknown = null;
 
         try {
           send({ type: 'status', status: 'validating' });
@@ -200,22 +220,21 @@ const compatibilityReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Ar
 
           for await (const ev of stream) {
             if (ev.type === 'text-delta') {
-              reporter.appendOutputText(ev.text);
+              control.appendOutputText(ev.text);
             } else if (ev.type === 'done') {
-              reporter.setUsage(ev.rawUsage);
+              rawUsage = ev.rawUsage;
             } else if (ev.type === 'error') {
               throw new Error(ev.error);
             }
           }
 
-          const outputText = reporter.getOutputText();
-          if (!outputText.trim()) {
+          if (!control.hasOutput()) {
             throw new Error('模型服务未产出有效解读内容');
           }
 
           let raw: unknown = {};
           try {
-            raw = extractJsonObject(outputText);
+            raw = extractJsonObject(control.getOutputText());
           } catch {
             raw = {};
           }
@@ -236,40 +255,21 @@ const compatibilityReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Ar
           };
 
           send({ type: 'complete', report });
-          reporter.markCompleted();
+          await control.finish({ outcome: 'success', usage: rawUsage });
         } catch (error) {
+          const reason = error instanceof Error ? error.message : '合盘生成失败';
           send({
             type: 'error',
-            error: error instanceof Error ? error.message : '合盘生成失败',
+            error: reason,
           });
+          await control.finish({ outcome: 'failed', reason });
         } finally {
           controller.close();
         }
       },
     });
 
-    // 由通用流式计费管道托管流的生命周期与自动结算
-    return withQuotaStream(
-      rawStream,
-      {
-        session,
-        context: {
-          requestId,
-          action: 'destiny-compatibility-report',
-          endpoint: '/api/destiny/compatibility-report',
-          provider: config.provider,
-          model: config.model,
-          userId: user.id,
-          feature: 'destiny',
-          metadata: {
-            reportType: 'bazi-compatibility',
-            relationType,
-          },
-        },
-        logLabel: 'compatibility-report',
-      },
-      reporter
-    );
+    return wrap(rawStream);
   },
 };
 
