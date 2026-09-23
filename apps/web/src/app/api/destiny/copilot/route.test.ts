@@ -2,14 +2,15 @@
  * route.test.ts —— POST /api/destiny/copilot 命理追问流式路由测试。
  *
  * 验证重点：
- * 1. 正常问答：SSE 流式返回 text-delta 和 done 帧，配额按 success 终态结算（调用 settleAiQuota）；
- * 2. 上游错误：推送 error 帧与 done 帧，配额按 failed 终态释放（调用 releaseAiQuota，不调用 settleAiQuota）；
- * 3. 客户端中断：已产生输出文本时 cancel，管道兜底按 partial 结算（调用 settleAiQuota，status 为 partial）。
+ * 1. 正常问答：SSE 流式返回 text-delta 和 done 帧，按 success 终态声明结算；
+ * 2. 上游错误：推送 error 帧与 done 帧，按 failed 终态声明释放；
+ * 3. 客户端中断：已产生输出文本时 cancel，管道兜底按 partial 终态声明结算。
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 
-const { mockUserRef, streamModelRef, quotaServiceMocks, quotaSessionMocks } = vi.hoisted(() => ({
+const { mockUserRef, streamModelRef, quotaSessionMocks } = vi.hoisted(() => ({
   mockUserRef: {
     current: { id: 'test-user', role: 'user' },
   },
@@ -17,11 +18,6 @@ const { mockUserRef, streamModelRef, quotaServiceMocks, quotaSessionMocks } = vi
     chunks: [] as string[],
     error: null as string | null,
     delayMs: 0,
-  },
-  quotaServiceMocks: {
-    reserveChatQuota: vi.fn(),
-    settleAiQuota: vi.fn(),
-    releaseAiQuota: vi.fn(),
   },
   quotaSessionMocks: {
     reserve: vi.fn(),
@@ -38,87 +34,10 @@ vi.mock('@/lib/api/with-auth', () => ({
   ),
 }));
 
-vi.mock('@/lib/billing/quota-service', () => ({
-  reserveChatQuota: quotaServiceMocks.reserveChatQuota,
-  settleAiQuota: quotaServiceMocks.settleAiQuota,
-  releaseAiQuota: quotaServiceMocks.releaseAiQuota,
+// 路由统一走 QuotaSession，mock 接缝本身
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: quotaSessionMocks.reserve },
 }));
-
-vi.mock('@/lib/billing/quota-session', async () => {
-  const { reserveChatQuota, releaseAiQuota, settleAiQuota } = await import('@/lib/billing/quota-service');
-
-  class MockQuotaSession {
-    reservationId: string;
-    hasReservation: boolean;
-    inputUnits: number;
-    outputLimit: number;
-    userId: string;
-
-    constructor(
-      reservationId: string,
-      hasReservation: boolean,
-      inputUnits = 500,
-      outputLimit = 2048,
-      userId = 'test-user'
-    ) {
-      this.reservationId = reservationId;
-      this.hasReservation = hasReservation;
-      this.inputUnits = inputUnits;
-      this.outputLimit = outputLimit;
-      this.userId = userId;
-    }
-
-    static reserve = vi.fn(async (input: any, role?: string) => {
-      quotaSessionMocks.reserve(input, role);
-      if (role === 'admin') {
-        return new MockQuotaSession('', false, 0, input.maxOutputTokens ?? 2048, input.userId);
-      }
-      const quota = await reserveChatQuota(input);
-      return new MockQuotaSession(
-        quota.reservation.id,
-        true,
-        quota.inputUnits,
-        quota.outputLimit,
-        input.userId
-      );
-    });
-
-    release = vi.fn(async (opts?: any) => {
-      await releaseAiQuota({
-        reservationId: this.reservationId,
-        reason: opts?.reason,
-        meterType: opts?.meterType ?? 'tokens',
-      });
-    });
-
-    finalize = vi.fn(async (outcome: string, ctx: any) => {
-      quotaSessionMocks.finalize(outcome, ctx);
-      if (outcome === 'failed') {
-        await releaseAiQuota({
-          reservationId: this.reservationId,
-          reason: ctx.reason,
-          meterType: 'tokens',
-        });
-        return;
-      }
-
-      await settleAiQuota({
-        reservationId: this.reservationId,
-        requestId: ctx.requestId,
-        feature: ctx.feature ?? 'destiny',
-        action: ctx.action,
-        provider: ctx.provider,
-        model: ctx.model,
-        endpoint: ctx.endpoint,
-        measurement: { meterType: 'tokens', sourceUnits: 10, quotaUnits: 10, source: 'provider' },
-        status: outcome === 'partial' ? 'partial' : 'success',
-        metadata: ctx.metadata,
-      });
-    });
-  }
-
-  return { QuotaSession: MockQuotaSession };
-});
 
 vi.mock('@repo/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -212,19 +131,16 @@ describe('POST /api/destiny/copilot 路由测试', () => {
     streamModelRef.error = null;
     streamModelRef.delayMs = 0;
 
-    quotaServiceMocks.reserveChatQuota.mockReset();
-    quotaServiceMocks.settleAiQuota.mockReset();
-    quotaServiceMocks.releaseAiQuota.mockReset();
     quotaSessionMocks.reserve.mockReset();
     quotaSessionMocks.finalize.mockReset();
 
-    quotaServiceMocks.reserveChatQuota.mockResolvedValue({
-      reservation: { id: 'reservation-copilot-1' },
-      inputUnits: 500,
-      outputLimit: 2048,
-    });
-    quotaServiceMocks.settleAiQuota.mockResolvedValue(undefined);
-    quotaServiceMocks.releaseAiQuota.mockResolvedValue(undefined);
+    quotaSessionMocks.reserve.mockImplementation(() =>
+      createFakeQuotaSession({
+        inputUnits: 500,
+        outputLimit: 2048,
+        finalize: quotaSessionMocks.finalize,
+      })
+    );
   });
 
   afterEach(() => {
@@ -254,16 +170,16 @@ describe('POST /api/destiny/copilot 路由测试', () => {
     expect(doneEvents).toHaveLength(1);
 
     // 验证额度预留与成功结算
-    expect(quotaServiceMocks.reserveChatQuota).toHaveBeenCalled();
-    expect(quotaServiceMocks.settleAiQuota).toHaveBeenCalledWith(
+    expect(quotaSessionMocks.reserve).toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
       expect.objectContaining({
-        reservationId: 'reservation-copilot-1',
-        status: 'success',
         action: 'destiny-copilot',
         endpoint: '/api/destiny/copilot',
+        feature: 'destiny',
+        usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
       })
     );
-    expect(quotaServiceMocks.releaseAiQuota).not.toHaveBeenCalled();
   });
 
   it('上游模型错误：推送 error 帧与 done 帧，按 failed 终态释放额度', async () => {
@@ -288,14 +204,14 @@ describe('POST /api/destiny/copilot 路由测试', () => {
     expect(errorEvent?.error).toBe('火山引擎上游连接异常');
     expect(doneEvent).toBeDefined();
 
-    // 错误卡收尾按 failed 释放，不调用 settleAiQuota
-    expect(quotaServiceMocks.releaseAiQuota).toHaveBeenCalledWith(
+    // 错误卡收尾按 failed 释放
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'failed',
       expect.objectContaining({
-        reservationId: 'reservation-copilot-1',
+        action: 'destiny-copilot',
         reason: '火山引擎上游连接异常',
       })
     );
-    expect(quotaServiceMocks.settleAiQuota).not.toHaveBeenCalled();
   });
 
   it('客户端取消流：已有输出内容时，管道兜底按 partial 结算额度', async () => {
@@ -325,13 +241,12 @@ describe('POST /api/destiny/copilot 路由测试', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // 验证兜底按 partial 结算
-    expect(quotaServiceMocks.settleAiQuota).toHaveBeenCalledWith(
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'partial',
       expect.objectContaining({
-        reservationId: 'reservation-copilot-1',
-        status: 'partial',
         action: 'destiny-copilot',
+        outputText: expect.any(String),
       })
     );
-    expect(quotaServiceMocks.releaseAiQuota).not.toHaveBeenCalled();
   });
 });

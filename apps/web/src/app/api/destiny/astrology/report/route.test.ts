@@ -51,107 +51,10 @@ vi.mock('@/lib/api/with-auth', () => ({
   ),
 }));
 
-vi.mock('@/lib/billing/quota-service', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/billing/quota-service')>();
-  return {
-    ...actual,
-    reserveChatQuota: vi.fn(async () => ({
-      reservation: { id: 'reservation-1' },
-      inputUnits: 1200,
-      outputLimit: 6000,
-    })),
-    settleAiQuota: vi.fn(async () => undefined),
-    releaseAiQuota: vi.fn(async () => undefined),
-  };
-});
-
-// 路由重构至 QuotaSession：mock 该接缝并委托给既有 quota-service mock
-vi.mock('@/lib/billing/quota-session', async () => {
-  const { reserveChatQuota, releaseAiQuota, settleAiQuota } = await import('@/lib/billing/quota-service');
-  const { safeRecordAiUsage, normalizeUsage } = await import('@/lib/ai-usage');
-  const { createTokenMeasurement, estimateOutputTokens } = await import('@/lib/billing/usage-measurement');
-
-  class MockQuotaSession {
-    reservationId: string;
-    hasReservation: boolean;
-    inputUnits: number;
-    outputLimit: number;
-    userId: string;
-
-    constructor(
-      reservationId: string,
-      hasReservation: boolean,
-      inputUnits = 1200,
-      outputLimit = 6000,
-      userId = 'test-user'
-    ) {
-      this.reservationId = reservationId;
-      this.hasReservation = hasReservation;
-      this.inputUnits = inputUnits;
-      this.outputLimit = outputLimit;
-      this.userId = userId;
-    }
-
-    static reserve = vi.fn(async (input: any, role?: string) => {
-      quotaSessionMocks.reserve(input, role);
-      if (role === 'admin') {
-        return new MockQuotaSession('', false, 0, input.maxOutputTokens ?? 8000, input.userId);
-      }
-      const quota = await reserveChatQuota(input);
-      return new MockQuotaSession(
-        quota.reservation.id,
-        true,
-        quota.inputUnits,
-        quota.outputLimit,
-        input.userId
-      );
-    });
-
-    finalize = vi.fn(async (outcome: string, ctx: any) => {
-      quotaSessionMocks.finalize(outcome, ctx);
-      if (outcome === 'failed') {
-        await releaseAiQuota({
-          reservationId: this.reservationId,
-          reason: ctx.reason,
-          meterType: 'tokens',
-        });
-        return;
-      }
-      if (!this.hasReservation) {
-        if (ctx.userId) {
-          await safeRecordAiUsage({
-            userId: ctx.userId,
-            feature: ctx.feature ?? 'destiny',
-            action: ctx.action,
-            provider: ctx.provider,
-            model: ctx.model,
-            endpoint: ctx.endpoint,
-            usage: normalizeUsage(ctx.usage),
-            metadata: ctx.metadata,
-          });
-        }
-        return;
-      }
-      await settleAiQuota({
-        reservationId: this.reservationId,
-        requestId: ctx.requestId,
-        feature: ctx.feature ?? 'destiny',
-        action: ctx.action,
-        provider: ctx.provider,
-        model: ctx.model,
-        endpoint: ctx.endpoint,
-        measurement: createTokenMeasurement(
-          ctx.usage,
-          this.inputUnits + estimateOutputTokens(ctx.outputText)
-        ),
-        status: outcome === 'partial' ? 'partial' : 'success',
-        metadata: ctx.metadata,
-      });
-    });
-  }
-
-  return { QuotaSession: MockQuotaSession };
-});
+// 路由重构至 QuotaSession，mock 接缝本身
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: quotaSessionMocks.reserve },
+}));
 
 // 全链路用例把客户端接缝的 HTTP 调用转交给真实路由 handler（其余用例不经过此 mock）
 vi.mock('@/lib/api/client', () => ({
@@ -165,12 +68,6 @@ vi.mock('@/lib/api/client', () => ({
     );
   }),
 }));
-
-vi.mock('@/lib/ai-usage', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai-usage')>();
-  // 用量归一保持真实口径（结算断言依赖它），只把记账写入换成无副作用桩
-  return { ...actual, safeRecordAiUsage: vi.fn(async () => undefined) };
-});
 
 // 模型客户端边界：只替换上游调用，其余（配置解析 / 归一化 / schema 注入）保持真实
 vi.mock('@repo/shared', async (importOriginal) => {
@@ -194,9 +91,8 @@ vi.mock('@repo/shared', async (importOriginal) => {
 });
 
 import { POST } from './route';
-import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 import { streamModel } from '@repo/shared';
-import { createTokenMeasurement } from '@/lib/billing/usage-measurement';
 import { onQuotaExhausted } from '@/lib/api/quota-events';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { startChartFactsRequest } from '@/lib/astrology/chart-request';
@@ -206,9 +102,6 @@ import { computeChartFacts, startOfNaturalWeekUtc } from '@/lib/astrology/chart-
 import { selectActiveTransits } from '@/lib/astrology/transit-selection';
 import { SAMPLE_PROFILE_ACCURATE, SAMPLE_PROFILE_UNKNOWN } from '@/lib/astrology/sample-chart';
 
-const reserveChatQuotaMock = vi.mocked(reserveChatQuota);
-const settleAiQuotaMock = vi.mocked(settleAiQuota);
-const releaseAiQuotaMock = vi.mocked(releaseAiQuota);
 const streamModelMock = vi.mocked(streamModel);
 
 /* ---------- 请求与事件读取工具 ---------- */
@@ -353,11 +246,14 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
   beforeEach(() => {
     mockUserRef.current = { id: 'test-user', role: 'user', isAnonymous: true };
     streamModelRef.calls = [];
-    reserveChatQuotaMock.mockResolvedValue({
-      reservation: { id: 'reservation-1' },
-      inputUnits: 1200,
-      outputLimit: 6000,
-    } as never);
+    quotaSessionMocks.reserve.mockReset();
+    quotaSessionMocks.finalize.mockReset();
+    quotaSessionMocks.reserve.mockImplementation(() =>
+      createFakeQuotaSession({
+        outputLimit: 6000,
+        finalize: quotaSessionMocks.finalize,
+      })
+    );
     process.env.ARK_API_KEY = 'test-key';
     process.env.DEEPSEEK_MODEL = 'test-deepseek-key';
   });
@@ -405,7 +301,7 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
 
   it('结算失败：只记日志，不补发 complete、不降级已经送达的解读结论', async () => {
     primeStream(computeChartFacts(SAMPLE_PROFILE_ACCURATE));
-    settleAiQuotaMock.mockRejectedValueOnce(new Error('记账后端不可用'));
+    quotaSessionMocks.finalize.mockRejectedValueOnce(new Error('记账后端不可用'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const events = await readSseEvents(await postReport());
@@ -438,7 +334,7 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
     expect(call.json?.schema?.name).toBe('astrology_interpretation_report');
     expect(call.json?.schema?.schema).toMatchObject({ type: 'object' });
     expect(call.temperature).toBe(0.7);
-    expect(call.maxTokens).toBe(6000); // 余额允许的上限（reserveChatQuota 返回值）
+    expect(call.maxTokens).toBe(6000); // 余额允许的上限（QuotaSession.reserve 返回值）
     // 解读不需要深推理：ARK 推理摘要会吃光输出预算（匿名档曾因此一帧正文都出不来）
     expect(call.reasoningEffort).toBe('minimal');
     const systemPrompt = call.messages[0].content;
@@ -464,43 +360,54 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
     expect(streamModelMock).not.toHaveBeenCalled();
   });
 
-  it('额度：解读前预留 → 成功后按 usage 归一化结算（普通用户）', async () => {
+  it('额度：解读前调用 QuotaSession 预留，成功后声明 success 终态（普通用户）', async () => {
     primeStream(computeChartFacts(SAMPLE_PROFILE_ACCURATE));
 
     await readSseEvents(await postReport());
 
-    expect(reserveChatQuotaMock).toHaveBeenCalledTimes(1);
-    expect(reserveChatQuotaMock.mock.calls[0][0]).toMatchObject({
+    expect(quotaSessionMocks.reserve).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.reserve.mock.calls[0][0]).toMatchObject({
       userId: 'test-user',
       feature: 'destiny',
       maxOutputTokens: 8000,
       metadata: { reportType: 'astrology', timePrecision: 'accurate' },
     });
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(1);
-    const settleCall = settleAiQuotaMock.mock.calls[0][0];
-    expect(settleCall).toMatchObject({
-      reservationId: 'reservation-1',
-      status: 'success',
-      endpoint: '/api/destiny/astrology/report',
-    });
-    // usage 归一化：rawUsage 的 input/output tokens 落到结算口径
-    expect(settleCall.measurement).toMatchObject({ sourceUnits: 2400, source: 'provider' });
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        action: 'destiny-report',
+        endpoint: '/api/destiny/astrology/report',
+        usage: expect.objectContaining({ input_tokens: 1500, output_tokens: 900 }),
+      })
+    );
   });
 
-  it('额度：管理员跳过预留，改为直接记账', async () => {
+  it('额度：管理员请求同样调用 QuotaSession 预留与声明 success 终态（免扣由决策表承担）', async () => {
     mockUserRef.current = { id: 'test-admin', role: 'admin', isAnonymous: false };
     primeStream(computeChartFacts(SAMPLE_PROFILE_ACCURATE));
 
     await readSseEvents(await postReport());
 
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'test-admin',
+        feature: 'destiny',
+      }),
+      'admin'
+    );
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        action: 'destiny-report',
+        endpoint: '/api/destiny/astrology/report',
+      })
+    );
   });
 
   it('额度不足：真值照常下发，解读降级为 unavailable(quota)', async () => {
     const { BillingError } = await import('@/lib/billing/billing-errors');
-    reserveChatQuotaMock.mockRejectedValueOnce(
+    quotaSessionMocks.reserve.mockRejectedValueOnce(
       new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', { requestId: 'r' })
     );
 
@@ -514,10 +421,10 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
     expect(events[0].facts).toBeTruthy();
     expect(events[1].reason).toBe('quota');
     expect(streamModelMock).not.toHaveBeenCalled();
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).not.toHaveBeenCalled();
   });
 
-  it('解读超时/上游报错：不产出任何兜底文案，降级为 unavailable(model) 并按已产出文本部分结算', async () => {
+  it('解读超时/上游报错：不产出任何兜底文案，降级为 unavailable(model) 并声明 partial 终态部分结算', async () => {
     const facts = computeChartFacts(SAMPLE_PROFILE_ACCURATE);
     primeStream(facts);
     // 只推前半段（headline 已闭合）后上游报错
@@ -534,13 +441,18 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
       'complete',
     ]);
     expect(events[2].reason).toBe('model');
-    // 已产出部分文本 → 部分结算（不是整额释放）
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock.mock.calls[0][0]).toMatchObject({ status: 'partial' });
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    // 已产出部分文本 → 声明 partial 终态
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'partial',
+      expect.objectContaining({
+        action: 'destiny-report',
+        reason: '模型服务暂时不可用，请稍后重试',
+      })
+    );
   });
 
-  it('一个字都没产出就失败：整额释放预留', async () => {
+  it('一个字都没产出就失败：声明 failed 终态释放预留', async () => {
     streamModelRef.chunks = [];
     streamModelRef.error = '模型服务暂时不可用，请稍后重试';
 
@@ -551,8 +463,14 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
       'interpretation-unavailable',
       'complete',
     ]);
-    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({
+        action: 'destiny-report',
+        reason: '模型服务暂时不可用，请稍后重试',
+      })
+    );
   });
 
   it('模型输出缺分区：不补齐、不兜底，降级为 unavailable(model)', async () => {
@@ -676,19 +594,20 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
     expect(streamModelMock).not.toHaveBeenCalled();
   });
 
-  it('结算口径与八字同源：usage 缺失时按本地估算兜底', async () => {
-    const measurement = createTokenMeasurement(null, 4321);
-    expect(measurement.source).toBe('local_estimate');
-    expect(measurement.sourceUnits).toBe(4321);
-
+  it('流式解读成功完成：将模型返回的 usage 透传至 finalize 上下文', async () => {
     streamModelRef.error = null;
     const payload = buildReportPayload(computeChartFacts(SAMPLE_PROFILE_ACCURATE));
     streamModelRef.chunks = chunked(JSON.stringify(payload));
     await readSseEvents(await postReport());
 
-    const settleCall = settleAiQuotaMock.mock.calls[0][0];
-    expect(settleCall.measurement.source).toBe('provider');
-    expect(settleCall.measurement.sourceUnits).toBe(2400);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        action: 'destiny-report',
+        endpoint: '/api/destiny/astrology/report',
+        usage: expect.objectContaining({ input_tokens: 1500, output_tokens: 900 }),
+      })
+    );
   });
 });
 
@@ -742,7 +661,7 @@ describe('客户端接缝 → 报告路由（全链路）', () => {
 
   it('额度不足：真值照常兑现，工作区落 quota 并唤起额度耗尽对话框', async () => {
     const { BillingError } = await import('@/lib/billing/billing-errors');
-    reserveChatQuotaMock.mockRejectedValueOnce(
+    quotaSessionMocks.reserve.mockRejectedValueOnce(
       new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', { requestId: 'r' })
     );
     const quotaListener = vi.fn();

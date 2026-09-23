@@ -49,121 +49,10 @@ vi.mock('@/lib/api/with-auth', () => ({
   ),
 }));
 
-vi.mock('@/lib/billing/quota-service', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/billing/quota-service')>();
-  return {
-    ...actual,
-    reserveChatQuota: vi.fn(async () => ({
-      reservation: { id: 'reservation-1' },
-      inputUnits: 900,
-      outputLimit: 2048,
-    })),
-    settleAiQuota: vi.fn(async () => undefined),
-    releaseAiQuota: vi.fn(async () => undefined),
-  };
-});
-
-// 路由重构至 QuotaSession：mock 该接缝并委托给既有 quota-service mock
-vi.mock('@/lib/billing/quota-session', async () => {
-  const { reserveChatQuota, releaseAiQuota, settleAiQuota } = await import('@/lib/billing/quota-service');
-  const { safeRecordAiUsage, normalizeUsage } = await import('@/lib/ai-usage');
-  const { createTokenMeasurement, estimateOutputTokens } = await import('@/lib/billing/usage-measurement');
-
-  class MockQuotaSession {
-    reservationId: string;
-    hasReservation: boolean;
-    inputUnits: number;
-    outputLimit: number;
-    userId: string;
-
-    constructor(
-      reservationId: string,
-      hasReservation: boolean,
-      inputUnits = 900,
-      outputLimit = 2048,
-      userId = 'test-user'
-    ) {
-      this.reservationId = reservationId;
-      this.hasReservation = hasReservation;
-      this.inputUnits = inputUnits;
-      this.outputLimit = outputLimit;
-      this.userId = userId;
-    }
-
-    static reserve = vi.fn(async (input: any, role?: string) => {
-      quotaSessionMocks.reserve(input, role);
-      if (role === 'admin') {
-        return new MockQuotaSession('', false, 0, input.maxOutputTokens ?? 2048, input.userId);
-      }
-      const quota = await reserveChatQuota(input);
-      return new MockQuotaSession(
-        quota.reservation.id,
-        true,
-        quota.inputUnits,
-        quota.outputLimit,
-        input.userId
-      );
-    });
-
-    release = vi.fn(async (opts?: any) => {
-      await releaseAiQuota({
-        reservationId: this.reservationId,
-        reason: opts?.reason,
-        meterType: opts?.meterType ?? 'tokens',
-      });
-    });
-
-    finalize = vi.fn(async (outcome: string, ctx: any) => {
-      quotaSessionMocks.finalize(outcome, ctx);
-      if (outcome === 'failed') {
-        await releaseAiQuota({
-          reservationId: this.reservationId,
-          reason: ctx.reason,
-          meterType: 'tokens',
-        });
-        return;
-      }
-      if (!this.hasReservation) {
-        if (ctx.userId) {
-          await safeRecordAiUsage({
-            userId: ctx.userId,
-            feature: ctx.feature ?? 'destiny',
-            action: ctx.action,
-            provider: ctx.provider,
-            model: ctx.model,
-            endpoint: ctx.endpoint,
-            usage: normalizeUsage(ctx.usage),
-            metadata: ctx.metadata,
-          });
-        }
-        return;
-      }
-      await settleAiQuota({
-        reservationId: this.reservationId,
-        requestId: ctx.requestId,
-        feature: ctx.feature ?? 'destiny',
-        action: ctx.action,
-        provider: ctx.provider,
-        model: ctx.model,
-        endpoint: ctx.endpoint,
-        measurement: createTokenMeasurement(
-          ctx.usage,
-          this.inputUnits + estimateOutputTokens(ctx.outputText)
-        ),
-        status: outcome === 'partial' ? 'partial' : 'success',
-        metadata: ctx.metadata,
-      });
-    });
-  }
-
-  return { QuotaSession: MockQuotaSession };
-});
-
-vi.mock('@/lib/ai-usage', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/ai-usage')>();
-  // 用量归一保持真实口径（结算断言依赖它），只把记账写入换成无副作用桩
-  return { ...actual, safeRecordAiUsage: vi.fn(async () => undefined) };
-});
+// 路由重构至 QuotaSession，mock 接缝本身
+vi.mock('@/lib/billing/quota-session', () => ({
+  QuotaSession: { reserve: quotaSessionMocks.reserve },
+}));
 
 // 全链路用例把客户端接缝的 HTTP 调用转交给真实路由 handler（其余用例不经过此 mock）
 vi.mock('@/lib/api/client', () => ({
@@ -201,9 +90,8 @@ vi.mock('@repo/shared', async (importOriginal) => {
 });
 
 import { POST } from './route';
-import { reserveChatQuota, releaseAiQuota, settleAiQuota } from '@/lib/billing/quota-service';
+import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 import { streamModel } from '@repo/shared';
-import { safeRecordAiUsage } from '@/lib/ai-usage';
 import {
   AstrologyQaRequestError,
   astrologyQaErrorMessage,
@@ -214,11 +102,7 @@ import { computeChartFacts, startOfNaturalWeekUtc } from '@/lib/astrology/chart-
 import { selectActiveTransits } from '@/lib/astrology/transit-selection';
 import { SAMPLE_PROFILE_ACCURATE, SAMPLE_PROFILE_UNKNOWN } from '@/lib/astrology/sample-chart';
 
-const reserveChatQuotaMock = vi.mocked(reserveChatQuota);
-const settleAiQuotaMock = vi.mocked(settleAiQuota);
-const releaseAiQuotaMock = vi.mocked(releaseAiQuota);
 const streamModelMock = vi.mocked(streamModel);
-const safeRecordAiUsageMock = vi.mocked(safeRecordAiUsage);
 
 /* ---------- 请求与事件读取工具 ---------- */
 
@@ -317,11 +201,15 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     streamModelRef.calls = [];
     streamModelRef.error = null;
     streamModelRef.chunks = [];
-    reserveChatQuotaMock.mockResolvedValue({
-      reservation: { id: 'reservation-1' },
-      inputUnits: 900,
-      outputLimit: 2048,
-    } as never);
+    quotaSessionMocks.reserve.mockReset();
+    quotaSessionMocks.finalize.mockReset();
+    quotaSessionMocks.reserve.mockImplementation(() =>
+      createFakeQuotaSession({
+        inputUnits: 900,
+        outputLimit: 2048,
+        finalize: quotaSessionMocks.finalize,
+      })
+    );
     process.env.ARK_API_KEY = 'test-key';
     process.env.DEEPSEEK_MODEL = 'test-deepseek-key';
   });
@@ -347,9 +235,8 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
 
     // 不过 LLM、不预留也不结算
     expect(streamModelMock).not.toHaveBeenCalled();
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.reserve).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).not.toHaveBeenCalled();
   });
 
   it('敏感话题：财务与法律同样前置拦截（三类话题规则齐备）', async () => {
@@ -400,29 +287,27 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(answer.citations[0].label).toContain('月亮');
   });
 
-  it('额度：普通用户提问前预留 → 成功后按 usage 归一化结算', async () => {
+  it('额度：普通用户提问前调用 QuotaSession 预留，成功后声明 success 终态', async () => {
     primeStream(answerPayload(ACCURATE_FACTS));
 
     await readSseEvents(await postCopilot());
 
-    expect(reserveChatQuotaMock).toHaveBeenCalledTimes(1);
-    expect(reserveChatQuotaMock.mock.calls[0][0]).toMatchObject({
+    expect(quotaSessionMocks.reserve).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.reserve.mock.calls[0][0]).toMatchObject({
       userId: 'test-user',
       feature: 'destiny',
       maxOutputTokens: 2048,
       metadata: { reportType: 'astrology', stream: true },
     });
-    expect(settleAiQuotaMock).toHaveBeenCalledTimes(1);
-    const settleCall = settleAiQuotaMock.mock.calls[0][0];
-    expect(settleCall).toMatchObject({
-      reservationId: 'reservation-1',
-      status: 'success',
-      action: 'destiny-copilot',
-      endpoint: '/api/destiny/astrology/copilot',
-    });
-    // usage 归一化：rawUsage 的 input/output tokens 落到结算口径
-    expect(settleCall.measurement).toMatchObject({ sourceUnits: 1100, source: 'provider' });
-    expect(releaseAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        action: 'destiny-copilot',
+        endpoint: '/api/destiny/astrology/copilot',
+        usage: { input_tokens: 800, output_tokens: 300 },
+      })
+    );
   });
 
   it('匿名用户可提问（不登录也能走同一条预留→结算链路）', async () => {
@@ -432,29 +317,35 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     const events = await readSseEvents(await postCopilot());
 
     expect(events[events.length - 1].type).toBe('answer');
-    expect(reserveChatQuotaMock.mock.calls[0][0]).toMatchObject({ userId: 'anon-1' });
+    expect(quotaSessionMocks.reserve.mock.calls[0][0]).toMatchObject({ userId: 'anon-1' });
   });
 
-  it('管理员：跳过预留与结算，改为直接记账', async () => {
+  it('管理员提问同样完成预留与成功结算（免扣与归档由 QuotaSession 决策表承担）', async () => {
     mockUserRef.current = { id: 'test-admin', role: 'admin', isAnonymous: false };
     primeStream(answerPayload(ACCURATE_FACTS));
 
     const events = await readSseEvents(await postCopilot());
 
     expect(events[events.length - 1].type).toBe('answer');
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
-    expect(safeRecordAiUsageMock).toHaveBeenCalledTimes(1);
-    expect(safeRecordAiUsageMock.mock.calls[0][0]).toMatchObject({
-      userId: 'test-admin',
-      action: 'destiny-copilot',
-      endpoint: '/api/destiny/astrology/copilot',
-    });
+    expect(quotaSessionMocks.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'test-admin',
+        feature: 'destiny',
+      }),
+      'admin'
+    );
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        action: 'destiny-copilot',
+        endpoint: '/api/destiny/astrology/copilot',
+      })
+    );
   });
 
   it('额度不足：返回 402，不调用模型', async () => {
     const { BillingError } = await import('@/lib/billing/billing-errors');
-    reserveChatQuotaMock.mockRejectedValueOnce(
+    quotaSessionMocks.reserve.mockRejectedValueOnce(
       new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', { requestId: 'r' })
     );
 
@@ -465,6 +356,7 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(payload.code).toBe('QUOTA_INSUFFICIENT');
     expect(payload.error).toContain('额度不足');
     expect(streamModelMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).not.toHaveBeenCalled();
   });
 
   it('引用白名单收敛：编造的键与报告中不存在的模块引用一律丢弃', async () => {
@@ -505,7 +397,7 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     expect(answer.citations[0].label).toContain('行运');
   });
 
-  it('上游报错：不产出兜底文案，推错误事件并整额释放预留（平台承担成本）', async () => {
+  it('上游报错：不产出兜底文案，推错误事件并声明 failed 终态释放预留', async () => {
     const payload = answerPayload(ACCURATE_FACTS);
     const full = JSON.stringify(payload);
     // 只推正文一部分后上游报错
@@ -516,23 +408,35 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
 
     expect(events[events.length - 1].type).toBe('error');
     expect(events[events.length - 1].error).toBe('模型服务暂时不可用，请稍后重试');
-    // 用户只看到错误卡：必须按 failed 结算并整额释放预留（平台承担上游成本）
-    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
+    // 用户只看到错误卡：必须按 failed 结算并整额释放预留
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({
+        action: 'destiny-copilot',
+        reason: '模型服务暂时不可用，请稍后重试',
+      })
+    );
   });
 
-  it('一个字都没产出就失败：整额释放预留', async () => {
+  it('一个字都没产出就失败：声明 failed 终态释放预留', async () => {
     streamModelRef.chunks = [];
     streamModelRef.error = '模型服务暂时不可用，请稍后重试';
 
     const events = await readSseEvents(await postCopilot());
 
     expect(events.map((event) => event.type)).toEqual(['error']);
-    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({
+        action: 'destiny-copilot',
+        reason: '模型服务暂时不可用，请稍后重试',
+      })
+    );
   });
 
-  it('模型输出不是合法 JSON：诚实报错，不拼装任何回答，推错误事件并整额释放预留', async () => {
+  it('模型输出不是合法 JSON：诚实报错，不拼装任何回答，推错误事件并声明 failed 终态释放预留', async () => {
     streamModelRef.chunks = chunked('抱歉，我无法回答这个问题。');
     streamModelRef.error = null;
 
@@ -540,9 +444,14 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
 
     expect(events.map((event) => event.type)).toEqual(['error']);
     expect(events[0].error).toContain('回答');
-    // 用户只看到错误卡：整额释放预留（而不是误扣费）
-    expect(releaseAiQuotaMock).toHaveBeenCalledTimes(1);
-    expect(settleAiQuotaMock).not.toHaveBeenCalled();
+    // 用户只看到错误卡：声明 failed 终态整额释放预留
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledTimes(1);
+    expect(quotaSessionMocks.finalize).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({
+        action: 'destiny-copilot',
+      })
+    );
   });
 
   it('模型配置缺失：500 且不预留额度', async () => {
@@ -551,7 +460,8 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     const response = await postCopilot();
 
     expect(response.status).toBe(500);
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.reserve).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.finalize).not.toHaveBeenCalled();
     expect(streamModelMock).not.toHaveBeenCalled();
   });
 
@@ -637,11 +547,15 @@ describe('客户端接缝 → 问答路由（全链路）', () => {
     streamModelRef.calls = [];
     streamModelRef.error = null;
     streamModelRef.chunks = [];
-    reserveChatQuotaMock.mockResolvedValue({
-      reservation: { id: 'reservation-1' },
-      inputUnits: 900,
-      outputLimit: 2048,
-    } as never);
+    quotaSessionMocks.reserve.mockReset();
+    quotaSessionMocks.finalize.mockReset();
+    quotaSessionMocks.reserve.mockImplementation(() =>
+      createFakeQuotaSession({
+        inputUnits: 900,
+        outputLimit: 2048,
+        finalize: quotaSessionMocks.finalize,
+      })
+    );
     process.env.ARK_API_KEY = 'test-key';
   });
 
@@ -671,12 +585,12 @@ describe('客户端接缝 → 问答路由（全链路）', () => {
     expect(answer.kind).toBe('blocked');
     expect(answer.text).toContain('不能据此作出医疗、财务或法律判断');
     expect(streamModelMock).not.toHaveBeenCalled();
-    expect(reserveChatQuotaMock).not.toHaveBeenCalled();
+    expect(quotaSessionMocks.reserve).not.toHaveBeenCalled();
   });
 
   it('额度不足：同一路径按 402 口径返回服务端中文提示（面板据此展示，全局弹框另行提示）', async () => {
     const { BillingError } = await import('@/lib/billing/billing-errors');
-    reserveChatQuotaMock.mockRejectedValueOnce(
+    quotaSessionMocks.reserve.mockRejectedValueOnce(
       new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', { requestId: 'req-1' })
     );
     const error = await requestAstrologyAnswer(QUESTION, ACCURATE_FACTS, ACCURATE_MODULES, {}).catch(
