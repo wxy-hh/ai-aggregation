@@ -48,3 +48,18 @@ export interface ChatProviderAdapter {
   /** 创建并返回 SSE 流；由调用方包装为 HTTP 响应 */
   stream(ctx: ChatContext): Promise<ReadableStream<Uint8Array>>;
 }
+
+/**
+ * 提供方客户端错误 — 适配器 → handler 的唯一异常类型。
+ * 各适配器必须把厂商私有错误翻译为此类型（status 为透传给客户端的 HTTP 状态码，
+ * message 为用户可读中文文案）；handler 只认此类型，不 import 任何厂商私有异常。
+ */
+export class ProviderClientError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ProviderClientError';
+  }
+}

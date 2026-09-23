@@ -15,8 +15,7 @@ import { getBillingRequestId } from '@/lib/billing/request-id';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
-import type { ChatProviderAdapter } from './types';
-import { DoubaoFileNotReadyError, DoubaoApiError } from './adapters/doubao';
+import { ProviderClientError, type ChatProviderAdapter } from './types';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
@@ -187,13 +186,8 @@ function handleError(error: unknown, errorId: string, startTime: number): Respon
     return billingErrorResponse(error, 402);
   }
 
-  // 豆包文件未就绪
-  if (error instanceof DoubaoFileNotReadyError) {
-    return jsonResponse({ error: error.message, errorId }, 400);
-  }
-
-  // 豆包 API 错误
-  if (error instanceof DoubaoApiError) {
+  // 提供方客户端错误（适配器已翻译为统一异常，status 直透客户端）
+  if (error instanceof ProviderClientError) {
     return jsonResponse({ error: error.message, errorId }, error.status);
   }
 

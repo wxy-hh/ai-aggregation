@@ -7,7 +7,7 @@
 
 import { normalizeUsage } from '@/lib/ai-usage';
 import { getDoubaoIncompleteWarning } from '../../doubao-warning';
-import type { ChatContext, ChatProviderAdapter } from '../types';
+import { ProviderClientError, type ChatContext, type ChatProviderAdapter } from '../types';
 import { encodeSseEvent } from '../sse';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 
@@ -112,7 +112,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     for (const attachment of fileAttachments) {
       const isReady = await waitForFileReady(attachment.fileId, this.arkApiKey, this.arkBaseUrl);
       if (!isReady) {
-        throw new DoubaoFileNotReadyError(attachment.fileId);
+        throw new ProviderClientError(400, '文件正在处理中，请稍后重试。大文件需要更长的处理时间。');
       }
     }
 
@@ -153,11 +153,11 @@ export class DoubaoAdapter implements ChatProviderAdapter {
         body: errorText,
       });
       const friendlyError = parseDoubaoError(errorText);
-      throw new DoubaoApiError(response.status, friendlyError);
+      throw new ProviderClientError(response.status, friendlyError);
     }
 
     if (!response.body) {
-      throw new DoubaoApiError(500, '上游未返回响应体');
+      throw new ProviderClientError(500, '上游未返回响应体');
     }
 
     // 解析豆包 Responses API 的 SSE 流
@@ -307,18 +307,3 @@ export class DoubaoAdapter implements ChatProviderAdapter {
   }
 }
 
-/** 豆包文件未就绪 */
-export class DoubaoFileNotReadyError extends Error {
-  constructor(public fileId: string) {
-    super('文件正在处理中，请稍后重试。大文件需要更长的处理时间。');
-    this.name = 'DoubaoFileNotReadyError';
-  }
-}
-
-/** 豆包 API 错误 */
-export class DoubaoApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-    this.name = 'DoubaoApiError';
-  }
-}
