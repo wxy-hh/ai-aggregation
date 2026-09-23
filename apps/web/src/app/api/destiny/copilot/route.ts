@@ -14,6 +14,7 @@ import { encodeChatSseEvent, SSE_HEADERS } from '@/lib/utils/sse';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createQuotaStream, type QuotaStreamControl } from '../_lib/quota-stream';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -186,17 +187,28 @@ export async function POST(req: Request) {
         metadata: { questionLength: parsed.data.question.length, stream: true },
       }, user.role);
 
-      return new Response(
-        createCopilotStream({
-          config,
-          messages,
-          userId: user.id,
-          session,
+      const { control, wrap } = createQuotaStream({
+        context: {
           requestId,
-          questionLength: parsed.data.question.length,
-        }),
-        { headers: SSE_HEADERS }
-      );
+          action: 'destiny-copilot',
+          endpoint: '/api/destiny/copilot',
+          userId: user.id,
+          feature: 'destiny',
+          provider: config.provider,
+          model: config.model,
+          metadata: { questionLength: parsed.data.question.length, stream: true, provider: config.provider },
+        },
+        logLabel: 'destiny/copilot',
+      });
+      control.bindSession(session);
+
+      const sourceStream = createCopilotStream({
+        config,
+        messages,
+        control,
+      });
+
+      return new Response(wrap(sourceStream), { headers: SSE_HEADERS });
     } catch (error) {
       if (session) {
         await session.release({ reason: '命理追问请求失败', meterType: 'tokens' });
@@ -222,17 +234,11 @@ export async function POST(req: Request) {
 function createCopilotStream({
   config,
   messages,
-  userId,
-  session,
-  requestId,
-  questionLength,
+  control,
 }: {
   config: ModelConfig;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
-  userId: string | null;
-  session: QuotaSession;
-  requestId: string;
-  questionLength: number;
+  control: QuotaStreamControl;
 }) {
   // 使用 pull() 模式：start() 立即 resolve 让 HTTP 响应头尽快发出，
   // 数据在 pull() 中按需从上游异步生成器逐帧读取并 enqueue。
@@ -246,21 +252,20 @@ function createCopilotStream({
   })[Symbol.asyncIterator]();
 
   let usagePayload: unknown = null;
-  let outputText = '';
 
   return new ReadableStream<Uint8Array>({
     async pull(streamController) {
       try {
         const { value: ev, done } = await streamIterator.next();
         if (done) {
-          // 流结束：结算配额并关闭
-          await settleUsage();
+          // 流结束：显式声明成功并关闭
+          await control.finish({ outcome: 'success', usage: usagePayload });
           streamController.close();
           return;
         }
 
         if (ev.type === 'text-delta') {
-          outputText += ev.text;
+          control.appendOutputText(ev.text);
           streamController.enqueue(encodeChatSseEvent({ type: 'text-delta', text: ev.text }));
         } else if (ev.type === 'done') {
           usagePayload = ev.rawUsage ?? usagePayload;
@@ -269,22 +274,25 @@ function createCopilotStream({
           throw new ModelUpstreamError(ev.error, 502);
         }
       } catch (error) {
-        // 结算配额（部分或释放）
-        await settleUsageOnError(error);
+        const reason =
+          error instanceof Error && error.name === 'AbortError'
+            ? '追问超时，请稍后重试'
+            : error instanceof Error
+              ? error.message
+              : '追问失败，请稍后重试';
+
         streamController.enqueue(
           encodeChatSseEvent({
             type: 'error',
-            error:
-              error instanceof Error && error.name === 'AbortError'
-                ? '追问超时，请稍后重试'
-                : error instanceof Error
-                  ? error.message
-                  : '追问失败，请稍后重试',
+            error: reason,
           })
         );
         // 对齐聊天契约终止序列：error 后同样补发 done，
         // 确保「error 即终止」的消费方与依赖终止帧的消费方行为一致。
         streamController.enqueue(encodeChatSseEvent({ type: 'done' }));
+
+        // 显式声明失败终态（ADR-0001 决策 5：错误卡收尾均为 failed，不再走 partial），释放预留
+        await control.finish({ outcome: 'failed', reason });
         streamController.close();
       }
     },
@@ -293,38 +301,6 @@ function createCopilotStream({
       streamIterator.return?.(undefined);
     },
   });
-
-  async function settleUsage() {
-    await session.finalize('success', {
-      requestId,
-      action: 'destiny-copilot',
-      endpoint: '/api/destiny/copilot',
-      usage: usagePayload,
-      outputText,
-      provider: config.provider,
-      model: config.model,
-      userId: userId ?? undefined,
-      feature: 'destiny',
-      metadata: { questionLength, stream: true, provider: config.provider },
-    });
-  }
-
-  async function settleUsageOnError(error: unknown) {
-    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 QuotaSession.finalize 决策表）
-    await session.finalize(outputText ? 'partial' : 'failed', {
-      requestId,
-      action: 'destiny-copilot',
-      endpoint: '/api/destiny/copilot',
-      usage: usagePayload,
-      outputText,
-      reason: error instanceof Error ? error.message : '命理追问流式失败',
-      provider: config.provider,
-      model: config.model,
-      userId: userId ?? undefined,
-      feature: 'destiny',
-      metadata: { questionLength, stream: true, provider: config.provider },
-    });
-  }
 }
 
 function buildCopilotMessages(

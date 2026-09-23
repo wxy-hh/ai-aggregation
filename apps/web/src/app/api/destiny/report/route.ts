@@ -26,6 +26,7 @@ import { BAZI_REPORT_JSON_SCHEMA } from '../_lib/bazi-json-schema';
 import { encodeDestinySseEvent } from '@/lib/utils/sse';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { getBillingRequestId } from '@/lib/billing/request-id';
+import { createQuotaStream, type QuotaStreamControl } from '../_lib/quota-stream';
 import {
   createReportHandler,
   defaultMapError,
@@ -114,16 +115,37 @@ const BaziReportAdapter: ReportGenerationAdapter<ReadableStream<Uint8Array>> = {
       metadata: { reportType: 'bazi', currentYear },
     }, ctx.user.role);
 
-    return createBaziStream({
+    const { control, wrap } = createQuotaStream({
+      context: {
+        requestId,
+        action: 'destiny-report',
+        endpoint: '/api/destiny/report',
+        userId: ctx.user.id,
+        feature: 'destiny',
+        provider: config.provider,
+        model: config.model,
+        metadata: {
+          reportType: 'bazi',
+          currentYear,
+          stage: 'single-stream',
+          provider: config.provider,
+        },
+      },
+      logLabel: 'destiny/report',
+    });
+    control.bindSession(session);
+
+    const sourceStream = createBaziStream({
       input,
       currentYear,
       config,
-      userId: ctx.user.id,
       basis,
       messages,
-      session,
-      requestId,
+      control,
+      outputLimit: session.outputLimit,
     });
+
+    return wrap(sourceStream);
   },
 
   mapError: defaultMapError,
@@ -135,21 +157,21 @@ function createBaziStream({
   input,
   currentYear,
   config,
-  userId,
   basis,
   messages,
-  session,
-  requestId,
+  control,
+  outputLimit,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   config: ModelConfig;
-  userId: string;
   basis: ReturnType<typeof computeBaziChart>;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
-  session: QuotaSession;
-  requestId: string;
+  control: QuotaStreamControl;
+  outputLimit: number;
 }) {
+  const abortController = new AbortController();
+
   return new ReadableStream({
     async start(controller) {
       const send = (event: BaziStreamEvent) => {
@@ -162,11 +184,11 @@ function createBaziStream({
           input,
           currentYear,
           config,
-          userId,
           basis,
           messages,
-          session,
-          requestId,
+          control,
+          outputLimit,
+          abortController,
           send,
         });
       } catch (error) {
@@ -178,6 +200,9 @@ function createBaziStream({
         controller.close();
       }
     },
+    cancel() {
+      abortController.abort();
+    },
   });
 }
 
@@ -185,25 +210,24 @@ async function streamBaziReport({
   input,
   currentYear,
   config,
-  userId,
   basis,
   messages,
-  session,
-  requestId,
+  control,
+  outputLimit,
+  abortController,
   send,
 }: {
   input: DestinyReportRequest;
   currentYear: number;
   config: ModelConfig;
-  userId: string;
   basis: ReturnType<typeof computeBaziChart>;
   messages: Array<{ role: 'system' | 'user'; content: string }>;
-  session: QuotaSession;
-  requestId: string;
+  control: QuotaStreamControl;
+  outputLimit: number;
+  abortController: AbortController;
   send: (event: BaziStreamEvent) => void;
 }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => abortController.abort(), REPORT_TIMEOUT_MS);
   let latestStatus: DestinyStreamStatus = 'queued';
 
   const transitionStatus = (status: DestinyStreamStatus) => {
@@ -216,6 +240,8 @@ async function streamBaziReport({
   const lockedSections: BaziLockedSections = {};
   let textBuffer = '';
   let usagePayload: unknown = null;
+  // 已送达的模型分区数：catch 据此判定 partial/failed（baziBasis/profileOverview 与兜底分区是免费算法真值，不计入）
+  let modelSectionsSent = 0;
 
   try {
     const deterministicReport = normalizeDestinyReport({}, input, currentYear, { basis });
@@ -264,6 +290,7 @@ async function streamBaziReport({
           lockedSections,
           send,
         });
+        modelSectionsSent += 1;
         if (sectionKey === 'timeline') {
           transitionStatus('finalizing');
         }
@@ -274,7 +301,7 @@ async function streamBaziReport({
       config,
       messages,
       temperature: 0.25,
-      maxTokens: session.outputLimit,
+      maxTokens: outputLimit,
       timeoutMs: REPORT_TIMEOUT_MS,
       json: { schema: { name: 'bazi_interpretation_report', schema: BAZI_REPORT_JSON_SCHEMA } },
     });
@@ -282,6 +309,7 @@ async function streamBaziReport({
     for await (const ev of stream) {
       if (ev.type === 'text-delta') {
         textBuffer += ev.text;
+        control.appendOutputText(ev.text);
       } else if (ev.type === 'done') {
         usagePayload = ev.rawUsage ?? usagePayload;
       } else if (ev.type === 'error') {
@@ -347,37 +375,14 @@ async function streamBaziReport({
       report,
     });
 
-    await session.finalize('success', {
-      requestId,
-      action: 'destiny-report',
-      endpoint: '/api/destiny/report',
-      usage: usagePayload,
-      outputText: textBuffer,
-      provider: config.provider,
-      model: config.model,
-      userId,
-      feature: 'destiny',
-      metadata: {
-        stage: 'single-stream',
-        currentYear,
-        provider: config.provider,
-        sectionCount: emittedSections.size,
-      },
-    });
+    await control.finish({ outcome: 'success', usage: usagePayload });
   } catch (error) {
-    // 三态决策：有部分输出按 partial 结算，无输出释放（对齐 QuotaSession.finalize 决策表）
-    await session.finalize(textBuffer ? 'partial' : 'failed', {
-      requestId,
-      action: 'destiny-report',
-      endpoint: '/api/destiny/report',
+    const reason = error instanceof Error ? error.message : '八字报告流式失败';
+    // 已送达完整模型分区 → partial 计量；否则 failed 释放（对齐 ADR-0001 决策 5）
+    await control.finish({
+      outcome: modelSectionsSent > 0 ? 'partial' : 'failed',
       usage: usagePayload,
-      outputText: textBuffer,
-      reason: error instanceof Error ? error.message : '八字报告流式失败',
-      provider: config.provider,
-      model: config.model,
-      userId,
-      feature: 'destiny',
-      metadata: { stage: 'single-stream', currentYear, provider: config.provider },
+      reason,
     });
     throw error;
   } finally {
