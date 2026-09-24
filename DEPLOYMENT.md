@@ -667,9 +667,8 @@ sudo systemctl disable nginx
 ```bash
 ssh ubuntu@<服务器IP>
 cd ~
+# 生产环境的 origin 必须指向 Gitee：GitHub 只是 Gitee 的自动镜像，不作为部署源
 git clone https://gitee.com/bit-xiaoyu/ai-aggregation.git
-# 或
-git clone https://github.com/wxy-hh/ai-aggregation.git
 ```
 
 #### 方式 B：打包上传
@@ -891,7 +890,7 @@ sudo certbot renew --dry-run
 
 #### 方式一：服务器直接 Git 拉取（推荐）
 
-适用于服务器已配置 Git 远程仓库的场景，操作最简单。
+适用于服务器已配置 Git 远程仓库的场景，操作最简单。本地与服务器的 `origin` 都指向 Gitee（`https://gitee.com/bit-xiaoyu/ai-aggregation.git`），GitHub 仅为 Gitee 的自动镜像，不作为部署源。
 
 **步骤 1：本地提交并推送代码**
 
