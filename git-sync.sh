@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Git 双仓库同步脚本
+# Git 同步脚本（只推送到 Gitee，GitHub 由 Gitee 镜像自动同步）
 # 用法: ./git-sync.sh "提交信息"
 
 # 颜色定义
@@ -20,7 +20,7 @@ fi
 COMMIT_MESSAGE="$1"
 
 echo -e "${BLUE}================================${NC}"
-echo -e "${BLUE}Git 双仓库同步工具${NC}"
+echo -e "${BLUE}Git 同步工具（Gitee → GitHub 镜像自动同步）${NC}"
 echo -e "${BLUE}================================${NC}"
 echo ""
 
@@ -58,7 +58,7 @@ else
 fi
 echo ""
 
-# 4. 推送到 Gitee
+# 4. 推送到 Gitee（GitHub 由 Gitee 镜像自动同步，无需手动推送）
 echo -e "${BLUE}4. 推送到 Gitee...${NC}"
 git push origin $BRANCH
 if [ $? -eq 0 ]; then
@@ -68,20 +68,10 @@ else
 fi
 echo ""
 
-# 5. 推送到 GitHub
-echo -e "${BLUE}5. 推送到 GitHub...${NC}"
-git push github $BRANCH
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ GitHub 推送成功${NC}"
-else
-    echo -e "${RED}✗ GitHub 推送失败${NC}"
-fi
-echo ""
-
 echo -e "${BLUE}================================${NC}"
 echo -e "${GREEN}✅ 同步完成!${NC}"
 echo -e "${BLUE}================================${NC}"
 echo ""
-echo -e "Gitee:  https://gitee.com/bit-xiaoyu/ai-aggregation"
-echo -e "GitHub: https://github.com/wxy-hh/ai-aggregation"
+echo -e "Gitee:        https://gitee.com/bit-xiaoyu/ai-aggregation"
+echo -e "GitHub(镜像): https://github.com/wxy-hh/ai-aggregation"
 echo ""
