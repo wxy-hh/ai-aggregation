@@ -39,10 +39,8 @@ yarn-error.log*
 *.db
 *.db-journal
 
-# IDE
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
+# IDE（.vscode 仅保留本地，不提交）
+.vscode/
 .idea
 *.swp
 *.swo
@@ -64,6 +62,8 @@ apps/web/ark-response-debug.json
 .codex*
 .agents*
 .claude*
+.scratch/
+.omo/run-continuation/
 dump.rdb*
 .dev-flow*
 .env*
@@ -76,13 +76,14 @@ infra/docker/server-info.md
 # Unanchored: .impeccable may sit at the repo root or under a nested
 # workspace (apps/web/.impeccable/...); anchored patterns would miss it.
 # Shared artifacts stay tracked: config.json, live/config.json,
-# design.json, surfaces/*.md, critique/*.md.
+# design.json, surfaces/*.md.
 .impeccable/config.local.json
 .impeccable/hook.cache.json
 .impeccable/hook.pending.json
 .impeccable/*.png
 .impeccable/review/
 .impeccable/questions/
+.impeccable/critique/
 .impeccable/live/server.json
 .impeccable/live/sessions/
 .impeccable/live/previews/
