@@ -659,17 +659,17 @@ export function UploadAudio({
 
   return (
     <div className="flex-1 h-full flex flex-col relative overflow-hidden">
-      {/* Ambient Background Glow */}
+      {/* 氛围环境背景柔光 */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar flex flex-col items-center justify-center min-h-[500px]">
         <div className="max-w-2xl w-full mx-auto relative z-10 animate-in fade-in zoom-in-95 duration-500">
-          {/* Main Upload Card */}
+          {/* 主上传文件区域卡片 */}
           <div
             className={cn(
-              'relative bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-[2rem] p-10 border transition-all duration-300 group',
+              'relative bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl rounded-[2rem] p-10 border transition-[box-shadow,border-color,transform] duration-normal ease-out-expo group',
               isDragging
-                ? 'border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] scale-[1.02]'
+                ? 'border-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] scale-[1.01]'
                 : 'border-white/60 dark:border-slate-700/60 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.05)] hover:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.08)]'
             )}
             onDragOver={handleDragOver}
@@ -677,13 +677,13 @@ export function UploadAudio({
             onDrop={handleDrop}
           >
             <div className="flex flex-col items-center justify-center text-center">
-              {/* Animated Upload Icon */}
-              <div className="relative w-20 h-20 mb-8 group-hover:scale-110 transition-transform duration-300 ease-out">
+              {/* 动态上传云朵图标 */}
+              <div className="relative w-20 h-20 mb-8 group-hover:scale-105 transition-transform duration-normal ease-out-expo">
                 <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl opacity-20 blur-xl group-hover:opacity-30 transition-opacity" />
                 <div className="absolute inset-0 bg-gradient-to-tr from-blue-100 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 rounded-3xl border border-white/50 dark:border-white/10 flex items-center justify-center shadow-inner">
                   <svg
                     className={cn(
-                      'w-10 h-10 text-blue-600 dark:text-blue-400 transition-transform duration-500',
+                      'w-10 h-10 text-blue-600 dark:text-blue-400 transition-transform duration-normal ease-out-expo',
                       isDragging ? 'scale-125 -translate-y-1' : 'translate-y-0'
                     )}
                     fill="none"
@@ -700,7 +700,7 @@ export function UploadAudio({
                 </div>
               </div>
 
-              {/* Title & Desc */}
+              {/* 标题与格式说明 */}
               <h3 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white mb-3">
                 {isDragging ? '释放以上传文件' : '点击或拖拽音频文件至此'}
               </h3>
@@ -710,12 +710,12 @@ export function UploadAudio({
                 <span className="text-xs opacity-70">单文件最大支持 50MB，自动识别语言</span>
               </p>
 
-              {/* Action Button */}
+              {/* 选择文件按钮 */}
               <div className="relative group/btn">
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl blur opacity-25 group-hover/btn:opacity-50 transition duration-200" />
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl blur opacity-25 group-hover/btn:opacity-50 transition duration-normal ease-out-expo" />
                 <Button
                   onClick={handleSelectFile}
-                  className="relative bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-6 h-auto rounded-xl font-semibold shadow-lg transition-all duration-200 active:scale-95 text-base"
+                  className="relative bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-10 py-6 h-auto rounded-xl font-semibold shadow-lg transition-[background-color,transform,box-shadow] duration-fast ease-out-expo active:scale-[0.98] text-base"
                 >
                   选择音频文件
                 </Button>
@@ -731,11 +731,11 @@ export function UploadAudio({
             </div>
           </div>
 
-          {/* Selected File Card - Premium Style */}
+          {/* 已选音频文件卡片（高品质拟态风格） */}
           {selectedFile && (
             <div className="mt-8 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md rounded-2xl p-5 border border-white/50 dark:border-slate-700/50 shadow-lg animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex items-center gap-5">
-                {/* File Icon */}
+                {/* 音频文件图标 */}
                 <div className="relative w-14 h-14 flex-shrink-0">
                   <div className="absolute inset-0 bg-blue-500/20 rounded-xl blur-sm" />
                   <div className="relative w-full h-full bg-gradient-to-br from-blue-50 to-white dark:from-slate-800 dark:to-slate-900 rounded-xl flex items-center justify-center border border-blue-100 dark:border-blue-900/30">
@@ -755,7 +755,7 @@ export function UploadAudio({
                   </div>
                 </div>
 
-                {/* File Info */}
+                {/* 文件详情信息 */}
                 <div className="flex-1 min-w-0">
                   <h4 className="text-base font-bold text-slate-900 dark:text-white truncate mb-1">
                     {selectedFile.name}
@@ -765,7 +765,7 @@ export function UploadAudio({
                       {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                     </span>
 
-                    {/* Status Indicators */}
+                    {/* 状态指示标签 */}
                     <div className="flex items-center gap-2">
                       {uploadMutation.isPending && (
                         <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20">
@@ -828,7 +828,7 @@ export function UploadAudio({
                     </div>
                   </div>
 
-                  {/* Progress Bar */}
+                  {/* 上传进度指示条 */}
                   {uploadMutation.isPending && (
                     <div className="mt-3 w-full bg-slate-100 dark:bg-slate-700/50 rounded-full h-1 overflow-hidden">
                       <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full rounded-full animate-[loading_1.5s_ease-in-out_infinite] w-full origin-left" />
@@ -836,10 +836,10 @@ export function UploadAudio({
                   )}
                 </div>
 
-                {/* Delete Action */}
+                {/* 移除文件按钮 */}
                 <button
                   onClick={handleRemoveFile}
-                  className="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all duration-200"
+                  className="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-[background-color,color,transform] duration-fast ease-out-expo active:scale-90"
                   title="移除文件"
                   disabled={uploadMutation.isPending}
                 >
@@ -856,7 +856,7 @@ export function UploadAudio({
             </div>
           )}
 
-          {/* Result Preview (Optional/Duplicate of TransriptionResult but simple) */}
+          {/* 转录结果简要预览卡片 */}
           {transcriptionResult && !showResult && (
             <div className="mt-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md rounded-2xl p-6 border border-white/50 dark:border-slate-700/50 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100">
               <div className="flex items-center justify-between mb-3">

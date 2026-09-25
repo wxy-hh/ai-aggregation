@@ -1,5 +1,7 @@
 'use client';
 
+import { useId } from 'react';
+import { motion } from 'framer-motion';
 import { useShallow } from 'zustand/react/shallow';
 import { useDestinyWorkspaceStore, type DestinyProvider } from '@/stores/destiny-workspace-store';
 import { cn } from '@/lib/utils';
@@ -27,6 +29,7 @@ export function DestinyModelSwitcher({
   className,
   size = 'default',
 }: DestinyModelSwitcherProps) {
+  const instanceId = useId();
   const { provider, setProvider } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       provider: state.provider,
@@ -57,16 +60,25 @@ export function DestinyModelSwitcher({
             aria-checked={active}
             onClick={() => setProvider(option.value)}
             className={cn(
-              'rounded-full font-semibold transition-all',
+              'relative rounded-full font-semibold outline-none select-none transition-colors duration-200 active:scale-[0.97]',
               compact
                 ? 'min-h-11 min-w-[4.5rem] px-2.5'
                 : 'min-h-11 min-w-[88px] px-4',
               active
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'text-white'
+                : 'text-muted-foreground hover:text-foreground active:text-foreground/80'
             )}
           >
-            {option.label}
+            {active && (
+              <motion.div
+                layoutId={`activeDestinyProvider-${instanceId}`}
+                className="absolute inset-0 rounded-full bg-blue-600 shadow-sm"
+                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center justify-center">
+              {option.label}
+            </span>
           </button>
         );
       })}

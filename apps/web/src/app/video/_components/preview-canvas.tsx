@@ -123,18 +123,11 @@ export function PreviewCanvas({
               <div className="relative z-10 flex gap-4">
                 <Button
                   variant="outline"
-                  className="h-12 gap-3 rounded-2xl border-white/70 bg-white/60 px-6 font-bold text-slate-600 shadow-sm backdrop-blur-md transition-all hover:bg-white/80 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 sm:h-14 sm:px-8"
+                  className="h-12 gap-3 rounded-2xl border-white/70 bg-white/60 px-6 font-bold text-slate-600 shadow-sm backdrop-blur-md select-none transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-expo hover:bg-white/80 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 sm:h-14 sm:px-8"
                 >
                   <ImageIcon className="w-5 h-5" />
                   上传参考图
                 </Button>
-                {/* <Button
-                  variant="outline"
-                  className="h-14 px-8 rounded-2xl gap-3 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 font-bold transition-all"
-                >
-                  <LayoutGrid className="w-5 h-5" />
-                  浏览模板
-                </Button> */}
               </div>
             </motion.div>
           )}
@@ -191,8 +184,8 @@ export function PreviewCanvas({
                   <span className="text-5xl font-bold font-mono tracking-tighter text-slate-900 dark:text-white">
                     {Math.floor(progress)}%
                   </span>
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-2">
-                    Computing Frames
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-widest mt-2">
+                    画面运算渲染中
                   </span>
                 </div>
               </div>
@@ -219,7 +212,7 @@ export function PreviewCanvas({
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">生成失败</h3>
               <p className="text-slate-500 dark:text-slate-400 mb-6">请检查输入并重试</p>
               {onReset && (
-                <Button onClick={onReset} variant="outline" className="gap-2">
+                <Button onClick={onReset} variant="outline" className="gap-2 select-none transition-transform duration-fast active:scale-95">
                   <RotateCcw className="w-4 h-4" />
                   重新开始
                 </Button>
@@ -250,7 +243,7 @@ export function PreviewCanvas({
               {/* 悬停控制层（移动端常显，避免依赖 hover） */}
               <div
                 className={cn(
-                  'absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/50 via-transparent to-black/20 p-4 transition-opacity sm:p-8',
+                  'absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/50 via-transparent to-black/20 p-4 transition-opacity duration-fast ease-out-expo sm:p-8',
                   'max-sm:opacity-100',
                   isHovering ? 'opacity-100' : 'opacity-0'
                 )}
@@ -261,7 +254,7 @@ export function PreviewCanvas({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20 select-none transition-[background-color,transform] duration-fast ease-out-expo active:scale-90"
                     onClick={handleDownload}
                     aria-label="下载视频"
                   >
@@ -270,7 +263,7 @@ export function PreviewCanvas({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-11 w-11 rounded-full text-white hover:bg-white/20"
+                    className="h-11 w-11 rounded-full text-white hover:bg-white/20 select-none transition-[background-color,transform] duration-fast ease-out-expo active:scale-90"
                     aria-label="全屏播放"
                   >
                     <Maximize2 className="h-5 w-5" />
@@ -280,10 +273,11 @@ export function PreviewCanvas({
                 {/* 中央播放按钮 */}
                 <div className="flex items-center justify-center">
                   <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                    whileHover={{ scale: 1.06 }}
+                    whileTap={{ scale: 0.94 }}
                     onClick={togglePlay}
-                    className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 text-white flex items-center justify-center"
+                    className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 text-white flex items-center justify-center select-none"
+                    aria-label={isPlaying ? '暂停播放' : '开始播放'}
                   >
                     {isPlaying ? (
                       <Pause className="w-8 h-8" />

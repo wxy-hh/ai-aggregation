@@ -22,6 +22,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
+import { motion } from 'framer-motion';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import type { HistoryType, ImageHistoryItem } from '@/types/history';
 
@@ -185,25 +186,38 @@ export default function HistoryWorkspace() {
             data-testid="history-tabs"
             className="bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl flex items-center gap-1 w-full overflow-x-auto hide-scrollbar"
           >
-            {tabs.map((tab) => (
-              <Button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                variant={activeTab === tab.id ? 'default' : 'ghost'}
-                className={cn(
-                  'px-4 md:px-6 py-2 rounded-lg text-sm font-bold transition-all shrink-0 flex-1 sm:flex-none h-9',
-                  activeTab !== tab.id &&
-                    'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
-                )}
-              >
-                {tab.label}
-                {tab.id !== 'all' && (
-                  <span className="ml-1.5 text-xs opacity-60">
-                    ({stats[tab.id as keyof typeof stats]})
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'relative px-4 md:px-6 py-2 rounded-lg text-sm font-bold shrink-0 flex-1 sm:flex-none h-9 flex items-center justify-center transition-colors duration-200 outline-none select-none active:scale-[0.97]',
+                    isActive
+                      ? 'text-white'
+                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                  )}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeHistoryTab"
+                      className="absolute inset-0 rounded-lg bg-blue-600 shadow-sm"
+                      transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center">
+                    {tab.label}
+                    {tab.id !== 'all' && (
+                      <span className={cn('ml-1.5 text-xs', isActive ? 'opacity-90' : 'opacity-60')}>
+                        ({stats[tab.id as keyof typeof stats]})
+                      </span>
+                    )}
                   </span>
-                )}
-              </Button>
-            ))}
+                </button>
+              );
+            })}
           </div>
 
           {/* 搜索与筛选 */}
@@ -224,10 +238,10 @@ export default function HistoryWorkspace() {
               </svg>
               <Input
                 type="text"
-                placeholder={activeTab === 'image' ? '搜索 prompt...' : '搜索历史记录...'}
+                placeholder={activeTab === 'image' ? '搜索提示词...' : '搜索历史记录...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px]"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px] transition-[border-color,box-shadow] duration-200 ease-out"
               />
             </div>
             <Button
@@ -320,7 +334,7 @@ export default function HistoryWorkspace() {
               variant="ghost"
               size="icon"
               onClick={() => setPreviewItem(null)}
-              className="absolute top-6 right-6 md:top-10 md:right-10 z-[60] p-2 md:p-3 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-xl border border-white/20 group hover:scale-110 active:scale-95 shadow-2xl h-12 w-12"
+              className="absolute top-6 right-6 md:top-10 md:right-10 z-[60] p-2 md:p-3 text-white/70 hover:text-white transition-[background-color,color,transform,box-shadow] duration-200 ease-out bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-xl border border-white/20 group hover:scale-105 active:scale-95 shadow-2xl h-12 w-12"
               title="关闭预览"
             >
               <svg

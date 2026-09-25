@@ -216,7 +216,7 @@ export function VideoEditor() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md dark:border-slate-700 dark:bg-slate-800/70"
+                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md select-none transition-[background-color,border-color,transform] duration-fast ease-out-expo active:scale-[0.97] dark:border-slate-700 dark:bg-slate-800/70"
                 aria-label="打开配置面板"
                 onClick={() => setIsConfigDrawerOpen(true)}
               >
@@ -226,7 +226,7 @@ export function VideoEditor() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md dark:border-slate-700 dark:bg-slate-800/70"
+                className="h-11 flex-1 justify-center rounded-2xl border-white/70 bg-white/70 backdrop-blur-md select-none transition-[background-color,border-color,transform] duration-fast ease-out-expo active:scale-[0.97] dark:border-slate-700 dark:bg-slate-800/70"
                 aria-label="打开资源面板"
                 onClick={() => setIsAssetsDrawerOpen(true)}
               >
@@ -276,7 +276,7 @@ export function VideoEditor() {
             type="button"
             onClick={handleGenerateWithRelay}
             disabled={!canGenerate}
-            className="h-12 w-full rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-blue-700"
+            className="h-12 w-full rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-500/20 select-none transition-[background-color,box-shadow,transform] duration-fast ease-out-expo hover:from-blue-600 hover:to-blue-700 active:scale-[0.98]"
           >
             {isGenerating ? (
               loadingStep || '正在创作...'

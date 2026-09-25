@@ -132,19 +132,20 @@ const ActionButtons = memo(function ActionButtons({
     <div
       className={cn(
         // 移动端常显（无 hover 无法发现接力），桌面保留 hover 渐显
-        'mt-2 flex items-center gap-1 px-1 transition-opacity max-sm:opacity-100 opacity-0 group-hover:opacity-100',
+        'mt-2 flex items-center gap-1 px-1 transition-opacity duration-fast ease-out-expo max-sm:opacity-100 opacity-0 group-hover:opacity-100',
         isUser ? 'flex-row-reverse' : ''
       )}
     >
       {/* 复制按钮 */}
       <button
         onClick={handleCopy}
-        className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+        className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
         title="复制"
+        aria-label="复制消息内容"
       >
         {copied ? (
           <svg
-            className="w-4 h-4 text-green-500"
+            className="w-4 h-4 text-emerald-500 animate-in zoom-in-75 duration-fast ease-out-expo"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -167,8 +168,9 @@ const ActionButtons = memo(function ActionButtons({
       {onRegenerate && (
         <button
           onClick={onRegenerate}
-          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+          className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
           title="重新生成"
+          aria-label="重新生成回答"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
@@ -181,11 +183,12 @@ const ActionButtons = memo(function ActionButtons({
         </button>
       )}
 
-      {/* 赞按钮 - 只对 AI 显示 */}
+      {/* 点赞按钮 - 仅对 AI 消息显示 */}
       {!isUser && (
         <button
-          className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+          className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
           title="赞"
+          aria-label="点赞"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
@@ -198,7 +201,7 @@ const ActionButtons = memo(function ActionButtons({
         </button>
       )}
 
-      {/* 接力按钮 - 只对 AI 显示（REQ-007 助手操作栏发起） */}
+      {/* 接力按钮 - 仅对 AI 消息显示 */}
       {!isUser && relay && (
         <RelayAction
           ref={relay.triggerRef}
@@ -206,7 +209,7 @@ const ActionButtons = memo(function ActionButtons({
           disabled={relay.disabled}
           disabledReason={relay.disabledReason}
           onClick={relay.onOpen}
-          className="rounded-full border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"
+          className="rounded-full border border-transparent text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
         />
       )}
     </div>
@@ -463,7 +466,12 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   }, [message.content]);
 
   return (
-    <div className={cn('flex w-full mb-6', isUser ? 'justify-end' : 'justify-start')}>
+    <div
+      className={cn(
+        'flex w-full mb-6 animate-in fade-in-0 slide-in-from-bottom-2 duration-fast ease-out-expo',
+        isUser ? 'justify-end' : 'justify-start'
+      )}
+    >
       <div
         className={cn(
           'flex w-full flex-col gap-2 md:gap-4',
@@ -499,9 +507,10 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             {...(!isUser ? relay.longPressProps : {})}
             className={cn(
               'max-w-full break-words rounded-[24px] px-5 py-4 text-[15px] leading-relaxed shadow-[0_10px_26px_rgba(76,95,154,0.08)]',
+              // AI 回复用实色面而非长渐变：近似等亮度的长半透明渐变会被渲染器抖出色带，在缩放或高分屏下呈横向条纹
               isUser
                 ? 'w-full rounded-tr-[10px] border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] text-white md:w-fit'
-                : 'rounded-tl-[10px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.78))] text-slate-800 dark:border-slate-700/80 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.92),rgba(15,23,42,0.82))] dark:text-slate-200',
+                : 'rounded-tl-[10px] border border-slate-200/70 bg-white text-slate-800 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200',
               // 思考状态下，气泡宽度设为更宽以容纳骨架屏
               isThinking ? 'w-full max-w-[500px]' : ''
             )}

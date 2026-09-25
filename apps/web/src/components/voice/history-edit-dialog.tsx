@@ -36,7 +36,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
   const [titleError, setTitleError] = useState<string | null>(null);
   const [tagError, setTagError] = useState<string | null>(null);
 
-  // Initialize form when item changes
+  // 当记录变化时初始化表单数据
   useEffect(() => {
     if (item) {
       setTitle(item.title);
@@ -48,7 +48,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
     }
   }, [item]);
 
-  // Validate title
+  // 校验标题有效性
   const validateTitle = (value: string): boolean => {
     if (value.trim().length === 0) {
       setTitleError('标题不能为空');
@@ -62,18 +62,18 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
     return true;
   };
 
-  // Handle title change
+  // 处理标题输入变动
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setTitle(value);
     validateTitle(value);
   };
 
-  // Add tag
+  // 添加新标签
   const handleAddTag = () => {
     const trimmedTag = tagInput.trim();
 
-    // Validate tag
+    // 校验标签格式
     if (!trimmedTag) {
       setTagError('标签不能为空');
       return;
@@ -99,13 +99,13 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
     setTagError(null);
   };
 
-  // Remove tag
+  // 移除标签
   const handleRemoveTag = (tagToRemove: string) => {
     setTags(tags.filter((tag) => tag !== tagToRemove));
     setTagError(null);
   };
 
-  // Handle tag input key press
+  // 处理标签输入框键盘回车事件
   const handleTagInputKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -113,11 +113,11 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
     }
   };
 
-  // Handle save
+  // 处理保存修改
   const handleSave = async () => {
     if (!item) return;
 
-    // Validate title before saving
+    // 保存前二次校验标题
     if (!validateTitle(title)) {
       return;
     }
@@ -138,7 +138,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
     }
   };
 
-  // Handle cancel
+  // 处理取消操作并重置表单
   const handleCancel = () => {
     if (item) {
       setTitle(item.title);
@@ -166,7 +166,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Error Message */}
+          {/* 错误消息提示条 */}
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <div className="flex items-start gap-2">
@@ -188,7 +188,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
             </div>
           )}
 
-          {/* Title Input */}
+          {/* 标题输入区域 */}
           <div className="space-y-2">
             <Label htmlFor="title">
               标题 <span className="text-red-500">*</span>
@@ -219,7 +219,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
             </div>
           </div>
 
-          {/* Tags Section */}
+          {/* 标签管理区域 */}
           <div className="space-y-2">
             <Label htmlFor="tag-input">标签</Label>
             <div className="flex gap-2">
@@ -249,7 +249,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
               按 Enter 键快速添加标签 ({tags.length}/{MAX_TAGS})
             </p>
 
-            {/* Tags Display */}
+            {/* 已添加标签徽标列表 */}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 {tags.map((tag) => (
@@ -285,7 +285,7 @@ export function HistoryEditDialog({ item, open, onOpenChange, onSave }: HistoryE
             )}
           </div>
 
-          {/* File Info (Read-only) */}
+          {/* 音频文件信息展示（只读） */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-1">
             <p className="text-xs text-slate-500 dark:text-slate-400">文件信息</p>
             <p

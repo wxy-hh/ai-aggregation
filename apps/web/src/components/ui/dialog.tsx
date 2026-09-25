@@ -30,7 +30,7 @@ const DialogOverlay = React.forwardRef<
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const dialogCenterMotionClass =
-  'duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]';
+  'duration-fast ease-out-expo data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]';
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
@@ -72,9 +72,9 @@ const DialogContent = React.forwardRef<
       {showClose && (
         <DialogPrimitive.Close
           aria-label="关闭"
-          className="absolute right-4 top-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-all duration-300 hover:scale-110 active:scale-95 group focus:outline-none disabled:pointer-events-none"
+          className="absolute right-4 top-4 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100/50 dark:hover:bg-slate-700/50 transition-[color,background-color,transform] duration-fast ease-out-expo hover:scale-105 active:scale-95 group focus:outline-none disabled:pointer-events-none"
         >
-          <X className="h-5 w-5 transition-transform duration-500 group-hover:rotate-90" />
+          <X className="h-5 w-5 transition-transform duration-fast ease-out-expo group-hover:rotate-90" />
           {/* 读屏文案用中文：项目要求用户可见文本全中文，别让 Radix 的默认英文 "Close" 漏给读屏用户 */}
           <span className="sr-only">关闭</span>
         </DialogPrimitive.Close>

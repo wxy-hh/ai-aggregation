@@ -68,11 +68,11 @@ export function DestinyHistoryCard({ item, onDelete }: DestinyHistoryCardProps) 
   return (
     <div
       onClick={handleClick}
-      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-all cursor-pointer group flex flex-col relative"
+      className="bg-white dark:bg-slate-800 rounded-2xl p-4 sm:p-6 border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-900 transition-[border-color,box-shadow,background-color,transform] duration-200 ease-out active:scale-[0.99] cursor-pointer group flex flex-col relative"
     >
       <button
         onClick={handleDelete}
-        className="absolute top-4 right-4 p-1.5 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
+        className="absolute top-4 right-4 p-1.5 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-[color,background-color,opacity,transform] duration-150 ease-out active:scale-90 opacity-100 md:opacity-0 md:group-hover:opacity-100"
         title="删除"
       >
         <Trash2 className="w-4 h-4" />

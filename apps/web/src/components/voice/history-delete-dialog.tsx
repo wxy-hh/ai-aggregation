@@ -72,7 +72,7 @@ export function HistoryDeleteDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Error Message */}
+          {/* 错误消息提示条 */}
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <div className="flex items-start gap-2">
@@ -94,7 +94,7 @@ export function HistoryDeleteDialog({
             </div>
           )}
 
-          {/* Warning Message */}
+          {/* 危险不可逆操作警示条 */}
           <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
             <div className="flex gap-3">
               <svg
@@ -121,7 +121,7 @@ export function HistoryDeleteDialog({
             </div>
           </div>
 
-          {/* Items to Delete */}
+          {/* 待删除项目清单预览 */}
           <div className="max-h-[200px] overflow-y-auto space-y-2 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg custom-scrollbar">
             {items.map((item) => (
               <div

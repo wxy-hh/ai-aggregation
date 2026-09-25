@@ -59,7 +59,7 @@ export function DestinyNavProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
-      // ignore
+      // 忽略存储读取异常
     }
   }, []);
 
