@@ -824,6 +824,86 @@ export async function reconcilePendingQuotas(limit = 100): Promise<{
   return { scanned: reservations.length, settled, pending: reservations.length - settled };
 }
 
+/**
+ * 超时释放无可审计用量的待补账预留：流终局无 usage 的存量与崩溃恢复产生的 pending，
+ * 等待 24h 仍无真实用量到达即整额释放退还（无法审计就不收费，崩溃不是用户的错）。
+ * 语音真实秒数回调通常分钟级到达，24h 窗口不会误伤。
+ */
+export async function releaseStaleBillingPendingReservations(
+  now = new Date(),
+  staleMs = 24 * 60 * 60 * 1000
+): Promise<number> {
+  const staleBefore = new Date(now.getTime() - staleMs);
+  const reservations = await prisma.quotaReservation.findMany({
+    where: {
+      status: 'billing_pending',
+      updatedAt: { lt: staleBefore },
+    },
+    include: {
+      aiUsageRecord: { select: { billableUnits: true, totalTokens: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  let releasedCount = 0;
+  for (const item of reservations) {
+    const usage = item.aiUsageRecord;
+    const actualUnits = usage?.billableUnits ?? usage?.totalTokens;
+    if (actualUnits !== null && actualUnits !== undefined && actualUnits >= 0) {
+      continue;
+    }
+
+    const released = await prisma.$transaction(async (tx) => {
+      const reservation = await tx.quotaReservation.findUnique({
+        where: { id: item.id },
+      });
+      if (
+        !reservation ||
+        reservation.status !== 'billing_pending' ||
+        reservation.updatedAt >= staleBefore
+      ) {
+        return false;
+      }
+
+      const updated = await tx.quotaReservation.updateMany({
+        where: { id: reservation.id, status: 'billing_pending' },
+        data: { status: 'released', executionState: 'completed' },
+      });
+      if (updated.count === 0) return false;
+
+      const account = await tx.quotaAccount.update({
+        where: { userId: reservation.userId },
+        data: {
+          reservedUnits: { decrement: reservation.estimatedUnits },
+          availableUnits: { increment: reservation.estimatedUnits },
+        },
+      });
+
+      await appendLedgerEntry(tx, {
+        userId: reservation.userId,
+        reservationId: reservation.id,
+        requestId: `${reservation.requestId}:release`,
+        eventType: 'release',
+        units: reservation.estimatedUnits,
+        meterType: getMeterType(reservation.meterType),
+        feature: reservation.feature,
+        provider: reservation.provider,
+        model: reservation.model,
+        reason: '待补账超时未获可审计用量，整额释放退还',
+      });
+
+      await syncQuotaSnapshot(tx, reservation.userId, account.availableUnits);
+      return true;
+    });
+
+    if (released) {
+      releasedCount += 1;
+    }
+  }
+
+  return releasedCount;
+}
+
 /** 读取统一额度账户的可用额度；额度账户缺失时视为不可消费。 */
 export async function getAvailableQuota(userId: string): Promise<number> {
   const account = await prisma.quotaAccount.findUnique({

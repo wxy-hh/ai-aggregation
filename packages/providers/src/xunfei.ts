@@ -174,33 +174,38 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
         const jsonStr = trimmedLine.slice(5).trim();
         if (jsonStr === '[DONE]') continue;
 
+        let data: XunfeiStreamResponse;
         try {
-          const data: XunfeiStreamResponse = JSON.parse(jsonStr);
-          if (data.code !== 0) {
-            throw new Error(`Xunfei stream error: ${data.code} - ${data.message}`);
-          }
-
-          if (data.usage) {
-            options.onUsage?.({
-              promptTokens: data.usage.prompt_tokens,
-              completionTokens: data.usage.completion_tokens,
-              totalTokens: data.usage.total_tokens,
-            });
-          }
-
-          const content = data.choices[0]?.delta?.content;
-
-          // 确保 content 是字符串类型
-          if (content && typeof content === 'string') {
-            yield content;
-          } else if (content) {
-            // 如果 content 不是字符串，尝试转换
-            console.warn('[Xunfei] 收到非字符串 content:', content);
-            yield String(content);
-          }
+          data = JSON.parse(jsonStr);
         } catch (parseError) {
-          // 忽略解析错误，继续处理下一行
+          // 仅真正的 JSON 解析失败才跳过本行
           console.warn('[Xunfei] 解析流式分片失败:', parseError);
+          continue;
+        }
+
+        // 业务错误帧（code !== 0：内容审核拒绝、鉴权失败、限流等）必须抛出，
+        // 由下游适配器翻译为 SSE error 帧并走 partial/failed 结算，不得吞成静默截断
+        if (data.code !== 0) {
+          throw new Error(`讯飞服务返回错误（码 ${data.code}）：${data.message ?? '未知错误'}`);
+        }
+
+        if (data.usage) {
+          options.onUsage?.({
+            promptTokens: data.usage.prompt_tokens,
+            completionTokens: data.usage.completion_tokens,
+            totalTokens: data.usage.total_tokens,
+          });
+        }
+
+        const content = data.choices[0]?.delta?.content;
+
+        // 确保 content 是字符串类型
+        if (content && typeof content === 'string') {
+          yield content;
+        } else if (content) {
+          // 如果 content 不是字符串，尝试转换
+          console.warn('[Xunfei] 收到非字符串 content:', content);
+          yield String(content);
         }
       }
     }

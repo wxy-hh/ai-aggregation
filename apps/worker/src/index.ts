@@ -3,6 +3,7 @@ import {
   markExpiredProcessingQuotaReservationsPending,
   reconcilePendingQuotas,
   releaseExpiredQuotaReservations,
+  releaseStaleBillingPendingReservations,
 } from '@repo/db';
 import { getRedisConnectionSummary } from '@repo/shared/server';
 import { WorkerHeartbeatStore, getRedisClient, shutdownRedisClient } from '@repo/redis';
@@ -25,16 +26,27 @@ function getBillingReconcileIntervalMs(): number {
   return configured;
 }
 
-/** 定期释放未开始的预留，锁定执行超时的成本，并对已有真实 usage 的待补账记录执行重试。 */
+/** 定期释放未开始的预留，锁定执行超时的成本，重试有真实 usage 的待补账，并超时释放无可审计用量的待补账。 */
 async function reconcileBilling(): Promise<void> {
   try {
-    const [releasedReservations, processingReservations, pending] = await Promise.all([
+    const [releasedReservations, processingReservations, pending, staleReleased] = await Promise.all([
       releaseExpiredQuotaReservations(),
       markExpiredProcessingQuotaReservationsPending(),
       reconcilePendingQuotas(),
+      releaseStaleBillingPendingReservations(),
     ]);
-    if (releasedReservations > 0 || processingReservations > 0 || pending.settled > 0) {
-      logger.info('额度账本对账完成', { releasedReservations, processingReservations, pending });
+    if (
+      releasedReservations > 0 ||
+      processingReservations > 0 ||
+      pending.settled > 0 ||
+      staleReleased > 0
+    ) {
+      logger.info('额度账本对账完成', {
+        releasedReservations,
+        processingReservations,
+        pending,
+        staleReleased,
+      });
     }
     if (processingReservations > 0 || pending.pending > 0) {
       logger.warn('存在等待真实用量的额度记录，需要供应商回调或受保护对账接口完成补账', {
