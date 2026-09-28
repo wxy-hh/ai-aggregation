@@ -7,6 +7,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
+import { Square } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import type { Attachment, Message } from '@/stores/chat-store';
@@ -524,6 +525,13 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                     {message.truncationWarning && (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                         {message.truncationWarning}
+                      </div>
+                    )}
+                    {message.stopped && (
+                      // DESIGN.md §2.6：浅色次要文字用 day-muted（白底过 AA）；深色中性 slate 表面允许 slate-400
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
+                        <Square className="h-3 w-3" />
+                        <span>已停止 · 内容可能不完整</span>
                       </div>
                     )}
                   </>

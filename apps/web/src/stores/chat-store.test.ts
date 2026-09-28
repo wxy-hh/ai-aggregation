@@ -87,7 +87,7 @@ describe('useChatStore.sendMessage（评审 C4：编排语义）', () => {
     expect(isLoading).toBe(false);
   });
 
-  it('AbortError：返回 aborted，不设置 error，assistant 消息保留（用户中断语义）', async () => {
+  it('AbortError：返回 aborted，不设置 error，空内容的 assistant 消息被移除（空删有留）', async () => {
     const abortError = new Error('canceled');
     abortError.name = 'AbortError';
     mockedAuthFetch.mockRejectedValue(abortError);
@@ -97,7 +97,9 @@ describe('useChatStore.sendMessage（评审 C4：编排语义）', () => {
     expect(result).toBe('aborted');
     const { messages, error, isLoading } = useChatStore.getState();
     expect(error).toBeNull();
-    expect(messages).toHaveLength(2);
+    // 空内容中止：assistant 消息删除，仅保留用户消息
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe('user');
     expect(isLoading).toBe(false);
   });
 });

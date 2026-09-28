@@ -25,6 +25,7 @@ import {
   FileWarning,
   Paperclip,
   Send,
+  Square,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -43,6 +44,10 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 文件最大大小：5MB
 const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
 /** 输入框自动增高上限（px） */
 const TEXTAREA_MAX_HEIGHT = 120;
+// 主操作按钮（发送/停止）共享样式：蓝色渐变 CTA；
+// after 伪元素向外扩展 4px，将 36px 视觉尺寸的点击热区补齐到 44px（DESIGN.md §8.1 移动端主操作热区 ≥44）
+const CTA_BUTTON_CLASS =
+  "relative mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] after:absolute after:-inset-1 after:content-['']";
 
 // ============ 组件属性类型定义 ============
 interface ChatInputProps {
@@ -107,6 +112,7 @@ export function ChatInput({
   // attachment: 当前附件对象（图片或文件）
   // setAttachment: 设置附件的方法
   const { provider, attachment, setAttachment } = useChatStore();
+  const stop = useChatStore((s) => s.stop);
 
   // ============ 附件功能开关 ============
   // 只有豆包（doubao）模型支持附件功能
@@ -860,22 +866,33 @@ export function ChatInput({
           disabled={isLoading}
         />
 
-        <Button
-          type="button"
-          onClick={handleSend}
-          disabled={
-            (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
-          }
-          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
-          size="icon"
-          aria-label={isLoading ? '发送中' : '发送'}
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
+        {isLoading ? (
+          <Button
+            type="button"
+            onClick={stop}
+            className={CTA_BUTTON_CLASS}
+            size="icon"
+            aria-label="停止生成"
+          >
+            <Square className="h-4 w-4" fill="currentColor" />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={handleSend}
+            disabled={
+              (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
+            }
+            className={cn(
+              CTA_BUTTON_CLASS,
+              'disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700'
+            )}
+            size="icon"
+            aria-label="发送"
+          >
             <Send className="h-4 w-4" />
-          )}
-        </Button>
+          </Button>
+        )}
       </div>
 
       <input

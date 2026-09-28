@@ -29,6 +29,27 @@ function sseResponse(chunks: string[]): Response {
   });
 }
 
+/** 构造中途抛出 AbortError 的 SSE 流式 Response：首帧正常返回增量文本，随后流中断 */
+function abortedSseResponse(firstChunk: string): Response {
+  const encoder = new TextEncoder();
+  const abortError = new Error('canceled');
+  abortError.name = 'AbortError';
+  let readOnce = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (!readOnce) {
+        readOnce = true;
+        controller.enqueue(encoder.encode(firstChunk));
+      } else {
+        controller.error(abortError);
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+  });
+}
+
 function createDeps(messages: Message[]) {
   const deps: ChatStreamSessionDeps = {
     updateMessages: (updater) => {
@@ -110,7 +131,7 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
     });
   });
 
-  it('AbortError：返回 aborted，不设错误且保留 assistant（用户中断语义）', async () => {
+  it('AbortError 且内容为空：返回 aborted，assistant 空消息被移除，不设错误，同步会话列表', async () => {
     const abortError = new Error('canceled');
     abortError.name = 'AbortError';
     mockedAuthFetch.mockRejectedValue(abortError);
@@ -121,7 +142,46 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
 
     expect(result).toBe('aborted');
     expect(deps.setError).not.toHaveBeenCalled();
-    expect(messages.find((m) => m.id === assistantId)).toBeDefined();
+    expect(messages.find((m) => m.id === assistantId)).toBeUndefined();
+    expect(onUpdated).toHaveBeenCalledWith({
+      id: 'conv-1',
+      messages: [expect.objectContaining({ id: 'user-1' })],
+    });
+  });
+
+  it('AbortError 且已有部分内容：返回 aborted，消息保留并标记 isStreaming:false + stopped:true，不设错误，同步会话列表', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      abortedSseResponse('data: {"type":"text-delta","text":"部分回答"}\n\n')
+    );
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+
+    const result = await runChatStreamSession(deps, assistantId, requestBody());
+
+    expect(result).toBe('aborted');
+    expect(deps.setError).not.toHaveBeenCalled();
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant).toBeDefined();
+    expect(assistant?.content).toBe('部分回答');
+    expect(assistant?.isStreaming).toBe(false);
+    expect(assistant?.stopped).toBe(true);
+    expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
+  });
+
+  it('AbortError 且已被同步收尾：返回 aborted，幂等不重复 emit', async () => {
+    const abortError = new Error('canceled');
+    abortError.name = 'AbortError';
+    mockedAuthFetch.mockRejectedValue(abortError);
+    const messages: Message[] = [
+      { id: 'user-1', role: 'user', content: '你好' },
+      { id: assistantId, role: 'assistant', content: '已收尾内容', isStreaming: false, stopped: true },
+    ];
+    const deps = createDeps(messages);
+
+    const result = await runChatStreamSession(deps, assistantId, requestBody());
+
+    expect(result).toBe('aborted');
+    expect(deps.setError).not.toHaveBeenCalled();
     expect(onUpdated).not.toHaveBeenCalled();
   });
 });

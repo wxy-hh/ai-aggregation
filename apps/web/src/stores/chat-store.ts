@@ -37,7 +37,8 @@ export interface Message {
   id: string; // 消息唯一标识
   role: 'user' | 'assistant' | 'system'; // 消息角色：用户 | AI助手 | 系统
   content: string; // 消息文本内容
-  isStreaming?: boolean; // 是否正在流式传输（AI回复时为true）
+  isStreaming?: boolean; // 是否正在流式传输（AI回复时为 true）
+  stopped?: boolean; // 是否被用户/隐式中止（保留部分内容时标记）
   truncationWarning?: string; // 回答可能被截断时的提示
   // 附件列表（可选）
   attachments?: Attachment[];
@@ -84,12 +85,30 @@ export interface ChatStreamSessionDeps {
 export type ChatStreamOutcome = 'sent' | 'aborted' | 'failed';
 
 /**
+ * 中止收尾（空删有留）：有部分内容标记 stopped 保留，空内容移除。
+ * 与服务商计费语义同构（空退 failed / 有扣 partial）。
+ * match 由调用方给定：编排层按消息 id 匹配，store 层按「正在流式的 assistant 消息」匹配。
+ */
+function finalizeAbortedMessages(
+  messages: Message[],
+  match: (m: Message) => boolean
+): { next: Message[]; changed: boolean } {
+  const target = messages.find(match);
+  // 未找到或已被收尾（isStreaming 已为 false）时不重复处理
+  if (!target || !target.isStreaming) return { next: messages, changed: false };
+  const next = target.content
+    ? messages.map((m) => (m.id === target.id ? { ...m, isStreaming: false, stopped: true } : m))
+    : messages.filter((m) => m.id !== target.id);
+  return { next, changed: true };
+}
+
+/**
  * 单聊会话流统一编排（评审 C6：sendMessage / reload 共用，删除重复模板）。
  *
  * 职责：streamChatResponse（fetch → !ok 抛错 → SSE 消费）+ 完成/失败/中止的语义映射：
  * - chunk/warning → 更新 assistant 消息；
  * - 完成 → 移除 isStreaming 并同步到会话列表（emit CONVERSATION_UPDATED），回调 onDone；
- * - AbortError → 返回 aborted，不设错误、不清消息（用户中断语义）；
+ * - AbortError → 返回 aborted，不设错误、按空删有留原则收尾并同步会话（若未被调用方收尾）；
  * - 其他失败 → 设错误并移除空的 assistant 消息。
  * 调用方只负责：deps 注入、请求体构造、前置校验与历史保存钩子。
  */
@@ -124,8 +143,21 @@ export async function runChatStreamSession(
     onDone?.(finalMessages);
     return 'sent';
   } catch (err) {
-    // 用户主动取消不算错误，也不清空已保留的 assistant 消息
-    if (err instanceof Error && err.name === 'AbortError') return 'aborted';
+    // 用户主动取消不算错误：按空删有留收尾并同步会话（已被调用方同步收尾时幂等跳过）
+    if (err instanceof Error && err.name === 'AbortError') {
+      let result = { next: [] as Message[], changed: false };
+      deps.updateMessages((messages) => {
+        result = finalizeAbortedMessages(messages, (m) => m.id === assistantId);
+        return result.next;
+      });
+      if (result.changed) {
+        const conversationId = deps.activeConversationId();
+        if (conversationId) {
+          emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: result.next });
+        }
+      }
+      return 'aborted';
+    }
 
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
     // 移除失败的 assistant 消息（没有成功生成）
@@ -155,6 +187,20 @@ export const useChatStore = create<ChatState>((set, get) => {
     setError: (error) => set({ error }),
     activeConversationId: () => get().activeConversationId,
   });
+
+  // 中止前同步收尾当前流式消息：有部分内容标记 stopped 并同步会话列表落盘，空内容删除
+  const finalizeStreamingMessage = () => {
+    const { messages, activeConversationId } = get();
+    const { next, changed } = finalizeAbortedMessages(
+      messages,
+      (m) => m.isStreaming === true && m.role === 'assistant'
+    );
+    if (!changed) return;
+    set({ messages: next });
+    if (activeConversationId) {
+      emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: next });
+    }
+  };
 
   return {
     // ========== 初始状态 ==========
@@ -193,15 +239,28 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 用于从对话列表切换到某个历史对话
     loadConversation: (id, messages, provider, model) => {
       // 停止之前的AI生成（如果有）
+      finalizeStreamingMessage();
       if (abortController) {
         abortController.abort();
         abortController = null;
       }
 
+      // 清洗历史消息：处理持久化数据中残留的流式消息（有内容标记 stopped，无内容直接过滤）
+      const sanitizedMessages = messages
+        .filter((m) => !(m.isStreaming && !m.content))
+        .map((m) => (m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m));
+      // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
+      const sanitizedChanged =
+        sanitizedMessages.length !== messages.length ||
+        sanitizedMessages.some((m, i) => m !== messages[i]);
+      if (sanitizedChanged) {
+        emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages });
+      }
+
       // 更新状态
       set({
         activeConversationId: id, // 设置当前对话ID
-        messages, // 加载历史消息
+        messages: sanitizedMessages, // 加载清洗后的历史消息
         provider: provider as ProviderName, // 恢复之前使用的提供商
         model, // 恢复之前使用的模型
         input: '', // 清空输入框
@@ -214,6 +273,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 用于开始新对话
     reset: () => {
       // 停止之前的AI生成（如果有）
+      finalizeStreamingMessage();
       if (abortController) {
         abortController.abort();
         abortController = null;
@@ -233,6 +293,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 停止AI生成
     // 用于用户主动中断AI回复
     stop: () => {
+      // 中止前同步收尾当前流式消息
+      finalizeStreamingMessage();
       // 取消网络请求
       if (abortController) {
         abortController.abort();
@@ -244,7 +306,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 发送消息
     sendMessage: async (contentOverrides, derivation) => {
-      const { input, messages, provider, model, isLoading, activeConversationId, attachment } =
+      const { input, provider, model, isLoading, activeConversationId, attachment } =
         get();
       const content = contentOverrides || input;
 
@@ -263,11 +325,13 @@ export const useChatStore = create<ChatState>((set, get) => {
         return 'skipped';
       }
 
-      // 1. 中断之前的请求
+      // 1. 中断之前的请求（finalize 可能改动消息列表，其后必须重新读取最新快照）
+      finalizeStreamingMessage();
       if (abortController) {
         abortController.abort();
       }
       abortController = new AbortController();
+      const currentMessages = get().messages;
 
       // 2. 构造消息对象
       const userMessage: Message = {
@@ -286,7 +350,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       };
 
       // 3. 更新 UI 状态
-      const newMessages = [...messages, userMessage, assistantMessage];
+      const newMessages = [...currentMessages, userMessage, assistantMessage];
       set({
         messages: newMessages,
         input: '',
@@ -310,7 +374,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           {
             body: {
               // 发送历史消息 + 新用户消息
-              messages: [...messages, userMessage].map((m) => ({
+              messages: [...currentMessages, userMessage].map((m) => ({
                 role: m.role,
                 content: m.content,
                 attachments: m.attachments,
