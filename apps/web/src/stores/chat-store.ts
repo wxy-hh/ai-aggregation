@@ -77,6 +77,8 @@ export interface ChatState {
 
 /** runChatStreamSession 依赖注入：把消息/错误/会话 id 的读写交给调用方（store），编排本身不含 store 引用，可单点测试 */
 export interface ChatStreamSessionDeps {
+  /** 获取当前消息列表快照（只读，供流中节流落盘合成最新数据，不经 setState） */
+  getMessages: () => Message[];
   /** 用 updater 改消息列表，返回新列表（供完成/失败后同步到会话列表） */
   updateMessages: (updater: (messages: Message[]) => Message[]) => Message[];
   setError: (error: Error | null) => void;
@@ -84,6 +86,44 @@ export interface ChatStreamSessionDeps {
 }
 
 export type ChatStreamOutcome = 'sent' | 'aborted' | 'failed';
+
+export interface RunChatStreamSessionOptions {
+  /** 可注入的内容刷新调度器（默认为 requestAnimationFrame 包装，返回取消函数） */
+  scheduleFlush?: (cb: () => void) => () => void;
+}
+
+/**
+ * 默认内容刷新调度器（基于 requestAnimationFrame 包装）
+ * 当环境不支持 requestAnimationFrame 时回退到 setTimeout
+ */
+function defaultScheduleFlush(cb: () => void): () => void {
+  if (typeof requestAnimationFrame === 'function') {
+    const handle = requestAnimationFrame(cb);
+    return () => cancelAnimationFrame(handle);
+  }
+  const timer = setTimeout(cb, 0);
+  return () => clearTimeout(timer);
+}
+
+/** 单聊内容合帧刷新状态：assistantId -> { text, raf } */
+interface ContentFlushEntry {
+  text: string;
+  raf: (() => void) | null;
+}
+
+const contentFlushState = new Map<string, ContentFlushEntry>();
+
+/** 清理并取消某条消息的待刷新合帧，返回最后暂存的最新文本（若有） */
+function flushLatestContentAndClear(assistantId: string): string | undefined {
+  const entry = contentFlushState.get(assistantId);
+  if (!entry) return undefined;
+  if (entry.raf) {
+    entry.raf();
+    entry.raf = null;
+  }
+  contentFlushState.delete(assistantId);
+  return entry.text;
+}
 
 /**
  * 中止收尾（空删有留）：有部分内容标记 stopped 保留，空内容移除。
@@ -107,32 +147,62 @@ function finalizeAbortedMessages(
  * 单聊会话流统一编排（评审 C6：sendMessage / reload 共用，删除重复模板）。
  *
  * 职责：streamChatResponse（fetch → !ok 抛错 → SSE 消费）+ 完成/失败/中止的语义映射：
- * - chunk/warning → 更新 assistant 消息；
- * - 完成 → 移除 isStreaming 并同步到会话列表（emit CONVERSATION_UPDATED），回调 onDone；
- * - AbortError → 返回 aborted，不设错误、按空删有留原则收尾并同步会话（若未被调用方收尾）；
- * - 其他失败 → 设错误，按有留空删原则收尾并同步会话（有内容保留并标记 failed，空内容移除）。
+ * - chunk/warning → 更新 assistant 消息（rAF 合帧每帧最多一次 setState，后台停帧时 1s 节流落盘仍正常工作）；
+ * - 完成 → cancelAnimationFrame 并兜底 flush 最新文本，移除 isStreaming 并同步到会话列表，回调 onDone；
+ * - AbortError → cancelAnimationFrame 并兜底 flush 最新文本，返回 aborted，不设错误、按空删有留原则收尾并同步会话（若未被调用方收尾）；
+ * - 其他失败 → cancelAnimationFrame 并兜底 flush 最新文本，设错误，按有留空删原则收尾并同步会话（有内容保留并标记 failed，空内容移除）。
  * 调用方只负责：deps 注入、请求体构造、前置校验与历史保存钩子。
  */
 export async function runChatStreamSession(
   deps: ChatStreamSessionDeps,
   assistantId: string,
   request: StreamChatRequest,
-  onDone?: (finalMessages: Message[]) => void
+  onDone?: (finalMessages: Message[]) => void,
+  options?: RunChatStreamSessionOptions
 ): Promise<ChatStreamOutcome> {
+  const scheduleFlush = options?.scheduleFlush ?? defaultScheduleFlush;
+
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
   let lastPersistAt = 0;
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
-        const next = deps.updateMessages((messages) =>
-          messages.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
-        );
+        // 1. rAF 合帧：更新暂存最新文本并调度帧刷新，每帧最多触发一次 setState
+        let entry = contentFlushState.get(assistantId);
+        if (!entry) {
+          entry = { text, raf: null };
+          contentFlushState.set(assistantId, entry);
+        }
+        entry.text = text;
+
+        if (!entry.raf) {
+          let executed = false;
+          const cancelFn = scheduleFlush(() => {
+            executed = true;
+            const current = contentFlushState.get(assistantId);
+            if (!current) return;
+            current.raf = null;
+            deps.updateMessages((messages) =>
+              messages.map((m) => (m.id === assistantId ? { ...m, content: current.text } : m))
+            );
+          });
+          if (!executed && contentFlushState.has(assistantId)) {
+            entry.raf = cancelFn;
+          }
+        }
+
+        // 2. 渲染与落盘分离：1s 节流落盘留在 onChunk 同步路径（后台停帧时不受影响）
+        // 基于 deps.getMessages 快照构造新消息列表并 emit，不经过 setState
         const now = Date.now();
         if (now - lastPersistAt >= 1000) {
           lastPersistAt = now;
           const conversationId = deps.activeConversationId();
           if (conversationId) {
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+            const currentMessages = deps.getMessages();
+            const persistedMessages = currentMessages.map((m) =>
+              m.id === assistantId ? { ...m, content: text } : m
+            );
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: persistedMessages });
           }
         }
       },
@@ -143,9 +213,17 @@ export async function runChatStreamSession(
       },
     });
 
-    // 完成：移除 isStreaming 标记，同步到对话列表
+    // 完成：先 cancelAnimationFrame 并用最新文本兜底 flush（合并写入最新 content，移除 isStreaming 标记）
+    const latestText = flushLatestContentAndClear(assistantId);
     const finalMessages = deps.updateMessages((messages) =>
-      messages.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
+      messages.map((m) => {
+        if (m.id !== assistantId) return m;
+        return {
+          ...m,
+          ...(latestText !== undefined ? { content: latestText } : {}),
+          isStreaming: false,
+        };
+      })
     );
     const conversationId = deps.activeConversationId();
     if (conversationId) {
@@ -154,6 +232,15 @@ export async function runChatStreamSession(
     onDone?.(finalMessages);
     return 'sent';
   } catch (err) {
+    // 中止/失败收尾前必须 cancelAnimationFrame 并用最新文本兜底 flush
+    // 现有「中止/失败」的「空删有留」判断基于 store 里的 content 判空，兜底 flush 必须先于它们执行
+    const latestText = flushLatestContentAndClear(assistantId);
+    if (latestText !== undefined) {
+      deps.updateMessages((messages) =>
+        messages.map((m) => (m.id === assistantId ? { ...m, content: latestText } : m))
+      );
+    }
+
     // 用户主动取消不算错误：按空删有留收尾并同步会话（已被调用方同步收尾时幂等跳过）
     if (err instanceof Error && err.name === 'AbortError') {
       let result = { next: [] as Message[], changed: false };
@@ -187,6 +274,9 @@ export async function runChatStreamSession(
       emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: filtered });
     }
     return 'failed';
+  } finally {
+    // 最终防御：确保清理模块级 Map 条目，防止内存泄漏
+    flushLatestContentAndClear(assistantId);
   }
 }
 
@@ -199,6 +289,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
   // 统一会话编排的依赖注入（评审 C6）：把消息/错误/当前会话 id 的读写交给 store
   const sessionDeps = (): ChatStreamSessionDeps => ({
+    getMessages: () => get().messages,
     updateMessages: (updater) => {
       const next = updater(get().messages);
       set({ messages: next });
@@ -211,6 +302,16 @@ export const useChatStore = create<ChatState>((set, get) => {
   // 中止前同步收尾当前流式消息：有部分内容标记 stopped 并同步会话列表落盘，空内容删除
   const finalizeStreamingMessage = () => {
     const { messages, activeConversationId } = get();
+    const streamingAssistant = messages.find(
+      (m) => m.isStreaming === true && m.role === 'assistant'
+    );
+    if (streamingAssistant) {
+      // 若存在未 flush 的最新文本，先取消调度并同步最新文本
+      const latestText = flushLatestContentAndClear(streamingAssistant.id);
+      if (latestText !== undefined) {
+        streamingAssistant.content = latestText;
+      }
+    }
     const { next, changed } = finalizeAbortedMessages(
       messages,
       (m) => m.isStreaming === true && m.role === 'assistant'

@@ -71,6 +71,7 @@ function failingSseResponse(firstChunk: string, error = new Error('upstream brok
 
 function createDeps(messages: Message[]) {
   const deps: ChatStreamSessionDeps = {
+    getMessages: () => [...messages],
     updateMessages: (updater) => {
       const next = updater(messages);
       messages.splice(0, messages.length, ...next);
@@ -269,4 +270,230 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
       vi.useRealTimers();
     }
   });
+
+  it('rAF 合帧：同帧多个 onChunk 不重复触发 set，调度器执行前 store 不更新，flush 后为最新', async () => {
+    let scheduledCallback: (() => void) | null = null;
+    const manualScheduler = (cb: () => void) => {
+      scheduledCallback = cb;
+      return () => {
+        scheduledCallback = null;
+      };
+    };
+
+    let sendChunk1: () => void;
+    let sendChunk2: () => void;
+    let closeStream: () => void;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        sendChunk1 = () => {
+          controller.enqueue(encoder.encode('data: {"type":"text-delta","text":"第一段"}\n\n'));
+        };
+        sendChunk2 = () => {
+          controller.enqueue(encoder.encode('data: {"type":"text-delta","text":"第二段"}\n\n'));
+        };
+        closeStream = () => {
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        };
+      },
+    });
+
+    mockedAuthFetch.mockResolvedValue(
+      new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+      })
+    );
+
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+    const updateSpy = vi.spyOn(deps, 'updateMessages');
+
+    const sessionPromise = runChatStreamSession(
+      deps,
+      assistantId,
+      requestBody(),
+      undefined,
+      { scheduleFlush: manualScheduler }
+    );
+
+    // 发送第一个 chunk
+    sendChunk1!();
+    await vi.waitFor(() => expect(scheduledCallback).not.toBeNull());
+
+    // 同帧发送第二个 chunk
+    sendChunk2!();
+    // 等待微任务让 reader 消费第二个 chunk
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 调度器回调执行前，store 消息未更新（updateMessages 尚未被调用）
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant?.content).toBe('');
+    expect(updateSpy).toHaveBeenCalledTimes(0);
+
+    // 手动 flush 一次
+    scheduledCallback!();
+
+    // 手动 flush 后仅触发一次 updateMessages，内容为最新
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const updatedAssistant = messages.find((m) => m.id === assistantId);
+    expect(updatedAssistant?.content).toBe('第一段第二段');
+
+    // 关闭流并完成
+    closeStream!();
+    const result = await sessionPromise;
+    expect(result).toBe('sent');
+  });
+
+  it('完成时兜底 flush：最后一个 chunk 到达后未手动 flush 直接完成，最终 content 完整且 isStreaming:false', async () => {
+    let scheduledCallback: (() => void) | null = null;
+    const manualScheduler = (cb: () => void) => {
+      scheduledCallback = cb;
+      return () => {
+        scheduledCallback = null;
+      };
+    };
+
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"第一段"}\n\n',
+        'data: {"type":"text-delta","text":"最后一帧未flush的内容"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+    const onDone = vi.fn();
+
+    // 这里完全不调用 scheduledCallback，模拟流结束时最后一帧仍在 rAF 队列中
+    const result = await runChatStreamSession(
+      deps,
+      assistantId,
+      requestBody(),
+      onDone,
+      { scheduleFlush: manualScheduler }
+    );
+
+    expect(result).toBe('sent');
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant?.content).toBe('第一段最后一帧未flush的内容');
+    expect(assistant?.isStreaming).toBe(false);
+    expect(onDone).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: assistantId,
+          content: '第一段最后一帧未flush的内容',
+          isStreaming: false,
+        }),
+      ])
+    );
+    expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
+  });
+
+  it('中止时兜底 flush：最后一个 chunk 未手动 flush 直接发生 AbortError，保留完整内容并标记 stopped:true', async () => {
+    let scheduledCallback: (() => void) | null = null;
+    const manualScheduler = (cb: () => void) => {
+      scheduledCallback = cb;
+      return () => {
+        scheduledCallback = null;
+      };
+    };
+
+    mockedAuthFetch.mockResolvedValue(
+      abortedSseResponse('data: {"type":"text-delta","text":"尾部未flush的部分内容"}\n\n')
+    );
+
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+
+    // 不调用 scheduledCallback，模拟中止前 rAF 尚未执行
+    const result = await runChatStreamSession(
+      deps,
+      assistantId,
+      requestBody(),
+      undefined,
+      { scheduleFlush: manualScheduler }
+    );
+
+    expect(result).toBe('aborted');
+    expect(deps.setError).not.toHaveBeenCalled();
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant).toBeDefined();
+    expect(assistant?.content).toBe('尾部未flush的部分内容');
+    expect(assistant?.isStreaming).toBe(false);
+    expect(assistant?.stopped).toBe(true);
+    expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
+  });
+
+  it('渲染与落盘分离：后台停帧（调度器不执行）时，1s 节流落盘仍在 onChunk 同步路径生效且包含最新内容', async () => {
+    vi.useFakeTimers();
+    try {
+      // 调度器完全不执行任何 flush，模拟标签页切到后台 rAF 挂起
+      const noopScheduler = () => () => {};
+
+      let sendFirstChunk: () => void;
+      let sendSecondChunk: () => void;
+      let completeStream: () => void;
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          sendFirstChunk = () => {
+            controller.enqueue(encoder.encode('data: {"type":"text-delta","text":"第一段"}\n\n'));
+          };
+          sendSecondChunk = () => {
+            controller.enqueue(encoder.encode('data: {"type":"text-delta","text":"第二段最新"}\n\n'));
+          };
+          completeStream = () => {
+            controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+            controller.close();
+          };
+        },
+      });
+
+      mockedAuthFetch.mockResolvedValue(
+        new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        })
+      );
+
+      const messages = makeMessages();
+      const deps = createDeps(messages);
+
+      const sessionPromise = runChatStreamSession(
+        deps,
+        assistantId,
+        requestBody(),
+        undefined,
+        { scheduleFlush: noopScheduler }
+      );
+
+      // 发送第 1 个 chunk
+      sendFirstChunk!();
+      await vi.advanceTimersByTimeAsync(10);
+
+      // 时间前进 2000ms（超过 1s 节流阈值）
+      vi.setSystemTime(Date.now() + 2000);
+
+      // 发送第 2 个 chunk
+      sendSecondChunk!();
+      await vi.advanceTimersByTimeAsync(10);
+
+      // 验证：尽管调度器从未执行 flush，onUpdated 已经同步收到了第 2 个 chunk 的落盘同步
+      const persistCalls = (onUpdated as any).mock.calls;
+      expect(persistCalls.length).toBeGreaterThanOrEqual(1);
+      const lastCallPayload = persistCalls[persistCalls.length - 1][0];
+      expect(lastCallPayload.id).toBe('conv-1');
+      const persistedAssistant = lastCallPayload.messages.find((m: Message) => m.id === assistantId);
+      expect(persistedAssistant?.content).toBe('第一段第二段最新');
+
+      completeStream!();
+      await sessionPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+

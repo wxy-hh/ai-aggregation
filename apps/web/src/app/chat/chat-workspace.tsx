@@ -17,6 +17,7 @@ import { ReferenceBar } from '@/components/relay/reference-bar';
 import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
 import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
+import { isNearBottom } from '@/lib/utils/scroll';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -28,7 +29,6 @@ import {
 import {
   useChatStore, // 当前单聊消息管理 Store（管理当前单聊的消息、发送与流式状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
-  type Message, // 消息类型定义
 } from '@/stores/chat-store';
 
 // 对比模式类型（'single' | 'compare'）
@@ -156,6 +156,14 @@ export default function ChatWorkspace() {
   // 用于实现自动滚动到最新消息的功能
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 跟踪滚动容器当前是否处于底部（吸底判断，使用 ref 避免触发组件重新渲染）
+  const isAtBottomRef = useRef(true);
+
+  // 滚动容器滚动事件：监听用户是否处于底部（距离底部 <= 80px 视为在底部）
+  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    isAtBottomRef.current = isNearBottom(e.currentTarget);
+  }, []);
 
   // 指向模型选择器的 DOM 元素
   // 用于检测点击外部区域时关闭下拉列表
@@ -369,12 +377,22 @@ export default function ChatWorkspace() {
     };
   }, [showModelSelector]);
 
+  // 切换会话时重置吸底状态：加载历史会话应定位到最新消息
+  // 声明顺序必须先于下方的自动滚动 effect，保证同一渲染周期内先重置再滚动
+  useEffect(() => {
+    isAtBottomRef.current = true;
+  }, [activeConversationId]);
+
   // ============ 自动滚动到最新消息 ============
-  // 在消息列表容器内滚动，避免误滚到外层布局
+  // 在消息列表容器内滚动，避免误滚到外层布局；仅在吸底状态下执行
+  // 流式期间使用 auto（即时滚动）避免每个 chunk 反复重启 smooth 平滑动画
   useEffect(() => {
     const scrollEl = messagesScrollRef.current;
-    if (!scrollEl) return;
-    scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+    if (!scrollEl || !isAtBottomRef.current) return;
+    scrollEl.scrollTo({
+      top: scrollEl.scrollHeight,
+      behavior: isLoading ? 'auto' : 'smooth',
+    });
   }, [messages, isLoading]);
 
   // 生成失败的全局错误提示（error 此前被订阅但从未渲染，失败时用户无感知）
@@ -383,24 +401,20 @@ export default function ChatWorkspace() {
   }, [error]);
 
   // ============ 消息展示处理 ============
-  // 为每条消息添加流式输出状态标记
-  // 流式输出：AI 的回复是逐字显示的，而不是一次性显示完整内容
-  const displayMessages: Message[] = messages.map((msg) => ({
-    ...msg, // 保留消息的所有原有属性
-    // 判断是否正在流式输出：
-    // 1. 如果消息本身有 isStreaming 标记，使用它
-    // 2. 否则，如果当前正在加载 && 是 AI 消息 && 是最后一条消息，则标记为流式输出
-    isStreaming:
-      msg.isStreaming ??
-      (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
-  }));
-  const isEmptyChat = displayMessages.length === 0;
+  const isEmptyChat = messages.length === 0;
 
   // ============ 发送消息处理函数 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
   // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
     async (content: string) => {
+      // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
+      isAtBottomRef.current = true;
+      const scrollEl = messagesScrollRef.current;
+      if (scrollEl) {
+        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+      }
+
       // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
       const derivation = relay.prepareExecution();
 
@@ -826,6 +840,7 @@ export default function ChatWorkspace() {
                   {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
                   <div
                     ref={messagesScrollRef}
+                    onScroll={handleMessagesScroll}
                     className={cn(
                       'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
                       isEmptyChat
@@ -896,7 +911,7 @@ export default function ChatWorkspace() {
                       </div>
                     ) : (
                       <div className="flex w-full flex-col pt-2 pb-4">
-                        {displayMessages.map((msg) => (
+                        {messages.map((msg) => (
                           <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
                         ))}
                         <div ref={messagesEndRef} />
