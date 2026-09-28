@@ -149,6 +149,32 @@ describe('consumeChatResponse', () => {
     await expect(consumeChatResponse(res, onChunk)).resolves.toBeUndefined();
     expect(onChunk).not.toHaveBeenCalled();
   });
+
+  it('data: 帧之间夹 : ping 注释行时，解析结果与无注释行一致', async () => {
+    const resWithPing = sseResponse([
+      ': ping\n\n',
+      'data: {"type":"text-delta","text":"你好"}\n\n',
+      ': ping\n\n',
+      'data: {"type":"text-delta","text":"世界"}\n\n',
+      ': ping\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunkWithPing = vi.fn();
+
+    await expect(consumeChatResponse(resWithPing, onChunkWithPing)).resolves.toBeUndefined();
+    expect(onChunkWithPing).toHaveBeenCalledTimes(2);
+    expect(onChunkWithPing.mock.calls.map((c) => c[0])).toEqual(['你好', '世界']);
+
+    // 对照组：无注释行
+    const resWithoutPing = sseResponse([
+      'data: {"type":"text-delta","text":"你好"}\n\n',
+      'data: {"type":"text-delta","text":"世界"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunkWithoutPing = vi.fn();
+    await expect(consumeChatResponse(resWithoutPing, onChunkWithoutPing)).resolves.toBeUndefined();
+    expect(onChunkWithPing.mock.calls).toEqual(onChunkWithoutPing.mock.calls);
+  });
 });
 
 describe('ChatStreamEvent 契约（@repo/shared）', () => {
