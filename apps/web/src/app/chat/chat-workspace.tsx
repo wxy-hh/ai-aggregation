@@ -911,9 +911,25 @@ export default function ChatWorkspace() {
                       </div>
                     ) : (
                       <div className="flex w-full flex-col pt-2 pb-4">
-                        {messages.map((msg) => (
-                          <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
-                        ))}
+                        {messages.map((msg, i) => {
+                          // 「重新生成」仅挂在最后一条 AI 消息上：线性会话只允许重生成最后一轮（防中间轮截断丢消息）
+                          const isLastAssistant =
+                            msg.role === 'assistant' && i === messages.length - 1;
+                          const prevUser = isLastAssistant
+                            ? [...messages.slice(0, i)].reverse().find((m) => m.role === 'user')
+                            : undefined;
+                          return (
+                            <MessageItem
+                              key={msg.id}
+                              message={msg}
+                              onRegenerate={
+                                isLastAssistant && prevUser
+                                  ? () => void reload(prevUser.id)
+                                  : undefined
+                              }
+                            />
+                          );
+                        })}
                         <div ref={messagesEndRef} />
                       </div>
                     )}

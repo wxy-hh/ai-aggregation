@@ -174,8 +174,8 @@ const ActionButtons = memo(function ActionButtons({
         )}
       </button>
 
-      {/* 重新生成按钮 */}
-      {onRegenerate && (
+      {/* 重新生成按钮 - 仅对 AI 消息显示 */}
+      {!isUser && onRegenerate && (
         <button
           onClick={onRegenerate}
           className="rounded-full border border-transparent p-2 text-slate-400 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300"

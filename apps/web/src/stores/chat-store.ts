@@ -548,25 +548,26 @@ export const useChatStore = create<ChatState>((set, get) => {
       const { messages, isLoading, provider, model, activeConversationId } = get();
       if (isLoading) return;
 
-      // 确定上下文和内容
-      let history: Message[] = [];
-      let content = '';
+      // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
+      let lastUserIndex = messages.length - 1;
+      while (lastUserIndex >= 0 && messages[lastUserIndex].role !== 'user') lastUserIndex--;
+      if (lastUserIndex === -1) return;
 
+      let index = lastUserIndex;
       if (msgId) {
-        const index = messages.findIndex((m) => m.id === msgId);
-        if (index === -1 || messages[index].role !== 'user') return;
-        history = messages.slice(0, index);
-        content = messages[index].content;
-      } else {
-        // 重新生成最后一次
-        let index = messages.length - 1;
-        while (index >= 0 && messages[index].role !== 'user') {
-          index--;
+        const found = messages.findIndex((m) => m.id === msgId);
+        if (found === -1 || messages[found].role !== 'user') return;
+        // 线性会话无分支模型：仅允许重新生成最后一轮；
+        // 中间轮重生成会静默丢弃后续消息（数据丢失缺陷修复）
+        if (found !== lastUserIndex) {
+          console.warn('[chat] 仅支持重新生成最后一轮回答，已忽略对历史轮次的请求');
+          return;
         }
-        if (index === -1) return;
-        history = messages.slice(0, index);
-        content = messages[index].content;
+        index = found;
       }
+
+      const history = messages.slice(0, index);
+      const content = messages[index].content;
 
       // 中断
       if (abortController) abortController.abort();

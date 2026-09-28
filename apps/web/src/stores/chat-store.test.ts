@@ -136,11 +136,81 @@ describe('useChatStore.sendMessage（评审 C4：编排语义）', () => {
     expect(isLoading).toBe(false);
     expect(mockedCheckAndWarnLowBalance).not.toHaveBeenCalled();
   });
+});
 
-  it('reload 成功：触发 checkAndWarnLowBalance 预警检查', async () => {
+describe('useChatStore.reload（重新生成守卫与行为）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    mockedCheckAndWarnLowBalance.mockReset();
+    resetState();
+  });
+
+  it('对非最后一轮的 user 消息调用 reload(msgId) → 状态不变、不发请求、console.warn 一次', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const initialMessages = [
+      { id: 'user-1', role: 'user' as const, content: '第 1 轮提问' },
+      { id: 'assistant-1', role: 'assistant' as const, content: '第 1 轮回答' },
+      { id: 'user-2', role: 'user' as const, content: '第 2 轮提问' },
+      { id: 'assistant-2', role: 'assistant' as const, content: '第 2 轮回答' },
+    ];
+    useChatStore.setState({
+      activeConversationId: 'conv-multi-round',
+      messages: initialMessages,
+    });
+
+    await useChatStore.getState().reload('user-1');
+
+    expect(mockedAuthFetch).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[chat] 仅支持重新生成最后一轮回答，已忽略对历史轮次的请求'
+    );
+    const { messages, isLoading, error } = useChatStore.getState();
+    expect(messages).toEqual(initialMessages);
+    expect(isLoading).toBe(false);
+    expect(error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it('对最后一轮 user 消息 reload(msgId) → 正常截掉旧回答重新请求', async () => {
     mockedAuthFetch.mockResolvedValue(
       sseResponse([
-        'data: {"type":"text-delta","text":"重新生成"}\n\n',
+        'data: {"type":"text-delta","text":"新第 2 轮回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    useChatStore.setState({
+      activeConversationId: 'conv-multi-round',
+      messages: [
+        { id: 'user-1', role: 'user', content: '第 1 轮提问' },
+        { id: 'assistant-1', role: 'assistant', content: '第 1 轮回答' },
+        { id: 'user-2', role: 'user', content: '第 2 轮提问' },
+        { id: 'assistant-2', role: 'assistant', content: '第 2 轮旧回答' },
+      ],
+    });
+
+    await useChatStore.getState().reload('user-2');
+
+    expect(mockedAuthFetch).toHaveBeenCalledTimes(1);
+    const { messages, isLoading, error } = useChatStore.getState();
+    expect(messages).toHaveLength(4);
+    expect(messages[0]).toMatchObject({ id: 'user-1', content: '第 1 轮提问' });
+    expect(messages[1]).toMatchObject({ id: 'assistant-1', content: '第 1 轮回答' });
+    expect(messages[2].role).toBe('user');
+    expect(messages[2].content).toBe('第 2 轮提问');
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
+      content: '新第 2 轮回答',
+      isStreaming: false,
+    });
+    expect(isLoading).toBe(false);
+    expect(error).toBeNull();
+  });
+
+  it('无参 reload() → 正常重新生成最后一轮并触发预警检查', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"重新生成成功"}\n\n',
         'data: {"type":"done"}\n\n',
       ])
     );
@@ -154,6 +224,28 @@ describe('useChatStore.sendMessage（评审 C4：编排语义）', () => {
 
     await useChatStore.getState().reload();
 
+    expect(mockedAuthFetch).toHaveBeenCalledTimes(1);
     expect(mockedCheckAndWarnLowBalance).toHaveBeenCalledWith('conv-reload');
+    const { messages } = useChatStore.getState();
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '重新生成成功',
+      isStreaming: false,
+    });
+  });
+
+  it('无效调用：不存在的 msgId 或非 user 消息不触发请求且状态保持不变', async () => {
+    const initialMessages = [
+      { id: 'user-1', role: 'user' as const, content: '问题' },
+      { id: 'assistant-1', role: 'assistant' as const, content: '回答' },
+    ];
+    useChatStore.setState({ messages: initialMessages });
+
+    await useChatStore.getState().reload('non-existent');
+    await useChatStore.getState().reload('assistant-1');
+
+    expect(mockedAuthFetch).not.toHaveBeenCalled();
+    expect(useChatStore.getState().messages).toEqual(initialMessages);
   });
 });
