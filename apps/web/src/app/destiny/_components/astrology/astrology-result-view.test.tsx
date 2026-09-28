@@ -55,8 +55,7 @@ const MODULES = [
   },
 ];
 
-/** 进度控制：用真实定时器渲染，逐字机按 34ms/字推进 */
-const TYPEWRITER_WAIT_MS = 1_600;
+/** 进度控制：逐字机时钟由 fake timers 手动推进，消除并行负载下的定时器漂移 */
 
 function primeWorkspace(interpretation: AstrologyInterpretationReport | null, status: 'pending' | 'ready' | 'unavailable', reason: 'model' | null = null) {
   useDestinyWorkspaceStore.getState().setWorkspaceState('astrology', {
@@ -83,6 +82,7 @@ describe('AstrologyResultView（解读分区渲染）', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     useDestinyWorkspaceStore.getState().resetWorkspace('astrology');
   });
 
@@ -110,15 +110,23 @@ describe('AstrologyResultView（解读分区渲染）', () => {
   });
 
   it('分区逐区到达：主轴先浮现，大三要素与生活模块随后替换骨架', async () => {
-    primeWorkspace({ headline: HEADLINE, bigThree: null, modules: [], transits: null }, 'ready');
-    renderResult();
+    vi.useFakeTimers();
+    try {
+      primeWorkspace({ headline: HEADLINE, bigThree: null, modules: [], transits: null }, 'ready');
+      renderResult();
 
-    // 主轴分区：逐字浮现后完整呈现，并给出可定位的依据片
-    await screen.findByText(HEADLINE.text, {}, { timeout: TYPEWRITER_WAIT_MS });
-    await screen.findByText('太阳天秤座', {}, { timeout: TYPEWRITER_WAIT_MS });
-    // 三要素与模块分区仍未到 → 仍是骨架
-    expect(screen.queryByText(BIG_THREE.sun.plain)).toBeNull();
-    expect(screen.getByLabelText('五个生活模块')).toHaveAttribute('aria-busy', 'true');
+      // 手动推进逐字机时钟：18 字 × 34ms + 余量，落定后 sr-only 活体区出现完整主轴（推进量与组件 TYPE_INTERVAL_MS=34 保持一致）
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEADLINE.text.length * 34 + 100);
+      });
+      expect(screen.getByText(HEADLINE.text)).toBeInTheDocument();
+      expect(screen.getByText('太阳天秤座')).toBeInTheDocument();
+      // 三要素与模块分区仍未到 → 仍是骨架
+      expect(screen.queryByText(BIG_THREE.sun.plain)).toBeNull();
+      expect(screen.getByLabelText('五个生活模块')).toHaveAttribute('aria-busy', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
 
     // 三要素与模块分区到达
     act(() => {
