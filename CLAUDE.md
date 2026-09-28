@@ -60,7 +60,7 @@ pnpm dev
 ```bash
 pnpm dev           # 智能启动（自动加载共享环境、清理旧进程、确保 Redis 可用）
 pnpm dev:docker    # 使用 Docker 基础设施启动 Web + Worker
-pnpm dev:web       # 仅启动 Web（Next.js，端口 3030）
+pnpm dev:web       # 仅启动 Web（Next.js，首选端口 3030，被占时自动漂移并同步回调配置）
 pnpm dev:worker    # 仅启动 BullMQ Worker
 pnpm dev:rtasr     # 仅启动实时语音网关（infra/worker-rtasr）
 

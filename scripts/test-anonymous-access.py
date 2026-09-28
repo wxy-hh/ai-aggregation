@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 匿名登录 + 3000 额度全面测试脚本
-运行前请确保 dev:web 已启动在 http://localhost:3030
+运行前请确保 dev:web 已启动（默认 http://localhost:3030；端口漂移时用 BASE_URL 环境变量指定）
 """
 
 import json
+import os
 import random
 import secrets
 import string
@@ -13,7 +14,8 @@ import time
 import urllib.request
 import urllib.error
 
-BASE_URL = "http://localhost:3030"
+# dev 端口可能自动漂移，可用 BASE_URL 环境变量指定实际地址
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:3030")
 
 results = []
 

@@ -12,9 +12,12 @@ for (const line of readFileSync(envPath, 'utf8').split('\n')) {
 const USER_ID = 'cmrswotmx0000zi9kvk8za9bt';
 const token = jwt.sign({ userId: USER_ID, role: 'admin' }, env.AUTH_SECRET, { expiresIn: 900 });
 
+// dev 端口可能自动漂移，可用 BASE_URL 环境变量指定实际地址
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3030';
+
 async function round(messages, label) {
   const t0 = Date.now();
-  const res = await fetch('http://localhost:3030/api/chat', {
+  const res = await fetch(`${BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ messages, provider: 'doubao', model: 'doubao-seed-evolving' }),
