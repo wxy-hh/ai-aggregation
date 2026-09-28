@@ -42,6 +42,37 @@ describe('consumeChatResponse', () => {
     expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['你好', '世界']);
   });
 
+  it('正常流 done 携带 usage 时正确回调 onDone(usage)', async () => {
+    const usage = {
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      estimated: false,
+    };
+    const res = sseResponse([
+      'data: {"type":"text-delta","text":"内容"}\n\n',
+      `data: {"type":"done","usage":${JSON.stringify(usage)}}\n\n`,
+    ]);
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+
+    await expect(consumeChatResponse(res, onChunk, undefined, onDone)).resolves.toBeUndefined();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(usage);
+  });
+
+  it('正常流 done 未携带 usage 时回调 onDone(undefined)', async () => {
+    const res = sseResponse([
+      'data: {"type":"text-delta","text":"内容"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onDone = vi.fn();
+
+    await expect(consumeChatResponse(res, vi.fn(), undefined, onDone)).resolves.toBeUndefined();
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(undefined);
+  });
+
   it('回归：流被截断（无 done / 无 error）时必须抛错，不能静默产出空回答', async () => {
     // 模拟部署超时截断 / 上游空流：只有 delta，永远没有完成事件
     const res = sseResponse([
@@ -146,16 +177,124 @@ describe('ChatStreamEvent 契约（@repo/shared）', () => {
     expect(parseChatStreamEvent('字符串')).toBeNull();
   });
 
+  it('parseChatStreamEvent 解析带合法 usage 的 done 事件', () => {
+    const validFullUsage = {
+      type: 'done' as const,
+      usage: {
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+        estimated: false,
+      },
+    };
+    expect(parseChatStreamEvent(validFullUsage)).toEqual(validFullUsage);
+
+    const validPartialUsage = {
+      type: 'done' as const,
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: 200,
+        estimated: true,
+      },
+    };
+    expect(parseChatStreamEvent(validPartialUsage)).toEqual(validPartialUsage);
+  });
+
+  it('parseChatStreamEvent 对非法 usage 丢弃 usage 仅保留 done 事件', () => {
+    // 缺失 totalTokens
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+
+    // totalTokens 为负数或非有限数
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: -1, estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: Infinity, estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: '100', estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+
+    // 分项非法（负数 / 字符串）
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: -5, outputTokens: 20, totalTokens: 15, estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: '10', outputTokens: 20, totalTokens: 30, estimated: false },
+      })
+    ).toEqual({ type: 'done' });
+
+    // estimated 缺失或非布尔值
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+      })
+    ).toEqual({ type: 'done' });
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, estimated: 'true' },
+      })
+    ).toEqual({ type: 'done' });
+
+    // usage 非对象
+    expect(
+      parseChatStreamEvent({
+        type: 'done',
+        usage: 123,
+      })
+    ).toEqual({ type: 'done' });
+  });
+
   it('encodeChatStreamEvent 产物可被 parse 解析回原事件（编码解码同源）', () => {
     const events = [
       { type: 'text-delta', text: '你好' },
       { type: 'done' },
+      {
+        type: 'done',
+        usage: {
+          inputTokens: 120,
+          outputTokens: 80,
+          totalTokens: 200,
+          estimated: false,
+        },
+      },
+      {
+        type: 'done',
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: 50,
+          estimated: true,
+        },
+      },
       { type: 'warning', warning: '警告' },
       { type: 'error', error: '失败' },
     ] as const;
 
     for (const event of events) {
-      const frame = encodeChatStreamEvent(event);
+      const frame = encodeChatStreamEvent(event as any);
       expect(frame.startsWith('data: ')).toBe(true);
       expect(frame.endsWith('\n\n')).toBe(true);
       expect(parseChatStreamEvent(JSON.parse(frame.slice(6).trim()))).toEqual(event);
@@ -194,6 +333,28 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       expect.objectContaining({ method: 'POST' })
     );
     expect(seenBody).toEqual({ messages: [], provider: 'xunfei' });
+  });
+
+  it('正常流 done 携带 usage 时透传给 handlers.onDone', async () => {
+    const usage = {
+      inputTokens: 15,
+      outputTokens: 25,
+      totalTokens: 40,
+      estimated: true,
+    };
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"文本"}\n\n',
+        `data: {"type":"done","usage":${JSON.stringify(usage)}}\n\n`,
+      ])
+    );
+    const onDone = vi.fn();
+    await streamChatResponse(
+      { body: { messages: [] }, signal: new AbortController().signal },
+      { onDone }
+    );
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith(usage);
   });
 
   it('warning 事件透传给 onWarning', async () => {

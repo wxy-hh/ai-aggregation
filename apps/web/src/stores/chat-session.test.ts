@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { runChatStreamSession, type ChatStreamSessionDeps, type Message } from './chat-store';
 import { authFetch } from '@/lib/api/client';
 import { on, StoreEvents } from './store-events';
@@ -98,12 +98,12 @@ function requestBody() {
 }
 
 describe('runChatStreamSession（评审 C6：统一会话语义映射）', () => {
-  let onUpdated: (payload: unknown) => void;
+  let onUpdated: Mock<(payload: any) => void>;
   let off: () => void;
 
   beforeEach(() => {
     mockedAuthFetch.mockReset();
-    onUpdated = vi.fn((_payload: unknown) => undefined);
+    onUpdated = vi.fn((_payload: any) => undefined);
     off = on(StoreEvents.CONVERSATION_UPDATED, onUpdated);
   });
 
@@ -131,6 +131,39 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
     expect(assistant?.isStreaming).toBe(false);
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
+  });
+
+  it('成功流携带 usage：返回 sent，assistant 消息写入 usage 并在 CONVERSATION_UPDATED 中落盘', async () => {
+    const expectedUsage = {
+      inputTokens: 120,
+      outputTokens: 80,
+      totalTokens: 200,
+      estimated: false,
+    };
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"智能回复"}\n\n',
+        `data: {"type":"done","usage":${JSON.stringify(expectedUsage)}}\n\n`,
+      ])
+    );
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+    const onDone = vi.fn();
+
+    const result = await runChatStreamSession(deps, assistantId, requestBody(), onDone);
+
+    expect(result).toBe('sent');
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant?.content).toBe('智能回复');
+    expect(assistant?.isStreaming).toBe(false);
+    expect(assistant?.usage).toEqual(expectedUsage);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
+    const lastCall = onUpdated.mock.calls[onUpdated.mock.calls.length - 1];
+    const emittedAssistant = (lastCall[0] as any).messages.find(
+      (m: any) => m.id === assistantId
+    );
+    expect(emittedAssistant?.usage).toEqual(expectedUsage);
   });
 
   it('HTTP !ok：返回 failed，设置错误并移除空的 assistant 消息', async () => {

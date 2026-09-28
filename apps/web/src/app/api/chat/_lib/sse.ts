@@ -9,7 +9,7 @@
  * warning / error），类型化签名拒绝任何未在契约内的事件。
  */
 
-import { encodeChatStreamEvent, type ChatStreamEvent } from '@repo/shared';
+import { encodeChatStreamEvent, type ChatStreamEvent, type ChatStreamUsage } from '@repo/shared';
 
 const encoder = new TextEncoder();
 
@@ -33,14 +33,14 @@ export function createSseResponse(stream: ReadableStream<Uint8Array>): Response 
  *
  * @param source  - 提供方返回的原始 ReadableStream
  * @param onText  - 每收到一个 chunk 时的回调（用于累计 token 统计等）
- * @param onDone  - 流正常结束后的回调（用于触发配额结算）
+ * @param onDone  - 流正常结束后的回调（用于触发配额结算并可选返回 usage）
  * @param onError - 流异常时的回调（用于释放预留额度）
  */
 export function textStreamToSse(
   source: ReadableStream<Uint8Array>,
   opts: {
     onText?: (text: string) => void;
-    onDone?: () => Promise<void> | void;
+    onDone?: () => Promise<ChatStreamUsage | void> | ChatStreamUsage | void;
     onError?: (error: unknown) => Promise<void> | void;
   } = {}
 ): ReadableStream<Uint8Array> {
@@ -58,8 +58,8 @@ export function textStreamToSse(
               opts.onText?.(rest);
               controller.enqueue(encodeSseEvent({ type: 'text-delta', text: rest }));
             }
-            await opts.onDone?.();
-            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            const usage = await opts.onDone?.();
+            controller.enqueue(encodeSseEvent(usage ? { type: 'done', usage } : { type: 'done' }));
             break;
           }
           const chunk = decoder.decode(value, { stream: true });
@@ -80,7 +80,7 @@ export function textStreamToSse(
           // 流已关闭时忽略
         }
       } finally {
-        try { reader.releaseLock(); } catch { /* ignore */ }
+        try { reader.releaseLock(); } catch { /* 忽略错误 */ }
       }
     },
   });

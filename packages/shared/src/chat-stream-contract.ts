@@ -24,8 +24,17 @@
 
 /** 增量文本事件 */
 export type ChatStreamTextDeltaEvent = { type: 'text-delta'; text: string };
+/** 聊天流式用量统计（done 帧携带） */
+export interface ChatStreamUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number;
+  /** true=估算值（上游未返回 usage，按结算同口径估算）；false=上游真实返回 */
+  estimated: boolean;
+}
+
 /** 正常终止事件 */
-export type ChatStreamDoneEvent = { type: 'done' };
+export type ChatStreamDoneEvent = { type: 'done'; usage?: ChatStreamUsage };
 /** 警告事件（不终止流） */
 export type ChatStreamWarningEvent = { type: 'warning'; warning: string };
 /** 错误事件（终止流） */
@@ -61,8 +70,32 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       return typeof ev.text === 'string' && ev.text.length > 0
         ? { type: 'text-delta', text: ev.text }
         : null;
-    case 'done':
+    case 'done': {
+      if (typeof ev.usage === 'object' && ev.usage !== null) {
+        const u = ev.usage as Record<string, unknown>;
+        const isValidTokenNumber = (v: unknown): v is number =>
+          typeof v === 'number' && Number.isFinite(v) && v >= 0;
+        const isValidSubToken = (v: unknown): v is number | null =>
+          v === null || isValidTokenNumber(v);
+        if (
+          isValidTokenNumber(u.totalTokens) &&
+          isValidSubToken(u.inputTokens) &&
+          isValidSubToken(u.outputTokens) &&
+          typeof u.estimated === 'boolean'
+        ) {
+          return {
+            type: 'done',
+            usage: {
+              inputTokens: u.inputTokens,
+              outputTokens: u.outputTokens,
+              totalTokens: u.totalTokens,
+              estimated: u.estimated,
+            },
+          };
+        }
+      }
       return { type: 'done' };
+    }
     case 'warning':
       return typeof ev.warning === 'string' ? { type: 'warning', warning: ev.warning } : null;
     case 'error':

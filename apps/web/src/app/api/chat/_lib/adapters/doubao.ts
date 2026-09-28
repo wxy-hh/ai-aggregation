@@ -9,6 +9,7 @@ import { normalizeUsage } from '@/lib/ai-usage';
 import { getDoubaoIncompleteWarning } from '../../doubao-warning';
 import { ProviderClientError, type ChatContext, type ChatProviderAdapter } from '../types';
 import { encodeSseEvent } from '../sse';
+import { resolveChatStreamUsage } from '../chat-usage';
 import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
 
 // 豆包多模态内容类型
@@ -257,12 +258,13 @@ export class DoubaoAdapter implements ChatProviderAdapter {
               });
             } else {
               // 有输出文本：发送 done 事件并结算为 success
-              controller.enqueue(encodeSseEvent({ type: 'done' }));
               await ctx.onFinish({
                 outcome: 'success',
                 usage,
                 outputText: text,
               });
+              const doneUsage = resolveChatStreamUsage(usage, ctx.messages, text);
+              controller.enqueue(encodeSseEvent({ type: 'done', usage: doneUsage }));
             }
           } else if (text) {
             // 截断但已有部分内容：先补发 warning + done 让前端正常收尾，按 partial 结算

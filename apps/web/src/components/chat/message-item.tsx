@@ -18,6 +18,16 @@ import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import type { RelayReferenceItem } from '@repo/shared';
 
+/** 格式化消息 token 消耗展示文案 */
+export function formatUsageText(usage: NonNullable<Message['usage']>): string {
+  const prefix = usage.estimated ? '约 ' : '';
+  const total = usage.totalTokens.toLocaleString();
+  if (usage.inputTokens !== null && usage.outputTokens !== null) {
+    return `${prefix}${total} tokens（输入 ${usage.inputTokens.toLocaleString()} · 输出 ${usage.outputTokens.toLocaleString()}）`;
+  }
+  return `${prefix}${total} tokens`;
+}
+
 interface MessageItemProps {
   message: Message;
   onRegenerate?: (messageId: string) => void;
@@ -538,6 +548,11 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                         <AlertCircle className="h-3 w-3" />
                         <span>生成中断 · 内容可能不完整</span>
+                      </div>
+                    )}
+                    {message.usage && (
+                      <div className="mt-2 text-xs text-day-muted dark:text-slate-400">
+                        {formatUsageText(message.usage)}
                       </div>
                     )}
                   </>

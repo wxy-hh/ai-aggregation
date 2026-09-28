@@ -1,7 +1,7 @@
 // 消费聊天接口返回的标准 SSE 流
 // 事件协议以 @repo/shared 的 ChatStreamEvent 为唯一权威定义（见 chat-stream-contract），
 // 任何未在契约内的事件（未知类型、非标准帧）按「显式忽略」处理，不回调、不终止流。
-import { parseChatStreamEvent } from '@repo/shared';
+import { parseChatStreamEvent, type ChatStreamUsage } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 
 /**
@@ -26,6 +26,7 @@ export interface StreamChatResponseHandlers {
   /** 每次收到增量时回调一次，参数为当前累计文本 */
   onChunk?: (accumulatedText: string) => void;
   onWarning?: (warning: string) => void;
+  onDone?: (usage?: ChatStreamUsage) => void;
 }
 
 export async function streamChatResponse(
@@ -50,7 +51,8 @@ export async function streamChatResponse(
       accumulated += chunk;
       handlers.onChunk?.(accumulated);
     },
-    handlers.onWarning
+    handlers.onWarning,
+    handlers.onDone
   );
   return accumulated;
 }
@@ -58,7 +60,8 @@ export async function streamChatResponse(
 export async function consumeChatResponse(
   response: Response,
   onChunk: (chunk: string) => void,
-  onWarning?: (warning: string) => void
+  onWarning?: (warning: string) => void,
+  onDone?: (usage?: ChatStreamUsage) => void
 ): Promise<void> {
   const contentType = response.headers.get('Content-Type') || '';
 
@@ -93,6 +96,7 @@ export async function consumeChatResponse(
     const payload = dataLines.map((line) => line.slice(5).trimStart()).join('\n');
     if (!payload || payload === '[DONE]') {
       isDone = true;
+      onDone?.();
       return;
     }
 
@@ -113,6 +117,7 @@ export async function consumeChatResponse(
           return;
         case 'done':
           isDone = true;
+          onDone?.(event.usage);
           return;
         case 'error':
           throw new Error(event.error || '流式响应失败');

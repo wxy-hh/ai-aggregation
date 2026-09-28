@@ -4,7 +4,8 @@ import { create } from 'zustand';
 import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
-import type { DerivationMetadata } from '@repo/shared';
+import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
+import type { DerivationMetadata, ChatStreamUsage } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -41,6 +42,7 @@ export interface Message {
   stopped?: boolean; // 是否被用户/隐式中止（保留部分内容时标记）
   failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
   truncationWarning?: string; // 回答可能被截断时的提示
+  usage?: ChatStreamUsage; // 本次对话的 Token 消耗统计（done 帧携带）
   // 附件列表（可选）
   attachments?: Attachment[];
 }
@@ -164,6 +166,7 @@ export async function runChatStreamSession(
 
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
   let lastPersistAt = 0;
+  let streamUsage: ChatStreamUsage | undefined;
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
@@ -211,9 +214,12 @@ export async function runChatStreamSession(
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
         );
       },
+      onDone: (usage) => {
+        streamUsage = usage;
+      },
     });
 
-    // 完成：先 cancelAnimationFrame 并用最新文本兜底 flush（合并写入最新 content，移除 isStreaming 标记）
+    // 完成：先 cancelAnimationFrame 并用最新文本兜底 flush（合并写入最新 content 与 usage，移除 isStreaming 标记）
     const latestText = flushLatestContentAndClear(assistantId);
     const finalMessages = deps.updateMessages((messages) =>
       messages.map((m) => {
@@ -222,6 +228,7 @@ export async function runChatStreamSession(
           ...m,
           ...(latestText !== undefined ? { content: latestText } : {}),
           isStreaming: false,
+          ...(streamUsage ? { usage: streamUsage } : {}),
         };
       })
     );
@@ -489,7 +496,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       try {
         // ===== 4-9. 流式消费 + 完成/失败/中止的语义映射（统一编排 runChatStreamSession，评审 C6） =====
         // 前置校验已在上方完成；历史保存/接力派生经 onDone 钩子
-        return await runChatStreamSession(
+        const outcome = await runChatStreamSession(
           sessionDeps(),
           assistantMessage.id,
           {
@@ -525,6 +532,10 @@ export const useChatStore = create<ChatState>((set, get) => {
             }
           }
         );
+        if (outcome === 'sent') {
+          void checkAndWarnLowBalance(activeConversationId);
+        }
+        return outcome;
       } finally {
         // ===== 10. 清理工作 =====
         set({ isLoading: false }); // 重置加载状态
@@ -589,7 +600,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       try {
         // 会话流统一编排（评审 C6），与 sendMessage 共用三态归一；
         // reload 不需要历史保存钩子（沿用既有会话记录）
-        await runChatStreamSession(
+        const outcome = await runChatStreamSession(
           sessionDeps(),
           assistantMessage.id,
           {
@@ -604,6 +615,9 @@ export const useChatStore = create<ChatState>((set, get) => {
             signal: abortController.signal,
           }
         );
+        if (outcome === 'sent') {
+          void checkAndWarnLowBalance(activeConversationId);
+        }
       } finally {
         set({ isLoading: false });
         abortController = null;

@@ -13,6 +13,7 @@ import {
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { ChatContext, ChatProviderAdapter } from '../types';
 import { textStreamToSse } from '../sse';
+import { resolveChatStreamUsage } from '../chat-usage';
 
 export class XunfeiAdapter implements ChatProviderAdapter {
   async stream(ctx: ChatContext): Promise<ReadableStream<Uint8Array>> {
@@ -33,6 +34,7 @@ export class XunfeiAdapter implements ChatProviderAdapter {
       onDone: async () => {
         // 流正常结束：报告 success，结算交由 handler 侧 QuotaSession 处理
         await ctx.onFinish({ outcome: 'success', usage, outputText: text });
+        return resolveChatStreamUsage(usage, ctx.messages, text);
       },
       onError: async (err) => {
         console.error('[chat] 讯飞流式错误:', {
