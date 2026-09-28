@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square } from 'lucide-react';
+import { Square, AlertCircle } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import type { Attachment, Message } from '@/stores/chat-store';
@@ -532,6 +532,12 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
                         <Square className="h-3 w-3" />
                         <span>已停止 · 内容可能不完整</span>
+                      </div>
+                    )}
+                    {message.failed && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="h-3 w-3" />
+                        <span>生成中断 · 内容可能不完整</span>
                       </div>
                     )}
                   </>

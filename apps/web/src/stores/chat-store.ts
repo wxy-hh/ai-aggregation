@@ -39,6 +39,7 @@ export interface Message {
   content: string; // 消息文本内容
   isStreaming?: boolean; // 是否正在流式传输（AI回复时为 true）
   stopped?: boolean; // 是否被用户/隐式中止（保留部分内容时标记）
+  failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
   truncationWarning?: string; // 回答可能被截断时的提示
   // 附件列表（可选）
   attachments?: Attachment[];
@@ -109,7 +110,7 @@ function finalizeAbortedMessages(
  * - chunk/warning → 更新 assistant 消息；
  * - 完成 → 移除 isStreaming 并同步到会话列表（emit CONVERSATION_UPDATED），回调 onDone；
  * - AbortError → 返回 aborted，不设错误、按空删有留原则收尾并同步会话（若未被调用方收尾）；
- * - 其他失败 → 设错误并移除空的 assistant 消息。
+ * - 其他失败 → 设错误，按有留空删原则收尾并同步会话（有内容保留并标记 failed，空内容移除）。
  * 调用方只负责：deps 注入、请求体构造、前置校验与历史保存钩子。
  */
 export async function runChatStreamSession(
@@ -118,12 +119,22 @@ export async function runChatStreamSession(
   request: StreamChatRequest,
   onDone?: (finalMessages: Message[]) => void
 ): Promise<ChatStreamOutcome> {
+  // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
+  let lastPersistAt = 0;
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
-        deps.updateMessages((messages) =>
+        const next = deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, content: text } : m))
         );
+        const now = Date.now();
+        if (now - lastPersistAt >= 1000) {
+          lastPersistAt = now;
+          const conversationId = deps.activeConversationId();
+          if (conversationId) {
+            emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+          }
+        }
       },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
@@ -160,8 +171,17 @@ export async function runChatStreamSession(
     }
 
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
-    // 移除失败的 assistant 消息（没有成功生成）
-    const filtered = deps.updateMessages((messages) => messages.filter((m) => m.id !== assistantId));
+    // 失败收尾（有留空删）：有部分内容保留并标记 failed（用户已读内容不丢），空内容移除
+    const filtered = deps.updateMessages((messages) => {
+      const target = messages.find((m) => m.id === assistantId);
+      if (!target) return messages;
+      if (target.content) {
+        return messages.map((m) =>
+          m.id === assistantId ? { ...m, isStreaming: false, failed: true } : m
+        );
+      }
+      return messages.filter((m) => m.id !== assistantId);
+    });
     const conversationId = deps.activeConversationId();
     if (conversationId) {
       emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: filtered });

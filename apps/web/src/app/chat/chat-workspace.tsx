@@ -377,6 +377,11 @@ export default function ChatWorkspace() {
     scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // 生成失败的全局错误提示（error 此前被订阅但从未渲染，失败时用户无感知）
+  useEffect(() => {
+    if (error) toast.error(error.message || '生成失败，请重试');
+  }, [error]);
+
   // ============ 消息展示处理 ============
   // 为每条消息添加流式输出状态标记
   // 流式输出：AI 的回复是逐字显示的，而不是一次性显示完整内容
