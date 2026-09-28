@@ -16,6 +16,11 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
 import { ProviderClientError, type ChatProviderAdapter } from './types';
+import {
+  detectChatSensitiveTopic,
+  buildChatBlockedText,
+  createBlockedStream,
+} from './chat-safety';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
@@ -48,6 +53,14 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
+      }
+
+      // 合规前置拦截：命中即返回安全话术，不预留额度、不调模型、不计费
+      const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+      const topic = lastUserMessage ? detectChatSensitiveTopic(lastUserMessage.content) : null;
+      if (topic) {
+        console.warn('[chat] 输入命中合规拦截', { errorId, userId: user.id, topic });
+        return createSseResponse(createBlockedStream(buildChatBlockedText(topic)));
       }
 
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
@@ -83,19 +96,30 @@ export function createChatHandler(config: ChatHandlerConfig) {
         outputLimit: reservedSession.outputLimit,
         signal: req.signal,
         errorId,
-        onFinish: (finish) => reservedSession.finalize(finish.outcome, {
-          requestId,
-          action: 'chat-stream',
-          endpoint: '/api/chat',
-          usage: finish.usage,
-          outputText: finish.outputText,
-          reason: finish.reason,
-          provider,
-          model: modelName,
-          userId: user.id,
-          feature: 'chat',
-          metadata: { errorId, messagesCount, attachmentCount },
-        }),
+        onFinish: (finish) => {
+          const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
+          if (outputTopic) {
+            console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
+          }
+          return reservedSession.finalize(finish.outcome, {
+            requestId,
+            action: 'chat-stream',
+            endpoint: '/api/chat',
+            usage: finish.usage,
+            outputText: finish.outputText,
+            reason: finish.reason,
+            provider,
+            model: modelName,
+            userId: user.id,
+            feature: 'chat',
+            metadata: {
+              errorId,
+              messagesCount,
+              attachmentCount,
+              ...(outputTopic ? { safetyFlag: outputTopic } : {}),
+            },
+          });
+        },
       });
 
       console.log('[chat] 流开始', {
