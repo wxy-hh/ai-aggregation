@@ -45,9 +45,9 @@ const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
 /** 输入框自动增高上限（px） */
 const TEXTAREA_MAX_HEIGHT = 120;
 // 主操作按钮（发送/停止）共享样式：蓝色渐变 CTA；
-// after 伪元素向外扩展 4px，将 36px 视觉尺寸的点击热区补齐到 44px（DESIGN.md §8.1 移动端主操作热区 ≥44）
+// 移动端 44px（h-11 w-11）命中 DESIGN.md §8.1「中」档主操作尺寸；md+ 桌面保持 36px，并通过伪元素补热区到 44px
 const CTA_BUTTON_CLASS =
-  "relative mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] after:absolute after:-inset-1 after:content-['']";
+  "relative mb-0.5 mr-0.5 h-11 w-11 md:h-9 md:w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] md:after:absolute md:after:-inset-1 md:after:content-['']";
 
 // ============ 组件属性类型定义 ============
 interface ChatInputProps {
@@ -874,7 +874,7 @@ export function ChatInput({
             size="icon"
             aria-label="停止生成"
           >
-            <Square className="h-4 w-4" fill="currentColor" />
+            <Square className="h-5 w-5 md:h-4 md:w-4" fill="currentColor" />
           </Button>
         ) : (
           <Button
@@ -890,7 +890,7 @@ export function ChatInput({
             size="icon"
             aria-label="发送"
           >
-            <Send className="h-4 w-4" />
+            <Send className="h-5 w-5 md:h-4 md:w-4" />
           </Button>
         )}
       </div>
