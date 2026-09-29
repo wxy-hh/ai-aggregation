@@ -27,6 +27,12 @@ vi.mock('next/dynamic', () => ({
   },
 }));
 
+// 场景 chunk 也打桩：组件 useEffect 里的 import 仅作「就绪信号」，真实 three.js
+// 模块在全套件并行负载下加载耗时不稳定（曾超时 4s 阈值造成偶发失败），桩为空模块后确定性就绪
+vi.mock('./astrology-wheel-scene', () => ({
+  AstrologyWheelScene: () => null,
+}));
+
 import { AstrologyWheel, __resetWebGLCacheForTest } from './astrology-wheel';
 import { SAMPLE_CHART_ACCURATE } from '@/lib/astrology/sample-chart';
 
