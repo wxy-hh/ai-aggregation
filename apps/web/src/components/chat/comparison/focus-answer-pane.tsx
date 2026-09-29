@@ -8,7 +8,8 @@
  * 行为栏：复制、重试、停止。
  */
 
-import { memo, useMemo, useState, useCallback, useRef } from 'react';
+import { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import type { UIEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -23,6 +24,7 @@ import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import type { RelayReferenceItem } from '@repo/shared';
 import { formatUsageText } from '@/components/chat/message-item';
+import { isNearBottom } from '@/lib/utils/scroll';
 
 // 流式内容：纯文本 + 光标（不做 Markdown 解析，避免流式抖动）
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
@@ -189,6 +191,35 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
     },
   });
 
+  // 吸底三态（每列独立，ref 存储不触发重渲染）：初始即跟随——列初始 scrollTop=0
+  // 但内容将持续增长，必须视为跟随态，否则首条流式就不可见
+  const isAtBottomRef = useRef(true);
+  // 记录上一次状态，用于识别「进入流式」的边沿
+  const prevStatusRef = useRef(run.status);
+
+  // 内容区滚动：距底 <= 80px 视为跟随态，上滚即释放、回底即恢复
+  const handleContentScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    isAtBottomRef.current = isNearBottom(e.currentTarget);
+  }, []);
+
+  // 进入流式的边沿（新生成/重试/继续追问）：表达要看新输出的意图，强制恢复跟随并立即回底
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = run.status;
+    if (prev !== 'streaming' && run.status === 'streaming') {
+      isAtBottomRef.current = true;
+      const el = contentRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+    }
+  }, [run.status]);
+
+  // 跟随吸底：内容增长且处于跟随态时即时回底（对比列一律 auto，不用 smooth）
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || !isAtBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+  }, [run.content, run.status]);
+
   return (
     <section
       className={cn(
@@ -227,6 +258,7 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
       <div
         ref={contentRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar"
+        onScroll={handleContentScroll}
         onContextMenu={relay.onContextMenu}
         {...relay.longPressProps}
       >
