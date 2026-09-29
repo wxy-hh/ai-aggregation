@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useComparisonStore } from './comparison-store';
+import { useComparisonStore, resetStreamPersistThrottle } from './comparison-store';
 import { useConversationsStore, type Conversation } from './conversations-store';
 import type { ModelRun } from '@/types/comparison';
 import { authFetch } from '@/lib/api/client';
@@ -36,7 +36,33 @@ function sseResponse(chunks: string[]): Response {
   });
 }
 
+/** 构造受控 SSE 流，供测试精确推进 chunk 与控制时钟 */
+function createControlledStream() {
+  let controllerRef!: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller;
+    },
+  });
+  return {
+    response: new Response(stream, {
+      headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+    }),
+    pushChunk(text: string) {
+      controllerRef.enqueue(
+        encoder.encode(`data: ${JSON.stringify({ type: 'text-delta', text })}\n\n`)
+      );
+    },
+    pushDone() {
+      controllerRef.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+      controllerRef.close();
+    },
+  };
+}
+
 function resetState() {
+  resetStreamPersistThrottle();
   useComparisonStore.setState({
     mode: 'compare',
     selectedModels: [],
@@ -657,6 +683,214 @@ describe('useComparisonStore.loadComparison（清洗残留死状态）', () => {
     expect(convAfter).toBe(initialConversation);
     expect(convAfter?.updatedAt).toBe(initialUpdatedAt);
 
+    updateSpy.mockRestore();
+  });
+});
+
+describe('useComparisonStore 流中节流落盘（G1b）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    mockedCheckAndWarnLowBalance.mockReset();
+    resetState();
+    vi.restoreAllMocks();
+  });
+
+  it('流中落盘触发：mock Date.now 使两次 onChunk 间隔 >= 1s 时触发落盘，写入最新 accumulated 内容（patch 生效，非旧帧）', async () => {
+    useComparisonStore.setState({
+      selectedModels: [
+        {
+          provider: 'xunfei',
+          model: 'lite',
+          providerLabel: '讯飞星火',
+          label: '讯飞星火 · Spark Lite（免费）',
+        },
+        {
+          provider: 'doubao',
+          model: 'doubao-seed-evolving',
+          providerLabel: '豆包',
+          label: '豆包 · Doubao Seed',
+        },
+      ],
+    });
+
+    const streamXunfei = createControlledStream();
+    const streamDoubao = createControlledStream();
+
+    mockedAuthFetch.mockImplementation(async (url, init) => {
+      if (url === '/api/chat/batch-reserve') {
+        return new Response(JSON.stringify(DEFAULT_RESERVATIONS), { status: 200 });
+      }
+      const body = JSON.parse((init as RequestInit).body as string);
+      if (body.model === 'lite') {
+        return streamXunfei.response;
+      }
+      return streamDoubao.response;
+    });
+
+    let mockTime = 10000;
+    vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+    const updateSpy = vi.spyOn(useConversationsStore.getState(), 'updateComparisonTurns');
+
+    const sendPromise = useComparisonStore.getState().sendComparison();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 1. 第一个 chunk（t = 10000，初始 lastStreamPersistAt = 0，>= 1000ms 触发首次落盘）
+    streamXunfei.pushChunk('第一段讯飞');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 断言首次落盘被触发，且写入的内容是最新的 '第一段讯飞'（patch 生效，而不是 store 旧帧里的空字符串）
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const firstCallTurns = updateSpy.mock.calls[0][1];
+    expect(firstCallTurns[0].runs['xunfei:lite'].content).toBe('第一段讯飞');
+
+    // 2. 500ms 后收到第二个 chunk（t = 10500，距上次落盘 500ms < 1000ms，被节流拦截）
+    mockTime = 10500;
+    streamXunfei.pushChunk('第二段讯飞');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 依然只有 1 次落盘
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+
+    // 3. 距离上次落盘超过 1s（t = 11500，距上次 1500ms >= 1000ms），收到第三个 chunk
+    mockTime = 11500;
+    streamXunfei.pushChunk('第三段讯飞');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 再次触发流中落盘，调用次数递增为 2
+    expect(updateSpy).toHaveBeenCalledTimes(2);
+    const secondCallTurns = updateSpy.mock.calls[1][1];
+    expect(secondCallTurns[0].runs['xunfei:lite'].content).toBe('第一段讯飞第二段讯飞第三段讯飞');
+
+    // 结束流并等待完成
+    streamXunfei.pushDone();
+    streamDoubao.pushDone();
+    await sendPromise;
+    updateSpy.mockRestore();
+  });
+
+  it('全局节流：1s 内多个 chunk（含两个模型各自的）只落盘一次', async () => {
+    useComparisonStore.setState({
+      selectedModels: [
+        {
+          provider: 'xunfei',
+          model: 'lite',
+          providerLabel: '讯飞星火',
+          label: '讯飞星火 · Spark Lite（免费）',
+        },
+        {
+          provider: 'doubao',
+          model: 'doubao-seed-evolving',
+          providerLabel: '豆包',
+          label: '豆包 · Doubao Seed',
+        },
+      ],
+    });
+
+    const streamXunfei = createControlledStream();
+    const streamDoubao = createControlledStream();
+
+    mockedAuthFetch.mockImplementation(async (url, init) => {
+      if (url === '/api/chat/batch-reserve') {
+        return new Response(JSON.stringify(DEFAULT_RESERVATIONS), { status: 200 });
+      }
+      const body = JSON.parse((init as RequestInit).body as string);
+      if (body.model === 'lite') {
+        return streamXunfei.response;
+      }
+      return streamDoubao.response;
+    });
+
+    let mockTime = 20000;
+    vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+    const updateSpy = vi.spyOn(useConversationsStore.getState(), 'updateComparisonTurns');
+
+    const sendPromise = useComparisonStore.getState().sendComparison();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 模型 A 第 1 个 chunk（触发首次落盘，记录 lastStreamPersistAt = 20000）
+    streamXunfei.pushChunk('讯飞 chunk 1');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+
+    // 200ms 后，模型 A 第 2 个 chunk
+    mockTime = 20200;
+    streamXunfei.pushChunk('讯飞 chunk 2');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 400ms 后，模型 B 第 1 个 chunk
+    mockTime = 20400;
+    streamDoubao.pushChunk('豆包 chunk 1');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 600ms 后，模型 B 第 2 个 chunk
+    mockTime = 20600;
+    streamDoubao.pushChunk('豆包 chunk 2');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 均在 1s 窗口内，全局节流器拦截，流中依然只落盘了 1 次
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+
+    // 结束流
+    streamXunfei.pushDone();
+    streamDoubao.pushDone();
+    await sendPromise;
+    updateSpy.mockRestore();
+  });
+
+  it('1s 窗口内 activeComparisonId 为 null 时不炸且不触发落盘（防御分支）', async () => {
+    useComparisonStore.setState({
+      selectedModels: [
+        {
+          provider: 'xunfei',
+          model: 'lite',
+          providerLabel: '讯飞星火',
+          label: '讯飞星火 · Spark Lite（免费）',
+        },
+        {
+          provider: 'doubao',
+          model: 'doubao-seed-evolving',
+          providerLabel: '豆包',
+          label: '豆包 · Doubao Seed',
+        },
+      ],
+    });
+
+    const streamXunfei = createControlledStream();
+    const streamDoubao = createControlledStream();
+
+    mockedAuthFetch.mockImplementation(async (url, init) => {
+      if (url === '/api/chat/batch-reserve') {
+        return new Response(JSON.stringify(DEFAULT_RESERVATIONS), { status: 200 });
+      }
+      const body = JSON.parse((init as RequestInit).body as string);
+      if (body.model === 'lite') {
+        return streamXunfei.response;
+      }
+      return streamDoubao.response;
+    });
+
+    vi.spyOn(Date, 'now').mockReturnValue(30000);
+    const updateSpy = vi.spyOn(useConversationsStore.getState(), 'updateComparisonTurns');
+
+    const sendPromise = useComparisonStore.getState().sendComparison();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // 模拟在流式过程中 activeComparisonId 变为 null（例如会话被重置或关闭）
+    useComparisonStore.setState({ activeComparisonId: null });
+
+    // 推送 chunk，验证不抛错且 updateComparisonTurns 不被调用
+    expect(() => {
+      streamXunfei.pushChunk('测试内容');
+    }).not.toThrow();
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    streamXunfei.pushDone();
+    streamDoubao.pushDone();
+    await sendPromise;
     updateSpy.mockRestore();
   });
 });
