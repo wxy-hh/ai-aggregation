@@ -22,6 +22,7 @@ import { RelayMenu } from '@/components/relay/relay-menu';
 import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import type { RelayReferenceItem } from '@repo/shared';
+import { formatUsageText } from '@/components/chat/message-item';
 
 // 流式内容：纯文本 + 光标（不做 Markdown 解析，避免流式抖动）
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
@@ -243,6 +244,11 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
             {run.truncationWarning && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                 {run.truncationWarning}
+              </div>
+            )}
+            {run.usage && (
+              <div className="mt-2 text-xs tabular-nums text-day-muted dark:text-slate-400">
+                {formatUsageText(run.usage)}
               </div>
             )}
           </>

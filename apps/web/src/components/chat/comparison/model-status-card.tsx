@@ -114,13 +114,18 @@ export const ModelStatusCard = memo(function ModelStatusCard({
         </span>
       </div>
 
-      {/* 状态行：图标 + 中文状态 + 耗时 + 错误信息 */}
-      <div className="flex items-center gap-1.5">
+      {/* 状态行：图标 + 中文状态 + 耗时 + token用量 + 错误信息 */}
+      <div className="flex flex-wrap items-center gap-1.5">
         <StatusIcon status={run.status} />
         {run.status !== 'failed' && (
           <span className={cn('text-xs font-medium', cfg.text)}>{cfg.label}</span>
         )}
         {duration && <span className="text-[11px] text-slate-400">{duration}</span>}
+        {run.status === 'completed' && run.usage && (
+          <span className="text-[11px] tabular-nums text-day-muted dark:text-slate-400">
+            {run.usage.estimated ? '约 ' : ''}{run.usage.totalTokens.toLocaleString()} tokens
+          </span>
+        )}
         {run.status === 'failed' && run.error && (
           <span 
             className="truncate text-[11px] text-rose-400" 

@@ -36,6 +36,7 @@ import { authFetch } from '@/lib/api/client';
 import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
 import { createComparisonHistoryItem } from '@/lib/utils/history-helpers';
+import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import type { ChatHistoryItem } from '@/types/history';
 import type { DerivationMetadata } from '@repo/shared';
 
@@ -148,6 +149,7 @@ async function runModel(
     completedAt: undefined,
     error: undefined,
     truncationWarning: undefined,
+    usage: undefined,
     content: '',
     branchMessages: appendToBranch
       ? [...run.branchMessages, { role: 'user', content: prompt }]
@@ -182,6 +184,11 @@ async function runModel(
         },
         onWarning: (warning) => {
           updateRun(turnId, modelKey, (r) => ({ ...r, truncationWarning: warning }));
+        },
+        onDone: (usage) => {
+          if (usage) {
+            updateRun(turnId, modelKey, (r) => ({ ...r, usage }));
+          }
         },
       }
     );
@@ -387,6 +394,7 @@ export const useComparisonStore = create<ComparisonState>()(
         );
 
         recordHistory(derivation);
+        void checkAndWarnLowBalance(convId);
         // 本轮已发出并记录（单模型失败局部化，不阻断整轮；REQ-016 语义：轮次发出即视为执行成功）
         return 'sent';
       },
@@ -462,6 +470,7 @@ export const useComparisonStore = create<ComparisonState>()(
         );
 
         recordHistory(derivation);
+        void checkAndWarnLowBalance(get().activeComparisonId);
         // 追问轮次发出并记录即视为执行成功（REQ-016）
         return 'sent';
       },
@@ -500,6 +509,7 @@ export const useComparisonStore = create<ComparisonState>()(
           true
         );
         recordHistory();
+        void checkAndWarnLowBalance(get().activeComparisonId);
       },
 
       setFocus: (turnId, slot, modelKey) => {
