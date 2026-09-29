@@ -104,6 +104,31 @@ function clearContentFlush(turnId: string, modelKey: string) {
   contentFlushState.delete(key);
 }
 
+// 清洗上一页面生命周期残留的死状态：streaming/queued 的 controller 已随页面销毁，
+// 不清洗会显示永久「生成中/等待发送」且停止按钮空操作（stale 死卡）。
+// 内容保留，状态归为 stopped（语义：中断而非出错，UI 自带重试入口）。
+function sanitizeLoadedTurns(turns: ComparisonTurn[]): { turns: ComparisonTurn[]; cleaned: boolean } {
+  let cleaned = false;
+  const next = turns.map((turn) => {
+    let turnDirty = false;
+    const runs: ComparisonTurn['runs'] = {};
+    for (const [key, run] of Object.entries(turn.runs)) {
+      if (run.status === 'streaming' || run.status === 'queued') {
+        runs[key] = { ...run, status: 'stopped' };
+        turnDirty = true;
+      } else {
+        runs[key] = run;
+      }
+    }
+    if (turnDirty) {
+      cleaned = true;
+      return { ...turn, runs };
+    }
+    return turn;
+  });
+  return { turns: cleaned ? next : turns, cleaned };
+}
+
 // 把 turns 镜像到 conversations-store（持久化）
 function syncTurnsToConversation() {
   const { activeComparisonId, turns } = useComparisonStore.getState();
@@ -527,14 +552,19 @@ export const useComparisonStore = create<ComparisonState>()(
         // 终止进行中的请求
         for (const c of abortControllers.values()) c.abort();
         abortControllers.clear();
+        const { turns, cleaned } = sanitizeLoadedTurns(conv.turns ?? []);
         set({
           activeComparisonId: id,
-          turns: conv.turns ?? [],
+          turns,
           selectedModels: conv.selectedModels ?? get().selectedModels,
           mode: 'compare',
           input: '',
           error: null,
         });
+        // 有脏数据被清洗时立即写回镜像（见过即干净）；无脏数据不写盘
+        if (cleaned) {
+          syncTurnsToConversation();
+        }
       },
 
       startNewComparison: () => {

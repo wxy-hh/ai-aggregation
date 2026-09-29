@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useComparisonStore } from './comparison-store';
+import { useConversationsStore, type Conversation } from './conversations-store';
+import type { ModelRun } from '@/types/comparison';
 import { authFetch } from '@/lib/api/client';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 
@@ -42,6 +44,14 @@ function resetState() {
     activeComparisonId: null,
     input: '测试 prompt',
     error: null,
+  });
+  useConversationsStore.setState({
+    conversations: [],
+    currentConversationId: null,
+    isLoaded: true,
+    mode: 'compare',
+    lastActiveSingleId: null,
+    lastActiveCompareId: null,
   });
 }
 
@@ -342,5 +352,311 @@ describe('useComparisonStore.sendComparison（评审 C4：故障局部化）', (
     expect(run.usage).toBeUndefined();
     expect(mockedCheckAndWarnLowBalance).toHaveBeenCalledTimes(1);
     expect(mockedCheckAndWarnLowBalance).toHaveBeenCalledWith(testConvId);
+  });
+});
+
+describe('useComparisonStore.loadComparison（清洗残留死状态）', () => {
+  beforeEach(() => {
+    resetState();
+  });
+
+  it('含 streaming run 的会话 loadComparison 后：该 run 状态为 stopped、content 保留、branchMessages 不变', () => {
+    const testConvId = 'conv-test-streaming';
+    const initialConversation: Conversation = {
+      id: testConvId,
+      title: '对比测试',
+      messages: [],
+      provider: 'compare',
+      model: 'multi',
+      createdAt: 1000,
+      updatedAt: 1000,
+      mode: 'compare',
+      selectedModels: [
+        {
+          provider: 'xunfei',
+          model: 'lite',
+          providerLabel: '讯飞星火',
+          label: '讯飞星火 · Spark Lite（免费）',
+        },
+      ],
+      turns: [
+        {
+          id: 'turn-1',
+          prompt: '用户问题 1',
+          createdAt: 1000,
+          focusSlots: { left: 'xunfei:lite', right: 'xunfei:lite' },
+          runs: {
+            'xunfei:lite': {
+              modelKey: 'xunfei:lite',
+              provider: 'xunfei',
+              model: 'lite',
+              label: '讯飞星火 · Spark Lite（免费）',
+              status: 'streaming',
+              content: '流式生成了一半的文本',
+              branchMessages: [{ role: 'user', content: '用户问题 1' }],
+            },
+          },
+        },
+      ],
+    };
+
+    useConversationsStore.setState({
+      conversations: [initialConversation],
+    });
+
+    useComparisonStore.getState().loadComparison(testConvId);
+
+    const turn = useComparisonStore.getState().turns[0];
+    const run = turn.runs['xunfei:lite'];
+    expect(run.status).toBe('stopped');
+    expect(run.content).toBe('流式生成了一半的文本');
+    expect(run.branchMessages).toEqual([{ role: 'user', content: '用户问题 1' }]);
+  });
+
+  it('含 queued run 同样清洗为 stopped', () => {
+    const testConvId = 'conv-test-queued';
+    const initialConversation: Conversation = {
+      id: testConvId,
+      title: '对比测试',
+      messages: [],
+      provider: 'compare',
+      model: 'multi',
+      createdAt: 1000,
+      updatedAt: 1000,
+      mode: 'compare',
+      selectedModels: [
+        {
+          provider: 'doubao',
+          model: 'doubao-seed-evolving',
+          providerLabel: '豆包',
+          label: '豆包 · Doubao Seed',
+        },
+      ],
+      turns: [
+        {
+          id: 'turn-1',
+          prompt: '排队中的问题',
+          createdAt: 1000,
+          focusSlots: { left: 'doubao:doubao-seed-evolving', right: 'doubao:doubao-seed-evolving' },
+          runs: {
+            'doubao:doubao-seed-evolving': {
+              modelKey: 'doubao:doubao-seed-evolving',
+              provider: 'doubao',
+              model: 'doubao-seed-evolving',
+              label: '豆包 · Doubao Seed',
+              status: 'queued',
+              content: '',
+              branchMessages: [{ role: 'user', content: '排队中的问题' }],
+            },
+          },
+        },
+      ],
+    };
+
+    useConversationsStore.setState({
+      conversations: [initialConversation],
+    });
+
+    useComparisonStore.getState().loadComparison(testConvId);
+
+    const turn = useComparisonStore.getState().turns[0];
+    const run = turn.runs['doubao:doubao-seed-evolving'];
+    expect(run.status).toBe('stopped');
+    expect(run.content).toBe('');
+    expect(run.branchMessages).toEqual([{ role: 'user', content: '排队中的问题' }]);
+  });
+
+  it('completed / failed / stopped 的 run 原样不动', () => {
+    const testConvId = 'conv-test-unchanged';
+    const completedRun: ModelRun = {
+      modelKey: 'xunfei:lite',
+      provider: 'xunfei',
+      model: 'lite',
+      label: '讯飞星火 · Spark Lite（免费）',
+      status: 'completed',
+      content: '已完成回答',
+      completedAt: 1500,
+      usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, estimated: false },
+      branchMessages: [
+        { role: 'user', content: '问题' },
+        { role: 'assistant', content: '已完成回答' },
+      ],
+    };
+    const failedRun: ModelRun = {
+      modelKey: 'doubao:doubao-seed-evolving',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      label: '豆包 · Doubao Seed',
+      status: 'failed',
+      content: '生成失败',
+      completedAt: 1600,
+      error: '豆包暂时不可用',
+      branchMessages: [{ role: 'user', content: '问题' }],
+    };
+    const stoppedRun: ModelRun = {
+      modelKey: 'xunfei:pro',
+      provider: 'xunfei',
+      model: 'pro',
+      label: '讯飞星火 · Spark Pro',
+      status: 'stopped',
+      content: '此前被停止的回答',
+      completedAt: 1400,
+      branchMessages: [{ role: 'user', content: '问题' }],
+    };
+
+    const initialConversation: Conversation = {
+      id: testConvId,
+      title: '对比测试',
+      messages: [],
+      provider: 'compare',
+      model: 'multi',
+      createdAt: 1000,
+      updatedAt: 1000,
+      mode: 'compare',
+      selectedModels: [],
+      turns: [
+        {
+          id: 'turn-1',
+          prompt: '问题',
+          createdAt: 1000,
+          focusSlots: { left: 'xunfei:lite', right: 'doubao:doubao-seed-evolving' },
+          runs: {
+            'xunfei:lite': completedRun,
+            'doubao:doubao-seed-evolving': failedRun,
+            'xunfei:pro': stoppedRun,
+          },
+        },
+      ],
+    };
+
+    useConversationsStore.setState({
+      conversations: [initialConversation],
+    });
+
+    useComparisonStore.getState().loadComparison(testConvId);
+
+    const runs = useComparisonStore.getState().turns[0].runs;
+    expect(runs['xunfei:lite']).toEqual(completedRun);
+    expect(runs['doubao:doubao-seed-evolving']).toEqual(failedRun);
+    expect(runs['xunfei:pro']).toEqual(stoppedRun);
+  });
+
+  it('清洗后 conversations-store 镜像里的 turns 也被写回为 stopped', () => {
+    const testConvId = 'conv-test-sync-back';
+    const initialConversation: Conversation = {
+      id: testConvId,
+      title: '对比测试',
+      messages: [],
+      provider: 'compare',
+      model: 'multi',
+      createdAt: 1000,
+      updatedAt: 1000,
+      mode: 'compare',
+      selectedModels: [],
+      turns: [
+        {
+          id: 'turn-1',
+          prompt: '问题',
+          createdAt: 1000,
+          focusSlots: { left: 'xunfei:lite', right: 'doubao:doubao-seed-evolving' },
+          runs: {
+            'xunfei:lite': {
+              modelKey: 'xunfei:lite',
+              provider: 'xunfei',
+              model: 'lite',
+              label: '讯飞星火 · Spark Lite（免费）',
+              status: 'streaming',
+              content: '未完待续',
+              branchMessages: [{ role: 'user', content: '问题' }],
+            },
+            'doubao:doubao-seed-evolving': {
+              modelKey: 'doubao:doubao-seed-evolving',
+              provider: 'doubao',
+              model: 'doubao-seed-evolving',
+              label: '豆包 · Doubao Seed',
+              status: 'queued',
+              content: '',
+              branchMessages: [{ role: 'user', content: '问题' }],
+            },
+          },
+        },
+      ],
+    };
+
+    useConversationsStore.setState({
+      conversations: [initialConversation],
+    });
+
+    useComparisonStore.getState().loadComparison(testConvId);
+
+    // 验证 conversations-store 镜像已同步写回
+    const syncedConv = useConversationsStore
+      .getState()
+      .conversations.find((c) => c.id === testConvId);
+    expect(syncedConv).toBeDefined();
+    const syncedRuns = syncedConv!.turns![0].runs;
+    expect(syncedRuns['xunfei:lite'].status).toBe('stopped');
+    expect(syncedRuns['xunfei:lite'].content).toBe('未完待续');
+    expect(syncedRuns['doubao:doubao-seed-evolving'].status).toBe('stopped');
+    expect(syncedRuns['doubao:doubao-seed-evolving'].content).toBe('');
+  });
+
+  it('全部 run 本就干净时：loadComparison 后镜像不被改写', () => {
+    const testConvId = 'conv-test-clean-no-write';
+    const initialUpdatedAt = 123456789;
+    const initialConversation: Conversation = {
+      id: testConvId,
+      title: '对比测试',
+      messages: [],
+      provider: 'compare',
+      model: 'multi',
+      createdAt: 1000,
+      updatedAt: initialUpdatedAt,
+      mode: 'compare',
+      selectedModels: [],
+      turns: [
+        {
+          id: 'turn-1',
+          prompt: '问题',
+          createdAt: 1000,
+          focusSlots: { left: 'xunfei:lite', right: 'xunfei:lite' },
+          runs: {
+            'xunfei:lite': {
+              modelKey: 'xunfei:lite',
+              provider: 'xunfei',
+              model: 'lite',
+              label: '讯飞星火 · Spark Lite（免费）',
+              status: 'completed',
+              content: '已完成回答',
+              completedAt: 1500,
+              branchMessages: [
+                { role: 'user', content: '问题' },
+                { role: 'assistant', content: '已完成回答' },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    useConversationsStore.setState({
+      conversations: [initialConversation],
+    });
+
+    const updateSpy = vi.spyOn(useConversationsStore.getState(), 'updateComparisonTurns');
+
+    useComparisonStore.getState().loadComparison(testConvId);
+
+    // 1. 断言 updateComparisonTurns 未被调用（不写盘）
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    // 2. 断言 conversations-store 镜像对象引用与 updatedAt 严格未变
+    const convAfter = useConversationsStore
+      .getState()
+      .conversations.find((c) => c.id === testConvId);
+    expect(convAfter).toBe(initialConversation);
+    expect(convAfter?.updatedAt).toBe(initialUpdatedAt);
+
+    updateSpy.mockRestore();
   });
 });
