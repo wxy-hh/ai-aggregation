@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import '@/styles/scrollbar.css';
 import '@/styles/ziwei-theme.css';
@@ -11,6 +11,8 @@ import { QuotaExhaustedDialog } from '@/components/quota-exhausted-dialog';
 
 // 构建时间：通过环境变量注入，用于控制台输出判断更新是否成功
 const BUILD_TIME = process.env.BUILD_TIME || 'unknown';
+
+export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
 
 export const metadata: Metadata = {
   title: 'AI 聚合平台',

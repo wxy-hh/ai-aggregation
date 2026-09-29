@@ -697,7 +697,7 @@ export default function ChatWorkspace() {
   return (
     <AuthGuard>
       <AppLayout>
-        <div className="flex h-full min-h-0 w-full">
+        <div className="flex h-[calc(100dvh-var(--app-mobile-header-h)-var(--app-mobile-nav-h))] min-h-0 w-full lg:h-full">
           {/* 聊天历史侧边栏 */}
           <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
             {renderConversationList()}
