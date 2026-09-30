@@ -10,10 +10,12 @@ import {
   Image as ImageIcon,
   LogIn,
   LogOut,
+  Mail,
   MessageSquare,
   Mic,
   PencilLine,
   RefreshCw,
+  ShieldCheck,
   User,
   Video,
   X,
@@ -36,7 +38,9 @@ import {
   updateProfile,
   deleteAccount,
   uploadAvatar,
+  bindEmail,
 } from '@/lib/api/profile';
+import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
 import { toast } from 'sonner';
@@ -146,6 +150,13 @@ function formatJoinDate(value: string | null) {
     month: 'long',
     day: 'numeric',
   }).format(date);
+}
+
+/** 邮箱打码：本地部分只保留首字符（a***@example.com），用于个人中心展示 */
+function maskEmail(email: string): string {
+  const [localPart, domain] = email.split('@');
+  if (!domain) return email;
+  return `${localPart.slice(0, 1) || '*'}***@${domain}`;
 }
 
 function buildProfileViewModel(
@@ -610,6 +621,211 @@ function AvatarEditor({
   );
 }
 
+/** 发码按钮倒计时（秒）：同一邮箱 60 秒内不可重发 */
+const RESEND_COUNTDOWN_SECONDS = 60;
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * 绑定 / 更换邮箱弹层：输入邮箱 → 发送验证码 → 验证码确认 → 生效。
+ * 形态遵循 DESIGN.md §8.4：lg 以下为底部抽屉（圆角上翻、带抓手、安全区内边距），
+ * lg 起为居中弹层。
+ */
+function EmailBindingDialog({
+  open,
+  onOpenChange,
+  currentEmail,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentEmail: string | null;
+}) {
+  const fetchUser = useAuthStore((s) => s.fetchUser);
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setEmail('');
+      setCode('');
+      setCountdown(0);
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const trimmedEmail = email.trim();
+
+  const handleSendCode = async () => {
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      toast.error('请输入正确的邮箱地址');
+      return;
+    }
+
+    setSendingCode(true);
+    try {
+      const res = await authApi.sendEmailCode('bind', trimmedEmail);
+      toast.success(res.message || '验证码已发送，请在 10 分钟内完成绑定');
+      setCountdown(RESEND_COUNTDOWN_SECONDS);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '验证码发送失败，请重试');
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      toast.error('请输入正确的邮箱地址');
+      return;
+    }
+    if (!/^\d{6}$/.test(code.trim())) {
+      toast.error('请输入 6 位邮箱验证码');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await bindEmail(trimmedEmail, code.trim());
+      await fetchUser();
+      toast.success('邮箱绑定成功');
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '绑定失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        contentAnimation="none"
+        overlayClassName={DIALOG_OVERLAY}
+        className={cn(
+          // 移动端（lg 以下，含触屏平板）：底部抽屉；lg 起：居中弹层
+          'inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden p-0',
+          'rounded-t-[28px] rounded-b-none border border-white/70 pb-[env(safe-area-inset-bottom)]',
+          'bg-white/90 backdrop-blur-2xl backdrop-saturate-150',
+          'shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(59,130,246,0.15)]',
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4',
+          'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+          'duration-300',
+          'lg:inset-x-auto lg:bottom-auto lg:left-[50%] lg:top-[50%] lg:w-[calc(100vw-2rem)] lg:max-w-[480px] lg:-translate-x-1/2 lg:-translate-y-1/2',
+          'lg:rounded-[24px] lg:pb-0',
+          // 居中断点：入场关键帧会覆盖 -translate-x/y-1/2，居中位移必须烘进关键帧
+          'lg:data-[state=open]:slide-in-from-left-1/2 lg:data-[state=open]:slide-in-from-top-[48%] lg:data-[state=open]:zoom-in-95',
+          'lg:data-[state=closed]:slide-out-to-left-1/2 lg:data-[state=closed]:slide-out-to-top-[48%] lg:data-[state=closed]:zoom-out-95',
+          'dark:border-white/10 dark:bg-slate-900/90'
+        )}
+      >
+        {/* 底部抽屉抓手（仅移动端） */}
+        <div className="flex justify-center pt-3 lg:hidden">
+          <span className="h-1 w-10 rounded-full bg-slate-900/15 dark:bg-white/20" />
+        </div>
+
+        <div className="border-b border-slate-200/60 px-5 py-4 sm:px-7 dark:border-white/10">
+          <div className="flex items-center gap-3">
+            <CardIconChip>
+              <Mail className="h-4 w-4" />
+            </CardIconChip>
+            <div>
+              <DialogTitle className="font-[var(--font-space-grotesk)] text-lg font-bold tracking-tight text-[#0F172A] dark:text-white">
+                {currentEmail ? '更换邮箱' : '绑定邮箱'}
+              </DialogTitle>
+              <DialogDescription className="mt-0.5 text-[13px] text-[#64748B] dark:text-slate-400">
+                需要邮箱验证码确认归属，验证码 10 分钟内有效
+              </DialogDescription>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 px-5 py-5 sm:px-7">
+          <div className="space-y-2">
+            <label
+              htmlFor="profile-email"
+              className="text-sm font-semibold text-[#475569] dark:text-slate-300"
+            >
+              邮箱地址
+            </label>
+            <Input
+              id="profile-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              className={DIALOG_INPUT}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="profile-email-code"
+              className="text-sm font-semibold text-[#475569] dark:text-slate-300"
+            >
+              邮箱验证码
+            </label>
+            <div className="flex items-center gap-3">
+              <Input
+                id="profile-email-code"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="6 位数字"
+                className={DIALOG_INPUT}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleSendCode()}
+                disabled={sendingCode || countdown > 0}
+                className={cn(DIALOG_CANCEL_BUTTON, 'h-12 shrink-0 whitespace-nowrap px-4')}
+              >
+                {sendingCode ? '发送中...' : countdown > 0 ? `${countdown}s 后重发` : '发送验证码'}
+              </Button>
+            </div>
+          </div>
+
+          <p className="text-xs leading-relaxed text-day-muted dark:text-slate-500">
+            绑定后可用该邮箱找回密码；若邮箱已被其他账号绑定，需要先更换。
+          </p>
+        </div>
+
+        <DialogFooter className="gap-3 border-t border-slate-200/60 px-5 py-4 sm:flex-row sm:justify-end sm:space-x-0 sm:px-7 dark:border-white/10">
+          <Button
+            type="button"
+            variant="outline"
+            className={DIALOG_CANCEL_BUTTON}
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            取消
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="h-11 min-w-[112px] rounded-xl text-sm shadow-[0_10px_24px_rgba(93,124,250,0.32)]"
+          >
+            {saving ? '绑定中...' : '确认绑定'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DeleteAccountDialog({
   open,
   onOpenChange,
@@ -701,6 +917,7 @@ export function ProfileShell() {
   const fetchUser = useAuthStore((state) => state.fetchUser);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isEmailOpen, setIsEmailOpen] = useState(false);
   const [usage, setUsage] = useState<ResourceUsageViewModel | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
   const [usageError, setUsageError] = useState<string | null>(null);
@@ -890,6 +1107,49 @@ export function ProfileShell() {
               <div
                 className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}
               >
+                {!isAnonymousUser ? (
+                  <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
+                    <HoverGlow />
+                    <div className="flex items-center gap-3">
+                      <CardIconChip accent="indigo">
+                        <Mail className="h-4 w-4" />
+                      </CardIconChip>
+                      <h3 className="font-[var(--font-space-grotesk)] text-lg font-semibold tracking-tight text-[#0F172A] dark:text-white">
+                        邮箱绑定
+                      </h3>
+                    </div>
+                    <p className="mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
+                      {profile.email
+                        ? `当前绑定 ${maskEmail(profile.email)}，可用于找回密码。`
+                        : '尚未绑定邮箱。绑定后可用于找回密码。'}
+                    </p>
+                    <div className="mb-5 mt-4">
+                      {profile.email ? (
+                        <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-300">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          已验证
+                        </span>
+                      ) : (
+                        <span className="inline-flex h-7 items-center rounded-full bg-amber-500/10 px-2.5 text-xs font-semibold text-amber-600 dark:bg-amber-400/10 dark:text-amber-300">
+                          未绑定
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsEmailOpen(true)}
+                      className={cn(
+                        OUTLINE_BUTTON,
+                        'mt-auto sm:w-auto sm:min-w-[200px] sm:self-start'
+                      )}
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      {profile.email ? '更换邮箱' : '绑定邮箱'}
+                    </Button>
+                  </div>
+                ) : null}
+
                 {isAnonymousUser ? (
                   <div
                     className={cn(
@@ -1184,6 +1444,13 @@ export function ProfileShell() {
       </div>
 
       <EditProfileDialog open={isEditOpen} onOpenChange={setIsEditOpen} value={profile} />
+      {!isAnonymousUser ? (
+        <EmailBindingDialog
+          open={isEmailOpen}
+          onOpenChange={setIsEmailOpen}
+          currentEmail={profile.email}
+        />
+      ) : null}
       {!isAdminUser ? (
         <DeleteAccountDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
       ) : null}

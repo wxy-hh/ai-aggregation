@@ -9,7 +9,7 @@ export default function ForgotPasswordPage() {
       <div className="relative z-10 w-full max-w-[28rem]">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-semibold text-slate-900">忘记密码</h1>
-          <p className="mt-2 text-sm text-slate-500">输入注册邮箱，我们将发送重置链接</p>
+          <p className="mt-2 text-sm text-slate-500">输入用户名或邮箱，我们将发送重置链接</p>
         </div>
 
         <div className="relative overflow-hidden rounded-[2rem] border border-white/75 p-[1px] shadow-[0_26px_80px_rgba(113,145,212,0.22)]">

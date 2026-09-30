@@ -214,6 +214,13 @@ DASHSCOPE_API_KEY=         # 通义千问 API Key
 ZHIPU_API_KEY=             # 智谱 API Key
 DEEPSEEK_API_KEY=          # DeepSeek API Key
 SILICONFLOW_API_KEY=       # 硅基流动（Kolors 图像生成）
+MEDIA_PROXY_ALLOWED_DOMAINS=  # 媒体代理白名单（逗号分隔，追加在默认白名单后）
+AUTH_RATE_LIMIT_FAILURE_MODE=  # 认证接口限流设施故障时的处置模式（默认 closed，open 为应急放行）
+ALIYUN_DM_ACCESS_KEY_ID=       # 阿里云邮件推送 AccessKey ID
+ALIYUN_DM_ACCESS_KEY_SECRET=   # 阿里云邮件推送 AccessKey Secret
+ALIYUN_DM_ACCOUNT_NAME=        # 发信地址（控制台已配置）
+ALIYUN_DM_FROM_ALIAS=          # 发件人昵称（可选）
+ALIYUN_DM_REGION=              # 区域（默认 cn-hangzhou）
 ```
 
 ### 环境变量分组说明
@@ -229,6 +236,13 @@ SILICONFLOW_API_KEY=       # 硅基流动（Kolors 图像生成）
   - `ZHIPU_API_KEY`
   - `DEEPSEEK_API_KEY`
   - `SILICONFLOW_API_KEY`
+- **媒体代理安全**
+  - `MEDIA_PROXY_ALLOWED_DOMAINS`：`/api/image/proxy`、`/api/video/proxy` 的额外域名白名单（逗号分隔，格式 `example.com` 或 `example.com:8443`）。默认白名单为 `storage.googleapis.com`（Agnes 生成结果）与 `sfile.chatglm.cn`（智谱 CogVideoX 视频结果）；代理仅允许 https，只有白名单内的本机地址（如 `localhost:9000`）才允许 http，用于本地 MinIO 开发
+- **认证加固**
+  - `AUTH_RATE_LIMIT_FAILURE_MODE`：登录/注册/忘记密码/重置密码/邮箱验证码路由的限流设施故障处置模式。默认（或设为 `closed`）为 fail-closed——Redis 异常或超时时返回 503 拒绝认证请求；仅当 Redis 长时间故障、需要临时恢复登录能力时设为 `open` 应急放行，恢复后改回。阈值（`AUTH_RATE_LIMITS`）与锁定策略见 `apps/web/src/lib/auth/rate-limit.ts`、`apps/web/src/lib/auth/login-lockout.ts`；锁定期内的登录尝试只拒绝、不累计不延长（防锁定 DoS）
+- **邮件通道（阿里云邮件推送 DirectMail）**
+  - `ALIYUN_DM_ACCESS_KEY_ID` / `ALIYUN_DM_ACCESS_KEY_SECRET` / `ALIYUN_DM_ACCOUNT_NAME`：DirectMail 发信凭证与发信地址（需在邮件推送控制台创建并完成域名解析），注册验证码、绑定邮箱验证码、忘记密码重置邮件三处共用；`ALIYUN_DM_FROM_ALIAS` 选填（发件人昵称），`ALIYUN_DM_REGION` 默认 `cn-hangzhou`
+  - 未配置凭证时发信接口统一返回 503（内测环境可无邮件通道跑通其余流程）；验证码存 Redis `verify:<purpose>:<email>`（用途仅 `register`/`bind`，忘记密码走重置链接不发验证码），只存 SHA-256 摘要、10 分钟有效、验证通过即删；发送限流为 5 次/分钟/IP + 单邮箱日上限 10 次，阈值统一登记在 `apps/web/src/lib/auth/rate-limit.ts` 的 `AUTH_RATE_LIMITS`。实现见 `apps/web/src/lib/mail/`、`apps/web/src/lib/auth/email-verification.ts`
 
 ---
 

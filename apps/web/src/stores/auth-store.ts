@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { authApi } from '@/lib/api/auth';
+import { authApi, type RegisterPayload } from '@/lib/api/auth';
 import {
   type AnonymousAuthStrategy,
   fingerprintAnonymousStrategy,
@@ -40,7 +40,7 @@ interface AuthState {
   isAuthenticated: boolean;
 
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string, name?: string) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
   anonymousSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
@@ -57,6 +57,15 @@ export interface AuthStoreOptions {
 let initializePromise: Promise<void> | null = null;
 
 /**
+ * 在途的认证引导（没有在途引导时为 null）。
+ * 供请求层在 401 时判断「该等引导结论，还是自己刷新」：
+ * accessToken 内存化后，引导结束前内存里必然没有 token，首屏请求的 401 就发生在这一刻。
+ */
+export function getPendingAuthBootstrap(): Promise<void> | null {
+  return initializePromise;
+}
+
+/**
  * 认证引导超时（毫秒）：接口层没有超时，弱网或代理挂起时引导会一直悬着，
  * 而 status 不迁移到 'ready' 就等于全站停在加载态。到点先放行渲染，引导继续在后台完成。
  */
@@ -64,6 +73,11 @@ export const AUTH_BOOTSTRAP_TIMEOUT_MS = 15_000;
 
 /** 创建 auth store，允许注入匿名认证策略以便测试或替换实现 */
 export function createAuthStore(options: AuthStoreOptions) {
+  // 防止并发刷新：401 请求、引导自身、fetchUser 都可能同时要求刷新，
+  // 而服务端每次刷新都会轮换 refresh token —— 后到的那次必然 401，
+  // 于是把仍在续期的会话误判成「会话失效」。共享同一枚在途 Promise，收敛成一次请求。
+  let refreshInFlight: Promise<string | null> | null = null;
+
   return create<AuthState>()(
     persist(
       (set, get) => ({
@@ -83,8 +97,8 @@ export function createAuthStore(options: AuthStoreOptions) {
           set({ user: res.data.user, accessToken: res.data.accessToken, isAuthenticated: true });
         },
 
-        register: async (username, password, name) => {
-          const res = await authApi.register(username, password, name);
+        register: async (payload) => {
+          const res = await authApi.register(payload);
 
           if (!res.success || !res.data?.user || !res.data?.accessToken) {
             throw new Error(res.error || '注册失败');
@@ -118,20 +132,36 @@ export function createAuthStore(options: AuthStoreOptions) {
             options.anonymousStrategy.clearCredential();
           }
 
-          window.location.href = '/api/auth/logout';
+          // 登出接口只接受 POST，用请求调用（服务端清 cookie），再由前端跳转登录页。
+          // 接口异常不能阻塞本地登出：本地状态已清理，cookie 失效由服务端兜底。
+          try {
+            await authApi.logout();
+          } catch {
+            // 忽略登出接口失败
+          }
+
+          window.location.href = '/login?logout=1';
         },
 
         refreshAccessToken: async () => {
-          try {
-            const res = await authApi.refresh();
-            if (res.accessToken) {
-              set({ accessToken: res.accessToken });
-              return res.accessToken;
-            }
-            return null;
-          } catch {
-            return null;
+          if (!refreshInFlight) {
+            refreshInFlight = (async () => {
+              try {
+                const res = await authApi.refresh();
+                if (res.accessToken) {
+                  set({ accessToken: res.accessToken });
+                  return res.accessToken;
+                }
+                return null;
+              } catch {
+                return null;
+              }
+            })().finally(() => {
+              refreshInFlight = null;
+            });
           }
+
+          return refreshInFlight;
         },
 
         fetchUser: async () => {
@@ -201,8 +231,14 @@ export function createAuthStore(options: AuthStoreOptions) {
             // 已在 rehydrate 时置为 'ready'，重置会白白把已就绪的界面打回加载态。
             // 引导状态只在下面的 finally 里单向迁移到 'ready'。
 
-            // 优先通过 refresh token 获取新 token（兼容已登录真实用户）
-            const newToken = await refreshAccessToken();
+            // 优先通过 refresh token 获取新 token（兼容已登录真实用户）。
+            // accessToken 内存化后刷新页面必然走这条路径，而多标签页下另一个标签可能刚轮换过
+            // refresh token：本标签用旧 cookie 刷新会 401，但浏览器此时已拿到新 cookie，
+            // 因此失败后先重试一次再决定是否降级，避免把刚续上的会话误判成「未登录」。
+            let newToken = await refreshAccessToken();
+            if (!newToken) {
+              newToken = await refreshAccessToken();
+            }
 
             if (newToken) {
               await fetchUser();
@@ -250,8 +286,20 @@ export function createAuthStore(options: AuthStoreOptions) {
       {
         name: 'ai-app-auth',
         storage: createJSONStorage(() => localStorage),
+        // 版本 1：accessToken 从持久化中移除（凭证只留在内存里，刷新页面后用 refresh token 静默换回）
+        version: 1,
+        migrate: (persistedState, version) => {
+          // v0 曾把 accessToken 一并写进 localStorage：旧版本残留的凭证必须就地清掉，
+          // 否则它既会继续留在磁盘上，又会在 rehydrate 时被当成有效登录态。
+          // 返回迁移后的状态后，persist 会把清理结果重新写回存储。
+          if (version < 1 && persistedState && typeof persistedState === 'object') {
+            const cleaned = { ...(persistedState as Record<string, unknown>) };
+            delete cleaned.accessToken;
+            return cleaned as { user: User | null; isAuthenticated: boolean };
+          }
+          return persistedState as { user: User | null; isAuthenticated: boolean };
+        },
         partialize: (state) => ({
-          accessToken: state.accessToken,
           user: state.user,
           isAuthenticated: state.isAuthenticated,
         }),

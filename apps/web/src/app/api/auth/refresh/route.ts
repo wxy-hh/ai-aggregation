@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, setRefreshTokenCookie, setAuthKindCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, hashRefreshToken, setRefreshTokenCookie, setAuthKindCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { ApiError } from '@/lib/api/responses';
 
 export async function POST(_req: NextRequest) {
@@ -12,7 +12,8 @@ export async function POST(_req: NextRequest) {
     }
 
     const record = await prisma.refreshToken.findUnique({
-      where: { token },
+      // 库中只存摘要：先对 cookie 明文算摘要再查
+      where: { token: hashRefreshToken(token) },
       include: { user: { select: { role: true } } },
     });
 
@@ -52,7 +53,8 @@ export async function POST(_req: NextRequest) {
       await prisma.$transaction([
         prisma.refreshToken.delete({ where: { id: record.id } }),
         prisma.refreshToken.create({
-          data: { userId: record.userId, token: newRefreshToken, expiresAt },
+          // 轮换出的新令牌同样只存摘要
+          data: { userId: record.userId, token: hashRefreshToken(newRefreshToken), expiresAt },
         }),
       ]);
     } catch (txError: unknown) {
@@ -72,8 +74,7 @@ export async function POST(_req: NextRequest) {
     return Response.json({ accessToken });
   } catch (error) {
     console.error('刷新令牌失败:', error);
-    return ApiError.internalError('刷新令牌失败', {
-      error: error instanceof Error ? error.message : '未知错误',
-    });
+    // 不向客户端透传底层异常细节，仅保留服务端日志
+    return ApiError.internalError('刷新令牌失败，请稍后重试');
   }
 }

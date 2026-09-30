@@ -10,6 +10,7 @@ import type { Message as ChatMessage } from '@/stores/chat-store';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { getRateLimiter } from '@repo/redis';
+import { logger } from '@repo/logger';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { QuotaSession } from '@/lib/billing/quota-session';
@@ -166,8 +167,12 @@ async function checkRateLimit(userId: string, errorId: string): Promise<void> {
     }
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
-    // 限流服务故障不阻断对话
-    console.error('[chat] 限流跳过:', error);
+    // 限流设施故障不阻断对话，但必须留痕（限流器内部按 fail-open 放行）
+    logger.warn('[chat] 限流检查异常，已放行请求', {
+      errorId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

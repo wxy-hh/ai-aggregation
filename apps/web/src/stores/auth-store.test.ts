@@ -51,6 +51,15 @@ function createDeferredCredential() {
   return { promise, release };
 }
 
+/** 可手动放行的 Promise，用来把异步过程钉在「进行中」这一刻 */
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 const noopStrategy = {
   getCredential: () => Promise.resolve('a'.repeat(64)),
   clearCredential: () => {},
@@ -61,11 +70,23 @@ function guardWouldRedirect(status: AuthStatus, isAuthenticated: boolean) {
   return status === 'ready' && !isAuthenticated;
 }
 
-function seedPersistedSession() {
+/** 当前版本的持久化结构：accessToken 不落盘，只留用户快照与登录标记 */
+function seedPersistedSession(user = ANONYMOUS_USER) {
   localStorage.setItem(
     'ai-app-auth',
     JSON.stringify({
-      state: { accessToken: 'persisted-token', user: ANONYMOUS_USER, isAuthenticated: true },
+      state: { user, isAuthenticated: true },
+      version: 1,
+    })
+  );
+}
+
+/** 旧版本残留的持久化结构：accessToken 曾经被一并写进 localStorage */
+function seedLegacyPersistedSession() {
+  localStorage.setItem(
+    'ai-app-auth',
+    JSON.stringify({
+      state: { accessToken: 'legacy-token', user: ANONYMOUS_USER, isAuthenticated: true },
       version: 0,
     })
   );
@@ -190,5 +211,127 @@ describe('auth-store 引导状态契约（首次进站不得被甩到登录页�
 
     expect(store.getState().isAuthenticated).toBe(true);
     expect(store.getState().status).toBe('ready');
+  });
+});
+
+/**
+ * accessToken 内存化契约：凭证只活在内存里，任何 XSS 都无法从磁盘上静默捞走它。
+ * 代价是页面刷新后内存必然为空，会话只能靠 httpOnly cookie 里的 refresh token 静默换回，
+ * 因此「刷新恢复」与「多标签页下的重试」是这条链路的生命线。
+ */
+describe('accessToken 内存化（凭证不落盘）', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    for (const mock of [refreshMock, anonymousMock, getMeMock, loginMock, registerMock]) {
+      mock.mockReset();
+    }
+  });
+
+  it('登录只把用户快照写进 localStorage，accessToken 不入持久化', async () => {
+    loginMock.mockResolvedValue({ success: true, data: { user: REAL_USER, accessToken: 'token-2' } });
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+    await store.getState().login('real_user', 'password');
+
+    expect(store.getState().accessToken).toBe('token-2');
+
+    const raw = localStorage.getItem('ai-app-auth');
+    expect(raw).not.toContain('token-2');
+    const persisted = JSON.parse(raw ?? '{}');
+    expect(persisted.state).not.toHaveProperty('accessToken');
+    expect(persisted.state.user).toMatchObject({ id: REAL_USER.id });
+    expect(persisted.state.isAuthenticated).toBe(true);
+  });
+
+  it('刷新页面：rehydrate 后内存 accessToken 为空，靠 refresh 静默恢复会话', async () => {
+    seedPersistedSession(REAL_USER);
+    refreshMock.mockResolvedValue({ accessToken: 'restored-token' });
+    getMeMock.mockResolvedValue({ success: true, data: { user: REAL_USER } });
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+
+    // 磁盘上不再有凭证，rehydrate 只能带回用户快照
+    expect(store.getState().accessToken).toBeNull();
+    expect(store.getState().isAuthenticated).toBe(true);
+    expect(store.getState().user).toMatchObject({ id: REAL_USER.id });
+
+    await store.getState().initialize();
+
+    expect(store.getState().accessToken).toBe('restored-token');
+    expect(anonymousMock).not.toHaveBeenCalled();
+  });
+
+  it('旧版本残留的 accessToken 会被迁移清掉，不复活成可用的登录态', () => {
+    seedLegacyPersistedSession();
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+
+    expect(store.getState().accessToken).toBeNull();
+    expect(store.getState().user).toMatchObject({ id: ANONYMOUS_USER.id });
+    expect(localStorage.getItem('ai-app-auth')).not.toContain('legacy-token');
+  });
+
+  it('refresh 首次失败后重试成功：恢复会话，不降级为匿名登录', async () => {
+    seedPersistedSession(REAL_USER);
+    // 首次 401（多标签页下另一标签刚轮换过 refresh token 就是这个形态），重试即成功
+    refreshMock
+      .mockRejectedValueOnce(new Error('刷新令牌已过期，请重新登录'))
+      .mockResolvedValue({ accessToken: 'retried-token' });
+    getMeMock.mockResolvedValue({ success: true, data: { user: REAL_USER } });
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+    await store.getState().initialize();
+
+    expect(refreshMock).toHaveBeenCalledTimes(2);
+    expect(anonymousMock).not.toHaveBeenCalled();
+    expect(store.getState().accessToken).toBe('retried-token');
+    expect(store.getState().isAuthenticated).toBe(true);
+  });
+
+  it('refresh 两次都失败才降级为匿名登录', async () => {
+    seedPersistedSession(REAL_USER);
+    refreshMock.mockResolvedValue({ accessToken: null });
+    anonymousMock.mockResolvedValue({
+      success: true,
+      data: { user: ANONYMOUS_USER, accessToken: 'anon-token' },
+    });
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+    await store.getState().initialize();
+
+    expect(refreshMock).toHaveBeenCalledTimes(2);
+    expect(anonymousMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().accessToken).toBe('anon-token');
+  });
+
+  it('refresh 首次即成功时不做多余重试', async () => {
+    seedPersistedSession(REAL_USER);
+    refreshMock.mockResolvedValue({ accessToken: 'fresh-token' });
+    getMeMock.mockResolvedValue({ success: true, data: { user: REAL_USER } });
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+    await store.getState().initialize();
+
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('并发刷新共享同一次请求：不会各自轮换 refresh token 把对方挤成 401', async () => {
+    const deferred = createDeferred<{ accessToken?: string }>();
+    refreshMock.mockReturnValue(deferred.promise);
+
+    const store = createAuthStore({ anonymousStrategy: noopStrategy });
+
+    // 引导与 401 请求会同时要求刷新；服务端每次刷新都轮换 token，重复并发必有一次拿不到
+    const first = store.getState().refreshAccessToken();
+    const second = store.getState().refreshAccessToken();
+
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+
+    deferred.resolve({ accessToken: 'shared-token' });
+
+    await expect(first).resolves.toBe('shared-token');
+    await expect(second).resolves.toBe('shared-token');
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().accessToken).toBe('shared-token');
   });
 });

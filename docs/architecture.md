@@ -161,8 +161,8 @@ class NewProvider implements AIProvider {
 
 ## 安全设计
 
-- **鉴权**: JWT / Session
-- **限流**: Redis + 滑动窗口
+- **鉴权**: 自研方案（HS256 JWT access token + 数据库 refresh token + httpOnly cookie），未采用 NextAuth/Auth.js
+- **限流**: Redis + 滑动窗口（认证接口在限流设施故障时 fail-closed，业务接口 fail-open）
 - **配额**: 用户级别的用量控制
 - **输入验证**: Zod schema 验证
 - **SQL 注入防护**: Prisma ORM

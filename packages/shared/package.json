@@ -17,9 +17,11 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@repo/logger": "workspace:*",
     "lunar-javascript": "^1.7.7",
     "qimen-dunjia": "^2.1.0",
     "tyme4ts": "1.4.6",
@@ -29,6 +31,7 @@
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "ioredis": "^5.4.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.18"
   }
 }

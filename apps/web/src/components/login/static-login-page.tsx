@@ -123,6 +123,8 @@ export function StaticLoginPage() {
         toast.error('第三方登录失败，请重试');
       } else if (error === 'no_code') {
         toast.error('授权已取消');
+      } else if (error === 'account_disabled') {
+        toast.error('账号已被停用，请联系管理员');
       }
     }
   }, [searchParams]);

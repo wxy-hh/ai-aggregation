@@ -1,18 +1,19 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { getRefreshTokenFromCookie, clearRefreshTokenCookie, clearAuthKindCookie } from '@/lib/auth/jwt';
-import { buildRedirectUrl } from '@/lib/auth/origin';
+import {
+  getRefreshTokenFromCookie,
+  clearRefreshTokenCookie,
+  clearAuthKindCookie,
+  hashRefreshToken,
+} from '@/lib/auth/jwt';
+import { createSuccessResponse } from '@/lib/api/responses';
 
-/** GET / POST 均可，清除 Cookie 后重定向到登录页 */
-export async function GET(req: NextRequest) {
-  return handleLogout(req);
-}
-
-export async function POST(req: NextRequest) {
-  return handleLogout(req);
-}
-
-async function handleLogout(req: NextRequest) {
+/**
+ * POST /api/auth/logout
+ * 清除 Cookie 与会话令牌。仅接受 POST：GET 登出会被第三方页面的图片标签/链接强制触发。
+ * 返回 JSON 而非重定向，前端拿到结果后自行跳转登录页。
+ */
+export async function POST(_req: NextRequest) {
   let token: string | undefined;
 
   try {
@@ -32,7 +33,8 @@ async function handleLogout(req: NextRequest) {
   // 清理数据库中的 refresh token（失败不影响登出）
   if (token) {
     try {
-      await prisma.refreshToken.deleteMany({ where: { token } });
+      // 库中只存摘要：先对 cookie 明文算摘要再删
+      await prisma.refreshToken.deleteMany({ where: { token: hashRefreshToken(token) } });
     } catch (error) {
       // 常见：refresh_tokens 表不存在（迁移未执行）、数据库连接异常
       const message = error instanceof Error ? error.message : String(error);
@@ -46,8 +48,5 @@ async function handleLogout(req: NextRequest) {
     }
   }
 
-  // 使用请求头中的 Origin 或 Host 来构建正确的重定向 URL
-  // 避免在 Docker 环境中使用 req.nextUrl.origin 导致跳转到 0.0.0.0:3000
-  const redirectUrl = buildRedirectUrl(req, '/login?logout=1');
-  return Response.redirect(new URL(redirectUrl, req.url));
+  return createSuccessResponse(null, '已退出登录');
 }

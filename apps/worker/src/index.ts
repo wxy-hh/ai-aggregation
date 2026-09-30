@@ -12,6 +12,7 @@ import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';
 import { qimenBaseWorker } from './workers/qimen-base';
 import { qimenSectionWorker } from './workers/qimen-section';
+import { maintenanceWorker, registerMaintenanceSchedules } from './workers/maintenance';
 
 let isRunning = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -72,7 +73,14 @@ async function main() {
   });
   isRunning = true;
   const heartbeatStore = new WorkerHeartbeatStore(getRedisClient());
-  const workers = [sttWorker, pptWorker, imageWorker, qimenBaseWorker, qimenSectionWorker];
+  const workers = [
+    sttWorker,
+    pptWorker,
+    imageWorker,
+    qimenBaseWorker,
+    qimenSectionWorker,
+    maintenanceWorker,
+  ];
 
   const shutdown = async (exitCode = 0) => {
     if (isShuttingDown) {
@@ -121,6 +129,15 @@ async function main() {
     await Promise.all(workers.map((worker) => worker.waitUntilReady()));
 
     logger.info('所有 Workers 已启动');
+    try {
+      await registerMaintenanceSchedules();
+    } catch (error) {
+      // 定时清理属维护动作，注册失败只告警不拖垮 Worker；下次重启会重新 upsert 调度
+      logger.error(
+        '注册维护任务调度失败',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
     await heartbeatStore.beat('apps-worker');
     heartbeatTimer = setInterval(() => {
       void heartbeatStore.beat('apps-worker');

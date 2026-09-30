@@ -1,6 +1,6 @@
 /** 管理端 API 客户端封装 */
 
-import { useAuthStore } from '@/stores/auth-store';
+import { authFetch } from './client';
 
 interface AdminUser {
   id: string;
@@ -30,18 +30,6 @@ interface UserResponse {
   message?: string;
 }
 
-function getAccessToken(): string | null {
-  return useAuthStore.getState().accessToken;
-}
-
-function authHeaders(): HeadersInit {
-  const token = getAccessToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
 async function handleResponse<T>(res: Response): Promise<T> {
   const data = await res.json();
   if (!res.ok) {
@@ -57,34 +45,30 @@ export const adminApi = {
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
 
-    const res = await fetch(`/api/admin/users?${searchParams.toString()}`, {
-      headers: authHeaders(),
-    });
+    // 统一走 authFetch：401 时自动刷新 token 并重试，裸 fetch 会把管理端挡在会话过期之外
+    const res = await authFetch(`/api/admin/users?${searchParams.toString()}`);
     return handleResponse<UsersListResponse>(res);
   },
 
   async createUser(data: { username: string; password: string; name?: string }) {
-    const res = await fetch('/api/admin/users', {
+    const res = await authFetch('/api/admin/users', {
       method: 'POST',
-      headers: authHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse<UserResponse>(res);
   },
 
   async updateUser(id: string, data: { name?: string; role?: string; status?: string; tokens?: number }) {
-    const res = await fetch(`/api/admin/users/${id}`, {
+    const res = await authFetch(`/api/admin/users/${id}`, {
       method: 'PATCH',
-      headers: authHeaders(),
       body: JSON.stringify(data),
     });
     return handleResponse<UserResponse>(res);
   },
 
   async deleteUser(id: string) {
-    const res = await fetch(`/api/admin/users/${id}`, {
+    const res = await authFetch(`/api/admin/users/${id}`, {
       method: 'DELETE',
-      headers: authHeaders(),
     });
     return handleResponse<{ success: boolean; message?: string }>(res);
   },

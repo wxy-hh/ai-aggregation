@@ -4,6 +4,7 @@ import { prisma } from '@repo/db';
 import {
   signAccessToken,
   generateRefreshToken,
+  hashRefreshToken,
   setRefreshTokenCookie,
   setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
@@ -13,6 +14,7 @@ import { RateLimiter } from '@repo/shared/server';
 import { getRedisClient } from '@repo/redis';
 import { ANONYMOUS_FREE_TOKENS } from '@/lib/constants/quota';
 import { DEVICE_ID_REGEX } from '@/lib/constants/device';
+import { getClientIp } from '@/lib/auth/client-ip';
 
 // 匿名用户创建速率限制：每 IP 每小时最多 30 次。
 // 注入进程级共享连接（@repo/redis 单例），避免每次模块加载新建连接泄漏。
@@ -28,24 +30,6 @@ function getDeviceHash(deviceId: string): string {
     throw new Error('ANONYMOUS_DEVICE_SALT 环境变量未配置');
   }
   return crypto.createHmac('sha256', salt).update(deviceId).digest('hex');
-}
-
-function getClientIp(req: NextRequest): string {
-  // 优先使用边缘/代理注入的真实 IP（不可由客户端伪造）
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.split(',')[0].trim();
-  }
-
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    // 取最右侧（最近可信代理）的 IP，降低客户端伪造风险
-    const parts = forwarded.split(',');
-    return parts[parts.length - 1].trim();
-  }
-
-  // NextRequest 在 Edge Runtime 中不提供 ip 属性，回退到未知标识
-  return 'unknown';
 }
 
 function generateAnonymousUsername(deviceHash: string): string {
@@ -154,7 +138,8 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + anonymousRefreshExpires * 1000);
 
     await prisma.refreshToken.create({
-      data: { userId: user.id, token: refreshToken, expiresAt },
+      // 库中只存摘要，明文仅存在于 httpOnly cookie
+      data: { userId: user.id, token: hashRefreshToken(refreshToken), expiresAt },
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);

@@ -1,4 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
+import { logger } from '@repo/logger';
+
+/**
+ * 限流设施故障（Redis 异常 / 超时）时的处置模式
+ * - open：放行请求（默认，业务路由保持既有行为）
+ * - closed：拒绝请求，由调用方映射为 503
+ */
+export type RateLimitFailureMode = 'open' | 'closed';
+
+/**
+ * 拒绝原因
+ * - limiter-unavailable：因限流设施故障拒绝（仅 fail-closed 模式产生），调用方应映射为 503 而非 429
+ */
+export type RateLimitDenyReason = 'limiter-unavailable';
 
 /**
  * 限流配置
@@ -10,6 +25,8 @@ export interface RateLimitConfig {
   limit: number;
   /** 限流键前缀 */
   prefix: string;
+  /** 设施故障时的处置模式，默认 open */
+  failureMode: RateLimitFailureMode;
 }
 
 /**
@@ -24,7 +41,12 @@ export interface RateLimitResult {
   reset: number;
   /** 总限制数 */
   limit: number;
+  /** 拒绝原因；仅当因限流设施故障拒绝时存在 */
+  reason?: RateLimitDenyReason;
 }
+
+/** 限流检查的 Redis 等待上限；超时按设施故障处置，避免请求永久挂起 */
+const CHECK_TIMEOUT_MS = 1000;
 
 /**
  * Redis 限流器。
@@ -42,11 +64,16 @@ export class RateLimiter {
       window: config.window || 60, // 默认 60 秒
       limit: config.limit || 10, // 默认 10 次
       prefix: config.prefix || 'ratelimit',
+      failureMode: config.failureMode || 'open', // 默认放行，保持业务路由既有行为
     };
   }
 
   /**
    * 检查限流
+   *
+   * 决策表（Redis 正常 / 抛错 / 超时 × fail-open / fail-closed）由
+   * src/__tests__/rate-limit.test.ts 单源覆盖（ADR 0003），调用方测试请勿复刻分支逻辑。
+   *
    * @param key - 限流键 (通常是 userId 或 IP)
    * @returns 限流结果
    */
@@ -55,13 +82,7 @@ export class RateLimiter {
     const now = Math.floor(Date.now() / 1000);
     const windowStart = now - this.config.window;
 
-    // Serverless 兜底：Redis 卡住时限时放行，避免 /api/chat 永久挂起
-    const failOpen = (): RateLimitResult => ({
-      allowed: true,
-      remaining: this.config.limit,
-      reset: now + this.config.window,
-      limit: this.config.limit,
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     try {
       const run = async (): Promise<RateLimitResult> => {
@@ -71,8 +92,9 @@ export class RateLimiter {
         // 1. 移除时间窗口之前的记录
         multi.zremrangebyscore(redisKey, 0, windowStart);
 
-        // 2. 添加当前请求时间戳
-        multi.zadd(redisKey, now, now.toString());
+        // 2. 添加当前请求记录：member 必须唯一（同一秒内多次请求的 score 相同，
+        //    若 member 也用秒级时间戳会被 zadd 去重，导致计数恒为 1、滑动窗口失效）
+        multi.zadd(redisKey, now, `${now}:${randomUUID()}`);
 
         // 3. 设置过期时间
         multi.expire(redisKey, this.config.window);
@@ -98,23 +120,62 @@ export class RateLimiter {
         };
       };
 
-      const timeoutMs = 2500;
+      // Serverless 兜底：Redis 卡住时按 failureMode 处置，避免请求永久挂起
       const result = await Promise.race([
         run(),
         new Promise<RateLimitResult>((resolve) => {
-          setTimeout(() => {
-            console.error(`限流检查超时(${timeoutMs}ms)，放行请求`);
-            resolve(failOpen());
-          }, timeoutMs);
+          timer = setTimeout(() => {
+            resolve(this.unavailableResult(key, `限流检查超时(${CHECK_TIMEOUT_MS}ms)`, now));
+          }, CHECK_TIMEOUT_MS);
         }),
       ]);
 
       return result;
     } catch (error) {
-      // Redis 错误时允许请求，避免单点故障
-      console.error('限流检查失败:', error);
-      return failOpen();
+      return this.unavailableResult(key, error, now);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+  }
+
+  /**
+   * 限流设施不可用（Redis 异常或超时）时的处置
+   *
+   * fail-open 放行请求（保留原兜底行为，但必须留下 warn 日志，不再静默）；
+   * fail-closed 拒绝请求并标记 reason，调用方据此映射为 503。
+   *
+   * @param key - 限流键
+   * @param error - 原始异常或超时描述
+   * @param now - 当前时间戳(秒)
+   * @returns 限流结果
+   */
+  private unavailableResult(key: string, error: unknown, now: number): RateLimitResult {
+    const { failureMode, prefix, limit, window } = this.config;
+
+    logger.warn('限流设施不可用', {
+      prefix,
+      key,
+      failureMode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    if (failureMode === 'closed') {
+      return {
+        allowed: false,
+        remaining: 0,
+        // 设施故障不涉及窗口等待，调用方按 limiter-unavailable 返回 503
+        reset: now,
+        limit,
+        reason: 'limiter-unavailable',
+      };
+    }
+
+    return {
+      allowed: true,
+      remaining: limit,
+      reset: now + window,
+      limit,
+    };
   }
 
   /**

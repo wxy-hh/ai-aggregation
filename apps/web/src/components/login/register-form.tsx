@@ -1,22 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, User } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { usePasswordValidation, PasswordToggleButton } from '@/hooks/use-password-toggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuthStore } from '@/stores/auth-store';
+import { authApi } from '@/lib/api/auth';
 import { toast } from 'sonner';
 
 const USERNAME_REGEX = /^[a-z0-9_]+$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** 发码按钮倒计时（秒）：同一邮箱 60 秒内不可重发 */
+const RESEND_COUNTDOWN_SECONDS = 60;
+
+/** 登录页输入行容器样式：与既有字段保持一致 */
+const FIELD_SHELL =
+  'flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]';
+
+const FIELD_INPUT =
+  'h-auto border-0 bg-transparent px-0 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0';
 
 export function RegisterForm() {
   const router = useRouter();
   const register = useAuthStore((s) => s.register);
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [sendingCode, setSendingCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -30,6 +46,36 @@ export function RegisterForm() {
     toggleConfirmPassword,
     isMatch,
   } = usePasswordValidation();
+
+  // 发码后的 60 秒倒计时
+  useEffect(() => {
+    if (countdown <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  const trimmedEmail = email.trim();
+  const hasEmail = trimmedEmail.length > 0;
+
+  const handleSendCode = async () => {
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      toast.error('请输入正确的邮箱地址');
+      return;
+    }
+
+    setSendingCode(true);
+    try {
+      const res = await authApi.sendEmailCode('register', trimmedEmail);
+      toast.success(res.message || '验证码已发送，请在 10 分钟内完成注册');
+      setCountdown(RESEND_COUNTDOWN_SECONDS);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '验证码发送失败，请重试');
+    } finally {
+      setSendingCode(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,9 +107,25 @@ export function RegisterForm() {
       return;
     }
 
+    // 邮箱选填：填了就必须通过验证码校验，否则服务端也会拒绝
+    if (hasEmail) {
+      if (!EMAIL_REGEX.test(trimmedEmail)) {
+        toast.error('请输入正确的邮箱地址');
+        return;
+      }
+      if (!/^\d{6}$/.test(emailCode.trim())) {
+        toast.error('请输入 6 位邮箱验证码');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
-      await register(trimmed, password);
+      await register({
+        username: trimmed,
+        password,
+        ...(hasEmail ? { email: trimmedEmail, emailCode: emailCode.trim() } : {}),
+      });
       toast.success('注册成功');
       router.push('/home');
     } catch (err) {
@@ -79,7 +141,7 @@ export function RegisterForm() {
         <Label htmlFor="register-username" className="text-base font-semibold text-slate-900">
           用户名
         </Label>
-        <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
+        <div className={FIELD_SHELL}>
           <User className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-username"
@@ -87,7 +149,7 @@ export function RegisterForm() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="your_username"
-            className="h-auto border-0 bg-transparent px-0 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className={FIELD_INPUT}
           />
         </div>
         <p className="text-xs text-slate-400">3-30 个字符，仅支持英文字母、数字和下划线</p>
@@ -97,7 +159,7 @@ export function RegisterForm() {
         <Label htmlFor="register-password" className="text-base font-semibold text-slate-900">
           密码
         </Label>
-        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
+        <div className={`${FIELD_SHELL} relative`}>
           <Lock className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-password"
@@ -105,7 +167,7 @@ export function RegisterForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="至少 8 位字符"
-            className="h-auto border-0 bg-transparent px-0 pr-12 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className={`${FIELD_INPUT} pr-12`}
           />
           <PasswordToggleButton
             show={showPassword}
@@ -120,7 +182,7 @@ export function RegisterForm() {
         <Label htmlFor="register-confirm-password" className="text-base font-semibold text-slate-900">
           确认密码
         </Label>
-        <div className="relative flex h-14 items-center gap-3 rounded-2xl border border-[#d7e2f3] bg-white/[0.74] px-4 text-base text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.82),0_10px_24px_rgba(122,154,218,0.06)] transition-colors focus-within:border-[#92b4ff] focus-within:bg-white/[0.88]">
+        <div className={`${FIELD_SHELL} relative`}>
           <Lock className="h-5 w-5 text-[#8ea0bc]" />
           <Input
             id="register-confirm-password"
@@ -128,7 +190,7 @@ export function RegisterForm() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="请再次输入密码"
-            className="h-auto border-0 bg-transparent px-0 pr-12 text-base text-slate-900 shadow-none outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className={`${FIELD_INPUT} pr-12`}
           />
           <PasswordToggleButton
             show={showConfirmPassword}
@@ -149,6 +211,57 @@ export function RegisterForm() {
           </p>
         )}
       </div>
+
+      <div className="space-y-2.5">
+        <Label htmlFor="register-email" className="text-base font-semibold text-slate-900">
+          邮箱（选填）
+        </Label>
+        <div className={FIELD_SHELL}>
+          <Mail className="h-5 w-5 text-[#8ea0bc]" />
+          <Input
+            id="register-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            className={FIELD_INPUT}
+          />
+        </div>
+        <p className="text-xs text-day-muted">
+          用于找回密码；填写后需完成验证码校验，也可以稍后在个人中心绑定
+        </p>
+      </div>
+
+      {hasEmail && (
+        <div className="space-y-2.5">
+          <Label htmlFor="register-email-code" className="text-base font-semibold text-slate-900">
+            邮箱验证码
+          </Label>
+          <div className={FIELD_SHELL}>
+            <ShieldCheck className="h-5 w-5 text-[#8ea0bc]" />
+            <Input
+              id="register-email-code"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={emailCode}
+              onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="6 位数字"
+              className={FIELD_INPUT}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleSendCode()}
+              disabled={sendingCode || countdown > 0}
+              className="h-11 shrink-0 whitespace-nowrap px-3 tabular-nums"
+            >
+              {sendingCode ? '发送中...' : countdown > 0 ? `${countdown}s 后重发` : '发送验证码'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Button
         type="submit"

@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """
-匿名登录 + 3000 额度全面测试脚本
+匿名登录 + 额度扣减验收脚本
 运行前请确保 dev:web 已启动（默认 http://localhost:3030；端口漂移时用 BASE_URL 环境变量指定）
+
+额度断言口径（2026-09-29 认证加固后）：
+  匿名初始额度已从 3000 提升到 apps/web/src/lib/constants/quota.ts 的 ANONYMOUS_FREE_TOKENS（现值 20000），
+  单次 chat 只扣减少量 token。若沿用「跑 N 次把额度打到 0」的旧断言，需要数十次真实模型调用——
+  脚本又慢又费钱。因此这里改为不依赖绝对值的断言：
+    1) 解析常量文件得到期望初始额度，并断言 /api/auth/me 返回的 tokens 与之一致（防常量与线上实现漂移）；
+    2) 只跑固定轮数 chat，断言余额单调不增、且总扣减差值 = 初始 - 最终 > 0（即扣减确实发生）。
+  「额度耗尽返回 402」等需要真实耗尽额度的场景在本脚本中显式跳过，由路由单测覆盖。
+
+本脚本会真实调用上游模型接口，仅在本地/内测环境按需运行，不要接入 CI。
 """
 
 import json
 import os
 import random
+import re
 import secrets
 import string
 import sys
@@ -17,7 +28,33 @@ import urllib.error
 # dev 端口可能自动漂移，可用 BASE_URL 环境变量指定实际地址
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:3030")
 
+# 匿名初始额度常量源文件（相对本脚本定位，避免依赖调用方的当前目录）
+QUOTA_CONST_SOURCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "apps",
+    "web",
+    "src",
+    "lib",
+    "constants",
+    "quota.ts",
+)
+
+# 额度扣减探针轮数：只验证「扣了」，不再把额度跑空
+CHAT_PROBE_ROUNDS = 3
+
 results = []
+skipped = []
+
+
+def read_anonymous_free_tokens():
+    """从常量文件解析匿名初始额度，避免在脚本里写死数值。"""
+    with open(QUOTA_CONST_SOURCE, encoding="utf-8") as handle:
+        content = handle.read()
+    matched = re.search(r"ANONYMOUS_FREE_TOKENS\s*=\s*(\d+)", content)
+    if not matched:
+        raise RuntimeError(f"未能从 {QUOTA_CONST_SOURCE} 解析 ANONYMOUS_FREE_TOKENS")
+    return int(matched.group(1))
 
 
 def request(method, path, body=None, headers=None, cookie_jar=None):
@@ -69,6 +106,12 @@ def check(name, expected_status, actual_status, detail=""):
     status = "✓" if ok else "✗"
     print(f"{status} {name}: 预期 {expected_status}, 实际 {actual_status}{detail and ' | ' + detail}")
     return ok
+
+
+def skip(name, reason):
+    """标记为跳过：既不计通过也不计失败，避免把「当前环境下不可达」误报成回归。"""
+    skipped.append((name, reason))
+    print(f"⊘ {name}: 跳过 | {reason}")
 
 
 def hex64():
@@ -124,42 +167,58 @@ def main():
     refresh_data = json.loads(body) if status == 200 else {}
     check("A-7 真实用户 refresh", 200, status, f"has token={'accessToken' in refresh_data or 'accessToken' in refresh_data.get('data', {})}")
 
-    # Q-2: /api/chat 扣减测试（讯飞预扣 500）
+    # Q-1/Q-2: /api/chat 额度扣减（不依赖绝对值的差值断言，理由见文件头注释）
     print("\n--- 额度扣减测试 ---")
     chat_headers = {"Authorization": f"Bearer {anon_token}"}
-    last_tokens = 3000
-    for i in range(1, 7):
+
+    status, body, _ = request("GET", "/api/auth/me", headers=chat_headers)
+    me_data = json.loads(body) if status == 200 else {}
+    initial_tokens = me_data.get("data", {}).get("user", {}).get("tokens")
+    expected_initial = read_anonymous_free_tokens()
+    check(
+        "Q-1 匿名初始额度与常量一致",
+        True,
+        initial_tokens == expected_initial,
+        f"初始 tokens={initial_tokens}, 常量 ANONYMOUS_FREE_TOKENS={expected_initial}",
+    )
+
+    previous_tokens = initial_tokens
+    non_increasing = True
+    for i in range(1, CHAT_PROBE_ROUNDS + 1):
         status, body, _ = request("POST", "/api/chat", {
             "messages": [{"role": "user", "content": "你好"}],
             "provider": "xunfei",
             "model": "generalv3.5"
         }, headers=chat_headers)
-        # chat 返回 SSE，这里只关注状态码
-        _, me_body, _ = request("GET", "/api/auth/me", headers=chat_headers)
+        # chat 返回 SSE，这里只关注状态码与随后的余额快照
         me_status, me_body, _ = request("GET", "/api/auth/me", headers=chat_headers)
         me_data = json.loads(me_body) if me_status == 200 else {}
         tokens = me_data.get("data", {}).get("user", {}).get("tokens")
         print(f"  第 {i} 次 chat: HTTP={status}, tokens={tokens}")
-        last_tokens = tokens if tokens is not None else last_tokens
+        if tokens is None:
+            continue
+        if previous_tokens is not None and tokens > previous_tokens:
+            non_increasing = False
+        previous_tokens = tokens
 
-    check("Q-2 chat 6 次扣减", True, last_tokens == 0, f"最终 tokens={last_tokens}")
+    final_tokens = previous_tokens
+    deducted = None if initial_tokens is None or final_tokens is None else initial_tokens - final_tokens
+    check("Q-2 余额单调不增", True, non_increasing, f"每轮余额={initial_tokens} → {final_tokens}")
+    check(
+        f"Q-2 {CHAT_PROBE_ROUNDS} 次 chat 有扣减（差值断言）",
+        True,
+        deducted is not None and deducted > 0,
+        f"初始={initial_tokens}, 最终={final_tokens}, 扣减差值={deducted}",
+    )
 
-    # Q-7: 额度耗尽返回 402
-    status, body, _ = request("POST", "/api/chat", {
-        "messages": [{"role": "user", "content": "你好"}],
-        "provider": "xunfei",
-        "model": "generalv3.5"
-    }, headers=chat_headers)
-    detail = ""
-    try:
-        detail = json.loads(body).get("code", "")
-    except Exception:
-        pass
-    check("Q-7 额度耗尽返回 402", 402, status, f"code={detail}")
+    # Q-7: 额度耗尽返回 402 —— 需要先真实耗尽额度，本脚本不再为此跑数十次模型调用
+    skip(
+        "Q-7 额度耗尽返回 402",
+        f"初始额度 {expected_initial}、单次 chat 仅扣减少量 token，跑空需数十次真实模型调用；由路由单测覆盖该分支",
+    )
 
-    # Q-8: 额度耗尽后仍可查看历史
-    status, body, _ = request("GET", "/api/history", headers=chat_headers)
-    check("Q-8 额度耗尽后历史可访问", 200, status)
+    # Q-8: 额度耗尽后仍可查看历史 —— 依赖 Q-7 的前置状态，同样跳过
+    skip("Q-8 额度耗尽后历史可访问", "依赖「额度已耗尽」前置状态；历史接口鉴权由 H-1 与路由单测覆盖")
 
     # AI 接口鉴权
     print("\n--- AI/业务接口鉴权 ---")
@@ -170,9 +229,9 @@ def main():
     status, body, _ = request("POST", "/api/video", {"prompt": "a cat", "model": "cogvideox-flash"}, headers=chat_headers)
     check("AI-4 免费视频模型", True, status in (200, 201, 202), f"status={status}")
 
-    # AI-5: optimize-prompt（该接口未强制认证，但前端已用 authFetch）
+    # AI-5: optimize-prompt（认证加固后已强制鉴权，未带 token 由 withAuth 直接 401）
     status, body, _ = request("POST", "/api/video/optimize-prompt", {"prompt": "一只猫"})
-    check("AI-5 optimize-prompt 未带 token", 200, status, "该接口保持公开")
+    check("AI-5 optimize-prompt 未带 token", 401, status, "认证加固后强制鉴权")
 
     # B-2/B-3: feedback
     check("B-2 feedback POST 未带 token", 401, request("POST", "/api/feedback", {"type": "BUG", "title": "test", "content": "test content"})[0])
@@ -208,10 +267,13 @@ def main():
     check("RES-1 resume/polish 未带 token", 401, request("POST", "/api/resume/polish", {"resume": "test"})[0])
     check("RES-2 resume/diagnose 未带 token", 401, request("POST", "/api/resume/diagnose", {"resume": "test"})[0])
     check("DES-1 destiny/copilot 未带 token", 401, request("POST", "/api/destiny/copilot", {"messages": [{"role": "user", "content": "test"}]})[0])
-    # 以下接口使用 getOptionalUserId，未登录时不强制 401，非法请求体返回 400
-    check("DES-2 destiny/report 未带 token（可选认证）", 400, request("POST", "/api/destiny/report", {"name": "test"})[0], "现有行为：未登录返回参数错误")
-    check("DES-3 destiny/ziwei-report 未带 token（可选认证）", 400, request("POST", "/api/destiny/ziwei-report", {"name": "test"})[0], "现有行为：未登录返回参数错误")
-    check("DES-4 qimen/analyze/start 未带 token（可选认证）", 400, request("POST", "/api/destiny/qimen/analyze/start", {"question": "test"})[0], "现有行为：未登录返回参数错误")
+    # 以下接口在认证加固后统一走 withAuth，未登录一律 401（不再存在「可选认证」路径，也没有请求体校验先行的行为）
+    check("DES-2 destiny/report 未带 token", 401, request("POST", "/api/destiny/report", {"name": "test"})[0])
+    check("DES-3 destiny/ziwei-report 未带 token", 401, request("POST", "/api/destiny/ziwei-report", {"name": "test"})[0])
+    check("DES-4 qimen/analyze/start 未带 token", 401, request("POST", "/api/destiny/qimen/analyze/start", {"question": "test"})[0])
+    # 补充：认证加固后被强制鉴权的其余接口
+    check("DES-5 image/agnes 未带 token", 401, request("POST", "/api/image/agnes", {"prompt": "test"})[0])
+    check("DES-6 voice/translate 未带 token", 401, request("POST", "/api/voice/translate", {"text": "test"})[0])
     # voice/transcribe 需要 multipart，空请求可能 500，此处仅验证带 token 可进入业务校验
     status, body, _ = request("POST", "/api/voice/transcribe", headers=chat_headers)
     check("VOI-1 voice/transcribe 带 token 无文件", 400, status, "带 token 后返回缺少文件")
@@ -242,11 +304,13 @@ def main():
     print("\n" + "=" * 60)
     passed = sum(1 for _, ok, *_ in results if ok)
     total = len(results)
-    print(f"测试结果: {passed}/{total} 通过")
+    print(f"测试结果: {passed}/{total} 通过，跳过 {len(skipped)} 项")
     print("=" * 60)
     for name, ok, expected, actual, detail in results:
         if not ok:
             print(f"✗ {name}: 预期 {expected}, 实际 {actual} | {detail}")
+    for name, reason in skipped:
+        print(f"⊘ {name}: 跳过 | {reason}")
 
     return 0 if passed == total else 1
 
