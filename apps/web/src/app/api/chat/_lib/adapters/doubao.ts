@@ -3,6 +3,11 @@
  *
  * 豆包使用 Responses API，SSE 事件格式与 OpenAI 不同，
  * 需要自定义解析逻辑，同时支持多模态附件。
+ *
+ * 推理流打捞：doubao-seed-evolving 等推理模型的
+ * `response.reasoning_summary_text.delta` 增量会被映射为契约
+ * `reasoning-delta` 事件透传给前端（此前被直接丢弃）；
+ * 中断/失败语义遵循 spec §6 D1：判定产出时 text 与 reasoning 任一非空即算有产出。
  */
 
 import { normalizeUsage } from '@/lib/ai-usage';
@@ -173,6 +178,8 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     const decoder = new TextDecoder();
     let usage: ReturnType<typeof normalizeUsage> | null = null;
     let text = '';
+    // 推理累计文本：与正文 text 平行累计，仅用于 D1 产出判定，不进 onFinish.outputText
+    let reasoning = '';
 
     return new ReadableStream({
       async start(controller) {
@@ -210,6 +217,18 @@ export class DoubaoAdapter implements ChatProviderAdapter {
                     text += content;
                     controller.enqueue(encodeSseEvent({ type: 'text-delta', text: content }));
                   }
+                } else if (data.type === 'response.reasoning_summary_text.delta') {
+                  // 推理增量：映射为契约 reasoning-delta 透传给前端。
+                  // 任何解析异常静默降级：记 warn 跳过该帧，绝不阻断正文流（spec §4.2 降级 C）。
+                  try {
+                    const delta = data.delta;
+                    if (typeof delta === 'string' && delta) {
+                      reasoning += delta;
+                      controller.enqueue(encodeSseEvent({ type: 'reasoning-delta', text: delta }));
+                    }
+                  } catch (reasoningError) {
+                    console.warn('[chat] 豆包推理增量帧处理失败，已跳过:', reasoningError);
+                  }
                 } else if (
                   data.type === 'response.done' ||
                   data.type === 'response.completed' ||
@@ -242,10 +261,11 @@ export class DoubaoAdapter implements ChatProviderAdapter {
           // 若未收到任何结束事件即为异常（部署超时截断、网络中断或上游空流），
           // 不能再静默补发 done——前端会把空回答当作「调用成功」展示。
           if (hasSentDone) {
-            // 关键修复：即使收到 response.done，也要检查是否有文本输出。
-            // 若文本为空（模型成功完成但无输出），应标记为 failed 而非 success，
+            // 关键修复：即使收到 response.done，也要检查是否有产出。
+            // D1：产出判定扩展为 text || reasoning 任一非空（推理-only 也算有产出）。
+            // 若两者皆空（模型成功完成但无输出），应标记为 failed 而非 success，
             // 否则前端会把空回答当作「调用成功」展示为空消息。
-            if (!text) {
+            if (!text && !reasoning) {
               // 上游空流：错误事件 + 释放预留（无产出不扣费，取消应退款）
               controller.enqueue(
                 encodeSseEvent({ type: 'error', error: '模型未返回任何内容，请重试' })
@@ -257,7 +277,8 @@ export class DoubaoAdapter implements ChatProviderAdapter {
                 reason: '模型未返回任何内容',
               });
             } else {
-              // 有输出文本：发送 done 事件并结算为 success
+              // 有产出（正文或推理）：发送 done 事件并结算为 success；
+              // outputText 与估算入参始终只传正文 text（推理不进合规审计文本）
               await ctx.onFinish({
                 outcome: 'success',
                 usage,
@@ -266,8 +287,9 @@ export class DoubaoAdapter implements ChatProviderAdapter {
               const doneUsage = resolveChatStreamUsage(usage, ctx.messages, text);
               controller.enqueue(encodeSseEvent({ type: 'done', usage: doneUsage }));
             }
-          } else if (text) {
-            // 截断但已有部分内容：先补发 warning + done 让前端正常收尾，按 partial 结算
+          } else if (text || reasoning) {
+            // 截断但已有产出（D1：推理-only 截断同样算 partial，正常结算）：
+            // 先补发 warning + done 让前端正常收尾，按 partial 结算
             controller.enqueue(
               encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
             );
@@ -293,9 +315,9 @@ export class DoubaoAdapter implements ChatProviderAdapter {
           controller.close();
         } catch (error) {
           console.error('[chat] 豆包流错误:', error);
-          // 有输出文本 → partial；完全无输出 → failed（取消应退款），结算交给 handler 侧 QuotaSession
+          // 有产出（正文或推理，D1）→ partial；完全无产出 → failed（取消应退款），结算交给 handler 侧 QuotaSession
           await ctx.onFinish({
-            outcome: text ? 'partial' : 'failed',
+            outcome: text || reasoning ? 'partial' : 'failed',
             usage,
             outputText: text,
             reason: error instanceof Error ? error.message : String(error),

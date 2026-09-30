@@ -138,6 +138,84 @@ describe('useChatStore.sendMessage（评审 C4：编排语义）', () => {
   });
 });
 
+describe('useChatStore.sendMessage（推理流）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    mockedCheckAndWarnLowBalance.mockReset();
+    resetState();
+  });
+
+  it('成功携带推理流：assistant 消息持久化 reasoningContent 与 reasoningDurationMs', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"reasoning-delta","text":"推理片段"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    const result = await useChatStore.getState().sendMessage();
+
+    expect(result).toBe('sent');
+    const { messages } = useChatStore.getState();
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      content: '正文',
+      reasoningContent: '推理片段',
+      isStreaming: false,
+    });
+    expect(messages[1].reasoningDurationMs).toEqual(expect.any(Number));
+  });
+
+  it('推理中调用 stop()：仅推理非空也保留消息并标记 stopped，推理内容与时长定格写入', async () => {
+    const encoder = new TextEncoder();
+    mockedAuthFetch.mockImplementation(async (_url, init) => {
+      const signal = (init as RequestInit).signal;
+      // 流先吐出一帧推理增量后挂起，直到 signal abort 才以 AbortError 结束
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode('data: {"type":"reasoning-delta","text":"思考中"}\n\n')
+          );
+          signal?.addEventListener('abort', () => {
+            const abortError = new Error('canceled');
+            abortError.name = 'AbortError';
+            controller.error(abortError);
+          });
+        },
+      });
+      return new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+      });
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage();
+    // 等推理增量被消费并经合帧写入消息（rAF 不存在时回退 setTimeout 0）
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().messages[1]?.reasoningContent).toBe('思考中');
+    });
+
+    useChatStore.getState().stop();
+    const result = await sendPromise;
+
+    expect(result).toBe('aborted');
+    const { messages, error } = useChatStore.getState();
+    expect(error).toBeNull();
+    // 有留空删扩展：content 为空但 reasoningContent 非空 → 保留并标记 stopped
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect(assistant).toBeDefined();
+    expect(assistant).toMatchObject({
+      content: '',
+      reasoningContent: '思考中',
+      isStreaming: false,
+      stopped: true,
+    });
+    expect(assistant?.reasoningDurationMs).toEqual(expect.any(Number));
+    expect(mockedCheckAndWarnLowBalance).not.toHaveBeenCalled();
+  });
+});
+
 describe('useChatStore.reload（重新生成守卫与行为）', () => {
   beforeEach(() => {
     mockedAuthFetch.mockReset();

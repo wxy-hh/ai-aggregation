@@ -43,6 +43,8 @@ export interface Message {
   failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
   truncationWarning?: string; // 回答可能被截断时的提示
   usage?: ChatStreamUsage; // 本次对话的 Token 消耗统计（done 帧携带）
+  reasoningContent?: string; // 模型真实推理内容（仅 supportsReasoning 模型可能产生，永不回传上游）
+  reasoningDurationMs?: number; // 思考时长：首个推理增量到达 → 分界点（首 text-delta / done / error / abort）冻结
   // 附件列表（可选）
   attachments?: Attachment[];
 }
@@ -107,16 +109,23 @@ function defaultScheduleFlush(cb: () => void): () => void {
   return () => clearTimeout(timer);
 }
 
-/** 单聊内容合帧刷新状态：assistantId -> { text, raf } */
+/** 单聊内容合帧刷新状态：assistantId -> { text, reasoning, raf }（正文/推理独立累加，同帧提交） */
 interface ContentFlushEntry {
   text: string;
+  /** 最新累计推理文本；undefined 表示本轮尚未收到推理增量 */
+  reasoning?: string;
   raf: (() => void) | null;
 }
 
 const contentFlushState = new Map<string, ContentFlushEntry>();
 
-/** 清理并取消某条消息的待刷新合帧，返回最后暂存的最新文本（若有） */
-function flushLatestContentAndClear(assistantId: string): string | undefined {
+/** 合帧兜底时暂存的最新流式产出（code-review Standards 轴：复用 ContentFlushEntry 同构类型，消灭匿名类型） */
+type LatestStreamContent = Pick<ContentFlushEntry, 'text' | 'reasoning'>;
+
+/** 清理并取消某条消息的待刷新合帧，返回最后暂存的最新正文与推理（若有） */
+function flushLatestContentAndClear(
+  assistantId: string
+): LatestStreamContent | undefined {
   const entry = contentFlushState.get(assistantId);
   if (!entry) return undefined;
   if (entry.raf) {
@@ -124,11 +133,98 @@ function flushLatestContentAndClear(assistantId: string): string | undefined {
     entry.raf = null;
   }
   contentFlushState.delete(assistantId);
-  return entry.text;
+  return { text: entry.text, reasoning: entry.reasoning };
 }
 
 /**
- * 中止收尾（空删有留）：有部分内容标记 stopped 保留，空内容移除。
+ * 把合帧兜底的最新正文/推理与冻结后的推理时长合并进消息。
+ * code-review Standards 轴：done / catch 两处收尾的同一合并形状提取，消除重复。
+ */
+function mergeLatestStreamContent(
+  m: Message,
+  latest: LatestStreamContent | undefined,
+  reasoningDurationMs: number | undefined
+): Message {
+  return {
+    ...m,
+    ...(latest !== undefined ? { content: latest.text } : {}),
+    ...(latest?.reasoning !== undefined ? { reasoningContent: latest.reasoning } : {}),
+    ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+  };
+}
+
+/**
+ * 调度一帧合帧刷新：把暂存的最新正文与推理一次性写入消息（每帧最多一次 setState）。
+ * 正文与推理共用同一帧：任一增量到达时若已有待执行帧则只更新暂存，不重复调度。
+ */
+function scheduleEntryFlush(
+  assistantId: string,
+  entry: ContentFlushEntry,
+  deps: ChatStreamSessionDeps,
+  scheduleFlush: (cb: () => void) => () => void
+): void {
+  if (entry.raf) return;
+  let executed = false;
+  const cancelFn = scheduleFlush(() => {
+    executed = true;
+    const current = contentFlushState.get(assistantId);
+    if (!current) return;
+    current.raf = null;
+    // 首 text-delta 冻结后时长随本帧即落消息：「正文中」阶段折叠头定格为「已思考 X 秒」，
+    // 不再等 done 才写入（code-review Spec 轴发现的定格滞后问题）
+    const frozenDurationMs = reasoningTimingState.get(assistantId)?.durationMs;
+    deps.updateMessages((messages) =>
+      messages.map((m) =>
+        m.id === assistantId
+          ? {
+              ...m,
+              content: current.text,
+              ...(current.reasoning !== undefined
+                ? { reasoningContent: current.reasoning }
+                : {}),
+              ...(frozenDurationMs !== undefined
+                ? { reasoningDurationMs: frozenDurationMs }
+                : {}),
+            }
+          : m
+      )
+    );
+  });
+  if (!executed && contentFlushState.has(assistantId)) {
+    entry.raf = cancelFn;
+  }
+}
+
+/** 推理计时状态：assistantId -> 首个推理增量时间戳 / 分界点冻结后的时长（store 内部变量，不持久化） */
+interface ReasoningTimingEntry {
+  startedAt: number;
+  durationMs?: number;
+}
+
+const reasoningTimingState = new Map<string, ReasoningTimingEntry>();
+
+/** 首个推理增量到达时记录开始时间戳（重复调用幂等） */
+function recordReasoningStart(assistantId: string): void {
+  if (!reasoningTimingState.has(assistantId)) {
+    reasoningTimingState.set(assistantId, { startedAt: Date.now() });
+  }
+}
+
+/**
+ * 分界点冻结推理时长：首个 text-delta / done / error / abort 先到先冻。
+ * 未收到过推理增量返回 undefined；已冻结后重复调用返回原值。
+ */
+function freezeReasoningDuration(assistantId: string): number | undefined {
+  const entry = reasoningTimingState.get(assistantId);
+  if (!entry) return undefined;
+  if (entry.durationMs === undefined) {
+    entry.durationMs = Date.now() - entry.startedAt;
+  }
+  return entry.durationMs;
+}
+
+/**
+ * 中止收尾（空删有留）：有部分内容（正文或推理任一）标记 stopped 保留，空内容移除。
  * 与服务商计费语义同构（空退 failed / 有扣 partial）。
  * match 由调用方给定：编排层按消息 id 匹配，store 层按「正在流式的 assistant 消息」匹配。
  */
@@ -139,7 +235,8 @@ function finalizeAbortedMessages(
   const target = messages.find(match);
   // 未找到或已被收尾（isStreaming 已为 false）时不重复处理
   if (!target || !target.isStreaming) return { next: messages, changed: false };
-  const next = target.content
+  // 「有留空删」扩展：正文或推理有任一即保留（推理-only 中断也算 partial）
+  const next = target.content || target.reasoningContent
     ? messages.map((m) => (m.id === target.id ? { ...m, isStreaming: false, stopped: true } : m))
     : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
@@ -170,6 +267,9 @@ export async function runChatStreamSession(
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
+        // 分界点：首个 text-delta 到达即冻结推理时长（未开始推理时为空操作）
+        freezeReasoningDuration(assistantId);
+
         // 1. rAF 合帧：更新暂存最新文本并调度帧刷新，每帧最多触发一次 setState
         let entry = contentFlushState.get(assistantId);
         if (!entry) {
@@ -177,22 +277,7 @@ export async function runChatStreamSession(
           contentFlushState.set(assistantId, entry);
         }
         entry.text = text;
-
-        if (!entry.raf) {
-          let executed = false;
-          const cancelFn = scheduleFlush(() => {
-            executed = true;
-            const current = contentFlushState.get(assistantId);
-            if (!current) return;
-            current.raf = null;
-            deps.updateMessages((messages) =>
-              messages.map((m) => (m.id === assistantId ? { ...m, content: current.text } : m))
-            );
-          });
-          if (!executed && contentFlushState.has(assistantId)) {
-            entry.raf = cancelFn;
-          }
-        }
+        scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
 
         // 2. 渲染与落盘分离：1s 节流落盘留在 onChunk 同步路径（后台停帧时不受影响）
         // 基于 deps.getMessages 快照构造新消息列表并 emit，不经过 setState
@@ -209,6 +294,19 @@ export async function runChatStreamSession(
           }
         }
       },
+      onReasoning: (reasoning) => {
+        // 首个推理增量到达：记录思考开始时间戳（store 内部变量，不持久化）
+        recordReasoningStart(assistantId);
+
+        // 推理走与正文相同的 rAF 合帧机制：独立累加器，与正文同帧提交，每帧最多一次 setState
+        let entry = contentFlushState.get(assistantId);
+        if (!entry) {
+          entry = { text: '', raf: null };
+          contentFlushState.set(assistantId, entry);
+        }
+        entry.reasoning = reasoning;
+        scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
@@ -219,14 +317,16 @@ export async function runChatStreamSession(
       },
     });
 
-    // 完成：先 cancelAnimationFrame 并用最新文本兜底 flush（合并写入最新 content 与 usage，移除 isStreaming 标记）
-    const latestText = flushLatestContentAndClear(assistantId);
+    // 完成：先 cancelAnimationFrame 并用最新正文/推理兜底 flush
+    // （合并写入最新 content、reasoningContent、reasoningDurationMs 与 usage，移除 isStreaming 标记）
+    const latest = flushLatestContentAndClear(assistantId);
+    // 分界点：done（首个 text-delta 未到达过的纯推理流在此冻结；已冻结则取原值）
+    const reasoningDurationMs = freezeReasoningDuration(assistantId);
     const finalMessages = deps.updateMessages((messages) =>
       messages.map((m) => {
         if (m.id !== assistantId) return m;
         return {
-          ...m,
-          ...(latestText !== undefined ? { content: latestText } : {}),
+          ...mergeLatestStreamContent(m, latest, reasoningDurationMs),
           isStreaming: false,
           ...(streamUsage ? { usage: streamUsage } : {}),
         };
@@ -239,12 +339,16 @@ export async function runChatStreamSession(
     onDone?.(finalMessages);
     return 'sent';
   } catch (err) {
-    // 中止/失败收尾前必须 cancelAnimationFrame 并用最新文本兜底 flush
-    // 现有「中止/失败」的「空删有留」判断基于 store 里的 content 判空，兜底 flush 必须先于它们执行
-    const latestText = flushLatestContentAndClear(assistantId);
-    if (latestText !== undefined) {
+    // 中止/失败收尾前必须 cancelAnimationFrame 并用最新正文/推理兜底 flush
+    // 现有「中止/失败」的「空删有留」判断基于 store 里的 content/reasoningContent 判空，兜底 flush 必须先于它们执行
+    const latest = flushLatestContentAndClear(assistantId);
+    // 分界点：error / abort 冻结推理时长（先到先冻，已冻结则取原值）
+    const reasoningDurationMs = freezeReasoningDuration(assistantId);
+    if (latest !== undefined || reasoningDurationMs !== undefined) {
       deps.updateMessages((messages) =>
-        messages.map((m) => (m.id === assistantId ? { ...m, content: latestText } : m))
+        messages.map((m) =>
+          m.id === assistantId ? mergeLatestStreamContent(m, latest, reasoningDurationMs) : m
+        )
       );
     }
 
@@ -265,11 +369,11 @@ export async function runChatStreamSession(
     }
 
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
-    // 失败收尾（有留空删）：有部分内容保留并标记 failed（用户已读内容不丢），空内容移除
+    // 失败收尾（有留空删）：有部分内容（正文或推理任一）保留并标记 failed（用户已读内容不丢），空内容移除
     const filtered = deps.updateMessages((messages) => {
       const target = messages.find((m) => m.id === assistantId);
       if (!target) return messages;
-      if (target.content) {
+      if (target.content || target.reasoningContent) {
         return messages.map((m) =>
           m.id === assistantId ? { ...m, isStreaming: false, failed: true } : m
         );
@@ -284,6 +388,7 @@ export async function runChatStreamSession(
   } finally {
     // 最终防御：确保清理模块级 Map 条目，防止内存泄漏
     flushLatestContentAndClear(assistantId);
+    reasoningTimingState.delete(assistantId);
   }
 }
 
@@ -313,11 +418,20 @@ export const useChatStore = create<ChatState>((set, get) => {
       (m) => m.isStreaming === true && m.role === 'assistant'
     );
     if (streamingAssistant) {
-      // 若存在未 flush 的最新文本，先取消调度并同步最新文本
-      const latestText = flushLatestContentAndClear(streamingAssistant.id);
-      if (latestText !== undefined) {
-        streamingAssistant.content = latestText;
+      // 若存在未 flush 的最新正文/推理，先取消调度并同步最新内容
+      const latest = flushLatestContentAndClear(streamingAssistant.id);
+      if (latest !== undefined) {
+        streamingAssistant.content = latest.text;
+        if (latest.reasoning !== undefined) {
+          streamingAssistant.reasoningContent = latest.reasoning;
+        }
       }
+      // 分界点：abort 冻结推理时长（先到先冻；未开始推理时不写字段）
+      const reasoningDurationMs = freezeReasoningDuration(streamingAssistant.id);
+      if (reasoningDurationMs !== undefined) {
+        streamingAssistant.reasoningDurationMs = reasoningDurationMs;
+      }
+      reasoningTimingState.delete(streamingAssistant.id);
     }
     const { next, changed } = finalizeAbortedMessages(
       messages,
@@ -374,8 +488,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       // 清洗历史消息：处理持久化数据中残留的流式消息（有内容标记 stopped，无内容直接过滤）
+      // 判空口径与「有留空删」一致：正文或推理任一非空即算有内容
       const sanitizedMessages = messages
-        .filter((m) => !(m.isStreaming && !m.content))
+        .filter((m) => !(m.isStreaming && !m.content && !m.reasoningContent))
         .map((m) => (m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m));
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
       const sanitizedChanged =

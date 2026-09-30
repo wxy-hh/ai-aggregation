@@ -5,11 +5,14 @@
 //   - /api/chat（generic / xunfei / doubao 三适配器）
 //   - /api/destiny/copilot（追问对话）
 //
-// 事件类型（共 4 种，联合类型即完整枚举）：
-//   - text-delta  增量文本（可重复出现；text 一定为非空字符串）
-//   - warning     警告信息（可重复出现；不终止流）
-//   - error       错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
-//   - done        正常终止（终止事件；流中最后一个事件）
+// 事件类型（共 5 种，联合类型即完整枚举）：
+//   - text-delta       增量文本（可重复出现；text 一定为非空字符串）
+//   - reasoning-delta  推理增量文本（可重复出现；text 一定为非空字符串；
+//                      仅 supportsReasoning 模型可能产生，先于 text-delta 到达；
+//                      推理与正文的分界由消费端推断：首个 text-delta 或流终止）
+//   - warning          警告信息（可重复出现；不终止流）
+//   - error            错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
+//   - done             正常终止（终止事件；流中最后一个事件）
 //
 // 状态机约束（消费端 consumeChatResponse 强制执行）：
 //   - 终止事件 = done | error，每个流只允许出现一次，且必须是最后一个事件；
@@ -25,6 +28,8 @@
 
 /** 增量文本事件 */
 export type ChatStreamTextDeltaEvent = { type: 'text-delta'; text: string };
+/** 推理增量事件（模型真实推理流，非终止事件；仅推理模型产生） */
+export type ChatStreamReasoningDeltaEvent = { type: 'reasoning-delta'; text: string };
 /** 聊天流式用量统计（done 帧携带） */
 export interface ChatStreamUsage {
   inputTokens: number | null;
@@ -44,6 +49,7 @@ export type ChatStreamErrorEvent = { type: 'error'; error: string };
 /** 聊天流式事件联合类型 — 编码（后端）与解码（前端）共用同一类型，杜绝双端字符串漂移 */
 export type ChatStreamEvent =
   | ChatStreamTextDeltaEvent
+  | ChatStreamReasoningDeltaEvent
   | ChatStreamDoneEvent
   | ChatStreamWarningEvent
   | ChatStreamErrorEvent;
@@ -58,7 +64,7 @@ export type ChatStreamTerminalEvent = Extract<
  * 解析单个 SSE data: 帧的 JSON payload（已 JSON.parse 的结果）为契约事件。
  *
  * 返回值说明：
- * - 合法的 4 类事件 → 对应事件对象；
+ * - 合法的 5 类事件 → 对应事件对象；
  * - null → 非 JSON 对象、未知事件类型或字段不合法。消费端必须显式忽略并继续等待
  *   终止事件（未知类型不代表流结束；只有 done/error/[DONE] 才结束流）。
  */
@@ -70,6 +76,11 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       // text 一定非空：空增量无意义，视为非法帧放弃
       return typeof ev.text === 'string' && ev.text.length > 0
         ? { type: 'text-delta', text: ev.text }
+        : null;
+    case 'reasoning-delta':
+      // 与 text-delta 同款严格度：空推理增量无意义，视为非法帧放弃
+      return typeof ev.text === 'string' && ev.text.length > 0
+        ? { type: 'reasoning-delta', text: ev.text }
         : null;
     case 'done': {
       if (typeof ev.usage === 'object' && ev.usage !== null) {

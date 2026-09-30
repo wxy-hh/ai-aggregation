@@ -1,13 +1,13 @@
 'use client';
 
 import React from 'react';
-import { useState, useCallback, useMemo, useRef, memo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square, AlertCircle } from 'lucide-react';
+import { Square, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import type { Attachment, Message } from '@/stores/chat-store';
@@ -394,7 +394,7 @@ const AIAvatar = memo(function AIAvatar() {
   );
 });
 
-// 思考过程骨架屏组件
+// 首字节等待骨架屏（语义：等待上游首个增量到达的加载态，不冒充思考内容）
 const ThinkingIndicator = memo(function ThinkingIndicator() {
   return (
     <div className="w-full max-w-[400px] space-y-3 py-1">
@@ -434,25 +434,97 @@ const ThinkingIndicator = memo(function ThinkingIndicator() {
   );
 });
 
+// 思考过程块：渲染模型真实推理流（reasoning-delta 驱动），豆包官方同款折叠时序。
+// 状态机见 docs/features/2026-10-01-chat-reasoning-stream/spec.md §5：
+// 推理期（流式且无正文）默认展开 → 首个正文增量到达即自动折叠（仅这一次）→ 用户手动操作后不再自动干预。
+const ThinkingBlock = memo(function ThinkingBlock({
+  reasoning,
+  durationMs,
+  defaultExpanded,
+  isStreaming,
+}: {
+  reasoning: string;
+  /** 冻结后的思考时长（分界点写入）；未冻结表示推理仍在进行 */
+  durationMs?: number;
+  /** 默认展开态纯数据驱动：流式中且无正文时为 true；正文一旦到达转为 false 且不可逆（自动折叠只发生一次） */
+  defaultExpanded: boolean;
+  isStreaming: boolean;
+}) {
+  // 用户手动展开/收起的覆盖态：一旦设置，该消息内不再被自动时序干预
+  const [userOverride, setUserOverride] = useState<boolean | null>(null);
+  const expanded = userOverride ?? defaultExpanded;
+
+  // 计时：组件随首个 reasoning-delta 挂载，推理流式中按 1s 跳动；durationMs 冻结后定格
+  // （DESIGN.md §9：计时数字强制 tabular-nums）
+  const mountTsRef = useRef(Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const ticking = isStreaming && durationMs === undefined;
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = setInterval(() => setElapsedMs(Date.now() - mountTsRef.current), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  const shownSeconds =
+    durationMs !== undefined ? Math.round(durationMs / 1000) : Math.round(elapsedMs / 1000);
+
+  return (
+    <div className="mb-3 rounded-xl border-l-2 border-slate-300 pl-3 dark:border-slate-600">
+      {/* 折叠头：整行可点；DESIGN.md §2.6 浅色次要文字用 day-muted，深色中性 slate 表面允许 slate-400 */}
+      <button
+        type="button"
+        onClick={() => setUserOverride(!expanded)}
+        aria-expanded={expanded}
+        aria-label={expanded ? '收起思考过程' : '展开思考过程'}
+        className="flex min-h-[44px] w-full items-center gap-1.5 text-xs text-day-muted dark:text-slate-400 md:min-h-[32px]"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" />
+        )}
+        <span className="tabular-nums">
+          {ticking
+            ? `思考中… ${shownSeconds} 秒`
+            : shownSeconds > 0
+              ? `已思考 ${shownSeconds} 秒`
+              : '已思考'}
+        </span>
+      </button>
+      {/* 推理内容：纯文本渲染（不跑 markdown，省流式重渲染预算），弱化于正文 */}
+      {expanded && (
+        <div className="whitespace-pre-wrap pb-2 text-xs leading-6 text-day-muted dark:text-slate-400 animate-in fade-in-0 duration-fast">
+          {reasoning}
+          {/* 流式光标：与正文 StreamingContent 同款的蓝条 pulse（DESIGN.md §10 chat 标志装置） */}
+          {isStreaming && (
+            <span className="ml-1 inline-block h-4 w-1.5 rounded-sm bg-blue-500 align-[-2px] animate-pulse" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 // 主消息组件
 export const MessageItem = memo(function MessageItem({ message, onRegenerate }: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
-  // 判断是否处于思考状态：是 AI 消息 + 正在流式传输 + 内容为空
-  const isThinking = !isUser && isStreaming && !message.content;
+  // 首字节等待态：AI 消息 + 流式中 + 推理与正文均未到达（骨架屏展示条件）
+  const isAwaitingFirstByte = !isUser && isStreaming && !message.content && !message.reasoningContent;
+  // 是否持有真实推理内容（决定思考块整棵子树是否渲染；无推理的模型/轮次自然退化）
+  const hasReasoning = !isUser && !!message.reasoningContent;
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
   // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
   const currentModel = useChatStore((s) => s.model);
   const currentProvider = useChatStore((s) => s.provider);
-  const canRelay = !isUser && !isStreaming && !isThinking && message.content.trim().length > 0;
+  const canRelay = !isUser && !isStreaming && !isAwaitingFirstByte && message.content.trim().length > 0;
   // 气泡容器 ref：用于判定用户是否在气泡内选中了片段（REQ-009 选区优先）
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const relay = useRelayLauncher({
     sourceType: 'text',
     selectionRootRef: bubbleRef,
     disabledReason: !canRelay
-      ? isStreaming || isThinking
+      ? isStreaming || isAwaitingFirstByte
         ? RELAY_COPY.disabled.generating
         : RELAY_COPY.disabled.empty
       : undefined,
@@ -506,8 +578,8 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               isUser ? 'self-end md:flex-row-reverse' : 'self-start'
             )}
           >
-            <span className={cn('font-medium', isThinking ? 'text-blue-500 animate-pulse' : '')}>
-              {isUser ? '用户' : isThinking ? 'AI 思考中...' : 'AI 助手'}
+            <span className={cn('font-medium', isAwaitingFirstByte ? 'text-blue-500 animate-pulse' : '')}>
+              {isUser ? '用户' : isAwaitingFirstByte ? 'AI 思考中...' : 'AI 助手'}
             </span>
           </div>
 
@@ -522,8 +594,8 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               isUser
                 ? 'w-full rounded-tr-[10px] border border-blue-400/20 bg-[linear-gradient(135deg,#4969E9_0%,#5D7CFA_56%,#7D91FF_100%)] text-white md:w-fit'
                 : 'rounded-tl-[10px] border border-slate-200/70 bg-white text-slate-800 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-200',
-              // 思考状态下，气泡宽度设为更宽以容纳骨架屏
-              isThinking ? 'w-full max-w-[500px]' : ''
+              // 首字节等待态下，气泡宽度设为更宽以容纳骨架屏
+              isAwaitingFirstByte ? 'w-full max-w-[500px]' : ''
             )}
           >
             {isUser ? (
@@ -534,10 +606,22 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               </>
             ) : (
               <div className="markdown-body prose max-w-none prose-p:leading-7 prose-p:text-slate-700 prose-headings:font-heading prose-headings:text-slate-900 prose-strong:text-slate-900 prose-pre:rounded-2xl prose-pre:border prose-pre:border-slate-200 prose-pre:p-0 dark:prose-invert dark:prose-p:text-slate-200 dark:prose-headings:text-white dark:prose-strong:text-white dark:prose-pre:border-slate-700">
-                {isThinking ? (
+                {/* 思考块位于气泡内、正文上方；无推理内容时整棵子树不渲染（讯飞模型/无推理轮次自然退化） */}
+                {hasReasoning && (
+                  <ThinkingBlock
+                    reasoning={message.reasoningContent ?? ''}
+                    durationMs={message.reasoningDurationMs}
+                    defaultExpanded={isStreaming && !message.content}
+                    isStreaming={isStreaming}
+                  />
+                )}
+                {isAwaitingFirstByte ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (
-                  <StreamingContent content={message.content} />
+                  // 推理阶段（无正文）此处渲染为空，流式光标由思考块内部承担
+                  message.content ? (
+                    <StreamingContent content={message.content} />
+                  ) : null
                 ) : (
                   <>
                     <MarkdownContent content={message.content} />
@@ -571,7 +655,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
           </div>
 
           {/* 操作按钮 - 同时显示给用户和 AI，但在流式传输期间不显示 */}
-          {!isStreaming && !isThinking && (
+          {!isStreaming && !isAwaitingFirstByte && (
             <ActionButtons
               onCopy={handleCopy}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}

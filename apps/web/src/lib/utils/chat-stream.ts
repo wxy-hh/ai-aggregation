@@ -23,8 +23,10 @@ export interface StreamChatRequest {
 }
 
 export interface StreamChatResponseHandlers {
-  /** 每次收到增量时回调一次，参数为当前累计文本 */
+  /** 每次收到正文增量时回调一次，参数为当前累计文本 */
   onChunk?: (accumulatedText: string) => void;
+  /** 每次收到推理增量时回调一次，参数为当前累计推理文本（可选，不传则忽略推理事件） */
+  onReasoning?: (accumulatedReasoning: string) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -45,24 +47,40 @@ export async function streamChatResponse(
   }
 
   let accumulated = '';
-  await consumeChatResponse(
-    response,
-    (chunk) => {
+  // 推理文本独立累计，与正文互不影响（返回值仍是正文累计）
+  let accumulatedReasoning = '';
+  await consumeChatResponse(response, {
+    onChunk: (chunk) => {
       accumulated += chunk;
       handlers.onChunk?.(accumulated);
     },
-    handlers.onWarning,
-    handlers.onDone
-  );
+    onReasoning: handlers.onReasoning
+      ? (chunk) => {
+          accumulatedReasoning += chunk;
+          handlers.onReasoning?.(accumulatedReasoning);
+        }
+      : undefined,
+    onWarning: handlers.onWarning,
+    onDone: handlers.onDone,
+  });
   return accumulated;
+}
+
+/** consumeChatResponse 的回调集合（handlers 对象形式，onReasoning 可选） */
+export interface ConsumeChatResponseHandlers {
+  /** 每次收到正文增量时回调一次，参数为本帧增量文本 */
+  onChunk: (chunk: string) => void;
+  /** 每次收到推理增量时回调一次，参数为本帧增量文本（可选，不传则忽略推理事件） */
+  onReasoning?: (chunk: string) => void;
+  onWarning?: (warning: string) => void;
+  onDone?: (usage?: ChatStreamUsage) => void;
 }
 
 export async function consumeChatResponse(
   response: Response,
-  onChunk: (chunk: string) => void,
-  onWarning?: (warning: string) => void,
-  onDone?: (usage?: ChatStreamUsage) => void
+  handlers: ConsumeChatResponseHandlers
 ): Promise<void> {
+  const { onChunk, onReasoning, onWarning, onDone } = handlers;
   const contentType = response.headers.get('Content-Type') || '';
 
   if (!contentType.includes('text/event-stream')) {
@@ -111,6 +129,10 @@ export async function consumeChatResponse(
       switch (event.type) {
         case 'text-delta':
           onChunk(event.text);
+          return;
+        case 'reasoning-delta':
+          // 推理增量：仅透传给订阅方；未传 onReasoning 的调用方显式忽略（行为与现状一致）
+          onReasoning?.(event.text);
           return;
         case 'warning':
           onWarning?.(event.warning);
