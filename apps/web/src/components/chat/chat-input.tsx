@@ -745,7 +745,7 @@ export function ChatInput({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300"
+          className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300 select-none transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95"
           aria-label="添加附件"
         >
           <Paperclip className="h-4 w-4" />
@@ -761,7 +761,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 select-none transition-colors duration-fast ease-out-expo hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 active:scale-[0.98]"
           >
             <Image className="h-4 w-4 text-green-500" />
             上传图片
@@ -769,7 +769,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 select-none transition-colors duration-fast ease-out-expo hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 active:scale-[0.98]"
           >
             <FileText className="h-4 w-4 text-blue-500" />
             上传文件
@@ -844,7 +844,7 @@ export function ChatInput({
         className={cn(
           'flex items-end gap-1 rounded-2xl p-1.5',
           'border border-white/60 bg-white/60 shadow-sm backdrop-blur-xl',
-          'transition-all duration-200',
+          'transition-[border-color,background-color,box-shadow] duration-fast ease-out-expo',
           'hover:border-slate-300/80 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-slate-700/80',
           'focus-within:border-blue-500/50 focus-within:bg-white/70 focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.12),0_4px_12px_-2px_rgba(59,130,246,0.15)]',
           'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
@@ -866,33 +866,22 @@ export function ChatInput({
           disabled={isLoading}
         />
 
-        {isLoading ? (
-          <Button
-            type="button"
-            onClick={stop}
-            className={CTA_BUTTON_CLASS}
-            size="icon"
-            aria-label="停止生成"
-          >
-            <Square className="h-5 w-5 md:h-4 md:w-4" fill="currentColor" />
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={handleSend}
-            disabled={
-              (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
-            }
-            className={cn(
-              CTA_BUTTON_CLASS,
-              'disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700'
-            )}
-            size="icon"
-            aria-label="发送"
-          >
-            <Send className="h-5 w-5 md:h-4 md:w-4" />
-          </Button>
-        )}
+        <Button
+          type="button"
+          onClick={handleSend}
+          disabled={
+            (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
+          }
+          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
+          size="icon"
+          aria-label={isLoading ? '发送中' : '发送'}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+        </Button>
       </div>
 
       <input

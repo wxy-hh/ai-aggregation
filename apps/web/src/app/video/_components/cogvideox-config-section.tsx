@@ -8,6 +8,7 @@ import {
   COGVIDEOX_DURATIONS,
   COGVIDEOX_RESOLUTIONS,
 } from '@/lib/constants/video-generation';
+import { motion } from 'framer-motion';
 import { Image as ImageIcon, Upload, X } from 'lucide-react';
 
 interface CogVideoXConfigSectionProps {
@@ -69,7 +70,7 @@ export function CogVideoXConfigSection({
         <div
           onClick={() => !disabled && !referenceImage && fileInputRef.current?.click()}
           className={cn(
-            'relative h-32 overflow-hidden rounded-2xl border-2 border-dashed transition-all',
+            'relative h-32 overflow-hidden rounded-2xl border-2 border-dashed select-none transition-[border-color,background-color] duration-fast ease-out-expo',
             referenceImage
               ? 'border-solid border-blue-400/50 bg-white/40 dark:border-blue-500/30 dark:bg-slate-900/30'
               : 'cursor-pointer border-white/60 bg-white/40 hover:border-blue-400/60 dark:border-white/10 dark:bg-slate-900/30 dark:hover:border-blue-500/40',
@@ -80,11 +81,12 @@ export function CogVideoXConfigSection({
             <>
               <img src={referenceImage} alt="参考图" className="h-full w-full object-cover" />
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   clearReferenceImage();
                 }}
-                className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white transition-colors hover:bg-black/70"
+                className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white transition-colors duration-fast hover:bg-black/70 active:scale-90"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -119,7 +121,7 @@ export function CogVideoXConfigSection({
                 onClick={() => setConfig({ ...config, aspectRatio: ratio.id })}
                 disabled={disabled}
                 className={cn(
-                  'flex flex-1 flex-col items-center gap-2.5 rounded-2xl border-2 p-4 transition-all',
+                  'flex flex-1 flex-col items-center gap-2.5 rounded-2xl border-2 p-4 select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.97]',
                   config.aspectRatio === ratio.id
                     ? 'border-blue-500/60 bg-white/70 shadow-sm backdrop-blur-md dark:bg-blue-500/15'
                     : 'border-white/50 bg-white/40 hover:border-blue-200/60 dark:border-white/10 dark:bg-slate-900/30',
@@ -148,24 +150,34 @@ export function CogVideoXConfigSection({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               时长
             </span>
-            <div className="grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
-              {COGVIDEOX_DURATIONS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setConfig({ ...config, duration: d })}
-                  disabled={disabled}
-                  className={cn(
-                    'rounded-lg py-2 text-xs font-bold transition-all',
-                    config.duration === d
-                      ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
-                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300',
-                    disabled && 'cursor-not-allowed opacity-50'
-                  )}
-                >
-                  {d}s
-                </button>
-              ))}
+            <div className="relative grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
+              {COGVIDEOX_DURATIONS.map((d) => {
+                const isActive = config.duration === d;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setConfig({ ...config, duration: d })}
+                    disabled={disabled}
+                    className={cn(
+                      'relative z-10 rounded-lg py-2 text-xs font-bold select-none transition-colors duration-fast ease-out-expo active:scale-95',
+                      isActive
+                        ? 'text-blue-600 dark:text-blue-400 font-extrabold'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300',
+                      disabled && 'cursor-not-allowed opacity-50'
+                    )}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="cogDurationIndicator"
+                        className="absolute inset-0 -z-10 rounded-lg bg-white shadow-sm dark:bg-slate-700"
+                        transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                      />
+                    )}
+                    {d}s
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -173,24 +185,34 @@ export function CogVideoXConfigSection({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
               分辨率
             </span>
-            <div className="grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
-              {COGVIDEOX_RESOLUTIONS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setConfig({ ...config, resolution: r })}
-                  disabled={disabled}
-                  className={cn(
-                    'rounded-lg py-2 text-xs font-bold transition-all',
-                    config.resolution === r
-                      ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400'
-                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300',
-                    disabled && 'cursor-not-allowed opacity-50'
-                  )}
-                >
-                  {r}
-                </button>
-              ))}
+            <div className="relative grid grid-cols-2 rounded-xl border border-white/50 bg-white/50 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
+              {COGVIDEOX_RESOLUTIONS.map((r) => {
+                const isActive = config.resolution === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setConfig({ ...config, resolution: r })}
+                    disabled={disabled}
+                    className={cn(
+                      'relative z-10 rounded-lg py-2 text-xs font-bold select-none transition-colors duration-fast ease-out-expo active:scale-95',
+                      isActive
+                        ? 'text-blue-600 dark:text-blue-400 font-extrabold'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300',
+                      disabled && 'cursor-not-allowed opacity-50'
+                    )}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="cogResolutionIndicator"
+                        className="absolute inset-0 -z-10 rounded-lg bg-white shadow-sm dark:bg-slate-700"
+                        transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                      />
+                    )}
+                    {r}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

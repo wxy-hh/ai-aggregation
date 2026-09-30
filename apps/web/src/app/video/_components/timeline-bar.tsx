@@ -126,16 +126,20 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
         {/* 播放控制按钮 */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleSkipBack}
             disabled={!hasVideo}
-            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl select-none transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="快退 1 秒"
           >
             <SkipBack className="w-4 h-4 fill-current" />
           </button>
           <button
+            type="button"
             onClick={handlePlayPause}
             disabled={!hasVideo}
-            className="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full flex items-center justify-center hover:bg-blue-500 hover:text-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-full flex items-center justify-center hover:bg-blue-500 hover:text-white select-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-expo active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label={isPlaying ? '暂停' : '播放'}
           >
             {isPlaying ? (
               <Pause className="w-4 h-4 fill-current" />
@@ -144,9 +148,11 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
             )}
           </button>
           <button
+            type="button"
             onClick={handleSkipForward}
             disabled={!hasVideo}
-            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl select-none transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="快进 1 秒"
           >
             <SkipForward className="w-4 h-4 fill-current" />
           </button>
@@ -169,12 +175,12 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
           )}
         >
           <div
-            className="absolute left-0 top-0 h-full bg-blue-500 rounded-full transition-all"
+            className="absolute left-0 top-0 h-full bg-blue-500 rounded-full transition-[width] duration-75 ease-linear"
             style={{ width: `${progress}%` }}
           />
           {hasVideo && (
             <div
-              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white dark:bg-slate-200 rounded-full border-2 border-blue-500 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white dark:bg-slate-200 rounded-full border-2 border-blue-500 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-fast ease-out-expo"
               style={{ left: `calc(${progress}% - 8px)` }}
             />
           )}
@@ -185,17 +191,21 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
 
         {/* 音量控制 */}
         <button
+          type="button"
           onClick={toggleMute}
           disabled={!hasVideo}
-          className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl select-none transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={isMuted ? '取消静音' : '静音'}
         >
           {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
         </button>
 
         {/* 展开时间轴按钮 */}
         <button
+          type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-blue-500 transition-colors"
+          className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-blue-500 select-none transition-colors duration-fast active:scale-95"
+          aria-label="展开帧预览时间轴"
         >
           <span>展开</span>
           <motion.div animate={{ rotate: isExpanded ? 180 : 0 }}>
@@ -211,6 +221,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
               className="overflow-hidden"
             >
               <div className="rounded-[32px] border border-white/50 bg-white/45 p-4 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/40">
@@ -221,7 +232,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
                       <div
                         key={i}
                         className={cn(
-                          'flex-shrink-0 w-20 h-14 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:scale-105 transition-transform cursor-pointer',
+                          'flex-shrink-0 w-20 h-14 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg select-none transition-[border-color,box-shadow,transform] duration-fast ease-out-expo active:scale-95 cursor-pointer',
                           i === Math.floor((progress / 100) * 24) && 'ring-2 ring-blue-500'
                         )}
                       />

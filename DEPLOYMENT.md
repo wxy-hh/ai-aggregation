@@ -591,6 +591,7 @@ openssl rand -hex 32
 | 2026-07-24 | Cloudflare                               | wrangler 已登录；workers.dev 子域名 `wxy-ai-agg` 已注册；RTASR 生产 URL 可按第 7 节继续                                                                              |
 | 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书                                               |
 | 2026-08-28 | 管理员权限排查 + Nginx 强制跳转          | **根因**：`http://` 访问时 Secure Cookie 被拒收 → 匿名登录覆盖管理员会话（账号权限本身已同步）；nginx 改为双 server 块（80 仅跳转 + 443 主站），全链路浏览器验证通过 |
+| 2026-09-30 | `40e467dd` master（服务器从 `ff11327` 前进 43 个提交） | **发布成功**：web + worker 镜像重建并 `--force-recreate`；无 Prisma schema 变更（跳过 migrate）；worker 心跳在线；register/login/me 全部 200；`/` → `/home` 200。`master_style` 分支改动**未**纳入本次发布。构建期踩坑：容器内 `pnpm install` 走 registry.npmjs.org 在腾讯云上卡死（每包约 200s），已在服务器侧注入 `.npmrc`（npmmirror）并在两个 Dockerfile 的 install 前 `COPY .npmrc`，构建耗时降到约 12 分钟 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
 Docker 生产地址：https://www.chunfen.ink  
@@ -915,7 +916,7 @@ git push origin master
 
 ```bash
 ssh ubuntu@124.223.40.33
-# 输入密码：woaini2244..
+# 输入密码：见 infra/docker/server-info.md（本地文件，不入 git；文档里不再留明文）
 ```
 
 **步骤 3：拉取最新代码**
@@ -1020,7 +1021,7 @@ tar -czf /tmp/ai-agg-deploy.tar.gz \
 **步骤 2：上传到服务器**
 
 ```bash
-sshpass -p 'woaini2244..' scp -P 22 \
+sshpass -p "$(grep -m1 -F 'SSH 密码' infra/docker/server-info.md | awk -F'`' '{print $2}')" scp -P 22 \
   /tmp/ai-agg-deploy.tar.gz \
   ubuntu@124.223.40.33:~/ai-aggregation/
 ```
@@ -1028,7 +1029,7 @@ sshpass -p 'woaini2244..' scp -P 22 \
 **步骤 3：SSH 到服务器解压**
 
 ```bash
-sshpass -p 'woaini2244.' ssh ubuntu@124.223.40.33
+sshpass -p "$(grep -m1 -F 'SSH 密码' infra/docker/server-info.md | awk -F'`' '{print $2}')" ssh ubuntu@124.223.40.33
 cd ~/ai-aggregation
 tar -xzf ai-agg-deploy.tar.gz
 rm ai-agg-deploy.tar.gz

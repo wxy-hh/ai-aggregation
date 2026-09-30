@@ -10,6 +10,7 @@ import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { AudioHistoryItem } from '@/types/audio-history';
@@ -289,9 +290,9 @@ function VoicePageContent() {
   return (
     <AppLayout>
       <div className="flex w-full h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-blue-900/10 overflow-hidden">
-        {/* Main Content */}
+        {/* 主内容工作区 */}
         <div className="flex-1 flex flex-col h-full min-w-0 relative">
-          {/* Header */}
+          {/* 顶部头部导航与状态栏 */}
           <header className="flex-none bg-white px-4 py-4 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10 md:px-6">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div className="min-w-0 flex-1">
@@ -318,7 +319,7 @@ function VoicePageContent() {
                   variant="outline"
                   onClick={() => setShowHistoryDrawer(true)}
                   aria-label="打开历史记录"
-                  className="h-11 shrink-0 px-4 lg:hidden text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  className="h-11 shrink-0 px-4 lg:hidden text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-[0.98] transition-[transform,background-color] duration-fast"
                 >
                   历史记录
                 </Button>
@@ -344,74 +345,100 @@ function VoicePageContent() {
               </div>
             </div>
 
-            {/* Mode Tabs */}
-            <Tabs value={mode} onValueChange={(value) => setMode(value as VoiceMode)}>
-              <TabsList className="grid w-full max-w-md grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                <TabsTrigger
-                  value="realtime"
-                  className={cn(
-                    'rounded-md text-sm font-medium transition-all',
-                    mode === 'realtime'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  )}
-                >
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                    />
-                  </svg>
-                  实时录音
-                </TabsTrigger>
-                <TabsTrigger
-                  value="upload"
-                  className={cn(
-                    'rounded-md text-sm font-medium transition-all relative',
-                    mode === 'upload'
-                      ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  )}
-                >
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  上传音频
-                  {/* 🔧 显示处理状态指示器 */}
-                  {uploadState.isProcessing && mode !== 'upload' && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                    </span>
-                  )}
-                  {uploadState.showResult && !uploadState.isProcessing && mode !== 'upload' && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {/* 模式切换选项卡 */}
+            <div className="w-full max-w-md">
+              <div
+                role="tablist"
+                aria-label="录音模式切换"
+                className="grid grid-cols-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl"
+              >
+                {[
+                  {
+                    id: 'realtime' as VoiceMode,
+                    label: '实时录音',
+                    icon: (
+                      <svg
+                        className="w-4 h-4 mr-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                        />
+                      </svg>
+                    ),
+                  },
+                  {
+                    id: 'upload' as VoiceMode,
+                    label: '上传音频',
+                    icon: (
+                      <svg
+                        className="w-4 h-4 mr-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                        />
+                      </svg>
+                    ),
+                  },
+                ].map((item) => {
+                  const active = mode === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setMode(item.id)}
+                      className={cn(
+                        // py-3 保证移动端热区 ≥44px（DESIGN.md §5）
+                        'relative flex items-center justify-center py-3 text-sm font-semibold select-none outline-none rounded-lg transition-colors duration-200 active:scale-[0.98]',
+                        active
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      )}
+                    >
+                      {active && (
+                        <motion.div
+                          layoutId="voiceModeIndicator"
+                          className="absolute inset-0 rounded-lg bg-white dark:bg-slate-700 shadow-sm"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-10 flex items-center justify-center">
+                        {item.icon}
+                        {item.label}
+                      </span>
+                      {/* 处理状态指示器 */}
+                      {item.id === 'upload' && uploadState.isProcessing && mode !== 'upload' && (
+                        <span className="absolute -top-1 -right-1 flex h-3 w-3 z-20">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                        </span>
+                      )}
+                      {item.id === 'upload' && uploadState.showResult && !uploadState.isProcessing && mode !== 'upload' && (
+                        <span className="absolute -top-1 -right-1 flex h-3 w-3 z-20">
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </header>
 
-          {/* Content Area */}
+          {/* 主工作内容展示区域 */}
           {/* 🔧 使用 CSS 隐藏而不是条件渲染，保持组件状态 */}
           {/* 上传音频界面 */}
           <div
@@ -530,11 +557,11 @@ function VoicePageContent() {
             </div>
           </div>
 
-          {/* Floating Action Bar - Only show in realtime mode */}
+          {/* 底部浮动控制栏（仅实时录音模式显示） */}
           {mode === 'realtime' && (
-            <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4">
-              <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-slate-200/50 dark:border-slate-700/50 p-2 rounded-2xl shadow-2xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                {/* Record Control */}
+            <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] lg:bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-2xl px-4 animate-in fade-in-0 slide-in-from-bottom-3 duration-normal">
+              <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl border border-slate-200/60 dark:border-slate-700/60 p-2.5 rounded-2xl shadow-xl ring-1 ring-black/[0.04] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {/* 录音启停控制 */}
                 <div className="flex items-center gap-2">
                   <Button
                     onClick={async () => {
@@ -555,11 +582,12 @@ function VoicePageContent() {
                       }
                     }}
                     aria-label={primaryActionLabel}
-                    className={
+                    className={cn(
+                      'w-10 h-10 rounded-xl active:scale-95 transition-[transform,background-color,box-shadow] duration-fast ease-out-expo',
                       rtasr.status === 'running'
-                        ? 'w-10 h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500'
-                        : 'w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
-                    }
+                        ? 'bg-red-50 hover:bg-red-100 text-red-500'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
+                    )}
                     variant={rtasr.status === 'running' ? 'secondary' : 'default'}
                     size="icon"
                   >
@@ -593,12 +621,12 @@ function VoicePageContent() {
 
                 <div className="hidden h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 sm:block"></div>
 
-                {/* Actions */}
+                {/* 辅助快捷操作 */}
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
                   <Button
                     variant="ghost"
                     onClick={handleCopyText}
-                    className="gap-2 justify-center text-slate-600 dark:text-slate-300"
+                    className="gap-2 justify-center text-slate-600 dark:text-slate-300 active:scale-[0.98] transition-[transform,background-color] duration-fast"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
@@ -613,7 +641,7 @@ function VoicePageContent() {
                   <Button
                     variant="ghost"
                     onClick={handleExport}
-                    className="gap-2 justify-center text-slate-600 dark:text-slate-300"
+                    className="gap-2 justify-center text-slate-600 dark:text-slate-300 active:scale-[0.98] transition-[transform,background-color] duration-fast"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
@@ -631,7 +659,7 @@ function VoicePageContent() {
                     disabled={relay.disabled}
                     disabledReason={relay.disabledReason}
                     onClick={relay.openAtTrigger}
-                    className="gap-2 justify-center"
+                    className="gap-2 justify-center active:scale-[0.98] transition-transform duration-fast"
                   />
                 </div>
 
@@ -650,7 +678,7 @@ function VoicePageContent() {
                     await handleStopAndSave();
                   }}
                   disabled={rtasr.status === 'connecting' || rtasr.status === 'stopping'}
-                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2"
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold gap-2 active:scale-[0.98] transition-[transform,background-color,box-shadow] duration-fast ease-out-expo"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -667,7 +695,7 @@ function VoicePageContent() {
           )}
         </div>
 
-        {/* Right Sidebar: Recording Library - Hidden on mobile, visible on lg screens */}
+        {/* 右侧边栏：历史录音库（移动端抽屉化，大屏常驻） */}
         <div className="hidden lg:block h-full shadow-xl z-20">
           <RecordingLibrary onHistoryItemClick={handleHistoryItemClick} />
         </div>

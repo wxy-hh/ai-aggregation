@@ -107,18 +107,18 @@ export function ConfigPanel({
               onClick={handleOptimize}
               disabled={isOptimizing || !prompt.trim() || isGenerating}
               className={cn(
-                'group flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600 transition-all hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30',
+                'group flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600 select-none transition-[background-color,color,transform] duration-fast ease-out-expo hover:bg-blue-100 active:scale-[0.96] dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30',
                 (isOptimizing || !prompt.trim() || isGenerating) && 'cursor-not-allowed opacity-50'
               )}
             >
-              <Sparkles className={cn('h-3.5 w-3.5', isOptimizing && 'animate-spin')} />
+              <Sparkles className={cn('h-3.5 w-3.5 transition-transform duration-fast ease-out-expo group-hover:scale-110', isOptimizing && 'animate-spin')} />
               {isOptimizing ? '优化中...' : '✨ 智能优化'}
             </button>
           </div>
           {/* 外层承载边框与 focus 光晕，内层 textarea 滚动，避免滚动条压住描边 */}
           <div
             className={cn(
-              'relative overflow-hidden rounded-2xl border border-white/60 bg-white/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35)] backdrop-blur-xl transition-all',
+              'relative overflow-hidden rounded-2xl border border-white/60 bg-white/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35)] backdrop-blur-xl transition-[border-color,box-shadow,background-color] duration-fast ease-out-expo',
               'focus-within:border-blue-500/50 focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.12),inset_0_1px_0_0_rgba(255,255,255,0.35)]',
               'dark:border-white/10 dark:bg-slate-900/50 dark:focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.18),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
               isGenerating && 'opacity-50'
@@ -145,7 +145,7 @@ export function ConfigPanel({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
             >
               <CogVideoXConfigSection
                 config={config}
@@ -161,7 +161,7 @@ export function ConfigPanel({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
+              transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
             >
               <AgnesConfigSection config={config} setConfig={setConfig} disabled={isGenerating} />
             </motion.div>
@@ -172,11 +172,11 @@ export function ConfigPanel({
         <section className="pt-2">
           <button
             onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-            className="flex items-center gap-2 text-xs font-bold text-slate-500 transition-colors hover:text-slate-900 dark:hover:text-white"
+            className="flex items-center gap-2 text-xs font-bold text-slate-500 select-none transition-colors duration-fast ease-out-expo hover:text-slate-900 active:scale-95 dark:hover:text-white"
           >
             <div
               className={cn(
-                'rounded-md bg-slate-100 p-1 transition-transform dark:bg-slate-800',
+                'rounded-md bg-slate-100 p-1 transition-transform duration-fast ease-out-expo dark:bg-slate-800',
                 isAdvancedOpen && 'rotate-180'
               )}
             >
@@ -190,6 +190,7 @@ export function ConfigPanel({
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
                 className="overflow-hidden"
               >
                 <div className="mt-4 rounded-2xl border border-white/50 bg-white/50 p-4 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/40">
@@ -212,7 +213,7 @@ export function ConfigPanel({
             onClick={onGenerate}
             disabled={isGenerating || !prompt.trim()}
             className={cn(
-              'relative h-14 w-full overflow-hidden rounded-2xl text-base font-bold transition-all',
+              'relative h-14 w-full overflow-hidden rounded-2xl text-base font-bold select-none transition-[background-color,box-shadow,transform,filter] duration-fast ease-out-expo',
               'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.98]',
               'disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale'
             )}
@@ -229,7 +230,7 @@ export function ConfigPanel({
               </div>
             )}
             {/* 光效扫过 */}
-            <div className="absolute inset-x-0 top-0 h-full w-full -translate-x-full skew-x-[25deg] bg-gradient-to-r from-transparent via-white/20 to-transparent transition-all duration-700 group-hover:translate-x-full" />
+            <div className="absolute inset-x-0 top-0 h-full w-full -translate-x-full skew-x-[25deg] bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-normal ease-out-expo group-hover:translate-x-full" />
           </Button>
         </div>
       ) : null}

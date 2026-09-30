@@ -169,7 +169,11 @@ export function textStreamToSse(
       } catch (error) {
         await opts.onError?.(error);
         try {
-          const message = error instanceof Error ? error.message : String(error);
+          const rawMessage = error instanceof Error ? error.message : String(error);
+          let message = rawMessage;
+          if (rawMessage.includes('fetch failed') || rawMessage.includes('ECONNRESET')) {
+            message = '网络连接失败，请检查网络连接或代理分流设置';
+          }
           controller.enqueue(encodeSseEvent({ type: 'error', error: message }));
           controller.enqueue(encodeSseEvent({ type: 'done' }));
           controller.close();
@@ -177,7 +181,7 @@ export function textStreamToSse(
           // 流已关闭时忽略
         }
       } finally {
-        try { reader.releaseLock(); } catch { /* 忽略错误 */ }
+        try { reader.releaseLock(); } catch { /* 忽略释放错误 */ }
       }
     },
   });

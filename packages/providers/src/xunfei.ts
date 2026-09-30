@@ -82,21 +82,31 @@ export async function xunfeiChat(options: XunfeiChatOptions): Promise<XunfeiChat
     throw new Error('Missing XUNFEI_API_PASSWORD environment variable');
   }
 
-  const response = await fetch(XUNFEI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiPassword}`,
-    },
-    body: JSON.stringify({
-      model: options.model || 'lite',
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      stream: false,
-    }),
-    signal: options.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(XUNFEI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiPassword}`,
+      },
+      body: JSON.stringify({
+        model: options.model || 'lite',
+        messages: options.messages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        stream: false,
+      }),
+      signal: options.signal,
+    });
+  } catch (error) {
+    const err = error as Error & { cause?: unknown };
+    const causeCode = (err.cause as { code?: string } | undefined)?.code;
+    if (err.message?.includes('fetch failed') || causeCode === 'ECONNRESET') {
+      throw new Error('连接讯飞星火服务失败，请检查网络连接或代理分流设置');
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -130,21 +140,31 @@ export async function* xunfeiChatStream(options: XunfeiChatOptions): AsyncIterab
     throw new Error('Missing XUNFEI_API_PASSWORD environment variable');
   }
 
-  const response = await fetch(XUNFEI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiPassword}`,
-    },
-    body: JSON.stringify({
-      model: options.model || 'lite',
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      stream: true,
-    }),
-    signal: options.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(XUNFEI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiPassword}`,
+      },
+      body: JSON.stringify({
+        model: options.model || 'lite',
+        messages: options.messages,
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        stream: true,
+      }),
+      signal: options.signal,
+    });
+  } catch (error) {
+    const err = error as Error & { cause?: unknown };
+    const causeCode = (err.cause as { code?: string } | undefined)?.code;
+    if (err.message?.includes('fetch failed') || causeCode === 'ECONNRESET') {
+      throw new Error('连接讯飞星火服务失败，请检查网络连接或代理分流设置');
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -35,8 +35,9 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-screen flex-col bg-[#F5F7FA] dark:bg-[#0A0B10] transition-colors duration-500 lg:flex-row"
       style={{
         ['--app-global-nav-w' as string]: '100px',
-        ['--app-mobile-header-h' as string]: 'calc(env(safe-area-inset-top, 0px) + 4.5rem)',
-        ['--app-mobile-nav-h' as string]: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)',
+        // 移动端固定顶栏/底栏的让位尺寸：main 内边距与需确定视口高度的页面（chat/video 应用壳）共用同一来源
+        ['--app-mobile-chrome-top' as string]: 'calc(env(safe-area-inset-top) + 4.5rem)',
+        ['--app-mobile-chrome-bottom' as string]: 'calc(env(safe-area-inset-bottom) + 5.5rem)',
       }}
     >
       {/* 桌面全局导航：悬浮层（fixed）不占文档流，页面底色/环境光延伸到它下方；
@@ -49,7 +50,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <MobileHeader pathname={pathname} />
       </div>
 
-      <main className="relative flex min-h-screen flex-1 overflow-x-hidden pt-[var(--app-mobile-header-h)] pb-[var(--app-mobile-nav-h)] lg:h-screen lg:overflow-hidden lg:pt-0 lg:pb-0 lg:pl-[var(--app-global-nav-w)]">
+      <main className="relative flex min-h-screen flex-1 overflow-x-hidden pt-[var(--app-mobile-chrome-top)] pb-[var(--app-mobile-chrome-bottom)] lg:h-screen lg:overflow-hidden lg:pt-0 lg:pb-0 lg:pl-[var(--app-global-nav-w)]">
         {children}
       </main>
 

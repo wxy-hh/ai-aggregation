@@ -78,4 +78,20 @@ describe('useChatStore.sendMessage - 豆包空流处理', () => {
     expect(messages).toHaveLength(2);
     expect(messages[1].content).toBe('你好世界');
   });
+
+  it('收到网络连接错误时返回 failed 并正确设置中文友好错误信息', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"error","error":"连接讯飞星火服务失败，请检查网络连接或代理分流设置"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    const result = await useChatStore.getState().sendMessage();
+
+    expect(result).toBe('failed');
+    const { messages, error } = useChatStore.getState();
+    expect(messages).toHaveLength(1);
+    expect(error?.message).toBe('连接讯飞星火服务失败，请检查网络连接或代理分流设置');
+  });
 });

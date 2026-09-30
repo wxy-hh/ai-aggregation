@@ -407,15 +407,26 @@ export function AppsModal({ isOpen, onClose, pinnedApps, onTogglePin }: AppsModa
                               onClick={(e) => handlePinClick(e, app.id)}
                               disabled={isDisabled || app.sidebarPinEnabled === false}
                               aria-label={
-                                isDisabled ? `${app.label}功能开发中，暂不支持添加到左侧导航` : undefined
+                                isDisabled
+                                  ? `${app.label}功能开发中，暂不支持添加到左侧导航`
+                                  : isPinned
+                                    ? `从侧边栏移除${app.label}`
+                                    : `固定${app.label}到侧边栏`
+                              }
+                              title={
+                                isDisabled
+                                  ? `${app.label}功能开发中`
+                                  : isPinned
+                                    ? '从侧边栏移除'
+                                    : '固定到侧边栏'
                               }
                               className={cn(
-                                'p-1.5 rounded-lg transition-all duration-200',
+                                'p-1.5 rounded-lg select-none transition-[color,background-color,transform] duration-fast ease-out-expo',
                                 (isDisabled || app.sidebarPinEnabled === false) &&
                                   'text-slate-300 dark:text-slate-600 cursor-not-allowed hover:bg-transparent',
                                 isPinned
-                                  ? 'text-[#5D7CFA] bg-[#EAF0FF] dark:bg-[#34428A]/40'
-                                  : 'text-slate-300 hover:text-[#5D7CFA] hover:bg-[#F0F4FF] dark:hover:bg-slate-700'
+                                  ? 'text-[#5D7CFA] bg-[#EAF0FF] dark:bg-[#34428A]/40 active:scale-95'
+                                  : 'text-slate-300 hover:text-[#5D7CFA] hover:bg-[#F0F4FF] dark:hover:bg-slate-700 active:scale-95'
                               )}
                             >
                               <Pin className={cn('w-4 h-4', isPinned && 'fill-current')} />

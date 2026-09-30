@@ -106,7 +106,8 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
         </Button>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4 sm:gap-4 lg:gap-6">
+      {/* 移动端双列网格自适应换行，sm 起逐步升列（原为横滑轮播，卡片 min-w 无上限会被长文撑爆） */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6 xl:grid-cols-4">
         {showSkeleton &&
           Array.from({ length: 3 }).map((_, index) => (
             <RecentCreationSkeleton key={`skeleton-${index}`} />
@@ -132,13 +133,13 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
             'border border-dashed border-slate-200 dark:border-slate-700',
             'bg-white/40 dark:bg-slate-900/20',
             'text-slate-500 dark:text-slate-400',
-            'transition-all duration-200',
+            'select-none transition-[border-color,background-color,color,transform] duration-fast ease-out-expo',
             'hover:border-blue-300 hover:bg-blue-50/60 hover:text-blue-600',
             'dark:hover:border-blue-700 dark:hover:bg-blue-950/20 dark:hover:text-blue-400',
-            'active:scale-[0.98]'
+            'active:scale-[0.97]'
           )}
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800 transition-transform duration-fast ease-out-expo group-hover:scale-110">
             <Plus className="h-5 w-5" />
           </span>
           <span className="text-sm font-medium">新建对话</span>
@@ -205,10 +206,10 @@ function RecentCreationCard({
         'group flex h-full flex-col overflow-hidden rounded-2xl',
         'border border-slate-200/80 dark:border-slate-800/80',
         'bg-white/70 dark:bg-slate-900/50 backdrop-blur-md',
-        'shadow-sm transition-all duration-200',
-        'hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_28px_-12px_rgba(59,130,246,0.22)]',
+        'shadow-sm select-none transition-[transform,box-shadow,border-color] duration-normal ease-out-expo',
+        'hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_12px_28px_-12px_rgba(59,130,246,0.22)]',
         'dark:hover:border-blue-800/60',
-        'active:scale-[0.99]'
+        'active:scale-[0.97]'
       )}
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-slate-50 dark:bg-slate-950/80">
@@ -216,7 +217,7 @@ function RecentCreationCard({
           <img
             src={item.imageUrl}
             alt={item.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-normal ease-out-expo group-hover:scale-[1.03]"
           />
         ) : (
           <div className="flex h-full flex-col justify-between p-4">
@@ -343,7 +344,7 @@ export function RecentFilesSidebarList() {
               const href = getHistoryItemHref(item);
               if (href) router.push(href);
             }}
-            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-slate-100/80 dark:hover:bg-slate-800/50"
+            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left select-none transition-[background-color,transform] duration-fast ease-out-expo hover:bg-slate-100/80 active:scale-[0.98] dark:hover:bg-slate-800/50"
           >
             <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', meta.iconBg, meta.accent)}>
               <Icon className="h-3.5 w-3.5" />

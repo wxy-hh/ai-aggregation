@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { translateText, isQuotaError } from '@/lib/api/translation';
 import { exportToWord } from '@/lib/utils/export-docx';
-import { useToast } from '@/hooks/use-toast';
-import { ToastContainer } from '@/components/ui/toast';
+import { toast } from 'sonner';
 // 跨模态接力：转写作为来源（REQ-002/008）
 import { RelayAction } from '@/components/relay/relay-action';
 import { RelayMenu } from '@/components/relay/relay-menu';
@@ -58,16 +57,17 @@ export function TranscriptionResult({
   const [userClickedSegment, setUserClickedSegment] = useState(false); // 标记用户是否点击了片段
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Edit state management
+  // 编辑状态管理
   const [segments, setSegments] = useState<TranscriptSegment[]>(initialSegments);
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
 
-  // Toast notifications
-  const { toasts, removeToast, success, error } = useToast();
+  // 消息通知方法映射
+  const success = (msg: string) => toast.success(msg);
+  const error = (msg: string) => toast.error(msg);
 
-  // Update segments when initialSegments changes
+  // 当外部传入的 initialSegments 变化时同步更新内部片段列表
   useEffect(() => {
     setSegments(initialSegments);
   }, [initialSegments]);
@@ -202,7 +202,7 @@ export function TranscriptionResult({
     },
   });
 
-  // Edit handlers
+  // 编辑事件处理函数
   const handleStartEdit = (segmentId: string, originalText: string) => {
     setEditingSegmentId(segmentId);
     setEditedText(originalText);
@@ -220,25 +220,25 @@ export function TranscriptionResult({
     }
 
     try {
-      // Mark segment as retranslating
+      // 标记片段为重翻译中
       setSegments((prev) =>
         prev.map((seg) =>
           seg.id === segmentId ? { ...seg, originalText: editedText, isRetranslating: true } : seg
         )
       );
 
-      // Clear editing state
+      // 清空编辑状态
       setEditingSegmentId(null);
       setEditedText('');
 
-      // Call translation API
+      // 调用翻译接口
       const result = await translateText({
         text: editedText,
         sourceLanguage: language,
         targetLanguage: targetLanguage,
       });
 
-      // Update translation
+      // 更新翻译内容
       setSegments((prev) =>
         prev.map((seg) =>
           seg.id === segmentId
@@ -257,7 +257,7 @@ export function TranscriptionResult({
         error('重新翻译失败，请重试');
       }
 
-      // Revert retranslating state
+      // 恢复重翻译状态
       setSegments((prev) =>
         prev.map((seg) => (seg.id === segmentId ? { ...seg, isRetranslating: false } : seg))
       );
@@ -266,9 +266,6 @@ export function TranscriptionResult({
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
-      {/* Toast Notifications */}
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-
       {/* 接力菜单（显式按钮/右键/长按复用） */}
       <RelayMenu
         open={relay.menuOpen}
@@ -279,10 +276,10 @@ export function TranscriptionResult({
         triggerRef={relay.triggerRef}
       />
 
-      {/* Header */}
+      {/* 页面头部区域 */}
       <header className="flex-none px-4 py-4 sm:px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          {/* File Info */}
+          {/* 音频文件信息 */}
           <div className="flex min-w-0 items-start gap-3 sm:gap-4">
             <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
               <svg
@@ -355,7 +352,7 @@ export function TranscriptionResult({
             </div>
           </div>
 
-          {/* Actions */}
+          {/* 操作按钮组 */}
           <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
             {/* 重新上传按钮 */}
             {onReupload && (
@@ -368,7 +365,7 @@ export function TranscriptionResult({
                   console.log('onReupload 函数:', onReupload);
                   onReupload();
                 }}
-                className="gap-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-all"
+                className="gap-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
@@ -433,7 +430,7 @@ export function TranscriptionResult({
               )}
               {isExporting ? '导出中...' : '导出'}
             </Button>
-            {/* 接力：完整转写发起（REQ-002 显式入口）。替换原「发送到对话」TODO。 */}
+            {/* 接力：完整转写发起（REQ-002 显式入口）。替换原「发送到对话」待办项。 */}
             <RelayAction
               ref={relay.triggerRef}
               disabled={relay.disabled}
@@ -444,7 +441,7 @@ export function TranscriptionResult({
           </div>
         </div>
 
-        {/* View Mode Tabs */}
+        {/* 视图模式切换卡 */}
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
             显示模式:
@@ -487,11 +484,11 @@ export function TranscriptionResult({
         </div>
       </header>
 
-      {/* Content Area */}
+      {/* 内容主区域 */}
       <div ref={transcriptContainerRef} className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         <div className="max-w-7xl mx-auto">
           {viewMode === 'bilingual' ? (
-            // 双栏对照模式 - 使用 grid 自动对齐高度
+            // 双栏对照模式 - 使用网格布局自动对齐高度
             <div className="space-y-4">
               {/* 标题行 */}
               <div className="grid grid-cols-2 gap-6 sticky top-0 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 py-2 z-10">
@@ -609,7 +606,7 @@ export function TranscriptionResult({
         </div>
       </div>
 
-      {/* Audio Player - 固定在底部 */}
+      {/* 音频播放控制器 - 固定于视口底部 */}
       {audioUrl ? (
         <div className="absolute bottom-6 left-0 right-0 px-6 z-30 pointer-events-none">
           <div className="max-w-3xl mx-auto pointer-events-auto transition-transform duration-300 hover:scale-[1.01]">
@@ -667,10 +664,10 @@ export function TranscriptionResult({
               ) : (
                 // 正常的音频播放器
                 <div className="flex items-center gap-4">
-                  {/* Play Button */}
+                  {/* 播放/暂停控制按钮 */}
                   <button
                     onClick={togglePlay}
-                    className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/30 transition-all"
+                    className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/30 transition-[background-color,transform] duration-fast ease-out-expo active:scale-95"
                   >
                     {isPlaying ? (
                       <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -687,7 +684,7 @@ export function TranscriptionResult({
                     )}
                   </button>
 
-                  {/* Progress Bar */}
+                  {/* 播放进度条 */}
                   <div className="flex-1">
                     <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
                       <span className="font-mono">{formatTime(currentTime)}</span>
@@ -695,7 +692,7 @@ export function TranscriptionResult({
                     </div>
                     <div className="relative h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden cursor-pointer group">
                       <div
-                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all"
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-[width] duration-instant"
                         style={{ width: `${(currentTime / duration) * 100}%` }}
                       />
                       <div
@@ -705,7 +702,7 @@ export function TranscriptionResult({
                     </div>
                   </div>
 
-                  {/* Speed Control */}
+                  {/* 倍速控制 */}
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500 dark:text-slate-400">1.0x</span>
                     <button className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors">
@@ -731,14 +728,14 @@ export function TranscriptionResult({
         </div>
       ) : null}
 
-      {/* Hidden Audio Element */}
+      {/* 原生隐藏音频元素 */}
       {audioUrl && audioUrl !== 'unavailable' && <audio ref={audioRef} src={audioUrl} />}
 
-      {/* Loading 遮罩 - 重新上传时显示 */}
+      {/* 加载遮罩 - 重新上传时显示 */}
       {isProcessing && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4">
-            {/* Loading 动画 */}
+            {/* 加载等待动画 */}
             <div className="flex flex-col items-center">
               {/* 旋转的音频图标 */}
               <div className="relative w-20 h-20 mb-6">
@@ -874,12 +871,12 @@ function SegmentBlock({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Active Indicator */}
+      {/* 激活指示器 */}
       {isActive && (
         <div className="absolute left-0 top-4 bottom-4 w-1 bg-gradient-to-b from-blue-500 to-indigo-600 rounded-r-full" />
       )}
 
-      {/* Header */}
+      {/* 发言人信息 */}
       <div className="flex items-center gap-3 mb-3">
         <div
           className={cn(
@@ -901,21 +898,21 @@ function SegmentBlock({
         </div>
       </div>
 
-      {/* Content */}
+      {/* 转写内容 */}
       {isEditing && !showTranslation ? (
-        // Edit mode
+        // 编辑模式
         <div className="space-y-3">
           <textarea
             value={editedText}
             onChange={(e) => onEditTextChange?.(e.target.value)}
-            className="w-full min-h-[100px] p-3 text-sm leading-relaxed rounded-lg border-2 border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none transition-all"
+            className="w-full min-h-[100px] p-3 text-sm leading-relaxed rounded-lg border-2 border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none transition-colors"
             autoFocus
             onClick={(e) => e.stopPropagation()}
           />
           <div className="flex items-center gap-2">
             <button
               onClick={handleSaveClick}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-medium shadow-lg shadow-blue-500/30 transition-all duration-200 flex items-center gap-2"
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-medium shadow-lg shadow-blue-500/30 transition-[background-color,transform] duration-fast ease-out-expo active:scale-95 flex items-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
@@ -929,25 +926,25 @@ function SegmentBlock({
             </button>
             <button
               onClick={handleCancelClick}
-              className="px-4 py-2 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium transition-all duration-200"
+              className="px-4 py-2 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium transition-[background-color,color] duration-fast ease-out-expo active:scale-95"
             >
               取消
             </button>
           </div>
         </div>
       ) : (
-        // Display mode
+        // 预览展示模式
         <>
           <p
             className={cn(
-              'text-sm leading-relaxed transition-all',
+              'text-sm leading-relaxed transition-colors',
               isActive
                 ? 'text-slate-900 dark:text-white font-medium'
                 : 'text-slate-700 dark:text-slate-300'
             )}
           >
             {segment.isRetranslating ? (
-              // Retranslating loading effect
+              // 重新翻译中加载效果
               <span className="flex items-center gap-2 text-blue-500 dark:text-blue-400">
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle
@@ -969,7 +966,7 @@ function SegmentBlock({
             ) : showTranslation &&
               (segment.translatedText === 'translating' ||
                 segment.translatedText === 'Translation in progress...') ? (
-              // Initial translation loading effect
+              // 初始翻译中加载效果
               <span className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle
@@ -986,7 +983,7 @@ function SegmentBlock({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                <span className="animate-pulse">Translating...</span>
+                <span className="animate-pulse">翻译中...</span>
               </span>
             ) : showTranslation ? (
               segment.translatedText
@@ -995,18 +992,18 @@ function SegmentBlock({
             )}
           </p>
 
-          {/* Hover Actions */}
+          {/* 悬浮操作菜单 */}
           <div
             className={cn(
-              'absolute top-2 right-2 flex items-center gap-1 transition-opacity duration-200',
+              'absolute top-2 right-2 flex items-center gap-1 transition-opacity duration-fast ease-out-expo',
               isHovered && !isEditing ? 'opacity-100' : 'opacity-0'
             )}
           >
-            {/* Edit button - only show for original text */}
+            {/* 编辑按钮 - 仅在原文显示 */}
             {!showTranslation && onStartEdit && (
               <button
                 onClick={handleEditClick}
-                className="w-8 h-8 rounded-lg bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 flex items-center justify-center transition-all duration-200 shadow-sm hover:shadow-md"
+                className="w-8 h-8 rounded-lg bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 flex items-center justify-center transition-colors duration-fast shadow-sm hover:shadow-md active:scale-95"
                 title="编辑"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1020,11 +1017,11 @@ function SegmentBlock({
               </button>
             )}
 
-            {/* Copy button */}
+            {/* 复制按钮 */}
             <button
               onClick={handleCopy}
               className={cn(
-                'w-8 h-8 rounded-lg shadow-sm flex items-center justify-center transition-all duration-200',
+                'w-8 h-8 rounded-lg shadow-sm flex items-center justify-center transition-[background-color,color,transform] duration-fast ease-out-expo active:scale-95',
                 copied
                   ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/30'
                   : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-indigo-50 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-md'
@@ -1032,7 +1029,7 @@ function SegmentBlock({
               title={copied ? '已复制' : '复制'}
             >
               {copied ? (
-                // Success checkmark
+                // 复制成功勾选图标
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
@@ -1042,7 +1039,7 @@ function SegmentBlock({
                   />
                 </svg>
               ) : (
-                // Copy icon
+                // 复制图标
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"

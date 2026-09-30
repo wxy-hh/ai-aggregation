@@ -11,6 +11,7 @@ import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组�
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 // 跨模态接力：目标侧接收（引用条 + 预填 + 派生）
 import { ReferenceBar } from '@/components/relay/reference-bar';
@@ -117,13 +118,22 @@ function ModeSegmentedControl({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'inline-flex min-h-[44px] items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-200 focus:outline-none',
+              'relative inline-flex min-h-[44px] items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-semibold select-none outline-none transition-colors duration-200 active:scale-[0.97]',
               active
-                ? 'bg-blue-500 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.4)]'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                ? 'text-white'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
             )}
           >
-            {opt.label}
+            {active && (
+              <motion.div
+                layoutId="chatModeIndicator"
+                className="absolute inset-0 rounded-full bg-blue-600 shadow-[0_4px_12px_-2px_rgba(59,130,246,0.45)]"
+                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+              />
+            )}
+            <span className="relative z-10 flex items-center justify-center">
+              {opt.label}
+            </span>
           </button>
         );
       })}
@@ -289,6 +299,14 @@ export default function ChatWorkspace() {
     if (!isLoaded) return;
     prepareRelaySession();
   }, [relay.initialized, relay.bundle?.id, isLoaded, prepareRelaySession]);
+
+  // ============ 错误提示全局监听 ============
+  // 当对话发生异常时（如网络故障、提供方错误、配额超限），统一向用户弹出友好提示
+  useEffect(() => {
+    if (error) {
+      toast.error(error.message || '请求失败，请稍后重试');
+    }
+  }, [error]);
 
   // ============ 计算属性（派生状态） ============
   // 这些值是从 Store 中的数据计算得出的，不需要单独存储
@@ -566,9 +584,9 @@ export default function ChatWorkspace() {
     <>
       <button
         onClick={handleNewConversation}
-        className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white border border-blue-100 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-700 rounded-xl py-3 px-4 font-medium flex items-center justify-center gap-2 transition-all shadow-sm group hover:shadow-md"
+        className="w-full bg-white dark:bg-blue-600 text-blue-600 dark:text-white border border-blue-100 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-700 rounded-xl py-3 px-4 font-medium flex items-center justify-center gap-2 select-none transition-[color,background-color,border-color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.98] shadow-sm group hover:shadow-md"
       >
-        <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+        <Plus className="w-5 h-5 group-hover:scale-110 transition-transform duration-fast ease-out-expo" />
         新建对话
       </button>
 
@@ -626,7 +644,8 @@ export default function ChatWorkspace() {
                           e.stopPropagation();
                           deleteConversation(item.id);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-500 select-none transition-[opacity,color,background-color,transform] duration-fast ease-out-expo active:scale-90"
+                        aria-label="删除此对话"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -697,7 +716,9 @@ export default function ChatWorkspace() {
   return (
     <AuthGuard>
       <AppLayout>
-        <div className="flex h-[calc(100dvh-var(--app-mobile-header-h)-var(--app-mobile-nav-h))] min-h-0 w-full lg:h-full">
+        {/* 移动端 main 无确定高度（仅 min-h-screen），h-full 百分比链会失效导致壳体被内容撑爆；
+            改为 100dvh 减去固定顶栏/底栏让位（变量来源 AppLayout），桌面端维持 h-full 原链路 */}
+        <div className="flex min-h-0 w-full h-[calc(100dvh_-_var(--app-mobile-chrome-top)_-_var(--app-mobile-chrome-bottom))] lg:h-full">
           {/* 聊天历史侧边栏 */}
           <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
             {renderConversationList()}
@@ -870,18 +891,18 @@ export default function ChatWorkspace() {
                                 <button
                                   key={action.title}
                                   onClick={() => handleSend(action.prompt)}
-                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
+                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
                                 >
                                   <div
                                     className={cn(
-                                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
+                                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105',
                                       action.iconClassName
                                     )}
                                   >
                                     <ActionIcon className="h-5 w-5" />
                                   </div>
                                   <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 transition-colors group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                    <div className="text-sm font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
                                       {action.title}
                                     </div>
                                     <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
