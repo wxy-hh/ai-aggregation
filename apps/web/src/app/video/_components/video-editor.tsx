@@ -159,7 +159,9 @@ export function VideoEditor() {
 
   return (
     <AppLayout>
-      <div className="relative flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 font-sans text-slate-900 transition-colors duration-500 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 dark:text-slate-100">
+      {/* 移动端 h-full 链在 main（min-h-screen）下失效会导致整页塌陷为内容高度（预览区被压没）；
+          与 chat 同款处理：100dvh 减去固定 chrome 让位，桌面端维持 h-full */}
+      <div className="relative flex w-full flex-col overflow-hidden h-[calc(100dvh_-_var(--app-mobile-chrome-top)_-_var(--app-mobile-chrome-bottom))] lg:h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100 via-white to-blue-50 font-sans text-slate-900 transition-colors duration-500 dark:from-slate-900 dark:via-slate-950 dark:to-indigo-950 dark:text-slate-100">
         {/* 背景光晕：支撑玻璃拟态质感（DESIGN.md §2.1） */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -right-[10%] -top-[20%] h-[50%] w-[50%] rounded-full bg-blue-400/10 blur-[100px]" />
@@ -259,8 +261,8 @@ export function VideoEditor() {
               </div>
             </div>
 
-            {/* 底部控制条 */}
-            <div className="px-4 pb-24 lg:px-6 lg:pb-6">
+            {/* 底部控制条（固定高度壳内 CTA 已在文档流占位，不再预留大段底部空间） */}
+            <div className="px-4 pb-4 lg:px-6 lg:pb-6">
               <TimelineBar videoUrl={videoUrl} />
             </div>
           </section>
@@ -291,7 +293,7 @@ export function VideoEditor() {
       </div>
 
       <Dialog open={isConfigDrawerOpen} onOpenChange={setIsConfigDrawerOpen}>
-        <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950">
+        <DialogContent className="inset-x-0 bottom-0 top-auto flex w-full max-w-none translate-x-0 translate-y-0 flex-col rounded-t-[28px] rounded-b-none border-0 bg-white p-0 max-h-[85dvh] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">
           <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
             <DialogTitle className="text-left text-base font-semibold text-slate-900 dark:text-white">
               创作参数
@@ -300,7 +302,7 @@ export function VideoEditor() {
               在移动端集中调整视频生成配置
             </DialogDescription>
           </div>
-          <div className="max-h-[78vh] overflow-y-auto custom-scrollbar">
+          <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
             <ConfigPanel
               prompt={prompt}
               setPrompt={setPrompt}
@@ -320,6 +322,27 @@ export function VideoEditor() {
               showGenerateButton={false}
               relayBar={relayBar}
             />
+          </div>
+          {/* 抽屉底部固定生成 CTA：参数/参考图在抽屉内填完后直接生成，无需关闭抽屉回页面找入口（安全区适配） */}
+          <div className="shrink-0 border-t border-slate-200/80 bg-white px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] dark:border-slate-800/80 dark:bg-slate-950">
+            <Button
+              type="button"
+              onClick={() => {
+                setIsConfigDrawerOpen(false);
+                handleGenerateWithRelay();
+              }}
+              disabled={!canGenerate}
+              className="h-12 w-full rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-500/20 select-none transition-[background-color,box-shadow,transform] duration-fast ease-out-expo hover:from-blue-600 hover:to-blue-700 active:scale-[0.98] disabled:scale-100 disabled:opacity-50"
+            >
+              {isGenerating ? (
+                loadingStep || '正在创作...'
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  生成视频
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

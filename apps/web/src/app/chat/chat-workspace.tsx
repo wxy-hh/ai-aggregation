@@ -697,7 +697,9 @@ export default function ChatWorkspace() {
   return (
     <AuthGuard>
       <AppLayout>
-        <div className="flex h-full min-h-0 w-full">
+        {/* 移动端 main 无确定高度（仅 min-h-screen），h-full 百分比链会失效导致壳体被内容撑爆；
+            改为 100dvh 减去固定顶栏/底栏让位（变量来源 AppLayout），桌面端维持 h-full 原链路 */}
+        <div className="flex min-h-0 w-full h-[calc(100dvh_-_var(--app-mobile-chrome-top)_-_var(--app-mobile-chrome-bottom))] lg:h-full">
           {/* 聊天历史侧边栏 */}
           <aside className="hidden lg:flex w-[280px] flex-shrink-0 flex-col p-4 gap-4 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-sm">
             {renderConversationList()}

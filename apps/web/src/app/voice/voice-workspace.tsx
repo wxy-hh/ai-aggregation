@@ -401,7 +401,8 @@ function VoicePageContent() {
                       aria-selected={active}
                       onClick={() => setMode(item.id)}
                       className={cn(
-                        'relative flex items-center justify-center py-2 text-sm font-semibold select-none outline-none rounded-lg transition-colors duration-200 active:scale-[0.98]',
+                        // py-3 保证移动端热区 ≥44px（DESIGN.md §5）
+                        'relative flex items-center justify-center py-3 text-sm font-semibold select-none outline-none rounded-lg transition-colors duration-200 active:scale-[0.98]',
                         active
                           ? 'text-slate-900 dark:text-white'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'

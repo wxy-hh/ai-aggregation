@@ -106,7 +106,8 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
         </Button>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible xl:grid-cols-4 sm:gap-4 lg:gap-6">
+      {/* 移动端双列网格自适应换行，sm 起逐步升列（原为横滑轮播，卡片 min-w 无上限会被长文撑爆） */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6 xl:grid-cols-4">
         {showSkeleton &&
           Array.from({ length: 3 }).map((_, index) => (
             <RecentCreationSkeleton key={`skeleton-${index}`} />

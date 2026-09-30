@@ -121,14 +121,14 @@ export default function HistoryWorkspace() {
     <AuthGuard>
       <AppLayout>
       <div className="flex w-full h-full bg-slate-50 dark:bg-slate-950 overflow-hidden flex-col">
-        {/* 头部 */}
-        <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-4 md:px-6 md:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between z-10 shadow-sm">
+        {/* 头部：全断点单行（标题+徽章左、操作图标右），移动端 369px 宽度足够容纳，无需折行 */}
+        <header className="flex-none bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-4 md:px-6 md:py-4 flex items-center justify-between gap-3 z-10 shadow-sm">
           <div className="min-w-0">
-            <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
+            <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               生成历史
               <Badge
                 variant="secondary"
-                className="px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal hover:bg-blue-100 dark:hover:bg-blue-900/40 border-0"
+                className="shrink-0 whitespace-nowrap px-2 py-0.5 bg-blue-100/50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded font-normal hover:bg-blue-100 dark:hover:bg-blue-900/40 border-0"
               >
                 {stats.total} 条记录
               </Badge>
@@ -194,7 +194,8 @@ export default function HistoryWorkspace() {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'relative px-4 md:px-6 py-2 rounded-lg text-sm font-bold shrink-0 flex-1 sm:flex-none h-9 flex items-center justify-center transition-colors duration-200 outline-none select-none active:scale-[0.97]',
+                    // 移动端按内容宽度排布并横向滑动（原 flex-1 均分导致标签被挤成两行），热区 ≥44px
+                    'relative px-4 md:px-6 rounded-lg text-sm font-bold shrink-0 flex items-center justify-center transition-colors duration-200 outline-none select-none active:scale-[0.97] h-11 sm:h-9',
                     isActive
                       ? 'text-white'
                       : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
@@ -207,7 +208,7 @@ export default function HistoryWorkspace() {
                       transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                     />
                   )}
-                  <span className="relative z-10 flex items-center">
+                  <span className="relative z-10 flex items-center whitespace-nowrap">
                     {tab.label}
                     {tab.id !== 'all' && (
                       <span className={cn('ml-1.5 text-xs', isActive ? 'opacity-90' : 'opacity-60')}>
@@ -353,11 +354,12 @@ export default function HistoryWorkspace() {
             </Button>
 
             <div
-              className="relative w-full h-[100dvh] max-w-none max-h-[100dvh] bg-white dark:bg-slate-900 rounded-none overflow-hidden shadow-2xl flex flex-col md:max-w-5xl md:max-h-[90vh] md:h-auto md:flex-row md:rounded-3xl transform animate-in zoom-in-95 duration-200 border border-white/10"
+              // h-full 而非 100dvh：遮罩自带 p-4 内边距，100dvh 会溢出被上下各裁 16px，导致底部操作按钮不可达
+              className="relative w-full h-full max-w-none bg-white dark:bg-slate-900 rounded-none overflow-hidden shadow-2xl flex flex-col md:max-w-5xl md:max-h-[90vh] md:h-auto md:flex-row md:rounded-3xl transform animate-in zoom-in-95 duration-200 border border-white/10"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* 左侧：图片容器 */}
-              <div className="flex-1 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden min-h-[300px] md:min-h-0">
+              {/* 左侧：图片容器（移动端固定 45dvh，避免 flex-1 无上限把信息面板挤没；桌面端维持 flex-1） */}
+              <div className="flex-none h-[45dvh] md:h-auto md:flex-1 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden md:min-h-0">
                 <img
                   src={previewItem.imageUrl}
                   alt={previewItem.title}
@@ -365,9 +367,9 @@ export default function HistoryWorkspace() {
                 />
               </div>
 
-              {/* 右侧：信息面板 */}
-              <div className="w-full md:w-80 flex flex-col bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800">
-                <div className="p-4 md:p-6">
+              {/* 右侧：信息面板（内容区独立滚动，按钮行固定不随长 prompt 被推出屏幕） */}
+              <div className="w-full md:w-80 flex flex-col flex-1 min-h-0 bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-slate-100 dark:border-slate-800">
+                <div className="p-4 md:p-6 flex-1 min-h-0 overflow-y-auto">
                   <div className="flex items-center justify-between mb-4">
                     <Badge
                       variant="outline"
@@ -394,7 +396,7 @@ export default function HistoryWorkspace() {
                   </div>
                 </div>
 
-                <div className="mt-auto p-4 md:p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+                <div className="shrink-0 p-4 md:p-6 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-3 bg-slate-50/50 dark:bg-slate-800/20">
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadImage(previewItem)}
