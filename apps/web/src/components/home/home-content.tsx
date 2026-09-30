@@ -288,6 +288,7 @@ export function HomeContent() {
                 icon={MessageSquare}
                 color="text-blue-600"
                 gradient="from-blue-500/20 to-cyan-500/20"
+                glowRgb="59 130 246"
                 buttonText="新建对话"
                 buttonIcon={Plus}
               />
@@ -298,6 +299,7 @@ export function HomeContent() {
                 icon={Mic}
                 color="text-purple-600"
                 gradient="from-purple-500/20 to-pink-500/20"
+                glowRgb="168 85 247"
                 buttonText="开始会议纪要"
                 buttonIcon={ArrowRight}
               />
@@ -308,6 +310,7 @@ export function HomeContent() {
                 icon={ImageIcon}
                 color="text-pink-600"
                 gradient="from-pink-500/20 to-rose-500/20"
+                glowRgb="236 72 153"
                 buttonText="开始创作"
                 buttonIcon={PenTool}
               />
@@ -408,24 +411,33 @@ function FeatureCard({
   icon: Icon,
   color,
   gradient,
+  glowRgb,
   buttonText,
   buttonIcon: ButtonIcon,
 }: any) {
   return (
     // 整卡即链接：hover 反馈必须可兑现
     <Link href={href} className="block group h-full">
-      {/* hover 只做「静默抬升」：位移 2px + 阴影升一档 + 中性描边微亮，不上彩色描边、不飞扫光（DESIGN.md §8.3） */}
-      <div className="relative overflow-hidden h-full bg-white dark:bg-slate-900 rounded-[24px] p-8 select-none border border-slate-100 dark:border-slate-800 shadow-xl transition-[transform,box-shadow,border-color] duration-fast ease-out-expo hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-[0_24px_30px_-14px_rgba(15,23,42,0.14),0_12px_16px_-8px_rgba(15,23,42,0.1)] dark:hover:border-slate-700 dark:hover:shadow-[0_24px_30px_-14px_rgba(0,0,0,0.3),0_12px_16px_-8px_rgba(0,0,0,0.22)] active:scale-[0.98]">
-        {/* 渐变背景光圈：静止态即弥散主视觉，hover 只微微亮起，不做整块点亮 */}
+      {/* 玻璃拟态卡：半透卡面承接外层 hero 的 G-3 模糊（玻璃不套玻璃，卡面不再开 blur，DESIGN.md §4.1/§11）；
+          hover 光影三件套——描边增亮为纯白玻璃缘、投影升档并注入品牌色环境辉光、角部光晕增亮绽放（§8.3 登记决策） */}
+      <div
+        style={{ '--card-glow': glowRgb } as React.CSSProperties}
+        className="relative overflow-hidden h-full bg-white/55 dark:bg-slate-900/55 rounded-[24px] p-8 select-none border border-white/70 dark:border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.8),0_2px_6px_-2px_rgba(15,23,42,0.04),0_16px_36px_-16px_rgba(15,23,42,0.1)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_2px_6px_-2px_rgba(0,0,0,0.3),0_16px_36px_-16px_rgba(0,0,0,0.45)] transition-[transform,box-shadow,border-color,background-color] duration-normal ease-out-expo hover:-translate-y-1 hover:bg-white/70 dark:hover:bg-slate-900/70 hover:border-white dark:hover:border-white/25 hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.95),0_4px_12px_-4px_rgba(15,23,42,0.06),0_28px_48px_-16px_rgba(15,23,42,0.14),0_0_40px_-6px_rgb(var(--card-glow)/0.3)] dark:hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_-4px_rgba(0,0,0,0.4),0_28px_48px_-16px_rgba(0,0,0,0.55),0_0_40px_-6px_rgb(var(--card-glow)/0.35)] active:scale-[0.98]"
+      >
+        {/* 角部弥散光晕：静止态即透出色彩，hover 增亮并轻微绽放（只动 opacity/transform） */}
         <div
-          className={`absolute top-0 right-0 w-64 h-64 bg-gradient-to-br ${gradient} blur-3xl rounded-full translate-x-12 -translate-y-12 opacity-50 group-hover:opacity-60 transition-opacity duration-normal ease-out-expo`}
+          className={`pointer-events-none absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-br ${gradient} blur-3xl rounded-full opacity-60 group-hover:opacity-90 group-hover:scale-110 transition-[opacity,transform] duration-normal ease-out-expo`}
         ></div>
 
-        {/* 顶部边缘捕光：与 hero 同语法的 1px 高光带，深色下为卡缘主折射暗示 */}
-        <div className="pointer-events-none absolute top-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-white/90 dark:via-white/15 to-transparent"></div>
+        {/* 表面径向微光：hover 时卡面接住角部光源，低透明度只提亮不点亮 */}
+        <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-normal bg-[radial-gradient(120%_90%_at_85%_0%,rgb(var(--card-glow)/0.08),transparent_60%)]"></div>
 
+        {/* 顶部边缘捕光：1px 高光线，hover 整体增亮呼应玻璃缘 */}
+        <div className="pointer-events-none absolute top-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-white/90 dark:via-white/15 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-normal"></div>
+
+        {/* 图标玻璃片：hover 泛起品牌色柔光并轻微上浮，与卡面拉开前后层次 */}
         <div
-          className={`w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-6 shadow-sm ${color}`}
+          className={`w-14 h-14 rounded-2xl bg-white/70 dark:bg-white/10 border border-white/70 dark:border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] flex items-center justify-center mb-6 transition-[box-shadow,transform,background-color,border-color] duration-normal ease-out-expo group-hover:-translate-y-0.5 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_-8px_rgb(var(--card-glow)/0.45)] dark:group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-8px_rgb(var(--card-glow)/0.5)] ${color}`}
         >
           <Icon className="w-7 h-7" />
         </div>
@@ -435,12 +447,12 @@ function FeatureCard({
           {description}
         </p>
 
-        {/* CTA 芯片：深色改为玻璃芯片（white/10+white/15 描边），带有精密微触感 */}
+        {/* CTA 玻璃芯片：hover 补一层品牌色柔光，保留按压微触感 */}
         <div
-          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-50 dark:bg-white/10 border border-transparent dark:border-white/15 dark:backdrop-blur-sm font-semibold text-sm group-hover:bg-slate-100 dark:group-hover:bg-white/15 active:scale-95 transition-[background-color,transform] duration-fast ease-out-expo ${color}`}
+          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/70 dark:bg-white/10 border border-white/70 dark:border-white/15 dark:backdrop-blur-sm font-semibold text-sm group-hover:bg-white/90 dark:group-hover:bg-white/15 group-hover:shadow-[0_8px_20px_-8px_rgb(var(--card-glow)/0.4)] active:scale-95 transition-[background-color,box-shadow,border-color,transform] duration-normal ease-out-expo ${color}`}
         >
           {buttonText}
-          <ButtonIcon className="w-4 h-4 transition-transform duration-fast ease-out-expo group-hover:translate-x-1" />
+          <ButtonIcon className="w-4 h-4 transition-transform duration-normal ease-out-expo group-hover:translate-x-1" />
         </div>
       </div>
     </Link>

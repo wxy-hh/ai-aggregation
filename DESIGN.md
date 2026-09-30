@@ -286,6 +286,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 命理域：G-3 三档——hero `rounded-[28px]→[32px]`、standard `[24px]→[28px]`、compact `rounded-2xl bg-white/85`。
 - hover：上浮 2px + 阴影升一档；卡片内不写「大数字+小标签」的 hero-metric 模板。
 - **可点击卡片必须整卡是链接**（不允许只有内部按钮可点、卡面 hover 却点不动）；**功能卡 hover 只做「静默抬升」**：位移 ≤2px + 投影升一档 + 中性描边微亮，160ms（`duration-fast`），装饰性光晕只微调不透明度（±10% 量级）、不做整块点亮。**不做斜切扫光掠过**（2026-09 判定其在白色卡面上过于刻意，原 `via-white/35`、700ms 扫光已从 home `FeatureCard` 移除；LiquidGlass 折射暗示交由静止态的 1px 顶部捕光线与弥散光晕承担）。卡内 CTA 芯片深色态用玻璃芯片（`dark:bg-white/10 dark:border-white/15 dark:backdrop-blur-sm`），不用 `slate-800` 实色趴在 `slate-900` 卡面上（只隔半档发闷）。
+- **登记例外（home `FeatureCard` 玻璃拟态，2026-09-30 用户明确要求）**：三功能卡升级为玻璃拟态——卡面 `bg-white/55 dark:bg-slate-900/55` 半透承接外层 hero 的 G-3 模糊（玻璃不套玻璃，卡面自身不开 blur）、亮玻璃描边 `border-white/70`、分层柔影含 `inset 0 1px` 玻璃缘高光；hover 放宽为位移 4px（`-translate-y-1`）+ 描边增亮至纯白玻璃缘 + 品牌色环境辉光（外层 `0 0 40px -6px` 发光阴影，颜色由卡片 `style` 注入 CSS 变量 `--card-glow`：蓝 `59 130 246` / 紫 `168 85 247` / 粉 `236 72 153`）+ 角部光晕增亮绽放 + 表面径向微光（≤0.08，只提亮不点亮）；图标玻璃片与 CTA 芯片同步泛品牌色柔光。斜切扫光禁令不变。
 - 口径登记：astrology 结果页内容卡统一取 compact 档（`rounded-2xl`，32 处）——结果页信息密度优先，不升 standard 档。
 - 非链接型可点卡（点击触发页内定位等动作、不跳转）用「兄弟节点 `absolute inset-0` 按钮 + `aria-label`」模式（参照 astrology 三要素卡），不用 `role="button"` 包裹正文（保住读屏正文流）；无动作的卡片不得加 hover 位移（假交互，生活模块卡已按此收敛）。
 
