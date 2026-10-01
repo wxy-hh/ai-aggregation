@@ -111,6 +111,12 @@ export async function requestAgnesImage(
   }
 
   if (!data) {
+    // 用户取消：原样抛出取消原因，**绝不**包装成 AgnesUpstreamError。
+    // 否则调用方会按「上游失败」处理，把「你按了停止」报成「图片生成失败，请稍后重试」——
+    // 实测过：abort 会走到这里，被包成 status=0，用户看到的是失败而不是取消。
+    if (signal?.aborted) {
+      throw lastError instanceof Error ? lastError : new Error('已取消');
+    }
     if (lastError instanceof AgnesUpstreamError) throw lastError;
     throw new AgnesUpstreamError(
       lastError instanceof Error ? lastError.message : String(lastError),

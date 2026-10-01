@@ -1,10 +1,13 @@
 /**
  * 工具执行策略（spec §7）
  *
- * 统一负责三件事，让每个工具只关心自己的业务逻辑：
- * - 执行超时：工具不得无限挂起，超时按失败处理
+ * 统一负责四件事，让每个工具只关心自己的业务逻辑：
+ * - 执行超时：工具不得无限挂起，超时按失败处理，且**超时会真正中止工具的 I/O**
  * - 结果截断：进模型的内容与下发前端的摘要各自有上限
  * - 错误规范化：任何异常都转成模型可读的中文文本（模型据此向用户解释）
+ * - **取消 / 超时的判定收口**：本模块是唯一同时掌握「父信号是否被用户中断」与
+ *   「是否由自己触发超时」的地方，因此各工具不得自行用 `ctx.signal.aborted` 判断取消 ——
+ *   交给工具的信号是**派生信号**（父信号或超时任一都会 abort 它），工具自己判必然误判。
  */
 
 import {
@@ -15,7 +18,7 @@ import {
 } from './tools/registry';
 
 export interface ToolPolicy {
-  /** 单次工具执行超时（毫秒） */
+  /** 单次工具执行超时（毫秒）；工具可用 spec.timeoutMs 覆盖 */
   timeoutMs: number;
   /** 进模型上下文的正文上限（字符） */
   maxContentChars: number;
@@ -31,6 +34,26 @@ export const DEFAULT_TOOL_POLICY: ToolPolicy = {
   maxSummaryChars: 240,
   maxArgsSummaryChars: 200,
 };
+
+/** 超时对用户可见的文案（不带内部工具名；与「已取消」「上游繁忙」三者相互区分） */
+export const TOOL_TIMEOUT_REASON = '用时过长，请重试';
+
+/**
+ * 组合父信号与超时信号：任一 abort 都会让返回的信号 abort。
+ * 只用于交给工具的 I/O 取消，**不作为取消/超时的判定依据**（那由 runToolWithPolicy 负责）。
+ */
+function combineSignals(parent: AbortSignal, own: AbortSignal): AbortSignal {
+  const controller = new AbortController();
+  if (parent.aborted || own.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  const forward = () => controller.abort();
+  parent.addEventListener('abort', forward, { once: true });
+  own.addEventListener('abort', forward, { once: true });
+  return controller.signal;
+}
+
 
 /** 超长文本截断，附省略标记 */
 export function truncate(text: string, maxChars: number): string {
@@ -76,23 +99,13 @@ export function normalizeToolError(error: unknown): string {
   return raw.slice(0, 200) || '未知错误';
 }
 
-/** 给 Promise 加超时；超时抛 ToolError（文案对用户可读） */
-async function withTimeout<T>(promise: Promise<T>, ms: number, toolName: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ToolError(`「${toolName}」执行超时`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 /**
  * 在策略约束下执行工具：
  * - 超时 / 异常 → 归一化为 ok:false 的结果（不抛出，保证编排层始终拿到可结算的结果）
  * - 成功结果同样按上限截断（内容与摘要）
+ * - 超时时**同时中止工具的 I/O**：`Promise.race` 不会取消输的一方，只靠它会让上游请求
+ *   在后台跑完（成本已产生、结果被丢弃）；因此超时还会 abort 派生子信号
+ * - 取消 / 超时的判定在本层完成，工具不得自查信号（见文件头注释）
  */
 export async function runToolWithPolicy(
   spec: AgentToolSpec,
@@ -100,8 +113,32 @@ export async function runToolWithPolicy(
   ctx: ToolExecutionContext,
   policy: ToolPolicy = DEFAULT_TOOL_POLICY
 ): Promise<ToolExecutionResult> {
+  const timeoutMs = spec.timeoutMs ?? policy.timeoutMs;
+  const timeoutController = new AbortController();
+  // 交给工具的是派生信号：用户中断 或 本层超时，任一都会 abort 它
+  const toolCtx: ToolExecutionContext = {
+    ...ctx,
+    signal: combineSignals(ctx.signal, timeoutController.signal),
+  };
+
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutSignal = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      // 先abort再reject：让工具的网络请求尽早断开
+      timeoutController.abort();
+      // 仅用于结束 race；用户可见文案由下方按 timedOut 统一给出
+      reject(new Error('tool-timeout'));
+    }, timeoutMs);
+  });
+
   try {
-    const raw = await withTimeout(spec.execute(args, ctx), policy.timeoutMs, spec.name);
+    const execution = spec.execute(args, toolCtx);
+    // 超时后 execution 仍可能在跑：给它挂一个空 handler，
+    // 避免它在 race 结束后抛错变成 unhandledRejection
+    void execution.catch(() => {});
+    const raw = await Promise.race([execution, timeoutSignal]);
     return {
       ok: raw.ok,
       contentForModel: truncate(raw.contentForModel, policy.maxContentChars),
@@ -109,8 +146,21 @@ export async function runToolWithPolicy(
       ...(raw.attachment ? { attachment: raw.attachment } : {}),
     };
   } catch (error) {
-    const reason = normalizeToolError(error);
-    console.warn('[agent] 工具执行失败', { tool: spec.name, reason, errorId: ctx.errorId });
+    // 判定顺序：用户取消 > 本层超时 > 其它。
+    // 必须按标志判、不靠错误文案匹配：工具拿到的派生信号在超时下同样是 aborted，
+    // 若改由工具自查 `ctx.signal.aborted`，超时会被误报成「已取消」。
+    const reason = ctx.signal.aborted
+      ? '已取消'
+      : timedOut
+        ? TOOL_TIMEOUT_REASON
+        : normalizeToolError(error);
+    console.warn('[agent] 工具执行失败', {
+      tool: spec.name,
+      reason,
+      timedOut,
+      userAborted: ctx.signal.aborted,
+      errorId: ctx.errorId,
+    });
     return {
       ok: false,
       // 必须显式要求模型转述失败：只给一句错误原因时，模型（实测 doubao-seed-evolving）
@@ -121,5 +171,7 @@ export async function runToolWithPolicy(
         '请在回答中如实告知用户这次调用失败及其原因；不要凭自身既有知识替用户回答本该由该工具获取的内容。',
       summaryForDisplay: `执行失败：${reason}`,
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

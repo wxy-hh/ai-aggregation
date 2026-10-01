@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { AGNES_DEFAULT_PARAMS, AGNES_SIZE_OPTIONS } from '@/lib/constants/image-generation';
 import { AgnesUpstreamError, requestAgnesImage } from '@/lib/services/agnes-image';
+import { AGENT_IMAGE_TOOL_TIMEOUT_MS } from '../agent-config';
 import { detectChatSensitiveTopic } from '../../chat-safety';
 import { ToolError, type AgentToolSpec, type ToolExecutionResult } from './registry';
 
@@ -33,6 +34,8 @@ export function createImageGenerateTool(): AgentToolSpec {
         .optional()
         .describe('图片尺寸，默认 1024x1024（正方形）；可选竖屏 768x1024、横屏 1024x768、宽屏 1024x576'),
     }),
+    // 出图耗时量级远高于其它工具（上游实测 10.7–13.9s），单独声明预算
+    timeoutMs: AGENT_IMAGE_TOOL_TIMEOUT_MS,
     async execute(args, ctx): Promise<ToolExecutionResult> {
       const { prompt, size } = args as { prompt: string; size?: string };
 
@@ -52,6 +55,9 @@ export function createImageGenerateTool(): AgentToolSpec {
           ctx.signal
         );
       } catch (error) {
+        // 注意：这里**不做**取消判定。交给本工具的 signal 是派生信号
+        // （用户中断或 policy 超时都会 abort 它），工具自行用 `ctx.signal.aborted`
+        // 判断会把「超时」误报成「已取消」。取消/超时的区分统一由 tool-policy 给出。
         if (error instanceof AgnesUpstreamError) {
           if (error.status === 429 || error.status === 503) {
             throw new ToolError('图片生成服务暂时繁忙，请稍后重试');

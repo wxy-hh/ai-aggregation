@@ -158,10 +158,14 @@ describe('runToolWithPolicy — 结果按策略截断 + 超时/异常都收敛�
     expect(result.contentForModel).toContain('如实告知用户');
   });
 
-  it('工具超时 → 按失败处理并给出可读文案', async () => {
+  it('工具超时 → 报「用时过长」（不带内部工具名），并真正中止工具 I/O', async () => {
     vi.useFakeTimers();
     try {
-      const spec = makeSpec(() => new Promise(() => {})); // 永不返回
+      let observed: AbortSignal | undefined;
+      const spec = makeSpec((_args, toolCtx) => {
+        observed = toolCtx.signal; // 永不返回，等超时
+        return new Promise(() => {});
+      });
       const promise = runToolWithPolicy(spec, { url: 'https://slow.example.com' }, ctx, {
         ...DEFAULT_TOOL_POLICY,
         timeoutMs: 1000,
@@ -170,10 +174,74 @@ describe('runToolWithPolicy — 结果按策略截断 + 超时/异常都收敛�
       const result = await promise;
 
       expect(result.ok).toBe(false);
-      expect(result.summaryForDisplay).toContain('执行超时');
+      expect(result.summaryForDisplay).toBe('执行失败：用时过长，请重试');
+      // 不再向用户透出内部工具名
+      expect(result.summaryForDisplay).not.toContain('web_fetch');
+      // 超时必须真正中止工具拿到的信号：Promise.race 本身不会取消输的一方，
+      // 只靠它会让上游请求在后台跑完（成本已产生、结果被丢弃）
+      expect(observed?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('声明了 timeoutMs 的工具用自身预算，而不是策略的通用值', async () => {
+    // 真实场景：出图工具声明 40s，而策略默认 15s
+    const spec: AgentToolSpec = {
+      ...makeSpec(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return { ok: true, contentForModel: 'ok', summaryForDisplay: 'ok' };
+      }),
+      timeoutMs: 3000,
+    };
+
+    const result = await runToolWithPolicy(spec, { url: 'https://example.com' }, ctx, {
+      ...DEFAULT_TOOL_POLICY,
+      timeoutMs: 100, // 通用值远小于工具耗时，若被采用必然超时
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('未声明 timeoutMs 的工具回落到策略通用值', async () => {
+    const spec = makeSpec(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return { ok: true, contentForModel: 'ok', summaryForDisplay: 'ok' };
+    });
+
+    const result = await runToolWithPolicy(spec, { url: 'https://example.com' }, ctx, {
+      ...DEFAULT_TOOL_POLICY,
+      timeoutMs: 100,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.summaryForDisplay).toBe('执行失败：用时过长，请重试');
+  });
+
+  it('用户取消 ≠ 超时：父信号中断时报「已取消」，不得报成超时', async () => {
+    const ac = new AbortController();
+    // 工具挂起，派生信号一 abort 就结束（复刻真实的 I/O 行为）
+    const spec = makeSpec(
+      (_args, toolCtx) =>
+        new Promise((_resolve, reject) => {
+          toolCtx.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        })
+    );
+
+    const pending = runToolWithPolicy(
+      spec,
+      { url: 'https://example.com' },
+      { userId: 'u1', signal: ac.signal, errorId: 'e1' },
+      // 超时故意设得比取消晚，确保走到的是「取消」而不是「超时」
+      { ...DEFAULT_TOOL_POLICY, timeoutMs: 5000 }
+    );
+    ac.abort();
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(result.summaryForDisplay).toBe('执行失败：已取消');
   });
 
   it('附件原样透传，成功时保留', async () => {

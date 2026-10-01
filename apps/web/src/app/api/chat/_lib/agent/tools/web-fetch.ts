@@ -129,8 +129,10 @@ function requestOnce(target: URL, signal: AbortSignal): Promise<RawResponse> {
     req.on('timeout', () => req.destroy(new ToolError('连接超时，请稍后重试')));
     req.on('error', reject);
 
-    // 用户中断：立即销毁请求（spec §7 中止贯穿）
-    const onAbort = () => req.destroy(new ToolError('已取消'));
+    // 信号中止（用户中断，或 tool-policy 的超时派生中止）：立即销毁请求，spec §7 中止贯穿。
+    // 这里**不写**「已取消」这类用户文案 —— 通过派生信号无法区分取消与超时，
+    // 自行判定会把超时误报成取消；区分由 tool-policy 负责（它掌握父信号与 timedOut）。
+    const onAbort = () => req.destroy(new Error('request aborted'));
     if (signal.aborted) {
       onAbort();
       return;

@@ -39,6 +39,11 @@ export interface AgentToolSpec {
   description: string;
   /** 入参 schema（zod） */
   parameters: z.ZodType;
+  /**
+   * 单次执行超时（毫秒）。缺省时回落到 `ToolPolicy.timeoutMs`。
+   * 供耗时量级明显高于其它工具者声明（如文生图实测 10.7–13.9s，远超通用 15s 的合理余量）。
+   */
+  timeoutMs?: number;
   /** 执行工具；抛出的 ToolError 会被 policy 原样透传给用户文案 */
   execute(args: unknown, ctx: ToolExecutionContext): Promise<ToolExecutionResult>;
 }
