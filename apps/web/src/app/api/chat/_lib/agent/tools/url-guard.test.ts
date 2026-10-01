@@ -70,6 +70,13 @@ describe('validateUrlLiteral — 内网 IPv6 字面量拦截', () => {
     ['http://[fc00::1]/'],
     ['http://[fd12:3456::1]/'],
     ['http://[fe80::1]/'],
+    // B-2：IPv6 转换/隧道前缀——地址内嵌 IPv4，可绕过全部 IPv4 判定
+    ['http://[::7f00:1]/'], // ::/96 IPv4-compatible（= ::127.0.0.1）
+    ['http://[::ffff:7f00:1]/'], // IPv4-mapped 十六进制写法
+    ['http://[64:ff9b::7f00:1]/'], // NAT64 well-known（内嵌 127.0.0.1）
+    ['http://[64:ff9b:1::7f00:1]/'], // NAT64 local-use /48
+    ['http://[2002:7f00:1::]/'], // 6to4（内嵌 127.0.0.1）
+    ['http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/'], // Teredo
   ])('拒绝 %s', (raw) => {
     expect(validateUrlLiteral(raw).ok).toBe(false);
   });
@@ -120,6 +127,13 @@ describe('isBlockedIp — IP 段判定（含边界）', () => {
     ['2001:4860:4860::8888', false],
     ['::ffff:127.0.0.1', true], // IPv4-mapped IPv6 绕过尝试
     ['::ffff:10.0.0.1', true],
+    // B-2：IPv6 转换/隧道前缀（内嵌 IPv4，可绕过 IPv4 判定）
+    ['::7f00:1', true], // ::/96 IPv4-compatible（= ::127.0.0.1）
+    ['64:ff9b::7f00:1', true], // NAT64 well-known
+    ['64:ff9b:1::1', true], // NAT64 local-use /48
+    ['2002:7f00:1::', true], // 6to4
+    ['2001:0:4136:e378:8000:63bf:3fff:fdd2', true], // Teredo
+    ['2001:db8::1', false], // 文档前缀：公网侧放行（路由不到，但不属内网判定职责）
     ['not-an-ip', true], // 无法判定即拒绝（fail-closed）
   ])('isBlockedIp(%s) === %s', (ip, expected) => {
     expect(isBlockedIp(ip)).toBe(expected);

@@ -96,7 +96,9 @@ export function normalizeToolError(error: unknown): string {
   if (/ECONNRESET|socket hang up/i.test(raw)) return '连接被中断，请稍后重试';
   if (/certificate|CERT_|TLS|SSL|证书/i.test(raw)) return '目标网站证书校验失败，无法访问';
   if (/ENETUNREACH|EHOSTUNREACH/i.test(raw)) return '目标网络不可达';
-  return raw.slice(0, 200) || '未知错误';
+  // 未知异常不透原始文案：可能是内部配置细节（如「XXX_API_KEY is not configured」），
+  // 原样透出既泄内部信息也让用户困惑；原始错误由调用方记入服务端日志
+  return '工具暂时不可用，请稍后重试';
 }
 
 /**
@@ -160,6 +162,8 @@ export async function runToolWithPolicy(
       timedOut,
       userAborted: ctx.signal.aborted,
       errorId: ctx.errorId,
+      // 原始错误只进日志不透用户：排障需要真实原因（如未配置的上游密钥）
+      rawError: error instanceof Error ? error.message : String(error),
     });
     return {
       ok: false,

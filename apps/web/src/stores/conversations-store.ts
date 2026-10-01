@@ -383,6 +383,9 @@ export const useConversationsStore = create<ConversationsState>()(
                     id: `${newId}-msg-${index}`,
                     role: msg.role as 'user' | 'assistant',
                     content: msg.content,
+                    // 透传 agent 工具记录与工具产出附件（B-10）：历史入口恢复后可回看过程与生成图
+                    ...(msg.toolCalls?.length ? { toolCalls: msg.toolCalls } : {}),
+                    ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
                 }));
                 set({
                     mode: 'single',

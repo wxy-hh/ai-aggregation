@@ -18,12 +18,11 @@ import { request as httpsRequest } from 'node:https';
 import { lookup as dnsLookup } from 'node:dns';
 import { z } from 'zod';
 import { guardResolvedAddresses, validateUrlLiteral } from './url-guard';
+import { detectChatSensitiveTopic } from '../../chat-safety';
 import { ToolError, type AgentToolSpec, type ToolExecutionResult } from './registry';
 
 /** 连接（含 TLS）超时 */
 const CONNECT_TIMEOUT_MS = 5_000;
-/** 单次请求整体超时（tool-policy 外层另有一道超时兜底） */
-const REQUEST_TIMEOUT_MS = 12_000;
 /** 响应体体积上限：超过即放弃（防止用超大页面打爆内存/带宽） */
 const MAX_RESPONSE_BYTES = 200 * 1024;
 /** 注入模型的正文上限 */
@@ -227,7 +226,10 @@ export function createWebFetchTool(): AgentToolSpec {
       const rawText = response.body.toString('utf8');
       const isHtml = /text\/html|application\/xhtml/i.test(response.contentType) || /<html|<body|<div|<p[ >]/i.test(rawText);
       const text = isHtml ? extractReadableText(rawText) : rawText.trim();
-      const title = isHtml ? extractTitle(rawText) : null;
+      const rawTitle = isHtml ? extractTitle(rawText) : null;
+      // 标题是第三方任意内容，且会进展示摘要直出前端（不经「注入模型前」检查点）——
+      // 单独过一道合规，命中则退化为仅主机名（B-5）
+      const title = rawTitle && !detectChatSensitiveTopic(rawTitle) ? rawTitle : null;
 
       if (!text) {
         throw new ToolError('目标网页没有可提取的正文内容');

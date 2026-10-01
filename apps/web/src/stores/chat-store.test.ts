@@ -327,3 +327,63 @@ describe('useChatStore.reload（重新生成守卫与行为）', () => {
     expect(useChatStore.getState().messages).toEqual(initialMessages);
   });
 });
+
+describe('useChatStore.loadConversation（toolCalls 恢复清洗，B-9）', () => {
+  beforeEach(() => {
+    resetState();
+  });
+
+  it('残留的 running 中间态归一为 failed，终态记录原样保留', () => {
+    useChatStore.getState().loadConversation(
+      'conv-1',
+      [
+        { id: 'u1', role: 'user', content: '画一张猫' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '已生成',
+          toolCalls: [
+            // 刷新前来不及收到 tool_result 的进行中残留
+            { id: 'c1', name: 'image_generate', argsSummary: '{}', status: 'running', resultSummary: '' },
+            // 已有终态的记录不受影响
+            { id: 'c2', name: 'web_fetch', argsSummary: '{}', status: 'success', resultSummary: '已抓取' },
+          ],
+        },
+      ],
+      'doubao',
+      'doubao-seed-evolving'
+    );
+
+    const calls = useChatStore.getState().messages[1].toolCalls;
+    expect(calls?.[0]).toMatchObject({ id: 'c1', status: 'failed', resultSummary: '执行未完成' });
+    expect(calls?.[1]).toMatchObject({ id: 'c2', status: 'success', resultSummary: '已抓取' });
+  });
+
+  it('形状非法的 toolCalls 记录被 schema 过滤（持久化数据可被手工篡改）', () => {
+    useChatStore.getState().loadConversation(
+      'conv-2',
+      [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '回答',
+          // 刻意构造非法形状（缺 name / 空 id / 枚举外 status）：模拟被篡改的持久化数据，
+          // 静态类型此时恰是要绕过的对象（as never[] = 明知不匹配）
+          toolCalls: [
+            { id: 'c1', argsSummary: '{}', status: 'success', resultSummary: 'x' },
+            { id: '', name: 'web_fetch', argsSummary: '{}', status: 'success', resultSummary: 'x' },
+            { id: 'c3', name: 'web_fetch', argsSummary: '{}', status: 'hacked', resultSummary: 'x' },
+            // 唯一合法记录保留
+            { id: 'c4', name: 'web_fetch', argsSummary: '{}', status: 'failed', resultSummary: '失败' },
+          ] as never[],
+        },
+      ],
+      'doubao',
+      'doubao-seed-evolving'
+    );
+
+    const calls = useChatStore.getState().messages[0].toolCalls;
+    expect(calls).toHaveLength(1);
+    expect(calls?.[0]).toMatchObject({ id: 'c4', status: 'failed' });
+  });
+});

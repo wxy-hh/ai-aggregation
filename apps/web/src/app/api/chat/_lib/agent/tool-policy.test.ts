@@ -95,9 +95,13 @@ describe('normalizeToolError — 异常归一化为用户可读中文', () => {
     expect(normalizeToolError(error)).toBe(expected);
   });
 
-  it('非 Error 值与超长未知错误都不会炸（降级为字符串并截到 200 字）', () => {
-    expect(normalizeToolError('boom')).toBe('boom');
-    expect(normalizeToolError(new Error('x'.repeat(500))).length).toBe(200);
+  it('未知错误不透原始文案（可能是内部配置细节），统一为通用话术', () => {
+    // B-6：如「AGNES_API_KEY is not configured」这类内部细节不得透给用户
+    expect(normalizeToolError('boom')).toBe('工具暂时不可用，请稍后重试');
+    expect(normalizeToolError(new Error('AGNES_API_KEY is not configured'))).toBe(
+      '工具暂时不可用，请稍后重试'
+    );
+    expect(normalizeToolError(new Error('x'.repeat(500)))).toBe('工具暂时不可用，请稍后重试');
   });
 });
 

@@ -98,9 +98,30 @@
 | Spec #4 退款口子 | **已修** | `agent-runner.ts` 新增 `toolProducedOutput` 与 `hasOutput()`；完成态与中断态均改以「有产出」判定；终态事件（`done`/`error`）同步对齐。回归用例 2 条（含**撤销修复即失败**的验证：`expected 'failed' to be 'partial'`、`['tool_call','tool_result','error']` vs `[...,'done']`） |
 | Spec #1 abort / 匿名缺用例 | **已补** | `chat-handler.agent.test.ts` 13 → **17 例**：新增「中断·无产出→failed」「中断·已交付产物→partial」「工具成功但无正文→success+done」「匿名用户→chat-agent 计费」 |
 | Spec #2 重绑定 / 截断边界缺覆盖 | **已补** | 把重绑定判定从 `web-fetch.ts` 的私有 `guardedLookup` 中抽出为 `url-guard.ts` 的纯函数 `guardResolvedAddresses`（含「公网+内网混入必须整体拒绝」等 9 个表驱动用例）；新建 `tool-policy.test.ts` 覆盖 `truncate` 边界（`==` 不截断 / `+1` 截断）、`summarizeArgs`、`normalizeToolError`、超时与附件透传 |
-| Spec #11 事件顺序 | **另立工单** | `.scratch/chat-agent-tools/issues/09-sse-event-ordering.md`，含两条路线与「路线 A 会牺牲最常见路径的流式观感」的权衡，待产品裁决 |
+| Spec #11 事件顺序 | **已修（路线 B）** | 用户裁决走路线 B：改写 spec §5.1 约束（工具事件成对有序 + `tool_result` 先于**总结步**正文），并把前端 `agent-trace` 的折叠信号从「正文到达」改为「工具是否还在跑」；顺带补齐决策表缺失的 D10/D11。见 `.scratch/chat-agent-tools/issues/09-sse-event-ordering.md` |
 | Spec #3 / #5–#10 / #12 | **不修，记录在案** | 多为已留痕的有意偏离或文档漂移；#12（image_generate 命中合规时直接失败而非替换话术）判断为对图像生成更合理，建议后续改 spec 而非改码 |
 | Standards 6 条 | **不修，记录在案** | 全部为判断题，无硬性违规；`ReserveFeature` 从 `AiUsageFeature` 派生这条值得单独开工 |
 
 **修复后的全量门禁**：`pnpm typecheck` 9/9；`pnpm test` 5/5 turbo 任务，`apps/web` **120 文件 / 1053 例**（较修复前 +1 文件 / +46 例）；`pnpm lint` 8/8 任务 **0 error**（2 个 warning 属既有、与本次改动无关）。
+
+---
+
+## 复核增补处置（2026-10-02，二次独立复核后）
+
+二次复核（独立子代理 + 主代理回码验证）在 T08 处置之外新发现 10 条（无 Blocker，1 条 Major），**已全部修复**：
+
+| 发现 | 处置 | 落点 |
+|---|---|---|
+| B-1（Major）单轮工具调用数量/整轮时长无上限 | **已修** | `agent-config.ts` 新增 `AGENT_MAX_TOOL_CALLS_PER_ROUND=3` / `AGENT_ROUND_TIME_BUDGET_MS=240s`；超限/超预算/已中断的调用不真跑，但仍推成对事件并给模型「未执行」结果（保证 tool_call/tool-result 协议完整）；spec §7 已回写 |
+| B-2 SSRF IPv6 转换前缀缺口 | **已修** | `url-guard.ts` 补拦 `::/96`（v4-compatible）、NAT64（`64:ff9b::/96`、`64:ff9b:1::/48`）、6to4（`2002::/16`）、Teredo（`2001:0::/32`） |
+| B-3 输出截断无提示 | **已修** | 总结步/降级路径 `finishReason==='length'` 时在 done 前下发 warning（与适配器路径同文案同通道） |
+| B-4 契约注释滞后 | **已修** | `chat-stream-contract.ts` 事件顺序注释同步为 §5.1 修订后口径；`agent-trace.tsx` 头部注释残留一并修正 |
+| B-5 网页标题未经合规进展示摘要 | **已修** | `web-fetch.ts` 的 title 先过 `detectChatSensitiveTopic`，命中退化为仅主机名；顺带删除未接线的 `REQUEST_TIMEOUT_MS` 死常量 |
+| B-6 未知错误原样透出 | **已修** | `tool-policy.ts` 兜底统一为「工具暂时不可用，请稍后重试」，原始错误只进服务端日志（`rawError` 字段） |
+| B-7 agent 标志无运行时校验 | **已修** | `chat-handler.ts` 只认严格 `=== true`，truthy 脏数据不再静默进入 agent 计费 |
+| B-8 单步 usage 缺失静默吞掉 | **已修** | `agent-runner.ts` 的 `accumulate` 漏步时 `console.warn` 留痕（含步名） |
+| B-9 恢复数据无 schema 校验 | **已修** | `chat-store.ts` 的 `sanitizeToolCalls` 先用共享 `toolCallRecordSchema` 过滤非法记录，再归一 running 残留 |
+| B-10 历史入口恢复丢 toolCalls/附件 | **已修** | `types/history.ts` + `history-helpers.ts` + `chat-store.ts` + `conversations-store.ts` 全链路保留工具记录与工具产出附件（用户上传的 base64 附件刻意不入历史，避免撑爆 localStorage） |
+
+**二次复核修正的数字**：T08 表中「13 → 17 例」在路线 B 落地后实为 **18 例**；全量门槛实为 **122 文件 / 1076 例**（非 1053）。**本次修复后**：`pnpm typecheck` 9/9；`pnpm lint` 8/8（0 error）；`pnpm test` 5/5，`apps/web` **122 文件 / 1097 例全绿**（+21 例）。「整轮时间预算耗尽」路径与「数量上限」共用同一段 skip 逻辑，由上限用例覆盖（真实触发需 240s 级耗时，单测强行模拟会测成实现细节）。
 

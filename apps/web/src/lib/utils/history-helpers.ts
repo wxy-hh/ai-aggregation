@@ -102,7 +102,7 @@ export function extractChatTags(messages: Array<{ role: string; content: string 
  * Create chat history item
  */
 export function createChatHistoryItem(
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
+  messages: ChatHistoryItem['messages'],
   provider: string,
   model: string
 ): Omit<ChatHistoryItem, 'id' | 'createdAt' | 'updatedAt'> {

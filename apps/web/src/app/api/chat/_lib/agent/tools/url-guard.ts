@@ -158,6 +158,17 @@ function isBlockedIpv6(ip: string): boolean {
   // ::1 回环
   if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true;
 
+  // ::/96（IPv4-compatible，如 ::127.0.0.1 = ::7f00:1）：前 6 组全 0。
+  // 已废弃但部分栈仍接受；注意 mapped（::ffff:）已在上面单独处理，不会走到这里
+  if (groups.slice(0, 6).every((g) => g === 0)) return true;
+
+  // NAT64 前缀 64:ff9b::/96（well-known）与 64:ff9b:1::/48（local-use）：
+  // IPv6-only + DNS64 集群里网关会把地址内嵌的 IPv4 翻译出来——可借此绕过全部 IPv4 判定
+  if (groups[0] === 0x64 && groups[1] === 0xff9b) return true;
+  // 6to4 隧道 2002::/16 / Teredo 隧道 2001:0000::/32：地址内嵌 IPv4，同属转换绕过面
+  if (groups[0] === 0x2002) return true;
+  if (groups[0] === 0x2001 && groups[1] === 0) return true;
+
   const top = groups[0];
   if ((top & 0xfe00) === 0xfc00) return true; // fc00::/7 唯一本地地址
   if ((top & 0xffc0) === 0xfe80) return true; // fe80::/10 链路本地

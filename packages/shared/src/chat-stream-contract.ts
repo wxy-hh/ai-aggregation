@@ -10,10 +10,11 @@
 //   - reasoning-delta  推理增量文本（可重复出现；text 一定为非空字符串；
 //                      仅 supportsReasoning 模型可能产生，先于 text-delta 到达；
 //                      推理与正文的分界由消费端推断：首个 text-delta 或流终止）
-//   - tool_call        工具调用开始（可重复出现；agent 模式专用；先于对应 tool_result 与
-//                      所有 text-delta 到达。仅承载展示摘要，完整参数只留在服务端上下文）
-//   - tool_result      工具执行结束（可重复出现；agent 模式专用；与某个 tool_call 按
-//                      callId 配对。仅承载展示摘要，完整结果只留在服务端上下文）
+//   - tool_call        工具调用开始（可重复出现；agent 模式专用；与对应 tool_result 按 callId
+//                      成对且有序。仅承载展示摘要，完整参数只留在服务端上下文）
+//   - tool_result      工具执行结束（可重复出现；agent 模式专用；必然先于总结步的首个
+//                      text-delta。注意：决策步正文可先于 tool_call 到达——模型先说一句
+//                      「我查一下」再调工具时 text-delta 更早，消费端不得假设工具事件先于一切正文。
 //   - warning          警告信息（可重复出现；不终止流）
 //   - error            错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
 //   - done             正常终止（终止事件；流中最后一个事件）
@@ -50,7 +51,7 @@ export interface ChatStreamToolCall {
   argsSummary: string;
 }
 
-/** 工具调用开始事件（agent 模式专用；先于对应 tool_result 与所有 text-delta 到达） */
+/** 工具调用开始事件（agent 模式专用；与对应 tool_result 按 callId 成对且有序） */
 export type ChatStreamToolCallEvent = { type: 'tool_call'; call: ChatStreamToolCall };
 /** 工具执行状态 */
 export type ChatStreamToolStatus = 'success' | 'failed';

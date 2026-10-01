@@ -67,6 +67,7 @@ function makeFakeResult(opts: {
   textParts?: string[];
   toolCalls?: Array<{ toolCallId: string; toolName: string; input: unknown }>;
   usage?: unknown;
+  finishReason?: string;
 }) {
   return {
     fullStream: (async function* () {
@@ -76,6 +77,7 @@ function makeFakeResult(opts: {
     })(),
     toolCalls: Promise.resolve(opts.toolCalls ?? []),
     usage: Promise.resolve(opts.usage ?? null),
+    finishReason: Promise.resolve(opts.finishReason ?? 'stop'),
     response: Promise.resolve({ messages: [{ role: 'assistant', content: '决策步消息' }] }),
   };
 }
@@ -362,6 +364,33 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(injected).toContain('违法犯罪');
   });
 
+  it('决策步先出正文再调工具 → text-delta 允许先于 tool_call（§5.1 修订后的契约）', async () => {
+    // 修订前的约束「tool_call / tool_result 必然先于首个 text-delta」在实现里并不成立：
+    // 决策步正文是边流边下发的，模型先来一句「我查一下」再调工具时正文就会先到。
+    // 之所以不修实现（缓冲决策步正文）——那会让不调工具的**最常见路径**失去流式观感。
+    // 本用例锁定修订后的契约：工具事件成对有序，且 tool_result 先于**总结步**正文。
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['我先查一下这个网页。'],
+          toolCalls: [
+            { toolCallId: 'call_pre', toolName: 'web_fetch', input: { url: 'https://example.com' } },
+          ],
+        })
+      )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['好了，这个网页讲的是……'] }));
+
+    const events = await readSseEvents(await handler(agentRequest()));
+    const types = events.map((e) => e.type);
+
+    expect(types).toEqual(['text-delta', 'tool_call', 'tool_result', 'text-delta', 'done']);
+    // tool_call 必先于它自己的 tool_result
+    expect(types.indexOf('tool_call')).toBeLessThan(types.indexOf('tool_result'));
+    // 关键保证：tool_result 先于总结步正文（即 tool_result 之后仍有 text-delta 时才到 done）
+    expect(types.indexOf('tool_result')).toBeLessThan(types.lastIndexOf('text-delta'));
+    expect(types.at(-1)).toBe('done');
+  });
+
   // ==================== spec §9：用户中断（abort） ====================
 
   it('用户中断（abort）：工具被取消且全程无产出 → 整轮释放（failed）', async () => {
@@ -521,6 +550,116 @@ describe('agent 模式编排（HTTP 级）', () => {
       expect.objectContaining({ feature: 'chat', provider: 'xunfei' }),
       'user'
     );
+  });
+
+  // ==================== B-7：agent 标志运行时校验 ====================
+
+  it.each([['false'], [1], ['true']])(
+    'agent 标志为 truthy 非布尔值 %j → 不进入 agent 分支（严格 === true 才生效）',
+    async (rawAgent) => {
+      const adapterStreamMock = vi.fn(async () => {
+        const { ReadableStream: RS } = globalThis;
+        return new RS<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+            controller.close();
+          },
+        });
+      });
+      handler = createChatHandler({
+        getAdapter: () => ({ stream: adapterStreamMock }),
+      });
+
+      const req = new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '普通对话' }],
+          provider: 'xunfei',
+          agent: rawAgent,
+        }),
+      });
+
+      await handler(req);
+
+      // truthy 脏数据不得静默进入「强制换模型 + chat-agent 计费」的 agent 模式
+      expect(adapterStreamMock).toHaveBeenCalledTimes(1);
+      expect(streamTextMock).not.toHaveBeenCalled();
+      expect(quotaSessionReserveMock).toHaveBeenCalledWith(
+        expect.objectContaining({ feature: 'chat' }),
+        'user'
+      );
+    }
+  );
+
+  // ==================== B-1：单轮工具调用数量上限 ====================
+
+  it('决策步一次返回超过上限的 tool_call → 超出部分不真跑，事件仍成对且如实告知模型', async () => {
+    const manyCalls = [1, 2, 3, 4, 5].map((i) => ({
+      toolCallId: `call_${i}`,
+      toolName: 'web_fetch',
+      input: { url: `https://example.com/${i}` },
+    }));
+    streamTextMock
+      .mockReturnValueOnce(makeFakeResult({ toolCalls: manyCalls }))
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['前三个抓好了，其余本轮没跑。'] }));
+
+    const events = await readSseEvents(await handler(agentRequest()));
+    const types = events.map((e) => e.type);
+
+    // 上限 3：只有前 3 个真跑，后 2 个不触工具执行器（成本闸门）
+    expect(toolExecuteMock).toHaveBeenCalledTimes(3);
+
+    // 5 个调用全部成对推送（协议完整：每个 tool_call 都有对应 tool_result）
+    expect(types.filter((t) => t === 'tool_call')).toHaveLength(5);
+    expect(types.filter((t) => t === 'tool_result')).toHaveLength(5);
+    expect(types.at(-1)).toBe('done');
+
+    // 超出上限的调用如实标记 failed 并说明原因（用户可见 + 模型可见）
+    const results = events.filter((e) => e.type === 'tool_result') as Array<{
+      callId: string;
+      status: string;
+      summary: string;
+    }>;
+    expect(results[3]).toMatchObject({ callId: 'call_4', status: 'failed' });
+    expect(results[3].summary).toContain('超过上限');
+    expect(results[4]).toMatchObject({ callId: 'call_5', status: 'failed' });
+
+    // 有产出（前 3 个成功）→ 正常 success 收尾
+    expect(fakeSession.finalize.mock.calls[0][0]).toBe('success');
+  });
+
+  // ==================== B-3：输出截断提示 ====================
+
+  it('总结步被 maxOutputTokens 截断（finishReason=length）→ done 前下发 warning', async () => {
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [
+            { toolCallId: 'call_1', toolName: 'web_fetch', input: { url: 'https://example.com' } },
+          ],
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({ textParts: ['这篇长文的要点是……'], finishReason: 'length' })
+      );
+
+    const events = await readSseEvents(await handler(agentRequest()));
+    const types = events.map((e) => e.type);
+
+    expect(types).toEqual(['tool_call', 'tool_result', 'text-delta', 'warning', 'done']);
+    const warning = events.find((e) => e.type === 'warning') as { warning: string };
+    expect(warning.warning).toContain('截断');
+  });
+
+  it('降级路径（未调工具）决策步被截断 → 同样下发 warning', async () => {
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ textParts: ['这个回答很长……'], finishReason: 'length' })
+    );
+
+    const events = await readSseEvents(await handler(agentRequest()));
+
+    expect(events.map((e) => e.type)).toEqual(['text-delta', 'warning', 'done']);
   });
 });
 

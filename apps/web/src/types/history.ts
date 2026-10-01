@@ -3,7 +3,7 @@
  * 统一的历史记录类型定义
  */
 
-import type { DerivationMetadata } from '@repo/shared';
+import type { DerivationMetadata, ToolCallRecord } from '@repo/shared';
 
 export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny';
 
@@ -27,6 +27,19 @@ export interface ChatHistoryItem extends BaseHistoryItem {
   messages: Array<{
     role: 'user' | 'assistant' | 'system';
     content: string;
+    /** agent 工具调用记录（可选；旧历史数据无此字段，向后兼容） */
+    toolCalls?: ToolCallRecord[];
+    /**
+     * agent 工具产出附件（可选，仅 id 以 tool- 开头的产出物，体积小）；
+     * 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
+     */
+    attachments?: Array<{
+      id: string;
+      type: 'image' | 'file';
+      name: string;
+      imageUrl?: string;
+      status: string;
+    }>;
   }>;
   // 比较会话扩展（单聊时缺省，向后兼容）
   mode?: 'single' | 'compare'; // 会话模式

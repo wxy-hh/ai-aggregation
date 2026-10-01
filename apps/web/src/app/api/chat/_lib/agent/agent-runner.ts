@@ -24,6 +24,7 @@ import { buildChatBlockedText, detectChatSensitiveTopic } from '../chat-safety';
 import { resolveChatStreamUsage } from '../chat-usage';
 import type { ChatStreamFinish } from '../types';
 import { DEFAULT_TOOL_POLICY, runToolWithPolicy, summarizeArgs } from './tool-policy';
+import { AGENT_MAX_TOOL_CALLS_PER_ROUND, AGENT_ROUND_TIME_BUDGET_MS } from './agent-config';
 import {
   validateToolArgs,
   type ToolExecutionContext,
@@ -91,10 +92,17 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let totals: UsageTotals | null = null;
       /** 是否有工具**成功**产出（生成的图片 / 抓到的正文）——这些已随事件下发给用户 */
       let toolProducedOutput = false;
+      /** 整轮起始时刻：wall-clock 预算（AGENT_ROUND_TIME_BUDGET_MS）的判定基准 */
+      const startedAt = Date.now();
 
-      const accumulate = (rawUsage: unknown) => {
+      const accumulate = (rawUsage: unknown, step: string) => {
         const n = normalizeUsage(rawUsage);
-        if (n.totalTokens === null) return;
+        if (n.totalTokens === null) {
+          // 漏步留痕（B-8）：该步 token 不计入结算（少计费方向，安全侧）；
+          // 二期多步循环放量前需补「漏步估算兜底」，否则单步 usage 缺失会被静默吞掉
+          console.warn('[agent] 某步缺少 usage 数据，该步不计入结算', { errorId, step });
+          return;
+        }
         totals = {
           inputTokens: (totals?.inputTokens ?? 0) + (n.inputTokens ?? 0),
           outputTokens: (totals?.outputTokens ?? 0) + (n.outputTokens ?? 0),
@@ -151,7 +159,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         }
 
         const toolCalls = await decision.toolCalls;
-        accumulate(await decision.usage);
+        accumulate(await decision.usage, 'decision');
+        // 降级路径（不调工具）时决策步即最终回答；有工具时会被总结步的 finishReason 覆盖
+        let finalFinishReason = await decision.finishReason;
 
         // ==================== 工具执行 + 总结步 ====================
         if (toolCalls.length > 0) {
@@ -168,9 +178,21 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           }> = [];
 
           // 顺序执行（一期约定）；每个调用的过程事件成对推送
-          for (const call of toolCalls) {
+          for (const [index, call] of toolCalls.entries()) {
             const callId = call.toolCallId;
             const name = call.toolName;
+
+            // 不真跑的三类情形（B-1）：用户已中断 / 超单轮数量上限 / 整轮时间预算耗尽。
+            // 这些调用仍推成对事件、并给模型一条「未执行」结果 —— 每个 tool_call 都必须有
+            // 对应的 tool-result，否则总结步的消息序列不完整（上游会 400）。
+            const skipReason = signal.aborted
+              ? '已取消'
+              : index >= AGENT_MAX_TOOL_CALLS_PER_ROUND
+                ? `本轮工具调用数量超过上限（${AGENT_MAX_TOOL_CALLS_PER_ROUND} 次）`
+                : Date.now() - startedAt > AGENT_ROUND_TIME_BUDGET_MS
+                  ? '本轮执行时间超出预算'
+                  : null;
+
             controller.enqueue(
               encodeSseEvent({
                 type: 'tool_call',
@@ -178,25 +200,34 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               })
             );
 
-            const spec = registry.get(name);
             let outcome: ToolExecutionResult;
 
-            if (!spec) {
-              // 模型幻觉出一个未注册的工具：按失败处理并如实告知
+            if (skipReason) {
               outcome = {
                 ok: false,
-                contentForModel: `工具「${name}」不存在，请使用已提供的工具。`,
-                summaryForDisplay: '工具不存在',
+                contentForModel: `工具「${name}」未执行：${skipReason}。请在回答中如实告知用户这次调用未执行。`,
+                summaryForDisplay: `未执行：${skipReason}`,
               };
             } else {
-              const validation = validateToolArgs(spec, call.input);
-              outcome = validation.ok
-                ? await runToolWithPolicy(spec, validation.args, toolContext, DEFAULT_TOOL_POLICY)
-                : {
-                    ok: false,
-                    contentForModel: `工具参数不合法：${validation.reason}。请修正参数后重试。`,
-                    summaryForDisplay: `参数不合法：${validation.reason}`,
-                  };
+              const spec = registry.get(name);
+
+              if (!spec) {
+                // 模型幻觉出一个未注册的工具：按失败处理并如实告知
+                outcome = {
+                  ok: false,
+                  contentForModel: `工具「${name}」不存在，请使用已提供的工具。`,
+                  summaryForDisplay: '工具不存在',
+                };
+              } else {
+                const validation = validateToolArgs(spec, call.input);
+                outcome = validation.ok
+                  ? await runToolWithPolicy(spec, validation.args, toolContext, DEFAULT_TOOL_POLICY)
+                  : {
+                      ok: false,
+                      contentForModel: `工具参数不合法：${validation.reason}。请修正参数后重试。`,
+                      summaryForDisplay: `参数不合法：${validation.reason}`,
+                    };
+              }
             }
 
             // 工具成功即视为「本轮有产出」：图片/正文已随上面的 tool_result 下发给用户
@@ -242,10 +273,19 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               emitText(part.text);
             }
           }
-          accumulate(await summary.usage);
+          accumulate(await summary.usage, 'summary');
+          finalFinishReason = await summary.finishReason;
         }
 
         // ==================== 完成态上报 ====================
+        // 单步输出被 maxOutputTokens 截断时显式提示（B-3）：agent 单步上限被压到预留的一半，
+        // 长文总结最易命中；与适配器路径同一文案/通道，否则用户静默拿到半截回答。
+        if (finalFinishReason === 'length') {
+          controller.enqueue(
+            encodeSseEvent({ type: 'warning', warning: '回答在此处被截断，内容可能不完整' })
+          );
+        }
+
         // 有产出（正文 或 工具已成功交付产物）即视为成功；
         // 两者皆无（模型空输出）才按失败释放预留。
         const produced = hasOutput();

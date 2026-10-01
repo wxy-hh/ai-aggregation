@@ -2,9 +2,12 @@
 
 // Agent 过程卡片：渲染 agent 模式下一轮回答里的工具调用过程。
 //
-// 折叠时序与 ThinkingBlock 完全同构（DESIGN.md 唯一的「流式折叠块」先例）：
-//   工具执行期（流式中且尚无正文）默认展开 → 首个正文增量到达即自动折叠（仅这一次）
+// 折叠时序与 ThinkingBlock 同构（`userOverride ?? defaultExpanded` 先例），但折叠信号
+// 看工具运行态而非正文（spec §5.1 修订 / D10）：
+//   流式中 且（尚无正文 **或** 仍有工具在跑）默认展开 → 工具全部落定后自动折叠（仅这一次）
 //   → 用户手动操作后不再被自动时序干预。
+// 决策步正文可先于 tool_call 到达（模型常说「我查一下」再调工具），若仍以「正文到达」
+// 为折叠信号，卡片会在工具还没开始跑时就收起，用户失去「工具正在执行」的反馈。
 // 这样用户不必学第二套折叠心智，也不会在气泡里多出一个独立的状态面。
 //
 // 视觉语言同样对齐 ThinkingBlock（左线块，非玻璃卡片）：
@@ -57,7 +60,7 @@ interface AgentTraceProps {
   toolCalls: ToolCallRecord[];
   /** 是否仍在流式中（终止态下不再有进行中动画） */
   isStreaming: boolean;
-  /** 是否已有正文：首个正文增量到达即折叠（与 ThinkingBlock 同一分界点） */
+  /** 是否已有正文（折叠信号之一：无正文保持展开；有正文但仍有工具在跑也不折叠，见 D10） */
   hasContent: boolean;
 }
 
@@ -68,13 +71,22 @@ export const AgentTrace = memo(function AgentTrace({
 }: AgentTraceProps) {
   // 用户手动展开/收起的覆盖态：一旦设置，该消息内不再被自动时序干预
   const [userOverride, setUserOverride] = useState<boolean | null>(null);
-  const defaultExpanded = isStreaming && !hasContent;
-  const expanded = userOverride ?? defaultExpanded;
 
   // 过程可见的关键：有调用正在执行时，折叠头本身也要能看出「此刻在动」
   const runningCount = toolCalls.filter((c) => c.status === 'running').length;
   const failedCount = toolCalls.filter((c) => c.status === 'failed').length;
   const runningName = toolCalls.find((c) => c.status === 'running')?.name;
+
+  /**
+   * 默认展开：流式中 且（尚未出正文 **或** 仍有工具在跑）。
+   *
+   * 后半条来自 spec §5.1 修订（决策 D10）：决策步正文可以先于 `tool_call` 到达
+   * （模型常见的「我查一下」类过程前言）。若仍只以「正文到达」为折叠信号，
+   * 卡片会在工具还没开始跑时就收起，用户失去「工具正在执行」的反馈。
+   * 故改以**工具运行态**为准：工具全部落定后才自动折叠。
+   */
+  const defaultExpanded = isStreaming && (runningCount > 0 || !hasContent);
+  const expanded = userOverride ?? defaultExpanded;
 
   const headerText =
     runningCount > 0

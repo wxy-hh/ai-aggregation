@@ -58,14 +58,17 @@ export function createChatHandler(config: ChatHandlerConfig) {
         model,
         provider = 'xunfei',
         reservationId,
-        agent = false,
+        agent: rawAgent,
       } = body as {
         messages: ChatMessage[];
         model?: string;
         provider?: ProviderName;
         reservationId?: string;
-        agent?: boolean;
+        agent?: unknown;
       };
+      // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
+      // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
+      const agent = rawAgent === true;
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);

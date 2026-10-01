@@ -7,6 +7,7 @@ import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-str
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord } from '@repo/shared';
+import { toolCallRecordSchema } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -262,16 +263,20 @@ function finalizeAbortedMessages(
 }
 
 /**
- * 清洗持久化消息里 toolCalls 的中间态残留：
- * 刷新/崩溃时来不及收到 tool_result，running 记录会成为永久「进行中」的假象。
- * 加载时统一归一为 failed（过程已不可续），有终态的记录原样保留。
+ * 清洗持久化消息里 toolCalls 的残留：
+ * 1. 先按共享 schema 过滤形状非法的记录（localStorage 可被手工篡改，B-9）；
+ * 2. 再把 running 中间态归一为 failed —— 刷新/崩溃时来不及收到 tool_result，
+ *    running 记录会成为永久「进行中」的假象。
+ * 无变化时返回原消息对象（loadConversation 用引用比较检测变更，避免重复写回）。
  */
 function sanitizeToolCalls(m: Message): Message {
   if (!m.toolCalls?.length) return m;
-  if (!m.toolCalls.some((c) => c.status === 'running')) return m;
+  const valid = m.toolCalls.filter((c) => toolCallRecordSchema.safeParse(c).success);
+  const hasRunning = valid.some((c) => c.status === 'running');
+  if (valid.length === m.toolCalls.length && !hasRunning) return m;
   return {
     ...m,
-    toolCalls: m.toolCalls.map((c) =>
+    toolCalls: valid.map((c) =>
       c.status === 'running'
         ? { ...c, status: 'failed' as const, resultSummary: c.resultSummary || '执行未完成' }
         : c
@@ -762,7 +767,16 @@ export const useChatStore = create<ChatState>((set, get) => {
               const historyItem = {
                 id: activeConversationId, // 使用对话ID作为历史记录ID
                 ...createChatHistoryItem(
-                  finalMessages.map((m) => ({ role: m.role, content: m.content })),
+                  // 保留 agent 工具记录与工具产出附件（B-10：历史入口恢复后可回看过程与生成图）；
+                  // 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
+                  finalMessages.map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                    ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
+                    ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
+                      ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
+                      : {}),
+                  })),
                   provider,
                   model || 'unknown'
                 ),

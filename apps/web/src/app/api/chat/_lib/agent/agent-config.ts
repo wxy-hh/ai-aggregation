@@ -23,6 +23,20 @@ export const AGENT_STEP_FACTOR = 2;
 export const AGENT_STEP_OUTPUT_LIMIT = 2048;
 
 /**
+ * 单轮工具调用数量上限：决策步一次可返回多个 toolCall，会逐个真实执行（真实上游成本）。
+ * 无上限时一轮可被诱导出 N 次出图/抓取，成本与时长双双失控（B-1 审查发现）。
+ * 超出上限的调用不执行：仍推成对事件并给模型「未执行」结果，保证协议完整。
+ */
+export const AGENT_MAX_TOOL_CALLS_PER_ROUND = 3;
+
+/**
+ * 整轮 wall-clock 预算（毫秒）：路由 maxDuration 为 300s（含决策步/总结步，豆包首 token
+ * 可达 60s），留 60s 余量收口。超限后剩余工具调用按「未执行」处理，避免被部署层硬杀
+ * 导致 onFinish 不执行、预留只能等 10 分钟 TTL 兜底。
+ */
+export const AGENT_ROUND_TIME_BUDGET_MS = 240_000;
+
+/**
  * image_generate 的单次执行超时。
  *
  * 上游 Agnes 出图实测 10.7–13.9s（5 次采样），而通用工具超时是 15s ——

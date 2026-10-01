@@ -183,6 +183,55 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     expect(useChatStore.getState().messages[0].content).toBe('你好');
   });
 
+  it('openHistorySession 保留 agent 工具记录与工具产出附件（B-10）', () => {
+    const historyItem: ChatHistoryItem = {
+      id: 'hist-2',
+      title: 'agent 历史',
+      type: 'chat',
+      preview: '画一张猫',
+      date: '今天',
+      messages: [
+        { role: 'user', content: '画一张猫' },
+        {
+          role: 'assistant',
+          content: '已经为你画好啦。',
+          toolCalls: [
+            {
+              id: 'call_1',
+              name: 'image_generate',
+              argsSummary: '{"prompt":"一只猫"}',
+              status: 'success',
+              resultSummary: '已生成图片',
+            },
+          ],
+          attachments: [
+            {
+              id: 'tool-call_1',
+              type: 'image',
+              name: '工具生成的图片',
+              imageUrl: 'https://cdn.agnes.ai/a.png',
+              status: 'ready',
+            },
+          ],
+        },
+      ],
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    useConversationsStore.getState().openHistorySession(historyItem);
+
+    const restored = useChatStore.getState().messages[1];
+    expect(restored.toolCalls).toHaveLength(1);
+    expect(restored.toolCalls?.[0]).toMatchObject({ id: 'call_1', name: 'image_generate' });
+    expect(restored.attachments?.[0]).toMatchObject({
+      id: 'tool-call_1',
+      imageUrl: 'https://cdn.agnes.ai/a.png',
+    });
+  });
+
   it('prepareRelaySession 接力唤起：对比模式下进入自动切到单聊并就绪', () => {
     useConversationsStore.getState().switchMode('compare');
     expect(useConversationsStore.getState().mode).toBe('compare');
