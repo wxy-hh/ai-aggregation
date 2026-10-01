@@ -78,6 +78,27 @@ function extractTitle(messages: ChatMessage[]): string {
 import { useChatStore } from './chat-store';
 import { useComparisonStore } from './comparison-store';
 
+// ==================== 交叉流中止（switchMode / switchConversation 共用） ====================
+
+/**
+ * 切换目标模式（或切到目标模式的会话）前，同步中断被离开模式的在途流：
+ * - 目标为 compare：停掉单聊流式生成——stop() 同步收尾（按「有留空删」保留已流出内容并落会话快照），
+ *   否则后台流与切回时的 loadConversation 快照覆盖竞态会丢掉该轮回复；
+ * - 目标为 single：停掉对比页各模型的在途请求（同类竞态的对称防护）。
+ */
+const abortCrossModeStreams = (targetMode: 'single' | 'compare') => {
+    if (targetMode === 'compare') {
+        try { useChatStore.getState().stop(); } catch {}
+    } else {
+        try {
+            const comp = useComparisonStore.getState();
+            if (comp) {
+                comp.selectedModels.forEach(m => comp.stopModel(`${m.provider}:${m.model}`));
+            }
+        } catch {}
+    }
+};
+
 // ==================== Store 接口 ====================
 
 interface ConversationsState {
@@ -248,7 +269,7 @@ export const useConversationsStore = create<ConversationsState>()(
                 const isCompare = conv.mode === 'compare';
 
                 if (isCompare) {
-                    try { useChatStore.getState().stop(); } catch {}
+                    abortCrossModeStreams('compare');
                     set({
                         currentConversationId: id,
                         mode: 'compare',
@@ -256,12 +277,7 @@ export const useConversationsStore = create<ConversationsState>()(
                     });
                     try { useComparisonStore.getState().loadComparison(id); } catch {}
                 } else {
-                    try {
-                        const comp = useComparisonStore.getState();
-                        if (comp) {
-                            comp.selectedModels.forEach(m => comp.stopModel(`${m.provider}:${m.model}`));
-                        }
-                    } catch {}
+                    abortCrossModeStreams('single');
                     set({
                         currentConversationId: id,
                         mode: 'single',
@@ -286,6 +302,8 @@ export const useConversationsStore = create<ConversationsState>()(
                 }
 
                 if (targetMode === 'compare') {
+                    // 切走前先同步中断单聊流式生成（防快照覆盖竞态，语义见 abortCrossModeStreams）
+                    abortCrossModeStreams('compare');
                     const targetId = updates.lastActiveCompareId ?? current.lastActiveCompareId;
                     const targetConv = targetId ? current.conversations.find((c) => c.id === targetId && c.mode === 'compare') : null;
 
@@ -297,6 +315,8 @@ export const useConversationsStore = create<ConversationsState>()(
                         try { useComparisonStore.getState().startNewComparison(); } catch {}
                     }
                 } else {
+                    // 切走前对称中断对比页在途流（防同类快照覆盖竞态）
+                    abortCrossModeStreams('single');
                     const targetId = updates.lastActiveSingleId ?? current.lastActiveSingleId;
                     const targetConv = targetId ? current.conversations.find((c) => c.id === targetId && c.mode !== 'compare') : null;
 

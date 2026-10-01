@@ -868,16 +868,19 @@ export function ChatInput({
 
         <Button
           type="button"
-          onClick={handleSend}
+          onClick={isLoading ? stop : handleSend}
           disabled={
-            (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
+            isLoading
+              ? false
+              : (!input.trim() && !attachment) || attachment?.status === 'uploading'
           }
           className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
           size="icon"
-          aria-label={isLoading ? '发送中' : '发送'}
+          aria-label={isLoading ? '停止生成' : '发送'}
+          title={isLoading ? '停止生成' : '发送'}
         >
           {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Square className="h-3.5 w-3.5 fill-current" />
           ) : (
             <Send className="h-4 w-4" />
           )}
