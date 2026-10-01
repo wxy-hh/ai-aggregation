@@ -34,7 +34,7 @@ import {
 import { safeRecordAiUsage } from './ai-usage';
 
 /** reserveChatQuota 支持的 feature 子集（不含 'image' | 'video'） */
-type ReserveFeature = 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+type ReserveFeature = 'chat' | 'chat-agent' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
 
 export interface QuotaSessionReserveInput {
   userId: string;

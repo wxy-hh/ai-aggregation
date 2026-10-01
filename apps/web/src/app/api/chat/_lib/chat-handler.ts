@@ -16,7 +16,15 @@ import { getBillingRequestId } from '@/lib/billing/request-id';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
-import { ProviderClientError, type ChatProviderAdapter } from './types';
+import { ProviderClientError, type ChatProviderAdapter, type ChatStreamFinish } from './types';
+import {
+  AGENT_MODEL,
+  AGENT_PROVIDER,
+  AGENT_STEP_FACTOR,
+  AGENT_STEP_OUTPUT_LIMIT,
+} from './agent/agent-config';
+import { runAgent } from './agent/agent-runner';
+import { getDefaultToolRegistry } from './agent/tools';
 import {
   detectChatSensitiveTopic,
   buildChatBlockedText,
@@ -45,11 +53,18 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       // 3. 解析请求
       const body = await req.json();
-      const { messages, model, provider = 'xunfei', reservationId } = body as {
+      const {
+        messages,
+        model,
+        provider = 'xunfei',
+        reservationId,
+        agent = false,
+      } = body as {
         messages: ChatMessage[];
         model?: string;
         provider?: ProviderName;
         reservationId?: string;
+        agent?: boolean;
       };
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -65,66 +80,98 @@ export function createChatHandler(config: ChatHandlerConfig) {
       }
 
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      const modelName = model || getDefaultModel(provider);
+      // agent 模式：服务端强制 provider/model（spec §5.2 静默覆盖，不报错）
+      const effectiveProvider: ProviderName = agent ? AGENT_PROVIDER : provider;
+      const modelName = agent ? AGENT_MODEL : model || getDefaultModel(effectiveProvider);
       const messagesCount = messages.length;
       const attachmentCount = messages.reduce(
         (count, m) => count + (m.attachments?.length ?? 0),
         0
       );
 
-      console.log('[chat] 请求参数:', { provider, model: modelName, messagesCount });
+      console.log('[chat] 请求参数:', {
+        provider: effectiveProvider,
+        model: modelName,
+        messagesCount,
+        agent,
+      });
 
       // 4. 配额管理：QuotaSession 统一 reserve → finalize（评审 C1 唯一决策表）
+      // agent 模式：feature 单列 'chat-agent'，预留按步数系数放大（spec §5.4，账本结构不变）
       const reservedSession = await QuotaSession.reserve({
         userId: user.id,
         requestId,
-        feature: 'chat',
-        provider,
+        feature: agent ? 'chat-agent' : 'chat',
+        provider: effectiveProvider,
         model: modelName,
         messages,
-        metadata: { messagesCount, attachmentCount },
+        ...(agent ? { maxOutputTokens: AGENT_STEP_OUTPUT_LIMIT * AGENT_STEP_FACTOR } : {}),
+        metadata: { messagesCount, attachmentCount, ...(agent ? { agent: true } : {}) },
         reservationId,
       }, user.role);
       session = reservedSession;
 
-      // 5. 委派给适配器：adapter 只产流，结算物料经 onFinish 回传给 handler
-      const adapter = config.getAdapter(provider);
-      const stream = await adapter.stream({
-        userId: user.id,
-        provider,
-        model: modelName,
-        messages,
-        outputLimit: reservedSession.outputLimit,
-        signal: req.signal,
-        errorId,
-        onFinish: (finish) => {
-          const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
-          if (outputTopic) {
-            console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
-          }
-          return reservedSession.finalize(finish.outcome, {
-            requestId,
-            action: 'chat-stream',
-            endpoint: '/api/chat',
-            usage: finish.usage,
-            outputText: finish.outputText,
-            reason: finish.reason,
-            provider,
-            model: modelName,
-            userId: user.id,
-            feature: 'chat',
-            metadata: {
-              errorId,
-              messagesCount,
-              attachmentCount,
-              ...(outputTopic ? { safetyFlag: outputTopic } : {}),
-            },
-          });
-        },
-      });
+      // 5. 完成态回调：输出合规审计 + 统一结算（适配器路径与 agent 编排共用同一份结算逻辑）
+      const onFinish = (finish: ChatStreamFinish) => {
+        const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
+        if (outputTopic) {
+          console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
+        }
+        return reservedSession.finalize(finish.outcome, {
+          requestId,
+          action: 'chat-stream',
+          endpoint: '/api/chat',
+          usage: finish.usage,
+          outputText: finish.outputText,
+          reason: finish.reason,
+          provider: effectiveProvider,
+          model: modelName,
+          userId: user.id,
+          feature: agent ? 'chat-agent' : 'chat',
+          metadata: {
+            errorId,
+            messagesCount,
+            attachmentCount,
+            ...(agent ? { agent: true } : {}),
+            ...(outputTopic ? { safetyFlag: outputTopic } : {}),
+          },
+        });
+      };
+
+      // 6. 分流：agent 走两段式编排，其余委派适配器（adapter 只产流）
+      let stream: ReadableStream<Uint8Array>;
+      if (agent) {
+        stream = runAgent({
+          userId: user.id,
+          provider: effectiveProvider,
+          model: modelName,
+          messages,
+          // 单步上限 = 预留总量 / 步数系数，保证各步之和不超过预留
+          stepOutputLimit: Math.max(
+            1,
+            Math.floor(reservedSession.outputLimit / AGENT_STEP_FACTOR)
+          ),
+          signal: req.signal,
+          errorId,
+          registry: getDefaultToolRegistry(),
+          onFinish,
+        });
+      } else {
+        const adapter = config.getAdapter(effectiveProvider);
+        stream = await adapter.stream({
+          userId: user.id,
+          provider: effectiveProvider,
+          model: modelName,
+          messages,
+          outputLimit: reservedSession.outputLimit,
+          signal: req.signal,
+          errorId,
+          onFinish,
+        });
+      }
 
       console.log('[chat] 流开始', {
-        userId: user.id, provider, model: modelName,
+        userId: user.id, provider: effectiveProvider, model: modelName, agent,
         duration: `${Date.now() - startTime}ms`,
       });
 

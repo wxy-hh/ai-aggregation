@@ -5,7 +5,8 @@ import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
-import type { DerivationMetadata, ChatStreamUsage } from '@repo/shared';
+import { useSettingsStore } from '@/stores/settings-store';
+import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -46,7 +47,11 @@ export interface Message {
   reasoningContent?: string; // 模型真实推理内容（仅 supportsReasoning 模型可能产生，永不回传上游）
   reasoningDurationMs?: number; // 思考时长：首个推理增量到达 → 分界点（首 text-delta / done / error / abort）冻结
   // 附件列表（可选）
+  // 用户消息 = 用户上传的附件；AI 消息 = agent 工具产出的附件（如生成的图片）
   attachments?: Attachment[];
+  // agent 模式下的工具调用记录（过程可见 + 刷新回看）。
+  // 未开启 agent 或本轮无工具调用时为 undefined —— 渲染与现状完全一致。
+  toolCalls?: ToolCallRecord[];
 }
 
 // 聊天状态管理接口
@@ -224,7 +229,16 @@ function freezeReasoningDuration(assistantId: string): number | undefined {
 }
 
 /**
- * 中止收尾（空删有留）：有部分内容（正文或推理任一）标记 stopped 保留，空内容移除。
+ * 消息是否含有可留存的产出（正文 / 推理 / 工具调用记录任一）。
+ * agent 轮次中模型可能只调了工具、还没写正文就被中断——此时工具过程本身
+ * 已是用户可见的产出（含工具生成的图片附件），不能按「空」丢弃。
+ */
+function hasRetainableContent(m: Message): boolean {
+  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length);
+}
+
+/**
+ * 中止收尾（空删有留）：有部分内容（正文/推理/工具记录任一）标记 stopped 保留，空内容移除。
  * 与服务商计费语义同构（空退 failed / 有扣 partial）。
  * match 由调用方给定：编排层按消息 id 匹配，store 层按「正在流式的 assistant 消息」匹配。
  */
@@ -235,11 +249,34 @@ function finalizeAbortedMessages(
   const target = messages.find(match);
   // 未找到或已被收尾（isStreaming 已为 false）时不重复处理
   if (!target || !target.isStreaming) return { next: messages, changed: false };
-  // 「有留空删」扩展：正文或推理有任一即保留（推理-only 中断也算 partial）
-  const next = target.content || target.reasoningContent
-    ? messages.map((m) => (m.id === target.id ? { ...m, isStreaming: false, stopped: true } : m))
+  const next = hasRetainableContent(target)
+    ? messages.map((m) =>
+        m.id === target.id
+          ? // 不再流式就必须没有 running 工具调用：中止时工具还没回 tool_result，
+            // 不清洗的话过程卡片会永远停在「正在调用…」的转圈态（T07 实测发现）
+            sanitizeToolCalls({ ...m, isStreaming: false, stopped: true })
+          : m
+      )
     : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
+}
+
+/**
+ * 清洗持久化消息里 toolCalls 的中间态残留：
+ * 刷新/崩溃时来不及收到 tool_result，running 记录会成为永久「进行中」的假象。
+ * 加载时统一归一为 failed（过程已不可续），有终态的记录原样保留。
+ */
+function sanitizeToolCalls(m: Message): Message {
+  if (!m.toolCalls?.length) return m;
+  if (!m.toolCalls.some((c) => c.status === 'running')) return m;
+  return {
+    ...m,
+    toolCalls: m.toolCalls.map((c) =>
+      c.status === 'running'
+        ? { ...c, status: 'failed' as const, resultSummary: c.resultSummary || '执行未完成' }
+        : c
+    ),
+  };
 }
 
 /**
@@ -307,6 +344,87 @@ export async function runChatStreamSession(
         entry.reasoning = reasoning;
         scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
       },
+      onToolCall: (call) => {
+        // 工具调用开始：追加一条 running 记录（agent 模式）。
+        // 低频事件（一轮至多几次），直接落 state 与本地存储即可，不参与正文的合帧节流；
+        // 立即落盘是为了让「图片生成中」这类长耗时工具在刷新后仍有踪迹（spec §8）。
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const prev = m.toolCalls ?? [];
+            // 幂等：同一 callId 重复到达（重放/乱序）不追加第二条
+            if (prev.some((c) => c.id === call.id)) return m;
+            return {
+              ...m,
+              toolCalls: [
+                ...prev,
+                {
+                  id: call.id,
+                  name: call.name,
+                  argsSummary: call.argsSummary,
+                  status: 'running' as const,
+                  resultSummary: '',
+                },
+              ],
+            };
+          })
+        );
+        const conversationId = deps.activeConversationId();
+        if (conversationId) {
+          emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+        }
+      },
+      onToolResult: (result) => {
+        // 工具执行结束：按 callId 落到终态；若 tool_call 未到达（事件丢失）则补一条完整记录，避免过程缺失。
+        // 工具产出附件（当前仅生成图片）并入消息附件列表，与用户附件共用同一渲染通道。
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const prev = m.toolCalls ?? [];
+            const nextCalls = prev.some((c) => c.id === result.callId)
+              ? prev.map((c) =>
+                  c.id === result.callId
+                    ? { ...c, status: result.status, resultSummary: result.summary }
+                    : c
+                )
+              : [
+                  ...prev,
+                  {
+                    id: result.callId,
+                    name: result.name,
+                    argsSummary: '',
+                    status: result.status,
+                    resultSummary: result.summary,
+                  },
+                ];
+
+            const attachmentId = `tool-${result.callId}`;
+            const prevAttachments = m.attachments ?? [];
+            const nextAttachments =
+              result.attachment && !prevAttachments.some((a) => a.id === attachmentId)
+                ? [
+                    ...prevAttachments,
+                    {
+                      id: attachmentId,
+                      type: 'image' as const,
+                      name: '工具生成的图片',
+                      // 直接用上游产物地址：展示型 <img> 不需要 CORS，实测浏览器可正常加载。
+                      // 刻意**不走** /api/image/proxy —— 该代理是为「下载成 Blob / dataURL」设计的，
+                      // 多一跳只会多绑一份白名单约束；图像页下载仍走代理（见 media-proxy-policy）。
+                      imageUrl: result.attachment.url,
+                      status: 'ready' as const,
+                    },
+                  ]
+                : m.attachments;
+
+            return { ...m, toolCalls: nextCalls, attachments: nextAttachments };
+          })
+        );
+        const conversationId = deps.activeConversationId();
+        if (conversationId) {
+          emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+        }
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
@@ -325,8 +443,10 @@ export async function runChatStreamSession(
     const finalMessages = deps.updateMessages((messages) =>
       messages.map((m) => {
         if (m.id !== assistantId) return m;
+        // 「不再流式 ⇒ 不存在 running 工具调用」是统一不变式：
+        // 正常结束也走一道清洗，兜住 tool_result 事件缺失时残留的进行中态。
         return {
-          ...mergeLatestStreamContent(m, latest, reasoningDurationMs),
+          ...sanitizeToolCalls(mergeLatestStreamContent(m, latest, reasoningDurationMs)),
           isStreaming: false,
           ...(streamUsage ? { usage: streamUsage } : {}),
         };
@@ -369,13 +489,15 @@ export async function runChatStreamSession(
     }
 
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
-    // 失败收尾（有留空删）：有部分内容（正文或推理任一）保留并标记 failed（用户已读内容不丢），空内容移除
+    // 失败收尾（有留空删）：有部分内容（正文/推理/工具记录任一）保留并标记 failed（用户已读内容不丢），空内容移除
     const filtered = deps.updateMessages((messages) => {
       const target = messages.find((m) => m.id === assistantId);
       if (!target) return messages;
-      if (target.content || target.reasoningContent) {
+      if (hasRetainableContent(target)) {
         return messages.map((m) =>
-          m.id === assistantId ? { ...m, isStreaming: false, failed: true } : m
+          m.id === assistantId
+            ? sanitizeToolCalls({ ...m, isStreaming: false, failed: true })
+            : m
         );
       }
       return messages.filter((m) => m.id !== assistantId);
@@ -488,10 +610,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       // 清洗历史消息：处理持久化数据中残留的流式消息（有内容标记 stopped，无内容直接过滤）
-      // 判空口径与「有留空删」一致：正文或推理任一非空即算有内容
+      // 判空口径与「有留空删」一致：正文/推理/工具记录任一非空即算有内容
+      // 另：toolCalls 里残留的 running 中间态一并归一为 failed（刷新时未收到 tool_result）
       const sanitizedMessages = messages
-        .filter((m) => !(m.isStreaming && !m.content && !m.reasoningContent))
-        .map((m) => (m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m));
+        .filter((m) => !(m.isStreaming && !hasRetainableContent(m)))
+        .map((m) => sanitizeToolCalls(m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m));
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
       const sanitizedChanged =
         sanitizedMessages.length !== messages.length ||
@@ -552,12 +675,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       const { input, provider, model, isLoading, activeConversationId, attachment } =
         get();
       const content = contentOverrides || input;
+      // agent 模式开关（settings-store）。仅在开启时往请求体带标志，
+      // 关闭时请求体与现状逐字节一致 —— 老链路的降级无感知由这里保证。
+      const agentMode = useSettingsStore.getState().agentModeEnabled;
 
       // 有附件时允许空文本，否则需要文本内容
       if ((!content.trim() && !attachment) || isLoading) return 'skipped';
 
-      // 附件只能在豆包 provider 下使用
-      if (attachment && provider !== 'doubao') {
+      // 附件只能在豆包模型下使用（agent 模式服务端强制走豆包，故此时一并放行）
+      if (attachment && provider !== 'doubao' && !agentMode) {
         set({ error: new Error('附件功能仅支持豆包模型') });
         return 'skipped';
       }
@@ -624,6 +750,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider, // AI提供商
               model, // 模型名称
+              // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
+              ...(agentMode ? { agent: true } : {}),
             },
             signal: abortController.signal, // 支持取消请求
           },
@@ -662,6 +790,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     reload: async (msgId) => {
       const { messages, isLoading, provider, model, activeConversationId } = get();
       if (isLoading) return;
+      // 重新生成沿用当前的 agent 开关状态（与 sendMessage 同一来源）
+      const agentMode = useSettingsStore.getState().agentModeEnabled;
 
       // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
       let lastUserIndex = messages.length - 1;
@@ -727,6 +857,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider,
               model,
+              ...(agentMode ? { agent: true } : {}),
             },
             signal: abortController.signal,
           }

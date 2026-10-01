@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { authFetch } from '@/lib/api/client';
 // useChatStore: 聊天状态管理 Store
 // Attachment: 附件类型定义（图片或文件）
@@ -26,6 +27,7 @@ import {
   Paperclip,
   Send,
   Square,
+  Wrench,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -114,10 +116,17 @@ export function ChatInput({
   const { provider, attachment, setAttachment } = useChatStore();
   const stop = useChatStore((s) => s.stop);
 
+  // ============ Agent 模式开关 ============
+  // agentModeEnabled：是否开启工具调用模式（settings-store，不跨会话记忆，默认每次进站为关）
+  // 开启后请求体带 agent 标志：服务端切到支持 function calling 的豆包模型、走工具编排、按 chat-agent 计费。
+  // 这里刻意不去改全局 provider/model —— agent 期间生效模型由服务端决定，头部选择器会置灰提示不生效。
+  const agentModeEnabled = useSettingsStore((s) => s.agentModeEnabled);
+  const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+
   // ============ 附件功能开关 ============
-  // 只有豆包（doubao）模型支持附件功能
-  // 其他模型（如讯飞星火）不支持，按钮会显示为禁用状态
-  const showAttachment = provider === 'doubao';
+  // 只有豆包（doubao）模型支持附件功能。
+  // agent 模式下服务端强制走豆包，故此时附件能力同样可用（生效模型 != 头部所选模型）。
+  const showAttachment = provider === 'doubao' || agentModeEnabled;
 
   // ============ 键盘事件处理 ============
   // 处理用户按下键盘按键的事件
@@ -791,6 +800,34 @@ export function ChatInput({
     </Button>
   );
 
+  // Agent 模式开关：输入坞内常驻。
+  // 视觉 36px 与附件钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1 二级控件热区配方），
+  // 移动端拇指可达且不与发送钮争抢视觉重量。
+  const agentButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={() => setAgentMode(!agentModeEnabled)}
+      aria-pressed={agentModeEnabled}
+      aria-label={agentModeEnabled ? '关闭 Agent 工具调用' : '开启 Agent 工具调用'}
+      title={
+        agentModeEnabled
+          ? 'Agent 模式已开启：可调用图像生成、网页抓取'
+          : '开启 Agent 模式：让 AI 在回答中调用工具'
+      }
+      className={cn(
+        "relative h-9 w-9 shrink-0 rounded-xl select-none after:absolute after:-inset-1 after:content-['']",
+        'transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95',
+        agentModeEnabled
+          ? 'border border-blue-400/30 bg-blue-500/10 text-blue-600 hover:bg-blue-500/15 dark:text-blue-400'
+          : 'text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300'
+      )}
+    >
+      <Wrench className="h-4 w-4" />
+    </Button>
+  );
+
   return (
     <div className="mx-auto w-full max-w-3xl">
       {/* 附件预览：仅在有附件时占用额外高度 */}
@@ -839,6 +876,17 @@ export function ChatInput({
         </div>
       )}
 
+      {/* Agent 模式局部提示：只说事实（生效模型与代价），不在头部选择器上做静默改写 */}
+      {agentModeEnabled && (
+        <div
+          data-testid="agent-mode-notice"
+          className="mb-2 flex items-center gap-1.5 px-1 text-[11px] leading-tight text-blue-600 dark:text-blue-400"
+        >
+          <Wrench className="h-3 w-3 shrink-0" />
+          <span>Agent 模式 · 已切换至豆包 Seed · 额度消耗更高</span>
+        </div>
+      )}
+
       {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，单容器无嵌套描边（DESIGN.md §8.2） */}
       <div
         className={cn(
@@ -850,6 +898,8 @@ export function ChatInput({
           'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
         )}
       >
+        {agentButton}
+
         {attachButton}
 
         <Textarea

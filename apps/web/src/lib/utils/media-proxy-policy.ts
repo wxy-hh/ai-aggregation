@@ -16,6 +16,10 @@
  *   （依据 docs/agnes-image-21-flash使用文档.md 的 `"url": "https://storage.googleapis.com/agnes-aigc/xxx.png"`
  *   与 docs/agnes-video-v20使用文档.md 的 `"remixed_from_video_id": "https://storage.googleapis.com/agnes-aigc/aigc/videos/..."`
  *   返回示例；前端分别经 apps/web/src/lib/api/agnes.ts 与 video/_components/preview-canvas.tsx 走本代理下载）。
+ * - agnes-ai.space：Agnes 产物的**当前**返回域名。上游 `response_format: 'url'` 现在返回
+ *   `https://platform-outputs.agnes-ai.space/...`（实测响应头为 `x-goog-*` + `server: UploadServer`，
+ *   即 GCS 桶挂在该自定义域下）。按供应商根域放行，覆盖其各产品线可能的其他子域；
+ *   不写死 `platform-outputs` 子域，避免上游轮换子域后再次 403。
  * - sfile.chatglm.cn：智谱 CogVideoX 异步结果 `video_result[].url` 的资源域名
  *   （apps/web/src/app/api/video/route.ts 调用 https://open.bigmodel.cn/api/paas/v4/async-result 获取，
  *   智谱官方文档与示例中的结果地址均为 sfile.chatglm.cn 下的 testpath/video/*.mp4）。
@@ -24,6 +28,7 @@
  */
 export const DEFAULT_ALLOWED_DOMAINS: readonly string[] = [
   'storage.googleapis.com',
+  'agnes-ai.space',
   'sfile.chatglm.cn',
 ];
 

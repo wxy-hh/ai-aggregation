@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Square, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
+import { AgentTrace } from './agent-trace';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { RelayAction } from '@/components/relay/relay-action';
@@ -508,10 +509,15 @@ const ThinkingBlock = memo(function ThinkingBlock({
 export const MessageItem = memo(function MessageItem({ message, onRegenerate }: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
-  // 首字节等待态：AI 消息 + 流式中 + 推理与正文均未到达（骨架屏展示条件）
-  const isAwaitingFirstByte = !isUser && isStreaming && !message.content && !message.reasoningContent;
+  // 是否持有 agent 工具调用记录（决定过程卡片是否渲染；非 agent 轮次自然为 0）
+  const hasToolCalls = !isUser && !!message.toolCalls?.length;
+  // 首字节等待态：AI 消息 + 流式中 + 推理/正文/工具记录均未到达（骨架屏展示条件）
+  // 工具记录也算「已有产出」：决策步只产 tool_call 时不挂骨架屏，视觉由过程卡片接管
+  const isAwaitingFirstByte =
+    !isUser && isStreaming && !message.content && !message.reasoningContent && !hasToolCalls;
   // 是否持有真实推理内容（决定思考块整棵子树是否渲染；无推理的模型/轮次自然退化）
   const hasReasoning = !isUser && !!message.reasoningContent;
+  // 附件：用户消息为用户上传件，AI 消息为 agent 工具产出件（如生成的图片）
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
   // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
@@ -615,6 +621,17 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                     isStreaming={isStreaming}
                   />
                 )}
+                {/* agent 过程卡片：位于气泡内、正文上方；复用思考块同一套折叠时序。
+                    非 agent 轮次无 toolCalls，整棵子树不渲染（降级无感知） */}
+                {hasToolCalls && (
+                  <AgentTrace
+                    toolCalls={message.toolCalls ?? []}
+                    isStreaming={isStreaming}
+                    hasContent={!!message.content}
+                  />
+                )}
+                {/* 工具产出附件（当前仅生成图片）：按时间序位于过程卡片之后、正文之前 */}
+                {hasAttachments && <AttachmentList attachments={message.attachments} />}
                 {isAwaitingFirstByte ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (

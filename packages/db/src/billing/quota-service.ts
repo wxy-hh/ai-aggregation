@@ -95,7 +95,7 @@ export async function reserveAiQuotaBatch(input: {
 export async function reserveChatQuota(input: {
   userId: string;
   requestId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: 'chat' | 'chat-agent' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
   provider?: string | null;
   model?: string | null;
   messages: Array<{ content?: string }>;
@@ -137,7 +137,7 @@ export async function reserveChatQuota(input: {
 
 export async function reserveChatQuotaBatch(input: {
   userId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: 'chat' | 'chat-agent' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
   messages: Array<{ content?: string }>;
   models: Array<{ requestId: string; provider?: string | null; model?: string | null }>;
   maxOutputTokens?: number;

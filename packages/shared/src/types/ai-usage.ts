@@ -2,6 +2,8 @@ import type { BillingStatus, MeterType } from './billing';
 
 export type AiUsageFeature =
   | 'chat'
+  /** agent 模式对话（工具调用；按次一口价，预留按步数系数放大） */
+  | 'chat-agent'
   | 'voice'
   | 'image'
   | 'video'

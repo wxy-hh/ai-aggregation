@@ -19,6 +19,7 @@ import { ReferenceSourcePreview } from '@/components/relay/reference-source-prev
 import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -198,6 +199,17 @@ export default function ChatWorkspace() {
   // 当前全局模式权威：单聊 / 并行对比
   const comparisonMode = useConversationsStore((state) => state.mode);
   const isCompareMode = comparisonMode === 'compare';
+
+  // agent 模式开关（与输入坞的开关同源）：开启期间头部模型选择器置灰 ——
+  // 此时它不再决定实际生效的模型（服务端强制豆包 seed），置灰是说真话而不是撒谎。
+  const agentModeEnabled = useSettingsStore((state) => state.agentModeEnabled);
+
+  // agent 开启时立即收起已展开的模型选择 UI：否则置灰的只是触发器，列表里的选项仍可点。
+  useEffect(() => {
+    if (!agentModeEnabled) return;
+    setShowModelSelector(false);
+    setShowMobileModelDrawer(false);
+  }, [agentModeEnabled]);
 
   // 批量获取会话编排中枢操作方法（浅比较优化）
   const {
@@ -754,8 +766,20 @@ export default function ChatWorkspace() {
                           // 单聊模式：单模型选择器
                           <div className="relative" ref={modelSelectorRef}>
                             <button
+                              type="button"
+                              disabled={agentModeEnabled}
+                              title={
+                                agentModeEnabled
+                                  ? 'Agent 模式开启期间由系统指定模型（豆包 Seed），此处暂不可切换'
+                                  : undefined
+                              }
                               onClick={() => setShowModelSelector(!showModelSelector)}
-                              className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
+                              className={cn(
+                                'flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs transition-colors',
+                                agentModeEnabled
+                                  ? 'cursor-not-allowed text-slate-300 dark:text-slate-600'
+                                  : 'text-slate-500 hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200'
+                              )}
                             >
                               <svg
                                 className="w-3.5 h-3.5 text-blue-500"
@@ -841,8 +865,19 @@ export default function ChatWorkspace() {
                       <button
                         type="button"
                         aria-label="打开模型选择"
+                        disabled={agentModeEnabled}
+                        title={
+                          agentModeEnabled
+                            ? 'Agent 模式开启期间由系统指定模型（豆包 Seed），此处暂不可切换'
+                            : undefined
+                        }
                         onClick={() => setShowMobileModelDrawer(true)}
-                        className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                        className={cn(
+                          'lg:hidden inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors',
+                          agentModeEnabled
+                            ? 'cursor-not-allowed border-slate-200/70 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
+                            : 'border-white/80 bg-white/80 text-slate-600 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
+                        )}
                       >
                         <SlidersHorizontal className="w-4 h-4" />
                         <span className="max-w-[88px] truncate">{currentModelLabel}</span>
