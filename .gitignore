@@ -62,6 +62,8 @@ apps/web/ark-response-debug.json
 .codex*
 .agents*
 .claude*
+# WorkBuddy 技能目录（软链到 .claude/skills，不入库）
+.workbuddy/skills/
 .scratch/
 .omo/run-continuation/
 dump.rdb*
@@ -96,3 +98,4 @@ infra/docker/server-info.md
 .impeccable/live/deferred-svelte-component-accepts.json
 .impeccable/live/*.png
 # impeccable-ignore-end
+.workbuddy*

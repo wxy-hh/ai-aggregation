@@ -221,6 +221,7 @@ ALIYUN_DM_ACCESS_KEY_SECRET=   # 阿里云邮件推送 AccessKey Secret
 ALIYUN_DM_ACCOUNT_NAME=        # 发信地址（控制台已配置）
 ALIYUN_DM_FROM_ALIAS=          # 发件人昵称（可选）
 ALIYUN_DM_REGION=              # 区域（默认 cn-hangzhou）
+WEBHOOK_SECRET_KEY=            # 用户自定义 Webhook 工具鉴权凭证 AES-256-GCM 主密钥（32 字节 hex，64 字符）
 ```
 
 ### 环境变量分组说明
@@ -243,6 +244,8 @@ ALIYUN_DM_REGION=              # 区域（默认 cn-hangzhou）
 - **邮件通道（阿里云邮件推送 DirectMail）**
   - `ALIYUN_DM_ACCESS_KEY_ID` / `ALIYUN_DM_ACCESS_KEY_SECRET` / `ALIYUN_DM_ACCOUNT_NAME`：DirectMail 发信凭证与发信地址（需在邮件推送控制台创建并完成域名解析），注册验证码、绑定邮箱验证码、忘记密码重置邮件三处共用；`ALIYUN_DM_FROM_ALIAS` 选填（发件人昵称），`ALIYUN_DM_REGION` 默认 `cn-hangzhou`
   - 未配置凭证时发信接口统一返回 503（内测环境可无邮件通道跑通其余流程）；验证码存 Redis `verify:<purpose>:<email>`（用途仅 `register`/`bind`，忘记密码走重置链接不发验证码），只存 SHA-256 摘要、10 分钟有效、验证通过即删；发送限流为 5 次/分钟/IP + 单邮箱日上限 10 次，阈值统一登记在 `apps/web/src/lib/auth/rate-limit.ts` 的 `AUTH_RATE_LIMITS`。实现见 `apps/web/src/lib/mail/`、`apps/web/src/lib/auth/email-verification.ts`
+- **Webhook 工具加密**
+  - `WEBHOOK_SECRET_KEY`：用户自定义 Webhook 工具鉴权凭证（`authHeaderValue`）的 AES-256-GCM 对称加密主密钥。必须为 32 字节的十六进制字符串（共 64 个字符）。未配置或格式非法时路由抛错（fail-closed）；密钥生成方式：`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`。实现见 `apps/web/src/lib/crypto/webhook-secret.ts`
 
 ---
 

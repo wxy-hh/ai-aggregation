@@ -409,7 +409,7 @@ EOF
 
 ### Issue tracker
 
-Issues / PRD 使用 GitHub Issues（`gh` CLI，仓库 `wxy-hh/ai-aggregation`）。详见 `docs/agents/issue-tracker.md`。
+Issues / PRD 使用本地 markdown tracker（`.scratch/<feature>/`；仓库托管 Gitee，无 `gh` CLI）。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 

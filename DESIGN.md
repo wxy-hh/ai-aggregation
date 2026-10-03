@@ -273,6 +273,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 首选 `@/components/ui/button`（已品牌化：主变体渐变+发光阴影、`active:scale-[0.98]`、destructive 粉渐变、outline 白玻璃）。
 - 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。星座寰宇模块统一引 `app/destiny/_components/astrology/astrology-cta-button.tsx` 的 `<AstrologyCtaButton>`（按钮）与 `ASTROLOGY_CTA_GRADIENT_CLASS`（选中态胶囊等装饰渐变），不再手写色值。
 - 状态齐全：hover（上浮 -1px 或 scale 1.02）/ active（scale 0.98）/ focus-visible（2px ring）/ disabled（opacity-40，无动效）/ loading（Spinner + pointer-events-none）。
+- 生成中主 CTA 的功能切换例外（chat 输入坞，2026-10-01）：AI 回复进行中，主按钮**不再呈现 loading 态**，而是切换为可点击的「停止生成」操作按钮（Square 图标 + `aria-label="停止生成"`，样式沿用发送 CTA 不变暗）。loading 态规范仍适用于表单提交类按钮；对「流式生成可中断」的场景，停止操作优先于 loading 展示。
 - 尺寸：大 52px / 中 44px / 小 32px；移动端主操作不小于 44px。
 
 ### 8.2 输入框
@@ -285,7 +286,8 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 工具域：`bg-white dark:bg-slate-800 rounded-2xl border` 实卡为主（滚动性能）。
 - 命理域：G-3 三档——hero `rounded-[28px]→[32px]`、standard `[24px]→[28px]`、compact `rounded-2xl bg-white/85`。
 - hover：上浮 2px + 阴影升一档；卡片内不写「大数字+小标签」的 hero-metric 模板。
-- **可点击卡片必须整卡是链接**（不允许只有内部按钮可点、卡面 hover 却点不动）；功能卡 hover 可加一道扫光（斜切高光掠过 `via-white/35 dark:via-white/10`、700ms，参照 home `FeatureCard`）做 LiquidGlass 折射暗示。卡内 CTA 芯片深色态用玻璃芯片（`dark:bg-white/10 dark:border-white/15 dark:backdrop-blur-sm`），不用 `slate-800` 实色趴在 `slate-900` 卡面上（只隔半档发闷）。
+- **可点击卡片必须整卡是链接**（不允许只有内部按钮可点、卡面 hover 却点不动）；**功能卡 hover 只做「静默抬升」**：位移 ≤2px + 投影升一档 + 中性描边微亮，160ms（`duration-fast`），装饰性光晕只微调不透明度（±10% 量级）、不做整块点亮。**不做斜切扫光掠过**（2026-09 判定其在白色卡面上过于刻意，原 `via-white/35`、700ms 扫光已从 home `FeatureCard` 移除；LiquidGlass 折射暗示交由静止态的 1px 顶部捕光线与弥散光晕承担）。卡内 CTA 芯片深色态用玻璃芯片（`dark:bg-white/10 dark:border-white/15 dark:backdrop-blur-sm`），不用 `slate-800` 实色趴在 `slate-900` 卡面上（只隔半档发闷）。
+- **登记例外（home `FeatureCard` 玻璃拟态，2026-09-30 用户明确要求）**：三功能卡升级为玻璃拟态——卡面 `bg-white/55 dark:bg-slate-900/55` 半透承接外层 hero 的 G-3 模糊（玻璃不套玻璃，卡面自身不开 blur）、亮玻璃描边 `border-white/70`、分层柔影含 `inset 0 1px` 玻璃缘高光；hover 放宽为位移 4px（`-translate-y-1`）+ 描边增亮至纯白玻璃缘 + 品牌色环境辉光（外层 `0 0 40px -6px` 发光阴影，颜色由卡片 `style` 注入 CSS 变量 `--card-glow`：蓝 `59 130 246` / 紫 `168 85 247` / 粉 `236 72 153`）+ 角部光晕增亮绽放 + 表面径向微光（≤0.08，只提亮不点亮）；图标玻璃片与 CTA 芯片同步泛品牌色柔光。斜切扫光禁令不变。
 - 口径登记：astrology 结果页内容卡统一取 compact 档（`rounded-2xl`，32 处）——结果页信息密度优先，不升 standard 档。
 - 非链接型可点卡（点击触发页内定位等动作、不跳转）用「兄弟节点 `absolute inset-0` 按钮 + `aria-label`」模式（参照 astrology 三要素卡），不用 `role="button"` 包裹正文（保住读屏正文流）；无动作的卡片不得加 hover 位移（假交互，生活模块卡已按此收敛）。
 
@@ -300,6 +302,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 
 - 桌面全局导航（global-sidebar）：**悬浮卡**——`fixed` 覆盖在页面左缘之上（不占文档流），卡体四周留白（上/下 16px、左/右 10px）、四角 `rounded-[28px]` 全圆角、整圈 `border-white/50 dark:border-white/10` 描边 + 顶部 1px 高光切割线；**不写单边 `border-r` 切分、不留直角贴边**，否则与相邻面板形成「两层边框」割裂感（2026-09 修正）。材质 G-2 均匀玻璃 `bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150`，图标按钮 G-1（`bg-white/40 backdrop-blur-md`），激活项 `#5D7CFA→#7D91FF` 渐变 + `shadow-indigo-500/35`。
 - 全局导航宽度单一来源：`--app-global-nav-w`（100px，定义于 `app-layout.tsx` 根节点）；内容让位由 `main` 的 `lg:pl-[var(--app-global-nav-w)]` 承担。命理页页面级环境底（`DestinyAmbientBackground`）在桌面端改取视口级定位（`lg:fixed`）铺到导航下方，使悬浮玻璃后有色可磨、页面底色不在导航右缘断一刀；**入夜（夜幕）态保持 `absolute` 不铺**（全局导航未随夜幕联动，维持亮玻璃底与既有分界，见 §10.2 联动面）。
+- 移动端 chrome 让位单一来源：`--app-mobile-chrome-top`（`env(safe-area-inset-top)+4.5rem`）与 `--app-mobile-chrome-bottom`（`env(safe-area-inset-bottom)+5.5rem`），同样定义于 `app-layout.tsx` 根节点；`main` 的 pt/pb 与「应用壳」页面（chat、video 的 `100dvh - 两偏移` 固定高度根节点）共用此口径——移动端 `main` 只有 `min-h-screen` 无确定高度，`h-full` 百分比链在 chat/video 内会解析失效、壳体被内容撑爆（2026-09 实证：对话页无法滚动到消息底部、输入坞出屏；视频页预览区塌陷）。长文档页（home/history/voice 等）保持文档流滚动，不需要确定高度。
 - 移动底部导航（mobile-bottom-nav）：`bg-white/[0.94] dark:bg-[#111218]/[0.94] backdrop-blur-xl`，激活色带渐变，安全区内边距。
 - 斜杠透明度只能写刻度值（5 的倍数，如 `/90`、`/95`）或方括号任意值（如 `/[0.94]`）：裸写 `/94`、`/92` 这类非刻度值 Tailwind v3 不生成 CSS，样式静默丢失（本条由底栏 `bg-white/94` 的实际失效证实）。
 - 移动顶栏：fixed + blur-xl；紫微夜幕联动时变 `bg-[#0C1128]/85` + 金边（页级主题联动的唯一先例）。
