@@ -64,6 +64,63 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
   });
 
+  it('switchMode 切到对比模式：中断进行中的单聊流式生成并按「有留空删」收尾保留', () => {
+    const store = useConversationsStore.getState();
+    const singleId = store.createConversation('xunfei', 'lite');
+    useConversationsStore.getState().switchConversation(singleId);
+
+    // 模拟单聊流式进行中：isLoading + 一条流式 assistant 消息（正文空、推理已有内容）
+    useChatStore.setState({
+      isLoading: true,
+      activeConversationId: singleId,
+      messages: [
+        { id: 'u1', role: 'user', content: '问题' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '',
+          reasoningContent: '已流出的推理',
+          isStreaming: true,
+        },
+      ],
+    });
+
+    // 切到对比模式应先同步中断单聊流（否则后台流与切回时的快照覆盖竞态会丢掉该轮回复）
+    useConversationsStore.getState().switchMode('compare');
+
+    const chat = useChatStore.getState();
+    expect(chat.isLoading).toBe(false);
+    const a1 = chat.messages.find((m) => m.id === 'a1');
+    expect(a1?.stopped).toBe(true);
+    expect(a1?.reasoningContent).toBe('已流出的推理');
+  });
+
+  it('switchMode 切到单聊模式：对称中断进行中的对比页流式生成', () => {
+    // 先进入对比模式并选中一个对比会话（含一个已选模型）
+    useConversationsStore.getState().switchMode('compare');
+    const compareId = useConversationsStore.getState().createComparisonConversation(
+      [
+        {
+          provider: 'xunfei',
+          model: 'lite',
+          providerLabel: '讯飞星火',
+          label: '讯飞星火 · Spark Lite',
+        },
+      ],
+      '测试对比'
+    );
+    useConversationsStore.getState().switchConversation(compareId);
+    expect(useConversationsStore.getState().mode).toBe('compare');
+
+    // 切回单聊模式应先停掉对比页在途流（与 switchConversation 的交叉中止对称）
+    const stopModelSpy = vi.spyOn(useComparisonStore.getState(), 'stopModel');
+    useConversationsStore.getState().switchMode('single');
+
+    expect(stopModelSpy).toHaveBeenCalledWith('xunfei:lite');
+    expect(useConversationsStore.getState().mode).toBe('single');
+    stopModelSpy.mockRestore();
+  });
+
   it('switchConversation 原子联动：根据会话元数据自动切换模式与加载数据', () => {
     const store = useConversationsStore.getState();
     const singleId = store.createConversation('xunfei', 'lite');
@@ -124,6 +181,55 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     expect(currentConv?.model).toBe('doubao-seed-evolving');
     expect(useChatStore.getState().messages).toHaveLength(2);
     expect(useChatStore.getState().messages[0].content).toBe('你好');
+  });
+
+  it('openHistorySession 保留 agent 工具记录与工具产出附件（B-10）', () => {
+    const historyItem: ChatHistoryItem = {
+      id: 'hist-2',
+      title: 'agent 历史',
+      type: 'chat',
+      preview: '画一张猫',
+      date: '今天',
+      messages: [
+        { role: 'user', content: '画一张猫' },
+        {
+          role: 'assistant',
+          content: '已经为你画好啦。',
+          toolCalls: [
+            {
+              id: 'call_1',
+              name: 'image_generate',
+              argsSummary: '{"prompt":"一只猫"}',
+              status: 'success',
+              resultSummary: '已生成图片',
+            },
+          ],
+          attachments: [
+            {
+              id: 'tool-call_1',
+              type: 'image',
+              name: '工具生成的图片',
+              imageUrl: 'https://cdn.agnes.ai/a.png',
+              status: 'ready',
+            },
+          ],
+        },
+      ],
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    useConversationsStore.getState().openHistorySession(historyItem);
+
+    const restored = useChatStore.getState().messages[1];
+    expect(restored.toolCalls).toHaveLength(1);
+    expect(restored.toolCalls?.[0]).toMatchObject({ id: 'call_1', name: 'image_generate' });
+    expect(restored.attachments?.[0]).toMatchObject({
+      id: 'tool-call_1',
+      imageUrl: 'https://cdn.agnes.ai/a.png',
+    });
   });
 
   it('prepareRelaySession 接力唤起：对比模式下进入自动切到单聊并就绪', () => {

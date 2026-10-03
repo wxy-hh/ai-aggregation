@@ -530,3 +530,229 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
   });
 });
 
+describe('runChatStreamSession（推理流：持久化 / 时长冻结 / 中断保留）', () => {
+  let onUpdated: Mock<(payload: any) => void>;
+  let off: () => void;
+
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    onUpdated = vi.fn((_payload: any) => undefined);
+    off = on(StoreEvents.CONVERSATION_UPDATED, onUpdated);
+  });
+
+  afterEach(() => {
+    off();
+  });
+
+  it('推理+正文流：reasoningContent 持久化到消息，时长在首个 text-delta 分界点冻结', async () => {
+    // Date.now 注入（spy）：避免 ReadableStream pull 预取导致 setSystemTime 时序不可控
+    let now = 1_000_000;
+    const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      // 合帧调度器挂起：flushCb 被赋值即证明对应增量帧已被消费（可观察信号）
+      let flushCb: (() => void) | null = null;
+      const manualScheduler = (cb: () => void) => {
+        flushCb = cb;
+        return () => {
+          flushCb = null;
+        };
+      };
+
+      const encoder = new TextEncoder();
+      let sendReasoning: () => void;
+      let sendText: () => void;
+      let sendDone: () => void;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          sendReasoning = () => {
+            controller.enqueue(
+              encoder.encode('data: {"type":"reasoning-delta","text":"思考一下"}\n\n')
+            );
+          };
+          sendText = () => {
+            controller.enqueue(encoder.encode('data: {"type":"text-delta","text":"正文"}\n\n'));
+          };
+          sendDone = () => {
+            controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+            controller.close();
+          };
+        },
+      });
+      mockedAuthFetch.mockResolvedValue(
+        new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        })
+      );
+      const messages = makeMessages();
+      const deps = createDeps(messages);
+
+      const sessionPromise = runChatStreamSession(
+        deps,
+        assistantId,
+        requestBody(),
+        undefined,
+        { scheduleFlush: manualScheduler }
+      );
+
+      // 推理增量到达并被消费（首个推理增量记录开始时间戳，now = start）
+      sendReasoning!();
+      await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+      // 推理持续 3s 后首个 text-delta 到达 → 分界点冻结
+      now += 3000;
+      sendText!();
+      // text-delta 被消费的观察信号：onChunk 同步路径的节流落盘 emit（now - 0 >= 1000 必触发）
+      await vi.waitFor(() => expect(onUpdated).toHaveBeenCalled());
+
+      // done 更晚到达，已冻结的时长不得被覆盖
+      now += 6000;
+      sendDone!();
+      const result = await sessionPromise;
+
+      expect(result).toBe('sent');
+      const assistant = messages.find((m) => m.id === assistantId);
+      expect(assistant?.content).toBe('正文');
+      expect(assistant?.reasoningContent).toBe('思考一下');
+      expect(assistant?.reasoningDurationMs).toBe(3000);
+      expect(assistant?.isStreaming).toBe(false);
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+
+  it('纯推理流（无 text-delta）正常 done：reasoningContent 持久化，时长在 done 分界点冻结', async () => {
+    let now = 2_000_000;
+    const dateSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      let flushCb: (() => void) | null = null;
+      const manualScheduler = (cb: () => void) => {
+        flushCb = cb;
+        return () => {
+          flushCb = null;
+        };
+      };
+
+      const encoder = new TextEncoder();
+      let sendReasoning1: () => void;
+      let sendReasoning2: () => void;
+      let sendDone: () => void;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          sendReasoning1 = () => {
+            controller.enqueue(
+              encoder.encode('data: {"type":"reasoning-delta","text":"只"}\n\n')
+            );
+          };
+          sendReasoning2 = () => {
+            controller.enqueue(
+              encoder.encode('data: {"type":"reasoning-delta","text":"有推理"}\n\n')
+            );
+          };
+          sendDone = () => {
+            controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+            controller.close();
+          };
+        },
+      });
+      mockedAuthFetch.mockResolvedValue(
+        new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        })
+      );
+      const messages = makeMessages();
+      const deps = createDeps(messages);
+
+      const sessionPromise = runChatStreamSession(
+        deps,
+        assistantId,
+        requestBody(),
+        undefined,
+        { scheduleFlush: manualScheduler }
+      );
+
+      // 首个推理增量（记录开始时间戳），消费后手动 flush 一次以便观察下一帧的重新调度
+      sendReasoning1!();
+      await vi.waitFor(() => expect(flushCb).not.toBeNull());
+      flushCb!();
+
+      now += 2000;
+      sendReasoning2!();
+      // 推理第二帧被消费后重新调度合帧（可观察信号）
+      await vi.waitFor(() => expect(flushCb).not.toBeNull());
+
+      // 无正文直接 done：分界点 = done（start + 5000）
+      now += 3000;
+      sendDone!();
+      const result = await sessionPromise;
+
+      expect(result).toBe('sent');
+      const assistant = messages.find((m) => m.id === assistantId);
+      expect(assistant?.content).toBe('');
+      expect(assistant?.reasoningContent).toBe('只有推理');
+      expect(assistant?.reasoningDurationMs).toBe(5000);
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+
+  it('仅推理非空时 AbortError：消息保留并标记 stopped，推理内容与已冻结时长一并写入', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      abortedSseResponse('data: {"type":"reasoning-delta","text":"半截推理"}\n\n')
+    );
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+
+    const result = await runChatStreamSession(deps, assistantId, requestBody());
+
+    expect(result).toBe('aborted');
+    expect(deps.setError).not.toHaveBeenCalled();
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant).toBeDefined();
+    expect(assistant?.content).toBe('');
+    expect(assistant?.reasoningContent).toBe('半截推理');
+    expect(assistant?.reasoningDurationMs).toEqual(expect.any(Number));
+    expect(assistant?.isStreaming).toBe(false);
+    expect(assistant?.stopped).toBe(true);
+  });
+
+  it('推理与正文同帧合帧：调度器执行前 store 不更新，一次 flush 同帧写入 content 与 reasoningContent', async () => {
+    let scheduledCallback: (() => void) | null = null;
+    const manualScheduler = (cb: () => void) => {
+      scheduledCallback = cb;
+      return () => {
+        scheduledCallback = null;
+      };
+    };
+
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"reasoning-delta","text":"推理一"}\n\n',
+        'data: {"type":"reasoning-delta","text":"推理二"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    const messages = makeMessages();
+    const deps = createDeps(messages);
+    const updateSpy = vi.spyOn(deps, 'updateMessages');
+
+    const result = await runChatStreamSession(
+      deps,
+      assistantId,
+      requestBody(),
+      undefined,
+      { scheduleFlush: manualScheduler }
+    );
+
+    expect(result).toBe('sent');
+    // 全程不手动 flush：完成时兜底 flush 一次性写入最新正文与推理（每帧最多一次 setState）
+    const assistant = messages.find((m) => m.id === assistantId);
+    expect(assistant?.content).toBe('正文');
+    expect(assistant?.reasoningContent).toBe('推理一推理二');
+    // updateMessages 仅被调用一次（最终合并写入），流中途未触发 setState
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(scheduledCallback).toBeNull();
+  });
+});
+

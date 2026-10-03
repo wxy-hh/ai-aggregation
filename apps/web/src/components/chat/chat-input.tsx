@@ -8,10 +8,13 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button'; // 按钮组件
 import { Textarea } from '@/components/ui/textarea'; // 多行文本输入框组件
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // 弹出层组件（用于附件选择菜单）
+import Link from 'next/link';
 
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { authFetch } from '@/lib/api/client';
+import { fetchAgentTools } from '@/lib/api/agent-tools';
 // useChatStore: 聊天状态管理 Store
 // Attachment: 附件类型定义（图片或文件）
 
@@ -26,6 +29,7 @@ import {
   Paperclip,
   Send,
   Square,
+  Wrench,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -114,10 +118,53 @@ export function ChatInput({
   const { provider, attachment, setAttachment } = useChatStore();
   const stop = useChatStore((s) => s.stop);
 
+  // ============ Agent 模式开关 ============
+  // agentModeEnabled：是否开启工具调用模式（settings-store，不跨会话记忆，默认每次进站为关）
+  // 开启后请求体带 agent 标志：服务端切到支持 function calling 的豆包模型、走工具编排、按 chat-agent 计费。
+  // 这里刻意不去改全局 provider/model —— agent 期间生效模型由服务端决定，头部选择器会置灰提示不生效。
+  const agentModeEnabled = useSettingsStore((s) => s.agentModeEnabled);
+  const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+
+  // ============ Agent 自定义 Webhook 工具状态条 ============
+  // 记录启用工具数量：null 表示未加载或加载失败（静默降级不显示），number 表示已启用的数量
+  const [enabledToolCount, setEnabledToolCount] = useState<number | null>(null);
+
+  // 仅当 agent 开关从关→开时懒加载一次
+  useEffect(() => {
+    if (!agentModeEnabled) {
+      setEnabledToolCount(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTools() {
+      try {
+        const tools = await fetchAgentTools();
+        if (!cancelled) {
+          const count = tools.filter((tool) => tool.enabled).length;
+          setEnabledToolCount(count);
+        }
+      } catch {
+        // 请求失败（网络错误、401 未登录、限流等）静默降级为不显示状态条，不打扰对话
+        if (!cancelled) {
+          setEnabledToolCount(null);
+        }
+      }
+    }
+
+    loadTools();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentModeEnabled]);
+
   // ============ 附件功能开关 ============
-  // 只有豆包（doubao）模型支持附件功能
-  // 其他模型（如讯飞星火）不支持，按钮会显示为禁用状态
-  const showAttachment = provider === 'doubao';
+  // 只有豆包（doubao）模型支持附件功能。
+  // agent 模式虽强制走豆包，但编排器暂不支持附件输入（会静默丢弃），
+  // 故 agent 模式下不显示附件入口，消除「能选图、传不进去」的不一致（二期顺手债 #4）。
+  const showAttachment = provider === 'doubao' && !agentModeEnabled;
 
   // ============ 键盘事件处理 ============
   // 处理用户按下键盘按键的事件
@@ -745,7 +792,7 @@ export function ChatInput({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300"
+          className="h-9 w-9 shrink-0 rounded-xl text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300 select-none transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95"
           aria-label="添加附件"
         >
           <Paperclip className="h-4 w-4" />
@@ -761,7 +808,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 select-none transition-colors duration-fast ease-out-expo hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 active:scale-[0.98]"
           >
             <Image className="h-4 w-4 text-green-500" />
             上传图片
@@ -769,7 +816,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-700 select-none transition-colors duration-fast ease-out-expo hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 active:scale-[0.98]"
           >
             <FileText className="h-4 w-4 text-blue-500" />
             上传文件
@@ -778,6 +825,10 @@ export function ChatInput({
         </div>
       </PopoverContent>
     </Popover>
+  ) : agentModeEnabled ? (
+    // agent 模式下彻底隐藏附件入口而非置灰：置灰文案「当前模型不支持附件」在 agent 下
+    // 不成立（模型支持、是编排不支持），隐藏才与工单口径「不显示附件入口」一致
+    null
   ) : (
     <Button
       type="button"
@@ -788,6 +839,34 @@ export function ChatInput({
       aria-label="当前模型不支持附件"
     >
       <Paperclip className="h-4 w-4" />
+    </Button>
+  );
+
+  // Agent 模式开关：输入坞内常驻。
+  // 视觉 36px 与附件钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1 二级控件热区配方），
+  // 移动端拇指可达且不与发送钮争抢视觉重量。
+  const agentButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={() => setAgentMode(!agentModeEnabled)}
+      aria-pressed={agentModeEnabled}
+      aria-label={agentModeEnabled ? '关闭 Agent 工具调用' : '开启 Agent 工具调用'}
+      title={
+        agentModeEnabled
+          ? 'Agent 模式已开启：可调用图像生成、网页抓取'
+          : '开启 Agent 模式：让 AI 在回答中调用工具'
+      }
+      className={cn(
+        "relative h-9 w-9 shrink-0 rounded-xl select-none after:absolute after:-inset-1 after:content-['']",
+        'transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95',
+        agentModeEnabled
+          ? 'border border-blue-400/30 bg-blue-500/10 text-blue-600 hover:bg-blue-500/15 dark:text-blue-400'
+          : 'text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300'
+      )}
+    >
+      <Wrench className="h-4 w-4" />
     </Button>
   );
 
@@ -839,17 +918,58 @@ export function ChatInput({
         </div>
       )}
 
+      {/* Agent 模式局部提示与工具感知状态条：不挤压输入坞布局、不遮挡发送按钮 */}
+      {agentModeEnabled && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
+          <div
+            data-testid="agent-mode-notice"
+            className="flex items-center gap-1.5 text-[10px] sm:text-[11px] leading-tight text-blue-600 dark:text-blue-400"
+          >
+            <Wrench className="h-3 w-3 shrink-0" />
+            <span>Agent 模式 · 已切换至豆包 Seed · 额度消耗更高</span>
+          </div>
+
+          {enabledToolCount !== null && (
+            <Link
+              href="/profile"
+              data-testid="agent-tools-status"
+              className={cn(
+                'group inline-flex min-h-[44px] sm:min-h-0 items-center text-[10px] sm:text-[11px] leading-tight',
+                'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400',
+                'transition-colors duration-fast ease-out-expo select-none',
+                'touch-manipulation'
+              )}
+            >
+              {enabledToolCount > 0 ? (
+                <span>
+                  已加载 {enabledToolCount} 个我的工具 ·{' '}
+                  <span className="text-blue-600 underline underline-offset-2 group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300">
+                    去管理
+                  </span>
+                </span>
+              ) : (
+                <span className="text-slate-500 underline underline-offset-2 group-hover:text-blue-600 dark:text-slate-400 dark:group-hover:text-blue-400">
+                  可添加我的工具，让 Agent 调用你的服务
+                </span>
+              )}
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，单容器无嵌套描边（DESIGN.md §8.2） */}
       <div
         className={cn(
           'flex items-end gap-1 rounded-2xl p-1.5',
           'border border-white/60 bg-white/60 shadow-sm backdrop-blur-xl',
-          'transition-all duration-200',
+          'transition-[border-color,background-color,box-shadow] duration-fast ease-out-expo',
           'hover:border-slate-300/80 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-slate-700/80',
           'focus-within:border-blue-500/50 focus-within:bg-white/70 focus-within:shadow-[0_0_0_2px_rgba(59,130,246,0.12),0_4px_12px_-2px_rgba(59,130,246,0.15)]',
           'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
         )}
       >
+        {agentButton}
+
         {attachButton}
 
         <Textarea
@@ -866,33 +986,25 @@ export function ChatInput({
           disabled={isLoading}
         />
 
-        {isLoading ? (
-          <Button
-            type="button"
-            onClick={stop}
-            className={CTA_BUTTON_CLASS}
-            size="icon"
-            aria-label="停止生成"
-          >
-            <Square className="h-5 w-5 md:h-4 md:w-4" fill="currentColor" />
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={handleSend}
-            disabled={
-              (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
-            }
-            className={cn(
-              CTA_BUTTON_CLASS,
-              'disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700'
-            )}
-            size="icon"
-            aria-label="发送"
-          >
-            <Send className="h-5 w-5 md:h-4 md:w-4" />
-          </Button>
-        )}
+        <Button
+          type="button"
+          onClick={isLoading ? stop : handleSend}
+          disabled={
+            isLoading
+              ? false
+              : (!input.trim() && !attachment) || attachment?.status === 'uploading'
+          }
+          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
+          size="icon"
+          aria-label={isLoading ? '停止生成' : '发送'}
+          title={isLoading ? '停止生成' : '发送'}
+        >
+          {isLoading ? (
+            <Square className="h-3.5 w-3.5 fill-current" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+        </Button>
       </div>
 
       <input

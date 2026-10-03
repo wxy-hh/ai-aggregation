@@ -67,6 +67,7 @@ export interface ModelCatalogItem {
   providerLabel: string;
   model: string;
   label: string;
+  supportsReasoning?: boolean; // 是否支持真实推理流（reasoning-delta），缺省为 false
 }
 
 // 生成模型唯一键
