@@ -40,7 +40,7 @@ export function WaveformVisualizer({ level }: { level?: number }) {
         <div
           key={i}
           className={cn(
-            'w-1.5 rounded-full transition-all duration-100 ease-in-out',
+            'w-1.5 rounded-full transition-[height,opacity] duration-100 ease-linear',
             i % 2 === 0 ? 'bg-blue-500' : 'bg-indigo-400 dark:bg-indigo-500'
           )}
           style={{

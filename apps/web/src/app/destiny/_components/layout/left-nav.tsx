@@ -173,12 +173,12 @@ export function LeftNav({
                     type="button"
                     onClick={() => onModuleChange?.(item.key)}
                     className={cn(
-                      'w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition',
+                      'w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out active:scale-[0.98]',
                       'border border-transparent',
                       !active &&
                         (night
-                          ? 'hover:border-white/10 hover:bg-white/5'
-                          : 'hover:border-white/60 dark:hover:border-white/10 hover:bg-white/40 dark:hover:bg-slate-800/40'),
+                          ? 'hover:border-white/10 hover:bg-white/5 active:bg-white/10'
+                          : 'hover:border-white/60 dark:hover:border-white/10 hover:bg-white/40 dark:hover:bg-slate-800/40 active:bg-white/60 dark:active:bg-slate-800/60'),
                       active &&
                         (night
                           ? 'border-[#A78BFA]/35 bg-[#A78BFA]/15 text-[#EDE7DA] shadow-[0_0_20px_rgba(139,92,246,0.15)]'

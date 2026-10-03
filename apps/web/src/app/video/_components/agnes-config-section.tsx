@@ -76,7 +76,7 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
               onClick={() => setMode(m.id)}
               disabled={disabled}
               className={cn(
-                'rounded-xl border-2 px-2 py-2.5 text-xs font-bold transition-all',
+                'rounded-xl border-2 px-2 py-2.5 text-xs font-bold select-none transition-[border-color,background-color,color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.97]',
                 config.mode === m.id
                   ? 'border-blue-500/60 bg-white/70 text-blue-600 shadow-sm backdrop-blur-md dark:bg-blue-500/15 dark:text-blue-400'
                   : 'border-white/50 bg-white/40 text-slate-500 hover:border-blue-200/60 hover:text-slate-700 dark:border-white/10 dark:bg-slate-900/30 dark:text-slate-400 dark:hover:text-slate-300',
@@ -96,6 +96,7 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
             className="space-y-3 overflow-hidden"
           >
             <div className="flex items-center justify-between">
@@ -126,9 +127,10 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
                 >
                   <img src={url} alt={`参考图 ${index + 1}`} className="h-full w-full object-cover" />
                   <button
+                    type="button"
                     onClick={() => removeImage(index)}
                     disabled={disabled}
-                    className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white transition-colors hover:bg-black/70 disabled:opacity-50"
+                    className="absolute right-2 top-2 rounded-full bg-black/50 p-1.5 text-white transition-colors duration-fast hover:bg-black/70 active:scale-90 disabled:opacity-50"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -141,7 +143,7 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
                   onClick={() => !disabled && fileInputRef.current?.click()}
                   disabled={disabled}
                   className={cn(
-                    'flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all',
+                    'flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed select-none transition-[border-color,background-color,color] duration-fast ease-out-expo',
                     'border-white/60 bg-white/40 text-slate-400 hover:border-blue-400/60 dark:border-white/10 dark:bg-slate-900/30 dark:hover:border-blue-500/40',
                     disabled && 'cursor-not-allowed opacity-50'
                   )}
@@ -168,7 +170,7 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
               onClick={() => setSize(preset.id)}
               disabled={disabled}
               className={cn(
-                'rounded-xl border-2 px-1 py-2.5 text-xs font-bold transition-all',
+                'rounded-xl border-2 px-1 py-2.5 text-xs font-bold select-none transition-[border-color,background-color,color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.97]',
                 currentSizeId === preset.id
                   ? 'border-blue-500/60 bg-white/70 text-blue-600 shadow-sm backdrop-blur-md dark:bg-blue-500/15 dark:text-blue-400'
                   : 'border-white/50 bg-white/40 text-slate-500 hover:border-blue-200/60 hover:text-slate-700 dark:border-white/10 dark:bg-slate-900/30 dark:text-slate-400 dark:hover:text-slate-300',
@@ -197,7 +199,7 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
               onClick={() => setDuration(preset.id)}
               disabled={disabled}
               className={cn(
-                'rounded-xl border-2 px-1 py-2.5 text-xs font-bold transition-all',
+                'rounded-xl border-2 px-1 py-2.5 text-xs font-bold select-none transition-[border-color,background-color,color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.97]',
                 config.durationPreset === preset.id
                   ? 'border-blue-500/60 bg-white/70 text-blue-600 shadow-sm backdrop-blur-md dark:bg-blue-500/15 dark:text-blue-400'
                   : 'border-white/50 bg-white/40 text-slate-500 hover:border-blue-200/60 hover:text-slate-700 dark:border-white/10 dark:bg-slate-900/30 dark:text-slate-400 dark:hover:text-slate-300',
@@ -266,7 +268,9 @@ export function AgnesConfigSection({ config, setConfig, disabled = false }: Agne
             size="icon"
             onClick={() => setConfig({ ...config, seed: String(Math.floor(Math.random() * 1_000_000_000)) })}
             disabled={disabled}
-            className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-slate-400 hover:text-blue-500"
+            className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-slate-400 hover:text-blue-500 select-none transition-transform duration-fast ease-out-expo active:scale-90 active:rotate-45"
+            title="生成随机种子"
+            aria-label="生成随机种子"
           >
             <Dice5 className="h-4 w-4" />
           </Button>

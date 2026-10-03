@@ -28,14 +28,14 @@ export const destinyPrimaryBtnClass = cn(
   'relative inline-flex min-h-11 shrink-0 items-center justify-center overflow-hidden rounded-full px-5 text-sm font-semibold text-white',
   'bg-gradient-to-r from-blue-600 to-indigo-600',
   'shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-  'transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_12px_20px_-8px_rgba(59,130,246,0.25)]',
+  'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out hover:shadow-[0_12px_20px_-8px_rgba(59,130,246,0.25)]',
   'active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950'
 );
 
 export const destinySecondaryBtnClass = cn(
   'min-h-11 rounded-full border border-slate-200/50 bg-white/40 px-4 text-sm font-semibold text-slate-700',
   'backdrop-blur-xl backdrop-saturate-150 shadow-[0_1px_2px_0_rgba(0,0,0,0.03)]',
-  'transition-all duration-200 hover:scale-[1.02] hover:bg-white/60',
+  'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out hover:bg-white/60 active:scale-[0.98]',
   'dark:border-slate-800/50 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:bg-slate-800/60'
 );
 

@@ -24,7 +24,6 @@ import type { ExternalDraft } from '../chat/ai-copilot-conversation';
 import { ReportRightRail } from '../reports/report-right-rail';
 import { ChartCenterPanel } from '../visualization/chart-center-panel';
 import { BaziShareEntry } from '../share/bazi-share-entry';
-// import { ChartSectionNav } from '../visualization/chart-section-nav';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { HeartHandshake, PanelRightOpen } from 'lucide-react';

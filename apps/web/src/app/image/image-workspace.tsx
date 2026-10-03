@@ -38,6 +38,7 @@ import { createImageHistoryItem } from '@/lib/utils/history-helpers';
 import { blobToDataUrl } from '@/lib/utils/image-url';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { toast } from 'sonner';
 // 跨模态接力：目标侧接收 + 结果源侧发起
 import { ReferenceBar } from '@/components/relay/reference-bar';
 import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
@@ -228,7 +229,7 @@ export default function ImageWorkspace() {
   // 仅当当前比例与生成图一致时才展示主预览，避免旧图在新比例框内留白
   const showGeneratedPreview = generatedImages.length > 0 && !previewRatioMismatch;
 
-  // Quick Start Actions
+  // 快速起步推荐预设
   const quickStarts = [
     {
       label: '赛博朋克城市',
@@ -308,21 +309,25 @@ export default function ImageWorkspace() {
           <Textarea
             value={prompt}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
-            className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm backdrop-saturate-150 border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-all text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
+            className="w-full h-32 px-4 py-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm backdrop-saturate-150 border-2 border-slate-200/60 dark:border-slate-700/60 rounded-2xl resize-none focus-visible:ring-0 focus-visible:border-indigo-500 transition-[border-color,box-shadow,background-color] duration-fast ease-out-expo text-sm leading-relaxed text-slate-700 dark:text-slate-200 shadow-sm group-hover:bg-white/80 dark:group-hover:bg-slate-800/80"
             placeholder="描述你想要生成的画面..."
           />
-          <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute right-3 bottom-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-fast ease-out-expo">
             <button
+              type="button"
               onClick={() => setPrompt('')}
-              className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm transition-colors"
+              className="p-1.5 text-slate-400 hover:text-red-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm select-none transition-[color,transform] duration-fast ease-out-expo active:scale-90"
               title="清空提示词"
+              aria-label="清空提示词"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <button
+              type="button"
               onClick={handleRandomPrompt}
-              className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm transition-colors"
+              className="p-1.5 text-slate-400 hover:text-indigo-500 bg-white/80 dark:bg-slate-700/80 rounded-lg backdrop-blur-md backdrop-saturate-150 shadow-sm select-none transition-[color,transform] duration-fast ease-out-expo active:scale-90 active:rotate-45"
               title="随机灵感"
+              aria-label="随机灵感"
             >
               <Dice5 className="w-4 h-4" />
             </button>
@@ -405,10 +410,10 @@ export default function ImageWorkspace() {
                   onClick={handleGenerate}
                   disabled={isGenerating || !prompt.trim()}
                   className={cn(
-                    'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 transition-all text-md cursor-pointer border border-white/20',
+                    'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 text-md cursor-pointer border border-white/20 select-none transition-[background-color,box-shadow,transform,filter] duration-fast ease-out-expo',
                     isGenerating || !prompt.trim()
                       ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-90'
-                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40 active:scale-[0.98]'
                   )}
                 >
                   {isGenerating ? (
@@ -464,10 +469,10 @@ export default function ImageWorkspace() {
                     onClick={handleGenerate}
                     disabled={isGenerating || !prompt.trim()}
                     className={cn(
-                      'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 transition-all text-md cursor-pointer border border-white/20',
+                      'w-full py-6 rounded-2xl font-bold flex items-center justify-center gap-2 text-white shadow-xl shadow-blue-500/20 text-md cursor-pointer border border-white/20 select-none transition-[background-color,box-shadow,transform,filter] duration-fast ease-out-expo',
                       isGenerating || !prompt.trim()
                         ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-90'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/40 active:scale-[0.98]'
                     )}
                   >
                     {isGenerating ? (
@@ -486,13 +491,13 @@ export default function ImageWorkspace() {
               </div>
 
               <div
-                className="relative mx-auto transition-all duration-500 ease-in-out"
+                className="relative mx-auto transition-[width,height,max-width,max-height] duration-normal ease-drawer"
                 style={previewBoxStyle}
               >
                 {showGeneratedPreview ? (
                   <div
                     className={cn(
-                      'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-all duration-300'
+                      'relative w-full h-full min-h-0 rounded-3xl overflow-hidden shadow-2xl shadow-indigo-500/10 border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-900 group transition-[border-color,box-shadow] duration-fast ease-out-expo'
                     )}
                     onContextMenu={resultRelay.onContextMenu}
                     {...resultRelay.longPressProps}
@@ -501,7 +506,7 @@ export default function ImageWorkspace() {
                       src={generatedImages[activeImageIndex]}
                       alt="生成结果"
                       className={cn(
-                        'absolute inset-0 w-full h-full object-cover transition-all duration-1000',
+                        'absolute inset-0 w-full h-full object-cover transition-[transform,filter,opacity] duration-normal ease-out-expo',
                         isGenerating
                           ? 'scale-105 blur-xl opacity-80'
                           : 'scale-100 blur-0 opacity-100'
@@ -509,7 +514,7 @@ export default function ImageWorkspace() {
                     />
 
                     {!isGenerating && (
-                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-100 transition-opacity duration-300 sm:opacity-0 sm:group-hover:opacity-100">
+                      <div className="absolute bottom-6 right-6 flex gap-2 opacity-100 transition-opacity duration-fast ease-out-expo sm:opacity-0 sm:group-hover:opacity-100">
                         {/* 接力：移动端常显（无 hover），桌面 hover 渐显（REQ-002 显式入口） */}
                         <RelayAction
                           ref={resultRelay.triggerRef}
@@ -520,14 +525,16 @@ export default function ImageWorkspace() {
                           className="h-11 w-11 rounded-full border border-white/20 bg-white/20 p-3 text-white shadow-lg backdrop-blur-md backdrop-saturate-150 hover:bg-white/30"
                         />
                         <button
+                          type="button"
                           onClick={() => {
                             const link = document.createElement('a');
                             link.href = generatedImages[activeImageIndex];
                             link.download = `agnes-${Date.now()}.png`;
                             link.click();
                           }}
-                          className="p-3 bg-white/20 backdrop-blur-md backdrop-saturate-150 hover:bg-white/30 rounded-full text-white transition-colors cursor-pointer shadow-lg border border-white/20"
+                          className="p-3 bg-white/20 backdrop-blur-md backdrop-saturate-150 hover:bg-white/30 rounded-full text-white select-none transition-[background-color,transform] duration-fast ease-out-expo active:scale-90 cursor-pointer shadow-lg border border-white/20"
                           title="下载图片"
+                          aria-label="下载图片"
                         >
                           <Download className="w-5 h-5" />
                         </button>
@@ -576,10 +583,13 @@ export default function ImageWorkspace() {
                           {quickStarts.map((item, i) => (
                             <button
                               key={i}
+                              type="button"
                               onClick={() => handleQuickStart(item)}
-                              className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 transition-all hover:-translate-y-0.5"
+                              className="group flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-800 rounded-full shadow-sm hover:shadow-md border border-slate-100 dark:border-slate-700 select-none transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.97]"
                             >
-                              {item.icon}
+                              <span className="transition-transform duration-fast ease-out-expo group-hover:scale-110">
+                                {item.icon}
+                              </span>
                               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                 {item.label}
                               </span>
@@ -661,7 +671,7 @@ export default function ImageWorkspace() {
                           if (generatedRatio) setRatio(generatedRatio);
                         }}
                         className={cn(
-                          'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95',
+                          'w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-2 cursor-pointer shadow-md select-none transition-[border-color,box-shadow,transform] duration-fast ease-out-expo active:scale-[0.94]',
                           i === activeImageIndex
                             ? 'border-indigo-500 ring-2 ring-indigo-500/20 ring-offset-2 dark:ring-offset-slate-950'
                             : 'border-white dark:border-slate-700 bg-slate-200 dark:bg-slate-800'
@@ -690,7 +700,8 @@ export default function ImageWorkspace() {
             onStyleApply={(params) => {
               if (params.ratio) setRatio(params.ratio);
               if (params.style) setStyle(params.style);
-              // Optionally show a toast here
+              // 触发应用提示反馈
+              toast.success('已应用所选风格与尺寸参数');
             }}
             onRestoreParams={handleRestoreParams}
             onPreviewImage={handlePreviewImage}

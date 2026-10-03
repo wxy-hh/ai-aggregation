@@ -103,7 +103,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
   return (
     <div
       className={cn(
-        'relative flex flex-col h-full transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] z-20',
+        'relative flex flex-col h-full transition-[width] duration-normal ease-out-expo z-20',
         isCollapsed ? 'w-12 border-l-0' : 'w-80',
         className
       )}
@@ -111,16 +111,18 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
       {/* 玻璃外壳 */}
       <div
         className={cn(
-          'absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-3xl backdrop-saturate-150 border-l border-white/20 dark:border-white/5 shadow-[-20px_0_50px_rgba(0,0,0,0.1)] transition-all duration-500',
+          'absolute inset-0 bg-white/60 dark:bg-slate-900/60 backdrop-blur-3xl backdrop-saturate-150 border-l border-white/20 dark:border-white/5 shadow-[-20px_0_50px_rgba(0,0,0,0.1)] transition-[background-color,border-color,box-shadow] duration-normal ease-out-expo',
           isCollapsed && 'bg-transparent backdrop-blur-none !backdrop-saturate-100 border-none shadow-none'
         )}
       />
 
       {/* 切换按钮 */}
       <button
+        type="button"
         onClick={() => setIsCollapsed(!isCollapsed)}
+        aria-label={isCollapsed ? '展开创作灵感舱' : '折叠创作灵感舱'}
         className={cn(
-          'absolute -left-3 top-6 w-6 h-6 rounded-full bg-white dark:bg-slate-800 shadow-[0_0_15px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700 flex items-center justify-center z-30 hover:scale-110 transition-all duration-300 cursor-pointer group',
+          'absolute -left-3 top-6 w-6 h-6 rounded-full bg-white dark:bg-slate-800 shadow-[0_0_15px_rgba(0,0,0,0.1)] border border-white/50 dark:border-slate-700 flex items-center justify-center z-30 select-none hover:scale-105 active:scale-95 transition-[color,background-color,border-color,transform] duration-fast ease-out-expo cursor-pointer group',
           isCollapsed ? 'translate-x-3' : ''
         )}
       >
@@ -134,7 +136,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
       {/* 内容容器 */}
       <div
         className={cn(
-          'relative flex flex-col h-full overflow-hidden transition-all duration-500',
+          'relative flex flex-col h-full overflow-hidden transition-[opacity,transform] duration-normal ease-out-expo',
           isCollapsed ? 'opacity-0 translate-x-10 pointer-events-none' : 'opacity-100 translate-x-0'
         )}
       >
@@ -176,16 +178,17 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
               {MAGIC_PROMPTS.map((item, index) => (
                 <button
                   key={index}
+                  type="button"
                   onClick={() => onPromptAppend?.(item.text)}
                   className={cn(
-                    'relative overflow-hidden rounded-xl p-3 text-left transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5 cursor-pointer group/chip',
+                    'relative overflow-hidden rounded-xl p-3 text-left select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:shadow-md hover:-translate-y-0.5 active:scale-[0.97] cursor-pointer group/chip',
                     'border backdrop-blur-md backdrop-saturate-150 bg-white/40 dark:bg-slate-800/40',
                     item.border
                   )}
                 >
                   <div
                     className={cn(
-                      'absolute inset-0 opacity-0 group-hover/chip:opacity-100 transition-opacity duration-500',
+                      'absolute inset-0 opacity-0 group-hover/chip:opacity-100 transition-opacity duration-fast ease-out-expo',
                       item.bg
                     )}
                   />
@@ -198,7 +201,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     </span>
                   </div>
                   {/* 晶体高光效果 */}
-                  <div className="absolute -top-10 -right-10 w-20 h-20 bg-white/20 rotate-45 blur-xl group-hover/chip:translate-y-5 transition-transform duration-700" />
+                  <div className="absolute -top-10 -right-10 w-20 h-20 bg-white/20 rotate-45 blur-xl group-hover/chip:translate-y-5 transition-transform duration-normal ease-out-expo" />
                 </button>
               ))}
             </div>
@@ -269,21 +272,21 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
               ].map((item) => (
                 <div
                   key={item.id}
-                  className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-all border border-white/10"
+                  className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer shadow-sm hover:shadow-md select-none transition-[box-shadow,border-color] duration-fast ease-out-expo border border-white/10"
                 >
                   {/* 真实图片背景 */}
                   <img
                     src={item.image}
                     alt={item.tags[0]}
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-normal ease-out-expo group-hover:scale-105"
                   />
                   {/* 噪点纹理叠加，增加胶片感 */}
                   <div className="absolute inset-0 opacity-10 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
 
                   {/* 悬停玻璃遮罩 */}
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center p-2 gap-3">
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-fast ease-out-expo flex flex-col items-center justify-center p-2 gap-3">
                     {/* 流光溢彩的标签 */}
-                    <div className="flex flex-wrap justify-center gap-1.5 transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300 delay-75">
+                    <div className="flex flex-wrap justify-center gap-1.5 transform translate-y-3 group-hover:translate-y-0 transition-transform duration-fast ease-out-expo">
                       {item.tags.map((tag, i) => (
                         <span
                           key={i}
@@ -297,7 +300,7 @@ export function CreativeCockpit({ className, onPromptAppend, onStyleApply, onRes
                     {/* 克隆按钮 */}
                     <Button
                       size="sm"
-                      className="h-7 text-[10px] px-3 rounded-lg bg-white text-black hover:bg-white/90 shadow-[0_0_20px_rgba(255,255,255,0.4)] transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 delay-100 font-bold tracking-wide"
+                      className="h-7 text-[10px] px-3 rounded-lg bg-white text-black hover:bg-white/90 shadow-[0_0_20px_rgba(255,255,255,0.4)] transform translate-y-3 group-hover:translate-y-0 select-none transition-[color,background-color,box-shadow,transform] duration-fast ease-out-expo active:scale-95 font-bold tracking-wide"
                       onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         onPromptAppend?.(item.prompt);

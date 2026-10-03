@@ -80,6 +80,17 @@
     --ds-focus-ring: 0 0 0 3px rgba(0, 113, 227, 0.18);
     --ds-nav-bg: rgba(16, 16, 20, 0.58);
     --ds-overlay-bg: rgba(6, 8, 12, 0.42);
+
+    /* 动效工程系统：Emil Kowalski 物理缓动曲线与时间尺度规范 */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+
+    --duration-instant: 100ms;
+    --duration-fast: 160ms;
+    --duration-normal: 220ms;
+    --duration-slow: 300ms;
   }
 
   .dark {
@@ -116,9 +127,29 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
   }
+  html,
   body {
     @apply bg-background text-foreground;
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* 移动端与交互元素：禁止按钮文字在长按时被意外选中，正文不受影响 */
+  button,
+  [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* 移动端输入框防页面自动缩放：iOS 在输入框小于 16px 时会强制放大视口导致布局跳动 */
+  @media screen and (max-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
   }
 
   /* 浏览器表面品牌化（DESIGN.md 第 9 章）：文本选区与输入光标跟随品牌靛蓝，
@@ -903,5 +934,31 @@
   .astrology-night-nebula,
   .astrology-invite-pulse {
     animation: none;
+  }
+}
+
+/* ═══ 移动端与全屏应用工程工具类（遵循 Emil Kowalski mobile-native 准则） ═══ */
+@layer utilities {
+  /* 现代动态视口高度：防止移动端浏览器地址栏伸缩导致的布局震颤与截断 */
+  .h-dvh-screen {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .min-h-dvh-screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  /* 移动端全面屏安全区边距（刘海屏、灵动岛、底部横条） */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0px);
   }
 }

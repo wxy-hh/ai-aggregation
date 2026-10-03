@@ -23,11 +23,11 @@ export function VideoHistoryCard({ item, onDelete }: VideoHistoryCardProps) {
   };
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white transition-all hover:border-blue-200 hover:shadow-lg dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-900">
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white transition-[border-color,box-shadow,background-color,transform] duration-200 ease-out active:scale-[0.99] hover:border-blue-200 hover:shadow-lg dark:border-slate-700 dark:bg-slate-800 dark:hover:border-blue-900">
       {/* 删除按钮 */}
       <button
         onClick={handleDelete}
-        className="absolute right-3 top-3 z-10 rounded-lg bg-black/40 p-1.5 text-white/70 opacity-100 backdrop-blur-md transition-all hover:bg-red-500/30 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100"
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/40 p-1.5 text-white/70 opacity-100 backdrop-blur-md transition-[color,background-color,opacity,transform] duration-150 ease-out active:scale-90 hover:bg-red-500/30 hover:text-red-400 md:opacity-0 md:group-hover:opacity-100"
         title="删除"
       >
         <Trash2 className="h-3.5 w-3.5" />

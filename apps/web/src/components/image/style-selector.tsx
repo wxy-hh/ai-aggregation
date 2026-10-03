@@ -65,30 +65,30 @@ export function StyleSelector({ selected, onStyleChange }: StyleSelectorProps) {
             key={style.id}
             onClick={() => onStyleChange(style.id)}
             className={cn(
-              'relative p-2.5 rounded-xl transition-all duration-300 cursor-pointer group flex flex-col items-center gap-2',
+              'relative p-2.5 rounded-xl select-none transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-expo cursor-pointer group flex flex-col items-center gap-2 active:scale-[0.97]',
               'border backdrop-blur-sm backdrop-saturate-150 bg-gradient-to-br',
               selected === style.id
-                ? `${style.activeGradient} ${style.borderColor} shadow-lg ${style.shadowColor} scale-[1.02] ring-1 ring-inset ring-white/20`
+                ? `${style.activeGradient} ${style.borderColor} shadow-md ${style.shadowColor} ring-1 ring-inset ring-white/20`
                 : `${style.gradient} border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:shadow-md hover:-translate-y-0.5`
             )}
           >
             {/* 图标容器 */}
             <div
               className={cn(
-                'w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 shadow-sm',
+                'w-8 h-8 rounded-lg flex items-center justify-center transition-transform duration-fast ease-out-expo shadow-sm',
                 'bg-white dark:bg-slate-800',
                 selected === style.id
-                  ? 'scale-110 shadow-md ring-2 ring-white/50'
-                  : 'group-hover:scale-110'
+                  ? 'scale-105 shadow-md ring-2 ring-white/50'
+                  : 'group-hover:scale-105'
               )}
             >
-              <div className={cn('transition-colors duration-300', style.color)}>{style.icon}</div>
+              <div className={cn('transition-colors duration-fast ease-out-expo', style.color)}>{style.icon}</div>
             </div>
 
             {/* 文字标签 */}
             <span
               className={cn(
-                'text-[10px] font-bold transition-colors',
+                'text-[10px] font-bold transition-colors duration-fast ease-out-expo',
                 selected === style.id
                   ? 'text-slate-900 dark:text-white'
                   : 'text-slate-600 dark:text-slate-400'

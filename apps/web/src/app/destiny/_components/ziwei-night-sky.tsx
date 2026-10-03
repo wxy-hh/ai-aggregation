@@ -24,9 +24,9 @@ function mulberry32(seed: number) {
 type Star = {
   left: number; // 百分比
   top: number; // 百分比
-  size: number; // px
-  delay: number; // s
-  duration: number; // s
+  size: number; // 像素
+  delay: number; // 秒
+  duration: number; // 秒
   bright: boolean; // 是否亮星(带十字光晕)
 };
 

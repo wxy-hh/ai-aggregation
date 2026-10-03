@@ -36,7 +36,7 @@ export function AssetsSidebar({
               )}
             >
               <Folder className="w-5 h-5" />
-              <span className="text-[10px] font-bold tracking-widest uppercase">Assets</span>
+              <span className="text-[10px] font-bold tracking-widest uppercase">素材库</span>
             </div>
 
             {/* 搜索/过滤 */}
@@ -46,10 +46,18 @@ export function AssetsSidebar({
                 showToggle ? 'flex flex-col gap-4 items-center px-2' : 'grid grid-cols-2 gap-3'
               )}
             >
-              <button className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+              <button
+                type="button"
+                className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 select-none transition-[background-color,color,transform] duration-fast ease-out-expo active:scale-90 shadow-sm"
+                aria-label="搜索素材"
+              >
                 <Search className="w-5 h-5" />
               </button>
-              <button className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm">
+              <button
+                type="button"
+                className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 select-none transition-[background-color,color,transform] duration-fast ease-out-expo active:scale-90 shadow-sm"
+                aria-label="切换网格视图"
+              >
                 <Grid className="w-5 h-5" />
               </button>
             </div>
@@ -65,20 +73,22 @@ export function AssetsSidebar({
                 <div
                   key={i}
                   className={cn(
-                    'bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden hover:border-blue-500 transition-colors cursor-pointer group shadow-sm',
+                    'bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden hover:border-blue-500 select-none transition-[border-color,box-shadow,transform] duration-fast ease-out-expo active:scale-95 cursor-pointer group shadow-sm',
                     showToggle ? 'w-14 h-14' : 'aspect-square min-h-24'
                   )}
                 >
-                  <div className="w-full h-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 group-hover:scale-110 transition-transform" />
+                  <div className="w-full h-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 group-hover:scale-110 transition-transform duration-fast ease-out-expo" />
                 </div>
               ))}
 
               {/* 添加按钮 */}
               <button
+                type="button"
                 className={cn(
-                  'bg-slate-50 dark:bg-slate-800/50 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 hover:text-blue-500 hover:border-blue-500 transition-all',
+                  'bg-slate-50 dark:bg-slate-800/50 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 hover:text-blue-500 hover:border-blue-500 select-none transition-[border-color,color,transform] duration-fast ease-out-expo active:scale-95',
                   showToggle ? 'w-14 h-14' : 'aspect-square min-h-24'
                 )}
+                aria-label="添加新素材"
               >
                 <Plus className="w-6 h-6" />
               </button>
@@ -96,8 +106,10 @@ export function AssetsSidebar({
       {showToggle ? (
         <div className="h-full py-4 flex flex-col justify-end px-1">
           <button
+            type="button"
             onClick={() => setIsOpen(!isOpen)}
-            className="w-4 h-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+            className="w-4 h-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 select-none transition-[background-color,color,transform] duration-fast ease-out-expo active:scale-90 shadow-sm"
+            aria-label={isOpen ? '收起素材侧边栏' : '展开素材侧边栏'}
           >
             {isOpen ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
           </button>

@@ -20,19 +20,19 @@ export function TranscriptList({ segments }: TranscriptListProps) {
         <div
           key={segment.id}
           className={cn(
-            'group relative p-4 rounded-xl transition-all duration-300 border',
+            'group relative p-4 rounded-xl transition-[background-color,border-color,box-shadow] duration-normal ease-out-expo border',
             segment.active
               ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800 shadow-sm'
               : 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
           )}
         >
-          {/* Active Indicator Line */}
+          {/* 激活状态指示竖线 */}
           {segment.active && (
             <div className="absolute left-0 top-4 bottom-4 w-1 bg-blue-500 rounded-r-full" />
           )}
 
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-            {/* Metadata */}
+            {/* 说话人与时间元数据 */}
             <div className="flex sm:flex-col items-center sm:items-start gap-2 sm:gap-1 min-w-[120px]">
               <span className="text-xs font-mono text-slate-400 dark:text-slate-500">
                 {segment.timestamp}
@@ -49,7 +49,7 @@ export function TranscriptList({ segments }: TranscriptListProps) {
               </div>
             </div>
 
-            {/* Text Content */}
+            {/* 识别转录正文 */}
             <div className="flex-1">
               <p
                 className={cn(
@@ -62,9 +62,9 @@ export function TranscriptList({ segments }: TranscriptListProps) {
                 {segment.text}
               </p>
 
-              {/* Segment Actions (Hover) */}
-              <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="text-xs text-slate-400 hover:text-blue-500 flex items-center gap-1">
+              {/* 片段快捷悬浮操作 */}
+              <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-fast">
+                <button className="text-xs text-slate-400 hover:text-blue-500 flex items-center gap-1 active:scale-95 transition-transform duration-fast">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
@@ -81,7 +81,7 @@ export function TranscriptList({ segments }: TranscriptListProps) {
                   </svg>
                   播放
                 </button>
-                <button className="text-xs text-slate-400 hover:text-blue-500 flex items-center gap-1">
+                <button className="text-xs text-slate-400 hover:text-blue-500 flex items-center gap-1 active:scale-95 transition-transform duration-fast">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"

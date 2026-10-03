@@ -19,7 +19,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 
-// Helper function to format file size
+// 辅助函数：格式化文件大小
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -28,7 +28,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-// Helper function to format duration
+// 辅助函数：格式化音频时长
 function formatDuration(seconds?: number): string {
   if (!seconds) return '--:--';
   const hours = Math.floor(seconds / 3600);
@@ -41,7 +41,7 @@ function formatDuration(seconds?: number): string {
   return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Helper function to format relative time
+// 辅助函数：格式化相对时间
 function formatRelativeTime(date: Date): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -58,7 +58,7 @@ function formatRelativeTime(date: Date): string {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
-// Helper function to group items by date
+// 辅助函数：按日期对历史录音分组
 function groupItemsByDate(items: AudioHistoryItem[]): Map<string, AudioHistoryItem[]> {
   const groups = new Map<string, AudioHistoryItem[]>();
 
@@ -130,14 +130,14 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Initialize service on mount
+  // 组件挂载时初始化历史记录服务
   useEffect(() => {
     if (!isInitialized) {
       initializeService();
     }
   }, [isInitialized, initializeService]);
 
-  // Load storage info
+  // 加载本地存储信息
   useEffect(() => {
     const loadStorageInfo = async () => {
       const info = await getStorageInfo();
@@ -151,7 +151,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
     }
   }, [isInitialized, getStorageInfo, stats]);
 
-  // Track searching state
+  // 跟踪搜索执行状态
   useEffect(() => {
     if (searchQuery !== debouncedSearchQuery) {
       setIsSearching(true);
@@ -160,11 +160,11 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
     }
   }, [searchQuery, debouncedSearchQuery]);
 
-  // Filter items based on search query, date filter, and status filter
+  // 根据搜索关键词、日期范围和处理状态过滤历史记录
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Apply search query filter (using debounced value)
+    // 应用搜索关键词过滤（防抖）
     if (debouncedSearchQuery.trim()) {
       const query = debouncedSearchQuery.toLowerCase();
       result = result.filter(
@@ -176,7 +176,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
       );
     }
 
-    // Apply date filter
+    // 应用日期范围过滤
     if (dateFilter !== 'all') {
       const now = new Date();
       result = result.filter((item) => {
@@ -197,7 +197,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
       });
     }
 
-    // Apply status filter
+    // 应用处理状态过滤
     if (statusFilter.length > 0) {
       result = result.filter((item) => statusFilter.includes(item.processingStatus));
     }
@@ -205,12 +205,12 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
     return result;
   }, [items, debouncedSearchQuery, dateFilter, statusFilter]);
 
-  // Group filtered items by date
+  // 对过滤后的列表按日期分组
   const groupedItems = useMemo(() => {
     return groupItemsByDate(filteredItems);
   }, [filteredItems]);
 
-  // Calculate storage percentage
+  // 计算本地存储占用百分比
   const storagePercentage = useMemo(() => {
     if (!storageInfo || storageInfo.total === 0) return 0;
     return Math.round((storageInfo.used / storageInfo.total) * 100);
@@ -297,7 +297,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 w-80 shrink-0">
-      {/* Search Header */}
+      {/* 顶部搜索与过滤工具栏 */}
       <div className="p-4 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">录音记录</h2>
@@ -359,7 +359,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         </div>
 
-        {/* Selection Mode Banner */}
+        {/* 多选批量操作提示条 */}
         {isSelectionMode && (
           <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center justify-between">
             <span className="text-xs text-blue-700 dark:text-blue-300">
@@ -387,7 +387,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* Search Input */}
+        {/* 关键词搜索输入框 */}
         <div className="relative">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
@@ -407,7 +407,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
             placeholder="搜索录音..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+            className="w-full pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-[border-color,box-shadow] duration-fast"
           />
           {isSearching && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -416,10 +416,10 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           )}
         </div>
 
-        {/* Filter Panel */}
+        {/* 细化过滤面板 */}
         {showFilters && (
           <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-3">
-            {/* Date Filter */}
+            {/* 时间范围筛选 */}
             <div>
               <label className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-2 block">
                 时间范围
@@ -447,7 +447,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
               </div>
             </div>
 
-            {/* Status Filter */}
+            {/* 处理状态筛选 */}
             <div>
               <label className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-2 block">
                 处理状态
@@ -485,7 +485,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
               </div>
             </div>
 
-            {/* Clear Filters */}
+            {/* 清除过滤条件按钮 */}
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
@@ -497,7 +497,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* Active Filters Summary */}
+        {/* 已激活过滤条件统计 */}
         {hasActiveFilters && !showFilters && (
           <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span>
@@ -514,9 +514,10 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
         )}
       </div>
 
-      {/* List */}
+      {/* 历史录音卡片列表容器 */}
+      {/* 历史录音卡片列表容器 */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4 custom-scrollbar">
-        {/* Error State */}
+        {/* 异常错误提示状态 */}
         {error && (
           <div className="mx-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
             <div className="flex items-start gap-2">
@@ -546,7 +547,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* Loading State with Skeleton */}
+        {/* 骨架屏加载过渡状态 */}
         {isLoading && items.length === 0 && (
           <div className="space-y-3">
             {[...Array(5)].map((_, i) => (
@@ -564,7 +565,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* Empty State */}
+        {/* 暂无历史数据空状态 */}
         {!isLoading && items.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
@@ -591,7 +592,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* No Search Results */}
+        {/* 无搜索匹配结果提示 */}
         {!isLoading && items.length > 0 && filteredItems.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4">
             <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
@@ -626,7 +627,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           </div>
         )}
 
-        {/* Grouped Items - Use virtual scrolling for large lists */}
+        {/* 分组渲染的历史记录卡片列表 */}
         {!isLoading &&
           filteredItems.length > 0 &&
           Array.from(groupedItems.entries()).map(([groupName, groupItems]) => (
@@ -649,7 +650,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
           ))}
       </div>
 
-      {/* Storage Status */}
+      {/* 底部本地存储使用状态指示条 */}
       <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
         <div className="flex items-center justify-between text-xs mb-2">
           <span className="font-medium text-slate-600 dark:text-slate-300">本地存储</span>
@@ -657,7 +658,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
         </div>
         <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
           <div
-            className="bg-blue-500 h-full rounded-full transition-all"
+            className="bg-blue-500 h-full rounded-full transition-[width] duration-normal ease-out-expo"
             style={{ width: `${storagePercentage}%` }}
           ></div>
         </div>
@@ -673,7 +674,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
         )}
       </div>
 
-      {/* Edit Dialog */}
+      {/* 记录重命名编辑弹窗 */}
       <HistoryEditDialog
         item={editingItem}
         open={!!editingItem}
@@ -681,7 +682,7 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
         onSave={handleSaveEdit}
       />
 
-      {/* Delete Dialog */}
+      {/* 删除确认对话框 */}
       <HistoryDeleteDialog
         items={deletingItems}
         open={deletingItems.length > 0}
@@ -707,9 +708,9 @@ function RecordingItem({
   isSelected: boolean;
   isSelectionMode: boolean;
 }) {
-  const isActive = false; // TODO: Implement active state based on current item
+  const isActive = false; // 待接入当前选中活跃态
 
-  // Get status badge info
+  // 获取状态徽标信息
   const getStatusBadge = () => {
     switch (item.processingStatus) {
       case 'uploading':
@@ -748,15 +749,15 @@ function RecordingItem({
     <div
       onClick={onClick}
       className={cn(
-        'p-3 rounded-xl border transition-all cursor-pointer group relative',
+        'p-3 rounded-xl border transition-[background-color,border-color,box-shadow,transform] duration-normal ease-out-expo cursor-pointer group relative active:scale-[0.98]',
         isActive
-          ? 'bg-white dark:bg-blue-900/20 border-blue-500 shadow-md transform scale-[1.02]'
+          ? 'bg-blue-50/60 dark:bg-blue-900/20 border-blue-500 shadow-md ring-1 ring-blue-500/20'
           : isSelected
             ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700'
             : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-slate-600 hover:shadow-sm'
       )}
     >
-      {/* Selection Checkbox */}
+      {/* 多选勾选框 */}
       {isSelectionMode && (
         <div className="absolute top-2 left-2 z-10">
           <div
@@ -831,7 +832,7 @@ function RecordingItem({
         </div>
       </div>
 
-      {/* File info */}
+      {/* 音频文件元信息 */}
       <div
         className={cn(
           'flex items-center gap-2 text-[10px] text-slate-400',
@@ -843,7 +844,7 @@ function RecordingItem({
         <span>{item.fileMimeType.split('/')[1].toUpperCase()}</span>
       </div>
 
-      {/* Tags */}
+      {/* 标签列表 */}
       {item.tags.length > 0 && (
         <div className={cn('flex flex-wrap gap-1 mt-2', isSelectionMode && 'ml-7')}>
           {item.tags.slice(0, 3).map((tag) => (
@@ -862,12 +863,12 @@ function RecordingItem({
         </div>
       )}
 
-      {/* Action Buttons (visible on hover when not in selection mode) */}
+      {/* 悬停快捷操作按钮（仅在非多选模式下显示） */}
       {!isSelectionMode && (
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-fast ease-out-expo flex gap-1">
           <button
             onClick={onEdit}
-            className="p-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+            className="p-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 active:scale-90 transition-[background-color,transform] duration-fast"
             title="编辑"
           >
             <svg
@@ -886,7 +887,7 @@ function RecordingItem({
           </button>
           <button
             onClick={onDelete}
-            className="p-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 hover:border-red-300 dark:hover:border-red-700 transition-colors"
+            className="p-1.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 hover:border-red-300 dark:hover:border-red-700 active:scale-90 transition-[background-color,border-color,transform] duration-fast"
             title="删除"
           >
             <svg

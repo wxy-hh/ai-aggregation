@@ -4,6 +4,10 @@ import tailwindcssTypography from '@tailwindcss/typography';
 
 const config: Config = {
   darkMode: 'class',
+  future: {
+    // 启用仅在支持悬停的精细指针设备上生效 hover 样式，消除触控设备上的粘滞残留
+    hoverOnlyWhenSupported: true,
+  },
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -106,6 +110,18 @@ const config: Config = {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "avatar-glow-breathe": "avatar-glow-breathe 3.4s ease-in-out infinite",
+      },
+      transitionTimingFunction: {
+        'out-expo': 'cubic-bezier(0.23, 1, 0.32, 1)',
+        'in-out-expo': 'cubic-bezier(0.77, 0, 0.175, 1)',
+        drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+        spring: 'cubic-bezier(0.175, 0.885, 0.32, 1.1)',
+      },
+      transitionDuration: {
+        instant: '100ms',
+        fast: '160ms',
+        normal: '220ms',
+        slow: '300ms',
       },
     },
   },

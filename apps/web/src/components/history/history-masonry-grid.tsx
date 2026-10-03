@@ -153,7 +153,7 @@ export function HistoryMasonryGrid({
               itemRefs.current[index] = el;
             }}
             className={cn(
-              'absolute top-0 left-0',
+              'absolute top-0 left-0 transition-[transform] duration-300 ease-out',
               !isReady && 'invisible'
             )}
             style={{

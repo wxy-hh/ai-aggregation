@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, useId } from 'react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -55,7 +55,7 @@ const labelClass = 'text-xs font-semibold text-slate-500 dark:text-slate-400';
 const inputClass = cn(
   'h-11 rounded-xl border-slate-200/50 bg-white/80 text-sm text-slate-700',
   'shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_1px_1px_0_rgba(0,0,0,0.02)]',
-  'transition-all duration-200',
+  'transition-[border-color,background-color,box-shadow] duration-200 ease-out',
   'focus-visible:border-blue-500/50 focus-visible:bg-white/95 focus-visible:ring-2 focus-visible:ring-blue-500/10',
   'dark:border-slate-800/50 dark:bg-slate-900/80 dark:text-slate-100 dark:placeholder:text-slate-400',
   'dark:focus-visible:border-blue-500/50 dark:focus-visible:bg-slate-950/90'
@@ -65,14 +65,6 @@ const segmentListClass = cn(
   'grid h-11 grid-cols-2 rounded-xl border border-slate-200/50 bg-white/40 p-1',
   'shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] backdrop-blur-md backdrop-saturate-150',
   'dark:border-white/10 dark:bg-slate-900/40'
-);
-
-const segmentTriggerClass = cn(
-  'rounded-lg text-sm font-semibold transition-all duration-200',
-  'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100',
-  'data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm',
-  'data-[state=active]:ring-1 data-[state=active]:ring-blue-500/20',
-  'dark:data-[state=active]:bg-slate-800 dark:data-[state=active]:text-blue-400'
 );
 
 const popoverContentClass = cn(
@@ -91,8 +83,8 @@ const primaryBtnClass = cn(
   'relative min-h-11 overflow-hidden rounded-full px-6 text-sm font-semibold text-white',
   'bg-gradient-to-r from-blue-600 to-indigo-600',
   'shadow-[0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)]',
-  'transition-all duration-200',
-  'hover:scale-[1.02] hover:shadow-[0_12px_20px_-8px_rgba(59,130,246,0.25)]',
+  'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out',
+  'hover:shadow-[0_12px_20px_-8px_rgba(59,130,246,0.25)]',
   'active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950',
   'disabled:opacity-40 disabled:pointer-events-none'
 );
@@ -101,8 +93,8 @@ const secondaryBtnClass = cn(
   'relative min-h-11 overflow-hidden rounded-full border border-slate-200/50 px-6 text-sm font-semibold',
   'bg-white/40 text-slate-700 backdrop-blur-xl backdrop-saturate-150',
   'shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_1px_1px_0_rgba(0,0,0,0.02)]',
-  'transition-all duration-200',
-  'hover:scale-[1.02] hover:bg-white/60 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)]',
+  'transition-[background-color,border-color,box-shadow,transform] duration-200 ease-out',
+  'hover:bg-white/60 hover:shadow-[0_0_15px_rgba(59,130,246,0.15)]',
   'active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
   'dark:border-slate-800/50 dark:bg-slate-900/40 dark:text-slate-200 dark:hover:bg-slate-800/60 dark:focus-visible:ring-offset-slate-950',
   'disabled:opacity-40 disabled:pointer-events-none'
@@ -122,6 +114,7 @@ export function BaziInputForm({
   onSubmit,
   onReset,
 }: BaziInputFormProps) {
+  const instanceId = useId();
   const nameLength = value.name.trim().length;
   const locationLength = value.location.name.trim().length;
 
@@ -220,19 +213,43 @@ export function BaziInputForm({
                 <Users className="mr-1 inline h-4 w-4 text-blue-500" />
                 性别
               </Label>
-              <Tabs
-                value={value.gender}
-                onValueChange={(next) => onChange('gender', next as 'male' | 'female')}
+              <div
+                role="radiogroup"
+                aria-label="选择性别"
+                className={segmentListClass}
               >
-                <TabsList className={segmentListClass}>
-                  <TabsTrigger value="male" disabled={submitting} className={segmentTriggerClass}>
-                    乾（男）
-                  </TabsTrigger>
-                  <TabsTrigger value="female" disabled={submitting} className={segmentTriggerClass}>
-                    坤（女）
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+                {[
+                  { value: 'male', label: '乾（男）' },
+                  { value: 'female', label: '坤（女）' },
+                ].map((item) => {
+                  const active = value.gender === item.value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={submitting}
+                      onClick={() => onChange('gender', item.value as 'male' | 'female')}
+                      className={cn(
+                        'relative flex items-center justify-center rounded-lg text-sm font-semibold outline-none select-none transition-colors duration-200 active:scale-[0.97]',
+                        active
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
+                      )}
+                    >
+                      {active && (
+                        <motion.div
+                          layoutId={`baziGenderIndicator-${instanceId}`}
+                          className="absolute inset-0 rounded-lg bg-white shadow-sm ring-1 ring-blue-500/20 dark:bg-slate-800"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-10">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
@@ -246,19 +263,43 @@ export function BaziInputForm({
           <div className="mt-4 space-y-4">
             <div className="space-y-2">
               <Label className={labelClass}>历法</Label>
-              <Tabs
-                value={value.calendarType}
-                onValueChange={(next) => onChange('calendarType', next as 'lunar' | 'solar')}
+              <div
+                role="radiogroup"
+                aria-label="选择历法"
+                className={segmentListClass}
               >
-                <TabsList className={segmentListClass}>
-                  <TabsTrigger value="lunar" disabled={submitting} className={segmentTriggerClass}>
-                    农历
-                  </TabsTrigger>
-                  <TabsTrigger value="solar" disabled={submitting} className={segmentTriggerClass}>
-                    阳历
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+                {[
+                  { value: 'lunar', label: '农历' },
+                  { value: 'solar', label: '阳历' },
+                ].map((item) => {
+                  const active = value.calendarType === item.value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      disabled={submitting}
+                      onClick={() => onChange('calendarType', item.value as 'lunar' | 'solar')}
+                      className={cn(
+                        'relative flex items-center justify-center rounded-lg text-sm font-semibold outline-none select-none transition-colors duration-200 active:scale-[0.97]',
+                        active
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
+                      )}
+                    >
+                      {active && (
+                        <motion.div
+                          layoutId={`baziCalendarIndicator-${instanceId}`}
+                          className="absolute inset-0 rounded-lg bg-white shadow-sm ring-1 ring-blue-500/20 dark:bg-slate-800"
+                          transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                      <span className="relative z-10">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">

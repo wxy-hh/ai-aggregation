@@ -12,7 +12,16 @@ import { QuotaExhaustedDialog } from '@/components/quota-exhausted-dialog';
 // 构建时间：通过环境变量注入，用于控制台输出判断更新是否成功
 const BUILD_TIME = process.env.BUILD_TIME || 'unknown';
 
-export const viewport: Viewport = { interactiveWidget: 'resizes-content' };
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#020617' },
+  ],
+};
 
 export const metadata: Metadata = {
   title: 'AI 聚合平台',
