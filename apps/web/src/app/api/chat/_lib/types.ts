@@ -26,6 +26,8 @@ export interface ChatStreamFinish {
   outputText: string;
   /** 失败/取消原因（release 记录与日志用） */
   reason?: string;
+  /** agent 模式观测计数：服务端执行的联网搜索次数（providerExecuted，不计入自有工具上限；仅观测，不影响计费） */
+  searchCalls?: number;
 }
 
 export interface ChatContext {
