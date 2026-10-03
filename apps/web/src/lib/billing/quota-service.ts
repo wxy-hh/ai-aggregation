@@ -10,5 +10,6 @@ export {
   settleAiQuota,
   recordMediaTask,
   releaseAiQuota,
+  getAvailableQuota,
 } from '@repo/db';
 export type { ReserveAiQuotaInput } from '@repo/db';

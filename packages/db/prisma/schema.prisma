@@ -15,8 +15,8 @@ model User {
   email         String?
   name          String?
   passwordHash  String?
-  role          String   @default("user")   // "user" | "admin"
-  status        String   @default("active") // "active" | "disabled"
+  role          String   @default("user")   // 用户角色："user"（普通用户）| "admin"（管理员）
+  status        String   @default("active") // 账号状态："active"（正常）| "disabled"（已禁用）
   tokens        Int      @default(20000)    // AI Token 剩余额度（每次调用按实际用量扣减）
   isAnonymous   Boolean  @default(false)    // 是否为匿名用户（设备指纹自动创建）
   deviceHash    String?  @unique            // 匿名用户设备哈希，用于查找与去重
@@ -39,6 +39,8 @@ model User {
   quotaAccount        QuotaAccount?
   quotaReservations   QuotaReservation[]
   quotaLedgerEntries  QuotaLedgerEntry[]
+  webhookTools        UserWebhookTool[]
+  webhookToolCalls    WebhookToolCall[]
   @@map("users")
 }
 
@@ -406,4 +408,58 @@ model FeedbackTag {
   createdAt   DateTime @default(now())
 
   @@map("feedback_tags")
+}
+
+// Webhook 请求方法枚举
+enum WebhookHttpMethod {
+  GET
+  POST
+}
+
+// 用户自定义 Webhook 工具定义
+model UserWebhookTool {
+  id                 String            @id @default(cuid())
+  userId             String
+  name               String
+  callName           String
+  description        String            @db.Text
+  url                String            @db.Text
+  method             WebhookHttpMethod @default(POST)
+  authHeaderName     String?
+  authHeaderValueEnc String?           @db.Text
+  params             Json              @default("[]")
+  enabled            Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calls              WebhookToolCall[]
+
+  @@unique([userId, callName])
+  @@index([userId])
+  @@index([userId, enabled])
+  @@map("user_webhook_tools")
+}
+
+// Webhook 工具调用审计记录
+model WebhookToolCall {
+  id            String            @id @default(cuid())
+  userId        String
+  toolId        String?
+  hostname      String
+  method        WebhookHttpMethod
+  statusCode    Int?
+  durationMs    Int
+  responseBytes Int               @default(0)
+  outcome       String            // 结果状态：success / failed / skipped / blocked
+  errorKind     String?
+  createdAt     DateTime          @default(now())
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool          UserWebhookTool?  @relation(fields: [toolId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([toolId])
+  @@index([createdAt])
+  @@map("webhook_tool_calls")
 }

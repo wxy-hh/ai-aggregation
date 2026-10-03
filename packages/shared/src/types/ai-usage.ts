@@ -2,12 +2,19 @@ import type { BillingStatus, MeterType } from './billing';
 
 export type AiUsageFeature =
   | 'chat'
+  /** agent 模式对话（工具调用；按次一口价，预留 = 单步上限 × 实际步数） */
+  | 'chat-agent'
   | 'voice'
   | 'image'
   | 'video'
   | 'video_prompt'
   | 'destiny'
   | 'resume';
+
+/**
+ * 预留配额支持的 feature 子集（排除按任务计费的 image / video，其余均基于 Token 预留）
+ */
+export type ReserveFeature = Exclude<AiUsageFeature, 'image' | 'video'>;
 
 export type AiUsageAction =
   | 'chat-stream'

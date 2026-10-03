@@ -18,7 +18,7 @@
  * ```
  */
 
-import type { AiUsageAction, BillingMeasurement, MeterType } from '@repo/shared';
+import type { AiUsageAction, BillingMeasurement, MeterType, ReserveFeature } from '@repo/shared';
 import { normalizeUsage } from '@repo/shared';
 import {
   reserveChatQuota,
@@ -33,8 +33,8 @@ import {
 } from './usage-measurement';
 import { safeRecordAiUsage } from './ai-usage';
 
-/** reserveChatQuota 支持的 feature 子集（不含 'image' | 'video'） */
-type ReserveFeature = 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+// 从 @repo/shared 单源派生的 ReserveFeature 重导出
+export type { ReserveFeature } from '@repo/shared';
 
 export interface QuotaSessionReserveInput {
   userId: string;

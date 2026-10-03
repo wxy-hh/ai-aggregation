@@ -25,6 +25,10 @@ export const AUTH_RATE_LIMITS = {
   resetPassword: { prefix: 'auth:reset-password', window: 60, limit: 10 },
   emailSendCode: { prefix: 'auth:email-send-code', window: 60, limit: 5 },
   emailBindVerify: { prefix: 'auth:email-bind-verify', window: 60, limit: 10 },
+  // 用户自定义 Webhook 工具 CRUD 限流（每用户约 30 次/分钟）
+  agentToolsCrud: { prefix: 'agent-tools:crud', window: 60, limit: 30 },
+  // Webhook 工具握手级连通性测试限流（每用户约 10 次/分钟）
+  agentToolsTest: { prefix: 'agent-tools:test', window: 60, limit: 10 },
 } as const satisfies Record<string, AuthRateLimitConfig>;
 
 /**
@@ -60,15 +64,20 @@ export function getAuthRateLimiter(config: AuthRateLimitConfig): RateLimiter {
 }
 
 /**
- * 认证请求的 IP 级限流。
+ * 请求限流检查（支持客户端 IP 或用户 ID 级限流）。
  *
  * 返回错误响应表示应中断请求；返回 null 表示放行。
  * 映射规则：设施故障（limiter-unavailable）→ 503（无窗口，不下发 Retry-After）；
  * 正常超限 → 429 + 剩余等待秒数。
+ *
+ * @param req NextRequest 请求对象
+ * @param config 限流配置项
+ * @param keyOverride 可选指定的限流键（如已登录用户的 userId），未指定则回退为客户端 IP
  */
 export async function enforceAuthRateLimit(
   req: NextRequest,
-  config: AuthRateLimitConfig
+  config: AuthRateLimitConfig,
+  keyOverride?: string
 ): Promise<Response | null> {
   let limiter: RateLimiter;
   try {
@@ -79,7 +88,8 @@ export async function enforceAuthRateLimit(
     return ApiError.serviceUnavailable('服务暂不可用，请稍后再试');
   }
 
-  const result = await limiter.check(getClientIp(req));
+  const key = keyOverride || getClientIp(req);
+  const result = await limiter.check(key);
 
   if (result.allowed) {
     return null;

@@ -37,7 +37,7 @@ describe('consumeChatResponse', () => {
     ]);
     const onChunk = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk })).resolves.toBeUndefined();
     expect(onChunk).toHaveBeenCalledTimes(2);
     expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['你好', '世界']);
   });
@@ -56,7 +56,7 @@ describe('consumeChatResponse', () => {
     const onChunk = vi.fn();
     const onDone = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk, undefined, onDone)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk, onDone })).resolves.toBeUndefined();
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith(usage);
   });
@@ -68,7 +68,7 @@ describe('consumeChatResponse', () => {
     ]);
     const onDone = vi.fn();
 
-    await expect(consumeChatResponse(res, vi.fn(), undefined, onDone)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk: vi.fn(), onDone })).resolves.toBeUndefined();
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onDone).toHaveBeenCalledWith(undefined);
   });
@@ -81,20 +81,20 @@ describe('consumeChatResponse', () => {
     ]);
     const onChunk = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk)).rejects.toThrow('回答流被中断');
+    await expect(consumeChatResponse(res, { onChunk })).rejects.toThrow('回答流被中断');
     expect(onChunk).toHaveBeenCalledTimes(2); // 已到达的文本仍应回调
   });
 
   it('回归：完全空的流（无任何事件）必须抛错，不能显示为已成功', async () => {
     const res = sseResponse(['data: {"type":"response.created","foo":1}\n\n']);
-    await expect(consumeChatResponse(res, vi.fn())).rejects.toThrow('回答流被中断');
+    await expect(consumeChatResponse(res, { onChunk: vi.fn() })).rejects.toThrow('回答流被中断');
   });
 
   it('error 事件直接抛出错误信息', async () => {
     const res = sseResponse([
       'data: {"type":"error","error":"模型未返回任何内容，请重试"}\n\n',
     ]);
-    await expect(consumeChatResponse(res, vi.fn())).rejects.toThrow(
+    await expect(consumeChatResponse(res, { onChunk: vi.fn() })).rejects.toThrow(
       '模型未返回任何内容，请重试'
     );
   });
@@ -108,7 +108,7 @@ describe('consumeChatResponse', () => {
     const onChunk = vi.fn();
     const onWarning = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk, onWarning)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk, onWarning })).resolves.toBeUndefined();
     expect(onWarning).toHaveBeenCalledWith('回答在此处被截断，内容可能不完整');
     expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['后续内容']);
   });
@@ -121,7 +121,7 @@ describe('consumeChatResponse', () => {
     ]);
     const onChunk = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk })).resolves.toBeUndefined();
     expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['你好']);
   });
 
@@ -134,19 +134,19 @@ describe('consumeChatResponse', () => {
     ]);
     const onChunk = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk })).resolves.toBeUndefined();
     expect(onChunk).not.toHaveBeenCalled();
 
     // 只有 response.done、没有任何契约内终止事件 → 一律按截断抛错
     const res2 = sseResponse(['data: {"type":"response.done"}\n\n']);
-    await expect(consumeChatResponse(res2, vi.fn())).rejects.toThrow('回答流被中断');
+    await expect(consumeChatResponse(res2, { onChunk: vi.fn() })).rejects.toThrow('回答流被中断');
   });
 
   it('非 JSON 帧按协议外数据忽略，不当作文本输出', async () => {
     const res = sseResponse(['data: 纯文本帧\n\n', 'data: {"type":"done"}\n\n']);
     const onChunk = vi.fn();
 
-    await expect(consumeChatResponse(res, onChunk)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(res, { onChunk })).resolves.toBeUndefined();
     expect(onChunk).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('consumeChatResponse', () => {
     ]);
     const onChunkWithPing = vi.fn();
 
-    await expect(consumeChatResponse(resWithPing, onChunkWithPing)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(resWithPing, { onChunk: onChunkWithPing })).resolves.toBeUndefined();
     expect(onChunkWithPing).toHaveBeenCalledTimes(2);
     expect(onChunkWithPing.mock.calls.map((c) => c[0])).toEqual(['你好', '世界']);
 
@@ -172,16 +172,82 @@ describe('consumeChatResponse', () => {
       'data: {"type":"done"}\n\n',
     ]);
     const onChunkWithoutPing = vi.fn();
-    await expect(consumeChatResponse(resWithoutPing, onChunkWithoutPing)).resolves.toBeUndefined();
+    await expect(consumeChatResponse(resWithoutPing, { onChunk: onChunkWithoutPing })).resolves.toBeUndefined();
     expect(onChunkWithPing.mock.calls).toEqual(onChunkWithoutPing.mock.calls);
+  });
+
+  it('reasoning-delta 帧回调 onReasoning（增量原样透传），不终止流、不触发 onChunk', async () => {
+    const res = sseResponse([
+      'data: {"type":"reasoning-delta","text":"先分析问题"}\n\n',
+      'data: {"type":"reasoning-delta","text":"再给出结论"}\n\n',
+      'data: {"type":"text-delta","text":"正文"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onReasoning = vi.fn();
+
+    await expect(consumeChatResponse(res, { onChunk, onReasoning })).resolves.toBeUndefined();
+    expect(onReasoning.mock.calls.map((c) => c[0])).toEqual(['先分析问题', '再给出结论']);
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+  });
+
+  it('agent_note 帧回调 onAgentNote（增量原样透传），不终止流、不触发 onChunk', async () => {
+    const res = sseResponse([
+      'data: {"type":"agent_note","text":"先查查这个"}\n\n',
+      'data: {"type":"agent_note","text":"再帮我分析"}\n\n',
+      'data: {"type":"text-delta","text":"正文"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onAgentNote = vi.fn();
+
+    await expect(consumeChatResponse(res, { onChunk, onAgentNote })).resolves.toBeUndefined();
+    expect(onAgentNote.mock.calls.map((c) => c[0])).toEqual(['先查查这个', '再帮我分析']);
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+  });
+
+  it('不传 onReasoning 时 reasoning-delta 帧被显式忽略，其余行为与现状一致', async () => {
+    const res = sseResponse([
+      'data: {"type":"reasoning-delta","text":"被忽略的推理"}\n\n',
+      'data: {"type":"text-delta","text":"正文"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+
+    await expect(consumeChatResponse(res, { onChunk, onDone })).resolves.toBeUndefined();
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('不传 onAgentNote 时 agent_note 帧被显式忽略，其余行为与现状一致', async () => {
+    const res = sseResponse([
+      'data: {"type":"agent_note","text":"被忽略的旁白"}\n\n',
+      'data: {"type":"text-delta","text":"正文"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+
+    await expect(consumeChatResponse(res, { onChunk, onDone })).resolves.toBeUndefined();
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('ChatStreamEvent 契约（@repo/shared）', () => {
-  it('parseChatStreamEvent 解析 4 种契约事件', () => {
+  it('parseChatStreamEvent 解析契约事件（含 agent_note）', () => {
     expect(parseChatStreamEvent({ type: 'text-delta', text: '你好' })).toEqual({
       type: 'text-delta',
       text: '你好',
+    });
+    expect(parseChatStreamEvent({ type: 'reasoning-delta', text: '推理片段' })).toEqual({
+      type: 'reasoning-delta',
+      text: '推理片段',
+    });
+    expect(parseChatStreamEvent({ type: 'agent_note', text: '正在规划步骤' })).toEqual({
+      type: 'agent_note',
+      text: '正在规划步骤',
     });
     expect(parseChatStreamEvent({ type: 'done' })).toEqual({ type: 'done' });
     expect(parseChatStreamEvent({ type: 'warning', warning: '警告' })).toEqual({
@@ -198,6 +264,14 @@ describe('ChatStreamEvent 契约（@repo/shared）', () => {
     expect(parseChatStreamEvent({ type: 'response.created' })).toBeNull();
     expect(parseChatStreamEvent({ type: 'text-delta', text: '' })).toBeNull();
     expect(parseChatStreamEvent({ type: 'text-delta', text: 123 })).toBeNull();
+    // reasoning-delta 与 text-delta 同款严格度：空增量 / 非字符串一律视为非法帧
+    expect(parseChatStreamEvent({ type: 'reasoning-delta', text: '' })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'reasoning-delta', text: 123 })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'reasoning-delta' })).toBeNull();
+    // agent_note 与 text-delta 同款严格度：空增量 / 非字符串一律视为非法帧
+    expect(parseChatStreamEvent({ type: 'agent_note', text: '' })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'agent_note', text: 123 })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'agent_note' })).toBeNull();
     expect(parseChatStreamEvent({ type: 'done', extra: 1 })).toEqual({ type: 'done' });
     expect(parseChatStreamEvent(null)).toBeNull();
     expect(parseChatStreamEvent('字符串')).toBeNull();
@@ -296,6 +370,8 @@ describe('ChatStreamEvent 契约（@repo/shared）', () => {
   it('encodeChatStreamEvent 产物可被 parse 解析回原事件（编码解码同源）', () => {
     const events = [
       { type: 'text-delta', text: '你好' },
+      { type: 'reasoning-delta', text: '推理片段' },
+      { type: 'agent_note', text: '过程旁白' },
       { type: 'done' },
       {
         type: 'done',
@@ -396,6 +472,90 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       { onWarning }
     );
     expect(onWarning).toHaveBeenCalledWith('回答在此处被截断，内容可能不完整');
+  });
+
+  it('reasoning-delta 事件内部独立累计，onReasoning 收到累计推理文本', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"reasoning-delta","text":"第一步"}\n\n',
+        'data: {"type":"reasoning-delta","text":"第二步"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    const onChunk = vi.fn();
+    const onReasoning = vi.fn();
+
+    const text = await streamChatResponse(
+      { body: { messages: [] }, signal: new AbortController().signal },
+      { onChunk, onReasoning }
+    );
+
+    // 推理与正文各自独立累计：推理累计值不影响正文累计与返回值
+    expect(onReasoning.mock.calls.map((c) => c[0])).toEqual(['第一步', '第一步第二步']);
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+    expect(text).toBe('正文');
+  });
+
+  it('不传 onReasoning 时 reasoning-delta 被忽略，正文行为不变', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"reasoning-delta","text":"被忽略的推理"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    const onChunk = vi.fn();
+
+    const text = await streamChatResponse(
+      { body: { messages: [] }, signal: new AbortController().signal },
+      { onChunk }
+    );
+
+    expect(text).toBe('正文');
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+  });
+
+  it('agent_note 事件内部独立累计，onAgentNote 收到累计旁白文本', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"agent_note","text":"第一轮思考"}\n\n',
+        'data: {"type":"agent_note","text":"，第二轮继续"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    const onChunk = vi.fn();
+    const onAgentNote = vi.fn();
+
+    const text = await streamChatResponse(
+      { body: { messages: [] }, signal: new AbortController().signal },
+      { onChunk, onAgentNote }
+    );
+
+    // 旁白与正文各自独立累计：旁白累计值不影响正文累计与返回值
+    expect(onAgentNote.mock.calls.map((c) => c[0])).toEqual(['第一轮思考', '第一轮思考，第二轮继续']);
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
+    expect(text).toBe('正文');
+  });
+
+  it('不传 onAgentNote 时 agent_note 被忽略，正文行为不变', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"agent_note","text":"被忽略的旁白"}\n\n',
+        'data: {"type":"text-delta","text":"正文"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    const onChunk = vi.fn();
+
+    const text = await streamChatResponse(
+      { body: { messages: [] }, signal: new AbortController().signal },
+      { onChunk }
+    );
+
+    expect(text).toBe('正文');
+    expect(onChunk.mock.calls.map((c) => c[0])).toEqual(['正文']);
   });
 
   it('HTTP !ok：优先取上游 error 文案，JSON 解析失败时回退状态码文案', async () => {
