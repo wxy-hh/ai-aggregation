@@ -103,7 +103,7 @@ export const AttachmentPreview = memo(function AttachmentPreview({
     return (
       <>
         {/* 缩略图容器：普通 div，无容器级按键监听或按钮角色，点击交互由兄弟覆层按钮提供 */}
-        <div className="relative group mb-2 inline-block select-none">
+        <div className="relative group/image mb-2 inline-block select-none">
           {/* 图片缩略图 */}
           <img
             src={attachment.imageUrl}
@@ -126,7 +126,7 @@ export const AttachmentPreview = memo(function AttachmentPreview({
 
           {/* 桌面端悬停操作条（移动端常显）：z-10 确保层级高于覆层按钮 */}
           <div
-            className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-xl bg-slate-950/70 p-1 border border-white/20 backdrop-blur-md shadow-lg transition-opacity duration-fast ease-out-expo max-sm:opacity-100 opacity-0 group-hover:opacity-100"
+            className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-xl bg-slate-950/70 p-1 border border-white/20 backdrop-blur-md shadow-lg transition-opacity duration-fast ease-out-expo max-sm:opacity-100 opacity-0 group-hover/image:opacity-100"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 查看原图按钮：热区 >= 44x44 */}
