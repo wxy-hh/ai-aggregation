@@ -22,11 +22,10 @@
  * - AGENT_MAX_TOOL_CALLS_TOTAL = 10（每请求全局工具上限）；
  * - AGENT_RUN_TIME_BUDGET_MS = 240s（整请求运行时间预算，决策前与工具执行前双重检查）。
  *
- * 退化保护与专项上限：
- * - 重复调用去重：以「工具名 + 参数稳定序列化」为键缓存首次执行结果，第 2 次相同调用不重新执行，
- *   仍推成对事件，注入模型的内容为缓存结果追加软提示；缓存结果首次已过检，不重复过检；
- * - 连败熔断：全局连续工具失败达到 3 次即跳出循环直接进收尾步；
- * - 出图专项上限：image_generate 每请求硬上限 3 次，第 4 次起走 skip 机制。
+ * 工具治理（去重缓存 / 单轮、全局、出图三重上限 / 连败熔断 / 时间预算 / 合规二道检查 /
+ * 重试引导）已收敛于深模块 ToolExecutionPipeline（lib/agent/tool-pipeline.ts，ADR-0008）：
+ * 本编排器只调用其窄接口（beginRound / executeCall / shouldHalt），不再内联治理状态；
+ * 循环顶与轮末共用 shouldHalt（等价性论证见 ADR-0008），用户中断单独检查。
  *
  * 传输与协议：
  * - 一期 400 根因 = SDK store:true 默认下把响应历史项序列化为 item_reference，Ark 拒绝（并非 Responses API 不支持多轮）；
@@ -53,7 +52,8 @@ import { encodeSseEvent } from '../sse';
 import { buildChatBlockedText, detectChatSensitiveTopic } from '../chat-safety';
 import { resolveChatStreamUsage } from '../chat-usage';
 import type { ChatStreamFinish } from '../types';
-import { DEFAULT_TOOL_POLICY, runToolWithPolicy, summarizeArgs } from '@/lib/agent/tool-policy';
+import { summarizeArgs } from '@/lib/agent/tool-policy';
+import { createToolExecutionPipeline } from '@/lib/agent/tool-pipeline';
 import {
   AGENT_MAX_CONSECUTIVE_FAILURES,
   AGENT_MAX_IMAGE_GENERATES,
@@ -62,12 +62,7 @@ import {
   AGENT_MAX_TOOL_CALLS_TOTAL,
   AGENT_RUN_TIME_BUDGET_MS,
 } from './agent-config';
-import {
-  validateToolArgs,
-  type ToolExecutionContext,
-  type ToolExecutionResult,
-  type ToolRegistry,
-} from '@/lib/agent/registry';
+import type { ToolRegistry } from '@/lib/agent/registry';
 
 export interface AgentRunOptions {
   userId: string;
@@ -91,14 +86,6 @@ interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-}
-
-/** 工具执行去重缓存条目 */
-interface CachedToolExecution {
-  ok: boolean;
-  guardedContent: string;
-  summaryForDisplay: string;
-  attachment?: ToolExecutionResult['attachment'];
 }
 
 /** 把 ChatMessage 投影为模型消息（agent 模式暂不支持附件输入，仅保留角色与内容） */
@@ -138,27 +125,6 @@ function extractSearchQuery(output: unknown): string | null {
   return null;
 }
 
-/** 对任意对象进行 key 排序后的稳定 JSON 序列化，用于工具调用的去重缓存键 */
-function stableSerialize(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return '[' + value.map(stableSerialize).join(',') + ']';
-  }
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return (
-    '{' +
-    keys
-      .map(
-        (key) =>
-          JSON.stringify(key) + ':' + stableSerialize((value as Record<string, unknown>)[key])
-      )
-      .join(',') +
-    '}'
-  );
-}
-
 /**
  * 执行 agent 编排，返回 SSE 字节流（已编码为契约事件）。
  */
@@ -180,13 +146,24 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       const effectiveMaxSteps = options.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
 
-      // 计数器与缓存
-      let totalToolCallsCount = 0;
-      let imageGenerateCallsCount = 0;
       // 服务端搜索调用计数，仅观测
       let searchCallsCount = 0;
-      let consecutiveToolFailures = 0;
-      const toolCache = new Map<string, CachedToolExecution>();
+
+      // 工具执行管道：本请求全部工具治理的唯一归属（去重 / 三重上限 / 连败熔断 /
+      // 时间预算 / 合规二道检查 / 重试引导，见 ADR-0008）
+      const pipeline = createToolExecutionPipeline({
+        registry,
+        ctx: { userId: options.userId, signal, errorId },
+        limits: {
+          maxTotalCalls: AGENT_MAX_TOOL_CALLS_TOTAL,
+          maxCallsPerRound: AGENT_MAX_TOOL_CALLS_PER_ROUND,
+          maxImageGenerates: AGENT_MAX_IMAGE_GENERATES,
+          maxConsecutiveFailures: AGENT_MAX_CONSECUTIVE_FAILURES,
+        },
+        startedAt,
+        runTimeBudgetMs,
+        guardContent: guardToolContent,
+      });
 
       // 消息序列：随多步循环递增回注
       let currentMessages: ModelMessage[] = toModelMessages(options.messages);
@@ -247,15 +224,13 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
         // ==================== 主循环：决策步 + 工具执行 ====================
         while (roundIndex < maxDecisionSteps) {
-          // 每轮决策开始前检查时间预算：耗尽即跳收尾步
-          if (Date.now() - startedAt > runTimeBudgetMs) {
-            break;
-          }
-          if (signal.aborted) {
+          // 每轮决策开始前检查：用户中断或治理停止条件（时间预算 / 连败熔断 / 全局上限）
+          if (signal.aborted || pipeline.shouldHalt()) {
             break;
           }
 
           roundIndex++;
+          pipeline.beginRound();
 
           const { chained, messages: stepMessages } = resolveStepPayload();
 
@@ -357,12 +332,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             controller.enqueue(encodeSseEvent({ type: 'agent_note', text: decisionBufferedText }));
           }
 
-          // 顺序执行本轮工具调用
-          const toolContext: ToolExecutionContext = {
-            userId: options.userId,
-            signal,
-            errorId,
-          };
+          // 顺序执行本轮工具调用（去重 / 上限 / 熔断 / 合规 / 引导全部收归管道内部）
           const toolResultParts: Array<{
             type: 'tool-result';
             toolCallId: string;
@@ -370,12 +340,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             output: { type: 'text'; value: string };
           }> = [];
 
-          for (const [callIndex, call] of toolCalls.entries()) {
+          for (const call of toolCalls) {
             const callId = call.toolCallId;
             const name = call.toolName;
-            totalToolCallsCount++;
 
-            // 工具调用事件推送
+            // 工具调用事件推送（先于治理判定：即使随即被 skip，前端也先收到卡片）
             controller.enqueue(
               encodeSseEvent({
                 type: 'tool_call',
@@ -383,107 +352,18 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               })
             );
 
-            // 检查跳过条件（取消 / 全局超限 / 单轮超限 / 时间耗尽 / 出图上限）
-            let skipReason: string | null = null;
-            let imageCapExceeded = false;
-            if (signal.aborted) {
-              skipReason = '已取消';
-            } else if (totalToolCallsCount > AGENT_MAX_TOOL_CALLS_TOTAL) {
-              skipReason = `本次请求累计工具调用数量已达上限（${AGENT_MAX_TOOL_CALLS_TOTAL} 次）`;
-            } else if (callIndex >= AGENT_MAX_TOOL_CALLS_PER_ROUND) {
-              skipReason = `本轮工具调用数量超过上限（${AGENT_MAX_TOOL_CALLS_PER_ROUND} 次）`;
-            } else if (Date.now() - startedAt > runTimeBudgetMs) {
-              skipReason = '执行时间超出预算';
-            } else if (name === 'image_generate') {
-              imageGenerateCallsCount++;
-              if (imageGenerateCallsCount > AGENT_MAX_IMAGE_GENERATES) {
-                imageCapExceeded = true;
-                skipReason = `本次对话的出图次数已用完（${AGENT_MAX_IMAGE_GENERATES} 次）`;
-              }
-            }
+            const outcome = await pipeline.executeCall({
+              toolCallId: callId,
+              toolName: name,
+              input: call.input,
+            });
 
-            let outcome: ToolExecutionResult;
-            let isCached = false;
-            let cachedGuardedContent = '';
-            // 首次执行已过检的内容（复用缓存计算结果，避免对同一段内容重复过检）
-            let freshGuardedContent = '';
-
-            if (skipReason) {
-              if (imageCapExceeded) {
-                outcome = {
-                  ok: false,
-                  contentForModel: `本次对话的出图次数已用完（${AGENT_MAX_IMAGE_GENERATES} 次），请基于已有内容作答`,
-                  summaryForDisplay: `未执行：本次对话的出图次数已用完（${AGENT_MAX_IMAGE_GENERATES} 次）`,
-                };
-              } else {
-                outcome = {
-                  ok: false,
-                  contentForModel: `工具「${name}」未执行：${skipReason}。请在回答中如实告知用户这次调用未执行。`,
-                  summaryForDisplay: `未执行：${skipReason}`,
-                };
-              }
-            } else {
-              // 退化保护 1：重复调用去重
-              const cacheKey = `${name}:${stableSerialize(call.input)}`;
-              const cached = toolCache.get(cacheKey);
-
-              if (cached) {
-                isCached = true;
-                cachedGuardedContent = cached.guardedContent;
-                // 重复调用不下发 attachment：首轮已并入消息，重复下发会让前端按新 callId
-                // 再渲染同一张图，可见张数破出图上限（评审 D）
-                outcome = {
-                  ok: cached.ok,
-                  contentForModel: cached.guardedContent,
-                  summaryForDisplay: cached.summaryForDisplay,
-                };
-              } else {
-                // 首次调用：真实执行工具
-                const spec = registry.get(name);
-                if (!spec) {
-                  outcome = {
-                    ok: false,
-                    contentForModel: `工具「${name}」不存在，请使用已提供的工具。`,
-                    summaryForDisplay: '工具不存在',
-                  };
-                } else {
-                  const validation = validateToolArgs(spec, call.input);
-                  outcome = validation.ok
-                    ? await runToolWithPolicy(
-                        spec,
-                        validation.args,
-                        toolContext,
-                        DEFAULT_TOOL_POLICY
-                      )
-                    : {
-                        ok: false,
-                        contentForModel: `工具参数不合法：${validation.reason}。请修正参数后重试。`,
-                        summaryForDisplay: `参数不合法：${validation.reason}`,
-                      };
-                }
-
-                // 首次执行结果过检后存入缓存；同时留存过检后内容，下方回注直接复用（避免二次过检）
-                const guarded = guardToolContent(outcome.contentForModel, name);
-                freshGuardedContent = guarded;
-                toolCache.set(cacheKey, {
-                  ok: outcome.ok,
-                  guardedContent: guarded,
-                  summaryForDisplay: outcome.summaryForDisplay,
-                  attachment: outcome.attachment,
-                });
-              }
-            }
-
-            // 工具成功交付产物即视为本轮有产出，且清零连败计数
+            // 工具成功交付产物即视为本轮有产出（是否按 success 结算由 hasOutput 三态判定）
             if (outcome.ok) {
               toolProducedOutput = true;
-              consecutiveToolFailures = 0;
-            } else {
-              // 失败或被跳过：连败计数递增
-              consecutiveToolFailures++;
             }
 
-            // 推送 tool_result 事件
+            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证）
             controller.enqueue(
               encodeSseEvent({
                 type: 'tool_result',
@@ -495,23 +375,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               })
             );
 
-            // 组装回注给模型的内容
-            let finalModelContent: string;
-            if (isCached) {
-              // 重复调用：缓存内容追加软提示，不再重复过检
-              finalModelContent = `${cachedGuardedContent}\n\n该调用已执行过，结果同前，请基于现有信息作答或调整参数。`;
-            } else if (skipReason) {
-              finalModelContent = outcome.contentForModel;
-            } else {
-              // 首次执行：复用上面过检后的内容（不重复过检）
-              finalModelContent = freshGuardedContent;
-            }
-
+            // 回注给模型的内容：软提示 / 未执行 / 过检后内容均由管道组装完毕
             toolResultParts.push({
               type: 'tool-result',
               toolCallId: callId,
               toolName: name,
-              output: { type: 'text', value: finalModelContent },
+              output: { type: 'text', value: outcome.contentForModel },
             });
           }
 
@@ -525,14 +394,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             toolMessage,
           ];
 
-          // 检查退化保护与边界熔断：连败熔断、全局工具上限、时间耗尽
-          if (consecutiveToolFailures >= AGENT_MAX_CONSECUTIVE_FAILURES) {
-            break;
-          }
-          if (totalToolCallsCount >= AGENT_MAX_TOOL_CALLS_TOTAL) {
-            break;
-          }
-          if (Date.now() - startedAt > runTimeBudgetMs) {
+          // 退化保护与边界熔断（连败 / 全局上限 / 时间耗尽）统一由管道的停止判定表达
+          if (pipeline.shouldHalt()) {
             break;
           }
         }
