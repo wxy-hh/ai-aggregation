@@ -66,3 +66,12 @@ Agent 多步自主循环中「自有工具」执行的唯一深模块（`ToolExe
 编排器在每轮决策步结束后消费的强类型标准动作（`StepAction`）。  
 包含直接交付回答（`deliver_answer`）、无文本引导续轮（`nudge_continue`）、派发执行本地工具（`execute_local_tools`）与空决策结束（`empty_finish`）四种归一化状态。见 ADR-0009。
 
+### 链式会话状态机
+管理 Agent 与火山 Ark Responses API 多步交互的单一职责深模块（`ChainedMessageSession`）。  
+内部收敛 `previous_response_id` 链状态追踪、单条增量消息（`pendingIncrement`）提取与全量历史池维护，对外仅通过极窄接口 `getStepPayload` 产出当前步骤发送载荷。见 ADR-0010。
+
+### 断链自愈回退
+链式状态机在遭遇响应缺少 ID 或链路中断时内置的自愈保障机制（Auto-fallback & Self-healing）。  
+当模型响应未携带有效 `responseId` 时，状态机自动断链并安全回退为全量累积历史池发送，杜绝向服务端发送无有效链引用的孤儿增量（防止 400 错误）；在全量重发并重新获得有效 ID 后，自动恢复链式增量发送模式。见 ADR-0010。
+
+

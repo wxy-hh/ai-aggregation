@@ -28,10 +28,14 @@
  * 适配器 ToolStreamProjector（lib/agent/tool-projector.ts，ADR-0009）：
  * 编排器完全消除对 providerExecuted 与查询词提取的特异分支与类型断言。
  *
+ * 链式调用状态（previous_response_id 追踪、增量推演与无 ID 断链自愈全量回退）已收敛于
+ * 深模块 ChainedMessageSession（lib/agent/chained-session.ts，ADR-0010）：
+ * 编排器完全消除对 previousResponseId、pendingIncrement 与 currentMessages 的散落维护。
+ *
  * 传输与协议：
  * - 一期 400 根因 = SDK store:true 默认下把响应历史项序列化为 item_reference，Ark 拒绝（并非 Responses API 不支持多轮）；
  * - 现为 Responses API + 请求内 previous_response_id 链式 + 仅回发增量工具结果；
- * - 本地 currentMessages 全量累积保留为无链（响应无 id）时的发送回退；
+ * - 本地全量累积历史由会话深模块维护，作为无链（响应无 id）时的发送回退与断链自愈依据；
  * - 三态判定不变：「有产出」= 正文或工具成功交付产物任一存在，中断/异常按 hasOutput 判 partial/failed；
  * - usage 逐轮累加，漏步时记录警告日志；截断提示（finishReason === 'length'）继续生效。
  */
@@ -55,6 +59,7 @@ import type { ChatStreamFinish } from '../types';
 import { summarizeArgs } from '@/lib/agent/tool-policy';
 import { createToolExecutionPipeline } from '@/lib/agent/tool-pipeline';
 import { projectDecisionStream, type RawToolCall } from '@/lib/agent/tool-projector';
+import { createChainedMessageSession } from '@/lib/agent/chained-session';
 import {
   AGENT_MAX_CONSECUTIVE_FAILURES,
   AGENT_MAX_IMAGE_GENERATES,
@@ -87,11 +92,6 @@ interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-}
-
-/** 把 ChatMessage 投影为模型消息（agent 模式暂不支持附件输入，仅保留角色与内容） */
-function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
-  return messages.map((m) => ({ role: m.role, content: m.content }) as ModelMessage);
 }
 
 /** 把注册表投影为 AI SDK 的工具集；不提供 execute —— SDK 停在 tool-call，由本编排器执行 */
@@ -154,23 +154,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         guardContent: guardToolContent,
       });
 
-      // 消息序列：随多步循环递增回注
-      let currentMessages: ModelMessage[] = toModelMessages(options.messages);
-      /** 链式状态：上一步响应 id；null = 未建链/已断链（首步或响应缺 id 时全量发送，与旧行为一致） */
-      let previousResponseId: string | null = null;
-      /** 链式增量：下一步要回发的消息（通常是上轮工具结果；仅服务端工具执行且无文本时为引导语） */
-      let pendingIncrement: ModelMessage | null = null;
-
-      /**
-       * 组装本步发送载荷：已建链且有增量时只发增量（链式），否则全量 currentMessages
-       * （首步或上游响应缺 id 的回退路径，与迁移前行为一致）
-       */
-      const resolveStepPayload = (): { chained: boolean; messages: ModelMessage[] } => {
-        if (previousResponseId !== null && pendingIncrement !== null) {
-          return { chained: true, messages: [pendingIncrement] };
-        }
-        return { chained: false, messages: currentMessages };
-      };
+      // 链式会话状态机：收敛 previousResponseId 链式追踪、增量推演与断链全量回退自愈（ADR-0010）
+      const session = createChainedMessageSession({
+        initialMessages: options.messages,
+      });
 
       // 最终文本步的 finishReason
       let finalFinishReason = 'stop';
@@ -221,12 +208,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           roundIndex++;
           pipeline.beginRound();
 
-          const { chained, messages: stepMessages } = resolveStepPayload();
+          const stepPayload = session.getStepPayload();
 
           // 决策步：挂 tools，stopWhen 为 1 步
           const decision: StreamTextResult<ToolSet, any> = streamText<ToolSet>({
             model: agentModel,
-            messages: stepMessages,
+            messages: stepPayload.messages,
             tools: {
               ...buildToolSet(registry),
               // Ark 服务端执行的内置联网搜索：由 ToolStreamProjector 统一流式投影与动作规约
@@ -237,7 +224,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             abortSignal: signal,
             providerOptions: {
               openai: {
-                ...(chained ? { previousResponseId } : {}),
+                ...(stepPayload.isChained && stepPayload.previousResponseId
+                  ? { previousResponseId: stepPayload.previousResponseId }
+                  : {}),
                 maxToolCalls: AGENT_MAX_TOOL_CALLS_PER_ROUND,
               },
             },
@@ -250,9 +239,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           });
           searchCallsCount += projectorOutcome.searchCallsIncrement;
 
-          const responseId: string | undefined = ((await decision.response) as { id?: string }).id;
-          // 缺 id 必须断链回退全量：沿用旧 id 链式发送新工具结果会因 call_id 不在被引链上而被上游拒绝
-          previousResponseId = responseId ?? null;
+          const decisionResponse = (await decision.response) as {
+            id?: string;
+            messages?: ModelMessage[];
+          };
+          // 记录模型响应：更新链追踪 ID，缺 id 触发断链自愈回退机制（ADR-0010）
+          session.recordResponse(decisionResponse);
 
           accumulate(await decision.usage, `decision_${roundIndex}`);
           finalFinishReason = await decision.finishReason;
@@ -269,8 +261,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
           if (action.type === 'nudge_continue') {
             // 服务端工具执行完毕且无文本（如搜索被截断）：补入系统引导语续跑一轮
-            pendingIncrement = action.nudgeMessage;
-            currentMessages = [...currentMessages, action.nudgeMessage];
+            session.appendNudge(action.nudgeMessage);
             continue;
           }
 
@@ -340,13 +331,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
           // 回注消息序列：包含这轮的 assistant 消息与 tool 结果消息
           const toolMessage: ModelMessage = { role: 'tool', content: toolResultParts };
-          pendingIncrement = toolMessage;
-          const decisionMessages = (await decision.response).messages;
-          currentMessages = [
-            ...currentMessages,
-            ...decisionMessages,
-            toolMessage,
-          ];
+          session.appendToolResult(toolMessage);
 
           // 退化保护与边界熔断（连败 / 全局上限 / 时间耗尽）统一由管道的停止判定表达
           if (pipeline.shouldHalt()) {
@@ -356,17 +341,19 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
         // ==================== 收尾步（若仍需收尾） ====================
         if (!finalAnswerDelivered) {
-          const { chained, messages: summaryMessages } = resolveStepPayload();
+          const summaryPayload = session.getStepPayload();
 
           // 收尾步不挂 tools，强制产出最终文本回答
           const summary = streamText({
             model: agentModel,
-            messages: summaryMessages,
+            messages: summaryPayload.messages,
             maxOutputTokens: stepOutputLimit,
             abortSignal: signal,
             providerOptions: {
               openai: {
-                ...(chained ? { previousResponseId } : {}),
+                ...(summaryPayload.isChained && summaryPayload.previousResponseId
+                  ? { previousResponseId: summaryPayload.previousResponseId }
+                  : {}),
               },
             },
           });
