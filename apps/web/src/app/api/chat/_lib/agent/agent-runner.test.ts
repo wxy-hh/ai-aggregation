@@ -11,10 +11,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { Message as ChatMessage } from '@/stores/chat-store';
-import type { AgentToolSpec } from '@/lib/agent/registry';
+import type { AgentToolSpec, ToolRegistry } from '@/lib/agent/registry';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { AGENT_MAX_TOOL_CALLS_PER_ROUND } from './agent-config';
 import { runAgent } from './agent-runner';
+import { createAgentRuntimeContext, type AgentRuntimeContext } from './runtime-context';
 
 // 仅替换 streamText，保留 tool、zodSchema、stepCountIs 等真实实现
 const { streamTextMock } = vi.hoisted(() => {
@@ -88,6 +89,18 @@ async function readSseEvents(stream: ReadableStream<Uint8Array>) {
     .map((chunk) => JSON.parse(chunk) as Record<string, unknown>);
 }
 
+/**
+ * 用内存注册表构造 Agent 运行时上下文（测试不触库：用户工具加载注入为空实现）。
+ * baseRegistry 原样透传 → 快照直接复用该注册表，行为与旧 `registry` 入参完全等价。
+ */
+function testRuntime(registry: ToolRegistry): Promise<AgentRuntimeContext> {
+  return createAgentRuntimeContext({
+    userId: 'u1',
+    loadUserTools: async () => [],
+    baseRegistry: registry,
+  });
+}
+
 describe('agent-runner 链式迁移测试（runner 级）', () => {
   let fakeToolSpec: AgentToolSpec;
 
@@ -133,7 +146,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -194,7 +207,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -239,7 +252,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -273,7 +286,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -316,7 +329,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -449,7 +462,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -523,7 +536,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -595,7 +608,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -650,7 +663,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -698,7 +711,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 
@@ -756,7 +769,7 @@ describe('web_search providerExecuted 映射', () => {
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: 'test',
-      registry,
+      runtime: await testRuntime(registry),
       onFinish: onFinishMock,
     });
 

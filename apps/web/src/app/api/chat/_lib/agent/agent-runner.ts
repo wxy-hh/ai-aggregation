@@ -69,6 +69,7 @@ import {
   AGENT_RUN_TIME_BUDGET_MS,
 } from './agent-config';
 import type { ToolRegistry } from '@/lib/agent/registry';
+import type { AgentRuntimeContext } from './runtime-context';
 
 export interface AgentRunOptions {
   userId: string;
@@ -79,7 +80,11 @@ export interface AgentRunOptions {
   stepOutputLimit: number;
   signal: AbortSignal;
   errorId: string;
-  registry: ToolRegistry;
+  /**
+   * 运行时上下文（ADR-0011）：工具注册表与完成态观测元数据的唯一来源。
+   * 编排器只经此窄接口取注册表与产出 webhookCalls，不接触工具装配细节。
+   */
+  runtime: AgentRuntimeContext;
   onFinish: (finish: ChatStreamFinish) => Promise<void>;
   /** 最大模型调用步数（默认为 AGENT_MAX_STEPS = 5），为后续自适应降级预留参数面 */
   maxSteps?: number;
@@ -118,7 +123,8 @@ function guardToolContent(content: string, toolName: string): string {
  * 执行 agent 编排，返回 SSE 字节流（已编码为契约事件）。
  */
 export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
-  const { registry, signal, errorId, stepOutputLimit, onFinish } = options;
+  const { runtime, signal, errorId, stepOutputLimit, onFinish } = options;
+  const registry = runtime.registry;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -382,6 +388,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           usage: totals,
           outputText: text,
           searchCalls: searchCallsCount,
+          // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
+          webhookCalls: runtime.finishMetadata().webhookCalls,
           ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
         });
 
@@ -407,6 +415,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           outputText: text,
           reason,
           searchCalls: searchCallsCount,
+          webhookCalls: runtime.finishMetadata().webhookCalls,
         });
         try {
           controller.enqueue(encodeSseEvent({ type: 'error', error: reason || '生成失败，请重试' }));

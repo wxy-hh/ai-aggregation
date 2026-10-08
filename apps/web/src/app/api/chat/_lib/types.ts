@@ -28,6 +28,12 @@ export interface ChatStreamFinish {
   reason?: string;
   /** agent 模式观测计数：服务端执行的联网搜索次数（providerExecuted，不计入自有工具上限；仅观测，不影响计费） */
   searchCalls?: number;
+  /**
+   * agent 模式观测计数：本次请求用户 Webhook 工具实际派发次数。
+   * 由 AgentRuntimeContext 在流完成时统一产出（ADR-0011），随 finish 一次性交付结算；
+   * 路由层不再持有快照闭包 getter。仅观测，不影响计费。
+   */
+  webhookCalls?: number;
 }
 
 export interface ChatContext {

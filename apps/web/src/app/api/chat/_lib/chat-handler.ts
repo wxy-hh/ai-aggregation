@@ -27,13 +27,13 @@ import {
   resolveAgentStepBudget,
   type AgentStepBudget,
 } from './agent/agent-config';
-import { prisma, type UserWebhookTool } from '@repo/db';
+import type { UserWebhookTool } from '@repo/db';
 import {
   detectChatSensitiveTopic,
   buildChatBlockedText,
   createBlockedStream,
 } from './chat-safety';
-import { createUserWebhookToolsSnapshot } from './agent/tools/user-webhook';
+import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
 
 export interface ChatHandlerConfig {
@@ -45,20 +45,11 @@ export interface ChatHandlerConfig {
    */
   agentRunTimeBudgetMs?: number;
   /**
-   * 获取用户自定义已启用 Webhook 工具列表的可选注入点。
-   * 缺省时默认从数据库查询（where: { userId, enabled: true }）。
+   * 获取用户自定义已启用 Webhook 工具列表的可选注入点（测试替身 / 自定义数据源）。
+   * 路由层不再亲自查询，仅透传给 AgentRuntimeContext；缺省时由运行时上下文
+   * 默认从数据库查询（where: { userId, enabled: true }，spec §4.6）。
    */
   getUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
-}
-
-/**
- * 默认获取用户自定义已启用 Webhook 工具列表。
- * spec §4.6：匿名用户不加载用户工具。
- */
-async function defaultGetUserTools(userId: string): Promise<UserWebhookTool[]> {
-  return prisma.userWebhookTool.findMany({
-    where: { userId, enabled: true, user: { isAnonymous: false } },
-  });
 }
 
 export function createChatHandler(config: ChatHandlerConfig) {
@@ -128,7 +119,9 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // agent 模式：计算可负担步数，按实际步数预留；不足下限拒绝；预检失败兜底满配
       // （步数 ↔ token 的换算唯一出处是 agent-config 的 resolveAgentStepBudget）
       let agentBudget: AgentStepBudget | null = null;
-      let userTools: UserWebhookTool[] = [];
+      // agent 运行时上下文：工具装配与调次统计全部内聚在运行时内部（Candidate 04 / ADR-0011），
+      // 路由层只负责创建它并把 userId 交给它
+      let agentRuntime: AgentRuntimeContext | null = null;
       if (agent) {
         let affordable;
         try {
@@ -152,21 +145,13 @@ export function createChatHandler(config: ChatHandlerConfig) {
         }
         agentBudget = affordable ?? fullAgentStepBudget();
 
-        // 加载用户自定义 Webhook 工具快照（按请求快照构建，加载失败不阻断对话）
-        try {
-          const fetchTools = config.getUserTools ?? defaultGetUserTools;
-          userTools = (await fetchTools(user.id)) ?? [];
-        } catch (error) {
-          console.warn('[chat] 加载用户自定义工具失败，按无用户工具继续', {
-            errorId,
-            userId: user.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          userTools = [];
-        }
+        // 创建运行时上下文：按需加载用户 Webhook 工具并装配合并注册表（加载失败由运行时内部降级）
+        agentRuntime = await createAgentRuntimeContext({
+          userId: user.id,
+          errorId,
+          loadUserTools: config.getUserTools,
+        });
       }
-
-      const webhookSnapshot = createUserWebhookToolsSnapshot(userTools);
 
       const reservedSession = await QuotaSession.reserve({
         userId: user.id,
@@ -205,7 +190,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
             ...(agent
               ? {
                   agent: true,
-                  webhookCalls: webhookSnapshot.getWebhookCallsCount(),
+                  // 观测计数由运行时上下文经 finish 统一交付（ADR-0011），路由层不再触碰调次闭包
+                  webhookCalls: finish.webhookCalls ?? 0,
                   searchCalls: finish.searchCalls ?? 0,
                 }
               : {}),
@@ -219,7 +205,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）
       let stream: ReadableStream<Uint8Array>;
-      if (agentBudget) {
+      if (agentBudget && agentRuntime) {
         stream = runAgent({
           userId: user.id,
           provider: effectiveProvider,
@@ -234,7 +220,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           runTimeBudgetMs: config.agentRunTimeBudgetMs,
           signal: req.signal,
           errorId,
-          registry: webhookSnapshot.registry,
+          runtime: agentRuntime,
           onFinish,
         });
       } else {
