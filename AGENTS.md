@@ -539,3 +539,31 @@ head -20 docs/feature-design.md
 ```
 
 ---
+
+## Agent skills
+
+### Issue tracker
+
+Issues / PRD 使用本地 markdown tracker（`.scratch/<feature>/`；仓库托管 Gitee，无 `gh` CLI）。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+默认五态：`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。
+
+### QA & 研发闭环默认执行准则 (Default Workflow Directive)
+
+进行任何特性开发或架构重构时，Agent **默认必须主动遵循 `docs/agents/qa-workflow.md` 全流程**，无需用户每次显式提醒：
+1. **未对齐不写码**：面对新特性或重构任务，第一步默认主动触发 `/grill-with-docs` 审问接口边界并落盘 ADR；
+2. **双轨规格联动**：规格产出（`/to-spec`）后，主动联动 `/qa-test-planner` 规划端到端冒烟用例；
+3. **真实浏览器卡点**：凡触及用户可见核心链路，审查交付前必须完成阶段 5 的真实浏览器验收与截图落盘；
+4. **快慢车道自适应**：严格按照 `qa-workflow.md`「适用范围与剪裁」规则执行，小型单点修复走快车道，不搞教条化瀑布流。
+
+详见 `docs/agents/qa-workflow.md`。
+
+### 技能目录
+
+`.agents/skills` 是指向 `.claude/skills` 的符号链接，技能的安装与修改一律在 `.claude/skills` 中进行（单一事实源），不要直接写入 `.agents/skills`。
