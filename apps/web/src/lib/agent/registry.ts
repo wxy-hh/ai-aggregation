@@ -6,6 +6,11 @@
  * 工具协议：每个工具声明 name / description / parameters(zod) / execute，
  * 新增工具只需注册一条 spec，编排层（agent-runner）无需改动 —— 开放的扩展点。
  *
+ * 架构分工（ADR-0008 / ADR-0009）：
+ * - 本注册表管理平台本地执行的自有工具（带 execute 实现）；
+ * - 服务端执行工具（如 Ark web_search）由 ToolStreamProjector 在事件流层统一投影与动作规约，
+ *   无需注册到本表，抹平双轨差异。
+ *
  * parameters 用 zod 声明：既作服务端入参校验的唯一真源，又在交给
  * Vercel AI SDK 时经 zodSchema() 转为模型可见的 JSON Schema（避免双份定义漂移）。
  */

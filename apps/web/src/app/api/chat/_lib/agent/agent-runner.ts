@@ -23,17 +23,17 @@
  * - AGENT_RUN_TIME_BUDGET_MS = 240s（整请求运行时间预算，决策前与工具执行前双重检查）。
  *
  * 工具治理（去重缓存 / 单轮、全局、出图三重上限 / 连败熔断 / 时间预算 / 合规二道检查 /
- * 重试引导）已收敛于深模块 ToolExecutionPipeline（lib/agent/tool-pipeline.ts，ADR-0008）：
- * 本编排器只调用其窄接口（beginRound / executeCall / shouldHalt），不再内联治理状态；
- * 循环顶与轮末共用 shouldHalt（等价性论证见 ADR-0008），用户中断单独检查。
+ * 重试引导）已收敛于深模块 ToolExecutionPipeline（lib/agent/tool-pipeline.ts，ADR-0008）；
+ * 服务端工具（web_search）与自有工具在流层的统一投影与动作契约规约已收敛于
+ * 适配器 ToolStreamProjector（lib/agent/tool-projector.ts，ADR-0009）：
+ * 编排器完全消除对 providerExecuted 与查询词提取的特异分支与类型断言。
  *
  * 传输与协议：
  * - 一期 400 根因 = SDK store:true 默认下把响应历史项序列化为 item_reference，Ark 拒绝（并非 Responses API 不支持多轮）；
  * - 现为 Responses API + 请求内 previous_response_id 链式 + 仅回发增量工具结果；
  * - 本地 currentMessages 全量累积保留为无链（响应无 id）时的发送回退；
  * - 三态判定不变：「有产出」= 正文或工具成功交付产物任一存在，中断/异常按 hasOutput 判 partial/failed；
- * - usage 逐轮累加，漏步时记录警告日志；截断提示（finishReason === 'length'）继续生效；
- * - providerExecuted 工具（web_search）由 Ark 服务端执行，事件直透过程卡片、不计入自有工具上限，按轮由 maxToolCalls 服务端封顶。
+ * - usage 逐轮累加，漏步时记录警告日志；截断提示（finishReason === 'length'）继续生效。
  */
 
 import {
@@ -54,6 +54,7 @@ import { resolveChatStreamUsage } from '../chat-usage';
 import type { ChatStreamFinish } from '../types';
 import { summarizeArgs } from '@/lib/agent/tool-policy';
 import { createToolExecutionPipeline } from '@/lib/agent/tool-pipeline';
+import { projectDecisionStream, type RawToolCall } from '@/lib/agent/tool-projector';
 import {
   AGENT_MAX_CONSECUTIVE_FAILURES,
   AGENT_MAX_IMAGE_GENERATES,
@@ -113,18 +114,6 @@ function guardToolContent(content: string, toolName: string): string {
   return `${buildChatBlockedText(topic)}\n（以上内容来自工具抓取，已被安全策略拦截）`;
 }
 
-/** 从 web_search 的 tool-result output 提取查询词（spike 验证路径 output.action.query；结构缺失时返回 null） */
-function extractSearchQuery(output: unknown): string | null {
-  if (output && typeof output === 'object') {
-    const action = (output as { action?: unknown }).action;
-    if (action && typeof action === 'object') {
-      const query = (action as { query?: unknown }).query;
-      if (typeof query === 'string' && query) return query;
-    }
-  }
-  return null;
-}
-
 /**
  * 执行 agent 编排，返回 SSE 字节流（已编码为契约事件）。
  */
@@ -169,7 +158,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let currentMessages: ModelMessage[] = toModelMessages(options.messages);
       /** 链式状态：上一步响应 id；null = 未建链/已断链（首步或响应缺 id 时全量发送，与旧行为一致） */
       let previousResponseId: string | null = null;
-      /** 链式增量：下一步要回发的消息（通常是上轮工具结果；providerExecuted-only 无文本时为引导语） */
+      /** 链式增量：下一步要回发的消息（通常是上轮工具结果；仅服务端工具执行且无文本时为引导语） */
       let pendingIncrement: ModelMessage | null = null;
 
       /**
@@ -234,16 +223,13 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
           const { chained, messages: stepMessages } = resolveStepPayload();
 
-          // 本轮是否出现 providerExecuted（服务端执行）活动：空决策路由的判定依据之一
-          let stepSawProviderExecuted = false;
-
           // 决策步：挂 tools，stopWhen 为 1 步
           const decision: StreamTextResult<ToolSet, any> = streamText<ToolSet>({
             model: agentModel,
             messages: stepMessages,
             tools: {
               ...buildToolSet(registry),
-              // Ark 服务端执行的内置联网搜索：不进 ToolRegistry（注册表只管我们执行的工具）
+              // Ark 服务端执行的内置联网搜索：由 ToolStreamProjector 统一流式投影与动作规约
               web_search: aiProvider.tools.webSearch({}),
             },
             stopWhen: stepCountIs(1),
@@ -257,90 +243,58 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             },
           });
 
-          // 决策步文本先缓冲，不直接推 text-delta
-          let decisionBufferedText = '';
-          for await (const part of decision.fullStream) {
-            if (part.type === 'text-delta') {
-              decisionBufferedText += part.text;
-            }
-            if (part.type === 'tool-call' && (part as { providerExecuted?: boolean }).providerExecuted) {
-              stepSawProviderExecuted = true;
-              // 服务端工具调用开始：直接映射为过程卡片事件（查询词此时还没有，result 才带）
-              controller.enqueue(
-                encodeSseEvent({
-                  type: 'tool_call',
-                  call: { id: part.toolCallId, name: part.toolName, argsSummary: '' },
-                })
-              );
-            }
-            if (part.type === 'tool-result' && (part as { providerExecuted?: boolean }).providerExecuted) {
-              stepSawProviderExecuted = true;
-              if (part.toolName === 'web_search') searchCallsCount++;
-              const query = extractSearchQuery((part as { output?: unknown }).output);
-              controller.enqueue(
-                encodeSseEvent({
-                  type: 'tool_result',
-                  callId: part.toolCallId,
-                  name: part.toolName,
-                  status: 'success',
-                  summary: query ? `查询词：${query}` : '搜索完成',
-                })
-              );
-            }
-          }
+          // 工具流投影适配器：统一消费流事件、直透服务端工具事件、规约标准决策动作（ADR-0009）
+          const rawCalls = (await decision.toolCalls) as RawToolCall[];
+          const projectorOutcome = await projectDecisionStream(decision.fullStream, rawCalls, {
+            onEvent: (event) => controller.enqueue(encodeSseEvent(event)),
+          });
+          searchCallsCount += projectorOutcome.searchCallsIncrement;
 
           const responseId: string | undefined = ((await decision.response) as { id?: string }).id;
           // 缺 id 必须断链回退全量：沿用旧 id 链式发送新工具结果会因 call_id 不在被引链上而被上游拒绝
           previousResponseId = responseId ?? null;
 
-          // providerExecuted 调用由 Ark 服务端执行，不进自有工具管道（不执行/不入去重/不计上限）
-          // SDK toolCalls 元素可能未显式声明 providerExecuted，做可选属性类型断言
-          const toolCalls = (await decision.toolCalls).filter(
-            (c) => !(c as { providerExecuted?: boolean }).providerExecuted
-          );
           accumulate(await decision.usage, `decision_${roundIndex}`);
           finalFinishReason = await decision.finishReason;
 
-          // 决策步文本路由
-          if (toolCalls.length === 0) {
-            if (decisionBufferedText) {
-              // 无自有工具调用且有文本：决策步文本即最终回答，降级路径，循环结束
-              emitText(decisionBufferedText);
-              finalAnswerDelivered = true;
-              break;
-            }
-            if (stepSawProviderExecuted) {
-              // providerExecuted-only 且无文本（典型：搜索被 maxToolCalls 按轮截断）：
-              // 不终结也不注入空工具消息；补一句仅进模型通道的引导语，续一轮让模型基于
-              // 服务端已有的搜索结果作答（由步数上限与时间预算兜底，不会死循环）
-              const nudge: ModelMessage = {
-                role: 'user',
-                content: '（系统提示：搜索已完成，请基于搜索结果直接给出回答，不要再调用工具）',
-              };
-              pendingIncrement = nudge;
-              currentMessages = [...currentMessages, nudge];
-              continue;
-            }
-            // 空决策（无工具、无文本、无服务端搜索）：模型选择不说话，按既有语义收尾——
-            // 是否有产出交给 hasOutput 三态判定（工具已交付产物时仍按 success 结算）
+          const action = projectorOutcome.action;
+
+          // 决策动作规约派发：消除编排器特异分支与防御断言
+          if (action.type === 'deliver_answer') {
+            // 决策步输出最终回答，降级路径，循环结束
+            emitText(action.text);
             finalAnswerDelivered = true;
             break;
           }
 
-          // 有工具调用：决策步文本以 agent_note 事件下发，绝不进 text-delta
-          if (decisionBufferedText) {
-            controller.enqueue(encodeSseEvent({ type: 'agent_note', text: decisionBufferedText }));
+          if (action.type === 'nudge_continue') {
+            // 服务端工具执行完毕且无文本（如搜索被截断）：补入系统引导语续跑一轮
+            pendingIncrement = action.nudgeMessage;
+            currentMessages = [...currentMessages, action.nudgeMessage];
+            continue;
           }
 
-          // 顺序执行本轮工具调用（去重 / 上限 / 熔断 / 合规 / 引导全部收归管道内部）
+          if (action.type === 'empty_finish') {
+            // 空决策（无工具、无文本、无服务端执行）：模型选择不说话，按既有语义收尾
+            finalAnswerDelivered = true;
+            break;
+          }
+
+          // 动作类型为 execute_local_tools：有待本地执行的自有工具
+          if (action.noteText) {
+            // 决策步思考文本以 agent_note 事件下发，绝不进 text-delta
+            controller.enqueue(encodeSseEvent({ type: 'agent_note', text: action.noteText }));
+          }
+
+          // 顺序执行本轮本地工具调用（去重 / 上限 / 熔断 / 合规 / 引导全部收归管道内部）
           const toolResultParts: Array<{
             type: 'tool-result';
             toolCallId: string;
             toolName: string;
-            output: { type: 'text'; value: string };
+            output: { type: 'text', value: string };
           }> = [];
 
-          for (const call of toolCalls) {
+          for (const call of action.localCalls) {
             const callId = call.toolCallId;
             const name = call.toolName;
 

@@ -44,3 +44,13 @@ export type AgentNote = {
   beforeCallIndex: number;
   text: string;
 };
+
+/**
+ * 决策步动作契约类型（二期多步循环）：
+ * 描述单轮决策步执行后，流投影适配器向编排器交付的归一化标准动作类型。
+ */
+export type StepActionType =
+  | 'deliver_answer'
+  | 'nudge_continue'
+  | 'execute_local_tools'
+  | 'empty_finish';
