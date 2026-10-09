@@ -8,8 +8,8 @@
   - 核心定义：7 阶段全景流水线、快慢车道剪裁矩阵、浏览器真机验收红线、时间盒控制与异常排障回路。
 - **研发闭环实战讲解指南**: `docs/agents/qa-workflow-guide.md`
   - 核心定义：团队落地实战教学、配置与使用方法、协同机制、排障踩坑心法与速查清单。
-- **项目顶层执行准则**: `CLAUDE.md`
-  - 核心定义：Monorepo 命令体系、Default Workflow Directive（无需每次念咒语的底层规则）。
+- **项目顶层执行准则**: `CLAUDE.md`（单一事实源，`AGENTS.md` 为其符号链接）
+  - 核心定义：Default Workflow Directive（无需每次念咒语的底层规则）与行为红线；命令体系等参考信息见 `docs/project-guide.md`。
 - **系统架构决策记录**: `docs/adr/`
   - 核心范本：深模块设计理念、工具治理、严格行为保持的技术决策典范。
 

@@ -48,7 +48,6 @@ yarn-error.log*
 
 # Claude AI
 .claude/
-.claude.md
 
 # 本地产物
 .pnpm-store/

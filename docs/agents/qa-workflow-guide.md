@@ -459,6 +459,6 @@ TDD 红-绿-重构闭环：
 
 > **附录：相关核心资料索引**
 > - 工作流规约源码：`docs/agents/qa-workflow.md`
-> - 顶层执行纪律与门禁：`CLAUDE.md`
+> - 顶层执行纪律与门禁：`CLAUDE.md`（单一事实源，`AGENTS.md` 为其符号链接；参考信息见 `docs/project-guide.md`）
 > - 架构决策沉淀：`docs/adr/`
 > - 真实浏览器教学与实战记录：`docs/teach/qa-workflow/`

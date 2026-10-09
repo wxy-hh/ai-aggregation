@@ -27,7 +27,7 @@
 
 - 流程正本：`docs/agents/qa-workflow.md` —— 7 阶段闭环 + 快慢车道剪裁表 + 核心链路红线 + 时间盒（≤5 条用例/≤15 分钟）+ 无 qa-plan 兜底规则 + 探活防呆 + 就绪锚点（禁 networkidle）+ 截图落盘 `.scratch/<feature>/screenshots/`
 - 参考书：`docs/agents/qa-workflow-guide.md` —— 正本没有的内容：技能权限矩阵、三层隔离探针、跨会话交接契约、速查清单
-- 入口索引：`CLAUDE.md` 末尾 + `AGENTS.md` 末尾的「## Agent skills」块（Kimi Code 读 AGENTS.md，Claude Code 读 CLAUDE.md，两处需同步）
+- 入口索引：`CLAUDE.md` 末尾的「## Agent skills」块（单一事实源；`AGENTS.md` 已改为指向 `CLAUDE.md` 的符号链接，2026-10-09 完成合并瘦身）
 - 技能定制点（`.claude/skills/`，均有「项目定制，上游升级时保留」标注，共 5 处）：
   - `qa-test-planner/SKILL.md`：四条项目约定（定位器/可量化断言/P0-P2 分级/视口意识）
   - `implement/SKILL.md`：核心链路浏览器验收前置指令
@@ -52,7 +52,7 @@
 1. **正本/参考书关系落地**：裁决 guide 独有内容（权限矩阵、三层隔离探针、跨会话交接契约、速查清单）哪些回流 `qa-workflow.md` 正本、哪些留参考书。约束：正本保持精简（规模债教训），回流需改写为规则形态而非教程形态。
 2. **全流程实证**：拿一个真实小需求完整跑一遍 7 阶段流程，结束后 `/retro` 校准时间盒与规则有效性（流程至今零次真实全流程实证，这是最大欠账）。
 3. **dev-flow 冷冻行动项**：把敏感路径/不可逆操作拦截写成 Claude Code 原生 `permissions.deny`（`settings.json`），验证后 dev-flow 转只读冷冻。
-4. **P1 遗留**：`CLAUDE.md` ↔ `AGENTS.md` 全面对齐（技术栈 Kolors/Agnes、常用命令、目录结构已分化）；CI 集成（当前无任何 CI 配置，测试靠自觉）。
+4. **P1 遗留**：~~`CLAUDE.md` ↔ `AGENTS.md` 全面对齐~~ **已完成（2026-10-09）**：`CLAUDE.md` 重写为 64 行行为规则门禁卡（单一事实源），`AGENTS.md` 改为指向它的符号链接；参考内容合并落盘 `docs/project-guide.md`（分化点已按代码核对：图像=Agnes、视频=智谱+Agnes 双 provider、SILICONFLOW=语音转写）。仍遗留：CI 集成（无任何 CI 配置与 git 钩子，测试靠自觉）。
 
 ## Suggested skills
 
