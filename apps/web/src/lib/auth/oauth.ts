@@ -104,8 +104,11 @@ interface QQTokenResponse {
 
 interface QQUserInfo {
   nickname: string;
-  figureurl_qq_2: string;
-  gender: string;
+  figureurl_qq_1?: string;
+  figureurl_qq_2?: string;
+  figureurl_1?: string;
+  figureurl_2?: string;
+  gender?: string;
 }
 
 /** 构造 QQ OAuth 授权 URL */
@@ -153,14 +156,19 @@ export async function getQQAccessToken(code: string): Promise<QQTokenResponse> {
 
   const text = await res.text();
 
-  // QQ 返回的是 URL 参数格式，不是 JSON
-  const data = Object.fromEntries(new URLSearchParams(text)) as unknown as QQTokenResponse;
+  let data: Partial<QQTokenResponse> = {};
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // 兼容 QQ 默认返回的 URL 参数格式
+    data = Object.fromEntries(new URLSearchParams(text)) as unknown as QQTokenResponse;
+  }
 
   if (!data.access_token) {
     throw new Error(`QQ OAuth 错误: ${text}`);
   }
 
-  return data;
+  return data as QQTokenResponse;
 }
 
 /** 获取 QQ 用户的 OpenID */
