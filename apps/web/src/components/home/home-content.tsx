@@ -1,27 +1,12 @@
 'use client';
-/* 生成页面的提示词:
-底部固定的“工具底座” (Utility Dock)：
 
-在侧边栏的最下方，我们将“设置”、“主题切换”和“个人中心”聚合在一起。
-由于宽度变窄：不再采用横向的“文字 + 开关”模式，而是设计一个极简的圆形磨砂玻璃图标按钮（太阳/月亮图标）。
-这样设计即便侧边栏收缩，图标依然能完美适配，不会出现文字截断或乱码。
-交互反馈 (Micro-interactions)：
-
-悬停状态：当鼠标悬停在这个图标上时，它会散发出淡淡的科技蓝（Technology Blue）外发光，并弹出一个小巧的玻璃气泡提示（Tooltip），显示“切换至深色模式”。
-无缝切换：点击后，全站色彩通过 css mix-blend-mode 进行平滑过渡，而无需重新加载。
-高级感细节：
-
-将该按钮设计为“悬浮式（Floating）”感，略微脱离底部的侧边栏底色，使用更强的 backdrop-blur，使其在视觉上既属于导航栏，又是一个独立的功能触点。
- */
-import React from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { useChatStore } from '@/stores/chat-store';
-import { useEffect, useState, useCallback } from 'react';
+import { useAuthStore } from '@/stores/auth-store';
 import {
   Search,
-  FileText,
   PenTool,
   Zap,
   Mic,
@@ -29,69 +14,110 @@ import {
   Image as ImageIcon,
   ArrowRight,
   Lightbulb,
-  Plus,
   Compass,
+  Send,
+  Sparkles,
 } from 'lucide-react';
 import {
   RecentCreationsSection,
   RecentFilesSidebarList,
 } from '@/components/home/recent-creations-section';
 
+/**
+ * 灵感快捷选胶囊：text 为灵感文案，target 决定执行载体
+ * chat → 对话页自动发送；image → 绘图页自动发起生成（文本模型无法直接出图）
+ */
+const QUICK_TIPS = [
+  { text: '帮我写一份工作总结大纲', target: 'chat' },
+  { text: '用通俗易懂的语言解释什么是大模型', target: 'chat' },
+  { text: '画一只在星空中穿梭的银白机械鲸鱼', target: 'image' },
+] as const;
+
+/**
+ * 首页工作台主内容组件
+ * 遵循 DESIGN.md 与 oil-ui 规范：
+ * 1. 采用 Operate 模式（聚焦即用、轻盈通透的工作台），避免空洞的营销落地页范式；
+ * 2. 具备即时 Prompt 启动舱，支持直接键入指令一键直达对话与各模型；
+ * 3. 4 大核心能力紧凑看板卡，消除与侧边栏的三重冗余；
+ * 4. 移动端优先：首屏即为高频操作热区，侧边栏不阻挡核心流；
+ * 5. 全局单一 main 容器，修复 HTML 语义结构。
+ */
 export function HomeContent() {
   const router = useRouter();
-  const setInput = useChatStore((state) => state.setInput);
-  const [searchQuery, setSearchQuery] = useState('');
+  const user = useAuthStore((state) => state.user);
 
-  // 每日灵感提示词
-  const dailyInspirations = [
-    '帮我生成一份周报大纲，包含本周工作总结和下周计划',
-    '请帮我编写一个 React 组件的最佳实践模板',
-    '生成一份产品需求文档的模板',
-    '帮我总结最新的 AI 技术发展趋势',
-    '设计一个用户调研问卷的框架',
-  ];
+  // 搜索关键词状态
+  const [searchQuery, setSearchQuery] = useState('');
+  // 即时 Prompt 输入框状态
+  const [promptText, setPromptText] = useState('');
+
+  // 每日灵感提示词库
+  const dailyInspirations = useMemo(
+    () => [
+      '帮我生成一份周报大纲，包含本周工作总结和下周计划',
+      '请帮我编写一个 React 组件的最佳实践模板',
+      '生成一份产品需求文档的框架与关键业务流',
+      '帮我总结当前大模型推理与多模态技术的发展趋势',
+      '设计一份面向新用户的产品调研问卷提纲',
+    ],
+    []
+  );
+
   const [currentInspiration, setCurrentInspiration] = useState(dailyInspirations[0]);
 
-  // 每日更换灵感提示
+  // 根据当前年份天数轮换每日灵感
   useEffect(() => {
     const dayOfYear = Math.floor(
       (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24)
     );
     setCurrentInspiration(dailyInspirations[dayOfYear % dailyInspirations.length]);
+  }, [dailyInspirations]);
+
+  // 问候语计算
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 6) return '夜深了';
+    if (hour < 12) return '早上好';
+    if (hour < 18) return '下午好';
+    return '晚上好';
   }, []);
 
-  // ==================== 事件处理 ====================
+  const displayName = user?.name || user?.username || '创作者';
+
+  // ==================== 快捷交互事件处理 ====================
 
   /**
-   * 跳转到语音识别页面（会议纪要）
+   * 即时发送 Prompt 到对话页
+   * 通过 URL 携带 prompt，由对话页初始化时自动发送；
+   * 不再使用 setInput 预填，因为对话页「新建会话」流程会清空输入框，导致灵感丢失、变成单纯跳转
    */
-  const handleMeetingNotes = useCallback(() => {
-    router.push('/voice');
-  }, [router]);
+  const handleSendPrompt = useCallback(
+    (textToSend?: string) => {
+      const finalPrompt = (textToSend || promptText).trim();
+      if (!finalPrompt) return;
+      router.push(`/chat?new=true&prompt=${encodeURIComponent(finalPrompt)}`);
+    },
+    [promptText, router]
+  );
 
   /**
-   * 跳转到聊天页面并预设文案润色提示
+   * 键盘回车快捷发送（Enter 发送，Shift+Enter 换行）
    */
-  const handleCopyPolish = useCallback(() => {
-    router.push('/chat?new=true');
-    // 使用 setTimeout 确保页面加载后再设置输入
-    setTimeout(() => {
-      setInput('请帮我润色以下文案，使其更加专业和流畅：\n\n');
-    }, 100);
-  }, [router, setInput]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSendPrompt();
+      }
+    },
+    [handleSendPrompt]
+  );
 
   /**
    * 跳转到历史记录页面
    */
   const handleViewHistory = useCallback(() => {
     router.push('/history');
-  }, [router]);
-
-  /**
-   * 跳转到命理测算页面
-   */
-  const handleDestiny = useCallback(() => {
-    router.push('/destiny');
   }, [router]);
 
   /**
@@ -109,254 +135,313 @@ export function HomeContent() {
   }, [router]);
 
   /**
-   * 每日灵感点击：跳转到聊天并发送预设提示
+   * 每日灵感点击：携带灵感文案跳转对话页并自动发起
    */
   const handleDailyInspiration = useCallback(() => {
-    router.push('/chat?new=true');
-    setTimeout(() => {
-      setInput(currentInspiration);
-    }, 100);
-  }, [router, setInput, currentInspiration]);
+    router.push(`/chat?new=true&prompt=${encodeURIComponent(currentInspiration)}`);
+  }, [router, currentInspiration]);
+
+  /**
+   * 快捷胶囊点击：按意图路由目标
+   * 绘图类灵感去绘图页并自动发起生成（文本模型无法直接出图），其余进对话自动发送
+   */
+  const handleQuickTip = useCallback(
+    (tip: (typeof QUICK_TIPS)[number]) => {
+      if (tip.target === 'image') {
+        router.push(`/image?prompt=${encodeURIComponent(tip.text)}`);
+        return;
+      }
+      handleSendPrompt(tip.text);
+    },
+    [router, handleSendPrompt]
+  );
+
+  /**
+   * 搜索框回车：若有输入则带着关键词去历史记录页筛选，否则去对话页
+   */
+  const handleSearchSubmit = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+        const query = searchQuery.trim();
+        if (query) {
+          router.push(`/history?q=${encodeURIComponent(query)}`);
+        }
+      }
+    },
+    [searchQuery, router]
+  );
 
   return (
     <div className="flex h-full w-full flex-col lg:flex-row home-aurora-base text-slate-900 dark:text-slate-100 overflow-y-auto custom-scrollbar lg:overflow-hidden font-sans">
       {/* 
-        二级侧边栏（发现） 
-        基于 "Image 1" 描述：左侧侧边栏包含 "发现"、搜索、工具等。
+        二级侧边栏（发现与快捷检索）
+        在桌面端常驻左侧；在移动端置于主内容下方作为次级探索区，确保移动端首屏直达核心工作区
       */}
-      <aside className="w-full lg:w-[280px] h-auto lg:h-full flex flex-col p-4 lg:p-6 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl backdrop-saturate-150 border-b lg:border-b-0 lg:border-r border-white/50 dark:border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] z-10 flex-shrink-0">
-        <h2 className="text-xl font-bold mb-6 flex items-center gap-2">发现</h2>
+      <aside className="order-2 lg:order-1 w-full lg:w-[280px] h-auto lg:h-full flex flex-col p-4 lg:p-6 bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border-t lg:border-t-0 lg:border-r border-slate-200/60 dark:border-white/10 shadow-sm z-10 flex-shrink-0">
+        <div className="flex items-center justify-between mb-4 lg:mb-6">
+          <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+            <Search className="w-4 h-4 text-primary" />
+            快速探索
+          </h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium">
+            聚合工作台
+          </span>
+        </div>
 
-        {/* 搜索 */}
-        <div className="relative mb-8">
+        {/* 快速搜索框 */}
+        <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="搜索功能、文档或指令..."
+            placeholder="搜索历史、会话或指令..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white dark:bg-slate-800 border-none rounded-xl py-3 pl-10 pr-4 text-sm text-slate-600 dark:text-slate-300 placeholder:text-slate-400 shadow-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-[box-shadow,background-color] duration-fast ease-out-expo"
+            onKeyDown={handleSearchSubmit}
+            className="w-full bg-white dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/60 rounded-xl py-2.5 pl-9 pr-3 text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all duration-fast"
           />
         </div>
 
-        {/* 常用工具 */}
-        <div className="mb-4">
-          <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-wider">
-            常用工具
-          </h3>
-          <div className="space-y-1">
-            <ToolItem
-              icon={FileText}
-              label="会议纪要"
-              badge="关联语音"
-              badgeColor="text-blue-500 bg-blue-50 dark:bg-blue-900/20"
-              color="text-blue-600"
-              onClick={handleMeetingNotes}
-            />
-            <ToolItem
-              icon={PenTool}
-              label="文案润色"
-              color="text-purple-600"
-              onClick={handleCopyPolish}
-            />
-            <ToolItem
-              icon={Compass}
-              label="命理测算"
-              badge="八字排盘"
-              badgeColor="text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20"
-              color="text-indigo-600"
-              onClick={handleDestiny}
-            />
-          </div>
-        </div>
-
         {/* 推荐指令 */}
-        <div>
-          <div className="flex items-center gap-2 mb-4">
+        <div className="mb-6">
+          <div className="flex items-center gap-1.5 mb-3">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              推荐指令
+              快捷流水线
             </h3>
-            <Zap className="w-3 h-3 text-yellow-500 fill-current" />
+            <Zap className="w-3 h-3 text-amber-500 fill-current" />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             <CommandCard
               icon={Mic}
-              iconColor="text-purple-500"
-              iconBg="bg-purple-100 dark:bg-purple-900/30"
+              iconColor="text-purple-600 dark:text-purple-400"
+              iconBg="bg-purple-100 dark:bg-purple-950/40"
               actionIcon={MessageSquare}
-              actionColor="text-blue-500"
-              actionBg="bg-blue-100 dark:bg-blue-900/30"
-              label="将录音总结为文档"
+              actionColor="text-blue-600 dark:text-blue-400"
+              actionBg="bg-blue-100 dark:bg-blue-950/40"
+              label="语音会议自动总结为文档"
               onClick={handleVoiceToDoc}
             />
             <CommandCard
               icon={MessageSquare}
-              iconColor="text-blue-500"
-              iconBg="bg-blue-100 dark:bg-blue-900/30"
+              iconColor="text-blue-600 dark:text-blue-400"
+              iconBg="bg-blue-100 dark:bg-blue-950/40"
               actionIcon={ImageIcon}
-              actionColor="text-pink-500"
-              actionBg="bg-pink-100 dark:bg-pink-900/30"
-              label="优化提示词并绘图"
+              actionColor="text-pink-600 dark:text-pink-400"
+              actionBg="bg-pink-100 dark:bg-pink-950/40"
+              label="优化 Prompt 并生成画作"
               onClick={handlePromptToImage}
             />
           </div>
         </div>
 
-        {/* 最近文件 */}
-        <div className="max-h-[320px] lg:max-h-none lg:flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2">
-          <div className="flex items-center justify-between mb-4 mt-1">
+        {/* 最近文件与历史抽屉 */}
+        <div className="max-h-[300px] lg:max-h-none lg:flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2">
+          <div className="flex items-center justify-between mb-3 mt-1">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              最近文件
+              最近创作清单
             </h3>
-            <ArrowRight
-              className="w-3 h-3 text-slate-400 cursor-pointer hover:text-blue-500 transition-colors"
+            <button
+              type="button"
               onClick={handleViewHistory}
-            />
+              className="text-xs text-slate-400 hover:text-primary transition-colors flex items-center gap-1"
+              aria-label="查看完整历史"
+            >
+              全部
+              <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
-          <div className="space-y-3">
-            <RecentFilesSidebarList />
-          </div>
+          <RecentFilesSidebarList />
         </div>
 
-        {/* 每日灵感 */}
+        {/* 每日灵感卡片 */}
         <div
-          className="mt-4 p-4 bg-gradient-to-br from-white to-blue-50 dark:from-slate-800 dark:to-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700/50 shadow-sm relative overflow-hidden group cursor-pointer select-none transition-[box-shadow,transform] duration-fast ease-out-expo hover:shadow-md active:scale-[0.98]"
+          className="mt-4 p-3.5 bg-gradient-to-br from-white to-blue-50/70 dark:from-slate-800/80 dark:to-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/50 shadow-sm relative overflow-hidden group cursor-pointer select-none transition-all duration-fast hover:shadow-md active:scale-[0.98]"
           onClick={handleDailyInspiration}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && handleDailyInspiration()}
+          aria-label="点击使用今日灵感"
         >
-          <div className="flex items-start gap-3 relative z-10">
-            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-500">
-              <Lightbulb className="w-4 h-4" />
+          <div className="flex items-start gap-2.5 relative z-10">
+            <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-blue-600 shrink-0">
+              <Lightbulb className="w-3.5 h-3.5" />
             </div>
-            <div>
-              <h4 className="font-bold text-sm mb-1">每日灵感</h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                {currentInspiration.slice(0, 30)}...
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">
+                  今日灵感
+                </span>
+                <span className="text-[10px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                  点击使用 →
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                {currentInspiration}
               </p>
             </div>
           </div>
-          <div className="absolute -right-4 -bottom-4 w-20 h-20 bg-blue-500/10 rounded-full blur-xl group-hover:scale-150 transition-transform duration-normal ease-out-expo"></div>
         </div>
       </aside>
 
-      {/* 主内容 */}
-      <main className="flex-1 h-auto lg:h-full overflow-y-auto custom-scrollbar relative">
-        {/* 背景光斑：透明度恒定（0.20）、慢速漂移错相位，透过 hero 玻璃形成均匀折射（DESIGN.md §6.3 home-aurora-drift） */}
-        <div className="absolute top-20 right-20 w-96 h-96 bg-purple-200/[0.20] dark:bg-purple-900/[0.20] rounded-full blur-3xl -z-10 animate-home-aurora-drift pointer-events-none"></div>
-        <div
-          className="absolute top-40 left-40 w-72 h-72 bg-blue-200/[0.20] dark:bg-blue-900/[0.20] rounded-full blur-3xl -z-10 animate-home-aurora-drift pointer-events-none"
-          style={{ animationDuration: '24s', animationDelay: '-9s' }}
-        ></div>
+      {/* 
+        主工作区容器（使用 section 规范标签，避免与 AppLayout 形成双 main 违规）
+      */}
+      <section
+        aria-label="核心工作区"
+        className="order-1 lg:order-2 flex-1 min-h-0 lg:h-full overflow-y-auto custom-scrollbar relative"
+      >
+        {/* 背景柔和环境辉光（符合 DESIGN.md 极光氛围规范） */}
+        <div className="absolute top-12 right-12 w-80 h-80 bg-purple-300/[0.12] dark:bg-purple-900/[0.15] rounded-full blur-3xl -z-10 pointer-events-none" />
+        <div className="absolute top-36 left-24 w-72 h-72 bg-blue-300/[0.12] dark:bg-blue-900/[0.15] rounded-full blur-3xl -z-10 pointer-events-none" />
 
-        <div className="max-w-[1400px] mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-          {/* 具有高级深色混合效果的主视觉区域卡片 */}
-          <div className="bg-gradient-to-b from-white/60 via-white/20 to-transparent dark:from-slate-900/60 dark:via-slate-900/20 dark:to-transparent backdrop-blur-2xl backdrop-saturate-150 rounded-[28px] lg:rounded-[48px] p-6 sm:p-8 lg:p-12 pb-0 shadow-[0_20px_60px_-10px_rgba(59,130,246,0.1)] dark:shadow-none mb-10 lg:mb-16 relative overflow-hidden group/hero">
-            {/* 渐变边框遮罩 - 创建“融合边缘”效果 */}
-            <div className="absolute inset-0 rounded-[48px] border border-white/60 dark:border-white/10 [mask-image:linear-gradient(to_bottom,black_30%,transparent_100%)] pointer-events-none"></div>
+        <div className="max-w-[1360px] mx-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8 space-y-6 lg:space-y-8">
+          {/* 
+            【即时 Prompt 启动舱】
+            进入首页即可直接打字沟通，瞬间激活对话，符合生产力工具 Operate 模式
+          */}
+          <div className="relative rounded-2xl lg:rounded-3xl p-5 sm:p-6 lg:p-7 bg-white/80 dark:bg-slate-900/70 border border-slate-200/80 dark:border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-none backdrop-blur-xl transition-all">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+              <div>
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>{greeting}，{displayName}</span>
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                </h1>
+                <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                  通义千问 · 智谱 GLM · DeepSeek 多模型已就绪，随时开启创作
+                </p>
+              </div>
 
-            {/* 顶部光波/高光 */}
-            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent opacity-50"></div>
-
-            {/* 细腻的内部高光 */}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent dark:from-white/5 pointer-events-none"></div>
-
-            {/* 头部 */}
-            <div className="text-center mb-16 relative z-10">
-              <h1 className="text-3xl sm:text-4xl lg:text-6xl font-black mb-4 lg:mb-6 tracking-tight text-slate-900 dark:text-white leading-tight">
-                开启您的 AI{' '}
-                <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-cyan-500 bg-clip-text text-transparent">
-                  创作宇宙
+              {/* 快捷场景微标：氛围信息，窄屏隐藏避免与标题区争抢宽度（移动端首屏信息密度规范） */}
+              <div className="hidden md:flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 whitespace-nowrap">
+                  ● 服务就绪
                 </span>
-              </h1>
-
-              <p className="text-sm sm:text-base lg:text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
-                集成尖端对话模型、高精度语音识别与艺术级图像生成，
-                <br />
-                为专业创作者打造的沉浸式智能工作空间。
-              </p>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 whitespace-nowrap">
+                  超快响应
+                </span>
+              </div>
             </div>
 
-            {/* 主要功能卡片 */}
+            {/* 即时输入控制区 */}
+            <div className="relative rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-950/60 p-2 sm:p-3 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
+              <textarea
+                rows={2}
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="在此输入您的灵感、提问或任务需求（按 Enter 立即发起，Shift+Enter 换行）..."
+                className="w-full resize-none bg-transparent text-sm sm:text-base text-slate-800 dark:text-slate-100 placeholder:text-slate-400 outline-none leading-relaxed px-1"
+              />
+
+              {/* 底部行：窄屏纵向排布（胶囊换行 + 整宽发送按钮），宽屏单行两端对齐 */}
+              <div className="flex flex-col gap-2 pt-2 border-t border-slate-200/50 dark:border-slate-800/60 mt-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                {/* 快捷 Prompt 预置胶囊：按意图路由（绘图类去绘图页，其余进对话） */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">灵感快捷选:</span>
+                  {QUICK_TIPS.map((tip) => (
+                    <button
+                      key={tip.text}
+                      type="button"
+                      onClick={() => handleQuickTip(tip)}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/50 hover:border-primary/50 hover:text-primary transition-all active:scale-95"
+                    >
+                      {tip.text}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 发送按钮：窄屏整宽占一行，保证拇指热区与视觉稳定 */}
+                <button
+                  type="button"
+                  onClick={() => handleSendPrompt()}
+                  disabled={!promptText.trim()}
+                  className={cn(
+                    'inline-flex w-full sm:w-auto items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white shadow-sm transition-all',
+                    'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95',
+                    'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
+                  )}
+                >
+                  <span>发起创作</span>
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 
+            【4 大核心生产力看板】
+            摒弃层层嵌套与空洞文案，采用利落的网格看板
+          */}
+          <div>
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>核心生产力空间</span>
+              </h2>
+              <span className="text-xs text-slate-400">选择专项工具开启深层次处理</span>
+            </div>
+
             <div
               data-testid="home-feature-grid"
-              className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-8 mb-12 lg:mb-20"
+              className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
             >
               <FeatureCard
                 href="/chat?new=true"
                 title="智能对话"
-                description="深度逻辑推理，支持多轮复杂指令理解与代码生成。"
+                badge="支持多模型"
+                description="深度逻辑推理、长文写作与代码实战"
                 icon={MessageSquare}
-                color="text-blue-600"
-                gradient="from-blue-500/20 to-cyan-500/20"
+                accentColor="text-blue-600"
+                iconBg="bg-blue-50 dark:bg-blue-950/50"
                 glowRgb="59 130 246"
-                buttonText="新建对话"
-                buttonIcon={Plus}
+                actionText="新建对话"
               />
               <FeatureCard
                 href="/voice"
                 title="语音转写"
-                description="毫秒级低延迟，自动识别说话人并生成智能纪要。"
+                badge="高精转录"
+                description="录音秒级转文字，智能纪要与分角色提炼"
                 icon={Mic}
-                color="text-purple-600"
-                gradient="from-purple-500/20 to-pink-500/20"
+                accentColor="text-purple-600"
+                iconBg="bg-purple-50 dark:bg-purple-950/50"
                 glowRgb="168 85 247"
-                buttonText="开始会议纪要"
-                buttonIcon={ArrowRight}
+                actionText="立即录音/上传"
               />
               <FeatureCard
                 href="/image"
                 title="灵感绘图"
-                description="超写实艺术渲染，将文字提示瞬间转化为视觉杰作。"
+                badge="Kolors 引擎"
+                description="中文语义直出，超写实渲染与风格画派"
                 icon={ImageIcon}
-                color="text-pink-600"
-                gradient="from-pink-500/20 to-rose-500/20"
+                accentColor="text-pink-600"
+                iconBg="bg-pink-50 dark:bg-pink-950/50"
                 glowRgb="236 72 153"
-                buttonText="开始创作"
-                buttonIcon={PenTool}
+                actionText="文生图创作"
+              />
+              <FeatureCard
+                href="/destiny"
+                title="AI 命理大师"
+                badge="夜幕星宫"
+                description="四柱八字、紫微斗数与奇门六壬深度演化"
+                icon={Compass}
+                accentColor="text-indigo-600"
+                iconBg="bg-indigo-50 dark:bg-indigo-950/50"
+                glowRgb="99 102 241"
+                actionText="进入排盘"
               />
             </div>
           </div>
 
-          <RecentCreationsSection className="mb-2" />
+          {/* 
+            【最近创作成果流水线】
+          */}
+          <RecentCreationsSection className="pt-2" />
         </div>
-      </main>
+      </section>
     </div>
   );
 }
 
-// 子组件
-
-interface ToolItemProps {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  badge?: string;
-  badgeColor?: string;
-  color?: string;
-  onClick?: () => void;
-}
-
-function ToolItem({ icon: Icon, label, badge, badgeColor, color, onClick }: ToolItemProps) {
-  return (
-    <div
-      className="flex items-center justify-between p-1 rounded-xl select-none transition-[background-color,transform] duration-fast ease-out-expo hover:bg-slate-100 active:scale-[0.98] dark:hover:bg-slate-800/50 cursor-pointer group"
-      onClick={onClick}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className={`p-2 rounded-lg bg-slate-50 dark:bg-slate-800 group-hover:bg-white dark:group-hover:bg-slate-700 transition-colors duration-fast ${color}`}
-        >
-          <Icon className="w-4 h-4 transition-transform duration-fast ease-out-expo group-hover:scale-110" />
-        </div>
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
-      </div>
-      {badge && (
-        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeColor}`}>
-          {badge}
-        </span>
-      )}
-    </div>
-  );
-}
+// ==================== 子组件 ====================
 
 interface CommandCardProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -380,79 +465,107 @@ function CommandCard({
   onClick,
 }: CommandCardProps) {
   return (
-    <div
-      className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl select-none transition-[box-shadow,border-color,transform] duration-fast ease-out-expo hover:shadow-md active:scale-[0.98] cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+    <button
+      type="button"
       onClick={onClick}
+      className="flex w-full items-center gap-2.5 p-2.5 bg-slate-50/80 dark:bg-slate-800/50 rounded-xl select-none transition-all duration-fast hover:shadow-sm hover:bg-slate-100/90 dark:hover:bg-slate-800 active:scale-[0.98] cursor-pointer border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700/80 text-left"
     >
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <div
-          className={`w-6 h-6 rounded-md flex items-center justify-center ${iconBg} ${iconColor}`}
-        >
+        <div className={cn('w-6 h-6 rounded-md flex items-center justify-center', iconBg, iconColor)}>
           <Icon className="w-3.5 h-3.5" />
         </div>
-        <div className="w-1 h-3 border-l border-dashed border-slate-300 dark:border-slate-600"></div>
-        <div
-          className={`w-6 h-6 rounded-md flex items-center justify-center ${actionBg} ${actionColor}`}
-        >
+        <div className="w-1 h-3 border-l border-dashed border-slate-300 dark:border-slate-600" />
+        <div className={cn('w-6 h-6 rounded-md flex items-center justify-center', actionBg, actionColor)}>
           <ActionIcon className="w-3.5 h-3.5" />
         </div>
       </div>
-      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 line-clamp-1">
+      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 line-clamp-1 flex-1">
         {label}
       </span>
-    </div>
+      <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+    </button>
   );
+}
+
+interface FeatureCardProps {
+  href: string;
+  title: string;
+  badge: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accentColor: string;
+  iconBg: string;
+  glowRgb: string;
+  actionText: string;
 }
 
 function FeatureCard({
   href,
   title,
+  badge,
   description,
   icon: Icon,
-  color,
-  gradient,
+  accentColor,
+  iconBg,
   glowRgb,
-  buttonText,
-  buttonIcon: ButtonIcon,
-}: any) {
+  actionText,
+}: FeatureCardProps) {
   return (
-    // 整卡即链接：hover 反馈必须可兑现
     <Link href={href} className="block group h-full">
-      {/* 玻璃拟态卡：半透卡面承接外层 hero 的 G-3 模糊（玻璃不套玻璃，卡面不再开 blur，DESIGN.md §4.1/§11）；
-          hover 光影三件套——描边增亮为纯白玻璃缘、投影升档并注入品牌色环境辉光、角部光晕增亮绽放（§8.3 登记决策） */}
       <div
         style={{ '--card-glow': glowRgb } as React.CSSProperties}
-        className="relative overflow-hidden h-full bg-white/55 dark:bg-slate-900/55 rounded-[24px] p-8 select-none border border-white/70 dark:border-white/10 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.8),0_2px_6px_-2px_rgba(15,23,42,0.04),0_16px_36px_-16px_rgba(15,23,42,0.1)] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_2px_6px_-2px_rgba(0,0,0,0.3),0_16px_36px_-16px_rgba(0,0,0,0.45)] transition-[transform,box-shadow,border-color,background-color] duration-normal ease-out-expo hover:-translate-y-1 hover:bg-white/70 dark:hover:bg-slate-900/70 hover:border-white dark:hover:border-white/25 hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.95),0_4px_12px_-4px_rgba(15,23,42,0.06),0_28px_48px_-16px_rgba(15,23,42,0.14),0_0_40px_-6px_rgb(var(--card-glow)/0.3)] dark:hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_4px_12px_-4px_rgba(0,0,0,0.4),0_28px_48px_-16px_rgba(0,0,0,0.55),0_0_40px_-6px_rgb(var(--card-glow)/0.35)] active:scale-[0.98]"
+        className={cn(
+          'relative overflow-hidden h-full flex flex-col justify-between p-4 sm:p-5 rounded-2xl select-none',
+          'bg-white/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/10 backdrop-blur-md',
+          'shadow-sm transition-all duration-normal ease-out-expo',
+          'hover:-translate-y-1 hover:border-slate-300 dark:hover:border-white/20',
+          'hover:shadow-[0_12px_28px_-12px_rgba(0,0,0,0.08),0_0_40px_-6px_rgb(var(--card-glow)/0.3)]',
+          'active:scale-[0.98]'
+        )}
       >
-        {/* 角部弥散光晕：静止态即透出色彩，hover 增亮并轻微绽放（只动 opacity/transform） */}
+        {/* 弥散渐变氛围层（DESIGN.md 登记例外：角部光晕增亮绽放 + 表面径向微光 ≤0.08，只提亮不点亮） */}
+        {/* 主光团：右上角品牌色弥散光晕，hover 时增亮绽放 */}
         <div
-          className={`pointer-events-none absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-br ${gradient} blur-3xl rounded-full opacity-60 group-hover:opacity-90 group-hover:scale-110 transition-[opacity,transform] duration-normal ease-out-expo`}
-        ></div>
-
-        {/* 表面径向微光：hover 时卡面接住角部光源，低透明度只提亮不点亮 */}
-        <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-normal bg-[radial-gradient(120%_90%_at_85%_0%,rgb(var(--card-glow)/0.08),transparent_60%)]"></div>
-
-        {/* 顶部边缘捕光：1px 高光线，hover 整体增亮呼应玻璃缘 */}
-        <div className="pointer-events-none absolute top-0 inset-x-6 h-px bg-gradient-to-r from-transparent via-white/90 dark:via-white/15 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-normal"></div>
-
-        {/* 图标玻璃片：hover 泛起品牌色柔光并轻微上浮，与卡面拉开前后层次 */}
+          aria-hidden
+          className="absolute -top-14 -right-14 w-44 h-44 rounded-full blur-2xl pointer-events-none opacity-70 group-hover:opacity-100 transition-opacity duration-normal ease-out-expo"
+          style={{ background: `radial-gradient(closest-side, rgb(${glowRgb} / 0.35), transparent)` }}
+        />
+        {/* 次光团：左下角同色系更淡光晕，与主光团构成双色弥散层次 */}
         <div
-          className={`w-14 h-14 rounded-2xl bg-white/70 dark:bg-white/10 border border-white/70 dark:border-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] flex items-center justify-center mb-6 transition-[box-shadow,transform,background-color,border-color] duration-normal ease-out-expo group-hover:-translate-y-0.5 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_-8px_rgb(var(--card-glow)/0.45)] dark:group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_24px_-8px_rgb(var(--card-glow)/0.5)] ${color}`}
-        >
-          <Icon className="w-7 h-7" />
+          aria-hidden
+          className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full blur-2xl pointer-events-none opacity-40 group-hover:opacity-60 transition-opacity duration-normal ease-out-expo"
+          style={{ background: `radial-gradient(closest-side, rgb(${glowRgb} / 0.2), transparent)` }}
+        />
+        {/* 表面径向微光：极淡的提亮层，避免点亮整块卡面 */}
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none opacity-[0.06] group-hover:opacity-[0.08] transition-opacity duration-normal ease-out-expo"
+          style={{ background: `radial-gradient(120% 90% at 85% 0%, rgb(${glowRgb} / 0.6), transparent 60%)` }}
+        />
+
+        {/* 卡片顶部：图标与微标 */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shadow-xs transition-transform group-hover:scale-105', iconBg, accentColor)}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">
+              {badge}
+            </span>
+          </div>
+
+          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white mb-1">
+            {title}
+          </h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-4">
+            {description}
+          </p>
         </div>
 
-        <h3 className="text-2xl font-bold mb-3">{title}</h3>
-        <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-8 min-h-[48px]">
-          {description}
-        </p>
-
-        {/* CTA 玻璃芯片：hover 补一层品牌色柔光，保留按压微触感 */}
-        <div
-          className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/70 dark:bg-white/10 border border-white/70 dark:border-white/15 dark:backdrop-blur-sm font-semibold text-sm group-hover:bg-white/90 dark:group-hover:bg-white/15 group-hover:shadow-[0_8px_20px_-8px_rgb(var(--card-glow)/0.4)] active:scale-95 transition-[background-color,box-shadow,border-color,transform] duration-normal ease-out-expo ${color}`}
-        >
-          {buttonText}
-          <ButtonIcon className="w-4 h-4 transition-transform duration-normal ease-out-expo group-hover:translate-x-1" />
+        {/* 卡片底栏动作 */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold">
+          <span className={cn('transition-colors', accentColor)}>{actionText}</span>
+          <ArrowRight className={cn('w-3.5 h-3.5 transition-transform duration-normal ease-out-expo group-hover:translate-x-1', accentColor)} />
         </div>
       </div>
     </Link>

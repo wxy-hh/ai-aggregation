@@ -352,7 +352,13 @@ export default function ChatWorkspace() {
       window.history.replaceState({}, '', '/chat');
     } else if (isNewConversation) {
       // 场景 2：统一新建会话（E-1 契约）
-      startNewSession();
+      // 首页「灵感快捷选 / 今日灵感 / 发起创作」会携带 prompt 参数唤起，
+      // 此时固定落到单聊会话并在新建后立即自动发送，保证点击即执行而非单纯跳转
+      const pendingPrompt = urlParams.get('prompt')?.trim();
+      startNewSession(pendingPrompt ? 'single' : undefined);
+      if (pendingPrompt) {
+        void sendMessage(pendingPrompt);
+      }
       window.history.replaceState({}, '', '/chat');
     } else if (!currentConversationId && comparisonMode === 'single') {
       // 场景 3：单聊模式且无当前指针时，若存在单聊历史则默认加载首个单聊会话
@@ -369,6 +375,7 @@ export default function ChatWorkspace() {
     switchConversation,
     openComparisonSession,
     openHistorySession,
+    sendMessage,
   ]);
 
   // 点击外部关闭模型选择器
