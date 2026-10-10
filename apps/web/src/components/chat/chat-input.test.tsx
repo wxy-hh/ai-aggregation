@@ -24,9 +24,14 @@ import { ChatInput } from './chat-input';
 import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { fetchAgentTools } from '@/lib/api/agent-tools';
+import { trackEvent } from '@/lib/events/tracker';
 
 vi.mock('@/lib/api/agent-tools', () => ({
   fetchAgentTools: vi.fn(),
+}));
+
+vi.mock('@/lib/events/tracker', () => ({
+  trackEvent: vi.fn(),
 }));
 
 describe('ChatInput 主操作按钮（发送/停止切换）', () => {
@@ -308,5 +313,231 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
 
     expect(fetchAgentTools).not.toHaveBeenCalled();
     expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      useChatStore.setState({
+        provider: 'xunfei',
+        attachment: null,
+        isLoading: false,
+        activeConversationId: 'conv-1',
+      });
+      useSettingsStore.setState({ agentModeEnabled: false });
+    });
+    vi.mocked(trackEvent).mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    useSettingsStore.setState({ agentModeEnabled: false });
+  });
+
+  it('出现条件：普通对话草稿命中关键词（>=4字符）且未开启 agentMode 时浮出芯片', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '帮我查下最新的股票行情' } });
+
+    const chip = screen.getByTestId('agent-intent-chip');
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent('联网查一下？');
+  });
+
+  it('出现条件：字符数 < 4 字符时不出现芯片', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '最新' } });
+
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('出现条件：agentMode 已开启时绝不出现芯片', async () => {
+    await act(async () => {
+      useSettingsStore.setState({ agentModeEnabled: true });
+    });
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: '帮我查下最新的股票行情' } });
+    });
+
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('双通道触发：paste URL 事件即时检测唤出芯片', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (format: string) => (format === 'text' ? 'https://example.com/article' : ''),
+      },
+    });
+
+    const chip = screen.getByTestId('agent-intent-chip');
+    expect(chip).toBeInTheDocument();
+  });
+
+  it('点击语义：点击芯片开启 agentMode 并以当前草稿全文触发既有 onSend', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+
+    const chip = screen.getByTestId('agent-intent-chip');
+    await act(async () => {
+      fireEvent.click(chip);
+    });
+
+    // 状态更新为开启
+    expect(useSettingsStore.getState().agentModeEnabled).toBe(true);
+    // 以当前全文发送
+    expect(onSend).toHaveBeenCalledWith('请帮我查一下上海明天的天气');
+  });
+
+  it('五类消失：点击芯片后芯片消失', async () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+
+    const chip = screen.getByTestId('agent-intent-chip');
+    await act(async () => {
+      fireEvent.click(chip);
+    });
+
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('五类消失：普通发送消息后芯片消失', () => {
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+
+    const sendBtn = screen.getByRole('button', { name: '发送' });
+    fireEvent.click(sendBtn);
+
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('五类消失：清空输入框后芯片消失', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+    expect(screen.getByTestId('agent-intent-chip')).toBeInTheDocument();
+
+    fireEvent.change(textarea, { target: { value: '' } });
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('五类消失与草稿级 dismiss：点 X 仅针对本条草稿 dismiss，继续编辑不再出现，清空后输入新草稿可再次出现', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+
+    const closeBtn = screen.getByLabelText('关闭联网查询提示');
+    fireEvent.click(closeBtn);
+
+    // 芯片消失
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+
+    // 在同一草稿继续追加编辑，依然保持 dismiss 不再出现
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气和空气质量' } });
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+
+    // 清空草稿后，再输入下一条满足条件的草稿，芯片正常重新出现
+    fireEvent.change(textarea, { target: { value: '' } });
+    fireEvent.change(textarea, { target: { value: '最新汇率是多少钱' } });
+    expect(screen.getByTestId('agent-intent-chip')).toBeInTheDocument();
+  });
+
+  it('五类消失：切换会话时芯片消失', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '请帮我查一下上海明天的天气' } });
+    expect(screen.getByTestId('agent-intent-chip')).toBeInTheDocument();
+
+    act(() => {
+      useChatStore.setState({ activeConversationId: 'conv-2' });
+    });
+
+    expect(screen.queryByTestId('agent-intent-chip')).not.toBeInTheDocument();
+  });
+
+  it('三动作埋点：曝光（去抖只报一次）、点击与 dismiss 正常上报且绝不包含原文', () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '帮我查一下最新的天气' } });
+
+    // 曝光事件上报
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+    expect(trackEvent).toHaveBeenCalledWith('agent_intent_chip.impression', {
+      signal: 'keyword',
+      keyword: '帮我查',
+    });
+
+    // 持续输入相同信号的草稿：去抖保证不再重复曝光
+    fireEvent.change(textarea, { target: { value: '帮我查一下最新的天气预报详情' } });
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+
+    // 点击 dismiss
+    const closeBtn = screen.getByLabelText('关闭联网查询提示');
+    fireEvent.click(closeBtn);
+
+    expect(trackEvent).toHaveBeenCalledTimes(2);
+    expect(trackEvent).toHaveBeenCalledWith('agent_intent_chip.dismiss', {
+      signal: 'keyword',
+      keyword: '帮我查',
+    });
+  });
+
+  it('三动作埋点：URL 命中上报时不带 keyword 字段', async () => {
+    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…');
+    fireEvent.change(textarea, { target: { value: '看这个 https://example.com/test' } });
+
+    expect(trackEvent).toHaveBeenCalledWith('agent_intent_chip.impression', {
+      signal: 'url',
+    });
+
+    const chip = screen.getByTestId('agent-intent-chip');
+    await act(async () => {
+      fireEvent.click(chip);
+    });
+
+    expect(trackEvent).toHaveBeenCalledWith('agent_intent_chip.click', {
+      signal: 'url',
+    });
+  });
+
+  it('余额与错误兜底：发送失败后草稿必须保留在输入框中（不丢失）', async () => {
+    const onSend = vi.fn().mockResolvedValue(false); // 模拟发送失败
+    render(<ChatInput onSend={onSend} isLoading={false} />);
+
+    const textarea = screen.getByPlaceholderText('输入消息…') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '帮我查一下今天的天气' } });
+
+    const sendBtn = screen.getByRole('button', { name: '发送' });
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    // 发送失败后草稿恢复保留在输入框
+    expect(textarea.value).toBe('帮我查一下今天的天气');
   });
 });

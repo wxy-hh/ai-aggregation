@@ -473,7 +473,9 @@ export default function ChatWorkspace() {
         if (attachment?.sourceId === relay.bundle?.id) {
           setAttachment(null);
         }
+        return true;
       }
+      return false;
     },
     // 依赖项列表：这些值变化时，函数会重新创建
     [
