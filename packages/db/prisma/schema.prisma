@@ -41,6 +41,7 @@ model User {
   quotaLedgerEntries  QuotaLedgerEntry[]
   webhookTools        UserWebhookTool[]
   webhookToolCalls    WebhookToolCall[]
+  productEvents       ProductEvent[]
   @@map("users")
 }
 
@@ -463,3 +464,19 @@ model WebhookToolCall {
   @@index([createdAt])
   @@map("webhook_tool_calls")
 }
+
+// 前端行为埋点事件记录（ADR-0013 / P0a 工单 03）
+model ProductEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  event     String
+  props     Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([event, createdAt])
+  @@map("product_events")
+}
+
