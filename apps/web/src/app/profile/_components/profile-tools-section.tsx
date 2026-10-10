@@ -45,6 +45,7 @@ import { ProfileToolCard } from './profile-tool-card';
 import { ProfileToolDrawer } from './profile-tool-drawer';
 import { ProfileToolEntryModal } from './profile-tool-entry-modal';
 import type { ToolTemplate } from './profile-tool-templates';
+import type { ParsedCurlDto } from '@/lib/agent/parse-curl';
 import { GLASS_CARD, DIALOG_OVERLAY } from './profile-shell';
 import { toast } from 'sonner';
 
@@ -66,6 +67,7 @@ export function ProfileToolsSection() {
   // 三入口选择弹层状态
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<ToolTemplate | null>(null);
+  const [selectedCurlPrefill, setSelectedCurlPrefill] = useState<ParsedCurlDto | null>(null);
 
   // 表单抽屉状态
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -128,6 +130,7 @@ export function ProfileToolsSection() {
     }
     setEditingTool(null);
     setSelectedTemplate(null);
+    setSelectedCurlPrefill(null);
     setIsEntryModalOpen(true);
   };
 
@@ -135,6 +138,7 @@ export function ProfileToolsSection() {
   const handleSelectManual = () => {
     setIsEntryModalOpen(false);
     setSelectedTemplate(null);
+    setSelectedCurlPrefill(null);
     setIsDrawerOpen(true);
   };
 
@@ -142,6 +146,15 @@ export function ProfileToolsSection() {
   const handleSelectTemplate = (template: ToolTemplate) => {
     setIsEntryModalOpen(false);
     setSelectedTemplate(template);
+    setSelectedCurlPrefill(null);
+    setIsDrawerOpen(true);
+  };
+
+  // 三入口：选择 cURL 解析导入
+  const handleSelectCurl = (dto: ParsedCurlDto) => {
+    setIsEntryModalOpen(false);
+    setSelectedTemplate(null);
+    setSelectedCurlPrefill(dto);
     setIsDrawerOpen(true);
   };
 
@@ -149,6 +162,7 @@ export function ProfileToolsSection() {
   const handleOpenEdit = (tool: SanitizedAgentTool) => {
     setEditingTool(tool);
     setSelectedTemplate(null);
+    setSelectedCurlPrefill(null);
     setIsDrawerOpen(true);
   };
 
@@ -352,6 +366,7 @@ export function ProfileToolsSection() {
         onOpenChange={setIsEntryModalOpen}
         onSelectManual={handleSelectManual}
         onSelectTemplate={handleSelectTemplate}
+        onSelectCurl={handleSelectCurl}
       />
 
       {/* 新增 / 编辑抽屉 */}
@@ -360,6 +375,7 @@ export function ProfileToolsSection() {
         onOpenChange={setIsDrawerOpen}
         tool={editingTool}
         initialTemplate={selectedTemplate}
+        initialPrefill={selectedCurlPrefill}
         onSaved={handleToolSaved}
       />
 

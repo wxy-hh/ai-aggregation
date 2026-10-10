@@ -11,9 +11,25 @@
  *   是同一次解析的结果，杜绝 TOCTOU 漂移。
  *
  * 判定策略为 fail-closed：无法解析、无法判定一律拒绝。
+ *
+ * 平台约束：本文件必须保持客户端可打包（cURL 导入的即时网址校验在浏览器内调用 validateWebhookUrl
+ * 链路），因此不使用 node:net 等 Node 内置模块；IP 字面量判定由下方本地纯函数承担，
+ * 与 node:net 的 isIP 在分派语义上等价（无法判定时同样 fail-closed 拒绝）。
  */
 
-import { isIP } from 'node:net';
+/** IPv4 点分字面量判定（node:net isIP=4 的本地纯函数等价物） */
+function isIpv4Literal(ip: string): boolean {
+  const parts = ip.split('.');
+  return (
+    parts.length === 4 &&
+    parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)
+  );
+}
+
+/** IP 字面量（v4 或 v6 候选）判定：域名不可能含冒号（URL hostname 中冒号仅为 IPv6 分隔符） */
+function isIpLiteral(ip: string): boolean {
+  return isIpv4Literal(ip) || ip.includes(':');
+}
 
 /** 允许的协议白名单 */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
@@ -67,7 +83,7 @@ export function validateUrlLiteral(raw: string): UrlGuardResult {
 
   // URL.hostname 对 IPv6 字面量保留方括号，判定前剥离
   const bare = hostname.replace(/^\[|\]$/g, '');
-  if (isIP(bare) !== 0 && isBlockedIp(bare)) {
+  if (isIpLiteral(bare) && isBlockedIp(bare)) {
     return { ok: false, reason: '该地址不允许访问' };
   }
 
@@ -76,9 +92,11 @@ export function validateUrlLiteral(raw: string): UrlGuardResult {
 
 /** 判定 IP（v4/v6）是否落在禁止段；无法解析时 fail-closed 拒绝 */
 export function isBlockedIp(ip: string): boolean {
-  const version = isIP(ip);
-  if (version === 4) return isBlockedIpv4(ip);
-  if (version === 6) return isBlockedIpv6(ip);
+  // 与 node:net isIP 的版本分派语义等价：v4 字面量走 v4 判定；
+  // 含冒号者按 v6 候选处理（expandIpv6 严格解析，非法即 fail-closed）；
+  // 其余无法判定的输入一律拒绝
+  if (isIpv4Literal(ip)) return isBlockedIpv4(ip);
+  if (ip.includes(':')) return isBlockedIpv6(ip);
   return true;
 }
 

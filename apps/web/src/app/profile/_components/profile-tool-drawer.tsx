@@ -53,6 +53,7 @@ import {
 } from '@/lib/api/agent-tools';
 import type { WebhookParamItem } from '@/schemas/agent-tool.schema';
 import type { ToolTemplate } from './profile-tool-templates';
+import type { ParsedCurlDto } from '@/lib/agent/parse-curl';
 import {
   suggestCallName,
   validateCallName,
@@ -66,6 +67,7 @@ interface ProfileToolDrawerProps {
   onOpenChange: (open: boolean) => void;
   tool?: SanitizedAgentTool | null;
   initialTemplate?: ToolTemplate | null;
+  initialPrefill?: ParsedCurlDto | null;
   onSaved: (tool: SanitizedAgentTool) => void;
 }
 
@@ -74,6 +76,7 @@ export function ProfileToolDrawer({
   onOpenChange,
   tool,
   initialTemplate,
+  initialPrefill,
   onSaved,
 }: ProfileToolDrawerProps) {
   const isEditing = Boolean(tool);
@@ -152,6 +155,28 @@ export function ProfileToolDrawer({
       setEnabled(true);
       // 模板已预置合法英文调用名，标记为已确认，避免中文工具名自动转换为随机 tool_xxxx
       setIsManualCallName(true);
+    } else if (initialPrefill) {
+      // 从 cURL 导入：预填解析出的名称、调用名、描述、URL、方法、鉴权头明文及请求体参数
+      setName(initialPrefill.name || 'cURL 导入工具');
+      setCallName(initialPrefill.callName || '');
+      setDescription(initialPrefill.description || '');
+      setUrl(initialPrefill.url || '');
+      setMethod(initialPrefill.method);
+      setAuthHeaderName(initialPrefill.authHeaderName || '');
+      setAuthHeaderValue(initialPrefill.authHeaderValue || '');
+      setClearAuthHeader(false);
+      setParams(
+        Array.isArray(initialPrefill.params)
+          ? initialPrefill.params.map((p) => ({
+              name: p.name,
+              type: p.type,
+              required: Boolean(p.required),
+              description: p.description || '',
+            }))
+          : []
+      );
+      setEnabled(true);
+      setIsManualCallName(Boolean(initialPrefill.callName));
     } else {
       setName('');
       setCallName('');
@@ -168,7 +193,7 @@ export function ProfileToolDrawer({
     setErrors({});
     setTestingStatus('idle');
     setTestResult(null);
-  }, [open, tool, initialTemplate]);
+  }, [open, tool, initialTemplate, initialPrefill]);
 
   // 工具名称修改时，自动生成调用名建议
   const handleNameChange = (val: string) => {

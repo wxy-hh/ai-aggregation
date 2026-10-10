@@ -94,23 +94,121 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
     expect(handleSelectManual).toHaveBeenCalledTimes(1);
   });
 
-  it('点击「粘贴 cURL 导入」展示占位态（工单 06 即将支持提示）', () => {
+  it('点击「粘贴 cURL 导入」进入真实解析界面，展示输入文本框与解析提示', () => {
     render(
       <ProfileToolEntryModal
         open={true}
         onOpenChange={vi.fn()}
         onSelectManual={vi.fn()}
         onSelectTemplate={vi.fn()}
+        onSelectCurl={vi.fn()}
       />
     );
 
     fireEvent.click(screen.getByText('粘贴 cURL 导入'));
 
-    expect(screen.getByText('cURL 一键导入即将支持')).toBeInTheDocument();
-    expect(screen.getByText(/自动解析 cURL/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/curl -X POST/i)).toBeInTheDocument();
+    expect(screen.getByText('解析并导入')).toBeInTheDocument();
   });
 
-  it('模板选择与 cURL 占位视图均支持「返回上一步」回到三入口选择页', () => {
+  it('输入合法 cURL 命令解析成功，展示提取摘要、warnings 并可点击「使用此配置」完成回调', () => {
+    const handleSelectCurl = vi.fn();
+    render(
+      <ProfileToolEntryModal
+        open={true}
+        onOpenChange={vi.fn()}
+        onSelectManual={vi.fn()}
+        onSelectTemplate={vi.fn()}
+        onSelectCurl={handleSelectCurl}
+      />
+    );
+
+    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+
+    const textarea = screen.getByPlaceholderText(/curl -X POST/i);
+    const validCurl =
+      'curl -X POST https://api.example.com/webhook -H "Authorization: Bearer tok_123" -H "User-Agent: test" -d \'{"event":"ping","details":{"nested":1}}\'';
+
+    fireEvent.change(textarea, { target: { value: validCurl } });
+    fireEvent.click(screen.getByText('解析并导入'));
+
+    // 展示摘要信息
+    expect(screen.getByText('解析成功')).toBeInTheDocument();
+    expect(screen.getByText('https://api.example.com/webhook')).toBeInTheDocument();
+    // 展示 warnings（非鉴权头与嵌套字段）
+    expect(screen.getByText(/已忽略 1 个非鉴权请求头/)).toBeInTheDocument();
+    expect(screen.getByText(/已忽略请求体中的嵌套对象或数组字段/)).toBeInTheDocument();
+
+    // 点击「使用此配置」
+    const useBtn = screen.getByText('使用此配置');
+    fireEvent.click(useBtn);
+
+    expect(handleSelectCurl).toHaveBeenCalledTimes(1);
+    expect(handleSelectCurl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://api.example.com/webhook',
+        method: 'POST',
+        authHeaderName: 'Authorization',
+        authHeaderValue: 'Bearer tok_123',
+        params: expect.arrayContaining([
+          expect.objectContaining({ name: 'event', type: 'string' }),
+        ]),
+      })
+    );
+  });
+
+  it('输入内网 IP 网址（如 http://192.168.1.1/api）解析成功但即时展示不支持与阻断提示', () => {
+    render(
+      <ProfileToolEntryModal
+        open={true}
+        onOpenChange={vi.fn()}
+        onSelectManual={vi.fn()}
+        onSelectTemplate={vi.fn()}
+        onSelectCurl={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+
+    const textarea = screen.getByPlaceholderText(/curl -X POST/i);
+    fireEvent.change(textarea, {
+      target: { value: 'curl http://192.168.1.1/api' },
+    });
+    fireEvent.click(screen.getByText('解析并导入'));
+
+    // 即时展示网址风险警告，且禁用「使用此配置」
+    expect(screen.getByText(/该地址不允许访问|Webhook 网址必须使用 https 协议/)).toBeInTheDocument();
+    expect(screen.getByText('使用此配置')).toBeDisabled();
+  });
+
+  it('输入普通文本等非法内容展示「无法识别，请手动填写」降级态，并支持一键转手动填写', () => {
+    const handleSelectManual = vi.fn();
+    render(
+      <ProfileToolEntryModal
+        open={true}
+        onOpenChange={vi.fn()}
+        onSelectManual={handleSelectManual}
+        onSelectTemplate={vi.fn()}
+        onSelectCurl={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+
+    const textarea = screen.getByPlaceholderText(/curl -X POST/i);
+    fireEvent.change(textarea, {
+      target: { value: '这是一段普通文字' },
+    });
+    fireEvent.click(screen.getByText('解析并导入'));
+
+    expect(screen.getByText('无法识别，请手动填写')).toBeInTheDocument();
+
+    const manualBtn = screen.getByText('改为手动填写');
+    fireEvent.click(manualBtn);
+    expect(handleSelectManual).toHaveBeenCalledTimes(1);
+  });
+
+  it('模板选择与 cURL 解析视图均支持「返回上一步」回到三入口选择页', () => {
     render(
       <ProfileToolEntryModal
         open={true}
@@ -126,10 +224,11 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
     fireEvent.click(screen.getByLabelText('返回上一步'));
     expect(screen.getByText('从模板创建')).toBeInTheDocument();
 
-    // 2. 进入 cURL 占位页并返回
+    // 2. 进入 cURL 解析页并返回
     fireEvent.click(screen.getByText('粘贴 cURL 导入'));
-    expect(screen.getByText('cURL 一键导入即将支持')).toBeInTheDocument();
+    expect(screen.getByText('粘贴 cURL 导入')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('返回上一步'));
     expect(screen.getByText('从模板创建')).toBeInTheDocument();
   });
 });
+

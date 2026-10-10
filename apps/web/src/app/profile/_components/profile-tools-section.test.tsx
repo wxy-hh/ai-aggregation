@@ -590,7 +590,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
     });
   });
 
-  it('工单05 验收项6：cURL 入口占位态可达且提示中文「即将支持」', async () => {
+  it('工单06 / TC-P0-5（步骤 4-5）：通过三入口选择 cURL 导入 → 自动解析并即时校验 → 使用此配置进入抽屉预填并保存成功', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ success: true, data: { tools: [] } }), {
         status: 200,
@@ -604,10 +604,76 @@ describe('ProfileToolsSection 我的工具板块', () => {
       expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
     });
 
+    // 1. 点击添加打开三入口弹层
     fireEvent.click(screen.getByRole('button', { name: '添加第一个工具' }));
-    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+    expect(screen.getByText('粘贴 cURL 导入')).toBeInTheDocument();
 
-    expect(screen.getByText('cURL 一键导入即将支持')).toBeInTheDocument();
-    expect(screen.getByText(/自动解析 cURL 命令行中的 URL/)).toBeInTheDocument();
+    // 2. 点击「粘贴 cURL 导入」进入解析界面
+    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+    expect(screen.getByPlaceholderText(/curl -X POST/i)).toBeInTheDocument();
+
+    // 3. 粘贴 cURL 命令行并点击解析
+    const curlInput = screen.getByPlaceholderText(/curl -X POST/i);
+    const curlCommand =
+      'curl https://api.github.com/user/repos -H "Authorization: Bearer tok_p0a_github" -H "User-Agent: test-app"';
+    fireEvent.change(curlInput, { target: { value: curlCommand } });
+
+    fireEvent.click(screen.getByText('解析并导入'));
+
+    // 4. 解析结果展示：状态成功、URL 正确、warnings 提示忽略了非鉴权头
+    await waitFor(() => {
+      expect(screen.getByText('解析成功')).toBeInTheDocument();
+      expect(screen.getByText('https://api.github.com/user/repos')).toBeInTheDocument();
+      expect(screen.getByText(/已忽略 1 个非鉴权请求头/)).toBeInTheDocument();
+    });
+
+    // 5. 点击「使用此配置」进入抽屉表单预填
+    fireEvent.click(screen.getByText('使用此配置'));
+
+    // 6. 验证表单抽屉已受控预填
+    const nameInput = screen.getByPlaceholderText('例如：城市天气查询') as HTMLInputElement;
+    const callNameInput = screen.getByPlaceholderText('例如：query_weather') as HTMLInputElement;
+    const urlInput = screen.getByPlaceholderText('https://api.example.com/webhook') as HTMLInputElement;
+    const authHeaderNameInput = screen.getByPlaceholderText('如：Authorization') as HTMLInputElement;
+    const authHeaderValueInput = screen.getByPlaceholderText('如：Bearer my-token-123') as HTMLInputElement;
+
+    expect(nameInput.value).toBe('cURL 导入工具');
+    expect(callNameInput.value).toMatch(/^[a-z][a-z0-9_-]{1,30}$/);
+    expect(urlInput.value).toBe('https://api.github.com/user/repos');
+    expect(authHeaderNameInput.value).toBe('Authorization');
+    expect(authHeaderValueInput.value).toBe('Bearer tok_p0a_github');
+
+    // 7. mock 创建成功响应
+    const createdCurlTool: SanitizedAgentTool = {
+      id: 'tool_curl_1',
+      userId: 'user_1',
+      name: 'cURL 导入工具',
+      callName: callNameInput.value,
+      description: '由 cURL 命令导入自动生成',
+      url: 'https://api.github.com/user/repos',
+      method: 'GET',
+      authHeaderName: 'Authorization',
+      hasAuthHeaderValue: true,
+      params: [],
+      enabled: true,
+      createdAt: '2026-10-10T12:00:00.000Z',
+      updatedAt: '2026-10-10T12:00:00.000Z',
+    };
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tool: createdCurlTool } }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    // 8. 点击保存工具
+    fireEvent.click(screen.getByRole('button', { name: '保存工具' }));
+
+    // 9. 列表出现新卡片
+    await waitFor(() => {
+      expect(screen.getByText('cURL 导入工具')).toBeInTheDocument();
+      expect(screen.getByText(`wh_${callNameInput.value}`)).toBeInTheDocument();
+    });
   });
 });
