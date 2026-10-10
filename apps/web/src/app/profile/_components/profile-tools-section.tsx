@@ -43,6 +43,8 @@ import {
 } from '@/lib/api/agent-tools';
 import { ProfileToolCard } from './profile-tool-card';
 import { ProfileToolDrawer } from './profile-tool-drawer';
+import { ProfileToolEntryModal } from './profile-tool-entry-modal';
+import type { ToolTemplate } from './profile-tool-templates';
 import { GLASS_CARD, DIALOG_OVERLAY } from './profile-shell';
 import { toast } from 'sonner';
 
@@ -61,7 +63,11 @@ export function ProfileToolsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 抽屉状态
+  // 三入口选择弹层状态
+  const [isEntryModalOpen, setIsEntryModalOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<ToolTemplate | null>(null);
+
+  // 表单抽屉状态
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<SanitizedAgentTool | null>(null);
 
@@ -114,19 +120,35 @@ export function ProfileToolsSection() {
     }
   };
 
-  // 打开新增抽屉
+  // 打开新建入口（唤起三入口弹层）
   const handleOpenCreate = () => {
     if (tools.length >= MAX_TOOLS_LIMIT) {
       toast.error(`最多只能创建 ${MAX_TOOLS_LIMIT} 个自定义工具`);
       return;
     }
     setEditingTool(null);
+    setSelectedTemplate(null);
+    setIsEntryModalOpen(true);
+  };
+
+  // 三入口：选择手动填写
+  const handleSelectManual = () => {
+    setIsEntryModalOpen(false);
+    setSelectedTemplate(null);
+    setIsDrawerOpen(true);
+  };
+
+  // 三入口：选择预置模板
+  const handleSelectTemplate = (template: ToolTemplate) => {
+    setIsEntryModalOpen(false);
+    setSelectedTemplate(template);
     setIsDrawerOpen(true);
   };
 
   // 打开编辑抽屉
   const handleOpenEdit = (tool: SanitizedAgentTool) => {
     setEditingTool(tool);
+    setSelectedTemplate(null);
     setIsDrawerOpen(true);
   };
 
@@ -324,11 +346,20 @@ export function ProfileToolsSection() {
         </div>
       </div>
 
+      {/* 创建工具三入口选择弹层 */}
+      <ProfileToolEntryModal
+        open={isEntryModalOpen}
+        onOpenChange={setIsEntryModalOpen}
+        onSelectManual={handleSelectManual}
+        onSelectTemplate={handleSelectTemplate}
+      />
+
       {/* 新增 / 编辑抽屉 */}
       <ProfileToolDrawer
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
         tool={editingTool}
+        initialTemplate={selectedTemplate}
         onSaved={handleToolSaved}
       />
 

@@ -126,10 +126,14 @@ describe('ProfileToolsSection 我的工具板块', () => {
       screen.getByText('配置您的私有 Webhook 接口，使 AI 智能体在对话中能调用您的专属服务与数据。')
     ).toBeInTheDocument();
 
-    // 点击空状态中的添加按钮打开抽屉
+    // 点击空状态中的添加按钮打开三入口弹层，选择手动填写打开抽屉
     const emptyAddBtn = screen.getByRole('button', { name: '添加第一个工具' });
     fireEvent.click(emptyAddBtn);
 
+    expect(screen.getByText('从模板创建')).toBeInTheDocument();
+    expect(screen.getByText('手动填写')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('手动填写'));
     expect(screen.getByText('添加自定义工具')).toBeInTheDocument();
   });
 
@@ -234,7 +238,8 @@ describe('ProfileToolsSection 我的工具板块', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '添加第一个工具' }));
 
-    // 抽屉展开
+    // 点击三入口中的「手动填写」以展开空白表单抽屉
+    fireEvent.click(screen.getByText('手动填写'));
     expect(screen.getByText('添加自定义工具')).toBeInTheDocument();
 
     // 直接点击保存触发本地拦截
@@ -413,5 +418,196 @@ describe('ProfileToolsSection 我的工具板块', () => {
     expect(screen.getByText('登录后即可管理您的专属 Webhook 工具')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '前往登录' })).toHaveAttribute('href', '/login');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('工单05 / TC-P0-5（步骤 1-3）：从模板创建飞书群机器人 → 预填表单 → 仅填 URL 即可保存成功并出现在列表', async () => {
+    // 1. 初始化空列表
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tools: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    render(<ProfileToolsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
+    });
+
+    // 2. 点击添加，出现三入口
+    fireEvent.click(screen.getByRole('button', { name: '添加第一个工具' }));
+    expect(screen.getByText('从模板创建')).toBeInTheDocument();
+    expect(screen.getByText('粘贴 cURL 导入')).toBeInTheDocument();
+    expect(screen.getByText('手动填写')).toBeInTheDocument();
+
+    // 3. 选择「从模板创建」→ 点击「飞书群机器人」
+    fireEvent.click(screen.getByText('从模板创建'));
+    expect(screen.getByText('飞书群机器人')).toBeInTheDocument();
+    expect(screen.getByText('钉钉群机器人')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('飞书群机器人'));
+
+    // 4. 进入抽屉表单，验证预填受控状态
+    expect(screen.getByText(/从模板创建：飞书群机器人/)).toBeInTheDocument();
+    const nameInput = screen.getByPlaceholderText('例如：城市天气查询') as HTMLInputElement;
+    const callNameInput = screen.getByPlaceholderText('例如：query_weather') as HTMLInputElement;
+    const descInput = screen.getByPlaceholderText(/告诉模型什么时候该用这个工具/) as HTMLTextAreaElement;
+    const urlInput = screen.getByPlaceholderText('https://open.feishu.cn/open-apis/bot/v2/hook/...') as HTMLInputElement;
+
+    expect(nameInput.value).toBe('飞书群机器人');
+    expect(callNameInput.value).toBe('feishu_bot');
+    expect(descInput.value).toContain('当需要把消息、通知或查询结果推送到飞书群时调用此工具');
+    expect(urlInput.value).toBe('');
+    // 参数已预置 text 参数
+    expect(screen.getByDisplayValue('text')).toBeInTheDocument();
+
+    // 5. 用户仅需填写真实 Webhook URL
+    const feishuWebhookUrl = 'https://open.feishu.cn/open-apis/bot/v2/hook/test-p0a-token-feishu';
+    fireEvent.change(urlInput, { target: { value: feishuWebhookUrl } });
+
+    // mock 创建成功响应
+    const createdFeishuTool: SanitizedAgentTool = {
+      id: 'tool_feishu_1',
+      userId: 'user_1',
+      name: '飞书群机器人',
+      callName: 'feishu_bot',
+      description: '当需要把消息、通知或查询结果推送到飞书群时调用此工具',
+      url: feishuWebhookUrl,
+      method: 'POST',
+      authHeaderName: null,
+      hasAuthHeaderValue: false,
+      params: [{ name: 'text', type: 'string', required: true, description: '需要发送到飞书群的消息文本内容' }],
+      enabled: true,
+      createdAt: '2026-10-10T12:00:00.000Z',
+      updatedAt: '2026-10-10T12:00:00.000Z',
+    };
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tool: createdFeishuTool } }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    // 6. 点击保存
+    const saveBtn = screen.getByRole('button', { name: '保存工具' });
+    fireEvent.click(saveBtn);
+
+    // 7. 提交验证：走标准 createAgentToolSchema 契约与 POST /api/agent-tools
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/agent-tools',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            name: '飞书群机器人',
+            callName: 'feishu_bot',
+            description: '当需要把消息、通知或查询结果推送到飞书群时调用此工具',
+            url: feishuWebhookUrl,
+            method: 'POST',
+            authHeaderName: null,
+            authHeaderValue: null,
+            params: [
+              {
+                name: 'text',
+                type: 'string',
+                required: true,
+                description: '需要发送到飞书群的消息文本内容',
+              },
+            ],
+            enabled: true,
+          }),
+        })
+      );
+    });
+
+    // 8. 工具列表出现新卡片（名称含「飞书群机器人」、调用名 wh_feishu_bot）
+    await waitFor(() => {
+      expect(screen.getByText('飞书群机器人')).toBeInTheDocument();
+      expect(screen.getByText('wh_feishu_bot')).toBeInTheDocument();
+    });
+  });
+
+  it('工单05 / P1-9：从模板创建钉钉群机器人 → 预填表单 → 仅填 URL 即可保存成功', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tools: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    render(<ProfileToolsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加第一个工具' }));
+    fireEvent.click(screen.getByText('从模板创建'));
+    fireEvent.click(screen.getByText('钉钉群机器人'));
+
+    expect(screen.getByText(/从模板创建：钉钉群机器人/)).toBeInTheDocument();
+    const nameInput = screen.getByPlaceholderText('例如：城市天气查询') as HTMLInputElement;
+    const callNameInput = screen.getByPlaceholderText('例如：query_weather') as HTMLInputElement;
+    const urlInput = screen.getByPlaceholderText('https://oapi.dingtalk.com/robot/send?access_token=...') as HTMLInputElement;
+
+    expect(nameInput.value).toBe('钉钉群机器人');
+    expect(callNameInput.value).toBe('dingtalk_bot');
+
+    const dingtalkWebhookUrl =
+      'https://oapi.dingtalk.com/robot/send?access_token=test-p0a-token-dingtalk';
+    fireEvent.change(urlInput, { target: { value: dingtalkWebhookUrl } });
+
+    const createdDingtalkTool: SanitizedAgentTool = {
+      id: 'tool_dingtalk_1',
+      userId: 'user_1',
+      name: '钉钉群机器人',
+      callName: 'dingtalk_bot',
+      description: '当需要把消息、通知或查询结果推送到钉钉群时调用此工具',
+      url: dingtalkWebhookUrl,
+      method: 'POST',
+      authHeaderName: null,
+      hasAuthHeaderValue: false,
+      params: [{ name: 'text', type: 'string', required: true, description: '需要发送到钉钉群的消息文本内容' }],
+      enabled: true,
+      createdAt: '2026-10-10T12:00:00.000Z',
+      updatedAt: '2026-10-10T12:00:00.000Z',
+    };
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tool: createdDingtalkTool } }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '保存工具' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('钉钉群机器人')).toBeInTheDocument();
+      expect(screen.getByText('wh_dingtalk_bot')).toBeInTheDocument();
+    });
+  });
+
+  it('工单05 验收项6：cURL 入口占位态可达且提示中文「即将支持」', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, data: { tools: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    render(<ProfileToolsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '添加第一个工具' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '添加第一个工具' }));
+    fireEvent.click(screen.getByText('粘贴 cURL 导入'));
+
+    expect(screen.getByText('cURL 一键导入即将支持')).toBeInTheDocument();
+    expect(screen.getByText(/自动解析 cURL 命令行中的 URL/)).toBeInTheDocument();
   });
 });

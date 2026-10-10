@@ -52,6 +52,7 @@ import {
   type ProbeConnectionResult,
 } from '@/lib/api/agent-tools';
 import type { WebhookParamItem } from '@/schemas/agent-tool.schema';
+import type { ToolTemplate } from './profile-tool-templates';
 import {
   suggestCallName,
   validateCallName,
@@ -64,6 +65,7 @@ interface ProfileToolDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tool?: SanitizedAgentTool | null;
+  initialTemplate?: ToolTemplate | null;
   onSaved: (tool: SanitizedAgentTool) => void;
 }
 
@@ -71,6 +73,7 @@ export function ProfileToolDrawer({
   open,
   onOpenChange,
   tool,
+  initialTemplate,
   onSaved,
 }: ProfileToolDrawerProps) {
   const isEditing = Boolean(tool);
@@ -126,6 +129,29 @@ export function ProfileToolDrawer({
       );
       setEnabled(tool.enabled);
       setIsManualCallName(true);
+    } else if (initialTemplate) {
+      // 从模板创建：预填模板常量数据，URL 留待用户填写真实 Webhook 链接
+      setName(initialTemplate.defaultName);
+      setCallName(initialTemplate.defaultCallName);
+      setDescription(initialTemplate.description);
+      setUrl('');
+      setMethod(initialTemplate.method);
+      setAuthHeaderName(initialTemplate.authHeaderName || '');
+      setAuthHeaderValue('');
+      setClearAuthHeader(false);
+      setParams(
+        Array.isArray(initialTemplate.params)
+          ? initialTemplate.params.map((p) => ({
+              name: p.name,
+              type: p.type,
+              required: Boolean(p.required),
+              description: p.description || '',
+            }))
+          : []
+      );
+      setEnabled(true);
+      // 模板已预置合法英文调用名，标记为已确认，避免中文工具名自动转换为随机 tool_xxxx
+      setIsManualCallName(true);
     } else {
       setName('');
       setCallName('');
@@ -142,7 +168,7 @@ export function ProfileToolDrawer({
     setErrors({});
     setTestingStatus('idle');
     setTestResult(null);
-  }, [open, tool]);
+  }, [open, tool, initialTemplate]);
 
   // 工具名称修改时，自动生成调用名建议
   const handleNameChange = (val: string) => {
@@ -406,10 +432,16 @@ export function ProfileToolDrawer({
               </span>
               <div>
                 <DialogTitle className="font-[var(--font-space-grotesk)] text-lg font-bold tracking-tight text-[#0F172A] dark:text-white">
-                  {isEditing ? '编辑自定义工具' : '添加自定义工具'}
+                  {isEditing
+                    ? '编辑自定义工具'
+                    : initialTemplate
+                    ? `从模板创建：${initialTemplate.title}`
+                    : '添加自定义工具'}
                 </DialogTitle>
                 <DialogDescription className="mt-0.5 text-xs text-[#64748B] dark:text-slate-400">
-                  配置 Webhook 接口供 AI 对话智能体自主调度与执行
+                  {initialTemplate
+                    ? '已预置请求方法、描述与消息参数，请填入您的 Webhook 网址'
+                    : '配置 Webhook 接口供 AI 对话智能体自主调度与执行'}
                 </DialogDescription>
               </div>
             </div>
@@ -571,7 +603,7 @@ export function ProfileToolDrawer({
                         });
                       }
                     }}
-                    placeholder="https://api.example.com/webhook"
+                    placeholder={initialTemplate?.urlPlaceholder || 'https://api.example.com/webhook'}
                     className={cn(
                       'h-11 font-mono rounded-xl border-slate-200/90 bg-white px-3.5 text-sm shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100',
                       errors.url && 'border-rose-500/80 focus-visible:ring-rose-500'
@@ -607,6 +639,7 @@ export function ProfileToolDrawer({
                   </label>
                   <Input
                     value={authHeaderName}
+                    autoComplete="off"
                     onChange={(e) => {
                       setAuthHeaderName(e.target.value);
                       if (errors.authHeaderName) {
@@ -640,6 +673,7 @@ export function ProfileToolDrawer({
                         <Input
                           type="password"
                           value={authHeaderValue}
+                          autoComplete="new-password"
                           onChange={(e) => setAuthHeaderValue(e.target.value)}
                           placeholder="已配置，输入新值可覆盖"
                           className="h-10 rounded-xl border-slate-200/90 bg-white text-xs dark:border-white/10 dark:bg-white/[0.06]"
@@ -679,6 +713,7 @@ export function ProfileToolDrawer({
                     <Input
                       type="password"
                       value={authHeaderValue}
+                      autoComplete="new-password"
                       onChange={(e) => setAuthHeaderValue(e.target.value)}
                       placeholder="如：Bearer my-token-123"
                       className="h-10 rounded-xl border-slate-200/90 bg-white text-xs dark:border-white/10 dark:bg-white/[0.06]"

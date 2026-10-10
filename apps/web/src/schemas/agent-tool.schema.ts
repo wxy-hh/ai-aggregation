@@ -53,8 +53,8 @@ export const webhookUrlSchema = z
     }
   });
 
-/** 创建 Webhook 工具请求 Schema */
-export const createAgentToolSchema = z.object({
+/** 创建 Webhook 工具基础字段定义（未添加 refine，支持 .partial() 派生校验） */
+export const baseCreateAgentToolSchema = z.object({
   name: z
     .string({ required_error: '请输入工具名称' })
     .trim()
@@ -89,8 +89,13 @@ export const createAgentToolSchema = z.object({
     .nullable(),
   params: z.array(webhookParamItemSchema).max(20, '最多配置 20 个参数').default([]),
   enabled: z.boolean().default(true),
-}).superRefine((val, ctx) => {
-  // 配对校验：填了鉴权头取值就必须给名称，否则密文落库后执行器无法注入（评审修补）
+});
+
+/** 鉴权头成对逻辑校验守卫 */
+function refineAuthPairing(
+  val: { authHeaderValue?: string | null; authHeaderName?: string | null },
+  ctx: z.RefinementCtx
+) {
   if (
     val.authHeaderValue &&
     val.authHeaderValue.trim() !== '' &&
@@ -102,7 +107,15 @@ export const createAgentToolSchema = z.object({
       message: '设置鉴权头取值时必须同时提供鉴权头名称',
     });
   }
-});
+}
+
+/** 创建 Webhook 工具请求 Schema（附带 .partial() 能力以供模板及局部场景校验） */
+export const createAgentToolSchema = Object.assign(
+  baseCreateAgentToolSchema.superRefine(refineAuthPairing),
+  {
+    partial: () => baseCreateAgentToolSchema.partial().superRefine(refineAuthPairing),
+  }
+);
 
 export type CreateAgentToolInput = z.infer<typeof createAgentToolSchema>;
 
