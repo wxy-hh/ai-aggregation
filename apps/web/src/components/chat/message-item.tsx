@@ -581,7 +581,6 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                     toolCalls={message.toolCalls ?? []}
                     agentNotes={message.agentNotes}
                     isStreaming={isStreaming}
-                    hasContent={!!message.content}
                   />
                 )}
                 {/* 工具产出附件（当前仅生成图片）：按时间序位于过程卡片之后、正文之前 */}

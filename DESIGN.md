@@ -235,6 +235,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | `astrology-twinkle` + `.animate-astrology-twinkle` | 默认 8s，组件错峰 | 星野星点闪烁（opacity 0.35↔0.7 窄带呼吸，不做 0↔1 全闪烁——替代曾滥用的 `animate-pulse`，reduce-motion 静止） |
 | `acw-ring-spin` + `.animate-acw-spin-slow` / `-slower` / `-slowest-reverse` | 18s / 36s / 48s 反向 | 星盘 HTML 环层自转（wheel-3d 双环、chart-wheel 环；`acw-orbit-cw/ccw` 是 SVG `fill-box` 专用，勿混用到 HTML 层） |
 | `acw-meteor` | 3s 亮痕 / 9s 归零 | 星野流星（自组件内联 `<style>` 收编进 globals.css，参数原样） |
+| `agent-pulse` | 1.8s | 运行态 AgentTrace 瞬态状态条微动效（工单 P0a-02：窄带透明度+缩放呼吸，reduce-motion 静止） |
 
 ### 6.4 动效技术选型
 
