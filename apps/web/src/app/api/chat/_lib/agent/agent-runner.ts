@@ -314,7 +314,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               toolProducedOutput = true;
             }
 
-            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证）
+            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证；携带真实耗时）
             controller.enqueue(
               encodeSseEvent({
                 type: 'tool_result',
@@ -323,6 +323,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                 status: outcome.ok ? 'success' : 'failed',
                 summary: outcome.summaryForDisplay,
                 ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+                ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
               })
             );
 

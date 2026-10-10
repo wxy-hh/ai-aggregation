@@ -26,7 +26,7 @@ import {
   type ToolRegistry,
 } from './registry';
 
-/** 单次调用结果（最小四字段：只含编排器真实消费面） */
+/** 单次调用结果（只含编排器真实消费面） */
 export interface ToolCallOutcome {
   ok: boolean;
   /** 最终回注模型的内容（已组装：软提示 / 未执行文案） */
@@ -35,6 +35,8 @@ export interface ToolCallOutcome {
   summaryForDisplay: string;
   /** 仅首次执行下发（重复调用不重发，防前端按新 callId 重复渲染） */
   attachment?: ToolExecutionResult['attachment'];
+  /** 工具真实执行耗时（毫秒；成功/失败/超时均计时；skip 与缓存命中保持缺省） */
+  durationMs?: number;
 }
 
 /** 一次工具调用（由编排器从模型决策步投影而来） */
@@ -127,14 +129,21 @@ export function createToolExecutionPipeline(
 
   const timeBudgetExhausted = () => now() - startedAt > runTimeBudgetMs;
 
-  /** 结算一次调用：维护连败计数（成功清零 / 失败递增，skip 计入失败） */
-  const settle = (outcome: ToolCallOutcome): ToolCallOutcome => {
+  /** 结算一次调用：维护连败计数（成功清零 / 失败递增，skip 计入失败），并计算执行耗时（若提供起点） */
+  const settle = (
+    outcome: Omit<ToolCallOutcome, 'durationMs'>,
+    startTime?: number
+  ): ToolCallOutcome => {
     if (outcome.ok) {
       consecutiveFailures = 0;
     } else {
       consecutiveFailures++;
     }
-    return outcome;
+    const durationMs = startTime !== undefined ? Math.max(0, now() - startTime) : undefined;
+    return {
+      ...outcome,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+    };
   };
 
   /**
@@ -218,6 +227,7 @@ export function createToolExecutionPipeline(
       }
 
       // 首次执行：真实执行工具（查规格 → 校验入参 → 策略化执行）
+      const callStart = now();
       const spec = registry.get(call.toolName);
       let outcome: ToolExecutionResult;
       if (!spec) {
@@ -247,12 +257,15 @@ export function createToolExecutionPipeline(
         attachment: outcome.attachment,
       });
 
-      return settle({
-        ok: outcome.ok,
-        contentForModel: guarded,
-        summaryForDisplay: outcome.summaryForDisplay,
-        ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
-      });
+      return settle(
+        {
+          ok: outcome.ok,
+          contentForModel: guarded,
+          summaryForDisplay: outcome.summaryForDisplay,
+          ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+        },
+        callStart
+      );
     },
   };
 }

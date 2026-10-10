@@ -111,12 +111,13 @@ describe('基础执行路径', () => {
       input: { url: 'https://example.com' },
     });
 
-    // 最小四字段的精确形状：内容为过检后、附件透传、无多余字段
+    // 最小结果字段的精确形状：内容为过检后、附件透传、真实执行携带耗时
     expect(outcome).toEqual({
       ok: true,
       contentForModel: '[过检:web_fetch]原始内容',
       summaryForDisplay: '完成',
       attachment,
+      durationMs: 0,
     });
     expect(execute).toHaveBeenCalledTimes(1);
     expect(guardCalls).toEqual([{ content: '原始内容', toolName: 'web_fetch' }]);
@@ -185,12 +186,13 @@ describe('去重缓存（退化保护 1）', () => {
       input: { prompt: '猫' },
     });
 
-    // 首次真实执行且带附件
+    // 首次真实执行且带附件与耗时
     expect(first).toEqual({
       ok: true,
       contentForModel: '原始内容',
       summaryForDisplay: '完成',
       attachment,
+      durationMs: 0,
     });
     // 重复调用：吃缓存（不重执行）、内容追加软提示、不重发 attachment
     expect(execute).toHaveBeenCalledTimes(1);
@@ -541,5 +543,136 @@ describe('判定顺序（互斥链）与连败熔断', () => {
     const exhausted = await pipeline.executeCall({ toolCallId: 'c2', toolName: 'web_fetch', input: { i: 2 } });
     expect(exhausted.summaryForDisplay).toBe('未执行：执行时间超出预算');
     expect(pipeline.shouldHalt()).toBe(true);
+  });
+});
+
+describe('耗时统计（durationMs，工单 P0a-01）', () => {
+  it('成功执行：以注入时钟差值产出 durationMs', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock = 250;
+      return okResult();
+    });
+    const registry = createToolRegistry([makeSpec('web_fetch', execute)]);
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+    });
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_fetch',
+      input: { url: 'https://example.com' },
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.durationMs).toBe(150);
+  });
+
+  it('失败执行：工具抛错失败同样结算耗时', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock = 180;
+      throw new Error('ECONNREFUSED');
+    });
+    const registry = createToolRegistry([makeSpec('web_fetch', execute)]);
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+    });
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_fetch',
+      input: { url: 'https://example.com' },
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.durationMs).toBe(80);
+  });
+
+  it('超时执行：超时保护失败同样结算耗时', async () => {
+    let clock = 100;
+    // 工具规格中设置 50ms 超时，执行中推动时钟超过 50ms
+    const spec: AgentToolSpec = {
+      name: 'web_fetch',
+      description: '测试假工具 web_fetch',
+      parameters: z.object({}),
+      timeoutMs: 50,
+      execute: async () => {
+        clock = 160;
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return okResult();
+      },
+    };
+    const registry = createToolRegistry([spec]);
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+    });
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_fetch',
+      input: {},
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.summaryForDisplay).toContain('用时过长');
+    expect(outcome.durationMs).toBe(60);
+  });
+
+  it('上限拦截（skip）：不计耗时，durationMs 保持缺省', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock += 50;
+      return okResult();
+    });
+    const registry = createToolRegistry([makeSpec('web_fetch', execute)]);
+    const { pipeline } = makePipeline({
+      registry,
+      limits: { maxCallsPerRound: 0 },
+      now: () => clock,
+    });
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_fetch',
+      input: {},
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.summaryForDisplay).toBe('未执行：本轮工具调用数量超过上限（0 次）');
+    expect(outcome.durationMs).toBeUndefined();
+    expect('durationMs' in outcome).toBe(false);
+  });
+
+  it('去重缓存命中：不计耗时，durationMs 保持缺省', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock += 40;
+      return okResult();
+    });
+    const registry = createToolRegistry([makeSpec('web_fetch', execute)]);
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+    });
+
+    const first = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_fetch',
+      input: { a: 1 },
+    });
+    clock += 10;
+    const second = await pipeline.executeCall({
+      toolCallId: 'c2',
+      toolName: 'web_fetch',
+      input: { a: 1 },
+    });
+
+    expect(first.durationMs).toBe(40);
+    expect(second.durationMs).toBeUndefined();
+    expect('durationMs' in second).toBe(false);
   });
 });

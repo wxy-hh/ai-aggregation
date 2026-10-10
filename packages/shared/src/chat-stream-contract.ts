@@ -81,6 +81,8 @@ export type ChatStreamToolResultEvent = {
   summary: string;
   /** 产物附件（可选；仅 image_generate 等产出文件的工具携带） */
   attachment?: ChatStreamToolAttachment;
+  /** 工具执行真实耗时（毫秒；可选，缺省向后兼容） */
+  durationMs?: number;
 };
 
 /** 聊天流式用量统计（done 帧携带） */
@@ -159,6 +161,15 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       if (typeof ev.name !== 'string' || !ev.name) return null;
       if (ev.status !== 'success' && ev.status !== 'failed') return null;
       if (typeof ev.summary !== 'string') return null;
+      // durationMs 为可选：若传必须为非负整数，否则视为非法帧废弃
+      if (
+        ev.durationMs !== undefined &&
+        (typeof ev.durationMs !== 'number' ||
+          !Number.isInteger(ev.durationMs) ||
+          ev.durationMs < 0)
+      ) {
+        return null;
+      }
       // attachment 为可选：给了就必须合法，非法则整个事件作废（不静默降级成无附件）
       let attachment: ChatStreamToolAttachment | undefined;
       if (ev.attachment !== undefined) {
@@ -175,6 +186,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         status: ev.status,
         summary: ev.summary,
         ...(attachment ? { attachment } : {}),
+        ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
       };
     }
     case 'done': {

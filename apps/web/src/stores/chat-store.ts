@@ -412,7 +412,12 @@ export async function runChatStreamSession(
             const nextCalls = prev.some((c) => c.id === result.callId)
               ? prev.map((c) =>
                   c.id === result.callId
-                    ? { ...c, status: result.status, resultSummary: result.summary }
+                    ? {
+                        ...c,
+                        status: result.status,
+                        resultSummary: result.summary,
+                        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+                      }
                     : c
                 )
               : [
@@ -423,6 +428,7 @@ export async function runChatStreamSession(
                     argsSummary: '',
                     status: result.status,
                     resultSummary: result.summary,
+                    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
                   },
                 ];
 

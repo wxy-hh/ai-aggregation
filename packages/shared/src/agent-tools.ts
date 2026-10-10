@@ -28,6 +28,8 @@ export const toolCallRecordSchema = z.object({
   status: z.enum(['running', 'success', 'failed']),
   /** 结果展示摘要（已截断；running 阶段为空串） */
   resultSummary: z.string(),
+  /** 工具真实执行耗时（毫秒；可选，由 tool_result 事件回填） */
+  durationMs: z.number().int().nonnegative().optional(),
 });
 
 export type ToolCallRecord = z.infer<typeof toolCallRecordSchema>;

@@ -479,3 +479,40 @@ describe('useChatStore.sendMessage（agent 过程旁白，二期）', () => {
     }
   });
 });
+
+describe('useChatStore.sendMessage（tool_result durationMs 耗时合并，工单 P0a-01）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    mockedCheckAndWarnLowBalance.mockReset();
+    resetState();
+  });
+
+  it('tool_result 带 durationMs 时记录获得该字段；不带时记录无该字段', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"tool_call","call":{"id":"c1","name":"web_fetch","argsSummary":"url1"}}\n\n',
+        'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"抓取1完成","durationMs":240}\n\n',
+        'data: {"type":"tool_call","call":{"id":"c2","name":"web_fetch","argsSummary":"url2"}}\n\n',
+        'data: {"type":"tool_result","callId":"c2","name":"web_fetch","status":"success","summary":"抓取2完成"}\n\n',
+        'data: {"type":"text-delta","text":"完成回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    const result = await useChatStore.getState().sendMessage();
+    expect(result).toBe('sent');
+
+    const assistant = useChatStore.getState().messages[1];
+    expect(assistant.toolCalls).toHaveLength(2);
+
+    const firstCall = assistant.toolCalls?.[0];
+    const secondCall = assistant.toolCalls?.[1];
+
+    expect(firstCall?.id).toBe('c1');
+    expect(firstCall?.durationMs).toBe(240);
+
+    expect(secondCall?.id).toBe('c2');
+    expect(secondCall?.durationMs).toBeUndefined();
+    expect('durationMs' in (secondCall ?? {})).toBe(false);
+  });
+});

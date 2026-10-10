@@ -367,6 +367,78 @@ describe('ChatStreamEvent 契约（@repo/shared）', () => {
     ).toEqual({ type: 'done' });
   });
 
+  it('parseChatStreamEvent 解析 tool_result 事件（有/无 durationMs 两态均合法）', () => {
+    // 态 1：无 durationMs（向后兼容缺省态）
+    const withoutDuration = {
+      type: 'tool_result' as const,
+      callId: 'call-1',
+      name: 'web_fetch',
+      status: 'success' as const,
+      summary: '获取完成',
+    };
+    expect(parseChatStreamEvent(withoutDuration)).toEqual(withoutDuration);
+
+    // 态 2：有 durationMs（正整数）
+    const withDuration = {
+      type: 'tool_result' as const,
+      callId: 'call-2',
+      name: 'web_fetch',
+      status: 'success' as const,
+      summary: '获取完成',
+      durationMs: 125,
+    };
+    expect(parseChatStreamEvent(withDuration)).toEqual(withDuration);
+
+    // 态 3：durationMs 为 0
+    const withZeroDuration = {
+      type: 'tool_result' as const,
+      callId: 'call-3',
+      name: 'web_fetch',
+      status: 'failed' as const,
+      summary: '执行失败',
+      durationMs: 0,
+    };
+    expect(parseChatStreamEvent(withZeroDuration)).toEqual(withZeroDuration);
+  });
+
+  it('parseChatStreamEvent 对 tool_result 非法 durationMs 视为非法帧返回 null', () => {
+    // 负数
+    expect(
+      parseChatStreamEvent({
+        type: 'tool_result',
+        callId: 'call-1',
+        name: 'web_fetch',
+        status: 'success',
+        summary: '完成',
+        durationMs: -1,
+      })
+    ).toBeNull();
+
+    // 浮点小数
+    expect(
+      parseChatStreamEvent({
+        type: 'tool_result',
+        callId: 'call-1',
+        name: 'web_fetch',
+        status: 'success',
+        summary: '完成',
+        durationMs: 12.34,
+      })
+    ).toBeNull();
+
+    // 字符串
+    expect(
+      parseChatStreamEvent({
+        type: 'tool_result',
+        callId: 'call-1',
+        name: 'web_fetch',
+        status: 'success',
+        summary: '完成',
+        durationMs: '100',
+      })
+    ).toBeNull();
+  });
+
   it('encodeChatStreamEvent 产物可被 parse 解析回原事件（编码解码同源）', () => {
     const events = [
       { type: 'text-delta', text: '你好' },
