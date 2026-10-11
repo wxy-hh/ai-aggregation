@@ -74,7 +74,37 @@ describe('ProfileToolsSection 我的工具板块', () => {
       },
     });
 
-    fetchSpy = vi.spyOn(global, 'fetch');
+    fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const urlStr = String(input);
+      if (urlStr.includes('/stats')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              totalCalls: 0,
+              successRate: null,
+              avgDurationMs: null,
+              lastCalledAt: null,
+              lastErrorSummary: null,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/logs')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { logs: [], total: 0, hasMore: false },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
   });
 
   afterEach(() => {
@@ -675,5 +705,75 @@ describe('ProfileToolsSection 我的工具板块', () => {
       expect(screen.getByText('cURL 导入工具')).toBeInTheDocument();
       expect(screen.getByText(`wh_${callNameInput.value}`)).toBeInTheDocument();
     });
+  });
+
+  it('点击工具卡片上的「调用记录」按钮，打开调用记录抽屉', async () => {
+    fetchSpy.mockImplementation(async (input: RequestInfo | URL) => {
+      const urlStr = String(input);
+      if (urlStr.includes('/api/agent-tools') && !urlStr.includes('/stats') && !urlStr.includes('/logs')) {
+        return new Response(
+          JSON.stringify({ success: true, data: { tools: [mockTool1] } }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/stats')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              totalCalls: 5,
+              successRate: 100,
+              avgDurationMs: 120,
+              lastCalledAt: '2026-10-10T12:00:00.000Z',
+              lastErrorSummary: null,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (urlStr.includes('/logs')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              logs: [
+                {
+                  id: 'call_test_1',
+                  method: 'POST',
+                  statusCode: 200,
+                  durationMs: 120,
+                  outcome: 'success',
+                  errorKind: null,
+                  createdAt: '2026-10-10T12:00:00.000Z',
+                },
+              ],
+              total: 1,
+              hasMore: false,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    render(<ProfileToolsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText('天气查询助手')).toBeInTheDocument();
+    });
+
+    // 点击该工具卡片的「调用记录」按钮
+    const logsBtn = await screen.findByRole('button', { name: /调用记录/ });
+    expect(logsBtn).toBeInTheDocument();
+    fireEvent.click(logsBtn);
+
+    // 抽屉展开且具备 data-testid="tool-logs-drawer"
+    const drawer = await screen.findByTestId('tool-logs-drawer');
+    expect(drawer).toBeInTheDocument();
+    expect(screen.getByText('天气查询助手 · 调用记录')).toBeInTheDocument();
   });
 });

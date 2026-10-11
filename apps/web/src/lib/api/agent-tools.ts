@@ -193,3 +193,86 @@ export async function testAgentToolConnection(id: string): Promise<ProbeConnecti
   const result = await response.json();
   return result.data;
 }
+
+export interface AgentToolStats {
+  totalCalls: number;
+  successRate: number | null;
+  avgDurationMs: number | null;
+  lastCalledAt: string | null;
+  lastErrorSummary: string | null;
+}
+
+export interface AgentToolLogItem {
+  id: string;
+  method: string;
+  statusCode: number | null;
+  durationMs: number;
+  outcome: string;
+  errorKind: string | null;
+  createdAt: string;
+}
+
+export interface AgentToolLogsResponse {
+  logs: AgentToolLogItem[];
+  total: number;
+  hasMore: boolean;
+}
+
+/**
+ * 获取指定 Webhook 工具的调用聚合统计数据（工单 03 / spec §4.4）
+ */
+export async function fetchAgentToolStats(id: string): Promise<AgentToolStats> {
+  const response = await authFetch(`/api/agent-tools/${id}/stats`);
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new AgentToolApiError('请求过于频繁，请稍后再试', 429, 'TOO_MANY_REQUESTS');
+    }
+    const payload = await response.json().catch(() => ({ error: '获取工具统计失败' }));
+    throw new AgentToolApiError(
+      payload.error || '获取工具统计失败',
+      response.status,
+      payload.errorCode
+    );
+  }
+
+  const result = await response.json();
+  return result.data;
+}
+
+/**
+ * 倒序分页获取指定 Webhook 工具的历史调用审计记录（工单 03 / spec §4.4）
+ */
+export async function fetchAgentToolLogs(
+  id: string,
+  options?: { limit?: number; offset?: number }
+): Promise<AgentToolLogsResponse> {
+  const queryParams = new URLSearchParams();
+  if (options?.limit !== undefined) {
+    queryParams.set('limit', String(options.limit));
+  }
+  if (options?.offset !== undefined) {
+    queryParams.set('offset', String(options.offset));
+  }
+
+  const queryStr = queryParams.toString();
+  const url = `/api/agent-tools/${id}/logs${queryStr ? `?${queryStr}` : ''}`;
+
+  const response = await authFetch(url);
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new AgentToolApiError('请求过于频繁，请稍后再试', 429, 'TOO_MANY_REQUESTS');
+    }
+    const payload = await response.json().catch(() => ({ error: '获取调用日志失败' }));
+    throw new AgentToolApiError(
+      payload.error || '获取调用日志失败',
+      response.status,
+      payload.errorCode
+    );
+  }
+
+  const result = await response.json();
+  return result.data;
+}
+

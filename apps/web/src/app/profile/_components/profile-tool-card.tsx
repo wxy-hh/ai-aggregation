@@ -14,7 +14,7 @@
  * - 编辑与删除入口（移动端热区 ≥44px，无 hover 依赖）。
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Globe,
   KeyRound,
@@ -25,6 +25,10 @@ import {
   XCircle,
   Loader2,
   Variable,
+  History,
+  Activity,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -32,8 +36,10 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   testAgentToolConnection,
+  fetchAgentToolStats,
   type SanitizedAgentTool,
   type ProbeConnectionResult,
+  type AgentToolStats,
 } from '@/lib/api/agent-tools';
 import { extractHostname } from './profile-tools-utils';
 
@@ -42,6 +48,8 @@ interface ProfileToolCardProps {
   onEdit: (tool: SanitizedAgentTool) => void;
   onDelete: (tool: SanitizedAgentTool) => void;
   onToggleEnabled: (tool: SanitizedAgentTool, nextEnabled: boolean) => Promise<void>;
+  onViewLogs?: (tool: SanitizedAgentTool) => void;
+  initialStats?: AgentToolStats | null;
 }
 
 export function ProfileToolCard({
@@ -49,10 +57,37 @@ export function ProfileToolCard({
   onEdit,
   onDelete,
   onToggleEnabled,
+  onViewLogs,
+  initialStats,
 }: ProfileToolCardProps) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ProbeConnectionResult | null>(null);
   const [isToggling, setIsToggling] = useState(false);
+
+  // 工具调用统计观测指标（工单 03）
+  const [stats, setStats] = useState<AgentToolStats | null>(initialStats ?? null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialStats !== undefined) return;
+    let cancelled = false;
+    setStatsLoading(true);
+
+    fetchAgentToolStats(tool.id)
+      .then((data) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch(() => {
+        // 静默降级：观测统计拉取失败不影响卡片主要配置与操作
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tool.id, initialStats]);
 
   const hostname = extractHostname(tool.url);
   const paramCount = Array.isArray(tool.params) ? tool.params.length : 0;
@@ -159,6 +194,54 @@ export function ProfileToolCard({
           {tool.description}
         </p>
 
+        {/* 观测回流指标展示（工单 03） */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+          {statsLoading && !stats ? (
+            <span className="inline-flex items-center gap-1 text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              加载指标中…
+            </span>
+          ) : stats && stats.totalCalls > 0 ? (
+            <>
+              <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 dark:bg-white/[0.08] dark:text-slate-300">
+                调用 <span className="font-mono font-semibold ml-0.5">{stats.totalCalls}</span> 次
+              </span>
+
+              {stats.successRate !== null && (
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded-md px-2 py-0.5 font-medium',
+                    stats.successRate >= 90
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+                      : stats.successRate >= 60
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300'
+                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300'
+                  )}
+                >
+                  成功率 <span className="font-mono font-semibold ml-0.5">{stats.successRate}%</span>
+                </span>
+              )}
+
+              {stats.avgDurationMs !== null && (
+                <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 dark:bg-white/[0.08] dark:text-slate-300">
+                  均耗 <span className="font-mono font-semibold ml-0.5">{stats.avgDurationMs}ms</span>
+                </span>
+              )}
+
+              {stats.lastErrorSummary && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 font-medium text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  最近失败：{stats.lastErrorSummary}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="inline-flex items-center rounded-md bg-slate-100/70 px-2 py-0.5 font-medium text-slate-400 dark:bg-white/[0.04] dark:text-slate-500">
+              暂无调用数据
+            </span>
+          )}
+        </div>
+
         {/* 测试结果行内反馈 */}
         {testResult && (
           <div
@@ -191,26 +274,41 @@ export function ProfileToolCard({
 
       {/* 底部操作工具栏（移动端热区 ≥44px，无 hover 依赖） */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-white/[0.06]">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={testing}
-          onClick={handleTest}
-          className="h-11 min-h-[44px] rounded-xl border-slate-200/90 bg-white px-3 text-xs font-semibold text-[#475569] shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/10"
-        >
-          {testing ? (
-            <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              测试中…
-            </>
-          ) : (
-            <>
-              <Play className="mr-1.5 h-3 w-3 text-blue-600 dark:text-blue-400" />
-              测试连接
-            </>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={testing}
+            onClick={handleTest}
+            className="h-11 min-h-[44px] rounded-xl border-slate-200/90 bg-white px-3 text-xs font-semibold text-[#475569] shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/10"
+          >
+            {testing ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                测试中…
+              </>
+            ) : (
+              <>
+                <Play className="mr-1.5 h-3 w-3 text-blue-600 dark:text-blue-400" />
+                测试连接
+              </>
+            )}
+          </Button>
+
+          {onViewLogs && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onViewLogs(tool)}
+              className="h-11 min-h-[44px] rounded-xl border-slate-200/90 bg-white px-3 text-xs font-semibold text-[#475569] shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100 dark:hover:bg-white/10"
+            >
+              <History className="mr-1.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+              调用记录
+            </Button>
           )}
-        </Button>
+        </div>
 
         <div className="flex items-center gap-1.5">
           <Button

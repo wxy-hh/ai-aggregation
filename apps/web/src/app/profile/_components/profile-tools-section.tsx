@@ -43,6 +43,7 @@ import {
 } from '@/lib/api/agent-tools';
 import { ProfileToolCard } from './profile-tool-card';
 import { ProfileToolDrawer } from './profile-tool-drawer';
+import { ProfileToolLogsDrawer } from './profile-tool-logs-drawer';
 import { ProfileToolEntryModal } from './profile-tool-entry-modal';
 import type { ToolTemplate } from './profile-tool-templates';
 import type { ParsedCurlDto } from '@/lib/agent/parse-curl';
@@ -72,6 +73,9 @@ export function ProfileToolsSection() {
   // 表单抽屉状态
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingTool, setEditingTool] = useState<SanitizedAgentTool | null>(null);
+
+  // 调用记录抽屉状态（工单 03）
+  const [logsTool, setLogsTool] = useState<SanitizedAgentTool | null>(null);
 
   // 删除二次确认状态
   const [deletingTool, setDeletingTool] = useState<SanitizedAgentTool | null>(null);
@@ -353,6 +357,7 @@ export function ProfileToolsSection() {
                   onEdit={handleOpenEdit}
                   onDelete={(t) => setDeletingTool(t)}
                   onToggleEnabled={handleToggleEnabled}
+                  onViewLogs={(t) => setLogsTool(t)}
                 />
               ))}
             </div>
@@ -377,6 +382,15 @@ export function ProfileToolsSection() {
         initialTemplate={selectedTemplate}
         initialPrefill={selectedCurlPrefill}
         onSaved={handleToolSaved}
+      />
+
+      {/* 调用记录抽屉（工单 03） */}
+      <ProfileToolLogsDrawer
+        open={Boolean(logsTool)}
+        onOpenChange={(open) => {
+          if (!open) setLogsTool(null);
+        }}
+        tool={logsTool}
       />
 
       {/* 删除二次确认弹层 */}
