@@ -13,6 +13,7 @@ import Link from 'next/link';
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { getCapabilityPack } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 import { fetchAgentTools } from '@/lib/api/agent-tools';
 import { detectAgentIntent, type AgentIntentDetectionResult } from '@/lib/agent/agent-intent';
@@ -24,6 +25,7 @@ import { trackEvent } from '@/lib/events/tracker';
 import {
   Image,
   FileText,
+  Search,
   X,
   Loader2,
   AlertCircle,
@@ -128,7 +130,13 @@ export function ChatInput({
   // provider: 当前使用的 AI 提供商（如 'xunfei'、'doubao'）
   // attachment: 当前附件对象（图片或文件）
   // setAttachment: 设置附件的方法
-  const { provider, attachment, setAttachment } = useChatStore();
+  const {
+    provider,
+    attachment,
+    setAttachment,
+    activeCapabilityPackKey,
+    setCapabilityPackKey,
+  } = useChatStore();
   const stop = useChatStore((s) => s.stop);
 
   // 监听激活会话 ID（切会话消失）
@@ -147,6 +155,11 @@ export function ChatInput({
   // 这里刻意不去改全局 provider/model —— agent 期间生效模型由服务端决定，头部选择器会置灰提示不生效。
   const agentModeEnabled = useSettingsStore((s) => s.agentModeEnabled);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+
+  // 场景能力包（ADR-0014 / 工单 01）：当前激活的能力包配置
+  const activeCapabilityPack = agentModeEnabled
+    ? getCapabilityPack(activeCapabilityPackKey)
+    : undefined;
 
   // 记录最近一次检测到意图时的完整草稿文本（用于 paste 即时触发场景下的兜底全文发送）
   const lastIntentDraftRef = useRef('');
@@ -382,6 +395,7 @@ export function ChatInput({
     if (el) {
       el.style.height = 'auto';
       el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+      el.focus();
     }
     onExternalDraftConsumed?.(externalDraft.id);
     // 仅在草稿 id 变化时消费一次
@@ -1096,13 +1110,43 @@ export function ChatInput({
 
       {/* Agent 模式局部提示与工具感知状态条：不挤压输入坞布局、不遮挡发送按钮 */}
       {agentModeEnabled && (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1">
-          <div
-            data-testid="agent-mode-notice"
-            className="flex items-center gap-1.5 text-[10px] sm:text-[11px] leading-tight text-blue-600 dark:text-blue-400"
-          >
-            <Wrench className="h-3 w-3 shrink-0" />
-            <span>Agent 模式 · 已切换至豆包 Seed · 额度消耗更高</span>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              data-testid="agent-mode-notice"
+              className="flex items-center gap-1.5 text-[10px] sm:text-[11px] leading-tight text-blue-600 dark:text-blue-400"
+            >
+              <Wrench className="h-3 w-3 shrink-0" />
+              <span>Agent 模式 · 已切换至豆包 Seed · 额度消耗更高</span>
+            </div>
+
+            {/* 场景能力包专属徽标（ADR-0014 / 工单 01） */}
+            {activeCapabilityPack && (
+              <div
+                data-testid="capability-pack-badge"
+                className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/30 bg-blue-50/90 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 shadow-sm backdrop-blur-md dark:border-blue-500/30 dark:bg-blue-950/50 dark:text-blue-300"
+              >
+                <span className="flex items-center gap-1">
+                  {activeCapabilityPack.key === 'deep-research' ? (
+                    <Search className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  ) : (
+                    <FileText className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  )}
+                  <span>{activeCapabilityPack.name}</span>
+                </span>
+                <span className="text-[10px] text-blue-500/80 dark:text-blue-400/80">
+                  ({activeCapabilityPack.maxSteps} 步上限)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCapabilityPackKey(null)}
+                  aria-label="取消选择能力包"
+                  className="ml-0.5 rounded-full p-0.5 text-blue-400 hover:bg-blue-200/50 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-800/50"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
           </div>
 
           {enabledToolCount !== null && (

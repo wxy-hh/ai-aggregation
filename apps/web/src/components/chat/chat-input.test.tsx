@@ -540,4 +540,46 @@ describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {
     // 发送失败后草稿恢复保留在输入框
     expect(textarea.value).toBe('帮我查一下今天的天气');
   });
+
+  describe('ChatInput 场景能力包徽标 (ADR-0014 / 工单 01)', () => {
+    it('开启 Agent 模式且选择了 deep-research 能力包时，展示深度调研能力包徽标与 8 步上限提示', () => {
+      useSettingsStore.setState({ agentModeEnabled: true });
+      useChatStore.setState({ activeCapabilityPackKey: 'deep-research' });
+
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      const badge = screen.getByTestId('capability-pack-badge');
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveTextContent('深度调研');
+      expect(badge).toHaveTextContent('8 步');
+    });
+
+    it('点击徽标上的取消按钮，清除能力包选择', () => {
+      useSettingsStore.setState({ agentModeEnabled: true });
+      useChatStore.setState({ activeCapabilityPackKey: 'deep-research' });
+
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      const closeBtn = screen.getByLabelText('取消选择能力包');
+      fireEvent.click(closeBtn);
+
+      expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
+    });
+
+    it('外部草稿传入时，自动填充输入框并调用 focus 聚焦', () => {
+      const onConsumed = vi.fn();
+      render(
+        <ChatInput
+          onSend={vi.fn()}
+          isLoading={false}
+          externalDraft={{ id: 'draft-1', text: '调研报告模板内容' }}
+          onExternalDraftConsumed={onConsumed}
+        />
+      );
+
+      const textarea = screen.getByPlaceholderText('输入消息…') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('调研报告模板内容');
+      expect(onConsumed).toHaveBeenCalledWith('draft-1');
+    });
+  });
 });

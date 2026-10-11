@@ -794,5 +794,93 @@ describe('web_search providerExecuted 映射', () => {
       expect.objectContaining({ outcome: 'success', searchCalls: 1 })
     );
   });
+
+  describe('场景能力包专属注入与 8 步扩容 (ADR-0014 / 工单 01)', () => {
+    it('决策步应注入能力包专属 systemPrompt', async () => {
+      const registry = createToolRegistry([fakeToolSpec]);
+      const onFinishMock = vi.fn(async () => {});
+
+      streamTextMock.mockReturnValueOnce(
+        makeFakeStreamResult({
+          streamParts: [{ type: 'text-delta', text: '研报最终文本' }],
+          toolCalls: [],
+        })
+      );
+
+      const stream = runAgent({
+        userId: 'u1',
+        provider: 'doubao',
+        model: 'doubao-seed-evolving',
+        messages: [{ id: 'm1', role: 'user', content: '调研' }] as ChatMessage[],
+        stepOutputLimit: 2048,
+        signal: new AbortController().signal,
+        errorId: 'test',
+        runtime: await testRuntime(registry),
+        capabilityPack: 'deep-research',
+        onFinish: onFinishMock,
+      });
+
+      await readSseEvents(stream);
+
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+      const callArgs = streamTextMock.mock.calls[0][0] as {
+        system?: string;
+      };
+      expect(callArgs.system).toBeDefined();
+      expect(callArgs.system).toContain('深度调研');
+    });
+
+    it('deep-research 场景下，effectiveMaxSteps 取 8 步，允许执行多轮决策直至收尾', async () => {
+      const registry = createToolRegistry([fakeToolSpec]);
+      const onFinishMock = vi.fn(async () => {});
+
+      // 模拟 7 轮工具调用 + 1 轮收尾步（共 8 次 streamText）
+      for (let i = 1; i <= 7; i++) {
+        streamTextMock.mockReturnValueOnce(
+          makeFakeStreamResult({
+            streamParts: [],
+            toolCalls: [{ toolCallId: `call_${i}`, toolName: 'test_tool', input: { index: i } }],
+            response: { id: `resp_${i}` },
+          })
+        );
+      }
+      // 收尾步
+      streamTextMock.mockReturnValueOnce(
+        makeFakeStreamResult({
+          streamParts: [{ type: 'text-delta', text: '第 8 步最终收尾报告' }],
+          toolCalls: [],
+          response: { id: 'resp_summary' },
+        })
+      );
+
+      const stream = runAgent({
+        userId: 'u1',
+        provider: 'doubao',
+        model: 'doubao-seed-evolving',
+        messages: [{ id: 'm1', role: 'user', content: '长流程探索' }] as ChatMessage[],
+        stepOutputLimit: 2048,
+        signal: new AbortController().signal,
+        errorId: 'test',
+        runtime: await testRuntime(registry),
+        capabilityPack: 'deep-research',
+        onFinish: onFinishMock,
+      });
+
+      const events = await readSseEvents(stream);
+
+      // 共执行了 7 次决策 + 1 次收尾 = 8 次 streamText 调用
+      expect(streamTextMock).toHaveBeenCalledTimes(8);
+      // 收尾步不挂 tools
+      const summaryCall = streamTextMock.mock.calls[7][0] as { tools?: unknown };
+      expect(summaryCall.tools).toBeUndefined();
+
+      expect(
+        events.some((e) => e.type === 'text-delta' && e.text === '第 8 步最终收尾报告')
+      ).toBe(true);
+      expect(onFinishMock).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'success' })
+      );
+    });
+  });
 });
 

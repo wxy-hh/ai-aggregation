@@ -20,6 +20,7 @@ import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
 import { useSettingsStore } from '@/stores/settings-store';
+import { CAPABILITY_PACKS } from '@repo/shared';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -60,6 +61,8 @@ import {
   PanelLeft,
   SlidersHorizontal,
   GitCompareArrows, // 对比图标（并行对比会话标识）
+  Sparkles,
+  Wrench,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -246,6 +249,7 @@ export default function ChatWorkspace() {
     reset,
     setAttachment,
     attachment,
+    setCapabilityPackKey,
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -261,6 +265,7 @@ export default function ChatWorkspace() {
       reset: state.reset,
       setAttachment: state.setAttachment,
       attachment: state.attachment,
+      setCapabilityPackKey: state.setCapabilityPackKey,
     }))
   );
 
@@ -911,60 +916,135 @@ export default function ChatWorkspace() {
                         <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
                         <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
-                          <div className="mb-8 flex flex-col items-center text-center">
-                            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
-                              <Bot className="h-8 w-8" />
-                            </div>
-                            <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                              智能对话助手
-                            </div>
-                          </div>
+                          {agentModeEnabled ? (
+                            <>
+                              <div className="mb-8 flex flex-col items-center text-center">
+                                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#3B82F6_0%,#6366F1_100%)] text-white shadow-[0_16px_32px_rgba(59,130,246,0.28)]">
+                                  <Sparkles className="h-8 w-8" />
+                                </div>
+                                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/90 px-3.5 py-1 text-xs font-semibold text-blue-700 shadow-sm dark:border-blue-500/30 dark:bg-blue-950/40 dark:text-blue-300">
+                                  <Wrench className="h-3.5 w-3.5" />
+                                  <span>Agent 场景能力包</span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
+                                  专项设定专属于垂直任务的提示词与工具白名单，为您交付高质量结构化成果
+                                </p>
+                              </div>
 
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {quickActions.map((action) => {
-                              const ActionIcon = action.icon;
+                              <div className="grid gap-4 md:grid-cols-2" data-testid="capability-packs-grid">
+                                {CAPABILITY_PACKS.map((pack) => {
+                                  const isResearch = pack.key === 'deep-research';
+                                  const PackIcon = isResearch ? Search : FileText;
+                                  return (
+                                    <button
+                                      key={pack.key}
+                                      type="button"
+                                      data-testid={`capability-pack-card-${pack.key}`}
+                                      onClick={() => {
+                                        setCapabilityPackKey(pack.key);
+                                        setRelayDraft({
+                                          id: `pack-${pack.key}-${Date.now()}`,
+                                          text: pack.promptTemplate,
+                                        });
+                                      }}
+                                      className="group relative flex flex-col justify-between rounded-[24px] border border-white/80 bg-white/[0.88] p-5 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-300 hover:shadow-[0_18px_32px_rgba(93,124,250,0.14)] dark:border-slate-700/80 dark:bg-slate-800/[0.88] dark:hover:border-blue-500/40 cursor-pointer"
+                                    >
+                                      <div>
+                                        <div className="flex items-center justify-between gap-3 mb-3">
+                                          <div
+                                            className={cn(
+                                              'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105 shadow-sm',
+                                              isResearch
+                                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+                                                : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                            )}
+                                          >
+                                            <PackIcon className="h-5 w-5" />
+                                          </div>
+                                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+                                            {pack.maxSteps} 步探索上限
+                                          </span>
+                                        </div>
 
-                              return (
-                                <button
-                                  key={action.title}
-                                  onClick={() => handleSend(action.prompt)}
-                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
-                                >
-                                  <div
-                                    className={cn(
-                                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105',
-                                      action.iconClassName
-                                    )}
-                                  >
-                                    <ActionIcon className="h-5 w-5" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
-                                      {action.title}
-                                    </div>
-                                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                      {action.description}
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
+                                        <div className="text-base font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                          {pack.name}
+                                        </div>
+                                        <div className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                          {pack.description}
+                                        </div>
+                                      </div>
 
-                          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <FileText className="h-3.5 w-3.5 text-blue-500" />
-                              支持长文本分析
-                            </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <Globe className="h-3.5 w-3.5 text-blue-500" />
-                              实时联网搜索
-                            </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                              企业级数据安全
-                            </div>
-                          </div>
+                                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                        <span>点击载入专业模板</span>
+                                        <span className="font-medium group-hover:translate-x-0.5 transition-transform">→</span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="mt-6 flex flex-wrap items-center justify-center gap-3 pt-2 text-xs text-slate-400 dark:text-slate-500">
+                                <span>按需启用私有 Webhook 插槽 · 随会话状态隔离</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="mb-8 flex flex-col items-center text-center">
+                                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                                  <Bot className="h-8 w-8" />
+                                </div>
+                                <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                                  智能对话助手
+                                </div>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {quickActions.map((action) => {
+                                  const ActionIcon = action.icon;
+
+                                  return (
+                                    <button
+                                      key={action.title}
+                                      onClick={() => handleSend(action.prompt)}
+                                      className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
+                                    >
+                                      <div
+                                        className={cn(
+                                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105',
+                                          action.iconClassName
+                                        )}
+                                      >
+                                        <ActionIcon className="h-5 w-5" />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                          {action.title}
+                                        </div>
+                                        <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                          {action.description}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <FileText className="h-3.5 w-3.5 text-blue-500" />
+                                  支持长文本分析
+                                </div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <Globe className="h-3.5 w-3.5 text-blue-500" />
+                                  实时联网搜索
+                                </div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                                  企业级数据安全
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     ) : (

@@ -37,23 +37,27 @@ export interface AgentStepBudget {
 /**
  * 步数 ↔ token 的唯一换算点（评审收敛：预检算步 / 预留总量曾各写一份公式）。
  * 由可用额度与输入估算计算可负担步数；steps < AGENT_MIN_STEPS 时调用方应拒绝。
+ * 支持按场景能力包传入特定 maxSteps（例如深度调研 8 步，默认 5 步）。
  */
 export function resolveAgentStepBudget(
   availableQuota: number,
-  inputEstimate: number
+  inputEstimate: number,
+  maxSteps: number = AGENT_MAX_STEPS
 ): AgentStepBudget {
+  const effectiveMax = Math.max(1, maxSteps);
   const steps = Math.min(
-    AGENT_MAX_STEPS,
+    effectiveMax,
     Math.max(0, Math.floor((availableQuota - inputEstimate) / AGENT_STEP_OUTPUT_LIMIT))
   );
   return { steps, reserveOutputLimit: AGENT_STEP_OUTPUT_LIMIT * steps };
 }
 
 /** 满配步数预算：余额预检失败时的兜底（reserve 内部仍是权威校验） */
-export function fullAgentStepBudget(): AgentStepBudget {
+export function fullAgentStepBudget(maxSteps: number = AGENT_MAX_STEPS): AgentStepBudget {
+  const steps = Math.max(1, maxSteps);
   return {
-    steps: AGENT_MAX_STEPS,
-    reserveOutputLimit: AGENT_STEP_OUTPUT_LIMIT * AGENT_MAX_STEPS,
+    steps,
+    reserveOutputLimit: AGENT_STEP_OUTPUT_LIMIT * steps,
   };
 }
 

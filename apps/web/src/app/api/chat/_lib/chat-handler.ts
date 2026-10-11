@@ -18,7 +18,7 @@ import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
 import { ProviderClientError, type ChatProviderAdapter, type ChatStreamFinish } from './types';
 import { getAvailableQuota } from '@/lib/billing/quota-service';
-import { estimateTextTokens } from '@repo/shared';
+import { estimateTextTokens, getCapabilityPack } from '@repo/shared';
 import {
   AGENT_MIN_STEPS,
   AGENT_MODEL,
@@ -75,16 +75,24 @@ export function createChatHandler(config: ChatHandlerConfig) {
         provider = 'xunfei',
         reservationId,
         agent: rawAgent,
+        capabilityPack: rawCapabilityPack,
       } = body as {
         messages: ChatMessage[];
         model?: string;
         provider?: ProviderName;
         reservationId?: string;
         agent?: unknown;
+        capabilityPack?: unknown;
       };
       // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
       // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
       const agent = rawAgent === true;
+      // 场景能力包（ADR-0014 / 工单 01）：仅在 agent 模式且为合法字符串时放行
+      const capabilityPack =
+        agent && typeof rawCapabilityPack === 'string' && rawCapabilityPack.trim()
+          ? rawCapabilityPack.trim()
+          : undefined;
+      const activeCapabilityPack = agent ? getCapabilityPack(capabilityPack) : undefined;
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
@@ -127,7 +135,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
         try {
           affordable = resolveAgentStepBudget(
             await getAvailableQuota(user.id),
-            estimateTextTokens(messages)
+            estimateTextTokens(messages),
+            activeCapabilityPack?.maxSteps
           );
         } catch (error) {
           console.warn('[chat] 余额预检异常，按满配步数尝试预留', {
@@ -143,13 +152,14 @@ export function createChatHandler(config: ChatHandlerConfig) {
             requestId,
           });
         }
-        agentBudget = affordable ?? fullAgentStepBudget();
+        agentBudget = affordable ?? fullAgentStepBudget(activeCapabilityPack?.maxSteps);
 
-        // 创建运行时上下文：按需加载用户 Webhook 工具并装配合并注册表（加载失败由运行时内部降级）
+        // 创建运行时上下文：按需加载用户 Webhook 工具并依据能力包白名单严格收敛内置工具
         agentRuntime = await createAgentRuntimeContext({
           userId: user.id,
           errorId,
           loadUserTools: config.getUserTools,
+          capabilityPack: activeCapabilityPack?.key,
         });
       }
 
@@ -193,6 +203,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
                   // 观测计数由运行时上下文经 finish 统一交付（ADR-0011），路由层不再触碰调次闭包
                   webhookCalls: finish.webhookCalls ?? 0,
                   searchCalls: finish.searchCalls ?? 0,
+                  ...(activeCapabilityPack ? { capabilityPack: activeCapabilityPack.key } : {}),
                 }
               : {}),
             // agent 模式静默覆盖留痕：当用户请求的提供商/模型与强制值不同时，记录被覆盖的原始值以备审计追溯
@@ -221,6 +232,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           signal: req.signal,
           errorId,
           runtime: agentRuntime,
+          capabilityPack: activeCapabilityPack?.key,
           onFinish,
         });
       } else {

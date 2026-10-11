@@ -28,6 +28,9 @@ export interface Conversation {
     mode?: 'single' | 'compare'; // 会话模式
     selectedModels?: SelectedModel[]; // 比较模式已选模型
     turns?: ComparisonTurn[]; // 比较模式：会话→轮次→模型分支
+    // P0b 场景能力包与会话级工具覆盖（ADR-0014）
+    capabilityPack?: string;
+    toolOverrides?: Record<string, boolean>;
 }
 
 // 按日期分组的对话
@@ -116,10 +119,11 @@ interface ConversationsState {
 
     // 操作方法
     setIsLoaded: (loaded: boolean) => void;
-    createConversation: (provider?: string, model?: string) => string;
+    createConversation: (provider?: string, model?: string, capabilityPack?: string) => string;
     switchConversation: (id: string) => void;
     updateMessages: (id: string, messages: ChatMessage[]) => void;
     updateConversationSettings: (id: string, provider: string, model: string) => void;
+    updateConversationCapabilityPack: (id: string, capabilityPack?: string | null) => void;
     deleteConversation: (id: string, _isSyncDelete?: boolean) => void;
 
     // 比较会话：创建与更新轮次分支
@@ -184,8 +188,8 @@ export const useConversationsStore = create<ConversationsState>()(
                 return conversations.find(c => c.messages.length === 0 && c.mode !== 'compare');
             },
 
-            // 创建新对话
-            createConversation: (provider = 'xunfei', model = 'lite') => {
+            // 创建新对话（支持可选能力包参数）
+            createConversation: (provider = 'xunfei', model = 'lite', capabilityPack) => {
                 const newConv: Conversation = {
                     id: generateId(),
                     title: '新对话',
@@ -195,6 +199,7 @@ export const useConversationsStore = create<ConversationsState>()(
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     mode: 'single',
+                    ...(capabilityPack ? { capabilityPack } : {}),
                 };
 
                 set(state => ({
@@ -205,6 +210,21 @@ export const useConversationsStore = create<ConversationsState>()(
                 }));
 
                 return newConv.id;
+            },
+
+            // 更新会话的能力包绑定
+            updateConversationCapabilityPack: (id, capabilityPack) => {
+                set(state => ({
+                    conversations: state.conversations.map(conv =>
+                        conv.id === id
+                            ? {
+                                  ...conv,
+                                  capabilityPack: capabilityPack || undefined,
+                                  updatedAt: Date.now(),
+                              }
+                            : conv
+                    ),
+                }));
             },
 
             // 创建比较会话（并行对比模式）
@@ -284,7 +304,7 @@ export const useConversationsStore = create<ConversationsState>()(
                         lastActiveSingleId: id,
                     });
                     try {
-                        useChatStore.getState().loadConversation(conv.id, conv.messages as any, conv.provider as any, conv.model);
+                        useChatStore.getState().loadConversation(conv.id, conv.messages as any, conv.provider as any, conv.model, conv.capabilityPack);
                     } catch {}
                 }
             },
