@@ -235,6 +235,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 | `astrology-twinkle` + `.animate-astrology-twinkle` | 默认 8s，组件错峰 | 星野星点闪烁（opacity 0.35↔0.7 窄带呼吸，不做 0↔1 全闪烁——替代曾滥用的 `animate-pulse`，reduce-motion 静止） |
 | `acw-ring-spin` + `.animate-acw-spin-slow` / `-slower` / `-slowest-reverse` | 18s / 36s / 48s 反向 | 星盘 HTML 环层自转（wheel-3d 双环、chart-wheel 环；`acw-orbit-cw/ccw` 是 SVG `fill-box` 专用，勿混用到 HTML 层） |
 | `acw-meteor` | 3s 亮痕 / 9s 归零 | 星野流星（自组件内联 `<style>` 收编进 globals.css，参数原样） |
+| `agent-pulse` | 1.8s | 运行态 AgentTrace 瞬态状态条微动效（工单 P0a-02：窄带透明度+缩放呼吸，reduce-motion 静止） |
 
 ### 6.4 动效技术选型
 
@@ -273,6 +274,7 @@ destiny 全域共享：白昼/夜幕双层底 + 3 档漂浮光斑（tone: blue /
 - 首选 `@/components/ui/button`（已品牌化：主变体渐变+发光阴影、`active:scale-[0.98]`、destructive 粉渐变、outline 白玻璃）。
 - 命理主 CTA 用胶囊：`rounded-full bg-gradient-to-r from-blue-600 to-indigo-600`（或 `#4969E9→#7C5CF6`），hover `scale-[1.02]`，active `scale-[0.98]`。星座寰宇模块统一引 `app/destiny/_components/astrology/astrology-cta-button.tsx` 的 `<AstrologyCtaButton>`（按钮）与 `ASTROLOGY_CTA_GRADIENT_CLASS`（选中态胶囊等装饰渐变），不再手写色值。
 - 状态齐全：hover（上浮 -1px 或 scale 1.02）/ active（scale 0.98）/ focus-visible（2px ring）/ disabled（opacity-40，无动效）/ loading（Spinner + pointer-events-none）。
+- 生成中主 CTA 的功能切换例外（chat 输入坞，2026-10-01）：AI 回复进行中，主按钮**不再呈现 loading 态**，而是切换为可点击的「停止生成」操作按钮（Square 图标 + `aria-label="停止生成"`，样式沿用发送 CTA 不变暗）。loading 态规范仍适用于表单提交类按钮；对「流式生成可中断」的场景，停止操作优先于 loading 展示。
 - 尺寸：大 52px / 中 44px / 小 32px；移动端主操作不小于 44px。
 
 ### 8.2 输入框

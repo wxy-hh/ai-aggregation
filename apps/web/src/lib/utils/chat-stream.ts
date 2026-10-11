@@ -1,7 +1,12 @@
 // 消费聊天接口返回的标准 SSE 流
 // 事件协议以 @repo/shared 的 ChatStreamEvent 为唯一权威定义（见 chat-stream-contract），
 // 任何未在契约内的事件（未知类型、非标准帧）按「显式忽略」处理，不回调、不终止流。
-import { parseChatStreamEvent, type ChatStreamUsage } from '@repo/shared';
+import {
+  parseChatStreamEvent,
+  type ChatStreamToolCall,
+  type ChatStreamToolResultEvent,
+  type ChatStreamUsage,
+} from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 
 /**
@@ -23,8 +28,16 @@ export interface StreamChatRequest {
 }
 
 export interface StreamChatResponseHandlers {
-  /** 每次收到增量时回调一次，参数为当前累计文本 */
+  /** 每次收到正文增量时回调一次，参数为当前累计文本 */
   onChunk?: (accumulatedText: string) => void;
+  /** 每次收到推理增量时回调一次，参数为当前累计推理文本（可选，不传则忽略推理事件） */
+  onReasoning?: (accumulatedReasoning: string) => void;
+  /** 每次收到过程旁白增量时回调一次，参数为当前累计旁白文本（agent 模式；可选，不传则忽略） */
+  onAgentNote?: (accumulatedAgentNote: string) => void;
+  /** 收到工具调用开始时回调一次（agent 模式；可选，不传则忽略） */
+  onToolCall?: (call: ChatStreamToolCall) => void;
+  /** 收到工具执行结束时回调一次（agent 模式；可选，不传则忽略） */
+  onToolResult?: (result: ChatStreamToolResultEvent) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -45,24 +58,57 @@ export async function streamChatResponse(
   }
 
   let accumulated = '';
-  await consumeChatResponse(
-    response,
-    (chunk) => {
+  // 推理文本独立累计，与正文互不影响（返回值仍是正文累计）
+  let accumulatedReasoning = '';
+  // 过程旁白文本独立累计（agent 模式中间轮决策文本，不进正文）
+  let accumulatedAgentNote = '';
+  await consumeChatResponse(response, {
+    onChunk: (chunk) => {
       accumulated += chunk;
       handlers.onChunk?.(accumulated);
     },
-    handlers.onWarning,
-    handlers.onDone
-  );
+    onReasoning: handlers.onReasoning
+      ? (chunk) => {
+          accumulatedReasoning += chunk;
+          handlers.onReasoning?.(accumulatedReasoning);
+        }
+      : undefined,
+    onAgentNote: handlers.onAgentNote
+      ? (chunk) => {
+          accumulatedAgentNote += chunk;
+          handlers.onAgentNote?.(accumulatedAgentNote);
+        }
+      : undefined,
+    onToolCall: handlers.onToolCall,
+    onToolResult: handlers.onToolResult,
+    onWarning: handlers.onWarning,
+    onDone: handlers.onDone,
+  });
   return accumulated;
+}
+
+/** consumeChatResponse 的回调集合（handlers 对象形式，onReasoning 可选） */
+export interface ConsumeChatResponseHandlers {
+  /** 每次收到正文增量时回调一次，参数为本帧增量文本 */
+  onChunk: (chunk: string) => void;
+  /** 每次收到推理增量时回调一次，参数为本帧增量文本（可选，不传则忽略推理事件） */
+  onReasoning?: (chunk: string) => void;
+  /** 每次收到过程旁白增量时回调一次，参数为本帧增量文本（agent 模式；可选，不传则忽略） */
+  onAgentNote?: (chunk: string) => void;
+  /** 收到工具调用开始时回调一次（agent 模式；可选，不传则忽略） */
+  onToolCall?: (call: ChatStreamToolCall) => void;
+  /** 收到工具执行结束时回调一次（agent 模式；可选，不传则忽略） */
+  onToolResult?: (result: ChatStreamToolResultEvent) => void;
+  onWarning?: (warning: string) => void;
+  onDone?: (usage?: ChatStreamUsage) => void;
 }
 
 export async function consumeChatResponse(
   response: Response,
-  onChunk: (chunk: string) => void,
-  onWarning?: (warning: string) => void,
-  onDone?: (usage?: ChatStreamUsage) => void
+  handlers: ConsumeChatResponseHandlers
 ): Promise<void> {
+  const { onChunk, onReasoning, onAgentNote, onToolCall, onToolResult, onWarning, onDone } =
+    handlers;
   const contentType = response.headers.get('Content-Type') || '';
 
   if (!contentType.includes('text/event-stream')) {
@@ -111,6 +157,22 @@ export async function consumeChatResponse(
       switch (event.type) {
         case 'text-delta':
           onChunk(event.text);
+          return;
+        case 'reasoning-delta':
+          // 推理增量：仅透传给订阅方；未传 onReasoning 的调用方显式忽略（行为与现状一致）
+          onReasoning?.(event.text);
+          return;
+        case 'agent_note':
+          // 过程旁白：仅透传给订阅方；未传 onAgentNote 的调用方显式忽略
+          onAgentNote?.(event.text);
+          return;
+        case 'tool_call':
+          // 工具调用开始：仅透传给订阅方；未传 onToolCall 的调用方显式忽略
+          onToolCall?.(event.call);
+          return;
+        case 'tool_result':
+          // 工具执行结束：仅透传给订阅方；未传 onToolResult 的调用方显式忽略
+          onToolResult?.(event);
           return;
         case 'warning':
           onWarning?.(event.warning);

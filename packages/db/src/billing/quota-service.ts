@@ -14,12 +14,16 @@ import type {
   AiUsageRecordInput,
   BillingMeasurement,
   MeterType,
+  ReserveFeature,
 } from '@repo/shared';
 import { estimateTextTokens } from '@repo/shared';
 import { BillingError } from './billing-errors';
 
 // releaseAiQuota 仅为 releaseQuota 的语义化别名，直接复导出，避免无逻辑的透传包装。
 export { releaseQuota as releaseAiQuota } from '../quota-ledger';
+
+// 读取统一额度账户的可用额度（轻量只读查询）。
+export { getAvailableQuota } from '../quota-ledger';
 
 export interface ReserveAiQuotaInput {
   userId: string;
@@ -95,7 +99,7 @@ export async function reserveAiQuotaBatch(input: {
 export async function reserveChatQuota(input: {
   userId: string;
   requestId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: ReserveFeature;
   provider?: string | null;
   model?: string | null;
   messages: Array<{ content?: string }>;
@@ -137,7 +141,7 @@ export async function reserveChatQuota(input: {
 
 export async function reserveChatQuotaBatch(input: {
   userId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: ReserveFeature;
   messages: Array<{ content?: string }>;
   models: Array<{ requestId: string; provider?: string | null; model?: string | null }>;
   maxOutputTokens?: number;

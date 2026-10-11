@@ -12,6 +12,7 @@ import type {
 
 const FEATURE_LABEL_MAP: Record<AiUsageFeature, string> = {
   chat: '智能对话',
+  'chat-agent': '智能对话（工具增强）',
   voice: '语音',
   image: '图片生成',
   video: '视频生成',

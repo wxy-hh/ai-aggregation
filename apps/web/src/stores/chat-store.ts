@@ -5,7 +5,9 @@ import { emit, StoreEvents } from './store-events';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
-import type { DerivationMetadata, ChatStreamUsage } from '@repo/shared';
+import { useSettingsStore } from '@/stores/settings-store';
+import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord, AgentNote } from '@repo/shared';
+import { toolCallRecordSchema } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -43,8 +45,18 @@ export interface Message {
   failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
   truncationWarning?: string; // 回答可能被截断时的提示
   usage?: ChatStreamUsage; // 本次对话的 Token 消耗统计（done 帧携带）
+  reasoningContent?: string; // 模型真实推理内容（仅 supportsReasoning 模型可能产生，永不回传上游）
+  reasoningDurationMs?: number; // 思考时长：首个推理增量到达 → 分界点（首 text-delta / done / error / abort）冻结
   // 附件列表（可选）
+  // 用户消息 = 用户上传的附件；AI 消息 = agent 工具产出的附件（如生成的图片）
   attachments?: Attachment[];
+  // agent 模式下的工具调用记录（过程可见 + 刷新回看）。
+  // 未开启 agent 或本轮无工具调用时为 undefined —— 渲染与现状完全一致。
+  toolCalls?: ToolCallRecord[];
+  // agent 模式的过程旁白（二期多步循环）：中间轮决策文本。
+  // beforeCallIndex = 旁白到达时 toolCalls 的长度（即插入到第几个工具调用之前）。
+  // 进过程卡片、不进正文、不入历史持久化（历史拍平时被丢弃）。类型单源在 @repo/shared。
+  agentNotes?: AgentNote[];
 }
 
 // 聊天状态管理接口
@@ -107,16 +119,23 @@ function defaultScheduleFlush(cb: () => void): () => void {
   return () => clearTimeout(timer);
 }
 
-/** 单聊内容合帧刷新状态：assistantId -> { text, raf } */
+/** 单聊内容合帧刷新状态：assistantId -> { text, reasoning, raf }（正文/推理独立累加，同帧提交） */
 interface ContentFlushEntry {
   text: string;
+  /** 最新累计推理文本；undefined 表示本轮尚未收到推理增量 */
+  reasoning?: string;
   raf: (() => void) | null;
 }
 
 const contentFlushState = new Map<string, ContentFlushEntry>();
 
-/** 清理并取消某条消息的待刷新合帧，返回最后暂存的最新文本（若有） */
-function flushLatestContentAndClear(assistantId: string): string | undefined {
+/** 合帧兜底时暂存的最新流式产出（code-review Standards 轴：复用 ContentFlushEntry 同构类型，消灭匿名类型） */
+type LatestStreamContent = Pick<ContentFlushEntry, 'text' | 'reasoning'>;
+
+/** 清理并取消某条消息的待刷新合帧，返回最后暂存的最新正文与推理（若有） */
+function flushLatestContentAndClear(
+  assistantId: string
+): LatestStreamContent | undefined {
   const entry = contentFlushState.get(assistantId);
   if (!entry) return undefined;
   if (entry.raf) {
@@ -124,11 +143,107 @@ function flushLatestContentAndClear(assistantId: string): string | undefined {
     entry.raf = null;
   }
   contentFlushState.delete(assistantId);
-  return entry.text;
+  return { text: entry.text, reasoning: entry.reasoning };
 }
 
 /**
- * 中止收尾（空删有留）：有部分内容标记 stopped 保留，空内容移除。
+ * 把合帧兜底的最新正文/推理与冻结后的推理时长合并进消息。
+ * code-review Standards 轴：done / catch 两处收尾的同一合并形状提取，消除重复。
+ */
+function mergeLatestStreamContent(
+  m: Message,
+  latest: LatestStreamContent | undefined,
+  reasoningDurationMs: number | undefined
+): Message {
+  return {
+    ...m,
+    ...(latest !== undefined ? { content: latest.text } : {}),
+    ...(latest?.reasoning !== undefined ? { reasoningContent: latest.reasoning } : {}),
+    ...(reasoningDurationMs !== undefined ? { reasoningDurationMs } : {}),
+  };
+}
+
+/**
+ * 调度一帧合帧刷新：把暂存的最新正文与推理一次性写入消息（每帧最多一次 setState）。
+ * 正文与推理共用同一帧：任一增量到达时若已有待执行帧则只更新暂存，不重复调度。
+ */
+function scheduleEntryFlush(
+  assistantId: string,
+  entry: ContentFlushEntry,
+  deps: ChatStreamSessionDeps,
+  scheduleFlush: (cb: () => void) => () => void
+): void {
+  if (entry.raf) return;
+  let executed = false;
+  const cancelFn = scheduleFlush(() => {
+    executed = true;
+    const current = contentFlushState.get(assistantId);
+    if (!current) return;
+    current.raf = null;
+    // 首 text-delta 冻结后时长随本帧即落消息：「正文中」阶段折叠头定格为「已思考 X 秒」，
+    // 不再等 done 才写入（code-review Spec 轴发现的定格滞后问题）
+    const frozenDurationMs = reasoningTimingState.get(assistantId)?.durationMs;
+    deps.updateMessages((messages) =>
+      messages.map((m) =>
+        m.id === assistantId
+          ? {
+              ...m,
+              content: current.text,
+              ...(current.reasoning !== undefined
+                ? { reasoningContent: current.reasoning }
+                : {}),
+              ...(frozenDurationMs !== undefined
+                ? { reasoningDurationMs: frozenDurationMs }
+                : {}),
+            }
+          : m
+      )
+    );
+  });
+  if (!executed && contentFlushState.has(assistantId)) {
+    entry.raf = cancelFn;
+  }
+}
+
+/** 推理计时状态：assistantId -> 首个推理增量时间戳 / 分界点冻结后的时长（store 内部变量，不持久化） */
+interface ReasoningTimingEntry {
+  startedAt: number;
+  durationMs?: number;
+}
+
+const reasoningTimingState = new Map<string, ReasoningTimingEntry>();
+
+/** 首个推理增量到达时记录开始时间戳（重复调用幂等） */
+function recordReasoningStart(assistantId: string): void {
+  if (!reasoningTimingState.has(assistantId)) {
+    reasoningTimingState.set(assistantId, { startedAt: Date.now() });
+  }
+}
+
+/**
+ * 分界点冻结推理时长：首个 text-delta / done / error / abort 先到先冻。
+ * 未收到过推理增量返回 undefined；已冻结后重复调用返回原值。
+ */
+function freezeReasoningDuration(assistantId: string): number | undefined {
+  const entry = reasoningTimingState.get(assistantId);
+  if (!entry) return undefined;
+  if (entry.durationMs === undefined) {
+    entry.durationMs = Date.now() - entry.startedAt;
+  }
+  return entry.durationMs;
+}
+
+/**
+ * 消息是否含有可留存的产出（正文 / 推理 / 工具调用记录任一）。
+ * agent 轮次中模型可能只调了工具、还没写正文就被中断——此时工具过程本身
+ * 已是用户可见的产出（含工具生成的图片附件），不能按「空」丢弃。
+ */
+function hasRetainableContent(m: Message): boolean {
+  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length);
+}
+
+/**
+ * 中止收尾（空删有留）：有部分内容（正文/推理/工具记录任一）标记 stopped 保留，空内容移除。
  * 与服务商计费语义同构（空退 failed / 有扣 partial）。
  * match 由调用方给定：编排层按消息 id 匹配，store 层按「正在流式的 assistant 消息」匹配。
  */
@@ -139,10 +254,51 @@ function finalizeAbortedMessages(
   const target = messages.find(match);
   // 未找到或已被收尾（isStreaming 已为 false）时不重复处理
   if (!target || !target.isStreaming) return { next: messages, changed: false };
-  const next = target.content
-    ? messages.map((m) => (m.id === target.id ? { ...m, isStreaming: false, stopped: true } : m))
+  const next = hasRetainableContent(target)
+    ? messages.map((m) =>
+        m.id === target.id
+          ? // 不再流式就必须没有 running 工具调用：中止时工具还没回 tool_result，
+            // 不清洗的话过程卡片会永远停在「正在调用…」的转圈态（T07 实测发现）
+            sanitizeToolCalls({ ...m, isStreaming: false, stopped: true })
+          : m
+      )
     : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
+}
+
+/**
+ * 清洗持久化消息里 toolCalls 的残留：
+ * 1. 先按共享 schema 过滤形状非法的记录（localStorage 可被手工篡改，B-9）；
+ * 2. 再把 running 中间态归一为 failed —— 刷新/崩溃时来不及收到 tool_result，
+ *    running 记录会成为永久「进行中」的假象。
+ * 无变化时返回原消息对象（loadConversation 用引用比较检测变更，避免重复写回）。
+ */
+function sanitizeToolCalls(m: Message): Message {
+  if (!m.toolCalls?.length) return m;
+  const valid = m.toolCalls.filter((c) => toolCallRecordSchema.safeParse(c).success);
+  const hasRunning = valid.some((c) => c.status === 'running');
+  if (valid.length === m.toolCalls.length && !hasRunning) return m;
+  return {
+    ...m,
+    toolCalls: valid.map((c) =>
+      c.status === 'running'
+        ? { ...c, status: 'failed' as const, resultSummary: c.resultSummary || '执行未完成' }
+        : c
+    ),
+  };
+}
+
+/**
+ * 剥离过程旁白（二期）：旁白是过程性内容，只服务于本轮 live 展示，
+ * 刷新还原时不恢复（spec D-二期-6「不入历史持久化」；流式期间 CONVERSATION_UPDATED
+ * 落盘的会话列表快照里可能带着旁白，加载时在此剥离）。
+ * 注意只挂在 loadConversation 还原路径：done/abort/failed 的 live 收尾共用
+ * sanitizeToolCalls 但**不**剥离——收尾后用户仍应能在过程卡片里回看完整旁白。
+ * 无旁白时返回原引用（loadConversation 用引用比较检测变更）。
+ */
+function stripAgentNotes(m: Message): Message {
+  if (!m.agentNotes?.length) return m;
+  return { ...m, agentNotes: undefined };
 }
 
 /**
@@ -167,9 +323,21 @@ export async function runChatStreamSession(
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
   let lastPersistAt = 0;
   let streamUsage: ChatStreamUsage | undefined;
+  // 过程旁白累计值的已消费长度（onAgentNote 回调为累计值，按此切增量）
+  let agentNoteConsumedLength = 0;
+  // 工具调用/结果/旁白三类低频事件共用的落盘出口：更新 state 后立即同步会话列表
+  const persistConversation = (next: Message[]) => {
+    const conversationId = deps.activeConversationId();
+    if (conversationId) {
+      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+    }
+  };
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
+        // 分界点：首个 text-delta 到达即冻结推理时长（未开始推理时为空操作）
+        freezeReasoningDuration(assistantId);
+
         // 1. rAF 合帧：更新暂存最新文本并调度帧刷新，每帧最多触发一次 setState
         let entry = contentFlushState.get(assistantId);
         if (!entry) {
@@ -177,22 +345,7 @@ export async function runChatStreamSession(
           contentFlushState.set(assistantId, entry);
         }
         entry.text = text;
-
-        if (!entry.raf) {
-          let executed = false;
-          const cancelFn = scheduleFlush(() => {
-            executed = true;
-            const current = contentFlushState.get(assistantId);
-            if (!current) return;
-            current.raf = null;
-            deps.updateMessages((messages) =>
-              messages.map((m) => (m.id === assistantId ? { ...m, content: current.text } : m))
-            );
-          });
-          if (!executed && contentFlushState.has(assistantId)) {
-            entry.raf = cancelFn;
-          }
-        }
+        scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
 
         // 2. 渲染与落盘分离：1s 节流落盘留在 onChunk 同步路径（后台停帧时不受影响）
         // 基于 deps.getMessages 快照构造新消息列表并 emit，不经过 setState
@@ -209,6 +362,116 @@ export async function runChatStreamSession(
           }
         }
       },
+      onReasoning: (reasoning) => {
+        // 首个推理增量到达：记录思考开始时间戳（store 内部变量，不持久化）
+        recordReasoningStart(assistantId);
+
+        // 推理走与正文相同的 rAF 合帧机制：独立累加器，与正文同帧提交，每帧最多一次 setState
+        let entry = contentFlushState.get(assistantId);
+        if (!entry) {
+          entry = { text: '', raf: null };
+          contentFlushState.set(assistantId, entry);
+        }
+        entry.reasoning = reasoning;
+        scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
+      },
+      onToolCall: (call) => {
+        // 工具调用开始：追加一条 running 记录（agent 模式）。
+        // 低频事件（一轮至多几次），直接落 state 与本地存储即可，不参与正文的合帧节流；
+        // 立即落盘是为了让「图片生成中」这类长耗时工具在刷新后仍有踪迹（spec §8）。
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const prev = m.toolCalls ?? [];
+            // 幂等：同一 callId 重复到达（重放/乱序）不追加第二条
+            if (prev.some((c) => c.id === call.id)) return m;
+            return {
+              ...m,
+              toolCalls: [
+                ...prev,
+                {
+                  id: call.id,
+                  name: call.name,
+                  argsSummary: call.argsSummary,
+                  status: 'running' as const,
+                  resultSummary: '',
+                },
+              ],
+            };
+          })
+        );
+        persistConversation(next);
+      },
+      onToolResult: (result) => {
+        // 工具执行结束：按 callId 落到终态；若 tool_call 未到达（事件丢失）则补一条完整记录，避免过程缺失。
+        // 工具产出附件（当前仅生成图片）并入消息附件列表，与用户附件共用同一渲染通道。
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const prev = m.toolCalls ?? [];
+            const nextCalls = prev.some((c) => c.id === result.callId)
+              ? prev.map((c) =>
+                  c.id === result.callId
+                    ? {
+                        ...c,
+                        status: result.status,
+                        resultSummary: result.summary,
+                        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+                      }
+                    : c
+                )
+              : [
+                  ...prev,
+                  {
+                    id: result.callId,
+                    name: result.name,
+                    argsSummary: '',
+                    status: result.status,
+                    resultSummary: result.summary,
+                    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+                  },
+                ];
+
+            const attachmentId = `tool-${result.callId}`;
+            const prevAttachments = m.attachments ?? [];
+            const nextAttachments =
+              result.attachment && !prevAttachments.some((a) => a.id === attachmentId)
+                ? [
+                    ...prevAttachments,
+                    {
+                      id: attachmentId,
+                      type: 'image' as const,
+                      name: '工具生成的图片',
+                      // 直接用上游产物地址：展示型 <img> 不需要 CORS，实测浏览器可正常加载。
+                      // 刻意**不走** /api/image/proxy —— 该代理是为「下载成 Blob / dataURL」设计的，
+                      // 多一跳只会多绑一份白名单约束；图像页下载仍走代理（见 media-proxy-policy）。
+                      imageUrl: result.attachment.url,
+                      status: 'ready' as const,
+                    },
+                  ]
+                : m.attachments;
+
+            return { ...m, toolCalls: nextCalls, attachments: nextAttachments };
+          })
+        );
+        persistConversation(next);
+      },
+      onAgentNote: (accumulatedNote) => {
+        // 过程旁白（agent 二期）：onAgentNote 与 onChunk 同形、回调的是累计值，
+        // 这里按已消费长度切出增量（服务端每个 agent_note 事件携带一整轮旁白，故增量即一整条）。
+        // 低频事件，与 tool_call 同级处理；不进正文、不随历史拍平持久化。
+        const delta = accumulatedNote.slice(agentNoteConsumedLength);
+        agentNoteConsumedLength = accumulatedNote.length;
+        if (!delta) return;
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const entry = { beforeCallIndex: m.toolCalls?.length ?? 0, text: delta };
+            return { ...m, agentNotes: [...(m.agentNotes ?? []), entry] };
+          })
+        );
+        persistConversation(next);
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
@@ -219,14 +482,18 @@ export async function runChatStreamSession(
       },
     });
 
-    // 完成：先 cancelAnimationFrame 并用最新文本兜底 flush（合并写入最新 content 与 usage，移除 isStreaming 标记）
-    const latestText = flushLatestContentAndClear(assistantId);
+    // 完成：先 cancelAnimationFrame 并用最新正文/推理兜底 flush
+    // （合并写入最新 content、reasoningContent、reasoningDurationMs 与 usage，移除 isStreaming 标记）
+    const latest = flushLatestContentAndClear(assistantId);
+    // 分界点：done（首个 text-delta 未到达过的纯推理流在此冻结；已冻结则取原值）
+    const reasoningDurationMs = freezeReasoningDuration(assistantId);
     const finalMessages = deps.updateMessages((messages) =>
       messages.map((m) => {
         if (m.id !== assistantId) return m;
+        // 「不再流式 ⇒ 不存在 running 工具调用」是统一不变式：
+        // 正常结束也走一道清洗，兜住 tool_result 事件缺失时残留的进行中态。
         return {
-          ...m,
-          ...(latestText !== undefined ? { content: latestText } : {}),
+          ...sanitizeToolCalls(mergeLatestStreamContent(m, latest, reasoningDurationMs)),
           isStreaming: false,
           ...(streamUsage ? { usage: streamUsage } : {}),
         };
@@ -239,12 +506,16 @@ export async function runChatStreamSession(
     onDone?.(finalMessages);
     return 'sent';
   } catch (err) {
-    // 中止/失败收尾前必须 cancelAnimationFrame 并用最新文本兜底 flush
-    // 现有「中止/失败」的「空删有留」判断基于 store 里的 content 判空，兜底 flush 必须先于它们执行
-    const latestText = flushLatestContentAndClear(assistantId);
-    if (latestText !== undefined) {
+    // 中止/失败收尾前必须 cancelAnimationFrame 并用最新正文/推理兜底 flush
+    // 现有「中止/失败」的「空删有留」判断基于 store 里的 content/reasoningContent 判空，兜底 flush 必须先于它们执行
+    const latest = flushLatestContentAndClear(assistantId);
+    // 分界点：error / abort 冻结推理时长（先到先冻，已冻结则取原值）
+    const reasoningDurationMs = freezeReasoningDuration(assistantId);
+    if (latest !== undefined || reasoningDurationMs !== undefined) {
       deps.updateMessages((messages) =>
-        messages.map((m) => (m.id === assistantId ? { ...m, content: latestText } : m))
+        messages.map((m) =>
+          m.id === assistantId ? mergeLatestStreamContent(m, latest, reasoningDurationMs) : m
+        )
       );
     }
 
@@ -265,13 +536,15 @@ export async function runChatStreamSession(
     }
 
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
-    // 失败收尾（有留空删）：有部分内容保留并标记 failed（用户已读内容不丢），空内容移除
+    // 失败收尾（有留空删）：有部分内容（正文/推理/工具记录任一）保留并标记 failed（用户已读内容不丢），空内容移除
     const filtered = deps.updateMessages((messages) => {
       const target = messages.find((m) => m.id === assistantId);
       if (!target) return messages;
-      if (target.content) {
+      if (hasRetainableContent(target)) {
         return messages.map((m) =>
-          m.id === assistantId ? { ...m, isStreaming: false, failed: true } : m
+          m.id === assistantId
+            ? sanitizeToolCalls({ ...m, isStreaming: false, failed: true })
+            : m
         );
       }
       return messages.filter((m) => m.id !== assistantId);
@@ -284,6 +557,7 @@ export async function runChatStreamSession(
   } finally {
     // 最终防御：确保清理模块级 Map 条目，防止内存泄漏
     flushLatestContentAndClear(assistantId);
+    reasoningTimingState.delete(assistantId);
   }
 }
 
@@ -313,11 +587,20 @@ export const useChatStore = create<ChatState>((set, get) => {
       (m) => m.isStreaming === true && m.role === 'assistant'
     );
     if (streamingAssistant) {
-      // 若存在未 flush 的最新文本，先取消调度并同步最新文本
-      const latestText = flushLatestContentAndClear(streamingAssistant.id);
-      if (latestText !== undefined) {
-        streamingAssistant.content = latestText;
+      // 若存在未 flush 的最新正文/推理，先取消调度并同步最新内容
+      const latest = flushLatestContentAndClear(streamingAssistant.id);
+      if (latest !== undefined) {
+        streamingAssistant.content = latest.text;
+        if (latest.reasoning !== undefined) {
+          streamingAssistant.reasoningContent = latest.reasoning;
+        }
       }
+      // 分界点：abort 冻结推理时长（先到先冻；未开始推理时不写字段）
+      const reasoningDurationMs = freezeReasoningDuration(streamingAssistant.id);
+      if (reasoningDurationMs !== undefined) {
+        streamingAssistant.reasoningDurationMs = reasoningDurationMs;
+      }
+      reasoningTimingState.delete(streamingAssistant.id);
     }
     const { next, changed } = finalizeAbortedMessages(
       messages,
@@ -374,9 +657,16 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       // 清洗历史消息：处理持久化数据中残留的流式消息（有内容标记 stopped，无内容直接过滤）
+      // 判空口径与「有留空删」一致：正文/推理/工具记录任一非空即算有内容
+      // 另：toolCalls 里残留的 running 中间态一并归一为 failed（刷新时未收到 tool_result）；
+      // 过程旁白（agentNotes）属过程性内容，还原时剥离不恢复（spec D-二期-6）
       const sanitizedMessages = messages
-        .filter((m) => !(m.isStreaming && !m.content))
-        .map((m) => (m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m));
+        .filter((m) => !(m.isStreaming && !hasRetainableContent(m)))
+        .map((m) =>
+          stripAgentNotes(
+            sanitizeToolCalls(m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m)
+          )
+        );
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
       const sanitizedChanged =
         sanitizedMessages.length !== messages.length ||
@@ -437,12 +727,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       const { input, provider, model, isLoading, activeConversationId, attachment } =
         get();
       const content = contentOverrides || input;
+      // agent 模式开关（settings-store）。仅在开启时往请求体带标志，
+      // 关闭时请求体与现状逐字节一致 —— 老链路的降级无感知由这里保证。
+      const agentMode = useSettingsStore.getState().agentModeEnabled;
 
       // 有附件时允许空文本，否则需要文本内容
       if ((!content.trim() && !attachment) || isLoading) return 'skipped';
 
-      // 附件只能在豆包 provider 下使用
-      if (attachment && provider !== 'doubao') {
+      // 附件只能在豆包模型下使用（agent 模式服务端强制走豆包，故此时一并放行）
+      if (attachment && provider !== 'doubao' && !agentMode) {
         set({ error: new Error('附件功能仅支持豆包模型') });
         return 'skipped';
       }
@@ -509,6 +802,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider, // AI提供商
               model, // 模型名称
+              // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
+              ...(agentMode ? { agent: true } : {}),
             },
             signal: abortController.signal, // 支持取消请求
           },
@@ -519,7 +814,16 @@ export const useChatStore = create<ChatState>((set, get) => {
               const historyItem = {
                 id: activeConversationId, // 使用对话ID作为历史记录ID
                 ...createChatHistoryItem(
-                  finalMessages.map((m) => ({ role: m.role, content: m.content })),
+                  // 保留 agent 工具记录与工具产出附件（B-10：历史入口恢复后可回看过程与生成图）；
+                  // 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
+                  finalMessages.map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                    ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
+                    ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
+                      ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
+                      : {}),
+                  })),
                   provider,
                   model || 'unknown'
                 ),
@@ -547,6 +851,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     reload: async (msgId) => {
       const { messages, isLoading, provider, model, activeConversationId } = get();
       if (isLoading) return;
+      // 重新生成沿用当前的 agent 开关状态（与 sendMessage 同一来源）
+      const agentMode = useSettingsStore.getState().agentModeEnabled;
 
       // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
       let lastUserIndex = messages.length - 1;
@@ -612,6 +918,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider,
               model,
+              ...(agentMode ? { agent: true } : {}),
             },
             signal: abortController.signal,
           }

@@ -150,3 +150,7 @@ export async function authFetch(url: string, options?: RequestInit): Promise<Res
 
   return response;
 }
+
+/** 规范别名导出：对齐 nextjs.md 与各处工单中的 fetchWithAuth 命名 */
+export const fetchWithAuth = authFetch;
+

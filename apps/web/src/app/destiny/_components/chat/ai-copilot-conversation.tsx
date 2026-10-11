@@ -210,21 +210,23 @@ export function AICoPilotConversation({
       }
 
       let streamedAnswer = '';
-      await consumeChatResponse(response, (chunk) => {
-        streamedAnswer += chunk;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === thinkingMsg.id
-              ? {
-                  ...m,
-                  content: streamedAnswer,
-                  displayedContent: streamedAnswer,
-                  status: 'typing',
-                }
-              : m
-          )
-        );
-        scrollToBottom();
+      await consumeChatResponse(response, {
+        onChunk: (chunk) => {
+          streamedAnswer += chunk;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === thinkingMsg.id
+                ? {
+                    ...m,
+                    content: streamedAnswer,
+                    displayedContent: streamedAnswer,
+                    status: 'typing',
+                  }
+                : m
+            )
+          );
+          scrollToBottom();
+        },
       });
 
       setMessages((prev) =>

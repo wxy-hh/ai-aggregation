@@ -43,6 +43,7 @@ import {
 import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
+import { ProfileToolsSection } from './profile-tools-section';
 import { toast } from 'sonner';
 
 const DEFAULT_AVATAR =
@@ -54,7 +55,7 @@ const DEFAULT_AVATAR =
  *   避免「玻璃套玻璃」导致的画面发糊与 GPU 浪费（DESIGN.md 禁忌一）。
  * - 阴影即 Z 轴高度：主卡 Z-3、次级操作卡 Z-2、页头扁平无阴影，形成清晰层级。
  */
-const GLASS_CARD =
+export const GLASS_CARD =
   'group relative overflow-hidden rounded-[24px] border border-white/60 bg-gradient-to-b from-white/70 via-white/45 to-white/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_12px_20px_-8px_rgba(15,23,42,0.08),0_4px_10px_-2px_rgba(15,23,42,0.04)] backdrop-blur-[40px] transition-[box-shadow,border-color] duration-300 hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_20px_40px_-15px_rgba(59,130,246,0.12),0_8px_20px_-10px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.78),rgba(15,23,42,0.62))] dark:shadow-[0_18px_44px_-18px_rgba(0,0,0,0.4)] dark:hover:border-white/20 dark:hover:shadow-[0_24px_48px_-18px_rgba(0,0,0,0.5)]';
 
 const SOLID_CARD =
@@ -394,7 +395,7 @@ function ResourceRing({
 const DIALOG_SHELL =
   'w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-[24px] border border-white/70 bg-white/90 shadow-[0_30px_60px_-20px_rgba(15,23,42,0.25),0_10px_30px_-15px_rgba(59,130,246,0.15)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/90';
 
-const DIALOG_OVERLAY = 'bg-slate-950/45 backdrop-blur-md dark:bg-slate-950/65';
+export const DIALOG_OVERLAY = 'bg-slate-950/45 backdrop-blur-md dark:bg-slate-950/65';
 
 const DIALOG_INPUT =
   'h-12 rounded-xl border-slate-200/90 bg-white px-4 text-sm shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100';
@@ -1123,6 +1124,8 @@ export function ProfileShell() {
                   </div>
                 </div>
               </div>
+
+              <ProfileToolsSection />
 
               <div
                 className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}
