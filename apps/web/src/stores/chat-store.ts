@@ -70,12 +70,14 @@ export interface ChatState {
   model: string | undefined; // 当前使用的模型名称
   activeConversationId: string | null; // 当前激活的对话ID
   attachment: Attachment | null; // 当前待发送的附件（单文件模式）
+  activeCapabilityPackKey: string | null; // 当前激活的场景能力包 key（ADR-0014 / 工单 01）
 
   // ========== 基础操作 ==========
   setInput: (value: string) => void; // 设置输入框内容
   setMessages: (messages: Message[]) => void; // 设置消息列表
   switchProvider: (provider: ProviderName, model?: string) => void; // 切换AI提供商和模型
   setAttachment: (attachment: Attachment | null) => void; // 设置附件
+  setCapabilityPackKey: (key: string | null) => void; // 设置当前场景能力包
 
   // ========== 核心交互功能 ==========
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
@@ -83,7 +85,7 @@ export interface ChatState {
   stop: () => void; // 停止当前的AI生成
 
   // ========== 生命周期管理 ==========
-  loadConversation: (id: string, messages: Message[], provider: string, model: string) => void; // 加载历史对话
+  loadConversation: (id: string, messages: Message[], provider: string, model: string, capabilityPack?: string | null) => void; // 加载历史对话
   reset: () => void; // 重置聊天状态
 }
 
@@ -623,6 +625,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     model: undefined, // 使用默认模型
     activeConversationId: null, // 无激活对话
     attachment: null, // 无附件
+    activeCapabilityPackKey: null, // 当前无激活场景能力包
 
     // ========== 基础操作方法 ==========
 
@@ -634,6 +637,9 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 设置附件
     setAttachment: (attachment) => set({ attachment }),
+
+    // 设置当前激活的场景能力包
+    setCapabilityPackKey: (key) => set({ activeCapabilityPackKey: key }),
 
     // 切换AI提供商和模型
     // 切换时会清空附件（因为不同提供商支持的附件类型可能不同）
@@ -647,8 +653,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       })),
 
     // 加载历史对话
-    // 用于从对话列表切换到某个历史对话
-    loadConversation: (id, messages, provider, model) => {
+    // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包）
+    loadConversation: (id, messages, provider, model, capabilityPack) => {
       // 停止之前的AI生成（如果有）
       finalizeStreamingMessage();
       if (abortController) {
@@ -681,6 +687,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         messages: sanitizedMessages, // 加载清洗后的历史消息
         provider: provider as ProviderName, // 恢复之前使用的提供商
         model, // 恢复之前使用的模型
+        activeCapabilityPackKey: capabilityPack ?? null, // 恢复绑定的场景能力包
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
         error: null, // 清空错误
@@ -704,6 +711,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         isLoading: false, // 重置加载状态
         error: null, // 清空错误
         activeConversationId: null, // 清空对话ID
+        activeCapabilityPackKey: null, // 清空能力包选择
         // 注意：provider 和 model 保持不变，保留用户的选择
       });
     },
@@ -724,8 +732,15 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 发送消息
     sendMessage: async (contentOverrides, derivation) => {
-      const { input, provider, model, isLoading, activeConversationId, attachment } =
-        get();
+      const {
+        input,
+        provider,
+        model,
+        isLoading,
+        activeConversationId,
+        attachment,
+        activeCapabilityPackKey,
+      } = get();
       const content = contentOverrides || input;
       // agent 模式开关（settings-store）。仅在开启时往请求体带标志，
       // 关闭时请求体与现状逐字节一致 —— 老链路的降级无感知由这里保证。
@@ -804,6 +819,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               model, // 模型名称
               // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
               ...(agentMode ? { agent: true } : {}),
+              // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
+              ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
             },
             signal: abortController.signal, // 支持取消请求
           },

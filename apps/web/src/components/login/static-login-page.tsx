@@ -129,6 +129,44 @@ export function StaticLoginPage() {
     }
   }, [searchParams]);
 
+  // 监听 OAuth 弹窗跨窗口通信通知（PC 弹窗模式）
+  useEffect(() => {
+    const handleAuthMessage = (event: MessageEvent) => {
+      // 严格校验同源，防止恶意跨站脚本伪造
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const data = event.data;
+      if (!data || typeof data !== 'object') {
+        return;
+      }
+
+      if (data.type === 'QQ_AUTH_SUCCESS') {
+        setOauthRedirecting(null);
+        toast.success('QQ 登录成功');
+        router.push('/home');
+      } else if (data.type === 'QQ_AUTH_ERROR') {
+        setOauthRedirecting(null);
+        const code = data.code;
+        if (code === 'no_code') {
+          toast.error('已取消 QQ 授权');
+        } else if (code === 'account_disabled') {
+          toast.error('账号已被停用，请联系管理员');
+        } else if (code === 'oauth_state_mismatch') {
+          toast.error('OAuth 验证失败，请重试');
+        } else {
+          toast.error('QQ 登录失败，请重试');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => {
+      window.removeEventListener('message', handleAuthMessage);
+    };
+  }, [router]);
+
   const isTypingUsername = activeField === 'username';
   const isTypingPassword = activeField === 'password';
   const isPasswordWatching = isTypingPassword && !showPassword;
@@ -552,9 +590,42 @@ export function StaticLoginPage() {
                               toast.error('QQ 登录未配置，请联系管理员');
                               return;
                             }
-                            setOauthRedirecting('qq');
-                            toast.info('正在跳转到 QQ 登录...');
-                            window.location.href = '/api/auth/oauth/qq';
+
+                            const isDesktop =
+                              typeof window !== 'undefined'
+                                ? window.innerWidth >= 1024
+                                : isDesktopViewport;
+
+                            if (isDesktop) {
+                              // PC 视口：在用户手势信任链首行同步居中呼出独立授权弹窗，彻底规避浏览器弹窗拦截
+                              const width = 720;
+                              const height = 550;
+                              const screenLeft = window.screenLeft ?? window.screenX ?? 0;
+                              const screenTop = window.screenTop ?? window.screenY ?? 0;
+                              const outerWidth = window.outerWidth || window.innerWidth;
+                              const outerHeight = window.outerHeight || window.innerHeight;
+                              const left = Math.max(0, Math.round(screenLeft + (outerWidth - width) / 2));
+                              const top = Math.max(0, Math.round(screenTop + (outerHeight - height) / 2));
+
+                              setOauthRedirecting('qq');
+                              toast.info('正在打开 QQ 登录窗口...');
+
+                              const popup = window.open(
+                                '/api/auth/oauth/qq',
+                                'QQAuthPopup',
+                                `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,status=no,resizable=yes,scrollbars=yes`
+                              );
+
+                              // 兜底防御：若被某些极其严苛的第三方插件拦截，则降级为整页跳转
+                              if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+                                window.location.href = '/api/auth/oauth/qq';
+                              }
+                            } else {
+                              // 移动端视口：直接整页重定向
+                              setOauthRedirecting('qq');
+                              toast.info('正在跳转到 QQ 登录...');
+                              window.location.href = '/api/auth/oauth/qq';
+                            }
                           }}
                         >
                           <img

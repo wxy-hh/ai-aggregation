@@ -13,6 +13,7 @@ export * from './ziwei-glossary';
 export * from './destiny-model-client';
 export * from './chat-stream-contract';
 export * from './agent-tools';
+export * from './capability-pack';
 export * from './destiny-report';
 export * from './destiny-report-stream-maps';
 export * from './destiny-stream-contract';

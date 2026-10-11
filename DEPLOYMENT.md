@@ -593,6 +593,7 @@ openssl rand -hex 32
 | 2026-08-28 | 管理员权限排查 + Nginx 强制跳转          | **根因**：`http://` 访问时 Secure Cookie 被拒收 → 匿名登录覆盖管理员会话（账号权限本身已同步）；nginx 改为双 server 块（80 仅跳转 + 443 主站），全链路浏览器验证通过 |
 | 2026-09-30 | `40e467dd` master（服务器从 `ff11327` 前进 43 个提交） | **发布成功**：web + worker 镜像重建并 `--force-recreate`；无 Prisma schema 变更（跳过 migrate）；worker 心跳在线；register/login/me 全部 200；`/` → `/home` 200。`master_style` 分支改动**未**纳入本次发布。构建期踩坑：容器内 `pnpm install` 走 registry.npmjs.org 在腾讯云上卡死（每包约 200s），已在服务器侧注入 `.npmrc`（npmmirror）并在两个 Dockerfile 的 install 前 `COPY .npmrc`，构建耗时降到约 12 分钟 |
 | 2026-09-30 | `4855d814` master（Merge master_style，6 提交 / 61 文件） | **发布成功**：本次为纯前端 UI 变更（chat/video/home 样式、tailwind、SSE 修复、xunfei），无 schema 变更、无依赖变更（依赖层缓存命中，构建约 8 分钟）；容器 5 个全 Up（ai-web healthy）、worker 心跳在线；`/`、`/home`、`/login`、`/chat`、`/image`、`/video`、`/voice`、`/history` 全部 200；http→https 301；register/login/me 全 200。服务器侧 5 处运维改动（含 Dockerfile 的 `.npmrc` 补丁）校验完好 |
+| 2026-10-09 | `a064700` master（QQ OAuth 登录，2 提交 / 12 文件） | **发布成功**：QQ 登录弹窗通信协议与分端自适应交互；无 schema 变更、无依赖变更（构建约 6 分钟）；服务器 `.env.prod` 新增 `QQ_APP_ID` / `QQ_APP_SECRET` / `QQ_REDIRECT_URI`（已先备份 `.env.prod.bak.*`）；容器 5 个全 Up（ai-web healthy）；register/login/me 全 200；`/api/auth/oauth/qq` 302 正确跳转 graph.qq.com 授权页（回调 `https://www.chunfen.ink/api/auth/oauth/qq/callback`）；QQ 侧返回 100008 属审核未通过的预期行为 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
 Docker 生产地址：https://www.chunfen.ink  

@@ -164,10 +164,11 @@ function buildProfileViewModel(
   user: ReturnType<typeof useAuthStore.getState>['user']
 ): ProfileViewModel {
   const username = user?.username || '';
+  const nickname = user?.name?.trim() || '';
   return {
     username,
-    fullName: '',
-    displayName: username || 'user_unknown',
+    fullName: nickname,
+    displayName: nickname || username || 'user_unknown',
     email: user?.email || null,
     userId: user?.id ? `UID_${user.id.slice(0, 6).toUpperCase()}` : 'UID_8492015',
     timezone: '(GMT+08:00) 中国标准时间 - 北京',
@@ -427,6 +428,7 @@ function EditProfileDialog({
     try {
       await updateProfile({
         username: draft.username,
+        name: draft.fullName,
       });
       await fetchUser();
       toast.success('个人资料已更新');
@@ -448,10 +450,27 @@ function EditProfileDialog({
           <DialogTitle className="font-[var(--font-space-grotesk)] text-xl font-bold tracking-tight text-[#0F172A] dark:text-white">
             编辑个人资料
           </DialogTitle>
-          <DialogDescription className="sr-only">修改用户名。</DialogDescription>
+          <DialogDescription className="sr-only">修改昵称与用户名。</DialogDescription>
         </DialogHeader>
 
         <div className="mt-6 grid gap-5">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-[#475569] dark:text-slate-300">
+              昵称
+            </label>
+            <Input
+              value={draft.fullName}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, fullName: event.target.value }))
+              }
+              placeholder="请输入昵称（如 QQ 昵称）"
+              className={DIALOG_INPUT}
+            />
+            <p className="text-xs text-[#94A3B8] dark:text-slate-500">
+              用于全站各功能展示的个人名称
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label className="text-sm font-semibold text-[#475569] dark:text-slate-300">
               用户名
@@ -932,6 +951,7 @@ export function ProfileShell() {
   const joinDate = isAnonymousUser ? null : formatJoinDate(profile.createdAt);
   const profileFields: Array<{ label: string; value: string; mono?: boolean; span?: boolean }> = [
     { label: '用户 ID', value: profile.userId, mono: true },
+    ...(profile.fullName ? [{ label: '昵称', value: profile.fullName }] : []),
     { label: '用户名', value: profile.username },
     ...(profile.email ? [{ label: '邮箱', value: profile.email }] : []),
     ...(joinDate ? [{ label: '注册时间', value: joinDate }] : []),

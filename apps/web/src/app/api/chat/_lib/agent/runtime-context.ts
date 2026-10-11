@@ -14,8 +14,10 @@
  */
 
 import { prisma, type UserWebhookTool } from '@repo/db';
-import type { ToolRegistry } from '@/lib/agent/registry';
+import { getCapabilityPack } from '@repo/shared';
+import { createToolRegistry, type ToolRegistry } from '@/lib/agent/registry';
 import { createUserWebhookToolsSnapshot } from './tools/user-webhook';
+import { getDefaultToolRegistry } from './tools';
 
 /** 完成态观测元数据（仅观测，不影响计费口径） */
 export interface AgentRuntimeFinishMetadata {
@@ -40,6 +42,8 @@ export interface AgentRuntimeContextOptions {
   loadUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
   /** 基础注册表（缺省为内置工具注册表单例），供测试注入内存注册表 */
   baseRegistry?: ToolRegistry;
+  /** 可选场景能力包 key（ADR-0014 / 工单 01） */
+  capabilityPack?: string;
 }
 
 /**
@@ -60,7 +64,7 @@ async function defaultLoadUserTools(userId: string): Promise<UserWebhookTool[]> 
 export async function createAgentRuntimeContext(
   options: AgentRuntimeContextOptions
 ): Promise<AgentRuntimeContext> {
-  const { userId, errorId, loadUserTools, baseRegistry } = options;
+  const { userId, errorId, loadUserTools, baseRegistry, capabilityPack } = options;
 
   // 1. 加载用户工具：失败降级为无用户工具（沿用既有告警文案，测试接缝保持不变）
   let userTools: UserWebhookTool[] = [];
@@ -75,10 +79,20 @@ export async function createAgentRuntimeContext(
     userTools = [];
   }
 
-  // 2. 装配快照：合并注册表 + 每请求调次闭包计数器（内部黑盒）
-  const snapshot = createUserWebhookToolsSnapshot(userTools, baseRegistry);
+  // 2. 基础内置工具注册表：依据能力包白名单严格过滤收敛（防越权，ADR-0014）
+  const initialBaseRegistry = baseRegistry ?? getDefaultToolRegistry();
+  let effectiveBaseRegistry = initialBaseRegistry;
+  const pack = getCapabilityPack(capabilityPack);
+  if (pack) {
+    const whitelist = new Set(pack.toolWhitelist);
+    const filteredSpecs = initialBaseRegistry.list().filter((spec) => whitelist.has(spec.name));
+    effectiveBaseRegistry = createToolRegistry(filteredSpecs);
+  }
 
-  // 3. 窄接口暴露：注册表给编排器，观测元数据给完成态结算
+  // 3. 装配快照：合并已收敛的内置工具与用户 Webhook 扩展插槽 + 每请求调次闭包计数器
+  const snapshot = createUserWebhookToolsSnapshot(userTools, effectiveBaseRegistry);
+
+  // 4. 窄接口暴露：注册表给编排器，观测元数据给完成态结算
   return {
     registry: snapshot.registry,
     finishMetadata: () => ({ webhookCalls: snapshot.getWebhookCallsCount() }),

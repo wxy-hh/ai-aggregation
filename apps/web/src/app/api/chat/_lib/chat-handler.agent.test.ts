@@ -1409,5 +1409,104 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
     const fourthImgOutput = toolMsgs[1]?.content?.find((p) => p.toolCallId === 'img_c4')?.output?.value;
     expect(fourthImgOutput).toContain('本次对话的出图次数已用完');
   });
+
+  // ==================== ADR-0014 / 工单 01：场景能力包核心链路 ====================
+
+  describe('agent 模式 · 场景能力包核心链路 (ADR-0014 / 工单 01)', () => {
+    it('选择 deep-research 能力包：按 8 步上限（16384 tokens）预留，决策步注入专属 systemPrompt 且留痕', async () => {
+      getAvailableQuotaMock.mockResolvedValue(100_000);
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['深度研报产出完毕。'],
+        })
+      );
+
+      const req = new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '请对新能源汽车市场做深度调研' }],
+          agent: true,
+          capabilityPack: 'deep-research',
+        }),
+      });
+
+      const response = await handler(req);
+      expect(response.status).toBe(200);
+      const events = await readSseEvents(response);
+
+      // 1. 预算预留按 8 步扩容计算：2048 * 8 = 16384
+      expect(quotaSessionReserveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: 'chat-agent',
+          maxOutputTokens: 16384,
+        }),
+        'user'
+      );
+
+      // 2. 决策步传入能力包专属 systemPrompt
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+      const callOptions = streamTextMock.mock.calls[0][0] as {
+        system?: string;
+        tools?: Record<string, unknown>;
+      };
+      expect(callOptions.system).toBeDefined();
+      expect(callOptions.system).toContain('深度调研');
+
+      // 3. 内置工具白名单收敛：由于 registryHolder 当前只有 image_generate，在 deep-research 下被剔除！
+      // tools 中只包含 web_search（若允许），不包含 image_generate
+      expect(callOptions.tools?.image_generate).toBeUndefined();
+
+      // 4. finalize metadata 包含能力包标记
+      expect(fakeSession.finalize).toHaveBeenCalledWith(
+        'success',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            agent: true,
+            capabilityPack: 'deep-research',
+          }),
+        })
+      );
+
+      expect(events.some((e) => e.type === 'text-delta' && e.text === '深度研报产出完毕。')).toBe(true);
+    });
+
+    it('未指定能力包：保持 5 步基线（10240 tokens）预留，不挂载专项 systemPrompt', async () => {
+      getAvailableQuotaMock.mockResolvedValue(100_000);
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['通用 Agent 回答。'],
+        })
+      );
+
+      const req = new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '通用问题' }],
+          agent: true,
+        }),
+      });
+
+      const response = await handler(req);
+      expect(response.status).toBe(200);
+      await readSseEvents(response);
+
+      // 保持 5 步基线预算：2048 * 5 = 10240
+      expect(quotaSessionReserveMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: 'chat-agent',
+          maxOutputTokens: 10240,
+        }),
+        'user'
+      );
+
+      // 决策步无特定专项能力包提示词
+      const callOptions = streamTextMock.mock.calls[0][0] as {
+        system?: string;
+      };
+      expect(callOptions.system).toBeUndefined();
+    });
+  });
 });
 

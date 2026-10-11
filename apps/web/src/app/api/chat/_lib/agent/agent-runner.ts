@@ -50,6 +50,7 @@ import {
   type ToolSet,
 } from 'ai';
 import { createProvider, type ProviderName } from '@repo/providers';
+import { getCapabilityPack } from '@repo/shared';
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import { encodeSseEvent } from '../sse';
@@ -90,6 +91,10 @@ export interface AgentRunOptions {
   maxSteps?: number;
   /** 整请求运行时间预算毫秒数（默认为 AGENT_RUN_TIME_BUDGET_MS = 240,000） */
   runTimeBudgetMs?: number;
+  /** 绑定的场景能力包 key（ADR-0014 / 工单 01） */
+  capabilityPack?: string;
+  /** 专属系统提示词（如能力包系统提示词；未传时自动按 capabilityPack 解析） */
+  systemPrompt?: string;
 }
 
 /** 多步 usage 的累加结构（null 表示至今无任何有效 usage） */
@@ -137,9 +142,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       /** 整请求起始时刻：运行时间预算（AGENT_RUN_TIME_BUDGET_MS）的判定基准 */
       const startedAt = Date.now();
 
-      // 边界与预算计算
-      const effectiveMaxSteps = options.maxSteps ?? AGENT_MAX_STEPS;
+      // 边界与预算计算（支持能力包自适应扩容，ADR-0014 / 工单 01）
+      const pack = getCapabilityPack(options.capabilityPack);
+      const effectiveSystemPrompt = options.systemPrompt ?? pack?.systemPrompt;
+      const effectiveMaxSteps = options.maxSteps ?? pack?.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
+      const canUseWebSearch = !pack || pack.toolWhitelist.includes('web_search');
 
       // 服务端搜索调用计数，仅观测
       let searchCallsCount = 0;
@@ -220,10 +228,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           const decision: StreamTextResult<ToolSet, any> = streamText<ToolSet>({
             model: agentModel,
             messages: stepPayload.messages,
+            ...(effectiveSystemPrompt ? { system: effectiveSystemPrompt } : {}),
             tools: {
               ...buildToolSet(registry),
-              // Ark 服务端执行的内置联网搜索：由 ToolStreamProjector 统一流式投影与动作规约
-              web_search: aiProvider.tools.webSearch({}),
+              // Ark 服务端执行的内置联网搜索：依据能力包白名单挂载，由 ToolStreamProjector 统一流式投影与动作规约
+              ...(canUseWebSearch ? { web_search: aiProvider.tools.webSearch({}) } : {}),
             },
             stopWhen: stepCountIs(1),
             maxOutputTokens: stepOutputLimit,
@@ -354,6 +363,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           const summary = streamText({
             model: agentModel,
             messages: summaryPayload.messages,
+            ...(effectiveSystemPrompt ? { system: effectiveSystemPrompt } : {}),
             maxOutputTokens: stepOutputLimit,
             abortSignal: signal,
             providerOptions: {

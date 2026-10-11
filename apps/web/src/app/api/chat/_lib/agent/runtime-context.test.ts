@@ -135,6 +135,66 @@ describe('createAgentRuntimeContext 运行时装配', () => {
 
     expect(runtime.registry).toBe(base);
   });
+
+  describe('场景能力包白名单收敛 (ADR-0014 / 工单 01)', () => {
+    function makeMultiBuiltinRegistry(): { registry: ToolRegistry } {
+      const fetchTool: AgentToolSpec = {
+        name: 'web_fetch',
+        description: '网页抓取',
+        parameters: z.object({ url: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '网页正文', summaryForDisplay: '完成' }),
+      };
+      const imageTool: AgentToolSpec = {
+        name: 'image_generate',
+        description: '生成图片',
+        parameters: z.object({ prompt: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '图片URL', summaryForDisplay: '完成' }),
+      };
+      return { registry: createToolRegistry([fetchTool, imageTool]) };
+    }
+
+    it('deep-research 深度调研包：严格仅保留 web_fetch，绝不出图（image_generate 被剔除）', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        capabilityPack: 'deep-research',
+        loadUserTools: async () => [makeUserTool()],
+      });
+
+      // 白名单包含 web_fetch，不包含 image_generate
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+      expect(runtime.registry.has('image_generate')).toBe(false);
+      // 用户自定义 Webhook 作为插槽依然可用
+      expect(runtime.registry.has('wh_weather')).toBe(true);
+    });
+
+    it('visual-report 图文报告包：保留 image_generate，剔除非白名单内置工具 web_fetch', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        capabilityPack: 'visual-report',
+        loadUserTools: async () => [],
+      });
+
+      expect(runtime.registry.has('image_generate')).toBe(true);
+      expect(runtime.registry.has('web_fetch')).toBe(false);
+    });
+
+    it('未指定能力包或未知包时，保持通用 Agent 行为，保留全部内置工具', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        capabilityPack: undefined,
+        loadUserTools: async () => [],
+      });
+
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+      expect(runtime.registry.has('image_generate')).toBe(true);
+    });
+  });
 });
 
 describe('finishMetadata 完成态观测元数据', () => {
