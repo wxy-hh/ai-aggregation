@@ -195,6 +195,83 @@ describe('createAgentRuntimeContext 运行时装配', () => {
       expect(runtime.registry.has('image_generate')).toBe(true);
     });
   });
+
+  describe('会话级临时停用工具 (disabledToolKeys · ADR-0014 / 工单 02)', () => {
+    function makeMultiBuiltinRegistry(): { registry: ToolRegistry } {
+      const fetchTool: AgentToolSpec = {
+        name: 'web_fetch',
+        description: '网页抓取',
+        parameters: z.object({ url: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '网页正文', summaryForDisplay: '完成' }),
+      };
+      const imageTool: AgentToolSpec = {
+        name: 'image_generate',
+        description: '生成图片',
+        parameters: z.object({ prompt: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '图片URL', summaryForDisplay: '完成' }),
+      };
+      return { registry: createToolRegistry([fetchTool, imageTool]) };
+    }
+
+    it('disabledToolKeys 剔除指定内置工具', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        disabledToolKeys: ['image_generate'],
+        loadUserTools: async () => [],
+      });
+
+      expect(runtime.registry.has('image_generate')).toBe(false);
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+    });
+
+    it('disabledToolKeys 支持按 callName、wh_ 前缀或 id 剔除用户 Webhook 工具', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        disabledToolKeys: ['weather'], // 按 callName 禁用
+        loadUserTools: async () => [
+          makeUserTool({ id: 'tool-weather', callName: 'weather' }),
+          makeUserTool({ id: 'tool-stock', callName: 'stock' }),
+        ],
+      });
+
+      expect(runtime.registry.has('wh_weather')).toBe(false);
+      expect(runtime.registry.has('wh_stock')).toBe(true);
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+    });
+
+    it('能力包白名单与 disabledToolKeys 双重叠加过滤', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        capabilityPack: 'deep-research', // 白名单包含 web_fetch
+        disabledToolKeys: ['web_fetch'], // 临时禁用 web_fetch
+        loadUserTools: async () => [makeUserTool({ callName: 'weather' })],
+      });
+
+      // web_fetch 虽然在能力包白名单，但被 disabledToolKeys 临时剔除
+      expect(runtime.registry.has('web_fetch')).toBe(false);
+      expect(runtime.registry.has('image_generate')).toBe(false);
+      // 未被禁用的 webhook 依旧保留
+      expect(runtime.registry.has('wh_weather')).toBe(true);
+    });
+
+    it('全部内置与 Webhook 工具被禁用时，注册表清空', async () => {
+      const { registry: base } = makeMultiBuiltinRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        disabledToolKeys: ['web_fetch', 'image_generate', 'weather'],
+        loadUserTools: async () => [makeUserTool({ callName: 'weather' })],
+      });
+
+      expect(runtime.registry.list()).toHaveLength(0);
+    });
+  });
 });
 
 describe('finishMetadata 完成态观测元数据', () => {

@@ -76,6 +76,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         reservationId,
         agent: rawAgent,
         capabilityPack: rawCapabilityPack,
+        disabledToolKeys: rawDisabledToolKeys,
       } = body as {
         messages: ChatMessage[];
         model?: string;
@@ -83,6 +84,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         reservationId?: string;
         agent?: unknown;
         capabilityPack?: unknown;
+        disabledToolKeys?: unknown;
       };
       // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
       // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
@@ -93,6 +95,11 @@ export function createChatHandler(config: ChatHandlerConfig) {
           ? rawCapabilityPack.trim()
           : undefined;
       const activeCapabilityPack = agent ? getCapabilityPack(capabilityPack) : undefined;
+      // 会话级临时停用工具列表（ADR-0014 / 工单 02）：仅接收字符串数组
+      const disabledToolKeys =
+        agent && Array.isArray(rawDisabledToolKeys)
+          ? rawDisabledToolKeys.filter((k): k is string => typeof k === 'string' && Boolean(k.trim()))
+          : undefined;
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
@@ -160,6 +167,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           errorId,
           loadUserTools: config.getUserTools,
           capabilityPack: activeCapabilityPack?.key,
+          disabledToolKeys,
         });
       }
 
@@ -233,6 +241,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           errorId,
           runtime: agentRuntime,
           capabilityPack: activeCapabilityPack?.key,
+          disabledToolKeys,
           onFinish,
         });
       } else {

@@ -39,6 +39,8 @@ export const StoreEvents = {
   CONVERSATION_DELETED: 'conversation:deleted',
   /** 对话消息被更新（payload: { id: string, messages: Message[] }） */
   CONVERSATION_UPDATED: 'conversation:updated',
+  /** 对话工具覆盖被更新（payload: { id: string, toolOverrides?: Record<string, boolean> }） */
+  CONVERSATION_TOOL_OVERRIDES_UPDATED: 'conversation:tool-overrides-updated',
   /** 聊天历史记录保存（payload: { item: HistoryItem }） */
   CHAT_HISTORY_SAVED: 'chat-history:saved',
   /** 音频记录被删除（payload: { id: string }） */

@@ -71,6 +71,7 @@ export interface ChatState {
   activeConversationId: string | null; // 当前激活的对话ID
   attachment: Attachment | null; // 当前待发送的附件（单文件模式）
   activeCapabilityPackKey: string | null; // 当前激活的场景能力包 key（ADR-0014 / 工单 01）
+  toolOverrides: Record<string, boolean>; // 当前会话的工具临时启停覆盖字典（ADR-0014 / 工单 02）
 
   // ========== 基础操作 ==========
   setInput: (value: string) => void; // 设置输入框内容
@@ -78,6 +79,8 @@ export interface ChatState {
   switchProvider: (provider: ProviderName, model?: string) => void; // 切换AI提供商和模型
   setAttachment: (attachment: Attachment | null) => void; // 设置附件
   setCapabilityPackKey: (key: string | null) => void; // 设置当前场景能力包
+  setToolOverride: (toolKey: string, enabled: boolean) => void; // 切换单个工具临时启停
+  setToolOverrides: (overrides: Record<string, boolean>) => void; // 批量更新工具覆盖字典
 
   // ========== 核心交互功能 ==========
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
@@ -85,7 +88,14 @@ export interface ChatState {
   stop: () => void; // 停止当前的AI生成
 
   // ========== 生命周期管理 ==========
-  loadConversation: (id: string, messages: Message[], provider: string, model: string, capabilityPack?: string | null) => void; // 加载历史对话
+  loadConversation: (
+    id: string,
+    messages: Message[],
+    provider: string,
+    model: string,
+    capabilityPack?: string | null,
+    toolOverrides?: Record<string, boolean>
+  ) => void; // 加载历史对话
   reset: () => void; // 重置聊天状态
 }
 
@@ -626,6 +636,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeConversationId: null, // 无激活对话
     attachment: null, // 无附件
     activeCapabilityPackKey: null, // 当前无激活场景能力包
+    toolOverrides: {}, // 当前无工具覆盖字典（ADR-0014 / 工单 02）
 
     // ========== 基础操作方法 ==========
 
@@ -641,6 +652,33 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 设置当前激活的场景能力包
     setCapabilityPackKey: (key) => set({ activeCapabilityPackKey: key }),
 
+    // 切换单个工具的临时启停状态
+    setToolOverride: (toolKey, enabled) => {
+      const current = get().toolOverrides;
+      const next = { ...current, [toolKey]: enabled };
+      set({ toolOverrides: next });
+      const conversationId = get().activeConversationId;
+      if (conversationId) {
+        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
+          id: conversationId,
+          toolOverrides: next,
+        });
+      }
+    },
+
+    // 批量设置工具覆盖字典
+    setToolOverrides: (overrides) => {
+      const next = { ...overrides };
+      set({ toolOverrides: next });
+      const conversationId = get().activeConversationId;
+      if (conversationId) {
+        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
+          id: conversationId,
+          toolOverrides: next,
+        });
+      }
+    },
+
     // 切换AI提供商和模型
     // 切换时会清空附件（因为不同提供商支持的附件类型可能不同）
     // 但保留接力图片（有 sourceId 的附件）以支持图片接力场景
@@ -653,8 +691,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       })),
 
     // 加载历史对话
-    // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包）
-    loadConversation: (id, messages, provider, model, capabilityPack) => {
+    // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包与工具覆盖，ADR-0014 / 工单 02）
+    loadConversation: (id, messages, provider, model, capabilityPack, toolOverrides) => {
       // 停止之前的AI生成（如果有）
       finalizeStreamingMessage();
       if (abortController) {
@@ -688,6 +726,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         provider: provider as ProviderName, // 恢复之前使用的提供商
         model, // 恢复之前使用的模型
         activeCapabilityPackKey: capabilityPack ?? null, // 恢复绑定的场景能力包
+        toolOverrides: toolOverrides ? { ...toolOverrides } : {}, // 恢复会话级工具覆盖字典
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
         error: null, // 清空错误
@@ -712,6 +751,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         error: null, // 清空错误
         activeConversationId: null, // 清空对话ID
         activeCapabilityPackKey: null, // 清空能力包选择
+        toolOverrides: {}, // 清空工具覆盖字典
         // 注意：provider 和 model 保持不变，保留用户的选择
       });
     },
@@ -740,11 +780,16 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeConversationId,
         attachment,
         activeCapabilityPackKey,
+        toolOverrides,
       } = get();
       const content = contentOverrides || input;
       // agent 模式开关（settings-store）。仅在开启时往请求体带标志，
       // 关闭时请求体与现状逐字节一致 —— 老链路的降级无感知由这里保证。
       const agentMode = useSettingsStore.getState().agentModeEnabled;
+      // 会话级临时停用工具差异项（ADR-0014 / 工单 02）：仅提取当前会话中值为 false 的工具
+      const disabledToolKeys = Object.entries(toolOverrides)
+        .filter(([_, enabled]) => enabled === false)
+        .map(([key]) => key);
 
       // 有附件时允许空文本，否则需要文本内容
       if ((!content.trim() && !attachment) || isLoading) return 'skipped';
@@ -821,6 +866,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               ...(agentMode ? { agent: true } : {}),
               // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
               ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
+              // 会话级临时停用工具（ADR-0014 / 工单 02）：仅在有被关闭工具时携带差异项
+              ...(agentMode && disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
             },
             signal: abortController.signal, // 支持取消请求
           },

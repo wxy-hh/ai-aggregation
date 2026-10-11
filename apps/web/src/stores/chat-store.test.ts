@@ -516,3 +516,97 @@ describe('useChatStore.sendMessage（tool_result durationMs 耗时合并，工�
     expect('durationMs' in (secondCall ?? {})).toBe(false);
   });
 });
+
+describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0014 / 工单 02)', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    mockedCheckAndWarnLowBalance.mockReset();
+    resetState();
+  });
+
+  it('setToolOverride 正确更新临时启停字典', () => {
+    expect(useChatStore.getState().toolOverrides).toEqual({});
+
+    useChatStore.getState().setToolOverride('image_generate', false);
+    expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: false });
+
+    useChatStore.getState().setToolOverride('image_generate', true);
+    expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: true });
+  });
+
+  it('loadConversation 恢复绑定的 toolOverrides，reset 予以重置', () => {
+    useChatStore.getState().loadConversation(
+      'conv-override-1',
+      [],
+      'doubao',
+      'doubao-seed-evolving',
+      'deep-research',
+      { web_fetch: false, weather: true }
+    );
+
+    expect(useChatStore.getState().activeConversationId).toBe('conv-override-1');
+    expect(useChatStore.getState().activeCapabilityPackKey).toBe('deep-research');
+    expect(useChatStore.getState().toolOverrides).toEqual({ web_fetch: false, weather: true });
+
+    useChatStore.getState().reset();
+    expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
+    expect(useChatStore.getState().toolOverrides).toEqual({});
+  });
+
+  it('agent 模式下 sendMessage 计算并携带 disabledToolKeys（差异减项传参）', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"已排除画图工具回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    // 启用 agent 模式并设置画图被临时禁用
+    useChatStore.setState({
+      input: '写一份报告',
+      toolOverrides: { image_generate: false, web_search: true },
+    });
+
+    // 引入 settingsStore 并开启 agentMode
+    const { useSettingsStore } = await import('@/stores/settings-store');
+    useSettingsStore.setState({ agentModeEnabled: true });
+
+    const result = await useChatStore.getState().sendMessage();
+    expect(result).toBe('sent');
+    expect(mockedAuthFetch).toHaveBeenCalledTimes(1);
+
+    const callArgs = mockedAuthFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1]?.body as string);
+
+    expect(body.agent).toBe(true);
+    // 仅携带启停为 false 的工具项（差异减项传输）
+    expect(body.disabledToolKeys).toEqual(['image_generate']);
+  });
+
+  it('所有工具全开（无 false 覆盖）时，sendMessage 请求体不带 disabledToolKeys', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"全开回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    useChatStore.setState({
+      input: '写一份报告',
+      toolOverrides: { image_generate: true, web_search: true },
+    });
+
+    const { useSettingsStore } = await import('@/stores/settings-store');
+    useSettingsStore.setState({ agentModeEnabled: true });
+
+    const result = await useChatStore.getState().sendMessage();
+    expect(result).toBe('sent');
+
+    const callArgs = mockedAuthFetch.mock.calls[0];
+    const body = JSON.parse(callArgs[1]?.body as string);
+
+    expect(body.agent).toBe(true);
+    expect(body.disabledToolKeys).toBeUndefined();
+  });
+});

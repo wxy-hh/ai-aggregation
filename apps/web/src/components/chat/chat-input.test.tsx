@@ -582,4 +582,32 @@ describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {
       expect(onConsumed).toHaveBeenCalledWith('draft-1');
     });
   });
+
+  describe('ChatInput 可用工具面板入口 (ADR-0014 / 工单 02)', () => {
+    beforeEach(() => {
+      vi.mocked(fetchAgentTools).mockResolvedValue([]);
+    });
+
+    it('Agent 模式开启时，渲染可用工具触发入口并显示可用数量角标', () => {
+      useSettingsStore.setState({ agentModeEnabled: true });
+      useChatStore.setState({ activeCapabilityPackKey: null, toolOverrides: {} });
+
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      const trigger = screen.getByTestId('session-tools-trigger');
+      expect(trigger).toBeInTheDocument();
+      const countBadge = screen.getByTestId('session-tools-count');
+      expect(countBadge).toBeInTheDocument();
+      // 默认通用模式 3 个内置工具
+      expect(countBadge).toHaveTextContent('3');
+    });
+
+    it('Agent 模式关闭时，不渲染可用工具触发入口', () => {
+      useSettingsStore.setState({ agentModeEnabled: false });
+
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      expect(screen.queryByTestId('session-tools-trigger')).not.toBeInTheDocument();
+    });
+  });
 });

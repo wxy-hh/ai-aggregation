@@ -44,6 +44,8 @@ export interface AgentRuntimeContextOptions {
   baseRegistry?: ToolRegistry;
   /** 可选场景能力包 key（ADR-0014 / 工单 01） */
   capabilityPack?: string;
+  /** 会话级临时停用的工具键名列表（ADR-0014 / 工单 02） */
+  disabledToolKeys?: string[];
 }
 
 /**
@@ -64,7 +66,14 @@ async function defaultLoadUserTools(userId: string): Promise<UserWebhookTool[]> 
 export async function createAgentRuntimeContext(
   options: AgentRuntimeContextOptions
 ): Promise<AgentRuntimeContext> {
-  const { userId, errorId, loadUserTools, baseRegistry, capabilityPack } = options;
+  const { userId, errorId, loadUserTools, baseRegistry, capabilityPack, disabledToolKeys } = options;
+
+  // 0. 规范化临时停用键名集合（容错清洗非字符串项）
+  const disabledSet = new Set(
+    Array.isArray(disabledToolKeys)
+      ? disabledToolKeys.filter((k): k is string => typeof k === 'string' && Boolean(k.trim()))
+      : []
+  );
 
   // 1. 加载用户工具：失败降级为无用户工具（沿用既有告警文案，测试接缝保持不变）
   let userTools: UserWebhookTool[] = [];
@@ -79,18 +88,34 @@ export async function createAgentRuntimeContext(
     userTools = [];
   }
 
-  // 2. 基础内置工具注册表：依据能力包白名单严格过滤收敛（防越权，ADR-0014）
+  // 二次过滤用户自定义 Webhook 工具：剔除被临时停用的工具（支持按 id、callName 或 wh_ 前缀）
+  const effectiveUserTools = userTools.filter((tool) => {
+    if (disabledSet.has(tool.id)) return false;
+    if (disabledSet.has(tool.callName)) return false;
+    if (disabledSet.has(`wh_${tool.callName}`)) return false;
+    return true;
+  });
+
+  // 2. 基础内置工具注册表：依据能力包白名单严格收敛并剔除 disabledToolKeys（双重安全闸门，ADR-0014）
   const initialBaseRegistry = baseRegistry ?? getDefaultToolRegistry();
   let effectiveBaseRegistry = initialBaseRegistry;
   const pack = getCapabilityPack(capabilityPack);
-  if (pack) {
-    const whitelist = new Set(pack.toolWhitelist);
-    const filteredSpecs = initialBaseRegistry.list().filter((spec) => whitelist.has(spec.name));
-    effectiveBaseRegistry = createToolRegistry(filteredSpecs);
+  if (pack || disabledSet.size > 0) {
+    const whitelist = pack ? new Set(pack.toolWhitelist) : null;
+    const initialSpecs = initialBaseRegistry.list();
+    const filteredSpecs = initialSpecs.filter((spec) => {
+      if (whitelist && !whitelist.has(spec.name)) return false;
+      if (disabledSet.has(spec.name)) return false;
+      return true;
+    });
+    // 仅在实际发生过滤或能力包指定时创建新注册表；若无变化则复用 initialBaseRegistry 保持零开销
+    if (filteredSpecs.length !== initialSpecs.length || pack) {
+      effectiveBaseRegistry = createToolRegistry(filteredSpecs);
+    }
   }
 
   // 3. 装配快照：合并已收敛的内置工具与用户 Webhook 扩展插槽 + 每请求调次闭包计数器
-  const snapshot = createUserWebhookToolsSnapshot(userTools, effectiveBaseRegistry);
+  const snapshot = createUserWebhookToolsSnapshot(effectiveUserTools, effectiveBaseRegistry);
 
   // 4. 窄接口暴露：注册表给编排器，观测元数据给完成态结算
   return {

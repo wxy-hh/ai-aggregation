@@ -9,13 +9,14 @@ import { Button } from '@/components/ui/button'; // 按钮组件
 import { Textarea } from '@/components/ui/textarea'; // 多行文本输入框组件
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // 弹出层组件（用于附件选择菜单）
 import Link from 'next/link';
+import { SessionToolsPanel } from './session-tools-panel';
 
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { getCapabilityPack } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
-import { fetchAgentTools } from '@/lib/api/agent-tools';
+import { fetchAgentTools, type SanitizedAgentTool } from '@/lib/api/agent-tools';
 import { detectAgentIntent, type AgentIntentDetectionResult } from '@/lib/agent/agent-intent';
 import { trackEvent } from '@/lib/events/tracker';
 // useChatStore: 聊天状态管理 Store
@@ -228,11 +229,13 @@ export function ChatInput({
   // ============ Agent 自定义 Webhook 工具状态条 ============
   // 记录启用工具数量：null 表示未加载或加载失败（静默降级不显示），number 表示已启用的数量
   const [enabledToolCount, setEnabledToolCount] = useState<number | null>(null);
+  const [userTools, setUserTools] = useState<SanitizedAgentTool[]>([]);
 
   // 仅当 agent 开关从关→开时懒加载一次
   useEffect(() => {
     if (!agentModeEnabled) {
       setEnabledToolCount(null);
+      setUserTools([]);
       return;
     }
 
@@ -242,13 +245,16 @@ export function ChatInput({
       try {
         const tools = await fetchAgentTools();
         if (!cancelled) {
-          const count = tools.filter((tool) => tool.enabled).length;
+          const list = tools || [];
+          setUserTools(list);
+          const count = list.filter((tool) => tool.enabled).length;
           setEnabledToolCount(count);
         }
       } catch {
         // 请求失败（网络错误、401 未登录、限流等）静默降级为不显示状态条，不打扰对话
         if (!cancelled) {
           setEnabledToolCount(null);
+          setUserTools([]);
         }
       }
     }
@@ -1206,6 +1212,9 @@ export function ChatInput({
           className="min-h-[36px] max-h-[120px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
           disabled={isLoading}
         />
+
+        {/* Agent 模式可用工具入口（ADR-0014 / 工单 02） */}
+        {agentModeEnabled && <SessionToolsPanel userTools={userTools} />}
 
         <Button
           type="button"

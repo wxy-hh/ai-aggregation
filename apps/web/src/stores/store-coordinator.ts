@@ -29,6 +29,13 @@ export function registerStoreCoordinator(): () => void {
     })
   );
 
+  // conversation:tool-overrides-updated → 同步更新 conversations-store 中的工具覆盖字典（ADR-0014 / 工单 02）
+  unsubs.push(
+    on(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, ({ id, toolOverrides }: { id: string; toolOverrides?: Record<string, boolean> }) => {
+      useConversationsStore.getState().updateConversationToolOverrides(id, toolOverrides);
+    })
+  );
+
   // chat-history:saved → 同步写入 history-store
   unsubs.push(
     on(StoreEvents.CHAT_HISTORY_SAVED, ({ item }: { item: any }) => {

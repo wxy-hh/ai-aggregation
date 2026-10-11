@@ -124,6 +124,7 @@ interface ConversationsState {
     updateMessages: (id: string, messages: ChatMessage[]) => void;
     updateConversationSettings: (id: string, provider: string, model: string) => void;
     updateConversationCapabilityPack: (id: string, capabilityPack?: string | null) => void;
+    updateConversationToolOverrides: (id: string, toolOverrides?: Record<string, boolean>) => void;
     deleteConversation: (id: string, _isSyncDelete?: boolean) => void;
 
     // 比较会话：创建与更新轮次分支
@@ -182,10 +183,16 @@ export const useConversationsStore = create<ConversationsState>()(
                 }, [] as ConversationGroup[]);
             },
 
-            // 查找空对话
+            // 查找未被定制的空白对话（无消息、无能力包绑定且无工具覆盖）
             findEmptyConversation: () => {
                 const { conversations } = get();
-                return conversations.find(c => c.messages.length === 0 && c.mode !== 'compare');
+                return conversations.find(
+                    c =>
+                        c.messages.length === 0 &&
+                        c.mode !== 'compare' &&
+                        !c.capabilityPack &&
+                        (!c.toolOverrides || Object.keys(c.toolOverrides).length === 0)
+                );
             },
 
             // 创建新对话（支持可选能力包参数）
@@ -220,6 +227,21 @@ export const useConversationsStore = create<ConversationsState>()(
                             ? {
                                   ...conv,
                                   capabilityPack: capabilityPack || undefined,
+                                  updatedAt: Date.now(),
+                              }
+                            : conv
+                    ),
+                }));
+            },
+
+            // 更新会话的工具覆盖字典（ADR-0014 / 工单 02）
+            updateConversationToolOverrides: (id, toolOverrides) => {
+                set(state => ({
+                    conversations: state.conversations.map(conv =>
+                        conv.id === id
+                            ? {
+                                  ...conv,
+                                  toolOverrides: toolOverrides ? { ...toolOverrides } : undefined,
                                   updatedAt: Date.now(),
                               }
                             : conv
@@ -304,7 +326,14 @@ export const useConversationsStore = create<ConversationsState>()(
                         lastActiveSingleId: id,
                     });
                     try {
-                        useChatStore.getState().loadConversation(conv.id, conv.messages as any, conv.provider as any, conv.model, conv.capabilityPack);
+                        useChatStore.getState().loadConversation(
+                            conv.id,
+                            conv.messages as any,
+                            conv.provider as any,
+                            conv.model,
+                            conv.capabilityPack,
+                            conv.toolOverrides
+                        );
                     } catch {}
                 }
             },
@@ -343,7 +372,14 @@ export const useConversationsStore = create<ConversationsState>()(
                     if (targetConv) {
                         set({ ...updates, currentConversationId: targetConv.id });
                         try {
-                            useChatStore.getState().loadConversation(targetConv.id, targetConv.messages as any, targetConv.provider as any, targetConv.model);
+                            useChatStore.getState().loadConversation(
+                                targetConv.id,
+                                targetConv.messages as any,
+                                targetConv.provider as any,
+                                targetConv.model,
+                                targetConv.capabilityPack,
+                                targetConv.toolOverrides
+                            );
                         } catch {}
                     } else {
                         const emptyConv = current.findEmptyConversation();

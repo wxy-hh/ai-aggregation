@@ -1507,6 +1507,68 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
       };
       expect(callOptions.system).toBeUndefined();
     });
+
+    describe('会话级临时停用工具二次过滤 (disabledToolKeys · ADR-0014 / 工单 02)', () => {
+      it('请求携带 disabledToolKeys 时二次过滤剔除对应工具', async () => {
+        getAvailableQuotaMock.mockResolvedValue(100_000);
+        streamTextMock.mockReturnValueOnce(
+          makeFakeResult({
+            textParts: ['工具已被过滤，直接回答。'],
+          })
+        );
+
+        const req = new Request('http://localhost/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: '临时关闭画图' }],
+            agent: true,
+            disabledToolKeys: ['image_generate'],
+          }),
+        });
+
+        const response = await handler(req);
+        expect(response.status).toBe(200);
+        const events = await readSseEvents(response);
+
+        const callOptions = streamTextMock.mock.calls[0][0] as {
+          tools?: Record<string, unknown>;
+        };
+        // 验证 image_generate 被过滤剔除
+        expect(callOptions.tools?.image_generate).toBeUndefined();
+        expect(events.some((e) => e.type === 'text-delta' && e.text === '工具已被过滤，直接回答。')).toBe(true);
+      });
+
+      it('全部工具禁用时（含 web_search），编排器安全退化为纯文本流', async () => {
+        getAvailableQuotaMock.mockResolvedValue(100_000);
+        streamTextMock.mockReturnValueOnce(
+          makeFakeResult({
+            textParts: ['全关工具，安全退化为纯文本回答。'],
+          })
+        );
+
+        const req = new Request('http://localhost/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: '关闭所有工具' }],
+            agent: true,
+            disabledToolKeys: ['image_generate', 'web_fetch', 'web_search'],
+          }),
+        });
+
+        const response = await handler(req);
+        expect(response.status).toBe(200);
+        const events = await readSseEvents(response);
+
+        const callOptions = streamTextMock.mock.calls[0][0] as {
+          tools?: Record<string, unknown>;
+        };
+        // 验证 tools 为空对象，web_search 与内置工具全都不在
+        expect(callOptions.tools).toEqual({});
+        expect(events.some((e) => e.type === 'text-delta' && e.text === '全关工具，安全退化为纯文本回答。')).toBe(true);
+      });
+    });
   });
 });
 

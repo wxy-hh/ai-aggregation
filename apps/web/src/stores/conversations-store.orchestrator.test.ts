@@ -289,5 +289,35 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     expect(cur?.provider).toBe('doubao');
     expect(cur?.model).toBe('doubao-seed-evolving');
   });
+
+  it('会话工具覆盖隔离与还原：切换会话无损恢复 toolOverrides，新建会话重置（ADR-0014 / 工单 02）', () => {
+    const store = useConversationsStore.getState();
+
+    // 1. 创建两个会话
+    const idA = store.createConversation('doubao', 'doubao-seed-evolving', 'deep-research');
+    const idB = store.createConversation('doubao', 'doubao-seed-evolving', 'visual-report');
+
+    // 2. 为会话 A 设置覆盖项：禁用 web_fetch
+    store.updateConversationToolOverrides(idA, { web_fetch: false });
+    // 为会话 B 设置覆盖项：禁用 image_generate
+    store.updateConversationToolOverrides(idB, { image_generate: false });
+
+    // 3. 切换至会话 A：chatStore 恢复会话 A 的 capabilityPack 与 toolOverrides
+    store.switchConversation(idA);
+    expect(useChatStore.getState().activeConversationId).toBe(idA);
+    expect(useChatStore.getState().activeCapabilityPackKey).toBe('deep-research');
+    expect(useChatStore.getState().toolOverrides).toEqual({ web_fetch: false });
+
+    // 4. 切换至会话 B：chatStore 恢复会话 B 的 capabilityPack 与 toolOverrides（严格隔离，不污染）
+    store.switchConversation(idB);
+    expect(useChatStore.getState().activeConversationId).toBe(idB);
+    expect(useChatStore.getState().activeCapabilityPackKey).toBe('visual-report');
+    expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: false });
+
+    // 5. 新建会话：重置 toolOverrides 为空字典，capabilityPack 为 null
+    store.startNewSession('single');
+    expect(useChatStore.getState().toolOverrides).toEqual({});
+    expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
+  });
 });
 

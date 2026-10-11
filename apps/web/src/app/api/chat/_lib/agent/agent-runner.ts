@@ -95,6 +95,8 @@ export interface AgentRunOptions {
   capabilityPack?: string;
   /** 专属系统提示词（如能力包系统提示词；未传时自动按 capabilityPack 解析） */
   systemPrompt?: string;
+  /** 会话级临时停用的工具键名列表（ADR-0014 / 工单 02） */
+  disabledToolKeys?: string[];
 }
 
 /** 多步 usage 的累加结构（null 表示至今无任何有效 usage） */
@@ -147,7 +149,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       const effectiveSystemPrompt = options.systemPrompt ?? pack?.systemPrompt;
       const effectiveMaxSteps = options.maxSteps ?? pack?.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
-      const canUseWebSearch = !pack || pack.toolWhitelist.includes('web_search');
+      const disabledSet = new Set(options.disabledToolKeys ?? []);
+      const canUseWebSearch =
+        (!pack || pack.toolWhitelist.includes('web_search')) && !disabledSet.has('web_search');
 
       // 服务端搜索调用计数，仅观测
       let searchCallsCount = 0;
