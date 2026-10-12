@@ -6,7 +6,7 @@ import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
-import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord, AgentNote } from '@repo/shared';
+import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord, AgentNote, Artifact } from '@repo/shared';
 import { toolCallRecordSchema } from '@repo/shared';
 
 // ==================== 类型定义 ====================
@@ -57,6 +57,8 @@ export interface Message {
   // beforeCallIndex = 旁白到达时 toolCalls 的长度（即插入到第几个工具调用之前）。
   // 进过程卡片、不进正文、不入历史持久化（历史拍平时被丢弃）。类型单源在 @repo/shared。
   agentNotes?: AgentNote[];
+  // 本条消息关联生成的产物标识引用列表（ADR-0015）
+  artifactIds?: string[];
 }
 
 // 聊天状态管理接口
@@ -72,6 +74,10 @@ export interface ChatState {
   attachment: Attachment | null; // 当前待发送的附件（单文件模式）
   activeCapabilityPackKey: string | null; // 当前激活的场景能力包 key（ADR-0014 / 工单 01）
   toolOverrides: Record<string, boolean>; // 当前会话的工具临时启停覆盖字典（ADR-0014 / 工单 02）
+  // P1 Artifacts 工作台状态（ADR-0015）
+  artifacts: Artifact[]; // 当前会话的产物集合池
+  activeArtifactId: string | null; // 当前工作台聚焦的产物 ID
+  isWorkspaceOpen: boolean; // 桌面端工作台是否展开
 
   // ========== 基础操作 ==========
   setInput: (value: string) => void; // 设置输入框内容
@@ -81,6 +87,9 @@ export interface ChatState {
   setCapabilityPackKey: (key: string | null) => void; // 设置当前场景能力包
   setToolOverride: (toolKey: string, enabled: boolean) => void; // 切换单个工具临时启停
   setToolOverrides: (overrides: Record<string, boolean>) => void; // 批量更新工具覆盖字典
+  setActiveArtifactId: (id: string | null) => void; // 设置工作台聚焦产物
+  setWorkspaceOpen: (open: boolean) => void; // 开关工作台分栏
+  closeWorkspace: () => void; // 关闭工作台分栏
 
   // ========== 核心交互功能 ==========
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
@@ -94,7 +103,8 @@ export interface ChatState {
     provider: string,
     model: string,
     capabilityPack?: string | null,
-    toolOverrides?: Record<string, boolean>
+    toolOverrides?: Record<string, boolean>,
+    artifacts?: Artifact[]
   ) => void; // 加载历史对话
   reset: () => void; // 重置聊天状态
 }
@@ -109,6 +119,14 @@ export interface ChatStreamSessionDeps {
   updateMessages: (updater: (messages: Message[]) => Message[]) => Message[];
   setError: (error: Error | null) => void;
   activeConversationId: () => string | null;
+  /** 获取当前会话产物池快照（可选） */
+  getArtifacts?: () => Artifact[];
+  /** 更新产物池（可选） */
+  updateArtifacts?: (updater: (artifacts: Artifact[]) => Artifact[]) => void;
+  /** 设置当前聚焦产物（可选） */
+  setActiveArtifactId?: (id: string | null) => void;
+  /** 设置工作台展开状态（可选） */
+  setWorkspaceOpen?: (open: boolean) => void;
 }
 
 export type ChatStreamOutcome = 'sent' | 'aborted' | 'failed';
@@ -341,7 +359,12 @@ export async function runChatStreamSession(
   const persistConversation = (next: Message[]) => {
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: next });
+      const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
+      emit(StoreEvents.CONVERSATION_UPDATED, {
+        id: conversationId,
+        messages: next,
+        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
+      });
     }
   };
   try {
@@ -484,6 +507,46 @@ export async function runChatStreamSession(
         );
         persistConversation(next);
       },
+      onArtifactStart: (artifact) => {
+        deps.updateArtifacts?.((prev) => {
+          const existing = prev.find((a) => a.id === artifact.id);
+          if (existing) {
+            return prev.map((a) => (a.id === artifact.id ? { ...a, ...artifact } : a));
+          }
+          return [
+            ...prev,
+            {
+              ...artifact,
+              content: '',
+              status: 'streaming' as const,
+              createdAt: Date.now(),
+            },
+          ];
+        });
+        deps.setActiveArtifactId?.(artifact.id);
+        deps.setWorkspaceOpen?.(true);
+
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId) return m;
+            const prevIds = m.artifactIds ?? [];
+            if (prevIds.includes(artifact.id)) return m;
+            return { ...m, artifactIds: [...prevIds, artifact.id] };
+          })
+        );
+        persistConversation(next);
+      },
+      onArtifactDelta: (id, delta) => {
+        deps.updateArtifacts?.((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, content: a.content + delta } : a))
+        );
+      },
+      onArtifactEnd: (id, status) => {
+        deps.updateArtifacts?.((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, status } : a))
+        );
+        persistConversation(deps.getMessages());
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
@@ -513,7 +576,12 @@ export async function runChatStreamSession(
     );
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: finalMessages });
+      const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
+      emit(StoreEvents.CONVERSATION_UPDATED, {
+        id: conversationId,
+        messages: finalMessages,
+        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
+      });
     }
     onDone?.(finalMessages);
     return 'sent';
@@ -590,6 +658,13 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
     setError: (error) => set({ error }),
     activeConversationId: () => get().activeConversationId,
+    getArtifacts: () => get().artifacts,
+    updateArtifacts: (updater) => {
+      const next = updater(get().artifacts);
+      set({ artifacts: next });
+    },
+    setActiveArtifactId: (id) => set({ activeArtifactId: id }),
+    setWorkspaceOpen: (open) => set({ isWorkspaceOpen: open }),
   });
 
   // 中止前同步收尾当前流式消息：有部分内容标记 stopped 并同步会话列表落盘，空内容删除
@@ -637,6 +712,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     attachment: null, // 无附件
     activeCapabilityPackKey: null, // 当前无激活场景能力包
     toolOverrides: {}, // 当前无工具覆盖字典（ADR-0014 / 工单 02）
+    artifacts: [], // 产物集合池（ADR-0015）
+    activeArtifactId: null, // 当前工作台聚焦产物 ID
+    isWorkspaceOpen: false, // 桌面端工作台是否展开
 
     // ========== 基础操作方法 ==========
 
@@ -651,6 +729,15 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 设置当前激活的场景能力包
     setCapabilityPackKey: (key) => set({ activeCapabilityPackKey: key }),
+
+    // 设置工作台聚焦产物
+    setActiveArtifactId: (id) => set({ activeArtifactId: id }),
+
+    // 开关工作台分栏
+    setWorkspaceOpen: (open) => set({ isWorkspaceOpen: open }),
+
+    // 关闭工作台分栏
+    closeWorkspace: () => set({ isWorkspaceOpen: false }),
 
     // 切换单个工具的临时启停状态
     setToolOverride: (toolKey, enabled) => {
@@ -691,8 +778,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       })),
 
     // 加载历史对话
-    // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包与工具覆盖，ADR-0014 / 工单 02）
-    loadConversation: (id, messages, provider, model, capabilityPack, toolOverrides) => {
+    // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包、工具覆盖与产物池，ADR-0014 / ADR-0015）
+    loadConversation: (id, messages, provider, model, capabilityPack, toolOverrides, artifacts) => {
       // 停止之前的AI生成（如果有）
       finalizeStreamingMessage();
       if (abortController) {
@@ -716,8 +803,11 @@ export const useChatStore = create<ChatState>((set, get) => {
         sanitizedMessages.length !== messages.length ||
         sanitizedMessages.some((m, i) => m !== messages[i]);
       if (sanitizedChanged) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages });
+        emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages, ...(artifacts ? { artifacts } : {}) });
       }
+
+      const initialArtifacts = artifacts ? [...artifacts] : [];
+      const latestArtifactId = initialArtifacts.length > 0 ? initialArtifacts[initialArtifacts.length - 1].id : null;
 
       // 更新状态
       set({
@@ -727,6 +817,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         model, // 恢复之前使用的模型
         activeCapabilityPackKey: capabilityPack ?? null, // 恢复绑定的场景能力包
         toolOverrides: toolOverrides ? { ...toolOverrides } : {}, // 恢复会话级工具覆盖字典
+        artifacts: initialArtifacts, // 恢复会话级产物池（ADR-0015）
+        activeArtifactId: latestArtifactId, // 聚焦最新产物
+        isWorkspaceOpen: initialArtifacts.length > 0, // 有产物时自动展开工作台
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
         error: null, // 清空错误
@@ -752,6 +845,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeConversationId: null, // 清空对话ID
         activeCapabilityPackKey: null, // 清空能力包选择
         toolOverrides: {}, // 清空工具覆盖字典
+        artifacts: [], // 清空产物池
+        activeArtifactId: null, // 清空活动产物
+        isWorkspaceOpen: false, // 关闭工作台
         // 注意：provider 和 model 保持不变，保留用户的选择
       });
     },

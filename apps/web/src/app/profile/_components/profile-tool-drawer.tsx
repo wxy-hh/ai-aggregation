@@ -23,6 +23,7 @@ import {
   Wrench,
   KeyRound,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Dialog,
@@ -67,7 +68,7 @@ interface ProfileToolDrawerProps {
   onOpenChange: (open: boolean) => void;
   tool?: SanitizedAgentTool | null;
   initialTemplate?: ToolTemplate | null;
-  initialPrefill?: ParsedCurlDto | null;
+  initialPrefill?: (ParsedCurlDto & { securityWarning?: string }) | null;
   onSaved: (tool: SanitizedAgentTool) => void;
 }
 
@@ -485,6 +486,14 @@ export function ProfileToolDrawer({
         {/* 抽屉内容滚动区域 */}
         <form onSubmit={handleSubmit} className="flex max-h-[75vh] flex-col">
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 custom-scrollbar sm:px-7">
+            {/* 安全提示条（ADR-0015） */}
+            {initialPrefill?.securityWarning && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-amber-200/90 bg-amber-50/90 p-3 text-xs text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{initialPrefill.securityWarning}</span>
+              </div>
+            )}
+
             {/* 工具名称 */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">

@@ -27,12 +27,14 @@ import {
   resolveAgentStepBudget,
   type AgentStepBudget,
 } from './agent/agent-config';
-import type { UserWebhookTool } from '@repo/db';
+import { prisma, type UserWebhookTool } from '@repo/db';
 import {
   detectChatSensitiveTopic,
   buildChatBlockedText,
   createBlockedStream,
 } from './chat-safety';
+import { normalizeUsage } from '@/lib/ai-usage';
+import { resolveChatStreamUsage } from './chat-usage';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
 
@@ -185,12 +187,12 @@ export function createChatHandler(config: ChatHandlerConfig) {
       session = reservedSession;
 
       // 5. 完成态回调：输出合规审计 + 统一结算（适配器路径与 agent 编排共用同一份结算逻辑）
-      const onFinish = (finish: ChatStreamFinish) => {
+      const onFinish = async (finish: ChatStreamFinish) => {
         const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
         if (outputTopic) {
           console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
         }
-        return reservedSession.finalize(finish.outcome, {
+        const finalizeResult = await reservedSession.finalize(finish.outcome, {
           requestId,
           action: 'chat-stream',
           endpoint: '/api/chat',
@@ -220,6 +222,39 @@ export function createChatHandler(config: ChatHandlerConfig) {
             ...(outputTopic ? { safetyFlag: outputTopic } : {}),
           },
         });
+
+        // P1 工单 02：若开启 Agent 模式，事务落盘 agent_runs 记录（ADR-0015）
+        if (agent) {
+          try {
+            const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+            const goalText = (lastUserMessage?.content || '').slice(0, 2000);
+            const norm = finish.usage ? normalizeUsage(finish.usage) : null;
+            const resolvedUsage = resolveChatStreamUsage(norm, messages, finish.outputText);
+            const quotaCost = finish.outcome === 'failed' ? 0 : (resolvedUsage.totalTokens ?? 0);
+
+            if (prisma?.agentRun?.create) {
+              await prisma.agentRun.create({
+                data: {
+                  userId: user.id,
+                  conversationId: null,
+                  messageId: null,
+                  goalText: goalText || '无目标文本',
+                  steps: finish.steps ?? 1,
+                  toolCalls: finish.toolCalls ? (finish.toolCalls as any) : [],
+                  artifactRefs: finish.artifactRefs ? (finish.artifactRefs as any) : [],
+                  capabilityPack: activeCapabilityPack?.key || null,
+                  outcome: finish.outcome,
+                  quotaCost,
+                  durationMs: finish.durationMs ?? 0,
+                },
+              });
+            }
+          } catch (dbError) {
+            console.warn('[chat] agent_runs 记录落盘失败 (容错不阻断):', dbError);
+          }
+        }
+
+        return finalizeResult;
       };
 
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）

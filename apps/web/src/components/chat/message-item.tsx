@@ -12,6 +12,7 @@ import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
 import { AttachmentPreview } from './attachment-preview';
+import { ArtifactCard } from './artifacts/artifact-card';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { RelayAction } from '@/components/relay/relay-action';
@@ -619,6 +620,14 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                       </div>
                     )}
                   </>
+                )}
+                {/* 关联产物卡片清单（ADR-0015） */}
+                {message.artifactIds && message.artifactIds.length > 0 && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {message.artifactIds.map((artId) => (
+                      <ArtifactCard key={artId} artifactId={artId} />
+                    ))}
+                  </div>
                 )}
               </div>
             )}

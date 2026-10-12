@@ -27,6 +27,7 @@ import {
   KeyRound,
   ShieldCheck,
   ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -49,8 +50,10 @@ import {
   MAX_CURL_INPUT_LENGTH,
 } from '@/lib/agent/parse-curl';
 import { validateWebhookUrl } from '@/lib/webhook/validation';
+import { authFetch } from '@/lib/api/client';
+import { toast } from 'sonner';
 
-type EntryStep = 'entry_selection' | 'template_selection' | 'curl_placeholder';
+type EntryStep = 'entry_selection' | 'ai_draft' | 'template_selection' | 'curl_placeholder';
 
 interface ProfileToolEntryModalProps {
   open: boolean;
@@ -58,6 +61,7 @@ interface ProfileToolEntryModalProps {
   onSelectManual: () => void;
   onSelectTemplate: (template: ToolTemplate) => void;
   onSelectCurl?: (dto: ParsedCurlDto) => void;
+  onSelectDraft?: (draft: ParsedCurlDto & { securityWarning?: string }) => void;
 }
 
 type CurlParseState =
@@ -77,19 +81,63 @@ export function ProfileToolEntryModal({
   onSelectManual,
   onSelectTemplate,
   onSelectCurl,
+  onSelectDraft,
 }: ProfileToolEntryModalProps) {
   const [step, setStep] = useState<EntryStep>('entry_selection');
   const [curlInput, setCurlInput] = useState('');
   const [parseState, setParseState] = useState<CurlParseState>({ status: 'idle' });
+  const [promptInput, setPromptInput] = useState('');
+  const [generating, setGenerating] = useState(false);
 
-  // 弹层打开或关闭时，自动重置回初始三入口状态与解析输入
+  // 弹层打开或关闭时，自动重置回初始入口状态与解析输入
   useEffect(() => {
     if (open) {
       setStep('entry_selection');
       setCurlInput('');
+      setPromptInput('');
       setParseState({ status: 'idle' });
     }
   }, [open]);
+
+  // 调用自然语言生成草稿接口（ADR-0015 / 工单 03）
+  const handleGenerateDraft = async () => {
+    const trimmed = promptInput.trim();
+    if (!trimmed) return;
+
+    setGenerating(true);
+    try {
+      const res = await authFetch('/api/agent-tools/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: trimmed }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || '生成配置草稿失败');
+      }
+
+      const json = await res.json();
+      const draft = json.data.draft;
+
+      if (draft.securityWarning) {
+        toast.warning(draft.securityWarning);
+      } else {
+        toast.success('配置草稿已生成，请核对信息');
+      }
+
+      onOpenChange(false);
+      if (onSelectDraft) {
+        onSelectDraft(draft);
+      } else if (onSelectCurl) {
+        onSelectCurl(draft);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '智能生成失败，请重试');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   // 执行 cURL 文本解析并立即跑 validateWebhookUrl 网址校验
   const handleParseCurl = () => {
@@ -182,11 +230,13 @@ export function ProfileToolEntryModal({
               <div>
                 <DialogTitle className="font-[var(--font-space-grotesk)] text-lg font-bold tracking-tight text-[#0F172A] dark:text-white">
                   {step === 'entry_selection' && '新建自定义工具'}
+                  {step === 'ai_draft' && '智能生成工具配置'}
                   {step === 'template_selection' && '选择工具模板'}
                   {step === 'curl_placeholder' && '粘贴 cURL 导入'}
                 </DialogTitle>
                 <DialogDescription className="mt-0.5 text-xs text-[#64748B] dark:text-slate-400">
                   {step === 'entry_selection' && '请选择创建路径，快速完成 AI 智能体工具接入'}
+                  {step === 'ai_draft' && '一句话描述需求，AI 自动生成名称、URL、方法与参数草稿'}
                   {step === 'template_selection' && '预置开箱即用模板，用户仅需提供 Webhook 网址'}
                   {step === 'curl_placeholder' && '自动解析 cURL 命令行中的 URL、鉴权头及请求参数'}
                 </DialogDescription>
@@ -206,9 +256,39 @@ export function ProfileToolEntryModal({
 
         {/* 主体内容视图区 */}
         <div className="max-h-[70vh] overflow-y-auto p-5 sm:p-7 custom-scrollbar">
-          {/* 状态 1：三入口主列表 */}
+          {/* 状态 1：四入口主列表 */}
           {step === 'entry_selection' && (
             <div className="space-y-3.5">
+              {/* 入口 0：智能生成 */}
+              <button
+                type="button"
+                data-testid="entry-ai-draft"
+                onClick={() => setStep('ai_draft')}
+                className={cn(
+                  'group flex w-full items-start gap-4 rounded-2xl border border-blue-200/90 bg-gradient-to-r from-blue-50/70 to-indigo-50/40 p-4 text-left shadow-sm transition-all',
+                  'hover:border-blue-500 hover:shadow-md active:scale-[0.99]',
+                  'dark:border-blue-900/40 dark:bg-blue-950/20 dark:hover:border-blue-500/50'
+                )}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                  <Sparkles className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-[#0F172A] group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
+                      智能生成
+                    </h3>
+                    <span className="inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      推荐
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-[#64748B] dark:text-slate-400">
+                    一句话自然语言描述功能，AI 自动推导生成 URL、请求方法与参数结构
+                  </p>
+                </div>
+                <ChevronRight className="mt-2.5 h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-500" />
+              </button>
+
               {/* 入口 1：从模板创建 */}
               <button
                 type="button"
@@ -221,16 +301,13 @@ export function ProfileToolEntryModal({
                 )}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300">
-                  <Sparkles className="h-5 w-5" />
+                  <Bot className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-[#0F172A] group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
                       从模板创建
                     </h3>
-                    <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-400/10 dark:text-blue-300">
-                      推荐
-                    </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-[#64748B] dark:text-slate-400">
                     预置飞书、钉钉群机器人配置，填入 Webhook 链接即可使用
@@ -293,6 +370,63 @@ export function ProfileToolEntryModal({
                 </div>
                 <ChevronRight className="mt-2.5 h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-600" />
               </button>
+            </div>
+          )}
+
+          {/* 状态 0：自然语言生成视图（ADR-0015 / 工单 03） */}
+          {step === 'ai_draft' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="prompt-input"
+                    className="text-xs font-semibold text-[#0F172A] dark:text-white"
+                  >
+                    功能需求描述 <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    {promptInput.length} / 500 字符
+                  </span>
+                </div>
+                <Textarea
+                  id="prompt-input"
+                  value={promptInput}
+                  onChange={(e) => setPromptInput(e.target.value)}
+                  placeholder="描述您需要的工具功能，例如：输入快递单号查询物流轨迹..."
+                  className="min-h-[120px] rounded-xl border-slate-200/90 bg-white p-3.5 text-sm shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-100"
+                />
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-slate-400">试一试：</span>
+                  {['查询手机号码归属地和运营商', '城市天气预报查询', '查询快递物流跟踪轨迹'].map((hint) => (
+                    <button
+                      key={hint}
+                      type="button"
+                      onClick={() => setPromptInput(hint)}
+                      className="rounded-lg bg-slate-100 px-2 py-1 text-[11px] text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                      {hint}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-3 border-t border-slate-100 dark:border-white/10">
+                <Button
+                  type="button"
+                  disabled={generating || !promptInput.trim()}
+                  onClick={handleGenerateDraft}
+                  className="h-11 min-w-[120px] rounded-xl shadow-sm"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    '生成配置'
+                  )}
+                </Button>
+              </div>
             </div>
           )}
 

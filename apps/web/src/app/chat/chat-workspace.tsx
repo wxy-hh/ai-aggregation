@@ -8,6 +8,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
+import { ArtifactWorkspace } from '@/components/chat/artifacts/artifact-workspace'; // P1 交付物独立工作台（ADR-0015）
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -250,6 +251,10 @@ export default function ChatWorkspace() {
     setAttachment,
     attachment,
     setCapabilityPackKey,
+    artifacts,
+    activeArtifactId,
+    isWorkspaceOpen,
+    setWorkspaceOpen,
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -266,8 +271,14 @@ export default function ChatWorkspace() {
       setAttachment: state.setAttachment,
       attachment: state.attachment,
       setCapabilityPackKey: state.setCapabilityPackKey,
+      artifacts: state.artifacts,
+      activeArtifactId: state.activeArtifactId,
+      isWorkspaceOpen: state.isWorkspaceOpen,
+      setWorkspaceOpen: state.setWorkspaceOpen,
     }))
   );
+
+  const hasArtifacts = artifacts && artifacts.length > 0;
 
   // ============ 跨模态接力：对话目标接收 ============
   // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
@@ -355,6 +366,9 @@ export default function ChatWorkspace() {
 
     // 检查是否是创建新对话的请求（URL 中有 ?new=true）
     const isNewConversation = urlParams.get('new') === 'true';
+    const goal = urlParams.get('goal');
+    const pack = urlParams.get('pack');
+    const enableAgent = urlParams.get('agent') === 'true';
 
     // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
     const historyId = urlParams.get('historyId');
@@ -376,8 +390,20 @@ export default function ChatWorkspace() {
       });
       window.history.replaceState({}, '', '/chat');
     } else if (isNewConversation) {
-      // 场景 2：统一新建会话（E-1 契约）
+      // 场景 2：统一新建会话（E-1 契约，支持重跑参数注入，ADR-0015）
       startNewSession();
+      if (enableAgent) {
+        useSettingsStore.getState().setAgentMode(true);
+      }
+      if (pack) {
+        setCapabilityPackKey(pack);
+      }
+      if (goal) {
+        setRelayDraft({
+          id: `rerun-${Date.now()}`,
+          text: goal,
+        });
+      }
       window.history.replaceState({}, '', '/chat');
     } else if (!currentConversationId && comparisonMode === 'single') {
       // 场景 3：单聊模式且无当前指针时，若存在单聊历史则默认加载首个单聊会话
@@ -852,6 +878,28 @@ export default function ChatWorkspace() {
 
                   {/* 头部操作区 */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {/* 产物工作台切换按钮（ADR-0015） */}
+                    {!isCompareMode && hasArtifacts && (
+                      <button
+                        type="button"
+                        aria-label={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
+                        title={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
+                        onClick={() => setWorkspaceOpen(!isWorkspaceOpen)}
+                        className={cn(
+                          'inline-flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none',
+                          isWorkspaceOpen
+                            ? 'border-blue-500/60 bg-blue-50 text-blue-600 dark:border-blue-500/50 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-white/80 bg-white/80 text-slate-700 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-700'
+                        )}
+                      >
+                        <FileText className="w-4 h-4 text-blue-500" />
+                        <span className="hidden sm:inline">工作台</span>
+                        <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] text-blue-600 dark:bg-blue-900/50 dark:text-blue-300">
+                          {artifacts.length}
+                        </span>
+                      </button>
+                    )}
+
                     {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
                     <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
                     <button
@@ -1144,7 +1192,21 @@ export default function ChatWorkspace() {
               )}
             </div>
           </div>
+
+          {/* 桌面端 Artifacts 工作台：单聊模式、展开且有产物时常驻双栏（ADR-0015） */}
+          {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
+            <aside className="hidden lg:flex w-[480px] xl:w-[540px] 2xl:w-[600px] flex-shrink-0 flex-col p-4 pl-0 min-h-0 h-full">
+              <ArtifactWorkspace />
+            </aside>
+          )}
         </div>
+
+        {/* 移动端全屏工作台覆盖层（Overlay，ADR-0015） */}
+        {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
+          <div className="lg:hidden">
+            <ArtifactWorkspace isMobile={true} />
+          </div>
+        )}
 
         <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
           <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">

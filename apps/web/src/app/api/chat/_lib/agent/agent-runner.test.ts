@@ -298,6 +298,63 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
     expect((warningEvent?.warning as string).includes('截断')).toBe(true);
   });
 
+  it('收尾步输出包含 <artifact> 标签时，流式下发 artifact_* 事件且剔除普通正文', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 模拟决策步无工具，收尾步产出研报
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: [
+          '导语：已完成分析。\n',
+          '<artifact identifier="art_report_1" type="markdown" title="AI 产业调研">\n',
+          '# 核心结论\n技术迭代迅速。',
+          '</artifact>\n请查阅右侧。',
+        ],
+        response: { id: 'resp_art' },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '深度调研' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    const events = await readSseEvents(stream);
+
+    const startEvent = events.find((e) => e.type === 'artifact_start');
+    expect(startEvent).toBeDefined();
+    expect(startEvent).toEqual({
+      type: 'artifact_start',
+      artifact: {
+        id: 'art_report_1',
+        type: 'markdown',
+        title: 'AI 产业调研',
+      },
+    });
+
+    const deltaEvents = events.filter((e) => e.type === 'artifact_delta');
+    const fullArtifactContent = deltaEvents.map((e) => e.delta).join('');
+    expect(fullArtifactContent).toBe('\n# 核心结论\n技术迭代迅速。');
+
+    const endEvent = events.find((e) => e.type === 'artifact_end');
+    expect(endEvent).toEqual({
+      type: 'artifact_end',
+      id: 'art_report_1',
+      status: 'complete',
+    });
+
+    const textDeltas = events.filter((e) => e.type === 'text-delta').map((e) => e.text).join('');
+    expect(textDeltas).toBe('导语：已完成分析。\n\n请查阅右侧。');
+  });
+
   it('无响应 id 时回退全量发送：两次调用响应均不带 id 时，第 2 次调用全量回发历史与中间消息且无 previousResponseId', async () => {
     const registry = createToolRegistry([fakeToolSpec]);
     const onFinishMock = vi.fn(async () => {});

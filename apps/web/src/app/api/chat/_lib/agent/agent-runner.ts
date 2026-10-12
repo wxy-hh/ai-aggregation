@@ -50,7 +50,7 @@ import {
   type ToolSet,
 } from 'ai';
 import { createProvider, type ProviderName } from '@repo/providers';
-import { getCapabilityPack } from '@repo/shared';
+import { getCapabilityPack, createArtifactStreamExtractor } from '@repo/shared';
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import { encodeSseEvent } from '../sse';
@@ -146,12 +146,23 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
       // 边界与预算计算（支持能力包自适应扩容，ADR-0014 / 工单 01）
       const pack = getCapabilityPack(options.capabilityPack);
-      const effectiveSystemPrompt = options.systemPrompt ?? pack?.systemPrompt;
+      const basePrompt = options.systemPrompt ?? pack?.systemPrompt;
+      const artifactGuideline = `【交付物与产物规范】：当回答包含长篇分析研报（>500字）、对比表格、完整代码文件时，请将其作为独立产物（Artifact）输出。格式：<artifact identifier="唯一英文ID" type="markdown|table|code" title="中文标题" language="可选语言">正文</artifact>。在标签外部仅输出简短导引说明（例如「报告已整理在右侧工作台」），不重复铺陈长文。`;
+      const effectiveSystemPrompt = basePrompt
+        ? `${basePrompt}\n\n${artifactGuideline}`
+        : undefined;
       const effectiveMaxSteps = options.maxSteps ?? pack?.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
       const disabledSet = new Set(options.disabledToolKeys ?? []);
       const canUseWebSearch =
         (!pack || pack.toolWhitelist.includes('web_search')) && !disabledSet.has('web_search');
+
+      // 流式产物标签抽取器（ADR-0015）
+      const artifactExtractor = createArtifactStreamExtractor();
+
+      // P1 工单 02：收集运行记录审计元数据（ADR-0015）
+      const recordedToolCalls: NonNullable<ChatStreamFinish['toolCalls']> = [];
+      const recordedArtifactRefs: NonNullable<ChatStreamFinish['artifactRefs']> = [];
 
       // 服务端搜索调用计数，仅观测
       let searchCallsCount = 0;
@@ -198,8 +209,24 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
       const emitText = (chunk: string) => {
         if (!chunk) return;
-        text += chunk;
-        controller.enqueue(encodeSseEvent({ type: 'text-delta', text: chunk }));
+        const events = artifactExtractor.push(chunk);
+        for (const event of events) {
+          if (event.type === 'text-delta') {
+            text += event.text;
+          } else if (event.type === 'artifact_start') {
+            toolProducedOutput = true;
+            if (!recordedArtifactRefs.some((r) => r.id === event.artifact.id)) {
+              recordedArtifactRefs.push({
+                id: event.artifact.id,
+                type: event.artifact.type,
+                title: event.artifact.title,
+              });
+            }
+          } else if (event.type.startsWith('artifact_')) {
+            toolProducedOutput = true;
+          }
+          controller.enqueue(encodeSseEvent(event));
+        }
       };
 
       /**
@@ -340,6 +367,46 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               })
             );
 
+            // 记录到运行审计流水（ADR-0015 / 工单 02）
+            recordedToolCalls.push({
+              id: callId,
+              name,
+              argsSummary: summarizeArgs(call.input),
+              status: outcome.ok ? 'success' : 'failed',
+              summary: outcome.summaryForDisplay,
+              ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+            });
+
+            // 若工具产出图片附件，自动泛化挂载为 image 产物（ADR-0015）
+            if (outcome.ok && outcome.attachment && outcome.attachment.kind === 'image') {
+              const artId = `art_img_${callId}`;
+              recordedArtifactRefs.push({
+                id: artId,
+                type: 'image',
+                title: '生成的图片',
+              });
+              controller.enqueue(
+                encodeSseEvent({
+                  type: 'artifact_start',
+                  artifact: { id: artId, type: 'image', title: '生成的图片' },
+                })
+              );
+              controller.enqueue(
+                encodeSseEvent({
+                  type: 'artifact_delta',
+                  id: artId,
+                  delta: outcome.attachment.url,
+                })
+              );
+              controller.enqueue(
+                encodeSseEvent({
+                  type: 'artifact_end',
+                  id: artId,
+                  status: 'complete',
+                })
+              );
+            }
+
             // 回注给模型的内容：软提示 / 未执行 / 过检后内容均由管道组装完毕
             toolResultParts.push({
               type: 'tool-result',
@@ -388,6 +455,26 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           finalFinishReason = await summary.finishReason;
         }
 
+        // 清空流式抽取器剩余缓冲区与未闭合标签自愈（ADR-0015）
+        const flushEvents = artifactExtractor.flush();
+        for (const event of flushEvents) {
+          if (event.type === 'text-delta') {
+            text += event.text;
+          } else if (event.type === 'artifact_start') {
+            toolProducedOutput = true;
+            if (!recordedArtifactRefs.some((r) => r.id === event.artifact.id)) {
+              recordedArtifactRefs.push({
+                id: event.artifact.id,
+                type: event.artifact.type,
+                title: event.artifact.title,
+              });
+            }
+          } else if (event.type.startsWith('artifact_')) {
+            toolProducedOutput = true;
+          }
+          controller.enqueue(encodeSseEvent(event));
+        }
+
         // ==================== 完成态上报 ====================
         // 输出被 maxOutputTokens 截断时显式提示警告（B-3）
         if (finalFinishReason === 'length') {
@@ -405,6 +492,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           searchCalls: searchCallsCount,
           // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
           webhookCalls: runtime.finishMetadata().webhookCalls,
+          steps: roundIndex + (finalAnswerDelivered ? 0 : 1),
+          toolCalls: recordedToolCalls,
+          artifactRefs: recordedArtifactRefs,
+          durationMs: Date.now() - startedAt,
           ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
         });
 

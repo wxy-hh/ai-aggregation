@@ -230,5 +230,53 @@ describe('ProfileToolEntryModal 创建工具三入口', () => {
     fireEvent.click(screen.getByLabelText('返回上一步'));
     expect(screen.getByText('从模板创建')).toBeInTheDocument();
   });
+
+  it('点击「智能生成」进入自然语言输入界面，输入后点击「生成配置」触发 draft API 与回调', async () => {
+    const handleSelectDraft = vi.fn();
+    const mockDraft = {
+      name: '天气查询',
+      callName: 'query_weather',
+      description: '查天气',
+      method: 'POST' as const,
+      url: 'https://api.example.com/weather',
+      params: [{ name: 'city', type: 'string' as const, required: true, description: '城市' }],
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, data: { draft: mockDraft } }),
+    } as any);
+
+    render(
+      <ProfileToolEntryModal
+        open={true}
+        onOpenChange={vi.fn()}
+        onSelectManual={vi.fn()}
+        onSelectTemplate={vi.fn()}
+        onSelectDraft={handleSelectDraft}
+      />
+    );
+
+    // 点击智能生成入口
+    fireEvent.click(screen.getByTestId('entry-ai-draft'));
+
+    // 检查输入框与按钮
+    const input = screen.getByPlaceholderText('描述您需要的工具功能，例如：输入快递单号查询物流轨迹...');
+    expect(input).toBeInTheDocument();
+
+    const submitBtn = screen.getByRole('button', { name: '生成配置' });
+    expect(submitBtn).toBeDisabled();
+
+    // 输入需求描述
+    fireEvent.change(input, { target: { value: '帮我查北京的天气预报' } });
+    expect(submitBtn).not.toBeDisabled();
+
+    // 提交生成
+    fireEvent.click(submitBtn);
+
+    await vi.waitFor(() => {
+      expect(handleSelectDraft).toHaveBeenCalledWith(mockDraft);
+    });
+  });
 });
 

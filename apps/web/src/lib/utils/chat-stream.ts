@@ -6,6 +6,7 @@ import {
   type ChatStreamToolCall,
   type ChatStreamToolResultEvent,
   type ChatStreamUsage,
+  type ArtifactMeta,
 } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 
@@ -38,6 +39,12 @@ export interface StreamChatResponseHandlers {
   onToolCall?: (call: ChatStreamToolCall) => void;
   /** 收到工具执行结束时回调一次（agent 模式；可选，不传则忽略） */
   onToolResult?: (result: ChatStreamToolResultEvent) => void;
+  /** 产物开始生成时回调一次（可选） */
+  onArtifactStart?: (artifact: ArtifactMeta) => void;
+  /** 产物正文增量到达时回调（可选） */
+  onArtifactDelta?: (id: string, delta: string) => void;
+  /** 产物生成结束时回调（可选） */
+  onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -81,6 +88,9 @@ export async function streamChatResponse(
       : undefined,
     onToolCall: handlers.onToolCall,
     onToolResult: handlers.onToolResult,
+    onArtifactStart: handlers.onArtifactStart,
+    onArtifactDelta: handlers.onArtifactDelta,
+    onArtifactEnd: handlers.onArtifactEnd,
     onWarning: handlers.onWarning,
     onDone: handlers.onDone,
   });
@@ -99,6 +109,12 @@ export interface ConsumeChatResponseHandlers {
   onToolCall?: (call: ChatStreamToolCall) => void;
   /** 收到工具执行结束时回调一次（agent 模式；可选，不传则忽略） */
   onToolResult?: (result: ChatStreamToolResultEvent) => void;
+  /** 产物开始生成时回调一次（可选） */
+  onArtifactStart?: (artifact: ArtifactMeta) => void;
+  /** 产物正文增量到达时回调（可选） */
+  onArtifactDelta?: (id: string, delta: string) => void;
+  /** 产物生成结束时回调（可选） */
+  onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -173,6 +189,18 @@ export async function consumeChatResponse(
         case 'tool_result':
           // 工具执行结束：仅透传给订阅方；未传 onToolResult 的调用方显式忽略
           onToolResult?.(event);
+          return;
+        case 'artifact_start':
+          // 产物生成开始（ADR-0015）
+          handlers.onArtifactStart?.(event.artifact);
+          return;
+        case 'artifact_delta':
+          // 产物增量正文（ADR-0015）
+          handlers.onArtifactDelta?.(event.id, event.delta);
+          return;
+        case 'artifact_end':
+          // 产物生成结束（ADR-0015）
+          handlers.onArtifactEnd?.(event.id, event.status);
           return;
         case 'warning':
           onWarning?.(event.warning);

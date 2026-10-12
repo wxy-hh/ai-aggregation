@@ -85,6 +85,44 @@ export type ChatStreamToolResultEvent = {
   durationMs?: number;
 };
 
+/** 产物类型枚举 */
+export type ArtifactType = 'markdown' | 'table' | 'code' | 'image';
+
+/** 产物元数据（标识、类型、标题、编程语言） */
+export interface ArtifactMeta {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  language?: string;
+}
+
+/** 产物完整实体（包含正文与流式完成态） */
+export interface Artifact extends ArtifactMeta {
+  content: string;
+  status: 'streaming' | 'complete' | 'error';
+  createdAt?: number;
+}
+
+/** 产物开始生成事件（首帧声明产物元数据） */
+export type ChatStreamArtifactStartEvent = {
+  type: 'artifact_start';
+  artifact: ArtifactMeta;
+};
+
+/** 产物增量正文事件 */
+export type ChatStreamArtifactDeltaEvent = {
+  type: 'artifact_delta';
+  id: string;
+  delta: string;
+};
+
+/** 产物生成结束事件 */
+export type ChatStreamArtifactEndEvent = {
+  type: 'artifact_end';
+  id: string;
+  status: 'complete' | 'error';
+};
+
 /** 聊天流式用量统计（done 帧携带） */
 export interface ChatStreamUsage {
   inputTokens: number | null;
@@ -108,6 +146,9 @@ export type ChatStreamEvent =
   | ChatStreamAgentNoteEvent
   | ChatStreamToolCallEvent
   | ChatStreamToolResultEvent
+  | ChatStreamArtifactStartEvent
+  | ChatStreamArtifactDeltaEvent
+  | ChatStreamArtifactEndEvent
   | ChatStreamDoneEvent
   | ChatStreamWarningEvent
   | ChatStreamErrorEvent;
@@ -187,6 +228,42 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         summary: ev.summary,
         ...(attachment ? { attachment } : {}),
         ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
+      };
+    }
+    case 'artifact_start': {
+      const art = ev.artifact as Record<string, unknown> | null | undefined;
+      if (typeof art !== 'object' || art === null) return null;
+      const { id, type, title, language } = art;
+      if (typeof id !== 'string' || !id) return null;
+      if (type !== 'markdown' && type !== 'table' && type !== 'code' && type !== 'image') return null;
+      if (typeof title !== 'string' || !title) return null;
+      if (language !== undefined && (typeof language !== 'string' || !language)) return null;
+      return {
+        type: 'artifact_start',
+        artifact: {
+          id,
+          type,
+          title,
+          ...(language ? { language } : {}),
+        },
+      };
+    }
+    case 'artifact_delta': {
+      if (typeof ev.id !== 'string' || !ev.id) return null;
+      if (typeof ev.delta !== 'string' || ev.delta.length === 0) return null;
+      return {
+        type: 'artifact_delta',
+        id: ev.id,
+        delta: ev.delta,
+      };
+    }
+    case 'artifact_end': {
+      if (typeof ev.id !== 'string' || !ev.id) return null;
+      if (ev.status !== 'complete' && ev.status !== 'error') return null;
+      return {
+        type: 'artifact_end',
+        id: ev.id,
+        status: ev.status,
       };
     }
     case 'done': {

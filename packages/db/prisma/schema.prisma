@@ -42,6 +42,7 @@ model User {
   webhookTools        UserWebhookTool[]
   webhookToolCalls    WebhookToolCall[]
   productEvents       ProductEvent[]
+  agentRuns           AgentRun[]
   @@map("users")
 }
 
@@ -478,5 +479,29 @@ model ProductEvent {
   @@index([userId])
   @@index([event, createdAt])
   @@map("product_events")
+}
+
+// 智能体运行记录（ADR-0015 / P1 工单 02）
+model AgentRun {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String?
+  messageId      String?
+  goalText       String   @db.Text
+  steps          Int      @default(1)
+  toolCalls      Json     @default("[]")
+  artifactRefs   Json     @default("[]")
+  capabilityPack String?
+  outcome        String   // 结果状态：success / partial / failed
+  quotaCost      Int      @default(0)
+  durationMs     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("agent_runs")
 }
 

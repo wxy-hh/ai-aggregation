@@ -365,13 +365,14 @@ export function ProfileToolsSection() {
         </div>
       </div>
 
-      {/* 创建工具三入口选择弹层 */}
+      {/* 创建工具入口选择弹层 */}
       <ProfileToolEntryModal
         open={isEntryModalOpen}
         onOpenChange={setIsEntryModalOpen}
         onSelectManual={handleSelectManual}
         onSelectTemplate={handleSelectTemplate}
         onSelectCurl={handleSelectCurl}
+        onSelectDraft={handleSelectCurl}
       />
 
       {/* 新增 / 编辑抽屉 */}

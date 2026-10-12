@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { emit, StoreEvents } from './store-events';
 import type { SelectedModel, ComparisonTurn } from '@/types/comparison';
+import type { Artifact } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -31,6 +32,8 @@ export interface Conversation {
     // P0b 场景能力包与会话级工具覆盖（ADR-0014）
     capabilityPack?: string;
     toolOverrides?: Record<string, boolean>;
+    // P1 会话级产物集合池（ADR-0015）
+    artifacts?: Artifact[];
 }
 
 // 按日期分组的对话
@@ -121,7 +124,7 @@ interface ConversationsState {
     setIsLoaded: (loaded: boolean) => void;
     createConversation: (provider?: string, model?: string, capabilityPack?: string) => string;
     switchConversation: (id: string) => void;
-    updateMessages: (id: string, messages: ChatMessage[]) => void;
+    updateMessages: (id: string, messages: ChatMessage[], artifacts?: Artifact[]) => void;
     updateConversationSettings: (id: string, provider: string, model: string) => void;
     updateConversationCapabilityPack: (id: string, capabilityPack?: string | null) => void;
     updateConversationToolOverrides: (id: string, toolOverrides?: Record<string, boolean>) => void;
@@ -332,7 +335,8 @@ export const useConversationsStore = create<ConversationsState>()(
                             conv.provider as any,
                             conv.model,
                             conv.capabilityPack,
-                            conv.toolOverrides
+                            conv.toolOverrides,
+                            conv.artifacts
                         );
                     } catch {}
                 }
@@ -467,14 +471,15 @@ export const useConversationsStore = create<ConversationsState>()(
                 }
             },
 
-            // 更新对话消息
-            updateMessages: (id, messages) => {
+            // 更新对话消息与产物（ADR-0015）
+            updateMessages: (id, messages, artifacts) => {
                 set(state => ({
                     conversations: state.conversations.map(conv => {
                         if (conv.id === id) {
                             return {
                                 ...conv,
                                 messages,
+                                ...(artifacts !== undefined ? { artifacts } : {}),
                                 title: extractTitle(messages) || conv.title,
                                 updatedAt: Date.now(),
                             };
@@ -570,7 +575,10 @@ export const useConversationsStore = create<ConversationsState>()(
                                         conv.id,
                                         conv.messages as any,
                                         conv.provider as any,
-                                        conv.model
+                                        conv.model,
+                                        conv.capabilityPack,
+                                        conv.toolOverrides,
+                                        conv.artifacts
                                     );
                                 } catch {}
                             }

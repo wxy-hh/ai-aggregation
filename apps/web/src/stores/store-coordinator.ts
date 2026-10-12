@@ -22,10 +22,10 @@ import { useHistoryStore } from './history-store';
 export function registerStoreCoordinator(): () => void {
   const unsubs: Array<() => void> = [];
 
-  // conversation:updated → 同步更新 conversations-store 中的消息
+  // conversation:updated → 同步更新 conversations-store 中的消息与产物（ADR-0015）
   unsubs.push(
-    on(StoreEvents.CONVERSATION_UPDATED, ({ id, messages }: { id: string; messages: any[] }) => {
-      useConversationsStore.getState().updateMessages(id, messages);
+    on(StoreEvents.CONVERSATION_UPDATED, ({ id, messages, artifacts }: { id: string; messages: any[]; artifacts?: any[] }) => {
+      useConversationsStore.getState().updateMessages(id, messages, artifacts);
     })
   );
 

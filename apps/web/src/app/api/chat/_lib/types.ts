@@ -34,6 +34,25 @@ export interface ChatStreamFinish {
    * 路由层不再持有快照闭包 getter。仅观测，不影响计费。
    */
   webhookCalls?: number;
+  /** P1 工单 02：执行步数（ADR-0015） */
+  steps?: number;
+  /** P1 工单 02：工具调用流水（ADR-0015） */
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    argsSummary: string;
+    status: 'success' | 'failed';
+    summary: string;
+    durationMs?: number;
+  }>;
+  /** P1 工单 02：产物引用列表（ADR-0015） */
+  artifactRefs?: Array<{
+    id: string;
+    type: string;
+    title: string;
+  }>;
+  /** P1 工单 02：全生命周期执行总耗时（毫秒） */
+  durationMs?: number;
 }
 
 export interface ChatContext {

@@ -44,6 +44,7 @@ import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
 import { ProfileToolsSection } from './profile-tools-section';
+import { ProfileAgentRunsSection } from './profile-agent-runs-section';
 import { toast } from 'sonner';
 
 const DEFAULT_AVATAR =
@@ -1126,6 +1127,8 @@ export function ProfileShell() {
               </div>
 
               <ProfileToolsSection />
+
+              <ProfileAgentRunsSection />
 
               <div
                 className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}
