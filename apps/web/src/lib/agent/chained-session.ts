@@ -24,6 +24,8 @@ export interface StepPayload {
 export interface ChainedMessageSessionOptions {
   /** 初始历史消息（支持 UI ChatMessage 数组或 ModelMessage 数组） */
   initialMessages: ChatMessage[] | ModelMessage[];
+  /** 是否启用服务端链式传输（仅火山引擎豆包 Ark Responses API 支持；DeepSeek 等标准 OpenAI 接口必须为 false） */
+  supportsChaining?: boolean;
 }
 
 /** 兼容 AI SDK 响应格式的结构 */
@@ -78,8 +80,11 @@ function normalizeInitialMessages(
 
 /** 链式会话状态机默认实现 */
 class DefaultChainedMessageSession implements ChainedMessageSession {
-  /** 全量累积消息历史池（用于断链回退） */
+  /** 全量累积消息历史池（用于断链回退或非链式提供方） */
   private currentMessages: ModelMessage[];
+
+  /** 是否允许启用服务端链式追踪（仅豆包 Responses API 支持） */
+  private supportsChaining: boolean;
 
   /** 链式状态：上一步响应 id；null = 未建链或已断链 */
   private previousResponseId: string | null = null;
@@ -92,10 +97,11 @@ class DefaultChainedMessageSession implements ChainedMessageSession {
 
   constructor(options: ChainedMessageSessionOptions) {
     this.currentMessages = normalizeInitialMessages(options.initialMessages);
+    this.supportsChaining = Boolean(options.supportsChaining);
   }
 
   getStepPayload(): StepPayload {
-    if (this.previousResponseId !== null && this.pendingIncrement !== null) {
+    if (this.supportsChaining && this.previousResponseId !== null && this.pendingIncrement !== null) {
       return {
         isChained: true,
         previousResponseId: this.previousResponseId,

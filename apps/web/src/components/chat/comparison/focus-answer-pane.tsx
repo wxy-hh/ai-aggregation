@@ -8,7 +8,7 @@
  * 行为栏：复制、重试、停止。
  */
 
-import { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import React, { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import type { UIEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,32 +38,33 @@ const StreamingContent = memo(function StreamingContent({ content }: { content: 
 
 // 完成态 Markdown 渲染（复用 message-item 的渲染约定与 CodeBlock）
 const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  const getText = (child: any): string => {
+    if (typeof child === 'string') return child;
+    if (Array.isArray(child)) return child.map(getText).join('');
+    if (child?.props?.children) return getText(child.props.children);
+    return '';
+  };
+
   const components = useMemo(
     () => ({
-      code({ inline, className, children, ...props }: any) {
-        const match = /language-(\w+)/.exec(className || '');
-        const getText = (child: any): string => {
-          if (typeof child === 'string') return child;
-          if (Array.isArray(child)) return child.map(getText).join('');
-          if (child?.props?.children) return getText(child.props.children);
-          return '';
-        };
-        const text = getText(children);
-        if (!inline && match) {
+      pre({ children }: any) {
+        // pre 标签专门包裹代码块（react-markdown v10 保证行内代码绝不走 pre）
+        if (React.isValidElement(children)) {
+          const codeProps: any = children.props || {};
+          const className = codeProps.className || '';
+          const match = /language-(\w+)/.exec(className);
+          const language = match ? match[1] : 'text';
+          const text = getText(codeProps.children);
           return (
-            <CodeBlock language={match[1]} className={className}>
+            <CodeBlock language={language} className={className}>
               {text.replace(/\n$/, '')}
             </CodeBlock>
           );
         }
-        // 如果在 pre 标签内但没有语言标记，使用 CodeBlock 组件
-        if (!inline) {
-          return (
-            <CodeBlock language="text" className={className}>
-              {text.replace(/\n$/, '')}
-            </CodeBlock>
-          );
-        }
+        return <pre>{children}</pre>;
+      },
+      code({ className, children, ...props }: any) {
+        // 行内代码（inline code）：渲染单行徽标样式，杜绝误染为独立多行代码块卡片
         return (
           <code
             className={cn(
@@ -72,15 +73,11 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
             )}
             {...props}
           >
-            {text}
+            {children}
           </code>
         );
       },
-      // 使用 pre 替代 p 作为代码块的父容器，避免 div 在 p 内的 HTML 规范问题
-      pre({ children }: any) {
-        return <>{children}</>;
-      },
-      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
+      // 使用 SafeParagraph 替代 p 作为代码块的父容器，避免 div 在 p 内的 HTML 规范问题
       p: SafeParagraph,
     }),
     []

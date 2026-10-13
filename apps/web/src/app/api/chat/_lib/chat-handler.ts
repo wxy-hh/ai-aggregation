@@ -23,6 +23,7 @@ import {
   AGENT_MIN_STEPS,
   AGENT_MODEL,
   AGENT_PROVIDER,
+  AGENT_SUMMARY_OUTPUT_LIMIT,
   fullAgentStepBudget,
   resolveAgentStepBudget,
   type AgentStepBudget,
@@ -273,6 +274,14 @@ export function createChatHandler(config: ChatHandlerConfig) {
           stepOutputLimit: Math.max(
             1,
             Math.floor(reservedSession.outputLimit / agentBudget.steps)
+          ),
+          // 收尾步上限：在总预留限额与模型单次最大输出（8192）之间取合规值，确保长文研报不被截断
+          summaryOutputLimit: Math.min(
+            AGENT_SUMMARY_OUTPUT_LIMIT,
+            Math.max(
+              Math.floor(reservedSession.outputLimit / agentBudget.steps),
+              reservedSession.outputLimit
+            )
           ),
           maxSteps: agentBudget.steps,
           runTimeBudgetMs: config.agentRunTimeBudgetMs,

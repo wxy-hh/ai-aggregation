@@ -68,6 +68,7 @@ import {
   AGENT_MAX_TOOL_CALLS_PER_ROUND,
   AGENT_MAX_TOOL_CALLS_TOTAL,
   AGENT_RUN_TIME_BUDGET_MS,
+  AGENT_SUMMARY_OUTPUT_LIMIT,
 } from './agent-config';
 import type { ToolRegistry } from '@/lib/agent/registry';
 import type { AgentRuntimeContext } from './runtime-context';
@@ -79,6 +80,8 @@ export interface AgentRunOptions {
   messages: ChatMessage[];
   /** 单步输出上限（预留总量由 handler 侧按步数系数放大） */
   stepOutputLimit: number;
+  /** 收尾步输出上限（用于长篇技术研报/完整交付物，默认 8192） */
+  summaryOutputLimit?: number;
   signal: AbortSignal;
   errorId: string;
   /**
@@ -188,8 +191,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       });
 
       // 链式会话状态机：收敛 previousResponseId 链式追踪、增量推演与断链全量回退自愈（ADR-0010）
+      // 注意：仅豆包 Ark Responses API 支持服务端链式增量传输；DeepSeek 等无状态 OpenAI 兼容模型必须回发全量上下文
       const session = createChainedMessageSession({
         initialMessages: options.messages,
+        supportsChaining: options.provider === 'doubao',
       });
 
       // 最终文本步的 finishReason
@@ -438,12 +443,25 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         if (!finalAnswerDelivered) {
           const summaryPayload = session.getStepPayload();
 
-          // 收尾步不挂 tools，强制产出最终文本回答
+          // 收尾步不挂 tools，强制产出最终文本回答（充分利用收尾上限，防止长文报告被截断）
+          const effectiveSummaryLimit =
+            options.summaryOutputLimit ?? Math.max(stepOutputLimit, AGENT_SUMMARY_OUTPUT_LIMIT);
+          const summaryMessages: ModelMessage[] = summaryPayload.isChained
+            ? summaryPayload.messages
+            : [
+                ...summaryPayload.messages,
+                {
+                  role: 'user',
+                  content:
+                    '请基于上述各轮工具调研检索到的信息，整理并输出完整、详尽、结构化的最终中文回答。请直接输出最终交付内容，不要再输出任何工具调用标记。',
+                },
+              ];
+
           const summary = streamText({
             model: agentModel,
-            messages: summaryPayload.messages,
+            messages: summaryMessages,
             ...(effectiveSystemPrompt ? { system: effectiveSystemPrompt } : {}),
-            maxOutputTokens: stepOutputLimit,
+            maxOutputTokens: effectiveSummaryLimit,
             abortSignal: signal,
             headers:
               options.thinking !== undefined
@@ -524,8 +542,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         }
         controller.close();
       } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        console.warn('[agent] 编排失败', { errorId, reason });
+        const cause = error instanceof Error && (error as any).cause ? (error as any).cause : null;
+        const causeMessage = cause instanceof Error ? cause.message : (cause ? JSON.stringify(cause) : '');
+        const baseReason = error instanceof Error ? error.message : String(error);
+        const reason = causeMessage ? `${baseReason} (cause: ${causeMessage})` : baseReason;
+        console.warn('[agent] 编排失败', { errorId, reason, cause });
         // 中断或异常同样以「有产出」判 partial：工具已交付产物的轮次不得整轮退款
         await onFinish({
           outcome: hasOutput() ? 'partial' : 'failed',

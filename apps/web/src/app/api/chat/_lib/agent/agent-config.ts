@@ -20,6 +20,9 @@ export const AGENT_MODEL_LEGACY_DOUBAO = 'doubao-seed-evolving';
 /** 单步输出 token 基准上限；预留按「基准 × 实际步数」，单步生成受基准约束 */
 export const AGENT_STEP_OUTPUT_LIMIT = 2048;
 
+/** 最终收尾步（产出完整研报/长篇交付物）输出上限：充分利用预留额度，支持长篇完整交付不被截断 */
+export const AGENT_SUMMARY_OUTPUT_LIMIT = 8192;
+
 /**
  * 最大模型调用步数：最多 4 轮「决策 + 工具」+ 1 次强制收尾步。
  * 收尾步不挂 tools，强制产出最终文本，终止由编排器保证。

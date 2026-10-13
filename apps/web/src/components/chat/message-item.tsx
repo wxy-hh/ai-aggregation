@@ -178,41 +178,37 @@ const ActionButtons = memo(function ActionButtons({
 
 // 静态 Markdown 内容组件 - 只在非流式时渲染
 const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  // 提取子元素中的纯文本内容，过滤掉复杂对象
+  const getTextContent = useCallback((child: any): string => {
+    if (typeof child === 'string') return child;
+    if (Array.isArray(child)) return child.map(getTextContent).join('');
+    if (child && typeof child === 'object' && child.props && child.props.children) {
+      return getTextContent(child.props.children);
+    }
+    return '';
+  }, []);
+
   // 使用 useMemo 缓存 components 配置，避免每次渲染都创建新对象
   const components = useMemo(
     () => ({
-      code({ node, inline, className, children, ...props }: any) {
-        const match = /language-(\w+)/.exec(className || '');
-
-        // 将 children 转换为字符串，过滤掉对象
-        const getTextContent = (child: any): string => {
-          if (typeof child === 'string') return child;
-          if (Array.isArray(child)) return child.map(getTextContent).join('');
-          if (child && typeof child === 'object' && child.props && child.props.children) {
-            return getTextContent(child.props.children);
-          }
-          return '';
-        };
-
-        const textContent = getTextContent(children);
-
-        if (!inline && match) {
+      pre({ children }: any) {
+        // pre 标签专门包裹代码块（react-markdown v10 保证行内代码绝不走 pre）
+        if (React.isValidElement(children)) {
+          const codeProps: any = children.props || {};
+          const className = codeProps.className || '';
+          const match = /language-(\w+)/.exec(className);
+          const language = match ? match[1] : 'text';
+          const textContent = getTextContent(codeProps.children);
           return (
-            <CodeBlock language={match[1]} className={className}>
+            <CodeBlock language={language} className={className}>
               {textContent.replace(/\n$/, '')}
             </CodeBlock>
           );
         }
-
-        // 如果在 pre 标签内但没有语言标记，使用 CodeBlock 组件或支持换行的样式
-        if (!inline) {
-          return (
-            <CodeBlock language="text" className={className}>
-              {textContent.replace(/\n$/, '')}
-            </CodeBlock>
-          );
-        }
-
+        return <pre>{children}</pre>;
+      },
+      code({ node, className, children, ...props }: any) {
+        // 行内代码（inline code）：渲染优雅的单行徽标样式，杜绝误染为独立多行代码块卡片
         return (
           <code
             className={cn(
@@ -221,7 +217,7 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
             )}
             {...props}
           >
-            {textContent}
+            {children}
           </code>
         );
       },
