@@ -28,3 +28,11 @@
 - **前沿**：扫描 `.scratch/<effort>/issues/` 中开放、未阻塞、未认领的文件；编号小者优先。
 - **认领**：开工前先把 `Status:` 改为 `claimed` 并保存。
 - **解决**：在 `## Answer` 标题下追加答案，`Status:` 改为 `resolved`，再把上下文指针追加到 `map.md` 的 Decisions-so-far。
+
+## 跨人交接
+
+`.scratch/` 是单机工作区且被 `.gitignore` 排除——工单、spec、qa-plan、截图、执行记录均不出本机。跨人交接时：
+
+- 正式载体为**已入库**的 `docs/handoff/<日期>-<slug>.md` 交接文档 + Gitee PR 描述：由交接方从 `.scratch` 提炼关键决策、工单状态快照与验收证据写入，而非直接共享工作区；
+- Epic 级特性的工单看板如需跨人可见，在交接文档中附工单清单与状态快照；
+- 同机会话续接不受此限，仍直接读写 `.scratch/`。

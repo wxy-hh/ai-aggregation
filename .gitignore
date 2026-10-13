@@ -46,8 +46,10 @@ yarn-error.log*
 *.swo
 *~
 
-# Claude AI
-.claude/
+# Claude AI（技能与规则随库分发，仅忽略本地配置与临时产物）
+.claude/settings.local.json
+.claude/tmp-arch/
+.claude/worktrees/
 
 # 本地产物
 .pnpm-store/
@@ -59,8 +61,6 @@ apps/web/ark-response-debug.json
 .playwright-mcp*
 .codegraph*
 .codex*
-.agents*
-.claude*
 # WorkBuddy 技能目录（软链到 .claude/skills，不入库）
 .workbuddy/skills/
 .scratch/
