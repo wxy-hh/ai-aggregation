@@ -87,13 +87,17 @@ describe('ProfileAgentRunsSection 组件 (ADR-0015 / 工单 02)', () => {
     expect(screen.getByText('14.2s')).toBeInTheDocument();
     expect(screen.getByText('2,800')).toBeInTheDocument();
 
-    // 点击详情展开抽屉
+    // 点击详情展开弹窗
     const detailBtn = screen.getByRole('button', { name: /详情/ });
     fireEvent.click(detailBtn);
 
     expect(screen.getByTestId('agent-run-detail-drawer')).toBeInTheDocument();
     expect(screen.getByText('web_search')).toBeInTheDocument();
     expect(screen.getByText('多模态调研报告')).toBeInTheDocument();
+
+    // 验证底部操作栏关闭按钮存在并可点击关闭
+    const closeBtn = screen.getByRole('button', { name: '关闭' });
+    expect(closeBtn).toBeInTheDocument();
 
     // 点击重跑
     const rerunBtn = screen.getByRole('button', { name: /以相同目标重跑/ });

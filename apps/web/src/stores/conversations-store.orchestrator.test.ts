@@ -23,6 +23,7 @@ import { useConversationsStore } from './conversations-store';
 import { useChatStore } from './chat-store';
 import { useComparisonStore } from './comparison-store';
 import type { ChatHistoryItem } from '@/types/history';
+import type { Artifact } from '@repo/shared';
 
 describe('ConversationsStore 会话编排中枢（候选 05）', () => {
   beforeEach(() => {
@@ -62,6 +63,51 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     useConversationsStore.getState().switchMode('single');
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
+  });
+
+  it('switchMode 模式切换保持单聊产物池与工作台状态（切对比再切回单聊不丢失工作台）', () => {
+    const store = useConversationsStore.getState();
+    const singleId = store.createConversation('xunfei', 'lite');
+    const compareId = store.createComparisonConversation([], '测试对比');
+
+    // 模拟单聊会话中已生成产物，且工作台展开
+    const mockArtifact: Artifact = {
+      id: 'art-1',
+      title: '季度述职汇报',
+      type: 'markdown',
+      content: '# 季度述职汇报大纲',
+      status: 'complete',
+    };
+
+    useConversationsStore.getState().switchConversation(singleId);
+    useChatStore.setState({
+      activeConversationId: singleId,
+      artifacts: [mockArtifact],
+      activeArtifactId: 'art-1',
+      isWorkspaceOpen: true,
+    });
+    // 会话列表同步记录产物池
+    useConversationsStore.getState().updateMessages(singleId, [], [mockArtifact]);
+
+    // 确认切走前工作台处于展开态且有产物
+    expect(useChatStore.getState().artifacts).toHaveLength(1);
+    expect(useChatStore.getState().isWorkspaceOpen).toBe(true);
+
+    // 切换到对比模式
+    useConversationsStore.getState().switchMode('compare');
+    expect(useConversationsStore.getState().mode).toBe('compare');
+    expect(useConversationsStore.getState().currentConversationId).toBe(compareId);
+
+    // 切回单聊模式：验证产物池完整还原且工作台保持展开（ADR-0015）
+    useConversationsStore.getState().switchMode('single');
+    expect(useConversationsStore.getState().mode).toBe('single');
+    expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
+
+    const restoredChat = useChatStore.getState();
+    expect(restoredChat.artifacts).toHaveLength(1);
+    expect(restoredChat.artifacts[0].id).toBe('art-1');
+    expect(restoredChat.isWorkspaceOpen).toBe(true);
+    expect(restoredChat.activeArtifactId).toBe('art-1');
   });
 
   it('switchMode 切到对比模式：中断进行中的单聊流式生成并按「有留空删」收尾保留', () => {

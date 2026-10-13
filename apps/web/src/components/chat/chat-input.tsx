@@ -8,7 +8,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button'; // 按钮组件
 import { Textarea } from '@/components/ui/textarea'; // 多行文本输入框组件
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // 弹出层组件（用于附件选择菜单）
-import Link from 'next/link';
 import { SessionToolsPanel } from './session-tools-panel';
 
 // ============ 导入状态管理 ============
@@ -226,15 +225,12 @@ export function ChatInput({
     setIsDraftDismissed(true);
   };
 
-  // ============ Agent 自定义 Webhook 工具状态条 ============
-  // 记录启用工具数量：null 表示未加载或加载失败（静默降级不显示），number 表示已启用的数量
-  const [enabledToolCount, setEnabledToolCount] = useState<number | null>(null);
+  // ============ Agent 自定义 Webhook 工具状态 ============
   const [userTools, setUserTools] = useState<SanitizedAgentTool[]>([]);
 
-  // 仅当 agent 开关从关→开时懒加载一次
+  // 仅当 agent 开关从关→开时懒加载一次用户自定义工具
   useEffect(() => {
     if (!agentModeEnabled) {
-      setEnabledToolCount(null);
       setUserTools([]);
       return;
     }
@@ -245,15 +241,11 @@ export function ChatInput({
       try {
         const tools = await fetchAgentTools();
         if (!cancelled) {
-          const list = tools || [];
-          setUserTools(list);
-          const count = list.filter((tool) => tool.enabled).length;
-          setEnabledToolCount(count);
+          setUserTools(tools || []);
         }
       } catch {
-        // 请求失败（网络错误、401 未登录、限流等）静默降级为不显示状态条，不打扰对话
+        // 请求失败（网络错误、401 未登录、限流等）静默降级为空数组，不打扰对话
         if (!cancelled) {
-          setEnabledToolCount(null);
           setUserTools([]);
         }
       }
@@ -1154,32 +1146,6 @@ export function ChatInput({
               </div>
             )}
           </div>
-
-          {enabledToolCount !== null && (
-            <Link
-              href="/profile"
-              data-testid="agent-tools-status"
-              className={cn(
-                'group inline-flex min-h-[44px] sm:min-h-0 items-center text-[10px] sm:text-[11px] leading-tight',
-                'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400',
-                'transition-colors duration-fast ease-out-expo select-none',
-                'touch-manipulation'
-              )}
-            >
-              {enabledToolCount > 0 ? (
-                <span>
-                  已加载 {enabledToolCount} 个我的工具 ·{' '}
-                  <span className="text-blue-600 underline underline-offset-2 group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300">
-                    去管理
-                  </span>
-                </span>
-              ) : (
-                <span className="text-slate-500 underline underline-offset-2 group-hover:text-blue-600 dark:text-slate-400 dark:group-hover:text-blue-400">
-                  可添加我的工具，让 Agent 调用你的服务
-                </span>
-              )}
-            </Link>
-          )}
         </div>
       )}
 

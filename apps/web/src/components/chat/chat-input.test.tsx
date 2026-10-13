@@ -197,7 +197,30 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
     useSettingsStore.setState({ agentModeEnabled: false });
   });
 
-  it('开关开启时加载并展示已启用的工具数量（未启用的不计入）', async () => {
+describe('ChatInput agent 工具状态收敛与会话工具面板', () => {
+  beforeEach(async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      useChatStore.setState({
+        provider: 'doubao',
+        attachment: null,
+        isLoading: false,
+        activeConversationId: 'conv-1',
+        activeCapabilityPackKey: null,
+        toolOverrides: {},
+      });
+      useSettingsStore.setState({ agentModeEnabled: false });
+    });
+    vi.mocked(fetchAgentTools).mockReset();
+    vi.mocked(fetchAgentTools).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    cleanup();
+    useSettingsStore.setState({ agentModeEnabled: false });
+  });
+
+  it('开关开启时加载用户工具并注入底部工具面板，顶栏不再渲染重复的状态链接', async () => {
     vi.mocked(fetchAgentTools).mockResolvedValue([
       createMockTool('1', '查询天气', true),
       createMockTool('2', '查询股票', true),
@@ -210,13 +233,16 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
       fireEvent.click(screen.getByRole('button', { name: '开启 Agent 工具调用' }));
     });
 
-    const statusLine = await screen.findByTestId('agent-tools-status');
-    expect(statusLine).toBeInTheDocument();
-    expect(statusLine).toHaveTextContent('已加载 2 个我的工具 · 去管理');
+    // 顶栏不再渲染旧的重复状态条
+    expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
+
+    // 底部可用工具面板角标展示总可用工具数（3 个内置 + 2 个启用的自定义 = 5）
+    const countBadge = await screen.findByTestId('session-tools-count');
+    expect(countBadge).toHaveTextContent('5');
     expect(fetchAgentTools).toHaveBeenCalledTimes(1);
   });
 
-  it('工具数量为 0 时展示引导文案「可添加我的工具，让 Agent 调用你的服务」', async () => {
+  it('无自定义工具时底部面板正常展示内置工具数量（3），顶栏无冗余跳转', async () => {
     vi.mocked(fetchAgentTools).mockResolvedValue([
       createMockTool('1', '停用工具A', false),
     ]);
@@ -227,12 +253,12 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
       fireEvent.click(screen.getByRole('button', { name: '开启 Agent 工具调用' }));
     });
 
-    const statusLine = await screen.findByTestId('agent-tools-status');
-    expect(statusLine).toBeInTheDocument();
-    expect(statusLine).toHaveTextContent('可添加我的工具，让 Agent 调用你的服务');
+    expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
+    const countBadge = await screen.findByTestId('session-tools-count');
+    expect(countBadge).toHaveTextContent('3');
   });
 
-  it('接口返回 401 或请求异常时静默降级，不渲染状态条且不影响对话输入', async () => {
+  it('接口返回 401 或请求异常时静默降级，不影响对话输入与基础 Agent 提示', async () => {
     vi.mocked(fetchAgentTools).mockRejectedValue(new Error('401 Unauthorized'));
 
     render(<ChatInput onSend={vi.fn()} isLoading={false} />);
@@ -243,29 +269,11 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
 
     // 确认 Agent 模式基础提示正常展示
     expect(await screen.findByTestId('agent-mode-notice')).toHaveTextContent('已切换至豆包 Seed');
+    expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
 
-    // 状态条不应被渲染
-    await waitFor(() => {
-      expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
-    });
-  });
-
-  it('状态条渲染为指向 /profile 的链接，且支持点击', async () => {
-    vi.mocked(fetchAgentTools).mockResolvedValue([
-      createMockTool('1', '发送通知', true),
-    ]);
-
-    render(<ChatInput onSend={vi.fn()} isLoading={false} />);
-
-    act(() => {
-      fireEvent.click(screen.getByRole('button', { name: '开启 Agent 工具调用' }));
-    });
-
-    const statusLine = await screen.findByTestId('agent-tools-status');
-    expect(statusLine).toHaveAttribute('href', '/profile');
-
-    // 验证点击不会抛错
-    fireEvent.click(statusLine);
+    // 底部仍兜底展示 3 个内置工具
+    const countBadge = await screen.findByTestId('session-tools-count');
+    expect(countBadge).toHaveTextContent('3');
   });
 
   it('开关关掉再开启会重新懒加载最新数据（改配置后回来能刷新）', async () => {
@@ -281,7 +289,7 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
       fireEvent.click(screen.getByRole('button', { name: '开启 Agent 工具调用' }));
     });
 
-    expect(await screen.findByText(/已加载 1 个我的工具/)).toBeInTheDocument();
+    expect(await screen.findByTestId('session-tools-count')).toHaveTextContent('4');
     expect(fetchAgentTools).toHaveBeenCalledTimes(1);
 
     // 关闭开关
@@ -289,8 +297,8 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
       fireEvent.click(screen.getByRole('button', { name: '关闭 Agent 工具调用' }));
     });
 
-    // 状态条消失
-    expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
+    // 底部工具入口随之隐藏
+    expect(screen.queryByTestId('session-tools-trigger')).not.toBeInTheDocument();
 
     // 配置发生变更：变为 3 个启用工具
     vi.mocked(fetchAgentTools).mockResolvedValueOnce([
@@ -304,7 +312,7 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
       fireEvent.click(screen.getByRole('button', { name: '开启 Agent 工具调用' }));
     });
 
-    expect(await screen.findByText(/已加载 3 个我的工具/)).toBeInTheDocument();
+    expect(await screen.findByTestId('session-tools-count')).toHaveTextContent('6');
     expect(fetchAgentTools).toHaveBeenCalledTimes(2);
   });
 
@@ -313,7 +321,9 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
 
     expect(fetchAgentTools).not.toHaveBeenCalled();
     expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-tools-trigger')).not.toBeInTheDocument();
   });
+});
 });
 
 describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {

@@ -782,13 +782,16 @@ export default function ChatWorkspace() {
                     'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
                 )}
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-3 mr-2 sm:mr-3">
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
                       <BarChart2 className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+                      <h1
+                        title={currentTitle}
+                        className="truncate font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base"
+                      >
                         {currentTitle}
                       </h1>
                       <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">

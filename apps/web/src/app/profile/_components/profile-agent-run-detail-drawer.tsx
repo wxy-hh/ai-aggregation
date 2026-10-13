@@ -64,8 +64,18 @@ export function ProfileAgentRunDetailDrawer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         data-testid="agent-run-detail-drawer"
-        className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-lg flex-col border-l border-slate-200/80 bg-white p-0 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:max-w-xl"
+        showClose={false}
+        className={cn(
+          'p-0 gap-0 overflow-hidden border border-slate-200/80 bg-white/95 dark:border-white/10 dark:bg-slate-900/95 backdrop-blur-xl shadow-2xl',
+          'w-[calc(100vw-2rem)] max-w-2xl max-h-[88vh] flex flex-col rounded-2xl sm:rounded-[24px]',
+          'max-sm:fixed max-sm:bottom-0 max-sm:top-auto max-sm:left-0 max-sm:right-0 max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-[28px] max-sm:max-h-[92vh]'
+        )}
       >
+        {/* 移动端顶部抓手 */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-slate-200 dark:bg-white/20" />
+        </div>
+
         {/* 顶部标题栏 */}
         <div className="flex h-16 flex-shrink-0 items-center justify-between border-b border-slate-200/80 px-6 dark:border-slate-800">
           <div className="flex items-center gap-3">
@@ -82,9 +92,10 @@ export function ProfileAgentRunDetailDrawer({
             </div>
           </div>
           <button
+            type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="关闭抽屉"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            aria-label="关闭运行详情"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -234,17 +245,31 @@ export function ProfileAgentRunDetailDrawer({
         </div>
 
         {/* 底部操作栏 */}
-        <div className="flex h-18 flex-shrink-0 items-center justify-end border-t border-slate-200/80 px-6 dark:border-slate-800">
-          <Button
-            onClick={() => {
-              onOpenChange(false);
-              onRerun(run);
-            }}
-            className="flex items-center gap-2 h-11 px-5 rounded-xl shadow-[0_8px_20px_rgba(59,130,246,0.25)]"
-          >
-            <Play className="h-4 w-4" />
-            <span>以相同目标重跑</span>
-          </Button>
+        <div className="flex flex-shrink-0 items-center justify-between border-t border-slate-200/80 px-6 py-4 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
+          <div className="text-xs text-slate-400 dark:text-slate-500 hidden sm:block">
+            已记录完整审计流水 · 可根据历史参数再次运行
+          </div>
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="h-10 px-4 rounded-xl border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800"
+            >
+              关闭
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onOpenChange(false);
+                onRerun(run);
+              }}
+              className="flex items-center gap-2 h-10 px-5 rounded-xl shadow-sm"
+            >
+              <Play className="h-4 w-4" />
+              <span>以相同目标重跑</span>
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -350,6 +350,11 @@ export const useConversationsStore = create<ConversationsState>()(
                 const updates: Partial<ConversationsState> = { mode: targetMode };
                 if (current.mode === 'single' && current.currentConversationId) {
                     updates.lastActiveSingleId = current.currentConversationId;
+                    // 同步当前单聊产物池，防切走前未及落盘导致产物丢失（ADR-0015）
+                    const activeArtifacts = useChatStore.getState().artifacts;
+                    if (activeArtifacts && activeArtifacts.length > 0) {
+                        get().updateMessages(current.currentConversationId, useChatStore.getState().messages, activeArtifacts);
+                    }
                 } else if (current.mode === 'compare' && current.currentConversationId) {
                     updates.lastActiveCompareId = current.currentConversationId;
                 }
@@ -382,7 +387,8 @@ export const useConversationsStore = create<ConversationsState>()(
                                 targetConv.provider as any,
                                 targetConv.model,
                                 targetConv.capabilityPack,
-                                targetConv.toolOverrides
+                                targetConv.toolOverrides,
+                                targetConv.artifacts
                             );
                         } catch {}
                     } else {
