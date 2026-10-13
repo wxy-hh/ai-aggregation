@@ -7,11 +7,15 @@
 
 import type { ProviderName } from '@repo/providers';
 
-/** agent 模式强制使用的提供方（T01 实测确认支持 function calling） */
-export const AGENT_PROVIDER: ProviderName = 'doubao';
+/** agent 模式默认使用的提供方（ADR-0016 切换至按量计费的 DeepSeek） */
+export const AGENT_PROVIDER: ProviderName = 'deepseek';
 
-/** agent 模式强制使用的模型（T01 实测选定；reasoning 消耗低于 pro 型号） */
-export const AGENT_MODEL = 'doubao-seed-evolving';
+/** agent 模式默认使用的模型（deepseek-flash 原生支持标准 Function Calling） */
+export const AGENT_MODEL = 'deepseek-flash';
+
+/** 豆包旧版常量（保留以便未来充值后平滑回切与双轨回退，ADR-0016） */
+export const AGENT_PROVIDER_LEGACY_DOUBAO: ProviderName = 'doubao';
+export const AGENT_MODEL_LEGACY_DOUBAO = 'doubao-seed-evolving';
 
 /** 单步输出 token 基准上限；预留按「基准 × 实际步数」，单步生成受基准约束 */
 export const AGENT_STEP_OUTPUT_LIMIT = 2048;

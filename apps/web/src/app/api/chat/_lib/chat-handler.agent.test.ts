@@ -132,6 +132,7 @@ describe('agent 模式编排（HTTP 级）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
 
     currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
     rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
@@ -189,8 +190,8 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(quotaSessionReserveMock).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: 'chat-agent',
-        provider: 'doubao',
-        model: 'doubao-seed-evolving',
+        provider: 'deepseek',
+        model: 'deepseek-flash',
         maxOutputTokens: 10240,
       }),
       'user'
@@ -247,14 +248,14 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(done.usage?.totalTokens).toBe(300);
   });
 
-  it('请求指定 xunfei/lite → 服务端静默覆盖为 doubao/doubao-seed-evolving 并在 finalize 留痕', async () => {
+  it('请求指定 xunfei/lite → 服务端静默覆盖为 deepseek/deepseek-flash 并在 finalize 留痕', async () => {
     streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['ok'] }));
 
     const response = await handler(agentRequest({ provider: 'xunfei', model: 'lite' }));
     await readSseEvents(response);
 
     expect(quotaSessionReserveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'doubao', model: 'doubao-seed-evolving' }),
+      expect.objectContaining({ provider: 'deepseek', model: 'deepseek-flash' }),
       'user'
     );
     expect(quotaSessionReserveMock).not.toHaveBeenCalledWith(
@@ -275,11 +276,11 @@ describe('agent 模式编排（HTTP 级）', () => {
     );
   });
 
-  it('请求已指定 doubao/doubao-seed-evolving → 不记录静默覆盖留痕', async () => {
+  it('请求已指定 deepseek/deepseek-flash → 不记录静默覆盖留痕', async () => {
     streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['ok'] }));
 
     const response = await handler(
-      agentRequest({ provider: 'doubao', model: 'doubao-seed-evolving' })
+      agentRequest({ provider: 'deepseek', model: 'deepseek-flash' })
     );
     await readSseEvents(response);
 

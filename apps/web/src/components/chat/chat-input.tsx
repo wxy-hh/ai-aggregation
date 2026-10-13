@@ -35,6 +35,7 @@ import {
   Square,
   Wrench,
   Globe,
+  Brain,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -138,6 +139,7 @@ export function ChatInput({
     setCapabilityPackKey,
   } = useChatStore();
   const stop = useChatStore((s) => s.stop);
+  const switchProvider = useChatStore((s) => s.switchProvider);
 
   // 监听激活会话 ID（切会话消失）
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -155,6 +157,8 @@ export function ChatInput({
   // 这里刻意不去改全局 provider/model —— agent 期间生效模型由服务端决定，头部选择器会置灰提示不生效。
   const agentModeEnabled = useSettingsStore((s) => s.agentModeEnabled);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+  const thinkingModeEnabled = useSettingsStore((s) => s.thinkingModeEnabled);
+  const toggleThinkingMode = useSettingsStore((s) => s.toggleThinkingMode);
 
   // 场景能力包（ADR-0014 / 工单 01）：当前激活的能力包配置
   const activeCapabilityPack = agentModeEnabled
@@ -209,6 +213,7 @@ export function ChatInput({
     });
 
     setAgentMode(true);
+    switchProvider('deepseek', 'deepseek-flash');
     handleSend(draftToSend);
     setDetectedIntent(null);
   };
@@ -993,12 +998,20 @@ export function ChatInput({
   // Agent 模式开关：输入坞内常驻。
   // 视觉 36px 与附件钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1 二级控件热区配方），
   // 移动端拇指可达且不与发送钮争抢视觉重量。
+  const handleToggleAgentMode = () => {
+    const next = !agentModeEnabled;
+    setAgentMode(next);
+    if (next) {
+      switchProvider('deepseek', 'deepseek-flash');
+    }
+  };
+
   const agentButton = (
     <Button
       type="button"
       variant="ghost"
       size="icon"
-      onClick={() => setAgentMode(!agentModeEnabled)}
+      onClick={handleToggleAgentMode}
       aria-pressed={agentModeEnabled}
       aria-label={agentModeEnabled ? '关闭 Agent 工具调用' : '开启 Agent 工具调用'}
       title={
@@ -1015,6 +1028,35 @@ export function ChatInput({
       )}
     >
       <Wrench className="h-4 w-4" />
+    </Button>
+  );
+
+  // 深度思考模式开关（ADR-0016 / 工单 03）
+  // 视觉 36px 与 Agent/附件按钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1），
+  // 移动端拇指易触达，点亮时展示科技紫微光。
+  const thinkingButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      data-testid="thinking-mode-toggle"
+      onClick={toggleThinkingMode}
+      aria-pressed={thinkingModeEnabled}
+      aria-label={thinkingModeEnabled ? '关闭深度思考' : '开启深度思考'}
+      title={
+        thinkingModeEnabled
+          ? '深度思考已开启：模型将输出完整思维链推理过程'
+          : '开启深度思考：让模型进行深入推理（耗时与消耗稍高）'
+      }
+      className={cn(
+        "relative h-9 w-9 shrink-0 rounded-xl select-none after:absolute after:-inset-1 after:content-['']",
+        'transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95',
+        thinkingModeEnabled
+          ? 'border border-purple-400/30 bg-purple-500/10 text-purple-600 hover:bg-purple-500/15 dark:text-purple-400'
+          : 'text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300'
+      )}
+    >
+      <Brain className="h-4 w-4" />
     </Button>
   );
 
@@ -1115,7 +1157,7 @@ export function ChatInput({
               className="flex items-center gap-1.5 text-[10px] sm:text-[11px] leading-tight text-blue-600 dark:text-blue-400"
             >
               <Wrench className="h-3 w-3 shrink-0" />
-              <span>Agent 模式 · 已切换至豆包 Seed · 额度消耗更高</span>
+              <span>Agent 模式 · 已切换至 DeepSeek Flash · 额度消耗更高</span>
             </div>
 
             {/* 场景能力包专属徽标（ADR-0014 / 工单 01） */}
@@ -1161,6 +1203,8 @@ export function ChatInput({
         )}
       >
         {agentButton}
+
+        {thinkingButton}
 
         {attachButton}
 

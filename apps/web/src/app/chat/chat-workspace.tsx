@@ -91,6 +91,13 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
     ],
   },
+  // DeepSeek 模型配置
+  deepseek: {
+    name: 'DeepSeek', // 显示名称
+    models: [
+      { id: 'deepseek-flash', label: 'DeepSeek Flash' }, // 官方高性价比模型
+    ],
+  },
 };
 
 // ============ 对话模式分段控制器 ============

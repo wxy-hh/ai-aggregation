@@ -97,6 +97,8 @@ export interface AgentRunOptions {
   systemPrompt?: string;
   /** 会话级临时停用的工具键名列表（ADR-0014 / 工单 02） */
   disabledToolKeys?: string[];
+  /** 是否开启深度思考模式（ADR-0016 / 工单 03） */
+  thinking?: boolean;
 }
 
 /** 多步 usage 的累加结构（null 表示至今无任何有效 usage） */
@@ -156,6 +158,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       const disabledSet = new Set(options.disabledToolKeys ?? []);
       const canUseWebSearch =
         (!pack || pack.toolWhitelist.includes('web_search')) && !disabledSet.has('web_search');
+      // 自适应工具挂载（ADR-0016）：web_search 为火山方舟 Ark 专属服务端工具，仅在 doubao 供应方下挂载
+      const canUseArkWebSearch = options.provider === 'doubao' && canUseWebSearch;
 
       // 流式产物标签抽取器（ADR-0015）
       const artifactExtractor = createArtifactStreamExtractor();
@@ -262,12 +266,16 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             ...(effectiveSystemPrompt ? { system: effectiveSystemPrompt } : {}),
             tools: {
               ...buildToolSet(registry),
-              // Ark 服务端执行的内置联网搜索：依据能力包白名单挂载，由 ToolStreamProjector 统一流式投影与动作规约
-              ...(canUseWebSearch ? { web_search: aiProvider.tools.webSearch({}) } : {}),
+              // Ark 服务端执行的内置联网搜索：依据能力包白名单与供应方自适应挂载
+              ...(canUseArkWebSearch ? { web_search: aiProvider.tools.webSearch({}) } : {}),
             },
             stopWhen: stepCountIs(1),
             maxOutputTokens: stepOutputLimit,
             abortSignal: signal,
+            headers:
+              options.thinking !== undefined
+                ? { 'x-deepseek-thinking': options.thinking ? 'enabled' : 'disabled' }
+                : undefined,
             providerOptions: {
               openai: {
                 ...(stepPayload.isChained && stepPayload.previousResponseId
@@ -437,6 +445,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             ...(effectiveSystemPrompt ? { system: effectiveSystemPrompt } : {}),
             maxOutputTokens: stepOutputLimit,
             abortSignal: signal,
+            headers:
+              options.thinking !== undefined
+                ? { 'x-deepseek-thinking': options.thinking ? 'enabled' : 'disabled' }
+                : undefined,
             providerOptions: {
               openai: {
                 ...(summaryPayload.isChained && summaryPayload.previousResponseId

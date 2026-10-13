@@ -1,11 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AGENT_PROVIDER,
+  AGENT_MODEL,
+  AGENT_PROVIDER_LEGACY_DOUBAO,
+  AGENT_MODEL_LEGACY_DOUBAO,
   AGENT_MAX_STEPS,
   AGENT_MIN_STEPS,
   AGENT_STEP_OUTPUT_LIMIT,
   resolveAgentStepBudget,
   fullAgentStepBudget,
 } from './agent-config';
+
+describe('Agent 默认底座模型配置 (ADR-0016 / 工单 02)', () => {
+  it('默认 Provider 为 deepseek，默认 Model 为 deepseek-flash，且保留 doubao legacy 常量', () => {
+    expect(AGENT_PROVIDER).toBe('deepseek');
+    expect(AGENT_MODEL).toBe('deepseek-flash');
+    expect(AGENT_PROVIDER_LEGACY_DOUBAO).toBe('doubao');
+    expect(AGENT_MODEL_LEGACY_DOUBAO).toBe('doubao-seed-evolving');
+  });
+});
 
 describe('Agent 步数预算与配额换算 (ADR-0014 / 工单 01)', () => {
   describe('默认基线步数 (5 步)', () => {

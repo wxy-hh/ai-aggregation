@@ -79,6 +79,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         agent: rawAgent,
         capabilityPack: rawCapabilityPack,
         disabledToolKeys: rawDisabledToolKeys,
+        thinking: rawThinking,
       } = body as {
         messages: ChatMessage[];
         model?: string;
@@ -87,7 +88,10 @@ export function createChatHandler(config: ChatHandlerConfig) {
         agent?: unknown;
         capabilityPack?: unknown;
         disabledToolKeys?: unknown;
+        thinking?: unknown;
       };
+      // 深度思考模式开关（ADR-0016 / 工单 03）
+      const thinking = rawThinking === true;
       // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
       // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
       const agent = rawAgent === true;
@@ -277,6 +281,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           runtime: agentRuntime,
           capabilityPack: activeCapabilityPack?.key,
           disabledToolKeys,
+          thinking,
           onFinish,
         });
       } else {
@@ -289,6 +294,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           outputLimit: reservedSession.outputLimit,
           signal: req.signal,
           errorId,
+          thinking,
           onFinish,
         });
       }

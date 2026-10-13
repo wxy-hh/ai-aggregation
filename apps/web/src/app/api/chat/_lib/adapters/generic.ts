@@ -21,6 +21,10 @@ export class GenericAdapter implements ChatProviderAdapter {
       messages: ctx.messages,
       abortSignal: ctx.signal,
       maxOutputTokens: ctx.outputLimit,
+      headers:
+        ctx.thinking !== undefined
+          ? { 'x-deepseek-thinking': ctx.thinking ? 'enabled' : 'disabled' }
+          : undefined,
     });
 
     const textResponse = result.toTextStreamResponse();

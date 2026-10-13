@@ -30,6 +30,13 @@ export const CHAT_MODEL_CATALOG: ModelCatalogItem[] = [
     label: 'Doubao Pro（专业级）',
     supportsReasoning: true,
   },
+  {
+    provider: 'deepseek',
+    providerLabel: 'DeepSeek',
+    model: 'deepseek-flash',
+    label: 'DeepSeek Flash',
+    supportsReasoning: true,
+  },
 ];
 
 // 默认比较组合：讯飞 lite + 豆包 lite（modelKey 形式）

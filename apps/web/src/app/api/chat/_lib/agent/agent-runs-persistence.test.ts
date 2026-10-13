@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => {
   process.env.ARK_API_KEY = 'test-ark-key-32-bytes-long-for-test!';
+  process.env.DEEPSEEK_MODEL = 'test-deepseek-key-32-bytes-long!';
   return {
     currentUser: { id: 'user_agent_run_test', role: 'user' },
     rateLimiter: { check: vi.fn().mockResolvedValue({ allowed: true }) },
@@ -56,6 +57,7 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
   });
 
   it('agent 任务执行完成时，将目标文本、步骤、工具与 Quota 结算结果同源写入 agent_runs', async () => {

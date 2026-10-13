@@ -132,7 +132,9 @@ describe('ChatInput agent 模式开关', () => {
     expect(useSettingsStore.getState().agentModeEnabled).toBe(true);
     const toggle = screen.getByRole('button', { name: '关闭 Agent 工具调用' });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('agent-mode-notice')).toHaveTextContent('已切换至豆包 Seed');
+    expect(screen.getByTestId('agent-mode-notice')).toHaveTextContent('已切换至 DeepSeek Flash');
+    expect(useChatStore.getState().provider).toBe('deepseek');
+    expect(useChatStore.getState().model).toBe('deepseek-flash');
 
     // 冲刷异步微任务，避免跨用例 act 警告
     await act(async () => {
@@ -268,7 +270,7 @@ describe('ChatInput agent 工具状态收敛与会话工具面板', () => {
     });
 
     // 确认 Agent 模式基础提示正常展示
-    expect(await screen.findByTestId('agent-mode-notice')).toHaveTextContent('已切换至豆包 Seed');
+    expect(await screen.findByTestId('agent-mode-notice')).toHaveTextContent('已切换至 DeepSeek Flash');
     expect(screen.queryByTestId('agent-tools-status')).not.toBeInTheDocument();
 
     // 底部仍兜底展示 3 个内置工具
@@ -618,6 +620,32 @@ describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {
       render(<ChatInput onSend={vi.fn()} isLoading={false} />);
 
       expect(screen.queryByTestId('session-tools-trigger')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('ChatInput 深度思考模式开关 (ADR-0016 / 工单 03)', () => {
+    it('渲染深度思考切换按钮，初始未激活，点击可切换激活状态', () => {
+      useSettingsStore.setState({ thinkingModeEnabled: false });
+
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      const toggle = screen.getByTestId('thinking-mode-toggle');
+      expect(toggle).toBeInTheDocument();
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+
+      act(() => {
+        fireEvent.click(toggle);
+      });
+
+      expect(useSettingsStore.getState().thinkingModeEnabled).toBe(true);
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+      act(() => {
+        fireEvent.click(toggle);
+      });
+
+      expect(useSettingsStore.getState().thinkingModeEnabled).toBe(false);
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
     });
   });
 });

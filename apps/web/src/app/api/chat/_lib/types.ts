@@ -64,6 +64,8 @@ export interface ChatContext {
   outputLimit: number;
   signal: AbortSignal;
   errorId: string;
+  /** 是否开启深度思考模式（ADR-0016 / 工单 03） */
+  thinking?: boolean;
   /**
    * 流结束时回调：结算由 handler 侧的 QuotaSession 统一处理，
    * adapter 不持有任何结算句柄、不写结算逻辑。

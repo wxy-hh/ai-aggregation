@@ -116,3 +116,87 @@ describe('doubaoFetch /responses 兼容 shim', () => {
     }
   });
 });
+
+describe('createProvider deepseek', () => {
+  const originalEnv = process.env;
+
+  beforeEach(async () => {
+    process.env = { ...originalEnv };
+    const { _clearProviderCacheForTest } = await import('../factory');
+    _clearProviderCacheForTest();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('支持创建 deepseek 提供方，读取 DEEPSEEK_MODEL 环境变量，默认模型为 deepseek-flash', async () => {
+    process.env.DEEPSEEK_MODEL = 'test_deepseek_key';
+    const { createProvider, getDefaultModel } = await import('../factory');
+    const provider = createProvider('deepseek');
+    expect(provider).toBeDefined();
+    expect(getDefaultModel('deepseek')).toBe('deepseek-flash');
+  });
+
+  it('缺失 DEEPSEEK_MODEL 时抛出配置错误', async () => {
+    delete process.env.DEEPSEEK_MODEL;
+    delete process.env.DEEPSEEK_API_KEY;
+    const { createProvider } = await import('../factory');
+    expect(() => createProvider('deepseek')).toThrow(/Missing API key for deepseek/);
+  });
+
+  it('deepseek 提供方默认调用 chat completions 端点（非 responses 端点）', async () => {
+    process.env.DEEPSEEK_MODEL = 'test_deepseek_key';
+    const { createProvider } = await import('../factory');
+    const { streamText } = await import('ai');
+    let requestedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        requestedUrl = typeof input === 'string' ? input : (input as { url: string }).url;
+        return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      })
+    );
+    const provider = createProvider('deepseek');
+    const result = streamText({
+      model: provider('deepseek-flash'),
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    try {
+      for await (const _part of result.fullStream) {}
+    } catch {}
+    expect(requestedUrl).toContain('/chat/completions');
+    expect(requestedUrl).not.toContain('/responses');
+  });
+
+  it('deepseekFetch 会根据 x-deepseek-thinking 请求头注入 thinking 参数并清理请求头', async () => {
+    process.env.DEEPSEEK_MODEL = 'test_deepseek_key';
+    const { createProvider } = await import('../factory');
+    const { streamText } = await import('ai');
+    let capturedBody: Record<string, unknown> | null = null;
+    let capturedHeaders: HeadersInit | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        capturedHeaders = init?.headers;
+        if (typeof init?.body === 'string') {
+          capturedBody = JSON.parse(init.body);
+        }
+        return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+      })
+    );
+    const provider = createProvider('deepseek');
+    const result = streamText({
+      model: provider('deepseek-flash'),
+      messages: [{ role: 'user', content: 'hello' }],
+      headers: { 'x-deepseek-thinking': 'enabled' },
+    });
+    try {
+      for await (const _part of result.fullStream) {}
+    } catch {}
+    expect(capturedBody).toBeDefined();
+    expect(capturedBody?.thinking).toEqual({ type: 'enabled' });
+    const headers = new Headers(capturedHeaders);
+    expect(headers.get('x-deepseek-thinking')).toBeNull();
+  });
+});

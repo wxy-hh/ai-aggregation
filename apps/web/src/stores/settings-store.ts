@@ -23,12 +23,20 @@ export interface SettingsState {
      */
     agentModeEnabled: boolean;
 
+    /**
+     * 深度思考模式开关（ADR-0016 / 工单 03）。
+     * 开启后对话请求带 thinking: true，在 DeepSeek 等支持模型上输出思维链内容。
+     */
+    thinkingModeEnabled: boolean;
+
     // Actions
     setTheme: (theme: Theme) => void;
     toggleTheme: () => void;
     setLanguage: (language: 'zh-CN' | 'en-US') => void;
     setFontSize: (size: 'small' | 'medium' | 'large') => void;
     setAgentMode: (enabled: boolean) => void;
+    setThinkingMode: (enabled: boolean) => void;
+    toggleThinkingMode: () => void;
 
     // 内部方法
     _initializeTheme: () => void;
@@ -77,6 +85,7 @@ export const useSettingsStore = create<SettingsState>()(
             language: 'zh-CN',
             fontSize: 'medium',
             agentModeEnabled: false,
+            thinkingModeEnabled: false,
 
             // 设置主题
             setTheme: (theme) => {
@@ -112,6 +121,16 @@ export const useSettingsStore = create<SettingsState>()(
             // 设置 agent 模式开关
             setAgentMode: (enabled) => {
                 set({ agentModeEnabled: enabled });
+            },
+
+            // 设置深度思考模式开关
+            setThinkingMode: (enabled) => {
+                set({ thinkingModeEnabled: enabled });
+            },
+
+            // 切换深度思考模式开关
+            toggleThinkingMode: () => {
+                set((state) => ({ thinkingModeEnabled: !state.thinkingModeEnabled }));
             },
 
             // 初始化主题（在客户端加载时调用）

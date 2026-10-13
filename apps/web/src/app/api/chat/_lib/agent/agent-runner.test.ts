@@ -8,7 +8,7 @@
  * 4. 验证核心：Responses API 链式增量回传（previousResponseId、仅发送 tool-result 增量、决策步 maxToolCalls=3、收尾步无 maxToolCalls）与无响应 id 时的全量回退机制。
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import type { AgentToolSpec, ToolRegistry } from '@/lib/agent/registry';
@@ -937,6 +937,60 @@ describe('web_search providerExecuted 映射', () => {
       expect(onFinishMock).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'success' })
       );
+    });
+  });
+
+  describe('自适应工具挂载 (Adaptive Tool Mounting, ADR-0016 / 工单 02)', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv, DEEPSEEK_MODEL: 'test_key', ARK_API_KEY: 'test_ark_key' };
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    it('provider 为 deepseek 时：挂载自有工具，安全剥离 Ark 专属 web_search', async () => {
+      const toolSpec: AgentToolSpec = {
+        name: 'local_tool',
+        description: '本地测试工具',
+        parameters: z.object({ query: z.string() }),
+        execute: vi.fn(async () => ({
+          ok: true,
+          contentForModel: '本地结果',
+          summaryForDisplay: '执行成功',
+        })),
+      };
+      const registry = createToolRegistry([toolSpec]);
+      const onFinishMock = vi.fn();
+
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['DeepSeek 直接回答'],
+        })
+      );
+
+      const stream = runAgent({
+        userId: 'u1',
+        provider: 'deepseek',
+        model: 'deepseek-flash',
+        messages: [{ id: 'm1', role: 'user', content: '测试' }] as ChatMessage[],
+        stepOutputLimit: 2048,
+        signal: new AbortController().signal,
+        errorId: 'test',
+        runtime: await testRuntime(registry),
+        onFinish: onFinishMock,
+      });
+
+      await readSseEvents(stream);
+
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+      const call = streamTextMock.mock.calls[0][0] as { tools?: Record<string, unknown> };
+      expect(call.tools).toBeDefined();
+      expect(call.tools?.local_tool).toBeDefined();
+      // 验证 Ark 专有的 web_search 在 deepseek 下被安全剥离
+      expect(call.tools?.web_search).toBeUndefined();
     });
   });
 });

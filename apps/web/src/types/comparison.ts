@@ -11,7 +11,7 @@ import type { ChatStreamUsage } from '@repo/shared';
 export type ComparisonMode = 'single' | 'compare';
 
 // AI 提供商：与 packages/providers 的 ProviderName 保持一致
-export type ProviderName = 'xunfei' | 'doubao';
+export type ProviderName = 'xunfei' | 'doubao' | 'deepseek';
 
 // 已选模型（比较模式下一个可对比的模型变体）
 export interface SelectedModel {

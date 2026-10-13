@@ -302,6 +302,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
     vi.clearAllMocks();
     vi.stubEnv('WEBHOOK_SECRET_KEY', TEST_SECRET_KEY);
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
 
     currentUserMock.mockResolvedValue({ id: 'user-001', role: 'user' });
     rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });

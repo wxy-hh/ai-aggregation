@@ -11,8 +11,8 @@ import { toolCallRecordSchema } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
-// AI 提供商类型：讯飞星火 或 豆包
-export type ProviderName = 'xunfei' | 'doubao';
+// AI 提供商类型：讯飞星火、豆包或 DeepSeek
+export type ProviderName = 'xunfei' | 'doubao' | 'deepseek';
 
 // 附件上传状态：上传中 | 就绪 | 错误
 export type AttachmentStatus = 'uploading' | 'ready' | 'error';
@@ -882,6 +882,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       // agent 模式开关（settings-store）。仅在开启时往请求体带标志，
       // 关闭时请求体与现状逐字节一致 —— 老链路的降级无感知由这里保证。
       const agentMode = useSettingsStore.getState().agentModeEnabled;
+      // 深度思考模式开关（ADR-0016 / 工单 03）
+      const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
       // 会话级临时停用工具差异项（ADR-0014 / 工单 02）：仅提取当前会话中值为 false 的工具
       const disabledToolKeys = Object.entries(toolOverrides)
         .filter(([_, enabled]) => enabled === false)
@@ -958,6 +960,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider, // AI提供商
               model, // 模型名称
+              thinking: thinkingMode, // 深度思考模式开关（ADR-0016 / 工单 03）
               // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
               ...(agentMode ? { agent: true } : {}),
               // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
@@ -1011,8 +1014,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     reload: async (msgId) => {
       const { messages, isLoading, provider, model, activeConversationId } = get();
       if (isLoading) return;
-      // 重新生成沿用当前的 agent 开关状态（与 sendMessage 同一来源）
+      // 重新生成沿用当前的 agent 开关与思考模式状态（与 sendMessage 同一来源）
       const agentMode = useSettingsStore.getState().agentModeEnabled;
+      const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
 
       // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
       let lastUserIndex = messages.length - 1;
@@ -1078,6 +1082,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               })),
               provider,
               model,
+              thinking: thinkingMode,
               ...(agentMode ? { agent: true } : {}),
             },
             signal: abortController.signal,
