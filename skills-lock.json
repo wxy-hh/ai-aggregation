@@ -79,6 +79,12 @@
       "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
       "computedHash": "66e8a50c83c3c724fcfe0769701b665c56cec220cc4f49cc1aee8bdfc07de94a"
     },
+    "oil-ui": {
+      "source": "oil-oil/oil-ui",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "a0ff54e436d4e0f8d9c480e511c21878cfbb88f1612b3e1de996f3d7f69a4316"
+    },
     "prototype": {
       "source": "mattpocock/skills",
       "sourceType": "github",
