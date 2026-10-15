@@ -789,15 +789,16 @@ export default function ChatWorkspace() {
               {/* 头部：悬浮毛玻璃顶栏，浮于滚动区之上（DESIGN.md §4.1 / §8.5） */}
               <header
                 className={cn(
-                  'absolute inset-x-0 top-0 z-20 flex-none px-4 py-3.5 sm:px-6',
+                  // 移动端收敛：内边距与行距压到最小档，图标块移入桌面端（2026-10-15 评审 H4，移动端外壳高度）
+                  'absolute inset-x-0 top-0 z-20 flex-none px-4 py-2.5 sm:px-6 sm:py-3.5',
                   'border-b border-white/50 bg-white/70 shadow-sm backdrop-blur-xl backdrop-saturate-150',
                   'dark:border-white/10 dark:bg-slate-900/75',
                   'transition-[border-color,background-color] duration-fast ease-out-expo'
                 )}
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:justify-between min-w-0">
                   <div className="flex min-w-0 flex-1 items-center gap-3 mr-2 sm:mr-3">
-                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
+                    <div className="hidden sm:flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
                       <BarChart2 className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -853,9 +854,10 @@ export default function ChatWorkspace() {
                               </svg>
                             </button>
 
-                            {/* 下拉列表 */}
+                            {/* 下拉列表：实体卡底（DESIGN.md §8.3），禁止半透明玻璃——
+                                否则滚动正文透出与选项文字混叠不可读（2026-10-15 评审 H1） */}
                             {showModelSelector && (
-                              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-white/80 bg-white/90 py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700/80 dark:bg-slate-900/[0.92]">
+                              <div className="absolute left-0 top-full z-50 mt-2 w-64 rounded-3xl border border-slate-200 bg-white py-2 shadow-[0_18px_40px_rgba(76,95,154,0.16)] animate-in fade-in zoom-in-95 duration-100 dark:border-slate-700 dark:bg-slate-800">
                                 {(
                                   Object.entries(MODELS) as [
                                     ProviderName,
@@ -902,7 +904,7 @@ export default function ChatWorkspace() {
                         title={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
                         onClick={() => setWorkspaceOpen(!isWorkspaceOpen)}
                         className={cn(
-                          'inline-flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none',
+                          'inline-flex h-11 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none lg:h-10',
                           isWorkspaceOpen
                             ? 'border-blue-500/60 bg-blue-50 text-blue-600 dark:border-blue-500/50 dark:bg-blue-950/40 dark:text-blue-300'
                             : 'border-white/80 bg-white/80 text-slate-700 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-700'
@@ -922,7 +924,7 @@ export default function ChatWorkspace() {
                       type="button"
                       aria-label="打开会话列表"
                       onClick={() => setShowConversationDrawer(true)}
-                      className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                      className="lg:hidden inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                       <PanelLeft className="w-4 h-4" />
                     </button>
@@ -944,7 +946,8 @@ export default function ChatWorkspace() {
                         }
                         onClick={() => setShowMobileModelDrawer(true)}
                         className={cn(
-                          'lg:hidden inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors',
+                          // 移动端热区 ≥44px（DESIGN.md §5）
+                          'lg:hidden inline-flex min-h-11 items-center gap-2 rounded-2xl border px-3 text-xs font-medium shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors',
                           agentModeEnabled
                             ? 'cursor-not-allowed border-slate-200/70 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
                             : 'border-white/80 bg-white/80 text-slate-600 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
@@ -1115,7 +1118,9 @@ export default function ChatWorkspace() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex w-full flex-col pb-4">
+                      // 消息列：桌面端限制阅读列宽（DESIGN.md §5：65–75 字符；2026-10-15 评审 M3，
+                      // 1920 下行宽近 1500px 换行串行）。用户/AI 气泡共同居中于该列内
+                      <div className="mx-auto flex w-full max-w-4xl flex-col pb-4">
                         {messages.map((msg, i) => {
                           // 「重新生成」仅挂在最后一条 AI 消息上：线性会话只允许重生成最后一轮（防中间轮截断丢消息）
                           const isLastAssistant =
@@ -1192,6 +1197,8 @@ export default function ChatWorkspace() {
                     <ChatInput
                       onSend={handleSend}
                       isLoading={isLoading}
+                      // 草稿按会话隔离（2026-10-15 评审 H5）：切换会话时各自暂存/还原
+                      draftKey={activeConversationId}
                       externalDraft={relayDraft}
                       onExternalDraftConsumed={() => setRelayDraft(null)}
                       externalAttachmentUrl={relayAttachmentUrl}

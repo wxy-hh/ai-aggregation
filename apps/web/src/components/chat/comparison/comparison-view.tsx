@@ -12,7 +12,8 @@ import { Sparkles, GitCompareArrows } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useIsMobile } from '@/hooks/use-is-mobile';
-import type { ComparisonTurn } from '@/types/comparison';
+import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
+import { toModelKey } from '@/types/comparison';
 import { ModelOverviewRail } from './model-overview-rail';
 import { FocusAnswerPane } from './focus-answer-pane';
 import { ComparisonInput } from './comparison-input';
@@ -110,7 +111,9 @@ const TurnSection = memo(function TurnSection({
 });
 
 // 空状态：引导选模型并发问
-const EmptyState = memo(function EmptyState({ modelCount }: { modelCount: number }) {
+// 2026-10-15 评审 L2：已选模型 chips 上提至空态中央，与引导语合成一个看板，
+// 避免「顶部下拉入口 / 中央文案 / 底部 chips」三处分散导致视线来回跳跃
+const EmptyState = memo(function EmptyState({ models }: { models: SelectedModel[] }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
       <div className="relative">
@@ -125,9 +128,21 @@ const EmptyState = memo(function EmptyState({ modelCount }: { modelCount: number
       <div className="space-y-1.5">
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">并行对比，一题多问</h2>
         <p className="mx-auto max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
-          已选 {modelCount} 个模型。输入同一个问题同时发送，先看全局状态，再聚焦比较两份完整答案，选中更好的继续追问。
+          已选 {models.length} 个模型。输入同一个问题同时发送，先看全局状态，再聚焦比较两份完整答案，选中更好的继续追问。
         </p>
       </div>
+      {models.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {models.map((m) => (
+            <span
+              key={toModelKey(m.provider, m.model)}
+              className="inline-flex items-center rounded-full border border-white/60 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300"
+            >
+              {m.label}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
@@ -150,7 +165,7 @@ export const ComparisonView = memo(function ComparisonView() {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {turns.length === 0 ? (
-        <EmptyState modelCount={selectedModels.length} />
+        <EmptyState models={selectedModels} />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2 custom-scrollbar">
           <div className="mx-auto flex max-w-6xl flex-col gap-6">

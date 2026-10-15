@@ -28,6 +28,26 @@ export interface StreamChatRequest {
   signal: AbortSignal;
 }
 
+/**
+ * 沉默看门狗阈值（2026-10-15 评审 H3：服务端挂起时客户端不再无限等待骨架屏）：
+ * - 首个事件超时：请求发出后 60s 内没有任何 SSE 事件 → 判超时（免费/拥堵线路首字慢于该值的概率极低）；
+ * - 中途沉默超时：任意事件后再沉默 150s → 判超时（覆盖工具执行等长间隔，事件到达即重置）。
+ * 任何事件（正文/推理/旁白/工具/产物/告警）都会重置计时；超时转为明确错误而非静默挂起。
+ */
+export const STREAM_FIRST_BYTE_TIMEOUT_MS = 60_000;
+export const STREAM_SILENCE_TIMEOUT_MS = 150_000;
+
+/** 与调用方 signal 联动的 AbortController：看门狗超时只中断联动控制器，不污染调用方信号 */
+function linkAbortController(signal: AbortSignal): AbortController {
+  const controller = new AbortController();
+  if (signal.aborted) {
+    controller.abort();
+  } else {
+    signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return controller;
+}
+
 export interface StreamChatResponseHandlers {
   /** 每次收到正文增量时回调一次，参数为当前累计文本 */
   onChunk?: (accumulatedText: string) => void;
@@ -53,48 +73,93 @@ export async function streamChatResponse(
   request: StreamChatRequest,
   handlers: StreamChatResponseHandlers
 ): Promise<string> {
-  const response = await authFetch('/api/chat', {
-    method: 'POST',
-    body: JSON.stringify(request.body),
-    signal: request.signal,
-  });
+  // 沉默看门狗：见上方阈值常量注释。首个事件到达前用首字节阈值，之后切换为沉默阈值
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  let watchdogFired = false;
+  const linkedController = linkAbortController(request.signal);
+  const armWatchdog = (ms: number) => {
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    watchdogTimer = setTimeout(() => {
+      watchdogFired = true;
+      linkedController.abort();
+    }, ms);
+  };
+  // 任意事件到达：重置计时（首个事件后切到较长的中途沉默阈值）
+  const petWatchdog = () => armWatchdog(STREAM_SILENCE_TIMEOUT_MS);
+  // 统一插桩包装：事件回调先喂狗再透传，避免逐一手写（评审：Duplicated Code）
+  const withPet = <A extends unknown[]>(fn?: (...args: A) => void) =>
+    fn
+      ? (...args: A) => {
+          petWatchdog();
+          fn(...args);
+        }
+      : undefined;
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `请求失败: ${response.status}`);
+  try {
+    armWatchdog(STREAM_FIRST_BYTE_TIMEOUT_MS);
+    const response = await authFetch('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify(request.body),
+      signal: linkedController.signal,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `请求失败: ${response.status}`);
+    }
+
+    let accumulated = '';
+    // 推理文本独立累计，与正文互不影响（返回值仍是正文累计）
+    let accumulatedReasoning = '';
+    // 过程旁白文本独立累计（agent 模式中间轮决策文本，不进正文）
+    let accumulatedAgentNote = '';
+    try {
+      await consumeChatResponse(response, {
+        onChunk: (chunk: string) => {
+          petWatchdog();
+          accumulated += chunk;
+          handlers.onChunk?.(accumulated);
+        },
+        onReasoning: withPet(
+          handlers.onReasoning
+            ? (chunk: string) => {
+                accumulatedReasoning += chunk;
+                handlers.onReasoning?.(accumulatedReasoning);
+              }
+            : undefined
+        ),
+        onAgentNote: withPet(
+          handlers.onAgentNote
+            ? (chunk: string) => {
+                accumulatedAgentNote += chunk;
+                handlers.onAgentNote?.(accumulatedAgentNote);
+              }
+            : undefined
+        ),
+        onToolCall: withPet(handlers.onToolCall),
+        onToolResult: withPet(handlers.onToolResult),
+        onArtifactStart: withPet(handlers.onArtifactStart),
+        onArtifactDelta: withPet(handlers.onArtifactDelta),
+        onArtifactEnd: withPet(handlers.onArtifactEnd),
+        onWarning: withPet(handlers.onWarning),
+        onDone: withPet((usage?: ChatStreamUsage) => {
+          handlers.onDone?.(usage);
+        }),
+      });
+    } catch (err) {
+      // 看门狗超时 → 转为明确错误（用户主动取消维持 AbortError 透传语义）
+      if (
+        watchdogFired &&
+        !(err instanceof Error && err.name === 'AbortError' && request.signal.aborted)
+      ) {
+        throw new Error('模型响应超时，请重试或切换模型');
+      }
+      throw err;
+    }
+    return accumulated;
+  } finally {
+    if (watchdogTimer) clearTimeout(watchdogTimer);
   }
-
-  let accumulated = '';
-  // 推理文本独立累计，与正文互不影响（返回值仍是正文累计）
-  let accumulatedReasoning = '';
-  // 过程旁白文本独立累计（agent 模式中间轮决策文本，不进正文）
-  let accumulatedAgentNote = '';
-  await consumeChatResponse(response, {
-    onChunk: (chunk) => {
-      accumulated += chunk;
-      handlers.onChunk?.(accumulated);
-    },
-    onReasoning: handlers.onReasoning
-      ? (chunk) => {
-          accumulatedReasoning += chunk;
-          handlers.onReasoning?.(accumulatedReasoning);
-        }
-      : undefined,
-    onAgentNote: handlers.onAgentNote
-      ? (chunk) => {
-          accumulatedAgentNote += chunk;
-          handlers.onAgentNote?.(accumulatedAgentNote);
-        }
-      : undefined,
-    onToolCall: handlers.onToolCall,
-    onToolResult: handlers.onToolResult,
-    onArtifactStart: handlers.onArtifactStart,
-    onArtifactDelta: handlers.onArtifactDelta,
-    onArtifactEnd: handlers.onArtifactEnd,
-    onWarning: handlers.onWarning,
-    onDone: handlers.onDone,
-  });
-  return accumulated;
 }
 
 /** consumeChatResponse 的回调集合（handlers 对象形式，onReasoning 可选） */

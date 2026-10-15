@@ -44,7 +44,12 @@ export function QuotaExhaustedDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md">
+      {/* 遮罩对齐 DESIGN.md §8.4（bg-slate-950/50 + blur）：压暗并模糊底层内容，
+          阻断感不足时背景空态文字会与弹窗争焦点（2026-10-15 评审 M4） */}
+      <DialogContent
+        className="sm:max-w-md"
+        overlayClassName="bg-slate-950/50 backdrop-blur-md"
+      >
         <DialogHeader>
           <DialogTitle>{isAgentQuota ? '额度不足' : '文本或语音额度不足'}</DialogTitle>
           <DialogDescription className="pt-2 leading-relaxed">

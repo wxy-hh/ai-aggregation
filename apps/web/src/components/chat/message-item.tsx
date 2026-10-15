@@ -63,6 +63,13 @@ const StreamingContent = memo(function StreamingContent({ content }: { content: 
   );
 });
 
+// 操作按钮共享样式（2026-10-15 评审 H2/M2：全断点常显 + 触屏 44px 热区）
+// 浅色常态文字用 day-muted（DESIGN.md §2.6 白底 AA），深色 slate 表面允许 slate-400；
+// 尺寸：触屏或 <md 恒 44px；仅「md 及以上 + 精细指针（桌面鼠标）」降 32px 小档，
+// 避免 iPad 等 md 断点触屏设备被 md:h-8 压回 32px 不达标
+const ACTION_BTN_CLASS =
+  'flex h-11 w-11 items-center justify-center rounded-full border border-transparent text-day-muted select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 md:pointer-fine:h-8 md:pointer-fine:w-8 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]';
+
 // 操作按钮组件
 const ActionButtons = memo(function ActionButtons({
   onCopy,
@@ -91,15 +98,16 @@ const ActionButtons = memo(function ActionButtons({
   return (
     <div
       className={cn(
-        // 移动端常显（无 hover 无法发现接力），桌面保留 hover 渐显
-        'mt-2 flex items-center gap-1 px-1 transition-opacity duration-fast ease-out-expo max-sm:opacity-100 opacity-0 group-hover:opacity-100',
+        // 全断点常显（2026-10-15 评审 H2）：hover 无法作为触屏端唯一发现手段；
+        // 常态低对比（slate-400 图标），hover 仅增强按钮自身底色
+        'mt-2 flex items-center gap-1 px-1 transition-opacity duration-fast ease-out-expo',
         isUser ? 'flex-row-reverse' : ''
       )}
     >
       {/* 复制按钮 */}
       <button
         onClick={handleCopy}
-        className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
+        className={ACTION_BTN_CLASS}
         title="复制"
         aria-label="复制消息内容"
       >
@@ -128,7 +136,7 @@ const ActionButtons = memo(function ActionButtons({
       {!isUser && onRegenerate && (
         <button
           onClick={onRegenerate}
-          className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
+          className={ACTION_BTN_CLASS}
           title="重新生成"
           aria-label="重新生成回答"
         >
@@ -146,7 +154,7 @@ const ActionButtons = memo(function ActionButtons({
       {/* 点赞按钮 - 仅对 AI 消息显示 */}
       {!isUser && (
         <button
-          className="rounded-full border border-transparent p-2 text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
+          className={ACTION_BTN_CLASS}
           title="赞"
           aria-label="点赞"
         >
@@ -169,7 +177,7 @@ const ActionButtons = memo(function ActionButtons({
           disabled={relay.disabled}
           disabledReason={relay.disabledReason}
           onClick={relay.onOpen}
-          className="rounded-full border border-transparent text-slate-400 select-none transition-[color,background-color,border-color,transform] duration-fast ease-out-expo hover:border-slate-200 hover:bg-white/80 hover:text-slate-600 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-300 active:scale-[0.90]"
+          className={ACTION_BTN_CLASS}
         />
       )}
     </div>
@@ -340,7 +348,25 @@ const AIAvatar = memo(function AIAvatar() {
 });
 
 // 首字节等待骨架屏（语义：等待上游首个增量到达的加载态，不冒充思考内容）
+// 2026-10-15 评审 H3：长时间无反馈死锁——加入已等待秒数与分级提示（10s/45s 两档）
+const FIRST_BYTE_HINT_SLOW_MS = 10_000;
+const FIRST_BYTE_HINT_STUCK_MS = 45_000;
+
 const ThinkingIndicator = memo(function ThinkingIndicator() {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  const hint =
+    elapsedMs >= FIRST_BYTE_HINT_STUCK_MS
+      ? '响应时间较长，可停止后换个模型重试'
+      : elapsedMs >= FIRST_BYTE_HINT_SLOW_MS
+        ? '模型响应较慢，请稍候'
+        : null;
+
   return (
     <div className="w-full max-w-[400px] space-y-3 py-1">
       {/* 标题动画 */}
@@ -366,7 +392,15 @@ const ThinkingIndicator = memo(function ThinkingIndicator() {
           <span className="animate-bounce delay-150">.</span>
           <span className="animate-bounce delay-300">.</span>
         </span>
+        {elapsedSeconds > 0 && (
+          <span className="tabular-nums text-xs font-normal text-day-muted dark:text-slate-400">
+            已等待 {elapsedSeconds} 秒
+          </span>
+        )}
       </div>
+      {hint && (
+        <p className="text-xs text-day-muted dark:text-slate-400 -mt-2">{hint}</p>
+      )}
 
       {/* 骨架屏线条 */}
       <div className="space-y-2.5">
@@ -599,9 +633,10 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                     )}
                     {message.stopped && (
                       // DESIGN.md §2.6：浅色次要文字用 day-muted（白底过 AA）；深色中性 slate 表面允许 slate-400
+                      // 空内容停止（用户抢先停止且无产出）与部分停止的文案区分（2026-10-15 评审 H3）
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
                         <Square className="h-3 w-3" />
-                        <span>已停止 · 内容可能不完整</span>
+                        <span>{message.content ? '已停止 · 内容可能不完整' : '已停止 · 未生成内容'}</span>
                       </div>
                     )}
                     {message.failed && (

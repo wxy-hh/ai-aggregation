@@ -276,10 +276,13 @@ function hasRetainableContent(m: Message): boolean {
  * 中止收尾（空删有留）：有部分内容（正文/推理/工具记录任一）标记 stopped 保留，空内容移除。
  * 与服务商计费语义同构（空退 failed / 有扣 partial）。
  * match 由调用方给定：编排层按消息 id 匹配，store 层按「正在流式的 assistant 消息」匹配。
+ * keepEmptyStopped：用户主动停止（stop()）时置位——零产出也保留消息并标记 stopped，
+ * 让「已停止 · 未生成内容」在会话里有迹可循；隐式中止（切会话/切模式）保持空删。
  */
 function finalizeAbortedMessages(
   messages: Message[],
-  match: (m: Message) => boolean
+  match: (m: Message) => boolean,
+  options?: { keepEmptyStopped?: boolean }
 ): { next: Message[]; changed: boolean } {
   const target = messages.find(match);
   // 未找到或已被收尾（isStreaming 已为 false）时不重复处理
@@ -292,7 +295,11 @@ function finalizeAbortedMessages(
             sanitizeToolCalls({ ...m, isStreaming: false, stopped: true })
           : m
       )
-    : messages.filter((m) => m.id !== target.id);
+    : options?.keepEmptyStopped
+      ? messages.map((m) =>
+          m.id === target.id ? sanitizeToolCalls({ ...m, isStreaming: false, stopped: true }) : m
+        )
+      : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
 }
 
@@ -667,8 +674,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     setWorkspaceOpen: (open) => set({ isWorkspaceOpen: open }),
   });
 
-  // 中止前同步收尾当前流式消息：有部分内容标记 stopped 并同步会话列表落盘，空内容删除
-  const finalizeStreamingMessage = () => {
+  // 中止前同步收尾当前流式消息：有部分内容标记 stopped 并同步会话列表落盘，空内容删除。
+  // keepEmptyStopped 仅用户主动停止（stop()）置位：零产出也保留消息标记 stopped，
+  // 让「已停止 · 未生成内容」在会话里有迹可循；其余隐式中止路径（切会话/重载/再发送）维持空删
+  const finalizeStreamingMessage = (options?: { keepEmptyStopped?: boolean }) => {
     const { messages, activeConversationId } = get();
     const streamingAssistant = messages.find(
       (m) => m.isStreaming === true && m.role === 'assistant'
@@ -691,7 +700,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
     const { next, changed } = finalizeAbortedMessages(
       messages,
-      (m) => m.isStreaming === true && m.role === 'assistant'
+      (m) => m.isStreaming === true && m.role === 'assistant',
+      { keepEmptyStopped: options?.keepEmptyStopped }
     );
     if (!changed) return;
     set({ messages: next });
@@ -858,8 +868,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 停止AI生成
     // 用于用户主动中断AI回复
     stop: () => {
-      // 中止前同步收尾当前流式消息
-      finalizeStreamingMessage();
+      // 中止前同步收尾当前流式消息（keepEmptyStopped：用户主动停止，空产出也留「已停止」痕迹）
+      finalizeStreamingMessage({ keepEmptyStopped: true });
       // 取消网络请求
       if (abortController) {
         abortController.abort();

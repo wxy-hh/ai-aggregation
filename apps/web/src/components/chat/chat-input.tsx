@@ -54,6 +54,11 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 文件最大大小：5MB
 const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
 /** 输入框自动增高上限（px） */
 const TEXTAREA_MAX_HEIGHT = 200;
+
+// 草稿字典（2026-10-15 评审 H5）：模块级共享，键为 draftKey（会话 id）。
+// 组件级 useRef 在单聊↔对比模式切换（ChatInput 卸载）时会丢失草稿，故上提至此；
+// 仅存内存（刷新即清，与旧行为一致），页面内同时只有一个输入坞，无并发问题
+const DRAFT_STORE = new Map<string, string>();
 // 主操作按钮（发送/停止）共享样式：蓝色渐变 CTA；
 // 移动端 44px（h-11 w-11）命中 DESIGN.md §8.1「中」档主操作尺寸；md+ 桌面保持 36px，并通过伪元素补热区到 44px
 const CTA_BUTTON_CLASS =
@@ -63,6 +68,9 @@ const CTA_BUTTON_CLASS =
 interface ChatInputProps {
   onSend: (message: string) => void | boolean | Promise<void | boolean | 'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息的回调函数（父组件传入）
   isLoading?: boolean; // 是否正在加载（可选，用于禁用输入）
+  // 草稿隔离键（2026-10-15 评审 H5）：通常传当前会话 id。
+  // 键变化时未发送草稿按旧键暂存、按新键还原，防止跨会话串扰
+  draftKey?: string | null;
   // 跨模态接力：外部草稿预填（仅写入输入框，不自动发送；id 变化才消费一次）
   externalDraft?: { id: string; text: string } | null;
   // 预填被消费后的回调（父组件清除活动草稿）
@@ -85,6 +93,7 @@ interface ChatInputProps {
 export function ChatInput({
   onSend,
   isLoading,
+  draftKey,
   externalDraft,
   onExternalDraftConsumed,
   externalAttachmentUrl,
@@ -95,6 +104,11 @@ export function ChatInput({
 
   // 输入框的文本内容
   const [input, setInput] = useState('');
+
+  // 草稿隔离（2026-10-15 评审 H5）：以 draftKey（会话 id）为键读写模块级草稿字典。
+  // 切换会话时保存旧键草稿、还原新键草稿；切模式组件卸载也不丢（字典在组件外）
+  const draftsRef = useRef(DRAFT_STORE);
+  const draftKeyRef = useRef<string | null>(null);
 
   // 是否正在使用输入法（如中文拼音输入）
   // 输入法激活时，按 Enter 不应该发送消息，而是确认输入法的选择
@@ -117,6 +131,21 @@ export function ChatInput({
   // 引用多行文本输入框元素
   // 用于：1. 自动调整高度  2. 发送后重置高度
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 统一写输入框：同步 state、当前会话草稿字典与输入框高度（草稿隔离 H5）
+  const applyInput = useCallback((text: string) => {
+    setInput(text);
+    const key = draftKeyRef.current ?? '__none__';
+    if (text) {
+      draftsRef.current.set(key, text);
+    } else {
+      draftsRef.current.delete(key);
+    }
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+    }
+  }, []);
 
   // 引用隐藏的图片文件选择器
   // 用户点击"上传图片"按钮时，触发这个隐藏的 input 元素
@@ -313,13 +342,8 @@ export function ChatInput({
     // 暂存草稿，以防发送失败时丢失（ADR-0012 兜底保护）
     const savedDraft = textToSend;
 
-    // 清空输入框
-    setInput('');
-
-    // 重置输入框高度为初始高度
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    // 清空输入框（applyInput 同步草稿字典与高度）
+    applyInput('');
 
     // 重置芯片意图与 dismiss 状态
     setDetectedIntent(null);
@@ -339,38 +363,22 @@ export function ChatInput({
       const result = await onSend(textToSend);
       // 若 onSend 返回 false（例如网络失败、BillingError 额度不足等），恢复草稿到输入框
       if (result === false) {
-        setInput(savedDraft);
-        if (textareaRef.current) {
-          textareaRef.current.style.height = 'auto';
-          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
-        }
+        applyInput(savedDraft);
       }
     } catch {
       // 异常情况下同样恢复草稿
-      setInput(savedDraft);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
-      }
+      applyInput(savedDraft);
     }
   };
 
   // ============ 输入框内容变化处理 ============
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextVal = e.target.value;
-    // 更新输入内容
-    setInput(nextVal);
+    // 更新输入内容（applyInput 同步草稿字典与高度）
+    applyInput(nextVal);
 
     // 实时检测意图（不防抖）
     updateIntentDetection(nextVal);
-
-    // 自动调整输入框高度
-    // 1. 先重置为 auto，让浏览器计算实际需要的高度
-    e.target.style.height = 'auto';
-
-    // 2. 设置为内容的实际高度，但最大不超过 120px
-    //    scrollHeight 是元素内容的实际高度（包括滚动区域）
-    e.target.style.height = `${Math.min(e.target.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
   };
 
   // ============ 剪贴板粘贴即时检测（双通道触发） ============
@@ -392,18 +400,31 @@ export function ChatInput({
   useEffect(() => {
     if (!externalDraft) return;
     const el = textareaRef.current;
-    setInput(externalDraft.text);
+    // applyInput 同步草稿字典与高度，避免预填后高度不变
+    applyInput(externalDraft.text);
     updateIntentDetection(externalDraft.text);
-    // 触发与 handleInput 一致的高度重算，避免预填后高度不变
     if (el) {
-      el.style.height = 'auto';
-      el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
       el.focus();
     }
     onExternalDraftConsumed?.(externalDraft.id);
     // 仅在草稿 id 变化时消费一次
 
-  }, [externalDraft?.id, updateIntentDetection, onExternalDraftConsumed]);
+  }, [externalDraft?.id, updateIntentDetection, onExternalDraftConsumed, applyInput]);
+
+  // ============ 草稿隔离：会话切换时保存/还原未发送草稿（2026-10-15 评审 H5） ============
+  // 草稿内容已随输入实时写入 draftsRef（见 applyInput），此 effect 只负责换键时的还原与复位
+  useEffect(() => {
+    const key = draftKey ?? '__none__';
+    const prevKey = draftKeyRef.current;
+    if (prevKey === key) return;
+    draftKeyRef.current = key;
+    applyInput(draftsRef.current.get(key) ?? '');
+    // 意图芯片是草稿级状态，随会话切换复位
+    setDetectedIntent(null);
+    setIsDraftDismissed(false);
+    lastImpressionKeyRef.current = null;
+    lastIntentDraftRef.current = '';
+  }, [draftKey, applyInput]);
 
   // ============ 跨模态接力：外部图片附件预填 ============
   // 图像生成页接力到对话时携带的 snapshotMediaUrl（DataURL）作为图片附件直接显示
@@ -1213,7 +1234,7 @@ export function ChatInput({
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           placeholder={attachment ? '补充说明…' : '输入消息…'}
-          title="Enter 发送，Shift + Enter 换行"
+          title="按 ↵ 发送，Shift + ↵ 换行"
           className="min-h-[38px] max-h-[200px] w-full resize-none border-0 bg-transparent px-2.5 pt-1.5 pb-1 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
           disabled={isLoading}
         />
@@ -1282,7 +1303,7 @@ export function ChatInput({
       <p className="mt-1.5 px-1 text-center text-[10px] leading-tight text-slate-400/75 dark:text-slate-500/80">
         <span className="hidden sm:inline">
           {isLoading ? 'AI 正在回复… · ' : ''}
-          Enter 发送 · Shift+Enter 换行 ·{' '}
+          ↵ 发送 · Shift+↵ 换行 ·{' '}
         </span>
         生成内容请自行核实
       </p>
