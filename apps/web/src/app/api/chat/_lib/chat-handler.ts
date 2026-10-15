@@ -10,16 +10,49 @@ import type { Message as ChatMessage } from '@/stores/chat-store';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { getRateLimiter } from '@repo/redis';
+import { logger } from '@repo/logger';
 import { BillingError, billingErrorResponse } from '@/lib/billing/billing-errors';
 import { getBillingRequestId } from '@/lib/billing/request-id';
 import { QuotaSession } from '@/lib/billing/quota-session';
 import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
-import { ProviderClientError, type ChatProviderAdapter } from './types';
+import { ProviderClientError, type ChatProviderAdapter, type ChatStreamFinish } from './types';
+import { getAvailableQuota } from '@/lib/billing/quota-service';
+import { estimateTextTokens, getCapabilityPack } from '@repo/shared';
+import {
+  AGENT_MIN_STEPS,
+  AGENT_MODEL,
+  AGENT_PROVIDER,
+  AGENT_SUMMARY_OUTPUT_LIMIT,
+  fullAgentStepBudget,
+  resolveAgentStepBudget,
+  type AgentStepBudget,
+} from './agent/agent-config';
+import { prisma, type UserWebhookTool } from '@repo/db';
+import {
+  detectChatSensitiveTopic,
+  buildChatBlockedText,
+  createBlockedStream,
+} from './chat-safety';
+import { normalizeUsage } from '@/lib/ai-usage';
+import { resolveChatStreamUsage } from './chat-usage';
+import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
+import { runAgent } from './agent/agent-runner';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
   getAdapter: (provider: ProviderName) => ChatProviderAdapter;
+  /**
+   * agent 整请求运行时间预算（毫秒）的注入点：默认 AGENT_RUN_TIME_BUDGET_MS（240s）。
+   * 测试用缩短预算验证超时降级路径，不打真实时钟（spec Testing Decisions 4）。
+   */
+  agentRunTimeBudgetMs?: number;
+  /**
+   * 获取用户自定义已启用 Webhook 工具列表的可选注入点（测试替身 / 自定义数据源）。
+   * 路由层不再亲自查询，仅透传给 AgentRuntimeContext；缺省时由运行时上下文
+   * 默认从数据库查询（where: { userId, enabled: true }，spec §4.6）。
+   */
+  getUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
 }
 
 export function createChatHandler(config: ChatHandlerConfig) {
@@ -39,67 +72,244 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       // 3. 解析请求
       const body = await req.json();
-      const { messages, model, provider = 'xunfei', reservationId } = body as {
+      const {
+        messages,
+        model,
+        provider = 'xunfei',
+        reservationId,
+        agent: rawAgent,
+        capabilityPack: rawCapabilityPack,
+        disabledToolKeys: rawDisabledToolKeys,
+        thinking: rawThinking,
+      } = body as {
         messages: ChatMessage[];
         model?: string;
         provider?: ProviderName;
         reservationId?: string;
+        agent?: unknown;
+        capabilityPack?: unknown;
+        disabledToolKeys?: unknown;
+        thinking?: unknown;
       };
+      // 深度思考模式开关（ADR-0016 / 工单 03）
+      const thinking = rawThinking === true;
+      // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
+      // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
+      const agent = rawAgent === true;
+      // 场景能力包（ADR-0014 / 工单 01）：仅在 agent 模式且为合法字符串时放行
+      const capabilityPack =
+        agent && typeof rawCapabilityPack === 'string' && rawCapabilityPack.trim()
+          ? rawCapabilityPack.trim()
+          : undefined;
+      const activeCapabilityPack = agent ? getCapabilityPack(capabilityPack) : undefined;
+      // 会话级临时停用工具列表（ADR-0014 / 工单 02）：仅接收字符串数组
+      const disabledToolKeys =
+        agent && Array.isArray(rawDisabledToolKeys)
+          ? rawDisabledToolKeys.filter((k): k is string => typeof k === 'string' && Boolean(k.trim()))
+          : undefined;
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
       }
 
+      // 合规前置拦截：命中即返回安全话术，不预留额度、不调模型、不计费
+      const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+      const topic = lastUserMessage ? detectChatSensitiveTopic(lastUserMessage.content) : null;
+      if (topic) {
+        console.warn('[chat] 输入命中合规拦截', { errorId, userId: user.id, topic });
+        return createSseResponse(createBlockedStream(buildChatBlockedText(topic)));
+      }
+
       const requestId = getBillingRequestId(req, body as Record<string, unknown>);
-      const modelName = model || getDefaultModel(provider);
+      // agent 模式：服务端强制 provider/model（spec §5.2 静默覆盖，不报错）
+      const effectiveProvider: ProviderName = agent ? AGENT_PROVIDER : provider;
+      const modelName = agent ? AGENT_MODEL : model || getDefaultModel(effectiveProvider);
       const messagesCount = messages.length;
       const attachmentCount = messages.reduce(
         (count, m) => count + (m.attachments?.length ?? 0),
         0
       );
 
-      console.log('[chat] 请求参数:', { provider, model: modelName, messagesCount });
+      console.log('[chat] 请求参数:', {
+        provider: effectiveProvider,
+        model: modelName,
+        messagesCount,
+        agent,
+      });
 
       // 4. 配额管理：QuotaSession 统一 reserve → finalize（评审 C1 唯一决策表）
+      // agent 模式：计算可负担步数，按实际步数预留；不足下限拒绝；预检失败兜底满配
+      // （步数 ↔ token 的换算唯一出处是 agent-config 的 resolveAgentStepBudget）
+      let agentBudget: AgentStepBudget | null = null;
+      // agent 运行时上下文：工具装配与调次统计全部内聚在运行时内部（Candidate 04 / ADR-0011），
+      // 路由层只负责创建它并把 userId 交给它
+      let agentRuntime: AgentRuntimeContext | null = null;
+      if (agent) {
+        let affordable;
+        try {
+          affordable = resolveAgentStepBudget(
+            await getAvailableQuota(user.id),
+            estimateTextTokens(messages),
+            activeCapabilityPack?.maxSteps
+          );
+        } catch (error) {
+          console.warn('[chat] 余额预检异常，按满配步数尝试预留', {
+            errorId,
+            userId: user.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          affordable = null;
+        }
+
+        if (affordable && affordable.steps < AGENT_MIN_STEPS) {
+          throw new BillingError('QUOTA_INSUFFICIENT', '当前额度不足以处理本次对话', {
+            requestId,
+          });
+        }
+        agentBudget = affordable ?? fullAgentStepBudget(activeCapabilityPack?.maxSteps);
+
+        // 创建运行时上下文：按需加载用户 Webhook 工具并依据能力包白名单严格收敛内置工具
+        agentRuntime = await createAgentRuntimeContext({
+          userId: user.id,
+          errorId,
+          loadUserTools: config.getUserTools,
+          capabilityPack: activeCapabilityPack?.key,
+          disabledToolKeys,
+        });
+      }
+
       const reservedSession = await QuotaSession.reserve({
         userId: user.id,
         requestId,
-        feature: 'chat',
-        provider,
+        feature: agent ? 'chat-agent' : 'chat',
+        provider: effectiveProvider,
         model: modelName,
         messages,
-        metadata: { messagesCount, attachmentCount },
+        ...(agentBudget ? { maxOutputTokens: agentBudget.reserveOutputLimit } : {}),
+        metadata: { messagesCount, attachmentCount, ...(agent ? { agent: true } : {}) },
         reservationId,
       }, user.role);
       session = reservedSession;
 
-      // 5. 委派给适配器：adapter 只产流，结算物料经 onFinish 回传给 handler
-      const adapter = config.getAdapter(provider);
-      const stream = await adapter.stream({
-        userId: user.id,
-        provider,
-        model: modelName,
-        messages,
-        outputLimit: reservedSession.outputLimit,
-        signal: req.signal,
-        errorId,
-        onFinish: (finish) => reservedSession.finalize(finish.outcome, {
+      // 5. 完成态回调：输出合规审计 + 统一结算（适配器路径与 agent 编排共用同一份结算逻辑）
+      const onFinish = async (finish: ChatStreamFinish) => {
+        const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
+        if (outputTopic) {
+          console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
+        }
+        const finalizeResult = await reservedSession.finalize(finish.outcome, {
           requestId,
           action: 'chat-stream',
           endpoint: '/api/chat',
           usage: finish.usage,
           outputText: finish.outputText,
           reason: finish.reason,
-          provider,
+          provider: effectiveProvider,
           model: modelName,
           userId: user.id,
-          feature: 'chat',
-          metadata: { errorId, messagesCount, attachmentCount },
-        }),
-      });
+          feature: agent ? 'chat-agent' : 'chat',
+          metadata: {
+            errorId,
+            messagesCount,
+            attachmentCount,
+            ...(agent
+              ? {
+                  agent: true,
+                  // 观测计数由运行时上下文经 finish 统一交付（ADR-0011），路由层不再触碰调次闭包
+                  webhookCalls: finish.webhookCalls ?? 0,
+                  searchCalls: finish.searchCalls ?? 0,
+                  ...(activeCapabilityPack ? { capabilityPack: activeCapabilityPack.key } : {}),
+                }
+              : {}),
+            // agent 模式静默覆盖留痕：当用户请求的提供商/模型与强制值不同时，记录被覆盖的原始值以备审计追溯
+            ...(agent && provider !== AGENT_PROVIDER ? { overriddenProvider: provider } : {}),
+            ...(agent && model && model !== AGENT_MODEL ? { overriddenModel: model } : {}),
+            ...(outputTopic ? { safetyFlag: outputTopic } : {}),
+          },
+        });
+
+        // P1 工单 02：若开启 Agent 模式，事务落盘 agent_runs 记录（ADR-0015）
+        if (agent) {
+          try {
+            const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+            const goalText = (lastUserMessage?.content || '').slice(0, 2000);
+            const norm = finish.usage ? normalizeUsage(finish.usage) : null;
+            const resolvedUsage = resolveChatStreamUsage(norm, messages, finish.outputText);
+            const quotaCost = finish.outcome === 'failed' ? 0 : (resolvedUsage.totalTokens ?? 0);
+
+            if (prisma?.agentRun?.create) {
+              await prisma.agentRun.create({
+                data: {
+                  userId: user.id,
+                  conversationId: null,
+                  messageId: null,
+                  goalText: goalText || '无目标文本',
+                  steps: finish.steps ?? 1,
+                  toolCalls: finish.toolCalls ? (finish.toolCalls as any) : [],
+                  artifactRefs: finish.artifactRefs ? (finish.artifactRefs as any) : [],
+                  capabilityPack: activeCapabilityPack?.key || null,
+                  outcome: finish.outcome,
+                  quotaCost,
+                  durationMs: finish.durationMs ?? 0,
+                },
+              });
+            }
+          } catch (dbError) {
+            console.warn('[chat] agent_runs 记录落盘失败 (容错不阻断):', dbError);
+          }
+        }
+
+        return finalizeResult;
+      };
+
+      // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）
+      let stream: ReadableStream<Uint8Array>;
+      if (agentBudget && agentRuntime) {
+        stream = runAgent({
+          userId: user.id,
+          provider: effectiveProvider,
+          model: modelName,
+          messages,
+          // 单步上限 = 预留总量 / 实际步数，保证各步之和不超过预留
+          stepOutputLimit: Math.max(
+            1,
+            Math.floor(reservedSession.outputLimit / agentBudget.steps)
+          ),
+          // 收尾步上限：在总预留限额与模型单次最大输出（8192）之间取合规值，确保长文研报不被截断
+          summaryOutputLimit: Math.min(
+            AGENT_SUMMARY_OUTPUT_LIMIT,
+            Math.max(
+              Math.floor(reservedSession.outputLimit / agentBudget.steps),
+              reservedSession.outputLimit
+            )
+          ),
+          maxSteps: agentBudget.steps,
+          runTimeBudgetMs: config.agentRunTimeBudgetMs,
+          signal: req.signal,
+          errorId,
+          runtime: agentRuntime,
+          capabilityPack: activeCapabilityPack?.key,
+          disabledToolKeys,
+          thinking,
+          onFinish,
+        });
+      } else {
+        const adapter = config.getAdapter(effectiveProvider);
+        stream = await adapter.stream({
+          userId: user.id,
+          provider: effectiveProvider,
+          model: modelName,
+          messages,
+          outputLimit: reservedSession.outputLimit,
+          signal: req.signal,
+          errorId,
+          thinking,
+          onFinish,
+        });
+      }
 
       console.log('[chat] 流开始', {
-        userId: user.id, provider, model: modelName,
+        userId: user.id, provider: effectiveProvider, model: modelName, agent,
         duration: `${Date.now() - startTime}ms`,
       });
 
@@ -142,8 +352,12 @@ async function checkRateLimit(userId: string, errorId: string): Promise<void> {
     }
   } catch (error) {
     if (error instanceof RateLimitError) throw error;
-    // 限流服务故障不阻断对话
-    console.error('[chat] 限流跳过:', error);
+    // 限流设施故障不阻断对话，但必须留痕（限流器内部按 fail-open 放行）
+    logger.warn('[chat] 限流检查异常，已放行请求', {
+      errorId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

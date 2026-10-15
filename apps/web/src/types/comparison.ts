@@ -5,11 +5,13 @@
  * comparison-store、conversations-store、比较 UI 组件、history 均从这里导入类型。
  */
 
+import type { ChatStreamUsage } from '@repo/shared';
+
 // 比较模式：单聊（现有）| 并行对比（新增）
 export type ComparisonMode = 'single' | 'compare';
 
 // AI 提供商：与 packages/providers 的 ProviderName 保持一致
-export type ProviderName = 'xunfei' | 'doubao';
+export type ProviderName = 'xunfei' | 'doubao' | 'deepseek';
 
 // 已选模型（比较模式下一个可对比的模型变体）
 export interface SelectedModel {
@@ -40,6 +42,7 @@ export interface ModelRun {
   content: string; // 本轮累计生成的回答正文
   error?: string; // 失败原因（含模型名与可操作下一步）
   truncationWarning?: string; // 回答被截断时的提示
+  usage?: ChatStreamUsage; // done 帧携带的 token 用量（仅正常完成后有值；停止/失败无数据）
   branchMessages: BranchMessage[]; // 该模型自己的多轮上下文（分支隔离核心）
 }
 
@@ -64,6 +67,7 @@ export interface ModelCatalogItem {
   providerLabel: string;
   model: string;
   label: string;
+  supportsReasoning?: boolean; // 是否支持真实推理流（reasoning-delta），缺省为 false
 }
 
 // 生成模型唯一键

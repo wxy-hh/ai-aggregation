@@ -20,6 +20,25 @@ export interface ProfileUser {
   avatar: string | null;
 }
 
+/** 绑定 / 更换邮箱：需先经 send-code（purpose=bind）拿到验证码 */
+export async function bindEmail(
+  email: string,
+  code: string
+): Promise<{ id: string; username: string; email: string | null; emailVerified: string | null }> {
+  const response = await authFetch('/api/profile/email', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({ error: '邮箱绑定失败' }));
+    throw new Error(payload.error || '邮箱绑定失败');
+  }
+
+  const result = await response.json();
+  return result.data.user;
+}
+
 export async function updateProfile(data: {
   username?: string;
   name?: string;

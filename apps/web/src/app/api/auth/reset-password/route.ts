@@ -3,9 +3,17 @@ import { prisma } from '@repo/db';
 import { hashPassword } from '@/lib/auth/password';
 import { resetPasswordSchema } from '@/schemas/auth.schema';
 import { ApiError, createSuccessResponse } from '@/lib/api/responses';
+import { AUTH_RATE_LIMITS, enforceAuthRateLimit } from '@/lib/auth/rate-limit';
+import { hashResetToken } from '@/lib/auth/jwt';
 
 export async function POST(req: NextRequest) {
   try {
+    // 先过 IP 级限流（fail-closed：防止重置令牌被暴力枚举）
+    const limited = await enforceAuthRateLimit(req, AUTH_RATE_LIMITS.resetPassword);
+    if (limited) {
+      return limited;
+    }
+
     const body = await req.json();
     const parsed = resetPasswordSchema.safeParse(body);
 
@@ -18,7 +26,8 @@ export async function POST(req: NextRequest) {
     const { token, newPassword } = parsed.data;
 
     const record = await prisma.refreshToken.findUnique({
-      where: { token: `reset:${token}` },
+      // 库中只存摘要，先对明文令牌算摘要再查
+      where: { token: hashResetToken(token) },
     });
 
     if (!record || record.expiresAt < new Date()) {
@@ -39,8 +48,7 @@ export async function POST(req: NextRequest) {
     return createSuccessResponse(null, '密码已重置，请使用新密码登录');
   } catch (error) {
     console.error('重置密码失败:', error);
-    return ApiError.internalError('重置密码失败', {
-      error: error instanceof Error ? error.message : '未知错误',
-    });
+    // 不向客户端透传底层异常细节，仅保留服务端日志
+    return ApiError.internalError('重置密码失败，请稍后重试');
   }
 }

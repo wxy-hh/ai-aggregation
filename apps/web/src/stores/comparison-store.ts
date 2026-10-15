@@ -11,7 +11,7 @@
  * - 持久化镜像：turns 同步到 conversations-store（localStorage），刷新可恢复
  *
  * 单一写入方约定：活动会话期间以本 store 的 turns 为权威；
- * conversations-store.turns 仅作持久化镜像，在流式完成/失败/停止时同步。
+ * conversations-store.turns 仅作持久化镜像，在流中 1s 节流落盘，并在流式完成/失败/停止时终局兜底同步。
  */
 
 import { create } from 'zustand';
@@ -36,6 +36,7 @@ import { authFetch } from '@/lib/api/client';
 import { useConversationsStore } from './conversations-store';
 import { useHistoryStore } from './history-store';
 import { createComparisonHistoryItem } from '@/lib/utils/history-helpers';
+import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import type { ChatHistoryItem } from '@/types/history';
 import type { DerivationMetadata } from '@repo/shared';
 
@@ -103,6 +104,66 @@ function clearContentFlush(turnId: string, modelKey: string) {
   contentFlushState.delete(key);
 }
 
+// 清洗上一页面生命周期残留的死状态：streaming/queued 的 controller 已随页面销毁，
+// 不清洗会显示永久「生成中/等待发送」且停止按钮空操作（stale 死卡）。
+// 内容保留，状态归为 stopped（语义：中断而非出错，UI 自带重试入口）。
+function sanitizeLoadedTurns(turns: ComparisonTurn[]): { turns: ComparisonTurn[]; cleaned: boolean } {
+  let cleaned = false;
+  const next = turns.map((turn) => {
+    let turnDirty = false;
+    const runs: ComparisonTurn['runs'] = {};
+    for (const [key, run] of Object.entries(turn.runs)) {
+      if (run.status === 'streaming' || run.status === 'queued') {
+        runs[key] = { ...run, status: 'stopped' };
+        turnDirty = true;
+      } else {
+        runs[key] = run;
+      }
+    }
+    if (turnDirty) {
+      cleaned = true;
+      return { ...turn, runs };
+    }
+    return turn;
+  });
+  return { turns: cleaned ? next : turns, cleaned };
+}
+
+// 流中落盘节流（全局共享）：N 模型并发任一 onChunk 触发检查，1s 内全店最多写一次
+let lastStreamPersistAt = 0;
+
+/** 重置流中落盘节流（供单元测试使用） */
+export function resetStreamPersistThrottle(): void {
+  lastStreamPersistAt = 0;
+}
+
+// 流中节流落盘：用在途最新内容（contentFlushState）patch store 旧帧后写镜像。
+// 渲染走 rAF 合帧（后台停帧不跑），落盘留在 onChunk 同步路径——切后台期间落的也是
+// 最新内容，刷新/强杀丢失窗口 ≤1s。stale streaming 由 loadComparison 清洗兜底（G1a）。
+function throttledStreamPersist() {
+  const now = Date.now();
+  if (now - lastStreamPersistAt < 1000) return;
+  lastStreamPersistAt = now;
+  const { activeComparisonId, turns } = useComparisonStore.getState();
+  if (!activeComparisonId) return;
+  // 用在途最新内容覆盖 store 旧帧（rAF 合帧未落 store / 后台停帧 content 停滞）
+  const patched = turns.map((turn) => {
+    let dirty = false;
+    const runs: ComparisonTurn['runs'] = {};
+    for (const [key, run] of Object.entries(turn.runs)) {
+      const entry = contentFlushState.get(`${turn.id}|${key}`);
+      if (entry && entry.content !== run.content) {
+        runs[key] = { ...run, content: entry.content };
+        dirty = true;
+      } else {
+        runs[key] = run;
+      }
+    }
+    return dirty ? { ...turn, runs } : turn;
+  });
+  useConversationsStore.getState().updateComparisonTurns(activeComparisonId, patched);
+}
+
 // 把 turns 镜像到 conversations-store（持久化）
 function syncTurnsToConversation() {
   const { activeComparisonId, turns } = useComparisonStore.getState();
@@ -148,6 +209,7 @@ async function runModel(
     completedAt: undefined,
     error: undefined,
     truncationWarning: undefined,
+    usage: undefined,
     content: '',
     branchMessages: appendToBranch
       ? [...run.branchMessages, { role: 'user', content: prompt }]
@@ -179,9 +241,15 @@ async function runModel(
         onChunk: (accumulatedText) => {
           accumulated = accumulatedText;
           scheduleContentFlush(turnId, modelKey, accumulatedText);
+          throttledStreamPersist(); // 流中节流落盘（全局 1s）：缩小刷新/切后台丢失窗口
         },
         onWarning: (warning) => {
           updateRun(turnId, modelKey, (r) => ({ ...r, truncationWarning: warning }));
+        },
+        onDone: (usage) => {
+          if (usage) {
+            updateRun(turnId, modelKey, (r) => ({ ...r, usage }));
+          }
         },
       }
     );
@@ -217,7 +285,7 @@ async function runModel(
     }
   } finally {
     abortControllers.delete(modelKey);
-    // 流式结束（完成/失败/停止）才持久化镜像；进行中内容不落盘
+    // 终局全量兜底落盘：流中虽有 1s 节流落盘，但终局（完成/失败/停止）仍需同步最终状态与使用量
     syncTurnsToConversation();
   }
 }
@@ -387,6 +455,7 @@ export const useComparisonStore = create<ComparisonState>()(
         );
 
         recordHistory(derivation);
+        void checkAndWarnLowBalance(convId);
         // 本轮已发出并记录（单模型失败局部化，不阻断整轮；REQ-016 语义：轮次发出即视为执行成功）
         return 'sent';
       },
@@ -462,6 +531,7 @@ export const useComparisonStore = create<ComparisonState>()(
         );
 
         recordHistory(derivation);
+        void checkAndWarnLowBalance(get().activeComparisonId);
         // 追问轮次发出并记录即视为执行成功（REQ-016）
         return 'sent';
       },
@@ -500,6 +570,7 @@ export const useComparisonStore = create<ComparisonState>()(
           true
         );
         recordHistory();
+        void checkAndWarnLowBalance(get().activeComparisonId);
       },
 
       setFocus: (turnId, slot, modelKey) => {
@@ -517,14 +588,19 @@ export const useComparisonStore = create<ComparisonState>()(
         // 终止进行中的请求
         for (const c of abortControllers.values()) c.abort();
         abortControllers.clear();
+        const { turns, cleaned } = sanitizeLoadedTurns(conv.turns ?? []);
         set({
           activeComparisonId: id,
-          turns: conv.turns ?? [],
+          turns,
           selectedModels: conv.selectedModels ?? get().selectedModels,
           mode: 'compare',
           input: '',
           error: null,
         });
+        // 有脏数据被清洗时立即写回镜像（见过即干净）；无脏数据不写盘
+        if (cleaned) {
+          syncTurnsToConversation();
+        }
       },
 
       startNewComparison: () => {

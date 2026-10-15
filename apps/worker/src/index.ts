@@ -3,6 +3,7 @@ import {
   markExpiredProcessingQuotaReservationsPending,
   reconcilePendingQuotas,
   releaseExpiredQuotaReservations,
+  releaseStaleBillingPendingReservations,
 } from '@repo/db';
 import { getRedisConnectionSummary } from '@repo/shared/server';
 import { WorkerHeartbeatStore, getRedisClient, shutdownRedisClient } from '@repo/redis';
@@ -11,6 +12,7 @@ import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';
 import { qimenBaseWorker } from './workers/qimen-base';
 import { qimenSectionWorker } from './workers/qimen-section';
+import { maintenanceWorker, registerMaintenanceSchedules } from './workers/maintenance';
 
 let isRunning = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -25,16 +27,27 @@ function getBillingReconcileIntervalMs(): number {
   return configured;
 }
 
-/** 定期释放未开始的预留，锁定执行超时的成本，并对已有真实 usage 的待补账记录执行重试。 */
+/** 定期释放未开始的预留，锁定执行超时的成本，重试有真实 usage 的待补账，并超时释放无可审计用量的待补账。 */
 async function reconcileBilling(): Promise<void> {
   try {
-    const [releasedReservations, processingReservations, pending] = await Promise.all([
+    const [releasedReservations, processingReservations, pending, staleReleased] = await Promise.all([
       releaseExpiredQuotaReservations(),
       markExpiredProcessingQuotaReservationsPending(),
       reconcilePendingQuotas(),
+      releaseStaleBillingPendingReservations(),
     ]);
-    if (releasedReservations > 0 || processingReservations > 0 || pending.settled > 0) {
-      logger.info('额度账本对账完成', { releasedReservations, processingReservations, pending });
+    if (
+      releasedReservations > 0 ||
+      processingReservations > 0 ||
+      pending.settled > 0 ||
+      staleReleased > 0
+    ) {
+      logger.info('额度账本对账完成', {
+        releasedReservations,
+        processingReservations,
+        pending,
+        staleReleased,
+      });
     }
     if (processingReservations > 0 || pending.pending > 0) {
       logger.warn('存在等待真实用量的额度记录，需要供应商回调或受保护对账接口完成补账', {
@@ -60,7 +73,14 @@ async function main() {
   });
   isRunning = true;
   const heartbeatStore = new WorkerHeartbeatStore(getRedisClient());
-  const workers = [sttWorker, pptWorker, imageWorker, qimenBaseWorker, qimenSectionWorker];
+  const workers = [
+    sttWorker,
+    pptWorker,
+    imageWorker,
+    qimenBaseWorker,
+    qimenSectionWorker,
+    maintenanceWorker,
+  ];
 
   const shutdown = async (exitCode = 0) => {
     if (isShuttingDown) {
@@ -109,6 +129,15 @@ async function main() {
     await Promise.all(workers.map((worker) => worker.waitUntilReady()));
 
     logger.info('所有 Workers 已启动');
+    try {
+      await registerMaintenanceSchedules();
+    } catch (error) {
+      // 定时清理属维护动作，注册失败只告警不拖垮 Worker；下次重启会重新 upsert 调度
+      logger.error(
+        '注册维护任务调度失败',
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
     await heartbeatStore.beat('apps-worker');
     heartbeatTimer = setInterval(() => {
       void heartbeatStore.beat('apps-worker');

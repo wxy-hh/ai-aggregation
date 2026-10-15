@@ -99,10 +99,52 @@ describe('DoubaoAdapter - 空流处理', () => {
     const stream = await adapter.stream(ctx);
     const output = await new Response(stream).text();
 
-    // 有文本：发送 text-delta + done 事件；完成态标记为 success 并携带累计文本
+    // 有文本：发送 text-delta + done 事件；完成态标记为 success 并携带累计文本，done 帧携带真实 usage
     expect(output).toContain('"type":"text-delta"');
     expect(output).toContain('"type":"done"');
+    expect(output).toContain('"usage":{"inputTokens":10,"outputTokens":2,"totalTokens":12,"estimated":false}');
     expect(finisher.calls[0].outcome).toBe('success');
     expect(finisher.calls[0].outputText).toBe('你好');
+  });
+
+  it('收到 response.done 但无 usage 时应该在 done 帧中携带估算 usage（estimated: true）', async () => {
+    const finisher = createMockOnFinish();
+    const adapter = new DoubaoAdapter('test-key', 'http://localhost:3999');
+
+    const encoder = new TextEncoder();
+    const streamWithoutUsage = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"response.created","response":{"id":"resp_123"}}\n\n'));
+        controller.enqueue(encoder.encode('data: {"type":"response.output_text.delta","delta":"你好世界"}\n\n'));
+        setTimeout(() => {
+          controller.enqueue(encoder.encode('data: {"type":"response.done","response":{"id":"resp_123"}}\n\n'));
+          controller.close();
+        }, 50);
+      }
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: streamWithoutUsage,
+    } as any);
+
+    const ctx = {
+      userId: 'test',
+      provider: 'doubao' as const,
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user' as const, content: '测试问题', createdAt: new Date(), sessionId: 's1' }],
+      outputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test',
+      onFinish: finisher.onFinish,
+    };
+
+    const stream = await adapter.stream(ctx);
+    const output = await new Response(stream).text();
+
+    expect(output).toContain('"type":"done"');
+    expect(output).toContain('"estimated":true');
+    expect(finisher.calls[0].outcome).toBe('success');
+    expect(finisher.calls[0].outputText).toBe('你好世界');
   });
 });

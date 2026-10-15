@@ -5,6 +5,7 @@ import { prisma } from '@repo/db';
 import {
   signAccessToken,
   generateRefreshToken,
+  hashRefreshToken,
   setRefreshTokenCookie,
   setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
@@ -16,6 +17,75 @@ import { buildRedirectUrl } from '@/lib/auth/origin';
 
 const CLIENT_REDIRECT = '/home';
 
+/**
+ * 构造跨窗口通信 HTML 响应：
+ * - PC 弹窗：检测到 window.opener 时通过 postMessage 通信并自动关闭小窗；
+ * - 移动端 / 兜底：无 window.opener 时直接重定向至目标页面。
+ */
+function renderAuthResultHtml({
+  req,
+  success,
+  errorCode,
+  redirectPath = CLIENT_REDIRECT,
+}: {
+  req: NextRequest;
+  success: boolean;
+  errorCode?: string;
+  redirectPath?: string;
+}): Response {
+  const payload = success
+    ? JSON.stringify({ type: 'QQ_AUTH_SUCCESS' })
+    : JSON.stringify({ type: 'QQ_AUTH_ERROR', code: errorCode || 'oauth_failed' });
+
+  const targetPath = success
+    ? redirectPath
+    : `/login?error=${encodeURIComponent(errorCode || 'oauth_failed')}`;
+  const fallbackUrl = buildRedirectUrl(req, targetPath);
+
+  const html = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>QQ 授权处理中</title>
+  </head>
+  <body>
+    <script>
+      (function() {
+        var payload = ${payload};
+        if (window.opener && window.opener !== window) {
+          try {
+            window.opener.postMessage(payload, window.location.origin);
+            window.close();
+            return;
+          } catch (e) {}
+        }
+        window.location.replace(${JSON.stringify(fallbackUrl)});
+      })();
+    </script>
+  </body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    },
+  });
+}
+
+/** 清除 state cookie */
+async function clearOAuthStateCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.set('oauth_state', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/auth/oauth',
+    maxAge: 0,
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
@@ -24,22 +94,17 @@ export async function GET(req: NextRequest) {
 
     const cookieState = req.cookies.get('oauth_state')?.value;
     if (!state || !cookieState || state !== cookieState) {
-      return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=oauth_state_mismatch'), req.url));
+      await clearOAuthStateCookie();
+      return renderAuthResultHtml({ req, success: false, errorCode: 'oauth_state_mismatch' });
     }
 
     if (!code) {
-      return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=no_code'), req.url));
+      await clearOAuthStateCookie();
+      return renderAuthResultHtml({ req, success: false, errorCode: 'no_code' });
     }
 
     // state 和 code 验证通过，清除 oauth_state cookie
-    const jar = await cookies();
-    jar.set('oauth_state', '', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/api/auth/oauth',
-      maxAge: 0,
-    });
+    await clearOAuthStateCookie();
 
     const tokenData = await getQQAccessToken(code);
     const openId = await getQQOpenId(tokenData.access_token);
@@ -57,14 +122,26 @@ export async function GET(req: NextRequest) {
 
     let user = oauthAccount?.user;
 
+    // 已绑定账号被停用时拒绝签发会话（与账密登录行为对齐）
+    if (user && user.status === 'disabled') {
+      return renderAuthResultHtml({ req, success: false, errorCode: 'account_disabled' });
+    }
+
     if (!oauthAccount) {
       const username = await generateOAuthUsername('qq', userInfo.nickname);
+      const rawAvatar =
+        userInfo.figureurl_qq_2 ||
+        userInfo.figureurl_qq_1 ||
+        userInfo.figureurl_2 ||
+        userInfo.figureurl_1 ||
+        null;
+      const avatar = rawAvatar ? rawAvatar.replace(/^http:\/\//, 'https://') : null;
 
       user = await prisma.user.create({
         data: {
           username,
           name: userInfo.nickname,
-          avatar: userInfo.figureurl_qq_2,
+          avatar,
           tokens: REGISTERED_FREE_TOKENS,
           quotaAccount: {
             create: {
@@ -99,16 +176,16 @@ export async function GET(req: NextRequest) {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 
     await prisma.refreshToken.create({
-      data: { userId: user!.id, token: refreshToken, expiresAt },
+      // 库中只存摘要，明文仅存在于 httpOnly cookie
+      data: { userId: user!.id, token: hashRefreshToken(refreshToken), expiresAt },
     });
 
-    const redirectUrl = buildRedirectUrl(req, CLIENT_REDIRECT);
     await setRefreshTokenCookie(refreshToken, expiresAt);
     await setAuthKindCookie('user', expiresAt);
 
-    return Response.redirect(new URL(redirectUrl, req.url));
+    return renderAuthResultHtml({ req, success: true, redirectPath: CLIENT_REDIRECT });
   } catch (error) {
     logger.error('QQ OAuth 回调失败', error instanceof Error ? error : undefined);
-    return Response.redirect(new URL(buildRedirectUrl(req, '/login?error=oauth_failed'), req.url));
+    return renderAuthResultHtml({ req, success: false, errorCode: 'oauth_failed' });
   }
 }

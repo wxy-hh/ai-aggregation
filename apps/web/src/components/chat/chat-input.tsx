@@ -8,10 +8,16 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button'; // 按钮组件
 import { Textarea } from '@/components/ui/textarea'; // 多行文本输入框组件
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // 弹出层组件（用于附件选择菜单）
+import { SessionToolsPanel } from './session-tools-panel';
 
 // ============ 导入状态管理 ============
 import { useChatStore, type Attachment } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { getCapabilityPack } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
+import { fetchAgentTools, type SanitizedAgentTool } from '@/lib/api/agent-tools';
+import { detectAgentIntent, type AgentIntentDetectionResult } from '@/lib/agent/agent-intent';
+import { trackEvent } from '@/lib/events/tracker';
 // useChatStore: 聊天状态管理 Store
 // Attachment: 附件类型定义（图片或文件）
 
@@ -19,12 +25,17 @@ import { authFetch } from '@/lib/api/client';
 import {
   Image,
   FileText,
+  Search,
   X,
   Loader2,
   AlertCircle,
   FileWarning,
   Paperclip,
   Send,
+  Square,
+  Wrench,
+  Globe,
+  Brain,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -42,11 +53,15 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 图片最大大小：10MB（10 * 102
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 文件最大大小：5MB
 const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
 /** 输入框自动增高上限（px） */
-const TEXTAREA_MAX_HEIGHT = 120;
+const TEXTAREA_MAX_HEIGHT = 200;
+// 主操作按钮（发送/停止）共享样式：蓝色渐变 CTA；
+// 移动端 44px（h-11 w-11）命中 DESIGN.md §8.1「中」档主操作尺寸；md+ 桌面保持 36px，并通过伪元素补热区到 44px
+const CTA_BUTTON_CLASS =
+  "relative mb-0.5 mr-0.5 h-11 w-11 md:h-9 md:w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] transition duration-200 hover:brightness-105 active:scale-[0.98] md:after:absolute md:after:-inset-1 md:after:content-['']";
 
 // ============ 组件属性类型定义 ============
 interface ChatInputProps {
-  onSend: (message: string) => void; // 发送消息的回调函数（父组件传入）
+  onSend: (message: string) => void | boolean | Promise<void | boolean | 'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息的回调函数（父组件传入）
   isLoading?: boolean; // 是否正在加载（可选，用于禁用输入）
   // 跨模态接力：外部草稿预填（仅写入输入框，不自动发送；id 变化才消费一次）
   externalDraft?: { id: string; text: string } | null;
@@ -87,6 +102,16 @@ export function ChatInput({
 
   // 附件选择弹窗的显示状态
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+  // ============ 智能意图升级芯片状态（ADR-0012 / 工单 04）============
+  // 当前检测命中的意图：{ signal: 'url' | 'keyword', keyword?: string } | null
+  const [detectedIntent, setDetectedIntent] = useState<AgentIntentDetectionResult | null>(null);
+
+  // 本条草稿级 dismiss 标记：true 表示当前草稿已被用户忽略，同一草稿继续编辑不再提示
+  const [isDraftDismissed, setIsDraftDismissed] = useState(false);
+
+  // 记录上次曝光去抖键（${signal}:${keyword || ''}），同一草稿同信号只曝光一次
+  const lastImpressionKeyRef = useRef<string | null>(null);
   // ============ DOM 元素引用 ============
 
   // 引用多行文本输入框元素
@@ -106,12 +131,143 @@ export function ChatInput({
   // provider: 当前使用的 AI 提供商（如 'xunfei'、'doubao'）
   // attachment: 当前附件对象（图片或文件）
   // setAttachment: 设置附件的方法
-  const { provider, attachment, setAttachment } = useChatStore();
+  const {
+    provider,
+    attachment,
+    setAttachment,
+    activeCapabilityPackKey,
+    setCapabilityPackKey,
+  } = useChatStore();
+  const stop = useChatStore((s) => s.stop);
+  const switchProvider = useChatStore((s) => s.switchProvider);
+
+  // 监听激活会话 ID（切会话消失）
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+
+  // 会话切换时重置芯片意图与 dismiss 状态
+  useEffect(() => {
+    setDetectedIntent(null);
+    setIsDraftDismissed(false);
+    lastImpressionKeyRef.current = null;
+  }, [activeConversationId]);
+
+  // ============ Agent 模式开关 ============
+  // agentModeEnabled：是否开启工具调用模式（settings-store，不跨会话记忆，默认每次进站为关）
+  // 开启后请求体带 agent 标志：服务端切到支持 function calling 的豆包模型、走工具编排、按 chat-agent 计费。
+  // 这里刻意不去改全局 provider/model —— agent 期间生效模型由服务端决定，头部选择器会置灰提示不生效。
+  const agentModeEnabled = useSettingsStore((s) => s.agentModeEnabled);
+  const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+  const thinkingModeEnabled = useSettingsStore((s) => s.thinkingModeEnabled);
+  const toggleThinkingMode = useSettingsStore((s) => s.toggleThinkingMode);
+
+  // 场景能力包（ADR-0014 / 工单 01）：当前激活的能力包配置
+  const activeCapabilityPack = agentModeEnabled
+    ? getCapabilityPack(activeCapabilityPackKey)
+    : undefined;
+
+  // 记录最近一次检测到意图时的完整草稿文本（用于 paste 即时触发场景下的兜底全文发送）
+  const lastIntentDraftRef = useRef('');
+
+  // 意图检测调度函数（双通道共用）
+  const updateIntentDetection = useCallback(
+    (text: string) => {
+      // 1. 如果草稿变空，重置 dismiss 标记和曝光去抖键，清空命中意图
+      if (!text.trim()) {
+        setIsDraftDismissed(false);
+        lastImpressionKeyRef.current = null;
+        setDetectedIntent(null);
+        lastIntentDraftRef.current = '';
+        return;
+      }
+
+      // 2. 纯函数检测意图
+      const intent = detectAgentIntent(text);
+      setDetectedIntent(intent);
+      if (intent) {
+        lastIntentDraftRef.current = text;
+      }
+
+      // 3. 曝光埋点去抖（未开启 agent 模式、未被 dismiss、命中了意图）
+      if (intent && !agentModeEnabled && !isDraftDismissed) {
+        const impressionKey = `${intent.signal}:${intent.keyword || ''}`;
+        if (lastImpressionKeyRef.current !== impressionKey) {
+          lastImpressionKeyRef.current = impressionKey;
+          trackEvent('agent_intent_chip.impression', {
+            signal: intent.signal,
+            ...(intent.keyword ? { keyword: intent.keyword } : {}),
+          });
+        }
+      }
+    },
+    [agentModeEnabled, isDraftDismissed]
+  );
+
+  // 点击芯片语义：开启 agent 模式，以当前草稿全文触发既有发送链路
+  const handleChipClick = () => {
+    const draftToSend = input.trim() ? input : lastIntentDraftRef.current;
+    if (!detectedIntent || !draftToSend.trim()) return;
+
+    trackEvent('agent_intent_chip.click', {
+      signal: detectedIntent.signal,
+      ...(detectedIntent.keyword ? { keyword: detectedIntent.keyword } : {}),
+    });
+
+    setAgentMode(true);
+    switchProvider('deepseek', 'deepseek-flash');
+    handleSend(draftToSend);
+    setDetectedIntent(null);
+  };
+
+  // 点击 X 关闭芯片：本条草稿级 dismiss
+  const handleChipDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (detectedIntent) {
+      trackEvent('agent_intent_chip.dismiss', {
+        signal: detectedIntent.signal,
+        ...(detectedIntent.keyword ? { keyword: detectedIntent.keyword } : {}),
+      });
+    }
+    setIsDraftDismissed(true);
+  };
+
+  // ============ Agent 自定义 Webhook 工具状态 ============
+  const [userTools, setUserTools] = useState<SanitizedAgentTool[]>([]);
+
+  // 仅当 agent 开关从关→开时懒加载一次用户自定义工具
+  useEffect(() => {
+    if (!agentModeEnabled) {
+      setUserTools([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTools() {
+      try {
+        const tools = await fetchAgentTools();
+        if (!cancelled) {
+          setUserTools(tools || []);
+        }
+      } catch {
+        // 请求失败（网络错误、401 未登录、限流等）静默降级为空数组，不打扰对话
+        if (!cancelled) {
+          setUserTools([]);
+        }
+      }
+    }
+
+    loadTools();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentModeEnabled]);
 
   // ============ 附件功能开关 ============
-  // 只有豆包（doubao）模型支持附件功能
-  // 其他模型（如讯飞星火）不支持，按钮会显示为禁用状态
-  const showAttachment = provider === 'doubao';
+  // 只有豆包（doubao）模型支持附件功能。
+  // agent 模式虽强制走豆包，但编排器暂不支持附件输入（会静默丢弃），
+  // 故 agent 模式下不显示附件入口，消除「能选图、传不进去」的不一致（二期顺手债 #4）。
+  const showAttachment = provider === 'doubao' && !agentModeEnabled;
 
   // ============ 键盘事件处理 ============
   // 处理用户按下键盘按键的事件
@@ -140,26 +296,22 @@ export function ChatInput({
   };
 
   // ============ 发送消息处理 ============
-  const handleSend = () => {
+  const handleSend = async (messageText?: unknown) => {
+    // 兼容可能传入的 MouseEvent，仅当为 string 时使用传入值，否则使用 input
+    const textToSend = typeof messageText === 'string' ? messageText : input;
+
     // 发送条件检查：
     // 1. 如果没有附件，必须有文本内容（去除空格后不为空）
     // 2. 如果有附件，可以没有文本内容
     // 3. 不能在加载状态下发送
-    if ((!input.trim() && !attachment) || isLoading) return;
+    if ((!textToSend.trim() && !attachment) || isLoading) return;
 
     // 如果有附件，必须在 ready（准备就绪）状态才能发送
     // 其他状态：uploading（上传中）、error（错误）都不能发送
     if (attachment && attachment.status !== 'ready') return;
 
-    // 调用父组件传入的发送函数
-    onSend(input);
-
-    // 发送后立即清理本地附件，避免被预填 effect 再次填回造成残留
-    // （接力图带 sourceId；同步清来源，不依赖异步发送结果）
-    if (attachment?.sourceId && onExternalAttachmentConsumed) {
-      onExternalAttachmentConsumed(attachment.sourceId);
-    }
-    setAttachment(null);
+    // 暂存草稿，以防发送失败时丢失（ADR-0012 兜底保护）
+    const savedDraft = textToSend;
 
     // 清空输入框
     setInput('');
@@ -168,20 +320,72 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
+
+    // 重置芯片意图与 dismiss 状态
+    setDetectedIntent(null);
+    setIsDraftDismissed(false);
+    lastImpressionKeyRef.current = null;
+    lastIntentDraftRef.current = '';
+
+    // 发送后立即清理本地附件，避免被预填 effect 再次填回造成残留
+    // （接力图带 sourceId；同步清来源，不依赖异步发送结果）
+    if (attachment?.sourceId && onExternalAttachmentConsumed) {
+      onExternalAttachmentConsumed(attachment.sourceId);
+    }
+    setAttachment(null);
+
+    // 调用父组件传入的发送函数
+    try {
+      const result = await onSend(textToSend);
+      // 若 onSend 返回 false（例如网络失败、BillingError 额度不足等），恢复草稿到输入框
+      if (result === false) {
+        setInput(savedDraft);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+        }
+      }
+    } catch {
+      // 异常情况下同样恢复草稿
+      setInput(savedDraft);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+      }
+    }
   };
 
   // ============ 输入框内容变化处理 ============
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const nextVal = e.target.value;
     // 更新输入内容
-    setInput(e.target.value);
+    setInput(nextVal);
+
+    // 实时检测意图（不防抖）
+    updateIntentDetection(nextVal);
 
     // 自动调整输入框高度
     // 1. 先重置为 auto，让浏览器计算实际需要的高度
     e.target.style.height = 'auto';
 
-    // 2. 设置为内容的实际高度，但最大不超过 200px
+    // 2. 设置为内容的实际高度，但最大不超过 120px
     //    scrollHeight 是元素内容的实际高度（包括滚动区域）
     e.target.style.height = `${Math.min(e.target.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+  };
+
+  // ============ 剪贴板粘贴即时检测（双通道触发） ============
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pastedText = e.clipboardData?.getData('text');
+    if (!pastedText) return;
+
+    // 即时预测粘贴后的文本内容
+    const target = e.currentTarget;
+    const start = target.selectionStart || 0;
+    const end = target.selectionEnd || 0;
+    const nextVal = input.slice(0, start) + pastedText + input.slice(end);
+
+    // 即时检测意图（贴 URL 是最强信号通道，立刻唤出芯片）
+    updateIntentDetection(nextVal);
   };
 
   // ============ 跨模态接力：外部草稿预填（仅写入，不自动发送） ============
@@ -189,15 +393,17 @@ export function ChatInput({
     if (!externalDraft) return;
     const el = textareaRef.current;
     setInput(externalDraft.text);
+    updateIntentDetection(externalDraft.text);
     // 触发与 handleInput 一致的高度重算，避免预填后高度不变
     if (el) {
       el.style.height = 'auto';
       el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+      el.focus();
     }
     onExternalDraftConsumed?.(externalDraft.id);
     // 仅在草稿 id 变化时消费一次
 
-  }, [externalDraft?.id]);
+  }, [externalDraft?.id, updateIntentDetection, onExternalDraftConsumed]);
 
   // ============ 跨模态接力：外部图片附件预填 ============
   // 图像生成页接力到对话时携带的 snapshotMediaUrl（DataURL）作为图片附件直接显示
@@ -772,6 +978,10 @@ export function ChatInput({
         </div>
       </PopoverContent>
     </Popover>
+  ) : agentModeEnabled ? (
+    // agent 模式下彻底隐藏附件入口而非置灰：置灰文案「当前模型不支持附件」在 agent 下
+    // 不成立（模型支持、是编排不支持），隐藏才与工单口径「不显示附件入口」一致
+    null
   ) : (
     <Button
       type="button"
@@ -784,6 +994,75 @@ export function ChatInput({
       <Paperclip className="h-4 w-4" />
     </Button>
   );
+
+  // Agent 模式开关：输入坞内常驻。
+  // 视觉 36px 与附件钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1 二级控件热区配方），
+  // 移动端拇指可达且不与发送钮争抢视觉重量。
+  const handleToggleAgentMode = () => {
+    const next = !agentModeEnabled;
+    setAgentMode(next);
+    if (next) {
+      switchProvider('deepseek', 'deepseek-flash');
+    }
+  };
+
+  const agentButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={handleToggleAgentMode}
+      aria-pressed={agentModeEnabled}
+      aria-label={agentModeEnabled ? '关闭 Agent 工具调用' : '开启 Agent 工具调用'}
+      title={
+        agentModeEnabled
+          ? 'Agent 模式已开启：可调用图像生成、网页抓取'
+          : '开启 Agent 模式：让 AI 在回答中调用工具'
+      }
+      className={cn(
+        "relative h-9 w-9 shrink-0 rounded-xl select-none after:absolute after:-inset-1 after:content-['']",
+        'transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95',
+        agentModeEnabled
+          ? 'border border-blue-400/30 bg-blue-500/10 text-blue-600 hover:bg-blue-500/15 dark:text-blue-400'
+          : 'text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300'
+      )}
+    >
+      <Wrench className="h-4 w-4" />
+    </Button>
+  );
+
+  // 深度思考模式开关（ADR-0016 / 工单 03）
+  // 视觉 36px 与 Agent/附件按钮同级；用伪元素补出 44px 命中区（DESIGN.md §8.1），
+  // 移动端拇指易触达，点亮时展示科技紫微光。
+  const thinkingButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      data-testid="thinking-mode-toggle"
+      onClick={toggleThinkingMode}
+      aria-pressed={thinkingModeEnabled}
+      aria-label={thinkingModeEnabled ? '关闭深度思考' : '开启深度思考'}
+      title={
+        thinkingModeEnabled
+          ? '深度思考已开启：模型将输出完整思维链推理过程'
+          : '开启深度思考：让模型进行深入推理（耗时与消耗稍高）'
+      }
+      className={cn(
+        "relative h-9 w-9 shrink-0 rounded-xl select-none after:absolute after:-inset-1 after:content-['']",
+        'transition-[color,background-color,transform] duration-fast ease-out-expo active:scale-95',
+        thinkingModeEnabled
+          ? 'border border-purple-400/30 bg-purple-500/10 text-purple-600 hover:bg-purple-500/15 dark:text-purple-400'
+          : 'text-slate-400 hover:bg-white/50 hover:text-slate-600 dark:hover:bg-white/5 dark:hover:text-slate-300'
+      )}
+    >
+      <Brain className="h-4 w-4" />
+    </Button>
+  );
+
+  // 芯片展示条件（ADR-0012 / 工单 04）：命中意图 且 agentMode 关 且 本草稿未 dismiss
+  const showIntentChip =
+    Boolean(detectedIntent) && !agentModeEnabled && !isDraftDismissed;
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -833,10 +1112,89 @@ export function ChatInput({
         </div>
       )}
 
-      {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，单容器无嵌套描边（DESIGN.md §8.2） */}
+      {/* 智能意图升级芯片（能力发现 L0 路径，ADR-0012）：不抢焦点、不挡输入区 */}
+      {showIntentChip && (
+        <div className="mb-2 flex items-center px-1 animate-in fade-in slide-in-from-bottom-2 duration-fast ease-out-expo">
+          <div
+            data-testid="agent-intent-chip"
+            onClick={handleChipClick}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleChipClick();
+              }
+            }}
+            className={cn(
+              'group inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-50/80 px-3 py-1.5 text-xs text-blue-600 shadow-sm backdrop-blur-md',
+              'transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-expo hover:bg-blue-100/90 active:scale-[0.98] cursor-pointer select-none',
+              'dark:border-blue-500/30 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900/50'
+            )}
+          >
+            <span className="flex items-center gap-1 font-medium">
+              <Globe className="h-3.5 w-3.5 shrink-0 text-blue-500 dark:text-blue-400" />
+              <span>联网查一下？</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleChipDismiss}
+              aria-label="关闭联网查询提示"
+              className="relative -mr-1 flex h-6 w-6 items-center justify-center rounded-full text-blue-400 hover:bg-blue-200/50 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-800/50 dark:hover:text-blue-100 after:absolute after:-inset-2.5 after:content-['']"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Agent 模式局部提示与工具感知状态条：不挤压输入坞布局、不遮挡发送按钮 */}
+      {agentModeEnabled && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              data-testid="agent-mode-notice"
+              className="flex items-center gap-1.5 text-[10px] sm:text-[11px] leading-tight text-blue-600 dark:text-blue-400"
+            >
+              <Wrench className="h-3 w-3 shrink-0" />
+              <span>Agent 模式 · 已切换至 DeepSeek Flash · 额度消耗更高</span>
+            </div>
+
+            {/* 场景能力包专属徽标（ADR-0014 / 工单 01） */}
+            {activeCapabilityPack && (
+              <div
+                data-testid="capability-pack-badge"
+                className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/30 bg-blue-50/90 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 shadow-sm backdrop-blur-md dark:border-blue-500/30 dark:bg-blue-950/50 dark:text-blue-300"
+              >
+                <span className="flex items-center gap-1">
+                  {activeCapabilityPack.key === 'deep-research' ? (
+                    <Search className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  ) : (
+                    <FileText className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  )}
+                  <span>{activeCapabilityPack.name}</span>
+                </span>
+                <span className="text-[10px] text-blue-500/80 dark:text-blue-400/80">
+                  ({activeCapabilityPack.maxSteps} 步上限)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCapabilityPackKey(null)}
+                  aria-label="取消选择能力包"
+                  className="ml-0.5 rounded-full p-0.5 text-blue-400 hover:bg-blue-200/50 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-800/50"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，上下分层复合架构（DESIGN.md §8.2） */}
       <div
         className={cn(
-          'flex items-end gap-1 rounded-2xl p-1.5',
+          'flex flex-col rounded-2xl p-2',
           'border border-white/60 bg-white/60 shadow-sm backdrop-blur-xl',
           'transition-[border-color,background-color,box-shadow] duration-fast ease-out-expo',
           'hover:border-slate-300/80 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-slate-700/80',
@@ -844,38 +1202,65 @@ export function ChatInput({
           'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
         )}
       >
-        {attachButton}
-
+        {/* 上层：多行文本输入区（独占 100% 宽度，自增高上限至 200px） */}
         <Textarea
           ref={textareaRef}
           rows={1}
           value={input}
           onChange={handleInput}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           placeholder={attachment ? '补充说明…' : '输入消息…'}
           title="Enter 发送，Shift + Enter 换行"
-          className="min-h-[36px] max-h-[120px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
+          className="min-h-[38px] max-h-[200px] w-full resize-none border-0 bg-transparent px-2.5 pt-1.5 pb-1 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
           disabled={isLoading}
         />
 
-        <Button
-          type="button"
-          onClick={handleSend}
-          disabled={
-            (!input.trim() && !attachment) || isLoading || attachment?.status === 'uploading'
-          }
-          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
-          size="icon"
-          aria-label={isLoading ? '发送中' : '发送'}
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
+        {/* 下层：工具栏与主操作底栏（固定吸附在底部两侧，不随输入增高上下漂移） */}
+        <div className="mt-1 flex items-center justify-between gap-2 px-1 pt-0.5">
+          {/* 左侧：场景模式与功能开关 */}
+          <div className="flex items-center gap-1">
+            {agentButton}
+
+            {thinkingButton}
+
+            {attachButton}
+
+            {/* Agent 模式可用工具入口（ADR-0014 / 工单 02） */}
+            {agentModeEnabled && <SessionToolsPanel userTools={userTools} />}
+          </div>
+
+          {/* 右侧：字数辅助与发送/停止主按钮 */}
+          <div className="flex items-center gap-2">
+            {input.length > 50 && (
+              <span className="text-[11px] tabular-nums text-slate-400/80 dark:text-slate-500/80 select-none">
+                {input.length}
+              </span>
+            )}
+
+            <Button
+              type="button"
+              onClick={isLoading ? stop : handleSend}
+              disabled={
+                isLoading
+                  ? false
+                  : (!input.trim() && !attachment) || attachment?.status === 'uploading'
+              }
+              className="relative h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700 after:absolute after:-inset-1 after:content-['']"
+              size="icon"
+              aria-label={isLoading ? '停止生成' : '发送'}
+              title={isLoading ? '停止生成' : '发送'}
+            >
+              {isLoading ? (
+                <Square className="h-3.5 w-3.5 fill-current" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <input

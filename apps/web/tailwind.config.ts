@@ -105,11 +105,17 @@ const config: Config = {
           "0%, 100%": { opacity: "0.32", transform: "scale(0.94)" },
           "50%": { opacity: "0.62", transform: "scale(1.06)" },
         },
+        /** 运行态 AgentTrace 状态条微动效（工单 P0a-02） */
+        "agent-pulse": {
+          "0%, 100%": { opacity: "1", transform: "scale(1)" },
+          "50%": { opacity: "0.4", transform: "scale(0.92)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "avatar-glow-breathe": "avatar-glow-breathe 3.4s ease-in-out infinite",
+        "agent-pulse": "agent-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite",
       },
       transitionTimingFunction: {
         'out-expo': 'cubic-bezier(0.23, 1, 0.32, 1)',

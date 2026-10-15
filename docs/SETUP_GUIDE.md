@@ -118,7 +118,6 @@ DEEPSEEK_API_KEY=""
 # 生成一个随机字符串（可以用下面的命令生成）
 # openssl rand -base64 32
 AUTH_SECRET="your-random-secret-string-change-this"
-NEXTAUTH_URL="http://localhost:3000"
 ```
 
 ### 2. 配置 Worker 服务
@@ -307,7 +306,6 @@ DEEPSEEK_API_KEY=""
 
 # 鉴权
 AUTH_SECRET="Kq8xN2vP9wR5tY7uI3oP1aS4dF6gH8jK"
-NEXTAUTH_URL="http://localhost:3000"
 ```
 
 ---

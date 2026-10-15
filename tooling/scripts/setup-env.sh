@@ -96,8 +96,9 @@ ZHIPU_API_KEY=""
 DEEPSEEK_API_KEY=""
 
 # ==================== 鉴权配置 ====================
+# 自研认证（JWT + bcrypt + 数据库 refresh token），不需要第三方认证框架的 URL 变量；
+# 本地访问地址由 tooling/scripts/dev-port.mjs 按实际端口注入 NEXT_PUBLIC_APP_URL
 AUTH_SECRET="${AUTH_SECRET}"
-NEXTAUTH_URL="http://localhost:3000"
 EOF
 
 echo "✅ 已创建 apps/web/.env.local"

@@ -8,7 +8,8 @@
  * 行为栏：复制、重试、停止。
  */
 
-import { memo, useMemo, useState, useCallback, useRef } from 'react';
+import React, { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import type { UIEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -22,6 +23,8 @@ import { RelayMenu } from '@/components/relay/relay-menu';
 import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import type { RelayReferenceItem } from '@repo/shared';
+import { formatUsageText } from '@/components/chat/message-item';
+import { isNearBottom } from '@/lib/utils/scroll';
 
 // 流式内容：纯文本 + 光标（不做 Markdown 解析，避免流式抖动）
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
@@ -35,32 +38,33 @@ const StreamingContent = memo(function StreamingContent({ content }: { content: 
 
 // 完成态 Markdown 渲染（复用 message-item 的渲染约定与 CodeBlock）
 const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+  const getText = (child: any): string => {
+    if (typeof child === 'string') return child;
+    if (Array.isArray(child)) return child.map(getText).join('');
+    if (child?.props?.children) return getText(child.props.children);
+    return '';
+  };
+
   const components = useMemo(
     () => ({
-      code({ inline, className, children, ...props }: any) {
-        const match = /language-(\w+)/.exec(className || '');
-        const getText = (child: any): string => {
-          if (typeof child === 'string') return child;
-          if (Array.isArray(child)) return child.map(getText).join('');
-          if (child?.props?.children) return getText(child.props.children);
-          return '';
-        };
-        const text = getText(children);
-        if (!inline && match) {
+      pre({ children }: any) {
+        // pre 标签专门包裹代码块（react-markdown v10 保证行内代码绝不走 pre）
+        if (React.isValidElement(children)) {
+          const codeProps: any = children.props || {};
+          const className = codeProps.className || '';
+          const match = /language-(\w+)/.exec(className);
+          const language = match ? match[1] : 'text';
+          const text = getText(codeProps.children);
           return (
-            <CodeBlock language={match[1]} className={className}>
+            <CodeBlock language={language} className={className}>
               {text.replace(/\n$/, '')}
             </CodeBlock>
           );
         }
-        // 如果在 pre 标签内但没有语言标记，使用 CodeBlock 组件
-        if (!inline) {
-          return (
-            <CodeBlock language="text" className={className}>
-              {text.replace(/\n$/, '')}
-            </CodeBlock>
-          );
-        }
+        return <pre>{children}</pre>;
+      },
+      code({ className, children, ...props }: any) {
+        // 行内代码（inline code）：渲染单行徽标样式，杜绝误染为独立多行代码块卡片
         return (
           <code
             className={cn(
@@ -69,15 +73,11 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
             )}
             {...props}
           >
-            {text}
+            {children}
           </code>
         );
       },
-      // 使用 pre 替代 p 作为代码块的父容器，避免 div 在 p 内的 HTML 规范问题
-      pre({ children }: any) {
-        return <>{children}</>;
-      },
-      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
+      // 使用 SafeParagraph 替代 p 作为代码块的父容器，避免 div 在 p 内的 HTML 规范问题
       p: SafeParagraph,
     }),
     []
@@ -188,6 +188,35 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
     },
   });
 
+  // 吸底三态（每列独立，ref 存储不触发重渲染）：初始即跟随——列初始 scrollTop=0
+  // 但内容将持续增长，必须视为跟随态，否则首条流式就不可见
+  const isAtBottomRef = useRef(true);
+  // 记录上一次状态，用于识别「进入流式」的边沿
+  const prevStatusRef = useRef(run.status);
+
+  // 内容区滚动：距底 <= 80px 视为跟随态，上滚即释放、回底即恢复
+  const handleContentScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    isAtBottomRef.current = isNearBottom(e.currentTarget);
+  }, []);
+
+  // 进入流式的边沿（新生成/重试/继续追问）：表达要看新输出的意图，强制恢复跟随并立即回底
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = run.status;
+    if (prev !== 'streaming' && run.status === 'streaming') {
+      isAtBottomRef.current = true;
+      const el = contentRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+    }
+  }, [run.status]);
+
+  // 跟随吸底：内容增长且处于跟随态时即时回底（对比列一律 auto，不用 smooth）
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || !isAtBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'auto' });
+  }, [run.content, run.status]);
+
   return (
     <section
       className={cn(
@@ -226,6 +255,7 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
       <div
         ref={contentRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar"
+        onScroll={handleContentScroll}
         onContextMenu={relay.onContextMenu}
         {...relay.longPressProps}
       >
@@ -243,6 +273,11 @@ export const FocusAnswerPane = memo(function FocusAnswerPane({
             {run.truncationWarning && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                 {run.truncationWarning}
+              </div>
+            )}
+            {run.usage && (
+              <div className="mt-2 text-xs tabular-nums text-day-muted dark:text-slate-400">
+                {formatUsageText(run.usage)}
               </div>
             )}
           </>

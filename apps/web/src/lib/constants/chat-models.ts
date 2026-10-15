@@ -11,6 +11,7 @@ export const MIN_COMPARE_MODELS = 2;
 export const MAX_COMPARE_MODELS = 4;
 
 // 全部可选模型变体：讯飞星火 3 个 + 豆包 2 个
+// supportsReasoning：豆包两项为推理模型（产出 reasoning-delta），讯飞三项缺省（无推理流）
 export const CHAT_MODEL_CATALOG: ModelCatalogItem[] = [
   { provider: 'xunfei', providerLabel: '讯飞星火', model: 'lite', label: 'Spark Lite（免费）' },
   { provider: 'xunfei', providerLabel: '讯飞星火', model: 'generalv3.5', label: 'Spark Max' },
@@ -20,12 +21,21 @@ export const CHAT_MODEL_CATALOG: ModelCatalogItem[] = [
     providerLabel: '豆包',
     model: 'doubao-seed-evolving',
     label: 'Doubao Evolving（最新模型）',
+    supportsReasoning: true,
   },
   {
     provider: 'doubao',
     providerLabel: '豆包',
     model: 'doubao-seed-2-0-pro-260215',
     label: 'Doubao Pro（专业级）',
+    supportsReasoning: true,
+  },
+  {
+    provider: 'deepseek',
+    providerLabel: 'DeepSeek',
+    model: 'deepseek-flash',
+    label: 'DeepSeek Flash',
+    supportsReasoning: true,
   },
 ];
 

@@ -1,10 +1,12 @@
 """
 用户反馈功能 E2E 测试
 """
+import os
 import time
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "http://localhost:3030"
+# dev 端口可能自动漂移，可用 BASE_URL 环境变量指定实际地址
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:3030")
 
 
 def run_tests():

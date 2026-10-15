@@ -26,6 +26,33 @@ export interface ChatStreamFinish {
   outputText: string;
   /** 失败/取消原因（release 记录与日志用） */
   reason?: string;
+  /** agent 模式观测计数：服务端执行的联网搜索次数（providerExecuted，不计入自有工具上限；仅观测，不影响计费） */
+  searchCalls?: number;
+  /**
+   * agent 模式观测计数：本次请求用户 Webhook 工具实际派发次数。
+   * 由 AgentRuntimeContext 在流完成时统一产出（ADR-0011），随 finish 一次性交付结算；
+   * 路由层不再持有快照闭包 getter。仅观测，不影响计费。
+   */
+  webhookCalls?: number;
+  /** P1 工单 02：执行步数（ADR-0015） */
+  steps?: number;
+  /** P1 工单 02：工具调用流水（ADR-0015） */
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    argsSummary: string;
+    status: 'success' | 'failed';
+    summary: string;
+    durationMs?: number;
+  }>;
+  /** P1 工单 02：产物引用列表（ADR-0015） */
+  artifactRefs?: Array<{
+    id: string;
+    type: string;
+    title: string;
+  }>;
+  /** P1 工单 02：全生命周期执行总耗时（毫秒） */
+  durationMs?: number;
 }
 
 export interface ChatContext {
@@ -37,6 +64,8 @@ export interface ChatContext {
   outputLimit: number;
   signal: AbortSignal;
   errorId: string;
+  /** 是否开启深度思考模式（ADR-0016 / 工单 03） */
+  thinking?: boolean;
   /**
    * 流结束时回调：结算由 handler 侧的 QuotaSession 统一处理，
    * adapter 不持有任何结算句柄、不写结算逻辑。

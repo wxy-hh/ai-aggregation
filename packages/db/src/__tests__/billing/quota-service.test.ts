@@ -81,6 +81,91 @@ describe('统一额度结算', () => {
     );
   });
 
+  it('流终局无真实用量的 Token 估算计量，直接通过 settleQuota 结算而不进 billing_pending', async () => {
+    mocks.settleQuota.mockResolvedValue({
+      id: 'reservation_tokens_1',
+      userId: 'user_1',
+      requestId: 'chat-estimate-1',
+      status: 'settled',
+    });
+
+    await settleAiQuota({
+      reservationId: 'reservation_tokens_1',
+      requestId: 'chat-estimate-1',
+      feature: 'chat',
+      action: 'chat-stream',
+      measurement: {
+        meterType: 'tokens',
+        sourceUnits: 150,
+        quotaUnits: 150,
+        source: 'local_estimate',
+        inputUnits: 50,
+        outputUnits: 100,
+      },
+    });
+
+    expect(mocks.settleQuota).toHaveBeenCalledWith({
+      reservationId: 'reservation_tokens_1',
+      measurement: expect.objectContaining({
+        meterType: 'tokens',
+        sourceUnits: 150,
+        quotaUnits: 150,
+        source: 'local_estimate',
+      }),
+    });
+    expect(mocks.markQuotaBillingPending).not.toHaveBeenCalled();
+    expect(mocks.recordAiUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        billingStatus: 'settled',
+        billableUnits: 150,
+        usage: expect.objectContaining({
+          inputTokens: 50,
+          outputTokens: 100,
+          totalTokens: 150,
+        }),
+      })
+    );
+  });
+
+  it('当 settleQuota 结算落点为 billing_pending 时，仍会兜底触发 reconcilePendingQuota 补账', async () => {
+    mocks.settleQuota.mockResolvedValue({
+      id: 'reservation_pending_1',
+      userId: 'user_1',
+      requestId: 'chat-overdraw-1',
+      status: 'billing_pending',
+    });
+    mocks.reconcilePendingQuota.mockResolvedValue({
+      settled: true,
+      reservation: {
+        id: 'reservation_pending_1',
+        userId: 'user_1',
+        requestId: 'chat-overdraw-1',
+        status: 'settled',
+      },
+    });
+
+    await settleAiQuota({
+      reservationId: 'reservation_pending_1',
+      requestId: 'chat-overdraw-1',
+      feature: 'chat',
+      action: 'chat-stream',
+      measurement: {
+        meterType: 'tokens',
+        sourceUnits: 200,
+        quotaUnits: 200,
+        source: 'provider',
+      },
+    });
+
+    expect(mocks.settleQuota).toHaveBeenCalled();
+    expect(mocks.reconcilePendingQuota).toHaveBeenCalledWith({
+      reservationId: 'reservation_pending_1',
+      actualUnits: 200,
+      meterType: 'tokens',
+    });
+    expect(mocks.markQuotaBillingPending).not.toHaveBeenCalled();
+  });
+
   it('文本或语音请求必须原子领取执行权后才能调用供应商', async () => {
     mocks.reserveQuota.mockResolvedValue({
       success: true,

@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>研发与真实浏览器真机测试闭环工作流实战教程</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Mermaid.js -->
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap');
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #1e293b;
+        background-color: #f8fafc;
+      }
+      .font-serif-title {
+        font-family: 'Noto Serif SC', serif;
+      }
+      .font-mono-code {
+        font-family: 'Fira Code', monospace;
+      }
+      .deep-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      }
+      .code-box {
+        background-color: #0f172a;
+        color: #e2e8f0;
+        border-radius: 0.5rem;
+      }
+      .quiz-option {
+        transition: all 0.2s ease;
+      }
+      .quiz-option:hover {
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
+      }
+      .quiz-option.correct {
+        background-color: #f0fdf4 !important;
+        border-color: #22c55e !important;
+        color: #15803d !important;
+      }
+      .quiz-option.wrong {
+        background-color: #fef2f2 !important;
+        border-color: #ef4444 !important;
+        color: #b91c1c !important;
+      }
+    </style>
+  </head>
+  <body class="selection:bg-blue-100 selection:text-blue-900 pb-24">
+    <!-- 顶部导航栏 -->
+    <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-6 py-3.5 mb-8">
+      <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <span class="px-2.5 py-0.5 text-xs font-bold rounded bg-blue-600 text-white tracking-wider">LESSON 0001</span>
+          <span class="text-sm font-semibold text-slate-800">AI-Aggregation 研发与测试闭环实战教学</span>
+        </div>
+        <div class="flex items-center space-x-4 text-xs font-medium text-slate-600">
+          <a href="../MISSION.md" class="hover:text-blue-600 transition-colors">教学使命 (Mission)</a>
+          <a href="../GLOSSARY.md" class="hover:text-blue-600 transition-colors">标准词汇表</a>
+          <a href="../RESOURCES.md" class="hover:text-blue-600 transition-colors">参考资料源</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <main class="max-w-4xl mx-auto px-6 space-y-12">
+      <!-- 课程标题头部 -->
+      <header class="space-y-4 border-b border-slate-200 pb-8">
+        <div class="inline-flex items-center space-x-2 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-semibold">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>高确定性工程质量守则 · 全员必修课</span>
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 font-serif-title">
+          研发与真实浏览器真机测试闭环工作流实战教程
+        </h1>
+        <p class="text-base text-slate-600 leading-relaxed">
+          告别“单测全绿线上白屏”、“需求模糊瞎写返工”。本课程将系统拆解如何结合规格契约（Spec）、测试驱动开发（TDD）与真实 Chromium 浏览器自动化验收，打造高可靠的工程交付闭环。
+        </p>
+        <div class="flex flex-wrap gap-4 pt-2 text-xs text-slate-500 font-mono-code">
+          <span>🎯 学习目标：掌握 7 大阶段执行与排障定界</span>
+          <span>⏱ 建议学习时长：15 分钟</span>
+          <span>📦 关联代码：AI-aggregation Monorepo</span>
+        </div>
+      </header>
+
+      <!-- 核心痛点与心智模型 -->
+      <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">1</span>
+          为什么必须建立这套工作流？
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-5 rounded-xl border border-red-200 bg-red-50/30 space-y-3">
+            <div class="text-sm font-bold text-red-700 flex items-center gap-2">
+              <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              传统 AI 辅助开发的致命陷阱
+            </div>
+            <ul class="text-xs text-slate-700 space-y-2 list-disc list-inside">
+              <li><strong>盲目直接写码</strong>：需求一句话，AI 改了 10 个文件后发现方向完全跑偏。</li>
+              <li><strong>单测假绿灯忽悠</strong>：纯内存 Node 虚拟机 mock 测通过，浏览器打开却白屏崩溃。</li>
+              <li><strong>环境故障乱改代码</strong>：上游大模型欠费 403，误以为自己代码写错而盲目重构。</li>
+              <li><strong>PR 缺乏证据</strong>：提 PR 时无从知晓是否真正在前台跑通，代码审查靠猜。</li>
+            </ul>
+          </div>
+
+          <div class="p-5 rounded-xl border border-emerald-200 bg-emerald-50/30 space-y-3">
+            <div class="text-sm font-bold text-emerald-800 flex items-center gap-2">
+              <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              闭环工作流的核心解法
+            </div>
+            <ul class="text-xs text-slate-700 space-y-2 list-disc list-inside">
+              <li><strong>未对齐不写码</strong>：强制先盘问需求并产出规格合同（Spec）与架构决策（ADR）。</li>
+              <li><strong>真实浏览器真机验收</strong>：核心链路必须用真实 Chromium 逐条冒烟截屏落盘。</li>
+              <li><strong>探活与三层探针</strong>：网络与服务先探活，独立脚本隔离环境瞬态与代码缺陷。</li>
+              <li><strong>完整证据链沉淀</strong>：截图证据自动关联 PR，可信度闭环交付。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 技能权限与分工澄清 -->
+      <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">2</span>
+          技能权限矩阵：命令到底由谁来触发？
+        </h2>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          许多新同学误以为“所有技能都要人手动敲”或“某些技能只有模型能用”。其实技能严格分为两类，分工非常明确：
+        </p>
+
+        <div class="deep-card rounded-xl p-6 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 开发者独占命令 -->
+            <div class="space-y-3 border-r-0 md:border-r border-slate-200 pr-0 md:pr-6">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500"></span>
+                <span class="text-sm font-bold text-slate-900">开发者独占命令（模型被禁调）</span>
+              </div>
+              <p class="text-xs text-slate-500">
+                配置了安全闸门，<strong>模型无法自主调用</strong>，必须由开发者在对话框显式敲入：
+              </p>
+              <div class="space-y-1.5 font-mono-code text-xs">
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>/grill-with-docs</strong> — 启动需求高压盘问
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>/to-spec</strong> — 锁定技术规格与契约
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>/implement</strong> — 授权开启 TDD 驱动编码
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>/grill-me</strong> — 轻量级逻辑盘问推演
+                </div>
+              </div>
+              <div class="text-xs text-amber-700 bg-amber-50 p-2.5 rounded border border-amber-200">
+                💡 <strong>为什么？</strong> 防止模型“自己提需求、自己写规格、自己通过”，产生失控的确认偏误。
+              </div>
+            </div>
+
+            <!-- 通用协同技能 -->
+            <div class="space-y-3">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                <span class="text-sm font-bold text-slate-900">通用协同技能（双向均可调用）</span>
+              </div>
+              <p class="text-xs text-slate-500">
+                <strong>模型可在流程中自主调用，同时开发者随时可以手动调用：</strong>
+              </p>
+              <div class="space-y-1.5 font-mono-code text-xs">
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>ego-browser</strong> — 驱动真实 Chromium 浏览器与截图
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>qa-test-planner</strong> — 规划端到端测试用例
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>diagnosing-bugs</strong> — 科学故障定位与隔离探针
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>tdd</strong> — 红绿循环切片单测驱动
+                </div>
+                <div class="p-2 bg-slate-50 border border-slate-200 rounded text-slate-800">
+                  <strong>code-review</strong> / <strong>pr</strong> / <strong>retro</strong>
+                </div>
+              </div>
+              <div class="text-xs text-blue-700 bg-blue-50 p-2.5 rounded border border-blue-200">
+                💡 <strong>提示：</strong> 日常开发想看页面随时敲 <code>/ego-browser</code>；想查 Bug 随时敲 <code>/diagnosing-bugs</code>。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 全景闭环七大阶段 -->
+      <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">3</span>
+          全景闭环流程与核心产物拆解
+        </h2>
+
+        <!-- Mermaid 全景流程图 -->
+        <div class="deep-card rounded-xl p-5 overflow-x-auto">
+          <pre class="mermaid text-xs">
+flowchart TD
+    S1["1. 需求盘问 (/grill-with-docs)"] -->|产出 ADR / 锁定边界| S2["2. 规格确立 (/to-spec)"]
+    S2 -->|生成 spec.md| Fork{双轨并行}
+
+    subgraph DevTrack [研发轨]
+        Fork --> S3A["3A. 工单拓扑拆解 (/to-tickets)"]
+        S3A -->|生成 issues/*.md| S4["4. 编码实现 (/implement + TDD)"]
+        S4 -->|单测全绿 / 契约锁定| Join[汇合点]
+    end
+
+    subgraph QATrack [测试轨]
+        Fork --> S3B["3B. 测试集规划 (/qa-test-planner)"]
+        S3B -->|生成 qa-plan.md| Join
+    end
+
+    Join --> S5["5. 真实浏览器真机验收 (ego-browser)"]
+    S5 -->|异常排查| Remediation["异常自愈回路 (diagnosing-bugs 隔离探针)"]
+    Remediation -->|修复后回归| S5
+    S5 -->|全 PASS / 截图落盘| S6["6. 双轴代码审查 (code-review)"]
+    S6 --> S7["7. 交付发布与复盘 (pr + /retro)"]
+          </pre>
+        </div>
+
+        <!-- 关键概念辨析卡片 -->
+        <div class="space-y-4">
+          <!-- 概念辨析 1：Spec vs PRD vs Plan -->
+          <div class="deep-card rounded-xl p-5 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">核心产物辨析 01</span>
+              <span class="text-xs text-slate-400 font-mono-code">/to-spec 产物</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">
+              技术规格（Spec）和 PRD 需求文档、开发计划（Plan）到底有什么区别？
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 text-slate-700 border-b border-slate-200">
+                    <th class="p-2.5 font-semibold">文档类型</th>
+                    <th class="p-2.5 font-semibold">回答的核心问题</th>
+                    <th class="p-2.5 font-semibold">主要读者</th>
+                    <th class="p-2.5 font-semibold">典型关注内容</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-slate-600">
+                  <tr>
+                    <td class="p-2.5 font-bold text-slate-800">需求文档 (PRD)</td>
+                    <td class="p-2.5">“做给谁看、要什么商业/业务价值？”</td>
+                    <td class="p-2.5">产品经理、UI/UX、业务方</td>
+                    <td class="p-2.5">业务流程图、原型草图、用户价值、ROI</td>
+                  </tr>
+                  <tr>
+                    <td class="p-2.5 font-bold text-slate-800">技术规格 (Spec)</td>
+                    <td class="p-2.5">“系统的物理接缝与接口契约合同是什么？”</td>
+                    <td class="p-2.5">开发者、测试架构师、AI Agent</td>
+                    <td class="p-2.5">导出函数签名、数据 Schema、异常状态机、测试接缝</td>
+                  </tr>
+                  <tr>
+                    <td class="p-2.5 font-bold text-slate-800">实现计划 (Plan)</td>
+                    <td class="p-2.5">“第一步改哪、第二步加啥？”</td>
+                    <td class="p-2.5">执行编码的具体人员</td>
+                    <td class="p-2.5">操作步骤便签，用完即弃</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 概念辨析 2：工单目录澄清 -->
+          <div class="deep-card rounded-xl p-5 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider">本地结构澄清 02</span>
+              <span class="text-xs text-slate-400 font-mono-code">/to-tickets 产物</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">
+              为什么技能叫 /to-tickets，本地却只有 issues 文件夹？
+            </h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              因为当前仓库托管在 Gitee（无 GitHub CLI 工具），根据仓库顶层规范（<code>docs/agents/issue-tracker.md</code>），项目建立了本地的 Markdown Issue Tracker。
+              所有实现工单一题一文件编号存放在：<br>
+              <code class="font-mono-code text-blue-600 font-bold">.scratch/&lt;feature-slug&gt;/issues/&lt;NN&gt;-&lt;slug&gt;.md</code>（例如 <code>01-agent-note-contract.md</code>）。<br>
+              <strong>本地只有 <code>issues/</code> 目录，没有 <code>tickets/</code> 目录</strong>，它们指代同一个工单体系。
+            </p>
+          </div>
+
+          <!-- 概念辨析 3：TDD 红灯真相 -->
+          <div class="deep-card rounded-xl p-5 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-purple-600 uppercase tracking-wider">测试原理辨析 03</span>
+              <span class="text-xs text-slate-400 font-mono-code">/implement + TDD</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">
+              TDD 中的“红灯”是故意写的反面教材或者错误例子吗？
+            </h3>
+            <div class="p-3 bg-purple-50/50 rounded-lg border border-purple-100 space-y-2 text-xs text-slate-700">
+              <p>
+                <strong>❌ 错误理解：</strong> 红灯测试是故意写错参数、或者故意写反逻辑去试探报错。
+              </p>
+              <p>
+                <strong>✅ 真正原理：</strong> <strong>红灯测试是一个 100% 正确、符合 Spec 规格、对未来功能提出合理预期的正面测试！</strong>
+              </p>
+              <p>
+                它之所以是“红灯（报错退出）”，仅仅是因为<strong>业务代码此时根本还没写</strong>（函数尚未定义或未实现）！先确认红灯，是为了证明这个测试<strong>具备真实的拦截能力</strong>，杜绝写出“代码写错也依然能过”的无效测试。随后编写最简代码让它变绿，再进行重构。
+              </p>
+            </div>
+          </div>
+
+          <!-- 概念辨析 4：双轴代码审查 -->
+          <div class="deep-card rounded-xl p-5 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-bold text-amber-600 uppercase tracking-wider">代码把关辨析 04</span>
+              <span class="text-xs text-slate-400 font-mono-code">code-review</span>
+            </div>
+            <h3 class="text-base font-bold text-slate-800">
+              “规范轴”是不是日常说的 Code Review？为什么还要“需求轴”？
+            </h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              <strong>完全正确！规范轴就是大家最熟悉的传统 Code Review</strong>（检查有无 <code>any</code> 破坏类型安全、有无内存泄漏、有无硬编码凭证、有无违反 DESIGN.md）。<br>
+              <strong>但单有规范轴存在巨大盲区</strong>：一段代码可以写得极其优雅、单测 100% 绿灯，但<strong>压根漏掉了 Spec 要求的异常降级，甚至夹带了私货</strong>！<br>
+              <strong>需求轴（Spec 轴）</strong> 专门拿代码对照 <code>spec.md</code>“对账”，确认业务承诺被精准兑现、没有私自扩范围。<strong>规范轴保底线，需求轴保方向</strong>。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 真实浏览器真机验收与踩坑治理 -->
+      <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">4</span>
+          真实浏览器真机验收：执行细节与防踩坑心法
+        </h2>
+
+        <div class="deep-card rounded-xl p-6 space-y-6">
+          <!-- 验收步骤流程 -->
+          <div class="space-y-3">
+            <h3 class="text-sm font-bold text-slate-900">执行全流程：从就绪到 PASS 回填</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                <span class="font-bold text-blue-600 block">Step 1：端口探活</span>
+                <span class="text-slate-500">curl 探活 3030 返回 200，未返回先启动 pnpm dev:web。</span>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                <span class="font-bold text-blue-600 block">Step 2：就绪锚点</span>
+                <span class="text-slate-500">等待输入框渲染可交互。严禁 networkidle 防 SSR 水合假死。</span>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                <span class="font-bold text-blue-600 block">Step 3：真机交互</span>
+                <span class="text-slate-500">按 qa-plan.md 逐条点击输入，抓取操作帧截图保存到 .scratch。</span>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                <span class="font-bold text-blue-600 block">Step 4：PASS 回填</span>
+                <span class="text-slate-500">在 qa-plan.md 的「## 执行记录」追加通过结论与截图名。</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 分流机制对比 -->
+          <div class="space-y-3 border-t border-slate-100 pt-5">
+            <h3 class="text-sm font-bold text-slate-900">
+              时间盒成本控制：什么时候用 ego-browser？什么时候用 Playwright？
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 text-slate-700 border-b border-slate-200">
+                    <th class="p-2.5 font-semibold">工具</th>
+                    <th class="p-2.5 font-semibold">运行机制</th>
+                    <th class="p-2.5 font-semibold">速度与成本</th>
+                    <th class="p-2.5 font-semibold">适用场景</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 text-slate-600">
+                  <tr>
+                    <td class="p-2.5 font-bold text-blue-600">ego-browser 交互验收</td>
+                    <td class="p-2.5">大模型逐帧观察截图、推断交互、模拟操作</td>
+                    <td class="p-2.5">1~3分钟/条，<strong>消耗大模型多模态 Token</strong></td>
+                    <td class="p-2.5 font-medium text-slate-900"><strong>本次新改动的核心链路首次验收</strong>、人工接管登录、抓取 PR 截图证据</td>
+                  </tr>
+                  <tr>
+                    <td class="p-2.5 font-bold text-emerald-600">Playwright 脚本 (test:e2e)</td>
+                    <td class="p-2.5">Node.js 进程极速执行预置确定性测试脚本</td>
+                    <td class="p-2.5"><strong>秒级完成</strong>，<strong>0 Token 消耗</strong></td>
+                    <td class="p-2.5 font-medium text-slate-900"><strong>全站历史存量功能的防退化回归</strong>、CI 流水线常规把关</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-xs text-slate-500">
+              📌 <strong>时间盒纪律</strong>：单次 <code>ego-browser</code> 验收用例严格控制在 <strong>3~5 条 P0 冒烟</strong> 内，时间盒上限 <strong>15 分钟</strong>。超时立即停下交互，改用隔离探针排障。
+            </p>
+          </div>
+
+          <!-- 三层隔离探针心法 -->
+          <div class="space-y-3 border-t border-slate-100 pt-5">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+              排障心法：遇到上游报错时的“三层隔离探针链”
+            </h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              在浏览器中遇到大模型上游返回错误（如 <code>No output generated</code>）时，<strong>切忌直接删改本地业务代码</strong>！先建立临时脚本 <code>probe.mts</code> 逐层排查：
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono-code">
+              <div class="p-3 bg-slate-900 text-slate-200 rounded-lg space-y-1">
+                <span class="text-amber-400 font-bold block">一层：裸 curl 直连</span>
+                <span class="text-slate-400">直连官方域名，排查欠费 403 或本地代理阻断。</span>
+              </div>
+              <div class="p-3 bg-slate-900 text-slate-200 rounded-lg space-y-1">
+                <span class="text-amber-400 font-bold block">二层：极简官方 SDK</span>
+                <span class="text-slate-400">调用官方最简单测，排查 API Key 凭证有效性。</span>
+              </div>
+              <div class="p-3 bg-slate-900 text-slate-200 rounded-lg space-y-1">
+                <span class="text-amber-400 font-bold block">三层：本地适配器</span>
+                <span class="text-slate-400">前两层皆通，方可接入本地 Adapter 定位代码逻辑。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 跨会话无缝交接提示词模板 -->
+      <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">5</span>
+          跨会话无缝交接契约：新会话提示词模板
+        </h2>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          开新会话接着做任务时，切忌只说“接着做吧”。套用以下标准话术，模型可瞬间读取磁盘契约恢复上下文：
+        </p>
+
+        <div class="space-y-3 text-xs font-mono-code">
+          <div class="deep-card rounded-xl p-4 space-y-2">
+            <span class="text-xs font-bold text-blue-600 uppercase tracking-wider block">模板 A：从规格到编码实现</span>
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded text-slate-800 leading-relaxed select-all">
+              我刚才完成了 &lt;feature&gt; 的规格与测试规划。请先阅读 .scratch/&lt;feature&gt;/spec.md 和 .scratch/&lt;feature&gt;/qa-plan.md 熟悉契约，然后直接执行 /implement 开启 TDD 编码实现。
+            </div>
+          </div>
+
+          <div class="deep-card rounded-xl p-4 space-y-2">
+            <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block">模板 B：从编码到真机浏览器验收</span>
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded text-slate-800 leading-relaxed select-all">
+              &lt;feature&gt; 的业务代码和单测已完成。请阅读 .scratch/&lt;feature&gt;/qa-plan.md，执行阶段 5 真实浏览器验收。确保先通过 curl 探活 3030 端口，使用 ego-browser 逐条执行 P0 用例，将截图存入 .scratch/&lt;feature&gt;/screenshots/ 并回填执行记录。
+            </div>
+          </div>
+
+          <div class="deep-card rounded-xl p-4 space-y-2">
+            <span class="text-xs font-bold text-purple-600 uppercase tracking-wider block">模板 C：中途接力未完成的浏览器验收</span>
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded text-slate-800 leading-relaxed select-all">
+              请阅读 .scratch/&lt;feature&gt;/qa-plan.md，重点查看末尾的 ## 执行记录，接力执行尚未 PASS 的用例，遇到问题调用 diagnosing-bugs 进行自愈排查。
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 互动测验 Quiz -->
+      <section class="space-y-6 border-t border-slate-200 pt-8">
+        <h2 class="text-2xl font-bold text-slate-900 font-serif-title flex items-center gap-2">
+          <span class="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">6</span>
+          知识检验与互动测验 (Interactive Quiz)
+        </h2>
+        <p class="text-sm text-slate-600">
+          点击选项检验学习成果，系统将实时给出正误反馈与解析：
+        </p>
+
+        <div class="space-y-6">
+          <!-- 题目 1 -->
+          <div class="deep-card rounded-xl p-6 space-y-4" id="quiz-1">
+            <div class="text-sm font-bold text-slate-900">
+              1. [单选] 开发者在 Next.js 项目中进行浏览器验收，应该选择哪种页面加载等待策略？
+            </div>
+            <div class="grid grid-cols-1 gap-2.5 text-xs">
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(1, 'A', false)">
+                A. 严格等待全页面 networkidle（网络连接完全空闲）再开始执行
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(1, 'B', true)">
+                B. 寻找输入框等客户端就绪锚点，确认 React 水合完毕后再交互
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(1, 'C', false)">
+                C. 无需任何等待，页面 HTML 标签只要在 DOM 中渲染就立刻点击
+              </button>
+            </div>
+            <div id="quiz-feedback-1" class="hidden text-xs p-3 rounded-lg"></div>
+          </div>
+
+          <!-- 题目 2 -->
+          <div class="deep-card rounded-xl p-6 space-y-4" id="quiz-2">
+            <div class="text-sm font-bold text-slate-900">
+              2. [单选] 关于 TDD 循环中的“红灯测试”，下列哪一项表述是完全正确的？
+            </div>
+            <div class="grid grid-cols-1 gap-2.5 text-xs">
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(2, 'A', false)">
+                A. 红灯测试是指故意编写错误的断言或者反面教材用于检验异常
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(2, 'B', false)">
+                B. 红灯测试是指无论业务代码怎么改都必须保持永远失败的测试
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(2, 'C', true)">
+                C. 红灯测试是指契约完全正确，仅因底层代码未编写而失败的测试
+              </button>
+            </div>
+            <div id="quiz-feedback-2" class="hidden text-xs p-3 rounded-lg"></div>
+          </div>
+
+          <!-- 题目 3 -->
+          <div class="deep-card rounded-xl p-6 space-y-4" id="quiz-3">
+            <div class="text-sm font-bold text-slate-900">
+              3. [单选] 新开发的功能如果不属于默认六大红线链路，可以执行真实浏览器验收吗？
+            </div>
+            <div class="grid grid-cols-1 gap-2.5 text-xs">
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(3, 'A', true)">
+                A. 随时可以手动执行，有界面交互的新功能均强烈鼓励真机验证
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(3, 'B', false)">
+                B. 绝对不可以执行，除非先修改工作流规范把新功能加入到红线
+              </button>
+              <button class="quiz-option p-3 rounded-lg border border-slate-200 text-left font-medium text-slate-700" onclick="answerQuiz(3, 'C', false)">
+                C. 只有单测全部失败的时候，才被允许降级到浏览器里进行验证
+              </button>
+            </div>
+            <div id="quiz-feedback-3" class="hidden text-xs p-3 rounded-lg"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 课后答疑指引与下一步 -->
+      <footer class="deep-card rounded-xl p-6 bg-slate-900 text-slate-200 space-y-3">
+        <div class="flex items-center gap-2 text-blue-400 text-xs font-bold uppercase tracking-wider">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          课后协同支持
+        </div>
+        <p class="text-sm font-bold text-white">
+          有任何细节不清楚？随时向 AI 助手提出追问！
+        </p>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          AI Agent 是您的工程搭档与工作流助教。遇到具体业务场景不知道该选快车道还是慢车道、不知道探针怎么写，随时在终端提出问题，助手将实时为您提供具体到文件路径与代码的指导。
+        </p>
+        <div class="pt-2 text-xs text-slate-500 font-mono-code flex justify-between items-center border-t border-slate-800">
+          <span>归档位置：docs/teach/qa-workflow/lessons/0001-qa-browser-testing-workflow.html</span>
+          <span>AI-Aggregation 工程委员会</span>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Quiz 互动脚本 -->
+    <script>
+      const feedbacks = {
+        1: {
+          true: "✅ 正确！Next.js 在开发模式下存在 HMR 和 SSE 流式连接，网络永远不会处于 idle 状态；必须使用可见且可交互的客户端锚点（如输入框激活）来确保 React 水合已挂载完成。",
+          false: "❌ 错误。在本项目中严禁等待 networkidle，因为 HMR 与 SSE 连接会让网络永不空闲，盲等会导致测试超时报废。"
+        },
+        2: {
+          true: "✅ 正确！红灯测试是对未来功能的正面期许合同，之所以失败是因为功能代码还没写出来。先确认失败，才能证明测试具备真实拦截力。",
+          false: "❌ 错误。红灯测试绝对不是反面教材或故意写错的用例，它是 100% 正确的业务契约断言。"
+        },
+        3: {
+          true: "✅ 正确！六大链路只是强制红线（模型必须执行）；对于任何有界面的新功能，开发者随时可以直接调起 ego-browser 进行验证，非常受鼓励！",
+          false: "❌ 错误。工作流支持高度灵活的自适应剪裁，任何时候开发者都可以手动执行真实浏览器验收，无需改动规约。"
+        }
+      };
+
+      function answerQuiz(qNum, selectedOption, isCorrect) {
+        const quizCard = document.getElementById(`quiz-${qNum}`);
+        const feedbackDiv = document.getElementById(`quiz-feedback-${qNum}`);
+        const buttons = quizCard.querySelectorAll('.quiz-option');
+
+        buttons.forEach(btn => {
+          btn.classList.remove('correct', 'wrong');
+          btn.disabled = true;
+        });
+
+        const clickedBtn = Array.from(buttons).find(b => b.textContent.trim().startsWith(selectedOption));
+        if (clickedBtn) {
+          clickedBtn.classList.add(isCorrect ? 'correct' : 'wrong');
+        }
+
+        feedbackDiv.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-800', 'border-emerald-200', 'bg-red-50', 'text-red-800', 'border-red-200');
+        if (isCorrect) {
+          feedbackDiv.classList.add('bg-emerald-50', 'text-emerald-800', 'border', 'border-emerald-200');
+          feedbackDiv.textContent = feedbacks[qNum].true;
+        } else {
+          feedbackDiv.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
+          feedbackDiv.textContent = feedbacks[qNum].false;
+        }
+      }
+    </script>
+  </body>
+</html>

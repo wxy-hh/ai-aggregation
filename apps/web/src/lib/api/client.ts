@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/stores/auth-store';
+import { getPendingAuthBootstrap, useAuthStore } from '@/stores/auth-store';
 import { dispatchQuotaExhausted } from './quota-events';
 
 const QUOTA_EXHAUSTED_CODES = new Set(['QUOTA_INSUFFICIENT', 'QUOTA_LIMIT_REACHED']);
@@ -35,7 +35,7 @@ export function authHeaders(init?: HeadersInit, contentType?: string | null): He
   return headers;
 }
 
-// 防止并发刷新：多个 401 请求共享同一个刷新 Promise
+// 防止并发刷新：多个 401 请求共享同一个刷新 Promise（auth-store 内部也做了同样的收敛）
 let refreshPromise: Promise<string | null> | null = null;
 
 function getRefreshPromise(): Promise<string | null> {
@@ -70,6 +70,8 @@ function buildRequestHeaders(explicitHeaders?: HeadersInit): Headers {
  * - 不处理任何 UI 副作用（如额度弹窗），便于单元测试和复用
  */
 export async function rawAuthFetch(url: string, options?: RequestInit): Promise<Response> {
+  // 记录首跳实际生效的 token：401 之后要靠它判断引导是否换回了新凭证
+  const sentToken = getAccessToken();
   const headers = buildRequestHeaders(options?.headers);
   const isFormData = options?.body instanceof FormData;
 
@@ -84,6 +86,28 @@ export async function rawAuthFetch(url: string, options?: RequestInit): Promise<
 
   if (response.status !== 401) {
     return response;
+  }
+
+  // accessToken 内存化后，引导结束前内存里必然没有 token（刷新页面后的首屏请求正是这个形态）。
+  // 先等引导得出结论——它自己会换 token，并对 refresh 失败重试一次：
+  // 这里若直接刷新，会和引导抢同一枚 refresh token 的轮换；
+  // 这里若直接登出，会在引导重试成功之前把用户踢出会话。
+  const store = useAuthStore.getState();
+  const pendingBootstrap = getPendingAuthBootstrap();
+  if (pendingBootstrap) {
+    await pendingBootstrap;
+  } else if (store.status === 'bootstrapping') {
+    // 引导还没被触发（首个请求早于 useAuth 的 effect）：主动跑一次，等它出结论
+    await store.initialize();
+  }
+
+  const bootstrappedToken = getAccessToken();
+  if (bootstrappedToken && bootstrappedToken !== sentToken) {
+    headers.set('Authorization', `Bearer ${bootstrappedToken}`);
+    return fetch(url, {
+      ...options,
+      headers,
+    });
   }
 
   // 401：尝试刷新 token
@@ -126,3 +150,7 @@ export async function authFetch(url: string, options?: RequestInit): Promise<Res
 
   return response;
 }
+
+/** 规范别名导出：对齐 nextjs.md 与各处工单中的 fetchWithAuth 命名 */
+export const fetchWithAuth = authFetch;
+

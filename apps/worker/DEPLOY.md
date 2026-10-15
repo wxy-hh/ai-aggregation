@@ -87,6 +87,7 @@ SILICONFLOW_API_KEY=
 
 - `启动 Worker 服务...`
 - `所有 Workers 已启动`
+- `已注册维护任务调度`（每日 03:17 清理过期 refresh token；注册失败只告警，不影响其它 Worker）
 
 如果奇门模块已有人触发，还应能看到：
 

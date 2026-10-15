@@ -209,11 +209,13 @@ pnpm db:seed
 
 ```bash
 export SEED_ADMIN_PASSWORD='你的管理员密码'   # seed.ts 要求，缺失会直接报错
+export SEED_TEST_PASSWORD='测试账号密码'      # 可选：测试账号 test_user 的密码；不配则随机生成并打印一次
 export DATABASE_URL='...生产连接串...'
 pnpm db:seed
 ```
 
 > seed 使用 upsert：已存在的 `xkfy` 会被更新为 `role=admin` 并重置密码为 `SEED_ADMIN_PASSWORD`；未注册过则直接创建。
+> 测试账号 `test_user` 只在**首次创建**时写入密码（已存在则不重置）；未配置 `SEED_TEST_PASSWORD` 时，seed 会随机生成密码并在输出中打印一次，请及时保存。
 
 ---
 
@@ -226,13 +228,16 @@ pnpm db:seed
 
 ### 5.1 登录注册最小集（必填）
 
-| 变量                    | 示例/说明                                          | 必填   |
-| ----------------------- | -------------------------------------------------- | ------ |
-| `DATABASE_URL`          | 生产 PostgreSQL 连接串                             | **是** |
-| `AUTH_SECRET`           | `openssl rand -hex 32` 生成，**勿用** `dev-secret` | **是** |
-| `ANONYMOUS_DEVICE_SALT` | `openssl rand -hex 16`，匿名设备指纹盐             | **是** |
-| `NEXTAUTH_URL`          | `https://ai-aggregation-web.vercel.app`            | 是     |
-| `NEXT_PUBLIC_APP_URL`   | 同上（客户端可见）                                 | 是     |
+| 变量                    | 示例/说明                                                                                                           | 必填   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- | ------ |
+| `DATABASE_URL`          | 生产 PostgreSQL 连接串                                                                                              | **是** |
+| `AUTH_SECRET`           | 自研 JWT（HS256）access token 签名密钥，`openssl rand -hex 32` 生成，**勿用** `dev-secret`；改动会使全部已签发 access token 立即失效（客户端会走 refresh 换取新 token，refresh token 本身不受影响） | **是** |
+| `ANONYMOUS_DEVICE_SALT` | `openssl rand -hex 16`，匿名设备指纹哈希盐（HMAC-SHA256），改动会使同一设备重新建号                                  | **是** |
+| `NEXT_PUBLIC_APP_URL`   | `https://ai-aggregation-web.vercel.app`（客户端可见）                                                               | 是     |
+
+> 本项目认证为自研方案（JWT + bcrypt + 数据库 refresh token + httpOnly cookie），不使用 NextAuth。
+>
+> **注意（认证加固上线）**：refresh token 已改为「库中只存 SHA-256 摘要」，部署本次变更后所有存量会话失效（旧 cookie 无法与库中摘要匹配），用户需重新登录一次；不做双读兼容。
 
 生成密钥：
 
@@ -286,6 +291,9 @@ openssl rand -hex 24   # BILLING_RECONCILE_SECRET / RTASR_GATEWAY_SECRET
 | `WECHAT_*` / `QQ_*`                                        | OAuth 登录，本地也常未配 |
 | `S3_*` / `OSS_*`                                           | 对象存储；反馈附件等     |
 | `ALLOWED_FILE_TYPES` / `MAX_FILE_SIZE` / `TEMP_UPLOAD_DIR` | 上传限制                 |
+| `ALIYUN_DM_*`                                              | 邮件通道（注册/绑定验证码、忘记密码重置邮件）；未配置时相关接口返回 503，不影响登录 |
+| `MEDIA_PROXY_ALLOWED_DOMAINS`                              | `/api/image/proxy`、`/api/video/proxy` 的额外域名白名单（逗号分隔，如 `example.com,example.com:8443`）；代理仅放行 https，只有白名单中显式声明的本机地址才允许 http（本地 MinIO 开发）；不配则只允许代码内默认白名单 |
+| `AUTH_RATE_LIMIT_FAILURE_MODE`                             | 认证接口限流设施故障处置：留空/`closed`（默认）为 Redis 故障时拒绝认证（503），`open` 为应急放行，仅 Redis 长时间故障时临时使用 |
 
 ### 5.5 批量粘贴方式
 
@@ -300,7 +308,7 @@ KEY=value
 
 ### 5.6 当前生产已验证存在的关键项（2026-07-24）
 
-`DATABASE_URL`、`AUTH_SECRET`、`ANONYMOUS_DEVICE_SALT`、`NEXTAUTH_URL`、`NEXT_PUBLIC_APP_URL`、  
+`DATABASE_URL`、`AUTH_SECRET`、`ANONYMOUS_DEVICE_SALT`、`NEXT_PUBLIC_APP_URL`、  
 `ARK_*`、`DEEPSEEK_*`、`DASHSCOPE_API_KEY`、`ZHIPU_API_KEY`、`AGNES_*`、  
 `SILICONFLOW_*`、`XUNFEI_*`、`REDIS_*` / Upstash 集成变量、  
 `BILLING_RECONCILE_SECRET`、`RTASR_GATEWAY_SECRET` 等。
@@ -513,7 +521,7 @@ pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
 [ ] 3. 准备生产 DATABASE_URL（非 localhost，可公网，建议 sslmode=require）
 [ ] 4. 本地对生产库执行：prisma migrate deploy，status 为 up to date
 [ ] 5. Vercel 写入最小 env：DATABASE_URL, AUTH_SECRET, ANONYMOUS_DEVICE_SALT,
-       NEXTAUTH_URL, NEXT_PUBLIC_APP_URL（生产域名）
+       NEXT_PUBLIC_APP_URL（生产域名）
 [ ] 6. 按需写入 AI / Redis / 讯飞等变量（第 5 节）
 [ ] 7. Trigger Production Deploy / Redeploy，等待 Ready
 [ ] 8. 浏览器侧执行 register → login → me，全部 200
@@ -529,7 +537,7 @@ pnpm --filter @repo/db exec prisma migrate status --schema prisma/schema.prisma
 - 不要对生产库执行 `migrate reset` / 随意 `db push` 除非用户明确要求
 - 不要在未确认 Cloudflare 登录时假装 RTASR 已上线
 - 不要因为本机 curl 失败就断定 Vercel 挂了——先浏览器验证
-- 不要修改 `AUTH_SECRET` 后期望旧 refresh token 仍可用（会话会失效）
+- 不要随意修改 `AUTH_SECRET`：它签发全部 access token，改动会让在线客户端的 access token 立即失效（客户端会走 refresh 换新，refresh token 不受影响）
 
 ---
 
@@ -584,6 +592,8 @@ openssl rand -hex 32
 | 2026-08-22 | Docker 自部署（腾讯云 124.223.40.33）    | **部署成功**：https://www.chunfen.ink 正常访问；修复 Dockerfile pnpm postinstall 冲突、Prisma 路径、容器网络、SSL 证书                                               |
 | 2026-08-28 | 管理员权限排查 + Nginx 强制跳转          | **根因**：`http://` 访问时 Secure Cookie 被拒收 → 匿名登录覆盖管理员会话（账号权限本身已同步）；nginx 改为双 server 块（80 仅跳转 + 443 主站），全链路浏览器验证通过 |
 | 2026-09-30 | `40e467dd` master（服务器从 `ff11327` 前进 43 个提交） | **发布成功**：web + worker 镜像重建并 `--force-recreate`；无 Prisma schema 变更（跳过 migrate）；worker 心跳在线；register/login/me 全部 200；`/` → `/home` 200。`master_style` 分支改动**未**纳入本次发布。构建期踩坑：容器内 `pnpm install` 走 registry.npmjs.org 在腾讯云上卡死（每包约 200s），已在服务器侧注入 `.npmrc`（npmmirror）并在两个 Dockerfile 的 install 前 `COPY .npmrc`，构建耗时降到约 12 分钟 |
+| 2026-09-30 | `4855d814` master（Merge master_style，6 提交 / 61 文件） | **发布成功**：本次为纯前端 UI 变更（chat/video/home 样式、tailwind、SSE 修复、xunfei），无 schema 变更、无依赖变更（依赖层缓存命中，构建约 8 分钟）；容器 5 个全 Up（ai-web healthy）、worker 心跳在线；`/`、`/home`、`/login`、`/chat`、`/image`、`/video`、`/voice`、`/history` 全部 200；http→https 301；register/login/me 全 200。服务器侧 5 处运维改动（含 Dockerfile 的 `.npmrc` 补丁）校验完好 |
+| 2026-10-09 | `a064700` master（QQ OAuth 登录，2 提交 / 12 文件） | **发布成功**：QQ 登录弹窗通信协议与分端自适应交互；无 schema 变更、无依赖变更（构建约 6 分钟）；服务器 `.env.prod` 新增 `QQ_APP_ID` / `QQ_APP_SECRET` / `QQ_REDIRECT_URI`（已先备份 `.env.prod.bak.*`）；容器 5 个全 Up（ai-web healthy）；register/login/me 全 200；`/api/auth/oauth/qq` 302 正确跳转 graph.qq.com 授权页（回调 `https://www.chunfen.ink/api/auth/oauth/qq/callback`）；QQ 侧返回 100008 属审核未通过的预期行为 |
 
 Vercel 生产地址：https://ai-aggregation-web.vercel.app
 Docker 生产地址：https://www.chunfen.ink  
@@ -715,16 +725,18 @@ REDIS_PORT="6379"
 REDIS_PASSWORD=""
 
 # ---------- 应用地址（改为你的域名）----------
-NEXTAUTH_URL="https://www.your-domain.com"
 NEXT_PUBLIC_APP_URL="https://www.your-domain.com"
 
 # ---------- 安全密钥（务必修改默认值）----------
+# AUTH_SECRET 是自研 JWT（HS256）access token 签名密钥，改动它会使已签发的 access token 失效
 AUTH_SECRET="$(openssl rand -hex 32)"
 ANONYMOUS_DEVICE_SALT="$(openssl rand -hex 16)"
 
-# ---------- 管理员初始化（seed 用，务必修改默认值）----------
+# ---------- 账号初始化（seed 用，务必修改默认值）----------
 # 不配置则线上无法通过 seed 创建/升级管理员账号（xkfy），只能手动改库
 SEED_ADMIN_PASSWORD="你的管理员密码"
+# 测试账号 test_user 的密码；不配置时 seed 会随机生成并打印一次（仅首次创建该账号时生效）
+# SEED_TEST_PASSWORD="你的测试账号密码"
 
 # ---------- AI 服务商 Key（按需填写）----------
 # 豆包（命理分析主力）
@@ -1166,21 +1178,25 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 
 ### 14.14 环境变量说明
 
-| 变量                        | 用途                            | 必填           |
-| --------------------------- | ------------------------------- | -------------- |
-| `DATABASE_URL`              | PostgreSQL 连接串               | ✅             |
-| `REDIS_HOST`                | Redis 地址                      | ✅             |
-| `REDIS_PORT`                | Redis 端口                      | ✅             |
-| `AUTH_SECRET`               | NextAuth 加密密钥               | ✅             |
-| `ANONYMOUS_DEVICE_SALT`     | 匿名用户设备指纹盐              | ✅             |
-| `SEED_ADMIN_PASSWORD`       | 超管 xkfy 初始化密码（seed 用） | 管理员账号需要 |
-| `NEXTAUTH_URL`              | NextAuth 回调地址               | ✅             |
-| `NEXT_PUBLIC_APP_URL`       | 前端可见的应用地址              | ✅             |
-| `ARK_API_KEY`               | 火山方舟 API Key（豆包）        | 命理分析需要   |
-| `DEEPSEEK_MODEL`            | DeepSeek API Key（存错变量名）  | 命理分析备选   |
-| `ZHIPU_API_KEY`             | 智谱 API Key                    | 视频生成需要   |
-| `XUNFEI_API_KEY` / `SECRET` | 讯飞 API                        | 语音转写需要   |
-| `SILICONFLOW_API_KEY`       | 硅基流动 API Key                | 语音模型需要   |
-| `AGNES_API_KEY`             | Agnes 图像 API                  | 图像生成需要   |
+| 变量                          | 用途                                                           | 必填           |
+| ----------------------------- | -------------------------------------------------------------- | -------------- |
+| `DATABASE_URL`                | PostgreSQL 连接串                                              | ✅             |
+| `REDIS_HOST`                  | Redis 地址                                                     | ✅             |
+| `REDIS_PORT`                  | Redis 端口                                                     | ✅             |
+| `AUTH_SECRET`                 | 自研 JWT（HS256）access token 签名密钥；改动会使已签发 access token 失效 | ✅             |
+| `ANONYMOUS_DEVICE_SALT`       | 匿名用户设备指纹哈希盐（HMAC-SHA256）                          | ✅             |
+| `SEED_ADMIN_PASSWORD`         | 超管 xkfy 初始化密码（seed 用）                                | 管理员账号需要 |
+| `SEED_TEST_PASSWORD`          | 测试账号 test_user 密码（seed 用）；不配则随机生成并打印       | 否             |
+| `NEXT_PUBLIC_APP_URL`         | 前端可见的应用地址                                             | ✅             |
+| `AUTH_RATE_LIMIT_FAILURE_MODE` | 认证接口限流故障处置，默认 `closed`（拒绝），`open` 应急放行   | 否             |
+| `MEDIA_PROXY_ALLOWED_DOMAINS` | 媒体代理额外域名白名单（逗号分隔，仅 https）                   | 否             |
+| `ALIYUN_DM_*`                 | 阿里云邮件推送凭证（验证码/重置邮件）；不配则相关接口 503      | 否             |
+| `ARK_API_KEY`                 | 火山方舟 API Key（豆包）                                       | 命理分析需要   |
+| `DEEPSEEK_MODEL`              | DeepSeek API Key（存错变量名）                                 | 命理分析备选   |
+| `ZHIPU_API_KEY`               | 智谱 API Key                                                   | 视频生成需要   |
+| `XUNFEI_API_KEY` / `SECRET`   | 讯飞 API                                                       | 语音转写需要   |
+| `SILICONFLOW_API_KEY`         | 硅基流动 API Key                                               | 语音模型需要   |
+| `AGNES_API_KEY`               | Agnes 图像 API                                                 | 图像生成需要   |
 
 > **注意**：`DEEPSEEK_API_KEY` 在代码中未使用。DeepSeek 的 Key 实际存储在 `DEEPSEEK_MODEL` 变量中（`packages/shared/src/destiny-model-client.ts`）。
+> 认证为自研方案（JWT + bcrypt + 数据库 refresh token + httpOnly cookie），无 `NEXTAUTH_URL` 等 NextAuth 变量。

@@ -36,6 +36,21 @@ export function generateRefreshToken(): string {
   return crypto.randomBytes(48).toString('hex');
 }
 
+/** 计算 token 的 SHA-256 摘要（hex）：库中只存摘要，泄露也无法直接用于认证 */
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** refresh token 落库值：明文只存在客户端 cookie 中，库中仅存摘要 */
+export function hashRefreshToken(plainToken: string): string {
+  return hashToken(plainToken);
+}
+
+/** 密码重置 token 落库值 `reset:<sha256>`（前缀用于与 refresh token 区分） */
+export function hashResetToken(plainToken: string): string {
+  return `reset:${hashToken(plainToken)}`;
+}
+
 const COOKIE_NAME = 'refresh_token';
 
 /**

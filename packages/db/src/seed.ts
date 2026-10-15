@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
@@ -42,8 +43,15 @@ async function main() {
   console.log('超管账号已就绪:', superAdmin.username, '(role:', superAdmin.role, ')');
 
   // 创建测试用户
-  const testPassword = process.env.SEED_TEST_PASSWORD || 'test123456';
+  // 密码由环境变量驱动；未配置时随机生成并在下方打印一次，避免在仓库里留下固定密码。
+  const configuredTestPassword = process.env.SEED_TEST_PASSWORD;
+  const testPassword = configuredTestPassword ?? randomBytes(12).toString('base64url');
   const testPasswordHash = await bcrypt.hash(testPassword, 12);
+
+  const existingTestUser = await prisma.user.findUnique({
+    where: { username: 'test_user' },
+    select: { id: true },
+  });
 
   await prisma.user.upsert({
     where: { username: 'test_user' },
@@ -63,6 +71,14 @@ async function main() {
       },
     },
   });
+
+  if (existingTestUser) {
+    console.log('测试用户 test_user 已存在，密码未改动（如需重置请手动更新数据库）');
+  } else if (configuredTestPassword) {
+    console.log('测试用户 test_user 已创建，密码来自 SEED_TEST_PASSWORD');
+  } else {
+    console.log(`测试用户 test_user 已创建，随机密码（仅本次打印，请立即保存）：${testPassword}`);
+  }
 
   console.log('种子数据完成!');
 }

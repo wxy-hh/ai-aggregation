@@ -16,11 +16,27 @@ export interface SettingsState {
     language: 'zh-CN' | 'en-US';
     fontSize: 'small' | 'medium' | 'large';
 
+    /**
+     * agent 模式开关（工具调用）。
+     * 开启后对话请求带 agent 标志：服务端切到支持 function calling 的模型，
+     * 走两段式编排（可调用图像生成 / 网页抓取等工具），计费按 chat-agent 单列。
+     */
+    agentModeEnabled: boolean;
+
+    /**
+     * 深度思考模式开关（ADR-0016 / 工单 03）。
+     * 开启后对话请求带 thinking: true，在 DeepSeek 等支持模型上输出思维链内容。
+     */
+    thinkingModeEnabled: boolean;
+
     // Actions
     setTheme: (theme: Theme) => void;
     toggleTheme: () => void;
     setLanguage: (language: 'zh-CN' | 'en-US') => void;
     setFontSize: (size: 'small' | 'medium' | 'large') => void;
+    setAgentMode: (enabled: boolean) => void;
+    setThinkingMode: (enabled: boolean) => void;
+    toggleThinkingMode: () => void;
 
     // 内部方法
     _initializeTheme: () => void;
@@ -68,6 +84,8 @@ export const useSettingsStore = create<SettingsState>()(
             resolvedTheme: 'light',
             language: 'zh-CN',
             fontSize: 'medium',
+            agentModeEnabled: false,
+            thinkingModeEnabled: false,
 
             // 设置主题
             setTheme: (theme) => {
@@ -98,6 +116,21 @@ export const useSettingsStore = create<SettingsState>()(
             // 设置字体大小
             setFontSize: (fontSize) => {
                 set({ fontSize });
+            },
+
+            // 设置 agent 模式开关
+            setAgentMode: (enabled) => {
+                set({ agentModeEnabled: enabled });
+            },
+
+            // 设置深度思考模式开关
+            setThinkingMode: (enabled) => {
+                set({ thinkingModeEnabled: enabled });
+            },
+
+            // 切换深度思考模式开关
+            toggleThinkingMode: () => {
+                set((state) => ({ thinkingModeEnabled: !state.thinkingModeEnabled }));
             },
 
             // 初始化主题（在客户端加载时调用）
@@ -138,12 +171,19 @@ export const useSettingsStore = create<SettingsState>()(
             name: 'ai-app-settings', // 本地存储键名
             storage: createJSONStorage(() => localStorage),
             // 只持久化用户设置，不持久化 resolvedTheme
+            // 只持久化零代价的用户偏好。
+            // agentModeEnabled 刻意不持久化：它一次同时改变模型（更贵）、计费口径与响应延迟，
+            // 属于「有代价的模式」，默认必须回到安全态；且持久化会让第二次起的「开启」不再是
+            // 用户显式动作（与「输入区显式开关」的约定冲突）。
             partialize: (state) => ({
                 theme: state.theme,
                 language: state.language,
                 fontSize: state.fontSize,
             }),
             onRehydrateStorage: () => (state) => {
+                // 旧版本可能把 agentModeEnabled: true 写进过 localStorage，
+                // 而 zustand persist 的浅合并会把该值再带进来一次；显式归零保证每次进站都是「关」。
+                state?.setAgentMode(false);
                 // 数据恢复完成后，初始化主题
                 if (state) {
                     // 延迟到下一个 tick，确保 DOM 已准备好

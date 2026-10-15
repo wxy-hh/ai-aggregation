@@ -11,7 +11,7 @@
 | FR-1 | 使用浏览器指纹生成稳定设备标识 | `apps/web/src/lib/device-fingerprint.ts` | 代码审查 + 自动化测试 | completed |
 | FR-1.1 | deviceId 持久化到 localStorage | `apps/web/src/lib/device-fingerprint.ts` | 代码审查 + 自动化测试 | completed |
 | FR-2 | 首次访问自动创建匿名用户 | `apps/web/src/app/api/auth/anonymous/route.ts` | 代码审查 + 自动化测试 | completed |
-| FR-2.1 | 匿名用户默认 3000 token | `packages/db/src/quota.ts`、`schema.prisma`、`apps/web/src/lib/constants/quota.ts` | 代码审查 + 自动化测试 | completed |
+| FR-2.1 | 匿名用户默认额度（需求原始值 3000 token；**现值 20000**，见 `apps/web/src/lib/constants/quota.ts` 的 `ANONYMOUS_FREE_TOKENS`） | `packages/db/src/quota.ts`、`schema.prisma`、`apps/web/src/lib/constants/quota.ts` | 代码审查 + 自动化测试 | completed |
 | FR-3 | 匿名用户通过 JWT 访问 API | `apps/web/src/app/api/auth/anonymous/route.ts` | 代码审查 + 自动化测试 | completed |
 | FR-3.1 | 中间件不再强制重定向到登录页 | `apps/web/src/middleware.ts` | 代码审查 + curl 测试 | completed |
 | FR-3.2 | 真实登录用户流程不受影响 | `apps/web/src/stores/auth-store.ts` | 代码审查 + 自动化测试 | completed |
@@ -44,4 +44,4 @@
 
 ## 遗留/待决策项
 
-- OPT-1：部分 AI 接口（`destiny/report`、`destiny/ziwei-report`、`qimen/analyze/start`、`image/agnes`、`voice/translate`）使用 `getOptionalUserId`，未登录时不强制 401，也不走 3000 额度限制。这是现有行为，本次未改动。如需统一纳入匿名认证额度体系，需单独产品决策。
+- OPT-1（**已于 2026-09-29 认证加固专项解决**）：原先 `destiny/report`、`destiny/ziwei-report`、`qimen/analyze/start`、`image/agnes`、`voice/translate` 等 AI 接口通过 `getOptionalUserId` 允许未登录访问，既不强制 401 也不进入额度体系。现所有 AI / 业务接口已统一改为 `withAuth` 强制鉴权（未登录一律 401），未登录请求无法绕开匿名用户额度（`ANONYMOUS_FREE_TOKENS`，现值 20000）；辅助模块 `apps/web/src/lib/auth/get-optional-user-id.ts` 已随无调用方一并删除。

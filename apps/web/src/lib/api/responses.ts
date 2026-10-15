@@ -22,10 +22,16 @@ export const ErrorCode = {
 
   // 认证业务错误
   USERNAME_EXISTS: 'USERNAME_EXISTS',
+  /** 邮箱已被其他账号占用（注册/绑定邮箱时检查） */
+  EMAIL_EXISTS: 'EMAIL_EXISTS',
+  /** 邮箱验证码错误、已过期或已被使用 */
+  INVALID_EMAIL_CODE: 'INVALID_EMAIL_CODE',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   TOKEN_EXPIRED: 'TOKEN_EXPIRED',
   PASSWORD_REQUIRED: 'PASSWORD_REQUIRED',
   INVALID_PASSWORD: 'INVALID_PASSWORD',
+  /** 登录失败次数过多，账号被临时锁定（与限流 429 区分） */
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
 
   // 请求相关
   INVALID_REQUEST: 'INVALID_REQUEST',
@@ -38,6 +44,8 @@ export const ErrorCode = {
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   DATABASE_ERROR: 'DATABASE_ERROR',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  /** 请求频次超限（429，与 503 的 SERVICE_UNAVAILABLE 区分） */
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
 
   // 业务相关
   PARSE_FAILED: 'PARSE_FAILED',
@@ -139,6 +147,10 @@ export const ApiError = {
   internalError: (message = '服务器内部错误', details?: Record<string, unknown>) =>
     createErrorResponse(message, ErrorCode.INTERNAL_ERROR, 500, details),
 
+  /** 账号因连续登录失败被临时锁定（423，提示中含剩余等待时间） */
+  accountLocked: (message: string, details?: Record<string, unknown>) =>
+    createErrorResponse(message, ErrorCode.ACCOUNT_LOCKED, 423, details),
+
   tooManyRequests: (message = '请求过于频繁，请稍后再试', details?: Record<string, unknown>) =>
-    createErrorResponse(message, ErrorCode.SERVICE_UNAVAILABLE, 429, details),
+    createErrorResponse(message, ErrorCode.TOO_MANY_REQUESTS, 429, details),
 };

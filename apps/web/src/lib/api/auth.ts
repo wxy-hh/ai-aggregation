@@ -48,6 +48,16 @@ function authHeaders(accessToken: string): HeadersInit {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+export interface RegisterPayload {
+  username: string;
+  password: string;
+  name?: string;
+  /** 选填邮箱；填写时必须同时带 emailCode */
+  email?: string;
+  /** 邮箱验证码（6 位数字） */
+  emailCode?: string;
+}
+
 export const authApi = {
   async login(username: string, password: string) {
     return request('/api/auth/login', {
@@ -56,10 +66,10 @@ export const authApi = {
     });
   },
 
-  async register(username: string, password: string, name?: string) {
+  async register(payload: RegisterPayload) {
     return request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, name }),
+      body: JSON.stringify(payload),
     });
   },
 
@@ -79,10 +89,19 @@ export const authApi = {
     });
   },
 
-  async forgotPassword(username: string) {
+  /** 发送邮箱验证码（注册验证 / 绑定邮箱两处复用；忘记密码走重置链接） */
+  async sendEmailCode(purpose: 'register' | 'bind', email: string) {
+    return request('/api/auth/email/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ purpose, email }),
+    });
+  },
+
+  /** 忘记密码：传用户名或邮箱均可 */
+  async forgotPassword(account: string) {
     return request('/api/auth/forgot-password', {
       method: 'POST',
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ account }),
     });
   },
 

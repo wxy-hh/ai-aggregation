@@ -5,6 +5,7 @@ import { prisma } from '@repo/db';
 import {
   signAccessToken,
   generateRefreshToken,
+  hashRefreshToken,
   setRefreshTokenCookie,
   setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
@@ -63,6 +64,13 @@ export async function GET(req: NextRequest) {
 
     let user = oauthAccount?.user;
 
+    // 已绑定账号被停用时拒绝签发会话（与账密登录行为对齐）
+    if (user && user.status === 'disabled') {
+      return Response.redirect(
+        new URL(buildRedirectUrl(req, '/login?error=account_disabled'), req.url)
+      );
+    }
+
     if (!oauthAccount) {
       // 创建新用户和 OAuth 关联
       const username = await generateOAuthUsername('wechat', userInfo.nickname);
@@ -107,7 +115,8 @@ export async function GET(req: NextRequest) {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRES * 1000);
 
     await prisma.refreshToken.create({
-      data: { userId: user!.id, token: refreshToken, expiresAt },
+      // 库中只存摘要，明文仅存在于 httpOnly cookie
+      data: { userId: user!.id, token: hashRefreshToken(refreshToken), expiresAt },
     });
 
     const redirectUrl = buildRedirectUrl(req, CLIENT_REDIRECT);

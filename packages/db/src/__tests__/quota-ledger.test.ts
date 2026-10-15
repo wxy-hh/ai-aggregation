@@ -45,6 +45,7 @@ import {
   releaseQuota,
   reserveQuotaBatch,
   markQuotaBillingPending,
+  releaseStaleBillingPendingReservations,
   getAvailableQuota,
   getQuotaReservation,
 } from '../quota-ledger';
@@ -53,8 +54,10 @@ import { prisma } from '../client';
 function resetMocks() {
   // mockReset 清除实现 + 调用记录，确保 mockImplementation 不跨测试泄漏
   for (const obj of [mockTx.quotaAccount, mockTx.quotaReservation, mockTx.quotaLedgerEntry, mockTx.user, mockTx.aIUsageRecord]) {
-    for (const fn of Object.values(obj).filter((v): v is vi.Mock => typeof v === 'function')) {
-      fn.mockReset();
+    for (const fn of Object.values(obj)) {
+      if (typeof (fn as { mockReset?: () => void })?.mockReset === 'function') {
+        (fn as { mockReset: () => void }).mockReset();
+      }
     }
   }
   vi.mocked(prisma.quotaAccount.findUnique).mockReset();
@@ -223,7 +226,7 @@ describe('quota-ledger', () => {
 
       const result = await settleQuota({
         reservationId: 'r1',
-        measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'test' },
+        measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'local_measurement' },
       });
 
       expect(result.status).toBe('settled');
@@ -243,7 +246,7 @@ describe('quota-ledger', () => {
 
       const result = await settleQuota({
         reservationId: 'r1',
-        measurement: { meterType: 'tokens', quotaUnits: 80, sourceUnits: 80, source: 'test' },
+        measurement: { meterType: 'tokens', quotaUnits: 80, sourceUnits: 80, source: 'local_measurement' },
       });
 
       expect(result.status).toBe('billing_pending');
@@ -256,7 +259,7 @@ describe('quota-ledger', () => {
 
       const result = await settleQuota({
         reservationId: 'r1',
-        measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'test' },
+        measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'local_measurement' },
       });
 
       expect(result.status).toBe('settled');
@@ -271,7 +274,7 @@ describe('quota-ledger', () => {
       await expect(
         settleQuota({
           reservationId: 'r1',
-          measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'test' },
+          measurement: { meterType: 'tokens', quotaUnits: 100, sourceUnits: 100, source: 'local_measurement' },
         })
       ).rejects.toThrow('额度预留不存在');
     });
@@ -284,7 +287,7 @@ describe('quota-ledger', () => {
       await expect(
         settleQuota({
           reservationId: 'r1',
-          measurement: { meterType: 'audio_seconds', quotaUnits: 10, sourceUnits: 10, source: 'test' },
+          measurement: { meterType: 'audio_seconds', quotaUnits: 10, sourceUnits: 10, source: 'local_measurement' },
         })
       ).rejects.toThrow('预留计量类型与实际结算类型不一致');
     });
@@ -406,6 +409,121 @@ describe('quota-ledger', () => {
 
       const result = await getQuotaReservation('u1', 'nonexistent');
       expect(result).toBeNull();
+    });
+  });
+
+  // ─── releaseStaleBillingPendingReservations ─────────────
+  describe('releaseStaleBillingPendingReservations', () => {
+    it('超时且无 usage 的 pending 预留被整额释放退还', async () => {
+      const now = new Date('2026-09-28T12:00:00Z');
+      const staleTime = new Date('2026-09-27T11:00:00Z');
+      const r = {
+        ...makeReservation({
+          id: 'r_pending_1',
+          userId: 'u1',
+          status: 'billing_pending',
+          estimatedUnits: 150,
+          updatedAt: staleTime,
+        }),
+        aiUsageRecord: null,
+      };
+
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([r] as any);
+      mockTx.quotaReservation.findUnique.mockResolvedValue(r);
+      mockTx.quotaReservation.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.quotaAccount.update.mockResolvedValue(makeAccount({ availableUnits: 1150, reservedUnits: 0 }));
+      mockTx.quotaLedgerEntry.create.mockResolvedValue({ id: 'le_release' } as any);
+      mockTx.user.update.mockResolvedValue({} as any);
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(1);
+      expect(mockTx.quotaReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'r_pending_1', status: 'billing_pending' },
+        data: { status: 'released', executionState: 'completed' },
+      });
+      expect(mockTx.quotaAccount.update).toHaveBeenCalledWith({
+        where: { userId: 'u1' },
+        data: {
+          reservedUnits: { decrement: 150 },
+          availableUnits: { increment: 150 },
+        },
+      });
+      expect(mockTx.quotaLedgerEntry.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'u1',
+          reservationId: 'r_pending_1',
+          eventType: 'release',
+          units: 150,
+          reason: '待补账超时未获可审计用量，整额释放退还',
+        }),
+      });
+    });
+
+    it('未超时的 pending 预留不被释放', async () => {
+      const now = new Date('2026-09-28T12:00:00Z');
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([]);
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(0);
+      expect(mockTx.quotaReservation.updateMany).not.toHaveBeenCalled();
+      expect(prisma.quotaReservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'billing_pending',
+            updatedAt: { lt: new Date('2026-09-27T12:00:00Z') },
+          }),
+        })
+      );
+    });
+
+    it('已有 billableUnits 或 totalTokens 的 pending 预留不被释放（留给 reconcile）', async () => {
+      const now = new Date('2026-09-28T12:00:00Z');
+      const staleTime = new Date('2026-09-27T11:00:00Z');
+      const rWithUsage = {
+        ...makeReservation({
+          id: 'r_with_usage',
+          userId: 'u1',
+          status: 'billing_pending',
+          estimatedUnits: 200,
+          updatedAt: staleTime,
+        }),
+        aiUsageRecord: { billableUnits: 120, totalTokens: 120 },
+      };
+
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([rWithUsage] as any);
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(0);
+      expect(mockTx.quotaReservation.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.quotaAccount.update).not.toHaveBeenCalled();
+    });
+
+    it('状态已不是 billing_pending 时守卫生效，不重复释放', async () => {
+      const now = new Date('2026-09-28T12:00:00Z');
+      const staleTime = new Date('2026-09-27T11:00:00Z');
+      const r = {
+        ...makeReservation({
+          id: 'r_concurrent',
+          userId: 'u1',
+          status: 'billing_pending',
+          estimatedUnits: 100,
+          updatedAt: staleTime,
+        }),
+        aiUsageRecord: null,
+      };
+
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([r] as any);
+      // 事务内再次查出时状态已被其他并发对账更新为 settled
+      mockTx.quotaReservation.findUnique.mockResolvedValue({ ...r, status: 'settled' });
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(0);
+      expect(mockTx.quotaReservation.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.quotaAccount.update).not.toHaveBeenCalled();
     });
   });
 });

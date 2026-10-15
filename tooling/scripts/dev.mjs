@@ -1,17 +1,20 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
+import {
+  applyWebPortConfig,
+  isPortOpen,
+  PROJECT_ROOT,
+  resolveWebPort,
+  RTASR_GATEWAY_PORT,
+  WEB_PORT_RANGE,
+} from './dev-port.mjs';
 
 let cleanupInProgress = false;
 let ownedRedisProcess = null;
 let ownedDockerRedis = false;
-
-const PROJECT_ROOT = process.cwd();
-/** Web 首选端口 + next-dev 可能漂移到的邻近端口，以及 rtasr 网关端口 */
-const DEV_PORTS = [3030, 3031, 3032, 3033, 3034, 3035, 8787];
 
 function getRedisConfig() {
   const host = process.env.REDIS_HOST || '127.0.0.1';
@@ -28,11 +31,30 @@ async function main() {
   console.log('启动本地开发环境...');
   loadSharedEnv();
   logEnvStatus();
-  await ensureRedis();
   registerCleanupHandlers();
+
+  // 清理当前项目历史残留的孤儿进程
+  // 必须先于 ensureRedis：旧 dev.mjs 退出时会顺带停掉它拥有的临时 Redis，
+  // 若顺序颠倒，已通过可用性检查的 Redis 会在清理后被杀死，Worker 启动即失败
+  await cleanupExistingDevProcesses();
+
+  await ensureRedis();
+
+  // 端口决议单点：此处选定端口并完成全链路同步，next-dev.mjs 仅透传消费
+  const activeWebPort = await resolveWebPort();
+  applyWebPortConfig(activeWebPort);
+
+  await warnIfGatewayPortBusy();
+
+  // 竞态兜底：决议后若端口被抢，Next 内置重试会静默漂移，轮询校验把静默失败变响亮
+  void verifyWebPortStarted(activeWebPort);
+
   await runTurboDev();
 }
 
+/**
+ * 加载各应用的本地共享环境变量文件
+ */
 function loadSharedEnv() {
   const envFiles = [
     path.resolve(PROJECT_ROOT, 'apps/web/.env.local'),
@@ -51,7 +73,7 @@ function loadSharedEnv() {
       if (separatorIndex === -1) continue;
 
       const key = line.slice(0, separatorIndex).trim();
-      // 与 dotenv 一致：已有环境变量（含 shell 注入）不被覆盖
+      // 保持与 dotenv 一致：已存在的环境变量（含外部注入）不进行覆盖
       if (!key || process.env[key] !== undefined) continue;
 
       let value = line.slice(separatorIndex + 1).trim();
@@ -69,10 +91,13 @@ function loadSharedEnv() {
 
 function logEnvStatus() {
   console.log(
-    `共享环境加载完成：ARK_API_KEY=${process.env.ARK_API_KEY ? 'SET' : 'UNSET'}，REDIS_HOST=${process.env.REDIS_HOST || '127.0.0.1'}`
+    `共享环境加载完成：ARK_API_KEY=${process.env.ARK_API_KEY ? '已设置' : '未设置'}，REDIS_HOST=${process.env.REDIS_HOST || '127.0.0.1'}`
   );
 }
 
+/**
+ * 确保 Redis 服务正常可用，若未运行则依次尝试本地服务与 Docker 容器
+ */
 async function ensureRedis() {
   const { host, port, url } = getRedisConfig();
 
@@ -82,7 +107,7 @@ async function ensureRedis() {
   }
 
   if (await hasCommand('redis-server')) {
-    console.log('检测到本地 redis-server，尝试为当前 pnpm dev 会话启动临时 Redis...');
+    console.log('检测到本地 redis-server，尝试为当前开发会话启动临时 Redis...');
     ownedRedisProcess = spawn(
       'redis-server',
       [
@@ -143,10 +168,7 @@ async function ensureRedis() {
 }
 
 async function runTurboDev() {
-  await cleanupExistingDevProcesses();
-  await assertDevPortsAvailable();
-
-  // stream 模式便于在终端直接看到 web/worker/rtasr 的交错日志，避免 TUI 吞掉告警
+  // 流式输出模式便于在控制台清晰查看各服务的交错日志
   await runCommand('pnpm', [
     'turbo',
     'run',
@@ -160,9 +182,8 @@ async function runTurboDev() {
 }
 
 /**
- * 列出本机进程。使用 ps 而非 pgrep：
- * macOS 上 `pgrep -af` 的 -a 表示 include ancestors，且只输出 PID，
- * 旧实现用 /^(\d+)\s+(.*)$/ 解析会导致清理逻辑 100% 失效。
+ * 列出本机正在运行的进程
+ * 注：使用 ps 命令解析进程列表，保证在各类系统环境下稳定提取 PID 与执行命令
  */
 async function listProcesses() {
   const result = await execCapture('ps -ax -o pid= -o command=');
@@ -184,15 +205,17 @@ async function listProcesses() {
   return processes;
 }
 
+/**
+ * 判断某个命令是否确属当前工程目录启动的开发进程
+ */
 function isProjectDevProcess(command) {
   const inProject =
     command.includes(PROJECT_ROOT) ||
-    // next-dev 以相对路径启动时命令行不含绝对路径
     command.includes('tooling/scripts/next-dev.mjs') ||
     command.includes('tooling/scripts/dev.mjs');
 
   if (!inProject) {
-    // turbo/pnpm 入口可能不带项目绝对路径，用 monorepo filter 特征识别
+    // 针对不包含绝对路径的 monorepo 过滤指令进行特征识别
     if (
       command.includes('turbo run dev') &&
       command.includes('@repo/web') &&
@@ -215,24 +238,32 @@ function isProjectDevProcess(command) {
   );
 }
 
+/**
+ * 列出当前在开发端口范围上进行监听的 PID
+ * 端口范围与漂移空间同源派生（见 dev-port.mjs），lsof 区间查询一次完成
+ */
 async function listPidsListeningOnDevPorts() {
   const pids = new Set();
 
-  for (const port of DEV_PORTS) {
-    try {
-      const output = await execCapture(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t 2>/dev/null || true`);
-      for (const line of output.split('\n')) {
-        const pid = line.trim();
-        if (pid) pids.add(pid);
-      }
-    } catch {
-      // lsof 不可用或端口无监听时忽略
+  try {
+    const output = await execCapture(
+      `lsof -nP -iTCP:${WEB_PORT_RANGE.start}-${WEB_PORT_RANGE.end} -iTCP:${RTASR_GATEWAY_PORT} -sTCP:LISTEN -t 2>/dev/null || true`
+    );
+    for (const line of output.split('\n')) {
+      const pid = line.trim();
+      if (pid) pids.add(pid);
     }
+  } catch {
+    // lsof 不可用或端口无监听时忽略
   }
 
   return pids;
 }
 
+/**
+ * 收集确属当前工程需要清理的陈旧孤儿进程
+ * 注意：非当前工程目录的外部进程不会被收集，避免暴力杀除其他正常运行的实例
+ */
 async function collectDevProcessTargets(currentPid) {
   const processes = await listProcesses();
   const byPid = new Map(processes.map((item) => [item.pid, item]));
@@ -245,20 +276,17 @@ async function collectDevProcessTargets(currentPid) {
     }
   }
 
-  // next-server 命令行通常不含项目路径，通过开发端口反查补齐
+  // 针对监听端口的反查补齐，仅清理确属当前项目的孤儿子进程
   const listeningPids = await listPidsListeningOnDevPorts();
   for (const pid of listeningPids) {
     if (pid === currentPid || targets.has(pid)) continue;
     const item = byPid.get(pid);
     if (!item) continue;
 
-    const command = item.command;
-    if (
-      command.includes('next') ||
-      command.includes('workerd') ||
-      command.includes('wrangler') ||
-      command.includes(PROJECT_ROOT)
-    ) {
+    // 归属判据：argv 含项目路径，或进程工作目录位于项目内
+    // （next-server 等 fork 子进程的 argv 可能只有 "next-server (vX)"，不含路径，
+    //  此时以 cwd 为准，既能收回本项目孤儿，又不会误杀其他项目的同名服务）
+    if (item.command.includes(PROJECT_ROOT) || (await isProcessInProject(pid))) {
       targets.set(pid, item);
     }
   }
@@ -266,6 +294,22 @@ async function collectDevProcessTargets(currentPid) {
   return [...targets.values()];
 }
 
+/**
+ * 通过进程工作目录判断其是否归属于当前项目
+ */
+async function isProcessInProject(pid) {
+  try {
+    const output = await execCapture(`lsof -p ${pid} -a -d cwd -Fn 2>/dev/null || true`);
+    const cwdLine = output.split('\n').find((line) => line.startsWith('n/'));
+    return cwdLine ? cwdLine.slice(1).startsWith(PROJECT_ROOT) : false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 清理当前项目历史遗留的开发进程
+ */
 async function cleanupExistingDevProcesses() {
   const currentPid = String(process.pid);
   const targets = await collectDevProcessTargets(currentPid);
@@ -274,28 +318,28 @@ async function cleanupExistingDevProcesses() {
     return;
   }
 
-  console.log(`检测到 ${targets.length} 个旧的开发进程，准备清理...`);
+  console.log(`检测到 ${targets.length} 个历史残留的开发进程，准备清理...`);
   for (const { pid, command } of targets) {
     const short = command.length > 120 ? `${command.slice(0, 117)}...` : command;
-    console.log(`  - PID ${pid}: ${short}`);
+    console.log(`  - 进程标识 ${pid}: ${short}`);
   }
 
   const pids = targets.map(({ pid }) => pid);
   await signalPids(pids, 'TERM');
   await delay(800);
 
-  // 仍存活的进程再强杀，避免 next/worker/workerd 成为孤儿继续占端口
+  // 仍存活的孤儿进程发送强制结束信号
   const stillAlive = (await collectDevProcessTargets(currentPid)).map(({ pid }) => pid);
 
   if (stillAlive.length > 0) {
-    console.log(`以下进程未响应 SIGTERM，改为 SIGKILL: ${stillAlive.join(', ')}`);
+    console.log(`以下进程未响应终止信号，执行强制终止: ${stillAlive.join(', ')}`);
     await signalPids(stillAlive, 'KILL');
     await delay(300);
   }
 
   const leftovers = await collectDevProcessTargets(currentPid);
   if (leftovers.length > 0) {
-    console.log(`仍有 ${leftovers.length} 个残留开发进程，再次清理...`);
+    console.log(`仍有 ${leftovers.length} 个残留进程，再次清理...`);
     await signalPids(
       leftovers.map(({ pid }) => pid),
       'KILL'
@@ -311,24 +355,42 @@ async function signalPids(pids, signal) {
   await runCommand('kill', [flag, ...pids], { allowNonZeroExit: true });
 }
 
-async function assertDevPortsAvailable() {
-  const criticalPorts = [3030, 8787];
-  const busy = [];
-
-  for (const port of criticalPorts) {
-    if (await isPortOpen('127.0.0.1', port)) {
-      busy.push(port);
-    }
-  }
-
-  if (busy.length === 0) {
+/**
+ * 检查 rtasr 语音网关端口可用性
+ * 网关是可选子系统：被占时仅警告并说明后果边界，不阻断其余功能的开发
+ */
+async function warnIfGatewayPortBusy() {
+  if (!(await isPortOpen('127.0.0.1', RTASR_GATEWAY_PORT))) {
     return;
   }
 
   console.warn(
-    `警告：关键开发端口仍被占用（${busy.join(', ')}）。next-dev 可能会自动换端口，导致与 worker-rtasr 的 BILLING_API_URL 不一致。`
+    `⚠️  rtasr 语音网关端口 ${RTASR_GATEWAY_PORT} 被占用：语音转写功能将不可用，其余功能不受影响。`
   );
-  console.warn('可手动检查: lsof -nP -iTCP:3030,8787 -sTCP:LISTEN');
+  console.warn(`   可手动检查占用进程: lsof -nP -iTCP:${RTASR_GATEWAY_PORT} -sTCP:LISTEN`);
+}
+
+/**
+ * 启动后校验选定端口确实开始监听
+ * 决议到 Next 实际绑定之间存在秒级窗口，若端口被抢 Next 会静默漂移（内置重试），
+ * 而回调/计费配置已指向原端口——无法自动修复，因此超时时大声报警提示重启
+ */
+async function verifyWebPortStarted(webPort, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (await isPortOpen('127.0.0.1', webPort)) {
+      return;
+    }
+    await delay(500);
+  }
+
+  console.warn('');
+  console.warn(
+    `⚠️  端口 ${webPort} 在 ${Math.round(timeoutMs / 1000)} 秒内未开始监听：Next 可能已被抢端口并静默漂移。`
+  );
+  console.warn('   回调/计费链路可能已断裂，建议 Ctrl+C 后重新执行 pnpm dev。');
+  console.warn('');
 }
 
 function registerCleanupHandlers() {
@@ -340,7 +402,7 @@ function registerCleanupHandlers() {
   process.on('SIGINT', handleSignal);
   process.on('SIGTERM', handleSignal);
   process.on('exit', () => {
-    void cleanup('exit');
+    void cleanup('退出');
   });
 }
 
@@ -374,29 +436,6 @@ async function cleanup(reason) {
   } finally {
     cleanupInProgress = false;
   }
-}
-
-async function isPortOpen(host, port) {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port });
-    // 避免连接挂起导致启动卡住
-    socket.setTimeout(500);
-
-    socket.once('connect', () => {
-      socket.end();
-      resolve(true);
-    });
-
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-  });
 }
 
 async function hasCommand(command) {
@@ -446,7 +485,7 @@ async function runCommand(command, args, options = {}) {
         return;
       }
 
-      reject(new Error(`${command} ${args.join(' ')} 执行失败，退出码 ${code ?? 'unknown'}`));
+      reject(new Error(`${command} ${args.join(' ')} 执行失败，退出码 ${code ?? '未知'}`));
     });
 
     child.on('error', reject);
@@ -478,7 +517,7 @@ async function execCapture(command) {
         return;
       }
 
-      reject(new Error(stderr.trim() || `${command} 执行失败，退出码 ${code ?? 'unknown'}`));
+      reject(new Error(stderr.trim() || `${command} 执行失败，退出码 ${code ?? '未知'}`));
     });
 
     child.on('error', reject);

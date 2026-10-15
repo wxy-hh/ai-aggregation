@@ -7,7 +7,10 @@ for (const line of readFileSync('/Users/weixiaoyu/Desktop/practice/AI-aggregatio
 }
 const token = jwt.sign({ userId: 'cmrswotmx0000zi9kvk8za9bt', role: 'admin' }, env.AUTH_SECRET, { expiresIn: 900 });
 
-const res = await fetch('http://localhost:3030/api/chat', {
+// dev 端口可能自动漂移，可用 BASE_URL 环境变量指定实际地址
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3030';
+
+const res = await fetch(`${BASE_URL}/api/chat`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   body: JSON.stringify({

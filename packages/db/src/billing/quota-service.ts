@@ -3,7 +3,6 @@ import {
   claimQuotaReservation,
   getAvailableQuota,
   getQuotaReservation,
-  markQuotaBillingPending,
   reconcilePendingQuota,
   reserveQuotaBatch,
   reserveQuota,
@@ -15,12 +14,16 @@ import type {
   AiUsageRecordInput,
   BillingMeasurement,
   MeterType,
+  ReserveFeature,
 } from '@repo/shared';
 import { estimateTextTokens } from '@repo/shared';
 import { BillingError } from './billing-errors';
 
 // releaseAiQuota 仅为 releaseQuota 的语义化别名，直接复导出，避免无逻辑的透传包装。
 export { releaseQuota as releaseAiQuota } from '../quota-ledger';
+
+// 读取统一额度账户的可用额度（轻量只读查询）。
+export { getAvailableQuota } from '../quota-ledger';
 
 export interface ReserveAiQuotaInput {
   userId: string;
@@ -96,7 +99,7 @@ export async function reserveAiQuotaBatch(input: {
 export async function reserveChatQuota(input: {
   userId: string;
   requestId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: ReserveFeature;
   provider?: string | null;
   model?: string | null;
   messages: Array<{ content?: string }>;
@@ -138,7 +141,7 @@ export async function reserveChatQuota(input: {
 
 export async function reserveChatQuotaBatch(input: {
   userId: string;
-  feature?: 'chat' | 'voice' | 'video_prompt' | 'destiny' | 'resume';
+  feature?: ReserveFeature;
   messages: Array<{ content?: string }>;
   models: Array<{ requestId: string; provider?: string | null; model?: string | null }>;
   maxOutputTokens?: number;
@@ -205,22 +208,14 @@ export async function settleAiQuota(input: {
   status?: AiUsageRecordInput['status'];
   metadata?: Record<string, unknown>;
 }) {
-  const isProviderTokenUsage =
-    input.measurement.meterType !== 'tokens' || input.measurement.source === 'provider';
-  let reservation = isProviderTokenUsage
-    ? await settleQuota({
-        reservationId: input.reservationId,
-        measurement: input.measurement,
-      })
-    : await markQuotaBillingPending({
-        reservationId: input.reservationId,
-        meterType: input.measurement.meterType,
-        reason: '供应商未返回可审计 Token 用量，等待后续对账',
-      });
+  let reservation = await settleQuota({
+    reservationId: input.reservationId,
+    measurement: input.measurement,
+  });
 
-  // 实时语音会在首段音频真正转发后先标记为 billing_pending，避免超时任务误退款。
-  // 最终拿到可审计秒数后立即走统一补账结算，而不是一直停留在待处理状态。
-  if (reservation.status === 'billing_pending' && isProviderTokenUsage) {
+  // 预留超支或此前已被标记为待补账（如实时语音首段转发后先标记 billing_pending，或超时恢复）：
+  // 若落点仍是 billing_pending，立即走统一补账结算。
+  if (reservation.status === 'billing_pending') {
     const reconciled = await reconcilePendingQuota({
       reservationId: input.reservationId,
       actualUnits: input.measurement.quotaUnits,

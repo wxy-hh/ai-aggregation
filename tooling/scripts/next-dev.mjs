@@ -1,57 +1,47 @@
-import net from 'node:net';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
+import { applyWebPortConfig, resolveWebPort } from './dev-port.mjs';
 
-const PREFERRED_PORT = Number(process.env.PORT || process.env.WEB_PORT || 3030);
+/**
+ * Next.js 开发服务器启动器
+ *
+ * 端口决议是单点的（见 dev-port.mjs）：
+ * - 父进程（dev.mjs）已注入 PORT / WEB_PORT 时，直接信任并透传，不再重复探测；
+ *   若注入端口在绑定前被抢，Next 内置重试会兜底，dev.mjs 侧的启动后校验负责报警
+ * - 无注入时（如 pnpm dev:web 独立运行），自行决议端口并完成同样的全链路同步
+ */
+const injectedPort = process.env.PORT || process.env.WEB_PORT;
 
-async function isPortFree(port) {
-  return new Promise((resolve) => {
-    const server = net.createServer();
-
-    server.once('error', () => {
-      resolve(false);
-    });
-
-    server.once('listening', () => {
-      server.close(() => resolve(true));
-    });
-
-    // 仅绑定本机回环，与 Next 默认监听行为一致，避免误判
-    server.listen(port, '0.0.0.0');
-  });
+let port;
+if (injectedPort) {
+  port = Number(injectedPort);
+} else {
+  port = await resolveWebPort();
+  applyWebPortConfig(port);
 }
 
-async function findAvailablePort(startPort, maxAttempts = 20) {
-  for (let offset = 0; offset < maxAttempts; offset += 1) {
-    const port = startPort + offset;
-    if (await isPortFree(port)) {
-      return port;
-    }
-  }
+// 自动定位 Next.js 可执行文件路径，兼容独立运行或子进程运行场景
+const webBinPath = path.resolve(import.meta.dirname, '../../apps/web/node_modules/.bin/next');
+const nextCommand = fs.existsSync(webBinPath) ? webBinPath : 'next';
 
-  throw new Error(
-    `从端口 ${startPort} 起连续 ${maxAttempts} 个端口均被占用，无法启动 Next.js 开发服务器`
-  );
-}
+// 确保执行环境中包含 node_modules/.bin 路径
+const extraBinDirs = [
+  path.resolve(import.meta.dirname, '../../apps/web/node_modules/.bin'),
+  path.resolve(import.meta.dirname, '../../node_modules/.bin'),
+];
+const updatedPath = [...extraBinDirs, process.env.PATH || ''].join(path.delimiter);
 
-const port = await findAvailablePort(PREFERRED_PORT);
-
-if (port !== PREFERRED_PORT) {
-  console.warn('');
-  console.warn(`⚠️  首选端口 ${PREFERRED_PORT} 已被占用，自动改用 ${port}`);
-  console.warn('   这通常表示旧的 next/dev 进程没有被清理干净。');
-  console.warn(`   请检查: lsof -nP -iTCP:${PREFERRED_PORT} -sTCP:LISTEN`);
-  console.warn('   worker-rtasr 的 BILLING_API_URL 默认仍指向 http://localhost:3030，');
-  console.warn('   换端口后计费/回调整体链路可能异常。');
-  console.warn('');
-}
-
-// 不使用 shell:true，避免 Node DEP0190，并防止参数拼接注入风险
-const child = spawn('next', ['dev', '-p', String(port)], {
+// 不使用 shell:true，避免 Node 警告并防止参数注入安全隐患
+const child = spawn(nextCommand, ['dev', '-p', String(port)], {
   stdio: 'inherit',
+  cwd: path.resolve(import.meta.dirname, '../../apps/web'),
   env: {
     ...process.env,
+    PATH: updatedPath,
     PORT: String(port),
+    WEB_PORT: String(port),
   },
 });
 

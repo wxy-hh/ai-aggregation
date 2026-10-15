@@ -8,6 +8,7 @@ import { AppLayout } from '@/components/layout/app-layout';
 import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布局组件（包含侧边栏、头部等）
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
+import { ArtifactWorkspace } from '@/components/chat/artifacts/artifact-workspace'; // P1 交付物独立工作台（ADR-0015）
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -18,6 +19,9 @@ import { ReferenceBar } from '@/components/relay/reference-bar';
 import { ReferenceSourcePreview } from '@/components/relay/reference-source-preview';
 import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
+import { isNearBottom } from '@/lib/utils/scroll';
+import { useSettingsStore } from '@/stores/settings-store';
+import { CAPABILITY_PACKS } from '@repo/shared';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -29,7 +33,6 @@ import {
 import {
   useChatStore, // 当前单聊消息管理 Store（管理当前单聊的消息、发送与流式状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
-  type Message, // 消息类型定义
 } from '@/stores/chat-store';
 
 // 对比模式类型（'single' | 'compare'）
@@ -59,6 +62,8 @@ import {
   PanelLeft,
   SlidersHorizontal,
   GitCompareArrows, // 对比图标（并行对比会话标识）
+  Sparkles,
+  Wrench,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -84,6 +89,13 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
     models: [
       { id: 'doubao-seed-evolving', label: 'Doubao-Seed-Evolving' }, // 最新版本
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro (专业级)' }, // 专业级版本
+    ],
+  },
+  // DeepSeek 模型配置
+  deepseek: {
+    name: 'DeepSeek', // 显示名称
+    models: [
+      { id: 'deepseek-flash', label: 'DeepSeek Flash' }, // 官方高性价比模型
     ],
   },
 };
@@ -167,6 +179,14 @@ export default function ChatWorkspace() {
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 跟踪滚动容器当前是否处于底部（吸底判断，使用 ref 避免触发组件重新渲染）
+  const isAtBottomRef = useRef(true);
+
+  // 滚动容器滚动事件：监听用户是否处于底部（距离底部 <= 80px 视为在底部）
+  const handleMessagesScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    isAtBottomRef.current = isNearBottom(e.currentTarget);
+  }, []);
+
   // 指向模型选择器的 DOM 元素
   // 用于检测点击外部区域时关闭下拉列表
   const modelSelectorRef = useRef<HTMLDivElement>(null);
@@ -190,6 +210,17 @@ export default function ChatWorkspace() {
   // 当前全局模式权威：单聊 / 并行对比
   const comparisonMode = useConversationsStore((state) => state.mode);
   const isCompareMode = comparisonMode === 'compare';
+
+  // agent 模式开关（与输入坞的开关同源）：开启期间头部模型选择器置灰 ——
+  // 此时它不再决定实际生效的模型（服务端强制豆包 seed），置灰是说真话而不是撒谎。
+  const agentModeEnabled = useSettingsStore((state) => state.agentModeEnabled);
+
+  // agent 开启时立即收起已展开的模型选择 UI：否则置灰的只是触发器，列表里的选项仍可点。
+  useEffect(() => {
+    if (!agentModeEnabled) return;
+    setShowModelSelector(false);
+    setShowMobileModelDrawer(false);
+  }, [agentModeEnabled]);
 
   // 批量获取会话编排中枢操作方法（浅比较优化）
   const {
@@ -226,6 +257,11 @@ export default function ChatWorkspace() {
     reset,
     setAttachment,
     attachment,
+    setCapabilityPackKey,
+    artifacts,
+    activeArtifactId,
+    isWorkspaceOpen,
+    setWorkspaceOpen,
   } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -241,8 +277,20 @@ export default function ChatWorkspace() {
       reset: state.reset,
       setAttachment: state.setAttachment,
       attachment: state.attachment,
+      setCapabilityPackKey: state.setCapabilityPackKey,
+      artifacts: state.artifacts,
+      activeArtifactId: state.activeArtifactId,
+      isWorkspaceOpen: state.isWorkspaceOpen,
+      setWorkspaceOpen: state.setWorkspaceOpen,
     }))
   );
+
+  // 仅将非图片资产（研报、表格、代码）视为工作台有效产物，避免生图结果污染工作台与触发分栏
+  const validArtifacts = useMemo(
+    () => (artifacts ?? []).filter((a) => a.type !== 'image'),
+    [artifacts]
+  );
+  const hasArtifacts = validArtifacts.length > 0;
 
   // ============ 跨模态接力：对话目标接收 ============
   // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
@@ -330,6 +378,9 @@ export default function ChatWorkspace() {
 
     // 检查是否是创建新对话的请求（URL 中有 ?new=true）
     const isNewConversation = urlParams.get('new') === 'true';
+    const goal = urlParams.get('goal');
+    const pack = urlParams.get('pack');
+    const enableAgent = urlParams.get('agent') === 'true';
 
     // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
     const historyId = urlParams.get('historyId');
@@ -351,13 +402,19 @@ export default function ChatWorkspace() {
       });
       window.history.replaceState({}, '', '/chat');
     } else if (isNewConversation) {
-      // 场景 2：统一新建会话（E-1 契约）
-      // 首页「灵感快捷选 / 今日灵感 / 发起创作」会携带 prompt 参数唤起，
-      // 此时固定落到单聊会话并在新建后立即自动发送，保证点击即执行而非单纯跳转
-      const pendingPrompt = urlParams.get('prompt')?.trim();
-      startNewSession(pendingPrompt ? 'single' : undefined);
-      if (pendingPrompt) {
-        void sendMessage(pendingPrompt);
+      // 场景 2：统一新建会话（E-1 契约，支持重跑参数注入，ADR-0015）
+      startNewSession();
+      if (enableAgent) {
+        useSettingsStore.getState().setAgentMode(true);
+      }
+      if (pack) {
+        setCapabilityPackKey(pack);
+      }
+      if (goal) {
+        setRelayDraft({
+          id: `rerun-${Date.now()}`,
+          text: goal,
+        });
       }
       window.history.replaceState({}, '', '/chat');
     } else if (!currentConversationId && comparisonMode === 'single') {
@@ -394,33 +451,44 @@ export default function ChatWorkspace() {
     };
   }, [showModelSelector]);
 
+  // 切换会话时重置吸底状态：加载历史会话应定位到最新消息
+  // 声明顺序必须先于下方的自动滚动 effect，保证同一渲染周期内先重置再滚动
+  useEffect(() => {
+    isAtBottomRef.current = true;
+  }, [activeConversationId]);
+
   // ============ 自动滚动到最新消息 ============
-  // 在消息列表容器内滚动，避免误滚到外层布局
+  // 在消息列表容器内滚动，避免误滚到外层布局；仅在吸底状态下执行
+  // 流式期间使用 auto（即时滚动）避免每个 chunk 反复重启 smooth 平滑动画
   useEffect(() => {
     const scrollEl = messagesScrollRef.current;
-    if (!scrollEl) return;
-    scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'smooth' });
+    if (!scrollEl || !isAtBottomRef.current) return;
+    scrollEl.scrollTo({
+      top: scrollEl.scrollHeight,
+      behavior: isLoading ? 'auto' : 'smooth',
+    });
   }, [messages, isLoading]);
 
+  // 生成失败的全局错误提示（error 此前被订阅但从未渲染，失败时用户无感知）
+  useEffect(() => {
+    if (error) toast.error(error.message || '生成失败，请重试');
+  }, [error]);
+
   // ============ 消息展示处理 ============
-  // 为每条消息添加流式输出状态标记
-  // 流式输出：AI 的回复是逐字显示的，而不是一次性显示完整内容
-  const displayMessages: Message[] = messages.map((msg) => ({
-    ...msg, // 保留消息的所有原有属性
-    // 判断是否正在流式输出：
-    // 1. 如果消息本身有 isStreaming 标记，使用它
-    // 2. 否则，如果当前正在加载 && 是 AI 消息 && 是最后一条消息，则标记为流式输出
-    isStreaming:
-      msg.isStreaming ??
-      (isLoading && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id),
-  }));
-  const isEmptyChat = displayMessages.length === 0;
+  const isEmptyChat = messages.length === 0;
 
   // ============ 发送消息处理函数 ============
   // useCallback 用于缓存函数，避免每次渲染都创建新函数
   // 只有当依赖项变化时，才会创建新的函数实例
   const handleSend = useCallback(
     async (content: string) => {
+      // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
+      isAtBottomRef.current = true;
+      const scrollEl = messagesScrollRef.current;
+      if (scrollEl) {
+        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+      }
+
       // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
       const derivation = relay.prepareExecution();
 
@@ -449,7 +517,9 @@ export default function ChatWorkspace() {
         if (attachment?.sourceId === relay.bundle?.id) {
           setAttachment(null);
         }
+        return true;
       }
+      return false;
     },
     // 依赖项列表：这些值变化时，函数会重新创建
     [
@@ -716,22 +786,25 @@ export default function ChatWorkspace() {
           <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
             <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
               <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
-              {/* 头部 */}
+              {/* 头部：悬浮毛玻璃顶栏，浮于滚动区之上（DESIGN.md §4.1 / §8.5） */}
               <header
                 className={cn(
-                  'relative z-20 flex-none px-4 py-4 sm:px-6',
-                  // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
-                  !isEmptyChat &&
-                    'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
+                  'absolute inset-x-0 top-0 z-20 flex-none px-4 py-3.5 sm:px-6',
+                  'border-b border-white/50 bg-white/70 shadow-sm backdrop-blur-xl backdrop-saturate-150',
+                  'dark:border-white/10 dark:bg-slate-900/75',
+                  'transition-[border-color,background-color] duration-fast ease-out-expo'
                 )}
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
+                  <div className="flex min-w-0 flex-1 items-center gap-3 mr-2 sm:mr-3">
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border border-white/75 bg-white/80 text-blue-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-blue-300">
                       <BarChart2 className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h1 className="break-words font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base">
+                      <h1
+                        title={currentTitle}
+                        className="truncate font-heading text-sm font-bold leading-snug text-slate-900 dark:text-white sm:text-base"
+                      >
                         {currentTitle}
                       </h1>
                       <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
@@ -742,8 +815,20 @@ export default function ChatWorkspace() {
                           // 单聊模式：单模型选择器
                           <div className="relative" ref={modelSelectorRef}>
                             <button
+                              type="button"
+                              disabled={agentModeEnabled}
+                              title={
+                                agentModeEnabled
+                                  ? 'Agent 模式开启期间由系统指定模型（豆包 Seed），此处暂不可切换'
+                                  : undefined
+                              }
                               onClick={() => setShowModelSelector(!showModelSelector)}
-                              className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200"
+                              className={cn(
+                                'flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs transition-colors',
+                                agentModeEnabled
+                                  ? 'cursor-not-allowed text-slate-300 dark:text-slate-600'
+                                  : 'text-slate-500 hover:border-slate-200 hover:bg-white/80 hover:text-slate-700 dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800/80 dark:hover:text-slate-200'
+                              )}
                             >
                               <svg
                                 className="w-3.5 h-3.5 text-blue-500"
@@ -809,6 +894,28 @@ export default function ChatWorkspace() {
 
                   {/* 头部操作区 */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {/* 产物工作台切换按钮（ADR-0015） */}
+                    {!isCompareMode && hasArtifacts && (
+                      <button
+                        type="button"
+                        aria-label={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
+                        title={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
+                        onClick={() => setWorkspaceOpen(!isWorkspaceOpen)}
+                        className={cn(
+                          'inline-flex h-10 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none',
+                          isWorkspaceOpen
+                            ? 'border-blue-500/60 bg-blue-50 text-blue-600 dark:border-blue-500/50 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'border-white/80 bg-white/80 text-slate-700 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-700'
+                        )}
+                      >
+                        <FileText className="w-4 h-4 text-blue-500" />
+                        <span className="hidden sm:inline">工作台</span>
+                        <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] text-blue-600 dark:bg-blue-900/50 dark:text-blue-300">
+                          {validArtifacts.length}
+                        </span>
+                      </button>
+                    )}
+
                     {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
                     <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
                     <button
@@ -829,8 +936,19 @@ export default function ChatWorkspace() {
                       <button
                         type="button"
                         aria-label="打开模型选择"
+                        disabled={agentModeEnabled}
+                        title={
+                          agentModeEnabled
+                            ? 'Agent 模式开启期间由系统指定模型（豆包 Seed），此处暂不可切换'
+                            : undefined
+                        }
                         onClick={() => setShowMobileModelDrawer(true)}
-                        className="lg:hidden inline-flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700"
+                        className={cn(
+                          'lg:hidden inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-medium shadow-[0_8px_20px_rgba(76,95,154,0.08)] transition-colors',
+                          agentModeEnabled
+                            ? 'cursor-not-allowed border-slate-200/70 bg-slate-100/70 text-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600'
+                            : 'border-white/80 bg-white/80 text-slate-600 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
+                        )}
                       >
                         <SlidersHorizontal className="w-4 h-4" />
                         <span className="max-w-[88px] truncate">{currentModelLabel}</span>
@@ -846,93 +964,190 @@ export default function ChatWorkspace() {
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
-                  {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
-                  <div
-                    ref={messagesScrollRef}
-                    className={cn(
-                      'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
-                      isEmptyChat
-                        ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
-                        : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
-                    )}
-                  >
+                  {/* 消息滚动区域外壳：承载顶部/底部平滑渐变遮罩与滚动列表 */}
+                  <div className="relative min-h-0 flex-1">
+                    {/* 消息列表：h-full 填满外壳，min-h-0 保证纵向正常滚动 */}
+                    <div
+                      ref={messagesScrollRef}
+                      onScroll={handleMessagesScroll}
+                      className={cn(
+                        'h-full w-full overflow-y-auto overscroll-y-contain custom-scrollbar',
+                        // 非空消息列表：背景取主壳渐变底部色，避免顶部透出渐变白色端形成色带
+                        isEmptyChat
+                          ? 'bg-transparent px-4 pb-4 pt-[80px] sm:px-5 sm:pb-5'
+                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[84px] pb-[4.5rem] sm:px-5 sm:pt-[88px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
+                      )}
+                    >
                     {isEmptyChat ? (
                       <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
                         <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
 
                         <div className="relative w-full max-w-3xl rounded-[32px] bg-white/50 p-6 shadow-[0_20px_44px_rgba(76,95,154,0.08)] ring-1 ring-white/50 backdrop-blur-2xl dark:bg-slate-900/45 dark:ring-slate-700/35 md:p-8">
-                          <div className="mb-8 flex flex-col items-center text-center">
-                            <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
-                              <Bot className="h-8 w-8" />
-                            </div>
-                            <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
-                              智能对话助手
-                            </div>
-                          </div>
+                          {agentModeEnabled ? (
+                            <>
+                              <div className="mb-8 flex flex-col items-center text-center">
+                                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#3B82F6_0%,#6366F1_100%)] text-white shadow-[0_16px_32px_rgba(59,130,246,0.28)]">
+                                  <Sparkles className="h-8 w-8" />
+                                </div>
+                                <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-blue-200/80 bg-blue-50/90 px-3.5 py-1 text-xs font-semibold text-blue-700 shadow-sm dark:border-blue-500/30 dark:bg-blue-950/40 dark:text-blue-300">
+                                  <Wrench className="h-3.5 w-3.5" />
+                                  <span>Agent 场景能力包</span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
+                                  专项设定专属于垂直任务的提示词与工具白名单，为您交付高质量结构化成果
+                                </p>
+                              </div>
 
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {quickActions.map((action) => {
-                              const ActionIcon = action.icon;
+                              <div className="grid gap-4 md:grid-cols-2" data-testid="capability-packs-grid">
+                                {CAPABILITY_PACKS.map((pack) => {
+                                  const isResearch = pack.key === 'deep-research';
+                                  const PackIcon = isResearch ? Search : FileText;
+                                  return (
+                                    <button
+                                      key={pack.key}
+                                      type="button"
+                                      data-testid={`capability-pack-card-${pack.key}`}
+                                      onClick={() => {
+                                        setCapabilityPackKey(pack.key);
+                                        setRelayDraft({
+                                          id: `pack-${pack.key}-${Date.now()}`,
+                                          text: pack.promptTemplate,
+                                        });
+                                      }}
+                                      className="group relative flex flex-col justify-between rounded-[24px] border border-white/80 bg-white/[0.88] p-5 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-300 hover:shadow-[0_18px_32px_rgba(93,124,250,0.14)] dark:border-slate-700/80 dark:bg-slate-800/[0.88] dark:hover:border-blue-500/40 cursor-pointer"
+                                    >
+                                      <div>
+                                        <div className="flex items-center justify-between gap-3 mb-3">
+                                          <div
+                                            className={cn(
+                                              'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105 shadow-sm',
+                                              isResearch
+                                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+                                                : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                            )}
+                                          >
+                                            <PackIcon className="h-5 w-5" />
+                                          </div>
+                                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+                                            {pack.maxSteps} 步探索上限
+                                          </span>
+                                        </div>
 
-                              return (
-                                <button
-                                  key={action.title}
-                                  onClick={() => handleSend(action.prompt)}
-                                  className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
-                                >
-                                  <div
-                                    className={cn(
-                                      'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105',
-                                      action.iconClassName
-                                    )}
-                                  >
-                                    <ActionIcon className="h-5 w-5" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
-                                      {action.title}
-                                    </div>
-                                    <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                      {action.description}
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
+                                        <div className="text-base font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                          {pack.name}
+                                        </div>
+                                        <div className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                          {pack.description}
+                                        </div>
+                                      </div>
 
-                          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <FileText className="h-3.5 w-3.5 text-blue-500" />
-                              支持长文本分析
-                            </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <Globe className="h-3.5 w-3.5 text-blue-500" />
-                              实时联网搜索
-                            </div>
-                            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
-                              <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                              企业级数据安全
-                            </div>
-                          </div>
+                                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-[11px] text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                        <span>点击载入专业模板</span>
+                                        <span className="font-medium group-hover:translate-x-0.5 transition-transform">→</span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="mt-6 flex flex-wrap items-center justify-center gap-3 pt-2 text-xs text-slate-400 dark:text-slate-500">
+                                <span>按需启用私有 Webhook 插槽 · 随会话状态隔离</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="mb-8 flex flex-col items-center text-center">
+                                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[24px] bg-[linear-gradient(135deg,#4969E9_0%,#7D91FF_100%)] text-white shadow-[0_16px_32px_rgba(93,124,250,0.24)]">
+                                  <Bot className="h-8 w-8" />
+                                </div>
+                                <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-xs font-semibold text-blue-600 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                                  智能对话助手
+                                </div>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {quickActions.map((action) => {
+                                  const ActionIcon = action.icon;
+
+                                  return (
+                                    <button
+                                      key={action.title}
+                                      onClick={() => handleSend(action.prompt)}
+                                      className="group flex items-start gap-4 rounded-[24px] border border-white/80 bg-white/[0.84] p-4 text-left shadow-[0_10px_24px_rgba(76,95,154,0.06)] select-none transition-[border-color,background-color,box-shadow,transform] duration-fast ease-out-expo hover:-translate-y-0.5 active:scale-[0.99] hover:border-blue-200 hover:shadow-[0_18px_32px_rgba(93,124,250,0.12)] dark:border-slate-700/80 dark:bg-slate-800/[0.82] dark:hover:border-blue-500/30"
+                                    >
+                                      <div
+                                        className={cn(
+                                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105',
+                                          action.iconClassName
+                                        )}
+                                      >
+                                        <ActionIcon className="h-5 w-5" />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-slate-800 transition-colors duration-fast ease-out-expo group-hover:text-blue-600 dark:text-slate-100 dark:group-hover:text-blue-300">
+                                          {action.title}
+                                        </div>
+                                        <div className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                          {action.description}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="mt-5 flex flex-wrap items-center justify-center gap-3 pt-3">
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <FileText className="h-3.5 w-3.5 text-blue-500" />
+                                  支持长文本分析
+                                </div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <Globe className="h-3.5 w-3.5 text-blue-500" />
+                                  实时联网搜索
+                                </div>
+                                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/[0.78] px-3 py-2 text-xs font-medium text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/[0.78] dark:text-slate-300">
+                                  <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                                  企业级数据安全
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     ) : (
-                      <div className="flex w-full flex-col pt-2 pb-4">
-                        {displayMessages.map((msg) => (
-                          <MessageItem key={msg.id} message={msg} onRegenerate={reload} />
-                        ))}
+                      <div className="flex w-full flex-col pb-4">
+                        {messages.map((msg, i) => {
+                          // 「重新生成」仅挂在最后一条 AI 消息上：线性会话只允许重生成最后一轮（防中间轮截断丢消息）
+                          const isLastAssistant =
+                            msg.role === 'assistant' && i === messages.length - 1;
+                          const prevUser = isLastAssistant
+                            ? [...messages.slice(0, i)].reverse().find((m) => m.role === 'user')
+                            : undefined;
+                          return (
+                            <MessageItem
+                              key={msg.id}
+                              message={msg}
+                              onRegenerate={
+                                isLastAssistant && prevUser
+                                  ? () => void reload(prevUser.id)
+                                  : undefined
+                              }
+                            />
+                          );
+                        })}
                         <div ref={messagesEndRef} />
                       </div>
                     )}
                   </div>
+
                   {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
                   {!isEmptyChat && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
                       aria-hidden
                     />
                   )}
+                </div>
 
                   {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
                   {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (
@@ -998,7 +1213,21 @@ export default function ChatWorkspace() {
               )}
             </div>
           </div>
+
+          {/* 桌面端 Artifacts 工作台：单聊模式、展开且有产物时常驻双栏（ADR-0015） */}
+          {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
+            <aside className="hidden lg:flex w-[480px] xl:w-[540px] 2xl:w-[600px] flex-shrink-0 flex-col p-4 pl-0 min-h-0 h-full">
+              <ArtifactWorkspace />
+            </aside>
+          )}
         </div>
+
+        {/* 移动端全屏工作台覆盖层（Overlay，ADR-0015） */}
+        {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
+          <div className="lg:hidden">
+            <ArtifactWorkspace isMobile={true} />
+          </div>
+        )}
 
         <Dialog open={showConversationDrawer} onOpenChange={setShowConversationDrawer}>
           <DialogContent className="inset-x-0 bottom-0 top-auto w-full max-w-none translate-x-0 translate-y-0 rounded-t-[28px] rounded-b-none border-0 bg-white p-0 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom dark:bg-slate-950 lg:hidden">

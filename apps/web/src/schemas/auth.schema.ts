@@ -2,17 +2,60 @@ import { z } from 'zod';
 
 export const USERNAME_REGEX = /^[a-z0-9_]+$/;
 
-/** 注册请求 */
-export const registerSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(3, '用户名至少 3 个字符')
-    .max(30, '用户名最多 30 个字符')
-    .regex(USERNAME_REGEX, '用户名只能包含英文字母、数字和下划线'),
-  password: z.string().min(8, '密码至少 8 位字符'),
-  name: z.string().trim().optional(),
+/** 选填字段的空值归一化：空字符串（含纯空白）视为未填写 */
+function optionalField<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema.optional()
+  );
+}
+
+/** 邮箱（统一小写存储与比对） */
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('邮箱格式不正确')
+  .max(254, '邮箱长度超出限制');
+
+/** 6 位数字验证码 */
+export const emailCodeSchema = z.string().trim().regex(/^\d{6}$/, '验证码为 6 位数字');
+
+/** 注册请求；邮箱选填，填写则必须带邮箱验证码 */
+export const registerSchema = z
+  .object({
+    username: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3, '用户名至少 3 个字符')
+      .max(30, '用户名最多 30 个字符')
+      .regex(USERNAME_REGEX, '用户名只能包含英文字母、数字和下划线'),
+    password: z.string().min(8, '密码至少 8 位字符'),
+    name: z.string().trim().optional(),
+    email: optionalField(emailSchema),
+    emailCode: optionalField(emailCodeSchema),
+  })
+  .superRefine((data, ctx) => {
+    if (data.email && !data.emailCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['emailCode'],
+        message: '请填写邮箱验证码',
+      });
+    }
+  });
+
+/** 发送邮箱验证码请求（忘记密码不发验证码，走重置链接） */
+export const sendEmailCodeSchema = z.object({
+  purpose: z.enum(['register', 'bind'], { message: '验证码用途不合法' }),
+  email: emailSchema,
+});
+
+/** 绑定/更换邮箱请求 */
+export const bindEmailSchema = z.object({
+  email: emailSchema,
+  code: emailCodeSchema,
 });
 
 /** 登录请求 */
@@ -25,14 +68,19 @@ export const loginSchema = z.object({
   password: z.string().min(1, '请输入密码'),
 });
 
-/** 忘记密码请求 */
-export const forgotPasswordSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .min(1, '请输入用户名'),
-});
+/**
+ * 忘记密码请求：支持用户名或邮箱（按是否含 @ 区分）。
+ * `username` 为旧客户端字段，保留兼容。
+ */
+export const forgotPasswordSchema = z
+  .object({
+    account: z.string().trim().toLowerCase().min(1, '请输入用户名或邮箱').optional(),
+    username: z.string().trim().toLowerCase().min(1, '请输入用户名或邮箱').optional(),
+  })
+  .refine((data) => Boolean(data.account || data.username), {
+    message: '请输入用户名或邮箱',
+    path: ['account'],
+  });
 
 /** 重置密码请求 */
 export const resetPasswordSchema = z.object({
@@ -59,6 +107,8 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type SendEmailCodeInput = z.infer<typeof sendEmailCodeSchema>;
+export type BindEmailInput = z.infer<typeof bindEmailSchema>;
 
 /** 超管创建用户 */
 export const adminCreateUserSchema = z.object({

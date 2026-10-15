@@ -10,6 +10,7 @@ import { createProvider } from '@repo/providers';
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { ChatContext, ChatProviderAdapter } from '../types';
 import { textStreamToSse } from '../sse';
+import { resolveChatStreamUsage } from '../chat-usage';
 import type { ProviderName } from '@repo/providers';
 
 export class GenericAdapter implements ChatProviderAdapter {
@@ -20,6 +21,10 @@ export class GenericAdapter implements ChatProviderAdapter {
       messages: ctx.messages,
       abortSignal: ctx.signal,
       maxOutputTokens: ctx.outputLimit,
+      headers:
+        ctx.thinking !== undefined
+          ? { 'x-deepseek-thinking': ctx.thinking ? 'enabled' : 'disabled' }
+          : undefined,
     });
 
     const textResponse = result.toTextStreamResponse();
@@ -33,14 +38,17 @@ export class GenericAdapter implements ChatProviderAdapter {
       onText: (chunk) => { text += chunk; },
       onDone: async () => {
         let usage: unknown = null;
+        let normUsage: ReturnType<typeof normalizeUsage> | null = null;
         try {
           const total = await result.totalUsage;
-          usage = normalizeUsage(total).rawUsage;
+          normUsage = normalizeUsage(total);
+          usage = normUsage.rawUsage;
         } catch (err) {
           // usage 读取失败：走估算兜底结算，不静默跳过
           console.error('[chat] 读取 usage 失败:', err);
         }
         await ctx.onFinish({ outcome: 'success', usage, outputText: text });
+        return resolveChatStreamUsage(normUsage, ctx.messages, text);
       },
       onError: async (err) => {
         // 有输出文本 → partial；完全无输出 → failed（取消应退款），
