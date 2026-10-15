@@ -1,16 +1,41 @@
 ---
 name: handoff
-description: 将当前对话压缩为交接文档。
-argument-hint: "What will the next session be used for?"
+description: 将当前会话浓缩为工作区交接文档，支持断点无缝续接。
+argument-hint: "下一会话将用来做什么？重点关注什么？"
 disable-model-invocation: true
 ---
 
-Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.（项目定制，上游升级时保留本节：若交接对象是**其他组员或需跨机器可见**，改为落盘入库的 `docs/handoff/<日期>-<slug>.md`；同机会话续接仍用系统临时目录。）
+编写一份结构化交接文档，浓缩总结当前会话上下文，以便全新的 Agent 能无缝接力继续推进工作。
 
-Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
+## 1. 落盘路径规范（严禁写入系统临时目录 /tmp，必须收敛于项目工作区）
 
-Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
+- **默认同机会话续接（本地工作区单机流转，不入库）**：
+  - 若当前正处于特定特性开发中（存在 `.scratch/<feature>/`），保存至当前特性工作区：
+    `.scratch/<feature>/handoff.md`（与 `spec.md`、`qa-plan.md` 同级归档）；
+  - 若无特定特性目录，保存至：
+    `.scratch/handoff/<YYYY-MM-DD>-<slug>.md`。
+- **跨人协作或跨机器交接（版本化入库流转）**：
+  - 若用户参数或指令中指明交接给其他组员、跨机协同或需要版本化追踪，落盘至：
+    `docs/handoff/<YYYY-MM-DD>-<slug>.md`。
 
-Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+## 2. 文档内容与结构要求
 
-If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.
+交接文档必须精炼、高信息密度，包含以下核心章节：
+1. **当前进度与状态概览**：已完成的工单、单测状态（红/绿）、浏览器验收进展；
+2. **阻断项与未决难点 (Blockers & Decisions-so-far)**：当前卡在哪里，已确定的关键技术假设；
+3. **建议调用的技能集 (Suggested Skills)**：明确列出新 Agent 在下一会话开工时建议调用的技能（如 `/implement`、`ego-browser`、`code-review` 等）；
+4. **下一阶段核心目标**：若用户传入了参数，将其作为下个会话的核心焦点并量化目标；
+5. **产物指针索引（严禁正文重复）**：
+   - 严禁将 `spec.md`、`qa-plan.md`、ADR、代码 diff 的大段正文复制到交接文档中；
+   - 一律使用项目相对路径引用（如 `.scratch/<feature>/spec.md`、`docs/adr/0012-xxx.md`），最大化节省新会话 Token。
+
+## 3. 安全脱敏红线
+
+自动检测并完全擦除会话中出现的任何敏感信息，包括但不限于 API Key、鉴权 Token、数据库密码、Cookie、个人隐私等。
+
+## 4. 完成后输出提示
+
+生成交接文档后，在对话框底部明确向开发者输出极简提示：
+- 落盘文件相对路径；
+- 新会话接力开工一句话指令：
+  `请阅读交接文档 <相对路径>，严格按照其中的建议技能和指引继续推进。`
