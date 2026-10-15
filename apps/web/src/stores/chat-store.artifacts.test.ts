@@ -162,6 +162,41 @@ describe('chat-store Artifacts 状态机与工作台联动 (ADR-0015)', () => {
     const state = useChatStore.getState();
     expect(state.artifacts).toEqual(historicalArtifacts);
     expect(state.activeArtifactId).toBe('hist-art-2'); // 聚焦最新一个
-    expect(state.isWorkspaceOpen).toBe(true);
+    // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰（可由用户点击顶部或卡片按需展开）
+    expect(state.isWorkspaceOpen).toBe(false);
+  });
+
+  it('loadConversation 过滤纯图片的冗余产物', () => {
+    const mixedArtifacts: Artifact[] = [
+      {
+        id: 'hist-img-1',
+        type: 'image',
+        title: '生成的图片',
+        content: 'https://example.com/pic.png',
+        status: 'complete',
+      },
+      {
+        id: 'hist-art-1',
+        type: 'markdown',
+        title: '历史研报',
+        content: '研报正文',
+        status: 'complete',
+      },
+    ];
+
+    useChatStore.getState().loadConversation(
+      'conv-history-img',
+      [{ id: 'm1', role: 'assistant', content: '请查阅' }],
+      'doubao',
+      'doubao-seed-evolving',
+      null,
+      {},
+      mixedArtifacts
+    );
+
+    const state = useChatStore.getState();
+    // 纯图片已被过滤，仅保留真实研报产物
+    expect(state.artifacts).toHaveLength(1);
+    expect(state.artifacts[0].type).toBe('markdown');
   });
 });

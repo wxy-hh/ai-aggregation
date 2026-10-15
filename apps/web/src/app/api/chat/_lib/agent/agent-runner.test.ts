@@ -355,6 +355,81 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
     expect(textDeltas).toBe('导语：已完成分析。\n\n请查阅右侧。');
   });
 
+  it('工具产出图片附件时，通过 tool_result 下发附件，不额外推送 artifact 事件（避免强行弹开工作台）', async () => {
+    const imageToolSpec: AgentToolSpec = {
+      name: 'image_generate',
+      description: '生成图片',
+      parameters: z.object({ prompt: z.string().optional() }),
+      execute: async () => ({
+        ok: true,
+        contentForModel: '图片生成成功',
+        summaryForDisplay: '已生成图片',
+        attachment: {
+          kind: 'image',
+          url: 'https://example.com/generated-cat.png',
+        },
+      }),
+    };
+
+    const registry = createToolRegistry([imageToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 第 1 步调用生图工具，第 2 步收尾输出
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [{ toolCallId: 'call_img_1', toolName: 'image_generate', input: { prompt: '猫咪' } }],
+          response: { id: 'resp_step1' },
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['这是为您生成的猫咪图片。'],
+          response: { id: 'resp_step2' },
+        })
+      );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '画一只猫' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test_img',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 验证 tool_result 正确携带了图片附件
+    const toolResultEvent = events.find((e) => e.type === 'tool_result');
+    expect(toolResultEvent).toBeDefined();
+    expect(toolResultEvent).toMatchObject({
+      type: 'tool_result',
+      callId: 'call_img_1',
+      name: 'image_generate',
+      status: 'success',
+      attachment: {
+        kind: 'image',
+        url: 'https://example.com/generated-cat.png',
+      },
+    });
+
+    // 核心契约：绝对不产生 artifact_start 事件（不弹开工作台）
+    const artifactEvents = events.filter(
+      (e) => typeof e.type === 'string' && e.type.startsWith('artifact_')
+    );
+    expect(artifactEvents).toHaveLength(0);
+
+    // 审计流水中不包含 artifactRefs
+    expect(onFinishMock).toHaveBeenCalled();
+    const finishArg = (onFinishMock.mock.calls as unknown as Array<[Record<string, unknown>]>)[0]?.[0];
+    expect(finishArg?.artifactRefs).toEqual([]);
+    expect(finishArg?.outcome).toBe('success');
+  });
+
   it('无响应 id 时回退全量发送：两次调用响应均不带 id 时，第 2 次调用全量回发历史与中间消息且无 previousResponseId', async () => {
     const registry = createToolRegistry([fakeToolSpec]);
     const onFinishMock = vi.fn(async () => {});

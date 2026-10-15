@@ -27,7 +27,8 @@ export function ArtifactCard({ artifactId, className }: ArtifactCardProps) {
   const setActiveArtifactId = useChatStore((state) => state.setActiveArtifactId);
   const setWorkspaceOpen = useChatStore((state) => state.setWorkspaceOpen);
 
-  if (!artifact) return null;
+  // 图片已由消息流原生工具卡片完整承载（支持预览与下载），不在消息底部渲染重复的产物查看卡片
+  if (!artifact || artifact.type === 'image') return null;
 
   const config = TYPE_CONFIG[artifact.type] ?? TYPE_CONFIG.markdown;
   const IconComponent = config.icon;
@@ -90,7 +91,7 @@ export function ArtifactCard({ artifactId, className }: ArtifactCardProps) {
           <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
             <span>{config.label}</span>
             {artifact.language && <span>· {artifact.language}</span>}
-            {artifact.content && artifact.type !== 'image' && (
+            {artifact.content && (
               <span>· {artifact.content.length} 字符</span>
             )}
           </div>

@@ -23,8 +23,8 @@ import { ToolError, type AgentToolSpec, type ToolExecutionResult } from '@/lib/a
 
 /** 连接（含 TLS）超时 */
 const CONNECT_TIMEOUT_MS = 5_000;
-/** 响应体体积上限：超过即放弃（防止用超大页面打爆内存/带宽） */
-const MAX_RESPONSE_BYTES = 200 * 1024;
+/** 响应体体积上限：放宽至 2MB，覆盖技术文档与重型单页，达到上限平滑截断而非报错抛弃（ADR-0017） */
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 /** 注入模型的正文上限 */
 const MAX_CONTENT_CHARS = 8_000;
 /** 最大重定向跳数 */
@@ -36,7 +36,22 @@ interface RawResponse {
   location?: string;
   contentType: string;
   body: Buffer;
+  isTruncated?: boolean;
 }
+
+/** 真实的现代桌面 Chrome 请求头，避免被各大平台反爬拦截返回 14 字空壳（ADR-0017） */
+const BROWSER_FETCH_HEADERS: Record<string, string> = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,application/json,text/plain;q=0.8,*/*;q=0.5',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1',
+};
 
 /** 发起一次 GET（不跟随重定向）；重定向响应不读 body */
 function requestOnce(target: URL, signal: AbortSignal): Promise<RawResponse> {
@@ -52,11 +67,7 @@ function requestOnce(target: URL, signal: AbortSignal): Promise<RawResponse> {
         port: target.port || (isHttps ? 443 : 80),
         path: `${target.pathname}${target.search}`,
         method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; AI-AggregationBot/1.0; +https://chunfen.ink)',
-          Accept: 'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.5',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.5',
-        },
+        headers: BROWSER_FETCH_HEADERS,
         lookup: guardedLookup,
         timeout: CONNECT_TIMEOUT_MS,
       },
@@ -77,22 +88,41 @@ function requestOnce(target: URL, signal: AbortSignal): Promise<RawResponse> {
 
         const chunks: Buffer[] = [];
         let total = 0;
+        let reachedMax = false;
+
         res.on('data', (chunk: Buffer) => {
+          if (reachedMax) return;
           total += chunk.length;
-          if (total > MAX_RESPONSE_BYTES) {
-            res.destroy(new ToolError('目标网页内容过大，已放弃抓取'));
-            return;
-          }
           chunks.push(chunk);
+
+          // 达到 2MB 上限：优雅截断停止读取，保留已收到的前 2MB 内容提取正文，绝不直接抛错中断！
+          if (total >= MAX_RESPONSE_BYTES) {
+            reachedMax = true;
+            res.destroy(); // 停止接收后续字节，节省网络
+            resolve({
+              status,
+              contentType: String(res.headers['content-type'] ?? ''),
+              body: Buffer.concat(chunks),
+              isTruncated: true,
+            });
+          }
         });
+
         res.on('end', () => {
-          resolve({
-            status,
-            contentType: String(res.headers['content-type'] ?? ''),
-            body: Buffer.concat(chunks),
-          });
+          if (!reachedMax) {
+            resolve({
+              status,
+              contentType: String(res.headers['content-type'] ?? ''),
+              body: Buffer.concat(chunks),
+              isTruncated: false,
+            });
+          }
         });
-        res.on('error', reject);
+
+        res.on('error', (err) => {
+          if (reachedMax) return; // 截断后的主动销毁不作为错误
+          reject(err);
+        });
       }
     );
 
@@ -206,13 +236,30 @@ export function createWebFetchTool(): AgentToolSpec {
         throw new ToolError('目标网页没有可提取的正文内容');
       }
 
-      const truncatedNote = text.length > MAX_CONTENT_CHARS ? '\n\n（正文过长，以上为前部分内容）' : '';
+      // 识别依赖客户端 JS 动态渲染或防爬拦截的极短页面（如 14 字空壳），给出明确引导防止模型死循环（ADR-0017）
+      const isDynamicSpaOrBlocked =
+        text.length < 60 &&
+        /(javascript|noscript|loading|登录|验证码|403|forbidden|challenge|安全验证)/i.test(rawText);
+
+      if (isDynamicSpaOrBlocked) {
+        return {
+          ok: true,
+          contentForModel: `来源：${finalUrl.toString()}\n${title ? `标题：${title}\n` : ''}正文提取说明：该网页依赖客户端 JavaScript 动态渲染或需要登录鉴权，静态抓取仅能获取部分前置文本（${text}）。请参考搜索摘要中的已知信息继续组织回答，避免重复尝试抓取该页面。`,
+          summaryForDisplay: `已访问 ${finalUrl.hostname}${title ? ` · ${title}` : ''}（动态渲染页，正文较少）`,
+        };
+      }
+
+      const byteTruncatedNote = response.isTruncated
+        ? '\n\n（提示：网页原始文件体积超过 2MB，以上为前 2MB 提取的核心正文内容）'
+        : '';
+      const charTruncatedNote =
+        text.length > MAX_CONTENT_CHARS ? '\n\n（正文过长，以上为前部分内容）' : '';
       const content = text.slice(0, MAX_CONTENT_CHARS);
 
       return {
         ok: true,
-        contentForModel: `来源：${finalUrl.toString()}\n${title ? `标题：${title}\n` : ''}\n正文：\n${content}${truncatedNote}`,
-        summaryForDisplay: `已抓取 ${finalUrl.hostname}${title ? ` · ${title}` : ''}（正文 ${text.length} 字）`,
+        contentForModel: `来源：${finalUrl.toString()}\n${title ? `标题：${title}\n` : ''}\n正文：\n${content}${charTruncatedNote}${byteTruncatedNote}`,
+        summaryForDisplay: `已抓取 ${finalUrl.hostname}${title ? ` · ${title}` : ''}（正文 ${text.length} 字${response.isTruncated ? '，大页面截断' : ''}）`,
       };
     },
   };

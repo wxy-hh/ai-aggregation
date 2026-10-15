@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 228 35% 97%;
     --foreground: 225 35% 16%;
 
@@ -94,6 +95,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 229 26% 11%;
     --foreground: 223 38% 94%;
 
@@ -169,6 +171,24 @@
   .dark textarea,
   .dark [contenteditable='true'] {
     caret-color: #8b9dff;
+  }
+
+  /* 浏览器表单自动填充 (Autofill) 适配：解决 WebKit/Chrome 强制白底并破坏暗色模式的问题 */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    transition: background-color 5000000s ease-in-out 0s, color 5000000s ease-in-out 0s;
+    -webkit-text-fill-color: currentColor !important;
+  }
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
+    box-shadow: 0 0 0 1000px #1e293b inset !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    caret-color: #8b9dff !important;
   }
 
   /* 链接/文字按钮下划线统一（DESIGN.md §9）：offset 4px + 装饰色 40% 透明度。

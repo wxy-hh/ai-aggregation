@@ -153,9 +153,13 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       const pack = getCapabilityPack(options.capabilityPack);
       const basePrompt = options.systemPrompt ?? pack?.systemPrompt;
       const artifactGuideline = `【交付物与产物规范】：当回答包含长篇分析研报（>500字）、对比表格、完整代码文件时，请将其作为独立产物（Artifact）输出。格式：<artifact identifier="唯一英文ID" type="markdown|table|code" title="中文标题" language="可选语言">正文</artifact>。在标签外部仅输出简短导引说明（例如「报告已整理在右侧工作台」），不重复铺陈长文。`;
+      const searchGuideline = `【联网检索与精读协同规范 (ADR-0017)】：
+1. 查询新闻、时效线索、最新价格或官方文档时，必须优先使用 web_search 工具输入关键词 Query，严禁使用 web_fetch 抓取搜索引擎结果页（如 bing/duckduckgo/google/baidu）。
+2. 高效两步收敛：先用 web_search 检索获取权威线索与 URL；若搜索摘要已足够详尽，直接组织最终回答；若需要深读官方定价表或具体细则，挑选 1~2 个最权威的官方 URL 使用 web_fetch 进行单页精读。
+3. 避免过度循环：单次任务尽量在 1~3 次工具调用内快速收敛，组织出完整、详实、重点突出的最终专业回答。`;
       const effectiveSystemPrompt = basePrompt
-        ? `${basePrompt}\n\n${artifactGuideline}`
-        : undefined;
+        ? `${basePrompt}\n\n${searchGuideline}\n\n${artifactGuideline}`
+        : `${searchGuideline}\n\n${artifactGuideline}`;
       const effectiveMaxSteps = options.maxSteps ?? pack?.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
       const disabledSet = new Set(options.disabledToolKeys ?? []);
@@ -390,34 +394,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
             });
 
-            // 若工具产出图片附件，自动泛化挂载为 image 产物（ADR-0015）
-            if (outcome.ok && outcome.attachment && outcome.attachment.kind === 'image') {
-              const artId = `art_img_${callId}`;
-              recordedArtifactRefs.push({
-                id: artId,
-                type: 'image',
-                title: '生成的图片',
-              });
-              controller.enqueue(
-                encodeSseEvent({
-                  type: 'artifact_start',
-                  artifact: { id: artId, type: 'image', title: '生成的图片' },
-                })
-              );
-              controller.enqueue(
-                encodeSseEvent({
-                  type: 'artifact_delta',
-                  id: artId,
-                  delta: outcome.attachment.url,
-                })
-              );
-              controller.enqueue(
-                encodeSseEvent({
-                  type: 'artifact_end',
-                  id: artId,
-                  status: 'complete',
-                })
-              );
+            // 若工具产出有效附件（如生成的图片），标记为有效产出，不向工作台冗余注入 image artifact
+            if (outcome.ok && outcome.attachment) {
+              toolProducedOutput = true;
             }
 
             // 回注给模型的内容：软提示 / 未执行 / 过检后内容均由管道组装完毕

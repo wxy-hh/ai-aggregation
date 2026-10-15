@@ -648,4 +648,23 @@ describe('ChatInput 智能意图升级芯片（ADR-0012 / 工单 04）', () => {
       expect(toggle).toHaveAttribute('aria-pressed', 'false');
     });
   });
+
+  describe('ChatInput 上下分层复合架构 (方案 A)', () => {
+    it('文本框具有 200px 上限且独占全宽，长文本时显示字数辅助指示', () => {
+      render(<ChatInput onSend={vi.fn()} isLoading={false} />);
+
+      const textarea = screen.getByPlaceholderText('输入消息…');
+      expect(textarea).toHaveClass('max-h-[200px]');
+      expect(textarea).toHaveClass('w-full');
+
+      // 输入短文本时，不显示字数指示
+      fireEvent.change(textarea, { target: { value: '短文本' } });
+      expect(screen.queryByText('3')).not.toBeInTheDocument();
+
+      // 输入超过 80 字符时，显示字数统计
+      const longText = '这是一段超过80个字符的测试文本，用来验证当用户输入较长内容时，右下角能够正常展示字数统计指示器，给用户清晰的输入长度反馈，体验非常友好且优雅。';
+      fireEvent.change(textarea, { target: { value: longText } });
+      expect(screen.getByText(String(longText.length))).toBeInTheDocument();
+    });
+  });
 });

@@ -806,7 +806,10 @@ export const useChatStore = create<ChatState>((set, get) => {
         emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages, ...(artifacts ? { artifacts } : {}) });
       }
 
-      const initialArtifacts = artifacts ? [...artifacts] : [];
+      // 过滤掉纯图片的冗余产物（图片已由消息流原生卡片直接承载，不污染工作台）
+      const initialArtifacts = (artifacts ? [...artifacts] : []).filter(
+        (a) => a.type !== 'image'
+      );
       const latestArtifactId = initialArtifacts.length > 0 ? initialArtifacts[initialArtifacts.length - 1].id : null;
 
       // 更新状态
@@ -819,7 +822,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         toolOverrides: toolOverrides ? { ...toolOverrides } : {}, // 恢复会话级工具覆盖字典
         artifacts: initialArtifacts, // 恢复会话级产物池（ADR-0015）
         activeArtifactId: latestArtifactId, // 聚焦最新产物
-        isWorkspaceOpen: initialArtifacts.length > 0, // 有产物时自动展开工作台
+        isWorkspaceOpen: false, // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰（可由用户点击顶部或卡片按需展开）
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
         error: null, // 清空错误

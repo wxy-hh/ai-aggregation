@@ -285,7 +285,12 @@ export default function ChatWorkspace() {
     }))
   );
 
-  const hasArtifacts = artifacts && artifacts.length > 0;
+  // 仅将非图片资产（研报、表格、代码）视为工作台有效产物，避免生图结果污染工作台与触发分栏
+  const validArtifacts = useMemo(
+    () => (artifacts ?? []).filter((a) => a.type !== 'image'),
+    [artifacts]
+  );
+  const hasArtifacts = validArtifacts.length > 0;
 
   // ============ 跨模态接力：对话目标接收 ============
   // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
@@ -780,13 +785,13 @@ export default function ChatWorkspace() {
           <div className="flex h-full min-h-0 flex-1 flex-col p-4 min-w-0">
             <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(248,250,252,0.76))] shadow-[0_18px_40px_rgba(76,95,154,0.1)] backdrop-blur-xl dark:border-slate-700/70 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.82))] dark:shadow-[0_20px_48px_rgba(0,0,0,0.24)]">
               <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
-              {/* 头部 */}
+              {/* 头部：悬浮毛玻璃顶栏，浮于滚动区之上（DESIGN.md §4.1 / §8.5） */}
               <header
                 className={cn(
-                  'relative z-20 flex-none px-4 py-4 sm:px-6',
-                  // 有消息时用柔和投影区分层级，空状态不加分割避免顶栏硬切线
-                  !isEmptyChat &&
-                    'shadow-[0_12px_32px_-24px_rgba(76,95,154,0.22)] dark:shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)]'
+                  'absolute inset-x-0 top-0 z-20 flex-none px-4 py-3.5 sm:px-6',
+                  'border-b border-white/50 bg-white/70 shadow-sm backdrop-blur-xl backdrop-saturate-150',
+                  'dark:border-white/10 dark:bg-slate-900/75',
+                  'transition-[border-color,background-color] duration-fast ease-out-expo'
                 )}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between min-w-0">
@@ -905,7 +910,7 @@ export default function ChatWorkspace() {
                         <FileText className="w-4 h-4 text-blue-500" />
                         <span className="hidden sm:inline">工作台</span>
                         <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] text-blue-600 dark:bg-blue-900/50 dark:text-blue-300">
-                          {artifacts.length}
+                          {validArtifacts.length}
                         </span>
                       </button>
                     )}
@@ -958,17 +963,20 @@ export default function ChatWorkspace() {
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
-                  {/* 消息列表：min-h-0 保证 flex 子项可收缩并出现纵向滚动 */}
-                  <div
-                    ref={messagesScrollRef}
-                    onScroll={handleMessagesScroll}
-                    className={cn(
-                      'relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain custom-scrollbar bg-transparent',
-                      isEmptyChat
-                        ? 'px-4 pb-4 pt-1 sm:px-5 sm:pb-5'
-                        : 'px-4 pt-4 pb-[4.5rem] sm:px-5 sm:pt-5 sm:pb-20'
-                    )}
-                  >
+                  {/* 消息滚动区域外壳：承载顶部/底部平滑渐变遮罩与滚动列表 */}
+                  <div className="relative min-h-0 flex-1">
+                    {/* 消息列表：h-full 填满外壳，min-h-0 保证纵向正常滚动 */}
+                    <div
+                      ref={messagesScrollRef}
+                      onScroll={handleMessagesScroll}
+                      className={cn(
+                        'h-full w-full overflow-y-auto overscroll-y-contain custom-scrollbar',
+                        // 非空消息列表：背景取主壳渐变底部色，避免顶部透出渐变白色端形成色带
+                        isEmptyChat
+                          ? 'bg-transparent px-4 pb-4 pt-[80px] sm:px-5 sm:pb-5'
+                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[84px] pb-[4.5rem] sm:px-5 sm:pt-[88px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
+                      )}
+                    >
                     {isEmptyChat ? (
                       <div className="relative z-0 flex min-h-full flex-col items-center justify-center">
                         <div className="pointer-events-none absolute top-1/2 h-[320px] w-[min(88vw,640px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.1),transparent_72%)] blur-[96px] dark:bg-[radial-gradient(circle,rgba(93,124,250,0.16),transparent_72%)]" />
@@ -1106,7 +1114,7 @@ export default function ChatWorkspace() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex w-full flex-col pt-2 pb-4">
+                      <div className="flex w-full flex-col pb-4">
                         {messages.map((msg, i) => {
                           // 「重新生成」仅挂在最后一条 AI 消息上：线性会话只允许重生成最后一轮（防中间轮截断丢消息）
                           const isLastAssistant =
@@ -1130,13 +1138,15 @@ export default function ChatWorkspace() {
                       </div>
                     )}
                   </div>
+
                   {/* 底部过渡，仅柔化输入坞背景与消息列表的衔接，不遮挡消息内容 */}
                   {!isEmptyChat && (
                     <div
-                      className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
+                      className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-[rgba(248,250,252,0.9)] via-[rgba(248,250,252,0.45)] to-transparent dark:from-[rgba(15,23,42,0.88)] dark:via-[rgba(15,23,42,0.35)]"
                       aria-hidden
                     />
                   )}
+                </div>
 
                   {/* 接力引用条：模型标签与输入框之间（REQ-007） */}
                   {(relay.bundle || relay.replaceCandidate || relay.isInvalid) && (

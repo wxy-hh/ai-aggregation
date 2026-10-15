@@ -53,7 +53,7 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 图片最大大小：10MB（10 * 102
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 文件最大大小：5MB
 const UPLOAD_TIMEOUT = 20000; // 上传超时时间：20秒（20000毫秒）
 /** 输入框自动增高上限（px） */
-const TEXTAREA_MAX_HEIGHT = 120;
+const TEXTAREA_MAX_HEIGHT = 200;
 // 主操作按钮（发送/停止）共享样式：蓝色渐变 CTA；
 // 移动端 44px（h-11 w-11）命中 DESIGN.md §8.1「中」档主操作尺寸；md+ 桌面保持 36px，并通过伪元素补热区到 44px
 const CTA_BUTTON_CLASS =
@@ -1191,10 +1191,10 @@ export function ChatInput({
         </div>
       )}
 
-      {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，单容器无嵌套描边（DESIGN.md §8.2） */}
+      {/* G-2 输入坞：与聊天卡片同系磨砂玻璃，上下分层复合架构（DESIGN.md §8.2） */}
       <div
         className={cn(
-          'flex items-end gap-1 rounded-2xl p-1.5',
+          'flex flex-col rounded-2xl p-2',
           'border border-white/60 bg-white/60 shadow-sm backdrop-blur-xl',
           'transition-[border-color,background-color,box-shadow] duration-fast ease-out-expo',
           'hover:border-slate-300/80 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-slate-700/80',
@@ -1202,12 +1202,7 @@ export function ChatInput({
           'dark:focus-within:border-blue-500/40 dark:focus-within:bg-slate-950/75'
         )}
       >
-        {agentButton}
-
-        {thinkingButton}
-
-        {attachButton}
-
+        {/* 上层：多行文本输入区（独占 100% 宽度，自增高上限至 200px） */}
         <Textarea
           ref={textareaRef}
           rows={1}
@@ -1219,32 +1214,53 @@ export function ChatInput({
           onCompositionEnd={handleCompositionEnd}
           placeholder={attachment ? '补充说明…' : '输入消息…'}
           title="Enter 发送，Shift + Enter 换行"
-          className="min-h-[36px] max-h-[120px] flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
+          className="min-h-[38px] max-h-[200px] w-full resize-none border-0 bg-transparent px-2.5 pt-1.5 pb-1 text-sm leading-5 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-slate-100"
           disabled={isLoading}
         />
 
-        {/* Agent 模式可用工具入口（ADR-0014 / 工单 02） */}
-        {agentModeEnabled && <SessionToolsPanel userTools={userTools} />}
+        {/* 下层：工具栏与主操作底栏（固定吸附在底部两侧，不随输入增高上下漂移） */}
+        <div className="mt-1 flex items-center justify-between gap-2 px-1 pt-0.5">
+          {/* 左侧：场景模式与功能开关 */}
+          <div className="flex items-center gap-1">
+            {agentButton}
 
-        <Button
-          type="button"
-          onClick={isLoading ? stop : handleSend}
-          disabled={
-            isLoading
-              ? false
-              : (!input.trim() && !attachment) || attachment?.status === 'uploading'
-          }
-          className="mb-0.5 mr-0.5 h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700"
-          size="icon"
-          aria-label={isLoading ? '停止生成' : '发送'}
-          title={isLoading ? '停止生成' : '发送'}
-        >
-          {isLoading ? (
-            <Square className="h-3.5 w-3.5 fill-current" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
+            {thinkingButton}
+
+            {attachButton}
+
+            {/* Agent 模式可用工具入口（ADR-0014 / 工单 02） */}
+            {agentModeEnabled && <SessionToolsPanel userTools={userTools} />}
+          </div>
+
+          {/* 右侧：字数辅助与发送/停止主按钮 */}
+          <div className="flex items-center gap-2">
+            {input.length > 50 && (
+              <span className="text-[11px] tabular-nums text-slate-400/80 dark:text-slate-500/80 select-none">
+                {input.length}
+              </span>
+            )}
+
+            <Button
+              type="button"
+              onClick={isLoading ? stop : handleSend}
+              disabled={
+                isLoading
+                  ? false
+                  : (!input.trim() && !attachment) || attachment?.status === 'uploading'
+              }
+              className="relative h-9 w-9 shrink-0 rounded-xl border border-blue-400/20 bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-0 text-white shadow-[0_4px_12px_-2px_rgba(59,130,246,0.35)] select-none transition-[box-shadow,transform,filter] duration-fast ease-out-expo hover:brightness-105 active:scale-[0.93] disabled:border-slate-200 disabled:bg-slate-200 disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none dark:disabled:border-slate-700 dark:disabled:from-slate-700 dark:disabled:via-slate-700 dark:disabled:to-slate-700 after:absolute after:-inset-1 after:content-['']"
+              size="icon"
+              aria-label={isLoading ? '停止生成' : '发送'}
+              title={isLoading ? '停止生成' : '发送'}
+            >
+              {isLoading ? (
+                <Square className="h-3.5 w-3.5 fill-current" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
 
       <input
