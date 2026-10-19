@@ -117,7 +117,6 @@ describe('GET /api/auth/oauth/qq/callback', () => {
     const stored = mocks.refreshTokenCreate.mock.calls[0][0].data.token as string;
     expect(plainToken).toBeTruthy();
     expect(stored).toBe(sha256(plainToken!));
-    expect(mocks.cookieJar.get('auth_kind')).toBe('user');
   });
 
   it('未绑定账号的新用户首次授权时静默建号，升级 https 头像并签发会话', async () => {

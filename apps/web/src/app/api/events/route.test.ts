@@ -113,7 +113,7 @@ describe('/api/events 埋点上报路由测试', () => {
     mocks.userFindUnique.mockImplementation((args: { where?: { id?: string } }) =>
       Promise.resolve(
         args?.where?.id
-          ? { id: args.where.id, status: 'active', role: 'user', isAnonymous: false, tokens: 20000 }
+          ? { id: args.where.id, status: 'active', role: 'user', tokens: 20000 }
           : null
       )
     );

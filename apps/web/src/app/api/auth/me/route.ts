@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
         emailVerified: true,
         role: true,
         tokens: true,
-        isAnonymous: true,
         createdAt: true,
       },
     });

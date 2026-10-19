@@ -97,7 +97,7 @@ class DefaultChainedMessageSession implements ChainedMessageSession {
 
   constructor(options: ChainedMessageSessionOptions) {
     this.currentMessages = normalizeInitialMessages(options.initialMessages);
-    this.supportsChaining = Boolean(options.supportsChaining);
+    this.supportsChaining = options.supportsChaining ?? true;
   }
 
   getStepPayload(): StepPayload {

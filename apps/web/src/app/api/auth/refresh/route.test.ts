@@ -66,7 +66,7 @@ describe('POST /api/auth/refresh', () => {
       expiresAt: new Date(Date.now() + 60_000),
       user: { role: 'user' },
     });
-    mocks.userFindUnique.mockResolvedValue({ status: 'active', isAnonymous: false });
+    mocks.userFindUnique.mockResolvedValue({ status: 'active' });
     mocks.transaction.mockResolvedValue([]);
     mocks.refreshTokenCreate.mockResolvedValue({ id: 'token_2' });
     mocks.refreshTokenDelete.mockReturnValue({ 标记: 'refreshToken.delete' });

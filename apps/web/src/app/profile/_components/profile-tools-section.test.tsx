@@ -69,7 +69,6 @@ describe('ProfileToolsSection 我的工具板块', () => {
         emailVerified: null,
         avatar: null,
         role: 'user',
-        isAnonymous: false,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -428,19 +427,10 @@ describe('ProfileToolsSection 我的工具板块', () => {
     expect(addBtn).toBeDisabled();
   });
 
-  it('匿名用户：友好引导登录，不请求工具列表，不抛出异常', async () => {
+  it('未登录访客：友好引导登录，不请求工具列表，不抛出异常', async () => {
     useAuthStore.setState({
-      user: {
-        id: 'anon_1',
-        username: 'guest',
-        name: null,
-        email: null,
-        emailVerified: null,
-        avatar: null,
-        role: 'user',
-        isAnonymous: true,
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
+      user: null,
+      accessToken: null,
     });
 
     render(<ProfileToolsSection />);

@@ -27,7 +27,6 @@ describe('getCurrentUser', () => {
       .mockResolvedValueOnce({
         id: 'user-1',
         role: 'user',
-        isAnonymous: false,
         status: 'active',
         tokens: 100,
       } as any);
@@ -42,30 +41,9 @@ describe('getCurrentUser', () => {
     expect(user).toEqual({
       id: 'user-1',
       role: 'user',
-      isAnonymous: false,
       status: 'active',
       tokens: 100,
     });
-  });
-
-  it('匿名用户上下文包含 isAnonymous: true', async () => {
-    vi.mocked(prisma.user.findUnique)
-      .mockResolvedValueOnce({ status: 'active' } as any)
-      .mockResolvedValueOnce({
-        id: 'anon-1',
-        role: 'user',
-        isAnonymous: true,
-        status: 'active',
-        tokens: 0,
-      } as any);
-
-    const token = await createTestToken('anon-1', 'user');
-    const req = new Request('http://localhost/api/test', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const user = await getCurrentUser(req);
-    expect(user.isAnonymous).toBe(true);
   });
 
   it('用户不存在时抛出 AuthError', async () => {

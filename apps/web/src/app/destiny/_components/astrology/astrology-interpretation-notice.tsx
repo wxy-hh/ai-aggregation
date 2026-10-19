@@ -18,7 +18,6 @@
 
 import Link from 'next/link';
 import { LockKeyhole, RefreshCw, Sparkles } from 'lucide-react';
-import { useAuthStore } from '@/stores/auth-store';
 import type { AstrologyInterpretationReason } from '@/stores/destiny-workspace-store';
 import { AstrologyCtaButton } from './astrology-cta-button';
 
@@ -63,7 +62,6 @@ export function AstrologyInterpretationNotice({
   /** 重试解读（重走报告流，真值确定性一致不重算）；缺省时不渲染重试入口 */
   onRetry?: () => void;
 }) {
-  const isAnonymous = useAuthStore((state) => state.user?.isAnonymous === true);
   const variant: NoticeVariant =
     reason === 'quota'
       ? 'quota'
@@ -109,10 +107,10 @@ export function AstrologyInterpretationNotice({
             )}
             {variant === 'quota' && (
               <Link
-                href={isAnonymous ? '/login' : '/profile'}
+                href="/profile"
                 className="inline-flex min-h-11 items-center justify-center rounded-full border border-indigo-300/70 bg-indigo-50/80 px-4 text-sm font-semibold text-indigo-600 transition-colors hover:border-indigo-400 hover:bg-indigo-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D7CFA] focus-visible:ring-offset-2 focus-visible:ring-offset-transparent dark:border-indigo-300/25 dark:bg-indigo-400/10 dark:text-indigo-200 dark:hover:bg-indigo-400/20"
               >
-                {isAnonymous ? '使用账号密码登录，获得更多额度' : '查看我的额度'}
+                查看我的额度
               </Link>
             )}
           </div>

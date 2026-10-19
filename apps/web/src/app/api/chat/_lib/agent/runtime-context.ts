@@ -49,12 +49,12 @@ export interface AgentRuntimeContextOptions {
 }
 
 /**
- * 默认加载实现：查询该用户已启用的 Webhook 工具（spec §4.6 匿名用户不加载）。
+ * 默认加载实现：查询该用户已启用的 Webhook 工具。
  * 与旧路由层 defaultGetUserTools 行为完全一致，仅归属地迁移至此。
  */
 async function defaultLoadUserTools(userId: string): Promise<UserWebhookTool[]> {
   return prisma.userWebhookTool.findMany({
-    where: { userId, enabled: true, user: { isAnonymous: false } },
+    where: { userId, enabled: true },
   });
 }
 

@@ -15,7 +15,7 @@ describe('ProfileAgentRunsSection 组件 (ADR-0015 / 工单 02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({
-      user: { id: 'u1', username: 'testuser', isAnonymous: false } as any,
+      user: { id: 'u1', username: 'testuser' } as any,
       accessToken: 'valid-token',
       status: 'ready',
     });

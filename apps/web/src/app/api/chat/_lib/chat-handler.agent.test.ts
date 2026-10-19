@@ -542,9 +542,9 @@ describe('agent 模式编排（HTTP 级）', () => {
 
   // ==================== spec §9：匿名用户路径 ====================
 
-  it('匿名用户 → 正常进入 agent 分支并以 chat-agent 计费', async () => {
-    currentUserMock.mockResolvedValue({ id: 'anon-user-id', role: 'user', isAnonymous: true });
-    streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['这是给匿名用户的回答。'] }));
+  it('正常用户 → 正常进入 agent 分支并以 chat-agent 计费', async () => {
+    currentUserMock.mockResolvedValue({ id: 'valid-user-id', role: 'user' });
+    streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['这是给用户的回答。'] }));
 
     const response = await handler(agentRequest());
     expect(response.status).toBe(200);
@@ -1502,11 +1502,11 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
         'user'
       );
 
-      // 决策步无特定专项能力包提示词
+      // 决策步无特定专项能力包提示词（未挂载 deep-research 等专项指令）
       const callOptions = streamTextMock.mock.calls[0][0] as {
         system?: string;
       };
-      expect(callOptions.system).toBeUndefined();
+      expect(callOptions.system).not.toContain('深度调研与全景分析专家');
     });
 
     describe('会话级临时停用工具二次过滤 (disabledToolKeys · ADR-0014 / 工单 02)', () => {

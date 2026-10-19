@@ -103,7 +103,9 @@ export function StaticLoginPage() {
     try {
       await login(username.trim(), password);
       toast.success('登录成功');
-      router.push('/home');
+      const redirect = searchParams.get('redirect');
+      const target = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/home';
+      router.push(target);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '登录失败，请重试');
     } finally {

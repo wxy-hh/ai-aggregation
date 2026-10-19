@@ -106,7 +106,7 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     const restoredChat = useChatStore.getState();
     expect(restoredChat.artifacts).toHaveLength(1);
     expect(restoredChat.artifacts[0].id).toBe('art-1');
-    expect(restoredChat.isWorkspaceOpen).toBe(true);
+    expect(restoredChat.isWorkspaceOpen).toBe(false); // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰
     expect(restoredChat.activeArtifactId).toBe('art-1');
   });
 

@@ -3,10 +3,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { authApi, type RegisterPayload } from '@/lib/api/auth';
-import {
-  type AnonymousAuthStrategy,
-  fingerprintAnonymousStrategy,
-} from '@/lib/auth/anonymous-strategy';
 
 interface User {
   id: string;
@@ -16,20 +12,14 @@ interface User {
   avatar: string | null;
   role: string;
   tokens?: number;
-  isAnonymous?: boolean;
   emailVerified: string | null;
   createdAt?: string;
 }
 
 /**
  * 认证引导（bootstrap）状态。只有两态、且单向迁移：
- * - `bootstrapping`：还没有结论（refresh / 匿名认证可能仍在途），**不能当成"未登录"**；
+ * - `bootstrapping`：还没有结论（refresh 可能仍在途），不能当成"未登录"；
  * - `ready`：已经有结论，此时 `isAuthenticated` 才可信。
- *
- * 该字段是「认证是否已有结论」的唯一真相来源：只有引导生命周期本身可以改写它
- * （rehydrate 命中已持久化登录态、或 initialize 收尾），
- * login / register / anonymousSignIn 等登录动作一律不碰，
- * 避免"某条登录路径把状态改回未就绪"再次引发守卫误判。
  */
 export type AuthStatus = 'bootstrapping' | 'ready';
 
@@ -41,7 +31,6 @@ interface AuthState {
 
   login: (username: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
-  anonymousSignIn: () => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
   fetchUser: () => Promise<void>;
@@ -49,8 +38,7 @@ interface AuthState {
 }
 
 export interface AuthStoreOptions {
-  /** 匿名认证策略，控制设备标识的获取与清除 */
-  anonymousStrategy: AnonymousAuthStrategy;
+  // 保留可选配置类型以兼容测试注入
 }
 
 // 防止并发初始化调用导致的竞争条件
@@ -65,17 +53,10 @@ export function getPendingAuthBootstrap(): Promise<void> | null {
   return initializePromise;
 }
 
-/**
- * 认证引导超时（毫秒）：接口层没有超时，弱网或代理挂起时引导会一直悬着，
- * 而 status 不迁移到 'ready' 就等于全站停在加载态。到点先放行渲染，引导继续在后台完成。
- */
-export const AUTH_BOOTSTRAP_TIMEOUT_MS = 15_000;
-
-/** 创建 auth store，允许注入匿名认证策略以便测试或替换实现 */
-export function createAuthStore(options: AuthStoreOptions) {
+/** 创建 auth store */
+export function createAuthStore(_options?: AuthStoreOptions) {
   // 防止并发刷新：401 请求、引导自身、fetchUser 都可能同时要求刷新，
-  // 而服务端每次刷新都会轮换 refresh token —— 后到的那次必然 401，
-  // 于是把仍在续期的会话误判成「会话失效」。共享同一枚在途 Promise，收敛成一次请求。
+  // 共享同一枚在途 Promise，收敛成一次请求。
   let refreshInFlight: Promise<string | null> | null = null;
 
   return create<AuthState>()(
@@ -107,17 +88,6 @@ export function createAuthStore(options: AuthStoreOptions) {
           set({ user: res.data.user, accessToken: res.data.accessToken, isAuthenticated: true });
         },
 
-        anonymousSignIn: async () => {
-          const credential = await options.anonymousStrategy.getCredential();
-          const res = await authApi.anonymous(credential);
-
-          if (!res.success || !res.data?.user || !res.data?.accessToken) {
-            throw new Error(res.error || '匿名登录失败');
-          }
-
-          set({ user: res.data.user, accessToken: res.data.accessToken, isAuthenticated: true });
-        },
-
         logout: async () => {
           // 清除持久化的登录数据，防止公共电脑上的残留
           try {
@@ -126,14 +96,7 @@ export function createAuthStore(options: AuthStoreOptions) {
             // 忽略清除失败
           }
 
-          // 如果是匿名用户，同时清除设备标识，确保下次访问时重新生成匿名身份
-          const { user } = get();
-          if (user?.isAnonymous) {
-            options.anonymousStrategy.clearCredential();
-          }
-
           // 登出接口只接受 POST，用请求调用（服务端清 cookie），再由前端跳转登录页。
-          // 接口异常不能阻塞本地登出：本地状态已清理，cookie 失效由服务端兜底。
           try {
             await authApi.logout();
           } catch {
@@ -216,7 +179,6 @@ export function createAuthStore(options: AuthStoreOptions) {
             } catch {
               // 刷新也失败，保持当前状态，不清除
             }
-            // 网络错误不强制登出，保持现有登录状态（引导收尾由 initialize 负责）
           }
         },
 
@@ -224,17 +186,10 @@ export function createAuthStore(options: AuthStoreOptions) {
           // 防止并发调用（React StrictMode 会导致 useEffect 执行两次）
           if (initializePromise) return initializePromise;
 
-          const bootstrap = (async () => {
-            const { refreshAccessToken, fetchUser, anonymousSignIn } = get();
+          initializePromise = (async () => {
+            const { refreshAccessToken, fetchUser } = get();
 
-            // 注意：这里不写 status —— 初始值就是 'bootstrapping'，而「已持久化登录态」
-            // 已在 rehydrate 时置为 'ready'，重置会白白把已就绪的界面打回加载态。
-            // 引导状态只在下面的 finally 里单向迁移到 'ready'。
-
-            // 优先通过 refresh token 获取新 token（兼容已登录真实用户）。
-            // accessToken 内存化后刷新页面必然走这条路径，而多标签页下另一个标签可能刚轮换过
-            // refresh token：本标签用旧 cookie 刷新会 401，但浏览器此时已拿到新 cookie，
-            // 因此失败后先重试一次再决定是否降级，避免把刚续上的会话误判成「未登录」。
+            // 优先通过 refresh token 静默续期获取新 token
             let newToken = await refreshAccessToken();
             if (!newToken) {
               newToken = await refreshAccessToken();
@@ -243,36 +198,16 @@ export function createAuthStore(options: AuthStoreOptions) {
             if (newToken) {
               await fetchUser();
             } else {
-              // refresh token 不可用，尝试匿名设备认证
-              try {
-                await anonymousSignIn();
-              } catch (anonymousError) {
-                console.warn('[auth-store] 匿名认证失败:', anonymousError);
-                // 匿名认证失败，清除状态
-                set({ user: null, accessToken: null, isAuthenticated: false });
-              }
+              // 无有效令牌，置为未登录
+              set({ user: null, accessToken: null, isAuthenticated: false });
             }
-          })();
-
-          // 超时兜底：接口层没有超时，弱网/代理挂起时引导会一直悬着，
-          // 而 status 不迁移到 'ready' 就意味着全站停在加载态（比"未登录"更糟）。
-          // 到点先放行渲染，引导本身继续在后台跑完。
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          const timeout = new Promise<void>((resolve) => {
-            timer = setTimeout(() => {
-              console.warn(`[auth-store] 认证引导超过 ${AUTH_BOOTSTRAP_TIMEOUT_MS}ms 未完成，先放行渲染`);
-              resolve();
-            }, AUTH_BOOTSTRAP_TIMEOUT_MS);
-          });
-
-          initializePromise = Promise.race([bootstrap, timeout])
+          })()
             .catch((bootstrapError) => {
-              // 引导自身抛出（例如 refresh 意外 reject）也要收尾，不能把异常留给调用方
               console.warn('[auth-store] 认证引导异常:', bootstrapError);
+              set({ user: null, accessToken: null, isAuthenticated: false });
             })
             .finally(() => {
-              if (timer) clearTimeout(timer);
-              // 引导收尾（成功/失败/超时）：唯一一处把 status 迁移到 'ready' 的地方
+              // 引导收尾：单向迁移到 'ready'
               set({ status: 'ready' });
             });
 
@@ -286,12 +221,8 @@ export function createAuthStore(options: AuthStoreOptions) {
       {
         name: 'ai-app-auth',
         storage: createJSONStorage(() => localStorage),
-        // 版本 1：accessToken 从持久化中移除（凭证只留在内存里，刷新页面后用 refresh token 静默换回）
         version: 1,
         migrate: (persistedState, version) => {
-          // v0 曾把 accessToken 一并写进 localStorage：旧版本残留的凭证必须就地清掉，
-          // 否则它既会继续留在磁盘上，又会在 rehydrate 时被当成有效登录态。
-          // 返回迁移后的状态后，persist 会把清理结果重新写回存储。
           if (version < 1 && persistedState && typeof persistedState === 'object') {
             const cleaned = { ...(persistedState as Record<string, unknown>) };
             delete cleaned.accessToken;
@@ -304,11 +235,6 @@ export function createAuthStore(options: AuthStoreOptions) {
           isAuthenticated: state.isAuthenticated,
         }),
         onRehydrateStorage: () => (state) => {
-          // 引导状态的两条写入路径之一（另一条是 initialize 的收尾）：
-          // 只有「已持久化登录态」才能认定引导已有结论（isAuthenticated 已为 true，首个渲染即可放行）。
-          // 未登录（含首次进站）必须留在 'bootstrapping'，等 initialize() 走完匿名认证再迁移；
-          // 否则守卫会把「认证进行中」当成「未登录」立刻 router.push('/login')，
-          // 用户停在登录页（重定向甚至晚于匿名认证成功）。
           if (state?.isAuthenticated) {
             state.status = 'ready';
           }
@@ -318,5 +244,5 @@ export function createAuthStore(options: AuthStoreOptions) {
   );
 }
 
-/** 默认 auth store：使用浏览器指纹作为匿名认证策略 */
-export const useAuthStore = createAuthStore({ anonymousStrategy: fingerprintAnonymousStrategy });
+/** 默认 auth store */
+export const useAuthStore = createAuthStore();

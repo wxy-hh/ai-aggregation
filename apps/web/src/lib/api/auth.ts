@@ -8,7 +8,6 @@ interface User {
   avatar: string | null;
   role: string;
   tokens?: number;
-  isAnonymous?: boolean;
   emailVerified: string | null;
   createdAt?: string;
 }
@@ -102,13 +101,6 @@ export const authApi = {
     return request('/api/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ account }),
-    });
-  },
-
-  async anonymous(deviceId: string) {
-    return request('/api/auth/anonymous', {
-      method: 'POST',
-      body: JSON.stringify({ deviceId }),
     });
   },
 

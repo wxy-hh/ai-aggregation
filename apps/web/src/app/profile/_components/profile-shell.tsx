@@ -947,9 +947,7 @@ export function ProfileShell() {
 
   const profile = useMemo(() => buildProfileViewModel(user), [user]);
   const isAdminUser = user?.role === 'admin';
-  const isAnonymousUser = user?.isAnonymous === true;
-  // 注册时间仅对正式账号展示，匿名账号的创建时间没有账户意义
-  const joinDate = isAnonymousUser ? null : formatJoinDate(profile.createdAt);
+  const joinDate = formatJoinDate(profile.createdAt);
   const profileFields: Array<{ label: string; value: string; mono?: boolean; span?: boolean }> = [
     { label: '用户 ID', value: profile.userId, mono: true },
     ...(profile.fullName ? [{ label: '昵称', value: profile.fullName }] : []),
@@ -1130,11 +1128,8 @@ export function ProfileShell() {
 
               <ProfileAgentRunsSection />
 
-              <div
-                className={`grid gap-6 ${isAdminUser || isAnonymousUser ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}
-              >
-                {!isAnonymousUser ? (
-                  <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
                     <HoverGlow />
                     <div className="flex items-center gap-3">
                       <CardIconChip accent="indigo">
@@ -1174,43 +1169,7 @@ export function ProfileShell() {
                       {profile.email ? '更换邮箱' : '绑定邮箱'}
                     </Button>
                   </div>
-                ) : null}
 
-                {isAnonymousUser ? (
-                  <div
-                    className={cn(
-                      SOLID_CARD,
-                      'flex h-full flex-col border-blue-200/70 bg-gradient-to-b from-blue-50/70 to-white p-6 dark:border-blue-900/40 dark:from-blue-950/20 dark:to-transparent'
-                    )}
-                  >
-                    <HoverGlow />
-                    <div className="flex items-center gap-3">
-                      <CardIconChip>
-                        <LogIn className="h-4 w-4" />
-                      </CardIconChip>
-                      <h3 className="font-[var(--font-space-grotesk)] text-lg font-semibold tracking-tight text-[#0F172A] dark:text-white">
-                        使用账号密码登录
-                      </h3>
-                    </div>
-                    <p className="mb-5 mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
-                      您当前处于匿名体验模式。使用账号密码登录后，可享受完整额度、云端同步与个性化服务。
-                    </p>
-                    <Button
-                      asChild
-                      type="button"
-                      variant="outline"
-                      className={cn(
-                        OUTLINE_BUTTON,
-                        'mt-auto border-blue-200/80 text-[#255DFF] hover:bg-blue-50/80 sm:w-auto sm:min-w-[200px] sm:self-start dark:border-blue-900/50 dark:text-[#A8BAFF] dark:hover:bg-blue-950/30'
-                      )}
-                    >
-                      <Link href="/login">
-                        <LogIn className="mr-2 h-4 w-4" />
-                        前往登录页
-                      </Link>
-                    </Button>
-                  </div>
-                ) : (
                   <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
                     <HoverGlow />
                     <div className="flex items-center gap-3">
@@ -1237,9 +1196,8 @@ export function ProfileShell() {
                       退出当前登录
                     </Button>
                   </div>
-                )}
 
-                {!isAdminUser && !isAnonymousUser ? (
+                {!isAdminUser ? (
                   <div
                     className={cn(
                       SOLID_CARD,
@@ -1470,13 +1428,11 @@ export function ProfileShell() {
       </div>
 
       <EditProfileDialog open={isEditOpen} onOpenChange={setIsEditOpen} value={profile} />
-      {!isAnonymousUser ? (
-        <EmailBindingDialog
-          open={isEmailOpen}
-          onOpenChange={setIsEmailOpen}
-          currentEmail={profile.email}
-        />
-      ) : null}
+      <EmailBindingDialog
+        open={isEmailOpen}
+        onOpenChange={setIsEmailOpen}
+        currentEmail={profile.email}
+      />
       {!isAdminUser ? (
         <DeleteAccountDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} />
       ) : null}

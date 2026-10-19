@@ -36,7 +36,6 @@ export function ProfileAgentRunsSection() {
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const authStatus = useAuthStore((s) => s.status);
-  const isAnonymousUser = user?.isAnonymous === true;
 
   const [runs, setRuns] = useState<AgentRunRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -48,7 +47,7 @@ export function ProfileAgentRunsSection() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const loadRuns = useCallback(async () => {
-    if (!accessToken || isAnonymousUser || authStatus !== 'ready') {
+    if (!accessToken || authStatus !== 'ready') {
       setLoading(false);
       return;
     }

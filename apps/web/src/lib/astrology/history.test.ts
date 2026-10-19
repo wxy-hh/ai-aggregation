@@ -161,21 +161,20 @@ describe('buildAstrologyHistoryItem（标题、低敏摘要与修订）', () => 
 
 describe('saveAstrologyHistoryRecord（匿名/登录写入路由）', () => {
   it('匿名用户：写入会话临时记录，不进统一历史', () => {
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     expect(useAstrologyTempRecordStore.getState().tempRecord?.id).toBe(item.id);
     expect(useHistoryStore.getState().getItemById(item.id)).toBeUndefined();
   });
 
   it('已登录用户：写入统一历史，不留临时记录', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     expect(useHistoryStore.getState().getItemById(item.id)?.title).toBe('星座寰宇 · 小宇的本命星盘');
     expect(useAstrologyTempRecordStore.getState().tempRecord).toBeNull();
   });
 
-  it('真实用户响应缺省 isAnonymous 字段时也按已登录处理', () => {
-    // 注册/登录接口的真实用户负载不带 isAnonymous（undefined），不能误判为匿名
+  it('真实登录用户按已登录处理并写入统一历史', () => {
     useAuthStore.setState({ user: { id: 'u1', username: 'real_user' } as never });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     expect(useHistoryStore.getState().getItemById(item.id)).toBeDefined();
@@ -185,10 +184,10 @@ describe('saveAstrologyHistoryRecord（匿名/登录写入路由）', () => {
 
 describe('migrateTempRecordToHistory（登录确认迁移）', () => {
   it('匿名临时记录迁移进统一历史并清空临时态', () => {
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     const temp = saveAstrologyHistoryRecord(baseForm, facts);
 
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     expect(migrateTempRecordToHistory()).toBe(true);
 
     const migrated = useHistoryStore.getState().getItemById(temp.id) as DestinyHistoryItem | undefined;
@@ -198,11 +197,11 @@ describe('migrateTempRecordToHistory（登录确认迁移）', () => {
 
   it('匿名期重算沿用同一逻辑链：迁移后旧版快照去重只留一份', () => {
     // 登录期：同一盘面已有 revision 1
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     saveAstrologyHistoryRecord(baseForm, facts);
 
     // 匿名期（如退出后）：同一盘面重算两次——临时记录从既有链延伸，不另起炉灶
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     saveAstrologyHistoryRecord(baseForm, facts);
     saveAstrologyHistoryRecord({ ...baseForm, timePrecision: 'approximate', approximateSlot: '12:00-15:00' }, facts);
     const temp = useAstrologyTempRecordStore.getState().tempRecord;
@@ -210,7 +209,7 @@ describe('migrateTempRecordToHistory（登录确认迁移）', () => {
     expect(payloadOf(temp as DestinyHistoryItem).revisions).toHaveLength(1);
 
     // 迁移：登录期旧版折叠为唯一只读快照（与临时链同源的那一份去重），最新为匿名期真值
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     expect(migrateTempRecordToHistory()).toBe(true);
     const merged = payloadOf(useHistoryStore.getState().getItemById(temp!.id) as DestinyHistoryItem);
     expect(merged.revision).toBe(2);
@@ -228,7 +227,7 @@ describe('migrateTempRecordToHistory（登录确认迁移）', () => {
 
 describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   it('已登录：同一条逻辑记录的摘要由日月兜底换成主轴金句，修订与时间戳不动', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
     // 提交时解读未到：摘要为日月星座组合兜底
     expect(saved.preview).toMatch(/^太阳.+· 月亮/);
@@ -249,7 +248,7 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   });
 
   it('整份解读分区随记录保存（历史恢复据此还原结果页）', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
     const report = interpretationFixture('主轴金句', [moduleFixture]);
 
@@ -260,7 +259,7 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   });
 
   it('匿名：会话临时记录同样被覆盖更新', () => {
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
 
     expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture('主轴金句'))).toBe(true);
@@ -269,7 +268,7 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   });
 
   it('主轴缺失（null）时保留兜底摘要，不影响记录', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
     expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture(null))).toBe(true);
     const after = useHistoryStore.getState().getItemById(saved.id) as DestinyHistoryItem;
@@ -277,13 +276,13 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
   });
 
   it('记录已不在（未登录无临时记录）时静默跳过', () => {
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     expect(updateAstrologyHistoryInterpretation(baseForm, facts, interpretationFixture('主轴金句'))).toBe(false);
     expect(useAstrologyTempRecordStore.getState().tempRecord).toBeNull();
   });
 
   it('重算换新真值后，上一份迟到的解读不得改写新记录', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const saved = saveAstrologyHistoryRecord(baseForm, facts);
     // 新一次测算：真值换新（calculatedAt 前进），记录已指向新修订
     const newerFacts = { ...facts, calculatedAt: new Date(Date.parse(facts.calculatedAt) + 60_000).toISOString() };
@@ -297,7 +296,7 @@ describe('updateAstrologyHistoryInterpretation（解读摘要合并）', () => {
 
 describe('restoreAstrologyFromHistory（从历史重开结果页）', () => {
   it('统一历史记录可恢复：结果页状态与真值一并还原', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
 
     expect(restoreAstrologyFromHistory(item.id)).toBe(true);
@@ -309,14 +308,14 @@ describe('restoreAstrologyFromHistory（从历史重开结果页）', () => {
   });
 
   it('匿名临时记录同样可恢复（会话内「继续查看」）', () => {
-    useAuthStore.setState({ user: { isAnonymous: true } as never });
+    useAuthStore.setState({ user: null });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     expect(restoreAstrologyFromHistory(item.id)).toBe(true);
     expect(useDestinyWorkspaceStore.getState().astrology.step).toBe('result');
   });
 
   it('记录里存了解读：恢复为 ready，结果页直接呈现当时那份结果', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
     const report = interpretationFixture('主轴金句', [moduleFixture]);
     updateAstrologyHistoryInterpretation(baseForm, facts, report);
@@ -328,7 +327,7 @@ describe('restoreAstrologyFromHistory（从历史重开结果页）', () => {
   });
 
   it('记录里没有解读（改动前的旧记录）：回到未发起态，不假装在途', () => {
-    useAuthStore.setState({ user: { isAnonymous: false } as never });
+    useAuthStore.setState({ user: { id: 'u1', username: 'test_user' } as never });
     const item = saveAstrologyHistoryRecord(baseForm, facts);
 
     expect(restoreAstrologyFromHistory(item.id)).toBe(true);

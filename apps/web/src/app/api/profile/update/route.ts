@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { assertCanUpdateUsername } from '@/lib/auth/anonymous-policy';
 import { updateProfileSchema } from '@/schemas/auth.schema';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
 
@@ -19,9 +18,6 @@ export async function PATCH(req: NextRequest) {
       }
 
       const { username, name, avatar } = parsed.data;
-
-      // 匿名用户业务规则校验
-      assertCanUpdateUsername(user, username);
 
       // 如果修改用户名，检查唯一性
       if (username) {

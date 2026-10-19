@@ -22,10 +22,9 @@ import { aspectRefKey, buildFactReferenceKeys } from '@/lib/astrology/interpreta
 // 通过 hoisted 引用控制每次测试的登录用户（admin 跳过额度预留，普通用户走预留→结算）
 const { mockUserRef, streamModelRef, quotaSessionMocks } = vi.hoisted(() => ({
   mockUserRef: {
-    current: { id: 'test-user', role: 'user', isAnonymous: true } as {
+    current: { id: 'test-user', role: 'user' } as {
       id: string;
       role: string;
-      isAnonymous: boolean;
     },
   },
   streamModelRef: {
@@ -244,7 +243,7 @@ function primeStream(facts: AstrologyChartFacts, options: { chunks?: number } = 
 
 describe('POST /api/destiny/astrology/report（解读流）', () => {
   beforeEach(() => {
-    mockUserRef.current = { id: 'test-user', role: 'user', isAnonymous: true };
+    mockUserRef.current = { id: 'test-user', role: 'user' };
     streamModelRef.calls = [];
     quotaSessionMocks.reserve.mockReset();
     quotaSessionMocks.finalize.mockReset();
@@ -384,7 +383,7 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
   });
 
   it('额度：管理员请求同样调用 QuotaSession 预留与声明 success 终态（免扣由决策表承担）', async () => {
-    mockUserRef.current = { id: 'test-admin', role: 'admin', isAnonymous: false };
+    mockUserRef.current = { id: 'test-admin', role: 'admin' };
     primeStream(computeChartFacts(SAMPLE_PROFILE_ACCURATE));
 
     await readSseEvents(await postReport());
@@ -618,7 +617,7 @@ describe('POST /api/destiny/astrology/report（解读流）', () => {
  */
 describe('客户端接缝 → 报告路由（全链路）', () => {
   beforeEach(() => {
-    mockUserRef.current = { id: 'test-user', role: 'user', isAnonymous: true };
+    mockUserRef.current = { id: 'test-user', role: 'user' };
     process.env.ARK_API_KEY = 'test-key';
     useDestinyWorkspaceStore.getState().resetWorkspace('astrology');
   });
