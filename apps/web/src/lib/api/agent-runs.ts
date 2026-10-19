@@ -57,3 +57,16 @@ export async function fetchAgentRuns(params?: {
   const json = await res.json();
   return json.data;
 }
+
+export async function deleteAgentRun(id: string): Promise<{ id: string }> {
+  const res = await authFetch(`/api/agent-runs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `删除运行记录失败: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}

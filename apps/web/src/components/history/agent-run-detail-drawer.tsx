@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { AgentRunRecord } from '@/lib/api/agent-runs';
 
-interface ProfileAgentRunDetailDrawerProps {
+export interface AgentRunDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   run: AgentRunRecord | null;
@@ -48,12 +48,12 @@ const ARTIFACT_ICON_MAP: Record<string, React.ComponentType<{ className?: string
   image: ImageIcon,
 };
 
-export function ProfileAgentRunDetailDrawer({
+export function AgentRunDetailDrawer({
   open,
   onOpenChange,
   run,
   onRerun,
-}: ProfileAgentRunDetailDrawerProps) {
+}: AgentRunDetailDrawerProps) {
   if (!run) return null;
 
   const outcomeInfo = OUTCOME_CONFIG[run.outcome] ?? OUTCOME_CONFIG.failed;

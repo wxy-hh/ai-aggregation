@@ -44,7 +44,6 @@ import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
 import { ProfileToolsSection } from './profile-tools-section';
-import { ProfileAgentRunsSection } from './profile-agent-runs-section';
 import { toast } from 'sonner';
 
 const DEFAULT_AVATAR =
@@ -1125,8 +1124,6 @@ export function ProfileShell() {
               </div>
 
               <ProfileToolsSection />
-
-              <ProfileAgentRunsSection />
 
               <div className="grid gap-6 md:grid-cols-2">
                 <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>

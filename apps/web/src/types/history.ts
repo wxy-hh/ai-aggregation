@@ -5,7 +5,7 @@
 
 import type { DerivationMetadata, ToolCallRecord } from '@repo/shared';
 
-export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny';
+export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny' | 'agent';
 
 export type DestinySubType = 'bazi' | 'ziwei' | 'qimen' | 'astrology' | 'bazi-compatibility';
 
@@ -113,4 +113,5 @@ export interface HistoryStats {
   image: number;
   video: number;
   destiny: number;
+  agent?: number;
 }

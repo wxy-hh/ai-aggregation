@@ -9,6 +9,7 @@ import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
 import { VideoHistoryCard } from '@/components/history/video-history-card';
 import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
+import { AgentRunHistoryView } from '@/components/history/agent-run-history-view';
 import { HistoryMasonryGrid, HistoryMasonryItem } from '@/components/history/history-masonry-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ const tabs = [
   { id: 'image', label: '图片' },
   { id: 'video', label: '视频' },
   { id: 'destiny', label: '命理' },
+  { id: 'agent', label: '智能体' },
 ];
 
 export default function HistoryWorkspace() {
@@ -210,7 +212,7 @@ export default function HistoryWorkspace() {
                   )}
                   <span className="relative z-10 flex items-center whitespace-nowrap">
                     {tab.label}
-                    {tab.id !== 'all' && (
+                    {tab.id !== 'all' && stats[tab.id as keyof typeof stats] !== undefined && (
                       <span className={cn('ml-1.5 text-xs', isActive ? 'opacity-90' : 'opacity-60')}>
                         ({stats[tab.id as keyof typeof stats]})
                       </span>
@@ -221,55 +223,59 @@ export default function HistoryWorkspace() {
             })}
           </div>
 
-          {/* 搜索与筛选 */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
-            <div className="relative flex-1 sm:w-80">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          {/* 搜索与筛选：仅非智能体 Tab（本地历史资产流）展示 */}
+          {activeTab !== 'agent' && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+              <div className="relative flex-1 sm:w-80">
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <Input
+                  type="text"
+                  placeholder={activeTab === 'image' ? '搜索提示词...' : '搜索历史记录...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px] transition-[border-color,box-shadow] duration-200 ease-out"
                 />
-              </svg>
-              <Input
-                type="text"
-                placeholder={activeTab === 'image' ? '搜索提示词...' : '搜索历史记录...'}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px] transition-[border-color,box-shadow] duration-200 ease-out"
-              />
+              </div>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
+              >
+                <svg
+                  className="w-4 h-4 text-slate-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                  />
+                </svg>
+                筛选
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
-            >
-              <svg
-                className="w-4 h-4 text-slate-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                />
-              </svg>
-              筛选
-            </Button>
-          </div>
+          )}
         </div>
 
-        {/* 内容网格 */}
+        {/* 内容展示区 */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6 custom-scrollbar">
-          {!historyReady || isLoading ? (
+          {activeTab === 'agent' ? (
+            <AgentRunHistoryView />
+          ) : !historyReady || isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
