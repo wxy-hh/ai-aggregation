@@ -12,6 +12,8 @@ describe('createEmbeddingModel 工厂测试', () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
+      SILICONFLOW_API_KEY: 'test-siliconflow-key-12345',
+      SILICONFLOW_API_URL: 'https://api.siliconflow.cn/v1',
       ARK_API_KEY: 'test-ark-key-12345',
       ARK_BASE_URL: 'https://ark.cn-beijing.volces.com/api/v3',
     };
@@ -45,7 +47,7 @@ describe('createEmbeddingModel 工厂测试', () => {
           JSON.stringify({
             object: 'list',
             data,
-            model: body.model || 'doubao-embedding-large',
+            model: body.model || 'BAAI/bge-m3',
             usage: { prompt_tokens: 10, total_tokens: 10 },
           }),
           {
@@ -63,7 +65,12 @@ describe('createEmbeddingModel 工厂测试', () => {
     vi.restoreAllMocks();
   });
 
-  it('缺失 ARK_API_KEY 时应抛出明确的中文错误信息', () => {
+  it('缺失 SILICONFLOW_API_KEY 时默认创建应抛出明确的中文错误信息', () => {
+    delete process.env.SILICONFLOW_API_KEY;
+    expect(() => createEmbeddingModel()).toThrowError(/缺少提供商 siliconflow 的 API 密钥/);
+  });
+
+  it('缺失 ARK_API_KEY 时显式指定 doubao 应抛出明确的中文错误信息', () => {
     delete process.env.ARK_API_KEY;
     expect(() => createEmbeddingModel('doubao')).toThrowError(/缺少提供商 doubao 的 API 密钥/);
   });
@@ -73,24 +80,24 @@ describe('createEmbeddingModel 工厂测试', () => {
     expect(() => createEmbeddingModel('unknown')).toThrowError(/未知的 Embedding 提供商/);
   });
 
-  it('成功创建 EmbeddingModel 实例，且单例缓存生效', () => {
-    const model1 = createEmbeddingModel('doubao');
-    const model2 = createEmbeddingModel('doubao');
+  it('默认创建 siliconflow EmbeddingModel 实例，且单例缓存生效', () => {
+    const model1 = createEmbeddingModel();
+    const model2 = createEmbeddingModel('siliconflow');
     expect(model1).toBe(model2);
 
-    const modelCustom = createEmbeddingModel('doubao', 'doubao-embedding-large-custom');
+    const modelCustom = createEmbeddingModel('siliconflow', 'BAAI/bge-m3-custom');
     expect(modelCustom).not.toBe(model1);
   });
 
   it('清空缓存函数 _clearEmbeddingModelCacheForTest 能有效重置单例', () => {
-    const model1 = createEmbeddingModel('doubao');
+    const model1 = createEmbeddingModel();
     _clearEmbeddingModelCacheForTest();
-    const model2 = createEmbeddingModel('doubao');
+    const model2 = createEmbeddingModel();
     expect(model1).not.toBe(model2);
   });
 
   it('通过 AI SDK embed 调用能成功发送请求并获得 1024 维向量', async () => {
-    const model = createEmbeddingModel('doubao');
+    const model = createEmbeddingModel();
     const result = await embed({
       model,
       value: '测试单条文本嵌入',
@@ -98,14 +105,14 @@ describe('createEmbeddingModel 工厂测试', () => {
 
     expect(capturedRequests.length).toBe(1);
     expect(capturedRequests[0].url).toContain('/embeddings');
-    expect(capturedRequests[0].body.model).toBe('doubao-embedding-large');
+    expect(capturedRequests[0].body.model).toBe('BAAI/bge-m3');
     expect(capturedRequests[0].body.input).toEqual(['测试单条文本嵌入']);
 
     expect(result.embedding.length).toBe(1024);
   });
 
   it('通过 AI SDK embedMany 调用支持批量向量化', async () => {
-    const model = createEmbeddingModel('doubao');
+    const model = createEmbeddingModel();
     const values = ['第一条切片内容', '第二条切片内容', '第三条切片内容'];
     const result = await embedMany({
       model,

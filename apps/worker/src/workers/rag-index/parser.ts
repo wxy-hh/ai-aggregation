@@ -1,0 +1,292 @@
+/**
+ * RAG 文档解析、切块与应用层分词器
+ *
+ * 核心设计契约：
+ * 1. PDF：提取各页文本并记录实际页码（pageNumber，1-based），若文件损坏抛出明确的致命中文异常
+ * 2. Markdown：扫描标题结构并维护标题栈，产出 headingPath（例如「一级标题 > 二级标题」）
+ * 3. TXT：按自然段落与语义切块
+ * 4. 语义切块器：基于 RecursiveCharacterTextSplitter（500~800 tokens，约 10% 重叠）
+ * 5. 应用层中文分词：基于 @node-rs/jieba 预载词典，空格分隔写入 contentSegmented
+ */
+
+import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
+import { Jieba } from '@node-rs/jieba';
+import { dict } from '@node-rs/jieba/dict';
+import { PDFParse } from 'pdf-parse';
+import { RAG_CHUNK_CONFIG } from '@repo/shared';
+
+/**
+ * 文档解析与切块产生的切片结构
+ */
+export interface ParsedChunk {
+  chunkIndex: number;
+  content: string;
+  contentSegmented: string;
+  headingPath: string | null;
+  pageNumber: number | null;
+  tokenCount: number;
+}
+
+/**
+ * 文档解析错误，isFatal 表示确定性不可重试的致命错误（如文件损坏、空内容）
+ */
+export class DocumentParseError extends Error {
+  constructor(
+    message: string,
+    public readonly isFatal: boolean = true
+  ) {
+    super(message);
+    this.name = 'DocumentParseError';
+  }
+}
+
+// 结巴分词全局单例（带默认词典）
+let jiebaInstance: Jieba | null = null;
+
+function getJieba(): Jieba {
+  if (!jiebaInstance) {
+    jiebaInstance = Jieba.withDict(dict);
+  }
+  return jiebaInstance;
+}
+
+/**
+ * 应用层中文分词函数，输出为空格分隔的词串
+ */
+export function segmentChinese(text: string): string {
+  if (!text || !text.trim()) {
+    return '';
+  }
+  const jieba = getJieba();
+  const words = jieba.cut(text, false);
+  return words
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * 估算文本 Token 数量（中英混合启发式计算）
+ */
+export function estimateTokenCount(text: string): number {
+  if (!text) return 0;
+  // 匹配中文字符及全角标点
+  const chineseChars = text.match(/[一-龥　-〿！-～]/g)?.length || 0;
+  // 剩余其他字符（英文/数字/空格）
+  const otherChars = Math.max(0, text.length - chineseChars);
+  // 中文字符约 1 字符 ≈ 1 token，西文字符约 4 字符 ≈ 1 token
+  return Math.ceil(chineseChars + otherChars / 4);
+}
+
+/**
+ * Markdown 章节扫描与标题层级提取
+ */
+export interface MarkdownSection {
+  headingPath: string | null;
+  text: string;
+}
+
+export function extractMarkdownSections(markdown: string): MarkdownSection[] {
+  const lines = markdown.split(/\r?\n/);
+  const sections: MarkdownSection[] = [];
+  const headingStack: Array<{ level: number; text: string }> = [];
+  let currentLines: string[] = [];
+
+  function getHeadingPath(): string | null {
+    if (headingStack.length === 0) return null;
+    return headingStack.map((h) => h.text).join(' > ');
+  }
+
+  function flushCurrent() {
+    const text = currentLines.join('\n').trim();
+    if (text) {
+      sections.push({
+        headingPath: getHeadingPath(),
+        text,
+      });
+    }
+    currentLines = [];
+  }
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      flushCurrent();
+      const level = headingMatch[1].length;
+      const headingText = headingMatch[2].trim();
+      while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
+        headingStack.pop();
+      }
+      headingStack.push({ level, text: headingText });
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  flushCurrent();
+  return sections;
+}
+
+/**
+ * 默认文本切块器单例
+ */
+const textSplitter = new RecursiveCharacterTextSplitter({
+  chunkSize: RAG_CHUNK_CONFIG.chunkSize, // 800
+  chunkOverlap: RAG_CHUNK_CONFIG.chunkOverlap, // 80 (~10%)
+  separators: ['\n\n', '\n', '。', '！', '？', '；', ' ', ''],
+});
+
+/**
+ * 解析并切分 PDF 缓冲区
+ */
+export async function parsePdfBuffer(buffer: Buffer): Promise<ParsedChunk[]> {
+  let result;
+  try {
+    const parser = new PDFParse({ data: buffer });
+    result = await parser.getText();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new DocumentParseError(`PDF 文件损坏或格式不正确，无法解析: ${msg}`, true);
+  }
+
+  if (!result || !result.pages || result.pages.length === 0) {
+    throw new DocumentParseError('PDF 文件未包含任何有效页面', true);
+  }
+
+  const chunks: ParsedChunk[] = [];
+  let chunkIndex = 0;
+
+  for (const page of result.pages) {
+    const pageText = (page.text || '').trim();
+    if (!pageText) continue;
+
+    // 对单页文本执行切块
+    const splitTexts = await textSplitter.splitText(pageText);
+    for (const piece of splitTexts) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+
+      chunks.push({
+        chunkIndex: chunkIndex++,
+        content: trimmed,
+        contentSegmented: segmentChinese(trimmed),
+        headingPath: null,
+        pageNumber: page.num,
+        tokenCount: estimateTokenCount(trimmed),
+      });
+    }
+  }
+
+  if (chunks.length === 0) {
+    throw new DocumentParseError(
+      'PDF 未包含有效文本内容（可能为纯图片扫描件，暂不支持 OCR）',
+      true
+    );
+  }
+
+  return chunks;
+}
+
+/**
+ * 解析并切分 Markdown 字符串
+ */
+export async function parseMarkdownString(content: string): Promise<ParsedChunk[]> {
+  const trimmedAll = content.trim();
+  if (!trimmedAll) {
+    throw new DocumentParseError('Markdown 文档内容为空', true);
+  }
+
+  const sections = extractMarkdownSections(content);
+  if (sections.length === 0) {
+    throw new DocumentParseError('Markdown 文档未提取到有效内容', true);
+  }
+
+  const chunks: ParsedChunk[] = [];
+  let chunkIndex = 0;
+
+  for (const section of sections) {
+    const splitTexts = await textSplitter.splitText(section.text);
+    for (const piece of splitTexts) {
+      const trimmed = piece.trim();
+      if (!trimmed) continue;
+
+      chunks.push({
+        chunkIndex: chunkIndex++,
+        content: trimmed,
+        contentSegmented: segmentChinese(trimmed),
+        headingPath: section.headingPath,
+        pageNumber: null,
+        tokenCount: estimateTokenCount(trimmed),
+      });
+    }
+  }
+
+  if (chunks.length === 0) {
+    throw new DocumentParseError('Markdown 文档切块后结果为空', true);
+  }
+
+  return chunks;
+}
+
+/**
+ * 解析并切分 TXT 字符串
+ */
+export async function parseTxtString(content: string): Promise<ParsedChunk[]> {
+  const trimmedAll = content.trim();
+  if (!trimmedAll) {
+    throw new DocumentParseError('TXT 文档内容为空', true);
+  }
+
+  const splitTexts = await textSplitter.splitText(content);
+  const chunks: ParsedChunk[] = [];
+  let chunkIndex = 0;
+
+  for (const piece of splitTexts) {
+    const trimmed = piece.trim();
+    if (!trimmed) continue;
+
+    chunks.push({
+      chunkIndex: chunkIndex++,
+      content: trimmed,
+      contentSegmented: segmentChinese(trimmed),
+      headingPath: null,
+      pageNumber: null,
+      tokenCount: estimateTokenCount(trimmed),
+    });
+  }
+
+  if (chunks.length === 0) {
+    throw new DocumentParseError('TXT 文档切块后结果为空', true);
+  }
+
+  return chunks;
+}
+
+/**
+ * 统一文档解析入口：按文件后缀分流到不同解析器
+ */
+export async function parseDocument(
+  buffer: Buffer,
+  fileName: string
+): Promise<ParsedChunk[]> {
+  const lower = fileName.toLowerCase();
+
+  if (lower.endsWith('.pdf')) {
+    return parsePdfBuffer(buffer);
+  }
+
+  const textContent = buffer.toString('utf-8');
+
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+    return parseMarkdownString(textContent);
+  }
+
+  if (lower.endsWith('.txt')) {
+    return parseTxtString(textContent);
+  }
+
+  throw new DocumentParseError(
+    `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown 与 TXT 文件`,
+    true
+  );
+}

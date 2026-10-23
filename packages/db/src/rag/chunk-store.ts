@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '../client';
+import type { Prisma } from '@prisma/client';
 
 /**
  * 文档切片记录自声明类型
@@ -110,9 +111,11 @@ function generateId(): string {
 
 /**
  * 批量插入文档切片（使用 raw SQL 写入 Unsupported vector 字段）
+ * 支持传入 Prisma 事务客户端在事务内执行
  */
 export async function insertDocumentChunks(
-  chunks: InsertDocumentChunkInput[]
+  chunks: InsertDocumentChunkInput[],
+  client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<number> {
   if (chunks.length === 0) return 0;
 
@@ -122,7 +125,7 @@ export async function insertDocumentChunks(
     const vectorStr = formatVector(chunk.embedding);
     const metadataStr = JSON.stringify(chunk.metadata ?? {});
 
-    await prisma.$executeRawUnsafe(
+    await client.$executeRawUnsafe(
       `
       INSERT INTO "document_chunks" (
         "id", "document_id", "knowledge_base_id", "user_id",
@@ -166,21 +169,60 @@ export async function insertDocumentChunks(
 
 /**
  * 删除指定文档的切片（支持指定特定版本或清除全版本）
+ * 支持传入 Prisma 事务客户端在事务内执行
  */
 export async function deleteDocumentChunks(
   documentId: string,
-  version?: number
+  version?: number,
+  client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<number> {
   if (typeof version === 'number') {
-    return prisma.$executeRaw`
+    return client.$executeRaw`
       DELETE FROM "document_chunks"
       WHERE "document_id" = ${documentId} AND "document_version" = ${version};
     `;
   }
-  return prisma.$executeRaw`
+  return client.$executeRaw`
     DELETE FROM "document_chunks"
     WHERE "document_id" = ${documentId};
   `;
+}
+
+/**
+ * 在事务内原子替换文档切片并更新文档为就绪态（对齐 QA-007 与工单 05 契约）
+ * 步骤：
+ * 1. 事务内删除同文档旧版本切片（或当前版本残留）
+ * 2. 事务内批量插入新版本切片
+ * 3. 事务内更新 Document 状态为 ready 与 chunkCount，并清除错误信息
+ */
+export async function replaceDocumentChunksInTransaction(params: {
+  documentId: string;
+  version: number;
+  chunks: InsertDocumentChunkInput[];
+}): Promise<{ chunkCount: number }> {
+  return prisma.$transaction(async (tx) => {
+    // 1. 事务内清理该文档的旧版本切片与当前版本（幂等防重）
+    await tx.$executeRaw`
+      DELETE FROM "document_chunks"
+      WHERE "document_id" = ${params.documentId}
+        AND ("document_version" < ${params.version} OR "document_version" = ${params.version});
+    `;
+
+    // 2. 事务内插入新切片
+    await insertDocumentChunks(params.chunks, tx);
+
+    // 3. 事务内原子更新文档状态为 ready 与切片数
+    await tx.document.update({
+      where: { id: params.documentId },
+      data: {
+        status: 'ready',
+        chunkCount: params.chunks.length,
+        errorMessage: null,
+      },
+    });
+
+    return { chunkCount: params.chunks.length };
+  });
 }
 
 /**

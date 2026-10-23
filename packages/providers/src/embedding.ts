@@ -4,9 +4,9 @@ import { RAG_EMBEDDING_MODEL } from '@repo/shared';
 
 /**
  * 支持的 Embedding 提供商标识联合类型
- * 首发仅火山方舟豆包，接口预留后续扩展
+ * 默认使用硅基流动 (SiliconFlow)，保留火山方舟豆包供对照
  */
-export type EmbeddingProviderName = 'doubao';
+export type EmbeddingProviderName = 'siliconflow' | 'doubao';
 
 interface EmbeddingProviderConfig {
   baseURL: string | (() => string);
@@ -15,10 +15,15 @@ interface EmbeddingProviderConfig {
 }
 
 const embeddingConfigs: Record<EmbeddingProviderName, EmbeddingProviderConfig> = {
+  siliconflow: {
+    baseURL: () => process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1',
+    envKey: 'SILICONFLOW_API_KEY',
+    defaultModel: RAG_EMBEDDING_MODEL,
+  },
   doubao: {
     baseURL: () => process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3',
     envKey: 'ARK_API_KEY',
-    defaultModel: RAG_EMBEDDING_MODEL,
+    defaultModel: 'doubao-embedding-large',
   },
 };
 
@@ -28,11 +33,11 @@ const embeddingModelCache = new Map<string, EmbeddingModel>();
  * 创建通用 Embedding 模型实例（带缓存）
  * 返回 AI SDK 的标准 EmbeddingModel，业务层统一使用 embed / embedMany 消费
  *
- * @param providerName 提供商名称（默认 'doubao'）
- * @param modelId 可选的模型标识符（默认取环境变量 ARK_EMBEDDING_MODEL 或 doubao-embedding-large）
+ * @param providerName 提供商名称（默认 'siliconflow'）
+ * @param modelId 可选的模型标识符（默认取环境变量或对应配置的 defaultModel）
  */
 export function createEmbeddingModel(
-  providerName: EmbeddingProviderName = 'doubao',
+  providerName: EmbeddingProviderName = 'siliconflow',
   modelId?: string
 ): EmbeddingModel {
   const config = embeddingConfigs[providerName];
@@ -47,10 +52,12 @@ export function createEmbeddingModel(
     );
   }
 
-  const actualModel =
-    modelId ||
-    (providerName === 'doubao' ? process.env.ARK_EMBEDDING_MODEL : undefined) ||
-    config.defaultModel;
+  const envModel =
+    providerName === 'siliconflow'
+      ? process.env.SILICONFLOW_EMBEDDING_MODEL
+      : process.env.ARK_EMBEDDING_MODEL;
+
+  const actualModel = modelId || envModel || config.defaultModel;
 
   const cacheKey = `${providerName}:${actualModel}`;
   if (embeddingModelCache.has(cacheKey)) {

@@ -6,6 +6,7 @@ import {
   ImageJobData,
   QimenBaseJobData,
   QimenSectionJobData,
+  RagIndexJobData,
 } from './jobs';
 
 const defaultQueueOptions: QueueOptions = {
@@ -32,3 +33,4 @@ export const pptQueue = new Queue<PPTJobData>('ppt', defaultQueueOptions);
 export const imageQueue = new Queue<ImageJobData>('image', defaultQueueOptions);
 export const qimenBaseQueue = new Queue<QimenBaseJobData>('qimen-base', defaultQueueOptions);
 export const qimenSectionQueue = new Queue<QimenSectionJobData>('qimen-section', defaultQueueOptions);
+export const ragIndexQueue = new Queue<RagIndexJobData>('rag-index', defaultQueueOptions);

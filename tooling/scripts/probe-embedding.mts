@@ -1,16 +1,17 @@
 /**
- * 火山引擎方舟 (Ark) Embedding 接口探针脚本
- * 真实调用一次 embedding API，测量实际返回向量维度与请求耗时，
+ * 硅基流动 (SiliconFlow) Embedding 接口探针脚本
+ * 真实调用一次 embedding API (BAAI/bge-m3)，测量实际返回向量维度与请求耗时，
  * 为全局常量 RAG_EMBEDDING_DIM 与数据库 vector 列维度提供依据。
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// 加载环境变量（按优先级：当前环境 -> apps/web/.env.local -> .env.local）
+// 加载环境变量（按优先级：当前环境 -> apps/web/.env.local -> .env.local -> apps/worker/.env）
 function loadEnv(): void {
   const envPaths = [
     resolve(process.cwd(), 'apps/web/.env.local'),
     resolve(process.cwd(), '.env.local'),
+    resolve(process.cwd(), 'apps/worker/.env'),
   ];
 
   for (const envPath of envPaths) {
@@ -37,19 +38,19 @@ function loadEnv(): void {
 async function runProbe() {
   loadEnv();
 
-  const apiKey = process.env.ARK_API_KEY;
-  const baseURL = process.env.ARK_BASE_URL || 'https://ark.cn-beijing.volces.com/api/v3';
-  const model = process.env.ARK_EMBEDDING_MODEL || 'doubao-embedding-large';
+  const apiKey = process.env.SILICONFLOW_API_KEY;
+  const baseURL = process.env.SILICONFLOW_API_URL || 'https://api.siliconflow.cn/v1';
+  const model = process.env.SILICONFLOW_EMBEDDING_MODEL || 'BAAI/bge-m3';
 
   console.log('==============================================');
-  console.log('🔍 开始执行 Embedding 真实接口探针');
+  console.log('🔍 开始执行 Embedding 真实接口探针 (SiliconFlow)');
   console.log(`目标服务: ${baseURL}`);
   console.log(`目标模型: ${model}`);
   console.log(`API Key 状态: ${apiKey ? '已配置 (长度 ' + apiKey.length + ')' : '未配置'}`);
   console.log('==============================================');
 
   if (!apiKey) {
-    console.error('❌ 未检测到 ARK_API_KEY，无法发起真实网络请求');
+    console.error('❌ 未检测到 SILICONFLOW_API_KEY，无法发起真实网络请求');
     process.exit(1);
   }
 
@@ -76,19 +77,12 @@ async function runProbe() {
     if (!response.ok) {
       console.warn(`⚠️ 真实 API 调用返回 HTTP ${response.status} (${elapsedMs}ms)`);
       console.warn(`响应详情: ${responseText}`);
-      console.log('----------------------------------------------');
-      console.log('📌 规格与技术规范对齐诊断：');
-      console.log('根据 spec.md 与火山方舟 doubao-embedding-large 官方技术规格：');
-      console.log('- 目标模型标称与生产基准维度: 1024 维 (RAG_EMBEDDING_DIM = 1024)');
-      console.log('- 当前火山方舟账号尚未在控制台激活该模型的接入点');
-      console.log('- 探针落定基准全局常量: RAG_EMBEDDING_DIM = 1024');
-      console.log('----------------------------------------------');
 
       return {
         success: false,
         status: response.status,
         model,
-        dimension: 1024,
+        dimension: 0,
         elapsedMs,
         error: responseText,
       };
@@ -119,7 +113,7 @@ async function runProbe() {
       success: false,
       status: 0,
       model,
-      dimension: 1024,
+      dimension: 0,
       elapsedMs,
       error: (error as Error).message,
     };
@@ -134,4 +128,8 @@ runProbe().then((res) => {
     elapsedMs: res.elapsedMs,
     success: res.success,
   }));
+  if (res.dimension !== 1024) {
+    console.error(`❌ 严重警告：实测维度 ${res.dimension} 不等于 1024！`);
+    process.exit(1);
+  }
 });
