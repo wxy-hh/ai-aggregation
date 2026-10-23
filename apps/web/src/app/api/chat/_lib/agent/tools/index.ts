@@ -9,6 +9,7 @@ import { createWebFetchTool } from './web-fetch';
 import { createWebSearchTool } from './web-search';
 import { createImageGenerateTool } from './image-generate';
 import { createKnowledgeSearchTool } from './knowledge-search';
+import { createMemorySearchTool } from './memory-search';
 
 let cached: ToolRegistry | null = null;
 
@@ -20,6 +21,7 @@ export function getDefaultToolRegistry(): ToolRegistry {
       createWebFetchTool(),
       createImageGenerateTool(),
       createKnowledgeSearchTool(),
+      createMemorySearchTool(),
     ]);
   }
   return cached;

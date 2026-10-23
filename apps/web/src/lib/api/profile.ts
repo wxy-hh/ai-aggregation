@@ -18,6 +18,7 @@ export interface ProfileUser {
   email: string | null;
   name: string | null;
   avatar: string | null;
+  memorySearchEnabled?: boolean;
 }
 
 /** 绑定 / 更换邮箱：需先经 send-code（purpose=bind）拿到验证码 */
@@ -43,6 +44,7 @@ export async function updateProfile(data: {
   username?: string;
   name?: string;
   avatar?: string;
+  memorySearchEnabled?: boolean;
 }): Promise<{ user: ProfileUser }> {
   const response = await authFetch('/api/profile/update', {
     method: 'PATCH',

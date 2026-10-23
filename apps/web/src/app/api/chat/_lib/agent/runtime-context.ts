@@ -48,6 +48,8 @@ export interface AgentRuntimeContextOptions {
   disabledToolKeys?: string[];
   /** 用户有效知识库探活注入点（工单 08 / QA-010：无库过滤），缺省走数据库 count 查询 */
   hasKnowledgeBases?: (userId: string) => Promise<boolean>;
+  /** 用户会话记忆检索开关状态，缺省时自动查询数据库判断用户是否已开启 (工单 09) */
+  memorySearchEnabled?: boolean;
 }
 
 /**
@@ -99,6 +101,24 @@ export async function createAgentRuntimeContext(
       ? disabledToolKeys.filter((k): k is string => typeof k === 'string' && Boolean(k.trim()))
       : []
   );
+
+  // 会话记忆检索动态剔除闸门 (工单 09 / QA-005 / QA-006)：若未开启记忆检索，将 memory_search 剔除
+  let isMemoryEnabled = options.memorySearchEnabled;
+  if (isMemoryEnabled === undefined) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { memorySearchEnabled: true },
+      });
+      isMemoryEnabled = user?.memorySearchEnabled === true;
+    } catch {
+      isMemoryEnabled = false;
+    }
+  }
+
+  if (!isMemoryEnabled) {
+    disabledSet.add('memory_search');
+  }
 
   // 1. 加载用户工具：失败降级为无用户工具（沿用既有告警文案，测试接缝保持不变）
   let userTools: UserWebhookTool[] = [];
