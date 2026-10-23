@@ -31,7 +31,9 @@ const querySchema = z.object({
     .max(50, 'topK 最大不能超过 50')
     .optional()
     .default(20),
+  enableRerank: z.boolean().optional(),
 });
+
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -72,6 +74,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       knowledgeBaseId,
       query: parsed.data.query,
       topK: parsed.data.topK,
+      enableRerank: parsed.data.enableRerank,
     });
 
     return createSuccessResponse(result, '检索执行成功');

@@ -23,8 +23,14 @@ import {
   type DocumentChunkLexicalMatch,
 } from '@repo/db';
 import { createEmbeddingModel } from '@repo/providers';
-import { RAG_RETRIEVAL_CONFIG } from '@repo/shared';
+import { RAG_RETRIEVAL_CONFIG, RAG_RERANK_CONFIG, isRagRerankEnabled } from '@repo/shared';
+import { logger } from '@repo/logger';
 import { reciprocalRankFusion, type RrfFusedResult } from './rrf';
+import {
+  SiliconFlowRerankProvider,
+  type RerankProvider,
+  type RerankResult,
+} from './rerank';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 
@@ -50,11 +56,13 @@ export interface RetrievedChunk {
   documentVersion: number;
   content: string;
   contentSegmented: string;
-  score: number; // RRF 融合得分
+  score: number; // 最终排序得分（若开启 Rerank 则为 Rerank 分数，否则为 RRF 分数）
   denseRank: number | null; // 稠密路排名 (1-based)，未命中为 null
   lexicalRank: number | null; // 词法路排名 (1-based)，未命中为 null
   similarity?: number; // 稠密路原始余弦相似度（仅用于观测调试）
   lexicalScore?: number; // 词法路原始全文 rank 分数（仅用于观测调试）
+  rerankScore?: number; // Rerank 精排打分（仅在开启精排且成功时存在）
+  rrfScore?: number; // 原 RRF 融合得分（用于对照与观测）
   citationAnchor: CitationAnchor;
 }
 
@@ -66,6 +74,7 @@ export interface RetrievalStats {
   denseDurationMs: number;
   lexicalDurationMs: number;
   fusionDurationMs: number;
+  rerankDurationMs?: number; // Rerank 精排耗时（未启用或降级时记录）
   totalDurationMs: number;
 }
 
@@ -81,6 +90,7 @@ export interface HybridRetrievalResult {
   lexicalMatches: Array<DocumentChunkLexicalMatch & { rank: number }>;
   durationMs: number;
   stats: RetrievalStats;
+  isReranked?: boolean; // 标识是否成功经过 Rerank 二次精排
 }
 
 /**
@@ -91,6 +101,7 @@ export interface HybridRetrievalOptions {
   knowledgeBaseId: string;
   query: string;
   topK?: number;
+  enableRerank?: boolean; // 显式开关覆盖（默认回退至 isRagRerankEnabled()）
 }
 
 /**
@@ -101,7 +112,10 @@ export interface HybridRetrievalDeps {
   searchDenseFn?: typeof searchDocumentChunksDense;
   searchLexicalFn?: typeof searchDocumentChunksLexical;
   tokenizeFn?: (text: string) => string;
+  rerankProvider?: RerankProvider;
+  isRerankEnabledFn?: () => boolean;
 }
+
 
 // 结巴分词单例
 let jiebaInstance: Jieba | null = null;
@@ -248,32 +262,99 @@ export async function hybridRetrieval(
   });
   fusionDurationMs = Math.round(performance.now() - fusionStartTime);
 
-  // 5. 组装最终结构化切片与来源锚点，截取 topK
-  const targetChunks = fusedList.slice(0, topK);
-  const chunks: RetrievedChunk[] = targetChunks.map((fused) => {
-    const raw = fused.item;
-    return {
-      chunkId: fused.id,
-      documentId: raw.documentId,
-      documentName: raw.documentName,
-      documentVersion: raw.documentVersion,
-      content: raw.content,
-      contentSegmented: raw.contentSegmented,
-      score: fused.score,
-      denseRank: fused.denseRank,
-      lexicalRank: fused.lexicalRank,
-      similarity: fused.denseScore,
-      lexicalScore: fused.lexicalScore,
-      citationAnchor: {
+  // 5. Rerank 可插拔精排阶段（默认关闭，配置驱动，弹性降级）
+  const checkRerankEnabled = deps.isRerankEnabledFn || isRagRerankEnabled;
+  const isRerankActive = options.enableRerank !== undefined ? options.enableRerank : checkRerankEnabled();
+
+  let rerankDurationMs = 0;
+  let isReranked = false;
+  let chunks: RetrievedChunk[] = [];
+
+  if (isRerankActive && fusedList.length > 0) {
+    // 选取 RRF 融合候选（保障至少 defaultTopN 条送入 Rerank 模型二次排序）
+    const candidateLimit = Math.max(topK, RAG_RERANK_CONFIG.defaultTopN);
+    const candidateList = fusedList.slice(0, candidateLimit);
+    const candidateDocuments = candidateList.map((f) => f.item.content);
+
+    const rerankStartTime = performance.now();
+    try {
+      const provider = deps.rerankProvider || new SiliconFlowRerankProvider();
+      const rerankResults = await provider.rerank(query, candidateDocuments, topK);
+      rerankDurationMs = Math.round(performance.now() - rerankStartTime);
+
+      if (rerankResults && rerankResults.length > 0) {
+        chunks = rerankResults.map((res) => {
+          const fused = candidateList[res.index] ?? candidateList[0];
+          const raw = fused.item;
+          return {
+            chunkId: fused.id,
+            documentId: raw.documentId,
+            documentName: raw.documentName,
+            documentVersion: raw.documentVersion,
+            content: raw.content,
+            contentSegmented: raw.contentSegmented,
+            score: res.relevanceScore, // 排序得分使用 Rerank 精排打分
+            rerankScore: res.relevanceScore,
+            rrfScore: fused.score,
+            denseRank: fused.denseRank,
+            lexicalRank: fused.lexicalRank,
+            similarity: fused.denseScore,
+            lexicalScore: fused.lexicalScore,
+            citationAnchor: {
+              documentId: raw.documentId,
+              documentName: raw.documentName,
+              documentVersion: raw.documentVersion,
+              pageNumber: raw.pageNumber,
+              headingPath: raw.headingPath,
+              chunkIndex: raw.chunkIndex,
+            },
+          };
+        });
+
+        isReranked = true;
+      }
+    } catch (err: unknown) {
+      rerankDurationMs = Math.round(performance.now() - rerankStartTime);
+      logger.warn('[hybrid-retrieval] Rerank 二次精排异常，平滑降级为原 RRF 排名结果', {
+        feature: 'rag-rerank',
+        query,
+        candidateCount: candidateList.length,
+        durationMs: rerankDurationMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // 容灾平滑降级：保持 isReranked 为 false，进入后续 RRF 融合降级组装
+    }
+  }
+
+  // 6. 若未开启 Rerank 或 Rerank 发生异常降级：按原 RRF 融合位次装配
+  if (!isReranked) {
+    const targetChunks = fusedList.slice(0, topK);
+    chunks = targetChunks.map((fused) => {
+      const raw = fused.item;
+      return {
+        chunkId: fused.id,
         documentId: raw.documentId,
         documentName: raw.documentName,
         documentVersion: raw.documentVersion,
-        pageNumber: raw.pageNumber,
-        headingPath: raw.headingPath,
-        chunkIndex: raw.chunkIndex,
-      },
-    };
-  });
+        content: raw.content,
+        contentSegmented: raw.contentSegmented,
+        score: fused.score,
+        rrfScore: fused.score,
+        denseRank: fused.denseRank,
+        lexicalRank: fused.lexicalRank,
+        similarity: fused.denseScore,
+        lexicalScore: fused.lexicalScore,
+        citationAnchor: {
+          documentId: raw.documentId,
+          documentName: raw.documentName,
+          documentVersion: raw.documentVersion,
+          pageNumber: raw.pageNumber,
+          headingPath: raw.headingPath,
+          chunkIndex: raw.chunkIndex,
+        },
+      };
+    });
+  }
 
   const totalDurationMs = Math.round(performance.now() - totalStartTime);
 
@@ -285,12 +366,15 @@ export async function hybridRetrieval(
     denseMatches: denseMatchesWithRank,
     lexicalMatches: lexicalMatchesWithRank,
     durationMs: totalDurationMs,
+    isReranked,
     stats: {
       embeddingDurationMs,
       denseDurationMs,
       lexicalDurationMs,
       fusionDurationMs,
+      rerankDurationMs,
       totalDurationMs,
     },
   };
+
 }

@@ -161,4 +161,91 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
       expect(screen.getByText('知识库不存在或已被归档')).toBeInTheDocument();
     });
   });
+
+  it('4. 勾选 Rerank 精排后请求携带 enableRerank，并且正确呈现 Rerank 精排耗时与精排分数', async () => {
+    const user = userEvent.setup();
+
+    const mockRerankResponse = {
+      query: '精排测试',
+      preparedLexicalQuery: '精排 测试',
+      topK: 20,
+      isReranked: true,
+      chunks: [
+        {
+          chunkId: 'chk_rerank_1',
+          documentId: 'doc_1',
+          documentName: 'adr-architecture.md',
+          documentVersion: 1,
+          content: '黄金答案文本',
+          contentSegmented: '黄金 答案 文本',
+          score: 0.9856,
+          rerankScore: 0.9856,
+          rrfScore: 0.032,
+          denseRank: 2,
+          lexicalRank: 1,
+          citationAnchor: {
+            documentId: 'doc_1',
+            documentName: 'adr-architecture.md',
+            documentVersion: 1,
+            pageNumber: 1,
+            headingPath: '设计',
+            chunkIndex: 0,
+          },
+        },
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 85,
+      stats: {
+        embeddingDurationMs: 15,
+        denseDurationMs: 10,
+        lexicalDurationMs: 8,
+        fusionDurationMs: 2,
+        rerankDurationMs: 50,
+        totalDurationMs: 85,
+      },
+    };
+
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: mockRerankResponse,
+      }),
+    });
+
+    render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
+
+    // 勾选 Rerank 精排复选框
+    const checkbox = screen.getByRole('checkbox');
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    const input = screen.getByPlaceholderText(/输入查询测试混合检索/);
+    await user.type(input, '精排测试');
+
+    const submitBtn = screen.getByRole('button', { name: /测试检索/ });
+    await user.click(submitBtn);
+
+    // 验证 API 参数包含 enableRerank: true
+    await waitFor(() => {
+      expect(mockFetchWithAuth).toHaveBeenCalledWith(
+        '/api/knowledge-bases/kb_test_123/query',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ query: '精排测试', topK: 20, enableRerank: true }),
+        })
+      );
+    });
+
+    // 验证界面呈现 Rerank 精排明细与精排耗时
+    await waitFor(() => {
+      expect(screen.getByText('Rerank 精排明细')).toBeInTheDocument();
+      expect(screen.getByText('精排生效')).toBeInTheDocument();
+      expect(screen.getByText('Rerank 耗时')).toBeInTheDocument();
+      expect(screen.getByText('50ms')).toBeInTheDocument();
+      expect(screen.getByText(/精排分 0.9856/)).toBeInTheDocument();
+    });
+  });
 });
+
