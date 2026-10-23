@@ -38,6 +38,94 @@ export const RAG_CAPACITY_LIMITS = {
 } as const;
 
 /**
+ * 容量超限时的标准中文提示文案（返回 429）
+ */
+export const RAG_CAPACITY_ERROR_MESSAGES = {
+  maxKnowledgeBases: '知识库数量已达上限（最多 5 个），请归档或清理不需要的知识库',
+  maxDocuments: '知识库文档数量已达上限（最多 50 个），请删除无用文档后再试',
+  maxChunks: '切片总数已达上限（最多 20000 个），请清理文档释放切片额度',
+} as const;
+
+/**
+ * RAG 文档文件格式与大小限制
+ * v1 仅支持文本型 PDF/Markdown/TXT
+ */
+export const RAG_FILE_CONFIG = {
+  /** 单个文档最大大小（字节）：20MB */
+  maxFileSize: 20 * 1024 * 1024,
+  /** 允许的文件扩展名 */
+  allowedExtensions: ['.pdf', '.md', '.markdown', '.txt'] as const,
+  /** 常见的允许 MIME 类型 */
+  allowedMimeTypes: [
+    'application/pdf',
+    'text/plain',
+    'text/markdown',
+    'text/x-markdown',
+  ] as const,
+} as const;
+
+/**
+ * 校验 RAG 上传文档的格式与大小
+ * 非法类型与超限文件被中文文案拒绝且不产生数据行
+ */
+export interface RagDocumentValidationInput {
+  name: string;
+  size: number;
+  type?: string;
+}
+
+export type RagDocumentValidationResult =
+  | { valid: true; safeName: string; extension: string }
+  | { valid: false; error: string };
+
+export function validateRagDocument(
+  input: RagDocumentValidationInput
+): RagDocumentValidationResult {
+  const { name, size } = input;
+
+  // 1. 文件大小检查
+  if (size > RAG_FILE_CONFIG.maxFileSize) {
+    const maxSizeMB = (RAG_FILE_CONFIG.maxFileSize / 1024 / 1024).toFixed(0);
+    const actualSizeMB = (size / 1024 / 1024).toFixed(1);
+    return {
+      valid: false,
+      error: `文件大小超过限制 (${actualSizeMB}MB > ${maxSizeMB}MB)，最大支持 20MB`,
+    };
+  }
+
+  if (size <= 0) {
+    return {
+      valid: false,
+      error: '不能上传空文件',
+    };
+  }
+
+  // 2. 清洗文件名并提取扩展名
+  const basename = name.split('/').pop()?.split('\\').pop() || name;
+  let safeName = basename.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim().replace(/^\.+|\.+$/g, '');
+  if (!safeName) {
+    safeName = `doc_${Date.now()}`;
+  }
+
+  const lastDotIndex = safeName.lastIndexOf('.');
+  const ext = lastDotIndex !== -1 ? safeName.slice(lastDotIndex).toLowerCase() : '';
+
+  const isAllowedExt = (RAG_FILE_CONFIG.allowedExtensions as readonly string[]).includes(ext);
+  if (!isAllowedExt) {
+    return {
+      valid: false,
+      error: '不支持的文件类型，仅支持 PDF、Markdown、TXT 文本文件',
+    };
+  }
+
+  return {
+    valid: true,
+    safeName,
+    extension: ext,
+  };
+}
+
+/**
  * 混合检索阶段召回与融合参数
  */
 export const RAG_RETRIEVAL_CONFIG = {

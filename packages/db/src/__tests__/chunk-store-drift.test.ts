@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.hoisted(() => {
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = 'postgresql://weixiaoyu@localhost:5432/ai_aggregation';
+  }
+});
+
 import { prisma } from '../client';
 import {
   insertDocumentChunks,
