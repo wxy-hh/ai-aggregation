@@ -17,6 +17,7 @@ import type { Prisma } from '@prisma/client';
 export interface DocumentChunkRow {
   id: string;
   documentId: string;
+  documentName: string;
   knowledgeBaseId: string;
   userId: string;
   documentVersion: number;
@@ -226,7 +227,7 @@ export async function replaceDocumentChunksInTransaction(params: {
 }
 
 /**
- * 稠密向量相似度检索（基于 cosine 距离 <=>，SQL 层强制执行用户与知识库 ACL）
+ * 稠密向量相似度检索（基于 cosine 距离 <=>，SQL 层前置执行用户/知识库 ACL、软删除过滤与最新版本过滤）
  */
 export async function searchDocumentChunksDense(params: {
   userId: string;
@@ -240,6 +241,7 @@ export async function searchDocumentChunksDense(params: {
   interface RawDenseRow {
     id: string;
     document_id: string;
+    document_name: string;
     knowledge_base_id: string;
     user_id: string;
     document_version: number;
@@ -257,25 +259,29 @@ export async function searchDocumentChunksDense(params: {
   const rows = await prisma.$queryRawUnsafe<RawDenseRow[]>(
     `
     SELECT
-      "id",
-      "document_id",
-      "knowledge_base_id",
-      "user_id",
-      "document_version",
-      "chunk_index",
-      "content",
-      "content_segmented",
-      "heading_path",
-      "page_number",
-      "token_count",
-      "metadata",
-      "created_at",
-      (1 - ("embedding" <=> $1::vector)) AS "similarity"
-    FROM "document_chunks"
-    WHERE "user_id" = $2
-      AND "knowledge_base_id" = $3
-      AND "embedding" IS NOT NULL
-    ORDER BY "embedding" <=> $1::vector ASC
+      dc."id",
+      dc."document_id",
+      d."name" AS "document_name",
+      dc."knowledge_base_id",
+      dc."user_id",
+      dc."document_version",
+      dc."chunk_index",
+      dc."content",
+      dc."content_segmented",
+      dc."heading_path",
+      dc."page_number",
+      dc."token_count",
+      dc."metadata",
+      dc."created_at",
+      (1 - (dc."embedding" <=> $1::vector)) AS "similarity"
+    FROM "document_chunks" dc
+    INNER JOIN "documents" d ON dc."document_id" = d."id"
+    WHERE dc."user_id" = $2
+      AND dc."knowledge_base_id" = $3
+      AND d."deleted_at" IS NULL
+      AND dc."document_version" = d."version"
+      AND dc."embedding" IS NOT NULL
+    ORDER BY dc."embedding" <=> $1::vector ASC
     LIMIT $4;
     `,
     vectorStr,
@@ -287,6 +293,7 @@ export async function searchDocumentChunksDense(params: {
   return rows.map((row) => ({
     id: row.id,
     documentId: row.document_id,
+    documentName: row.document_name,
     knowledgeBaseId: row.knowledge_base_id,
     userId: row.user_id,
     documentVersion: row.document_version,
@@ -303,7 +310,7 @@ export async function searchDocumentChunksDense(params: {
 }
 
 /**
- * 词法全文检索（基于 ts_rank_cd 与 content_tsv 生成列，SQL 层强制执行 ACL）
+ * 词法全文检索（基于 ts_rank_cd 与 content_tsv 生成列，SQL 层前置执行用户/知识库 ACL、软删除过滤与最新版本过滤）
  */
 export async function searchDocumentChunksLexical(params: {
   userId: string;
@@ -316,6 +323,7 @@ export async function searchDocumentChunksLexical(params: {
   interface RawLexicalRow {
     id: string;
     document_id: string;
+    document_name: string;
     knowledge_base_id: string;
     user_id: string;
     document_version: number;
@@ -333,24 +341,28 @@ export async function searchDocumentChunksLexical(params: {
   const rows = await prisma.$queryRawUnsafe<RawLexicalRow[]>(
     `
     SELECT
-      "id",
-      "document_id",
-      "knowledge_base_id",
-      "user_id",
-      "document_version",
-      "chunk_index",
-      "content",
-      "content_segmented",
-      "heading_path",
-      "page_number",
-      "token_count",
-      "metadata",
-      "created_at",
-      ts_rank_cd("content_tsv", plainto_tsquery('simple', $1)) AS "rank"
-    FROM "document_chunks"
-    WHERE "user_id" = $2
-      AND "knowledge_base_id" = $3
-      AND "content_tsv" @@ plainto_tsquery('simple', $1)
+      dc."id",
+      dc."document_id",
+      d."name" AS "document_name",
+      dc."knowledge_base_id",
+      dc."user_id",
+      dc."document_version",
+      dc."chunk_index",
+      dc."content",
+      dc."content_segmented",
+      dc."heading_path",
+      dc."page_number",
+      dc."token_count",
+      dc."metadata",
+      dc."created_at",
+      ts_rank_cd(dc."content_tsv", plainto_tsquery('simple', $1)) AS "rank"
+    FROM "document_chunks" dc
+    INNER JOIN "documents" d ON dc."document_id" = d."id"
+    WHERE dc."user_id" = $2
+      AND dc."knowledge_base_id" = $3
+      AND d."deleted_at" IS NULL
+      AND dc."document_version" = d."version"
+      AND dc."content_tsv" @@ plainto_tsquery('simple', $1)
     ORDER BY "rank" DESC
     LIMIT $4;
     `,
@@ -363,6 +375,7 @@ export async function searchDocumentChunksLexical(params: {
   return rows.map((row) => ({
     id: row.id,
     documentId: row.document_id,
+    documentName: row.document_name,
     knowledgeBaseId: row.knowledge_base_id,
     userId: row.user_id,
     documentVersion: row.document_version,
