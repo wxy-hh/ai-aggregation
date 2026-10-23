@@ -24,6 +24,7 @@
     "format": "turbo format",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "test:eval": "pnpm --filter @repo/web test:eval",
     "test:e2e": "turbo test:e2e",
     "db:generate": "pnpm --filter @repo/db generate",
     "db:migrate": "pnpm --filter @repo/db migrate",

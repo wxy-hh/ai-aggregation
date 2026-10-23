@@ -129,7 +129,11 @@ export function createToolExecutionPipeline(
 
   const timeBudgetExhausted = () => now() - startedAt > runTimeBudgetMs;
 
-  /** 结算一次调用：维护连败计数（成功清零 / 失败递增，skip 计入失败），并计算执行耗时（若提供起点） */
+  /**
+   * 教学重点：连败熔断器（Circuit Breaker）计数器与结算
+   * 维护连续失败次数：任何工具成功，连败计数归零；连续失败则自增。
+   * 当连败次数达到 maxConsecutiveFailures（默认 3 次）时，shouldHalt 会立即跳闸切断循环。
+   */
   const settle = (
     outcome: Omit<ToolCallOutcome, 'durationMs'>,
     startTime?: number
@@ -214,8 +218,10 @@ export function createToolExecutionPipeline(
         });
       }
 
-      // 退化保护 1：重复调用去重（命中即复用首次过检内容；不重新执行、不重复过检、
-      // 不重发 attachment —— 首轮已并入消息，重复下发会让前端按新 callId 再渲染同一张图）
+      // 教学重点：退化保护 1 —— 入参哈希去重缓存（Deduplication Cache）
+      // 将「工具名 + 规范化序列化的入参」作为唯一 Key。
+      // 若大模型在多步中因幻觉或死循环重复调用同一入参，直接在内存中命中并短路（Short-circuit）返回历史结果，
+      // 避免重复发网络请求消耗配额，同时向模型注入引导提示语。
       const cacheKey = `${call.toolName}:${stableSerialize(call.input)}`;
       const cached = toolCache.get(cacheKey);
       if (cached) {

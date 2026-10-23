@@ -278,6 +278,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               // Ark 服务端执行的内置联网搜索：依据能力包白名单与供应方自适应挂载
               ...(canUseArkWebSearch ? { web_search: aiProvider.tools.webSearch({}) } : {}),
             },
+            // 教学重点：stopWhen: stepCountIs(1) 将单步决策控制权夺回到我们自己的 Node.js 运行时中
+            // 严禁让上游 SDK 黑盒自动多步循环，这样我们才能在每一步执行去重、耗时统计、连败熔断与自定义 SSE 事件推送
             stopWhen: stepCountIs(1),
             maxOutputTokens: stepOutputLimit,
             abortSignal: signal,
@@ -408,7 +410,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             });
           }
 
-          // 回注消息序列：包含这轮的 assistant 消息与 tool 结果消息
+          // 教学重点：工具结果回注（Tool Re-injection）
+          // 按照 LLM 标准协议，将本地执行的结果包装为 role: 'tool' 消息，
+          // 其中 toolResultParts 的每一项都携带了对应模型申请的 toolCallId 与返回值 content，
+          // 重新追加到 session 历史中，模型在下一轮决策才能“看到”工具的数据产出
           const toolMessage: ModelMessage = { role: 'tool', content: toolResultParts };
           session.appendToolResult(toolMessage);
 
