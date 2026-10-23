@@ -97,7 +97,22 @@ export interface VideoHistoryItem extends BaseHistoryItem {
   parameters?: Record<string, any>;
 }
 
-export type HistoryItem = ChatHistoryItem | VoiceHistoryItem | ImageHistoryItem | VideoHistoryItem | DestinyHistoryItem;
+export interface AgentHistoryItem extends BaseHistoryItem {
+  type: 'agent';
+  preview: string;
+  goalText?: string;
+  steps?: number;
+  outcome?: string;
+  durationMs?: number;
+}
+
+export type HistoryItem =
+  | ChatHistoryItem
+  | VoiceHistoryItem
+  | ImageHistoryItem
+  | VideoHistoryItem
+  | DestinyHistoryItem
+  | AgentHistoryItem;
 
 export interface HistoryFilter {
   type?: HistoryType | 'all';

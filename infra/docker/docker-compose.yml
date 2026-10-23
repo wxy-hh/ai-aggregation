@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # 关系型数据库：主应用元数据与业务数据持久化
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: ai-aggregation-postgres
     environment:
       POSTGRES_USER: postgres

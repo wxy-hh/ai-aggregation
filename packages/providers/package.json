@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.19",
+    "@repo/shared": "workspace:*",
     "ai": "^6.0.50"
   }
 }

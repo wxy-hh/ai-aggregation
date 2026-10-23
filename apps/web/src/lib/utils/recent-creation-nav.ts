@@ -48,6 +48,8 @@ export function getHistoryItemHref(item: HistoryItem): string | null {
   switch (item.type) {
     case 'chat':
       return `/chat?historyId=${item.id}`;
+    case 'agent':
+      return `/history`;
     case 'voice':
       return `/voice?historyId=${item.id}`;
     case 'image':
