@@ -71,6 +71,7 @@ import {
   AGENT_SUMMARY_OUTPUT_LIMIT,
 } from './agent-config';
 import type { ToolRegistry } from '@/lib/agent/registry';
+import type { ObservabilityTrace } from '@/lib/observability/langfuse-client';
 import type { AgentRuntimeContext } from './runtime-context';
 
 export interface AgentRunOptions {
@@ -102,6 +103,8 @@ export interface AgentRunOptions {
   disabledToolKeys?: string[];
   /** 是否开启深度思考模式（ADR-0016 / 工单 03） */
   thinking?: boolean;
+  /** 可选的可观测性 Root Trace 实例（工单 01 观测底座接入） */
+  trace?: ObservabilityTrace;
 }
 
 /** 多步 usage 的累加结构（null 表示至今无任何有效 usage） */
@@ -192,6 +195,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         startedAt,
         runTimeBudgetMs,
         guardContent: guardToolContent,
+        trace: options.trace,
       });
 
       // 链式会话状态机：收敛 previousResponseId 链式追踪、增量推演与断链全量回退自愈（ADR-0010）
@@ -266,6 +270,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           roundIndex++;
           pipeline.beginRound();
 
+          const decisionStart = Date.now();
           const stepPayload = session.getStepPayload();
 
           // 决策步：挂 tools，stopWhen 为 1 步
@@ -315,6 +320,50 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           finalFinishReason = await decision.finishReason;
 
           const action = projectorOutcome.action;
+
+          // 决策步可观测 Generation 记录（工单 01）
+          if (options.trace) {
+            const norm = normalizeUsage(await decision.usage);
+            const usageType: 'actual' | 'missing' =
+              norm && norm.totalTokens !== null ? 'actual' : 'missing';
+            let outputSummary: string;
+            if (action.type === 'deliver_answer') {
+              outputSummary = action.text;
+            } else if (action.type === 'execute_local_tools') {
+              outputSummary = action.noteText
+                ? `[agent_note] ${action.noteText}`
+                : `[tool_calls] ${action.localCalls.map((c) => c.toolName).join(', ')}`;
+            } else if (action.type === 'nudge_continue') {
+              outputSummary = `[nudge] ${action.nudgeMessage}`;
+            } else {
+              outputSummary = `[action: ${action.type}]`;
+            }
+
+            const gen = options.trace.generation({
+              name: `decision_round_${roundIndex}`,
+              model: options.model,
+              input: stepPayload.messages,
+              output: outputSummary,
+              usage:
+                norm && norm.totalTokens !== null
+                  ? {
+                      promptTokens: norm.inputTokens ?? undefined,
+                      completionTokens: norm.outputTokens ?? undefined,
+                      totalTokens: norm.totalTokens ?? undefined,
+                    }
+                  : undefined,
+              usageType,
+              startTime: new Date(decisionStart),
+              endTime: new Date(),
+              metadata: {
+                stepIndex: roundIndex,
+                actionType: action.type,
+                finishReason: finalFinishReason,
+                priceBookVersion: '2026.1',
+              },
+            });
+            gen.end();
+          }
 
           // 决策动作规约派发：消除编排器特异分支与防御断言
           if (action.type === 'deliver_answer') {
@@ -425,6 +474,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
         // ==================== 收尾步（若仍需收尾） ====================
         if (!finalAnswerDelivered) {
+          const summaryStart = Date.now();
           const summaryPayload = session.getStepPayload();
 
           // 收尾步不挂 tools，强制产出最终文本回答（充分利用收尾上限，防止长文报告被截断）
@@ -467,6 +517,36 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           }
           accumulate(await summary.usage, 'summary');
           finalFinishReason = await summary.finishReason;
+
+          // 收尾步可观测 Generation 记录（工单 01）
+          if (options.trace) {
+            const norm = normalizeUsage(await summary.usage);
+            const usageType: 'actual' | 'missing' =
+              norm && norm.totalTokens !== null ? 'actual' : 'missing';
+            const gen = options.trace.generation({
+              name: 'summary_step',
+              model: options.model,
+              input: summaryMessages,
+              output: text,
+              usage:
+                norm && norm.totalTokens !== null
+                  ? {
+                      promptTokens: norm.inputTokens ?? undefined,
+                      completionTokens: norm.outputTokens ?? undefined,
+                      totalTokens: norm.totalTokens ?? undefined,
+                    }
+                  : undefined,
+              usageType,
+              startTime: new Date(summaryStart),
+              endTime: new Date(),
+              metadata: {
+                summaryOutputLimit: effectiveSummaryLimit,
+                finishReason: finalFinishReason,
+                priceBookVersion: '2026.1',
+              },
+            });
+            gen.end();
+          }
         }
 
         // 清空流式抽取器剩余缓冲区与未闭合标签自愈（ADR-0015）
@@ -513,6 +593,21 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
         });
 
+        // 结束 Root Trace（工单 01）
+        if (options.trace) {
+          const currentTotals = totals as UsageTotals | null;
+          options.trace.update({
+            output: text,
+            metadata: {
+              outcome: produced ? 'success' : 'failed',
+              steps: roundIndex + (finalAnswerDelivered ? 0 : 1),
+              durationMs: Date.now() - startedAt,
+              totalTokens: currentTotals?.totalTokens,
+            },
+          });
+          options.trace.end();
+        }
+
         if (produced) {
           const normalized = totals ? normalizeUsage(totals) : null;
           controller.enqueue(
@@ -540,6 +635,17 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           searchCalls: searchCallsCount,
           webhookCalls: runtime.finishMetadata().webhookCalls,
         });
+        if (options.trace) {
+          options.trace.update({
+            output: text,
+            metadata: {
+              outcome: hasOutput() ? 'partial' : 'failed',
+              error: reason,
+              durationMs: Date.now() - startedAt,
+            },
+          });
+          options.trace.end();
+        }
         try {
           controller.enqueue(encodeSseEvent({ type: 'error', error: reason || '生成失败，请重试' }));
         } catch {

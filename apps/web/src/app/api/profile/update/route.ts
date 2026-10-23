@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { prisma } from '@repo/db';
+import { prisma, deleteMemoryChunksByUser } from '@repo/db';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
 import { updateProfileSchema } from '@/schemas/auth.schema';
@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest) {
         });
       }
 
-      const { username, name, avatar } = parsed.data;
+      const { username, name, avatar, memorySearchEnabled } = parsed.data;
 
       // 如果修改用户名，检查唯一性
       if (username) {
@@ -27,12 +27,18 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
+      // 若用户关闭会话记忆检索，立即物理级联删除当前用户的全部存量切片（授权撤回闭环，QA-006）
+      if (memorySearchEnabled === false) {
+        await deleteMemoryChunksByUser(user.id);
+      }
+
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
         data: {
           ...(username !== undefined && { username }),
           ...(name !== undefined && { name }),
           ...(avatar !== undefined && { avatar }),
+          ...(memorySearchEnabled !== undefined && { memorySearchEnabled }),
         },
         select: {
           id: true,
@@ -40,6 +46,7 @@ export async function PATCH(req: NextRequest) {
           email: true,
           name: true,
           avatar: true,
+          memorySearchEnabled: true,
         },
       });
 

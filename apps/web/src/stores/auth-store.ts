@@ -12,6 +12,7 @@ interface User {
   avatar: string | null;
   role: string;
   tokens?: number;
+  memorySearchEnabled?: boolean;
   emailVerified: string | null;
   createdAt?: string;
 }

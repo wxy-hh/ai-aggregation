@@ -18,6 +18,7 @@ model User {
   role          String   @default("user")   // 用户角色："user"（普通用户）| "admin"（管理员）
   status        String   @default("active") // 账号状态："active"（正常）| "disabled"（已禁用）
   tokens        Int      @default(20000)    // AI Token 剩余额度（每次调用按实际用量扣减）
+  memorySearchEnabled Boolean @default(false) @map("memory_search_enabled") // 会话记忆检索开关（默认关闭，opt-in）
   emailVerified DateTime?
   avatar        String?
   createdAt     DateTime @default(now())
@@ -41,6 +42,10 @@ model User {
   webhookToolCalls    WebhookToolCall[]
   productEvents       ProductEvent[]
   agentRuns           AgentRun[]
+  knowledgeBases      KnowledgeBase[]
+  documents           Document[]
+  documentChunks      DocumentChunk[]
+  conversationMemoryChunks ConversationMemoryChunk[]
   @@map("users")
 }
 
@@ -84,6 +89,7 @@ model ChatSession {
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
+  memoryChunks ConversationMemoryChunk[]
 
   @@index([userId])
   @@map("chat_sessions")
@@ -502,4 +508,123 @@ model AgentRun {
   @@index([createdAt])
   @@map("agent_runs")
 }
+
+// 知识库表（RAG 知识库，不含 embedding 模型与维度字段，收敛为全局常量）
+model KnowledgeBase {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  name        String
+  description String?   @db.Text
+  status      String    @default("active") // "active" | "archived"
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents   Document[]
+  evalCases   RagEvalCase[]
+  chunks      DocumentChunk[]
+
+  @@index([userId])
+  @@map("knowledge_bases")
+}
+
+// 知识库文档表（状态机：pending -> ready / failed，单调版本号，软删除）
+model Document {
+  id              String    @id @default(cuid())
+  knowledgeBaseId String    @map("knowledge_base_id")
+  userId          String    @map("user_id") // 冗余用户 ID，供检索期前置 ACL 过滤
+  name            String
+  storageKey      String    @map("storage_key")
+  status          String    @default("pending") // "pending" | "processing" | "ready" | "failed"
+  version         Int       @default(1)
+  chunkCount      Int       @default(0) @map("chunk_count")
+  errorMessage    String?   @map("error_message") @db.Text
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  knowledgeBase   KnowledgeBase   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks          DocumentChunk[]
+
+  @@index([knowledgeBaseId])
+  @@index([userId])
+  @@index([status])
+  @@map("documents")
+}
+
+// 文档切片表（稠密向量 + 词法检索，HNSW 索引，版本化唯一约束）
+model DocumentChunk {
+  id               String   @id @default(cuid())
+  documentId       String   @map("document_id")
+  knowledgeBaseId  String   @map("knowledge_base_id") // 冗余供前置过滤
+  userId           String   @map("user_id") // 冗余供前置 ACL 过滤
+  documentVersion  Int      @map("document_version")
+  chunkIndex       Int      @map("chunk_index")
+  content          String   @db.Text
+  contentSegmented String   @map("content_segmented") @db.Text // jieba 应用层分词结果（空格分隔）
+  headingPath      String?  @map("heading_path") // Markdown 标题路径
+  pageNumber       Int?     @map("page_number") // PDF 页码
+  tokenCount       Int      @default(0) @map("token_count")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Unsupported 字段由 raw SQL 维护
+  contentTsv       Unsupported("tsvector")? @map("content_tsv")
+  embedding        Unsupported("vector(1024)")?
+
+  document         Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeBase    KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, documentVersion, chunkIndex])
+  @@index([knowledgeBaseId, userId])
+  @@index([documentId])
+  @@map("document_chunks")
+}
+
+// 会话记忆切片表（opt-in 开启，按消息水位线索引，支持双源路由记忆检索）
+model ConversationMemoryChunk {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id") // 强制跨用户隔离过滤
+  sessionId        String   @map("session_id")
+  messageId        String?  @map("message_id") // 溯源到消息 ID
+  chunkIndex       Int      @map("chunk_index")
+  content          String   @db.Text
+  contentSegmented String   @map("content_segmented") @db.Text
+  tokenCount       Int      @default(0) @map("token_count")
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Unsupported 字段由 raw SQL 维护
+  contentTsv       Unsupported("tsvector")? @map("content_tsv")
+  embedding        Unsupported("vector(1024)")?
+
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session          ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, chunkIndex])
+  @@index([userId])
+  @@index([sessionId])
+  @@map("conversation_memory_chunks")
+}
+
+// RAG 评测用例表（金标为 (documentId, version, chunkIndex) 三元组 JSON 数组）
+model RagEvalCase {
+  id              String   @id @default(cuid())
+  knowledgeBaseId String   @map("knowledge_base_id")
+  question        String   @db.Text
+  referenceAnswer String   @map("reference_answer") @db.Text
+  goldenAnchors   Json     @map("golden_anchors") // 三元组锚点数组
+  category        String   @default("answerable") // "answerable" | "unanswerable" | "cross_paragraph" | "injection"
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@index([knowledgeBaseId])
+  @@index([category])
+  @@map("rag_eval_cases")
+}
+
 

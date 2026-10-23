@@ -38,6 +38,7 @@ import { normalizeUsage } from '@/lib/ai-usage';
 import { resolveChatStreamUsage } from './chat-usage';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
+import { createRootTrace, flushObservability, type ObservabilityTrace } from '@/lib/observability/langfuse-client';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
@@ -81,6 +82,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         capabilityPack: rawCapabilityPack,
         disabledToolKeys: rawDisabledToolKeys,
         thinking: rawThinking,
+        conversationId: rawConversationId,
       } = body as {
         messages: ChatMessage[];
         model?: string;
@@ -90,7 +92,13 @@ export function createChatHandler(config: ChatHandlerConfig) {
         capabilityPack?: unknown;
         disabledToolKeys?: unknown;
         thinking?: unknown;
+        conversationId?: unknown;
       };
+      // 会话 ID（用于 Langfuse session 与运行记录关联）
+      const conversationId =
+        typeof rawConversationId === 'string' && rawConversationId.trim()
+          ? rawConversationId.trim()
+          : undefined;
       // 深度思考模式开关（ADR-0016 / 工单 03）
       const thinking = rawThinking === true;
       // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
@@ -144,6 +152,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // agent 运行时上下文：工具装配与调次统计全部内聚在运行时内部（Candidate 04 / ADR-0011），
       // 路由层只负责创建它并把 userId 交给它
       let agentRuntime: AgentRuntimeContext | null = null;
+      let agentTrace: ObservabilityTrace | null = null;
       if (agent) {
         let affordable;
         try {
@@ -175,6 +184,24 @@ export function createChatHandler(config: ChatHandlerConfig) {
           loadUserTools: config.getUserTools,
           capabilityPack: activeCapabilityPack?.key,
           disabledToolKeys,
+        });
+
+        // 统一创建 Root Trace：traceId=errorId、runId=requestId、关联 conversationId（工单 01）
+        agentTrace = createRootTrace({
+          traceId: errorId,
+          runId: requestId,
+          conversationId,
+          userId: user.id,
+          name: activeCapabilityPack ? `chat-agent:${activeCapabilityPack.key}` : 'chat-agent',
+          input: messages,
+          tags: activeCapabilityPack ? ['agent-rag', activeCapabilityPack.key] : ['agent-rag'],
+          metadata: {
+            errorId,
+            model: modelName,
+            provider: effectiveProvider,
+            ...(activeCapabilityPack ? { capabilityPack: activeCapabilityPack.key } : {}),
+            thinking,
+          },
         });
       }
 
@@ -241,7 +268,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
               await prisma.agentRun.create({
                 data: {
                   userId: user.id,
-                  conversationId: null,
+                  conversationId: conversationId ?? null,
                   messageId: null,
                   goalText: goalText || '无目标文本',
                   steps: finish.steps ?? 1,
@@ -256,6 +283,35 @@ export function createChatHandler(config: ChatHandlerConfig) {
             }
           } catch (dbError) {
             console.warn('[chat] agent_runs 记录落盘失败 (容错不阻断):', dbError);
+          }
+        }
+
+        // 异步刷新 Langfuse 观测事件队列（未配置时 no-op）
+        await flushObservability();
+
+        // 工单 09：若用户开启会话记忆检索，防抖 30s 派发 memory-index 任务（使用 sessionId 作为去重 jobId）
+        if (conversationId) {
+          try {
+            const dbUser = await (prisma?.user?.findUnique
+              ? prisma.user.findUnique({
+                  where: { id: user.id },
+                  select: { memorySearchEnabled: true },
+                })
+              : null);
+            if (dbUser?.memorySearchEnabled) {
+              const { memoryIndexQueue } = await import('@repo/queue');
+              await memoryIndexQueue.add(
+                'memory-index',
+                { userId: user.id, sessionId: conversationId },
+                {
+                  jobId: `memory-index-${conversationId}`,
+                  delay: 30_000,
+                  removeOnComplete: true,
+                }
+              );
+            }
+          } catch (memoryQueueErr) {
+            console.warn('[chat] 派发会话记忆索引任务失败 (容错不阻断):', memoryQueueErr);
           }
         }
 
@@ -291,6 +347,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           capabilityPack: activeCapabilityPack?.key,
           disabledToolKeys,
           thinking,
+          trace: agentTrace ?? undefined,
           onFinish,
         });
       } else {

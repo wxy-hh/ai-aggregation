@@ -19,6 +19,7 @@
  */
 
 import { DEFAULT_TOOL_POLICY, runToolWithPolicy } from './tool-policy';
+import type { ObservabilityTrace } from '@/lib/observability/langfuse-client';
 import {
   validateToolArgs,
   type ToolExecutionContext,
@@ -70,6 +71,8 @@ export interface ToolExecutionPipelineDeps {
   now?: () => number;
   /** 合规检查器（必传；实现留在 app 层，规避分层守卫） */
   guardContent: (content: string, toolName: string) => string;
+  /** 可选的可观测性 Root Trace 实例（工单 01 观测底座接入） */
+  trace?: ObservabilityTrace;
 }
 
 export interface ToolExecutionPipeline {
@@ -113,7 +116,7 @@ function stableSerialize(value: unknown): string {
 export function createToolExecutionPipeline(
   deps: ToolExecutionPipelineDeps
 ): ToolExecutionPipeline {
-  const { registry, ctx, guardContent, limits, runTimeBudgetMs, startedAt } = deps;
+  const { registry, ctx, guardContent, limits, runTimeBudgetMs, startedAt, trace } = deps;
   const now = deps.now ?? Date.now;
 
   /** 去重缓存：键 = 工具名 + 参数稳定序列化 */
@@ -204,17 +207,34 @@ export function createToolExecutionPipeline(
       // 上限拦截：被跳过的调用不执行、不过合规、不进缓存（skip 文案直接回注）
       const skip = resolveSkip(call.toolName);
       if (skip) {
+        const skipSummary = skip.imageCapExceeded
+          ? `未执行：本次对话的出图次数已用完（${limits.maxImageGenerates} 次）`
+          : `未执行：${skip.reason}`;
+        if (trace) {
+          const span = trace.span({
+            name: `tool:${call.toolName}`,
+            input: call.input,
+            output: skipSummary,
+            status: 'failed',
+            durationMs: 0,
+            metadata: {
+              skipped: true,
+              skipReason: skip.reason,
+            },
+          });
+          span.end();
+        }
         if (skip.imageCapExceeded) {
           return settle({
             ok: false,
             contentForModel: `本次对话的出图次数已用完（${limits.maxImageGenerates} 次），请基于已有内容作答`,
-            summaryForDisplay: `未执行：本次对话的出图次数已用完（${limits.maxImageGenerates} 次）`,
+            summaryForDisplay: skipSummary,
           });
         }
         return settle({
           ok: false,
           contentForModel: `工具「${call.toolName}」未执行：${skip.reason}。请在回答中如实告知用户这次调用未执行。`,
-          summaryForDisplay: `未执行：${skip.reason}`,
+          summaryForDisplay: skipSummary,
         });
       }
 
@@ -225,6 +245,20 @@ export function createToolExecutionPipeline(
       const cacheKey = `${call.toolName}:${stableSerialize(call.input)}`;
       const cached = toolCache.get(cacheKey);
       if (cached) {
+        if (trace) {
+          const span = trace.span({
+            name: `tool:${call.toolName}`,
+            input: call.input,
+            output: cached.summaryForDisplay,
+            status: cached.ok ? 'success' : 'failed',
+            durationMs: 0,
+            metadata: {
+              cached: true,
+              skipped: false,
+            },
+          });
+          span.end();
+        }
         return settle({
           ok: cached.ok,
           contentForModel: `${cached.guardedContent}\n\n该调用已执行过，结果同前，请基于现有信息作答或调整参数。`,
@@ -262,6 +296,25 @@ export function createToolExecutionPipeline(
         summaryForDisplay: outcome.summaryForDisplay,
         attachment: outcome.attachment,
       });
+
+      const callEnd = now();
+      const callDurationMs = Math.max(0, callEnd - callStart);
+      if (trace) {
+        const span = trace.span({
+          name: `tool:${call.toolName}`,
+          input: call.input,
+          output: outcome.summaryForDisplay,
+          status: outcome.ok ? 'success' : 'failed',
+          durationMs: callDurationMs,
+          startTime: new Date(callStart),
+          endTime: new Date(callEnd),
+          metadata: {
+            cached: false,
+            skipped: false,
+          },
+        });
+        span.end();
+      }
 
       return settle(
         {

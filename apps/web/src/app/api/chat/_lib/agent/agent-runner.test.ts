@@ -1070,3 +1070,72 @@ describe('web_search providerExecuted 映射', () => {
   });
 });
 
+describe('可观测性 Generation 记录（工单 01）', () => {
+  it('决策步记录 Generation 并标注 Usage 三口径', async () => {
+    vi.clearAllMocks();
+    const fakeToolSpec: AgentToolSpec = {
+      name: 'test_obs_tool',
+      description: '测试假工具',
+      parameters: z.object({}),
+      execute: vi.fn(async () => ({ ok: true, contentForModel: 'ok', summaryForDisplay: '完成' })),
+    };
+    const registry = createToolRegistry([fakeToolSpec]);
+    const mockGeneration = { update: vi.fn(), end: vi.fn() };
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      generation: vi.fn(() => mockGeneration),
+      span: vi.fn(() => mockSpan),
+      update: vi.fn(),
+      end: vi.fn(),
+    };
+
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['直接交付的文本'],
+        usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '测试提问' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test-err',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+      trace: mockTrace,
+    });
+
+    await readSseEvents(stream);
+
+    // 验证 Generation 记录
+    expect(mockTrace.generation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'decision_round_1',
+        model: 'doubao-seed-evolving',
+        usageType: 'actual',
+        usage: expect.objectContaining({
+          promptTokens: 20,
+          completionTokens: 10,
+          totalTokens: 30,
+        }),
+        metadata: expect.objectContaining({
+          priceBookVersion: '2026.1',
+        }),
+      })
+    );
+    expect(mockGeneration.end).toHaveBeenCalled();
+
+    // 验证 Trace 整体结束
+    expect(mockTrace.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        output: '直接交付的文本',
+      })
+    );
+    expect(mockTrace.end).toHaveBeenCalled();
+  });
+});
+

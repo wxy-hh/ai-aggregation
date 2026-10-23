@@ -174,7 +174,7 @@ describe('createProvider deepseek', () => {
     const { createProvider } = await import('../factory');
     const { streamText } = await import('ai');
     let capturedBody: Record<string, unknown> | null = null;
-    let capturedHeaders: HeadersInit | undefined;
+    let capturedHeaders: unknown;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: unknown, init?: RequestInit) => {
@@ -195,8 +195,8 @@ describe('createProvider deepseek', () => {
       for await (const _part of result.fullStream) {}
     } catch {}
     expect(capturedBody).toBeDefined();
-    expect(capturedBody?.thinking).toEqual({ type: 'enabled' });
-    const headers = new Headers(capturedHeaders);
+    expect((capturedBody as Record<string, unknown> | null)?.thinking).toEqual({ type: 'enabled' });
+    const headers = new Headers(capturedHeaders as any);
     expect(headers.get('x-deepseek-thinking')).toBeNull();
   });
 });

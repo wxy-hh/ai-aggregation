@@ -45,4 +45,37 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     expect(screen.getByText('console.log("hello");')).toBeInTheDocument();
     expect(screen.getByText('复制')).toBeInTheDocument();
   });
+
+  it('知识库问题命中检索后：回答正文含 [^1] 样式引用编号，气泡元信息行展示来源计数 (QA-004)', () => {
+    const message: Message = {
+      id: 'msg-rag-1',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 的规定，连续失败 3 次将触发熔断 [^2]。',
+      isStreaming: false,
+      toolCalls: [
+        {
+          id: 'call-1',
+          name: 'knowledge_search',
+          args: { query: '连败熔断触发条件' },
+          status: 'success',
+          resultSummary: '命中 2 条切片',
+        },
+      ],
+    };
+
+    render(<MessageItem message={message} />);
+
+    // 1. 正文中存在 [^1] 和 [^2] 的引用徽标按钮
+    const cite1 = screen.getByTestId('citation-badge-1');
+    const cite2 = screen.getByTestId('citation-badge-2');
+    expect(cite1).toBeInTheDocument();
+    expect(cite2).toBeInTheDocument();
+    expect(cite1).toHaveTextContent('[^1]');
+    expect(cite2).toHaveTextContent('[^2]');
+
+    // 2. 气泡元信息行展示检索类来源计数（QA-004 步骤 1）
+    const metaRow = screen.getByTestId('retrieval-source-meta');
+    expect(metaRow).toBeInTheDocument();
+    expect(metaRow).toHaveTextContent('已参考知识库来源 · 2 处引用');
+  });
 });
