@@ -47,6 +47,7 @@ function makePipeline(overrides: {
   runTimeBudgetMs?: number;
   now?: () => number;
   guardContent?: (content: string, toolName: string) => string;
+  trace?: any;
 } = {}): PipelineHarness {
   const guardCalls: PipelineHarness['guardCalls'] = [];
   // 自定义 guard 也包一层记录，便于断言「过检是否发生、入参是什么」
@@ -63,6 +64,7 @@ function makePipeline(overrides: {
     runTimeBudgetMs: overrides.runTimeBudgetMs ?? 1_000_000,
     now: overrides.now ?? (() => 0),
     guardContent,
+    trace: overrides.trace,
   });
   return { pipeline, guardCalls };
 }
@@ -674,5 +676,109 @@ describe('耗时统计（durationMs，工单 P0a-01）', () => {
     expect(first.durationMs).toBe(40);
     expect(second.durationMs).toBeUndefined();
     expect('durationMs' in second).toBe(false);
+  });
+});
+
+describe('可观测性 Span 记录（工单 01）', () => {
+  it('真实执行时记录 Span 并携带耗时与结果', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock = 220;
+      return okResult();
+    });
+    const registry = createToolRegistry([makeSpec('web_search', execute)]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'call_obs_1',
+      toolName: 'web_search',
+      input: { query: 'test query' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        input: { query: 'test query' },
+        status: 'success',
+        durationMs: 120,
+      })
+    );
+    expect(mockSpan.end).toHaveBeenCalled();
+  });
+
+  it('被跳过拦截时记录 Span 为 failed 且标记 skipped', async () => {
+    const registry = createToolRegistry([makeSpec('web_search', vi.fn())]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      limits: { maxCallsPerRound: 0 },
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'call_obs_skip',
+      toolName: 'web_search',
+      input: { query: 'skipped query' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        status: 'failed',
+        metadata: expect.objectContaining({
+          skipped: true,
+        }),
+      })
+    );
+    expect(mockSpan.end).toHaveBeenCalled();
+  });
+
+  it('命中缓存时记录 Span 且标记 cached', async () => {
+    const execute = vi.fn(async () => okResult());
+    const registry = createToolRegistry([makeSpec('web_search', execute)]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_search',
+      input: { query: 'q1' },
+    });
+    mockTrace.span.mockClear();
+
+    await pipeline.executeCall({
+      toolCallId: 'c2',
+      toolName: 'web_search',
+      input: { query: 'q1' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        metadata: expect.objectContaining({
+          cached: true,
+        }),
+      })
+    );
   });
 });

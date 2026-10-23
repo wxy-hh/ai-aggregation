@@ -143,9 +143,10 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
 
     // 断言 4：完成态数据正确落盘
     expect(finishData).not.toBeNull();
-    expect(finishData?.outcome).toBe('success');
-    expect(finishData?.steps).toBe(1);
-    expect(finishData?.usage?.totalTokens).toBe(37);
+    const finalData = finishData!;
+    expect(finalData.outcome).toBe('success');
+    expect(finalData.steps).toBe(1);
+    expect((finalData.usage as any)?.totalTokens).toBe(37);
     console.log('[Case 1 基线结果] 纯文本问答成功, 步数: 1, Token消耗: 37, 工具调次: 0');
   });
 
@@ -224,8 +225,10 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
     expect(secondCallConfig.tools).toBeUndefined();
 
     // 断言 5：Token 累加正确 (30+15 + 60+25 = 130)
-    expect(finishData?.outcome).toBe('success');
-    expect(finishData?.usage?.totalTokens).toBe(130);
+    expect(finishData).not.toBeNull();
+    const finalData = finishData!;
+    expect(finalData.outcome).toBe('success');
+    expect((finalData.usage as any)?.totalTokens).toBe(130);
     console.log('[Case 2 基线结果] 正常工具调用成功, 步数: 2, Token消耗: 130, 工具调次: 1');
   });
 

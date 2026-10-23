@@ -35,6 +35,12 @@ export const RECENT_CREATION_TYPE_META: Record<
     chip: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
     iconBg: 'bg-amber-100/80 dark:bg-amber-900/30',
   },
+  agent: {
+    label: '智能体',
+    accent: 'text-emerald-600 dark:text-emerald-400',
+    chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+    iconBg: 'bg-emerald-100/80 dark:bg-emerald-900/30',
+  },
 };
 
 /** 根据历史记录类型生成跳转路径 */
