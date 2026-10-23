@@ -106,7 +106,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
   // =========================================================================
   it('Case 1: 纯文本问答，走 deliver_answer 直接交付，0 次工具调用', async () => {
     const registry = createToolRegistry([]);
-    let finishData: ChatStreamFinish | null = null;
+    let finishData: any = null;
 
     streamTextMock.mockReturnValueOnce(
       makeMockStreamResult({
@@ -167,7 +167,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
     };
 
     const registry = createToolRegistry([weatherTool]);
-    let finishData: ChatStreamFinish | null = null;
+    let finishData: any = null;
 
     // 第 1 轮：模型决策调用工具
     streamTextMock.mockReturnValueOnce(
@@ -308,7 +308,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
     };
 
     const registry = createToolRegistry([slowTool]);
-    let finishData: ChatStreamFinish | null = null;
+    let finishData: any = null;
 
     // 模拟第 1 轮决策：模型返回调用工具后，时间流逝超出预算（600ms > 500ms）
     streamTextMock.mockImplementationOnce(() => {
@@ -367,7 +367,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
     };
 
     const registry = createToolRegistry([brokenTool]);
-    let finishData: ChatStreamFinish | null = null;
+    let finishData: any = null;
 
     // 第 1 轮：失败 1 次
     streamTextMock.mockReturnValueOnce(

@@ -13,6 +13,7 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "generate": "prisma generate",
     "migrate": "prisma migrate dev",
@@ -29,6 +30,7 @@
     "@repo/config-eslint": "workspace:*",
     "@repo/config-typescript": "workspace:*",
     "@types/bcryptjs": "^3.0.0",
+    "@types/node": "^22.10.5",
     "prisma": "^6.19.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
