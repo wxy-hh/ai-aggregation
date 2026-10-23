@@ -46,6 +46,8 @@ export interface AgentRuntimeContextOptions {
   capabilityPack?: string;
   /** 会话级临时停用的工具键名列表（ADR-0014 / 工单 02） */
   disabledToolKeys?: string[];
+  /** 用户有效知识库探活注入点（工单 08 / QA-010：无库过滤），缺省走数据库 count 查询 */
+  hasKnowledgeBases?: (userId: string) => Promise<boolean>;
 }
 
 /**
@@ -59,6 +61,21 @@ async function defaultLoadUserTools(userId: string): Promise<UserWebhookTool[]> 
 }
 
 /**
+ * 默认知识库探活实现：查询用户是否存在有效知识库 (QA-010)
+ */
+async function defaultHasKnowledgeBases(userId: string): Promise<boolean> {
+  try {
+    const count = await prisma.knowledgeBase.count({
+      where: { userId, status: 'active' },
+    });
+    return count > 0;
+  } catch (error) {
+    console.warn('[runtime-context] 查询用户知识库存在性失败，降级为无库处理', error);
+    return false;
+  }
+}
+
+/**
  * 创建单次请求的 Agent 运行时上下文。
  *
  * 异步：内部可能发起数据库查询；任何加载异常均被吞掉并降级（不向外抛）。
@@ -66,7 +83,15 @@ async function defaultLoadUserTools(userId: string): Promise<UserWebhookTool[]> 
 export async function createAgentRuntimeContext(
   options: AgentRuntimeContextOptions
 ): Promise<AgentRuntimeContext> {
-  const { userId, errorId, loadUserTools, baseRegistry, capabilityPack, disabledToolKeys } = options;
+  const {
+    userId,
+    errorId,
+    loadUserTools,
+    baseRegistry,
+    capabilityPack,
+    disabledToolKeys,
+    hasKnowledgeBases,
+  } = options;
 
   // 0. 规范化临时停用键名集合（容错清洗非字符串项）
   const disabledSet = new Set(
@@ -96,22 +121,39 @@ export async function createAgentRuntimeContext(
     return true;
   });
 
-  // 2. 基础内置工具注册表：依据能力包白名单严格收敛并剔除 disabledToolKeys（双重安全闸门，ADR-0014）
+  // 1.1 查询用户是否有名下有效知识库（QA-010：无知识库动态剔除 knowledge_search，避免浪费 prompt tokens）
+  let userHasKb = false;
+  try {
+    userHasKb = await (hasKnowledgeBases ?? defaultHasKnowledgeBases)(userId);
+  } catch (error) {
+    console.warn('[runtime-context] 检查用户知识库存在性异常，按无知识库降级处理', {
+      userId,
+      errorId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    userHasKb = false;
+  }
+
+  // 2. 基础内置工具注册表：依据能力包白名单、临时停用键与无知识库过滤进行动态收敛（双重安全闸门，ADR-0014 / QA-010）
   const initialBaseRegistry = baseRegistry ?? getDefaultToolRegistry();
   let effectiveBaseRegistry = initialBaseRegistry;
   const pack = getCapabilityPack(capabilityPack);
-  if (pack || disabledSet.size > 0) {
-    const whitelist = pack ? new Set(pack.toolWhitelist) : null;
-    const initialSpecs = initialBaseRegistry.list();
-    const filteredSpecs = initialSpecs.filter((spec) => {
-      if (whitelist && !whitelist.has(spec.name)) return false;
-      if (disabledSet.has(spec.name)) return false;
-      return true;
-    });
-    // 仅在实际发生过滤或能力包指定时创建新注册表；若无变化则复用 initialBaseRegistry 保持零开销
-    if (filteredSpecs.length !== initialSpecs.length || pack) {
-      effectiveBaseRegistry = createToolRegistry(filteredSpecs);
-    }
+  const whitelist = pack ? new Set(pack.toolWhitelist) : null;
+  const initialSpecs = initialBaseRegistry.list();
+
+  const filteredSpecs = initialSpecs.filter((spec) => {
+    // 场景能力包白名单严格拦截（非白名单内置工具绝对过滤）
+    if (whitelist && !whitelist.has(spec.name)) return false;
+    // 会话级临时停用过滤
+    if (disabledSet.has(spec.name)) return false;
+    // QA-010：用户无有效知识库时动态剔除 knowledge_search
+    if (spec.name === 'knowledge_search' && !userHasKb) return false;
+    return true;
+  });
+
+  // 仅在实际发生过滤或能力包指定时创建新注册表；若无变化则复用 initialBaseRegistry 保持零开销
+  if (filteredSpecs.length !== initialSpecs.length || pack) {
+    effectiveBaseRegistry = createToolRegistry(filteredSpecs);
   }
 
   // 3. 装配快照：合并已收敛的内置工具与用户 Webhook 扩展插槽 + 每请求调次闭包计数器
