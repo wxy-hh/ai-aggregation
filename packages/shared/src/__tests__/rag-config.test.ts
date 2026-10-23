@@ -12,8 +12,8 @@ describe('rag-config 基础配置约束', () => {
     expect(RAG_EMBEDDING_DIM).toBe(1024);
   });
 
-  it('默认模型必须为 doubao-embedding-large', () => {
-    expect(RAG_EMBEDDING_MODEL).toBe('doubao-embedding-large');
+  it('默认模型必须为 BAAI/bge-m3', () => {
+    expect(RAG_EMBEDDING_MODEL).toBe('BAAI/bge-m3');
   });
 
   it('单批批次大小不超过 64 条', () => {

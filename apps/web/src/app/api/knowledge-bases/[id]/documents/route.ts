@@ -20,6 +20,7 @@ import {
   validateRagDocument,
 } from '@repo/shared';
 import { createStorageProvider } from '@repo/storage';
+import { ragIndexQueue } from '@repo/queue';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
@@ -271,7 +272,33 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return doc;
     });
 
-    // 11. 返回 202，状态 pending 为当前阶段的正确终态
+    // 11. 将新文档或重传文档投递至 rag-index 索引队列进行异步解析切片与向量化
+    try {
+      await ragIndexQueue.add(
+        'index-document',
+        {
+          documentId: document.id,
+          knowledgeBaseId,
+          userId: user.id,
+          version: document.version,
+          storageKey,
+          fileName: safeFileName,
+        },
+        {
+          jobId: `rag-index-${document.id}-v${document.version}`,
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        }
+      );
+    } catch (queueError) {
+      console.error('[knowledge-bases/documents] 派发 rag-index 队列任务失败:', queueError);
+      // 队列故障不阻断上传 202 响应，后台有补发或重试机制
+    }
+
+    // 12. 返回 202，状态 pending 为当前阶段的正确终态
     return createSuccessResponse(
       { document },
       '文档上传成功，已加入排队队列',

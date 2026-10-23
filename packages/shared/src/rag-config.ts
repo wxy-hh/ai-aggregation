@@ -9,15 +9,20 @@
 
 /**
  * 向量切片 Embedding 维度
- * 对应火山引擎 doubao-embedding-large 标称与推荐维度（1024 维）
+ * 对应硅基流动 BAAI/bge-m3 标称与实测维度（1024 维）
  * 数据库 vector(1024) 列与所有相关索引以此维度为硬约束
  */
 export const RAG_EMBEDDING_DIM = 1024 as const;
 
 /**
- * 默认 Embedding 模型标识符
+ * 默认 Embedding 模型标识符（硅基流动 BAAI/bge-m3）
  */
-export const RAG_EMBEDDING_MODEL = 'doubao-embedding-large' as const;
+export const RAG_EMBEDDING_MODEL = 'BAAI/bge-m3' as const;
+
+/**
+ * 备选 Embedding 模型标识符（火山方舟 doubao-embedding-large，保留备用）
+ */
+export const RAG_EMBEDDING_MODEL_DOUBAO = 'doubao-embedding-large' as const;
 
 /**
  * 单批向量化处理切片上限（防超时与 API 批次限制）

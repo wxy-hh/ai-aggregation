@@ -40,6 +40,18 @@ export interface QimenSectionJobData {
   provider?: 'doubao' | 'deepseek';
 }
 
+/**
+ * RAG 知识库文档索引队列任务数据结构
+ */
+export interface RagIndexJobData {
+  documentId: string;
+  knowledgeBaseId: string;
+  userId: string;
+  version: number;
+  storageKey: string;
+  fileName: string;
+}
+
 // 任务名单一事实源约束：与 shared 的 TaskType 对齐（评审 C3），新增任务类型需两处同步
 export const JOB_NAMES = {
   STT: 'stt',
@@ -47,4 +59,5 @@ export const JOB_NAMES = {
   IMAGE: 'image',
   QIMEN_BASE: 'qimen-base',
   QIMEN_SECTION: 'qimen-section',
+  RAG_INDEX: 'rag-index',
 } as const satisfies Record<string, TaskType>;

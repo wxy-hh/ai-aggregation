@@ -12,6 +12,7 @@ import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';
 import { qimenBaseWorker } from './workers/qimen-base';
 import { qimenSectionWorker } from './workers/qimen-section';
+import { ragIndexWorker } from './workers/rag-index';
 import { maintenanceWorker, registerMaintenanceSchedules } from './workers/maintenance';
 
 let isRunning = false;
@@ -79,6 +80,7 @@ async function main() {
     imageWorker,
     qimenBaseWorker,
     qimenSectionWorker,
+    ragIndexWorker,
     maintenanceWorker,
   ];
 
