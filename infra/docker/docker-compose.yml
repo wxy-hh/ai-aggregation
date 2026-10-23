@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # 关系型数据库：主应用元数据与业务数据持久化
   postgres:
     image: pgvector/pgvector:pg16
     container_name: ai-aggregation-postgres
@@ -18,6 +19,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # 缓存与任务队列代理：会话状态缓存与 BullMQ 异步队列调度
   redis:
     image: redis:7-alpine
     container_name: ai-aggregation-redis
@@ -31,6 +33,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # S3 兼容对象存储：文档、音频、生成图像及知识库源文件存储
   minio:
     image: minio/minio:latest
     container_name: ai-aggregation-minio
@@ -49,7 +52,88 @@ services:
       timeout: 20s
       retries: 3
 
+  # OLAP 分析数据库：Langfuse v3 追踪（Traces）、调用（Generations）与观察数据列式存储
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: ai-aggregation-clickhouse
+    user: '101:101'
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - '8123:8123'
+      - '9002:9000' # 宿主机映射 9002，避开与 minio 9000 端口冲突
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q --spider http://localhost:8123/ping || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Langfuse Web UI 与 API 服务：开发者本地观测看板与摄取服务端点（数据严格不出本机）
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: ai-aggregation-langfuse-web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - '3100:3000' # 映射至 3100 端口，避开 Next.js 本地开发默认 3000 端口
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_aggregation
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: http://localhost:3100
+      NEXTAUTH_SECRET: langfuse-local-nextauth-secret-for-dev-32chars
+      SALT: langfuse-local-salt-for-hashing
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      TELEMETRY_ENABLED: "false" # 禁用外部遥测上报，数据不出本机
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000/api/public/health || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Langfuse 异步后台 Worker：负责评测队列处理、事件后台异步摄取与聚合计算
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: ai-aggregation-langfuse-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_aggregation
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      REDIS_URL: redis://redis:6379
+      SALT: langfuse-local-salt-for-hashing
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      TELEMETRY_ENABLED: "false" # 禁用外部遥测上报，数据不出本机
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3030/api/health || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  clickhouse_data:
