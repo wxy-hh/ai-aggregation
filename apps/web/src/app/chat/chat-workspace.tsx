@@ -64,6 +64,7 @@ import {
   GitCompareArrows, // 对比图标（并行对比会话标识）
   Sparkles,
   Wrench,
+  BookOpen,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -1001,10 +1002,11 @@ export default function ChatWorkspace() {
                                 </p>
                               </div>
 
-                              <div className="grid gap-4 md:grid-cols-2" data-testid="capability-packs-grid">
+                              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" data-testid="capability-packs-grid">
                                 {CAPABILITY_PACKS.map((pack) => {
                                   const isResearch = pack.key === 'deep-research';
-                                  const PackIcon = isResearch ? Search : FileText;
+                                  const isKnowledgeQa = pack.key === 'knowledge-qa';
+                                  const PackIcon = isResearch ? Search : isKnowledgeQa ? BookOpen : FileText;
                                   return (
                                     <button
                                       key={pack.key}
@@ -1026,7 +1028,9 @@ export default function ChatWorkspace() {
                                               'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105 shadow-sm',
                                               isResearch
                                                 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-                                                : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                                : isKnowledgeQa
+                                                  ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                                  : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
                                             )}
                                           >
                                             <PackIcon className="h-5 w-5" />

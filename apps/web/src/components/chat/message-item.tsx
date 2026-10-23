@@ -7,12 +7,14 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
+import { CitationBadge, wrapCitationsInReactNode, injectCitationBadges } from './citation-badge';
+import { extractCitationIndices } from '@/lib/rag/citation';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { RelayAction } from '@/components/relay/relay-action';
@@ -53,11 +55,11 @@ const AttachmentList = memo(function AttachmentList({
   );
 });
 
-// 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
+// 流式内容组件 - 呈现纯文本与实时引用徽标 + 光标
 const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
   return (
     <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700 dark:text-slate-200">
-      {content}
+      {injectCitationBadges(content)}
       <span className="ml-1 inline-block h-5 w-2 rounded-sm bg-blue-500 align-[-3px] animate-pulse" />
     </div>
   );
@@ -229,8 +231,34 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
           </code>
         );
       },
-      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
-      p: SafeParagraph,
+      // 链接与脚注引用处理：若命中 GFM footnote 引用，转换为可点击交互的 CitationBadge (QA-004)
+      a({ href, children, ...props }: any) {
+        if (
+          props['data-footnote-ref'] ||
+          href?.startsWith('#user-content-fn-') ||
+          href?.startsWith('#fn-')
+        ) {
+          const num = parseInt(String(children), 10);
+          if (!isNaN(num)) {
+            return <CitationBadge index={num} />;
+          }
+        }
+        return (
+          <a href={href} {...props}>
+            {children}
+          </a>
+        );
+      },
+      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div，并包装可点击 [^n] 引用
+      p({ children, ...props }: any) {
+        const wrapped = wrapCitationsInReactNode(children);
+        return <SafeParagraph {...props}>{wrapped}</SafeParagraph>;
+      },
+      // 列表项同样支持解析正文内 [^n] 引用
+      li({ children, ...props }: any) {
+        const wrapped = wrapCitationsInReactNode(children);
+        return <li {...props}>{wrapped}</li>;
+      },
     }),
     []
   );
@@ -499,6 +527,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   // 附件：用户消息为用户上传件，AI 消息为 agent 工具产出件（如生成的图片）
   const hasAttachments = message.attachments && message.attachments.length > 0;
 
+  // 是否包含检索类工具调用（QA-004：知识库检索来源元信息计数）
+  const retrievalToolCalls = useMemo(() => {
+    return (message.toolCalls ?? []).filter(
+      (tc) =>
+        (tc.name === 'knowledge_search' || tc.name === 'memory_search') &&
+        tc.status === 'success'
+    );
+  }, [message.toolCalls]);
+  const hasRetrievalSource = !isUser && retrievalToolCalls.length > 0;
+  const citationIndices = useMemo(() => {
+    return extractCitationIndices(message.content);
+  }, [message.content]);
+
   // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
   const currentModel = useChatStore((s) => s.model);
   const currentProvider = useChatStore((s) => s.provider);
@@ -648,6 +689,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                     {message.usage && (
                       <div className="mt-2 text-xs text-day-muted dark:text-slate-400">
                         {formatUsageText(message.usage)}
+                      </div>
+                    )}
+                    {/* 知识库检索来源元信息行（QA-004） */}
+                    {hasRetrievalSource && (
+                      <div
+                        data-testid="retrieval-source-meta"
+                        className="mt-2 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium"
+                      >
+                        <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          已参考知识库来源
+                          {citationIndices.length > 0 ? ` · ${citationIndices.length} 处引用` : ''}
+                        </span>
                       </div>
                     )}
                   </>

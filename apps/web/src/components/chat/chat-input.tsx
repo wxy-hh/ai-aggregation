@@ -36,6 +36,7 @@ import {
   Wrench,
   Globe,
   Brain,
+  BookOpen,
 } from 'lucide-react';
 // Image: 图片图标
 // FileText: 文件图标
@@ -1190,6 +1191,8 @@ export function ChatInput({
                 <span className="flex items-center gap-1">
                   {activeCapabilityPack.key === 'deep-research' ? (
                     <Search className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  ) : activeCapabilityPack.key === 'knowledge-qa' ? (
+                    <BookOpen className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                   ) : (
                     <FileText className="h-3 w-3 text-blue-600 dark:text-blue-400" />
                   )}

@@ -97,6 +97,11 @@ describe('ChatWorkspace 场景能力包空态卡片交互 (ADR-0014 / 工单 01)
     expect(visualCard).toBeInTheDocument();
     expect(visualCard).toHaveTextContent('图文报告');
     expect(visualCard).toHaveTextContent('5 步探索上限');
+
+    const knowledgeCard = screen.getByTestId('capability-pack-card-knowledge-qa');
+    expect(knowledgeCard).toBeInTheDocument();
+    expect(knowledgeCard).toHaveTextContent('知识库问答');
+    expect(knowledgeCard).toHaveTextContent('5 步探索上限');
   });
 
   it('点击「深度调研」卡片：自动设置能力包标记并预填调研模板到输入框', async () => {
@@ -138,5 +143,26 @@ describe('ChatWorkspace 场景能力包空态卡片交互 (ADR-0014 / 工单 01)
 
     // 3. 输入坞上方渲染出「图文报告」能力包徽标
     expect(screen.getByTestId('capability-pack-badge')).toHaveTextContent('图文报告');
+  });
+
+  it('点击「知识库问答」卡片：自动设置能力包标记并预填知识库问答模板到输入框 (工单 08 / QA-013)', async () => {
+    useSettingsStore.setState({ agentModeEnabled: true });
+    render(<ChatWorkspace />);
+
+    const knowledgeCard = screen.getByTestId('capability-pack-card-knowledge-qa');
+    await act(async () => {
+      fireEvent.click(knowledgeCard);
+    });
+
+    // 1. 设置能力包标记为 knowledge-qa
+    expect(useChatStore.getState().activeCapabilityPackKey).toBe('knowledge-qa');
+
+    // 2. 输入框中预填了知识库问答 Prompt 模板
+    const textarea = screen.getByPlaceholderText('输入消息…') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('知识库');
+    expect(textarea.value).toContain('[^n]');
+
+    // 3. 输入坞上方渲染出「知识库问答」能力包徽标
+    expect(screen.getByTestId('capability-pack-badge')).toHaveTextContent('知识库问答');
   });
 });
