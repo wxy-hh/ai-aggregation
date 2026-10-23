@@ -208,4 +208,215 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(result.chunks[0].lexicalRank).toBe(1);
     expect(result.chunks[0].score).toBeCloseTo(1 / 61, 8);
   });
+
+  it('4. 默认配置验证：默认配置下不发起任何 Rerank 调用 (零开销)', async () => {
+    const mockDenseMatch: DocumentChunkDenseMatch = {
+      id: 'chunk_1',
+      documentId: 'doc_1',
+      documentName: 'architecture.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '切片内容',
+      contentSegmented: '切片 内容',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.9,
+    };
+
+    const mockRerankProvider = {
+      name: 'mock',
+      model: 'mock-model',
+      rerank: vi.fn(),
+    };
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '测试默认不走 Rerank',
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [mockDenseMatch],
+        searchLexicalFn: async () => [],
+        rerankProvider: mockRerankProvider,
+        // 默认不传 enableRerank，由系统默认配置 isRagRerankEnabled() 判定
+      }
+    );
+
+    expect(mockRerankProvider.rerank).not.toHaveBeenCalled();
+    expect(result.isReranked).toBe(false);
+    expect(result.stats.rerankDurationMs).toBe(0);
+    expect(result.chunks[0].rerankScore).toBeUndefined();
+    expect(result.chunks[0].score).toBeCloseTo(1 / 61, 8);
+  });
+
+  it('5. 开启 Rerank：二次精排打分重构切片位次并记录用量指标', async () => {
+    // 构造两段切片：
+    // 切片 A 在 RRF 中由于两路都靠前原本排第一；但在 Rerank 语意精排中切片 B 获得更高相关性
+    const chunkA: DocumentChunkDenseMatch = {
+      id: 'chunk_a',
+      documentId: 'doc_a',
+      documentName: 'doc_a.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '初筛较相关的文本内容 A',
+      contentSegmented: '初筛 内容 A',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 20,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.9,
+    };
+
+    const chunkB: DocumentChunkDenseMatch = {
+      id: 'chunk_b',
+      documentId: 'doc_b',
+      documentName: 'doc_b.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '深层精排绝对匹配的黄金答案文本 B',
+      contentSegmented: '深层 匹配 文本 B',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 20,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.85,
+    };
+
+    const mockRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockResolvedValue([
+        // Rerank 返回下标 1（对应 chunkB）得分最高 0.99，下标 0（对应 chunkA）得分 0.45
+        { index: 1, relevanceScore: 0.99 },
+        { index: 0, relevanceScore: 0.45 },
+      ]),
+    };
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '黄金问题',
+        enableRerank: true, // 显式开启 Rerank
+        topK: 2,
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [chunkA, chunkB],
+        searchLexicalFn: async () => [],
+        rerankProvider: mockRerankProvider,
+      }
+    );
+
+    // 验证 Rerank Provider 调用参数
+    expect(mockRerankProvider.rerank).toHaveBeenCalledTimes(1);
+    expect(mockRerankProvider.rerank).toHaveBeenCalledWith(
+      '黄金问题',
+      ['初筛较相关的文本内容 A', '深层精排绝对匹配的黄金答案文本 B'],
+      2
+    );
+
+    // 验证切片重排：chunk_b 逆袭排到第一位
+    expect(result.chunks.length).toBe(2);
+    expect(result.isReranked).toBe(true);
+
+    const firstChunk = result.chunks[0];
+    expect(firstChunk.chunkId).toBe('chunk_b');
+    expect(firstChunk.score).toBe(0.99);
+    expect(firstChunk.rerankScore).toBe(0.99);
+    expect(firstChunk.rrfScore).toBeDefined();
+
+    const secondChunk = result.chunks[1];
+    expect(secondChunk.chunkId).toBe('chunk_a');
+    expect(secondChunk.score).toBe(0.45);
+    expect(secondChunk.rerankScore).toBe(0.45);
+
+    // 耗时指标中包含 rerankDurationMs
+    expect(result.stats.rerankDurationMs).toBeDefined();
+    expect(result.stats.rerankDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('6. 弹性容灾平滑降级：Rerank 抛出网络超时或 5xx 错误时，平稳降级使用原 RRF 排名，检索不失败', async () => {
+    const chunk1: DocumentChunkDenseMatch = {
+      id: 'chunk_1',
+      documentId: 'doc_1',
+      documentName: 'doc_1.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '切片 1',
+      contentSegmented: '切片 1',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.95,
+    };
+
+    const chunk2: DocumentChunkDenseMatch = {
+      id: 'chunk_2',
+      documentId: 'doc_2',
+      documentName: 'doc_2.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '切片 2',
+      contentSegmented: '切片 2',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.85,
+    };
+
+    // 模拟 Rerank 发生网络超时或 429 报错
+    const mockFailingRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockRejectedValue(new Error('网络超时：5000ms 超时中断')),
+    };
+
+    // 执行检索，必须不抛出异常，平稳完成
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '测试降级查询',
+        enableRerank: true,
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [chunk1, chunk2],
+        searchLexicalFn: async () => [],
+        rerankProvider: mockFailingRerankProvider,
+      }
+    );
+
+    // 验证平滑降级：isReranked 为 false，顺序保持原 RRF 首位 chunk_1
+    expect(result.isReranked).toBe(false);
+    expect(result.chunks.length).toBe(2);
+    expect(result.chunks[0].chunkId).toBe('chunk_1');
+    expect(result.chunks[0].rerankScore).toBeUndefined();
+    expect(result.chunks[0].score).toBeCloseTo(1 / 61, 8);
+    expect(result.chunks[1].chunkId).toBe('chunk_2');
+    expect(result.stats.rerankDurationMs).toBeGreaterThanOrEqual(0);
+  });
 });
+

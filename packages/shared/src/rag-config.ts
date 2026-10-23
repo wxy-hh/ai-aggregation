@@ -156,3 +156,42 @@ export const RAG_CHUNK_CONFIG = {
  * 会话记忆索引防抖延迟毫秒数（30 秒去重合并）
  */
 export const RAG_MEMORY_DEBOUNCE_DELAY_MS = 30000 as const;
+
+/**
+ * Rerank 二次精排可插拔段默认开关（严格默认 false）
+ *
+ * 规范依据：
+ * - spec.md「检索与双源路由（Phase B）」：
+ *   Rerank 为可插拔第三段，默认关闭，仅当对照实验证明净收益后按配置开启。
+ * - 工单 10 验收标准 1：默认配置下检索链路与 06 完全一致（无 rerank 调用，零网络请求、零延迟开销）
+ */
+export const RAG_RERANK_ENABLED = false as const;
+
+/**
+ * Rerank 默认模型与接口配置
+ * 复用硅基流动 BAAI/bge-reranker-v2-m3 端点与既有密钥 SILICONFLOW_API_KEY
+ */
+export const RAG_RERANK_CONFIG = {
+  /** 默认模型标识符（硅基流动 BAAI/bge-reranker-v2-m3） */
+  model: 'BAAI/bge-reranker-v2-m3',
+  /** 硅基流动 Rerank 官方 API 端点 */
+  endpoint: 'https://api.siliconflow.cn/v1/rerank',
+  /** 网络请求默认超时时间（毫秒） */
+  timeoutMs: 8000,
+  /** 默认候选切片送入 Rerank 精排的上限数量 */
+  defaultTopN: 20,
+} as const;
+
+/**
+ * 运行时判定 Rerank 二次精排是否开启
+ * 优先读取环境变量 RAG_RERANK_ENABLED，未显式配置时严格遵循默认值 false
+ */
+export function isRagRerankEnabled(): boolean {
+  const envVal = process.env.RAG_RERANK_ENABLED;
+  if (envVal !== undefined && envVal.trim() !== '') {
+    const normalized = envVal.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
+  }
+  return RAG_RERANK_ENABLED;
+}
+

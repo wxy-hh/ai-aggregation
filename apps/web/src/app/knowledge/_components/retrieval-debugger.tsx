@@ -49,6 +49,7 @@ export interface RetrievalDebuggerProps {
 export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
   const [query, setQuery] = React.useState('');
   const [topK, setTopK] = React.useState(20);
+  const [enableRerank, setEnableRerank] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<HybridRetrievalResult | null>(null);
@@ -84,12 +85,20 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
     setError(null);
 
     try {
+      const requestPayload: { query: string; topK: number; enableRerank?: boolean } = {
+        query: targetQuery,
+        topK,
+      };
+      if (enableRerank) {
+        requestPayload.enableRerank = true;
+      }
+
       const res = await fetchWithAuth(
         `/api/knowledge-bases/${knowledgeBaseId}/query`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: targetQuery, topK }),
+          body: JSON.stringify(requestPayload),
         }
       );
 
@@ -168,6 +177,17 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                 </select>
               </div>
 
+              <label className="flex items-center space-x-1.5 border border-border/60 rounded-xl px-3 h-11 bg-muted/20 cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground transition-colors min-h-[44px]">
+                <input
+                  type="checkbox"
+                  checked={enableRerank}
+                  onChange={(e) => setEnableRerank(e.target.checked)}
+                  disabled={loading}
+                  className="w-4 h-4 rounded text-primary focus:ring-0 cursor-pointer"
+                />
+                <span className="whitespace-nowrap">Rerank 精排</span>
+              </label>
+
               <Button
                 onClick={() => handleSearch()}
                 disabled={loading || !query.trim()}
@@ -219,7 +239,13 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
 
       {/* 阶段耗时统计面板 */}
       {result && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div
+          className={`grid grid-cols-2 ${
+            result.stats.rerankDurationMs !== undefined && result.stats.rerankDurationMs > 0
+              ? 'sm:grid-cols-6'
+              : 'sm:grid-cols-5'
+          } gap-3`}
+        >
           <div className="p-3 rounded-xl border border-border/50 bg-card/60 flex flex-col">
             <span className="text-[11px] text-muted-foreground flex items-center space-x-1">
               <Clock className="w-3 h-3 text-primary" />
@@ -258,7 +284,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
             </span>
           </div>
 
-          <div className="col-span-2 sm:col-span-1 p-3 rounded-xl border border-border/50 bg-card/60 flex flex-col">
+          <div className="p-3 rounded-xl border border-border/50 bg-card/60 flex flex-col">
             <span className="text-[11px] text-muted-foreground flex items-center space-x-1">
               <Zap className="w-3 h-3 text-emerald-500" />
               <span>RRF 融合耗时</span>
@@ -267,6 +293,18 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
               {result.stats.fusionDurationMs}ms
             </span>
           </div>
+
+          {result.stats.rerankDurationMs !== undefined && result.stats.rerankDurationMs > 0 && (
+            <div className="col-span-2 sm:col-span-1 p-3 rounded-xl border border-border/50 bg-card/60 flex flex-col">
+              <span className="text-[11px] text-muted-foreground flex items-center space-x-1">
+                <Sparkles className="w-3 h-3 text-purple-500" />
+                <span>Rerank 耗时</span>
+              </span>
+              <span className="text-lg font-bold text-foreground mt-1">
+                {result.stats.rerankDurationMs}ms
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -286,16 +324,25 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
       {/* 结果呈现三栏区域（桌面端 3 列，移动端纵向堆叠，杜绝横向滚动） */}
       {result && !loading && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
-          {/* 第 1 列：RRF 综合融合结果 */}
+          {/* 第 1 列：RRF / Rerank 综合结果 */}
           <div className="flex flex-col space-y-3 w-full overflow-hidden">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center space-x-2">
-                <span className="font-semibold text-sm text-foreground">RRF 融合明细</span>
+                <span className="font-semibold text-sm text-foreground">
+                  {result.isReranked ? 'Rerank 精排明细' : 'RRF 融合明细'}
+                </span>
                 <Badge variant="secondary" className="text-xs px-2 py-0.5">
                   {result.chunks.length} 条命中
                 </Badge>
+                {result.isReranked && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 text-purple-600 dark:text-purple-400">
+                    精排生效
+                  </Badge>
+                )}
               </div>
-              <span className="text-xs text-muted-foreground">k = 60</span>
+              <span className="text-xs text-muted-foreground">
+                {result.isReranked ? 'bge-reranker' : 'k = 60'}
+              </span>
             </div>
 
             {result.chunks.length === 0 ? (
@@ -408,11 +455,24 @@ function FusedChunkCard({
               #{rankIndex}
             </span>
             <span className="text-xs font-semibold text-foreground">
-              得分 {chunk.score.toFixed(6)}
+              {chunk.rerankScore !== undefined
+                ? `精排分 ${chunk.score.toFixed(4)}`
+                : `得分 ${chunk.score.toFixed(6)}`}
             </span>
+            {chunk.rerankScore !== undefined && chunk.rrfScore !== undefined && (
+              <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                (RRF: {chunk.rrfScore.toFixed(4)})
+              </span>
+            )}
           </div>
 
           <div className="flex items-center space-x-1 text-[11px]">
+            {chunk.rerankScore !== undefined && (
+              <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 font-medium">
+                Rerank
+              </span>
+            )}
+
             {chunk.denseRank !== null ? (
               <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-medium">
                 向量 #{chunk.denseRank}
