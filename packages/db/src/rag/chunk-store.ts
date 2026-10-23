@@ -338,7 +338,7 @@ export async function searchDocumentChunksLexical(params: {
     rank: number;
   }
 
-  const rows = await prisma.$queryRawUnsafe<RawLexicalRow[]>(
+  let rows = await prisma.$queryRawUnsafe<RawLexicalRow[]>(
     `
     SELECT
       dc."id",
@@ -371,6 +371,58 @@ export async function searchDocumentChunksLexical(params: {
     knowledgeBaseId,
     topK
   );
+
+  // 若默认严格 AND 未命中且包含多词，使用 OR (to_tsquery) 平滑降级
+  if (rows.length === 0 && query && query.includes(' ')) {
+    const rawTokens = query.split(/\s+/).map((t) => t.trim()).filter((t) => t.length > 0);
+    const cleanTokens = rawTokens
+      .map((t) => t.replace(/[^a-zA-Z0-9_一-龥]/g, ''))
+      .filter((t) => t.length > 0);
+
+    if (cleanTokens.length > 0) {
+      const orQuery = cleanTokens.join(' | ');
+      try {
+        const orRows = await prisma.$queryRawUnsafe<RawLexicalRow[]>(
+          `
+          SELECT
+            dc."id",
+            dc."document_id",
+            d."name" AS "document_name",
+            dc."knowledge_base_id",
+            dc."user_id",
+            dc."document_version",
+            dc."chunk_index",
+            dc."content",
+            dc."content_segmented",
+            dc."heading_path",
+            dc."page_number",
+            dc."token_count",
+            dc."metadata",
+            dc."created_at",
+            ts_rank_cd(dc."content_tsv", to_tsquery('simple', $1)) AS "rank"
+          FROM "document_chunks" dc
+          INNER JOIN "documents" d ON dc."document_id" = d."id"
+          WHERE dc."user_id" = $2
+            AND dc."knowledge_base_id" = $3
+            AND d."deleted_at" IS NULL
+            AND dc."document_version" = d."version"
+            AND dc."content_tsv" @@ to_tsquery('simple', $1)
+          ORDER BY "rank" DESC
+          LIMIT $4;
+          `,
+          orQuery,
+          userId,
+          knowledgeBaseId,
+          topK
+        );
+        if (orRows.length > 0) {
+          rows = orRows;
+        }
+      } catch {
+        // 忽略降级解析异常，维持原空结果
+      }
+    }
+  }
 
   return rows.map((row) => ({
     id: row.id,
