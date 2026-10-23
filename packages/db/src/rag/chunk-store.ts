@@ -459,3 +459,147 @@ export async function deleteMemoryChunksBySession(sessionId: string): Promise<nu
     WHERE "session_id" = ${sessionId};
   `;
 }
+
+/**
+ * 稠密向量命中的会话记忆切片结果
+ */
+export interface ConversationMemoryChunkDenseMatch extends ConversationMemoryChunkRow {
+  similarity: number;
+}
+
+/**
+ * 词法全文检索命中的会话记忆切片结果
+ */
+export interface ConversationMemoryChunkLexicalMatch extends ConversationMemoryChunkRow {
+  rank: number;
+}
+
+/**
+ * 会话记忆切片稠密向量检索（基于 cosine 距离 <=>，SQL 层前置强制过滤当前用户 userId）
+ */
+export async function searchMemoryChunksDense(params: {
+  userId: string;
+  queryVector: number[];
+  topK?: number;
+}): Promise<ConversationMemoryChunkDenseMatch[]> {
+  const { userId, queryVector, topK = 20 } = params;
+  const vectorStr = formatVector(queryVector);
+
+  interface RawMemoryDenseRow {
+    id: string;
+    user_id: string;
+    session_id: string;
+    message_id: string | null;
+    chunk_index: number;
+    content: string;
+    content_segmented: string;
+    token_count: number;
+    metadata: Record<string, unknown>;
+    created_at: Date;
+    similarity: number;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<RawMemoryDenseRow[]>(
+    `
+    SELECT
+      cmc."id",
+      cmc."user_id",
+      cmc."session_id",
+      cmc."message_id",
+      cmc."chunk_index",
+      cmc."content",
+      cmc."content_segmented",
+      cmc."token_count",
+      cmc."metadata",
+      cmc."created_at",
+      (1 - (cmc."embedding" <=> $1::vector)) AS "similarity"
+    FROM "conversation_memory_chunks" cmc
+    WHERE cmc."user_id" = $2
+      AND cmc."embedding" IS NOT NULL
+    ORDER BY cmc."embedding" <=> $1::vector ASC
+    LIMIT $3;
+    `,
+    vectorStr,
+    userId,
+    topK
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    sessionId: row.session_id,
+    messageId: row.message_id,
+    chunkIndex: row.chunk_index,
+    content: row.content,
+    contentSegmented: row.content_segmented,
+    tokenCount: row.token_count,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+    similarity: Number(row.similarity),
+  }));
+}
+
+/**
+ * 会话记忆切片词法全文检索（基于 ts_rank_cd 与 content_tsv 生成列，SQL 层前置强制过滤当前用户 userId）
+ */
+export async function searchMemoryChunksLexical(params: {
+  userId: string;
+  query: string;
+  topK?: number;
+}): Promise<ConversationMemoryChunkLexicalMatch[]> {
+  const { userId, query, topK = 20 } = params;
+
+  interface RawMemoryLexicalRow {
+    id: string;
+    user_id: string;
+    session_id: string;
+    message_id: string | null;
+    chunk_index: number;
+    content: string;
+    content_segmented: string;
+    token_count: number;
+    metadata: Record<string, unknown>;
+    created_at: Date;
+    rank: number;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<RawMemoryLexicalRow[]>(
+    `
+    SELECT
+      cmc."id",
+      cmc."user_id",
+      cmc."session_id",
+      cmc."message_id",
+      cmc."chunk_index",
+      cmc."content",
+      cmc."content_segmented",
+      cmc."token_count",
+      cmc."metadata",
+      cmc."created_at",
+      ts_rank_cd(cmc."content_tsv", plainto_tsquery('simple', $1)) AS "rank"
+    FROM "conversation_memory_chunks" cmc
+    WHERE cmc."user_id" = $2
+      AND cmc."content_tsv" @@ plainto_tsquery('simple', $1)
+    ORDER BY "rank" DESC
+    LIMIT $3;
+    `,
+    query,
+    userId,
+    topK
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    sessionId: row.session_id,
+    messageId: row.message_id,
+    chunkIndex: row.chunk_index,
+    content: row.content,
+    contentSegmented: row.content_segmented,
+    tokenCount: row.token_count,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+    rank: Number(row.rank),
+  }));
+}
+

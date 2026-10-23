@@ -100,6 +100,7 @@ export const updateProfileSchema = z.object({
     .optional(),
   name: z.string().trim().max(50, '昵称最多 50 个字符').optional(),
   avatar: z.string().url('头像 URL 格式不正确').optional(),
+  memorySearchEnabled: z.boolean().optional(),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

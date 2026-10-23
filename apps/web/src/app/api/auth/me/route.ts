@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
         emailVerified: true,
         role: true,
         tokens: true,
+        memorySearchEnabled: true,
         createdAt: true,
       },
     });

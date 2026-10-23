@@ -289,6 +289,32 @@ export function createChatHandler(config: ChatHandlerConfig) {
         // 异步刷新 Langfuse 观测事件队列（未配置时 no-op）
         await flushObservability();
 
+        // 工单 09：若用户开启会话记忆检索，防抖 30s 派发 memory-index 任务（使用 sessionId 作为去重 jobId）
+        if (conversationId) {
+          try {
+            const dbUser = await (prisma?.user?.findUnique
+              ? prisma.user.findUnique({
+                  where: { id: user.id },
+                  select: { memorySearchEnabled: true },
+                })
+              : null);
+            if (dbUser?.memorySearchEnabled) {
+              const { memoryIndexQueue } = await import('@repo/queue');
+              await memoryIndexQueue.add(
+                'memory-index',
+                { userId: user.id, sessionId: conversationId },
+                {
+                  jobId: `memory-index-${conversationId}`,
+                  delay: 30_000,
+                  removeOnComplete: true,
+                }
+              );
+            }
+          } catch (memoryQueueErr) {
+            console.warn('[chat] 派发会话记忆索引任务失败 (容错不阻断):', memoryQueueErr);
+          }
+        }
+
         return finalizeResult;
       };
 

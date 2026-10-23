@@ -1,7 +1,7 @@
 /**
  * 任务类型单一事实源（评审 C3：收齐 qimen 任务，与 queue 的 JOB_NAMES 对齐）。
  */
-export type TaskType = 'stt' | 'ppt' | 'image' | 'qimen-base' | 'qimen-section' | 'rag-index';
+export type TaskType = 'stt' | 'ppt' | 'image' | 'qimen-base' | 'qimen-section' | 'rag-index' | 'memory-index';
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface Task {

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
+  Brain,
   Camera,
   Crown,
   Image as ImageIcon,
@@ -31,6 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
 import {
@@ -44,6 +46,7 @@ import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
 import { ProfileToolsSection } from './profile-tools-section';
+import { ConversationMemoryCard } from './conversation-memory-card';
 import { toast } from 'sonner';
 
 const DEFAULT_AVATAR =
@@ -1166,6 +1169,8 @@ export function ProfileShell() {
                       {profile.email ? '更换邮箱' : '绑定邮箱'}
                     </Button>
                   </div>
+
+                  <ConversationMemoryCard />
 
                   <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
                     <HoverGlow />
