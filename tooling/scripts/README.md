@@ -50,6 +50,21 @@ pnpm dev
 pnpm qimen:check
 ```
 
+## seed-docs-corpus.mts (RAG 首发语料导入种子脚本)
+
+将本仓库 `docs/` 目录下的核心技术 Markdown 文档（roadmap、19 份 ADR、project-guide、qa-workflow 系列等）通过正常上传管道（同用户界面上传同一入口）批量入库为一个「工程文档」知识库并索引至全部就绪：
+- 严格遵循鉴权、格式校验与单库 50 篇限额
+- 支持幂等重跑与 `--reindex` 单调版本更新
+- 内置自动化抽查验证（ADR-0008、ADR-0014、连败熔断等词法全文检索命中校验）
+
+```bash
+# 默认模式：幂等复用已就绪文档
+pnpm rag:seed
+
+# 强制重传模式：递增版本 (version+1) 并原子替换切片
+pnpm rag:seed --reindex
+```
+
 ## 基础设施命令
 
 ```bash
