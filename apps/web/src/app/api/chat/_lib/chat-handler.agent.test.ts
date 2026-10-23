@@ -1571,5 +1571,34 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
       });
     });
   });
+
+  describe('可观测性 Root Trace 关联与上报 (工单 01)', () => {
+    it('Agent 会话携带 conversationId 时，Root Trace 正确关联且流程正常完成', async () => {
+      getAvailableQuotaMock.mockResolvedValue(100_000);
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['观测底座测试回答'],
+          usage: { inputTokens: 15, outputTokens: 15, totalTokens: 30 },
+        })
+      );
+
+      const req = new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '测试可观测' }],
+          agent: true,
+          conversationId: 'conv-obs-test-123',
+        }),
+      });
+
+      const response = await handler(req);
+      expect(response.status).toBe(200);
+      const events = await readSseEvents(response);
+
+      expect(events.some((e) => e.type === 'text-delta' && e.text === '观测底座测试回答')).toBe(true);
+      expect(events.some((e) => e.type === 'done')).toBe(true);
+    });
+  });
 });
 

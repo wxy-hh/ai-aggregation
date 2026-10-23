@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
+  Bot,
   Clock,
   Compass,
   Image as ImageIcon,
@@ -42,6 +43,7 @@ const TYPE_ICONS: Record<HistoryType, React.ComponentType<{ className?: string }
   image: ImageIcon,
   video: VideoIcon,
   destiny: Compass,
+  agent: Bot,
 };
 
 type RecentCreationsSectionProps = {
