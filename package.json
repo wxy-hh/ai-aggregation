@@ -30,6 +30,7 @@
     "db:migrate": "pnpm --filter @repo/db migrate",
     "db:seed": "pnpm --filter @repo/db seed",
     "rag:seed": "tsx --tsconfig apps/web/tsconfig.json tooling/scripts/seed-docs-corpus.mts",
+    "rag:eval": "tsx --tsconfig apps/web/tsconfig.json tooling/scripts/eval-rag.mts",
     "clean": "turbo clean && rm -rf node_modules",
     "postinstall": "pnpm db:generate"
   },
