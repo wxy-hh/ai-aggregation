@@ -172,10 +172,29 @@ describe('POST /api/knowledge-bases/[id]/query 检索调试接口测试', () => 
       knowledgeBaseId: 'kb_1',
       query: '连败熔断',
       topK: 10,
+      enableRerank: undefined,
     });
   });
 
-  it('5. 检索底层抛出未知异常返回 500', async () => {
+  it('5. 传递 enableRerank: true 时透传至混合检索深模块', async () => {
+    const req = new NextRequest('http://localhost:3000/api/knowledge-bases/kb_1/query', {
+      method: 'POST',
+      body: JSON.stringify({ query: '连败熔断', topK: 10, enableRerank: true }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: 'kb_1' }) });
+    expect(res.status).toBe(200);
+
+    expect(mocks.hybridRetrieval).toHaveBeenCalledWith({
+      userId: 'user_1',
+      knowledgeBaseId: 'kb_1',
+      query: '连败熔断',
+      topK: 10,
+      enableRerank: true,
+    });
+  });
+
+  it('6. 检索底层抛出未知异常返回 500', async () => {
     mocks.hybridRetrieval.mockRejectedValue(new Error('Embedding API 超时'));
 
     const req = new NextRequest('http://localhost:3000/api/knowledge-bases/kb_1/query', {
