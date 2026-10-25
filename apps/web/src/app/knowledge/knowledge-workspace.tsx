@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { fetchWithAuth } from '@/lib/api/client';
 import { RetrievalDebugger } from './_components/retrieval-debugger';
+import { DocumentPreviewDrawer } from './_components/document-preview-drawer';
 import {
   BookOpen,
   Plus,
@@ -37,6 +38,7 @@ import {
   Upload,
   RefreshCw,
   FolderOpen,
+  Eye,
 } from 'lucide-react';
 
 export interface KnowledgeBaseItem {
@@ -76,6 +78,17 @@ export function KnowledgeWorkspace() {
   // 文档列表状态
   const [documents, setDocuments] = React.useState<DocumentItem[]>([]);
   const [docsLoading, setDocsLoading] = React.useState(false);
+
+  // 文档预览抽屉状态
+  const [previewState, setPreviewState] = React.useState<{
+    isOpen: boolean;
+    documentId: string | null;
+    documentName?: string;
+    documentVersion?: number;
+  }>({
+    isOpen: false,
+    documentId: null,
+  });
 
   // 1. 获取知识库列表
   const loadKnowledgeBases = React.useCallback(async () => {
@@ -337,9 +350,27 @@ export function KnowledgeWorkspace() {
                         </Badge>
                       </div>
 
-                      <div className="flex items-center space-x-3 text-[11px] text-muted-foreground">
-                        <span>版本: v{doc.version}</span>
-                        <span>切片: {doc.chunkCount} 个</span>
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex items-center space-x-3 text-[11px] text-muted-foreground">
+                          <span>版本: v{doc.version}</span>
+                          <span>切片: {doc.chunkCount} 个</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setPreviewState({
+                              isOpen: true,
+                              documentId: doc.id,
+                              documentName: doc.name,
+                              documentVersion: doc.version,
+                            })
+                          }
+                          className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs text-primary hover:bg-primary/10 gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>预览</span>
+                        </Button>
                       </div>
 
                       {doc.errorMessage && (
@@ -416,6 +447,16 @@ export function KnowledgeWorkspace() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* 文档全文预览抽屉 */}
+      <DocumentPreviewDrawer
+        open={previewState.isOpen}
+        onOpenChange={(open) => setPreviewState((prev) => ({ ...prev, isOpen: open }))}
+        knowledgeBaseId={selectedKbId}
+        documentId={previewState.documentId}
+        documentName={previewState.documentName}
+        documentVersion={previewState.documentVersion}
+      />
       </div>
     </div>
   );

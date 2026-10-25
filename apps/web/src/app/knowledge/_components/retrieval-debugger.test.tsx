@@ -247,5 +247,87 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
       expect(screen.getByText(/精排分 0.9856/)).toBeInTheDocument();
     });
   });
+
+  it('5. 点击检索卡片上的文档名称或全文预览按钮：成功呼出文档全文预览抽屉并带入锚点', async () => {
+    const user = userEvent.setup();
+
+    const mockResponseData = {
+      query: '连败熔断',
+      preparedLexicalQuery: '连败 熔断',
+      topK: 20,
+      chunks: [
+        {
+          chunkId: 'chk_1',
+          content: '连败熔断触发条件：连续 3 次工具调用失败则自动终止循环。',
+          contentSegmented: '连败 熔断 触发 条件',
+          score: 0.032,
+          denseRank: 1,
+          lexicalRank: 1,
+          citationAnchor: {
+            documentId: 'doc_target_1',
+            documentName: '架构规约.md',
+            documentVersion: 1,
+            pageNumber: 1,
+            headingPath: '规约 > 熔断',
+            chunkIndex: 2,
+          },
+        },
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 30,
+      stats: {
+        embeddingDurationMs: 10,
+        denseDurationMs: 10,
+        lexicalDurationMs: 8,
+        fusionDurationMs: 2,
+        totalDurationMs: 30,
+      },
+    };
+
+    // 第一次调用为 query 检索接口；第二次调用为抽屉内容拉取接口
+    mockFetchWithAuth
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: mockResponseData,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            id: 'doc_target_1',
+            name: '架构规约.md',
+            version: 1,
+            chunkCount: 5,
+            fileType: 'markdown',
+            content: '# 架构规约\n\n## 熔断章节\n\n连败熔断触发条件：连续 3 次工具调用失败则自动终止循环。',
+          },
+        }),
+      });
+
+    render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
+
+    // 点击快捷词触发检索
+    const quickBtn = screen.getByRole('button', { name: '连败熔断' });
+    await user.click(quickBtn);
+
+    // 检索卡片呈现后，点击「全文预览」按钮
+    await waitFor(() => {
+      expect(screen.getByText('架构规约.md')).toBeInTheDocument();
+    });
+
+    const previewBtn = screen.getByRole('button', { name: /全文预览/ });
+    await user.click(previewBtn);
+
+    // 验证右侧全文预览抽屉已渲染，且包含文档标题与正文
+    await waitFor(() => {
+      expect(screen.getByTestId('document-preview-drawer-content')).toBeInTheDocument();
+      expect(screen.getByText('熔断章节')).toBeInTheDocument();
+    });
+  });
 });
 

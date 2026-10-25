@@ -40,7 +40,13 @@ import {
   ChevronUp,
   AlertCircle,
   Hash,
+  Eye,
+  BookOpen,
 } from 'lucide-react';
+import {
+  DocumentPreviewDrawer,
+  type MatchedCitationAnchor,
+} from './document-preview-drawer';
 
 export interface RetrievalDebuggerProps {
   knowledgeBaseId: string;
@@ -54,6 +60,105 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<HybridRetrievalResult | null>(null);
   const [expandedChunkIds, setExpandedChunkIds] = React.useState<Set<string>>(new Set());
+
+  // 文档全文预览抽屉状态
+  const [previewState, setPreviewState] = React.useState<{
+    isOpen: boolean;
+    documentId: string | null;
+    documentName?: string;
+    documentVersion?: number;
+    focusedAnchor?: {
+      chunkIndex: number;
+      headingPath?: string | null;
+      pageNumber?: number | null;
+    };
+    allMatchedAnchors: MatchedCitationAnchor[];
+  }>({
+    isOpen: false,
+    documentId: null,
+    allMatchedAnchors: [],
+  });
+
+  // 打开文档全文预览并聚合当前文档全部召回切片
+  const handleOpenPreview = React.useCallback(
+    (target: {
+      documentId: string;
+      documentName?: string;
+      documentVersion?: number;
+      chunkIndex: number;
+      headingPath?: string | null;
+      pageNumber?: number | null;
+    }) => {
+      const anchors: MatchedCitationAnchor[] = [];
+      const seenIndices = new Set<number>();
+
+      if (result) {
+        // 从融合切片收集
+        for (const chunk of result.chunks) {
+          if (
+            chunk.citationAnchor.documentId === target.documentId &&
+            !seenIndices.has(chunk.citationAnchor.chunkIndex)
+          ) {
+            seenIndices.add(chunk.citationAnchor.chunkIndex);
+            anchors.push({
+              chunkIndex: chunk.citationAnchor.chunkIndex,
+              headingPath: chunk.citationAnchor.headingPath,
+              pageNumber: chunk.citationAnchor.pageNumber,
+              score: chunk.score,
+            });
+          }
+        }
+        // 从向量召回收集
+        for (const m of result.denseMatches) {
+          if (m.documentId === target.documentId && !seenIndices.has(m.chunkIndex)) {
+            seenIndices.add(m.chunkIndex);
+            anchors.push({
+              chunkIndex: m.chunkIndex,
+              headingPath: m.headingPath,
+              pageNumber: m.pageNumber,
+              score: m.similarity,
+            });
+          }
+        }
+        // 从词法召回收集
+        for (const m of result.lexicalMatches) {
+          if (m.documentId === target.documentId && !seenIndices.has(m.chunkIndex)) {
+            seenIndices.add(m.chunkIndex);
+            anchors.push({
+              chunkIndex: m.chunkIndex,
+              headingPath: m.headingPath,
+              pageNumber: m.pageNumber,
+            });
+          }
+        }
+      }
+
+      anchors.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+      setPreviewState({
+        isOpen: true,
+        documentId: target.documentId,
+        documentName: target.documentName,
+        documentVersion: target.documentVersion,
+        focusedAnchor: {
+          chunkIndex: target.chunkIndex,
+          headingPath: target.headingPath,
+          pageNumber: target.pageNumber,
+        },
+        allMatchedAnchors:
+          anchors.length > 0
+            ? anchors
+            : [
+                {
+                  chunkIndex: target.chunkIndex,
+                  headingPath: target.headingPath,
+                  pageNumber: target.pageNumber,
+                },
+              ],
+      });
+    },
+    [result]
+  );
 
   // 快捷测试词条（方便快速验证技术编号与中文词法分词）
   const quickTestQueries = ['连败熔断', 'ADR-0008', '珀金协议', '知识库检索'];
@@ -358,6 +463,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                     rankIndex={idx + 1}
                     isExpanded={expandedChunkIds.has(`fused_${chunk.chunkId}`)}
                     onToggle={() => toggleExpand(`fused_${chunk.chunkId}`)}
+                    onPreview={handleOpenPreview}
                   />
                 ))}
               </div>
@@ -388,6 +494,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                     match={m}
                     isExpanded={expandedChunkIds.has(`dense_${m.id}`)}
                     onToggle={() => toggleExpand(`dense_${m.id}`)}
+                    onPreview={handleOpenPreview}
                   />
                 ))}
               </div>
@@ -418,6 +525,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                     match={m}
                     isExpanded={expandedChunkIds.has(`lexical_${m.id}`)}
                     onToggle={() => toggleExpand(`lexical_${m.id}`)}
+                    onPreview={handleOpenPreview}
                   />
                 ))}
               </div>
@@ -425,6 +533,28 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
           </div>
         </div>
       )}
+
+      {/* 文档全文预览滑动抽屉 */}
+      <DocumentPreviewDrawer
+        open={previewState.isOpen}
+        onOpenChange={(open) => setPreviewState((prev) => ({ ...prev, isOpen: open }))}
+        knowledgeBaseId={knowledgeBaseId}
+        documentId={previewState.documentId}
+        documentName={previewState.documentName}
+        documentVersion={previewState.documentVersion}
+        focusedAnchor={previewState.focusedAnchor}
+        allMatchedAnchors={previewState.allMatchedAnchors}
+        onSelectAnchor={(anchor) =>
+          setPreviewState((prev) => ({
+            ...prev,
+            focusedAnchor: {
+              chunkIndex: anchor.chunkIndex,
+              headingPath: anchor.headingPath,
+              pageNumber: anchor.pageNumber,
+            },
+          }))
+        }
+      />
     </div>
   );
 }
@@ -437,13 +567,33 @@ function FusedChunkCard({
   rankIndex,
   isExpanded,
   onToggle,
+  onPreview,
 }: {
   chunk: RetrievedChunk;
   rankIndex: number;
   isExpanded: boolean;
   onToggle: () => void;
+  onPreview: (target: {
+    documentId: string;
+    documentName?: string;
+    documentVersion?: number;
+    chunkIndex: number;
+    headingPath?: string | null;
+    pageNumber?: number | null;
+  }) => void;
 }) {
   const { citationAnchor } = chunk;
+
+  const triggerPreview = () => {
+    onPreview({
+      documentId: citationAnchor.documentId,
+      documentName: citationAnchor.documentName,
+      documentVersion: citationAnchor.documentVersion,
+      chunkIndex: citationAnchor.chunkIndex,
+      headingPath: citationAnchor.headingPath,
+      pageNumber: citationAnchor.pageNumber,
+    });
+  };
 
   return (
     <Card className="border border-border/60 shadow-none hover:border-primary/40 transition-colors w-full overflow-hidden break-words">
@@ -495,12 +645,19 @@ function FusedChunkCard({
           </div>
         </div>
 
-        {/* 来源锚点徽章行 */}
+        {/* 来源锚点徽章行：可点击直达全文预览 */}
         <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center space-x-1 font-medium text-foreground/80">
-            <FileText className="w-3 h-3 text-muted-foreground" />
-            <span className="truncate max-w-[160px]">{citationAnchor.documentName || '未命名文档'}</span>
-          </span>
+          <button
+            type="button"
+            onClick={triggerPreview}
+            className="inline-flex items-center space-x-1 font-medium text-foreground hover:text-primary transition-colors text-left group"
+            title="点击预览完整文档并定位高亮"
+          >
+            <FileText className="w-3 h-3 text-muted-foreground group-hover:text-primary" />
+            <span className="truncate max-w-[160px] underline decoration-muted-foreground/30 underline-offset-2 group-hover:decoration-primary">
+              {citationAnchor.documentName || '未命名文档'}
+            </span>
+          </button>
           <span className="px-1 rounded bg-muted/60">v{citationAnchor.documentVersion}</span>
           {citationAnchor.pageNumber !== null && (
             <span className="px-1 rounded bg-muted/60">P{citationAnchor.pageNumber}</span>
@@ -517,17 +674,29 @@ function FusedChunkCard({
           {isExpanded ? chunk.content : truncateText(chunk.content, 120)}
         </div>
 
-        {/* 展开/收起切换 */}
-        {chunk.content.length > 120 && (
+        {/* 展开/收起切换与全文预览按钮 */}
+        <div className="flex items-center justify-between pt-0.5">
+          {chunk.content.length > 120 ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="text-[11px] text-primary hover:underline flex items-center space-x-0.5"
+            >
+              <span>{isExpanded ? '收起全文' : '查看完整切片'}</span>
+              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          ) : <div />}
+
           <button
             type="button"
-            onClick={onToggle}
-            className="text-[11px] text-primary hover:underline flex items-center space-x-0.5 pt-0.5"
+            onClick={triggerPreview}
+            className="text-[11px] text-muted-foreground hover:text-primary flex items-center space-x-1 ml-auto transition-colors"
+            title="打开右侧抽屉预览文档全文"
           >
-            <span>{isExpanded ? '收起全文' : '查看完整切片'}</span>
-            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Eye className="w-3 h-3" />
+            <span>全文预览</span>
           </button>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -540,11 +709,31 @@ function DenseMatchCard({
   match,
   isExpanded,
   onToggle,
+  onPreview,
 }: {
   match: any;
   isExpanded: boolean;
   onToggle: () => void;
+  onPreview: (target: {
+    documentId: string;
+    documentName?: string;
+    documentVersion?: number;
+    chunkIndex: number;
+    headingPath?: string | null;
+    pageNumber?: number | null;
+  }) => void;
 }) {
+  const triggerPreview = () => {
+    onPreview({
+      documentId: match.documentId,
+      documentName: match.documentName,
+      documentVersion: match.documentVersion,
+      chunkIndex: match.chunkIndex,
+      headingPath: match.headingPath,
+      pageNumber: match.pageNumber,
+    });
+  };
+
   return (
     <Card className="border border-border/50 shadow-none hover:border-blue-400/40 transition-colors w-full overflow-hidden break-words">
       <CardContent className="p-3 space-y-2">
@@ -558,9 +747,14 @@ function DenseMatchCard({
         </div>
 
         <div className="text-[11px] text-muted-foreground flex items-center space-x-1.5 flex-wrap">
-          <span className="truncate max-w-[160px] font-medium text-foreground/70">
+          <button
+            type="button"
+            onClick={triggerPreview}
+            className="truncate max-w-[160px] font-medium text-foreground hover:text-primary transition-colors text-left underline decoration-muted-foreground/30 underline-offset-2 hover:decoration-primary"
+            title="点击预览完整文档并定位高亮"
+          >
             {match.documentName || '文档'}
-          </span>
+          </button>
           <span className="px-1 rounded bg-muted/60">v{match.documentVersion}</span>
           {match.pageNumber && <span className="px-1 rounded bg-muted/60">P{match.pageNumber}</span>}
           {match.headingPath && (
@@ -574,16 +768,28 @@ function DenseMatchCard({
           {isExpanded ? match.content : truncateText(match.content, 90)}
         </div>
 
-        {match.content.length > 90 && (
+        <div className="flex items-center justify-between pt-0.5">
+          {match.content.length > 90 ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-0.5"
+            >
+              <span>{isExpanded ? '收起' : '展开'}</span>
+              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          ) : <div />}
+
           <button
             type="button"
-            onClick={onToggle}
-            className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-0.5"
+            onClick={triggerPreview}
+            className="text-[11px] text-muted-foreground hover:text-blue-600 dark:hover:text-blue-400 flex items-center space-x-1 ml-auto transition-colors"
+            title="打开右侧抽屉预览文档全文"
           >
-            <span>{isExpanded ? '收起' : '展开'}</span>
-            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Eye className="w-3 h-3" />
+            <span>全文预览</span>
           </button>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -596,11 +802,31 @@ function LexicalMatchCard({
   match,
   isExpanded,
   onToggle,
+  onPreview,
 }: {
   match: any;
   isExpanded: boolean;
   onToggle: () => void;
+  onPreview: (target: {
+    documentId: string;
+    documentName?: string;
+    documentVersion?: number;
+    chunkIndex: number;
+    headingPath?: string | null;
+    pageNumber?: number | null;
+  }) => void;
 }) {
+  const triggerPreview = () => {
+    onPreview({
+      documentId: match.documentId,
+      documentName: match.documentName,
+      documentVersion: match.documentVersion,
+      chunkIndex: match.chunkIndex,
+      headingPath: match.headingPath,
+      pageNumber: match.pageNumber,
+    });
+  };
+
   return (
     <Card className="border border-border/50 shadow-none hover:border-amber-400/40 transition-colors w-full overflow-hidden break-words">
       <CardContent className="p-3 space-y-2">
@@ -614,9 +840,14 @@ function LexicalMatchCard({
         </div>
 
         <div className="text-[11px] text-muted-foreground flex items-center space-x-1.5 flex-wrap">
-          <span className="truncate max-w-[160px] font-medium text-foreground/70">
+          <button
+            type="button"
+            onClick={triggerPreview}
+            className="truncate max-w-[160px] font-medium text-foreground hover:text-primary transition-colors text-left underline decoration-muted-foreground/30 underline-offset-2 hover:decoration-primary"
+            title="点击预览完整文档并定位高亮"
+          >
             {match.documentName || '文档'}
-          </span>
+          </button>
           <span className="px-1 rounded bg-muted/60">v{match.documentVersion}</span>
           {match.pageNumber && <span className="px-1 rounded bg-muted/60">P{match.pageNumber}</span>}
           {match.headingPath && (
@@ -630,16 +861,28 @@ function LexicalMatchCard({
           {isExpanded ? match.content : truncateText(match.content, 90)}
         </div>
 
-        {match.content.length > 90 && (
+        <div className="flex items-center justify-between pt-0.5">
+          {match.content.length > 90 ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline flex items-center space-x-0.5"
+            >
+              <span>{isExpanded ? '收起' : '展开'}</span>
+              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          ) : <div />}
+
           <button
             type="button"
-            onClick={onToggle}
-            className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline flex items-center space-x-0.5"
+            onClick={triggerPreview}
+            className="text-[11px] text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 flex items-center space-x-1 ml-auto transition-colors"
+            title="打开右侧抽屉预览文档全文"
           >
-            <span>{isExpanded ? '收起' : '展开'}</span>
-            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Eye className="w-3 h-3" />
+            <span>全文预览</span>
           </button>
-        )}
+        </div>
       </CardContent>
     </Card>
   );
