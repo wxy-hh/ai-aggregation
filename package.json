@@ -16,6 +16,7 @@
     "dev:worker": "pnpm --filter @repo/worker dev",
     "dev:rtasr": "pnpm --filter @repo/worker-rtasr dev",
     "qimen:check": "node tooling/scripts/qimen-check.mjs",
+    "qa:check": "node tooling/scripts/qa-check.mjs",
     "infra:up": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml up -d redis postgres minio'",
     "infra:down": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml down'",
     "infra:logs": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml logs -f redis postgres minio'",

@@ -76,4 +76,4 @@ Any further notes about the feature.
 
 ---
 
-发布 spec 后告知用户下一步（项目定制，上游升级时保留本节）：若预估跨会话/跨人交接、或计划用 `/implement-spec` 并发派发，运行 `/to-tickets` 拆解工单；单会话冲刺则直接从 spec 起 `/implement`，跳过拆票；若特性涉及用户可见核心链路，同时运行 `/qa-test-planner` 规划浏览器验收用例（见 `docs/agents/qa-workflow.md` 阶段 3B）。
+发布 spec 后告知用户下一步（项目定制，上游升级时保留本节）：标准车道与慢车道立即以 inline 默认运行 `/qa-test-planner`，快车道无需额外计划；跨会话/跨人交接或用户明确选择 `/implement-spec` 并行时运行 `/to-tickets`，单会话串行冲刺直接从 spec 起 `/implement`。只有用户显式选择 `--independent` 才增加一个规划子代理，不自动指定或升级模型（见 `docs/agents/qa-workflow.md` 阶段 3B）。
