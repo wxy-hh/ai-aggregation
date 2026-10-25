@@ -9,7 +9,7 @@ disable-model-invocation: true
 ## 1. 固化范围与基线
 
 - 阅读 spec、工单依赖和 `docs/agents/qa-workflow.md`，先查看 `git status`，区分既有改动与本任务改动。
-- 在特性目录写入当前 `git rev-parse HEAD` 到 `review-base`；已存在时保留并校验，不要覆盖任务起点。
+- 确认本任务路径白名单，在特性目录执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD 与开工前内容快照（禁止重复 init 覆盖已有基线）。
 - 记录本任务路径白名单，审查时避免混入无关工作区改动。禁止为实现自动切换分支或提交代码。
 
 ## 2. 串行实现

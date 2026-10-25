@@ -15,7 +15,7 @@
 在实现步骤中注入或更新项目段：
 
 ```text
-开工时记录 HEAD 到 .scratch/<feature>/review-base，并记录路径白名单。默认单会话串行完成就绪工单，不自动提交。触及 {CORE_LINKS} 时，在 code-review 前按 qa-workflow 阶段 5 inline 完成真实浏览器验收；Schema 1 计划在规划、验收和审查边界运行 qa-check，旧计划仅报告 LEGACY。
+开工时执行 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单> 固化快照。默认单会话串行完成就绪工单，不自动提交。触及 {CORE_LINKS} 时，在 code-review 前按 qa-workflow 阶段 5 inline 完成真实浏览器验收；在规划、验收和审查边界运行 qa-check。
 ```
 
 ## 3. `implement-spec` —— 显式并行与合并回归

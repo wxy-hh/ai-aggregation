@@ -44,7 +44,10 @@ export function deriveCaseStatus(rows) {
 }
 
 export function parsePlan(markdown) {
-  if (!/^QA Schema:\s*1\s*$/m.test(markdown)) return { legacy: true };
+  const schemaMatch = markdown.match(/^QA Schema:\s*(\d+)\s*$/m);
+  if (!schemaMatch) return { legacy: true };
+  const schema = Number(schemaMatch[1]);
+  if (![1, 2].includes(schema)) return { legacy: true };
 
   const mode = markdown.match(/^QA Mode:\s*(\S+)\s*$/m)?.[1];
   const cases = [];
@@ -111,7 +114,7 @@ export function parsePlan(markdown) {
     }
   }
 
-  return { legacy: false, mode, cases, results };
+  return { legacy: false, schema, mode, cases, results };
 }
 
 function validatePlan(plan, specIds) {
@@ -250,8 +253,51 @@ async function checkReview(featureDir, plan, specIds, markdown) {
     if (!seen.has(us)) issues.push(issue('MISSING_US', `US ${us} 未出现在 Spec 对账中`));
   }
 
-  const hardFailure = issues.some((item) => item.code !== 'SPEC_BLOCKED');
-  const status = hardFailure ? 'FAIL' : rows.some((row) => row.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
+  if (plan.schema === 2) {
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(path.join(featureDir, 'review-package.json'), 'utf8'));
+    } catch {
+      return result('BLOCKED', [issue('MISSING_REVIEW_PACKAGE', 'Schema 2 审查必须具备有效的 review-package.json')]);
+    }
+
+    if (Array.isArray(manifest.unreviewed) && manifest.unreviewed.length > 0) {
+      issues.push(issue('UNREVIEWED_FILES', `存在未审查文件：${manifest.unreviewed.map((u) => u.path || u).join(', ')}`));
+    }
+
+    if (Array.isArray(manifest.changedFiles) && manifest.changedFiles.length > 0) {
+      try {
+        const patch = await readFile(path.join(featureDir, 'review-package.diff'), 'utf8');
+        if (!patch.trim()) {
+          issues.push(issue('EMPTY_REVIEW_DIFF', '存在代码变更但 review-package.diff 为空'));
+        }
+      } catch {
+        issues.push(issue('MISSING_REVIEW_DIFF', '存在代码变更但缺少 review-package.diff'));
+      }
+    }
+
+    let reportText = '';
+    try {
+      reportText = await readFile(path.join(featureDir, 'review-report.md'), 'utf8');
+    } catch {
+      return result('BLOCKED', [issue('MISSING_REVIEW_REPORT', 'Schema 2 审查必须具备 .scratch/<feature>/review-report.md')]);
+    }
+
+    if (!/^##\s+Standards\b/m.test(reportText)) {
+      issues.push(issue('MISSING_STANDARDS_REVIEW', 'review-report.md 缺少 ## Standards 规范轴审查报告'));
+    }
+    if (!/^##\s+Spec\b/m.test(reportText)) {
+      issues.push(issue('MISSING_SPEC_SECTION', 'review-report.md 缺少 ## Spec 需求轴审查报告'));
+    }
+    if (!/本次修|转专项|驳回/.test(reportText)) {
+      issues.push(issue('MISSING_TRIAGE_CONCLUSION', 'review-report.md 缺少三档分流结论（本次修/转专项/驳回）'));
+    }
+  }
+
+  const blockedCodes = new Set(['SPEC_BLOCKED', 'MISSING_REVIEW_PACKAGE', 'MISSING_REVIEW_REPORT']);
+  const hardFailure = issues.some((item) => !blockedCodes.has(item.code));
+  const isBlocked = issues.some((item) => blockedCodes.has(item.code)) || rows.some((row) => row.status === 'BLOCKED');
+  const status = hardFailure ? 'FAIL' : isBlocked ? 'BLOCKED' : 'PASS';
   return result(status, issues);
 }
 

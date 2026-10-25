@@ -30,12 +30,12 @@ A comprehensive skill for QA engineers to create test plans, generate manual tes
 - fresh context 不等于 different model。阶段 5 浏览器验收始终由主 Agent inline 执行，不交给独立 QA。
 - 阶段 6 沿用 Standards + Spec 双轴，不额外增加第三名 QA 或裁决代理。
 
-### Schema 1 输出契约
+### Schema 2 输出契约（兼容 Schema 1）
 
-新计划必须声明 `QA Schema: 1` 和 `QA Mode: inline|independent`。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers 和连续编号的验证断言：
+新计划声明 `QA Schema: 2` 和 `QA Mode: inline|independent`。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers 和连续编号的验证断言：
 
 ```markdown
-QA Schema: 1
+QA Schema: 2
 QA Mode: inline
 
 ### TC01: 示例场景
@@ -62,9 +62,14 @@ QA Mode: inline
 - 只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。
 - 不手填 TC 总体结果：全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
 - 文件证据写反引号相对路径，必须位于特性目录且非空；`command:` / `server:` 证据必须来自真实执行。检查器不判断截图语义，人工仍需抽查。
-- 无 Schema 标记的历史计划保持不动，`qa-check` 返回 LEGACY 仅表示未校验，不得称为 PASS。
+- Schema 2 在 review 时另需 `review-package.json`、变更补丁（有变更时）和 `review-report.md`（含 Standards、Spec、三档分流），不能只凭表格宣称审查完成。
+- Schema 1 保持旧校验规则；无 Schema 1/2 标记的历史计划保持不动，返回 LEGACY 仅表示未校验，不得称为 PASS。
 
-计划完成后运行一次 `pnpm qa:check -- plan .scratch/<feature>`；验收后运行 `acceptance`，Spec 对账后运行 `review`。失败时一次性查看全部问题，不自动重试，不为追求退出码修改业务断言。
+计划完成后运行一次 `pnpm qa:check -- plan .scratch/<feature>`；验收后运行 `acceptance`，真实双轴审查并生成报告后运行 `review`。失败时一次性查看全部问题，不自动重试，不为追求退出码修改业务断言。
+
+### 阶段收口
+
+规划通过后，报告当前已完成阶段 3B、车道及理由、qa-plan 路径和 `qa-check plan` 结果。**规划通过后，唯一下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
 
 ---
 

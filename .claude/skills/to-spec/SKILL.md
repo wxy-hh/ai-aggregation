@@ -76,4 +76,4 @@ Any further notes about the feature.
 
 ---
 
-发布 spec 后告知用户下一步（项目定制，上游升级时保留本节）：标准车道与慢车道立即以 inline 默认运行 `/qa-test-planner`，快车道无需额外计划；跨会话/跨人交接或用户明确选择 `/implement-spec` 并行时运行 `/to-tickets`，单会话串行冲刺直接从 spec 起 `/implement`。只有用户显式选择 `--independent` 才增加一个规划子代理，不自动指定或升级模型（见 `docs/agents/qa-workflow.md` 阶段 3B）。
+发布 spec 后按统一阶段收口报告（项目定制，上游升级时保留本节）：当前已完成阶段 2、车道及理由、spec 路径和实际产物。标准/慢车道的**唯一下一步：`/qa-test-planner`**（默认 inline）；只有用户明确选择并行时才改变该默认路径，先运行 `/to-tickets`，再进入 `/implement-spec`。快车道可直接 `/implement`，不额外生成 QA 计划。独立 QA 只有用户显式选择 `--independent` 才允许，不自动指定或升级模型（见 `docs/agents/qa-workflow.md` 阶段 3B）。

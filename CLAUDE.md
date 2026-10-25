@@ -40,7 +40,7 @@
 
 - **Issue tracker**：`.scratch/<feature>/` 本地 markdown tracker（仓库托管 Gitee，无 `gh` CLI）。详见 `docs/agents/issue-tracker.md`
 - **Triage labels**：默认五态 `needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`。详见 `docs/agents/triage-labels.md`
-- **Domain docs**：single-context：根目录 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`
+- **Domain docs**：领域术语默认只写 `GLOSSARY.md`；`CONTEXT.md` 仅用于跨特性稳定架构背景，按需更新；决策记录见 `docs/adr/`。详见 `docs/agents/domain.md`
 - **技能目录**：`.agents/skills` 是指向 `.claude/skills` 的符号链接，技能的安装与修改一律在 `.claude/skills` 中进行（单一事实源），不要直接写入 `.agents/skills`。技能与规则（`.claude/skills/`、`.claude/rules/`）已随 git 入库分发，组员 clone 后无需额外安装；本地配置（`settings.local.json`、`tmp-arch/`、`worktrees/`）仍保持忽略不入库
 
 ## QA & 研发闭环默认执行准则 (Default Workflow Directive)

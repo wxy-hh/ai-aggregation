@@ -43,10 +43,11 @@ disable-model-invocation: true
 2. 从 `templates/prompt-shortcuts.md` 复制思维快捷键；已有文件跳过。
 3. 向真实 `CLAUDE.md` 或 `AGENTS.md` 注入 `templates/claude-qa-directive.md`，不清空其他段落，不直接编辑符号链接。
 4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`implement`、`implement-spec`、`handoff` 和 issue tracker 的项目约定。
-5. 将 `templates/qa-check.mjs` 复制到 `tooling/scripts/qa-check.mjs`；不增加 npm 依赖。若根 package 没有 `qa:check`，加入：
+5. 将 `templates/qa-check.mjs` 与 `templates/review-package.mjs` 复制到 `tooling/scripts/`；不增加 npm 依赖。若根 package 没有对应的 script，分别加入：
 
    ```json
-   "qa:check": "node tooling/scripts/qa-check.mjs"
+   "qa:check": "node tooling/scripts/qa-check.mjs",
+   "review:package": "node tooling/scripts/review-package.mjs"
    ```
 
 6. 确保 `.scratch/` 被忽略；按用户选择设置 `.claude/skills/` 入库规则，仅忽略本地配置和临时 Worktree。

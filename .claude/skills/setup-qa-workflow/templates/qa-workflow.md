@@ -111,12 +111,12 @@ pnpm qa:check -- acceptance .scratch/<feature>
 
 ### 5. 双轴审查（阶段 6）
 
-- 中大型改动在验收后调用 `code-review`。Base 优先级为：用户显式值 > 特性 `review-base` > 可说明范围的 upstream/远端默认分支 > 询问一次。
-- 使用 `git diff <base>` 覆盖 Base 后的已提交、staged、unstaged 已跟踪改动；相关未跟踪文本用 `git diff --no-index` 生成补丁。禁止为审查 `git add -N` 或自动 commit，空改动不派子代理。
+- 中大型改动在验收后调用 `code-review`。开工时由 `implement` 初始化快照，审查时执行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>` 生成只含开工后真实变动的审查包（`review-package.diff` 与 `review-package.json` 清单）。开工前已存在的未提交修改若未在本任务中变动，不会混入审查包。
+- 兼容旧流程或无快照时，回退使用 `git diff <base> -- <路径白名单>` 与 `git diff --no-index` 新增文本。Base 优先级为：用户显式值 > 特性 `review-base` > 可说明范围的 upstream/远端默认分支 > 询问一次。禁止为审查 `git add -N` 或自动 commit，空改动不派子代理。
 - **Standards 轴**：安全与隐私、移动端红线、仓库工程规范、语言规范、Fowler 坏味道。区分硬违规与判断题。
 - **Spec 轴**：每个 User Story 数字必须且只能出现一次在 `## Spec 对账` 中，附 PASS/FAIL/BLOCKED 和证据或原因；遗漏即 FAIL。
-- **三档分流**：本次修 / 转专项 / 驳回。转专项写入 `## 遗留事项`，驳回须引用 ADR 或契约理由。
-- **复验回路**：本次修触及核心链路时重跑浏览器用例；其他修复重跑相关测试。存在未审查文件或未解决阻断项时不得声称完整通过。
+- **三档分流与报告落盘**：审查结论分为“本次修 / 转专项 / 驳回”，转专项写入 `## 遗留事项`。完整双轴审查报告必须落盘保存为 `.scratch/<feature>/review-report.md`。
+- **复验回路**：本次修触及核心链路时重跑浏览器用例；其他修复重跑相关测试。Schema 2 计划必须具备 `review-report.md` 且无未审查文件；存在未审查文件或未解决阻断项时不得声称完整通过。
 
 审查后运行：
 

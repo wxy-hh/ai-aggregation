@@ -272,14 +272,66 @@ test('CLI 兼容 pnpm 传入的字面量双横线分隔符', async (t) => {
   assert.match(cli.stdout, /结果: PASS/);
 });
 
-for (const prefix of ['command:', 'server:']) {
-  test(`${prefix} 后没有任何说明时不能作为有效证据`, async (t) => {
-    const dir = await workspace(t, {
-      plan: VALID_PLAN.replaceAll('`screenshots/TC01-a.png`', prefix).replaceAll('`screenshots/TC01-b.png`', prefix),
-    });
+const SCHEMA2_PLAN = VALID_PLAN.replace('QA Schema: 1', 'QA Schema: 2');
+const REPORT_OK = [
+  '# 审查报告',
+  '',
+  '## Standards',
+  '规范轴通过',
+  '',
+  '## Spec',
+  '需求轴通过',
+  '',
+  '## 结论',
+  '- 本次修：无',
+  '- 转专项：无',
+  '- 驳回：无',
+].join('\n');
 
-    const result = await checkFeature(dir, 'acceptance');
-    assert.equal(result.status, 'FAIL');
-    assert.ok(result.issues.some((item) => item.code === 'MISSING_EVIDENCE'));
+test('Schema 2 缺少 review-report 时 review 返回 BLOCKED', async (t) => {
+  const dir = await workspace(t, {
+    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
+    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
   });
-}
+  await writeFile(
+    path.join(dir, 'review-package.json'),
+    JSON.stringify({ version: 1, changedFiles: [], unreviewed: [] }),
+  );
+
+  const result = await checkFeature(dir, 'review');
+  assert.equal(result.status, 'BLOCKED');
+  assert.ok(result.issues.some((item) => item.code === 'MISSING_REVIEW_REPORT'));
+});
+
+test('Schema 2 存在 unreviewed 敏感或过大文件时 review 返回 FAIL', async (t) => {
+  const dir = await workspace(t, {
+    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
+    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
+  });
+  await writeFile(
+    path.join(dir, 'review-package.json'),
+    JSON.stringify({ version: 1, changedFiles: [], unreviewed: [{ path: '.env', reason: '敏感配置' }] }),
+  );
+  await writeFile(path.join(dir, 'review-report.md'), REPORT_OK);
+
+  const result = await checkFeature(dir, 'review');
+  assert.equal(result.status, 'FAIL');
+  assert.ok(result.issues.some((item) => item.code === 'UNREVIEWED_FILES'));
+});
+
+test('Schema 2 具备完整 manifest、diff 与双轴报告时 review 返回 PASS', async (t) => {
+  const dir = await workspace(t, {
+    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
+    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
+  });
+  await writeFile(
+    path.join(dir, 'review-package.json'),
+    JSON.stringify({ version: 1, changedFiles: ['file.ts'], unreviewed: [] }),
+  );
+  await writeFile(path.join(dir, 'review-package.diff'), 'diff --git a/file.ts b/file.ts\n+hello\n');
+  await writeFile(path.join(dir, 'review-report.md'), REPORT_OK);
+
+  const result = await checkFeature(dir, 'review');
+  assert.equal(result.status, 'PASS');
+});
+

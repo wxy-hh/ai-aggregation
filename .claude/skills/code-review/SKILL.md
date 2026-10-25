@@ -31,26 +31,18 @@ test "$(git merge-base HEAD "$BASE")" = "$BASE"
 
 ## 2. 只读构建完整审查包
 
-`git diff <base>` 已能覆盖 Base 后的已提交、staged 和 unstaged 已跟踪改动：
+运行增量审查收集器，生成基于开工前快照的审查包：
 
 ```bash
-git log --oneline "${BASE}..HEAD"
-git diff --stat "$BASE" -- <路径白名单>
-git diff "$BASE" -- <路径白名单>
+node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>
 ```
 
-通过 `git ls-files --others --exclude-standard` 发现未跟踪文件。将白名单内的相关文本用以下命令生成标准 hunk，并追加到审查包：
+该命令逐文件比对开工前内容与当前内容，生成 `.scratch/<feature>/review-package.diff` 与 `review-package.json`（清单）。开工前已有的未提交修改若未在本任务中再次变动，**绝对不会混入审查包**；开工后的修改、新增文本、删除以及相关未跟踪文本均以标准 `git diff` 格式纳入。**禁止为审查执行 `git add`、`git add -N`、commit、reset 或 checkout。**
 
-```bash
-git diff --no-index -- /dev/null <新增文本文件>
-```
-
-该命令退出 1 表示存在差异，不是执行失败。**禁止为审查执行 `git add`、`git add -N`、commit、reset 或 checkout。**
-
-- 不自动读取秘密文件、二进制、依赖目录、构建产物或锁文件。单文件超过 100KB 或审查包超过 400KB 时，不盲目灌入上下文；列出未覆盖范围并请求缩小路径或分段。
-- 任何应审而未审的文件都必须标为“未审查”，不能据此声称完整通过。
-- 已跟踪 diff 与相关未跟踪清单均为空时直接报告“无变更”，不要启动两个审查子代理。
-- 大 diff 写入 `.scratch/<feature>/review-package.diff`，向子代理传路径而非反复粘贴全文。
+- 若特性目录下尚未初始化快照，或为兼容老流程，回退使用 `git diff <base> -- <路径白名单>` 与 `git diff --no-index -- /dev/null <新增文件>` 组合。
+- 不自动读取秘密文件、二进制、依赖目录、构建产物或锁文件。敏感或过大文件自动登记在 `manifest.unreviewed` 中，必须标为“未审查”，不能据此声称完整通过。
+- 审查包 diff 为空且无未审查文件时，直接报告“无变更”，不要启动两个审查子代理。
+- 向子代理传 diff 文件路径而非反复粘贴全文。
 
 ## 3. Standards 规范轴
 
@@ -94,7 +86,8 @@ git diff --no-index -- /dev/null <新增文本文件>
 - **转专项**：结构性或超出当前范围的清理，追加到 qa-plan 的 `## 遗留事项`，说明独立处理理由；
 - **驳回**：有 ADR 或明确契约支持的有意设计，记录理由，防止重复报警。
 
-Schema 1 计划将完整的 `## Spec 对账` 写入 qa-plan。任何未审查文件、未覆盖 US 或未处理阻断项都不能表述为完整通过。
+汇总报告必须落盘保存为 `.scratch/<feature>/review-report.md`，并在其中清晰记录 `## Standards`、`## Spec`、高危雷达与三档分流结论。
+Schema 1 计划将完整的 `## Spec 对账` 写入 qa-plan；Schema 2 计划必须同时具备 `review-report.md`、`review-package.json` 及通过的对账表，任何未审查文件、未覆盖 US 或未处理阻断项都不能表述为完整通过。
 
 ## 6. 复验与交付边界
 
