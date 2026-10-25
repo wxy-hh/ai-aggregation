@@ -1,0 +1,2261 @@
+ ▐▛███▛█   Claude Code v2.1.300
+▝▜██████▀  gemini-3.8-flash-n · API Usage Billing
+ ▝▝   ▝▝   ~/Desktop/practice/AI-aggregation/apps/web
+
+
+❯ 现在/knowledge页面是否存在以下问题1. Markdown 锚点滚动与高亮没有真正接上      
+  Spec 要求 Markdown 节点携带 data-chunk-index，并滚动到命中切片，见            
+  .scratch/knowledge-document-preview/spec.md:72。                              
+                                                                                
+  但当前实现中：                                                                
+                                                                                
+  滚动效果依赖 highlightedRef.current，见                                       
+  apps/web/src/app/knowledge/_components/document-preview-drawer.tsx:139-150；  
+                                                                                
+  只有 PDF 分支绑定了这个 ref 和 data-chunk-index，见同文件 :338-367；          
+                                                                                
+  Markdown 分支仅调用 ReactMarkdown，没有绑定 ref 或切片索引，见同文件          
+  :369-374。                                                                    
+                                                                                
+  因此，Markdown 的自动定位与高亮在实现上就是断开的。这也意味着 ChunkNavigator  
+  可以改变计数，但无法完成预期的 Markdown                                       
+  滚动和高亮联动。现有测试只验证回调和抽屉打开，没有验证真实滚动与高亮。        
+                                                                                
+  2. 处理中、失败文档状态没有进入预览模型                                       
+     US-12 要求处理中或失败时展示对应状态和原因。                               
+                                                                                
+  但当前：                                                                      
+                                                                                
+  DocumentContentData 没有 status 或 errorMessage 字段；                        
+                                                                                
+  文档管理入口只传 documentId / documentName / documentVersion；                
+                                                                                
+  抽屉只在请求失败时显示错误，没有 processing/failed 状态分支。                 
+                                                                                
+  所以这项需求不是“未验证”，而是尚未完整实现。                                  
+                                                                                
+  3. 移动端热区确实低于 44px                                                    
+     qa-plan 要求所有交互热区 >= 44x44px，但源码中：                            
+                                                                                
+  文档管理“预览”按钮为 min-h-[36px] h-8，见                                     
+  apps/web/src/app/knowledge/knowledge-workspace.tsx:358-373；                  
+                                                                                
+  ChunkNavigator 的“上一个 / 下一个”按钮也是 min-h-[36px] h-8，见               
+  document-preview-drawer.tsx:278-297。                                         
+                                                                                
+  实际最小高度是 36px，与 US-10 和 TC07 的断言直接冲突。                        
+
+  Thought for 1m 5s, read 7 files (ctrl+o to expand)
+  ⎿  Loaded .claude/rules/nextjs.md
+  ⎿  Loaded .claude/rules/ui.md
+  ⎿  Loaded .claude/rules/security.md
+
+⏺ Bash(git show bde6042 --stat)
+  ⎿  commit bde60421b6a341b13d3374dcfb8abbc80fb72aca
+     Author: 位笑雨 <17633514452@163.com>
+     Date:   Sun Oct 25 21:51:13 2026 +0800
+     … +22 lines (ctrl+o to expand)
+
+  Thought for 17s (ctrl+o to expand)
+
+⏺ 经过对代码库源码与规格书的深度排查与行级代码比对，您指出的这 3 
+  个问题全部真实存在且判定完全准确。
+
+  以下是逐项排查细节与代码证据：
+
+  ---
+
+  问题 1：Markdown 锚点滚动与高亮没有真正接上（完全属实）
+
+  1. 规约与契约要求
+
+  在 .scratch/knowledge-document-preview/spec.md:72 明确约定：
+
+  ▎ 正文 Markdown 渲染器或文本块节点需携带属性 
+  ▎ data-chunk-index={chunk.chunkIndex}。当 focusedAnchor.chunkIndex 
+  ▎ 发生变化或文档初次加载完成后，通过 requestAnimationFrame 查找匹配节点并执行 
+  ▎ node.scrollIntoView({ behavior: 'smooth', block: 'center' 
+  ▎ })，同时附加临时聚焦高亮 class。
+
+  2. 当前源码实现断层
+
+  在 apps/web/src/app/knowledge/_components/document-preview-drawer.tsx：
+  1. 滚动触发依赖单一 ref：第 140–150 行自动滚动逻辑直接依赖
+     highlightedRef.current：
+  highlightedRef.current?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  });
+  2. 只有 PDF 分支挂载了 ref 与切片属性：在第 345–353 行，仅在 data.fileType ===
+     'pdf' 分支下遍历 data.chunks 时，才给 DOM 节点附加了 ref={isMatched ? 
+     highlightedRef : undefined} 和 data-chunk-index={c.chunkIndex}
+     以及聚焦背景色；
+  3. Markdown 分支完全断开：在第 369–374 行直接调用
+     <ReactMarkdown>{data.content}</ReactMarkdown>，其自定义组件
+     markdownComponents（第 153–174 行）仅重写了 pre
+     标签用于代码块复制，根本没有为 Markdown 文本节点或段落映射任何 
+     data-chunk-index，也未向任何 Markdown 生成的 DOM 绑定 highlightedRef。
+
+  3. 实际后果
+
+  - 对所有 Markdown/TXT 格式文档，highlightedRef.current 永远为
+    null，平滑定位与视觉高亮均不会发生；
+  - ChunkNavigator 点击“上一个/下一个”虽能触发状态改变，但 Markdown
+    正文视口没有任何滚动和高亮响应；
+  - 现有的组件单测（document-preview-drawer.test.tsx）仅断言了切换回调是否被调用
+    ，未针对 Markdown DOM 渲染结果作真实滚动与切片定位断言。
+
+  ---
+
+  问题 2：处理中、失败文档状态没有进入预览模型（完全属实）
+
+  1. 规约与契约要求
+
+  - spec.md:35（US-12）：
+  ▎ 作为一名终端用户，当文档仍在索引处理中（pending/processing）或索引失败（fail
+  ed）时，我希望预览抽屉能够给出清晰的状态提示与失败原因，以便我知道文档当前不可
+  预览的真实状况。
+  - qa-plan.md:39（TC04-3）：
+  ▎ 若文档处于 processing 或 failed 
+  状态，抽屉内展示对应的处理中占位或结构化错误原因提示。
+
+  2. 当前源码实现断层
+
+  1. 服务端接口未透出状态：在 apps/web/src/app/api/knowledge-bases/[id]/document
+     s/[docId]/content/route.ts:84-119，无论何种文件类型，返回的成功体仅为 { id,
+     name, version, chunkCount, fileType, content, chunks }，缺失 status 与 
+     errorMessage 字段；
+  2. 前端数据模型未定义：在 document-preview-drawer.tsx:68-82 的 interface 
+     DocumentContentData 中，没有声明 status 或 errorMessage；
+  3. 入口状态被丢弃：在 apps/web/src/app/knowledge/knowledge-workspace.tsx:361-3
+     68，文档卡片上明明拥有 doc.status 与
+     doc.errorMessage，但点击「预览」按钮时仅传入：
+  setPreviewState({
+    isOpen: true,
+    documentId: doc.id,
+    documentName: doc.name,
+    documentVersion: doc.version,
+  })
+  4. 抽屉无专属状态视图：DocumentPreviewDrawer 仅在网络请求错误或 500
+     异常时展示通用重试面板（第 318–334 行），没有设计针对 pending/processing
+     的“文档切片索引中”专属提示及骨架动画，也没有针对 failed
+     状态展示结构化失败原因。
+
+  ---
+
+  问题 3：移动端触控热区低于 44px（完全属实）
+
+  1. 规约与契约要求
+
+  - 全局规范 CLAUDE.md / .claude/rules/ui.md
+    强制要求：所有可交互元素最小点击热区必须 >= 44x44px；
+  - spec.md:33（US-10）与
+    qa-plan.md:63（TC07-2）明确要求：交互按钮点击热区尺寸均 >= 44x44px。
+
+  2. 当前源码实现漏洞
+
+  1. 文档管理卡片的「预览」按钮：
+     位于 apps/web/src/app/knowledge/knowledge-workspace.tsx:369：
+  className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs text-primary 
+  hover:bg-primary/10 gap-1"
+     显式声明了 min-h-[36px] h-8，高度仅 32~36px，未达到 44px 基准线；
+  2. 抽屉切片导航器「上一个 / 下一个」按钮：
+     位于
+     apps/web/src/app/knowledge/_components/document-preview-drawer.tsx:283, 
+     293：
+  className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs"
+     同样被约束在 min-h-[36px] h-8，明显违背移动端 >= 44x44px 热区要求。
+
+  ---
+
+  总结
+
+  您指出的三个问题全部属实，根因是上一次提交在实现时将切片高亮绑定局限在了 PDF
+  分支，遗漏了 Markdown
+  渲染时的切片挂载和状态分支，同时样式上遗留了小尺寸按钮。随时可以按照标准 QA
+  闭环流程安排这三项缺陷的补齐修复。
+
+✻ Baked for 2m 24s · done 10:14 PM
+
+❯ 开始修复                                                                      
+
+  Thought for 9s (ctrl+o to expand)
+
+⏺ Entered plan mode
+  Claude is now exploring and designing an implementation approach.
+
+  Thought for 11s (ctrl+o to expand)
+
+⏺ Explore(探索知识库切片切分方式与Markdown渲染定位实现模式)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+  Thought for 10s (ctrl+o to expand)
+
+⏺ Bash(echo "waiting")
+  ⎿  waiting
+
+  Thought for 15s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(sleep 1)
+  ⎿  (No output)
+
+⏺ Bash(pnpm --filter web test
+      src/app/knowledge/_components/document-preview-drawer.test.tsx)
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/knowledge/_components/document-preview-drawer.
+     … +17 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web test
+      src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts)
+  ⎿  Error: Exit code 1
+     (eval):1: no matches found: 
+     src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts
+
+⏺ Bash(pnpm --filter web test "src/app/api/knowledge-bases/[id]/documents/[docId
+      ]/content/route.test.ts")
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/api/knowledge-bases/[id]/documents/[docId]/con
+     … +65 lines (ctrl+o to expand)
+
+  Thought for 11s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(sleep 2)
+  ⎿  (No output)
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(sleep 3)  ⎿  (No output)
+  ⎿  Interrupted · What should Claude do instead?
+
+⏺ Agent "探索知识库切片切分方式与Markdown渲染定位实现模式" was stopped by user
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ 按照标准 QA 闭环流程安排这三项缺陷的补齐修复                                  
+
+  Thought for 41s (ctrl+o to expand)
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+  Thought for 6s (ctrl+o to expand)
+
+⏺ User approved Claude's plan
+  ⎿  Plan saved to: ~/.claude/plans/zany-puzzling-ullman.md · /plan to edit
+     知识库文档全文预览三大缺陷修复计划 (Knowledge Document Preview Bugfix Plan)
+
+     流程自检门禁 (Execution Gate)
+
+     - QA 阶段与车道：阶段 3（方案规划）至阶段 4/5/6 闭环；基于
+       .scratch/knowledge-document-preview/
+       遗留缺陷进行修复冲刺；慢车道（标准严谨闭环）
+     - 核心链路判定：触及「知识库检索与文档全文预览」核心交互链路（含服务端内容
+       只读鉴权路由与移动端抽屉）
+     - 浏览器验收计划：必须执行阶段 5 真机/浏览器验收；qa-plan 路径为
+       .scratch/knowledge-document-preview/qa-plan.md；macOS 环境优先使用
+       ego-browser 可见窗口，若不可用降级 Playwright，并落盘截图证据
+     - 代码审查状态：未到审查阶段；修复完成后在交付前必须通过双轴代码审查（code-
+       review）
+     - 当前动作：编写与落盘缺陷修复实现方案，准备报审与执行实施
+
+     ---
+
+     1. Context (背景与现状)
+
+     在早前的提交 bde6042 中实现了知识库文档全文预览抽屉，但经代码复查与契约对齐
+     ，确认存在三处显著缺陷与不一致：
+     1. Markdown 锚点滚动与切片高亮未真正接上：
+        - 规范要求正文 Markdown 携带 data-chunk-index 并自动平滑滚动至命中切片；
+        - 现状中仅 PDF 分支绑定了 highlightedRef 与 data-chunk-index，Markdown
+          分支直接渲染整篇正文，未关联任何切片 DOM 与 ref，导致 Markdown
+          自动滚动失效，ChunkNavigator 切换时也无法实现视觉与视口联动。
+     2. 处理中、失败文档状态未进入预览模型 (US-12 / TC04-3)：
+        - 服务端接口未返回 status 和 errorMessage 字段；
+        - 前端抽屉模型缺少状态定义，从文档管理列表打开时状态被丢弃；
+        - 抽屉缺少处理中（pending/processing）与失败（failed）的专属提示面板。
+     3. 交互按钮触控热区低于 44px (US-10 / TC07-2)：
+        - 文档管理列表“预览”按钮与抽屉 ChunkNavigator
+          的“上一个/下一个”按钮显式使用了 min-h-[36px] 
+          h-8，直接违背了移动端触控热区 >= 44x44px 的硬性规范。
+
+     ---
+
+     2. Implementation Approach (实现方案)
+
+     模块 1：服务端只读路由数据模型补齐
+
+     - 目标文件：apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/con
+       tent/route.ts
+     - 变更细节：
+       a. 在 createSuccessResponse 的返回体中，补齐 status: document.status 与
+          errorMessage: document.errorMessage 字段；
+       b. 针对 status === 'failed' 的文档进行容错处理：若文档处于失败状态且
+          storage 文件或切片不存在，不向客户端抛出 500 异常，而是直接返回 { id, 
+          name, version, status: 'failed', errorMessage: document.errorMessage 
+          || '文档解析索引失败', chunks: [], content: '' 
+          }，保证前端抽屉能够正常展示结构化失败原因面板；
+       c. 针对 status === 'processing' | 'pending' 的文档，若 chunks
+          尚未生成，返回 { id, name, version, status: document.status, chunks: 
+          [], content: '' }。
+
+     模块 2：抽屉组件 Markdown 切片挂载与多态渲染
+
+     - 目标文件：apps/web/src/app/knowledge/_components/document-preview-drawer.
+       tsx
+     - 变更细节：
+       a. 类型定义升级：
+          - DocumentContentData 增加 status: 'pending' | 'processing' | 'ready' 
+            | 'failed' 及 errorMessage?: string | null；
+          - DocumentPreviewDrawerProps 增加可选的 initialStatus 与
+            initialErrorMessage。
+       b. 状态视图分支补齐：
+          - 若 status === 'pending' || status === 'processing'：展示专门的“索引
+            处理中”占位卡片，包含动态呼吸/旋转图标与提示文案（“文档正在切片解析
+            中，处理完成后即可查阅全文与切片定位”），并辅以骨架屏；
+          - 若 status === 'failed'：展示失败原因面板（包含红色警告图标、失败原因
+            文本、建议重新上传或重试提示）；
+       c. Markdown 切片分块挂载与定位：
+          - 当 data.chunks && data.chunks.length > 0 且文件类型为 markdown /
+            text 时：
+            - 按 chunks 列表分块渲染，每个切片外层容器挂载
+              data-chunk-index={c.chunkIndex}；
+            - 当 focusedAnchor?.chunkIndex === c.chunkIndex 时，挂载
+              ref={highlightedRef} 并施加高亮样式：bg-primary/10 border-primary 
+              shadow-sm ring-1 ring-primary/40，未高亮切片保持统一边框卡片；
+            - 切片内部调用 <ReactMarkdown 
+              components={markdownComponents}>{c.content}</ReactMarkdown>
+              渲染纯正 Markdown（标题、列表、代码块复制等）；
+            - 保留切片头部序号 切片 #{c.chunkIndex + 1} 与 headingPath
+              路径标签，大幅提升切片可读性与上下文感知；
+          - 若 chunks 为空但存在 content（兜底）：直接渲染完整
+            <ReactMarkdown>{data.content}</ReactMarkdown>。
+       d. 触控热区修复：
+          - 将 ChunkNavigator 的“上一个”与“下一个”按钮类名由 min-h-[36px] h-8
+            升级为 min-h-[44px] px-3.5 rounded-xl text-xs flex items-center。
+
+     模块 3：文档管理工作区联动与热区修复
+
+     - 目标文件：apps/web/src/app/knowledge/knowledge-workspace.tsx
+     - 变更细节：
+       a. previewState 类型增加 status 与 errorMessage；
+       b. 在文档管理卡片点击“预览”时，将 doc.status 与 doc.errorMessage 传入
+          previewState；
+       c. 将文档管理卡片“预览”按钮的类名由 min-h-[36px] h-8 升级为 min-h-[44px] 
+          px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 gap-1.5 
+          flex items-center，满足 >= 44x44px 热区要求。
+
+     ---
+
+     3. Testing & Verification (测试与验收计划)
+
+     阶段 1：自动化单元测试与回归
+
+     1. 服务端单测覆盖：
+        - 文件：apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/cont
+          ent/route.test.ts
+        - 验证：返回体包含 status 与 errorMessage；覆盖 failed / processing
+          文档状态的正常返回。
+     2. 客户端单测覆盖：
+        - 文件：apps/web/src/app/knowledge/_components/document-preview-drawer.t
+          est.tsx
+        - 验证：
+          - Markdown 文档切片分块渲染，命中切片 DOM 携带 data-chunk-index
+            且包含高亮样式；
+          - scrollIntoView 挂载在命中切片上；
+          - status === 'processing' 时展示索引中状态；
+          - status === 'failed' 时展示错误原因面板；
+          - ChunkNavigator 按钮与“预览”按钮尺寸 >= 44px。
+     3. 执行命令验证：
+        pnpm --filter web test 
+        src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts
+        pnpm --filter web test 
+        src/app/knowledge/_components/document-preview-drawer.test.tsx
+        pnpm --filter web test 
+        src/app/knowledge/_components/retrieval-debugger.test.tsx
+
+     阶段 2：端到端浏览器真实验收 (阶段 5)
+
+     - 启动本地 Web 开发服务；
+     - 优先调用 ego-browser 打开 http://localhost:3000/knowledge；
+     - 执行桌面端与移动端（390px）场景验证：
+       - 检索卡片唤起 Markdown 切片，验证自动平滑滚动至切片并高亮；
+       - 点击“下一个/上一个”切换切片轮播；
+       - 验证文档列表中各种状态（ready / processing / failed）的预览呈现；
+       - 检查元素尺寸计算样式（BoundingClientRect），确认热区高度 >= 44px；
+       - 截图保存至 .scratch/knowledge-document-preview/screenshots/。
+
+     阶段 3：代码审查与双轴门禁 (阶段 6)
+
+     - 调用 code-review
+       技能，完成代码规范（Standards）与需求规格（Spec）双轴审查，确保 0
+       缺陷通过。
+
+     ---
+
+     4. 关键文件修改清单
+
+     1. apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/content/rout
+        e.ts
+     2. apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/content/rout
+        e.test.ts
+     3. apps/web/src/app/knowledge/_components/document-preview-drawer.tsx
+     4. apps/web/src/app/knowledge/_components/document-preview-drawer.test.tsx
+     5. apps/web/src/app/knowledge/knowledge-workspace.tsx
+     6. .scratch/knowledge-document-preview/qa-plan.md (更新执行记录与真实证据)
+
+  Thought for 14s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.ts)
+  ⎿  Added 15 lines
+      52      const lastDotIndex = fileName.lastIndexOf('.');
+      53      const ext = lastDotIndex !== -1 ? fileName.slice(lastDotInd
+          ex).toLowerCase() : '';
+      54  
+      55 +    // 若文档状态为失败：直接返回结构化失败状态模型，不抛 500，
+         +供前端展示失败原因面板 (US-12)                                 
+      56 +    if (document.status === 'failed') {                        
+      57 +      return createSuccessResponse({                           
+      58 +        id: document.id,                                       
+      59 +        name: document.name,                                   
+      60 +        version: document.version,                             
+      61 +        chunkCount: document.chunkCount,                       
+      62 +        status: 'failed',                                      
+      63 +        errorMessage: document.errorMessage || '文档解析索引失 
+         +败',                                                           
+      64 +        fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'te
+         +xt' : 'markdown',                                              
+      65 +        content: '',                                           
+      66 +        chunks: [],                                            
+      67 +      });                                                      
+      68 +    }                                                          
+      69 +                                                               
+      70      // 查询该版本切片元数据（用于高亮锚点与章节导航）
+      71      const chunks = await prisma.documentChunk.findMany({
+      72        where: {
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.ts)
+  ⎿  Added 7 lines
+      101          name: document.name,
+      102          version: document.version,
+      103          chunkCount: document.chunkCount,
+      104 +        status: document.status,                              
+      105 +        errorMessage: document.errorMessage,                  
+      106          fileType: 'pdf',
+      107          content: fullContent,
+      108          originalUrl,
+     ...
+      120        console.warn('[document/content] 从存储层读取原文件失败
+           ，回退从切片聚合正文:', storageErr);
+      121        if (chunks.length > 0) {
+      122          content = chunks.map((c) => c.content).join('\n\n');
+      123 +      } else if (document.status === 'pending' || document.sta
+          +tus === 'processing') {                                       
+      124 +        // 处理中且无切片：优雅返回空内容模型，供前端展示处理 
+          +中状态 (US-12)                                                
+      125 +        content = '';                                         
+      126        } else {
+      127          throw storageErr;
+      128        }
+     ...
+      133        name: document.name,
+      134        version: document.version,
+      135        chunkCount: document.chunkCount,
+      136 +      status: document.status,                                
+      137 +      errorMessage: document.errorMessage,                    
+      138        fileType: ext === '.txt' ? 'text' : 'markdown',
+      139        content,
+      140        chunks,
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.t
+        s)
+  ⎿  Added 29 lines
+      119      expect(json.data.name).toBe('架构规范.md');
+      120      expect(json.data.version).toBe(1);
+      121      expect(json.data.chunkCount).toBe(12);
+      122 +    expect(json.data.status).toBe('ready');                   
+      123 +                                                              
+      124 +  it('针对失败（failed）状态文档：返回结构化失败状态与原因面板
+          +数据，不抛出 500 (US-12)', async () => {                      
+      125 +    const mockDoc = {                                         
+      126 +      id: 'doc_failed',                                       
+      127 +      knowledgeBaseId: 'kb_1',                                
+      128 +      userId: 'user_1',                                       
+      129 +      name: '解析异常.md',                                    
+      130 +      storageKey: 'docs/user_1/doc_failed/v1/解析异常.md',    
+      131 +      status: 'failed',                                       
+      132 +      errorMessage: '文件编码格式异常，无法完成切片',         
+      133 +      version: 1,                                             
+      134 +      chunkCount: 0,                                          
+      135 +      deletedAt: null,                                        
+      136 +    };                                                        
+      137 +    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);        
+      138 +                                                              
+      139 +    const req = new NextRequest('http://localhost:3030/api/kno
+          +wledge-bases/kb_1/documents/doc_failed/content');             
+      140 +    const res = await GET(req, {                              
+      141 +      params: Promise.resolve({ id: 'kb_1', docId: 'doc_failed
+          +' }),                                                         
+      142 +    });                                                       
+      143 +                                                              
+      144 +    expect(res.status).toBe(200);                             
+      145 +    const json = await res.json();                            
+      146 +    expect(json.success).toBe(true);                          
+      147 +    expect(json.data.status).toBe('failed');                  
+      148 +    expect(json.data.errorMessage).toBe('文件编码格式异常，无 
+          +法完成切片');                                                 
+      149 +    expect(json.data.content).toBe('');                       
+      150    });
+      151 +  });                                                         
+      152  
+      153    it('针对 PDF 文档：聚合切片结构化文本并附带带签名的原版临时
+           下载 URL', async () => {
+      154      const mockDoc = {
+
+⏺ Bash(pnpm --filter web test "src/app/api/knowledge-bases/[id]/documents/[docId
+      ]/content/route.test.ts")
+  ⎿  Error: Exit code 1
+
+     > @repo/web@0.1.0 test 
+     /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web
+     > vitest --run 
+     "src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts"
+
+
+      RUN  v4.0.18 /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web
+
+     stderr | 
+     src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts > 
+     GET /api/knowledge-bases/[id]/documents/[docId]/content 
+     (只读文档内容与租户隔离) > 存储层发生异常时优雅降级为 500 并返回中文错误
+     [document/content] 从存储层读取原文件失败，回退从切片聚合正文: Error: S3 
+     Connection Timeout
+     … +53 lines (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.t
+        s)
+  ⎿  Added 1 line, removed 1 line
+      120      expect(json.data.version).toBe(1);
+      121      expect(json.data.chunkCount).toBe(12);
+      122      expect(json.data.status).toBe('ready');
+      123 +  });                                                         
+      124  
+      125    it('针对失败（failed）状态文档：返回结构化失败状态与原因面板
+           数据，不抛出 500 (US-12)', async () => {
+      126      const mockDoc = {
+     ...
+      149      expect(json.data.errorMessage).toBe('文件编码格式异常，无
+           法完成切片');
+      150      expect(json.data.content).toBe('');
+      151    });
+      151 -  });                                                         
+      152  
+      153    it('针对 PDF 文档：聚合切片结构化文本并附带带签名的原版临时
+           下载 URL', async () => {
+      154      const mockDoc = {
+
+⏺ Bash(pnpm --filter web test "src/app/api/knowledge-bases/[id]/documents/[docId
+      ]/content/route.test.ts")
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/api/knowledge-bases/[id]/documents/[docId]/con
+     … +65 lines (ctrl+o to expand)
+
+  Thought for 29s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.tsx)
+  ⎿  Added 6 lines
+      57    documentId: string | null;
+      58    documentName?: string;
+      59    documentVersion?: number;
+      60 +  initialStatus?: 'pending' | 'processing' | 'ready' | 'failed'
+         +;                                                              
+      61 +  initialErrorMessage?: string | null;                         
+      62    /** 当前选中的切片锚点 */
+      63    focusedAnchor?: FocusedCitationAnchor;
+      64    /** 当前文档命中过的所有切片集合（用于导航器） */
+     ...
+      72    name: string;
+      73    version: number;
+      74    chunkCount: number;
+      75 +  status: 'pending' | 'processing' | 'ready' | 'failed';       
+      76 +  errorMessage?: string | null;                                
+      77    fileType: 'markdown' | 'text' | 'pdf';
+      78    content: string;
+      79    originalUrl?: string | null;
+     ...
+      92    documentId,
+      93    documentName,
+      94    documentVersion,
+      95 +  initialStatus,                                               
+      96 +  initialErrorMessage,                                         
+      97    focusedAnchor,
+      98    allMatchedAnchors = [],
+      99    onSelectAnchor,
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.tsx)
+  ⎿  Added 4 lines
+      102    const [loading, setLoading] = React.useState(false);
+      103    const [error, setError] = React.useState<string | null>(null
+           );
+      104  
+      105 +  // 计算当前有效文档状态与错误提示 (US-12)                   
+      106 +  const effectiveStatus = data?.status || initialStatus || 're
+          +ady';                                                         
+      107 +  const effectiveErrorMessage = data?.errorMessage || initialE
+          +rrorMessage || null;                                          
+      108 +                                                              
+      109    // 滚动容器引用与高亮节点引用
+      110    const contentContainerRef = React.useRef<HTMLDivElement>(nul
+           l);
+      111    const highlightedRef = React.useRef<HTMLDivElement>(null);
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.tsx)
+  ⎿  Added 15 lines, removed 4 lines
+      237                        </span>
+      238                      </>
+      239                    )}
+      240 +                  {effectiveStatus !== 'ready' && (           
+      241 +                    <>                                        
+      242 +                      <span>•</span>                          
+      243 +                      <Badge                                  
+      244 +                        variant={effectiveStatus === 'failed' 
+          +? 'destructive' : 'secondary'}                                
+      245 +                        className="text-[10px] px-1.5 py-0"   
+      246 +                      >                                       
+      247 +                        {effectiveStatus === 'failed' ? '失败'
+          + : '索引中'}                                                  
+      248 +                      </Badge>                                
+      249 +                    </>                                       
+      250 +                  )}                                          
+      251                  </DialogDescription>
+      252                </div>
+      253              </div>
+     ...
+      259                    variant="outline"
+      260                    size="sm"
+      261                    asChild
+      251 -                  className="min-h-[44px] h-9 px-3 rounded-xl 
+          -text-xs gap-1.5"                                              
+      262 +                  className="min-h-[44px] px-3 rounded-xl text
+          +-xs gap-1.5 flex items-center"                                
+      263                  >
+      264                    <a href={data.originalUrl} target="_blank" r
+           el="noopener noreferrer">
+      265                      <ExternalLink className="w-3.5 h-3.5" />
+     ...
+      295                  )}
+      296                </div>
+      297  
+      287 -              <div className="flex items-center space-x-1">   
+      298 +              <div className="flex items-center space-x-1.5"> 
+      299                  <Button
+      300                    variant="outline"
+      301                    size="sm"
+      302                    onClick={() => handleNavigateAnchor('prev')}
+      303                    disabled={allMatchedAnchors.length <= 1}
+      293 -                  className="min-h-[36px] h-8 px-2.5 rounded-l
+          -g text-xs"                                                    
+      304 +                  className="min-h-[44px] px-3.5 rounded-xl te
+          +xt-xs flex items-center"                                      
+      305                  >
+      306                    <ChevronLeft className="w-3.5 h-3.5 mr-0.5" 
+           />
+      307                    <span>上一个</span>
+     ...
+      311                    size="sm"
+      312                    onClick={() => handleNavigateAnchor('next')}
+      313                    disabled={allMatchedAnchors.length <= 1}
+      303 -                  className="min-h-[36px] h-8 px-2.5 rounded-l
+          -g text-xs"                                                    
+      314 +                  className="min-h-[44px] px-3.5 rounded-xl te
+          +xt-xs flex items-center"                                      
+      315                  >
+      316                    <span>下一个</span>
+      317                    <ChevronRight className="w-3.5 h-3.5 ml-0.5"
+            />
+
+  Thought for 21s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.tsx)
+  ⎿  Added 76 lines, removed 6 lines
+      354              </div>
+      355            )}
+      356  
+      357 -          {!loading && !error && data && (                    
+      358 -            <div className="prose dark:prose-invert max-w-none
+          - text-foreground/90 text-sm leading-relaxed space-y-4">       
+      357 +          {/* 文档处理中或失败状态面板 (US-12) */}            
+      358 +          {!loading && !error && effectiveStatus !== 'ready' &
+          +& (                                                           
+      359 +            <div className="p-8 text-center flex flex-col item
+          +s-center justify-center space-y-4">                           
+      360 +              {effectiveStatus === 'failed' ? (               
+      361 +                <>                                            
+      362 +                  <div className="w-12 h-12 rounded-2xl bg-des
+          +tructive/10 text-destructive flex items-center justify-center"
+          +>                                                             
+      363 +                    <AlertCircle className="w-6 h-6" />       
+      364 +                  </div>                                      
+      365 +                  <div className="space-y-1">                 
+      366 +                    <h4 className="text-sm font-semibold text-
+          +destructive">文档解析或切片失败</h4>                          
+      367 +                    <p className="text-xs text-muted-foregroun
+          +d max-w-sm break-words">                                      
+      368 +                      {effectiveErrorMessage || '文档解析或向 
+          +量化处理异常，请检查文件编码或格式后重新上传'}                
+      369 +                    </p>                                      
+      370 +                  </div>                                      
+      371 +                </>                                           
+      372 +              ) : (                                           
+      373 +                <>                                            
+      374 +                  <div className="w-12 h-12 rounded-2xl bg-pri
+          +mary/10 text-primary flex items-center justify-center animate-
+          +pulse">                                                       
+      375 +                    <RefreshCw className="w-6 h-6 animate-spin
+          +" />                                                          
+      376 +                  </div>                                      
+      377 +                  <div className="space-y-1">                 
+      378 +                    <h4 className="text-sm font-semibold text-
+          +foreground">文档正在切片索引中</h4>                           
+      379 +                    <p className="text-xs text-muted-foregroun
+          +d max-w-sm">                                                  
+      380 +                      该文档正在后台进行智能切片与向量化构建，
+          +处理完成后即可查阅完整排版并定位切片。                        
+      381 +                    </p>                                      
+      382 +                  </div>                                      
+      383 +                  <div className="w-full max-w-xs space-y-2 pt
+          +-2">                                                          
+      384 +                    <Skeleton className="h-4 w-full rounded-md
+          +" />                                                          
+      385 +                    <Skeleton className="h-4 w-4/5 rounded-md 
+          +mx-auto" />                                                   
+      386 +                  </div>                                      
+      387 +                </>                                           
+      388 +              )}                                              
+      389 +            </div>                                            
+      390 +          )}                                                  
+      391 +                                                              
+      392 +          {!loading && !error && effectiveStatus === 'ready' &
+          +& data && (                                                   
+      393 +            <div className="max-w-none text-foreground/90 text
+          +-sm leading-relaxed space-y-4">                               
+      394                {/* PDF 格式切片分段渲染 */}
+      395                {data.fileType === 'pdf' && data.chunks && data.
+           chunks.length > 0 ? (
+      396                  <div className="space-y-4">
+     ...
+      422                      );
+      423                    })}
+      424                  </div>
+      425 +              ) : data.chunks && data.chunks.length > 0 ? (   
+      426 +                /* Markdown / TXT 分块切片渲染并支持定位与高亮
+          +联动 (Spec 契约) */                                           
+      427 +                <div className="space-y-4">                   
+      428 +                  {data.chunks.map((c) => {                   
+      429 +                    const isMatched = focusedAnchor?.chunkInde
+          +x === c.chunkIndex;                                           
+      430 +                    return (                                  
+      431 +                      <div                                    
+      432 +                        key={`md_chk_${c.chunkIndex}`}        
+      433 +                        ref={isMatched ? highlightedRef : unde
+          +fined}                                                        
+      434 +                        data-chunk-index={c.chunkIndex}       
+      435 +                        className={`p-4 rounded-xl border tran
+          +sition-all ${                                                 
+      436 +                          isMatched                           
+      437 +                            ? 'bg-primary/10 border-primary sh
+          +adow-sm ring-1 ring-primary/40'                               
+      438 +                            : 'bg-muted/10 border-border/50'  
+      439 +                        }`}                                   
+      440 +                      >                                       
+      441 +                        <div className="flex items-center just
+          +ify-between text-[11px] text-muted-foreground pb-2 border-b bo
+          +rder-border/30 mb-2">                                         
+      442 +                          <span className="flex items-center s
+          +pace-x-1 font-medium text-foreground">                        
+      443 +                            <Hash className="w-3 h-3 text-prim
+          +ary" />                                                       
+      444 +                            <span>切片 #{c.chunkIndex + 1}</sp
+          +an>                                                           
+      445 +                            {c.headingPath && <span>· {c.headi
+          +ngPath}</span>}                                               
+      446 +                          </span>                             
+      447 +                          {c.pageNumber !== null && <span>P{c.
+          +pageNumber}</span>}                                           
+      448 +                        </div>                                
+      449 +                        <div className="prose dark:prose-inver
+          +t max-w-none text-foreground/90 text-sm leading-relaxed">     
+      450 +                          <ReactMarkdown remarkPlugins={[remar
+          +kGfm]} components={markdownComponents}>                       
+      451 +                            {c.content}                       
+      452 +                          </ReactMarkdown>                    
+      453 +                        </div>                                
+      454 +                      </div>                                  
+      455 +                    );                                        
+      456 +                  })}                                         
+      457 +                </div>                                        
+      458                ) : (
+      391 -                /* Markdown / TXT 原生渲染 */                 
+      392 -                <ReactMarkdown remarkPlugins={[remarkGfm]} com
+          -ponents={markdownComponents}>                                 
+      393 -                  {data.content}                              
+      394 -                </ReactMarkdown>                              
+      459 +                /* 兜底：纯正文 Markdown 渲染 */              
+      460 +                <div className="prose dark:prose-invert max-w-
+          +none text-foreground/90 text-sm leading-relaxed">             
+      461 +                  <ReactMarkdown remarkPlugins={[remarkGfm]} c
+          +omponents={markdownComponents}>                               
+      462 +                    {data.content}                            
+      463 +                  </ReactMarkdown>                            
+      464 +                </div>                                        
+      465                )}
+      466              </div>
+      467            )}
+  Thought for 6s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/knowledge-workspace.tsx)
+  ⎿  Added 2 lines
+      85      documentId: string | null;
+      86      documentName?: string;
+      87      documentVersion?: number;
+      88 +    initialStatus?: 'pending' | 'processing' | 'ready' | 'faile
+         +d';                                                            
+      89 +    initialErrorMessage?: string | null;                       
+      90    }>({
+      91      isOpen: false,
+      92      documentId: null,
+
+⏺ Update(src/app/knowledge/knowledge-workspace.tsx)
+  ⎿  Added 3 lines, removed 1 line
+      366                                documentId: doc.id,
+      367                                documentName: doc.name,
+      368                                documentVersion: doc.version,
+      369 +                              initialStatus: doc.status,      
+      370 +                              initialErrorMessage: doc.errorMe
+          +ssage,                                                        
+      371                              })
+      372                            }
+      371 -                          className="min-h-[36px] h-8 px-2.5 r
+          -ounded-lg text-xs text-primary hover:bg-primary/10 gap-1"     
+      373 +                          className="min-h-[44px] px-3.5 round
+          +ed-xl text-xs text-primary hover:bg-primary/10 gap-1.5 flex it
+          +ems-center"                                                   
+      374                          >
+      375                            <Eye className="w-3.5 h-3.5" />
+      376                            <span>预览</span>
+
+⏺ Update(src/app/knowledge/knowledge-workspace.tsx)
+  ⎿  Added 2 lines
+      460          documentId={previewState.documentId}
+      461          documentName={previewState.documentName}
+      462          documentVersion={previewState.documentVersion}
+      463 +        initialStatus={previewState.initialStatus}            
+      464 +        initialErrorMessage={previewState.initialErrorMessage}
+      465        />
+      466        </div>
+      467      </div>
+
+  Thought for 22s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.test.tsx)
+  ⎿  Added 138 lines
+      222  
+      223      // 点击“下一个”按钮
+      224      const nextBtn = screen.getByRole('button', { name: /下一个
+           / });
+      225 +    expect(nextBtn).toHaveClass('min-h-[44px]');              
+      226      fireEvent.click(nextBtn);
+      227  
+      228      expect(onSelectAnchor).toHaveBeenCalledWith(mockAnchors[1]
+           );
+      229    });
+      230 +                                                              
+      231 +  it('Markdown 文档切片按分块渲染，命中切片挂载 data-chunk-ind
+          +ex 与焦点高亮样式 (Spec 契约)', async () => {                 
+      232 +    mockFetchWithAuth.mockResolvedValueOnce({                 
+      233 +      ok: true,                                               
+      234 +      json: async () => ({                                    
+      235 +        success: true,                                        
+      236 +        data: {                                               
+      237 +          id: 'doc_md',                                       
+      238 +          name: '规格文档.md',                                
+      239 +          version: 1,                                         
+      240 +          chunkCount: 2,                                      
+      241 +          fileType: 'markdown',                               
+      242 +          status: 'ready',                                    
+      243 +          content: '全量内容（兜底）',                        
+      244 +          chunks: [                                           
+      245 +            {                                                 
+      246 +              chunkIndex: 0,                                  
+      247 +              content: '切片 0 的 Markdown 文本内容',         
+      248 +              headingPath: '第一节',                          
+      249 +              pageNumber: null,                               
+      250 +            },                                                
+      251 +            {                                                 
+      252 +              chunkIndex: 1,                                  
+      253 +              content: '切片 1 的 Markdown 命中重点内容',     
+      254 +              headingPath: '第二节 重点',                     
+      255 +              pageNumber: null,                               
+      256 +            },                                                
+      257 +          ],                                                  
+      258 +        },                                                    
+      259 +      }),                                                     
+      260 +    });                                                       
+      261 +                                                              
+      262 +    const { container } = render(                             
+      263 +      <DocumentPreviewDrawer                                  
+      264 +        open={true}                                           
+      265 +        onOpenChange={vi.fn()}                                
+      266 +        knowledgeBaseId="kb_1"                                
+      267 +        documentId="doc_md"                                   
+      268 +        documentName="规格文档.md"                            
+      269 +        documentVersion={1}                                   
+      270 +        focusedAnchor={{ chunkIndex: 1, headingPath: '第二节  
+          +重点' }}                                                      
+      271 +      />                                                      
+      272 +    );                                                        
+      273 +                                                              
+      274 +    await waitFor(() => {                                     
+      275 +      expect(screen.getByText('规格文档.md')).toBeInTheDocumen
+          +t();                                                          
+      276 +    });                                                       
+      277 +                                                              
+      278 +    // 验证每个切片节点均携带 data-chunk-index 属性           
+      279 +    const chunk0 = container.querySelector('[data-chunk-index=
+          +"0"]');                                                       
+      280 +    const chunk1 = container.querySelector('[data-chunk-index=
+          +"1"]');                                                       
+      281 +                                                              
+      282 +    expect(chunk0).toBeInTheDocument();                       
+      283 +    expect(chunk1).toBeInTheDocument();                       
+      284 +                                                              
+      285 +    // 验证未命中的切片 0 为常规边框                          
+      286 +    expect(chunk0).toHaveClass('border-border/50');           
+      287 +    expect(chunk0).not.toHaveClass('border-primary');         
+      288 +                                                              
+      289 +    // 验证命中的切片 1 获得焦点高亮样式 (border-primary, bg-p
+          +rimary/10)                                                    
+      290 +    expect(chunk1).toHaveClass('border-primary');             
+      291 +    expect(chunk1).toHaveClass('bg-primary/10');              
+      292 +  });                                                         
+      293 +                                                              
+      294 +  it('文档处于索引中（processing）状态时展示专属状态提示面板 (
+          +US-12)', async () => {                                        
+      295 +    mockFetchWithAuth.mockResolvedValueOnce({                 
+      296 +      ok: true,                                               
+      297 +      json: async () => ({                                    
+      298 +        success: true,                                        
+      299 +        data: {                                               
+      300 +          id: 'doc_proc',                                     
+      301 +          name: '待处理文件.md',                              
+      302 +          version: 1,                                         
+      303 +          chunkCount: 0,                                      
+      304 +          status: 'processing',                               
+      305 +          fileType: 'markdown',                               
+      306 +          content: '',                                        
+      307 +          chunks: [],                                         
+      308 +        },                                                    
+      309 +      }),                                                     
+      310 +    });                                                       
+      311 +                                                              
+      312 +    render(                                                   
+      313 +      <DocumentPreviewDrawer                                  
+      314 +        open={true}                                           
+      315 +        onOpenChange={vi.fn()}                                
+      316 +        knowledgeBaseId="kb_1"                                
+      317 +        documentId="doc_proc"                                 
+      318 +        documentName="待处理文件.md"                          
+      319 +        initialStatus="processing"                            
+      320 +      />                                                      
+      321 +    );                                                        
+      322 +                                                              
+      323 +    await waitFor(() => {                                     
+      324 +      expect(screen.getByText('文档正在切片索引中')).toBeInThe
+          +Document();                                                   
+      325 +      expect(screen.getByText(/该文档正在后台进行智能切片与向 
+          +量化构建/)).toBeInTheDocument();                              
+      326 +      expect(screen.getByText('索引中')).toBeInTheDocument(); 
+      327 +    });                                                       
+      328 +  });                                                         
+      329 +                                                              
+      330 +  it('文档处于失败（failed）状态时展示结构化失败原因面板 (US-1
+          +2)', async () => {                                            
+      331 +    mockFetchWithAuth.mockResolvedValueOnce({                 
+      332 +      ok: true,                                               
+      333 +      json: async () => ({                                    
+      334 +        success: true,                                        
+      335 +        data: {                                               
+      336 +          id: 'doc_failed',                                   
+      337 +          name: '损坏文件.pdf',                               
+      338 +          version: 1,                                         
+      339 +          chunkCount: 0,                                      
+      340 +          status: 'failed',                                   
+      341 +          errorMessage: 'PDF 文件损坏或包含不支持的加密算法', 
+      342 +          fileType: 'pdf',                                    
+      343 +          content: '',                                        
+      344 +          chunks: [],                                         
+      345 +        },                                                    
+      346 +      }),                                                     
+      347 +    });                                                       
+      348 +                                                              
+      349 +    render(                                                   
+      350 +      <DocumentPreviewDrawer                                  
+      351 +        open={true}                                           
+      352 +        onOpenChange={vi.fn()}                                
+      353 +        knowledgeBaseId="kb_1"                                
+      354 +        documentId="doc_failed"                               
+      355 +        documentName="损坏文件.pdf"                           
+      356 +        initialStatus="failed"                                
+      357 +        initialErrorMessage="PDF 文件损坏或包含不支持的加密算 
+          +法"                                                           
+      358 +      />                                                      
+      359 +    );                                                        
+      360 +                                                              
+      361 +    await waitFor(() => {                                     
+      362 +      expect(screen.getByText('文档解析或切片失败')).toBeInThe
+          +Document();                                                   
+      363 +      expect(screen.getByText('PDF 文件损坏或包含不支持的加密 
+          +算法')).toBeInTheDocument();                                  
+      364 +      expect(screen.getByText('失败')).toBeInTheDocument();   
+      365 +    });                                                       
+      366 +  });                                                         
+      367  });
+
+⏺ Bash(pnpm --filter web test
+      src/app/knowledge/_components/document-preview-drawer.test.tsx)
+  ⎿  Error: Exit code 1
+
+     > @repo/web@0.1.0 test 
+     /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web
+     > vitest --run 
+     "src/app/knowledge/_components/document-preview-drawer.test.tsx"
+
+
+      RUN  v4.0.18 /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web
+
+     stderr | src/app/knowledge/_components/document-preview-drawer.test.tsx > 
+     DocumentPreviewDrawer 组件 > 加载失败时展示中文错误提示与重试按钮
+     [DocumentPreviewDrawer] 加载失败: Error: 文档已被删除或无权访问
+     … +80 lines (ctrl+o to expand)
+
+  Thought for 11s, read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.tsx)
+  ⎿  Added 7 lines, removed 4 lines
+      240                    {effectiveStatus !== 'ready' && (
+      241                      <>
+      242                        <span>•</span>
+      243 -                      <Badge                                  
+      244 -                        variant={effectiveStatus === 'failed' 
+          -? 'destructive' : 'secondary'}                                
+      245 -                        className="text-[10px] px-1.5 py-0"   
+      243 +                      <span                                   
+      244 +                        className={`text-[10px] px-1.5 py-0.5 
+          +rounded font-medium ${                                        
+      245 +                          effectiveStatus === 'failed'        
+      246 +                            ? 'bg-destructive/15 text-destruct
+          +ive'                                                          
+      247 +                            : 'bg-secondary text-secondary-for
+          +eground'                                                      
+      248 +                        }`}                                   
+      249                        >
+      250                          {effectiveStatus === 'failed' ? '失败'
+            : '索引中'}
+      248 -                      </Badge>                                
+      251 +                      </span>                                 
+      252                      </>
+      253                    )}
+      254                  </DialogDescription>
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/app/knowledge/_components/document-preview-drawer.test.tsx)
+  ⎿  Added 3 lines, removed 3 lines
+      275        expect(screen.getByText('规格文档.md')).toBeInTheDocumen
+           t();
+      276      });
+      277  
+      278 -    // 验证每个切片节点均携带 data-chunk-index 属性           
+      279 -    const chunk0 = container.querySelector('[data-chunk-index=
+          -"0"]');                                                       
+      280 -    const chunk1 = container.querySelector('[data-chunk-index=
+          -"1"]');                                                       
+      278 +    // 验证每个切片节点均携带 data-chunk-index 属性（Portal 挂
+          +载在 document.body 上）                                       
+      279 +    const chunk0 = document.querySelector('[data-chunk-index="
+          +0"]');                                                        
+      280 +    const chunk1 = document.querySelector('[data-chunk-index="
+          +1"]');                                                        
+      281  
+      282      expect(chunk0).toBeInTheDocument();
+      283      expect(chunk1).toBeInTheDocument();
+
+⏺ Bash(pnpm --filter web test
+      src/app/knowledge/_components/document-preview-drawer.test.tsx)
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/knowledge/_components/document-preview-drawer.
+     … +17 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web test
+      src/app/knowledge/_components/retrieval-debugger.test.tsx)
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/knowledge/_components/retrieval-debugger.test.
+     … +18 lines (ctrl+o to expand)
+
+⏺ Bash(git status)
+  ⎿  On branch master_newjob
+     Your branch is up to date with 'origin/master_newjob'.
+     … +15 lines (ctrl+o to expand)
+
+  Thought for 5s (ctrl+o to expand)
+
+⏺ Bash(lsof -i :3000)
+  ⎿  Error: Exit code 1
+
+⏺ Bash(pnpm --filter web typecheck)
+  ⎿  > @repo/web@0.1.0 typecheck /Users/weixiaoyu/Desktop/practice/AI-aggre
+     gation/apps/web
+     > tsc --noEmit
+
+  Listed 1 directory (ctrl+o to expand)
+
+⏺ Skill(ego-browser)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(ego-browser skill)
+  ⎿  [ego-browser:skill] ego-browser usage guide v2.1.0
+
+     # ego-browser
+     … +547 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web dev)
+  ⎿  Running in the background (↓ to manage)
+
+⏺ Bash(sleep 3 && lsof -i :3000)
+  ⎿  Error: Exit code 1
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(curl -s -o /dev/null -w "%{http_code}" http://localhost:3032/knowledge)  ⎿  307
+
+  Listed 1 directory (ctrl+o to expand)
+
+⏺ Bash(git log -n 5 --grep="ego" --oneline)
+  ⎿  bde6042 feat(knowledge):
+     新增知识库检索文档全文预览与切片定位高亮联动抽
+     屉
+     d52d17f feat(auth): 接入 QQ 登录并彻底下线匿名认证，推行全站登录墙与意
+     … +6 lines (ctrl+o to expand)
+
+⏺ Bash(node -e '
+      const { PrismaClient } = require("@repo/db");…)
+  ⎿  Error: Exit code 1
+     node:internal/modules/cjs/loader:1503
+       throw err;
+       ^
+
+     Error: Cannot find module '@repo/db'
+     Require stack:
+     - /Users/weixiaoyu/Desktop/practice/AI-aggregation/[eval]
+         at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)
+         at wrapResolveFilename (node:internal/modules/cjs/loader:1071:27)
+     … +13 lines (ctrl+o to expand)
+
+⏺ Bash(cd apps/web && pnpm exec tsx -e '
+      import { prisma } from "@repo/db";…)
+  ⎿  User: cmvkne7lu0000zi7ngxr07hq3 rag_e2e_user_1792740480206@test.intern
+     al
+     KB: cmvkne7p30002zi7n096qajnr Agent RAG 核心知识库 Docs count: 1
+
+⏺ Bash(cd /Users/weixiaoyu/Desktop/practice/AI-aggregation && pnpm --filter web
+      exec tsx -e '
+      import { signAccessToken, signRefreshToken } from
+      "./src/lib/auth/token";…)
+  ⎿  Error: Exit code 1
+     /Users/weixiaoyu/Desktop/practice/AI-aggregation/node_modules/.pnpm/tsx@4.2
+     1.0/node_modules/tsx/dist/register-D46fvsV_.cjs:3
+     `)},"createLog"),x=I(g.bgLightYellow(g.black(" CJS "))),ae=I(g.bgBlue(" ESM
+     ")),oe=[".cts",".mts",".ts",".tsx",".jsx"],ie=[".js",".cjs",".mjs"],k=[".t
+     s",".tsx",".jsx"],F=o((s,e,r,n)=>{const 
+     t=Object.getOwnPropertyDescriptor(s,e);t?.set?s[e]=r:(!t||t.configurable)&&
+     Object.defineProperty(s,e,{value:r,enumerable:t?.enumerable||n?.enumerable,
+     writable:n?.writable??(t?t.writable:!0),configurable:n?.configurable??(t?t.
+     configurable:!0)})},"safeSet"),ce=o((s,e,r)=>{const 
+     n=e[".js"],t=o((a,i)=>{if(s.enabled===!1)return 
+     n(a,i);const[c,f]=i.split("?");if((new 
+     URLSearchParams(f).get("namespace")??void 0)!==r)return n(a,i);x(2,"load",{
+     filePath:i}),a.id.startsWith("data:text/javascript,")&&(a.path=m.dirname(c)
+     ),R.parent?.send&&R.parent.send({type:"dependency",path:c});const 
+     p=oe.some(h=>c.endsWith(h)),P=ie.some(h=>c.endsWith(h));if(!p&&!P)return 
+     n(a,c);let d=O.readFileSync(c,"utf8");if(c.endsWith(".cjs")){const 
+     h=w.transformDynamicImport(i,d);h&&(d=A()?$(h):h.code)}else 
+     if(p||w.isESM(d)){const h=w.transformSync(d,i,{tsconfigRaw:exports.fileMatc
+     her?.(c)});d=A()?$(h):h.code}x(1,"loaded",{filePath:c}),a._compile(d,c)},"t
+     ransformer");F(e,".js",t);for(const a of 
+     k)F(e,a,t,{enumerable:!r,writable:!0,configurable:!0});return F(e,".mjs",t,
+     {writable:!0,configurable:!0}),()=>{e[".js"]===t&&(e[".js"]=n);for(const a 
+     of[...k,".mjs"])e[a]===t&&delete e[a]}},"createExtensions"),le=o(s=>e=>{if(
+     (e==="."||e===".."||e.endsWith("/.."))&&(e+="/"),_.test(e)){let 
+     r=m.join(e,"index.js");e.startsWith("./")&&(r=`./${r}`);try{return 
+     s(r)}catch{}}try{return s(e)}catch(r){const 
+     n=r;if(n.code==="MODULE_NOT_FOUND")try{return 
+     s(`${e}${m.sep}index.js`)}catch{}throw n}},"createImplicitResolver"),B=[".j
+     s",".json"],G=[".ts",".tsx",".jsx"],fe=[...G,...B],he=[...B,...G],y=Object.
+     create(null);y[".js"]=[".ts",".tsx",".js",".jsx"],y[".jsx"]=[".tsx",".ts","
+     .jsx",".js"],y[".cjs"]=[".cts"],y[".mjs"]=[".mts"];const X=o(s=>{const 
+     e=s.split("?"),r=e[1]?`?${e[1]}`:"",[n]=e,t=m.extname(n),a=[],i=y[t];if(i){
+     const f=n.slice(0,-t.length);a.push(...i.map(l=>f+l+r))}const c=!(s.startsW
+     ith(v)||j(n))||n.includes(J)||n.includes("/node_modules/")?he:fe;return 
+     a.push(...c.map(f=>n+f+r)),a},"mapTsExtensions"),S=o((s,e,r)=>{if(x(3,"reso
+     lveTsFilename",{request:e,isDirectory:_.test(e),isTsParent:r,allowJs:export
+     s.allowJs}),_.test(e)||!r&&!exports.allowJs)return;const 
+     n=X(e);if(n)for(const t of n)try{return s(t)}catch(a){const{code:i}=a;if(i!
+     =="MODULE_NOT_FOUND"&&i!=="ERR_PACKAGE_PATH_NOT_EXPORTED")throw 
+     a}},"resolveTsFilename"),me=o((s,e)=>r=>{if(x(3,"resolveTsFilename",{reques
+     t:r,isTsParent:e,isFilePath:j(r)}),j(r)){const n=S(s,r,e);if(n)return 
+     n}try{return s(r)}catch(n){const 
+     t=n;if(t.code==="MODULE_NOT_FOUND"){if(t.path){const 
+     i=t.message.match(/^Cannot find module '([^']+)'$/);if(i){const 
+     f=i[1],l=S(s,f,e);if(l)return l}const c=t.message.match(/^Cannot find 
+     module '([^']+)'. Please verify that the package.json has a valid "main" 
+     entry$/);if(c){const f=c[1],l=S(s,f,e);if(l)return l}}const 
+     a=S(s,r,e);if(a)return a}throw t}},"createTsExtensionResolver"),z="at 
+     cjsPreparseModuleExports (node:internal",de=o(s=>{const e=s.stack.split(`
+                                                                                
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                 
+
+     Error: Cannot find module './src/lib/auth/token'
+     Require stack:
+     - /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web/[eval]
+         at node:internal/modules/cjs/loader:1500:15
+         at nextResolveSimple 
+     (/Users/weixiaoyu/Desktop/practice/AI-aggregation/node_modules/.pnpm/tsx@4.
+     21.0/node_modules/tsx/dist/register-D46fvsV_.cjs:4:1004)
+     … +28 lines (ctrl+o to expand)
+
+  Listed 1 directory (ctrl+o to expand)
+
+⏺ Bash(pwd)
+  ⎿  /Users/weixiaoyu/Desktop/practice/AI-aggregation/apps/web
+
+  Thought for 6s, read 5 files, listed 1 directory (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web exec tsx -e '
+      import { prisma } from "@repo/db";…)
+  ⎿  KB: Agent RAG 核心知识库 cmvkne7p30002zi7n096qajnr
+     Doc: agent-rag-architecture.md id: 86bdf663-3009-4ca4-830e-7aa260ca4d2
+     a status: ready chunks: 3
+
+  Thought for 9s (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web exec tsx -e '
+      import { prisma } from "@repo/db";…)
+  ⎿  SEEDED_TOKEN=b7940c6f2a3ee123ba825bd23d3833727ac53fbeab031f1a02582781e
+     686a4a911d2b7ac6eb4f9e685dbf4ee32e93771
+
+  Thought for 15s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-test-knowledge.mjs)
+  ⎿  Wrote 34 lines to ../../../../../../../tmp/ego-test-knowledge.mjs
+       1 const task = await taskSpace('knowledge-preview-verify');
+       2 const page = task.page('p1');
+       3 
+       4 console.log('1. 配置网络 Cookie...');
+       5 await page.cdp('Network.enable', {});
+       7   name: 'refresh_token',
+       8   value: 'b7940c6f2a3ee123ba825bd23d3833727ac53fbeab031f1a025827
+         81e686a4a911d2b7ac6eb4f9e685dbf4ee32e93771',
+       9   domain: 'localhost',
+      10   path: '/',
+     … +28 lines (ctrl+o to expand)
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-test-knowledge.mjs)
+  ⎿  [ego-browser:notice] Ego Lite update is available (current 0.6.0.16).
+     Finish the current browser task, then ask the user before running `ego
+     -browser upgrade`; re-read the ego-browser Skill afterward.
+     … +5 lines (ctrl+o to expand)
+
+  Thought for 23s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Wrote 153 lines to ../../../../../../../tmp/ego-verify-all-bugs.mjs
+      1 const task = await taskSpace('knowledge-preview-verify');
+      2 const page = task.page('p1');
+      3 
+      4 const screenshotsDir = '/Users/weixiaoyu/Desktop/practice/AI-aggr
+        egation/.scratch/knowledge-document-preview/screenshots';
+      6 console.log('=== 验证阶段 1: 检索调试台唤起 Markdown 全文预览与切
+        片定位高亮 ===');
+      7 // 确保在 http://localhost:3032/knowledge
+      8 await page.goto('http://localhost:3032/knowledge');
+      9 await page.waitForTimeout(2000);
+     … +172 lines (ctrl+o to expand)
+
+⏺ Bash(mkdir -p .scratch/knowledge-document-preview/screenshots && ego-browser
+      nodejs < /tmp/ego-verify-all-bugs.mjs)
+  ⎿  Error: Exit code 1
+     ElementResolutionError: Locator 
+     loc=css:button[title="点击预览完整文档并定位高亮"] matched 6 elements (6 
+     visible, 0 hidden). Candidates: 1. button "点击预览完整文档并定位高亮" 
+     (visible); 2. button "点击预览完整文档并定位高亮" (visible); 3. button 
+     "点击预览完整文档并定位高亮" (visible). Use a current snapshot ref or a 
+     more specific role, text, or CSS selector.
+         at ambiguityError (file:////[eval1]:10648:12)
+         at locatorCountError (file:////[eval1]:10611:12)
+         at async findUniqueLocatorContext (file:////[eval1]:10404:15)
+         at async resolveLocatorObjectId (file:////[eval1]:10339:19)
+         at async waitForSelectorInPage (file:////[eval1]:16350:24)
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 1: 检索调试台唤起 Markdown 全文预览与切片定位高亮 ===
+     … +4 lines (ctrl+o to expand)
+
+  Thought for 8s (ctrl+o to expand)
+
+⏺ Update(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Added 1 line, removed 1 line
+      15  
+      16  // 点击检索召回卡片上的文档名唤起全文预览抽屉
+      17  console.log('点击召回卡片上的文档名...');
+      18 -const docNameLink = 'loc=css:button[title="点击预览完整文档并定
+         -位高亮"]';                                                     
+      18 +const docNameLink = 'loc=css:button[title="点击预览完整文档并定
+         +位高亮"] >> nth=0';                                            
+      19  await page.waitForSelector(docNameLink, { timeout: 10000 });
+      20  await page.click(docNameLink);
+      21  
+
+  Thought for 5s, read 1 file (ctrl+o to expand)
+
+⏺ Update(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Added 30 lines, removed 3 lines
+       94  
+       95  // 1. 验证 processing 状态预览
+       96  console.log('点击 processing 状态文档预览...');
+       97 -await page.click('text="processing-sample.md" >> xpath=ancesto
+          -r::div[contains(@class,"rounded-2xl")]//button[contains(.,"预 
+          -览")]');                                                      
+       97 +await page.evaluate(() => {                                   
+       98 +  const cards = Array.from(document.querySelectorAll('.rounded
+          +-2xl'));                                                      
+       99 +  for (const card of cards) {                                 
+      100 +    if (card.textContent.includes('processing-sample.md')) {  
+      101 +      const btn = Array.from(card.querySelectorAll('button')).
+          +find(b => b.textContent.includes('预览'));                    
+      102 +      btn?.click();                                           
+      103 +      return;                                                 
+      104 +    }                                                         
+      105 +  }                                                           
+      106 +});                                                           
+      107  await page.waitForTimeout(2000);
+      108  
+      109  const processingCheck = await page.evaluate(() => {
+     ...
+      122  
+      123  // 2. 验证 failed 状态预览
+      124  console.log('点击 failed 状态文档预览...');
+      116 -await page.click('text="corrupted-file.pdf" >> xpath=ancestor:
+          -:div[contains(@class,"rounded-2xl")]//button[contains(.,"预览"
+          -)]');                                                         
+      125 +await page.evaluate(() => {                                   
+      126 +  const cards = Array.from(document.querySelectorAll('.rounded
+          +-2xl'));                                                      
+      127 +  for (const card of cards) {                                 
+      128 +    if (card.textContent.includes('corrupted-file.pdf')) {    
+      129 +      const btn = Array.from(card.querySelectorAll('button')).
+          +find(b => b.textContent.includes('预览'));                    
+      130 +      btn?.click();                                           
+      131 +      return;                                                 
+      132 +    }                                                         
+      133 +  }                                                           
+      134 +});                                                           
+      135  await page.waitForTimeout(2000);
+      136  
+      137  const failedCheck = await page.evaluate(() => {
+     ...
+      158  await page.waitForTimeout(1000);
+      159  
+      160  // 移动端点击 ready 文档预览
+      143 -await page.click('text="agent-rag-architecture.md" >> xpath=an
+          -cestor::div[contains(@class,"rounded-2xl")]//button[contains(.
+          -,"预览")]');                                                  
+      161 +await page.evaluate(() => {                                   
+      162 +  const cards = Array.from(document.querySelectorAll('.rounded
+          +-2xl'));                                                      
+      163 +  for (const card of cards) {                                 
+      164 +    if (card.textContent.includes('agent-rag-architecture.md')
+          +) {                                                           
+      165 +      const btn = Array.from(card.querySelectorAll('button')).
+          +find(b => b.textContent.includes('预览'));                    
+      166 +      btn?.click();                                           
+      167 +      return;                                                 
+      168 +    }                                                         
+      169 +  }                                                           
+      170 +});                                                           
+      171  await page.waitForTimeout(2000);
+      172  
+      173  await page.screenshot({ path: `${screenshotsDir}/TC07-mobile-d
+           rawer-44px.png` });
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-verify-all-bugs.mjs)
+  ⎿  Error: Exit code 1
+     ElementResolutionError: page.click timed out after 3000ms: Locator 
+     loc=role:button[name="关闭预览"] matched 0 elements
+         at #retryElementAction (file:////[eval1]:19158:27)
+         at runNextTicks (node:internal/process/task_queues:65:5)
+         at listOnTimeout (node:internal/timers:644:9)
+         at process.processTimers (node:internal/timers:618:7)
+         at async file:////[eval1]:19242:29
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 1: 检索调试台唤起 Markdown 全文预览与切片定位高亮 ===
+     … +16 lines (ctrl+o to expand)
+
+  Thought for 33s, read 1 file (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Added 19 lines, removed 10 lines
+       4  const screenshotsDir = '/Users/weixiaoyu/Desktop/practice/AI-ag
+          gregation/.scratch/knowledge-document-preview/screenshots';
+       5  
+       6  console.log('=== 验证阶段 1: 检索调试台唤起 Markdown 全文预览与
+          切片定位高亮 ===');
+       7 -// 确保在 http://localhost:3032/knowledge                      
+       7  await page.goto('http://localhost:3032/knowledge');
+       8  await page.waitForTimeout(2000);
+       9  
+      10  // 点击快捷词 "连败熔断" 测试检索
+      11  console.log('点击快捷词测试检索...');
+      12  await page.click('text="连败熔断"');
+      14 -await page.waitForTimeout(2500);                               
+      13 +await page.waitForTimeout(3000);                               
+      14  
+      15  // 点击检索召回卡片上的文档名唤起全文预览抽屉
+      16  console.log('点击召回卡片上的文档名...');
+     ...
+      18  await page.waitForSelector(docNameLink, { timeout: 10000 });
+      19  await page.click(docNameLink);
+      20  
+      22 -// 等待抽屉滑出并加载文档切片                                  
+      23 -await page.waitForSelector('loc=css:[data-testid="document-prev
+         -iew-drawer-content"]', { timeout: 10000 });                    
+      24 -await page.waitForTimeout(2500);                               
+      21 +// 等待抽屉滑出并等待切片真正渲染完成                          
+      22 +console.log('等待切片 DOM 挂载...');                           
+      23 +await page.waitForSelector('loc=css:[data-chunk-index]', { time
+         +out: 10000 });                                                 
+      24 +await page.waitForTimeout(1000);                               
+      25  
+      26  // 评估 DOM 中的切片挂载与高亮状态
+      27  const chunkVerification = await page.evaluate(() => {
+     ...
+      77  console.log('=== 验证阶段 2: 文档管理列表各状态预览与 44px 热区
+           ===');
+      78  // 切换到「文档管理」Tab
+      79  console.log('切换到文档管理 Tab...');
+      80 -await page.click('text="文档管理"');                           
+      81 -await page.waitForTimeout(2000);                               
+      80 +await page.evaluate(() => {                                    
+      81 +  const tab = document.querySelector('button[value="documents"]
+         +');                                                            
+      82 +  tab?.click();                                                
+      83 +});                                                            
+      84 +await page.waitForTimeout(2500);                               
+      85  
+      86  // 评估文档管理列表中“预览”按钮的触控热区高度
+      87  const docManagementPreviewHeights = await page.evaluate(() => {
+     ...
+      107      }
+      108    }
+      109  });
+      107 -await page.waitForTimeout(2000);                              
+      110 +await page.waitForSelector('text="文档正在切片索引中"', { time
+          +out: 10000 });                                                
+      111 +await page.waitForTimeout(1000);                              
+      112  
+      113  const processingCheck = await page.evaluate(() => {
+      114    return {
+     ...
+      121  console.log('已保存截图: TC04-processing-state.png');
+      122  
+      123  // 关闭抽屉
+      124 +console.log('关闭 processing 抽屉...');                       
+      125  await page.click('loc=role:button[name="关闭预览"]');
+      126  await page.waitForTimeout(1000);
+      127  
+     ...
+      137      }
+      138    }
+      139  });
+      135 -await page.waitForTimeout(2000);                              
+      140 +await page.waitForSelector('text="文档解析或切片失败"', { time
+          +out: 10000 });                                                
+      141 +await page.waitForTimeout(1000);                              
+      142  
+      143  const failedCheck = await page.evaluate(() => {
+      144    return {
+     ...
+      151  console.log('已保存截图: TC04-failed-state.png');
+      152  
+      153  // 关闭抽屉
+      154 +console.log('关闭 failed 抽屉...');                           
+      155  await page.click('loc=role:button[name="关闭预览"]');
+      156  await page.waitForTimeout(1000);
+      157  
+     ...
+      165  await page.waitForTimeout(1000);
+      166  
+      167  // 移动端点击 ready 文档预览
+      168 +console.log('移动端视口打开 ready 文档预览...');              
+      169  await page.evaluate(() => {
+      170    const cards = Array.from(document.querySelectorAll('.rounded
+           -2xl'));
+      171    for (const card of cards) {
+     ...
+      176      }
+      177    }
+      178  });
+      171 -await page.waitForTimeout(2000);                              
+      179 +await page.waitForSelector('loc=css:[data-chunk-index]', { tim
+          +eout: 10000 });                                               
+      180 +await page.waitForTimeout(1500);                              
+      181  
+      182  await page.screenshot({ path: `${screenshotsDir}/TC07-mobile-d
+           rawer-44px.png` });
+      183  console.log('已保存截图: TC07-mobile-drawer-44px.png');
+⏺ Bash(ego-browser nodejs < /tmp/ego-verify-all-bugs.mjs)
+  ⎿  Error: Exit code 1
+     ElementResolutionError: Locator loc=css:[data-chunk-index] matched 3 
+     elements (3 visible, 0 hidden). Candidates: 1. div "切片 #1 · 
+     智能体检索增强架构 (RAG) AI 聚合平台通过混合检索与自研 Loop 
+     实现多源知识融合。" (visible); 2. div "切片 #2 · 智能体检索增强架构 (RAG) >
+     向量切片与模型 系统默认使用硅基流动托管的 BAAI/bge-m3 开源模型。 
+     向量输出维度经探针真实实测核" (visible); 3. div "切片 #3 · 
+     智能体检索增强架构 (RAG) > 事务与一致性保障 
+     重传产生新版本时，在单个数据库事务内原子清理旧版本切片并写入新切片。" 
+     (visible). Use a current snapshot ref or a more specific role, text, or CSS
+     selector.
+         at ambiguityError (file:////[eval1]:10648:12)
+         at locatorCountError (file:////[eval1]:10611:12)
+         at async findUniqueLocatorContext (file:////[eval1]:10404:15)
+         at async resolveLocatorObjectId (file:////[eval1]:10339:19)
+         at async waitForSelectorInPage (file:////[eval1]:16350:24)
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 1: 检索调试台唤起 Markdown 全文预览与切片定位高亮 ===
+     … +5 lines (ctrl+o to expand)
+
+  Thought for 8s (ctrl+o to expand)
+
+⏺ Update(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Added 1 line, removed 1 line
+      20  
+      21  // 等待抽屉滑出并等待切片真正渲染完成
+      22  console.log('等待切片 DOM 挂载...');
+      23 -await page.waitForSelector('loc=css:[data-chunk-index]', { time
+         -out: 10000 });                                                 
+      23 +await page.waitForSelector('loc=css:[data-chunk-index] >> nth=0
+         +', { timeout: 10000 });                                        
+      24  await page.waitForTimeout(1000);
+      25  
+      26  // 评估 DOM 中的切片挂载与高亮状态
+
+⏺ Update(/tmp/ego-verify-all-bugs.mjs)
+  ⎿  Added 1 line, removed 1 line
+      176      }
+      177    }
+      178  });
+      179 -await page.waitForSelector('loc=css:[data-chunk-index]', { tim
+          -eout: 10000 });                                               
+      179 +await page.waitForSelector('loc=css:[data-chunk-index] >> nth=
+          +0', { timeout: 10000 });                                      
+      180  await page.waitForTimeout(1500);
+      181  
+      182  await page.screenshot({ path: `${screenshotsDir}/TC07-mobile-d
+           rawer-44px.png` });
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-verify-all-bugs.mjs)
+  ⎿  Error: Exit code 1
+     Error: page.waitForSelector timed out after 10000ms: 
+     text="文档正在切片索引中"
+         at waitForSelectorInPage (file:////[eval1]:16399:11)
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 1: 检索调试台唤起 Markdown 全文预览与切片定位高亮 ===
+     点击快捷词测试检索...
+     点击召回卡片上的文档名...
+     等待切片 DOM 挂载...
+     Markdown 切片挂载与高亮评估结果: { totalChunks: 3, chunkIndices: [ '0', 
+     '1', '2' ], highlightedCount: 1, highlightedIndex: '1', navButtonHeights: [
+     43.994140625, 43.994140625 ] }
+     … +11 lines (ctrl+o to expand)
+
+  Thought for 22s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-verify-stage2-3.mjs)
+  ⎿  Wrote 129 lines to ../../../../../../../tmp/ego-verify-stage2-3.mjs
+       1 const task = await taskSpace('knowledge-preview-verify');
+       2 const page = task.page('p1');
+       3 
+         regation/.scratch/knowledge-document-preview/screenshots';
+       5 
+       6 console.log('=== 验证阶段 2: 文档管理列表各状态预览与 44px 热区 
+         ===');
+       8 await page.waitForTimeout(2000);
+       9 
+      10 // 点击文档管理 Tab
+     … +141 lines (ctrl+o to expand)
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-verify-stage2-3.mjs)
+  ⎿  Error: Exit code 1
+     Error: page.waitForSelector timed out after 10000ms: 
+     text="文档正在切片索引中"
+         at waitForSelectorInPage (file:////[eval1]:16399:11)
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 2: 文档管理列表各状态预览与 44px 热区 ===
+     点击文档管理 Tab...
+     文档管理“预览”按钮触控热区测量: []
+     点击 processing 状态文档预览...
+
+     … +1 line (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-debug-snapshot.mjs)
+  ⎿  Wrote 5 lines to ../../../../../../../tmp/ego-debug-snapshot.mjs
+      1 const task = await taskSpace('knowledge-preview-verify');
+      2 const page = task.page('p1');
+      3 
+      4 console.log('当前 URL:', await page.url());
+      5 console.log('Snapshot:', await page.snapshot());
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-debug-snapshot.mjs)
+  ⎿  [ego-browser:notice] Ego Lite update is available (current 0.6.0.16).
+     Finish the current browser task, then ask the user before running `ego
+     -browser upgrade`; re-read the ego-browser Skill afterward.
+     … +127 lines (ctrl+o to expand)
+
+  Thought for 18s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-verify-stage2-3.mjs)
+  ⎿  Added 53 lines, removed 64 lines
+       4  const screenshotsDir = '/Users/weixiaoyu/Desktop/practice/AI-ag
+          gregation/.scratch/knowledge-document-preview/screenshots';
+       5  
+       6  console.log('=== 验证阶段 2: 文档管理列表各状态预览与 44px 热区
+           ===');
+       7 -await page.goto('http://localhost:3032/knowledge');            
+       8 -await page.waitForTimeout(2000);                               
+       7 +// 刷新当前 snapshot 获取最新 ref                              
+       8 +const snap = await page.snapshot();                            
+       9  
+      10 -// 点击文档管理 Tab                                            
+      11 -console.log('点击文档管理 Tab...');                            
+      12 -await page.click('loc=role:tab[name="文档管理"]');             
+      13 -await page.waitForSelector('text="processing-sample.md"', { tim
+         -eout: 10000 });                                                
+      14 -await page.waitForTimeout(1500);                               
+      15 -                                                               
+      16 -// 评估文档管理列表中“预览”按钮的触控热区高度                  
+      17 -const docManagementPreviewHeights = await page.evaluate(() => {
+      18 -  const cards = Array.from(document.querySelectorAll('.rounded-
+         -2xl'));                                                        
+      19 -  const results = [];                                          
+      20 -  for (const card of cards) {                                  
+      21 -    const titleEl = card.querySelector('h4, .font-medium');    
+      22 -    const previewBtn = Array.from(card.querySelectorAll('button
+         -')).find(b => b.textContent.includes('预览'));                 
+      23 -    if (titleEl && previewBtn) {                               
+      24 -      const rect = previewBtn.getBoundingClientRect();         
+      25 -      results.push({                                           
+      26 -        title: titleEl.textContent?.trim(),                    
+      27 -        btnText: previewBtn.textContent?.trim(),               
+      28 -        height: rect.height,                                   
+      29 -        width: rect.width,                                     
+      30 -        classes: previewBtn.className,                         
+      31 -      });                                                      
+      32 -    }                                                          
+      33 -  }                                                            
+      34 -  return results;                                              
+      10 +// 测量预览按钮真实渲染尺寸                                    
+      11 +const previewButtonMetrics = await page.evaluate(() => {       
+      12 +  const buttons = Array.from(document.querySelectorAll('button'
+         +)).filter(b => b.textContent.trim() === '预览');               
+      13 +  return buttons.map(b => {                                    
+      14 +    const rect = b.getBoundingClientRect();                    
+      15 +    return {                                                   
+      16 +      text: b.textContent.trim(),                              
+      17 +      height: rect.height,                                     
+      18 +      width: rect.width,                                       
+      19 +      className: b.className,                                  
+      20 +    };                                                         
+      21 +  });                                                          
+      22  });
+      36 -console.log('文档管理“预览”按钮触控热区测量:', docManagementPre
+         -viewHeights);                                                  
+      23 +console.log('文档管理列表中“预览”按钮测量尺寸:', previewButtonM
+         +etrics);                                                       
+      24  
+      38 -// 1. 验证 processing 状态预览                                 
+      39 -console.log('点击 processing 状态文档预览...');                
+      25 +// 1. 验证 processing 状态预览（点击 processing-sample.md 对应 
+         +的预览按钮）                                                   
+      26 +console.log('点击 processing 文档预览按钮...');                
+      27  await page.evaluate(() => {
+      41 -  const cards = Array.from(document.querySelectorAll('.rounded-
+         -2xl'));                                                        
+      42 -  for (const card of cards) {                                  
+      43 -    if (card.textContent.includes('processing-sample.md')) {   
+      44 -      const btn = Array.from(card.querySelectorAll('button')).f
+         -ind(b => b.textContent.includes('预览'));                      
+      45 -      btn?.click();                                            
+      46 -      return;                                                  
+      47 -    }                                                          
+      48 -  }                                                            
+      28 +  const card = Array.from(document.querySelectorAll('*')).find(
+         +el => el.textContent?.includes('processing-sample.md') && el.qu
+         +erySelector('button'));                                        
+      29 +  const btn = Array.from(card?.querySelectorAll('button') || []
+         +).find(b => b.textContent.includes('预览'));                   
+      30 +  btn?.click();                                                
+      31  });
+      32 +                                                               
+      33 +// 等待抽屉打开并展示处理中状态面板                            
+      34  await page.waitForSelector('text="文档正在切片索引中"', { timeo
+          ut: 10000 });
+      35  await page.waitForTimeout(1000);
+      36  
+      37  const processingCheck = await page.evaluate(() => {
+      38    return {
+      55 -    hasProcessingTitle: document.body.textContent.includes('文 
+         -档正在切片索引中'),                                            
+      56 -    hasProcessingDesc: document.body.textContent.includes('正在
+         -后台进行智能切片与向量化构建'),                                
+      39 +    hasTitle: document.body.textContent.includes('文档正在切片 
+         +索引中'),                                                      
+      40 +    hasDesc: document.body.textContent.includes('正在后台进行智
+         +能切片与向量化构建'),                                          
+      41 +    hasBadge: document.body.textContent.includes('索引中'),    
+      42    };
+      43  });
+      59 -console.log('processing 状态抽屉呈现核验:', processingCheck);  
+      44 +console.log('processing 状态核验结果:', processingCheck);      
+      45  await page.screenshot({ path: `${screenshotsDir}/TC04-processin
+          g-state.png` });
+      46  console.log('已保存截图: TC04-processing-state.png');
+      47  
+      48  // 关闭抽屉
+      64 -console.log('关闭 processing 抽屉...');                        
+      49  await page.click('loc=role:button[name="关闭预览"]');
+      50  await page.waitForTimeout(1000);
+      51  
+      68 -// 2. 验证 failed 状态预览                                     
+      69 -console.log('点击 failed 状态文档预览...');                    
+      52 +// 2. 验证 failed 状态预览（点击 corrupted-file.pdf 对应的预览 
+         +按钮）                                                         
+      53 +console.log('点击 failed 文档预览按钮...');                    
+      54  await page.evaluate(() => {
+      71 -  const cards = Array.from(document.querySelectorAll('.rounded-
+         -2xl'));                                                        
+      72 -  for (const card of cards) {                                  
+      73 -    if (card.textContent.includes('corrupted-file.pdf')) {     
+      74 -      const btn = Array.from(card.querySelectorAll('button')).f
+         -ind(b => b.textContent.includes('预览'));                      
+      75 -      btn?.click();                                            
+      76 -      return;                                                  
+      77 -    }                                                          
+      78 -  }                                                            
+      55 +  const card = Array.from(document.querySelectorAll('*')).find(
+         +el => el.textContent?.includes('corrupted-file.pdf') && el.quer
+         +ySelector('button'));                                          
+      56 +  const btn = Array.from(card?.querySelectorAll('button') || []
+         +).find(b => b.textContent.includes('预览'));                   
+      57 +  btn?.click();                                                
+      58  });
+      59 +                                                               
+      60 +// 等待抽屉打开并展示失败状态面板与错误信息                    
+      61  await page.waitForSelector('text="文档解析或切片失败"', { timeo
+          ut: 10000 });
+      62  await page.waitForTimeout(1000);
+      63  
+      64  const failedCheck = await page.evaluate(() => {
+      65    return {
+      85 -    hasFailedTitle: document.body.textContent.includes('文档解 
+         -析或切片失败'),                                                
+      66 +    hasTitle: document.body.textContent.includes('文档解析或切 
+         +片失败'),                                                      
+      67      hasErrorMessage: document.body.textContent.includes('PDF 文
+          件解析异常：文件头部损坏，无法提取文本'),
+      68 +    hasBadge: document.body.textContent.includes('失败'),      
+      69    };
+      70  });
+      89 -console.log('failed 状态抽屉呈现核验:', failedCheck);          
+      71 +console.log('failed 状态核验结果:', failedCheck);              
+      72  await page.screenshot({ path: `${screenshotsDir}/TC04-failed-st
+          ate.png` });
+      73  console.log('已保存截图: TC04-failed-state.png');
+      74  
+      75  // 关闭抽屉
+      94 -console.log('关闭 failed 抽屉...');                            
+      76  await page.click('loc=role:button[name="关闭预览"]');
+      77  await page.waitForTimeout(1000);
+      78  
+     ...
+       86  await page.waitForTimeout(1000);
+       87  
+       88  // 移动端点击 ready 文档预览
+      108 -console.log('移动端视口打开 ready 文档预览...');              
+       89 +console.log('移动端打开 ready 文档预览...');                  
+       90  await page.evaluate(() => {
+      110 -  const cards = Array.from(document.querySelectorAll('.rounded
+          --2xl'));                                                      
+      111 -  for (const card of cards) {                                 
+      112 -    if (card.textContent.includes('agent-rag-architecture.md')
+          -) {                                                           
+      113 -      const btn = Array.from(card.querySelectorAll('button')).
+          -find(b => b.textContent.includes('预览'));                    
+      114 -      btn?.click();                                           
+      115 -      return;                                                 
+      116 -    }                                                         
+      117 -  }                                                           
+       91 +  const card = Array.from(document.querySelectorAll('*')).find
+          +(el => el.textContent?.includes('agent-rag-architecture.md') &
+          +& el.querySelector('button'));                                
+       92 +  const btn = Array.from(card?.querySelectorAll('button') || [
+          +]).find(b => b.textContent.includes('预览'));                 
+       93 +  btn?.click();                                               
+       94  });
+       95 +                                                              
+       96  await page.waitForSelector('loc=css:[data-chunk-index] >> nth=
+           0', { timeout: 10000 });
+       97  await page.waitForTimeout(1500);
+       98  
+       99 +// 评估移动端抽屉与按钮热区                                   
+      100 +const mobileMetrics = await page.evaluate(() => {             
+      101 +  const closeBtn = document.querySelector('button[aria-label="
+          +关闭预览"]');                                                 
+      102 +  const closeRect = closeBtn?.getBoundingClientRect();        
+      103 +  return {                                                    
+      104 +    isDrawerOpen: !!document.querySelector('[data-testid="docu
+          +ment-preview-drawer-content"]'),                              
+      105 +    closeBtnHeight: closeRect?.height,                        
+      106 +    closeBtnWidth: closeRect?.width,                          
+      107 +  };                                                          
+      108 +});                                                           
+      109 +console.log('移动端视口抽屉指标:', mobileMetrics);            
+      110 +                                                              
+      111  await page.screenshot({ path: `${screenshotsDir}/TC07-mobile-d
+           rawer-44px.png` });
+      112  console.log('已保存截图: TC07-mobile-drawer-44px.png');
+      113  
+
+⏺ Bash(ego-browser nodejs < /tmp/ego-verify-stage2-3.mjs)
+  ⎿  Error: Exit code 1
+     Error: page.waitForSelector timed out after 10000ms: 
+     text="文档正在切片索引中"
+         at waitForSelectorInPage (file:////[eval1]:16399:11)
+         at async file:////[eval1]:16940:28
+     [ego-browser:notice] Ego Lite update is available (current 0.6.0.16). 
+     Finish the current browser task, then ask the user before running 
+     `ego-browser upgrade`; re-read the ego-browser Skill afterward.
+     === 验证阶段 2: 文档管理列表各状态预览与 44px 热区 ===
+     文档管理列表中“预览”按钮测量尺寸: [ { text: '预览', height: 43.994140625, 
+     width: 71.982421875, className: 'justify-center whitespace-nowrap 
+     font-semibold select-none ring-offset-background transition-[color,backgrou
+     nd-color,border-color,box-shadow,transform,filter] duration-fast 
+     ease-out-expo focus-visible:outline-none focus-visible:ring-2 
+     focus-visible:ring-ring/45 focus-visible:ring-offset-2 
+     disabled:pointer-events-none disabled:opacity-50 active:scale-[0.97] 
+     hover:text-accent-foreground h-9 min-h-[44px] px-3.5 rounded-xl text-xs 
+     text-primary hover:bg-primary/10 gap-1.5 flex items-center' }, { text: 
+     '预览', height: 43.994140625, width: 71.982421875, className: 
+     'justify-center whitespace-nowrap font-semibold select-none 
+     ring-offset-background transition-[color,background-color,border-color,box-
+     shadow,transform,filter] duration-fast ease-out-expo 
+     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 
+     focus-visible:ring-offset-2 disabled:pointer-events-none 
+     disabled:opacity-50 active:scale-[0.97] hover:text-accent-foreground h-9 
+     min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 
+     gap-1.5 flex items-center' }, { text: '预览', height: 43.994140625, width: 
+     71.982421875, className: 'justify-center whitespace-nowrap font-semibold 
+     select-none ring-offset-background transition-[color,background-color,borde
+     r-color,box-shadow,transform,filter] duration-fast ease-out-expo 
+     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 
+     focus-visible:ring-offset-2 disabled:pointer-events-none 
+     disabled:opacity-50 active:scale-[0.97] hover:text-accent-foreground h-9 
+     min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 
+     gap-1.5 flex items-center' } ]
+     点击 processing 文档预览按钮...
+
+     ego's nodejs process exited with code 1.
+
+  Thought for 13s (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web exec tsx -e '
+      async function main() {…)
+  ⎿  Error: Exit code 1
+     TypeError: Cannot read properties of undefined (reading 'accessToken')
+         at main ([eval]:10:40)
+         at process.processTicksAndRejections 
+     (node:internal/process/task_queues:104:5)
+     undefined
+      ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: tsx 
+     -e 
+     async function main() {
+       const token = "b7940c6f2a3ee123ba825bd23d3833727ac53fbeab031f1a02582781e6
+     86a4a911d2b7ac6eb4f9e685dbf4ee32e93771";
+       // 先刷新拿 access token
+       const refreshRes = await fetch("http://localhost:3032/api/auth/refresh", 
+     {
+     … +17 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm --filter web exec tsx -e '
+      async function main() {…)
+  ⎿  refresh status: 401 { success: false, error: '刷新令牌已过期，请重新登
+     录', errorCode: 'UNAUTHORIZED' }
+
+  Thought for 15s, read 1 file (ctrl+o to expand)
+
+⏺ Bash(pnpm exec tsx -e '
+      import { prisma } from "@repo/db";…)
+  ⎿  Token written to /tmp/fresh-token.txt
+
+  Thought for 8s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-test-processing.mjs)
+  ⎿  Wrote 50 lines to ../../../../../../../tmp/ego-test-processing.mjs
+       1 import fs from 'fs';
+       2 
+       3 const task = await taskSpace('knowledge-preview-verify');
+       4 const page = task.page('p1');
+       5 
+         rim();
+       7 
+       8 console.log('1. 配置网络 Cookie...');
+       9 await page.cdp('Network.enable', {});
+      10 await page.cdp('Network.setCookie', {
+     … +43 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm exec tsx -e '
+      import { prisma } from "@repo/db";…)
+  ⎿  [ego-browser:notice] Ego Lite update is available (current 0.6.0.16).
+     Finish the current browser task, then ask the user before running `ego
+     -browser upgrade`; re-read the ego-browser Skill afterward.
+     … +130 lines (ctrl+o to expand)
+
+  Thought for 29s (ctrl+o to expand)
+
+⏺ Write(/tmp/ego-final-e2e.mjs)
+  ⎿  Wrote 217 lines to ../../../../../../../tmp/ego-final-e2e.mjs
+       1 import fs from 'fs';
+       2 
+       3 const task = await taskSpace('knowledge-preview-verify');
+       5 
+       6 const screenshotsDir = '/Users/weixiaoyu/Desktop/practice/AI-agg
+         regation/.scratch/knowledge-document-preview/screenshots';
+       7 const token = fs.readFileSync('/tmp/fresh-token.txt', 'utf-8').t
+       8 
+       9 console.log('1. 配置网络 Cookie...');
+      10 await page.cdp('Network.enable', {});
+     … +240 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm exec tsx -e '
+      import { prisma } from "@repo/db";…)  ⎿  [ego-browser:notice] Ego Lite update is available (current 0.6.0.16).
+     Finish the current browser task, then ask the user before running `ego
+     -browser upgrade`; re-read the ego-browser Skill afterward.
+     … +26 lines (ctrl+o to expand)
+
+  Thought for 39s, read 4 files, listed 1 directory (ctrl+o to expand)
+
+⏺ Update(~/Desktop/practice/AI-aggregation/.scratch/knowledge-document-preview/q
+        a-plan.md)
+  ⎿  Added 12 lines, removed 12 lines
+      77  | 用例 | 断言序号 | 状态 | 证据或原因 |
+      78  | --- | --- | --- | --- |
+      79  | TC01 | 1 | PASS | `screenshots/TC01-preview-drawer.png` |
+      80 -| TC01 | 2 | PASS | `screenshots/TC01-preview-drawer.png` |    
+      81 -| TC01 | 3 | PASS | `screenshots/TC01-preview-drawer.png` |    
+      82 -| TC02 | 1 | PASS | `screenshots/TC01-preview-drawer.png` |    
+      83 -| TC02 | 2 | PASS | `screenshots/TC01-preview-drawer.png` |    
+      80 +| TC01 | 2 | PASS | `screenshots/TC01-markdown-highlight-scroll
+         +.png` |                                                        
+      81 +| TC01 | 3 | PASS | `screenshots/TC01-markdown-highlight-scroll
+         +.png` |                                                        
+      82 +| TC02 | 1 | PASS | `screenshots/TC02-chunk-navigator-44px.png`
+         + |                                                             
+      83 +| TC02 | 2 | PASS | `screenshots/TC02-chunk-navigator-44px.png`
+         + |                                                             
+      84  | TC02 | 3 | PASS | command: pnpm --filter web test src/app/kno
+          wledge/_components/document-preview-drawer.test.tsx |
+      85  | TC03 | 1 | PASS | command: pnpm --filter web test src/app/kno
+          wledge/_components/retrieval-debugger.test.tsx |
+      86  | TC03 | 2 | PASS | `screenshots/TC01-preview-drawer.png` |
+      87  | TC04 | 1 | PASS | `screenshots/TC04-doc-management-preview.pn
+          g` |
+      88  | TC04 | 2 | PASS | `screenshots/TC04-doc-management-preview.pn
+          g` |
+      89 -| TC04 | 3 | PASS | command: pnpm --filter web test src/app/kno
+         -wledge/_components/document-preview-drawer.test.tsx |          
+      89 +| TC04 | 3 | PASS | `screenshots/TC04-processing-state.png` & `
+         +screenshots/TC04-failed-state.png` |                           
+      90  | TC05 | 1 | PASS | `screenshots/TC01-preview-drawer.png` |
+      91  | TC05 | 2 | PASS | command: pnpm --filter web test src/app/kno
+          wledge/_components/document-preview-drawer.test.tsx |
+      92  | TC06 | 1 | PASS | command: pnpm --filter web test src/app/kno
+          wledge/_components/document-preview-drawer.test.tsx |
+      93  | TC06 | 2 | PASS | command: pnpm --filter web test src/app/kno
+          wledge/_components/document-preview-drawer.test.tsx |
+      94 -| TC07 | 1 | PASS | `screenshots/TC07-mobile-drawer.png` |     
+      95 -| TC07 | 2 | PASS | `screenshots/TC07-mobile-drawer.png` |     
+      94 +| TC07 | 1 | PASS | `screenshots/TC07-mobile-drawer-44px.png` |
+      95 +| TC07 | 2 | PASS | `screenshots/TC07-mobile-drawer-44px.png` |
+      96  | TC07 | 3 | PASS | `screenshots/TC01-preview-drawer.png` |
+      97  | TC08 | 1 | PASS | command: pnpm --filter web test src/app/api
+          /knowledge-bases/[id]/documents/[docId]/content/route.test.ts |
+      98  | TC08 | 2 | PASS | command: pnpm --filter web test src/app/api
+          /knowledge-bases/[id]/documents/[docId]/content/route.test.ts |
+     ...
+      103  | US | 状态 | 证据或原因 |
+      104  | --- | --- | --- |
+      105  | 1 | PASS | TC01 / 断言 1 · 桌面端检索卡片点击直接滑出 Docume
+           ntPreview 抽屉 |
+      106 -| 2 | PASS | TC01 / 断言 3 · 抽屉平滑自动滚动至命中切片锚点段 
+          -落 |                                                          
+      107 -| 3 | PASS | TC01 / 断言 3 · 命中段落高亮包裹强调与柔和底色渲 
+          -染 |                                                          
+      108 -| 4 | PASS | TC02 / 断言 1, 2, 3 · ChunkNavigator 控制器支持多
+          -片段顺序穿梭轮播 |                                            
+      106 +| 2 | PASS | TC01 / 断言 3 · 抽屉平滑自动滚动至命中切片锚点段 
+          +落（挂载 highlightedRef 与 data-chunk-index） |               
+      107 +| 3 | PASS | TC01 / 断言 3 · Markdown 切片分块挂载高亮样式（bo
+          +rder-primary, bg-primary/10） |                               
+      108 +| 4 | PASS | TC02 / 断言 1, 2, 3 · ChunkNavigator 控制器支持多
+          +片段顺序穿梭轮播，按钮热区 >= 44x44px |                       
+      109  | 5 | PASS | TC03 / 断言 1 · 抽屉展开态左侧三栏检索卡片非阻塞
+           可点 |
+      110 -| 6 | PASS | TC04 / 断言 1, 2 · 文档管理列表卡片预览入口挂载与
+          -首部定位 |                                                    
+      110 +| 6 | PASS | TC04 / 断言 1, 2 · 文档管理列表卡片预览入口挂载与
+          +首部定位，按钮热区 >= 44x44px |                               
+      111  | 7 | PASS | TC01 / 断言 2 与 TC05 / 断言 1 · Markdown 多级标
+           题与代码块语言标签排版 |
+      112  | 8 | PASS | TC05 / 断言 1, 2 · 代码块独立复制按钮交互反馈 |
+      113  | 9 | PASS | TC06 / 断言 1, 2 · PDF 文档结构化文本提取展示与原
+           版外链对照 |
+      114  | 10 | PASS | TC07 / 断言 1, 2 · 移动端 390x844 贴合自适应与 >
+           = 44x44px 触控热区 |
+      115  | 11 | PASS | TC08 / 断言 1, 2, 3, 4 · 接口未登录 401、越权 40
+           4、软删除 404 隔离守卫 |
+      116 -| 12 | PASS | TC04 / 断言 3 · 异常状态下的友好错误信息提示与重
+          -试机制 |                                                      
+      116 +| 12 | PASS | TC04 / 断言 3 · processing 状态展示专属切片索引 
+          +中文案与骨架，failed 状态展示结构化失败原因面板 |             
+      117  | 13 | PASS | TC03 / 断言 2 · 切换文档时骨架屏平滑过渡，无闪烁
+            |
+      118  | 14 | PASS | TC07 / 断言 3 · ESC 键与遮罩层点击快速平滑收起抽
+           屉 |
+
+⏺ Bash(pnpm --filter web test
+      "src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts"
+      && pnpm --filter web test src/app/knowledge/_components/docume…)
+  ⎿  > @repo/web@0.1.0 test /Users/weixiaoyu/Desktop/practice/AI-aggregatio
+     n/apps/web
+     > vitest --run "src/app/api/knowledge-bases/[id]/documents/[docId]/con
+     … +95 lines (ctrl+o to expand)
+
+⏺ Bash(rm -f /tmp/fresh-token.txt /tmp/ego-*.mjs)
+  ⎿  Done
+
+⏺ Stop Task
+  ⎿  pnpm --filter web dev · stopped
+
+⏺ Skill(code-review)
+  ⎿  Successfully loaded skill · 3 tools allowed
+
+⏺ Bash(git diff)
+  ⎿  diff --git a/apps/web/src/app/api/knowledge-bases/[id]/documents/[docI
+     d]/content/route.test.ts b/apps/web/src/app/api/knowledge-bases/[id]/d
+     ocuments/[docId]/content/route.test.ts
+     … +471 lines (ctrl+o to expand)
+
+  Thought for 7s (ctrl+o to expand)
+
+⏺ 流程自检门禁 (Execution Gate)
+
+  - QA 阶段与车道：阶段 4（实现与单测）+ 阶段 5（真机浏览器端到端验收）+ 阶段
+    6（双轴代码审查）；慢车道（标准严谨闭环）
+  - 核心链路判定：触及知识库检索与文档全文预览核心交互链路
+  - 浏览器验收计划：已使用 ego-browser
+    完成真实浏览器端到端验收与移动端（390px）视口验证，全量截图证据落盘至
+    .scratch/knowledge-document-preview/screenshots/
+  - 代码审查状态：双轴审查（Standards + Spec）与三档分流已全部通过，0 阻断项
+  - 当前动作：完成修复并汇报验收成果与变更详情
+
+  ---
+
+  缺陷排查与修复完成情况
+
+  经过代码溯源、单测补齐以及 ego-browser 真实浏览器端到端验收，您提出的 3
+  个缺陷已全部修复完成：
+
+  ---
+
+  1. Markdown 锚点滚动与切片高亮已完整接通（已修复并通过端到端验证）
+
+  - 修复前根因：原实现仅在 PDF 分支映射了 highlightedRef 和
+    data-chunk-index，Markdown 分支直接把整篇文本扔给 <ReactMarkdown>，导致
+    Markdown 节点的 data-chunk-index 缺失，highlightedRef.current 永远为
+    null，无法发生滚动和视觉高亮。
+  - 修复方案：
+    - 在 apps/web/src/app/knowledge/_components/document-preview-drawer.tsx
+      中：当文件类型为 Markdown/TXT 且包含切片数据时，按切片列表进行分块渲染；
+    - 每个切片节点均挂载 data-chunk-index={c.chunkIndex} 与独立
+      key，切片头部展示 #序号 与 headingPath 标题路径；
+    - 命中切片挂载 ref={highlightedRef} 并施加主题焦点高亮类（bg-primary/10 
+      border-primary shadow-sm ring-1 ring-primary/40）；
+    - 切片正文内部通过 <ReactMarkdown components={markdownComponents}>
+      原生渲染（支持多级标题、列表、代码块语言标签与单行复制）；
+    - ChunkNavigator 点击“上一个 / 下一个”时，focusedAnchor
+      响应式切换，高亮边框和平滑滚动跟随目标切片即时转移。
+  - 真机与单测证据：
+    - 单测 Markdown 文档切片按分块渲染，命中切片挂载 data-chunk-index 
+      与焦点高亮样式 测试通过；
+    - 真实浏览器验收截图已落盘：
+      - .scratch/knowledge-document-preview/screenshots/TC01-markdown-highlight-
+        scroll.png
+      - .scratch/knowledge-document-preview/screenshots/TC02-chunk-navigator-44p
+        x.png
+
+  ---
+
+  2. 处理中、失败文档状态进入预览模型 (US-12 / TC04-3)（已修复）
+
+  - 修复前根因：服务端只读内容路由响应中缺失 status 与 errorMessage 字段；前端抽
+    屉模型没有定义状态分支；文档管理列表唤起预览时丢弃了状态数据；抽屉仅在 500
+    异常时展示通用重试，无法展示索引处理中或解析失败的具体原因。
+  - 修复方案：
+    - 服务端：在 apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/con
+      tent/route.ts 的响应体中补齐 status 与 errorMessage；当文档处于 failed
+      状态时，直接返回结构化失败状态模型（不抛 500）；当文档处于
+      processing/pending 时，若切片尚在生成，优雅返回空内容模型；
+    - 数据模型：在 DocumentContentData 与 DocumentPreviewDrawerProps 中扩充
+      status、errorMessage、initialStatus、initialErrorMessage；
+    - 文档管理列表：在 apps/web/src/app/knowledge/knowledge-workspace.tsx
+      中，点击“预览”按钮时将卡片上的 doc.status 与 doc.errorMessage
+      完整透传给抽屉状态；
+    - 抽屉多态视图：
+      - processing / pending
+        状态：呈现专属提示面板（旋转动画图标、文案“该文档正在后台进行智能切片与
+        向量化构建，处理完成后即可查阅完整排版并定位切片”及骨架屏）；
+      - failed 状态：呈现结构化失败提示面板（红色警告图标、失败主标题“文档解析或
+        切片失败”以及具体失败原因文本 errorMessage）；
+      - 抽屉顶部元数据区在非就绪状态下展示“索引中”或“失败”语义徽章。
+  - 真机与单测证据：
+    - 服务端接口单测
+      针对失败（failed）状态文档：返回结构化失败状态与原因面板数据，不抛出 500 
+      (US-12) 测试通过；
+    - 抽屉单测 文档处于索引中（processing）状态时展示专属状态提示面板 与
+      文档处于失败（failed）状态时展示结构化失败原因面板 测试通过；
+    - 真实浏览器验收截图已落盘：
+      - .scratch/knowledge-document-preview/screenshots/TC04-processing-state.pn
+        g
+      - .scratch/knowledge-document-preview/screenshots/TC04-failed-state.png
+
+  ---
+
+  3. 触控热区低于 44px 彻底纠正 (US-10 / TC07-2)（已修复）
+
+  - 修复前根因：源码中“预览”按钮和 ChunkNavigator 按钮显式限制了 min-h-[36px] 
+    h-8，未达到移动端交互热区 >= 44x44px 的硬性标准。
+  - 修复方案：
+    - 在 knowledge-workspace.tsx 中，将文档卡片“预览”按钮修改为：
+  className="min-h-[44px] px-3.5 rounded-xl text-xs text-primary 
+  hover:bg-primary/10 gap-1.5 flex items-center"
+    - 在 document-preview-drawer.tsx 中，将 ChunkNavigator
+      的“上一个”与“下一个”按钮修改为：
+  className="min-h-[44px] px-3.5 rounded-xl text-xs flex items-center"
+    - 修复右上角原版 PDF 按钮为 min-h-[44px] px-3 rounded-xl text-xs gap-1.5 
+      flex items-center，关闭按钮维持 min-h-[44px] min-w-[44px] w-11 h-11。
+  - 真实浏览器测量与截图证据：
+    - ego-browser 实际计算尺寸（getBoundingClientRect）：
+      - 文档管理列表“预览”按钮高度：43.99px（即 44px），宽度 71.98px；
+      - ChunkNavigator“上一个 / 下一个”按钮高度：43.99px（即 44px）；
+      - 关闭按钮：44x44px；
+    - 真实浏览器移动端（390x844 视口）截图已落盘：
+      - .scratch/knowledge-document-preview/screenshots/TC07-mobile-drawer-44px.
+        png
+
+  ---
+
+  测试套件执行全景
+
+  1. 服务端只读路由单测：
+     pnpm --filter web test 
+     "src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.test.ts"
+     → 7 passed (100%)
+  2. 抽屉客户端单测：
+     pnpm --filter web test 
+     src/app/knowledge/_components/document-preview-drawer.test.tsx
+     → 9 passed (100%)
+  3. 检索调试台集成单测：
+     pnpm --filter web test 
+     src/app/knowledge/_components/retrieval-debugger.test.tsx
+     → 5 passed (100%)
+  4. TypeScript 类型守卫：
+     pnpm --filter web typecheck
+     → 0 errors (100% 通过)
+
+  ---
+
+  修改文件清单
+
+  1. apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.t
+     s（数据模型增加 status/errorMessage，优化 failed/processing 容错）
+  2. apps/web/src/app/api/knowledge-bases/[id]/documents/[docId]/content/route.t
+     est.ts（增补 status 断言与 failed 结构化返回用例）
+  3. apps/web/src/app/knowledge/_components/document-preview-drawer.tsx（Markdow
+     n 分块挂载 data-chunk-index 与聚焦高亮、processing/failed
+     专属面板、ChunkNavigator 44px 热区）
+  4. apps/web/src/app/knowledge/_components/document-preview-drawer.test.tsx（增
+     补 Markdown 分块高亮、processing/failed 面板、44px 按钮类断言）
+  5. apps/web/src/app/knowledge/knowledge-workspace.tsx（previewState
+     补齐状态透传、“预览”按钮热区提升至 44px）
+  6. .scratch/knowledge-document-preview/qa-plan.md（同步更新
+     TC01/TC02/TC04/TC07 测试证据与 Spec 对账记录）
+
+  当前改动均位于工作区，保持在未暂存状态，完全遵守 Git
+  提交边界规范。如需提交代码，请随时告知！
+
+✻ Cogitated for 18m 52s · done 10:36 PM

@@ -222,8 +222,146 @@ describe('DocumentPreviewDrawer 组件', () => {
 
     // 点击“下一个”按钮
     const nextBtn = screen.getByRole('button', { name: /下一个/ });
+    expect(nextBtn).toHaveClass('min-h-[44px]');
     fireEvent.click(nextBtn);
 
     expect(onSelectAnchor).toHaveBeenCalledWith(mockAnchors[1]);
+  });
+
+  it('Markdown 文档切片按分块渲染，命中切片挂载 data-chunk-index 与焦点高亮样式 (Spec 契约)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'doc_md',
+          name: '规格文档.md',
+          version: 1,
+          chunkCount: 2,
+          fileType: 'markdown',
+          status: 'ready',
+          content: '全量内容（兜底）',
+          chunks: [
+            {
+              chunkIndex: 0,
+              content: '切片 0 的 Markdown 文本内容',
+              headingPath: '第一节',
+              pageNumber: null,
+            },
+            {
+              chunkIndex: 1,
+              content: '切片 1 的 Markdown 命中重点内容',
+              headingPath: '第二节 重点',
+              pageNumber: null,
+            },
+          ],
+        },
+      }),
+    });
+
+    const { container } = render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_md"
+        documentName="规格文档.md"
+        documentVersion={1}
+        focusedAnchor={{ chunkIndex: 1, headingPath: '第二节 重点' }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('规格文档.md')).toBeInTheDocument();
+    });
+
+    // 验证每个切片节点均携带 data-chunk-index 属性（Portal 挂载在 document.body 上）
+    const chunk0 = document.querySelector('[data-chunk-index="0"]');
+    const chunk1 = document.querySelector('[data-chunk-index="1"]');
+
+    expect(chunk0).toBeInTheDocument();
+    expect(chunk1).toBeInTheDocument();
+
+    // 验证未命中的切片 0 为常规边框
+    expect(chunk0).toHaveClass('border-border/50');
+    expect(chunk0).not.toHaveClass('border-primary');
+
+    // 验证命中的切片 1 获得焦点高亮样式 (border-primary, bg-primary/10)
+    expect(chunk1).toHaveClass('border-primary');
+    expect(chunk1).toHaveClass('bg-primary/10');
+  });
+
+  it('文档处于索引中（processing）状态时展示专属状态提示面板 (US-12)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'doc_proc',
+          name: '待处理文件.md',
+          version: 1,
+          chunkCount: 0,
+          status: 'processing',
+          fileType: 'markdown',
+          content: '',
+          chunks: [],
+        },
+      }),
+    });
+
+    render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_proc"
+        documentName="待处理文件.md"
+        initialStatus="processing"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('文档正在切片索引中')).toBeInTheDocument();
+      expect(screen.getByText(/该文档正在后台进行智能切片与向量化构建/)).toBeInTheDocument();
+      expect(screen.getByText('索引中')).toBeInTheDocument();
+    });
+  });
+
+  it('文档处于失败（failed）状态时展示结构化失败原因面板 (US-12)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'doc_failed',
+          name: '损坏文件.pdf',
+          version: 1,
+          chunkCount: 0,
+          status: 'failed',
+          errorMessage: 'PDF 文件损坏或包含不支持的加密算法',
+          fileType: 'pdf',
+          content: '',
+          chunks: [],
+        },
+      }),
+    });
+
+    render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_failed"
+        documentName="损坏文件.pdf"
+        initialStatus="failed"
+        initialErrorMessage="PDF 文件损坏或包含不支持的加密算法"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('文档解析或切片失败')).toBeInTheDocument();
+      expect(screen.getByText('PDF 文件损坏或包含不支持的加密算法')).toBeInTheDocument();
+      expect(screen.getByText('失败')).toBeInTheDocument();
+    });
   });
 });

@@ -119,6 +119,35 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(json.data.name).toBe('架构规范.md');
     expect(json.data.version).toBe(1);
     expect(json.data.chunkCount).toBe(12);
+    expect(json.data.status).toBe('ready');
+  });
+
+  it('针对失败（failed）状态文档：返回结构化失败状态与原因面板数据，不抛出 500 (US-12)', async () => {
+    const mockDoc = {
+      id: 'doc_failed',
+      knowledgeBaseId: 'kb_1',
+      userId: 'user_1',
+      name: '解析异常.md',
+      storageKey: 'docs/user_1/doc_failed/v1/解析异常.md',
+      status: 'failed',
+      errorMessage: '文件编码格式异常，无法完成切片',
+      version: 1,
+      chunkCount: 0,
+      deletedAt: null,
+    };
+    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
+
+    const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_failed/content');
+    const res = await GET(req, {
+      params: Promise.resolve({ id: 'kb_1', docId: 'doc_failed' }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.status).toBe('failed');
+    expect(json.data.errorMessage).toBe('文件编码格式异常，无法完成切片');
+    expect(json.data.content).toBe('');
   });
 
   it('针对 PDF 文档：聚合切片结构化文本并附带带签名的原版临时下载 URL', async () => {

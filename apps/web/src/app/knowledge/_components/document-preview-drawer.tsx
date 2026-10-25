@@ -57,6 +57,8 @@ export interface DocumentPreviewDrawerProps {
   documentId: string | null;
   documentName?: string;
   documentVersion?: number;
+  initialStatus?: 'pending' | 'processing' | 'ready' | 'failed';
+  initialErrorMessage?: string | null;
   /** 当前选中的切片锚点 */
   focusedAnchor?: FocusedCitationAnchor;
   /** 当前文档命中过的所有切片集合（用于导航器） */
@@ -70,6 +72,8 @@ interface DocumentContentData {
   name: string;
   version: number;
   chunkCount: number;
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+  errorMessage?: string | null;
   fileType: 'markdown' | 'text' | 'pdf';
   content: string;
   originalUrl?: string | null;
@@ -88,6 +92,8 @@ export function DocumentPreviewDrawer({
   documentId,
   documentName,
   documentVersion,
+  initialStatus,
+  initialErrorMessage,
   focusedAnchor,
   allMatchedAnchors = [],
   onSelectAnchor,
@@ -95,6 +101,10 @@ export function DocumentPreviewDrawer({
   const [data, setData] = React.useState<DocumentContentData | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // 计算当前有效文档状态与错误提示 (US-12)
+  const effectiveStatus = data?.status || initialStatus || 'ready';
+  const effectiveErrorMessage = data?.errorMessage || initialErrorMessage || null;
 
   // 滚动容器引用与高亮节点引用
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
@@ -227,6 +237,20 @@ export function DocumentPreviewDrawer({
                       </span>
                     </>
                   )}
+                  {effectiveStatus !== 'ready' && (
+                    <>
+                      <span>•</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          effectiveStatus === 'failed'
+                            ? 'bg-destructive/15 text-destructive'
+                            : 'bg-secondary text-secondary-foreground'
+                        }`}
+                      >
+                        {effectiveStatus === 'failed' ? '失败' : '索引中'}
+                      </span>
+                    </>
+                  )}
                 </DialogDescription>
               </div>
             </div>
@@ -238,7 +262,7 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] h-9 px-3 rounded-xl text-xs gap-1.5"
+                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center"
                 >
                   <a href={data.originalUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -274,13 +298,13 @@ export function DocumentPreviewDrawer({
                 )}
               </div>
 
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center space-x-1.5">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handleNavigateAnchor('prev')}
                   disabled={allMatchedAnchors.length <= 1}
-                  className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs"
+                  className="min-h-[44px] px-3.5 rounded-xl text-xs flex items-center"
                 >
                   <ChevronLeft className="w-3.5 h-3.5 mr-0.5" />
                   <span>上一个</span>
@@ -290,7 +314,7 @@ export function DocumentPreviewDrawer({
                   size="sm"
                   onClick={() => handleNavigateAnchor('next')}
                   disabled={allMatchedAnchors.length <= 1}
-                  className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs"
+                  className="min-h-[44px] px-3.5 rounded-xl text-xs flex items-center"
                 >
                   <span>下一个</span>
                   <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
@@ -333,8 +357,43 @@ export function DocumentPreviewDrawer({
             </div>
           )}
 
-          {!loading && !error && data && (
-            <div className="prose dark:prose-invert max-w-none text-foreground/90 text-sm leading-relaxed space-y-4">
+          {/* 文档处理中或失败状态面板 (US-12) */}
+          {!loading && !error && effectiveStatus !== 'ready' && (
+            <div className="p-8 text-center flex flex-col items-center justify-center space-y-4">
+              {effectiveStatus === 'failed' ? (
+                <>
+                  <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold text-destructive">文档解析或切片失败</h4>
+                    <p className="text-xs text-muted-foreground max-w-sm break-words">
+                      {effectiveErrorMessage || '文档解析或向量化处理异常，请检查文件编码或格式后重新上传'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center animate-pulse">
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold text-foreground">文档正在切片索引中</h4>
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                      该文档正在后台进行智能切片与向量化构建，处理完成后即可查阅完整排版并定位切片。
+                    </p>
+                  </div>
+                  <div className="w-full max-w-xs space-y-2 pt-2">
+                    <Skeleton className="h-4 w-full rounded-md" />
+                    <Skeleton className="h-4 w-4/5 rounded-md mx-auto" />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!loading && !error && effectiveStatus === 'ready' && data && (
+            <div className="max-w-none text-foreground/90 text-sm leading-relaxed space-y-4">
               {/* PDF 格式切片分段渲染 */}
               {data.fileType === 'pdf' && data.chunks && data.chunks.length > 0 ? (
                 <div className="space-y-4">
@@ -366,11 +425,46 @@ export function DocumentPreviewDrawer({
                     );
                   })}
                 </div>
+              ) : data.chunks && data.chunks.length > 0 ? (
+                /* Markdown / TXT 分块切片渲染并支持定位与高亮联动 (Spec 契约) */
+                <div className="space-y-4">
+                  {data.chunks.map((c) => {
+                    const isMatched = focusedAnchor?.chunkIndex === c.chunkIndex;
+                    return (
+                      <div
+                        key={`md_chk_${c.chunkIndex}`}
+                        ref={isMatched ? highlightedRef : undefined}
+                        data-chunk-index={c.chunkIndex}
+                        className={`p-4 rounded-xl border transition-all ${
+                          isMatched
+                            ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/40'
+                            : 'bg-muted/10 border-border/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground pb-2 border-b border-border/30 mb-2">
+                          <span className="flex items-center space-x-1 font-medium text-foreground">
+                            <Hash className="w-3 h-3 text-primary" />
+                            <span>切片 #{c.chunkIndex + 1}</span>
+                            {c.headingPath && <span>· {c.headingPath}</span>}
+                          </span>
+                          {c.pageNumber !== null && <span>P{c.pageNumber}</span>}
+                        </div>
+                        <div className="prose dark:prose-invert max-w-none text-foreground/90 text-sm leading-relaxed">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                            {c.content}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
-                /* Markdown / TXT 原生渲染 */
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {data.content}
-                </ReactMarkdown>
+                /* 兜底：纯正文 Markdown 渲染 */
+                <div className="prose dark:prose-invert max-w-none text-foreground/90 text-sm leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {data.content}
+                  </ReactMarkdown>
+                </div>
               )}
             </div>
           )}

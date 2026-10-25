@@ -52,6 +52,21 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const lastDotIndex = fileName.lastIndexOf('.');
     const ext = lastDotIndex !== -1 ? fileName.slice(lastDotIndex).toLowerCase() : '';
 
+    // 若文档状态为失败：直接返回结构化失败状态模型，不抛 500，供前端展示失败原因面板 (US-12)
+    if (document.status === 'failed') {
+      return createSuccessResponse({
+        id: document.id,
+        name: document.name,
+        version: document.version,
+        chunkCount: document.chunkCount,
+        status: 'failed',
+        errorMessage: document.errorMessage || '文档解析索引失败',
+        fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'text' : 'markdown',
+        content: '',
+        chunks: [],
+      });
+    }
+
     // 查询该版本切片元数据（用于高亮锚点与章节导航）
     const chunks = await prisma.documentChunk.findMany({
       where: {
@@ -86,6 +101,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
         name: document.name,
         version: document.version,
         chunkCount: document.chunkCount,
+        status: document.status,
+        errorMessage: document.errorMessage,
         fileType: 'pdf',
         content: fullContent,
         originalUrl,
@@ -103,6 +120,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
       console.warn('[document/content] 从存储层读取原文件失败，回退从切片聚合正文:', storageErr);
       if (chunks.length > 0) {
         content = chunks.map((c) => c.content).join('\n\n');
+      } else if (document.status === 'pending' || document.status === 'processing') {
+        // 处理中且无切片：优雅返回空内容模型，供前端展示处理中状态 (US-12)
+        content = '';
       } else {
         throw storageErr;
       }
@@ -113,6 +133,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
       name: document.name,
       version: document.version,
       chunkCount: document.chunkCount,
+      status: document.status,
+      errorMessage: document.errorMessage,
       fileType: ext === '.txt' ? 'text' : 'markdown',
       content,
       chunks,

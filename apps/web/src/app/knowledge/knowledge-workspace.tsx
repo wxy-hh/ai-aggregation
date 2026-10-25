@@ -85,6 +85,8 @@ export function KnowledgeWorkspace() {
     documentId: string | null;
     documentName?: string;
     documentVersion?: number;
+    initialStatus?: 'pending' | 'processing' | 'ready' | 'failed';
+    initialErrorMessage?: string | null;
   }>({
     isOpen: false,
     documentId: null,
@@ -364,9 +366,11 @@ export function KnowledgeWorkspace() {
                               documentId: doc.id,
                               documentName: doc.name,
                               documentVersion: doc.version,
+                              initialStatus: doc.status,
+                              initialErrorMessage: doc.errorMessage,
                             })
                           }
-                          className="min-h-[36px] h-8 px-2.5 rounded-lg text-xs text-primary hover:bg-primary/10 gap-1"
+                          className="min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 gap-1.5 flex items-center"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>预览</span>
@@ -456,6 +460,8 @@ export function KnowledgeWorkspace() {
         documentId={previewState.documentId}
         documentName={previewState.documentName}
         documentVersion={previewState.documentVersion}
+        initialStatus={previewState.initialStatus}
+        initialErrorMessage={previewState.initialErrorMessage}
       />
       </div>
     </div>
