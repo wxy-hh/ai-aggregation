@@ -42,7 +42,7 @@ disable-model-invocation: true
 1. 从 `templates/qa-workflow.md` 生成 `docs/agents/qa-workflow.md`，适配核心链路、dev 命令、端口、E2E 参数及测试命令 `{TEST_COMMAND}`。
 2. 从 `templates/prompt-shortcuts.md` 复制思维快捷键；已有文件跳过。
 3. 向真实 `CLAUDE.md` 或 `AGENTS.md` 注入 `templates/claude-qa-directive.md`，不清空其他段落，不直接编辑符号链接。
-4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`implement`、`implement-spec`、`handoff` 和 issue tracker 的项目约定。
+4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`implement`、`implement-spec`、`code-review`、`handoff` 和 issue tracker 的项目约定。
 5. 将 `templates/qa-check.mjs`、`templates/review-package.mjs` 与 `templates/qa-run.mjs` 复制到 `tooling/scripts/`；不增加 npm 依赖，不得修改宿主 package.json，不添加任何 scripts；三个核心工具直接由 Node 调用。
 6. 确保 `.scratch/` 被忽略；按用户选择设置 `.claude/skills/` 入库规则，仅忽略本地配置和临时 Worktree。
 7. 创建 `docs/handoff/.gitkeep`（目录不存在时）。不得新增 PreToolUse、Stop、SessionStart 或 Git Hook。
@@ -52,6 +52,7 @@ disable-model-invocation: true
 报告实际写入、跳过和冲突项，并检查：
 
 - Node 版本满足项目要求，依赖已安装；
+- `implement` / `implement-spec` 能在验收后实际调用 `code-review`，审查来源可按宿主能力核对，`结果: PASS` 只表示机器校验通过，不替代独立审查与人工终审；
 - `node tooling/scripts/qa-check.mjs --help` 能显示用法（该用法允许退出 1 表示缺少参数）；
 - 能用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成不可覆盖的证据日志，同名标签需换新；
 - dev 服务与端口锚点可用；

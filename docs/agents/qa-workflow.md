@@ -13,8 +13,8 @@
        └─[3B. 测试规划] /qa-test-planner → qa-plan.md → qa-check plan
 [4. 串行实现] init / add + TDD + qa-run → 单元、集成与静态检查
 [5. 真实验收] 按接缝执行 → qa-check acceptance
-[6. 双轴审查] collect + 独立 Standards / Spec → review-report.md
-[7. 交付收口] 最终代码交付验证 → qa-check review → 人工终审
+[6. 双轴审查] 调用 /code-review → collect + 独立 Standards / Spec → review-report.md
+[7. 交付收口] code-review 最终交付验证 → qa-check review（机器校验通过）→ 人工终审
 ```
 
 ## 二、适用范围与剪裁
@@ -82,6 +82,8 @@ QA Kind: feature
 ```
 
 - 每条 US 至少由一个 TC 覆盖；Seam 选最高的合适接缝，browser 只用于 DOM、交互和视觉，其他断言下沉到 api、integration、unit 或 static。
+- 对短路、权限、状态切换、降级等关键决策，按风险核对触发条件、排除条件和降级路径；`Covers` 只承担追踪，不等于风险覆盖完整，不机械要求每个 US、P0 或 TC 都增加正反用例。
+- 系统侧结果优先由低成本合适接缝证明；browser 断言须关联本次操作新产生的用户可见结果，不得以页面旧文本、按钮可用或固定等待代替目标行为。视口、输入方式和数值阈值须与冻结断言一致，环境降级或证据不足记 BLOCKED，不改弱断言冒充通过。
 - 证据只认特性目录内文件；命令通过 qa-run 真实执行，PASS 日志必须 exit 0。browser 需要独立截图加日志，其他接缝需要日志，同一截图不得跨 TC。
 - `## 修复前复现` 仅在 `QA Kind: fix` 时必需；每个 TC 都要引用同 argv、早于绿日志且 tree 不同的红日志。
 - 交付验证在规划时写全量命令，按改动范围选择 typecheck、测试和 lint，不得在审查前临时缩小。
@@ -114,19 +116,21 @@ QA Kind: feature
 
 ### 5. 双轴审查（阶段 6）
 
-- 运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，生成 diff 与 v2 manifest；不得为审查 `git add -N` 或自动 commit。
-- 中大型改动的 Standards 与 Spec 必须由独立于实现者的审查者完成；报告写明审查方式，宿主提供子代理 ID 时一并记录。
+- 通过宿主真实技能机制调用 `code-review`，由其统一组织 collect、独立 Standards / Spec、报告与三档分流。未实际调用或没有独立结果时保持“待独立审查”；实现者不得凭空生成 `review-report.md` 或填写“独立审查”，主 Agent 只能汇总真实审查返回并保留原结论。
+- 由 `code-review` 运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，生成 diff 与 v2 manifest；不得为审查 `git add -N` 或自动 commit。
+- 中大型改动的 Standards 与 Spec 必须由独立于实现者的审查者完成；报告写明审查方式，宿主提供技能轨迹或子代理 ID 时一并记录，没有此类标识时记录可定位的独立会话或人工审查者。
 - `review-report.md` 必须含 `## Standards`、`## Spec`、`## 证据审计`、`## Spec 对账`、`## 三档分流` 和 `## 范围说明`。
-- 证据审计逐个 TC 核对接缝、入口、输入事件、注入范围、截图独立性与新鲜度、数值断言和过程脚本；Spec 对账只采信报告中的表格。
+- 证据审计逐个 TC 对照冻结断言与过程脚本，核对接缝、入口、输入事件、注入范围、截图独立性与新鲜度、数值断言和实际目标行为，不只复述“真实有效”；Spec 对账只采信报告中的表格。
+- NOTE 处置按变化性质决定：核心实现变化重跑受影响验收，能确认仅为非行为文档变化时记录不重跑理由，无法判断时保持 BLOCKED；TC tree 不一致仍为 NOTE，不改为一律 FAIL。
 - 范围外改动属于本任务时 `add` 后重新 collect，其他来源在范围说明中逐项解释；`preexisting` 未进入审查包时如实保留 NOTE。
 - 代码变化后重新 collect 并复审过期内容；转专项与遗留事项写入报告，不改写 qa-plan 来消除问题。
 
 ### 6. 交付验证（阶段 7）
 
-- 在最终代码上通过 qa-run 执行计划声明的每条交付命令，并更新 `## 交付验证` 的日志路径。
+- 由 `code-review` 在最终代码上通过 qa-run 执行计划声明的每条交付命令，并更新 `## 交付验证` 的日志路径；实现者不另跑替代审查的交付流程。
 - 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对交付日志 argv、exit、tree 以及审查包新鲜度。
-- “代码审查状态：已通过”只能基于本会话上述命令输出的 `结果: PASS`，汇报时附上该行；其他阶段结果不能替代。
-- 汇报的测试结论必须与最后一次实际运行一致，不自动重试或只选择有利输出；人工可重跑检查器复核。
+- 本会话上述命令输出的 `结果: PASS` 只称“机器校验通过”，汇报须附该行；真实 `code-review` 及独立 Standards / Spec 结果才构成“独立审查完成”，两者不能互相替代。
+- 汇报的测试结论必须与最后一次实际运行一致，不自动重试或只选择有利输出；人工可重跑检查器复核，人工终审单独认定。
 
 ### 7. 人工终审
 

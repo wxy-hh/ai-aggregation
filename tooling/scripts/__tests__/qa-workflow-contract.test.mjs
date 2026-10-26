@@ -11,10 +11,12 @@ const paths = {
   toTickets: '.claude/skills/to-tickets/SKILL.md',
   codeReview: '.claude/skills/code-review/SKILL.md',
   implement: '.claude/skills/implement/SKILL.md',
+  implementSpec: '.claude/skills/implement-spec/SKILL.md',
   setup: '.claude/skills/setup-qa-workflow/SKILL.md',
   workflow: 'docs/agents/qa-workflow.md',
   workflowTemplate: '.claude/skills/setup-qa-workflow/templates/qa-workflow.md',
   claudeTemplate: '.claude/skills/setup-qa-workflow/templates/claude-qa-directive.md',
+  guide: 'docs/agents/qa-workflow-guide.md',
   root: 'CLAUDE.md',
   context: 'CONTEXT.md',
   settings: '.claude/settings.json',
@@ -104,7 +106,7 @@ test('门禁只在首轮、阶段切换与交付时完整声明（TC11）', asyn
   assert.ok(root.trim().split('\n').length <= 69);
 });
 
-test('完成声明以本会话 review 的 PASS 为据且审查技能列出完成标志（TC11、TC12）', async () => {
+test('机器校验保留 PASS 输出且审查技能列出完成标志（TC11、TC12、TC13）', async () => {
   const [root, workflow, codeReview] = await Promise.all([
     read(paths.root),
     read(paths.workflow),
@@ -117,6 +119,47 @@ test('完成声明以本会话 review 的 PASS 为据且审查技能列出完成
   for (const required of ['完成标志', '审查方式', '证据审计', '范围说明']) {
     assert.match(codeReview, new RegExp(required));
   }
+});
+
+test('实现收口先真实调用 code-review，再进入机器交付校验（TC13）', async () => {
+  const contents = await Promise.all([
+    read(paths.implement),
+    read(paths.implementSpec),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /调用 `code-review`/);
+    assert.match(content, /待独立审查/);
+    assert.match(content, /不得凭空生成/);
+    assert.match(content, /结果: PASS/);
+    assert.ok(content.indexOf('调用 `code-review`') < content.indexOf('结果: PASS'));
+  }
+});
+
+test('机器 PASS 不替代独立审查和人工终审（TC13）', async () => {
+  const contents = await Promise.all([
+    read(paths.workflow),
+    read(paths.root),
+    read(paths.codeReview),
+    read(paths.guide),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /机器校验通过/);
+    assert.match(content, /独立审查/);
+    assert.match(content, /人工终审/);
+  }
+});
+
+test('规划与证据审计覆盖关键分支、原断言和 NOTE 处置（TC13）', async () => {
+  const planner = await read(paths.qaPlanner);
+  assert.match(planner, /触发条件/);
+  assert.match(planner, /排除条件/);
+  assert.match(planner, /降级路径/);
+  assert.match(planner, /合适接缝/);
+
+  const reviewer = await read(paths.codeReview);
+  assert.match(reviewer, /冻结[^\n]*断言/);
+  assert.match(reviewer, /过程脚本/);
+  assert.match(reviewer, /NOTE[^\n]*处置/);
 });
 
 test('正本与 implement 写明探活、单文件测试、qa-run 和合规登录（TC10）', async () => {
@@ -162,4 +205,23 @@ test('通用安装器不注入宿主 scripts，模板使用可移植调用（TC1
   }
   assert.match(workflow, /node tooling\/scripts\/qa-run\.mjs/);
   assert.match(workflow, /node tooling\/scripts\/qa-check\.mjs/);
+});
+
+test('通用安装模板同步审查交接与完成语义（TC13）', async () => {
+  const [workflow, directive, customizations, setup] = await Promise.all([
+    read(paths.workflowTemplate),
+    read(paths.claudeTemplate),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+    read(paths.setup),
+  ]);
+  for (const content of [workflow, directive, customizations]) {
+    assert.match(content, /code-review/);
+    assert.match(content, /待独立审查/);
+    assert.match(content, /机器校验通过/);
+    assert.match(content, /人工终审/);
+  }
+  assert.match(workflow, /触发条件/);
+  assert.match(workflow, /NOTE 处置/);
+  assert.match(customizations, /## \d+\. `code-review`/);
+  assert.match(setup, /注入[^\n]*`code-review`/);
 });
