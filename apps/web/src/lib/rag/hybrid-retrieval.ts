@@ -38,12 +38,14 @@ import { dict } from '@node-rs/jieba/dict';
  * 来源定位锚点（用于前端跳转高亮、核验溯源）
  */
 export interface CitationAnchor {
+  knowledgeBaseId?: string;
   documentId: string;
   documentName: string;
   documentVersion: number;
   pageNumber: number | null;
   headingPath: string | null;
   chunkIndex: number;
+  snippet?: string;
 }
 
 /**
@@ -301,12 +303,14 @@ export async function hybridRetrieval(
             similarity: fused.denseScore,
             lexicalScore: fused.lexicalScore,
             citationAnchor: {
+              knowledgeBaseId: options.knowledgeBaseId,
               documentId: raw.documentId,
               documentName: raw.documentName,
               documentVersion: raw.documentVersion,
               pageNumber: raw.pageNumber,
               headingPath: raw.headingPath,
               chunkIndex: raw.chunkIndex,
+              snippet: raw.content ? raw.content.slice(0, 300) : undefined,
             },
           };
         });
@@ -345,12 +349,14 @@ export async function hybridRetrieval(
         similarity: fused.denseScore,
         lexicalScore: fused.lexicalScore,
         citationAnchor: {
+          knowledgeBaseId: options.knowledgeBaseId,
           documentId: raw.documentId,
           documentName: raw.documentName,
           documentVersion: raw.documentVersion,
           pageNumber: raw.pageNumber,
           headingPath: raw.headingPath,
           chunkIndex: raw.chunkIndex,
+          snippet: raw.content ? raw.content.slice(0, 300) : undefined,
         },
       };
     });

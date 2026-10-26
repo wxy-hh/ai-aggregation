@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MessageItem } from './message-item';
 import type { Message } from '@/stores/chat-store';
 
@@ -77,5 +77,53 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     const metaRow = screen.getByTestId('retrieval-source-meta');
     expect(metaRow).toBeInTheDocument();
     expect(metaRow).toHaveTextContent('已参考知识库来源 · 2 处引用');
+  });
+
+  it('点击引用角标或参考来源折叠卡片触发 onOpenCitation 回调 (TC01/TC04 / ADR-0025)', async () => {
+    const onOpenCitation = vi.fn();
+    const mockCitation = {
+      knowledgeBaseId: 'kb-test-1',
+      documentId: 'doc-100',
+      documentName: '珀金协议规范',
+      documentVersion: 1,
+      pageNumber: 2,
+      headingPath: '2.1 熔断条件',
+      chunkIndex: 0,
+      snippet: '连续失败 3 次触发熔断。',
+    };
+
+    const message: Message = {
+      id: 'msg-cite-test',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
+      isStreaming: false,
+      citations: {
+        1: mockCitation,
+      },
+    };
+
+    render(<MessageItem message={message} onOpenCitation={onOpenCitation} />);
+
+    // 1. 验证底部渲染参考来源卡片 (CitationReferenceCard)
+    const refCard = screen.getByTestId('citation-reference-card');
+    expect(refCard).toBeInTheDocument();
+    expect(refCard).toHaveTextContent('参考来源');
+    expect(refCard).toHaveTextContent('1 处引用');
+
+    // 2. 展开参考来源列表
+    const toggleBtn = screen.getByTestId('citation-reference-card-toggle');
+    fireEvent.click(toggleBtn);
+    expect(screen.getByText(/珀金协议规范/)).toBeInTheDocument();
+
+    // 3. 点击折叠列表中的条目，触发 onOpenCitation
+    const itemBtn = screen.getByTestId('citation-ref-item-1');
+    fireEvent.click(itemBtn);
+    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+
+    // 4. 点击正文行内角标 [^1]，同样直接触发 onOpenCitation (TC01)
+    onOpenCitation.mockClear();
+    const citeBadge = screen.getByTestId('citation-badge-1');
+    fireEvent.click(citeBadge);
+    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
   });
 });

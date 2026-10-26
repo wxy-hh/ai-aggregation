@@ -364,4 +364,64 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(screen.getByText('失败')).toBeInTheDocument();
     });
   });
+
+  it('接口 404 且提供 fallbackSnippet 时优雅降级渲染切片快照 (TC07 / ADR-0025)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        success: false,
+        error: '文档已被删除或无权访问',
+      }),
+    });
+
+    render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_deleted"
+        documentName="已删除文档.md"
+        fallbackSnippet="这是当时问答时保存的切片快照正文内容。"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('citation-snapshot-fallback')).toBeInTheDocument();
+      expect(screen.getByText('源文档已被删除或更新')).toBeInTheDocument();
+      expect(screen.getByText(/这是当时问答时保存的切片快照正文内容/)).toBeInTheDocument();
+    });
+  });
+
+  it('modal=false 时隐藏全局遮罩实现非模态边看边聊 (TC02 / ADR-0025)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'doc_1',
+          name: '测试文档.md',
+          version: 1,
+          content: '正文',
+        },
+      }),
+    });
+
+    render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_1"
+        modal={false}
+      />
+    );
+
+    await waitFor(() => {
+      const content = screen.getByTestId('document-preview-drawer-content');
+      expect(content).toBeInTheDocument();
+      // 在 modal=false 时 DialogOverlay 应被隐藏
+      const overlay = document.querySelector('.bg-black\\/40');
+      expect(overlay).toBeNull();
+    });
+  });
 });

@@ -14,6 +14,8 @@ import { AgentTrace } from './agent-trace';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
 import { CitationBadge, wrapCitationsInReactNode, injectCitationBadges } from './citation-badge';
+import { CitationReferenceCard } from './citation-reference-card';
+import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
 import { extractCitationIndices } from '@/lib/rag/citation';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
@@ -36,6 +38,7 @@ export function formatUsageText(usage: NonNullable<Message['usage']>): string {
 interface MessageItemProps {
   message: Message;
   onRegenerate?: (messageId: string) => void;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
 }
 
 // 附件列表组件
@@ -56,10 +59,18 @@ const AttachmentList = memo(function AttachmentList({
 });
 
 // 流式内容组件 - 呈现纯文本与实时引用徽标 + 光标
-const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
+const StreamingContent = memo(function StreamingContent({
+  content,
+  anchorMap,
+  onOpenCitation,
+}: {
+  content: string;
+  anchorMap?: Map<number, CitationAnchor>;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
+}) {
   return (
     <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700 dark:text-slate-200">
-      {injectCitationBadges(content)}
+      {injectCitationBadges(content, anchorMap, onOpenCitation)}
       <span className="ml-1 inline-block h-5 w-2 rounded-sm bg-blue-500 align-[-3px] animate-pulse" />
     </div>
   );
@@ -187,7 +198,15 @@ const ActionButtons = memo(function ActionButtons({
 });
 
 // 静态 Markdown 内容组件 - 只在非流式时渲染
-const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+const MarkdownContent = memo(function MarkdownContent({
+  content,
+  anchorMap,
+  onOpenCitation,
+}: {
+  content: string;
+  anchorMap?: Map<number, CitationAnchor>;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
+}) {
   // 提取子元素中的纯文本内容，过滤掉复杂对象
   const getTextContent = useCallback((child: any): string => {
     if (typeof child === 'string') return child;
@@ -240,7 +259,14 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
         ) {
           const num = parseInt(String(children), 10);
           if (!isNaN(num)) {
-            return <CitationBadge index={num} />;
+            const anchor = anchorMap?.get(num);
+            return (
+              <CitationBadge
+                index={num}
+                anchor={anchor}
+                onOpenCitation={onOpenCitation}
+              />
+            );
           }
         }
         return (
@@ -251,16 +277,16 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
       },
       // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div，并包装可点击 [^n] 引用
       p({ children, ...props }: any) {
-        const wrapped = wrapCitationsInReactNode(children);
+        const wrapped = wrapCitationsInReactNode(children, anchorMap, onOpenCitation);
         return <SafeParagraph {...props}>{wrapped}</SafeParagraph>;
       },
       // 列表项同样支持解析正文内 [^n] 引用
       li({ children, ...props }: any) {
-        const wrapped = wrapCitationsInReactNode(children);
+        const wrapped = wrapCitationsInReactNode(children, anchorMap, onOpenCitation);
         return <li {...props}>{wrapped}</li>;
       },
     }),
-    []
+    [anchorMap, onOpenCitation, getTextContent]
   );
 
   return (
@@ -512,9 +538,26 @@ const ThinkingBlock = memo(function ThinkingBlock({
 });
 
 // 主消息组件
-export const MessageItem = memo(function MessageItem({ message, onRegenerate }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({
+  message,
+  onRegenerate,
+  onOpenCitation,
+}: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
+
+  // 构造 1-based 物理切片锚点索引表 (ADR-0025)
+  const anchorMap = useMemo(() => {
+    if (!message.citations) return undefined;
+    const map = new Map<number, CitationAnchor>();
+    for (const [key, anchor] of Object.entries(message.citations)) {
+      const idx = Number(key);
+      if (!isNaN(idx) && anchor) {
+        map.set(idx, anchor);
+      }
+    }
+    return map;
+  }, [message.citations]);
   // 是否持有 agent 过程记录（工具调用或过程旁白；决定过程卡片是否渲染；非 agent 轮次自然为 0）
   const hasAgentTrace =
     !isUser && Boolean(message.toolCalls?.length || message.agentNotes?.length);
@@ -662,11 +705,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                 ) : isStreaming ? (
                   // 推理阶段（无正文）此处渲染为空，流式光标由思考块内部承担
                   message.content ? (
-                    <StreamingContent content={message.content} />
+                    <StreamingContent
+                      content={message.content}
+                      anchorMap={anchorMap}
+                      onOpenCitation={onOpenCitation}
+                    />
                   ) : null
                 ) : (
                   <>
-                    <MarkdownContent content={message.content} />
+                    <MarkdownContent
+                      content={message.content}
+                      anchorMap={anchorMap}
+                      onOpenCitation={onOpenCitation}
+                    />
                     {message.truncationWarning && (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                         {message.truncationWarning}
@@ -703,6 +754,13 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                           {citationIndices.length > 0 ? ` · ${citationIndices.length} 处引用` : ''}
                         </span>
                       </div>
+                    )}
+                    {/* 知识库引用来源折叠卡片 (ADR-0025 / TC04) */}
+                    {!isUser && message.citations && Object.keys(message.citations).length > 0 && (
+                      <CitationReferenceCard
+                        citations={message.citations}
+                        onSelectCitation={onOpenCitation}
+                      />
                     )}
                   </>
                 )}

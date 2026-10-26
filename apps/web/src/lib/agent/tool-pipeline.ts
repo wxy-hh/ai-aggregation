@@ -38,6 +38,8 @@ export interface ToolCallOutcome {
   attachment?: ToolExecutionResult['attachment'];
   /** 工具真实执行耗时（毫秒；成功/失败/超时均计时；skip 与缓存命中保持缺省） */
   durationMs?: number;
+  /** 结构化切片引用字典（仅知识库检索等工具携带） */
+  citations?: ToolExecutionResult['citations'];
 }
 
 /** 一次工具调用（由编排器从模型决策步投影而来） */
@@ -322,6 +324,7 @@ export function createToolExecutionPipeline(
           contentForModel: guarded,
           summaryForDisplay: outcome.summaryForDisplay,
           ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+          ...(outcome.citations ? { citations: outcome.citations } : {}),
         },
         callStart
       );

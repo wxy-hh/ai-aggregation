@@ -37,6 +37,8 @@ export interface ToolExecutionResult {
   summaryForDisplay: string;
   /** 图像类工具的附件（进 Message.attachments，复用前端既有渲染通道） */
   attachment?: { kind: 'image'; url: string };
+  /** 结构化切片引用映射字典（进 Message.citations，供前端直达溯源抽屉） */
+  citations?: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor>;
 }
 
 /** 工具规格 */

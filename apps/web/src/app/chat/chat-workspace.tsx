@@ -22,6 +22,11 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
 import { useSettingsStore } from '@/stores/settings-store';
 import { CAPABILITY_PACKS } from '@repo/shared';
+import {
+  DocumentPreviewDrawer,
+  type MatchedCitationAnchor,
+} from '@/app/knowledge/_components/document-preview-drawer';
+import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -172,6 +177,27 @@ export default function ChatWorkspace() {
   // 搜索框的输入内容
   // 用于过滤左侧的历史对话列表
   const [searchQuery, setSearchQuery] = useState('');
+
+  // 知识库文档全文预览抽屉状态 (ADR-0025 / KB-CHAT-CITE)
+  const [citationPreviewState, setCitationPreviewState] = useState<{
+    isOpen: boolean;
+    knowledgeBaseId: string | null;
+    documentId: string | null;
+    documentName?: string;
+    documentVersion?: number;
+    focusedAnchor?: {
+      chunkIndex: number;
+      headingPath?: string | null;
+      pageNumber?: number | null;
+    };
+    allMatchedAnchors: MatchedCitationAnchor[];
+    fallbackSnippet?: string;
+  }>({
+    isOpen: false,
+    knowledgeBaseId: null,
+    documentId: null,
+    allMatchedAnchors: [],
+  });
 
   // ============ Refs（引用） ============
 
@@ -557,6 +583,59 @@ export default function ChatWorkspace() {
       }
     },
     [switchProvider, currentConversationId, updateConversationSettings]
+  );
+
+  // ============ 打开知识库切片全文预览抽屉 ============
+  const handleOpenCitation = useCallback(
+    (anchor: CitationAnchor) => {
+      // 聚合所有属于该文档的切片（从当前消息列表中归集，激活 ChunkNavigator 穿梭）
+      const anchors: MatchedCitationAnchor[] = [];
+      const seenIndices = new Set<number>();
+
+      for (const msg of messages) {
+        if (!msg.citations) continue;
+        for (const c of Object.values(msg.citations)) {
+          if (
+            (c.documentId === anchor.documentId || c.documentName === anchor.documentName) &&
+            !seenIndices.has(c.chunkIndex)
+          ) {
+            seenIndices.add(c.chunkIndex);
+            anchors.push({
+              chunkIndex: c.chunkIndex,
+              headingPath: c.headingPath,
+              pageNumber: c.pageNumber,
+            });
+          }
+        }
+      }
+
+      anchors.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+      setCitationPreviewState({
+        isOpen: true,
+        knowledgeBaseId: anchor.knowledgeBaseId || null,
+        documentId: anchor.documentId,
+        documentName: anchor.documentName,
+        documentVersion: anchor.documentVersion,
+        focusedAnchor: {
+          chunkIndex: anchor.chunkIndex,
+          headingPath: anchor.headingPath,
+          pageNumber: anchor.pageNumber,
+        },
+        allMatchedAnchors:
+          anchors.length > 0
+            ? anchors
+            : [
+                {
+                  chunkIndex: anchor.chunkIndex,
+                  headingPath: anchor.headingPath,
+                  pageNumber: anchor.pageNumber,
+                },
+              ],
+        fallbackSnippet: anchor.snippet,
+      });
+    },
+    [messages]
   );
 
   // ============ 搜索过滤逻辑 ============
@@ -1141,6 +1220,7 @@ export default function ChatWorkspace() {
                                   ? () => void reload(prevUser.id)
                                   : undefined
                               }
+                              onOpenCitation={handleOpenCitation}
                             />
                           );
                         })}
@@ -1271,6 +1351,32 @@ export default function ChatWorkspace() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* 知识库文档全文预览与切片定位高亮抽屉 (ADR-0025 / KB-CHAT-CITE) */}
+        <DocumentPreviewDrawer
+          open={citationPreviewState.isOpen}
+          onOpenChange={(open) =>
+            setCitationPreviewState((prev) => ({ ...prev, isOpen: open }))
+          }
+          knowledgeBaseId={citationPreviewState.knowledgeBaseId || ''}
+          documentId={citationPreviewState.documentId || ''}
+          documentName={citationPreviewState.documentName}
+          documentVersion={citationPreviewState.documentVersion}
+          focusedAnchor={citationPreviewState.focusedAnchor}
+          allMatchedAnchors={citationPreviewState.allMatchedAnchors}
+          onSelectAnchor={(targetAnchor) => {
+            setCitationPreviewState((prev) => ({
+              ...prev,
+              focusedAnchor: {
+                chunkIndex: targetAnchor.chunkIndex,
+                headingPath: targetAnchor.headingPath,
+                pageNumber: targetAnchor.pageNumber,
+              },
+            }));
+          }}
+          modal={false}
+          fallbackSnippet={citationPreviewState.fallbackSnippet}
+        />
       </AppLayout>
     </AuthGuard>
   );

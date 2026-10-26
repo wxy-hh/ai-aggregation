@@ -83,6 +83,8 @@ export type ChatStreamToolResultEvent = {
   attachment?: ChatStreamToolAttachment;
   /** 工具执行真实耗时（毫秒；可选，缺省向后兼容） */
   durationMs?: number;
+  /** 结构化切片引用映射字典（可选；仅知识库检索等工具携带） */
+  citations?: Record<string | number, any>;
 };
 
 /** 产物类型枚举 */
@@ -220,6 +222,10 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         if (typeof att.url !== 'string' || !att.url) return null;
         attachment = { kind: 'image', url: att.url };
       }
+      let citations: Record<string | number, any> | undefined;
+      if (ev.citations !== undefined && typeof ev.citations === 'object' && ev.citations !== null) {
+        citations = ev.citations as Record<string | number, any>;
+      }
       return {
         type: 'tool_result',
         callId: ev.callId,
@@ -228,6 +234,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         summary: ev.summary,
         ...(attachment ? { attachment } : {}),
         ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
+        ...(citations ? { citations } : {}),
       };
     }
     case 'artifact_start': {

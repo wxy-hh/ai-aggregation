@@ -14,6 +14,9 @@ export interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
     createdAt?: number;
+    citations?: Record<number, any>;
+    toolCalls?: any[];
+    attachments?: any[];
 }
 
 // 对话类型

@@ -65,6 +65,10 @@ export interface DocumentPreviewDrawerProps {
   allMatchedAnchors?: MatchedCitationAnchor[];
   /** 切换高亮切片时的回调（如由 Navigator 触发） */
   onSelectAnchor?: (anchor: MatchedCitationAnchor) => void;
+  /** 是否模态阻塞，默认 true；聊天页传 false 时隐藏遮罩实现非模态边看边聊 (TC02 / ADR-0025) */
+  modal?: boolean;
+  /** 接口 404/403 失败时的降级历史切片快照 (TC07 / CitationSnapshotFallback) */
+  fallbackSnippet?: string;
 }
 
 interface DocumentContentData {
@@ -97,6 +101,8 @@ export function DocumentPreviewDrawer({
   focusedAnchor,
   allMatchedAnchors = [],
   onSelectAnchor,
+  modal = true,
+  fallbackSnippet,
 }: DocumentPreviewDrawerProps) {
   const [data, setData] = React.useState<DocumentContentData | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -206,12 +212,13 @@ export function DocumentPreviewDrawer({
   if (!open) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={modal}>
       <DialogContent
         data-testid="document-preview-drawer-content"
         showClose={false}
         contentAnimation="none"
-        overlayClassName="bg-black/40 backdrop-blur-sm"
+        hideOverlay={!modal}
+        overlayClassName={modal ? 'bg-black/40 backdrop-blur-sm' : 'hidden pointer-events-none'}
         className="!fixed !left-auto !right-0 !top-0 !translate-x-0 !translate-y-0 h-full w-full sm:w-[600px] lg:w-[680px] max-w-full p-0 gap-0 border-l border-border/70 bg-card shadow-2xl flex flex-col z-50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right duration-300 rounded-none sm:rounded-l-2xl overflow-hidden"
       >
         {/* 抽屉头部 */}
@@ -340,21 +347,46 @@ export function DocumentPreviewDrawer({
           )}
 
           {error && !loading && (
-            <div className="p-8 text-center flex flex-col items-center justify-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center">
-                <AlertCircle className="w-6 h-6" />
+            fallbackSnippet ? (
+              <div data-testid="citation-snapshot-fallback" className="p-4 sm:p-5 space-y-4">
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 space-y-1">
+                  <div className="flex items-center space-x-2 font-medium text-xs sm:text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>源文档已被删除或更新</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    原文档可能已被知识库维护者移除或重命名，当前为您呈现问答时保存的切片快照内容：
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                  <div className="flex items-center space-x-1.5 text-xs text-muted-foreground">
+                    <Hash className="w-3.5 h-3.5 text-primary" />
+                    <span>历史引用切片快照</span>
+                    {focusedAnchor?.headingPath && <span>· {focusedAnchor.headingPath}</span>}
+                  </div>
+                  <div className="whitespace-pre-wrap leading-relaxed text-xs sm:text-sm text-foreground/90">
+                    {fallbackSnippet}
+                  </div>
+                </div>
               </div>
-              <p className="text-sm font-medium text-destructive">{error}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={loadContent}
-                className="min-h-[44px] rounded-xl text-xs"
-              >
-                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-                <span>重新加载</span>
-              </Button>
-            </div>
+            ) : (
+              <div className="p-8 text-center flex flex-col items-center justify-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <p className="text-sm font-medium text-destructive">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadContent}
+                  className="min-h-[44px] rounded-xl text-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                  <span>重新加载</span>
+                </Button>
+              </div>
+            )
           )}
 
           {/* 文档处理中或失败状态面板 (US-12) */}

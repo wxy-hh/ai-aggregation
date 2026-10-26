@@ -422,7 +422,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               toolProducedOutput = true;
             }
 
-            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证；携带真实耗时）
+            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证；携带真实耗时与引用字典）
             controller.enqueue(
               encodeSseEvent({
                 type: 'tool_result',
@@ -432,6 +432,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                 summary: outcome.summaryForDisplay,
                 ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
                 ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+                ...(outcome.citations ? { citations: outcome.citations } : {}),
               })
             );
 
@@ -443,6 +444,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               status: outcome.ok ? 'success' : 'failed',
               summary: outcome.summaryForDisplay,
               ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+              ...(outcome.citations ? { citations: outcome.citations } : {}),
             });
 
             // 若工具产出有效附件（如生成的图片），标记为有效产出，不向工作台冗余注入 image artifact

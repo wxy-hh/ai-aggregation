@@ -62,7 +62,7 @@ function normalizeScopes(scopes) {
 }
 
 function listFiles(repo, scopes) {
-  const output = git(repo, ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...scopes]).stdout;
+  const output = git(repo, ['-c', 'core.quotepath=false', 'ls-files', '--cached', '--others', '--exclude-standard', '--', ...scopes]).stdout;
   return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).sort();
 }
 

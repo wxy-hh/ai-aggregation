@@ -171,7 +171,18 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           .sort((a, b) => b.score - a.score)
           .slice(0, topK);
 
-        // 3. 结果包装为不可信上下文并附带防御声明 (QA-011 / QA-012)
+        // 3. 构建结构化切片引用映射字典与快照 (ADR-0025 / KB-CHAT-CITE)
+        const citations: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor> = {};
+        fusedChunks.forEach((chunk, index) => {
+          const refNum = index + 1;
+          citations[refNum] = {
+            ...chunk.citationAnchor,
+            knowledgeBaseId: chunk.citationAnchor.knowledgeBaseId || targetKnowledgeBaseIds[0]?.id || '',
+            snippet: chunk.citationAnchor.snippet || (chunk.content ? chunk.content.slice(0, 300) : ''),
+          };
+        });
+
+        // 结果包装为不可信上下文并附带防御声明 (QA-011 / QA-012)
         const contentForModel = formatRetrievedChunksWithCitations(fusedChunks, trimmedQuery);
 
         const shortQuery = trimmedQuery.length > 20 ? `${trimmedQuery.slice(0, 18)}…` : trimmedQuery;
@@ -181,6 +192,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
             ok: true,
             contentForModel,
             summaryForDisplay: `已检索知识库“${shortQuery}” · 未命中相关内容`,
+            citations: {},
           };
         }
 
@@ -193,6 +205,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           ok: true,
           contentForModel,
           summaryForDisplay: `已检索知识库“${shortQuery}” · 命中 ${fusedChunks.length} 条切片（${docNamesSummary}）`,
+          citations,
         };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);

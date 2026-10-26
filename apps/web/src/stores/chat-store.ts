@@ -59,6 +59,8 @@ export interface Message {
   agentNotes?: AgentNote[];
   // 本条消息关联生成的产物标识引用列表（ADR-0015）
   artifactIds?: string[];
+  // 结构化切片引用映射字典（ADR-0025 / KB-CHAT-CITE）
+  citations?: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor>;
 }
 
 // 聊天状态管理接口
@@ -493,7 +495,16 @@ export async function runChatStreamSession(
                   ]
                 : m.attachments;
 
-            return { ...m, toolCalls: nextCalls, attachments: nextAttachments };
+            const nextCitations = result.citations
+              ? { ...(m.citations ?? {}), ...result.citations }
+              : m.citations;
+
+            return {
+              ...m,
+              toolCalls: nextCalls,
+              attachments: nextAttachments,
+              ...(nextCitations ? { citations: nextCitations } : {}),
+            };
           })
         );
         persistConversation(next);

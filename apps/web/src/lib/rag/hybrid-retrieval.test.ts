@@ -132,14 +132,16 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(topChunk.lexicalRank).toBe(1);
     expect(topChunk.score).toBeCloseTo(1 / 61 + 1 / 61, 8);
 
-    // 验证来源锚点 (CitationAnchor)
+    // 验证来源锚点 (CitationAnchor 补齐物理坐标与切片快照)
     expect(topChunk.citationAnchor).toEqual({
+      knowledgeBaseId: 'kb_123',
       documentId: 'doc_1',
       documentName: 'architecture.md',
       documentVersion: 1,
       pageNumber: 1,
       headingPath: '设计方案 > 熔断',
       chunkIndex: 0,
+      snippet: '连败熔断机制：连续 3 次工具调用失败触发熔断',
     });
 
     // 验证两路 Top-20 明细与排名记录

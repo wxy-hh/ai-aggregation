@@ -18,6 +18,8 @@ export interface CitationBadgeProps {
   anchor?: CitationAnchor | null;
   /** 点击跳转定位原文回调 */
   onNavigate?: (anchor: CitationAnchor) => void;
+  /** 点击直接唤起全文抽屉回调 (ADR-0025) */
+  onOpenCitation?: (anchor: CitationAnchor) => void;
   /** 紧凑模式或自定义样式 */
   className?: string;
 }
@@ -30,6 +32,7 @@ export function CitationBadge({
   index,
   anchor,
   onNavigate,
+  onOpenCitation,
   className,
 }: CitationBadgeProps) {
   const [copied, setCopied] = useState(false);
@@ -47,11 +50,20 @@ export function CitationBadge({
 
   const handleNavigate = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (anchor && onNavigate) {
+    if (anchor && onOpenCitation) {
+      setOpen(false);
+      onOpenCitation(anchor);
+    } else if (anchor && onNavigate) {
       onNavigate(anchor);
     } else if (anchor) {
       // 默认若有知识库路由，可跳转至知识库管理或文档
       window.open(`/knowledge?docId=${encodeURIComponent(anchor.documentId)}&v=${anchor.documentVersion}`, '_blank');
+    }
+  };
+
+  const handleTriggerClick = (e: React.MouseEvent) => {
+    if (anchor && onOpenCitation) {
+      onOpenCitation(anchor);
     }
   };
 
@@ -62,6 +74,7 @@ export function CitationBadge({
           type="button"
           data-testid={`citation-badge-${index}`}
           aria-label={`查看引用 [^${index}] 来源`}
+          onClick={handleTriggerClick}
           className={cn(
             'inline-flex items-center justify-center align-super text-[11px] font-semibold leading-none',
             'mx-0.5 px-1 py-0.5 rounded-md cursor-pointer select-none transition-colors duration-fast ease-out-expo',
@@ -167,7 +180,8 @@ export function CitationBadge({
 /** 正则拆分文本并嵌入 CitationBadge 组件 */
 export function injectCitationBadges(
   text: string,
-  anchorMap?: Map<number, CitationAnchor>
+  anchorMap?: Map<number, CitationAnchor>,
+  onOpenCitation?: (anchor: CitationAnchor) => void
 ): React.ReactNode {
   if (!text || typeof text !== 'string') {
     return text;
@@ -184,7 +198,14 @@ export function injectCitationBadges(
     if (match) {
       const num = parseInt(match[1], 10);
       const anchor = anchorMap?.get(num);
-      return <CitationBadge key={`cite-${num}-${idx}`} index={num} anchor={anchor} />;
+      return (
+        <CitationBadge
+          key={`cite-${num}-${idx}`}
+          index={num}
+          anchor={anchor}
+          onOpenCitation={onOpenCitation}
+        />
+      );
     }
     return part;
   });
@@ -193,15 +214,16 @@ export function injectCitationBadges(
 /** 递归遍历 React 节点树将文本中的 [^n] 替换为 CitationBadge */
 export function wrapCitationsInReactNode(
   node: React.ReactNode,
-  anchorMap?: Map<number, CitationAnchor>
+  anchorMap?: Map<number, CitationAnchor>,
+  onOpenCitation?: (anchor: CitationAnchor) => void
 ): React.ReactNode {
   if (typeof node === 'string') {
-    return injectCitationBadges(node, anchorMap);
+    return injectCitationBadges(node, anchorMap, onOpenCitation);
   }
   if (Array.isArray(node)) {
     return node.map((child, i) => (
       <React.Fragment key={i}>
-        {wrapCitationsInReactNode(child, anchorMap)}
+        {wrapCitationsInReactNode(child, anchorMap, onOpenCitation)}
       </React.Fragment>
     ));
   }
@@ -209,7 +231,7 @@ export function wrapCitationsInReactNode(
     const props = node.props as { children?: React.ReactNode };
     return React.cloneElement(node, {
       ...props,
-      children: wrapCitationsInReactNode(props.children, anchorMap),
+      children: wrapCitationsInReactNode(props.children, anchorMap, onOpenCitation),
     } as Record<string, unknown>);
   }
   return node;

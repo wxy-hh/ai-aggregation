@@ -30,6 +30,8 @@ export const toolCallRecordSchema = z.object({
   resultSummary: z.string(),
   /** 工具真实执行耗时（毫秒；可选，由 tool_result 事件回填） */
   durationMs: z.number().int().nonnegative().optional(),
+  /** 结构化切片引用映射字典（可选；知识库检索等工具携带） */
+  citations: z.record(z.any()).optional(),
 });
 
 export type ToolCallRecord = z.infer<typeof toolCallRecordSchema>;
