@@ -251,4 +251,51 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       snippet: '连败熔断阈值定为 3 次。',
     });
   });
+
+  it('8. TC07-1: 当提问与 FAQ 相似度在 0.78 到 0.92 区间时，置顶包含【官方权威标准口径 (Ground Truth)】文本块 (ADR-0027)', async () => {
+    const mockFindFaq = vi.fn().mockResolvedValue({
+      faqId: 'faq-123',
+      knowledgeBaseId: 'kb-1',
+      question: '如何申请发票？',
+      answer: '请在财务中心点击索取发票，系统自动开具电子专票。',
+      matchedQuestionText: '怎么开发票',
+      similarity: 0.85,
+      isShortCircuit: false,
+      isGroundTruth: true,
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([
+      { id: 'kb-1', name: '企业知识库' },
+    ]);
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: vi.fn().mockResolvedValue({
+        query: '怎么开发票',
+        preparedLexicalQuery: '开发票',
+        topK: 5,
+        chunks: [],
+        denseMatches: [],
+        lexicalMatches: [],
+        durationMs: 20,
+        stats: {
+          embeddingDurationMs: 5,
+          denseDurationMs: 5,
+          lexicalDurationMs: 5,
+          fusionDurationMs: 5,
+          totalDurationMs: 20,
+        },
+      }),
+      findKnowledgeBasesFn: mockFindKbs,
+      findBestFaqMatchFn: mockFindFaq,
+    });
+
+    const result = await tool.execute({ query: '怎么开发票' }, mockContext);
+
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('【官方权威标准口径 (Ground Truth)】');
+    expect(result.contentForModel).toContain('标准问题：如何申请发票？');
+    expect(result.contentForModel).toContain('权威答案：请在财务中心点击索取发票，系统自动开具电子专票。');
+    expect(result.summaryForDisplay).toContain('命中官方FAQ');
+  });
 });
+

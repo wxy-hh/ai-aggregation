@@ -12,10 +12,11 @@
  */
 
 import { z } from 'zod';
-import { prisma } from '@repo/db';
+import { prisma, findBestFaqMatch, incrementFaqHitCount } from '@repo/db';
 import { ToolError, type AgentToolSpec, type ToolExecutionResult } from '@/lib/agent/registry';
 import { hybridRetrieval, type RetrievedChunk } from '@/lib/rag/hybrid-retrieval';
 import { formatRetrievedChunksWithCitations } from '@/lib/rag/citation';
+import { embedFaqText } from '@/lib/rag/faq-service';
 import { detectChatSensitiveTopic } from '../../chat-safety';
 
 export const knowledgeSearchParametersSchema = z.object({
@@ -47,6 +48,8 @@ export interface KnowledgeSearchDeps {
     userId: string,
     knowledgeBaseId: string
   ) => Promise<{ id: string; name: string } | null>;
+  findBestFaqMatchFn?: typeof findBestFaqMatch;
+  embedFaqFn?: typeof embedFaqText;
 }
 
 /** 默认查询用户可用知识库列表 */
@@ -84,6 +87,8 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
   const retrievalFn = deps.hybridRetrievalFn || hybridRetrieval;
   const findKbsFn = deps.findKnowledgeBasesFn || defaultFindKnowledgeBases;
   const verifyKbFn = deps.verifyKnowledgeBaseFn || defaultVerifyKnowledgeBase;
+  const findFaqFn = deps.findBestFaqMatchFn || findBestFaqMatch;
+  const embedFn = deps.embedFaqFn || embedFaqText;
 
   return {
     name: 'knowledge_search',
@@ -146,24 +151,41 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         targetKnowledgeBaseIds = userKbs.slice(0, 3);
       }
 
-      // 2. 并发执行混合检索
+      // 2. 并发执行长文本切片混合检索与 FAQ 权威口径匹配 (ADR-0027)
       try {
-        const results = await Promise.all(
-          targetKnowledgeBaseIds.map(async (kb) => {
-            try {
-              const res = await retrievalFn({
-                userId,
-                knowledgeBaseId: kb.id,
-                query: trimmedQuery,
-                topK,
-              });
-              return res.chunks;
-            } catch (error) {
-              console.warn(`[knowledge_search] 知识库 ${kb.id} 检索失败:`, error);
-              return [] as RetrievedChunk[];
-            }
-          })
-        );
+        const kbIds = targetKnowledgeBaseIds.map((kb) => kb.id);
+        const [results, bestFaq] = await Promise.all([
+          Promise.all(
+            targetKnowledgeBaseIds.map(async (kb) => {
+              try {
+                const res = await retrievalFn({
+                  userId,
+                  knowledgeBaseId: kb.id,
+                  query: trimmedQuery,
+                  topK,
+                });
+                return res.chunks;
+              } catch (error) {
+                console.warn(`[knowledge_search] 知识库 ${kb.id} 检索失败:`, error);
+                return [] as RetrievedChunk[];
+              }
+            })
+          ),
+          findFaqFn({
+            userId,
+            knowledgeBaseIds: kbIds,
+            query: trimmedQuery,
+            embedFn,
+          }).catch((err) => {
+            console.warn('[knowledge_search] FAQ 检索降级:', err);
+            return null;
+          }),
+        ]);
+
+        // 若命中 FAQ 且属于强权威口径，异步增加命中统计
+        if (bestFaq && bestFaq.isGroundTruth) {
+          incrementFaqHitCount(bestFaq.faqId).catch(() => {});
+        }
 
         // 合并切片并按 RRF 分数重新排序截取 topK
         const fusedChunks: RetrievedChunk[] = results
@@ -183,11 +205,23 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         });
 
         // 结果包装为不可信上下文并附带防御声明 (QA-011 / QA-012)
-        const contentForModel = formatRetrievedChunksWithCitations(fusedChunks, trimmedQuery);
+        let contentForModel = formatRetrievedChunksWithCitations(fusedChunks, trimmedQuery);
+
+        // 若命中 FAQ 权威口径，置顶注入模型提示词 (ADR-0027 / FaqGroundTruth)
+        if (bestFaq && bestFaq.isGroundTruth) {
+          const faqHeader = [
+            '【官方权威标准口径 (Ground Truth)】',
+            `标准问题：${bestFaq.question}`,
+            `权威答案：${bestFaq.answer}`,
+            '（系统提示：用户提问与该官方问答对高度匹配，请严格以该权威口径作答，避免事实偏差。）',
+            '',
+          ].join('\n');
+          contentForModel = faqHeader + contentForModel;
+        }
 
         const shortQuery = trimmedQuery.length > 20 ? `${trimmedQuery.slice(0, 18)}…` : trimmedQuery;
 
-        if (fusedChunks.length === 0) {
+        if (fusedChunks.length === 0 && (!bestFaq || !bestFaq.isGroundTruth)) {
           return {
             ok: true,
             contentForModel,
@@ -201,10 +235,13 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           ? `${uniqueDocs.slice(0, 2).join('、')}等`
           : uniqueDocs.join('、');
 
+        const faqNotice = bestFaq && bestFaq.isGroundTruth ? '命中官方FAQ · ' : '';
+        const chunkNotice = fusedChunks.length > 0 ? `命中 ${fusedChunks.length} 条切片（${docNamesSummary}）` : '采用官方标准口径';
+
         return {
           ok: true,
           contentForModel,
-          summaryForDisplay: `已检索知识库“${shortQuery}” · 命中 ${fusedChunks.length} 条切片（${docNamesSummary}）`,
+          summaryForDisplay: `已检索知识库“${shortQuery}” · ${faqNotice}${chunkNotice}`,
           citations,
         };
       } catch (error) {

@@ -34,6 +34,7 @@ import {
   buildChatBlockedText,
   createBlockedStream,
 } from './chat-safety';
+import { checkFaqShortCircuit, createFaqShortCircuitStream } from './faq-short-circuit';
 import { normalizeUsage } from '@/lib/ai-usage';
 import { resolveChatStreamUsage } from './chat-usage';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
@@ -144,6 +145,24 @@ export function createChatHandler(config: ChatHandlerConfig) {
         messagesCount,
         agent,
       });
+
+      // 3.5 FAQ 极高置信度前置强短路检测 (ADR-0027)
+      // 若提问极度精准命中知识库标准 FAQ，直接秒出权威答案，零 Token 消耗
+      const lastUserMsg = messages[messages.length - 1];
+      if (lastUserMsg && lastUserMsg.role === 'user' && typeof lastUserMsg.content === 'string') {
+        const shortCircuitFaq = await checkFaqShortCircuit({
+          userId: user.id,
+          query: lastUserMsg.content,
+        });
+        if (shortCircuitFaq) {
+          console.log('[chat] 触发 FAQ 前置强短路直出', {
+            userId: user.id,
+            question: shortCircuitFaq.question,
+          });
+          const stream = createFaqShortCircuitStream(shortCircuitFaq);
+          return createSseResponse(stream);
+        }
+      }
 
       // 4. 配额管理：QuotaSession 统一 reserve → finalize（评审 C1 唯一决策表）
       // agent 模式：计算可负担步数，按实际步数预留；不足下限拒绝；预检失败兜底满配

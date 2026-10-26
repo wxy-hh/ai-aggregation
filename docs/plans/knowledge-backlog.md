@@ -1,91 +1,123 @@
 # 知识库功能演进与规划待做清单 (Knowledge Backlog)
 
-> 本文档用于归集知识库在混合检索（RRF）、自研双源路由、离线评测以及文档全文预览（DocumentPreview）落地后的后续可扩充功能清单，按优先级与价值分级，便于后续按需挑选立项与研发。
+> 本文档用于归集知识库在混合检索（RRF）、自研双源路由、离线评测以及文档全文预览（DocumentPreview）落地后的后续功能演进规划。结合行业成熟知识库（如 Dify、FastGPT、Ragflow）与 RAG 生产实践，按价值、成本与紧迫度分级，指导后续研发迭代。
 
 ---
 
 ## 优先级矩阵速览
 
-| 优先级 | 功能代号 | 功能名称 | 预估成本 | 用户体验提升 | 关联模块 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **P0** | `KB-CHAT-CITE` | **对话引用角标直达全文抽屉** | 低（~1天） | ★★★★★ | `apps/web/src/app/chat/` · 消息渲染 |
-| **P1** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取** | 中（~2天） | ★★★★☆ | `apps/worker` · `webFetch` SSRF 安全防线 |
-| **P1** | `KB-FAQ-PAIR` | **FAQ 标准问答对管理与优先路由** | 中（~2天） | ★★★★☆ | `@repo/db` · 检索管道短路/加权 |
-| **P2** | `KB-DOCX-PARSE` | **Word (.docx) / 表格 (.csv/.xlsx) 解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 文本提取转换器 |
-| **P2** | `KB-META-FILTER` | **多维标签元数据过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `apps/web/src/app/knowledge/` · Agent 意图识别 |
-| **P2** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 分析看板与运营提示 |
-| **P3** | `KB-CHUNK-TUNE` | **切片策略可视化调节与效果预览** | 中（~3天） | ★★★☆☆ | `apps/web` · 上传前置/后置配置 |
+| 优先级 / 状态 | 功能代号 | 功能名称 | 预估成本 | 价值与体验提升 | 关联模块 | 状态 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **P0 (已完成)** | `KB-CHAT-CITE` | **对话引用角标直达全文抽屉与切片高亮** | 低（~1天） | ★★★★★ | `apps/web` · 聊天与全文抽屉联动 | **已交付 (v1.0)** |
+| **P1 (已完成)** | `KB-FAQ-PAIR` | **FAQ 标准问答对管理与精准优先短路** | 中（~1.5天）| ★★★★★ | `@repo/db` · `@repo/providers` · 问答对路由 | **已交付 (v1.1)** |
+| **P1 (当前首选)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **准备立项 (Next)** |
+| **P2 (进阶扩展)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | 待排期 |
+| **P2 (算法强化)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | 待排期 |
+| **P2 (架构增强)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | 待排期 |
+| **P3 (运营看板)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | 储备池 |
+| **P3 (深度调优)** | `KB-CHUNK-TUNE` | **切片策略可视化调节与效果预览** | 中（~3天） | ★★★☆☆ | `apps/web` · 上传前置/后置配置 | 储备池 |
 
 ---
 
-## 详细功能清单与规格草案
+## 已交付功能沉淀 (Completed)
 
-### 1. `KB-CHAT-CITE`：对话引用角标直达全文抽屉 (P0 推荐)
-- **业务痛点**：目前文档全文预览（`DocumentPreviewDrawer`）仅存在于 `/knowledge` 工作台。在主对话页面（`/chat`）中，当模型基于知识库输出答案时，用户无法直接查看对应来源片段的完整上下文，影响对回答可靠性的感知。
-- **核心方案**：
-  - 复用已构建的 `DocumentPreviewDrawer` 和 `GET /api/knowledge-bases/[id]/documents/[docId]/content` 接口；
-  - 在聊天消息 Markdown 的引用标识（如 `[1]`、`[2]` 或底部“参考来源”折叠卡片）接入点击事件；
-  - 点击后在右侧滑出抽屉，自动平滑滚动至命中的切片（`CitationAnchorHighlight`）并聚焦高亮；
-  - 桌面端宽屏右侧滑出，移动端采用自适应 Drawer，不中断当前输入会话。
-- **技术接缝**：`apps/web/src/app/chat/_components/chat-message-list.tsx`、`apps/web/src/app/knowledge/_components/document-preview-drawer.tsx`。
+### `KB-CHAT-CITE`：对话引用角标直达全文抽屉 (P0 已完成)
+- **交付目标**：解决主对话（`/chat`）中大模型回答无法直观追溯来源上下文的问题，建立用户对 RAG 输出的确定性与可信度。
+- **交付成果**：
+  - 在聊天 Markdown 中渲染 `[1]`、`[2]` 引用角标与底部「参考来源」折叠卡片；
+  - 点击角标在桌面端平滑滑出非模态全文预览抽屉，移动端自适应抽屉布局；
+  - 自动平滑滚动定位至命中的切片（`CitationAnchorHighlight`）并聚焦高亮；
+  - 修复多文档交叉引用与预览异常，触控区域全面对齐移动端 $\ge 44\times 44\text{px}$ 规范。
+- **关联代码**：`apps/web/src/app/chat/_components/chat-message-list.tsx`、`apps/web/src/app/knowledge/_components/document-preview-drawer.tsx`。
 
----
-
-### 2. `KB-URL-INGEST`：网页 URL / 技术文章一键导入 (P1)
-- **业务痛点**：用户大量知识沉淀在外部网络（如官方文档、技术博客、公众号文章、语雀/Notion 共享链接），目前必须先手动复制粘贴存成 `.md`/`.txt` 再上传，操作链冗长。
-- **核心方案**：
-  - 新增「网页链接导入」Tab 或弹窗，支持单条或批量输入 HTTP(S) URL；
-  - 服务端复用已有的 SSRF 安全校验与无头抓取机制（`webFetch` / JSDOM / Readability），自动提取标题、去广告、提纯正文 Markdown；
-  - 生成虚拟 `Document`，入队 BullMQ 执行标准切片、稠密向量化与分词倒排索引；
-  - 原链接存入 `Document.sourceUrl`，全文抽屉支持一键跳转源网页。
-- **技术接缝**：`apps/worker/src/processors/document-processor.ts`、`apps/web/src/lib/security/ssrf.ts`。
-
----
-
-### 3. `KB-FAQ-PAIR`：FAQ 标准问答对管理与精准优先检索 (P1)
-- **业务痛点**：长文档切片在应对常见客服问答或制度规范时，模型容易“就近匹配”但回答不够精炼、甚至遗漏硬性规定。
-- **核心方案**：
-  - 知识库新增「问答对 (FAQ)」管理模块，支持在线手动新建/编辑问答对（问题 + 标准回答），以及 Excel/CSV 批量导入；
-  - 数据模型增加 `KnowledgeFaq` 表，对问题计算稠密向量与中文词法分词；
-  - 检索管道改进：检索时优先检索 FAQ 表，若存在相似度高于阈值（如 `Cosine > 0.88`）的精确问答对，直接将标准答案置顶返回或提示模型“优先采用官方标准口径”。
-- **技术接缝**：`packages/db/prisma/schema.prisma`、`packages/providers/src/rag/search.ts`。
+### `KB-FAQ-PAIR`：FAQ 标准问答对管理与精准优先短路 (P1 已完成)
+- **交付目标**：解决长文本分块在规章制度与高频客服中匹配发散与推理耗时的问题，构建高置信度秒级强短路与官方权威口径强约束体系。
+- **交付成果**：
+  - 在 `@repo/db` 构建 `KnowledgeFaq` 主表与 `KnowledgeFaqQuestion` 问法表，标准问与相似问扁平化独立索引（1024 维 BAAI/bge-m3 + HNSW 索引与 jieba 分词），最大化 Sentence-to-Sentence 语义锐度；
+  - 聊天链路实现 Cosine $\ge 0.92$ 极高置信度前置强短路（直出标准答复、零 Token 消耗、零推理延迟）；
+  - $0.78 \le \text{Cosine} < 0.92$ 或 Agent 链路自动作为 `FaqGroundTruth` 官方权威口径置顶注入；
+  - 知识库工作台挂载「问答对 (FAQ)」Tab，支持单条同步即时向量化增删改、启用开关一键切换及轻量标准 CSV 批量导入与导出；
+  - 移动端 375px 窄屏适配，热区全面满足 $\ge 40\text{px}$ 规范。
+- **关联代码**：`packages/db/src/rag/faq-store.ts`、`apps/web/src/app/api/chat/_lib/faq-short-circuit.ts`、`apps/web/src/app/knowledge/_components/faq-management-panel.tsx`。
 
 ---
 
-### 4. `KB-DOCX-PARSE`：Word (.docx) 与表格 (.xlsx / .csv) 解析 (P2)
-- **业务痛点**：企业/个人常有 Word 文档与 Excel 表格。目前上传此类文件无法入库。
+## 详细功能清单与研发规格草案
+
+### 1. `KB-FAQ-PAIR`：FAQ 标准问答对管理与精准优先短路 (P1 当前最高优先级)
+- **行业痛点与背景**：
+  长文本分块（Chunking 500~800 tokens）在应对规章制度、标准客服、常见业务定义等高频问题时，本质是**句子匹配段落（Sentence-to-Paragraph）**，常召回冗长无关上下文，导致大模型回答发散、抓不住重点甚至偶发幻觉。主流成熟方案（FastGPT、Dify 等）均以 FAQ 问答对作为精度压舱石。
 - **核心方案**：
-  - **.docx**：集成 `mammoth` 或 `@xmldom`，提取语义标题结构与段落，自动转换为结构化 Markdown；
-  - **.xlsx / .csv**：针对表格数据，支持按行（Row-as-chunk）或小块表格（Markdown Table）切块，并在切片首部自动注入表头上下文（Header Context Injection），避免切片丢失列名语义。
-- **技术接缝**：`apps/worker/src/services/parsers/`、`packages/shared/src/utils/table-chunker.ts`。
+  1. **问答对管理**：知识库新增「问答对 (FAQ)」管理面板，支持手动创建、编辑标准问答（问题 + 答案 + 相似问/别名），支持 Excel/CSV 批量导入导出；
+  2. **双路索引**：在 `@repo/db` 建立 `KnowledgeFaq` 模型，问题支持 jieba 中文词法分词与稠密向量化；
+  3. **检索短路与加权策略**：
+     - **短路阈值（如 Cosine $\ge 0.88$）**：直接命中权威标准答案，跳过长文本复杂检索与多轮推理，直接顶置返回或输出确定性答案（100% 准确、极低延迟与零幻觉）；
+     - **强参考阈值（如 $0.75 \le \text{Cosine} < 0.88$）**：将该问答对以超高权重注入系统 Prompt，显式提示模型“优先采用官方标准口径”。
+- **技术接缝**：`packages/db/prisma/schema.prisma`、`apps/web/src/app/api/chat/_lib/agent/tools/knowledge-search.ts`、`apps/web/src/app/knowledge/[id]/faq/`。
 
 ---
 
-### 5. `KB-META-FILTER`：多维标签与元数据前置过滤 (P2)
-- **业务痛点**：知识库文档很多时，跨年份、跨项目或跨部门的内容容易混淆。
+### 2. `KB-URL-INGEST`：网页 URL / 微信文章一键抓取与清洗 (P1 输入效率首选)
+- **行业痛点与背景**：
+  用户大量知识存在于技术博客、官方开发文档、微信公众号、语雀/Notion 共享链接中。当前知识库必须手动复制文本保存为 `.md`/`.txt` 再上传，录入链条冗长，抑制了知识库的丰富度。
 - **核心方案**：
-  - 文档支持自定义标签键值对（例如 `department:财务`, `year:2026`, `category:规范`）；
-  - `knowledge_search` 工具暴露 `metadataFilter` 参数；
-  - Agent 在解析用户提问时（如：“查询2026年的报销政策”），自动提取过滤约束并在 SQL/向量阶段完成前置 ACL 筛选，大幅提升大库检索准确度。
-- **技术接缝**：`packages/db/prisma/schema.prisma`（Document.metadata Json 字段）、Postgres GIN 索引。
+  1. **录入交互**：在上传弹窗中新增「链接导入」Tab，支持单个或批量输入 HTTP(S) URL；
+  2. **安全防护**：复用现有的 SSRF 防线（私网 IP 拦截、DNS 重绑定防御、协议白名单）；
+  3. **正文提取与降噪**：服务端基于 JSDOM / Readability 或无头解析，自动剥离导航栏、页脚与广告，提纯出标题与结构化 Markdown；
+  4. **异步流水线**：生成虚拟 `Document`，存入 `sourceUrl`，入队 BullMQ 走标准切片与向量索引流程；全文抽屉支持“跳转原文链接”。
+- **技术接缝**：`apps/worker/src/workers/rag-index/processor.ts`、`apps/web/src/lib/security/ssrf.ts`、`apps/web/src/app/knowledge/knowledge-workspace.tsx`。
 
 ---
 
-### 6. `KB-INSIGHT-GAP`：知识盲区分析看板与低置信度统计 (P2)
-- **业务痛点**：运维者无法获知终端用户在查什么，也不知道知识库哪些领域的文档还不完备。
+### 3. `KB-DOCX-PARSE`：Word (.docx) 与结构化表格 (.xlsx / .csv) 解析 (P2)
+- **行业痛点与背景**：
+  企业日常办公文件大量为 `.docx` 合同制度与 `.xlsx` 报表数据。直接当作纯文本切块会导致表格行列结构被撕裂，丢失列名语义。
 - **核心方案**：
-  - 记录每次对话检索的 `(query, maxScore, retrievedCount, isAnswered)`；
-  - 自动汇总聚合“低置信度提问”（Score < 阈值，或模型表示无相关信息）；
-  - 在知识库中提供「知识盲区分析」看板，展示：
-    1. 用户高频提问但未命中知识库的 Top 20 关键词/问题；
-    2. 长期未被召回的“冷门冗余文档”；
-    3. 辅助管理员精准补充文档，形成自愈运营闭环。
+  1. **.docx 解析**：集成 `mammoth` 提取大纲层级与标题路径（`headingPath`），保留粗体、有序列表与段落结构，统一转为 Markdown；
+  2. **.xlsx / .csv 表格切片与表头上下文注入 (Header Context Injection)**：
+     - 按行（Row-as-chunk）或切成小块 Markdown 表格；
+     - 每一个切片首部自动注入**一级表头字段说明**与**工作表名称**，确保向量检索与语义切块时不丢失列语义。
+- **技术接缝**：`apps/worker/src/workers/rag-index/parser.ts`、`apps/worker/src/workers/rag-index/table-parser.ts`。
+
+---
+
+### 4. `KB-RERANK-FUSION`：Rerank 二次精排模型集成 (P2 算法层)
+- **行业痛点与背景**：
+  目前的混合检索（RRF）虽然融合了词法与向量，但 RRF 本质是无监督的“倒数排名加权”，无法精确感知切片与 Query 之间的细粒度语义交叉关注。
+- **核心方案**：
+  1. 在 RRF 粗排召回 Top-20 候选切片后，引入 Cross-Encoder 架构的重排模型（如 BAAI/bge-reranker-v2-m3）；
+  2. 对 Query 和每个切片计算交叉注意力打分，重新排序取 Top-5 交付模型生成；
+  3. 显著压制长尾弱相关切片，降低 Prompt 噪音，提升复杂专业术语的命中率。
+- **技术接缝**：`packages/providers/src/rag/rerank.ts`、`apps/web/src/app/api/chat/_lib/agent/tools/knowledge-search.ts`。
+
+---
+
+### 5. `KB-META-FILTER`：多维标签与元数据前置过滤 (P2 架构层)
+- **行业痛点与背景**：
+  当单知识库文档数量超过数百篇时，跨年份（2024 vs 2026）、跨部门（财务 vs 行政）、跨业务线的文档容易发生语义交织混淆。
+- **核心方案**：
+  1. `Document` 扩展 `metadata` JSON 字段，支持自定义标签键值对（如 `year: 2026`, `department: hr`）；
+  2. 在 `knowledge-search` 工具中暴露 `filter` 参数；
+  3. 大模型 Agent 在分析用户提问（如“查询2026年最新报销政策”）时，先通过 Function Calling 抽取过滤条件，在 SQL/向量检索阶段进行前置布尔过滤，收缩检索空间。
+- **技术接缝**：`packages/db/prisma/schema.prisma`、PostgreSQL GIN 索引。
+
+---
+
+### 6. `KB-INSIGHT-GAP`：知识盲区分析看板与低置信度统计 (P3 运营层)
+- **行业痛点与背景**：
+  知识库搭建后，管理者无法获知终端用户常常搜不到什么，也无法知道哪些文档是从未被调用的冷数据。
+- **核心方案**：
+  1. 对话检索日志记录 `(query, maxScore, hitCount, isFallbacked)`；
+  2. 定时统计低置信度（Score < 阈值 或未命中）的提问聚类；
+  3. 在知识库中提供「盲区看板」：展示高频未命中词 Top 20、零引用冗余文档，生成“建议补充知识点”清单。
 - **技术接缝**：`apps/web/src/app/knowledge/[id]/insights/page.tsx`。
 
 ---
 
-### 7. `KB-CHUNK-TUNE`：切片策略调节器与切片可视化 (P3)
-- **业务痛点**：不同类型文档（代码规范、法律合同、短篇技术方案）适合不同的切片大小（Chunk Size）与重叠度（Overlap）。
+### 7. `KB-CHUNK-TUNE`：切片策略可视化调节与效果预览 (P3 调优层)
+- **行业痛点与背景**：
+  不同格式和领域的文档，最佳切块大小（Chunk Size）与重叠（Overlap）差异显著。
 - **核心方案**：
-  - 允许在知识库维度或单文档上传时选择切片规则（按字数切片、按 Markdown 多级标题递归切片、按段落分块）；
-  - 在文档详情页提供切片列表的直接查阅与微调能力，直观展示分词结果与 Token 长度。
+  1. 知识库级别或单文档上传时支持切片规则配置（字数切片、多级标题递归切片、按段落切片）；
+  2. 提供切片调优抽屉，上传样本后实时展示分块边界、Token 估算和分词效果。
+- **技术接缝**：`apps/web/src/app/knowledge/_components/chunk-tuning-dialog.tsx`。

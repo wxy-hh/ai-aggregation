@@ -195,3 +195,22 @@ export function isRagRerankEnabled(): boolean {
   return RAG_RERANK_ENABLED;
 }
 
+/**
+ * 知识库 FAQ 检索与短路判定阈值配置 (ADR-0027)
+ */
+export const RAG_FAQ_CONFIG = {
+  /** 极高置信度强短路阈值（Cosine >= 0.92） */
+  shortCircuitThreshold: 0.92,
+  /** 官方权威口径强参考阈值（0.78 <= Cosine < 0.92） */
+  groundTruthThreshold: 0.78,
+  /** 相似问单个上限 */
+  maxSimilarQuestionsPerFaq: 20,
+  /** 单个问题最大字符数 */
+  maxQuestionLength: 500,
+  /** 单个答案最大字符数 */
+  maxAnswerLength: 5000,
+  /** 单次批量 CSV 导入最大行数 */
+  maxBatchImportSize: 100,
+} as const;
+
+

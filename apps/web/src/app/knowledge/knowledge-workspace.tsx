@@ -30,6 +30,7 @@ import {
 import { fetchWithAuth } from '@/lib/api/client';
 import { RetrievalDebugger } from './_components/retrieval-debugger';
 import { DocumentPreviewDrawer } from './_components/document-preview-drawer';
+import { FaqManagementPanel } from './_components/faq-management-panel';
 import {
   BookOpen,
   Plus,
@@ -39,6 +40,7 @@ import {
   RefreshCw,
   FolderOpen,
   Eye,
+  HelpCircle,
 } from 'lucide-react';
 
 export interface KnowledgeBaseItem {
@@ -277,20 +279,27 @@ export function KnowledgeWorkspace() {
       {/* 知识库详情与功能 Tab 区 */}
       {selectedKb && (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-          <TabsList className="min-h-[44px] h-11 p-1 bg-muted/40 border border-border/40 rounded-xl">
+          <TabsList className="w-full grid grid-cols-3 min-h-[44px] h-11 p-1 bg-muted/40 border border-border/40 rounded-xl">
             <TabsTrigger
               value="debugger"
-              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-4 flex items-center space-x-1.5"
+              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>检索调试</span>
+              <Search className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">检索调试</span>
             </TabsTrigger>
             <TabsTrigger
               value="documents"
-              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-4 flex items-center space-x-1.5"
+              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>文档管理</span>
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">文档管理</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="faqs"
+              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
+            >
+              <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">问答对 (FAQ)</span>
             </TabsTrigger>
           </TabsList>
 
@@ -387,6 +396,11 @@ export function KnowledgeWorkspace() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* 问答对 (FAQ) Tab */}
+          <TabsContent value="faqs" className="space-y-4 mt-0">
+            <FaqManagementPanel knowledgeBaseId={selectedKb.id} />
           </TabsContent>
         </Tabs>
       )}

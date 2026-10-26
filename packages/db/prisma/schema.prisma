@@ -46,6 +46,8 @@ model User {
   documents           Document[]
   documentChunks      DocumentChunk[]
   conversationMemoryChunks ConversationMemoryChunk[]
+  knowledgeFaqs       KnowledgeFaq[]
+  knowledgeFaqQuestions KnowledgeFaqQuestion[]
   @@map("users")
 }
 
@@ -523,6 +525,8 @@ model KnowledgeBase {
   documents   Document[]
   evalCases   RagEvalCase[]
   chunks      DocumentChunk[]
+  faqs        KnowledgeFaq[]
+  faqQuestions KnowledgeFaqQuestion[]
 
   @@index([userId])
   @@map("knowledge_bases")
@@ -626,5 +630,51 @@ model RagEvalCase {
   @@index([category])
   @@map("rag_eval_cases")
 }
+
+// 知识库标准问答对主表 (ADR-0027)
+model KnowledgeFaq {
+  id              String    @id @default(cuid())
+  knowledgeBaseId String    @map("knowledge_base_id")
+  userId          String    @map("user_id") // 冗余供前置 ACL
+  question        String    @db.Text
+  answer          String    @db.Text
+  enabled         Boolean   @default(true)
+  hitCount        Int       @default(0) @map("hit_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  knowledgeBase   KnowledgeBase          @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions       KnowledgeFaqQuestion[]
+
+  @@index([knowledgeBaseId, userId])
+  @@index([userId, enabled])
+  @@map("knowledge_faqs")
+}
+
+// 问答对问法扁平化索引表 (Sentence-to-Sentence, 1024维向量 + jieba词法)
+model KnowledgeFaqQuestion {
+  id                String   @id @default(cuid())
+  faqId             String   @map("faq_id")
+  knowledgeBaseId   String   @map("knowledge_base_id") // 冗余供前置过滤
+  userId            String   @map("user_id") // 冗余供前置 ACL
+  questionText      String   @map("question_text") @db.Text
+  questionSegmented String   @map("question_segmented") @db.Text
+  isPrimary         Boolean  @default(false) @map("is_primary") // 是否为主标准问
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Unsupported 字段由 raw SQL 维护
+  questionTsv       Unsupported("tsvector")? @map("question_tsv")
+  embedding         Unsupported("vector(1024)")?
+
+  faq               KnowledgeFaq  @relation(fields: [faqId], references: [id], onDelete: Cascade)
+  knowledgeBase     KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([faqId])
+  @@index([knowledgeBaseId, userId])
+  @@map("knowledge_faq_questions")
+}
+
 
 
