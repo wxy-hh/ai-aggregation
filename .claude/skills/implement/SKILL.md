@@ -6,27 +6,32 @@ disable-model-invocation: true
 
 依据用户提供的 spec 或工单实现功能，默认在单会话中连续串行推进，不默认派发实现子代理。
 
-## 1. 固化范围与基线
+## 1. 固化范围、基线与冻结计划
 
 - 阅读 spec、工单依赖和 `docs/agents/qa-workflow.md`，先查看 `git status`，区分既有改动与本任务改动。
-- 确认本任务路径白名单，在特性目录执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD 与开工前内容快照（禁止重复 init 覆盖已有基线）。
-- 记录本任务路径白名单，审查时避免混入无关工作区改动。禁止为实现自动切换分支或提交代码。
+- 改第一行代码前执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD、开工前内容和 `prechange/qa-plan.md`；禁止重复 init 或手改 `scope.json` / `prechange/`。
+- 阶段 1–2 产物和流程工具修复需要纳入时，执行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`，以 base 为前值扩大范围，不修改 Git index。
+- 禁止为实现自动切换分支或提交代码。
 
-## 2. 串行实现
+## 2. 串行实现与测试
 
 - 在预先确认的公共接缝调用 `tdd`，遵循一次一个失败测试、一个最小实现的红绿循环。
-- 显式指定单张工单时，完成该工单及其测试后停下汇报；无工单参数或用户要求连续冲刺时，按依赖顺序承接全部就绪工单，不逐票询问是否继续。
-- 每张工单完成后按 tracker 约定更新状态；未拆 `issues/` 时以 spec 的 Work Orders 为进度依据。
-- 定期运行类型检查和相关测试，最后运行完整测试套件。遇到架构假设破裂、无法自愈的测试或外部阻断才暂停升级。
+- 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号，避免 shell 通配。
+- 显式指定单张工单时，完成该工单及其测试后停下汇报；无工单参数或用户要求连续冲刺时，按依赖顺序承接全部就绪工单，不逐票询问。
+- 修复已交付特性时使用独立修复目录和 `QA Kind: fix`；先用同一命令保存修复前红日志，再实现并保存绿日志，确保红日志更早且 tree 不同。
+- 命令证据统一经 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成，同名日志不得覆盖，失败或旧证据换新标签。
 
 ## 3. 验收
 
-- 新生成或主动迁移的 qa-plan 使用 Schema 1。规划后运行 `pnpm qa:check -- plan .scratch/<feature>`，验收后运行 `acceptance`；旧计划只报告 LEGACY，不阻断或批量迁移。
-- 触及用户可见核心链路（认证、流式对话、图像、视频、语音、历史、计费）时，在 code-review 前按 `docs/agents/qa-workflow.md` 阶段 5 完成真实浏览器验收；无 qa-plan 时按该文档补 3–5 条 P0 用例。
-- 非核心改动按 spec 运行单元、集成和静态检查，不强行增加浏览器步骤。未执行或证据不足只能记 BLOCKED，不得宣称 PASS。
+- 新计划使用 Schema 3。规划后运行 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`，验收后运行 `acceptance`；Schema 1/2 按旧规则处理，LEGACY 仅表示未校验。
+- 先用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 探活；未就绪时后台运行 `pnpm dev:web`，不得关闭标题不匹配的其他进程。
+- 触及核心链路时按 `docs/agents/qa-workflow.md` 阶段 5 完成真实浏览器验收，遵守真实入口、真实输入事件、独立截图和数值严格断言规则；非核心改动按 spec 运行单元、集成和静态检查。
+- 登录依次使用可见窗口已有会话、seed 的 `test_user`（密码从环境变量读取）或真实注册一次性账号；禁止签发令牌、写库造会话或改密码、注入 Cookie，凭据不得进入命令行、日志或证据。
+- 未执行或证据不足只能记 BLOCKED，不得宣称 PASS。
 
 ## 4. 审查与交付
 
-- 调用 `code-review`，提供 `review-base`、spec 和本任务路径白名单。审查必须覆盖已提交、staged、unstaged 及相关未跟踪文本，不得因尚未 commit 而报空 diff。
-- 完成 Standards + Spec 双轴和“本次修 / 转专项 / 驳回”分流；核心行为修复后重新执行对应浏览器验收，再运行 `pnpm qa:check -- review .scratch/<feature>`。
+- 调用 `code-review`，提供 `scope.json`、spec 和本任务路径范围；审查必须独立于实现者并覆盖完整变更，不得因尚未 commit 而报空 diff。
+- 在最终代码上用 qa-run 执行计划声明的全部交付命令，再运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度。
+- “代码审查状态：已通过”仅限本会话 review 输出 `结果: PASS` 之后，汇报须附该行；测试结论必须与最后一次实际运行一致。
 - 报告实际修改、测试输出、未验证项和新增 Agent 次数。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。

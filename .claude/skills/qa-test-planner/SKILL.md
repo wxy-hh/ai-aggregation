@@ -30,46 +30,50 @@ A comprehensive skill for QA engineers to create test plans, generate manual tes
 - fresh context 不等于 different model。阶段 5 浏览器验收始终由主 Agent inline 执行，不交给独立 QA。
 - 阶段 6 沿用 Standards + Spec 双轴，不额外增加第三名 QA 或裁决代理。
 
-### Schema 2 输出契约（兼容 Schema 1）
+### Schema 3 输出契约（Schema 1/2 冻结兼容）
 
-新计划声明 `QA Schema: 2` 和 `QA Mode: inline|independent`。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers 和连续编号的验证断言：
+新计划声明 `QA Schema: 3`、`QA Mode: inline|independent` 和可选 `QA Kind: feature|fix`（默认 feature）。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers、Seam 和连续编号的验证断言：
 
 ```markdown
-QA Schema: 2
+QA Schema: 3
 QA Mode: inline
+QA Kind: feature
 
 ### TC01: 示例场景
 - Priority: P0
 - Covers: 1, 2
+- Seam: browser
 
 #### 验证断言
 1. 第一条可量化预期。
-2. 第二条可量化预期。
 
 ## 执行记录
-| 用例 | 断言序号 | 状态 | 证据或原因 |
-| --- | --- | --- | --- |
-| TC01 | 1 | PASS | `screenshots/TC01-pass.png` |
-| TC01 | 2 | BLOCKED | 尚未执行 |
+| 用例 | 断言序号 | 状态 | 证据 | 备注 |
+| --- | --- | --- | --- | --- |
+| TC01 | 1 | PASS | `screenshots/TC01.png`、`evidence/tc01.log` | |
 
-## Spec 对账
-| US | 状态 | 证据或原因 |
-| --- | --- | --- |
-| 1 | PASS | TC01 / 断言 1 |
-| 2 | BLOCKED | TC01 / 断言 2 未执行 |
+## 交付验证
+| 命令 | 证据 |
+| --- | --- |
+| `node --test 'tooling/scripts/__tests__/*.test.mjs'` | 待执行 |
+
+## 计划变更
+- 无
 ```
 
-- 只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。
-- 不手填 TC 总体结果：全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
-- 文件证据写反引号相对路径，必须位于特性目录且非空；`command:` / `server:` 证据必须来自真实执行。检查器不判断截图语义，人工仍需抽查。
-- Schema 2 在 review 时另需 `review-package.json`、变更补丁（有变更时）和 `review-report.md`（含 Standards、Spec、三档分流），不能只凭表格宣称审查完成。
-- Schema 1 保持旧校验规则；无 Schema 1/2 标记的历史计划保持不动，返回 LEGACY 仅表示未校验，不得称为 PASS。
+- **Seam 选择**：选最高的合适接缝；browser 只用于 DOM、交互与视觉，其他断言下沉到 api、integration、unit 或 static。browser 默认 ≤5 条/15 分钟。
+- **证据**：只认特性目录内文件；browser 的 PASS 需要独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。
+- **状态**：只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
+- **交付验证**：规划时写全量命令，按范围选择 typecheck、测试和 lint；最终代码上用 qa-run 执行并核对 argv、exit 和 tree。
+- **修复轮**：修复已交付特性时使用 `QA Kind: fix` 和独立修复目录；每个 TC 增加 `## 修复前复现` 行，红绿日志必须同 argv、红日志更早且 tree 不同。
+- **计划冻结**：计划在 init 时冻结。删除 TC、改 Seam、减 Covers、改写或删除既有断言、改删交付命令，必须在 `## 计划变更` 说明；追加不受限，规划时就要写准。
+- **兼容**：Schema 1/2 按原规则校验；未声明受支持 Schema（1/2/3）的历史计划返回 LEGACY，仅表示未校验。
 
-计划完成后运行一次 `pnpm qa:check -- plan .scratch/<feature>`；验收后运行 `acceptance`，真实双轴审查并生成报告后运行 `review`。失败时一次性查看全部问题，不自动重试，不为追求退出码修改业务断言。
+计划完成后运行一次 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`；验收后运行 `acceptance`，真实独立双轴审查并生成报告后运行 `review`。失败时一次性查看全部问题，不自动重试，不为追求退出码修改业务断言。
 
 ### 阶段收口
 
-规划通过后，报告当前已完成阶段 3B、车道及理由、qa-plan 路径和 `qa-check plan` 结果。**规划通过后，唯一下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
+规划通过后，报告当前已完成阶段 3B、车道及理由、qa-plan 路径和 `qa-check plan` 结果。**规划通过后，建议下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
 
 ---
 

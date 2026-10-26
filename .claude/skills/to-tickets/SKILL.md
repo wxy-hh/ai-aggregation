@@ -104,4 +104,4 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 
 In either form, avoid specific file paths or code snippets: they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo, just the important bits.
 
-发布工单后按统一阶段收口报告：当前已完成阶段 3A、车道及理由、issues 目录和实际 frontier。默认**唯一下一步：`/implement`**，在单会话中按依赖顺序串行完成全部就绪工单，**不默认改为并发**。只有用户明确选择并行时才改为 `/implement-spec`，并遵守最多 2 个实现子代理及主 Agent 串行合并的约束。
+发布工单后按统一阶段收口报告：当前已完成阶段 3A、车道及理由、issues 目录和实际 frontier。默认**建议下一步：`/implement`**，在单会话中按依赖顺序串行完成全部就绪工单，**不默认改为并发**。只有用户明确选择并行时才改为 `/implement-spec`，并遵守最多 2 个实现子代理及主 Agent 串行合并的约束。

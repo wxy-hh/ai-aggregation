@@ -75,6 +75,28 @@ pnpm infra:logs
 
 适合团队协作、联调和更贴近生产的本地环境。
 
+## QA 工作流脚本
+
+### qa-check.mjs
+
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。Schema 3 绑定接缝、qa-run 证据和交付验证新鲜度，Schema 1/2 保持原规则。
+
+### review-package.mjs
+
+改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时用 `collect` 生成 diff 与 v2 manifest。`digest` 输出当前范围 tree；这些命令均不改变 Git index，禁止手改 `scope.json` 和 `prechange/`。
+
+### qa-run.mjs
+
+使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 真实执行并记录 argv、HEAD、tree、时间和退出码。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。
+
+### dev-port.mjs 探活
+
+使用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 按端口决议范围寻找标题为 AI 聚合平台的服务。标题不匹配时不要关闭其他进程；未找到时按输出启动 `pnpm dev:web` 后重试。
+
+### 工具测试
+
+运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时检查三个脚本的逐字一致性。
+
 ## 使用前
 
 确保脚本有执行权限：

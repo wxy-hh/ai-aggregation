@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { CURRENT_SCHEMA } from '../qa-check.mjs';
 
 const paths = {
   domain: 'docs/agents/domain.md',
@@ -9,6 +10,11 @@ const paths = {
   qaPlanner: '.claude/skills/qa-test-planner/SKILL.md',
   toTickets: '.claude/skills/to-tickets/SKILL.md',
   codeReview: '.claude/skills/code-review/SKILL.md',
+  implement: '.claude/skills/implement/SKILL.md',
+  setup: '.claude/skills/setup-qa-workflow/SKILL.md',
+  workflow: 'docs/agents/qa-workflow.md',
+  workflowTemplate: '.claude/skills/setup-qa-workflow/templates/qa-workflow.md',
+  claudeTemplate: '.claude/skills/setup-qa-workflow/templates/claude-qa-directive.md',
   root: 'CLAUDE.md',
   context: 'CONTEXT.md',
   settings: '.claude/settings.json',
@@ -28,30 +34,30 @@ test('领域术语默认只写 GLOSSARY，预览需求不再写入 CONTEXT', asy
   assert.doesNotMatch(context, /### 跨切片导航器 \(ChunkNavigator\)/);
 });
 
-test('grill 收口展示当前阶段、车道理由和唯一的 to-spec 后继', async () => {
+test('grill 收口展示当前阶段、车道理由和建议的 to-spec 后继（TC11）', async () => {
   const content = await read(paths.grill);
   assert.match(content, /当前已完成阶段/);
   assert.match(content, /车道及理由/);
   assert.match(content, /本阶段产物/);
-  assert.match(content, /唯一下一步：`\/to-spec`/);
+  assert.match(content, /建议下一步：`\/to-spec`/);
   assert.match(content, /不把补 ADR 与 `\/to-spec` 并列/);
 });
 
-test('to-spec 将 qa-test-planner 作为默认唯一下一步', async () => {
+test('to-spec 将 qa-test-planner 作为默认建议下一步（TC11）', async () => {
   const content = await read(paths.toSpec);
-  assert.match(content, /唯一下一步：`\/qa-test-planner`/);
+  assert.match(content, /建议下一步：`\/qa-test-planner`/);
   assert.match(content, /用户明确选择并行时才改变该默认路径/);
 });
 
-test('qa planner 将串行 implement 作为规划通过后的唯一下一步', async () => {
+test('qa planner 将串行 implement 作为规划通过后的建议下一步（TC11、TC12）', async () => {
   const content = await read(paths.qaPlanner);
-  assert.match(content, /规划通过后.*唯一下一步：`\/implement`/);
-  assert.match(content, /QA Schema: 2/);
+  assert.match(content, /规划通过后.*建议下一步：`\/implement`/);
+  assert.match(content, /QA Schema: 3/);
 });
 
-test('to-tickets 将串行 implement 作为默认唯一下一步', async () => {
+test('to-tickets 将串行 implement 作为默认建议下一步（TC11）', async () => {
   const content = await read(paths.toTickets);
-  assert.match(content, /唯一下一步：`\/implement`/);
+  assert.match(content, /建议下一步：`\/implement`/);
   assert.match(content, /不默认改为并发/);
 });
 
@@ -62,7 +68,98 @@ test('code-review 使用快照审查包并要求双轴报告', async () => {
   assert.match(content, /开工前已有/);
 });
 
-test('没有通过配置新增 Hooks', async () => {
+test('正本、根规则、规划与实现技能及安装模板引用当前 Schema（TC12）', async () => {
+  const documents = await Promise.all([
+    read(paths.workflow),
+    read(paths.root),
+    read(paths.qaPlanner),
+    read(paths.implement),
+    read(paths.workflowTemplate),
+    read(paths.claudeTemplate),
+  ]);
+  for (const content of documents) {
+    assert.match(content, new RegExp(`Schema ${CURRENT_SCHEMA}\\b`));
+    assert.doesNotMatch(content, /(新计划|新生成).{0,12}Schema [12]\b/);
+  }
+  assert.ok(documents[0].trim().split('\n').length <= 180);
+});
+
+test('规划器声明 Seam、交付命令、修复轮与计划冻结（TC12）', async () => {
+  const content = await read(paths.qaPlanner);
+  assert.match(content, /Seam/);
+  assert.match(content, /交付验证/);
+  assert.match(content, /QA Kind: fix/);
+  assert.match(content, /init 时冻结/);
+  assert.match(content, /≤5 条/);
+});
+
+test('门禁只在首轮、阶段切换与交付时完整声明（TC11）', async () => {
+  const [root, template] = await Promise.all([read(paths.root), read(paths.claudeTemplate)]);
+  for (const content of [root, template]) {
+    assert.match(content, /任务首轮/);
+    assert.match(content, /阶段切换/);
+    assert.match(content, /宣称交付/);
+    assert.match(content, /同一阶段内后续回合不重复/);
+  }
+  assert.ok(root.trim().split('\n').length <= 69);
+});
+
+test('完成声明以本会话 review 的 PASS 为据且审查技能列出完成标志（TC11、TC12）', async () => {
+  const [root, workflow, codeReview] = await Promise.all([
+    read(paths.root),
+    read(paths.workflow),
+    read(paths.codeReview),
+  ]);
+  for (const content of [root, workflow, codeReview]) {
+    assert.match(content, /node tooling\/scripts\/qa-check\.mjs review/);
+    assert.match(content, /结果: PASS/);
+  }
+  for (const required of ['完成标志', '审查方式', '证据审计', '范围说明']) {
+    assert.match(codeReview, new RegExp(required));
+  }
+});
+
+test('正本与 implement 写明探活、单文件测试、qa-run 和合规登录（TC10）', async () => {
+  const [workflow, implement] = await Promise.all([read(paths.workflow), read(paths.implement)]);
+  for (const content of [workflow, implement]) {
+    assert.match(content, /node tooling\/scripts\/dev-port\.mjs/);
+    assert.match(content, /pnpm --filter @repo\/web test/);
+    assert.match(content, /\[id\]/);
+    assert.match(content, /test_user/);
+    assert.match(content, /node tooling\/scripts\/qa-run\.mjs/);
+  }
+  for (const forbidden of ['签发令牌', '写库造会话', '注入 Cookie']) {
+    assert.match(workflow, new RegExp(forbidden));
+  }
+});
+
+test('安装器复制三个工具并验证直接 Node 调用（TC12）', async () => {
+  const content = await read(paths.setup);
+  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'node tooling/scripts/qa-run.mjs .scratch/<feature>']) {
+    assert.match(content, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('没有通过配置新增 Hooks（TC12）', async () => {
   const settings = JSON.parse(await read(paths.settings));
   assert.deepEqual(settings, { enabledPlugins: {}, extraKnownMarketplaces: {} });
+});
+
+test('通用安装器不注入宿主 scripts，模板使用可移植调用（TC12）', async () => {
+  const [setup, workflow, directive, customizations] = await Promise.all([
+    read(paths.setup),
+    read(paths.workflowTemplate),
+    read(paths.claudeTemplate),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+  ]);
+  assert.match(setup, /不得修改[^\n]*package\.json/);
+  for (const key of ['"qa:check"', '"qa:run"', '"review:package"', '"dev:probe"', '"test:tooling"']) {
+    assert.doesNotMatch(setup, new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  for (const content of [workflow, directive, customizations]) {
+    assert.doesNotMatch(content, /pnpm (?:qa:|dev:probe|test:tooling)/);
+    assert.doesNotMatch(content, /@repo\/web|test_user|AI 聚合平台/);
+  }
+  assert.match(workflow, /node tooling\/scripts\/qa-run\.mjs/);
+  assert.match(workflow, /node tooling\/scripts\/qa-check\.mjs/);
 });

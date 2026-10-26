@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * 开发端口决议共享模块
@@ -157,3 +158,76 @@ export function syncRtasrDevVars(webPort) {
     console.warn(`同步 worker-rtasr 环境变量配置时产生警告: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+export const APP_TITLE_PATTERN = /<title>[^<]*AI 聚合平台[^<]*<\/title>/;
+
+export function isAppHtml(html) {
+  return APP_TITLE_PATTERN.test(html);
+}
+
+export async function probeWebApp({
+  ports = Array.from({ length: MAX_PORT_ATTEMPTS }, (_, index) => WEB_PORT_RANGE.start + index),
+  path: requestPath = '/login',
+  timeoutMs = 30000,
+} = {}) {
+  const others = [];
+  for (const port of ports) {
+    if (!(await isPortOpen('127.0.0.1', port))) continue;
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}${requestPath}`, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const html = await response.text();
+      if (isAppHtml(html)) return { url: `http://localhost:${port}`, port };
+      others.push({ port, reason: '标题不匹配' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      others.push({ port, reason: `请求失败：${message}` });
+    }
+  }
+  return { url: null, others };
+}
+
+async function probeMain() {
+  const args = process.argv.slice(2).filter((argument) => argument !== '--');
+  let waitSeconds = 0;
+  if (args[0] === '--probe') {
+    for (let index = 1; index < args.length; index += 1) {
+      if (args[index] === '--wait' && Number.isFinite(Number(args[index + 1])) && Number(args[index + 1]) >= 0) {
+        waitSeconds = Number(args[index + 1]);
+        index += 1;
+      } else {
+        console.error('用法: node tooling/scripts/dev-port.mjs --probe [--wait <秒>]');
+        process.exitCode = 1;
+        return;
+      }
+    }
+  } else {
+    console.error('用法: node tooling/scripts/dev-port.mjs --probe [--wait <秒>]');
+    process.exitCode = 1;
+    return;
+  }
+
+  const deadline = Date.now() + waitSeconds * 1000;
+  let probed;
+  do {
+    probed = await probeWebApp();
+    if (probed.url || Date.now() >= deadline) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(2000, deadline - Date.now())));
+  } while (!probed.url);
+
+  if (probed.url) {
+    console.log(`WEB_URL=${probed.url}`);
+    console.log(`已找到 AI 聚合平台开发服务（端口 ${probed.port}）。`);
+    return;
+  }
+  for (const other of probed.others) {
+    console.log(`端口 ${other.port}：${other.reason}；有服务但不是本应用，不要关闭该进程。`);
+  }
+  console.log('未找到已就绪的 AI 聚合平台开发服务。');
+  console.log('请后台运行 pnpm dev:web 后执行 node tooling/scripts/dev-port.mjs --probe --wait 90');
+  process.exitCode = 1;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) await probeMain();

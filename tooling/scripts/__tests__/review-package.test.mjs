@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +95,7 @@ test('敏感文件不读取，只进入 unreviewed', async (t) => {
   const feature = path.join(dir, '.scratch', 'feature');
   assert.equal(run(dir, 'init', feature, ['.env', 'tracked.txt']).status, 0);
 
+  await writeFile(path.join(dir, '.env'), 'PRIVATE_TOKEN=changed-after-init\n');
   await writeFile(path.join(dir, 'tracked.txt'), '本任务修改\n');
   const collect = run(dir, 'collect', feature, ['.env', 'tracked.txt']);
   assert.equal(collect.status, 0, collect.stderr);
@@ -113,5 +114,178 @@ test('review-package 安装模板与工具脚本保持逐字一致', async () =>
     readFile(templatePath, 'utf8'),
   ]);
   assert.equal(template, script);
+});
+
+test('开工时冻结 qa-plan，并写入 v2 基线（TC04）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  const plan = 'QA Schema: 3\nQA Mode: inline\n\n### TC01: 示例\n';
+  await writeFile(path.join(feature, 'qa-plan.md'), plan);
+
+  const init = run(dir, 'init', feature, ['tracked.txt']);
+  assert.equal(init.status, 0, init.stderr);
+  assert.match(init.stdout, /计划已冻结：prechange\/qa-plan\.md/);
+  assert.equal(await readFile(path.join(feature, 'prechange', 'qa-plan.md'), 'utf8'), plan);
+  const scope = JSON.parse(await readFile(path.join(feature, 'scope.json'), 'utf8'));
+  assert.equal(scope.version, 2);
+  assert.deepEqual(scope.fromBase, []);
+  assert.ok(scope.createdAt);
+  assert.deepEqual(scope.dirtyAtInit.inScope, ['tracked.txt']);
+});
+
+test('未变化的跳过文件不算未审查，变化后才进入 unreviewed（TC05）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(dir, '.env'), 'PRIVATE_TOKEN=do-not-copy\n');
+  await writeFile(path.join(dir, 'image.png'), Buffer.from([0, 1, 2, 3]));
+  await writeFile(path.join(dir, 'large.txt'), '大'.repeat(180 * 1024));
+  const paths = ['.env', 'image.png', 'large.txt'];
+  assert.equal(run(dir, 'init', feature, paths).status, 0);
+
+  const unchanged = run(dir, 'collect', feature);
+  assert.equal(unchanged.status, 0, unchanged.stderr);
+  const unchangedManifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  assert.deepEqual(unchangedManifest.unreviewed, []);
+
+  await writeFile(path.join(dir, '.env'), 'PRIVATE_TOKEN=changed-but-still-private\n');
+  await writeFile(path.join(dir, 'image.png'), Buffer.from([0, 1, 2, 4]));
+  await writeFile(path.join(dir, 'large.txt'), '变'.repeat(180 * 1024));
+  const changed = run(dir, 'collect', feature);
+  assert.equal(changed.status, 0, changed.stderr);
+  const changedManifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  assert.deepEqual(new Set(changedManifest.unreviewed.map((item) => item.path)), new Set(paths));
+  const patch = await readFile(path.join(feature, 'review-package.diff'), 'utf8');
+  assert.doesNotMatch(patch, /PRIVATE_TOKEN|do-not-copy|changed-but-still-private/);
+});
+
+test('声明范围被收窄时 collect 拒绝生成审查包（TC05）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  const scopePath = path.join(feature, 'scope.json');
+  const scope = JSON.parse(await readFile(scopePath, 'utf8'));
+  scope.scopes = [];
+  await writeFile(scopePath, JSON.stringify(scope));
+
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 1);
+  assert.match(collect.stderr, /SCOPE_NARROWED/);
+  assert.match(collect.stderr, /不要修改 scope\.json.*扩大范围请用 add/s);
+});
+
+test('中文路径在 init、add 与 collect 中保持原样（TC05）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  const relative = '中文 文档.txt';
+  await writeFile(path.join(dir, relative), '开工前内容\n');
+  assert.equal(run(dir, 'init', feature, [relative]).status, 0);
+  await writeFile(path.join(dir, relative), '本任务修改\n');
+
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 0, collect.stderr);
+  const manifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  assert.deepEqual(manifest.changedFiles, [relative]);
+  assert.match(await readFile(path.join(feature, 'review-package.diff'), 'utf8'), /本任务修改/);
+});
+
+test('add 以 base 为前值扩大范围且不改变 git index（TC05）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(dir, 'new-file.txt'), '开工前新增文件\n');
+  const indexBefore = git(dir, ['diff', '--cached', '--name-only']);
+  assert.equal(run(dir, 'init', feature, ['delete-me.txt']).status, 0);
+
+  const add = run(dir, 'add', feature, ['tracked.txt', 'new-file.txt']);
+  assert.equal(add.status, 0, add.stderr);
+  await writeFile(path.join(dir, 'tracked.txt'), '本任务修改\n');
+  await writeFile(path.join(dir, 'new-file.txt'), '本任务新增内容\n');
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 0, collect.stderr);
+  const indexAfter = git(dir, ['diff', '--cached', '--name-only']);
+
+  assert.equal(indexAfter, indexBefore);
+  const patch = await readFile(path.join(feature, 'review-package.diff'), 'utf8');
+  assert.match(patch, /-原始行\n\+本任务修改/);
+  assert.match(patch, /\+本任务新增内容/);
+  const manifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  assert.deepEqual(new Set(manifest.changedFiles), new Set(['tracked.txt', 'new-file.txt']));
+  assert.deepEqual(manifest.preexisting, []);
+  assert.deepEqual(manifest.fromBase, ['new-file.txt', 'tracked.txt']);
+});
+
+test('collect 区分开工后新增、继续修改、已提交与稳定的范围外改动（TC06）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['delete-me.txt']).status, 0);
+  await writeFile(path.join(dir, 'existing-untracked.txt'), '开工后继续修改\n');
+  await writeFile(path.join(dir, 'outside-new.txt'), '开工后新增\n');
+  await writeFile(path.join(dir, 'tracked.txt'), '开工后提交\n');
+  git(dir, ['add', 'tracked.txt']);
+  git(dir, ['commit', '--quiet', '-m', '范围外提交']);
+
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 0, collect.stderr);
+  const manifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  const outOfScope = Object.fromEntries(manifest.outOfScope.map((item) => [item.path, item.reason]));
+  assert.equal(outOfScope['outside-new.txt'], '开工后新增改动');
+  assert.equal(outOfScope['existing-untracked.txt'], '开工后继续修改');
+  assert.equal(outOfScope['tracked.txt'], '开工后已提交');
+  assert.equal(outOfScope['untouched.txt'], undefined);
+});
+
+test('tree 摘要与 digest 一致并随范围内内容变化（TC02）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  const { computeTreeDigest, readScope, resolveFeature, listFiles, inScope } = await import(
+    new URL('../review-package.mjs', import.meta.url)
+  );
+  const { root } = await resolveFeature(dir, feature);
+  const scope = await readScope(feature);
+  const first = await computeTreeDigest(root, scope.scopes);
+  const digest = run(dir, 'digest', feature);
+  assert.equal(digest.status, 0, digest.stderr);
+  assert.equal(digest.stdout.trim(), `tree: ${first}`);
+  assert.deepEqual(listFiles(root, scope.scopes), ['tracked.txt']);
+  assert.equal(inScope('tracked.txt', scope.scopes), true);
+  assert.equal(inScope('tracked.txt/child', scope.scopes), true);
+  assert.equal(inScope('other.txt', scope.scopes), false);
+
+  await writeFile(path.join(dir, 'tracked.txt'), '改变摘要\n');
+  assert.notEqual(await computeTreeDigest(root, scope.scopes), first);
+});
+
+test('add 与 init、collect 使用一致的符号链接哈希（TC05）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(dir, 'file.txt'), '链接目标\n');
+  await symlink('file.txt', path.join(dir, 'link.txt'));
+  git(dir, ['add', 'file.txt', 'link.txt']);
+  git(dir, ['commit', '--quiet', '-m', '加入符号链接']);
+  assert.equal(run(dir, 'init', feature, ['delete-me.txt']).status, 0);
+
+  const add = run(dir, 'add', feature, ['link.txt']);
+  assert.equal(add.status, 0, add.stderr);
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 0, collect.stderr);
+  const manifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  assert.deepEqual(manifest.unreviewed, []);
+});
+
+test('范围外文件 git mv 到范围内时保留原路径（TC06）', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(dir, 'outside.txt'), '范围外原始内容\n');
+  git(dir, ['add', 'outside.txt']);
+  git(dir, ['commit', '--quiet', '-m', '加入范围外文件']);
+  assert.equal(run(dir, 'init', feature, ['scoped.txt']).status, 0);
+  git(dir, ['mv', 'outside.txt', 'scoped.txt']);
+
+  const collect = run(dir, 'collect', feature);
+  assert.equal(collect.status, 0, collect.stderr);
+  const manifest = JSON.parse(await readFile(path.join(feature, 'review-package.json'), 'utf8'));
+  const paths = manifest.outOfScope.map((item) => item.path);
+  assert.ok(paths.includes('outside.txt'), JSON.stringify(manifest.outOfScope));
+  assert.ok(!paths.includes('scoped.txt'));
 });
 

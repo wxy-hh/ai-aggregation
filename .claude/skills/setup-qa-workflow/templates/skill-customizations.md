@@ -15,7 +15,7 @@
 在实现步骤中注入或更新项目段：
 
 ```text
-开工时执行 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单> 固化快照。默认单会话串行完成就绪工单，不自动提交。触及 {CORE_LINKS} 时，在 code-review 前按 qa-workflow 阶段 5 inline 完成真实浏览器验收；在规划、验收和审查边界运行 qa-check。
+改代码前执行 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单> 固化快照并冻结 Schema 3 计划；阶段产物需要纳入时用 add 以 base 为前值扩大范围，禁止手改 scope.json 或 prechange。默认单会话串行完成就绪工单，不自动提交。命令证据经 node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令> 生成；触及 {CORE_LINKS} 时按 qa-workflow 阶段 5 inline 完成真实浏览器验收，并在规划、验收和审查边界运行 node tooling/scripts/qa-check.mjs。
 ```
 
 ## 3. `implement-spec` —— 显式并行与合并回归

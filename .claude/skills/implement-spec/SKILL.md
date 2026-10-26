@@ -16,7 +16,7 @@ disable-model-invocation: true
 ## 执行步骤
 
 1. 阅读 spec 和 tickets，确认依赖边、任务路径范围和测试命令；没有 tickets 时先使用 `to-tickets`，不要伪造依赖图。
-2. 按既有 Git 规则创建或确认 integration branch，并在特性目录记录 `review-base`。若使用 PR，遵循现有 tracker 与用户授权。
+2. 按既有 Git 规则创建或确认 integration branch，并在改代码前执行 `review-package.mjs init` 生成特性 `scope.json`、冻结计划。若使用 PR，遵循现有 tracker 与用户授权。
 3. 计算无阻塞工单 frontier，仅向彼此独立且资源不冲突的工单最多派发 2 个实现子代理；其他情况串行处理。每个子代理：
    - 在独立 Worktree 和分支中工作，确认基于 integration 当前基线；不得通过 reset 丢弃已有改动；
    - 调用 `tdd` 完成工单及对应测试；
@@ -24,5 +24,5 @@ disable-model-invocation: true
 4. 主 Agent 串行合并完成的分支，不默认另派 Merger。每次合并后运行该特性约定的集成测试；失败时先修复集成结果，不继续解锁后续 frontier。
 5. 新 frontier 解锁后重复步骤 3–4，直到全部工单完成。保持实际并发数不超过 2，不在等待时盲目轮询。
 6. 主编排 Agent 在 integration 结果上运行全量测试。触及核心链路时，先按 `docs/agents/qa-workflow.md` 阶段 5 inline 完成真实浏览器验收；实现子代理不承担这项验收。
-7. 调用 `code-review`，提供 integration 的 `review-base`、spec 和完整改动范围，完成双轴与三档分流。Schema 1 计划按阶段运行 `qa-check`，旧计划仅报告 LEGACY。
+7. 调用 `code-review`，提供 integration 的 `scope.json`、spec 和完整改动范围，完成独立双轴与三档分流。Schema 3 计划按阶段运行 `qa-check`，Schema 1/2 保持兼容，LEGACY 仅表示未校验。
 8. 修复审查问题并重跑受影响验收。报告集成分支、测试证据、未验证项和实际 Agent 次数；未经授权不 push、不提交 PR、不删除分支或 Worktree。
