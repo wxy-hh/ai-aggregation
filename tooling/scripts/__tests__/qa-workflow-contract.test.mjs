@@ -112,13 +112,51 @@ test('机器校验保留 PASS 输出且审查技能列出完成标志（TC11、T
     read(paths.workflow),
     read(paths.codeReview),
   ]);
-  for (const content of [root, workflow, codeReview]) {
+  for (const content of [root, workflow]) {
     assert.match(content, /node tooling\/scripts\/qa-check\.mjs review/);
     assert.match(content, /结果: PASS/);
   }
   for (const required of ['完成标志', '审查方式', '证据审计', '范围说明']) {
     assert.match(codeReview, new RegExp(required));
   }
+});
+
+test('code-review 支持无 spec 的独立调用且保持纯审查', async () => {
+  const content = await read(paths.codeReview);
+  assert.match(content, /无 spec 可用/);
+  assert.match(content, /N\/A/);
+  assert.match(content, /不强制[^\n]*qa-plan/);
+  assert.match(content, /不强制[^\n]*review-report\.md/);
+  assert.match(content, /QA 工作流[^\n]*最终交付/);
+  assert.match(content, /无 `scope\.json` 时（独立调用或旧流程）/);
+  assert.doesNotMatch(content, /最终代码上的交付验证日志/);
+});
+
+test('QA 工作流负责最终交付校验而非 code-review 总控', async () => {
+  const contents = await Promise.all([
+    read(paths.implement),
+    read(paths.implementSpec),
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+    read('docs/adr/0026-qa-evidence-binding-and-review-integrity.md'),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /QA 工作流/);
+    assert.match(content, /最终交付/);
+    assert.doesNotMatch(content, /(?:由 `code-review`|由其统一|由本技能统一)[^\n]*(?:最终交付|qa-check review)/);
+  }
+});
+
+test('最终树后按影响轴增量复审并保持三档不变', async () => {
+  const content = await read(paths.codeReview);
+  assert.match(content, /Standards 受影响/);
+  assert.match(content, /Spec 受影响/);
+  assert.match(content, /非行为文档/);
+  assert.match(content, /证据索引/);
+  assert.match(content, /本次修 \/ 转专项 \/ 驳回/);
+  assert.match(content, /不[^\n]*重跑完整双轴/);
 });
 
 test('实现收口先真实调用 code-review，再进入机器交付校验（TC13）', async () => {
@@ -136,17 +174,20 @@ test('实现收口先真实调用 code-review，再进入机器交付校验（TC
 });
 
 test('机器 PASS 不替代独立审查和人工终审（TC13）', async () => {
-  const contents = await Promise.all([
+  const [workflow, root, guide, codeReview] = await Promise.all([
     read(paths.workflow),
     read(paths.root),
-    read(paths.codeReview),
     read(paths.guide),
+    read(paths.codeReview),
   ]);
-  for (const content of contents) {
+  for (const content of [workflow, root, guide]) {
     assert.match(content, /机器校验通过/);
     assert.match(content, /独立审查/);
     assert.match(content, /人工终审/);
   }
+  assert.match(codeReview, /独立审查/);
+  assert.match(codeReview, /人工终审/);
+  assert.match(codeReview, /只返回独立审查发现/);
 });
 
 test('规划与证据审计覆盖关键分支、原断言和 NOTE 处置（TC13）', async () => {
@@ -223,5 +264,6 @@ test('通用安装模板同步审查交接与完成语义（TC13）', async () =
   assert.match(workflow, /触发条件/);
   assert.match(workflow, /NOTE 处置/);
   assert.match(customizations, /## \d+\. `code-review`/);
+  assert.match(customizations, /Standards（及有 spec 时的 Spec）/);
   assert.match(setup, /注入[^\n]*`code-review`/);
 });

@@ -31,8 +31,8 @@ disable-model-invocation: true
 
 ## 4. 审查与交付
 
-- 阶段 5 验收后，通过宿主真实技能机制调用 `code-review`，提供特性目录、`scope.json`、spec、冻结计划和本任务路径范围；由其统一完成 collect、独立 Standards / Spec、报告、三档分流和最终交付校验，不得因尚未 commit 而报空 diff。
+- 阶段 5 验收后，通过宿主真实技能机制调用 `code-review`，提供特性目录、`scope.json`、spec、冻结计划和本任务路径范围；由其完成 collect、独立 Standards / Spec、报告和三档发现，不得因尚未 commit 而报空 diff。
 - 未实际调用 `code-review` 或没有独立审查结果时，状态为“待独立审查”。实现者不得凭空生成 `review-report.md` 或填写“独立审查”；主 Agent 只能在真实技能流程中汇总实际返回并保留原结论。
-- 由 `code-review` 在最终代码上执行全部交付命令并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，汇报须附该行，不替代独立审查与人工终审。
 - 审查发现的问题由实现者明确修复，再重跑受影响验证并复审，不自动循环；测试结论必须与最后一次实际运行一致。
+- QA 工作流负责最终交付，在最终代码上执行全部交付命令并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，汇报须附该行，不替代独立审查与人工终审。
 - 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。

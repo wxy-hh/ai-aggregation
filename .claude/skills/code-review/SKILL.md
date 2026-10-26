@@ -1,17 +1,16 @@
 ---
 name: code-review
-description: "双轴代码审查：并行检查代码规范（Standards）与需求规格一致性（Spec），覆盖完整的未提交交付变更。"
+description: "独立双轴代码审查：支持固定点、当前工作区、branch、PR 与 QA 特性，检查 Standards 与可用的 Spec。"
 ---
 
-对当前交付变更执行 Standards + Spec 双轴审查，而不是只检查 `HEAD`。两轴在中大型改动中由独立于实现者的审查者完成，主 Agent 汇总但不合并、不互相重排结论；小型快车道按 `docs/agents/qa-workflow.md` 剪裁。
+对固定点或当前工作区的交付变更执行独立 Standards + Spec 审查，而不是只检查 `HEAD`。主 Agent 汇总真实审查返回但不合并、不互相重排结论；小型快车道按 `docs/agents/qa-workflow.md` 剪裁。
 
 ## 完成标志
 
-以下项目缺一不可，缺一项不得宣称审查已经完成：
+共同要求：本技能已通过宿主真实技能机制调用，独立于实现者的 Standards（及有 spec 时的 Spec）已经执行，主 Agent 只汇总真实返回；空 diff 不启动审查代理，没有实际调用或独立审查条件时保持“待独立审查”。
 
-- 本技能已通过宿主真实技能机制调用，独立于实现者的 Standards 与 Spec 审查已经执行，`review-report.md` 已落盘并包含证据审计和 Spec 对账；没有实际调用或独立结果时保持“待独立审查”；
-- 最终代码上的交付验证日志 argv 正确、exit 0、tree 新鲜，审查包也与当前 tree 一致；
-- 本会话 `node tooling/scripts/qa-check.mjs review .scratch/<feature>` 输出 `结果: PASS` 只表示“机器校验通过”，汇报附上该行；它不替代真实独立审查，也不替代后续人工终审。
+- **独立调用**：审查当前工作区、branch 或 PR 时 Standards 始终执行；有 spec 才执行 Spec 审查，无 spec 可用时标为 `Spec: N/A`，不启动 Spec 子代理，也不得写成 Spec PASS。没有特性 QA 目录时在会话中输出 Standards / Spec 与三档结果，不强制 qa-plan、qa-run、`review-report.md` 或 `qa-check review`。
+- **随 QA 标准/慢车道调用**：spec 与 qa-plan 必需，完成证据审计并落盘 `review-report.md`；QA 工作流负责最终交付命令、`qa-check review` 和人工终审，这些不列为本技能自身完成条件。
 
 ## 1. 确定 spec、基线与审查范围
 
@@ -32,15 +31,16 @@ test "$(git merge-base HEAD "$BASE")" = "$BASE"
 
 若记录失效，说明原因并使用下一优先级；不得把无法解析的 Base 直接传给子代理。回退 Base 可能扩大审查范围，必须显式报告。
 
-同时确定 spec 和路径范围：
+根据调用场景确定 spec 和路径范围：
 
-- spec 优先使用用户路径、工单引用或与当前特性匹配的 `.scratch/<feature>/spec.md` / `docs/features/**/spec.md`；中大型改动缺少 spec 时只询问一次。
+- 独立调用时，spec 优先使用用户路径、工单引用或与当前特性匹配的 `.scratch/<feature>/spec.md` / `docs/features/**/spec.md`；找不到时按 `Spec: N/A` 继续 Standards 审查，不为了补齐 QA 产物而阻断。
+- 随 QA 标准/慢车道调用时，spec 与 qa-plan 均为必需输入，缺失则保持 BLOCKED，不能借独立调用回退绕过交付要求。
 - 工作区有无关改动时，只审查用户或特性 spec 指定的路径，不把其他工作混入。
 - 审查相关规范包括 `CLAUDE.md`、`.claude/rules/`、相关 ADR、`DESIGN.md`（UI 时）及仓库已有标准。
 
 ## 2. 只读构建完整审查包
 
-运行增量审查收集器：
+有特性 `scope.json` 时运行增量审查收集器：
 
 ```bash
 node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>
@@ -53,7 +53,7 @@ node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白
 - 当前 tree 与 manifest 不一致时审查包已过期，必须重新 collect 并复审受影响结论。
 - 未变化跳过文件不再自动算未审查；发生变化或无法比较的敏感、二进制、超大文件列入 `unreviewed`，不得声称已覆盖其内容。
 - **禁止为审查执行 `git add`、`git add -N`、commit、reset 或 checkout。** diff 为空且无未审查文件时报告“无变更”，不要启动两个审查子代理。
-- 无 `scope.json` 的旧流程才回退 `git diff <base>` 与 `git diff --no-index`，并显式说明兼容边界。
+- 无 `scope.json` 时（独立调用或旧流程）回退 `git diff <base>` 与 `git diff --no-index`，并显式说明未跟踪文件的覆盖边界。
 
 ## 3. Standards 规范轴
 
@@ -72,15 +72,15 @@ node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白
 - **Middle Man**：仅转发的中间层，移除无价值委托。
 - **Refused Bequest**：继承后拒绝大部分父类契约，改用组合。
 
-## 4. 独立执行两个审查轴
+## 4. 独立执行审查轴
 
-中大型改动分别启动 Standards 和 Spec 子代理，不额外增加第三名 QA 或裁决代理，不自动指定或升级模型。优先使用只读审查角色；宿主不支持角色限制时，在提示词中明确禁止写文件。
+中大型改动在同一轮前台分别启动 Standards 和（有 spec 时的）Spec 子代理，不额外增加第三名 QA 或裁决代理，不自动指定或升级模型。独立调用无 spec 时不启动 Spec 子代理，结果标为 `Spec: N/A`。优先使用只读审查角色；宿主不支持角色限制时，在提示词中明确禁止写文件。
 
 审查来源按宿主能力记录：优先使用真实技能轨迹或子代理、会话 ID；没有此类标识时记录可定位的独立会话或人工审查者；完全没有独立审查条件时保持“待独立审查”。主 Agent 可在本技能内汇总真实返回，但不得伪造调用、补写不存在的审查过程或改写两轴结论。通用流程不强制统一 ID、transcript 文件或特定模型，这些文本也不构成机器可证明的防伪凭据。
 
 **Standards 子代理输入**：审查包路径、commit 列表、规范来源和完整坏味道基线。按文件/hunk 报告违反的标准及出处、可能的坏味道及证据，区分硬违规与判断题。
 
-**Spec 子代理输入**：审查包路径、commit 列表、spec、冻结计划与证据路径。除缺失、超范围和错误实现外，还要完成证据审计：
+**Spec 子代理输入**：有 spec 时提供审查包路径、commit 列表、spec、冻结计划与证据路径。除缺失、超范围和错误实现外，还要完成证据审计：
 
 1. 逐个 TC 对照冻结计划中的原始断言与过程脚本，核对接缝、真实入口、操作环境和操作方式是否一致，不能用低接缝证据冒充 browser；
 2. 核对交互是否来自真实输入事件，注入是否只构造前置条件并在备注标明；
@@ -94,11 +94,13 @@ node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白
 
 ## 5. 报告结构与三档分流
 
-报告必须落盘为 `.scratch/<feature>/review-report.md`，包含：
+随 QA 调用时，报告必须落盘为 `.scratch/<feature>/review-report.md`，包含：
 
 - 一行 `审查方式：…`，写明独立审查者、会话或子代理 ID，实现者自查不算独立审查；
 - 非空 `## Standards`、`## Spec` 和 `## 证据审计`，分别保留两轴结论和逐 TC 核对结果；
 - `## Spec 对账`、`## 三档分流` 和 `## 范围说明`，可附文件级高危雷达但不形成第三轴。
+
+独立调用且没有特性 QA 目录时，直接在会话中输出同样的两轴发现和三档结果；无 spec 时明确写 `Spec: N/A`，不强制创建报告文件或补齐 QA 产物。
 
 所有发现分为“本次修 / 转专项 / 驳回”：本次修重跑受影响验证；转专项写入报告的遗留事项并说明独立处理理由；驳回记录 ADR 或契约依据。不得把转专项写回 Schema 3 qa-plan 来消除审查问题。
 
@@ -106,11 +108,22 @@ Schema 1 继续采用 qa-plan 中的 Spec 对账；Schema 2 保留原 manifest�
 
 ## 6. 复验与交付边界
 
-- “本次修”触及核心链路时重跑对应浏览器用例；其他修复至少重跑相关测试和静态检查。
-- 在最终代码上通过 qa-run 执行计划声明的全部交付命令，日志 argv 必须一致、exit 0、tree 不得为 none 且必须等于当前 tree。
-- 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`；本会话输出 `结果: PASS` 只称“机器校验通过”并附上该行，独立审查完成以真实调用和双轴结果为据，人工终审另行认定。
-- LEGACY 仅表示旧计划未校验，不冒充 PASS；不自动重试，不为退出码修改业务断言。
-- 报告实际变更、证据、遗留事项和未验证项。是否 commit、push、合并由用户按 `.claude/rules/git-workflow.md` 决定。
+- 本技能只返回独立审查发现与三档结果。随 QA 调用时，修复后的受影响验证、最终交付命令、`qa-check review` 和人工终审均由 QA 工作流负责；独立调用不强制 QA 交付检查。
+- “本次修”由 QA 工作流安排复验：触及核心链路时重跑对应浏览器用例，其他修复至少重跑相关测试和静态检查；不自动重试，不为退出码修改业务断言。
+- QA 流程中的 LEGACY 仅表示旧计划未校验，不冒充 PASS。报告实际变更、证据、遗留事项和未验证项，是否 commit、push、合并由用户按 `.claude/rules/git-workflow.md` 决定。
+
+## 7. 最终树后的增量复审
+
+完整双轴尽量在实现和证据稳定的最终树执行；之后每次范围内变化都重新 collect，并按影响轴复核，不机械重跑完整双轴：
+
+- **Standards 受影响**：业务实现、架构、命名、规范或构建相关内容变化时，由 Standards 审查者复核受影响 hunk 和原结论。
+- **Spec 受影响**：spec、qa-plan、断言、过程脚本、证据或需求行为变化时，由 Spec 审查者复核受影响 TC/US 与证据。
+- **两轴均受影响**：两轴增量复审，不额外增加裁决代理。
+- **仅证据索引更新**：同一 tree、同一 argv、同一断言与预期结果，只更新日志标签或证据索引时，不重复审查代码；更新最终证据索引，不改原审查发现。
+- **非行为文档变化**：仅状态、格式等非行为文档由 Spec 审查者轻量确认差异与理由，不重跑完整双轴；spec、ADR、阈值或断言变化不属于此类。
+- **无法判断**：按行为变化处理，由受影响轴复核，实现者不得自行豁免。
+
+报告与证据索引必须指向最终材料，不保留已知过期日志路径。三档仍按“本次修 / 转专项 / 驳回”处理，不用增量复核改写原审查发现或消除问题。
 
 ## 为什么保留两个轴
 

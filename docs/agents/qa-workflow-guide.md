@@ -889,7 +889,7 @@ flowchart TD
 #### 3. 范围、三档分流与复验回路
 
 - 运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>` 生成 v2 审查包。属于本任务的范围外文件先 add，其他改动在 `## 范围说明` 逐项解释；`preexisting` 只作 NOTE，不冒充已审查。
-- 当前 tree 与 manifest 或交付日志不一致时重新 collect、重跑交付命令并复审。最终运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，本会话 `结果: PASS` 只称“机器校验通过”；独立审查完成以真实 `code-review` 和独立双轴结果为据，人工终审另行认定。
+- 当前 tree 与 manifest 或交付日志不一致时重新 collect、重跑交付命令，Standards 受影响由 Standards 复核，Spec 或证据受影响由 Spec 复核，两边都受影响才同时增量复审；仅日志标签或证据索引更新不重复审查代码，非行为文档由 Spec 轻量确认，不机械重跑完整双轴。最终由 QA 工作流运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，本会话 `结果: PASS` 只称“机器校验通过”；独立审查完成以真实 `code-review` 和独立双轴结果为据，人工终审另行认定。
 - 所有发现分为：**本次修**（当前修复并复验）、**转专项**（写入 review-report 的遗留事项）、**驳回**（给出 ADR 或契约依据）。不得通过改写 qa-plan 消除问题。
 
 ---
