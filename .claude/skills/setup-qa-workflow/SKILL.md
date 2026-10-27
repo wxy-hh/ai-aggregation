@@ -52,7 +52,7 @@ disable-model-invocation: true
 报告实际写入、跳过和冲突项，并检查：
 
 - Node 版本满足项目要求，依赖已安装；
-- `implement` / `implement-spec` 能在验收后实际调用 `code-review`，审查来源可按宿主能力核对，`结果: PASS` 只表示机器校验通过，不替代独立审查与人工终审；
+- `implement` / `implement-spec` 能在验收后实际调用 `code-review` 并取得独立上下文的真实独立审查返回；无独立上下文能力时只交付待审查材料包并保持待独立审查，不运行最终 `qa-check review`。`结果: PASS` 只表示机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审；
 - `node tooling/scripts/qa-check.mjs --help` 能显示用法（该用法允许退出 1 表示缺少参数）；
 - 能用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成不可覆盖的证据日志，同名标签需换新；
 - dev 服务与端口锚点可用；

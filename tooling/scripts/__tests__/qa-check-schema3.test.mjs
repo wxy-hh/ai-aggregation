@@ -571,6 +571,32 @@ test('产物齐全且新鲜时 review 为 PASS，多个问题一次聚合（TC08
   assert.ok(codes(aggregated).includes('MISSING_SPEC_REVIEW') === false);
 });
 
+test('review PASS 限定机器校验范围并保留退出码兼容（TC02）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+
+  const output = formatReport(report, 'review');
+  assert.match(output, /结果: PASS/);
+  assert.match(output, /校验范围: 审查材料结构、交付日志、tree 与范围完整性/);
+  assert.match(output, /不包含: 独立审查来源真实性、证据语义质量与交付授权/);
+  assert.doesNotMatch(formatReport(report, 'plan'), /校验范围:/);
+  assert.doesNotMatch(formatReport(report, 'acceptance'), /校验范围:/);
+  assert.doesNotMatch(formatReport(report, 'review'), /允许 commit/);
+
+  const cli = spawnSync(process.execPath, [QA_CHECK, 'review', feature], { encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /结果: PASS/);
+  assert.match(cli.stdout, /不包含: 独立审查来源真实性、证据语义质量与交付授权/);
+
+  const blocked = await reviewRepo(t, {
+    report: REPORT_OK.replace(/审查方式：.*$/m, '审查方式：实现者自查'),
+  });
+  const blockedCli = spawnSync(process.execPath, [QA_CHECK, 'review', blocked.feature], { encoding: 'utf8' });
+  assert.equal(blockedCli.status, 1);
+  assert.doesNotMatch(blockedCli.stdout, /校验范围:/);
+});
+
 function fixPlan({ reproduction = '| TC01 | `evidence/red.log` |' } = {}) {
   return singlePlan({ kind: 'fix', reproduction });
 }

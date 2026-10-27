@@ -267,3 +267,63 @@ test('通用安装模板同步审查交接与完成语义（TC13）', async () =
   assert.match(customizations, /Standards（及有 spec 时的 Spec）/);
   assert.match(setup, /注入[^\n]*`code-review`/);
 });
+
+test('独立审查以独立上下文和真实返回交接，无能力时合法暂停（TC01）', async () => {
+  const contents = await Promise.all([
+    read(paths.codeReview),
+    read(paths.implement),
+    read(paths.implementSpec),
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /独立上下文/);
+    assert.match(content, /真实独立(?:审查)?返回/);
+    assert.match(content, /待独立审查/);
+    assert.doesNotMatch(content, /exit 2/);
+  }
+  for (const content of [contents[1], contents[3], contents[4]]) {
+    assert.match(content, /不运行最终 `qa-check review`/);
+    assert.match(content, /待审查材料包/);
+  }
+
+  const [root, directive] = await Promise.all([read(paths.root), read(paths.claudeTemplate)]);
+  for (const content of [root, directive]) {
+    assert.match(content, /独立上下文/);
+    assert.match(content, /真实独立(?:审查)?返回/);
+    assert.doesNotMatch(content, /exit 2/);
+  }
+  assert.match(root, /`AGENTS\.md` 是指向本文件的符号链接/);
+});
+
+test('浏览器脚本具备失败能力，环境不足不得用低接缝冒充（TC04）', async () => {
+  const contents = await Promise.all([
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /硬断言/);
+    assert.match(content, /非零退出/);
+    assert.match(content, /转人工/);
+    assert.match(content, /BLOCKED/);
+  }
+  for (const content of contents.slice(0, 2)) {
+    assert.match(content, /不得用低接缝证据替代 browser/);
+  }
+});
+
+test('发布验收检查真实编排与无能力暂停，而非只查工具（TC01）', async () => {
+  const contents = await Promise.all([
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+  ]);
+  for (const content of contents) {
+    assert.match(content, /dogfood/);
+    assert.match(content, /真实\s+\/implement/);
+    assert.match(content, /无独立上下文能力/);
+    assert.match(content, /手动派发 reviewer/);
+  }
+});

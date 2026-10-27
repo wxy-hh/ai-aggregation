@@ -1021,7 +1021,7 @@ export async function checkFeature(featureDir, phase) {
   return checkReview(featureDir, plan, specIds, markdown);
 }
 
-export function formatReport(report) {
+export function formatReport(report, phase) {
   const lines = (report.notes ?? []).map((note) => `[NOTE] ${note}`);
   lines.push(...report.issues.map((item) => `[${item.code}] ${item.message}`));
   const hintedCodes = new Set();
@@ -1031,6 +1031,10 @@ export function formatReport(report) {
     lines.push(`[提示] ${item.code}：${item.hint}`);
   }
   lines.push(`结果: ${report.status}`);
+  if (phase === 'review' && report.status === 'PASS') {
+    lines.push('校验范围: 审查材料结构、交付日志、tree 与范围完整性');
+    lines.push('不包含: 独立审查来源真实性、证据语义质量与交付授权');
+  }
   return lines.join('\n');
 }
 
@@ -1046,7 +1050,7 @@ async function main() {
 
   try {
     const report = await checkFeature(featureDir, phase);
-    console.log(formatReport(report));
+    console.log(formatReport(report, phase));
     process.exitCode = ['PASS', 'LEGACY'].includes(report.status) ? 0 : 1;
   } catch (error) {
     console.error(`[INVALID_INPUT] ${error.message}`);

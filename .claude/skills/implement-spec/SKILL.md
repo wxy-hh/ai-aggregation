@@ -24,6 +24,6 @@ disable-model-invocation: true
 4. 主 Agent 串行合并完成的分支，不默认另派 Merger。每次合并后运行该特性约定的集成测试；失败时先修复集成结果，不继续解锁后续 frontier。
 5. 新 frontier 解锁后重复步骤 3–4，直到全部工单完成。保持实际并发数不超过 2，不在等待时盲目轮询。
 6. 主编排 Agent 在 integration 结果上运行全量测试。触及核心链路时，先按 `docs/agents/qa-workflow.md` 阶段 5 inline 完成真实浏览器验收；实现子代理不承担这项验收。
-7. 通过宿主真实技能机制调用 `code-review`，提供 integration 特性目录、`scope.json`、spec、冻结计划和完整改动范围；由其完成 collect、独立 Standards / Spec、报告和三档发现。Schema 3 计划按阶段运行 `qa-check`，Schema 1/2 保持兼容，LEGACY 仅表示未校验。
-8. 未实际调用 `code-review` 或没有独立审查结果时保持“待独立审查”，不得凭空生成 `review-report.md` 或填写“独立审查”。主 Agent 只能汇总真实审查返回；发现的问题明确修复后重跑受影响验证，Standards 受影响由 Standards 复核，Spec 或证据受影响由 Spec 复核，两边都受影响才同时增量复审，不自动循环。
-9. QA 工作流负责最终交付命令与 `qa-check review`，其 `结果: PASS` 只称“机器校验通过”，汇报须附该行，不替代独立审查与人工终审。报告集成分支、测试证据、未验证项和实际 Agent 次数；未经授权不 push、不提交 PR、不删除分支或 Worktree。
+7. 通过宿主真实技能机制调用 `code-review`，提供 integration 特性目录、`scope.json`、spec、冻结计划和完整改动范围；由其完成 collect、独立 Standards / Spec、报告和三档发现。独立审查指独立上下文，可在同一用户会话前台串行产生；主 Agent 只机械汇总真实独立审查返回，保留原结论。Schema 3 计划按阶段运行 `qa-check`，Schema 1/2 保持兼容，LEGACY 仅表示未校验。
+8. 未实际调用 `code-review` 或没有独立审查结果时保持“待独立审查”，不得凭空生成 `review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续。发现的问题明确修复后重跑受影响验证，Standards 受影响由 Standards 复核，Spec 或证据受影响由 Spec 复核，两边都受影响才同时增量复审，不自动循环。
+9. QA 工作流负责最终交付命令与 `qa-check review`，其 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明，不替代独立审查与人工终审。报告集成分支、测试证据、未验证项和实际 Agent 次数；未经授权不 push、不提交 PR、不删除分支或 Worktree。

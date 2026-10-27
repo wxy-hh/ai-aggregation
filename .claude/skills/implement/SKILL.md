@@ -26,13 +26,15 @@ disable-model-invocation: true
 - 新计划使用 Schema 3。规划后运行 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`，验收后运行 `acceptance`；Schema 1/2 按旧规则处理，LEGACY 仅表示未校验。
 - 先用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 探活；未就绪时后台运行 `pnpm dev:web`，不得关闭标题不匹配的其他进程。
 - 触及核心链路时按 `docs/agents/qa-workflow.md` 阶段 5 完成真实浏览器验收，遵守真实入口、真实输入事件、独立截图和数值严格断言规则；非核心改动按 spec 运行单元、集成和静态检查。
+- 过程脚本的关键预期必须有硬断言，目标缺失、动作未执行或数值不达标必须失败并非零退出，不能只打印成功文本；环境无法验证 DOM、真实交互或移动几何时记 BLOCKED 或经计划变更转人工，不用低接缝证据替代。
 - 登录依次使用可见窗口已有会话、seed 的 `test_user`（密码从环境变量读取）或真实注册一次性账号；禁止签发令牌、写库造会话或改密码、注入 Cookie，凭据不得进入命令行、日志或证据。
 - 未执行或证据不足只能记 BLOCKED，不得宣称 PASS。
 
 ## 4. 审查与交付
 
 - 阶段 5 验收后，通过宿主真实技能机制调用 `code-review`，提供特性目录、`scope.json`、spec、冻结计划和本任务路径范围；由其完成 collect、独立 Standards / Spec、报告和三档发现，不得因尚未 commit 而报空 diff。
-- 未实际调用 `code-review` 或没有独立审查结果时，状态为“待独立审查”。实现者不得凭空生成 `review-report.md` 或填写“独立审查”；主 Agent 只能在真实技能流程中汇总实际返回并保留原结论。
+- 独立审查指独立上下文，不要求另开用户会话或物理并发；宿主支持时前台串行调用只读审查者。主 Agent 只能机械汇总真实独立审查返回，保留原发现、来源与三档结论；实现串行不排斥这项必要审查。
+- 未实际调用 `code-review` 或没有独立审查结果时，状态为“待独立审查”。实现者不得凭空生成 `review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
 - 审查发现的问题由实现者明确修复，再重跑受影响验证并复审，不自动循环；测试结论必须与最后一次实际运行一致。
-- QA 工作流负责最终交付，在最终代码上执行全部交付命令并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，汇报须附该行，不替代独立审查与人工终审。
+- QA 工作流负责最终交付，在最终代码上执行全部交付命令并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明，不替代独立审查与人工终审。
 - 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。
