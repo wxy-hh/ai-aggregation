@@ -18,6 +18,11 @@ import { hybridRetrieval, type RetrievedChunk } from '@/lib/rag/hybrid-retrieval
 import { formatRetrievedChunksWithCitations } from '@/lib/rag/citation';
 import { embedFaqText } from '@/lib/rag/faq-service';
 import { detectChatSensitiveTopic } from '../../chat-safety';
+import {
+  SiliconFlowRerankProvider,
+  type RerankProvider,
+} from '@repo/providers';
+import { RAG_RERANK_CONFIG, isRagRerankEnabled } from '@repo/shared';
 
 export const knowledgeSearchParametersSchema = z.object({
   query: z
@@ -50,6 +55,8 @@ export interface KnowledgeSearchDeps {
   ) => Promise<{ id: string; name: string } | null>;
   findBestFaqMatchFn?: typeof findBestFaqMatch;
   embedFaqFn?: typeof embedFaqText;
+  rerankProvider?: RerankProvider;
+  isRerankEnabledFn?: () => boolean;
 }
 
 /** 默认查询用户可用知识库列表 */
@@ -89,6 +96,8 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
   const verifyKbFn = deps.verifyKnowledgeBaseFn || defaultVerifyKnowledgeBase;
   const findFaqFn = deps.findBestFaqMatchFn || findBestFaqMatch;
   const embedFn = deps.embedFaqFn || embedFaqText;
+  const rerankProvider = deps.rerankProvider;
+  const isRerankEnabledFn = deps.isRerankEnabledFn;
 
   return {
     name: 'knowledge_search',
@@ -162,7 +171,8 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
                   userId,
                   knowledgeBaseId: kb.id,
                   query: trimmedQuery,
-                  topK,
+                  topK: RAG_RERANK_CONFIG.defaultTopN,
+                  enableRerank: false, // 各库仅执行粗排召回，由外层统一单次全局 Rerank (ADR-0030)
                 });
                 return res.chunks;
               } catch (error) {
@@ -187,11 +197,55 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           incrementFaqHitCount(bestFaq.faqId).catch(() => {});
         }
 
-        // 合并切片并按 RRF 分数重新排序截取 topK
-        const fusedChunks: RetrievedChunk[] = results
-          .flat()
-          .sort((a, b) => b.score - a.score)
-          .slice(0, topK);
+        // 跨库切片汇总并按 chunkId 去重
+        const allCandidates = results.flat();
+        const seenChunkIds = new Set<string>();
+        const uniqueCandidates: RetrievedChunk[] = [];
+        for (const chunk of allCandidates) {
+          if (!seenChunkIds.has(chunk.chunkId)) {
+            seenChunkIds.add(chunk.chunkId);
+            uniqueCandidates.push(chunk);
+          }
+        }
+
+        // 执行跨库统一 Cross-Encoder Rerank 二次精排 (ADR-0030)
+        const checkRerank = isRerankEnabledFn || isRagRerankEnabled;
+        const isRerankActive = checkRerank();
+        let fusedChunks: RetrievedChunk[] = [];
+
+        if (isRerankActive && uniqueCandidates.length > 0) {
+          const candidateLimit = Math.min(uniqueCandidates.length, RAG_RERANK_CONFIG.maxCandidates);
+          // 按原 RRF 粗排得分截取前 maxCandidates (30) 条送入精排
+          const candidatePool = uniqueCandidates
+            .sort((a, b) => b.score - a.score)
+            .slice(0, candidateLimit);
+          const candidateDocs = candidatePool.map((c) => c.content);
+
+          try {
+            const provider = rerankProvider || new SiliconFlowRerankProvider();
+            const rerankResults = await provider.rerank(trimmedQuery, candidateDocs, candidateLimit);
+
+            // 过滤低于 minRelevanceScore (0.20) 的低相关长尾切片
+            const minScore = RAG_RERANK_CONFIG.minRelevanceScore;
+            const validResults = (rerankResults || []).filter((r) => r.relevanceScore >= minScore);
+            const targetResults = validResults.slice(0, topK);
+
+            fusedChunks = targetResults.map((r) => {
+              const original = candidatePool[r.index] ?? candidatePool[0];
+              return {
+                ...original,
+                score: r.relevanceScore,
+                rerankScore: r.relevanceScore,
+              };
+            });
+          } catch (rerankErr) {
+            console.warn('[knowledge_search] 多库聚合 Rerank 异常，平滑降级为原 RRF 排名:', rerankErr);
+            // 弹性容灾平滑降级：按原 RRF 分数排序截断
+            fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, topK);
+          }
+        } else {
+          fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, topK);
+        }
 
         // 3. 构建结构化切片引用映射字典与快照 (ADR-0025 / KB-CHAT-CITE)
         const citations: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor> = {};

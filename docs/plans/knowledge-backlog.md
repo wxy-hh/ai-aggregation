@@ -12,8 +12,8 @@
 | **P1 (已完成)** | `KB-FAQ-PAIR` | **FAQ 标准问答对管理与精准优先短路** | 中（~1.5天）| ★★★★★ | `@repo/db` · `@repo/providers` · 问答对路由 | **已交付 (v1.1)** |
 | **P1 (已完成)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **已交付 (v1.2)** |
 | **P2 (已完成)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | **已交付 (v1.3)** |
-| **P2 (当前首选)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | **准备立项 (Next)** |
-| **P2 (架构增强)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | 待排期 |
+| **P2 (已完成)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | **已交付 (v1.4)** |
+| **P2 (当前首选)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | **准备立项 (Next)** |
 | **P3 (运营看板)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | 储备池 |
 | **P3 (深度调优)** | `KB-CHUNK-TUNE` | **切片策略可视化调节与效果预览** | 中（~3天） | ★★★☆☆ | `apps/web` · 上传前置/后置配置 | 储备池 |
 
@@ -60,6 +60,18 @@
   - 知识库工作台挂载「上传文档」按钮与格式 Badge（Word/表格/PDF/文本），全文抽屉支持原文件下载与移动端 375px 窄屏表格横向平滑滚动（`overflow-x-auto`）；
   - 通过 `ego-browser` 可见窗口完成端到端全链路真机验收（截图：`screenshots/TC06.png`、`TC07.png`）。
 - **关联代码**：`packages/shared/src/rag-config.ts`、`apps/worker/src/workers/rag-index/docx-parser.ts`、`table-parser.ts`、`apps/web/src/app/knowledge/knowledge-workspace.tsx`、`document-preview-drawer.tsx`。
+
+### `KB-RERANK-FUSION`：Rerank 二次精排模型集成 (P2 已完成)
+- **交付目标**：解决 RRF 无监督倒数加权无法感知深层细粒度交叉注意力、多知识库并发召回时得分标尺不可比以及长尾无关切片诱发大模型幻觉的问题，构建多库聚合统一单次精排、0.20 置信度防线与静默弹性容灾体系。
+- **交付成果**：
+  - 将 `RerankProvider` 通用抽象与 `SiliconFlowRerankProvider`（基于 `BAAI/bge-reranker-v2-m3`）正式下沉至 `@repo/providers` 供全仓复用，`apps/web` 保留向下兼容导出；
+  - 在 `@repo/shared` 收敛 `RAG_RERANK_CONFIG`：设定候选池上限 `maxCandidates = 30`（防超时与 Payload 暴涨）与最低安全相关性阈值 `minRelevanceScore = 0.20`，生产环境默认开启；
+  - 主对话 Agent（`knowledge_search`）实现各库仅粗排召回、去重后统一发起单次 Rerank 请求，彻底解决跨库得分标尺不一致并将网络 I/O 降至最低；全员低分时明确提示未命中有效信息杜绝幻觉；
+  - 单库混合检索管道（`hybridRetrieval`）实现 Fail-open 静默容灾降级，发生网络异常时平滑回退为原 RRF 排名结果并标记 `isDegraded: true`，绝不阻断用户聊天或检索主链路；
+  - 知识库工作台「检索调试台」复选框默认勾选，实现 Rerank 精排分与原始 RRF / 向量 / 词法排名双打分透明对照，阶段耗时常态化呈现，支持黄色降级徽章与低分切片淘汰数量统计，375px 窄屏自适应良好；
+  - 通过 `ego-browser` 可见窗口完成端到端全链路真机验收（截图：`screenshots/TC05.png`、`TC06.png`）。
+- **关联代码**：`packages/providers/src/rerank.ts`、`packages/shared/src/rag-config.ts`、`apps/web/src/lib/rag/hybrid-retrieval.ts`、`apps/web/src/app/api/chat/_lib/agent/tools/knowledge-search.ts`、`apps/web/src/app/knowledge/_components/retrieval-debugger.tsx`。
+
 
 
 ---

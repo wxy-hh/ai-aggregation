@@ -88,7 +88,8 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       userId: 'user-alice',
       knowledgeBaseId: 'kb-1',
       query: '熔断条件',
-      topK: 5,
+      topK: 20,
+      enableRerank: false,
     });
     // 验证返回的模型提示词符合防御与引用规约
     expect(result.contentForModel).toContain('【不可信检索内容');
@@ -296,6 +297,188 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.contentForModel).toContain('标准问题：如何申请发票？');
     expect(result.contentForModel).toContain('权威答案：请在财务中心点击索取发票，系统自动开具电子专票。');
     expect(result.summaryForDisplay).toContain('命中官方FAQ');
+  });
+
+  it('9. TC04.1: 多知识库并发检索时各库粗排召回，外层统一发起 1 次 Rerank 交叉打分 (ADR-0030)', async () => {
+    const mockFindKbs = vi.fn().mockResolvedValue([
+      { id: 'kb-1', name: '技术库' },
+      { id: 'kb-2', name: '制度库' },
+    ]);
+
+    const chunkFromKb1 = createMockChunk({
+      chunkId: 'chunk-kb1',
+      documentId: 'doc-1',
+      content: '技术库切片内容',
+      score: 0.05,
+    });
+
+    const chunkFromKb2 = createMockChunk({
+      chunkId: 'chunk-kb2',
+      documentId: 'doc-2',
+      content: '制度库切片内容',
+      score: 0.04,
+    });
+
+    const mockRetrieval = vi.fn().mockImplementation(({ knowledgeBaseId }) => {
+      return Promise.resolve({
+        query: '多库测试',
+        preparedLexicalQuery: '多库',
+        topK: 20,
+        chunks: knowledgeBaseId === 'kb-1' ? [chunkFromKb1] : [chunkFromKb2],
+        denseMatches: [],
+        lexicalMatches: [],
+        durationMs: 10,
+        stats: {
+          embeddingDurationMs: 2,
+          denseDurationMs: 3,
+          lexicalDurationMs: 3,
+          fusionDurationMs: 2,
+          totalDurationMs: 10,
+        },
+      });
+    });
+
+    // Mock Rerank Provider: 制度库切片得分更高 (0.92)
+    const mockRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockResolvedValue([
+        { index: 1, relevanceScore: 0.92 },
+        { index: 0, relevanceScore: 0.65 },
+      ]),
+    };
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      rerankProvider: mockRerankProvider,
+      isRerankEnabledFn: () => true,
+    });
+
+    const result = await tool.execute({ query: '多库测试', topK: 2 }, mockContext);
+
+    expect(result.ok).toBe(true);
+    // 验证各库 retrievalFn 调用时均传了 enableRerank: false
+    expect(mockRetrieval).toHaveBeenCalledTimes(2);
+    expect(mockRetrieval).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ knowledgeBaseId: 'kb-1', enableRerank: false })
+    );
+    expect(mockRetrieval).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ knowledgeBaseId: 'kb-2', enableRerank: false })
+    );
+
+    // 验证 Rerank Provider 仅被调用了 1 次，且送入了两库合并后的切片
+    expect(mockRerankProvider.rerank).toHaveBeenCalledTimes(1);
+    expect(mockRerankProvider.rerank).toHaveBeenCalledWith(
+      '多库测试',
+      ['技术库切片内容', '制度库切片内容'],
+      2
+    );
+
+    // 验证精排逆袭：制度库切片排在第一位 [^1]
+    expect(result.contentForModel).toContain('[^1] 来源：《珀金协议规范》(v1) · 第 2 页 · 2.1 熔断条件\n制度库切片内容');
+    expect(result.citations?.[1]?.snippet).toBe('制度库切片内容');
+  });
+
+  it('10. TC04.2: 全员分数低于 0.20 时返回明确未召回提示以杜绝模型幻觉 (ADR-0030)', async () => {
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '技术库' }]);
+    const lowChunk = createMockChunk({
+      chunkId: 'chunk-low',
+      content: '无关低分切片',
+      score: 0.01,
+    });
+
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '无关提问',
+      preparedLexicalQuery: '无关',
+      topK: 20,
+      chunks: [lowChunk],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 10,
+      stats: {
+        embeddingDurationMs: 2,
+        denseDurationMs: 3,
+        lexicalDurationMs: 3,
+        fusionDurationMs: 2,
+        totalDurationMs: 10,
+      },
+    });
+
+    const mockRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockResolvedValue([
+        { index: 0, relevanceScore: 0.09 }, // 低于 minRelevanceScore = 0.20
+      ]),
+    };
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      rerankProvider: mockRerankProvider,
+      isRerankEnabledFn: () => true,
+    });
+
+    const result = await tool.execute({ query: '无关提问' }, mockContext);
+
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('未检索到任何与“无关提问”相关的切片内容');
+    expect(result.contentForModel).toContain('严禁编造答案');
+    expect(result.summaryForDisplay).toContain('未命中相关内容');
+  });
+
+  it('11. TC04.3: 多库聚合 Rerank 异常时静默弹性降级为各库粗排分数排序 (ADR-0030)', async () => {
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '技术库' }]);
+    const chunkA = createMockChunk({
+      chunkId: 'chunk-a',
+      content: '高粗排分切片',
+      score: 0.08,
+    });
+    const chunkB = createMockChunk({
+      chunkId: 'chunk-b',
+      content: '低粗排分切片',
+      score: 0.03,
+    });
+
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '降级测试',
+      preparedLexicalQuery: '降级',
+      topK: 20,
+      chunks: [chunkB, chunkA],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 10,
+      stats: {
+        embeddingDurationMs: 2,
+        denseDurationMs: 3,
+        lexicalDurationMs: 3,
+        fusionDurationMs: 2,
+        totalDurationMs: 10,
+      },
+    });
+
+    const mockFailingRerank = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockRejectedValue(new Error('500 Service Unavailable')),
+    };
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      rerankProvider: mockFailingRerank,
+      isRerankEnabledFn: () => true,
+    });
+
+    const result = await tool.execute({ query: '降级测试' }, mockContext);
+
+    expect(result.ok).toBe(true);
+    // 降级为原粗排分数降序：chunkA (0.08) 排在第一位
+    expect(result.contentForModel).toContain('高粗排分切片');
+    expect(result.citations?.[1]?.snippet).toBe('高粗排分切片');
   });
 });
 

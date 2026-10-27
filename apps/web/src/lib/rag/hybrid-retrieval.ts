@@ -30,7 +30,7 @@ import {
   SiliconFlowRerankProvider,
   type RerankProvider,
   type RerankResult,
-} from './rerank';
+} from '@repo/providers';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 
@@ -93,6 +93,8 @@ export interface HybridRetrievalResult {
   durationMs: number;
   stats: RetrievalStats;
   isReranked?: boolean; // 标识是否成功经过 Rerank 二次精排
+  isDegraded?: boolean; // 标识是否发生 Rerank 异常弹性降级
+  filteredLowScoreCount?: number; // 标识因低于 minRelevanceScore 被过滤的切片数量
 }
 
 /**
@@ -264,28 +266,37 @@ export async function hybridRetrieval(
   });
   fusionDurationMs = Math.round(performance.now() - fusionStartTime);
 
-  // 5. Rerank 可插拔精排阶段（默认关闭，配置驱动，弹性降级）
+  // 5. Rerank 可插拔精排阶段（默认开启，配置驱动，弹性降级）
   const checkRerankEnabled = deps.isRerankEnabledFn || isRagRerankEnabled;
   const isRerankActive = options.enableRerank !== undefined ? options.enableRerank : checkRerankEnabled();
 
   let rerankDurationMs = 0;
   let isReranked = false;
+  let isDegraded = false;
+  let filteredLowScoreCount = 0;
   let chunks: RetrievedChunk[] = [];
 
   if (isRerankActive && fusedList.length > 0) {
-    // 选取 RRF 融合候选（保障至少 defaultTopN 条送入 Rerank 模型二次排序）
-    const candidateLimit = Math.max(topK, RAG_RERANK_CONFIG.defaultTopN);
+    // 选取 RRF 融合候选（最多送入 maxCandidates = 30 条切片入 Rerank 模型二次排序，ADR-0030）
+    const candidateLimit = Math.min(fusedList.length, RAG_RERANK_CONFIG.maxCandidates);
     const candidateList = fusedList.slice(0, candidateLimit);
     const candidateDocuments = candidateList.map((f) => f.item.content);
 
     const rerankStartTime = performance.now();
     try {
       const provider = deps.rerankProvider || new SiliconFlowRerankProvider();
-      const rerankResults = await provider.rerank(query, candidateDocuments, topK);
+      const rerankResults = await provider.rerank(query, candidateDocuments, candidateLimit);
       rerankDurationMs = Math.round(performance.now() - rerankStartTime);
 
-      if (rerankResults && rerankResults.length > 0) {
-        chunks = rerankResults.map((res) => {
+      if (rerankResults) {
+        // ADR-0030: 依据 minRelevanceScore = 0.20 过滤低相关度长尾切片
+        const minScore = RAG_RERANK_CONFIG.minRelevanceScore;
+        const validResults = rerankResults.filter((res) => res.relevanceScore >= minScore);
+        filteredLowScoreCount = rerankResults.length - validResults.length;
+
+        const targetResults = validResults.slice(0, topK);
+
+        chunks = targetResults.map((res) => {
           const fused = candidateList[res.index] ?? candidateList[0];
           const raw = fused.item;
           return {
@@ -321,12 +332,14 @@ export async function hybridRetrieval(
       rerankDurationMs = Math.round(performance.now() - rerankStartTime);
       logger.warn('[hybrid-retrieval] Rerank 二次精排异常，平滑降级为原 RRF 排名结果', {
         feature: 'rag-rerank',
+        degradation: 'rrf-fallback',
         query,
         candidateCount: candidateList.length,
         durationMs: rerankDurationMs,
         error: err instanceof Error ? err.message : String(err),
       });
-      // 容灾平滑降级：保持 isReranked 为 false，进入后续 RRF 融合降级组装
+      // 容灾平滑降级：标记 isDegraded = true，进入后续 RRF 融合降级组装
+      isDegraded = true;
     }
   }
 
@@ -373,6 +386,8 @@ export async function hybridRetrieval(
     lexicalMatches: lexicalMatchesWithRank,
     durationMs: totalDurationMs,
     isReranked,
+    isDegraded,
+    filteredLowScoreCount,
     stats: {
       embeddingDurationMs,
       denseDurationMs,

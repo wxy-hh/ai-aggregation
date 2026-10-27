@@ -112,13 +112,13 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
     const quickBtn = screen.getByRole('button', { name: '连败熔断' });
     await user.click(quickBtn);
 
-    // 验证 API 调用
+    // 验证 API 调用（ADR-0030：默认开启 Rerank 精排）
     await waitFor(() => {
       expect(mockFetchWithAuth).toHaveBeenCalledWith(
         '/api/knowledge-bases/kb_test_123/query',
         expect.objectContaining({
           method: 'POST',
-          body: JSON.stringify({ query: '连败熔断', topK: 20 }),
+          body: JSON.stringify({ query: '连败熔断', topK: 20, enableRerank: true }),
         })
       );
     });
@@ -216,9 +216,8 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
 
     render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
 
-    // 勾选 Rerank 精排复选框
+    // ADR-0030: 验证 Rerank 精排复选框默认勾选
     const checkbox = screen.getByRole('checkbox');
-    await user.click(checkbox);
     expect(checkbox).toBeChecked();
 
     const input = screen.getByPlaceholderText(/输入查询测试混合检索/);
@@ -327,6 +326,75 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
     await waitFor(() => {
       expect(screen.getByTestId('document-preview-drawer-content')).toBeInTheDocument();
       expect(screen.getByText('熔断章节')).toBeInTheDocument();
+    });
+  });
+
+  it('6. 降级徽章与低分切片过滤标签展示 (TC05/TC06)', async () => {
+    const user = userEvent.setup();
+
+    const mockDegradedResponse = {
+      query: '降级与过滤测试',
+      preparedLexicalQuery: '降级 过滤',
+      topK: 20,
+      isReranked: false,
+      isDegraded: true,
+      filteredLowScoreCount: 3,
+      chunks: [
+        {
+          chunkId: 'chk_deg_1',
+          documentId: 'doc_1',
+          documentName: 'adr-architecture.md',
+          documentVersion: 1,
+          content: '降级后的切片文本',
+          contentSegmented: '降级 切片',
+          score: 0.0163,
+          rrfScore: 0.0163,
+          denseRank: 1,
+          lexicalRank: 1,
+          citationAnchor: {
+            documentId: 'doc_1',
+            documentName: 'adr-architecture.md',
+            documentVersion: 1,
+            pageNumber: 1,
+            headingPath: '设计',
+            chunkIndex: 0,
+          },
+        },
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 45,
+      stats: {
+        embeddingDurationMs: 10,
+        denseDurationMs: 10,
+        lexicalDurationMs: 8,
+        fusionDurationMs: 2,
+        rerankDurationMs: 15,
+        totalDurationMs: 45,
+      },
+    };
+
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: mockDegradedResponse,
+      }),
+    });
+
+    render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
+
+    const input = screen.getByPlaceholderText(/输入查询测试混合检索/);
+    await user.type(input, '降级与过滤测试');
+
+    const submitBtn = screen.getByRole('button', { name: /测试检索/ });
+    await user.click(submitBtn);
+
+    // 验证降级徽章、过滤数量标签与耗时[降级]标记
+    await waitFor(() => {
+      expect(screen.getByText('Rerank 降级为 RRF')).toBeInTheDocument();
+      expect(screen.getByText('已过滤 3 条低相关切片')).toBeInTheDocument();
+      expect(screen.getByText('[降级]')).toBeInTheDocument();
     });
   });
 });

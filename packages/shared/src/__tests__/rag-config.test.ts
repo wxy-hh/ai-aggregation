@@ -49,23 +49,18 @@ describe('rag-config 基础配置约束', () => {
     expect(RAG_RETRIEVAL_CONFIG.rrfK).toBe(60);
   });
 
-  it('Rerank 配置约束：默认硬性关闭、模型为 BAAI/bge-reranker-v2-m3', () => {
-    // 默认常量必须为 false
-    expect(RAG_RERANK_ENABLED).toBe(false);
+  it('Rerank 配置约束：默认开启、模型为 BAAI/bge-reranker-v2-m3、候选上限 30 与阈值 0.20', () => {
+    // ADR-0030：生产环境默认开启 Rerank
+    expect(RAG_RERANK_ENABLED).toBe(true);
     expect(RAG_RERANK_CONFIG.model).toBe('BAAI/bge-reranker-v2-m3');
     expect(RAG_RERANK_CONFIG.endpoint).toBe('https://api.siliconflow.cn/v1/rerank');
     expect(RAG_RERANK_CONFIG.timeoutMs).toBeGreaterThan(0);
+    expect(RAG_RERANK_CONFIG.maxCandidates).toBe(30);
+    expect(RAG_RERANK_CONFIG.minRelevanceScore).toBe(0.20);
   });
 
   it('isRagRerankEnabled 开关动态切换与环境变量解析', () => {
-    // 无环境变量时必须遵循默认值 false
-    expect(isRagRerankEnabled()).toBe(false);
-
-    // 环境变量显式开启
-    process.env.RAG_RERANK_ENABLED = 'true';
-    expect(isRagRerankEnabled()).toBe(true);
-
-    process.env.RAG_RERANK_ENABLED = '1';
+    // ADR-0030：无环境变量时必须遵循默认值 true
     expect(isRagRerankEnabled()).toBe(true);
 
     // 环境变量显式关闭
@@ -74,6 +69,13 @@ describe('rag-config 基础配置约束', () => {
 
     process.env.RAG_RERANK_ENABLED = '0';
     expect(isRagRerankEnabled()).toBe(false);
+
+    // 环境变量显式开启
+    process.env.RAG_RERANK_ENABLED = 'true';
+    expect(isRagRerankEnabled()).toBe(true);
+
+    process.env.RAG_RERANK_ENABLED = '1';
+    expect(isRagRerankEnabled()).toBe(true);
   });
 });
 

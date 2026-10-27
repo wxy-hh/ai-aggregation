@@ -55,7 +55,7 @@ export interface RetrievalDebuggerProps {
 export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
   const [query, setQuery] = React.useState('');
   const [topK, setTopK] = React.useState(20);
-  const [enableRerank, setEnableRerank] = React.useState(false);
+  const [enableRerank, setEnableRerank] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<HybridRetrievalResult | null>(null);
@@ -399,11 +399,14 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
             </span>
           </div>
 
-          {result.stats.rerankDurationMs !== undefined && result.stats.rerankDurationMs > 0 && (
+          {result.stats.rerankDurationMs !== undefined && (
             <div className="col-span-2 sm:col-span-1 p-3 rounded-xl border border-border/50 bg-card/60 flex flex-col">
               <span className="text-[11px] text-muted-foreground flex items-center space-x-1">
                 <Sparkles className="w-3 h-3 text-purple-500" />
                 <span>Rerank 耗时</span>
+                {result.isDegraded && (
+                  <span className="text-[9px] text-amber-500 font-bold">[降级]</span>
+                )}
               </span>
               <span className="text-lg font-bold text-foreground mt-1">
                 {result.stats.rerankDurationMs}ms
@@ -431,17 +434,27 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
           {/* 第 1 列：RRF / Rerank 综合结果 */}
           <div className="flex flex-col space-y-3 w-full overflow-hidden">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center space-x-2">
+            <div className="flex items-center justify-between px-1 flex-wrap gap-1.5">
+              <div className="flex items-center space-x-2 flex-wrap gap-1">
                 <span className="font-semibold text-sm text-foreground">
                   {result.isReranked ? 'Rerank 精排明细' : 'RRF 融合明细'}
                 </span>
                 <Badge variant="secondary" className="text-xs px-2 py-0.5">
                   {result.chunks.length} 条命中
                 </Badge>
-                {result.isReranked && (
-                  <Badge variant="outline" className="text-xs px-1.5 py-0 text-purple-600 dark:text-purple-400">
+                {result.isReranked && !result.isDegraded && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-800">
                     精排生效
+                  </Badge>
+                )}
+                {result.isDegraded && (
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30">
+                    Rerank 降级为 RRF
+                  </Badge>
+                )}
+                {result.filteredLowScoreCount !== undefined && result.filteredLowScoreCount > 0 && (
+                  <Badge variant="secondary" className="text-[11px] px-1.5 py-0 text-muted-foreground">
+                    已过滤 {result.filteredLowScoreCount} 条低相关切片
                   </Badge>
                 )}
               </div>

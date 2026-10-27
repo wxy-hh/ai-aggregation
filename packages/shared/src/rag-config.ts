@@ -191,14 +191,14 @@ export const RAG_CHUNK_CONFIG = {
 export const RAG_MEMORY_DEBOUNCE_DELAY_MS = 30000 as const;
 
 /**
- * Rerank 二次精排可插拔段默认开关（严格默认 false）
+ * Rerank 二次精排可插拔段默认开关（默认开启，ADR-0030）
  *
  * 规范依据：
- * - spec.md「检索与双源路由（Phase B）」：
- *   Rerank 为可插拔第三段，默认关闭，仅当对照实验证明净收益后按配置开启。
- * - 工单 10 验收标准 1：默认配置下检索链路与 06 完全一致（无 rerank 调用，零网络请求、零延迟开销）
+ * - ADR-0030「Cross-Encoder 二次语义精排管道与全链路弹性容灾架构」
+ * - 当配置有 SILICONFLOW_API_KEY 时默认启用 Rerank 二次精排
+ * - 可通过环境变量 RAG_RERANK_ENABLED=false 随时一键旁路
  */
-export const RAG_RERANK_ENABLED = false as const;
+export const RAG_RERANK_ENABLED = true as const;
 
 /**
  * Rerank 默认模型与接口配置
@@ -213,6 +213,10 @@ export const RAG_RERANK_CONFIG = {
   timeoutMs: 8000,
   /** 默认候选切片送入 Rerank 精排的上限数量 */
   defaultTopN: 20,
+  /** 送入 Cross-Encoder 模型的候选切片总数硬上限（ADR-0030，防 Payload 与耗时失控） */
+  maxCandidates: 30,
+  /** 相关性置信度最低安全过滤阈值（ADR-0030，低于该分数的长尾切片被过滤） */
+  minRelevanceScore: 0.20,
 } as const;
 
 /**
