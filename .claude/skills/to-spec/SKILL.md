@@ -76,4 +76,6 @@ Any further notes about the feature.
 
 ---
 
+spec 内容要求（项目定制，上游升级时保留本节）：Testing Decisions 与 Out of Scope 不得省略；在 Testing Decisions 之后增加 `## 交付命令`，用一个代码块逐行写出最终需要真实运行的完整命令，`qa-check plan` 会核对计划是否原样包含。推翻既有 ADR、评测结论或默认值时，在 Implementation Decisions 写明被推翻项、依据与各选项代价；宣称质量或性能收益时写明所需效果证据，否则写成机制描述。
+
 发布 spec 后按统一阶段收口报告（项目定制，上游升级时保留本节）：当前已完成阶段 2、车道及理由、spec 路径和实际产物。标准/慢车道的**建议下一步：`/qa-test-planner`**（默认 inline）；只有用户明确选择并行时才改变该默认路径，先运行 `/to-tickets`，再进入 `/implement-spec`。快车道可直接 `/implement`，不额外生成 QA 计划。独立 QA 只有用户显式选择 `--independent` 才允许，不自动指定或升级模型（见 `docs/agents/qa-workflow.md` 阶段 3B）。

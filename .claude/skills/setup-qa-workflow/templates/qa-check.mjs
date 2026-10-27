@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { computeTreeDigest, readScope } from './review-package.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { computeTreeDigest, inScope, readScope } from './review-package.mjs';
 import { formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
 
 export const CURRENT_SCHEMA = 3;
@@ -14,6 +15,16 @@ const PHASES = new Set(['plan', 'acceptance', 'review']);
 const SEAMS = new Set(['browser', 'api', 'integration', 'unit', 'static']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const TRIAGE_VALUES = new Set(['本次修', '转专项', '驳回']);
+// browser 入口脚本只接受常见脚本扩展名；截图、日志、计划等证据或文档不能充当入口脚本
+const SCRIPT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.py', '.sh']);
+// QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
+const WORKFLOW_SKILLS = new Set([
+  'to-spec', 'to-tickets', 'implement', 'implement-spec', 'tdd', 'code-review', 'pr', 'retro',
+  'handoff', 'grill-with-docs', 'diagnosing-bugs', 'improve-codebase-architecture', 'qa-test-planner',
+]);
+// 阶段 1–2 允许在建基线前写入的产物
+const STAGE_ARTIFACT_PATTERN = /^(?:GLOSSARY\.md|CONTEXT\.md|docs\/adr\/.+)$/;
+const BASELINE_HINT = '基线之前的执行不能作为本轮证据；建立基线后换新标签用 qa-run 重新运行，并更新证据路径。';
 
 function result(status, issues = [], notes = []) {
   return { status, ok: status === 'PASS', issues, notes };
@@ -25,6 +36,14 @@ function issue(code, message) {
 
 function issue3(code, severity, message, hint) {
   return { code, severity, message, ...(hint ? { hint } : {}) };
+}
+
+/** 合并多组检查结果的 issues 与 notes，保持各组顺序 */
+function mergeFindings(...parts) {
+  return {
+    issues: parts.flatMap((part) => part.issues),
+    notes: parts.flatMap((part) => part.notes),
+  };
 }
 
 function result3(issues = [], notes = []) {
@@ -50,6 +69,25 @@ export function parseSpec(markdown) {
     throw new Error('User Stories 编号为空或重复');
   }
   return ids;
+}
+
+/**
+ * 读取 spec 的 `## 交付命令`：取该段第一个围栏代码块中的非空行作为命令。
+ * 没有该段或代码块中没有命令时返回 null。
+ */
+function parseSpecCommands(markdown) {
+  const body = markdownSection(markdown, /^## 交付命令\s*$/);
+  if (body === null) return null;
+  const lines = body.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^\s*(?:```|~~~)/.test(line));
+  if (start < 0) return null;
+  const fence = lines[start].trim().slice(0, 3);
+  const commands = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim().startsWith(fence)) break;
+    if (line.trim()) commands.push(line.trim());
+  }
+  return commands.length ? commands : null;
 }
 
 export function splitMarkdownRow(line) {
@@ -307,6 +345,162 @@ function validateSchema3Plan(plan, specIds) {
   return { issues, notes };
 }
 
+/**
+ * 核对 spec 声明的交付命令是否原样进入计划；缺少声明时规划阶段不通过，其余阶段只提示。
+ */
+function specCommandIssues(plan, commands, phase) {
+  if (!commands) {
+    if (phase === 'plan') {
+      return {
+        issues: [issue3(
+          'MISSING_SPEC_COMMANDS',
+          'FAIL',
+          'spec.md 缺少 ## 交付命令 代码块，无法核对交付验证是否完整。',
+          '在 Testing Decisions 后增加 ## 交付命令，用一个代码块逐行写出最终需要真实运行的完整命令。',
+        )],
+        notes: [],
+      };
+    }
+    return { issues: [], notes: ['spec.md 没有 ## 交付命令 代码块，本次未核对交付验证是否覆盖 spec 声明的命令。'] };
+  }
+  const declared = new Set(plan.delivery.map((item) => item.command.trim()));
+  const issues = commands
+    .filter((command) => !declared.has(command))
+    .map((command) => issue3(
+      'SPEC_COMMAND_MISSING',
+      'FAIL',
+      `spec 声明的交付命令没有原样进入 ## 交付验证：${command}`,
+      '把该命令原样加入 ## 交付验证；确需缩减时，先修改 spec 的 ## 交付命令并写明理由，再更新计划。',
+    ));
+  return { issues, notes: [] };
+}
+
+async function gitRoot(directory) {
+  const result = spawnSync('git', ['-C', directory, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return null;
+  return realpath(result.stdout.trim());
+}
+
+function personalSkillsDir() {
+  const configDir = process.env.CLAUDE_CONFIG_DIR?.trim();
+  return configDir ? path.join(configDir, 'skills') : path.join(homedir(), '.claude', 'skills');
+}
+
+function frontmatterName(content) {
+  const block = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const name = block?.[1].match(/^name:\s*(.+?)\s*$/m)?.[1];
+  return name ? name.replace(/^(['"])(.*)\1$/, '$2').trim() : null;
+}
+
+/** 列出目录下含 SKILL.md 的技能（跟随符号链接），名称取目录名与 frontmatter name */
+async function readSkills(directory) {
+  let entries;
+  try {
+    entries = await readdir(directory);
+  } catch {
+    return [];
+  }
+  const skills = await Promise.all(entries.sort().map(async (entry) => {
+    try {
+      if (!(await stat(path.join(directory, entry))).isDirectory()) return null;
+      const content = await readFile(path.join(directory, entry, 'SKILL.md'));
+      const names = new Set([entry]);
+      const declared = frontmatterName(content.toString('utf8'));
+      if (declared) names.add(declared);
+      return { names, content };
+    } catch {
+      return null;
+    }
+  }));
+  return skills.filter(Boolean);
+}
+
+/**
+ * Claude Code 中个人级技能优先于项目级：流程技能同名且内容不同时阻塞，其余同名只提示。
+ * 输出只列技能名，不输出个人技能内容。
+ */
+async function skillShadowIssues(featureDir) {
+  const root = await gitRoot(featureDir);
+  if (!root) return { issues: [], notes: [] };
+  const [projectSkills, personalSkills] = await Promise.all([
+    readSkills(path.join(root, '.claude', 'skills')),
+    readSkills(personalSkillsDir()),
+  ]);
+  const issues = [];
+  const sharedNames = new Set();
+  for (const personal of personalSkills) {
+    for (const project of projectSkills) {
+      const collided = [...personal.names].filter((name) => project.names.has(name));
+      if (!collided.length) continue;
+      const workflowName = [...project.names].find((name) => WORKFLOW_SKILLS.has(name));
+      if (workflowName && !project.content.equals(personal.content)) {
+        issues.push(issue3(
+          'SHADOWED_WORKFLOW_SKILL',
+          'BLOCKED',
+          `个人级技能与项目流程技能 ${workflowName} 同名且内容不同，Claude Code 会加载个人级版本，项目版不会生效。`,
+          '把个人级技能目录（设置 CLAUDE_CONFIG_DIR 时为其下的 skills，否则为 ~/.claude/skills）中的同名技能移走或改名后重新运行；不要修改项目技能去迁就个人版本。',
+        ));
+      } else {
+        sharedNames.add(workflowName ?? collided[0]);
+      }
+    }
+  }
+  const notes = sharedNames.size
+    ? [`个人级技能与项目技能同名：${[...sharedNames].sort().join('、')}；Claude Code 中个人级优先，请确认个人版是期望使用的版本。`]
+    : [];
+  return { issues, notes };
+}
+
+/** 从 argv 中提取可能的文件路径：整个参数、按空白与引号等拆出的片段，以及 file:// URL */
+function argvPathCandidates(argv) {
+  const candidates = new Set();
+  for (const argument of argv) {
+    for (const piece of [argument, ...argument.split(/[\s'"`()[\]{},;=]+/)]) {
+      if (!piece) continue;
+      if (piece.startsWith('file://')) {
+        try {
+          candidates.add(fileURLToPath(piece));
+        } catch {
+          // 无法解析的 file URL 不算路径
+        }
+      } else {
+        candidates.add(piece);
+      }
+    }
+  }
+  return [...candidates];
+}
+
+/** 任一日志的 argv 引用了特性目录内真实存在的脚本文件（prechange 快照除外）时返回 true */
+async function referencesFeatureScript(featureDir, logs, root) {
+  const featureRoot = await realpath(featureDir);
+  for (const log of logs) {
+    const base = root ? path.resolve(root, log.cwd ?? '.') : null;
+    for (const candidate of argvPathCandidates(log.argv ?? [])) {
+      if (!SCRIPT_EXTENSIONS.has(path.extname(candidate).toLowerCase())) continue;
+      const absolute = path.isAbsolute(candidate) ? candidate : base && path.resolve(base, candidate);
+      if (!absolute) continue;
+      let resolved;
+      try {
+        if (!(await stat(absolute)).isFile()) continue;
+        resolved = await realpath(absolute);
+      } catch {
+        continue;
+      }
+      const location = evidenceLocation(featureRoot, resolved);
+      if (location && location.relative.split('/')[0] !== 'prechange') return true;
+    }
+  }
+  return false;
+}
+
+/** 日志开始时间早于开工基线时返回 true；任一时间无法解析时不判定 */
+function startedBeforeBaseline(log, scope) {
+  const createdAt = Date.parse(scope?.createdAt ?? '');
+  const started = Date.parse(log?.started ?? '');
+  return Number.isFinite(createdAt) && Number.isFinite(started) && started < createdAt;
+}
+
 async function validateEvidence(featureDir, row) {
   if (row.detail.startsWith('command:') || row.detail.startsWith('server:')) {
     const description = row.detail.slice(row.detail.indexOf(':') + 1).trim();
@@ -466,10 +660,8 @@ async function schema3Context(featureDir) {
     if (error.code === 'ENOENT') return { scope: null, root: null, tree: null };
     throw error;
   }
-  const rootResult = spawnSync('git', ['-C', featureDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (rootResult.error) throw rootResult.error;
-  if (rootResult.status !== 0) throw new Error(`无法定位特性目录所在仓库：${rootResult.stderr.trim()}`);
-  const root = await realpath(rootResult.stdout.trim());
+  const root = await gitRoot(featureDir);
+  if (!root) throw new Error('无法定位特性目录所在仓库；存在 scope.json 时特性目录必须位于 git 仓库内');
   return { scope, root, tree: await computeTreeDigest(root, scope.scopes) };
 }
 
@@ -575,6 +767,16 @@ async function frozenPlanIssues(featureDir, plan, hasScope) {
   const frozen = parsePlan(frozenText);
   if (frozen.legacy || frozen.schema !== 3) return { issues, notes };
 
+  const executed = frozen.results.filter((row) => row.status === 'PASS' || row.status === 'FAIL');
+  if (executed.length) {
+    issues.push(issue3(
+      'PLAN_FROZEN_AFTER_EXECUTION',
+      'FAIL',
+      `开工时冻结的计划已有 ${executed.length} 条 PASS/FAIL 执行结果，基线与计划冻结晚于验收执行。`,
+      '计划应在规划收口、执行任何验收之前通过 init 冻结；不要修改 prechange 或 scope.json，在 review-report 的 ## 范围说明 如实说明，由人工终审决定。',
+    ));
+  }
+
   const record = (token, description) => {
     if (planChangeRecorded(plan, token)) return;
     issues.push(issue3(
@@ -659,6 +861,8 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
   const notes = [];
   const rows = new Map();
   const evidenceByRow = new Map();
+  // 按 TC 汇总 browser PASS 行的日志，判定入口脚本位置
+  const browserLogs = new Map();
   const expectedKeys = new Set(
     plan.cases.flatMap((testCase) => testCase.assertions.map((assertion) => `${testCase.id}:${assertion.number}`)),
   );
@@ -696,6 +900,12 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
     const images = checked.entries.filter((entry) => entry.image);
     const goodLogs = checked.entries.filter((entry) => entry.log?.exit === 0);
     const mismatch = testCase.seam === 'browser' ? !images.length || !goodLogs.length : !goodLogs.length;
+    if (testCase.seam === 'browser' && !mismatch) {
+      if (!browserLogs.has(row.caseId)) browserLogs.set(row.caseId, { logs: [], assertions: [] });
+      const collected = browserLogs.get(row.caseId);
+      collected.logs.push(...goodLogs.map((entry) => entry.log));
+      collected.assertions.push(row.assertion);
+    }
     if (mismatch) {
       const message = testCase.seam === 'browser'
         ? `${row.caseId} / ${row.assertion} 声明 Seam: browser，缺少截图或 exit 0 的 qa-run 日志`
@@ -724,6 +934,40 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
       'FAIL',
       `${relative} 同时被 ${ids} 引用。`,
       '每个用例需要在自己的场景中截取独立截图；复制或改名同一张图视为伪造证据。',
+    ));
+  }
+
+  // 仓库根只在有 browser PASS 行时才需要，用于解析日志 argv 中的相对路径
+  const root = browserLogs.size ? context.root ?? await gitRoot(featureDir) : null;
+  const browserCases = [...browserLogs];
+  // 各 TC 的入口脚本检查互不依赖，并发执行；问题仍按 TC 顺序输出
+  const referenced = await Promise.all(
+    browserCases.map(([, collected]) => referencesFeatureScript(featureDir, collected.logs, root)),
+  );
+  browserCases.forEach(([caseId, collected], index) => {
+    if (referenced[index]) return;
+    issues.push(issue3(
+      'BROWSER_SCRIPT_OUTSIDE_FEATURE',
+      'FAIL',
+      `${caseId} / ${collected.assertions.join('、')} 的 browser 证据日志都没有引用特性目录内存在的过程脚本。`,
+      `把浏览器过程脚本放在特性目录内，并通过 qa-run 以该脚本路径运行；本检查只核对 argv 中的路径，不读取脚本内容，只接受 ${[...SCRIPT_EXTENSIONS].join('、')} 脚本，prechange 快照不算。`,
+    ));
+  });
+
+  const earlyLogs = new Map();
+  for (const [row, entries] of evidenceByRow) {
+    for (const entry of entries) {
+      if (!startedBeforeBaseline(entry.log, context.scope)) continue;
+      if (!earlyLogs.has(entry.path)) earlyLogs.set(entry.path, { started: entry.log.started, rows: [] });
+      earlyLogs.get(entry.path).rows.push(`${row.caseId} / ${row.assertion}`);
+    }
+  }
+  for (const [relative, item] of earlyLogs) {
+    issues.push(issue3(
+      'EVIDENCE_BEFORE_BASELINE',
+      'FAIL',
+      `${relative} 的开始时间 ${item.started} 早于开工基线 ${context.scope.createdAt}，被 ${item.rows.join('、')} 引用。`,
+      BASELINE_HINT,
     ));
   }
 
@@ -791,32 +1035,6 @@ function markdownSection(markdown, headingPattern) {
   return lines.slice(start + 1, end).join('\n');
 }
 
-function specReconciliationIssues(reportText, specIds) {
-  const body = markdownSection(reportText, /^## Spec 对账\s*$/);
-  if (body === null) return [issue3('MISSING_SPEC_REVIEW', 'FAIL', 'review-report.md 缺少 ## Spec 对账；请在审查报告中逐个 US 对账')];
-  const issues = [];
-  const rows = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (!line.includes('|')) continue;
-    const cells = splitMarkdownRow(line);
-    if (cells.length < 3 || !/^\d+$/.test(cells[0]) || !RESULT_STATUSES.has(cells[1])) continue;
-    rows.push({ us: Number(cells[0]), status: cells[1], detail: cells.slice(2).join('|').trim() });
-  }
-  const seen = new Set();
-  for (const row of rows) {
-    if (seen.has(row.us)) issues.push(issue3('DUPLICATE_US', 'FAIL', `US ${row.us} 在 Spec 对账中重复`));
-    seen.add(row.us);
-    if (!specIds.includes(row.us)) issues.push(issue3('UNKNOWN_US', 'FAIL', `Spec 对账包含未知 US ${row.us}`));
-    if (!row.detail) issues.push(issue3('MISSING_REVIEW_DETAIL', 'FAIL', `US ${row.us} 缺少证据或原因`));
-    if (row.status === 'FAIL') issues.push(issue3('SPEC_FAILED', 'FAIL', `US ${row.us} 未通过：${row.detail}`));
-    if (row.status === 'BLOCKED') issues.push(issue3('SPEC_BLOCKED', 'BLOCKED', `US ${row.us} 阻塞：${row.detail}`));
-  }
-  for (const us of specIds) {
-    if (!seen.has(us)) issues.push(issue3('MISSING_US', 'FAIL', `US ${us} 未出现在 review-report 的 Spec 对账中`));
-  }
-  return issues;
-}
-
 function triageIssues(reportText) {
   const body = markdownSection(reportText, /^## 三档分流\s*$/);
   if (body === null || !body.trim()) {
@@ -847,7 +1065,8 @@ function triageIssues(reportText) {
     : [issue3('INVALID_TRIAGE', 'FAIL', `三档分流的档位“${tier || '空'}”无效，只能是本次修、转专项或驳回`)]);
 }
 
-function reviewReportIssues(reportText, specIds) {
+/** 审查报告只强制审查方式、两轴原文与三档分流；证据审计与 Spec 对账不再是必备章节 */
+function reviewReportIssues(reportText) {
   const issues = [];
   const method = reportText.split(/\r?\n/).find((line) => /^审查方式[：:]/.test(line));
   if (!method || !method.replace(/^审查方式[：:]/, '').trim()) {
@@ -869,11 +1088,6 @@ function reviewReportIssues(reportText, specIds) {
   if (spec === null || !spec.trim()) {
     issues.push(issue3('MISSING_SPEC_SECTION', 'FAIL', 'review-report.md 的 ## Spec 缺失或正文为空；请补充需求轴审查，Spec 对账不能替代该节'));
   }
-  const audit = markdownSection(reportText, /^## 证据审计\s*$/);
-  if (audit === null || !audit.trim()) {
-    issues.push(issue3('MISSING_EVIDENCE_AUDIT', 'FAIL', 'review-report.md 的 ## 证据审计 缺失或正文为空；请逐条核对接缝、入口与证据真实性'));
-  }
-  issues.push(...specReconciliationIssues(reportText, specIds));
   issues.push(...triageIssues(reportText));
   return issues;
 }
@@ -906,6 +1120,14 @@ async function verificationIssues(featureDir, plan, context) {
       issues.push(issue3('INVALID_RUN_LOG', 'FAIL', `交付验证 ${declaration.command} 的证据不是完整 qa-run 日志：${location.relative}`));
       continue;
     }
+    if (startedBeforeBaseline(log, context.scope)) {
+      issues.push(issue3(
+        'EVIDENCE_BEFORE_BASELINE',
+        'FAIL',
+        `交付验证 ${declaration.command} 的日志开始时间 ${log.started} 早于开工基线 ${context.scope.createdAt}。`,
+        BASELINE_HINT,
+      ));
+    }
     let expectedArgv = null;
     try {
       expectedArgv = splitShellWords(declaration.command);
@@ -935,11 +1157,24 @@ async function verificationIssues(featureDir, plan, context) {
   return issues;
 }
 
-async function checkSchema3Review(featureDir, plan, specIds, context, acceptance) {
-  const issues = [...acceptance.issues];
-  const notes = [...acceptance.notes];
+/** earlier：规划契约、验收与同名技能检测已得到的结果，审查检查在其后追加 */
+async function checkSchema3Review(featureDir, plan, context, earlier) {
+  const issues = [...earlier.issues];
+  const notes = [...earlier.notes];
   if (!context.scope) {
     issues.push(issue3('MISSING_BASELINE', 'BLOCKED', '缺少 scope.json；请在改代码前用 review-package init 建立开工基线'));
+  }
+  // init 时已有改动的路径：白名单内的，以及白名单外但之后经 add 纳入范围的
+  const dirtyAtInit = context.scope?.dirtyAtInit;
+  const dirtyPaths = [
+    ...(dirtyAtInit?.inScope ?? []),
+    ...Object.keys(dirtyAtInit?.outOfScope ?? {}).filter((relative) => inScope(relative, context.scope.scopes)),
+  ];
+  const dirtyNonArtifacts = [...new Set(dirtyPaths)]
+    .filter((relative) => !STAGE_ARTIFACT_PATTERN.test(relative))
+    .sort();
+  if (dirtyNonArtifacts.length) {
+    notes.push(`开工前范围内已有改动：${dirtyNonArtifacts.join('、')}；若基线建得晚，请在 review-report 的 ## 范围说明 解释这些改动的来源。`);
   }
 
   let manifest = null;
@@ -974,9 +1209,9 @@ async function checkSchema3Review(featureDir, plan, specIds, context, acceptance
   try {
     reportText = await readFile(path.join(featureDir, 'review-report.md'), 'utf8');
   } catch {
-    issues.push(issue3('MISSING_REVIEW_REPORT', 'BLOCKED', '缺少 review-report.md；请由独立审查者补齐 Standards、Spec、证据审计与三档分流'));
+    issues.push(issue3('MISSING_REVIEW_REPORT', 'BLOCKED', '缺少 review-report.md；请先 collect 并调用 code-review，再落盘审查方式、两轴原文、三档分流与范围说明'));
   }
-  if (reportText) issues.push(...reviewReportIssues(reportText, specIds));
+  if (reportText) issues.push(...reviewReportIssues(reportText));
 
   const outOfScope = Array.isArray(manifest?.outOfScope) ? manifest.outOfScope : [];
   if (outOfScope.length) {
@@ -1003,15 +1238,26 @@ export async function checkFeature(featureDir, phase) {
     return result('LEGACY', [issue('LEGACY', '未声明受支持的 QA Schema（1/2/3），未校验')]);
   }
 
-  const specIds = parseSpec(await readFile(path.join(featureDir, 'spec.md'), 'utf8'));
+  const specText = await readFile(path.join(featureDir, 'spec.md'), 'utf8');
+  const specIds = parseSpec(specText);
   if (plan.schema === 3) {
     const validated = validateSchema3Plan(plan, specIds);
-    if (validated.issues.length) return result3(validated.issues);
-    if (phase === 'plan') return result3([], validated.notes);
+    const commandContract = specCommandIssues(plan, parseSpecCommands(specText), phase);
+    // 同名技能检测只在 plan 与 review 阶段运行，且不被其他规划问题提前返回遮住
+    const shadow = phase === 'acceptance' ? { issues: [], notes: [] } : await skillShadowIssues(featureDir);
+    // 计划结构的 NOTE（如 browser 用例超量）与改动前一致，只在 plan 阶段且结构无问题时输出；
+    // 交付命令契约的 NOTE 各阶段都输出
+    const structureNotes = phase === 'plan' && !validated.issues.length ? validated.notes : [];
+    const planFindings = mergeFindings({ issues: validated.issues, notes: structureNotes }, commandContract);
+    // 计划结构与交付命令契约问题在各阶段都提前结束检查（见 ADR-0031 §4）
+    if (planFindings.issues.length || phase === 'plan') {
+      const early = mergeFindings(planFindings, shadow);
+      return result3(early.issues, early.notes);
+    }
     const context = await schema3Context(featureDir);
-    const acceptance = await checkSchema3Acceptance(featureDir, plan, context);
-    if (phase === 'acceptance') return acceptance;
-    return checkSchema3Review(featureDir, plan, specIds, context, acceptance);
+    const findings = mergeFindings(planFindings, await checkSchema3Acceptance(featureDir, plan, context), shadow);
+    if (phase === 'acceptance') return result3(findings.issues, findings.notes);
+    return checkSchema3Review(featureDir, plan, context, findings);
   }
 
   const planIssues = validatePlan(plan, specIds);

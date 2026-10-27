@@ -9,7 +9,7 @@ disable-model-invocation: true
 ## 1. 固化范围、基线与冻结计划
 
 - 阅读 spec、工单依赖和 `docs/agents/qa-workflow.md`，先查看 `git status`，区分既有改动与本任务改动。
-- 改第一行代码前执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD、开工前内容和 `prechange/qa-plan.md`；禁止重复 init 或手改 `scope.json` / `prechange/`。
+- 已有 `scope.json`（规划收口时已 init）时不再 init；没有时在改第一行代码前执行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>`，固化 HEAD、开工前内容和 `prechange/qa-plan.md`。禁止重复 init 或手改 `scope.json` / `prechange/`。
 - 阶段 1–2 产物和流程工具修复需要纳入时，执行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`，以 base 为前值扩大范围，不修改 Git index。
 - 禁止为实现自动切换分支或提交代码。
 
@@ -32,9 +32,10 @@ disable-model-invocation: true
 
 ## 4. 审查与交付
 
-- 阶段 5 验收后，通过宿主真实技能机制调用 `code-review`，提供特性目录、`scope.json`、spec、冻结计划和本任务路径范围；由其完成 collect、独立 Standards / Spec、报告和三档发现，不得因尚未 commit 而报空 diff。
-- 独立审查指独立上下文，不要求另开用户会话或物理并发；宿主支持时前台串行调用只读审查者。主 Agent 只能机械汇总真实独立审查返回，保留原发现、来源与三档结论；实现串行不排斥这项必要审查。
-- 未实际调用 `code-review` 或没有独立审查结果时，状态为“待独立审查”。实现者不得凭空生成 `review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
-- 审查发现的问题由实现者明确修复，再重跑受影响验证并复审，不自动循环；测试结论必须与最后一次实际运行一致。
+- 阶段 5 验收后按 `docs/agents/qa-workflow.md` 阶段 6 串联：先运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，再通过宿主真实技能机制调用 `code-review`，固定点取 `scope.json` 的 base、diff 使用审查包，由它前台并行启动 Standards / Spec 两个独立上下文子代理；不得因尚未 commit 而报空 diff。
+- `review-report.md` 原样保留两份真实独立返回，主 Agent 只按正本逐条标注三档并写范围说明，不删改两轴原文；实现串行不排斥这项必要审查。
+- 未实际调用 `code-review` 或拿不到两份独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
+- 本次修由实现者明确修复，重跑受影响验证后重新 collect 并重跑 `code-review`，不自动循环；测试结论必须与最后一次实际运行一致。
+- 独立审查完成前不得把 backlog、计划等文档写成完成态，状态回填放在人工终审之后。
 - QA 工作流负责最终交付，在最终代码上执行全部交付命令并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明，不替代独立审查与人工终审。
-- 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。
+- 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审，并附正本阶段 7 的人工终审清单。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。

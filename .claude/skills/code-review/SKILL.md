@@ -1,132 +1,98 @@
 ---
 name: code-review
-description: "独立双轴代码审查：支持固定点、当前工作区、branch、PR 与 QA 特性，检查 Standards 与可用的 Spec。"
+description: "沿两个轴审查自固定点（commit、branch、tag 或 merge-base）以来的改动：Standards（代码是否遵守本仓库成文的编码规范）与 Spec（代码是否符合来源 issue 或 spec 的要求）。两轴在并行子代理中运行并分列汇报。用于审查分支、PR、进行中的改动，或用户要求“审查自某处以来的改动”时。"
 ---
 
-对固定点或当前工作区的交付变更执行独立 Standards + Spec 审查，而不是只检查 `HEAD`。主 Agent 只机械汇总真实独立审查返回，不合并、不互相重排结论；小型快车道按 `docs/agents/qa-workflow.md` 剪裁。
+Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
-## 完成标志
+- **Standards**: does the code conform to this repo's documented coding standards?
+- **Spec**: does the code faithfully implement the originating issue / spec?
 
-共同要求：本技能已通过宿主真实技能机制调用，独立于实现者的 Standards（及有 spec 时的 Spec）已经执行，主 Agent 只机械汇总真实独立审查返回；空 diff 不启动审查代理，没有实际调用或独立审查条件时保持“待独立审查”。
+Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-- **独立调用**：审查当前工作区、branch 或 PR 时 Standards 始终执行；有 spec 才执行 Spec 审查，无 spec 可用时标为 `Spec: N/A`，不启动 Spec 子代理，也不得写成 Spec PASS。没有特性 QA 目录时在会话中输出 Standards / Spec 与三档结果，不强制 qa-plan、qa-run、`review-report.md` 或 `qa-check review`。
-- **随 QA 标准/慢车道调用**：spec 与 qa-plan 必需，完成证据审计并落盘 `review-report.md`；QA 工作流负责最终交付命令、`qa-check review` 和人工终审，这些不列为本技能自身完成条件。
+The issue tracker should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
 
-## 1. 确定 spec、基线与审查范围
+## Process
 
-按以下优先级确定 Base，不假定仓库存在 `main`：
+### 1. Pin the fixed point
 
-1. 用户显式提供的 commit、branch、tag 或相对引用；
-2. 特性 `scope.json` 的 `base`，由 `/implement` 在改代码前通过 init 记录；
-3. 旧流程特性目录的 `review-base`；
-4. 可明确说明覆盖范围的 upstream 或远端默认分支；
-5. 无法可靠判断时只询问一次，不在每个审查子代理中重复追问。
+Whatever the user said is the fixed point (a commit SHA, branch name, tag, `main`, `HEAD~5`, etc.). If they didn't specify one, ask for it.
 
-读取 Base 后验证：
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
-```bash
-git cat-file -e "${BASE}^{commit}"
-test "$(git merge-base HEAD "$BASE")" = "$BASE"
-```
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside two parallel sub-agents.
 
-若记录失效，说明原因并使用下一优先级；不得把无法解析的 Base 直接传给子代理。回退 Base 可能扩大审查范围，必须显式报告。
+### 2. Identify the spec source
 
-根据调用场景确定 spec 和路径范围：
+Look for the originating spec, in this order:
 
-- 独立调用时，spec 优先使用用户路径、工单引用或与当前特性匹配的 `.scratch/<feature>/spec.md` / `docs/features/**/spec.md`；找不到时按 `Spec: N/A` 继续 Standards 审查，不为了补齐 QA 产物而阻断。
-- 随 QA 标准/慢车道调用时，spec 与 qa-plan 均为必需输入，缺失则保持 BLOCKED，不能借独立调用回退绕过交付要求。
-- 工作区有无关改动时，只审查用户或特性 spec 指定的路径，不把其他工作混入。
-- 审查相关规范包括 `CLAUDE.md`、`.claude/rules/`、相关 ADR、`DESIGN.md`（UI 时）及仓库已有标准。
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.), fetched via the workflow in the tracker doc.
+2. A path the user passed as an argument.
+3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
+4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
-## 2. 只读构建完整审查包
+### 3. Identify the standards sources
 
-有特性 `scope.json` 时运行增量审查收集器：
+Search the repo for every file that documents how code should be written. When `CODING_STANDARDS.md` or `CONTRIBUTING.md` exists, it must be on the list.
 
-```bash
-node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>
-```
+On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
-该命令生成 `review-package.diff` 与 v2 `review-package.json`。manifest 的 `outOfScope` 暴露开工后范围外改动，`preexisting` 标明开工前已有且未通过 add 纳入的修改，`treeDigest` 绑定收集时的代码。开工前已有但未继续修改的内容不会混入 diff；新增、删除和相关未跟踪文本按规则纳入。
+- **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
+- **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation. Like any standard here, skip anything tooling already enforces.
 
-- 阶段产物或流程工具修复属于本任务但未纳入时，先运行 `review-package.mjs add`，再重新 collect；禁止手改 `scope.json` / `prechange/`。
-- 范围外改动不属于本任务时，在报告 `## 范围说明` 逐个写明来源；未说明则为 BLOCKED。
-- 当前 tree 与 manifest 不一致时审查包已过期，必须重新 collect 并复审受影响结论。
-- 未变化跳过文件不再自动算未审查；发生变化或无法比较的敏感、二进制、超大文件列入 `unreviewed`，不得声称已覆盖其内容。
-- **禁止为审查执行 `git add`、`git add -N`、commit、reset 或 checkout。** diff 为空且无未审查文件时报告“无变更”，不要启动两个审查子代理。
-- 无 `scope.json` 时（独立调用或旧流程）回退 `git diff <base>` 与 `git diff --no-index`，并显式说明未跟踪文件的覆盖边界。
+Each smell reads *what it is* → *how to fix*; match it against the diff:
 
-## 3. Standards 规范轴
+- **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design's murky.
+- **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
+- **Feature Envy**: a method that reaches into another object's data more than its own. → move the method onto the data it envies.
+- **Data Clumps**: the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
+- **Primitive Obsession**: a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
+- **Repeated Switches**: the same `switch`/`if`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
+- **Shotgun Surgery**: one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.
+- **Divergent Change**: one file or module is edited for several unrelated reasons. → split so each module changes for one reason.
+- **Speculative Generality**: abstraction, parameters, or hooks added for needs the spec doesn't have. → delete it; inline back until a real need shows.
+- **Message Chains**: long `a.b().c().d()` navigation the caller shouldn't depend on. → hide the walk behind one method on the first object.
+- **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
+- **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-除仓库标准外，始终携带以下 Fowler 坏味道基线；仓库明确允许的设计优先，工具已强制检查的问题不重复报告。坏味道是判断线索，不自动等于硬缺陷：
+### 4. Spawn both sub-agents in parallel
 
-- **Mysterious Name**：命名无法揭示用途，改成真实语义。
-- **Duplicated Code**：同一逻辑形态重复出现，提取共享实现。
-- **Feature Envy**：方法过度使用其他对象的数据，考虑迁移职责。
-- **Data Clumps**：多个字段总是成组传递，形成有领域意义的类型。
-- **Primitive Obsession**：裸原始类型代替领域值对象，收敛为明确类型。
-- **Repeated Switches**：相同类型判断反复出现，使用多态或共享映射。
-- **Shotgun Surgery**：一个逻辑变化迫使散落修改，聚拢变化职责。
-- **Divergent Change**：同一模块因多个无关原因变化，重新划分职责。
-- **Speculative Generality**：没有当前需求的抽象、参数或钩子，删除或内联。
-- **Message Chains**：过长的对象导航链，隐藏实现路径。
-- **Middle Man**：仅转发的中间层，移除无价值委托。
-- **Refused Bequest**：继承后拒绝大部分父类契约，改用组合。
+Issue both sub-agent calls together, in the foreground, and aggregate the reports they return.
 
-## 4. 独立执行审查轴
+**Standards sub-agent prompt** should include:
 
-独立审查指**独立上下文**，不要求另开用户会话或物理并发。宿主支持时，中大型改动在同一轮前台串行启动 Standards 和（有 spec 时的）Spec 只读子代理，不额外增加第三名 QA 或裁决代理，不自动指定或升级模型。独立调用无 spec 时不启动 Spec 子代理，结果标为 `Spec: N/A`；宿主不支持角色限制时，在提示词中明确禁止写文件。
+- The full diff command and commit list.
+- The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
+- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls: documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
-主 Agent 只能机械汇总真实独立审查返回，保留原发现、来源与三档结论，不得删除问题、调低档位或改写结论。审查来源按宿主能力记录：优先使用真实技能轨迹或子代理、会话 ID；没有此类标识时记录可定位的独立会话或人工审查者。通用流程不强制统一 ID、transcript 文件或特定模型，这些文本也不构成机器可证明的防伪凭据。
+**Spec sub-agent prompt** should include:
 
-宿主完全没有独立上下文能力时，只输出待审查材料包并保持“待独立审查”，由独立会话或人工接续；不得由实现者角色扮演独立审查，不运行最终 `qa-check review`，不自动重试或提出 commit。
+- The diff command and commit list.
+- The path or fetched contents of the spec.
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
-**Standards 子代理输入**：审查包路径、commit 列表、规范来源和完整坏味道基线。按文件/hunk 报告违反的标准及出处、可能的坏味道及证据，区分硬违规与判断题。
+If the spec is missing, skip the Spec sub-agent and note this in the final report.
 
-**Spec 子代理输入**：有 spec 时提供审查包路径、commit 列表、spec、冻结计划与证据路径。除缺失、超范围和错误实现外，还要完成证据审计：
+### 5. Aggregate
 
-1. 逐个 TC 对照冻结计划中的原始断言与过程脚本，核对接缝、真实入口、操作环境和操作方式是否一致，不能用低接缝证据冒充 browser；
-2. 核对交互是否来自真实输入事件，注入是否只构造前置条件并在备注标明；
-3. 核对截图是否独立且新鲜、是否跨 TC 复用，数值阈值是否在脚本内严格断言；
-4. 核对过程脚本是否位于特性目录并经 qa-run 执行，修复轮红绿日志是否同源、顺序和 tree 合格；
-5. 核对关键预期是否具有硬断言与失败非零退出，是否以页面旧文本、按钮可用、固定等待、降低后的阈值、仅打印成功文本或未执行的目标动作冒充通过；环境降级或证据不足只能记 BLOCKED，或经计划变更转人工；
-6. 逐项记录 NOTE 处置：核心实现变化重跑受影响验收；能确认仅为非行为文档变化时记录不重跑的理由；无法判断时保持 BLOCKED。TC tree 不一致仍为 NOTE，不改为一律 FAIL，也不按全仓库无关脏文件使证据失效；
-7. 每个 US 都必须出现一次在报告的 `## Spec 对账`，格式为 `| US | PASS/FAIL/BLOCKED | 证据或原因 |`，遗漏即 FAIL。
+Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the two axes are deliberately separate (see _Why two axes_).
 
-证据审计可以简洁，但必须写出实际核对点和偏差，不得只复述“真实有效”。
+End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
-## 5. 报告结构与三档分流
+## Why two axes
 
-随 QA 调用时，报告必须落盘为 `.scratch/<feature>/review-report.md`，包含：
+A change can pass one axis and fail the other:
 
-- 一行 `审查方式：…`，写明独立审查者、会话或子代理 ID，实现者自查不算独立审查；
-- 非空 `## Standards`、`## Spec` 和 `## 证据审计`，分别保留两轴结论和逐 TC 核对结果；
-- `## Spec 对账`、`## 三档分流` 和 `## 范围说明`，可附文件级高危雷达但不形成第三轴。
+- Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
+- Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
 
-独立调用且没有特性 QA 目录时，直接在会话中输出同样的两轴发现和三档结果；无 spec 时明确写 `Spec: N/A`，不强制创建报告文件或补齐 QA 产物。
+Reporting them separately stops one axis from masking the other.
 
-所有发现分为“本次修 / 转专项 / 驳回”：本次修重跑受影响验证；转专项写入报告的遗留事项并说明独立处理理由；驳回记录 ADR 或契约依据。不得把转专项写回 Schema 3 qa-plan 来消除审查问题。
+## 项目定制（QA 工作流调用时）
 
-Schema 1 继续采用 qa-plan 中的 Spec 对账；Schema 2 保留原 manifest、diff 和报告规则；Schema 3 只采信 review-report 中的 Spec 对账，并要求上述完整结构。
+QA 工作流在审查前不提交代码，因此由它调用本技能时只替换 diff 来源，其余步骤按上文执行：
 
-## 6. 复验与交付边界
-
-- 本技能只返回独立审查发现与三档结果。随 QA 调用时，修复后的受影响验证、最终交付命令、`qa-check review` 和人工终审均由 QA 工作流负责；独立调用不强制 QA 交付检查。
-- “本次修”由 QA 工作流安排复验：触及核心链路时重跑对应浏览器用例，其他修复至少重跑相关测试和静态检查；不自动重试，不为退出码修改业务断言。
-- QA 流程中的 LEGACY 仅表示旧计划未校验，不冒充 PASS。报告实际变更、证据、遗留事项和未验证项，是否 commit、push、合并由用户按 `.claude/rules/git-workflow.md` 决定。
-
-## 7. 最终树后的增量复审
-
-完整双轴尽量在实现和证据稳定的最终树执行；之后每次范围内变化都重新 collect，并按影响轴复核，不机械重跑完整双轴：
-
-- **Standards 受影响**：业务实现、架构、命名、规范或构建相关内容变化时，由 Standards 审查者复核受影响 hunk 和原结论。
-- **Spec 受影响**：spec、qa-plan、断言、过程脚本、证据或需求行为变化时，由 Spec 审查者复核受影响 TC/US 与证据。
-- **两轴均受影响**：两轴增量复审，不额外增加裁决代理。
-- **仅证据索引更新**：同一 tree、同一 argv、同一断言与预期结果，只更新日志标签或证据索引时，不重复审查代码；更新最终证据索引，不改原审查发现。
-- **非行为文档变化**：仅状态、格式等非行为文档由 Spec 审查者轻量确认差异与理由，不重跑完整双轴；spec、ADR、阈值或断言变化不属于此类。
-- **无法判断**：按行为变化处理，由受影响轴复核，实现者不得自行豁免。
-
-报告与证据索引必须指向最终材料，不保留已知过期日志路径。三档仍按“本次修 / 转专项 / 驳回”处理，不用增量复核改写原审查发现或消除问题。
-
-## 为什么保留两个轴
-
-符合全部规范但实现错误需求，应当是 Standards PASS、Spec FAIL；实现需求却破坏仓库契约，应当是 Spec PASS、Standards FAIL。分轴是为了避免一个轴的通过掩盖另一个轴的问题。
+- 固定点取 `.scratch/<feature>/scope.json` 的 `base`；commit 列表仍用 `git log <base>..HEAD --oneline`。
+- diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
+- `review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
+- 审查期间不执行 `git add`、`git add -N`、commit、stash、reset 或 checkout。

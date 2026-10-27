@@ -24,6 +24,7 @@ A comprehensive skill for QA engineers to create test plans, generate manual tes
 4. **对抗清单**：按改动风险检查重复提交、并发、弱网、超时、中断、越权、隐私、脏数据和恢复，不机械地为每个需求堆满全部场景。
 5. **关键决策覆盖**：对短路、权限、状态切换、降级等关键决策，按风险核对触发条件、排除条件和降级路径；`Covers` 只承担需求追踪，不等于风险覆盖完整，不机械要求每个 US、P0 或 TC 都增加正反用例。
 6. **目标行为与合适接缝**：模型是否调用、下载响应、权限过滤、持久化等系统侧结果优先由 api、integration、unit 或 static 证明；browser 负责真实入口、交互和用户可见终态，不把全部断言堆到浏览器。浏览器断言必须关联本次操作新产生的结果，不能以页面旧文本、按钮可用或固定等待代替目标行为；视口、输入方式和数值阈值须与冻结断言一致，环境降级或证据不足记 BLOCKED，不改弱断言冒充通过。
+7. **条件断言**：写明前置状态与构造方式（例如接口响应注入，并在备注写明）；给不出构造方式的分支改到能触发它的接缝。依赖故障才出现的 UI 状态按“接口响应注入前置状态 + 真实输入”规划，从真实故障到该状态由 integration 证明。
 
 ### 成本边界
 
@@ -66,7 +67,7 @@ QA Kind: feature
 - **Seam 选择**：选最高的合适接缝；browser 只用于 DOM、交互与视觉，其他断言下沉到 api、integration、unit 或 static。browser 默认 ≤5 条/15 分钟。
 - **证据**：只认特性目录内文件；browser 的 PASS 需要独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。
 - **状态**：只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
-- **交付验证**：规划时写全量命令，按范围选择 typecheck、测试和 lint；最终代码上用 qa-run 执行并核对 argv、exit 和 tree。
+- **交付验证**：原样复制 spec `## 交付命令` 的每条命令（`qa-check plan` 校验包含关系），可以按改动范围追加 typecheck、测试和 lint，不得删减，确需缩减先改 spec 并写明理由；逐条映射 spec 的验收标准；最终代码上用 qa-run 执行并核对 argv、exit 和 tree。
 - **修复轮**：修复已交付特性时使用 `QA Kind: fix` 和独立修复目录；每个 TC 增加 `## 修复前复现` 行，红绿日志必须同 argv、红日志更早且 tree 不同。
 - **计划冻结**：计划在 init 时冻结。删除 TC、改 Seam、减 Covers、改写或删除既有断言、改删交付命令，必须在 `## 计划变更` 说明；追加不受限，规划时就要写准。
 - **兼容**：Schema 1/2 按原规则校验；未声明受支持 Schema（1/2/3）的历史计划返回 LEGACY，仅表示未校验。
@@ -75,7 +76,7 @@ QA Kind: feature
 
 ### 阶段收口
 
-规划通过后，报告当前已完成阶段 3B、车道及理由、qa-plan 路径和 `qa-check plan` 结果。**规划通过后，建议下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
+规划通过后立即运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道及理由、qa-plan 路径、`qa-check plan` 结果和 init 输出。**规划通过后，建议下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
 
 ---
 

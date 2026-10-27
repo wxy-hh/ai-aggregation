@@ -10,7 +10,8 @@ import { checkFeature, CURRENT_SCHEMA, formatReport } from '../qa-check.mjs';
 const QA_CHECK = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
 const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
 const REVIEW_PACKAGE = fileURLToPath(new URL('../review-package.mjs', import.meta.url));
-const SPEC = '## User Stories\n1. 第一条需求\n2. 第二条需求\n';
+// 默认 spec 声明与默认计划一致的交付命令，使既有用例不受交付命令契约影响
+const SPEC = '## User Stories\n1. 第一条需求\n2. 第二条需求\n\n## 交付命令\n\n```bash\nnode --version\n```\n';
 
 function runLog({
   label = 'run',
@@ -132,6 +133,28 @@ const REPORT_OK = [
   '无范围外改动。',
 ].join('\n');
 
+// 上游 code-review 输出加 QA 工作流落盘的最小报告：不含证据审计与 Spec 对账
+const REPORT_UPSTREAM = [
+  '# 审查报告',
+  '',
+  '审查方式：上游 code-review 流程，Standards 与 Spec 两个独立子代理',
+  '',
+  '## Standards',
+  '规范轴原文。',
+  '',
+  '## Spec',
+  '需求轴原文。',
+  '',
+  '## 三档分流',
+  '| 档位 | 说明 |',
+  '| --- | --- |',
+  '',
+  '无发现',
+  '',
+  '## 范围说明',
+  '无范围外改动。',
+].join('\n');
+
 function git(repo, args) {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
 }
@@ -156,13 +179,15 @@ async function reviewRepo(t, {
   await mkdir(feature, { recursive: true });
   await writeFile(path.join(dir, 'spec.md'), SPEC);
   await writeFile(path.join(feature, 'spec.md'), SPEC);
-  await writeFile(path.join(feature, 'qa-plan.md'), plan);
+  // 按正确时序先冻结尚未执行的计划，init 之后再写入执行结果
+  await writeFile(path.join(feature, 'qa-plan.md'), plan.replace(/\| (?:PASS|FAIL) \|/g, '| BLOCKED |'));
 
   const init = spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt'], {
     cwd: dir,
     encoding: 'utf8',
   });
   assert.equal(init.status, 0, init.stderr);
+  await writeFile(path.join(feature, 'qa-plan.md'), plan);
   if (outsideChange) await writeFile(path.join(dir, 'outside.txt'), '开工后范围外修改\n');
   for (const [label, argv, expected] of [
     ['run', ['node', '--version'], 0],
@@ -248,9 +273,14 @@ test('browser 截图加日志及其他接缝日志齐全时 acceptance 为 PASS�
     evidence: {
       'evidence/run.log': runLog(),
       'evidence/page.png': '独立截图',
-      'evidence/browser.log': runLog({ label: 'browser' }),
+      'scripts/browser.mjs': '// 浏览器过程脚本\n',
     },
   });
+  // browser 日志需引用特性目录内的过程脚本；临时目录不在 git 仓库中，因此使用绝对路径
+  await writeFile(
+    path.join(dir, 'evidence', 'browser.log'),
+    runLog({ label: 'browser', argv: ['node', path.join(dir, 'scripts', 'browser.mjs')] }),
+  );
   const report = await checkFeature(dir, 'acceptance');
   assert.equal(report.status, 'PASS', formatReport(report));
   assert.deepEqual(report.issues, []);
@@ -296,8 +326,12 @@ test('同一 TC 的多条断言可引用同一截图（TC03）', async (t) => {
   }).replace('1. 第一条断言', '1. 第一条断言\n2. 第二条断言');
   const dir = await workspace(t, {
     plan,
-    evidence: { 'evidence/shared.png': '图片', 'evidence/run.log': runLog() },
+    evidence: { 'evidence/shared.png': '图片', 'scripts/browser.mjs': '// 浏览器过程脚本\n' },
   });
+  await writeFile(
+    path.join(dir, 'evidence', 'run.log'),
+    runLog({ argv: ['node', path.join(dir, 'scripts', 'browser.mjs')] }),
+  );
   const report = await checkFeature(dir, 'acceptance');
   assert.equal(report.status, 'PASS', formatReport(report));
   assert.ok(!codes(report).includes('SHARED_SCREENSHOT'));
@@ -377,7 +411,8 @@ const CHANGED_PLAN = [
 ].join('\n');
 
 test('冻结计划的每类削弱都要求记录，记录后与追加均不报（TC04、TC12）', async (t) => {
-  const dir = await workspace(t, { plan: CHANGED_PLAN });
+  // 本用例专测计划冻结差异，spec 不声明交付命令，以免交付命令契约提前拦截
+  const dir = await workspace(t, { spec: '## User Stories\n1. 第一条需求\n2. 第二条需求\n', plan: CHANGED_PLAN });
   await mkdir(path.join(dir, 'prechange'));
   await writeFile(path.join(dir, 'prechange', 'qa-plan.md'), FROZEN_PLAN);
   const report = await checkFeature(dir, 'acceptance');
@@ -437,13 +472,12 @@ test('审查方式缺失判 FAIL，自查判 BLOCKED（TC07、TC12）', async (t
   assert.match(issue.hint, /独立/);
 });
 
-test('Standards、Spec 与证据审计节缺失或为空分别报错（TC07）', async (t) => {
+test('Standards 与 Spec 节缺失或为空分别报错（TC07）', async (t) => {
   const { feature } = await reviewRepo(t);
   const reportPath = path.join(feature, 'review-report.md');
   const cases = [
     [/## Standards 规范轴\n规范检查有具体结论。/, 'MISSING_STANDARDS_REVIEW'],
     [/## Spec 需求轴\n需求检查有具体结论。/, 'MISSING_SPEC_SECTION'],
-    [/## 证据审计\n逐个核对证据与断言。/, 'MISSING_EVIDENCE_AUDIT'],
   ];
   for (const [pattern, code] of cases) {
     await writeFile(reportPath, REPORT_OK.replace(pattern, ''));
@@ -453,27 +487,20 @@ test('Standards、Spec 与证据审计节缺失或为空分别报错（TC07）',
   }
 });
 
-test('Spec 对账只采信 review-report 并检查完整性与状态（TC07）', async (t) => {
-  const { feature } = await reviewRepo(t, {
-    plan: `${singlePlan()}\n## Spec 对账\n| US | 状态 | 证据或原因 |\n| 1 | PASS | 计划内伪对账 |\n| 2 | PASS | 计划内伪对账 |`,
-  });
-  const reportPath = path.join(feature, 'review-report.md');
-  await writeFile(reportPath, REPORT_OK.replace('| 2 | PASS | 交付验证 |', ''));
-  const missing = await checkFeature(feature, 'review');
-  assert.equal(missing.status, 'FAIL');
-  assert.ok(codes(missing).includes('MISSING_US'));
+test('审查报告只强制审查方式、两轴与三档分流，旧格式仍兼容（控制点 TC06）', async (t) => {
+  const { feature } = await reviewRepo(t, { report: REPORT_UPSTREAM });
+  const upstream = await checkFeature(feature, 'review');
+  assert.equal(upstream.status, 'PASS', formatReport(upstream));
+  assert.deepEqual(upstream.issues, []);
 
-  await writeFile(reportPath, REPORT_OK.replace('| 2 | PASS | 交付验证 |', '| 1 | PASS | 重复 |\n| 99 | FAIL | 未知且失败 |'));
-  const invalid = await checkFeature(feature, 'review');
-  assert.ok(codes(invalid).includes('DUPLICATE_US'));
-  assert.ok(codes(invalid).includes('UNKNOWN_US'));
-  assert.ok(codes(invalid).includes('SPEC_FAILED'));
-  assert.ok(codes(invalid).includes('MISSING_US'));
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK);
+  const legacy = await checkFeature(feature, 'review');
+  assert.equal(legacy.status, 'PASS', formatReport(legacy));
 
-  await writeFile(reportPath, REPORT_OK.replace('| 2 | PASS | 交付验证 |', '| 2 | BLOCKED | 等待确认 |'));
-  const blocked = await checkFeature(feature, 'review');
-  assert.equal(blocked.status, 'BLOCKED');
-  assert.ok(codes(blocked).includes('SPEC_BLOCKED'));
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_UPSTREAM.replace('## Spec\n需求轴原文。', ''));
+  const missingSpec = await checkFeature(feature, 'review');
+  assert.equal(missingSpec.status, 'FAIL');
+  assert.ok(codes(missingSpec).includes('MISSING_SPEC_SECTION'));
 });
 
 test('三档分流拒绝非法档位，空表必须写明无发现（TC07）', async (t) => {
