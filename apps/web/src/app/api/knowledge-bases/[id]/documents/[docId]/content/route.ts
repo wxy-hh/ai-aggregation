@@ -64,6 +64,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
         fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'text' : 'markdown',
         content: '',
         chunks: [],
+        sourceType: document.sourceType,
+        sourceUrl: document.sourceUrl,
       });
     }
 
@@ -138,6 +140,8 @@ export async function GET(req: NextRequest, context: RouteContext) {
       fileType: ext === '.txt' ? 'text' : 'markdown',
       content,
       chunks,
+      sourceType: document.sourceType,
+      sourceUrl: document.sourceUrl,
     });
   } catch (error) {
     if (error instanceof AuthError) {

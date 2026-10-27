@@ -50,6 +50,8 @@ export interface RagIndexJobData {
   version: number;
   storageKey: string;
   fileName: string;
+  sourceType?: 'file' | 'url';
+  sourceUrl?: string;
 }
 
 /**

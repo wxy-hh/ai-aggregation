@@ -10,8 +10,8 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **P0 (已完成)** | `KB-CHAT-CITE` | **对话引用角标直达全文抽屉与切片高亮** | 低（~1天） | ★★★★★ | `apps/web` · 聊天与全文抽屉联动 | **已交付 (v1.0)** |
 | **P1 (已完成)** | `KB-FAQ-PAIR` | **FAQ 标准问答对管理与精准优先短路** | 中（~1.5天）| ★★★★★ | `@repo/db` · `@repo/providers` · 问答对路由 | **已交付 (v1.1)** |
-| **P1 (当前首选)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **准备立项 (Next)** |
-| **P2 (进阶扩展)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | 待排期 |
+| **P1 (已完成)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **已交付 (v1.2)** |
+| **P2 (当前首选)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | **准备立项 (Next)** |
 | **P2 (算法强化)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | 待排期 |
 | **P2 (架构增强)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | 待排期 |
 | **P3 (运营看板)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | 储备池 |
@@ -39,6 +39,18 @@
   - 知识库工作台挂载「问答对 (FAQ)」Tab，支持单条同步即时向量化增删改、启用开关一键切换及轻量标准 CSV 批量导入与导出；
   - 移动端 375px 窄屏适配，热区全面满足 $\ge 40\text{px}$ 规范。
 - **关联代码**：`packages/db/src/rag/faq-store.ts`、`apps/web/src/app/api/chat/_lib/faq-short-circuit.ts`、`apps/web/src/app/knowledge/_components/faq-management-panel.tsx`。
+
+### `KB-URL-INGEST`：网页 URL / 微信文章一键抓取与入库 (P1 已完成)
+- **交付目标**：解决技术博客、开发文档与微信公众号文章手动复制粘贴入库繁琐易丢失排版的问题，建立纯 Node 降噪提取与防 DNS 重绑定 SSRF 强安全入库管道。
+- **交付成果**：
+  - 在 `@repo/shared` 下沉纯函数 `validateUrlLiteral`、`guardResolvedAddresses` 及服务端 `guardedFetch`（连接级 Socket lookup IP 锁定、逐跳 302 安全复核、2MB 截断）；
+  - `Document` 模型扩展 `sourceType='url'` 与 `sourceUrl`，并完成 Prisma 迁移与客户端类型更新；
+  - `apps/worker` 构建专有微信文章提取器（`#activity-name`、`#js_content`、`data-src` 懒加载图转标准 Markdown）与通用 Readability 降噪引擎；
+  - 知识库管理面板挂载「导入网页」弹窗，支持 1~10 个网址批量录入、微信链接专属高亮徽章与 50 篇容量门禁；
+  - 文档卡片展示「网页」Badge，全文预览抽屉顶部展示「跳转原文」外链直达；
+  - 通过 `ego-browser` 可见窗口完成全链路真机自动化验收（截图：`screenshots/TC05.png`、`TC06.png`）。
+- **关联代码**：`packages/shared/src/security/`、`apps/worker/src/workers/rag-index/html-extractor.ts`、`apps/web/src/app/api/knowledge-bases/[id]/documents/url/route.ts`、`apps/web/src/app/knowledge/_components/url-import-dialog.tsx`。
+
 
 ---
 

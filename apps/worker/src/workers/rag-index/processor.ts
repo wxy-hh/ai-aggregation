@@ -17,8 +17,10 @@ import { prisma, replaceDocumentChunksInTransaction } from '@repo/db';
 import { createStorageProvider, StorageProvider } from '@repo/storage';
 import { createEmbeddingModel } from '@repo/providers';
 import { RAG_EMBEDDING_BATCH_SIZE, RAG_EMBEDDING_MODEL } from '@repo/shared';
+import { guardedFetch, SsrfSecurityError } from '@repo/shared/server';
 import type { RagIndexJobData } from '@repo/queue';
 import { parseDocument, DocumentParseError, ParsedChunk } from './parser';
+import { extractContentFromHtml } from './html-extractor';
 
 export interface ProcessRagIndexDependencies {
   storage?: StorageProvider;
@@ -26,6 +28,8 @@ export interface ProcessRagIndexDependencies {
   replaceChunksFn?: typeof replaceDocumentChunksInTransaction;
   prismaClient?: typeof prisma;
   embeddingModel?: EmbeddingModel;
+  guardedFetchFn?: typeof guardedFetch;
+  extractContentFn?: typeof extractContentFromHtml;
 }
 
 export interface ProcessRagIndexResult {
@@ -84,12 +88,83 @@ export async function processRagIndexJob(
   });
 
   let parsedChunks: ParsedChunk[];
+  let effectiveFileName = fileName;
   try {
-    // 3. 从对象存储下载文件
-    const fileBuffer = await storage.download(storageKey);
+    let fileBuffer: Buffer;
+    const isUrlDoc =
+      (jobData.sourceType === 'url' || (doc as { sourceType?: string }).sourceType === 'url') &&
+      Boolean(jobData.sourceUrl || (doc as { sourceUrl?: string | null }).sourceUrl);
+    const targetUrl = jobData.sourceUrl || (doc as { sourceUrl?: string | null }).sourceUrl || '';
+
+    if (isUrlDoc) {
+      const fetchFn = deps.guardedFetchFn || guardedFetch;
+      const extractFn = deps.extractContentFn || extractContentFromHtml;
+
+      let htmlResponse;
+      try {
+        htmlResponse = await fetchFn(targetUrl);
+      } catch (err) {
+        if (err instanceof SsrfSecurityError) {
+          logger.error('RAG 外链抓取触发 SSRF 防御拦截', err, { documentId, targetUrl });
+          await db.document.update({
+            where: { id: documentId },
+            data: {
+              status: 'failed',
+              errorMessage: `安全拦截: ${err.message}`,
+            },
+          });
+          return {
+            success: false,
+            documentId,
+            version,
+            chunkCount: 0,
+            errorMessage: err.message,
+            isFatal: true,
+          };
+        }
+        throw err;
+      }
+
+      if (htmlResponse.status >= 400) {
+        const isFatalStatus = htmlResponse.status === 404 || htmlResponse.status === 403 || htmlResponse.status === 410;
+        const errorMsg = `抓取目标页面失败（HTTP ${htmlResponse.status}）`;
+        logger.error(errorMsg, undefined, { documentId, targetUrl, status: htmlResponse.status });
+        await db.document.update({
+          where: { id: documentId },
+          data: {
+            status: 'failed',
+            errorMessage: errorMsg,
+          },
+        });
+        return {
+          success: false,
+          documentId,
+          version,
+          chunkCount: 0,
+          errorMessage: errorMsg,
+          isFatal: isFatalStatus,
+        };
+      }
+
+      const extracted = extractFn(htmlResponse.text, targetUrl);
+      effectiveFileName = `${extracted.title}.md`;
+      fileBuffer = Buffer.from(extracted.markdown, 'utf8');
+
+      // 存储提纯后的 Markdown，保持存储与切片体系一致
+      await storage.upload(storageKey, fileBuffer, 'text/markdown');
+
+      // 更新真实文档标题
+      await db.document.update({
+        where: { id: documentId },
+        data: { name: extracted.title },
+      });
+    } else {
+      // 3. 从对象存储下载文件
+      fileBuffer = await storage.download(storageKey);
+    }
 
     // 4. 解析文档并执行语义切块与中文分词
-    parsedChunks = await parseDocument(fileBuffer, fileName);
+    parsedChunks = await parseDocument(fileBuffer, effectiveFileName);
   } catch (error) {
     if (error instanceof DocumentParseError && error.isFatal) {
       // 永久性致命格式错误（损坏 PDF、空文件、不支持类型）：立即置 failed 并记录中文原因，不向外抛错以避免死循环重试

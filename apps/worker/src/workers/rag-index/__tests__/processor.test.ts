@@ -208,4 +208,97 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(result.success).toBe(false);
     expect(mockStorage.download).not.toHaveBeenCalled();
   });
+
+  it('外链与微信文章全流程：拉取 HTML → 提纯 Markdown → 上传 Storage → 切片入库', async () => {
+    const urlJobData: RagIndexJobData = {
+      ...dummyJobData,
+      sourceType: 'url',
+      sourceUrl: 'https://mp.weixin.qq.com/s/sample_article_123',
+    };
+
+    const mockStorage = {
+      upload: vi.fn(),
+      download: vi.fn(),
+      delete: vi.fn(),
+      getUrl: vi.fn(),
+    };
+
+    const mockGuardedFetch = vi.fn(async () => ({
+      status: 200,
+      finalUrl: 'https://mp.weixin.qq.com/s/sample_article_123',
+      contentType: 'text/html; charset=utf-8',
+      text: '<html><body><h1 id="activity-name">微信架构实战</h1><div id="js_content"><p>本文详细介绍分布式切片架构实践。</p></div></body></html>',
+      buffer: Buffer.from('test'),
+      isTruncated: false,
+    }));
+
+    const mockExtractContent = vi.fn(() => ({
+      title: '微信架构实战',
+      markdown: '# 微信架构实战\n\n本文详细介绍分布式切片架构实践。',
+      contentLength: 60,
+    }));
+
+    const mockEmbedMany = vi.fn(async ({ values }: any) => ({
+      embeddings: values.map(() => new Array(1024).fill(0.111)),
+      usage: { tokens: values.length * 10 },
+    }));
+
+    const mockReplaceChunks = vi.fn(async (params: any) => {
+      replaceCalls.push(params);
+      return { chunkCount: params.chunks.length };
+    });
+
+    const result = await processRagIndexJob(urlJobData, {
+      prismaClient: createMockDb(),
+      storage: mockStorage as any,
+      guardedFetchFn: mockGuardedFetch as any,
+      extractContentFn: mockExtractContent as any,
+      embedManyFn: mockEmbedMany as any,
+      replaceChunksFn: mockReplaceChunks as any,
+      embeddingModel: mockEmbeddingModel,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockGuardedFetch).toHaveBeenCalledWith('https://mp.weixin.qq.com/s/sample_article_123');
+    expect(mockExtractContent).toHaveBeenCalled();
+    // 应当将清洗出的 Markdown 上传至对象存储
+    expect(mockStorage.upload).toHaveBeenCalledWith(
+      dummyJobData.storageKey,
+      expect.any(Buffer),
+      'text/markdown'
+    );
+    // 数据库标题应更新为真实网页标题
+    const titleUpdate = updateCalls.find((c) => c.data.name === '微信架构实战');
+    expect(titleUpdate).toBeDefined();
+    expect(replaceCalls.length).toBe(1);
+  });
+
+  it('外链抓取触发 SSRF 拦截：记录 failed 态与中文原因，不向外抛错以避免死循环重试', async () => {
+    const ssrfJobData: RagIndexJobData = {
+      ...dummyJobData,
+      sourceType: 'url',
+      sourceUrl: 'http://127.0.0.1:8080/internal',
+    };
+
+    const mockStorage = {
+      upload: vi.fn(),
+      download: vi.fn(),
+      delete: vi.fn(),
+      getUrl: vi.fn(),
+    };
+
+    const result = await processRagIndexJob(ssrfJobData, {
+      prismaClient: createMockDb(),
+      storage: mockStorage as any,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.isFatal).toBe(true);
+    expect(result.errorMessage).toContain('内部私有网络');
+
+    const lastUpdate = updateCalls[updateCalls.length - 1];
+    expect(lastUpdate.data.status).toBe('failed');
+    expect(lastUpdate.data.errorMessage).toContain('安全拦截');
+  });
 });
+

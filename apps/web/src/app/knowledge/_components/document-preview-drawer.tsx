@@ -69,6 +69,8 @@ export interface DocumentPreviewDrawerProps {
   modal?: boolean;
   /** 接口 404/403 失败时的降级历史切片快照 (TC07 / CitationSnapshotFallback) */
   fallbackSnippet?: string;
+  /** 外链来源 URL (ADR-0028) */
+  sourceUrl?: string | null;
 }
 
 interface DocumentContentData {
@@ -81,6 +83,8 @@ interface DocumentContentData {
   fileType: 'markdown' | 'text' | 'pdf';
   content: string;
   originalUrl?: string | null;
+  sourceType?: string;
+  sourceUrl?: string | null;
   chunks?: Array<{
     chunkIndex: number;
     content: string;
@@ -103,6 +107,7 @@ export function DocumentPreviewDrawer({
   onSelectAnchor,
   modal = true,
   fallbackSnippet,
+  sourceUrl,
 }: DocumentPreviewDrawerProps) {
   const [data, setData] = React.useState<DocumentContentData | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -262,8 +267,27 @@ export function DocumentPreviewDrawer({
               </div>
             </div>
 
-            {/* 右上角操作区：PDF原版链接与关闭按钮 */}
-            <div className="flex items-center space-x-1 shrink-0">
+            {/* 右上角操作区：PDF原版链接、网页跳转原文与关闭按钮 */}
+            <div className="flex items-center space-x-1.5 shrink-0">
+              {(data?.sourceUrl || sourceUrl) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center text-primary hover:text-primary"
+                >
+                  <a
+                    href={(data?.sourceUrl || sourceUrl) as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="document-source-link"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">跳转原文</span>
+                  </a>
+                </Button>
+              )}
+
               {data?.originalUrl && (
                 <Button
                   variant="outline"

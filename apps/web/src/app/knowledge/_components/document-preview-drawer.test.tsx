@@ -424,4 +424,46 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(overlay).toBeNull();
     });
   });
+
+  it('外链网页文档在抽屉顶部展示“跳转原文”操作按钮且在新标签页打开 (TC06)', async () => {
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'doc_url',
+          name: '微信架构深度实战.md',
+          version: 1,
+          chunkCount: 2,
+          fileType: 'markdown',
+          status: 'ready',
+          content: '# 微信架构深度实战\n\n正文内容...',
+          sourceType: 'url',
+          sourceUrl: 'https://mp.weixin.qq.com/s/article_target_123',
+          chunks: [],
+        },
+      }),
+    });
+
+    render(
+      <DocumentPreviewDrawer
+        open={true}
+        onOpenChange={vi.fn()}
+        knowledgeBaseId="kb_1"
+        documentId="doc_url"
+        documentName="微信架构深度实战.md"
+        sourceUrl="https://mp.weixin.qq.com/s/article_target_123"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('微信架构深度实战.md')).toBeInTheDocument();
+      const linkBtn = screen.getByTestId('document-source-link');
+      expect(linkBtn).toBeInTheDocument();
+      expect(linkBtn).toHaveAttribute('href', 'https://mp.weixin.qq.com/s/article_target_123');
+      expect(linkBtn).toHaveAttribute('target', '_blank');
+      expect(linkBtn).toHaveAttribute('rel', 'noopener noreferrer');
+      expect(screen.getByText('跳转原文')).toBeInTheDocument();
+    });
+  });
 });

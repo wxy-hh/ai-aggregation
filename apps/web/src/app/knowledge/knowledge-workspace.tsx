@@ -31,6 +31,7 @@ import { fetchWithAuth } from '@/lib/api/client';
 import { RetrievalDebugger } from './_components/retrieval-debugger';
 import { DocumentPreviewDrawer } from './_components/document-preview-drawer';
 import { FaqManagementPanel } from './_components/faq-management-panel';
+import { UrlImportDialog } from './_components/url-import-dialog';
 import {
   BookOpen,
   Plus,
@@ -41,6 +42,8 @@ import {
   FolderOpen,
   Eye,
   HelpCircle,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 
 export interface KnowledgeBaseItem {
@@ -60,6 +63,8 @@ export interface DocumentItem {
   version: number;
   chunkCount: number;
   errorMessage: string | null;
+  sourceType?: 'file' | 'url';
+  sourceUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,6 +86,9 @@ export function KnowledgeWorkspace() {
   const [documents, setDocuments] = React.useState<DocumentItem[]>([]);
   const [docsLoading, setDocsLoading] = React.useState(false);
 
+  // 网页外链导入弹窗状态 (ADR-0028)
+  const [isUrlImportOpen, setIsUrlImportOpen] = React.useState(false);
+
   // 文档预览抽屉状态
   const [previewState, setPreviewState] = React.useState<{
     isOpen: boolean;
@@ -89,6 +97,7 @@ export function KnowledgeWorkspace() {
     documentVersion?: number;
     initialStatus?: 'pending' | 'processing' | 'ready' | 'failed';
     initialErrorMessage?: string | null;
+    sourceUrl?: string | null;
   }>({
     isOpen: false,
     documentId: null,
@@ -139,6 +148,21 @@ export function KnowledgeWorkspace() {
       loadDocuments(selectedKbId);
     }
   }, [selectedKbId, activeTab, loadDocuments]);
+
+  // 当有处于处理中或待处理的文档时，开启 3 秒轻量轮询更新文档终态 (ADR-0028)
+  React.useEffect(() => {
+    if (!selectedKbId || activeTab !== 'documents') return;
+    const hasUnfinished = documents.some(
+      (d) => d.status === 'pending' || d.status === 'processing'
+    );
+    if (!hasUnfinished) return;
+
+    const timer = setInterval(() => {
+      loadDocuments(selectedKbId);
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [selectedKbId, activeTab, documents, loadDocuments]);
 
   // 创建知识库提交
   const handleCreateKnowledgeBase = async (e: React.FormEvent) => {
@@ -317,32 +341,53 @@ export function KnowledgeWorkspace() {
                   已收录文档及其版本、索引状态与切片统计
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => loadDocuments(selectedKb.id)}
-                className="min-h-[40px] sm:min-h-[36px] rounded-xl text-xs"
-              >
-                <RefreshCw className="w-3.5 h-3.5 mr-1" />
-                <span>刷新状态</span>
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Button
+                  size="sm"
+                  onClick={() => setIsUrlImportOpen(true)}
+                  className="min-h-[44px] sm:min-h-[40px] h-10 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>导入网页</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => loadDocuments(selectedKb.id)}
+                  className="min-h-[44px] sm:min-h-[36px] rounded-xl text-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                  <span>刷新状态</span>
+                </Button>
+              </div>
             </div>
 
             {docsLoading ? (
               <div className="p-8 text-center text-xs text-muted-foreground">加载文档列表中...</div>
             ) : documents.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
-                当前知识库暂无文档，请在左上角或文档接口上传
+                当前知识库暂无文档，请点击右上角「导入网页」或通过接口上传
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {documents.map((doc) => (
                   <Card key={doc.id} className="border border-border/50 shadow-none">
                     <CardContent className="p-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-xs text-foreground truncate max-w-[200px]">
-                          {doc.name}
-                        </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center space-x-1.5 min-w-0 flex-1">
+                          {doc.sourceType === 'url' && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-1 py-0 shrink-0 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
+                            >
+                              网页
+                            </Badge>
+                          )}
+                          <span className="font-medium text-xs text-foreground truncate" title={doc.name}>
+                            {doc.name}
+                          </span>
+                        </div>
                         <Badge
                           variant={
                             doc.status === 'ready'
@@ -351,7 +396,7 @@ export function KnowledgeWorkspace() {
                               ? 'destructive'
                               : 'secondary'
                           }
-                          className="text-[10px] px-1.5 py-0.5"
+                          className="text-[10px] px-1.5 py-0.5 shrink-0"
                         >
                           {doc.status === 'ready'
                             ? '就绪'
@@ -377,6 +422,7 @@ export function KnowledgeWorkspace() {
                               documentVersion: doc.version,
                               initialStatus: doc.status,
                               initialErrorMessage: doc.errorMessage,
+                              sourceUrl: doc.sourceUrl,
                             })
                           }
                           className="min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 gap-1.5 flex items-center"
@@ -466,6 +512,19 @@ export function KnowledgeWorkspace() {
         </DialogContent>
       </Dialog>
 
+      {/* 导入网页弹窗 (ADR-0028) */}
+      {selectedKb && (
+        <UrlImportDialog
+          open={isUrlImportOpen}
+          onOpenChange={setIsUrlImportOpen}
+          knowledgeBaseId={selectedKb.id}
+          onSuccess={() => {
+            loadDocuments(selectedKb.id);
+            loadKnowledgeBases();
+          }}
+        />
+      )}
+
       {/* 文档全文预览抽屉 */}
       <DocumentPreviewDrawer
         open={previewState.isOpen}
@@ -476,6 +535,7 @@ export function KnowledgeWorkspace() {
         documentVersion={previewState.documentVersion}
         initialStatus={previewState.initialStatus}
         initialErrorMessage={previewState.initialErrorMessage}
+        sourceUrl={previewState.sourceUrl}
       />
       </div>
     </div>
