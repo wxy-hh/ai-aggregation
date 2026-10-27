@@ -13,6 +13,9 @@ describe('RAG 配置与校验工具', () => {
     expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.md');
     expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.markdown');
     expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.txt');
+    expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.docx');
+    expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.xlsx');
+    expect(RAG_FILE_CONFIG.allowedExtensions).toContain('.csv');
   });
 
   it('正确导出容量配额与中文提示文案', () => {
@@ -63,6 +66,63 @@ describe('RAG 配置与校验工具', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('合法 Word (.docx) 与表格 (.xlsx / .csv) 文件校验通过', () => {
+      const docxResult = validateRagDocument({
+        name: '劳动合同范本.docx',
+        size: 1024 * 50,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+      expect(docxResult.valid).toBe(true);
+      if (docxResult.valid) {
+        expect(docxResult.safeName).toBe('劳动合同范本.docx');
+        expect(docxResult.extension).toBe('.docx');
+      }
+
+      const xlsxResult = validateRagDocument({
+        name: '财务报表2024.xlsx',
+        size: 1024 * 100,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      expect(xlsxResult.valid).toBe(true);
+      if (xlsxResult.valid) {
+        expect(xlsxResult.safeName).toBe('财务报表2024.xlsx');
+        expect(xlsxResult.extension).toBe('.xlsx');
+      }
+
+      const csvResult = validateRagDocument({
+        name: '花名册.csv',
+        size: 1024 * 10,
+        type: 'text/csv',
+      });
+      expect(csvResult.valid).toBe(true);
+      if (csvResult.valid) {
+        expect(csvResult.safeName).toBe('花名册.csv');
+        expect(csvResult.extension).toBe('.csv');
+      }
+    });
+
+    it('老旧 .doc 与 .xls 格式拦截并给出转存友好提示', () => {
+      const docResult = validateRagDocument({
+        name: 'old-contract.doc',
+        size: 1024,
+        type: 'application/msword',
+      });
+      expect(docResult.valid).toBe(false);
+      if (!docResult.valid) {
+        expect(docResult.error).toContain('暂不支持老旧的 .doc/.xls 格式，请在 Office 或 WPS 中另存为 .docx/.xlsx 后重新上传');
+      }
+
+      const xlsResult = validateRagDocument({
+        name: 'old-report.xls',
+        size: 1024,
+        type: 'application/vnd.ms-excel',
+      });
+      expect(xlsResult.valid).toBe(false);
+      if (!xlsResult.valid) {
+        expect(xlsResult.error).toContain('暂不支持老旧的 .doc/.xls 格式，请在 Office 或 WPS 中另存为 .docx/.xlsx 后重新上传');
+      }
+    });
+
     it('非法扩展名拒绝并返回明确中文提示', () => {
       const exeResult = validateRagDocument({
         name: 'malicious.exe',
@@ -71,17 +131,7 @@ describe('RAG 配置与校验工具', () => {
       });
       expect(exeResult.valid).toBe(false);
       if (!exeResult.valid) {
-        expect(exeResult.error).toContain('仅支持 PDF、Markdown、TXT');
-      }
-
-      const docxResult = validateRagDocument({
-        name: 'document.docx',
-        size: 1024,
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-      expect(docxResult.valid).toBe(false);
-      if (!docxResult.valid) {
-        expect(docxResult.error).toContain('仅支持 PDF、Markdown、TXT');
+        expect(exeResult.error).toContain('仅支持 PDF、Markdown、TXT、Word 与表格');
       }
 
       const pngResult = validateRagDocument({

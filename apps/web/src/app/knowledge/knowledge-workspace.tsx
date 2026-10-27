@@ -89,6 +89,10 @@ export function KnowledgeWorkspace() {
   // 网页外链导入弹窗状态 (ADR-0028)
   const [isUrlImportOpen, setIsUrlImportOpen] = React.useState(false);
 
+  // 文件上传状态与引用 (ADR-0029)
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = React.useState(false);
+
   // 文档预览抽屉状态
   const [previewState, setPreviewState] = React.useState<{
     isOpen: boolean;
@@ -163,6 +167,45 @@ export function KnowledgeWorkspace() {
 
     return () => clearInterval(timer);
   }, [selectedKbId, activeTab, documents, loadDocuments]);
+
+  // 处理文档本地文件上传 (支持 .docx / .xlsx / .csv / .pdf / .md / .txt，拦截 .doc / .xls)
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedKbId) return;
+
+    // 清空 input 允许重复选择同名文件
+    e.target.value = '';
+
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith('.doc') || lowerName.endsWith('.xls')) {
+      alert('暂不支持老旧的 .doc/.xls 格式，请在 Office 或 WPS 中另存为 .docx/.xlsx 后重新上传');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetchWithAuth(`/api/knowledge-bases/${selectedKbId}/documents`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || json.message || '上传文档失败');
+      }
+
+      await loadDocuments(selectedKbId);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '上传失败，请重试';
+      console.error('[knowledge] 上传文档异常:', err);
+      alert(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // 创建知识库提交
   const handleCreateKnowledgeBase = async (e: React.FormEvent) => {
@@ -342,8 +385,32 @@ export function KnowledgeWorkspace() {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept=".pdf,.md,.markdown,.txt,.docx,.xlsx,.csv"
+                  className="hidden"
+                  data-testid="document-file-input"
+                />
                 <Button
                   size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="min-h-[44px] sm:min-h-[40px] h-10 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
+                  data-testid="upload-document-button"
+                >
+                  {uploading ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>{uploading ? '上传中...' : '上传文档'}</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => setIsUrlImportOpen(true)}
                   className="min-h-[44px] sm:min-h-[40px] h-10 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
                 >
@@ -367,44 +434,62 @@ export function KnowledgeWorkspace() {
               <div className="p-8 text-center text-xs text-muted-foreground">加载文档列表中...</div>
             ) : documents.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
-                当前知识库暂无文档，请点击右上角「导入网页」或通过接口上传
+                当前知识库暂无文档，请点击右上角「上传文档」或「导入网页」进行知识入库
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {documents.map((doc) => (
-                  <Card key={doc.id} className="border border-border/50 shadow-none">
-                    <CardContent className="p-4 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center space-x-1.5 min-w-0 flex-1">
-                          {doc.sourceType === 'url' && (
+                {documents.map((doc) => {
+                  const lowerName = doc.name.toLowerCase();
+                  const formatLabel = doc.sourceType === 'url'
+                    ? '网页'
+                    : lowerName.endsWith('.docx')
+                    ? 'Word'
+                    : lowerName.endsWith('.xlsx') || lowerName.endsWith('.csv')
+                    ? '表格'
+                    : lowerName.endsWith('.pdf')
+                    ? 'PDF'
+                    : '文本';
+
+                  return (
+                    <Card key={doc.id} className="border border-border/50 shadow-none">
+                      <CardContent className="p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center space-x-1.5 min-w-0 flex-1">
                             <Badge
                               variant="outline"
-                              className="text-[10px] px-1 py-0 shrink-0 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
+                              className={`text-[10px] px-1 py-0 shrink-0 ${
+                                doc.sourceType === 'url'
+                                  ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                                  : formatLabel === 'Word'
+                                  ? 'border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20'
+                                  : formatLabel === '表格'
+                                  ? 'border-amber-500/30 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
+                                  : 'border-muted-foreground/30 text-muted-foreground bg-muted/20'
+                              }`}
                             >
-                              网页
+                              {formatLabel}
                             </Badge>
-                          )}
-                          <span className="font-medium text-xs text-foreground truncate" title={doc.name}>
-                            {doc.name}
-                          </span>
-                        </div>
-                        <Badge
-                          variant={
-                            doc.status === 'ready'
-                              ? 'default'
+                            <span className="font-medium text-xs text-foreground truncate" title={doc.name}>
+                              {doc.name}
+                            </span>
+                          </div>
+                          <Badge
+                            variant={
+                              doc.status === 'ready'
+                                ? 'default'
+                                : doc.status === 'failed'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                            className="text-[10px] px-1.5 py-0.5 shrink-0"
+                          >
+                            {doc.status === 'ready'
+                              ? '就绪'
                               : doc.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                          }
-                          className="text-[10px] px-1.5 py-0.5 shrink-0"
-                        >
-                          {doc.status === 'ready'
-                            ? '就绪'
-                            : doc.status === 'failed'
-                            ? '失败'
-                            : '索引中'}
-                        </Badge>
-                      </div>
+                              ? '失败'
+                              : '索引中'}
+                          </Badge>
+                        </div>
 
                       <div className="flex items-center justify-between pt-1">
                         <div className="flex items-center space-x-3 text-[11px] text-muted-foreground">
@@ -439,8 +524,9 @@ export function KnowledgeWorkspace() {
                       )}
                     </CardContent>
                   </Card>
-                ))}
-              </div>
+                );
+              })}
+            </div>
             )}
           </TabsContent>
 

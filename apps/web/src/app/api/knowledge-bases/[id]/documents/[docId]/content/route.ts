@@ -112,23 +112,56 @@ export async function GET(req: NextRequest, context: RouteContext) {
       });
     }
 
-    // 4. 针对 Markdown / 纯文本：优先从存储层读取原文件，若存储未命中则从切片还原
-    let content = '';
+    // 4. 生成原文件签名下载链接 (供 Word/Excel/CSV/PDF 等下载原件)
+    let originalUrl: string | null = null;
+    const storage = createStorageProvider();
     try {
-      const storage = createStorageProvider();
-      const buffer = await storage.download(document.storageKey);
-      content = buffer.toString('utf-8');
+      originalUrl = await storage.getUrl(document.storageKey, 3600);
     } catch (storageErr) {
-      console.warn('[document/content] 从存储层读取原文件失败，回退从切片聚合正文:', storageErr);
-      if (chunks.length > 0) {
+      console.warn('[document/content] 获取原文件签名 URL 失败:', storageErr);
+    }
+
+    // 5. 针对 Markdown / 纯文本 / Word / 表格读取正文内容
+    // 若为 Word (.docx) 或表格 (.xlsx)，优先从对象存储读取 Worker 提纯落盘的 content.md 缓存
+    let content = '';
+    const isStructuredBinary = ext === '.docx' || ext === '.xlsx';
+
+    if (isStructuredBinary) {
+      const parsedContentKey = document.storageKey.replace(/\/[^/]+$/, '/content.md');
+      try {
+        const buffer = await storage.download(parsedContentKey);
+        content = buffer.toString('utf-8');
+      } catch {
+        // 若提纯快照未命中，回退由切片聚合呈现
         content = chunks.map((c) => c.content).join('\n\n');
-      } else if (document.status === 'pending' || document.status === 'processing') {
-        // 处理中且无切片：优雅返回空内容模型，供前端展示处理中状态 (US-12)
-        content = '';
-      } else {
-        throw storageErr;
+      }
+    } else {
+      try {
+        const buffer = await storage.download(document.storageKey);
+        content = buffer.toString('utf-8');
+      } catch (storageErr) {
+        console.warn('[document/content] 从存储层读取原文件失败，回退从切片聚合正文:', storageErr);
+        if (chunks.length > 0) {
+          content = chunks.map((c) => c.content).join('\n\n');
+        } else if (document.status === 'pending' || document.status === 'processing') {
+          // 处理中且无切片：优雅返回空内容模型，供前端展示处理中状态 (US-12)
+          content = '';
+        } else {
+          throw storageErr;
+        }
       }
     }
+
+    const fileType =
+      ext === '.txt'
+        ? 'text'
+        : ext === '.docx'
+        ? 'docx'
+        : ext === '.xlsx'
+        ? 'xlsx'
+        : ext === '.csv'
+        ? 'csv'
+        : 'markdown';
 
     return createSuccessResponse({
       id: document.id,
@@ -137,8 +170,9 @@ export async function GET(req: NextRequest, context: RouteContext) {
       chunkCount: document.chunkCount,
       status: document.status,
       errorMessage: document.errorMessage,
-      fileType: ext === '.txt' ? 'text' : 'markdown',
+      fileType,
       content,
+      originalUrl,
       chunks,
       sourceType: document.sourceType,
       sourceUrl: document.sourceUrl,

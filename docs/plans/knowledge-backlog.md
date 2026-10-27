@@ -11,8 +11,8 @@
 | **P0 (已完成)** | `KB-CHAT-CITE` | **对话引用角标直达全文抽屉与切片高亮** | 低（~1天） | ★★★★★ | `apps/web` · 聊天与全文抽屉联动 | **已交付 (v1.0)** |
 | **P1 (已完成)** | `KB-FAQ-PAIR` | **FAQ 标准问答对管理与精准优先短路** | 中（~1.5天）| ★★★★★ | `@repo/db` · `@repo/providers` · 问答对路由 | **已交付 (v1.1)** |
 | **P1 (已完成)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **已交付 (v1.2)** |
-| **P2 (当前首选)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | **准备立项 (Next)** |
-| **P2 (算法强化)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | 待排期 |
+| **P2 (已完成)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | **已交付 (v1.3)** |
+| **P2 (当前首选)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | **准备立项 (Next)** |
 | **P2 (架构增强)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | 待排期 |
 | **P3 (运营看板)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | 储备池 |
 | **P3 (深度调优)** | `KB-CHUNK-TUNE` | **切片策略可视化调节与效果预览** | 中（~3天） | ★★★☆☆ | `apps/web` · 上传前置/后置配置 | 储备池 |
@@ -50,6 +50,16 @@
   - 文档卡片展示「网页」Badge，全文预览抽屉顶部展示「跳转原文」外链直达；
   - 通过 `ego-browser` 可见窗口完成全链路真机自动化验收（截图：`screenshots/TC05.png`、`TC06.png`）。
 - **关联代码**：`packages/shared/src/security/`、`apps/worker/src/workers/rag-index/html-extractor.ts`、`apps/web/src/app/api/knowledge-bases/[id]/documents/url/route.ts`、`apps/web/src/app/knowledge/_components/url-import-dialog.tsx`。
+
+### `KB-DOCX-PARSE`：Word (.docx) 与表格 (.csv/.xlsx) 结构化解析 (P2 已完成)
+- **交付目标**：解决企业合同、报表直接切块撕裂行列结构导致表头列语义脱落的问题，构建单机轻量防线、表头上下文注入与双轨归一存储体系。
+- **交付成果**：
+  - 在 `@repo/shared` 扩展格式白名单支持 `.docx`、`.xlsx`、`.csv`，前置友好拦截老旧 `.doc` / `.xls`，设立单 Sheet 500 行、单文件 50 切片、15 列修剪轻量保护防线；
+  - `apps/worker` 引入纯 Node 轻量 `mammoth` 提取大纲层级栈（`headingPath`），剥离图片 base64 污染；基于 `xlsx` 库构建 `TableChunk` 自包含切块与表头上下文注入（`HeaderContextInjection`）；
+  - 双轨归一存储模型：原始文件保全支持下载，提纯后的 GFM Markdown 同步缓存至 `content.md`，使全文抽屉极速只读渲染并无缝兼容切片高亮（`CitationAnchorHighlight`）；
+  - 知识库工作台挂载「上传文档」按钮与格式 Badge（Word/表格/PDF/文本），全文抽屉支持原文件下载与移动端 375px 窄屏表格横向平滑滚动（`overflow-x-auto`）；
+  - 通过 `ego-browser` 可见窗口完成端到端全链路真机验收（截图：`screenshots/TC06.png`、`TC07.png`）。
+- **关联代码**：`packages/shared/src/rag-config.ts`、`apps/worker/src/workers/rag-index/docx-parser.ts`、`table-parser.ts`、`apps/web/src/app/knowledge/knowledge-workspace.tsx`、`document-preview-drawer.tsx`。
 
 
 ---

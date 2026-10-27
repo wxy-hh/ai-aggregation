@@ -1,4 +1,5 @@
 import path from 'path';
+import { existsSync } from 'fs';
 import {
   S3Client,
   PutObjectCommand,
@@ -171,9 +172,19 @@ export function createStorageProvider(): StorageProvider {
     return new S3Provider(config);
   }
 
-  // 本地存储，零依赖
-  const localDir = process.env.LOCAL_STORAGE_DIR
-    || path.join(process.cwd(), 'public', 'feedback-attachments');
+  // 本地存储，零依赖（自动适配 apps/web、apps/worker 与根目录多进程统一存储路径）
+  let defaultDir = path.join(process.cwd(), 'public', 'feedback-attachments');
+  if (!process.env.LOCAL_STORAGE_DIR) {
+    const siblingWebAttachments = path.resolve(process.cwd(), '../web/public/feedback-attachments');
+    const rootWebAttachments = path.resolve(process.cwd(), 'apps/web/public/feedback-attachments');
+    if (existsSync(siblingWebAttachments)) {
+      defaultDir = siblingWebAttachments;
+    } else if (existsSync(rootWebAttachments)) {
+      defaultDir = rootWebAttachments;
+    }
+  }
+
+  const localDir = process.env.LOCAL_STORAGE_DIR || defaultDir;
   return new LocalStorageProvider(localDir);
 }
 

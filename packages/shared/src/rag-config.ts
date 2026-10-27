@@ -53,20 +53,45 @@ export const RAG_CAPACITY_ERROR_MESSAGES = {
 
 /**
  * RAG 文档文件格式与大小限制
- * v1 仅支持文本型 PDF/Markdown/TXT
+ * 支持文本型 PDF/Markdown/TXT，以及 Office OpenXML Word (.docx) 与表格 (.xlsx / .csv)
  */
 export const RAG_FILE_CONFIG = {
   /** 单个文档最大大小（字节）：20MB */
   maxFileSize: 20 * 1024 * 1024,
   /** 允许的文件扩展名 */
-  allowedExtensions: ['.pdf', '.md', '.markdown', '.txt'] as const,
+  allowedExtensions: [
+    '.pdf',
+    '.md',
+    '.markdown',
+    '.txt',
+    '.docx',
+    '.xlsx',
+    '.csv',
+  ] as const,
   /** 常见的允许 MIME 类型 */
   allowedMimeTypes: [
     'application/pdf',
     'text/plain',
     'text/markdown',
     'text/x-markdown',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
   ] as const,
+} as const;
+
+/**
+ * 结构化表格切块与防御规格配置 (ADR-0029)
+ */
+export const RAG_TABLE_CONFIG = {
+  /** 单个工作表最大允许解析的有效数据行数 */
+  maxRowsPerSheet: 500,
+  /** 单个表格文件跨 Sheet 生成切片数量上限 */
+  maxChunksPerDocument: 50,
+  /** 宽表最多保留的列数（多余列被修剪） */
+  maxColumns: 15,
+  /** 单个表格切片目标 Token 数 */
+  chunkTargetTokens: 600,
 } as const;
 
 /**
@@ -115,11 +140,19 @@ export function validateRagDocument(
   const lastDotIndex = safeName.lastIndexOf('.');
   const ext = lastDotIndex !== -1 ? safeName.slice(lastDotIndex).toLowerCase() : '';
 
+  // 3. 老旧格式前置拦截并友好提示 (ADR-0029)
+  if (ext === '.doc' || ext === '.xls') {
+    return {
+      valid: false,
+      error: '暂不支持老旧的 .doc/.xls 格式，请在 Office 或 WPS 中另存为 .docx/.xlsx 后重新上传',
+    };
+  }
+
   const isAllowedExt = (RAG_FILE_CONFIG.allowedExtensions as readonly string[]).includes(ext);
   if (!isAllowedExt) {
     return {
       valid: false,
-      error: '不支持的文件类型，仅支持 PDF、Markdown、TXT 文本文件',
+      error: '不支持的文件类型，仅支持 PDF、Markdown、TXT、Word 与表格文件',
     };
   }
 

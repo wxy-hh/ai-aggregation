@@ -14,6 +14,13 @@ import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 import { PDFParse } from 'pdf-parse';
 import { RAG_CHUNK_CONFIG } from '@repo/shared';
+import { parseDocxBuffer } from './docx-parser';
+import { parseTableBuffer, parseCsvString } from './table-parser';
+
+/**
+ * 带有可选完整 Markdown 提纯快照的切片集合
+ */
+export type ParsedDocumentChunks = ParsedChunk[] & { fullMarkdown?: string };
 
 /**
  * 文档解析与切块产生的切片结构
@@ -268,25 +275,43 @@ export async function parseTxtString(content: string): Promise<ParsedChunk[]> {
 export async function parseDocument(
   buffer: Buffer,
   fileName: string
-): Promise<ParsedChunk[]> {
+): Promise<ParsedDocumentChunks> {
   const lower = fileName.toLowerCase();
 
   if (lower.endsWith('.pdf')) {
-    return parsePdfBuffer(buffer);
+    const chunks = await parsePdfBuffer(buffer);
+    return Object.assign(chunks, { fullMarkdown: undefined });
+  }
+
+  if (lower.endsWith('.docx')) {
+    const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
+    return Object.assign(chunks, { fullMarkdown });
+  }
+
+  if (lower.endsWith('.xlsx')) {
+    const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
+    return Object.assign(chunks, { fullMarkdown });
   }
 
   const textContent = buffer.toString('utf-8');
 
+  if (lower.endsWith('.csv')) {
+    const { chunks, fullMarkdown } = await parseCsvString(textContent, fileName);
+    return Object.assign(chunks, { fullMarkdown });
+  }
+
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-    return parseMarkdownString(textContent);
+    const chunks = await parseMarkdownString(textContent);
+    return Object.assign(chunks, { fullMarkdown: textContent });
   }
 
   if (lower.endsWith('.txt')) {
-    return parseTxtString(textContent);
+    const chunks = await parseTxtString(textContent);
+    return Object.assign(chunks, { fullMarkdown: textContent });
   }
 
   throw new DocumentParseError(
-    `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown 与 TXT 文件`,
+    `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown、TXT、Word 与表格文件`,
     true
   );
 }

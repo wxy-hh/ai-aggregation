@@ -29,6 +29,7 @@ import {
   X,
   FileText,
   ExternalLink,
+  Download,
   RefreshCw,
   AlertCircle,
   ChevronLeft,
@@ -80,7 +81,7 @@ interface DocumentContentData {
   chunkCount: number;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   errorMessage?: string | null;
-  fileType: 'markdown' | 'text' | 'pdf';
+  fileType: 'markdown' | 'text' | 'pdf' | 'docx' | 'xlsx' | 'csv' | string;
   content: string;
   originalUrl?: string | null;
   sourceType?: string;
@@ -170,7 +171,7 @@ export function DocumentPreviewDrawer({
     }
   }, [loading, data, focusedAnchor]);
 
-  // Markdown 自定义组件：将 pre 转为可一键复制代码块，为段落赋予定位索引
+  // Markdown 自定义组件：将 pre 转为可一键复制代码块，表格包裹支持横向平滑滚动与热区适配
   const markdownComponents = React.useMemo(() => {
     return {
       pre({ children }: any) {
@@ -190,6 +191,27 @@ export function DocumentPreviewDrawer({
           );
         }
         return <pre>{children}</pre>;
+      },
+      table({ children }: any) {
+        return (
+          <div className="overflow-x-auto my-3 rounded-xl border border-border/60 bg-muted/10 max-w-full">
+            <table className="w-full text-xs text-left border-collapse">{children}</table>
+          </div>
+        );
+      },
+      th({ children }: any) {
+        return (
+          <th className="px-3.5 py-2.5 bg-muted/40 font-semibold border-b border-border/60 text-foreground whitespace-nowrap">
+            {children}
+          </th>
+        );
+      },
+      td({ children }: any) {
+        return (
+          <td className="px-3.5 py-2 border-b border-border/30 text-muted-foreground whitespace-nowrap text-xs">
+            {children}
+          </td>
+        );
       },
     };
   }, []);
@@ -295,9 +317,24 @@ export function DocumentPreviewDrawer({
                   asChild
                   className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center"
                 >
-                  <a href={data.originalUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">查看原版 PDF</span>
+                  <a
+                    href={data.originalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    data-testid="document-download-link"
+                  >
+                    {data.fileType === 'pdf' ? (
+                      <>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">查看原版 PDF</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">下载原文件</span>
+                      </>
+                    )}
                   </a>
                 </Button>
               )}

@@ -164,7 +164,25 @@ export async function processRagIndexJob(
     }
 
     // 4. 解析文档并执行语义切块与中文分词
-    parsedChunks = await parseDocument(fileBuffer, effectiveFileName);
+    const parseResult = await parseDocument(fileBuffer, effectiveFileName);
+    parsedChunks = parseResult;
+
+    // 若解析出衍生 Markdown（如 Word 或表格）且非 URL 文档，将完整 Markdown 缓存写入对象存储供全文抽屉直读 (ADR-0029)
+    if (parseResult.fullMarkdown && !isUrlDoc) {
+      const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
+      try {
+        await storage.upload(
+          parsedContentKey,
+          Buffer.from(parseResult.fullMarkdown, 'utf8'),
+          'text/markdown'
+        );
+      } catch (uploadErr) {
+        logger.warn('提纯 Markdown 缓存写入对象存储失败（不阻断主索引流程）', {
+          documentId,
+          error: uploadErr instanceof Error ? uploadErr.message : String(uploadErr),
+        });
+      }
+    }
   } catch (error) {
     if (error instanceof DocumentParseError && error.isFatal) {
       // 永久性致命格式错误（损坏 PDF、空文件、不支持类型）：立即置 failed 并记录中文原因，不向外抛错以避免死循环重试
@@ -254,6 +272,7 @@ export async function processRagIndexJob(
   }
 
   // 6. 构造入库切片数据结构
+  const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
   const chunksToInsert = parsedChunks.map((chunk, idx) => ({
     documentId,
     knowledgeBaseId,
@@ -268,6 +287,7 @@ export async function processRagIndexJob(
     metadata: {
       fileName,
       storageKey,
+      parsedContentKey,
     },
     embedding: allEmbeddings[idx],
   }));

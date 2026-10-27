@@ -127,7 +127,7 @@ describe('RAG 文档解析器单元测试 (parser)', () => {
   describe('不支持的文件扩展名', () => {
     it('传入不支持的文件格式抛出致命异常', async () => {
       await expect(
-        parseDocument(Buffer.from('dummy'), 'document.docx')
+        parseDocument(Buffer.from('dummy'), 'document.exe')
       ).rejects.toThrow(/不支持的文件格式/);
     });
   });

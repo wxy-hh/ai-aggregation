@@ -300,5 +300,55 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(lastUpdate.data.status).toBe('failed');
     expect(lastUpdate.data.errorMessage).toContain('安全拦截');
   });
+
+  it('表格与结构化文档：解析切片成功，并将提纯后的 content.md 缓存写入 Storage (ADR-0029)', async () => {
+    const csvJobData: RagIndexJobData = {
+      ...dummyJobData,
+      fileName: 'inventory.csv',
+      storageKey: 'docs/user_test_789/doc_test_123/v1/inventory.csv',
+    };
+
+    const csvContent = '编号,商品,价格\n1,苹果,5.5\n2,西瓜,18.0';
+    const mockStorage = {
+      upload: vi.fn(),
+      download: vi.fn(async () => Buffer.from(csvContent, 'utf-8')),
+      delete: vi.fn(),
+      getUrl: vi.fn(),
+    };
+
+    const mockEmbedMany = vi.fn(async ({ values }: any) => ({
+      embeddings: values.map(() => new Array(1024).fill(0.222)),
+      usage: { tokens: values.length * 10 },
+    }));
+
+    const mockReplaceChunks = vi.fn(async (params: any) => {
+      replaceCalls.push(params);
+      return { chunkCount: params.chunks.length };
+    });
+
+    const result = await processRagIndexJob(csvJobData, {
+      prismaClient: createMockDb(),
+      storage: mockStorage as any,
+      embedManyFn: mockEmbedMany as any,
+      replaceChunksFn: mockReplaceChunks as any,
+      embeddingModel: mockEmbeddingModel,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.chunkCount).toBeGreaterThan(0);
+
+    // 验证 content.md 缓存被上传至对象存储
+    expect(mockStorage.upload).toHaveBeenCalledWith(
+      'docs/user_test_789/doc_test_123/v1/content.md',
+      expect.any(Buffer),
+      'text/markdown'
+    );
+
+    // 验证切片包含 parsedContentKey
+    expect(replaceCalls.length).toBe(1);
+    expect(replaceCalls[0].chunks[0].metadata.parsedContentKey).toBe(
+      'docs/user_test_789/doc_test_123/v1/content.md'
+    );
+  });
 });
 
