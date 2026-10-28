@@ -1002,6 +1002,8 @@ test('页面内合成输入只输出 SYNTHETIC_INPUT_IN_SCRIPT 提示，干净�
     "await page.$eval('input', (el) => el.focus());",
     "await page.evaluate(() => { document.querySelector('input').value = '甲'; });",
     "await cdp.send('Runtime.evaluate', { expression: \"document.querySelector('a').click()\" });",
+    "await page.evaluate(() => localStorage.setItem('chat', '{}'));",
+    "await page.evaluate(() => sessionStorage.setItem('k', 'v'));",
   ];
   for (const script of samples) {
     const dir = await scriptedWorkspace(t, { script });
@@ -1011,7 +1013,7 @@ test('页面内合成输入只输出 SYNTHETIC_INPUT_IN_SCRIPT 提示，干净�
   }
 
   const clean = await scriptedWorkspace(t, {
-    script: "await page.getByRole('button', { name: '提交' }).click();\nawait page.fill('input', '甲');\nconst value = await page.evaluate(() => document.body.scrollWidth);\n",
+    script: "await page.getByRole('button', { name: '提交' }).click();\nawait page.fill('input', '甲');\nconst value = await page.evaluate(() => document.body.scrollWidth);\nconst saved = await page.evaluate(() => localStorage.getItem('chat'));\nawait page.evaluate(() => localStorage.removeItem('chat'));\n",
   });
   const report = await checkFeature(clean, 'acceptance');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -1145,8 +1147,32 @@ test('本次修条目最终未修或修错时 UNRESOLVED_FINDINGS，全部已修
     path.join(feature, 'review-report.md'),
     (await readFile(path.join(feature, 'review-report.md'), 'utf8')).replace('| 未修 |', '| 已修 |').replace('| 修错 |', '| 已修 |'),
   );
+  await writeRaw(feature, 4, { standards: '[S-H1] 已修\n', spec: '[P-M1] 已修\n' });
   const fixed = await checkFeature(feature, 'review');
   assert.equal(fixed.status, 'PASS', formatReport(fixed));
+});
+
+test('分流表最终状态与原文最后一次状态词不一致时 UNRESOLVED_FINDINGS，带限定语的已修按未修', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬\n[S-J1] 判\n', spec: '[P-W1] 已修改的函数未处理空值\n' });
+  await writeRaw(feature, 2, { standards: '[S-H1] 未修。\n[S-J1] 已修一半。\n', spec: '[P-W1] 修错。\n' });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| S-H1 | 驳回 | 驳回 | r1 → r2 未修 | 无 | 依据 ADR-0001 |',
+    '| S-J1 | 本次修 | 已修 | r1 → r2 已修 | 静态：抽函数 | |',
+    '| P-W1 | 转专项 | 转专项 | r1 → r2 修错 | 无 | 转入后续专项 |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  const mismatch = report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL');
+  assert.match(mismatch.message, /S-H1（原文未修，分流表驳回）.*S-J1（原文未修，分流表已修）.*P-W1（原文修错，分流表转专项）/);
+
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| S-H1 | 驳回 | 未修 | r1 → r2 未修 | 无 | 人工裁定接受现状 |',
+    '| S-J1 | 转专项 | 未修 | r1 → r2 未修 | 无 | 人工裁定转专项 |',
+    '| P-W1 | 转专项 | 修错 | r1 → r2 修错 | 无 | 人工裁定转专项 |',
+  ]));
+  const consistent = await checkFeature(feature, 'review');
+  assert.equal(consistent.status, 'PASS', formatReport(consistent));
 });
 
 /** 临时 CLAUDE_CONFIG_DIR，测试结束恢复 */
@@ -1223,7 +1249,7 @@ test('子代理模型与主会话不一致时输出 NOTE，状态不变（TC04-2
   assert.equal(report.status, 'PASS', formatReport(report));
   const notes = report.notes.filter((note) => note.startsWith('转录核验'));
   assert.ok(notes.length >= 1, formatReport(report));
-  assert.ok(notes.every((note) => /claude-haiku-5\.5/.test(note) && /主会话模型/.test(note)), notes.join('\n'));
+  assert.ok(notes.every((note) => /claude-haiku-5\.5/.test(note) && /仅提示/.test(note)), notes.join('\n'));
 });
 
 test('找不到会话目录时不输出转录相关内容（TC04-3）', async (t) => {

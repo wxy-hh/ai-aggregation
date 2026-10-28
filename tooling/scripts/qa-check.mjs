@@ -53,6 +53,7 @@ const SYNTHETIC_INPUT_PATTERNS = [
   { label: '.value 赋值', pattern: /\.value\s*=(?!=)/ },
   { label: '.setState(', pattern: /\.setState\s*\(/ },
   { label: 'window.__* 访问', pattern: /\bwindow\.__[\w$]/ },
+  { label: '浏览器存储写入', pattern: /\b(?:localStorage|sessionStorage)\.setItem\s*\(/ },
 ];
 // 审查编号：S-H 规范硬违规、S-J 规范判断、P-M 缺失或部分实现、P-W 实现有误、P-X 范围蔓延
 const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
@@ -1236,6 +1237,19 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
       '改为本次修，或在理由列写明转专项或驳回的依据（驳回须引 ADR 或契约）。',
     ));
   }
+  // 分流表最终状态以原文最后一次状态词为准，防止表格掩盖复审结论
+  const statuses = await rawStatuses(featureDir, rounds);
+  const mismatched = rows
+    .filter((row) => statuses.has(row.id) && row.final.match(/^(已修|未修|修错)/)?.[1] !== statuses.get(row.id))
+    .map((row) => `${row.id}（原文${statuses.get(row.id)}，分流表${row.final || '未填'}）`);
+  if (mismatched.length) {
+    issues.push(issue(
+      'UNRESOLVED_FINDINGS',
+      'FAIL',
+      `分流表最终状态与审查原文最后一次状态词不一致：${mismatched.join('、')}。`,
+      '最终状态照抄原文状态词（已修、未修、修错；带限定语按未修）；未修或修错的改档由人工裁决。',
+    ));
+  }
   const unresolved = rows
     .filter((row) => row.tier === '本次修' && (!row.final || /未修|修错/.test(row.final)))
     .map((row) => `${row.id}（${row.final || '未填'}）`);
@@ -1249,6 +1263,20 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
   }
   issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, rounds));
   return { issues, latest: latestFiles };
+}
+
+/** 按复审轮次（r2 起）取每个编号最后一次的状态词；「已修」后带限定语（如「已修一半」）按未修 */
+async function rawStatuses(featureDir, rounds) {
+  const statuses = new Map();
+  for (const round of [...rounds.keys()].filter((round) => round > 1).sort((a, b) => a - b)) {
+    for (const { text } of await roundRaws(featureDir, rounds.get(round))) {
+      for (const match of text.matchAll(/\[((?:S-[HJ]|P-[MWX])\d+)\]\s*((?:已修|未修|修错|修了)[^\n]*)/g)) {
+        const clean = match[2].match(/^(已修|未修|修错)(?=[\s。.，,；;：:]|$)/);
+        statuses.set(match[1], clean ? clean[1] : '未修');
+      }
+    }
+  }
+  return statuses;
 }
 
 /** 读取某一轮已存在的两轴原文 */
@@ -1468,7 +1496,7 @@ async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
     }
     const models = sessionModels.get(matched.session);
     if (models.size && !models.has(normalizeModel(matched.model))) {
-      notes.push(`转录核验：${relative} 对应子代理模型 ${matched.model} 与主会话模型 ${[...models].join('、')} 不一致（${matched.path}）；用户未指定审查模型时子代理应继承主会话模型。`);
+      notes.push(`转录核验：${relative} 对应子代理模型 ${matched.model} 与主会话模型 ${[...models].join('、')} 不一致（${matched.path}）；仅提示，不要求同模型。`);
     }
   }
   if (unmatched.length) {

@@ -16,8 +16,8 @@ Schema 4 上线后的首个真实需求（agent-kb-loop）`qa-check review` 为 
 1. **入口只路由**：根规则、安装模板、implement、implement-spec 与正本阶段 6 只写「collect 后用 Skill 工具调用 `code-review`」，不复述子代理行为；正本保留一句 `review/` 产物位置说明。
 2. **主代理逐字落盘**：子代理只返回，主代理逐字写入 `review/r<n>-*.md`，不删改、不覆盖；每轴每轮一个子代理，不重派；无返回保持待独立审查。规则只写在 code-review 项目定制段。
 3. **原文可对账**：最新一轮原文无规范编号且不含「无发现」时 FAIL `REVIEW_RAW_UNNUMBERED`；转录核验覆盖子代理全部输出，审查包之后无子代理转录或无 `code-review` Skill 调用时给 NOTE。
-4. **修复验证**：分流表新增「验证证据」列；「已修」行须引用特性目录 `evidence/`、`screenshots/` 下晚于首次提出该编号原文的文件（qa-run 日志 exit 0），或 `静态：<理由>`，否则 FAIL `FIX_UNVERIFIED`。tree 过期仍只给 NOTE。
-5. **登录在脚本外**：已有会话、用户在可见窗口登录，或 Agent 用用户提供的专用测试账号在真实登录页登录一次；`scripts/` 内密码字面量、登录或注册类接口路径、`window.__*` 上的登录方法并入不可豁免的 `AUTH_BYPASS_IN_SCRIPT`；`.setState(` 与 `window.__*` 访问并入 `SYNTHETIC_INPUT_IN_SCRIPT` NOTE。
+4. **修复验证**：分流表新增「验证证据」列；「已修」行须引用特性目录 `evidence/`、`screenshots/` 下晚于首次提出该编号原文的文件（qa-run 日志 exit 0），或 `静态：<理由>`，否则 FAIL `FIX_UNVERIFIED`。tree 过期仍只给 NOTE。分流表「最终状态」须与该编号在原文中最后一次的状态词（`已修`、`未修`、`修错`，带限定语按未修）一致，否则报 `UNRESOLVED_FINDINGS`；分流表不得掩盖原文结论。
+5. **登录在脚本外**：已有会话、用户在可见窗口登录，或 Agent 用用户提供的专用测试账号在真实登录页登录一次；`scripts/` 内密码字面量、登录或注册类接口路径、`window.__*` 上的登录方法并入不可豁免的 `AUTH_BYPASS_IN_SCRIPT`；`.setState(`、`window.__*` 访问与页面内 `localStorage`/`sessionStorage` 的 `setItem` 并入 `SYNTHETIC_INPUT_IN_SCRIPT` NOTE。
 6. **对账表交给审查者**：acceptance 把对账表写入 `_qa/reconciliation.md`，Spec 轴逐行核对实测是否证明冻结断言，不成立的报 `[P-W<n>]`；review 时该文件缺失或过期 FAIL `RECONCILIATION_STALE`。
 
 ## 对 ADR-0033 的取代
