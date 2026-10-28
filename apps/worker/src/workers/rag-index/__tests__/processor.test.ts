@@ -20,7 +20,7 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
   } | null;
 
   let updateCalls: Array<{ where: { id: string }; data: Record<string, unknown> }>;
-  let replaceCalls: Array<{ documentId: string; version: number; chunks: any[] }>;
+  let replaceCalls: Array<{ documentId: string; version: number; chunks: any[]; metadata?: any }>;
   const mockEmbeddingModel = {
     specificationVersion: 'v1',
     modelId: 'mock-bge-m3',
@@ -349,6 +349,80 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(replaceCalls[0].chunks[0].metadata.parsedContentKey).toBe(
       'docs/user_test_789/doc_test_123/v1/content.md'
     );
+  });
+
+  it('P-W7 验证：存量文档重建索引时，旧 outline 不会污染切片 metadata，且 Document 大纲元数据被干净覆盖', async () => {
+    // 模拟存量文档的 metadata 中残留有旧大纲
+    const oldOutline = {
+      version: 1,
+      totalHeadings: 1,
+      maxDepth: 1,
+      tree: [
+        {
+          title: '旧章节大纲',
+          level: 1,
+          headingPath: '旧章节大纲',
+          chunkRange: [0, 0],
+          tokenCount: 50,
+          children: [],
+        },
+      ],
+    };
+
+    const mockDbWithOldOutline = {
+      document: {
+        findUnique: vi.fn(async () => ({
+          ...mockDoc,
+          tags: ['安全'],
+          sourceType: 'file',
+          metadata: {
+            author: 'alice',
+            outline: oldOutline,
+          },
+        })),
+        update: vi.fn(async (params: any) => {
+          updateCalls.push(params);
+          return mockDoc;
+        }),
+      },
+    };
+
+    const newMdContent = '# 新章节标题\n全新的技术说明文本。';
+    const mockStorage = {
+      upload: vi.fn(),
+      download: vi.fn(async () => Buffer.from(newMdContent, 'utf-8')),
+      delete: vi.fn(),
+      getUrl: vi.fn(),
+    };
+
+    const mockEmbedMany = vi.fn(async ({ values }: any) => ({
+      embeddings: values.map(() => new Array(1024).fill(0.123)),
+      usage: { tokens: values.length * 10 },
+    }));
+
+    const mockReplaceChunks = vi.fn(async (params: any) => {
+      replaceCalls.push(params);
+      return { chunkCount: params.chunks.length };
+    });
+
+    const result = await processRagIndexJob(dummyJobData, {
+      prismaClient: mockDbWithOldOutline as any,
+      storage: mockStorage as any,
+      embedManyFn: mockEmbedMany as any,
+      replaceChunksFn: mockReplaceChunks as any,
+      embeddingModel: mockEmbeddingModel,
+    });
+
+    expect(result.success).toBe(true);
+    expect(replaceCalls.length).toBe(1);
+    const insertedChunk = replaceCalls[0].chunks[0];
+
+    // 断言 1：切片的 metadata 绝对不包含 outline 字段，根除切片数据膨胀 (P-W7 / S-J3)
+    expect(insertedChunk.metadata).not.toHaveProperty('outline');
+    expect(insertedChunk.metadata.author).toBe('alice');
+
+    // 断言 2：Document 的新 metadata 成功更新为新解析出的大纲，不再残留旧大纲
+    expect(replaceCalls[0].metadata.outline.tree[0].title).toBe('新章节标题');
   });
 });
 

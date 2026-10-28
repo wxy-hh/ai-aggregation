@@ -13,14 +13,15 @@ import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 import { PDFParse } from 'pdf-parse';
-import { RAG_CHUNK_CONFIG } from '@repo/shared';
+import { RAG_CHUNK_CONFIG, type DocumentOutline } from '@repo/shared';
 import { parseDocxBuffer } from './docx-parser';
 import { parseTableBuffer, parseCsvString } from './table-parser';
+import { buildDocumentOutline } from './outline-extractor';
 
 /**
- * 带有可选完整 Markdown 提纯快照的切片集合
+ * 带有可选完整 Markdown 提纯快照与层级大纲树的切片集合 (ADR-0036)
  */
-export type ParsedDocumentChunks = ParsedChunk[] & { fullMarkdown?: string };
+export type ParsedDocumentChunks = ParsedChunk[] & { fullMarkdown?: string; outline?: DocumentOutline };
 
 /**
  * 文档解析与切块产生的切片结构
@@ -280,34 +281,36 @@ export async function parseDocument(
 
   if (lower.endsWith('.pdf')) {
     const chunks = await parsePdfBuffer(buffer);
-    return Object.assign(chunks, { fullMarkdown: undefined });
+    return Object.assign(chunks, { fullMarkdown: undefined, outline: undefined });
   }
 
   if (lower.endsWith('.docx')) {
     const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
-    return Object.assign(chunks, { fullMarkdown });
+    const outline = buildDocumentOutline(fullMarkdown, chunks);
+    return Object.assign(chunks, { fullMarkdown, outline });
   }
 
   if (lower.endsWith('.xlsx')) {
     const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
-    return Object.assign(chunks, { fullMarkdown });
+    return Object.assign(chunks, { fullMarkdown, outline: undefined });
   }
 
   const textContent = buffer.toString('utf-8');
 
   if (lower.endsWith('.csv')) {
     const { chunks, fullMarkdown } = await parseCsvString(textContent, fileName);
-    return Object.assign(chunks, { fullMarkdown });
+    return Object.assign(chunks, { fullMarkdown, outline: undefined });
   }
 
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
     const chunks = await parseMarkdownString(textContent);
-    return Object.assign(chunks, { fullMarkdown: textContent });
+    const outline = buildDocumentOutline(textContent, chunks);
+    return Object.assign(chunks, { fullMarkdown: textContent, outline });
   }
 
   if (lower.endsWith('.txt')) {
     const chunks = await parseTxtString(textContent);
-    return Object.assign(chunks, { fullMarkdown: textContent });
+    return Object.assign(chunks, { fullMarkdown: textContent, outline: undefined });
   }
 
   throw new DocumentParseError(

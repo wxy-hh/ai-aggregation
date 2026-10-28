@@ -19,6 +19,7 @@ import { embed } from 'ai';
 import {
   searchDocumentChunksDense,
   searchDocumentChunksLexical,
+  getSequentialChapterChunks,
   type DocumentChunkDenseMatch,
   type DocumentChunkLexicalMatch,
   type MetadataFilter,
@@ -111,6 +112,8 @@ export interface HybridRetrievalOptions {
   topK?: number;
   enableRerank?: boolean; // 显式开关覆盖（默认回退至 isRagRerankEnabled()）
   filter?: MetadataFilter; // 前置元数据与标签过滤条件 (ADR-0032)
+  headingPath?: string | null; // 章节目录路径前缀收敛 (ADR-0036)
+  documentId?: string | null; // 特定文档 ID 下钻 (ADR-0036)
 }
 
 /**
@@ -120,6 +123,7 @@ export interface HybridRetrievalDeps {
   embedQueryFn?: (query: string) => Promise<number[]>;
   searchDenseFn?: typeof searchDocumentChunksDense;
   searchLexicalFn?: typeof searchDocumentChunksLexical;
+  getSequentialChunksFn?: typeof getSequentialChapterChunks;
   tokenizeFn?: (text: string) => string;
   rerankProvider?: RerankProvider;
   isRerankEnabledFn?: () => boolean;
@@ -181,6 +185,17 @@ async function defaultEmbedQuery(query: string): Promise<number[]> {
 }
 
 /**
+ * 判断是否命中章节顺序通读模式 (ADR-0036 / P-X1 / S-J1)
+ * 仅当指定 headingPath 且 query 为空字符串或 '*' 通配符时生效
+ */
+export function isSequentialChapterQuery(query?: string | null, headingPath?: string | null): boolean {
+  if (!headingPath || !headingPath.trim()) return false;
+  if (!query) return true;
+  const trimmed = query.trim();
+  return trimmed === '' || trimmed === '*';
+}
+
+/**
  * 执行混合检索核心流程
  */
 export async function hybridRetrieval(
@@ -195,8 +210,72 @@ export async function hybridRetrieval(
     topK = RAG_RETRIEVAL_CONFIG.denseTopK,
   } = options;
 
-  if (!query || !query.trim()) {
+  const sequentialMode = isSequentialChapterQuery(query, options.headingPath);
+
+  if (!sequentialMode && (!query || !query.trim())) {
     throw new Error('检索查询词不能为空');
+  }
+
+  // 章节顺序通读模式：直接按切片序号升序连续提取该章节全部内容 (ADR-0036)
+  if (sequentialMode) {
+    const fetchSequential = deps.getSequentialChunksFn || getSequentialChapterChunks;
+    // 通读模式默认切片上限提升至 100，若调用方显式传入 topK 则尊重显式入参 (P-W5)
+    const sequentialLimit = options.topK ?? 100;
+    const rawChunks = await fetchSequential({
+      userId,
+      knowledgeBaseId,
+      headingPath: options.headingPath,
+      documentId: options.documentId,
+      limit: sequentialLimit,
+    });
+    const totalDurationMs = Math.round(performance.now() - totalStartTime);
+
+    // 采用稳定递减序列生成有序模拟分数，避免负数 (S-J2)
+    const chunks: RetrievedChunk[] = rawChunks.map((c, idx) => {
+      const orderScore = Number((1 / (1 + idx * 0.05)).toFixed(4));
+      return {
+        chunkId: c.id,
+        documentId: c.documentId,
+        documentName: c.documentName,
+        documentVersion: c.documentVersion,
+        content: c.content,
+        contentSegmented: c.contentSegmented,
+        score: orderScore,
+        rrfScore: orderScore,
+        denseRank: idx + 1,
+        lexicalRank: idx + 1,
+        similarity: 1.0,
+        lexicalScore: 1.0,
+        citationAnchor: {
+          knowledgeBaseId,
+          documentId: c.documentId,
+          documentName: c.documentName,
+          documentVersion: c.documentVersion,
+          pageNumber: c.pageNumber,
+          headingPath: c.headingPath,
+          chunkIndex: c.chunkIndex,
+          snippet: c.content.slice(0, 100),
+        },
+      };
+    });
+
+    return {
+      query: query || '*',
+      preparedLexicalQuery: '',
+      topK: sequentialLimit,
+      chunks,
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: totalDurationMs,
+      stats: {
+        embeddingDurationMs: 0,
+        denseDurationMs: 0,
+        lexicalDurationMs: 0,
+        fusionDurationMs: 0,
+        totalDurationMs,
+      },
+      appliedFilter: options.filter || undefined,
+    };
   }
 
   const embedFn = deps.embedQueryFn || defaultEmbedQuery;
@@ -217,7 +296,7 @@ export async function hybridRetrieval(
   const queryVector = await embedFn(query);
   embeddingDurationMs = Math.round(performance.now() - embedStartTime);
 
-  // 3. 并行调用稠密向量检索与词法全文检索（支持前置 filter）
+  // 3. 并行调用稠密向量检索与词法全文检索（支持前置 filter 与 headingPath 前缀收敛）
   let [denseResults, lexicalResults] = await Promise.all([
     (async () => {
       const start = performance.now();
@@ -227,6 +306,8 @@ export async function hybridRetrieval(
         queryVector,
         topK,
         filter: options.filter,
+        headingPath: options.headingPath,
+        documentId: options.documentId,
       });
       denseDurationMs = Math.round(performance.now() - start);
       return res;
@@ -239,6 +320,8 @@ export async function hybridRetrieval(
         query: preparedLexicalQuery,
         topK,
         filter: options.filter,
+        headingPath: options.headingPath,
+        documentId: options.documentId,
       });
       lexicalDurationMs = Math.round(performance.now() - start);
       return res;
@@ -257,6 +340,8 @@ export async function hybridRetrieval(
           knowledgeBaseId,
           queryVector,
           topK,
+          headingPath: options.headingPath,
+          documentId: options.documentId,
         });
         denseDurationMs += Math.round(performance.now() - start);
         return res;
@@ -268,6 +353,8 @@ export async function hybridRetrieval(
           knowledgeBaseId,
           query: preparedLexicalQuery,
           topK,
+          headingPath: options.headingPath,
+          documentId: options.documentId,
         });
         lexicalDurationMs += Math.round(performance.now() - start);
         return res;

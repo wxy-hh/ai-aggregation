@@ -19,7 +19,7 @@ import { createEmbeddingModel } from '@repo/providers';
 import { RAG_EMBEDDING_BATCH_SIZE, RAG_EMBEDDING_MODEL } from '@repo/shared';
 import { guardedFetch, SsrfSecurityError } from '@repo/shared/server';
 import type { RagIndexJobData } from '@repo/queue';
-import { parseDocument, DocumentParseError, ParsedChunk } from './parser';
+import { parseDocument, DocumentParseError, ParsedDocumentChunks } from './parser';
 import { extractContentFromHtml } from './html-extractor';
 
 export interface ProcessRagIndexDependencies {
@@ -87,7 +87,7 @@ export async function processRagIndexJob(
     },
   });
 
-  let parsedChunks: ParsedChunk[];
+  let parsedChunks: ParsedDocumentChunks;
   let effectiveFileName = fileName;
   try {
     let fileBuffer: Buffer;
@@ -273,10 +273,20 @@ export async function processRagIndexJob(
 
   // 6. 构造入库切片数据结构
   const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
-  const docMetadata =
+  const rawDocMetadata =
     doc.metadata && typeof doc.metadata === 'object' && !Array.isArray(doc.metadata)
       ? (doc.metadata as Record<string, unknown>)
       : {};
+  // 显式解构剔除历史旧 outline，确保切片 metadata 干净且更新时不会残留过期大纲 (P-W7 / ADR-0036)
+  const { outline: _oldOutline, ...cleanDocMetadata } = rawDocMetadata;
+
+  const updatedDocMetadata: Record<string, unknown> = {
+    ...cleanDocMetadata,
+  };
+  if (parsedChunks.outline) {
+    updatedDocMetadata.outline = parsedChunks.outline;
+  }
+
   const chunksToInsert = parsedChunks.map((chunk, idx) => ({
     documentId,
     knowledgeBaseId,
@@ -289,7 +299,7 @@ export async function processRagIndexJob(
     pageNumber: chunk.pageNumber,
     tokenCount: chunk.tokenCount,
     metadata: {
-      ...docMetadata,
+      ...cleanDocMetadata,
       tags: doc.tags || [],
       sourceType: doc.sourceType,
       fileName,
@@ -299,12 +309,13 @@ export async function processRagIndexJob(
     embedding: allEmbeddings[idx],
   }));
 
-  // 7. 事务内原子删旧版本切片 + 插入新切片 + 更新 Document 状态为 ready 与 chunkCount
+  // 7. 事务内原子删旧版本切片 + 插入新切片 + 更新 Document 状态为 ready 与 chunkCount，并持久化大纲元数据 (ADR-0036)
   try {
     await replaceChunks({
       documentId,
       version,
       chunks: chunksToInsert,
+      metadata: updatedDocMetadata,
     });
 
     logger.info('RAG 文档索引成功入库', {

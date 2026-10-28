@@ -14,7 +14,7 @@
 import { z } from 'zod';
 import { prisma, findBestFaqMatch, incrementFaqHitCount } from '@repo/db';
 import { ToolError, type AgentToolSpec, type ToolExecutionResult } from '@/lib/agent/registry';
-import { hybridRetrieval, type RetrievedChunk } from '@/lib/rag/hybrid-retrieval';
+import { hybridRetrieval, isSequentialChapterQuery, type RetrievedChunk } from '@/lib/rag/hybrid-retrieval';
 import { formatRetrievedChunksWithCitations } from '@/lib/rag/citation';
 import { embedFaqText } from '@/lib/rag/faq-service';
 import { detectChatSensitiveTopic } from '../../chat-safety';
@@ -27,20 +27,30 @@ import { RAG_RERANK_CONFIG, isRagRerankEnabled } from '@repo/shared';
 export const knowledgeSearchParametersSchema = z.object({
   query: z
     .string()
-    .min(1, '检索查询词不能为空')
-    .describe('要在知识库私有文档中检索的具体问题、关键词或术语，例如：“连败熔断的触发条件”或“珀金协议修订版”'),
+    .optional()
+    .default('')
+    .describe('要在知识库私有文档中检索的具体问题、关键词或术语。如果指定了 headingPath 进行章节连续通读，query 可传空字符串或 "*"'),
   knowledgeBaseId: z
     .string()
     .optional()
     .describe('可选指定的知识库 ID；若未指定则自动在当前用户的所有可用知识库中检索'),
+  headingPath: z
+    .string()
+    .max(300, '章节路径最多 300 字符')
+    .optional()
+    .describe('可选的章节目录路径（例如：“3. 系统架构 > 3.2 权限控制”），用于将检索定向收敛到特定章节子树内'),
+  documentId: z
+    .string()
+    .max(100, '文档 ID 最多 100 字符')
+    .optional()
+    .describe('可选指定的单篇文档 ID，配合 headingPath 进行精准定向下钻'),
   topK: z
     .number()
     .int('topK 必须为整数')
     .min(1, 'topK 至少为 1')
-    .max(20, 'topK 单次最多 20 条')
+    .max(100, 'topK 单次最多 100 条')
     .optional()
-    .default(5)
-    .describe('返回的最相关切片数量（默认 5 条，最多 20 条）'),
+    .describe('返回的最相关切片数量（普通问答默认 5 条，最多 100 条；章节通读模式默认 100 条）'),
   filter: z
     .object({
       tags: z.array(z.string()).optional().describe('要过滤的文档标签列表，例如：["财务", "2026"]'),
@@ -120,15 +130,19 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         throw new ToolError(errorMsg);
       }
 
-      const { query, knowledgeBaseId, topK, filter } = parsed.data;
-      const trimmedQuery = query.trim();
+      const { query, knowledgeBaseId, headingPath, documentId, topK: inputTopK, filter } = parsed.data;
+      const trimmedQuery = (query || '').trim();
+      const isSequentialChapterMode = isSequentialChapterQuery(trimmedQuery, headingPath);
 
-      if (!trimmedQuery) {
+      // 章节通读模式下默认 100 条，普通问答模式下默认 5 条；若调用方显式指定 topK 则遵守指定值 (P-W5 / ADR-0036)
+      const effectiveTopK = inputTopK ?? (isSequentialChapterMode ? 100 : 5);
+
+      if (!isSequentialChapterMode && !trimmedQuery) {
         throw new ToolError('检索查询词不能为空');
       }
 
       // 安全合规预检
-      if (detectChatSensitiveTopic(trimmedQuery)) {
+      if (trimmedQuery && detectChatSensitiveTopic(trimmedQuery)) {
         throw new ToolError('检索关键词包含敏感内容，无法执行');
       }
 
@@ -181,9 +195,11 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
                   userId,
                   knowledgeBaseId: kb.id,
                   query: trimmedQuery,
-                  topK: RAG_RERANK_CONFIG.defaultTopN,
+                  topK: isSequentialChapterMode ? effectiveTopK : RAG_RERANK_CONFIG.defaultTopN,
                   enableRerank: false, // 各库仅执行粗排召回，由外层统一单次全局 Rerank (ADR-0030)
                   filter,
+                  headingPath: headingPath?.trim(),
+                  documentId: documentId?.trim(),
                 });
                 if (res.isFilterRelaxed) {
                   anyFilterRelaxed = true;
@@ -195,15 +211,17 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
               }
             })
           ),
-          findFaqFn({
-            userId,
-            knowledgeBaseIds: kbIds,
-            query: trimmedQuery,
-            embedFn,
-          }).catch((err) => {
-            console.warn('[knowledge_search] FAQ 检索降级:', err);
-            return null;
-          }),
+          !isSequentialChapterMode && trimmedQuery
+            ? findFaqFn({
+                userId,
+                knowledgeBaseIds: kbIds,
+                query: trimmedQuery,
+                embedFn,
+              }).catch((err) => {
+                console.warn('[knowledge_search] FAQ 检索降级:', err);
+                return null;
+              })
+            : Promise.resolve(null),
         ]);
 
         // 若命中 FAQ 且属于强权威口径，异步增加命中统计
@@ -222,43 +240,49 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           }
         }
 
-        // 执行跨库统一 Cross-Encoder Rerank 二次精排 (ADR-0030)
-        const checkRerank = isRerankEnabledFn || isRagRerankEnabled;
-        const isRerankActive = checkRerank();
         let fusedChunks: RetrievedChunk[] = [];
 
-        if (isRerankActive && uniqueCandidates.length > 0) {
-          const candidateLimit = Math.min(uniqueCandidates.length, RAG_RERANK_CONFIG.maxCandidates);
-          // 按原 RRF 粗排得分截取前 maxCandidates (30) 条送入精排
-          const candidatePool = uniqueCandidates
-            .sort((a, b) => b.score - a.score)
-            .slice(0, candidateLimit);
-          const candidateDocs = candidatePool.map((c) => c.content);
-
-          try {
-            const provider = rerankProvider || new SiliconFlowRerankProvider();
-            const rerankResults = await provider.rerank(trimmedQuery, candidateDocs, candidateLimit);
-
-            // 过滤低于 minRelevanceScore (0.20) 的低相关长尾切片
-            const minScore = RAG_RERANK_CONFIG.minRelevanceScore;
-            const validResults = (rerankResults || []).filter((r) => r.relevanceScore >= minScore);
-            const targetResults = validResults.slice(0, topK);
-
-            fusedChunks = targetResults.map((r) => {
-              const original = candidatePool[r.index] ?? candidatePool[0];
-              return {
-                ...original,
-                score: r.relevanceScore,
-                rerankScore: r.relevanceScore,
-              };
-            });
-          } catch (rerankErr) {
-            console.warn('[knowledge_search] 多库聚合 Rerank 异常，平滑降级为原 RRF 排名:', rerankErr);
-            // 弹性容灾平滑降级：按原 RRF 分数排序截断
-            fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, topK);
-          }
+        // 章节顺序通读模式：直接按切片顺序返回，无需 Cross-Encoder 打乱 (ADR-0036)
+        if (isSequentialChapterMode) {
+          fusedChunks = uniqueCandidates.slice(0, effectiveTopK);
         } else {
-          fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, topK);
+          // 执行跨库统一 Cross-Encoder Rerank 二次精排 (ADR-0030)
+          const checkRerank = isRerankEnabledFn || isRagRerankEnabled;
+          const isRerankActive = checkRerank();
+
+          if (isRerankActive && uniqueCandidates.length > 0) {
+            const candidateLimit = Math.min(uniqueCandidates.length, RAG_RERANK_CONFIG.maxCandidates);
+            // 按原 RRF 粗排得分截取前 maxCandidates (30) 条送入精排
+            const candidatePool = uniqueCandidates
+              .sort((a, b) => b.score - a.score)
+              .slice(0, candidateLimit);
+            const candidateDocs = candidatePool.map((c) => c.content);
+
+            try {
+              const provider = rerankProvider || new SiliconFlowRerankProvider();
+              const rerankResults = await provider.rerank(trimmedQuery, candidateDocs, candidateLimit);
+
+              // 过滤低于 minRelevanceScore (0.20) 的低相关长尾切片
+              const minScore = RAG_RERANK_CONFIG.minRelevanceScore;
+              const validResults = (rerankResults || []).filter((r) => r.relevanceScore >= minScore);
+              const targetResults = validResults.slice(0, effectiveTopK);
+
+              fusedChunks = targetResults.map((r) => {
+                const original = candidatePool[r.index] ?? candidatePool[0];
+                return {
+                  ...original,
+                  score: r.relevanceScore,
+                  rerankScore: r.relevanceScore,
+                };
+              });
+            } catch (rerankErr) {
+              console.warn('[knowledge_search] 多库聚合 Rerank 异常，平滑降级为原 RRF 排名:', rerankErr);
+              // 弹性容灾平滑降级：按原 RRF 分数排序截断
+              fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, effectiveTopK);
+            }
+          } else {
+            fusedChunks = uniqueCandidates.sort((a, b) => b.score - a.score).slice(0, effectiveTopK);
+          }
         }
 
         // 3. 构建结构化切片引用映射字典与快照 (ADR-0025 / KB-CHAT-CITE)

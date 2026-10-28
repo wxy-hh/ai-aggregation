@@ -201,6 +201,7 @@ export async function replaceDocumentChunksInTransaction(params: {
   documentId: string;
   version: number;
   chunks: InsertDocumentChunkInput[];
+  metadata?: Record<string, unknown>;
 }): Promise<{ chunkCount: number }> {
   return prisma.$transaction(async (tx) => {
     // 1. 事务内清理该文档的旧版本切片与当前版本（幂等防重）
@@ -213,14 +214,19 @@ export async function replaceDocumentChunksInTransaction(params: {
     // 2. 事务内插入新切片
     await insertDocumentChunks(params.chunks, tx);
 
-    // 3. 事务内原子更新文档状态为 ready 与切片数
+    // 3. 事务内原子更新文档状态为 ready 与切片数，同步更新元数据（包含大纲树）
+    const updateData: { status: string; chunkCount: number; errorMessage: null; metadata?: Prisma.InputJsonValue } = {
+      status: 'ready',
+      chunkCount: params.chunks.length,
+      errorMessage: null,
+    };
+    if (params.metadata) {
+      updateData.metadata = params.metadata as Prisma.InputJsonValue;
+    }
+
     await tx.document.update({
       where: { id: params.documentId },
-      data: {
-        status: 'ready',
-        chunkCount: params.chunks.length,
-        errorMessage: null,
-      },
+      data: updateData,
     });
 
     return { chunkCount: params.chunks.length };
@@ -228,7 +234,14 @@ export async function replaceDocumentChunksInTransaction(params: {
 }
 
 /**
- * 稠密向量相似度检索（基于 cosine 距离 <=>，SQL 层前置执行用户/知识库 ACL、软删除过滤与最新版本过滤）
+ * 转义 SQL LIKE 查询中的特殊通配符（%、_ 与 \）以防止注入或通配符放大攻击 (S-H2 / security.md)
+ */
+function escapeLikeWildcards(text: string): string {
+  return text.replace(/([%_\\])/g, '\\$1');
+}
+
+/**
+ * 稠密向量相似度检索（基于 cosine 距离 <=>，SQL 层前置执行用户/知识库 ACL、软删除过滤、最新版本过滤与章节路径前缀收敛）
  */
 export async function searchDocumentChunksDense(params: {
   userId: string;
@@ -236,8 +249,10 @@ export async function searchDocumentChunksDense(params: {
   queryVector: number[];
   topK?: number;
   filter?: MetadataFilter;
+  headingPath?: string | null;
+  documentId?: string | null;
 }): Promise<DocumentChunkDenseMatch[]> {
-  const { userId, knowledgeBaseId, queryVector, topK = 20, filter } = params;
+  const { userId, knowledgeBaseId, queryVector, topK = 20, filter, headingPath, documentId } = params;
   const vectorStr = formatVector(queryVector);
 
   const filterRes = buildMetadataFilterClause(filter, 4, 'dc');
@@ -249,8 +264,25 @@ export async function searchDocumentChunksDense(params: {
     `dc."embedding" IS NOT NULL`,
     ...filterRes.sqlClauses,
   ];
-  const limitPlaceholder = `$${filterRes.nextParamIndex}`;
-  const queryParams = [vectorStr, userId, knowledgeBaseId, ...filterRes.params, topK];
+
+  let currentParamIndex = filterRes.nextParamIndex;
+  const extraParams: unknown[] = [];
+
+  if (headingPath) {
+    const escaped = escapeLikeWildcards(headingPath);
+    whereClauses.push(`(dc."heading_path" = $${currentParamIndex} OR dc."heading_path" LIKE $${currentParamIndex + 1} || ' > %')`);
+    extraParams.push(headingPath, escaped);
+    currentParamIndex += 2;
+  }
+
+  if (documentId) {
+    whereClauses.push(`dc."document_id" = $${currentParamIndex}`);
+    extraParams.push(documentId);
+    currentParamIndex++;
+  }
+
+  const limitPlaceholder = `$${currentParamIndex}`;
+  const queryParams = [vectorStr, userId, knowledgeBaseId, ...filterRes.params, ...extraParams, topK];
 
   interface RawDenseRow {
     id: string;
@@ -317,7 +349,7 @@ export async function searchDocumentChunksDense(params: {
 }
 
 /**
- * 词法全文检索（基于 ts_rank_cd 与 content_tsv 生成列，SQL 层前置执行用户/知识库 ACL、软删除过滤与最新版本过滤）
+ * 词法全文检索（基于 ts_rank_cd 与 content_tsv 生成列，SQL 层前置执行用户/知识库 ACL、软删除过滤、最新版本过滤与章节路径前缀收敛）
  */
 export async function searchDocumentChunksLexical(params: {
   userId: string;
@@ -325,8 +357,10 @@ export async function searchDocumentChunksLexical(params: {
   query: string;
   topK?: number;
   filter?: MetadataFilter;
+  headingPath?: string | null;
+  documentId?: string | null;
 }): Promise<DocumentChunkLexicalMatch[]> {
-  const { userId, knowledgeBaseId, query, topK = 20, filter } = params;
+  const { userId, knowledgeBaseId, query, topK = 20, filter, headingPath, documentId } = params;
 
   const filterRes = buildMetadataFilterClause(filter, 4, 'dc');
   const baseWhereClauses = [
@@ -336,8 +370,25 @@ export async function searchDocumentChunksLexical(params: {
     `dc."document_version" = d."version"`,
     ...filterRes.sqlClauses,
   ];
-  const limitPlaceholder = `$${filterRes.nextParamIndex}`;
-  const queryParams = [query, userId, knowledgeBaseId, ...filterRes.params, topK];
+
+  let currentParamIndex = filterRes.nextParamIndex;
+  const extraParams: unknown[] = [];
+
+  if (headingPath) {
+    const escaped = escapeLikeWildcards(headingPath);
+    baseWhereClauses.push(`(dc."heading_path" = $${currentParamIndex} OR dc."heading_path" LIKE $${currentParamIndex + 1} || ' > %')`);
+    extraParams.push(headingPath, escaped);
+    currentParamIndex += 2;
+  }
+
+  if (documentId) {
+    baseWhereClauses.push(`dc."document_id" = $${currentParamIndex}`);
+    extraParams.push(documentId);
+    currentParamIndex++;
+  }
+
+  const limitPlaceholder = `$${currentParamIndex}`;
+  const queryParams = [query, userId, knowledgeBaseId, ...filterRes.params, ...extraParams, topK];
 
   interface RawLexicalRow {
     id: string;
@@ -422,6 +473,7 @@ export async function searchDocumentChunksLexical(params: {
           userId,
           knowledgeBaseId,
           ...filterRes.params,
+          ...extraParams,
           topK
         );
         if (orRows.length > 0) {
@@ -449,6 +501,104 @@ export async function searchDocumentChunksLexical(params: {
     metadata: row.metadata,
     createdAt: row.created_at,
     rank: Number(row.rank),
+  }));
+}
+
+/**
+ * 章节顺序连续切片提取（基于 chunk_index 升序，支持指定 headingPath 前缀收敛与 documentId，ADR-0036）
+ */
+export async function getSequentialChapterChunks(params: {
+  userId: string;
+  knowledgeBaseId: string;
+  headingPath?: string | null;
+  documentId?: string | null;
+  limit?: number;
+}): Promise<DocumentChunkRow[]> {
+  const { userId, knowledgeBaseId, headingPath, documentId, limit = 20 } = params;
+
+  const whereClauses = [
+    `dc."user_id" = $1`,
+    `dc."knowledge_base_id" = $2`,
+    `d."deleted_at" IS NULL`,
+    `dc."document_version" = d."version"`,
+  ];
+  const queryParams: unknown[] = [userId, knowledgeBaseId];
+  let paramIdx = 3;
+
+  if (headingPath) {
+    const escaped = escapeLikeWildcards(headingPath);
+    whereClauses.push(`(dc."heading_path" = $${paramIdx} OR dc."heading_path" LIKE $${paramIdx + 1} || ' > %')`);
+    queryParams.push(headingPath, escaped);
+    paramIdx += 2;
+  }
+
+  if (documentId) {
+    whereClauses.push(`dc."document_id" = $${paramIdx}`);
+    queryParams.push(documentId);
+    paramIdx++;
+  }
+
+  const limitPlaceholder = `$${paramIdx}`;
+  queryParams.push(limit);
+
+  interface RawSequentialRow {
+    id: string;
+    document_id: string;
+    document_name: string;
+    knowledge_base_id: string;
+    user_id: string;
+    document_version: number;
+    chunk_index: number;
+    content: string;
+    content_segmented: string;
+    heading_path: string | null;
+    page_number: number | null;
+    token_count: number;
+    metadata: Record<string, unknown>;
+    created_at: Date;
+  }
+
+  const rows = await prisma.$queryRawUnsafe<RawSequentialRow[]>(
+    `
+    SELECT
+      dc."id",
+      dc."document_id",
+      d."name" AS "document_name",
+      dc."knowledge_base_id",
+      dc."user_id",
+      dc."document_version",
+      dc."chunk_index",
+      dc."content",
+      dc."content_segmented",
+      dc."heading_path",
+      dc."page_number",
+      dc."token_count",
+      dc."metadata",
+      dc."created_at"
+    FROM "document_chunks" dc
+    INNER JOIN "documents" d ON dc."document_id" = d."id"
+    WHERE ${whereClauses.join('\n      AND ')}
+    ORDER BY dc."document_id" ASC, dc."chunk_index" ASC
+    LIMIT ${limitPlaceholder};
+    `,
+    ...queryParams
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    documentId: row.document_id,
+    documentName: row.document_name,
+    knowledgeBaseId: row.knowledge_base_id,
+    userId: row.user_id,
+    documentVersion: row.document_version,
+    chunkIndex: row.chunk_index,
+    content: row.content,
+    contentSegmented: row.content_segmented,
+    headingPath: row.heading_path,
+    pageNumber: row.page_number,
+    tokenCount: row.token_count,
+    metadata: row.metadata,
+    createdAt: row.created_at,
   }));
 }
 

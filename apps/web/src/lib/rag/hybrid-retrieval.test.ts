@@ -724,6 +724,121 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(result.chunks[0].chunkId).toBe('chunk_fallback');
     expect(result.appliedFilter).toEqual({ tags: ['不存在的标签999'] });
   });
+
+  it('11. headingPath 章节前缀过滤透传 (TC05-1 / ADR-0036)', async () => {
+    const mockChunk: DocumentChunkDenseMatch = {
+      id: 'chunk_section',
+      documentId: 'doc_arch',
+      documentName: 'architecture.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 3,
+      content: '权限子系统架构',
+      contentSegmented: '权限 子系统 架构',
+      headingPath: '3. 系统架构 > 3.2 权限控制',
+      pageNumber: 1,
+      tokenCount: 15,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.95,
+    };
+
+    const searchDenseMock = vi.fn().mockResolvedValue([mockChunk]);
+    const searchLexicalMock = vi.fn().mockResolvedValue([]);
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '权限模型',
+        enableRerank: false,
+        headingPath: '3. 系统架构 > 3.2 权限控制',
+        documentId: 'doc_arch',
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: searchDenseMock,
+        searchLexicalFn: searchLexicalMock,
+      }
+    );
+
+    expect(searchDenseMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headingPath: '3. 系统架构 > 3.2 权限控制',
+        documentId: 'doc_arch',
+      })
+    );
+    expect(result.chunks.length).toBe(1);
+    expect(result.chunks[0].citationAnchor.headingPath).toBe('3. 系统架构 > 3.2 权限控制');
+  });
+
+  it('12. 章节顺序通读模式与空 Query 切片连续返回 (TC05-2 / ADR-0036)', async () => {
+    const mockSequentialChunks = [
+      {
+        id: 'chunk_seq_1',
+        documentId: 'doc_arch',
+        documentName: 'architecture.md',
+        knowledgeBaseId: 'kb_123',
+        userId: 'user_123',
+        documentVersion: 1,
+        chunkIndex: 0,
+        content: '第一小节：背景介绍',
+        contentSegmented: '第一 小节 背景 介绍',
+        headingPath: '1. 概述',
+        pageNumber: 1,
+        tokenCount: 20,
+        metadata: {},
+        createdAt: new Date(),
+      },
+      {
+        id: 'chunk_seq_2',
+        documentId: 'doc_arch',
+        documentName: 'architecture.md',
+        knowledgeBaseId: 'kb_123',
+        userId: 'user_123',
+        documentVersion: 1,
+        chunkIndex: 1,
+        content: '第二小节：核心目标',
+        contentSegmented: '第二 小节 核心 目标',
+        headingPath: '1. 概述',
+        pageNumber: 1,
+        tokenCount: 25,
+        metadata: {},
+        createdAt: new Date(),
+      },
+    ];
+
+    const sequentialMock = vi.fn().mockResolvedValue(mockSequentialChunks);
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '', // 空 query 触发章节顺序通读
+        headingPath: '1. 概述',
+        documentId: 'doc_arch',
+        topK: 10,
+      },
+      {
+        getSequentialChunksFn: sequentialMock,
+      }
+    );
+
+    // 验证调用了序贯提取函数，且按 chunk_index ASC 连续返回
+    expect(sequentialMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headingPath: '1. 概述',
+        documentId: 'doc_arch',
+        limit: 10,
+      })
+    );
+    expect(result.chunks.length).toBe(2);
+    expect(result.chunks[0].chunkId).toBe('chunk_seq_1');
+    expect(result.chunks[0].content).toContain('第一小节');
+    expect(result.chunks[1].chunkId).toBe('chunk_seq_2');
+    expect(result.chunks[1].content).toContain('第二小节');
+  });
 });
 
 
