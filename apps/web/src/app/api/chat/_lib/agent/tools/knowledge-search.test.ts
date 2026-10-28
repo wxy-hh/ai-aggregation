@@ -480,5 +480,68 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.contentForModel).toContain('高粗排分切片');
     expect(result.citations?.[1]?.snippet).toBe('高粗排分切片');
   });
+
+  it('12. TC06: filter 参数解析与放宽提示响应 (ADR-0032)', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      chunks: [
+        {
+          chunkId: 'chk_relaxed_1',
+          documentId: 'doc_1',
+          documentName: 'general_policy.md',
+          documentVersion: 1,
+          content: '通用差旅报销标准参考',
+          contentSegmented: '通用 差旅 报销',
+          score: 0.88,
+          citationAnchor: {
+            documentId: 'doc_1',
+            documentName: 'general_policy.md',
+            documentVersion: 1,
+            pageNumber: 1,
+            headingPath: null,
+            chunkIndex: 0,
+            snippet: '通用差旅报销标准参考',
+          },
+        },
+      ],
+      isFilterRelaxed: true, // 模拟前置过滤零命中触发放宽兜底
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb_1', name: '企业知识库' }]);
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      isRerankEnabledFn: () => false,
+    });
+
+    const result = await tool.execute(
+      {
+        query: '2027年报销政策',
+        filter: {
+          tags: ['财务', '2027'],
+          year: 2027,
+        },
+      },
+      mockContext
+    );
+
+    // 验证 filter 正确下发给检索层
+    expect(mockRetrieval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: {
+          tags: ['财务', '2027'],
+          year: 2027,
+        },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    // 验证放宽兜底时模型上下文顶部注入放宽说明
+    expect(result.contentForModel).toContain('【系统提示：过滤条件已自动放宽】');
+    expect(result.contentForModel).toContain('通用差旅报销标准参考');
+    // 验证 summaryForDisplay 包含放宽提示
+    expect(result.summaryForDisplay).toContain('已放宽过滤');
+  });
 });
+
 

@@ -32,6 +32,13 @@ const querySchema = z.object({
     .optional()
     .default(20),
   enableRerank: z.boolean().optional(),
+  filter: z
+    .object({
+      tags: z.array(z.string()).optional(),
+      year: z.union([z.number(), z.string()]).optional(),
+    })
+    .passthrough()
+    .optional(),
 });
 
 
@@ -75,6 +82,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       query: parsed.data.query,
       topK: parsed.data.topK,
       enableRerank: parsed.data.enableRerank,
+      filter: parsed.data.filter,
     });
 
     return createSuccessResponse(result, '检索执行成功');

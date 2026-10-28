@@ -20,7 +20,9 @@ export default function RegisterPage() {
 
         <div className="relative overflow-hidden rounded-[2rem] border border-white/75 p-[1px] shadow-[0_26px_80px_rgba(113,145,212,0.22)]">
           <div className="relative rounded-[calc(2rem-1px)] bg-[linear-gradient(180deg,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.82)_100%)] px-6 py-7 backdrop-blur-[24px] sm:px-10 sm:py-8">
-            <RegisterForm />
+            <React.Suspense fallback={null}>
+              <RegisterForm />
+            </React.Suspense>
           </div>
         </div>
       </div>

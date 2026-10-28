@@ -273,6 +273,10 @@ export async function processRagIndexJob(
 
   // 6. 构造入库切片数据结构
   const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
+  const docMetadata =
+    doc.metadata && typeof doc.metadata === 'object' && !Array.isArray(doc.metadata)
+      ? (doc.metadata as Record<string, unknown>)
+      : {};
   const chunksToInsert = parsedChunks.map((chunk, idx) => ({
     documentId,
     knowledgeBaseId,
@@ -285,6 +289,9 @@ export async function processRagIndexJob(
     pageNumber: chunk.pageNumber,
     tokenCount: chunk.tokenCount,
     metadata: {
+      ...docMetadata,
+      tags: doc.tags || [],
+      sourceType: doc.sourceType,
       fileName,
       storageKey,
       parsedContentKey,

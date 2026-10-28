@@ -11,6 +11,7 @@ import {
   insertDocumentChunks,
   searchDocumentChunksDense,
   searchDocumentChunksLexical,
+  updateDocumentMetadataInPlace,
 } from '../rag/chunk-store';
 
 describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
@@ -306,4 +307,63 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
     });
     expect(lexicalB.length).toBe(0);
   });
+
+  it('6. 元数据前置过滤与原地批量同步 (TC07 / ADR-0032)', async () => {
+    // 6.1 原地更新 docV1 标签与元数据
+    const updateRes = await updateDocumentMetadataInPlace({
+      documentId: docV1Id,
+      userId: userAId,
+      tags: ['架构规范', '2026'],
+      metadata: { department: 'rd', year: 2026 },
+    });
+    expect(updateRes.documentId).toBe(docV1Id);
+    expect(updateRes.updatedChunkCount).toBeGreaterThan(0);
+
+    // 验证文档主表已更新
+    const doc = await prisma.document.findUnique({ where: { id: docV1Id } });
+    expect(doc?.tags).toEqual(['架构规范', '2026']);
+
+    // 6.2 稠密向量检索：带匹配 filter 前置过滤精准召回 docV1
+    const denseMatched = await searchDocumentChunksDense({
+      userId: userAId,
+      knowledgeBaseId: kbAId,
+      queryVector: baseVector,
+      topK: 5,
+      filter: { tags: ['2026'], department: 'rd' },
+    });
+    expect(denseMatched.length).toBeGreaterThan(0);
+    expect(denseMatched[0].documentId).toBe(docV1Id);
+
+    // 6.3 稠密向量检索：带不匹配 filter（如 department: 'finance'）零召回
+    const denseMismatched = await searchDocumentChunksDense({
+      userId: userAId,
+      knowledgeBaseId: kbAId,
+      queryVector: baseVector,
+      topK: 5,
+      filter: { department: 'finance' },
+    });
+    expect(denseMismatched.length).toBe(0);
+
+    // 6.4 词法全文检索：带匹配 filter 前置过滤精准召回 docV1
+    const lexicalMatched = await searchDocumentChunksLexical({
+      userId: userAId,
+      knowledgeBaseId: kbAId,
+      query: 'ADR-0008',
+      topK: 5,
+      filter: { tags: ['架构规范'] },
+    });
+    expect(lexicalMatched.length).toBeGreaterThan(0);
+    expect(lexicalMatched[0].documentId).toBe(docV1Id);
+
+    // 6.5 词法全文检索：带不匹配 tags 过滤零召回
+    const lexicalMismatched = await searchDocumentChunksLexical({
+      userId: userAId,
+      knowledgeBaseId: kbAId,
+      query: 'ADR-0008',
+      topK: 5,
+      filter: { tags: ['未存在标签_xyz'] },
+    });
+    expect(lexicalMismatched.length).toBe(0);
+  });
 });
+

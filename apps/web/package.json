@@ -8,6 +8,7 @@
     "start": "next start -p 3030",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
     "test": "vitest --run",
     "test:eval": "vitest --run src/eval/",
     "test:watch": "vitest",

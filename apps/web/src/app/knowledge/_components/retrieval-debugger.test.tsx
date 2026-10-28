@@ -397,5 +397,94 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
       expect(screen.getByText('[降级]')).toBeInTheDocument();
     });
   });
+
+  it('7. 前置标签过滤与自动放宽兜底徽章展示 (ADR-0032 / TC05 / TC06)', async () => {
+    const user = userEvent.setup();
+
+    const mockRelaxedResponse = {
+      query: '报销政策',
+      preparedLexicalQuery: '报销 政策',
+      topK: 20,
+      isReranked: false,
+      isFilterRelaxed: true,
+      chunks: [
+        {
+          chunkId: 'chk_rel_1',
+          documentId: 'doc_1',
+          documentName: '通用制度.md',
+          documentVersion: 1,
+          content: '全员差旅通用报销制度',
+          contentSegmented: '全员 差旅 报销',
+          score: 0.02,
+          tags: ['通用', '财务'],
+          denseRank: 1,
+          lexicalRank: 1,
+          citationAnchor: {
+            documentId: 'doc_1',
+            documentName: '通用制度.md',
+            documentVersion: 1,
+            pageNumber: 1,
+            headingPath: null,
+            chunkIndex: 0,
+          },
+        },
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 35,
+      stats: {
+        embeddingDurationMs: 10,
+        denseDurationMs: 10,
+        lexicalDurationMs: 8,
+        fusionDurationMs: 2,
+        totalDurationMs: 35,
+      },
+    };
+
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: mockRelaxedResponse,
+      }),
+    });
+
+    render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
+
+    // 输入查询词
+    const queryInput = screen.getByPlaceholderText(/输入查询测试混合检索/);
+    await user.type(queryInput, '报销政策');
+
+    // 输入前置标签过滤：财务, 2027
+    const tagFilterInput = screen.getByTestId('retrieval-tag-filter-input');
+    await user.type(tagFilterInput, '财务, 2027');
+
+    const submitBtn = screen.getByRole('button', { name: /测试检索/ });
+    await user.click(submitBtn);
+
+    // 验证 API 参数包含 filter: { tags: ['财务', '2027'] }
+    await waitFor(() => {
+      expect(mockFetchWithAuth).toHaveBeenCalledWith(
+        '/api/knowledge-bases/kb_test_123/query',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: '报销政策',
+            topK: 20,
+            enableRerank: true,
+            filter: { tags: ['财务', '2027'] },
+          }),
+        })
+      );
+    });
+
+    // 验证放宽徽章与放宽提示横幅展示
+    await waitFor(() => {
+      expect(screen.getByTestId('filter-relaxed-badge')).toBeInTheDocument();
+      expect(screen.getByText('已自动放宽过滤兜底召回')).toBeInTheDocument();
+      expect(screen.getByTestId('relaxed-filter-banner')).toBeInTheDocument();
+      expect(screen.getByText(/指定前置标签在库中无匹配切片，系统已自动放宽限制/)).toBeInTheDocument();
+    });
+  });
 });
 

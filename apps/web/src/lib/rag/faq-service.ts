@@ -35,7 +35,7 @@ export function segmentFaqText(text: string): string {
     // 降级为正则分词
   }
 
-  const fallbackTokens = text.match(/[一-龥]+|[a-zA-Z0-9_\-\.]+/g);
+  const fallbackTokens = text.match(/[一-龥]+|[a-zA-Z0-9_.-]+/g);
   return fallbackTokens ? fallbackTokens.join(' ') : text.trim();
 }
 

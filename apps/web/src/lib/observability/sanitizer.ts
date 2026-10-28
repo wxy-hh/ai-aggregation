@@ -12,10 +12,10 @@ const SENSITIVE_KEY_REGEX =
   /(?:^key$|api[_-]?key|token|secret|password|passwd|auth|authorization|credential|private[_-]?key|webhook)/i;
 
 /** API Key 模式（如 sk-proj-xxx, sk-xxx） */
-const SK_KEY_REGEX = /\bsk-[a-zA-Z0-9_\-]{16,}\b/g;
+const SK_KEY_REGEX = /\bsk-[a-zA-Z0-9_-]{16,}\b/g;
 
 /** Bearer Token 模式 */
-const BEARER_TOKEN_REGEX = /Bearer\s+[a-zA-Z0-9_\-\.]{16,}/g;
+const BEARER_TOKEN_REGEX = /Bearer\s+[a-zA-Z0-9_.-]{16,}/g;
 
 /** URL 查询参数中的敏感 token/key/secret 模式 */
 const URL_SENSITIVE_PARAM_REGEX = /([?&](?:token|key|secret|apiKey|api_key|password)=)[^&#\s]+/gi;

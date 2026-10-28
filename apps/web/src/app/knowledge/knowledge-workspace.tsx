@@ -32,6 +32,7 @@ import { RetrievalDebugger } from './_components/retrieval-debugger';
 import { DocumentPreviewDrawer } from './_components/document-preview-drawer';
 import { FaqManagementPanel } from './_components/faq-management-panel';
 import { UrlImportDialog } from './_components/url-import-dialog';
+import { DocumentMetadataDialog } from './_components/document-metadata-dialog';
 import {
   BookOpen,
   Plus,
@@ -44,6 +45,7 @@ import {
   HelpCircle,
   Globe,
   ExternalLink,
+  Tag,
 } from 'lucide-react';
 
 export interface KnowledgeBaseItem {
@@ -65,6 +67,8 @@ export interface DocumentItem {
   errorMessage: string | null;
   sourceType?: 'file' | 'url';
   sourceUrl?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,6 +110,9 @@ export function KnowledgeWorkspace() {
     isOpen: false,
     documentId: null,
   });
+
+  // 文档多维标签与元数据编辑弹窗状态 (ADR-0032 / KB-META-FILTER)
+  const [metadataTargetDoc, setMetadataTargetDoc] = React.useState<DocumentItem | null>(null);
 
   // 1. 获取知识库列表
   const loadKnowledgeBases = React.useCallback(async () => {
@@ -492,29 +499,61 @@ export function KnowledgeWorkspace() {
                         </div>
 
                       <div className="flex items-center justify-between pt-1">
-                        <div className="flex items-center space-x-3 text-[11px] text-muted-foreground">
-                          <span>版本: v{doc.version}</span>
-                          <span>切片: {doc.chunkCount} 个</span>
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex items-center space-x-3 text-[11px] text-muted-foreground">
+                            <span>版本: v{doc.version}</span>
+                            <span>切片: {doc.chunkCount} 个</span>
+                          </div>
+                          {doc.tags && doc.tags.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 pt-0.5" data-testid={`doc-tags-list-${doc.id}`}>
+                              {doc.tags.slice(0, 3).map((tag) => (
+                                <Badge
+                                  key={tag}
+                                  variant="secondary"
+                                  className="text-[10px] px-1.5 py-0 text-muted-foreground bg-muted/60 rounded-md font-normal"
+                                >
+                                  #{tag}
+                                </Badge>
+                              ))}
+                              {doc.tags.length > 3 && (
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  +{doc.tags.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setPreviewState({
-                              isOpen: true,
-                              documentId: doc.id,
-                              documentName: doc.name,
-                              documentVersion: doc.version,
-                              initialStatus: doc.status,
-                              initialErrorMessage: doc.errorMessage,
-                              sourceUrl: doc.sourceUrl,
-                            })
-                          }
-                          className="min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 gap-1.5 flex items-center"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>预览</span>
-                        </Button>
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setMetadataTargetDoc(doc)}
+                            className="min-h-[44px] px-2.5 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-muted gap-1 flex items-center"
+                            data-testid={`edit-tags-button-${doc.id}`}
+                          >
+                            <Tag className="w-3.5 h-3.5" />
+                            <span>标签</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setPreviewState({
+                                isOpen: true,
+                                documentId: doc.id,
+                                documentName: doc.name,
+                                documentVersion: doc.version,
+                                initialStatus: doc.status,
+                                initialErrorMessage: doc.errorMessage,
+                                sourceUrl: doc.sourceUrl,
+                              })
+                            }
+                            className="min-h-[44px] px-3.5 rounded-xl text-xs text-primary hover:bg-primary/10 gap-1.5 flex items-center"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>预览</span>
+                          </Button>
+                        </div>
                       </div>
 
                       {doc.errorMessage && (
@@ -607,6 +646,23 @@ export function KnowledgeWorkspace() {
           onSuccess={() => {
             loadDocuments(selectedKb.id);
             loadKnowledgeBases();
+          }}
+        />
+      )}
+
+      {/* 文档多维标签与元数据编辑弹窗 (ADR-0032 / KB-META-FILTER) */}
+      {selectedKb && (
+        <DocumentMetadataDialog
+          open={!!metadataTargetDoc}
+          onOpenChange={(open) => {
+            if (!open) setMetadataTargetDoc(null);
+          }}
+          knowledgeBaseId={selectedKb.id}
+          document={metadataTargetDoc}
+          onSuccess={({ id, tags }) => {
+            setDocuments((prev) =>
+              prev.map((d) => (d.id === id ? { ...d, tags } : d))
+            );
           }}
         />
       )}

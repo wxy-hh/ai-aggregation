@@ -41,6 +41,14 @@ export const knowledgeSearchParametersSchema = z.object({
     .optional()
     .default(5)
     .describe('返回的最相关切片数量（默认 5 条，最多 20 条）'),
+  filter: z
+    .object({
+      tags: z.array(z.string()).optional().describe('要过滤的文档标签列表，例如：["财务", "2026"]'),
+      year: z.union([z.number(), z.string()]).optional().describe('年份过滤，例如：2026'),
+    })
+    .passthrough()
+    .optional()
+    .describe('可选的前置元数据与多维标签过滤器，用于精准收敛检索空间（如过滤特定年份、部门或标签）'),
 });
 
 export type KnowledgeSearchParams = z.infer<typeof knowledgeSearchParametersSchema>;
@@ -112,7 +120,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         throw new ToolError(errorMsg);
       }
 
-      const { query, knowledgeBaseId, topK } = parsed.data;
+      const { query, knowledgeBaseId, topK, filter } = parsed.data;
       const trimmedQuery = query.trim();
 
       if (!trimmedQuery) {
@@ -160,9 +168,11 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         targetKnowledgeBaseIds = userKbs.slice(0, 3);
       }
 
-      // 2. 并发执行长文本切片混合检索与 FAQ 权威口径匹配 (ADR-0027)
+      // 2. 并发执行长文本切片混合检索与 FAQ 权威口径匹配 (ADR-0027 / ADR-0032)
       try {
         const kbIds = targetKnowledgeBaseIds.map((kb) => kb.id);
+        let anyFilterRelaxed = false;
+
         const [results, bestFaq] = await Promise.all([
           Promise.all(
             targetKnowledgeBaseIds.map(async (kb) => {
@@ -173,7 +183,11 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
                   query: trimmedQuery,
                   topK: RAG_RERANK_CONFIG.defaultTopN,
                   enableRerank: false, // 各库仅执行粗排召回，由外层统一单次全局 Rerank (ADR-0030)
+                  filter,
                 });
+                if (res.isFilterRelaxed) {
+                  anyFilterRelaxed = true;
+                }
                 return res.chunks;
               } catch (error) {
                 console.warn(`[knowledge_search] 知识库 ${kb.id} 检索失败:`, error);
@@ -261,6 +275,17 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
         // 结果包装为不可信上下文并附带防御声明 (QA-011 / QA-012)
         let contentForModel = formatRetrievedChunksWithCitations(fusedChunks, trimmedQuery);
 
+        // 若触发过滤放宽兜底，注入明确引导提示 (ADR-0032 / FilterRelaxation)
+        if (anyFilterRelaxed) {
+          const relaxedHeader = [
+            '【系统提示：过滤条件已自动放宽】',
+            `未检索到完全匹配指定过滤条件的切片，系统已自动为您检索全库最相关的参考内容。`,
+            '（请在回答用户时明确说明知识库中暂无完全符合该限制条件的专属文档，并基于以下放宽召回的资料提供参考。）',
+            '',
+          ].join('\n');
+          contentForModel = relaxedHeader + contentForModel;
+        }
+
         // 若命中 FAQ 权威口径，置顶注入模型提示词 (ADR-0027 / FaqGroundTruth)
         if (bestFaq && bestFaq.isGroundTruth) {
           const faqHeader = [
@@ -290,12 +315,13 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           : uniqueDocs.join('、');
 
         const faqNotice = bestFaq && bestFaq.isGroundTruth ? '命中官方FAQ · ' : '';
+        const relaxedNotice = anyFilterRelaxed ? '（已放宽过滤）' : '';
         const chunkNotice = fusedChunks.length > 0 ? `命中 ${fusedChunks.length} 条切片（${docNamesSummary}）` : '采用官方标准口径';
 
         return {
           ok: true,
           contentForModel,
-          summaryForDisplay: `已检索知识库“${shortQuery}” · ${faqNotice}${chunkNotice}`,
+          summaryForDisplay: `已检索知识库“${shortQuery}” · ${faqNotice}${chunkNotice}${relaxedNotice}`,
           citations,
         };
       } catch (error) {

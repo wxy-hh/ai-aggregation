@@ -21,6 +21,7 @@ import {
   searchDocumentChunksLexical,
   type DocumentChunkDenseMatch,
   type DocumentChunkLexicalMatch,
+  type MetadataFilter,
 } from '@repo/db';
 import { createEmbeddingModel } from '@repo/providers';
 import { RAG_RETRIEVAL_CONFIG, RAG_RERANK_CONFIG, isRagRerankEnabled } from '@repo/shared';
@@ -65,6 +66,7 @@ export interface RetrievedChunk {
   lexicalScore?: number; // 词法路原始全文 rank 分数（仅用于观测调试）
   rerankScore?: number; // Rerank 精排打分（仅在开启精排且成功时存在）
   rrfScore?: number; // 原 RRF 融合得分（用于对照与观测）
+  tags?: string[];
   citationAnchor: CitationAnchor;
 }
 
@@ -95,6 +97,8 @@ export interface HybridRetrievalResult {
   isReranked?: boolean; // 标识是否成功经过 Rerank 二次精排
   isDegraded?: boolean; // 标识是否发生 Rerank 异常弹性降级
   filteredLowScoreCount?: number; // 标识因低于 minRelevanceScore 被过滤的切片数量
+  isFilterRelaxed?: boolean; // 标识是否因过滤条件 0 命中而触发全库放宽兜底 (ADR-0032)
+  appliedFilter?: MetadataFilter; // 实际应用的过滤条件
 }
 
 /**
@@ -106,6 +110,7 @@ export interface HybridRetrievalOptions {
   query: string;
   topK?: number;
   enableRerank?: boolean; // 显式开关覆盖（默认回退至 isRagRerankEnabled()）
+  filter?: MetadataFilter; // 前置元数据与标签过滤条件 (ADR-0032)
 }
 
 /**
@@ -155,7 +160,7 @@ export function prepareLexicalQuery(query: string): string {
   }
 
   // 降级正则分词：连续汉字与字母数字连词
-  const fallbackTokens = query.match(/[一-龥]+|[a-zA-Z0-9_\-\.]+/g);
+  const fallbackTokens = query.match(/[一-龥]+|[a-zA-Z0-9_.-]+/g);
   if (fallbackTokens && fallbackTokens.length > 0) {
     return fallbackTokens.join(' ');
   }
@@ -212,8 +217,8 @@ export async function hybridRetrieval(
   const queryVector = await embedFn(query);
   embeddingDurationMs = Math.round(performance.now() - embedStartTime);
 
-  // 3. 并行调用稠密向量检索与词法全文检索
-  const [denseResults, lexicalResults] = await Promise.all([
+  // 3. 并行调用稠密向量检索与词法全文检索（支持前置 filter）
+  let [denseResults, lexicalResults] = await Promise.all([
     (async () => {
       const start = performance.now();
       const res = await searchDense({
@@ -221,6 +226,7 @@ export async function hybridRetrieval(
         knowledgeBaseId,
         queryVector,
         topK,
+        filter: options.filter,
       });
       denseDurationMs = Math.round(performance.now() - start);
       return res;
@@ -232,11 +238,54 @@ export async function hybridRetrieval(
         knowledgeBaseId,
         query: preparedLexicalQuery,
         topK,
+        filter: options.filter,
       });
       lexicalDurationMs = Math.round(performance.now() - start);
       return res;
     })(),
   ]);
+
+  // 3.1 零命中过滤放宽兜底 (Filter Relaxation Fallback, ADR-0032)
+  let isFilterRelaxed = false;
+  const hasFilter = options.filter && Object.keys(options.filter).length > 0;
+  if (hasFilter && denseResults.length === 0 && lexicalResults.length === 0) {
+    const [relaxedDense, relaxedLexical] = await Promise.all([
+      (async () => {
+        const start = performance.now();
+        const res = await searchDense({
+          userId,
+          knowledgeBaseId,
+          queryVector,
+          topK,
+        });
+        denseDurationMs += Math.round(performance.now() - start);
+        return res;
+      })(),
+      (async () => {
+        const start = performance.now();
+        const res = await searchLexical({
+          userId,
+          knowledgeBaseId,
+          query: preparedLexicalQuery,
+          topK,
+        });
+        lexicalDurationMs += Math.round(performance.now() - start);
+        return res;
+      })(),
+    ]);
+
+    if (relaxedDense.length > 0 || relaxedLexical.length > 0) {
+      isFilterRelaxed = true;
+      denseResults = relaxedDense;
+      lexicalResults = relaxedLexical;
+      logger.info('[hybrid-retrieval] 过滤条件零召回，自动触发全库放宽兜底检索', {
+        feature: 'rag-metadata-filter',
+        filter: options.filter,
+        query,
+        relaxedCount: relaxedDense.length + relaxedLexical.length,
+      });
+    }
+  }
 
   // 为两路各自附加原始排名 (1-based)
   const denseMatchesWithRank = denseResults.map((m, idx) => ({
@@ -388,6 +437,8 @@ export async function hybridRetrieval(
     isReranked,
     isDegraded,
     filteredLowScoreCount,
+    isFilterRelaxed,
+    appliedFilter: options.filter,
     stats: {
       embeddingDurationMs,
       denseDurationMs,

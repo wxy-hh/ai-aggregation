@@ -42,6 +42,7 @@ import {
   Hash,
   Eye,
   BookOpen,
+  Tag,
 } from 'lucide-react';
 import {
   DocumentPreviewDrawer,
@@ -56,6 +57,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
   const [query, setQuery] = React.useState('');
   const [topK, setTopK] = React.useState(20);
   const [enableRerank, setEnableRerank] = React.useState(true);
+  const [tagFilterInput, setTagFilterInput] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<HybridRetrievalResult | null>(null);
@@ -190,12 +192,27 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
     setError(null);
 
     try {
-      const requestPayload: { query: string; topK: number; enableRerank?: boolean } = {
+      const filterTags = tagFilterInput
+        .split(/[,，\s]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      const requestPayload: {
+        query: string;
+        topK: number;
+        enableRerank?: boolean;
+        filter?: { tags?: string[] };
+      } = {
         query: targetQuery,
         topK,
       };
       if (enableRerank) {
         requestPayload.enableRerank = true;
+      }
+      if (filterTags.length > 0) {
+        requestPayload.filter = {
+          tags: filterTags,
+        };
       }
 
       const res = await fetchWithAuth(
@@ -259,7 +276,7 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                 <button
                   type="button"
                   onClick={() => setQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 text-xs"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground h-11 min-h-[44px] px-3 flex items-center justify-center text-xs"
                 >
                   清空
                 </button>
@@ -310,6 +327,31 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                   </span>
                 )}
               </Button>
+            </div>
+          </div>
+
+          {/* 前置标签过滤器输入行 (ADR-0032 / KB-META-FILTER) */}
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-1 border border-border/60 rounded-xl px-3 min-h-[44px] h-11 bg-muted/20">
+              <Tag className="w-4 h-4 text-muted-foreground shrink-0" />
+              <Input
+                value={tagFilterInput}
+                onChange={(e) => setTagFilterInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="可选前置标签过滤（多个标签用逗号或空格分隔，如：财务, 2026）"
+                className="min-h-[44px] h-11 border-0 bg-transparent text-xs p-0 focus-visible:ring-0 shadow-none text-foreground placeholder:text-muted-foreground/60"
+                disabled={loading}
+                data-testid="retrieval-tag-filter-input"
+              />
+              {tagFilterInput && (
+                <button
+                  type="button"
+                  onClick={() => setTagFilterInput('')}
+                  className="text-muted-foreground hover:text-foreground text-xs px-1"
+                >
+                  清空
+                </button>
+              )}
             </div>
           </div>
 
@@ -452,6 +494,15 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                     Rerank 降级为 RRF
                   </Badge>
                 )}
+                {result.isFilterRelaxed && (
+                  <Badge
+                    variant="outline"
+                    data-testid="filter-relaxed-badge"
+                    className="text-xs px-2 py-0.5 border-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-950/30 font-medium"
+                  >
+                    已自动放宽过滤兜底召回
+                  </Badge>
+                )}
                 {result.filteredLowScoreCount !== undefined && result.filteredLowScoreCount > 0 && (
                   <Badge variant="secondary" className="text-[11px] px-1.5 py-0 text-muted-foreground">
                     已过滤 {result.filteredLowScoreCount} 条低相关切片
@@ -462,6 +513,16 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
                 {result.isReranked ? 'bge-reranker' : 'k = 60'}
               </span>
             </div>
+
+            {result.isFilterRelaxed && (
+              <div
+                data-testid="relaxed-filter-banner"
+                className="p-2.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs flex items-center space-x-2"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>指定前置标签在库中无匹配切片，系统已自动放宽限制，兜底召回全库最相关内容。</span>
+              </div>
+            )}
 
             {result.chunks.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground border border-dashed rounded-xl bg-muted/10">
@@ -681,6 +742,20 @@ function FusedChunkCard({
             </span>
           )}
         </div>
+
+        {/* 标签徽章 */}
+        {chunk.tags && chunk.tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {chunk.tags.map((t: string) => (
+              <span
+                key={t}
+                className="text-[10px] px-1 py-0 rounded bg-muted/60 text-muted-foreground font-normal"
+              >
+                #{t}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* 正文切片摘要 */}
         <div className="text-xs text-foreground/90 leading-relaxed break-words whitespace-pre-wrap">

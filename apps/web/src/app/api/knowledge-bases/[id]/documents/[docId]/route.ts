@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { prisma } from '@repo/db';
+import { prisma, updateDocumentMetadataInPlace } from '@repo/db';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
@@ -86,3 +86,74 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
     return ApiError.internalError('删除文档失败，请稍后重试');
   }
 }
+
+/**
+ * 原地即时更新文档及其切片的标签与元数据 (ADR-0032 / KB-META-FILTER)
+ */
+export async function PATCH(req: NextRequest, context: RouteContext) {
+  try {
+    const user = await getCurrentUser(req);
+    const { id: knowledgeBaseId, docId } = await context.params;
+
+    const existing = await prisma.document.findFirst({
+      where: {
+        id: docId,
+        knowledgeBaseId,
+        userId: user.id,
+        deletedAt: null,
+      },
+      select: { id: true, tags: true, metadata: true },
+    });
+
+    if (!existing) {
+      return ApiError.notFound('文档不存在');
+    }
+
+    const body = await req.json().catch(() => ({}));
+
+    // tags 处理：显式传参则更新，未传则保留现有
+    const sanitizedTags = Array.isArray(body.tags)
+      ? body.tags.map(String).map((t: string) => t.trim()).filter(Boolean)
+      : (existing.tags ?? []);
+
+    // metadata 处理：键名白名单校验，保留现有并浅层合并更新
+    const existingMetadata =
+      typeof existing.metadata === 'object' && existing.metadata !== null && !Array.isArray(existing.metadata)
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
+
+    let nextMetadata: Record<string, unknown> = { ...existingMetadata };
+
+    if (body.metadata !== undefined) {
+      if (typeof body.metadata === 'object' && body.metadata !== null && !Array.isArray(body.metadata)) {
+        for (const [key, val] of Object.entries(body.metadata)) {
+          if (!/^[a-zA-Z0-9_-]{1,32}$/.test(key)) {
+            return ApiError.badRequest(`元数据键名非法: ${key}，仅允许 1-32 位字母、数字、下划线及连字符`);
+          }
+          nextMetadata[key] = val;
+        }
+      }
+    }
+
+    const syncResult = await updateDocumentMetadataInPlace({
+      documentId: docId,
+      userId: user.id,
+      tags: sanitizedTags,
+      metadata: nextMetadata,
+    });
+
+    return createSuccessResponse({
+      documentId: syncResult.documentId,
+      updatedChunkCount: syncResult.updatedChunkCount,
+      tags: sanitizedTags,
+      metadata: nextMetadata,
+    }, '文档标签与元数据已更新');
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return handleAuthError(error);
+    }
+    console.error('[knowledge-bases/documents/[docId]] 更新元数据失败:', error);
+    return ApiError.internalError('更新文档元数据失败，请稍后重试');
+  }
+}
+

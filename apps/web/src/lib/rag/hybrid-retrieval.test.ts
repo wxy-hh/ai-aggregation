@@ -613,5 +613,117 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(sentDocs.length).toBe(30);
     expect(result.chunks.length).toBe(5);
   });
+
+  it('9. 前置元数据过滤透传与正常召回 (TC05 / ADR-0032)', async () => {
+    const mockChunk: DocumentChunkDenseMatch = {
+      id: 'chunk_filtered',
+      documentId: 'doc_1',
+      documentName: '2026-finance.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '2026 年度财务报销规范',
+      contentSegmented: '2026 年度 财务 报销 规范',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 15,
+      metadata: { tags: ['财务', '2026'], department: 'finance' },
+      createdAt: new Date(),
+      similarity: 0.92,
+    };
+
+    const searchDenseMock = vi.fn().mockResolvedValue([mockChunk]);
+    const searchLexicalMock = vi.fn().mockResolvedValue([]);
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '报销政策',
+        enableRerank: false,
+        filter: { tags: ['财务'], year: 2026 },
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: searchDenseMock,
+        searchLexicalFn: searchLexicalMock,
+      }
+    );
+
+    // 验证 filter 正确传递给底层搜索函数
+    expect(searchDenseMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: { tags: ['财务'], year: 2026 },
+      })
+    );
+    expect(searchLexicalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: { tags: ['财务'], year: 2026 },
+      })
+    );
+    expect(result.chunks.length).toBe(1);
+    expect(result.chunks[0].chunkId).toBe('chunk_filtered');
+    expect(result.isFilterRelaxed).toBe(false);
+    expect(result.appliedFilter).toEqual({ tags: ['财务'], year: 2026 });
+  });
+
+  it('10. 过滤条件 0 命中时自动触发 Relaxed Fallback 全库保底召回 (TC05 / ADR-0032)', async () => {
+    const mockFallbackChunk: DocumentChunkDenseMatch = {
+      id: 'chunk_fallback',
+      documentId: 'doc_old',
+      documentName: 'general-guide.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '通用企业制度指南',
+      contentSegmented: '通用 企业 制度 指南',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 12,
+      metadata: { tags: ['通用'] },
+      createdAt: new Date(),
+      similarity: 0.85,
+    };
+
+    // 第一次调用（带 filter）返回空；第二次调用（无 filter，放宽兜底）返回保底切片
+    const searchDenseMock = vi
+      .fn()
+      .mockResolvedValueOnce([]) // 带 filter：0 命中
+      .mockResolvedValueOnce([mockFallbackChunk]); // 放宽兜底：命中保底切片
+
+    const searchLexicalMock = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '报销政策',
+        enableRerank: false,
+        filter: { tags: ['不存在的标签999'] },
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: searchDenseMock,
+        searchLexicalFn: searchLexicalMock,
+      }
+    );
+
+    // 验证调用了两次 searchDense，第一次带 filter，第二次无 filter
+    expect(searchDenseMock).toHaveBeenCalledTimes(2);
+    expect(searchDenseMock.mock.calls[0][0].filter).toEqual({ tags: ['不存在的标签999'] });
+    expect(searchDenseMock.mock.calls[1][0].filter).toBeUndefined();
+
+    // 验证返回结果标记了 isFilterRelaxed = true，并成功召回保底切片
+    expect(result.isFilterRelaxed).toBe(true);
+    expect(result.chunks.length).toBe(1);
+    expect(result.chunks[0].chunkId).toBe('chunk_fallback');
+    expect(result.appliedFilter).toEqual({ tags: ['不存在的标签999'] });
+  });
 });
+
 

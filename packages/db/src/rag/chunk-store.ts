@@ -10,6 +10,7 @@
 
 import { prisma } from '../client';
 import type { Prisma } from '@prisma/client';
+import { buildMetadataFilterClause, type MetadataFilter } from './metadata-filter';
 
 /**
  * 文档切片记录自声明类型
@@ -234,9 +235,22 @@ export async function searchDocumentChunksDense(params: {
   knowledgeBaseId: string;
   queryVector: number[];
   topK?: number;
+  filter?: MetadataFilter;
 }): Promise<DocumentChunkDenseMatch[]> {
-  const { userId, knowledgeBaseId, queryVector, topK = 20 } = params;
+  const { userId, knowledgeBaseId, queryVector, topK = 20, filter } = params;
   const vectorStr = formatVector(queryVector);
+
+  const filterRes = buildMetadataFilterClause(filter, 4, 'dc');
+  const whereClauses = [
+    `dc."user_id" = $2`,
+    `dc."knowledge_base_id" = $3`,
+    `d."deleted_at" IS NULL`,
+    `dc."document_version" = d."version"`,
+    `dc."embedding" IS NOT NULL`,
+    ...filterRes.sqlClauses,
+  ];
+  const limitPlaceholder = `$${filterRes.nextParamIndex}`;
+  const queryParams = [vectorStr, userId, knowledgeBaseId, ...filterRes.params, topK];
 
   interface RawDenseRow {
     id: string;
@@ -276,18 +290,11 @@ export async function searchDocumentChunksDense(params: {
       (1 - (dc."embedding" <=> $1::vector)) AS "similarity"
     FROM "document_chunks" dc
     INNER JOIN "documents" d ON dc."document_id" = d."id"
-    WHERE dc."user_id" = $2
-      AND dc."knowledge_base_id" = $3
-      AND d."deleted_at" IS NULL
-      AND dc."document_version" = d."version"
-      AND dc."embedding" IS NOT NULL
+    WHERE ${whereClauses.join('\n      AND ')}
     ORDER BY dc."embedding" <=> $1::vector ASC
-    LIMIT $4;
+    LIMIT ${limitPlaceholder};
     `,
-    vectorStr,
-    userId,
-    knowledgeBaseId,
-    topK
+    ...queryParams
   );
 
   return rows.map((row) => ({
@@ -317,8 +324,20 @@ export async function searchDocumentChunksLexical(params: {
   knowledgeBaseId: string;
   query: string;
   topK?: number;
+  filter?: MetadataFilter;
 }): Promise<DocumentChunkLexicalMatch[]> {
-  const { userId, knowledgeBaseId, query, topK = 20 } = params;
+  const { userId, knowledgeBaseId, query, topK = 20, filter } = params;
+
+  const filterRes = buildMetadataFilterClause(filter, 4, 'dc');
+  const baseWhereClauses = [
+    `dc."user_id" = $2`,
+    `dc."knowledge_base_id" = $3`,
+    `d."deleted_at" IS NULL`,
+    `dc."document_version" = d."version"`,
+    ...filterRes.sqlClauses,
+  ];
+  const limitPlaceholder = `$${filterRes.nextParamIndex}`;
+  const queryParams = [query, userId, knowledgeBaseId, ...filterRes.params, topK];
 
   interface RawLexicalRow {
     id: string;
@@ -358,18 +377,11 @@ export async function searchDocumentChunksLexical(params: {
       ts_rank_cd(dc."content_tsv", plainto_tsquery('simple', $1)) AS "rank"
     FROM "document_chunks" dc
     INNER JOIN "documents" d ON dc."document_id" = d."id"
-    WHERE dc."user_id" = $2
-      AND dc."knowledge_base_id" = $3
-      AND d."deleted_at" IS NULL
-      AND dc."document_version" = d."version"
-      AND dc."content_tsv" @@ plainto_tsquery('simple', $1)
+    WHERE ${[...baseWhereClauses, `dc."content_tsv" @@ plainto_tsquery('simple', $1)`].join('\n      AND ')}
     ORDER BY "rank" DESC
-    LIMIT $4;
+    LIMIT ${limitPlaceholder};
     `,
-    query,
-    userId,
-    knowledgeBaseId,
-    topK
+    ...queryParams
   );
 
   // 若默认严格 AND 未命中且包含多词，使用 OR (to_tsquery) 平滑降级
@@ -402,17 +414,14 @@ export async function searchDocumentChunksLexical(params: {
             ts_rank_cd(dc."content_tsv", to_tsquery('simple', $1)) AS "rank"
           FROM "document_chunks" dc
           INNER JOIN "documents" d ON dc."document_id" = d."id"
-          WHERE dc."user_id" = $2
-            AND dc."knowledge_base_id" = $3
-            AND d."deleted_at" IS NULL
-            AND dc."document_version" = d."version"
-            AND dc."content_tsv" @@ to_tsquery('simple', $1)
+          WHERE ${[...baseWhereClauses, `dc."content_tsv" @@ to_tsquery('simple', $1)`].join('\n            AND ')}
           ORDER BY "rank" DESC
-          LIMIT $4;
+          LIMIT ${limitPlaceholder};
           `,
           orQuery,
           userId,
           knowledgeBaseId,
+          ...filterRes.params,
           topK
         );
         if (orRows.length > 0) {
@@ -654,4 +663,75 @@ export async function searchMemoryChunksLexical(params: {
     rank: Number(row.rank),
   }));
 }
+
+/**
+ * 原地即时同步更新文档及其切片的标签与元数据 (ADR-0032)
+ * 无需重新切块与重新向量化，毫秒级原子更新
+ */
+export async function updateDocumentMetadataInPlace(params: {
+  documentId: string;
+  userId: string;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  client?: Prisma.TransactionClient | typeof prisma;
+}): Promise<{ documentId: string; updatedChunkCount: number }> {
+  const { documentId, userId, tags, metadata = {}, client } = params;
+
+  const runWithClient = async (tx: Prisma.TransactionClient | typeof prisma) => {
+    // 1. 验证文档归属并获取当前版本
+    const doc = await tx.document.findFirst({
+      where: { id: documentId, userId, deletedAt: null },
+      select: { id: true, version: true },
+    });
+
+    if (!doc) {
+      throw new Error('文档不存在或无权操作');
+    }
+
+    // 2. 构造打平继承后的切片元数据
+    const mergedChunkMetadata = {
+      ...metadata,
+      tags,
+    };
+    const metadataJsonStr = JSON.stringify(mergedChunkMetadata);
+
+    // 3. 原地批量更新该版本的所有切片
+    const updatedChunkCount = await tx.$executeRawUnsafe(
+      `
+      UPDATE "document_chunks"
+      SET "metadata" = $1::jsonb
+      WHERE "document_id" = $2
+        AND "document_version" = $3
+        AND "user_id" = $4;
+      `,
+      metadataJsonStr,
+      documentId,
+      doc.version,
+      userId
+    );
+
+    // 4. 更新文档主表
+    await tx.document.update({
+      where: { id: documentId },
+      data: {
+        tags,
+        metadata: metadata as any,
+      },
+    });
+
+    return {
+      documentId,
+      updatedChunkCount: Number(updatedChunkCount),
+    };
+  };
+
+  if (client) {
+    return runWithClient(client);
+  }
+
+  return (prisma as any).$transaction(async (tx: Prisma.TransactionClient) => {
+    return runWithClient(tx);
+  });
+}
+
 
