@@ -60,7 +60,7 @@ AI 辅助编码最常见的三类返工：
 ```text
 [1] /grill-with-docs   需求盘问 → 领域术语、ADR
 [2] /to-spec           spec.md（含 ## 交付命令）
-[3A] /to-tickets       仅跨会话/跨人或并行时拆票
+[3A] /to-tickets       慢车道拆票
 [3B] /qa-test-planner  qa-plan.md → qa-check plan → review-package init（冻结计划）
 [4] /implement         TDD + qa-run 生成证据
 [5] 真实验收           browser/api 过程脚本 → qa-check acceptance（对账表）
@@ -238,13 +238,13 @@ NOTE 不改变结果，但值得看：
 
 ## 八、快慢车道
 
-| 车道 | 场景 | 流程 |
+| 车道 | 判定 | 路线 |
 | --- | --- | --- |
-| 快车道 | 文案、样式、非核心小修 | `/implement` + TDD，不强制 qa-plan |
-| 标准车道 | 单会话独立功能 | spec → qa-plan → 串行实现 → 验收 → 双轴审查 |
-| 慢车道 | 多会话、跨模块或跨人 | 完整 7 阶段，按需拆票 |
+| 快车道 | 文案、样式、非核心小修 | `/implement` |
+| 标准车道 | 独立功能，涉及模块少，串行可完成 | grill → spec → qa-test-planner → implement |
+| 慢车道 | 跨多模块的复杂业务或大功能，或需要并行子代理 | grill → spec → to-tickets → qa-test-planner → implement-spec |
 
-触及认证、对话、图像、视频、语音、历史、计费等核心链路时，哪条车道都要做浏览器验收。并行实现不是慢车道的必选项，默认仍串行。
+车道在阶段 1 定一次，每个技能结束只建议路线上的下一步。触及认证、对话、图像、视频、语音、历史、计费等核心链路时，哪条车道都要做浏览器验收。implement-spec 按工单依赖图调度，只有互不阻塞的工单才并行，其余仍串行。交接用 `/handoff`，见下一节。
 
 ---
 

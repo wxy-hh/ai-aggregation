@@ -44,10 +44,12 @@ test('grill 收口展示当前阶段、车道理由和建议的 to-spec 后继�
   assert.match(content, /不把补 ADR 与 `\/to-spec` 并列/);
 });
 
-test('to-spec 将 qa-test-planner 作为默认建议下一步（TC11）', async () => {
+test('to-spec 按车道只给一个建议下一步，慢车道为 to-tickets（TC11）', async () => {
   const content = await read(paths.toSpec);
-  assert.match(content, /建议下一步：`\/qa-test-planner`/);
-  assert.match(content, /用户明确选择并行时才改变该默认路径/);
+  assert.match(content, /标准车道\*\*建议下一步：`\/qa-test-planner`/);
+  assert.match(content, /慢车道\*\*建议下一步：`\/to-tickets`/);
+  assert.match(content, /快车道\*\*建议下一步：`\/implement`/);
+  assert.doesNotMatch(content, /先运行 `\/to-tickets`，再进入 `\/implement-spec`/);
 });
 
 test('qa planner 将串行 implement 作为规划通过后的建议下一步（TC11、TC12）', async () => {
@@ -56,10 +58,9 @@ test('qa planner 将串行 implement 作为规划通过后的建议下一步（T
   assert.match(content, /QA Schema: 4/);
 });
 
-test('to-tickets 将串行 implement 作为默认建议下一步（TC11）', async () => {
+test('to-tickets 拆票后建议 qa-test-planner，不跳过测试规划（TC11）', async () => {
   const content = await read(paths.toTickets);
-  assert.match(content, /建议下一步：`\/implement`/);
-  assert.match(content, /不默认改为并发/);
+  assert.match(content, /建议下一步：`\/qa-test-planner`\*\*，只写这一个命令/);
 });
 
 test('正本、根规则、规划与实现技能及安装模板引用当前 Schema（TC12）', async () => {

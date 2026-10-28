@@ -9,9 +9,9 @@
 ```text
 [1. 需求对齐] /grill-with-docs → 领域词汇、边界与 ADR
 [2. 规格确立] /to-spec → .scratch/<feature>/spec.md
-       ├─[3A. 条件拆票] /to-tickets → issues/*.md
+       ├─[3A. 慢车道拆票] /to-tickets → issues/*.md
        └─[3B. 测试规划] /qa-test-planner → qa-plan.md → qa-check plan → init 建基线并冻结计划
-[4. 串行实现] add（按需）+ TDD + qa-run → 单元、集成与静态检查
+[4. 实现] /implement（标准）或 /implement-spec（慢）+ add（按需）+ TDD + qa-run → 单元、集成与静态检查
 [5. 真实验收] 按接缝执行 → qa-check acceptance（输出对账表）
 [6. 双轴审查] collect → 调用 /code-review → review/ 原文落盘 → 三档分流 → 增量复审（自动上限 2 轮）
 [7. 交付收口] 最终交付验证 → qa-check review（机器校验通过）→ 人工终审清单
@@ -19,11 +19,15 @@
 
 ## 二、适用范围与剪裁
 
-| 改动规模 | 适用流程 |
-| --- | --- |
-| 大型特性（多会话、跨模块或核心链路） | 完整 7 阶段 |
-| 中型改动（单会话独立功能） | 跳过 3A，保留规划、验收和独立双轴审查 |
-| 小型快车道（文案、样式、非核心小修） | 直接 `/implement` + TDD，不强制 qa-plan，不跑 review 检查 |
+车道在阶段 1 裁决，后续技能沿用，不重新判定：
+
+| 车道 | 判定 | 路线 |
+| --- | --- | --- |
+| 快车道 | 文案、样式、非核心小修 | `/implement`（不建 qa-plan，不跑审查） |
+| 标准车道 | 独立功能，涉及模块少，串行可完成 | `/grill-with-docs` → `/to-spec` → `/qa-test-planner` → `/implement` |
+| 慢车道 | 跨多模块的复杂业务或大功能，或需要并行调度多个实现子代理 | `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/qa-test-planner` → `/implement-spec` |
+
+- 每个技能收口只写一个「建议下一步」，即本车道路线的下一格。独立规划（`--independent`）只在用户主动提出时使用，不写进建议。跨会话或跨人交接用 `/handoff`，与车道无关。
 
 - 核心小改动仍补 3–5 条 P0 用例和浏览器验收；非核心小修可不建 qa-plan，一旦建立便按 Schema 4 执行。
 - 修复已交付特性时新建 `.scratch/<feature>-fix-<n>/`，spec 只列本轮缺陷并引用原 US，使用 `QA Kind: fix`，不改写原特性的执行记录。
@@ -61,7 +65,7 @@
 
 ### 2. 测试规划（阶段 3B）
 
-标准/慢车道在 spec 后运行 `/qa-test-planner`，默认 inline。Schema 4 最小结构：
+标准车道在 spec 后、慢车道在 `/to-tickets` 后运行 `/qa-test-planner`，默认 inline。Schema 4 最小结构：
 
 ```markdown
 QA Schema: 4

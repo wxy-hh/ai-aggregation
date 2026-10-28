@@ -77,7 +77,7 @@ QA Kind: feature
 
 ### 阶段收口
 
-规划通过后立即运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道及理由、qa-plan 路径、`qa-check plan` 结果和 init 输出。**规划通过后，建议下一步：`/implement`**，默认在单会话串行完成全部就绪工单。只有用户明确选择 `/implement-spec` 并行时才改变默认路径，不并列提供 ADR、直接实现、并发实现等多个建议。
+规划通过后立即运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道及理由、qa-plan 路径、`qa-check plan` 结果和 init 输出。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。
 
 ---
 
