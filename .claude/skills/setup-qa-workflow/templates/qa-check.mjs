@@ -5,18 +5,50 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { computeTreeDigest, inScope, readScope } from './review-package.mjs';
+import { computeTreeDigest, inScope, QA_DIR, readScope } from './review-package.mjs';
 import { formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
 
-export const CURRENT_SCHEMA = 3;
+export const CURRENT_SCHEMA = 4;
 
 const RESULT_STATUSES = new Set(['PASS', 'FAIL', 'BLOCKED']);
 const PHASES = new Set(['plan', 'acceptance', 'review']);
 const SEAMS = new Set(['browser', 'api', 'integration', 'unit', 'static']);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const TRIAGE_VALUES = new Set(['本次修', '转专项', '驳回']);
-// browser 入口脚本只接受常见脚本扩展名；截图、日志、计划等证据或文档不能充当入口脚本
+// 过程脚本只接受常见脚本扩展名；截图、日志、计划等证据或文档不能充当入口脚本
 const SCRIPT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.py', '.sh']);
+// 特性目录内的固定子目录（Schema 4）
+const SCRIPTS_DIR = 'scripts';
+const REVIEW_DIR = 'review';
+const DEBUG_DIR = `${QA_DIR}/debug/`;
+// 需要过程脚本与断言标记的接缝；需要用例绑定的接缝
+const SCRIPTED_SEAMS = new Set(['browser', 'api']);
+const BOUND_SEAMS = new Set(['unit', 'integration']);
+// 绕过真实登录的模式：注入 Cookie、写令牌类本地存储键（检查器内置，不按宿主开关）
+const AUTH_BYPASS_PATTERNS = [
+  { label: 'CDP 设置 Cookie', pattern: /\b(?:Network|Storage)\.setCookies?\b/ },
+  { label: '浏览器上下文添加 Cookie', pattern: /\.addCookies\s*\(/ },
+  { label: '写 document.cookie', pattern: /\bdocument\.cookie\s*=(?!=)/ },
+  { label: '本地存储写入令牌类键', pattern: /\b(?:localStorage|sessionStorage)\s*(?:\.setItem\s*\(\s*['"`][^'"`]*token|\[\s*['"`][^'"`]*token[^'"`]*['"`]\s*\]\s*=(?!=))/i },
+];
+// 数据库驱动、ORM 与 BaaS 管理端 SDK：过程脚本不得绕过产品直连数据存储
+const DATA_STORE_MODULES = [
+  '@prisma/client', 'prisma', 'drizzle-orm', 'typeorm', 'sequelize', 'knex', 'kysely', 'mongoose',
+  'pg', 'postgres', '@neondatabase/serverless', 'mysql', 'mysql2', 'sqlite', 'sqlite3', 'better-sqlite3',
+  'mongodb', 'redis', 'ioredis', '@supabase/supabase-js', 'firebase-admin',
+];
+const PYTHON_DATA_STORE_IMPORT = /^\s*(?:from|import)\s+(psycopg2?|pymysql|mysql\.connector|sqlite3|pymongo|redis|sqlalchemy|supabase|firebase_admin)\b/m;
+// 页面内执行代码的入口；其中的合成事件不是真实输入
+const IN_PAGE_ENTRY = /(?<![\w$])(?:evaluate|evaluateHandle|evaluateOnNewDocument|\$eval|\$\$eval|addInitScript|waitForFunction)\s*\(|Runtime\.(?:evaluate|callFunctionOn)/g;
+const SYNTHETIC_INPUT_PATTERNS = [
+  { label: 'dispatchEvent(', pattern: /\bdispatchEvent\s*\(/ },
+  { label: '.click()', pattern: /\.click\(\s*\)/ },
+  { label: '.focus()', pattern: /\.focus\(\s*\)/ },
+  { label: '.value 赋值', pattern: /\.value\s*=(?!=)/ },
+];
+// 审查编号：S-H 规范硬违规、S-J 规范判断、P-M 缺失或部分实现、P-W 实现有误、P-X 范围蔓延
+const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
+const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
 const WORKFLOW_SKILLS = new Set([
   'to-spec', 'to-tickets', 'implement', 'implement-spec', 'tdd', 'code-review', 'pr', 'retro',
@@ -30,11 +62,7 @@ function result(status, issues = [], notes = []) {
   return { status, ok: status === 'PASS', issues, notes };
 }
 
-function issue(code, message) {
-  return { code, message };
-}
-
-function issue3(code, severity, message, hint) {
+function issue(code, severity, message, hint) {
   return { code, severity, message, ...(hint ? { hint } : {}) };
 }
 
@@ -46,7 +74,7 @@ function mergeFindings(...parts) {
   };
 }
 
-function result3(issues = [], notes = []) {
+function summarize(issues = [], notes = []) {
   const status = issues.some((item) => item.severity === 'FAIL')
     ? 'FAIL'
     : issues.some((item) => item.severity === 'BLOCKED')
@@ -102,7 +130,7 @@ export function deriveCaseStatus(rows) {
   return 'PASS';
 }
 
-function parseSchema3Plan(markdown) {
+export function parsePlan(markdown) {
   const mode = markdown.match(/^QA Mode:\s*(\S+)\s*$/m)?.[1];
   const kind = markdown.match(/^QA Kind:\s*(\S+)\s*$/m)?.[1] ?? 'feature';
   const cases = [];
@@ -110,6 +138,7 @@ function parseSchema3Plan(markdown) {
   const delivery = [];
   const reproductions = [];
   const planChanges = [];
+  let bindingColumn = false;
   let currentCase = null;
   let inAssertions = false;
   let section = '';
@@ -158,6 +187,7 @@ function parseSchema3Plan(markdown) {
     }
     const cells = splitMarkdownRow(line);
     if (section === '执行记录') {
+      if (cells[0] === '用例' && cells.includes('绑定')) bindingColumn = true;
       if (cells.length < 4 || !/^TC\d+$/.test(cells[0])) continue;
       if (!/^\d+$/.test(cells[1]) || !RESULT_STATUSES.has(cells[2])) continue;
       results.push({
@@ -165,7 +195,8 @@ function parseSchema3Plan(markdown) {
         assertion: Number(cells[1]),
         status: cells[2],
         evidence: cells[3],
-        detail: cells.slice(4).join('|').trim(),
+        binding: cells[4] ?? '',
+        detail: cells.slice(5).join('|').trim(),
       });
     } else if (section === '交付验证') {
       const command = cells[0]?.match(/^`([^`]+)`$/);
@@ -177,8 +208,8 @@ function parseSchema3Plan(markdown) {
     }
   }
   return {
-    legacy: false,
-    schema: 3,
+    schema: Number(markdown.match(/^QA Schema:\s*(\d+)\s*$/m)?.[1] ?? NaN),
+    bindingColumn,
     mode,
     kind,
     cases,
@@ -189,154 +220,49 @@ function parseSchema3Plan(markdown) {
   };
 }
 
-export function parsePlan(markdown) {
-  const schemaMatch = markdown.match(/^QA Schema:\s*(\d+)\s*$/m);
-  if (!schemaMatch) return { legacy: true };
-  const schema = Number(schemaMatch[1]);
-  if (![1, 2, 3].includes(schema)) return { legacy: true };
-  if (schema === 3) return parseSchema3Plan(markdown);
-
-  const mode = markdown.match(/^QA Mode:\s*(\S+)\s*$/m)?.[1];
-  const cases = [];
-  const results = [];
-  let currentCase = null;
-  let inAssertions = false;
-  let inExecution = false;
-
-  for (const line of markdown.split(/\r?\n/)) {
-    const caseHeading = line.match(/^###\s+(TC\d+)\b/);
-    if (caseHeading) {
-      currentCase = { id: caseHeading[1], priority: null, covers: [], assertions: [] };
-      cases.push(currentCase);
-      inAssertions = false;
-      inExecution = false;
-      continue;
-    }
-
-    if (/^##\s+执行记录\s*$/.test(line)) {
-      currentCase = null;
-      inAssertions = false;
-      inExecution = true;
-      continue;
-    }
-
-    if (/^##\s/.test(line)) {
-      currentCase = null;
-      inAssertions = false;
-      inExecution = false;
-      continue;
-    }
-
-    if (currentCase) {
-      const priority = line.match(/^- Priority:\s*(P\d+)\s*$/);
-      if (priority) currentCase.priority = priority[1];
-
-      const covers = line.match(/^- Covers:\s*([\d,\s]+)$/);
-      if (covers) {
-        currentCase.covers = covers[1].split(',').map((value) => Number(value.trim()));
-      }
-
-      if (/^####\s+验证断言\s*$/.test(line)) {
-        inAssertions = true;
-        continue;
-      }
-
-      if (/^#{1,4}\s/.test(line)) inAssertions = false;
-      if (inAssertions) {
-        const assertion = line.match(/^(\d+)\.\s+\S/);
-        if (assertion) currentCase.assertions.push(Number(assertion[1]));
-      }
-    }
-
-    if (inExecution && line.includes('|')) {
-      const cells = splitMarkdownRow(line);
-      if (cells.length < 4 || !/^TC\d+$/.test(cells[0])) continue;
-      if (!/^\d+$/.test(cells[1]) || !RESULT_STATUSES.has(cells[2])) continue;
-      results.push({
-        caseId: cells[0],
-        assertion: Number(cells[1]),
-        status: cells[2],
-        detail: cells.slice(3).join('|').trim(),
-      });
-    }
-  }
-
-  return { legacy: false, schema, mode, cases, results };
-}
-
 function validatePlan(plan, specIds) {
-  const issues = [];
-  if (!['inline', 'independent'].includes(plan.mode)) {
-    issues.push(issue('INVALID_QA_MODE', 'QA Mode 必须是 inline 或 independent'));
-  }
-  if (!plan.cases.length) issues.push(issue('NO_TEST_CASES', '测试计划没有 TC 用例'));
-
-  const caseIds = new Set();
-  const covered = new Set();
-  for (const testCase of plan.cases) {
-    if (caseIds.has(testCase.id)) issues.push(issue('DUPLICATE_TC', `${testCase.id} 重复定义`));
-    caseIds.add(testCase.id);
-    if (!testCase.priority) issues.push(issue('MISSING_PRIORITY', `${testCase.id} 缺少 Priority`));
-    if (!testCase.covers.length) issues.push(issue('MISSING_COVERS', `${testCase.id} 缺少 Covers`));
-    if (!testCase.assertions.length) {
-      issues.push(issue('MISSING_ASSERTIONS', `${testCase.id} 缺少验证断言`));
-    }
-    testCase.assertions.forEach((assertion, index) => {
-      if (assertion !== index + 1) {
-        issues.push(issue('INVALID_ASSERTION_SEQUENCE', `${testCase.id} 断言必须从 1 连续编号`));
-      }
-    });
-    for (const us of testCase.covers) {
-      if (!specIds.includes(us)) issues.push(issue('UNKNOWN_US', `${testCase.id} 覆盖未知 US ${us}`));
-      covered.add(us);
-    }
-  }
-  for (const us of specIds) {
-    if (!covered.has(us)) issues.push(issue('UNCOVERED_US', `US ${us} 没有被任何 TC 覆盖`));
-  }
-  return issues;
-}
-
-function validateSchema3Plan(plan, specIds) {
   const issues = [];
   const notes = [];
   if (!['inline', 'independent'].includes(plan.mode)) {
-    issues.push(issue3('INVALID_QA_MODE', 'FAIL', 'QA Mode 必须是 inline 或 independent'));
+    issues.push(issue('INVALID_QA_MODE', 'FAIL', 'QA Mode 必须是 inline 或 independent'));
   }
   if (!['feature', 'fix'].includes(plan.kind)) {
-    issues.push(issue3('INVALID_QA_KIND', 'FAIL', `QA Kind 必须是 feature 或 fix，当前为 ${plan.kind}`));
+    issues.push(issue('INVALID_QA_KIND', 'FAIL', `QA Kind 必须是 feature 或 fix，当前为 ${plan.kind}`));
   }
-  if (!plan.cases.length) issues.push(issue3('NO_TEST_CASES', 'FAIL', '测试计划没有 TC 用例'));
+  if (!plan.cases.length) issues.push(issue('NO_TEST_CASES', 'FAIL', '测试计划没有 TC 用例'));
+  if (!plan.bindingColumn) {
+    issues.push(issue('MISSING_BINDING_COLUMN', 'FAIL', '## 执行记录 表头缺少「绑定」列；Schema 4 列为：用例、断言序号、状态、证据、绑定、备注'));
+  }
   if (!plan.delivery.length) {
-    issues.push(issue3('MISSING_DELIVERY_COMMANDS', 'FAIL', '## 交付验证 中没有反引号命令；请在规划时声明最终需要真实运行的完整命令'));
+    issues.push(issue('MISSING_DELIVERY_COMMANDS', 'FAIL', '## 交付验证 中没有反引号命令；请在规划时声明最终需要真实运行的完整命令'));
   }
 
   const caseIds = new Set();
   const covered = new Set();
   for (const testCase of plan.cases) {
-    if (caseIds.has(testCase.id)) issues.push(issue3('DUPLICATE_TC', 'FAIL', `${testCase.id} 重复定义`));
+    if (caseIds.has(testCase.id)) issues.push(issue('DUPLICATE_TC', 'FAIL', `${testCase.id} 重复定义`));
     caseIds.add(testCase.id);
-    if (!testCase.priority) issues.push(issue3('MISSING_PRIORITY', 'FAIL', `${testCase.id} 缺少 Priority`));
-    if (!testCase.covers.length) issues.push(issue3('MISSING_COVERS', 'FAIL', `${testCase.id} 缺少 Covers`));
-    if (!testCase.seam) issues.push(issue3('MISSING_SEAM', 'FAIL', `${testCase.id} 缺少 Seam`));
+    if (!testCase.priority) issues.push(issue('MISSING_PRIORITY', 'FAIL', `${testCase.id} 缺少 Priority`));
+    if (!testCase.covers.length) issues.push(issue('MISSING_COVERS', 'FAIL', `${testCase.id} 缺少 Covers`));
+    if (!testCase.seam) issues.push(issue('MISSING_SEAM', 'FAIL', `${testCase.id} 缺少 Seam`));
     else if (!SEAMS.has(testCase.seam)) {
-      issues.push(issue3('INVALID_SEAM', 'FAIL', `${testCase.id} 的 Seam ${testCase.seam} 无效，应为 browser、api、integration、unit 或 static`));
+      issues.push(issue('INVALID_SEAM', 'FAIL', `${testCase.id} 的 Seam ${testCase.seam} 无效，应为 browser、api、integration、unit 或 static`));
     }
     if (!testCase.assertions.length) {
-      issues.push(issue3('MISSING_ASSERTIONS', 'FAIL', `${testCase.id} 缺少验证断言`));
+      issues.push(issue('MISSING_ASSERTIONS', 'FAIL', `${testCase.id} 缺少验证断言`));
     }
     testCase.assertions.forEach((assertion, index) => {
       if (assertion.number !== index + 1) {
-        issues.push(issue3('INVALID_ASSERTION_SEQUENCE', 'FAIL', `${testCase.id} 断言必须从 1 连续编号`));
+        issues.push(issue('INVALID_ASSERTION_SEQUENCE', 'FAIL', `${testCase.id} 断言必须从 1 连续编号`));
       }
     });
     for (const us of testCase.covers) {
-      if (!specIds.includes(us)) issues.push(issue3('UNKNOWN_US', 'FAIL', `${testCase.id} 覆盖未知 US ${us}`));
+      if (!specIds.includes(us)) issues.push(issue('UNKNOWN_US', 'FAIL', `${testCase.id} 覆盖未知 US ${us}`));
       covered.add(us);
     }
   }
   for (const us of specIds) {
-    if (!covered.has(us)) issues.push(issue3('UNCOVERED_US', 'FAIL', `US ${us} 没有被任何 TC 覆盖`));
+    if (!covered.has(us)) issues.push(issue('UNCOVERED_US', 'FAIL', `US ${us} 没有被任何 TC 覆盖`));
   }
   const browserCount = plan.cases.filter((testCase) => testCase.seam === 'browser').length;
   if (browserCount > 5) {
@@ -352,7 +278,7 @@ function specCommandIssues(plan, commands, phase) {
   if (!commands) {
     if (phase === 'plan') {
       return {
-        issues: [issue3(
+        issues: [issue(
           'MISSING_SPEC_COMMANDS',
           'FAIL',
           'spec.md 缺少 ## 交付命令 代码块，无法核对交付验证是否完整。',
@@ -366,7 +292,7 @@ function specCommandIssues(plan, commands, phase) {
   const declared = new Set(plan.delivery.map((item) => item.command.trim()));
   const issues = commands
     .filter((command) => !declared.has(command))
-    .map((command) => issue3(
+    .map((command) => issue(
       'SPEC_COMMAND_MISSING',
       'FAIL',
       `spec 声明的交付命令没有原样进入 ## 交付验证：${command}`,
@@ -434,7 +360,7 @@ async function skillShadowIssues(featureDir) {
       if (!collided.length) continue;
       const workflowName = [...project.names].find((name) => WORKFLOW_SKILLS.has(name));
       if (workflowName && !project.content.equals(personal.content)) {
-        issues.push(issue3(
+        issues.push(issue(
           'SHADOWED_WORKFLOW_SKILL',
           'BLOCKED',
           `个人级技能与项目流程技能 ${workflowName} 同名且内容不同，Claude Code 会加载个人级版本，项目版不会生效。`,
@@ -471,27 +397,38 @@ function argvPathCandidates(argv) {
   return [...candidates];
 }
 
-/** 任一日志的 argv 引用了特性目录内真实存在的脚本文件（prechange 快照除外）时返回 true */
-async function referencesFeatureScript(featureDir, logs, root) {
-  const featureRoot = await realpath(featureDir);
-  for (const log of logs) {
-    const base = root ? path.resolve(root, log.cwd ?? '.') : null;
-    for (const candidate of argvPathCandidates(log.argv ?? [])) {
-      if (!SCRIPT_EXTENSIONS.has(path.extname(candidate).toLowerCase())) continue;
-      const absolute = path.isAbsolute(candidate) ? candidate : base && path.resolve(base, candidate);
-      if (!absolute) continue;
-      let resolved;
+/** 把日志 argv 中的路径候选解析为真实存在的文件绝对路径（跟随符号链接），按出现顺序去重 */
+async function argvExistingFiles(log, bases) {
+  const files = [];
+  for (const candidate of argvPathCandidates(log.argv ?? [])) {
+    const absolutes = path.isAbsolute(candidate) ? [candidate] : bases.map((base) => path.resolve(base, candidate));
+    for (const absolute of absolutes) {
       try {
         if (!(await stat(absolute)).isFile()) continue;
-        resolved = await realpath(absolute);
+        const resolved = await realpath(absolute);
+        if (!files.includes(resolved)) files.push(resolved);
+        break;
       } catch {
-        continue;
+        // 不存在的候选不是文件路径
       }
-      const location = evidenceLocation(featureRoot, resolved);
-      if (location && location.relative.split('/')[0] !== 'prechange') return true;
     }
   }
-  return false;
+  return files;
+}
+
+/** 返回日志 argv 引用的、位于特性目录 scripts/ 内的过程脚本相对路径 */
+async function referencedProcessScripts(featureDir, logs, root) {
+  const featureRoot = await realpath(featureDir);
+  const scripts = new Set();
+  for (const log of logs) {
+    const bases = root ? [path.resolve(root, log.cwd ?? '.')] : [];
+    for (const file of await argvExistingFiles(log, bases)) {
+      if (!SCRIPT_EXTENSIONS.has(path.extname(file).toLowerCase())) continue;
+      const location = evidenceLocation(featureRoot, file);
+      if (location && location.relative.split('/')[0] === SCRIPTS_DIR) scripts.add(location.relative);
+    }
+  }
+  return [...scripts];
 }
 
 /** 日志开始时间早于开工基线时返回 true；任一时间无法解析时不判定 */
@@ -501,158 +438,7 @@ function startedBeforeBaseline(log, scope) {
   return Number.isFinite(createdAt) && Number.isFinite(started) && started < createdAt;
 }
 
-async function validateEvidence(featureDir, row) {
-  if (row.detail.startsWith('command:') || row.detail.startsWith('server:')) {
-    const description = row.detail.slice(row.detail.indexOf(':') + 1).trim();
-    return description ? [] : [issue('MISSING_EVIDENCE', `${row.caseId} / ${row.assertion} 的 PASS 缺少命令或服务端说明`)];
-  }
-  const match = row.detail.match(/^`([^`]+)`$/);
-  if (!match) return [issue('MISSING_EVIDENCE', `${row.caseId} / ${row.assertion} 的 PASS 缺少证据`)];
-
-  const root = path.resolve(featureDir);
-  const evidencePath = path.resolve(root, match[1]);
-  if (!evidencePath.startsWith(`${root}${path.sep}`)) {
-    return [issue('EVIDENCE_OUT_OF_SCOPE', `${row.caseId} / ${row.assertion} 的证据越出特性目录`)];
-  }
-
-  try {
-    const info = await stat(evidencePath);
-    if (!info.isFile() || info.size === 0) {
-      return [issue('EMPTY_EVIDENCE', `${row.caseId} / ${row.assertion} 的证据为空`)];
-    }
-  } catch {
-    return [issue('MISSING_EVIDENCE', `${row.caseId} / ${row.assertion} 的证据不存在：${match[1]}`)];
-  }
-  return [];
-}
-
-async function checkAcceptance(featureDir, plan) {
-  const issues = [];
-  const rows = new Map();
-  const expectedKeys = new Set(
-    plan.cases.flatMap((testCase) =>
-      testCase.assertions.map((assertion) => `${testCase.id}:${assertion}`),
-    ),
-  );
-  for (const row of plan.results) {
-    const key = `${row.caseId}:${row.assertion}`;
-    if (!expectedKeys.has(key)) {
-      issues.push(issue('UNKNOWN_RESULT', `${row.caseId} / ${row.assertion} 不在计划断言中`));
-    }
-    if (rows.has(key)) issues.push(issue('DUPLICATE_RESULT', `${row.caseId} / ${row.assertion} 有重复结果`));
-    rows.set(key, row);
-  }
-
-  for (const testCase of plan.cases) {
-    for (const assertion of testCase.assertions) {
-      const row = rows.get(`${testCase.id}:${assertion}`);
-      if (!row) {
-        issues.push(issue('MISSING_RESULT', `${testCase.id} / ${assertion} 缺少执行结果`));
-      }
-    }
-  }
-
-  for (const row of rows.values()) {
-    if (row.status === 'FAIL') {
-      issues.push(issue('ASSERTION_FAILED', `${row.caseId} / ${row.assertion} 失败：${row.detail}`));
-    } else if (row.status === 'BLOCKED') {
-      issues.push(issue('ASSERTION_BLOCKED', `${row.caseId} / ${row.assertion} 阻塞：${row.detail}`));
-    } else {
-      issues.push(...(await validateEvidence(featureDir, row)));
-    }
-  }
-
-  const caseStatuses = plan.cases.map((testCase) =>
-    deriveCaseStatus(testCase.assertions.map((assertion) => rows.get(`${testCase.id}:${assertion}`))),
-  );
-  const hardFailure = issues.some((item) => !['ASSERTION_BLOCKED', 'MISSING_RESULT'].includes(item.code));
-  const status = hardFailure || caseStatuses.includes('FAIL')
-    ? 'FAIL'
-    : caseStatuses.includes('BLOCKED')
-      ? 'BLOCKED'
-      : 'PASS';
-  return result(status, issues);
-}
-
-async function checkReview(featureDir, plan, specIds, markdown) {
-  const acceptance = await checkAcceptance(featureDir, plan);
-  if (!acceptance.ok) return acceptance;
-
-  const lines = markdown.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^## Spec 对账\s*$/.test(line));
-  if (start < 0) return result('FAIL', [issue('MISSING_SPEC_REVIEW', '缺少 ## Spec 对账')]);
-
-  const issues = [];
-  const rows = [];
-  for (let index = start + 1; index < lines.length && !/^##\s/.test(lines[index]); index += 1) {
-    if (!lines[index].includes('|')) continue;
-    const cells = splitMarkdownRow(lines[index]);
-    if (cells.length < 3 || !/^\d+$/.test(cells[0]) || !RESULT_STATUSES.has(cells[1])) continue;
-    rows.push({ us: Number(cells[0]), status: cells[1], detail: cells.slice(2).join('|').trim() });
-  }
-
-  const seen = new Set();
-  for (const row of rows) {
-    if (seen.has(row.us)) issues.push(issue('DUPLICATE_US', `US ${row.us} 在 Spec 对账中重复`));
-    seen.add(row.us);
-    if (!specIds.includes(row.us)) issues.push(issue('UNKNOWN_US', `Spec 对账包含未知 US ${row.us}`));
-    if (!row.detail) issues.push(issue('MISSING_REVIEW_DETAIL', `US ${row.us} 缺少证据或原因`));
-    if (row.status === 'FAIL') issues.push(issue('SPEC_FAILED', `US ${row.us} 未通过：${row.detail}`));
-    if (row.status === 'BLOCKED') issues.push(issue('SPEC_BLOCKED', `US ${row.us} 阻塞：${row.detail}`));
-  }
-  for (const us of specIds) {
-    if (!seen.has(us)) issues.push(issue('MISSING_US', `US ${us} 未出现在 Spec 对账中`));
-  }
-
-  if (plan.schema === 2) {
-    let manifest;
-    try {
-      manifest = JSON.parse(await readFile(path.join(featureDir, 'review-package.json'), 'utf8'));
-    } catch {
-      return result('BLOCKED', [issue('MISSING_REVIEW_PACKAGE', 'Schema 2 审查必须具备有效的 review-package.json')]);
-    }
-
-    if (Array.isArray(manifest.unreviewed) && manifest.unreviewed.length > 0) {
-      issues.push(issue('UNREVIEWED_FILES', `存在未审查文件：${manifest.unreviewed.map((u) => u.path || u).join(', ')}`));
-    }
-
-    if (Array.isArray(manifest.changedFiles) && manifest.changedFiles.length > 0) {
-      try {
-        const patch = await readFile(path.join(featureDir, 'review-package.diff'), 'utf8');
-        if (!patch.trim()) {
-          issues.push(issue('EMPTY_REVIEW_DIFF', '存在代码变更但 review-package.diff 为空'));
-        }
-      } catch {
-        issues.push(issue('MISSING_REVIEW_DIFF', '存在代码变更但缺少 review-package.diff'));
-      }
-    }
-
-    let reportText = '';
-    try {
-      reportText = await readFile(path.join(featureDir, 'review-report.md'), 'utf8');
-    } catch {
-      return result('BLOCKED', [issue('MISSING_REVIEW_REPORT', 'Schema 2 审查必须具备 .scratch/<feature>/review-report.md')]);
-    }
-
-    if (!/^##\s+Standards\b/m.test(reportText)) {
-      issues.push(issue('MISSING_STANDARDS_REVIEW', 'review-report.md 缺少 ## Standards 规范轴审查报告'));
-    }
-    if (!/^##\s+Spec\b/m.test(reportText)) {
-      issues.push(issue('MISSING_SPEC_SECTION', 'review-report.md 缺少 ## Spec 需求轴审查报告'));
-    }
-    if (!/本次修|转专项|驳回/.test(reportText)) {
-      issues.push(issue('MISSING_TRIAGE_CONCLUSION', 'review-report.md 缺少三档分流结论（本次修/转专项/驳回）'));
-    }
-  }
-
-  const blockedCodes = new Set(['SPEC_BLOCKED', 'MISSING_REVIEW_PACKAGE', 'MISSING_REVIEW_REPORT']);
-  const hardFailure = issues.some((item) => !blockedCodes.has(item.code));
-  const isBlocked = issues.some((item) => blockedCodes.has(item.code)) || rows.some((row) => row.status === 'BLOCKED');
-  const status = hardFailure ? 'FAIL' : isBlocked ? 'BLOCKED' : 'PASS';
-  return result(status, issues);
-}
-
-async function schema3Context(featureDir) {
+async function featureContext(featureDir) {
   let scope;
   try {
     scope = await readScope(featureDir);
@@ -661,7 +447,7 @@ async function schema3Context(featureDir) {
     throw error;
   }
   const root = await gitRoot(featureDir);
-  if (!root) throw new Error('无法定位特性目录所在仓库；存在 scope.json 时特性目录必须位于 git 仓库内');
+  if (!root) throw new Error(`无法定位特性目录所在仓库；存在 ${QA_DIR}/scope.json 时特性目录必须位于 git 仓库内`);
   return { scope, root, tree: await computeTreeDigest(root, scope.scopes) };
 }
 
@@ -696,12 +482,12 @@ function completeRunLog(log) {
   );
 }
 
-async function validateSchema3Evidence(featureDir, row) {
+async function validateEvidence(featureDir, row) {
   const issues = [];
   const entries = [];
   const references = evidenceReferences(row.evidence);
   if (!references.valid) {
-    issues.push(issue3(
+    issues.push(issue(
       'INVALID_EVIDENCE',
       'FAIL',
       `${row.caseId} / ${row.assertion} 的证据格无效：没有反引号文件路径，或含有路径以外的文字。`,
@@ -713,7 +499,7 @@ async function validateSchema3Evidence(featureDir, row) {
   for (const reference of references.paths) {
     const location = evidenceLocation(featureDir, reference);
     if (!location) {
-      issues.push(issue3('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据越出特性目录：${reference}`));
+      issues.push(issue('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据越出特性目录：${reference}`));
       continue;
     }
     const extension = path.posix.extname(location.relative).toLowerCase();
@@ -723,22 +509,22 @@ async function validateSchema3Evidence(featureDir, row) {
     try {
       info = await stat(location.absolute);
     } catch {
-      issues.push(issue3('MISSING_EVIDENCE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据不存在：${location.relative}`));
+      issues.push(issue('MISSING_EVIDENCE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据不存在：${location.relative}`));
       continue;
     }
     if (!info.isFile() || info.size === 0) {
-      issues.push(issue3('EMPTY_EVIDENCE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据为空：${location.relative}`));
+      issues.push(issue('EMPTY_EVIDENCE', 'FAIL', `${row.caseId} / ${row.assertion} 的证据为空：${location.relative}`));
       continue;
     }
     if (extension !== '.log') continue;
     const log = parseRunLog(await readFile(location.absolute, 'utf8'));
     if (!completeRunLog(log)) {
-      issues.push(issue3('INVALID_RUN_LOG', 'FAIL', `${row.caseId} / ${row.assertion} 的日志不是完整 qa-run 日志：${location.relative}；请通过 qa:run 真实执行生成`));
+      issues.push(issue('INVALID_RUN_LOG', 'FAIL', `${row.caseId} / ${row.assertion} 的日志不是完整 qa-run 日志：${location.relative}；请通过 qa:run 真实执行生成`));
       continue;
     }
     entry.log = log;
     if (log.exit !== 0) {
-      issues.push(issue3('EVIDENCE_EXIT_NONZERO', 'FAIL', `${row.caseId} / ${row.assertion} 的 PASS 证据日志退出码为 ${log.exit}：${location.relative}；请修复后重新执行`));
+      issues.push(issue('EVIDENCE_EXIT_NONZERO', 'FAIL', `${row.caseId} / ${row.assertion} 的 PASS 证据日志退出码为 ${log.exit}：${location.relative}；请修复后重新执行`));
     }
   }
   return { issues, entries };
@@ -758,28 +544,28 @@ async function frozenPlanIssues(featureDir, plan, hasScope) {
   const notes = [];
   let frozenText;
   try {
-    frozenText = await readFile(path.join(featureDir, 'prechange', 'qa-plan.md'), 'utf8');
+    frozenText = await readFile(path.join(featureDir, QA_DIR, 'prechange', 'qa-plan.md'), 'utf8');
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    if (hasScope) notes.push('存在 scope.json，但没有 prechange/qa-plan.md；本次无法核对计划冻结变化。');
-    return { issues, notes };
+    if (hasScope) notes.push(`存在 ${QA_DIR}/scope.json，但没有 ${QA_DIR}/prechange/qa-plan.md；本次无法核对计划冻结变化。`);
+    return { issues, notes, frozen: null };
   }
   const frozen = parsePlan(frozenText);
-  if (frozen.legacy || frozen.schema !== 3) return { issues, notes };
+  if (frozen.schema !== CURRENT_SCHEMA) return { issues, notes, frozen: null };
 
   const executed = frozen.results.filter((row) => row.status === 'PASS' || row.status === 'FAIL');
   if (executed.length) {
-    issues.push(issue3(
+    issues.push(issue(
       'PLAN_FROZEN_AFTER_EXECUTION',
       'FAIL',
       `开工时冻结的计划已有 ${executed.length} 条 PASS/FAIL 执行结果，基线与计划冻结晚于验收执行。`,
-      '计划应在规划收口、执行任何验收之前通过 init 冻结；不要修改 prechange 或 scope.json，在 review-report 的 ## 范围说明 如实说明，由人工终审决定。',
+      `计划应在规划收口、执行任何验收之前通过 init 冻结；不要修改 ${QA_DIR}/ 下的文件，在 review-report 的 ## 范围说明 如实说明，由人工终审决定。`,
     ));
   }
 
   const record = (token, description) => {
     if (planChangeRecorded(plan, token)) return;
-    issues.push(issue3(
+    issues.push(issue(
       'UNRECORDED_PLAN_CHANGE',
       'FAIL',
       `${description}。`,
@@ -818,7 +604,7 @@ async function frozenPlanIssues(featureDir, plan, hasScope) {
     if (index >= 0) remainingCommands.splice(index, 1);
     else record('交付验证', `交付验证与开工时冻结的计划不一致：命令已删除或修改：${item.command}`);
   }
-  return { issues, notes };
+  return { issues, notes, frozen };
 }
 
 async function reproductionLog(featureDir, reproduction) {
@@ -826,7 +612,7 @@ async function reproductionLog(featureDir, reproduction) {
   if (!references.valid || references.paths.length !== 1) {
     return {
       log: null,
-      issues: [issue3(
+      issues: [issue(
         'INVALID_EVIDENCE',
         'FAIL',
         `${reproduction.caseId} 的修复前复现必须引用一个 qa-run 日志路径`,
@@ -838,46 +624,300 @@ async function reproductionLog(featureDir, reproduction) {
   if (!location) {
     return {
       log: null,
-      issues: [issue3('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `${reproduction.caseId} 的修复前复现证据越出特性目录`)],
+      issues: [issue('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `${reproduction.caseId} 的修复前复现证据越出特性目录`)],
     };
   }
   try {
     const info = await stat(location.absolute);
     if (!info.isFile() || info.size === 0) {
-      return { log: null, issues: [issue3('EMPTY_EVIDENCE', 'FAIL', `${reproduction.caseId} 的修复前复现证据为空`)] };
+      return { log: null, issues: [issue('EMPTY_EVIDENCE', 'FAIL', `${reproduction.caseId} 的修复前复现证据为空`)] };
     }
   } catch {
-    return { log: null, issues: [issue3('MISSING_EVIDENCE', 'FAIL', `${reproduction.caseId} 的修复前复现证据不存在：${location.relative}`)] };
+    return { log: null, issues: [issue('MISSING_EVIDENCE', 'FAIL', `${reproduction.caseId} 的修复前复现证据不存在：${location.relative}`)] };
   }
   const log = parseRunLog(await readFile(location.absolute, 'utf8'));
   if (path.posix.extname(location.relative).toLowerCase() !== '.log' || !completeRunLog(log)) {
-    return { log: null, issues: [issue3('INVALID_RUN_LOG', 'FAIL', `${reproduction.caseId} 的修复前复现必须是完整 qa-run 日志：${location.relative}`)] };
+    return { log: null, issues: [issue('INVALID_RUN_LOG', 'FAIL', `${reproduction.caseId} 的修复前复现必须是完整 qa-run 日志：${location.relative}`)] };
   }
   return { log, issues: [] };
 }
 
-async function checkSchema3Acceptance(featureDir, plan, context) {
+/** 转义正则特殊字符 */
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * browser/api 的 PASS 行：引用日志须含该断言的 `[TC01-1] PASS 实测：<值>` 标记，且不得出现 FAIL 标记。
+ * values 记录各断言的实测值，供对账表使用。
+ */
+function assertionMarkerIssues(passRows) {
+  const issues = [];
+  const values = new Map();
+  for (const { row, testCase, logs } of passRows) {
+    if (!SCRIPTED_SEAMS.has(testCase.seam)) continue;
+    const tag = escapeRegExp(`[${row.caseId}-${row.assertion}]`);
+    const body = logs.map((log) => log.body ?? '').join('\n');
+    if (new RegExp(`${tag}\\s*FAIL\\b`).test(body)) {
+      issues.push(issue(
+        'ASSERTION_MARKER_CONFLICT',
+        'FAIL',
+        `${row.caseId} / ${row.assertion} 记为 PASS，但引用日志中出现该断言的 FAIL 标记。`,
+        '以日志为准把该行改为 FAIL，修复后换新标签用 qa-run 重新运行；不要改写日志或删除 FAIL 标记。',
+      ));
+      continue;
+    }
+    const observed = [...body.matchAll(new RegExp(`${tag}\\s*PASS\\s+实测[：:][ \\t]*(.*)$`, 'gm'))]
+      .map((match) => match[1].trim())
+      .filter(Boolean);
+    if (!observed.length) {
+      issues.push(issue(
+        'ASSERTION_MARKER_MISSING',
+        'FAIL',
+        `${row.caseId} / ${row.assertion} 的引用日志中没有 [${row.caseId}-${row.assertion}] PASS 实测：<观察值> 标记，或实测值为空。`,
+        '过程脚本须在该断言的硬断言通过后输出 [TC<id>-<序号>] PASS 实测：<观察值>，失败时输出 [TC<id>-<序号>] FAIL <原因> 并非零退出；补上后换新标签重新运行。',
+      ));
+      continue;
+    }
+    values.set(`${row.caseId}:${row.assertion}`, observed.join('；'));
+  }
+  return { issues, values };
+}
+
+/** 规范化测试标题：去掉各类引号、合并连续空白，用于源码子串匹配 */
+function normalizeTitle(text) {
+  return text.replace(/[`'"‘’“”]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** 解析绑定格 `` `<测试文件>` › <用例标题> `` */
+function parseBinding(text) {
+  const match = text.trim().match(/^`([^`]+)`\s*›\s*(.+)$/);
+  return match ? { file: match[1].trim(), title: match[2].trim() } : null;
+}
+
+const TEST_FILE_PATTERN = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|_test\.py|(?:^|\/)test_[^/]+\.py)$/;
+
+/** 向上查找含 package.json 的目录，找不到时返回仓库根 */
+async function packageDirectory(start, root) {
+  let current = start;
+  for (;;) {
+    try {
+      await stat(path.join(current, 'package.json'));
+      return current;
+    } catch {
+      // 继续向上查找
+    }
+    const parent = path.dirname(current);
+    if (current === root || parent === current) return root;
+    current = parent;
+  }
+}
+
+/** 绑定文件（仓库相对路径）是否被 argv 中点名的测试文件或 glob 覆盖 */
+function bindingNamedBy(relative, named) {
+  return named.some((candidate) => {
+    const pattern = candidate.split(path.sep).join('/').replace(/^\.\//, '');
+    return relative === pattern
+      || relative.endsWith(`/${pattern}`)
+      || path.posix.matchesGlob(relative, pattern)
+      || path.posix.matchesGlob(relative, `**/${pattern}`);
+  });
+}
+
+/**
+ * unit/integration 的 PASS 行须绑定到真实存在的测试文件与标题，且该文件在证据命令的运行范围内。
+ * 命令点名测试文件时绑定文件须在其中；未点名时须位于命令所属包目录内。
+ */
+async function testBindingIssues(passRows, root, featureDir) {
+  const issues = [];
+  // 绑定文件相对仓库根；不在仓库内时（仅测试夹具）相对特性目录
+  const base = root ?? path.resolve(featureDir);
+  const sources = new Map();
+  for (const { row, testCase, logs } of passRows) {
+    if (!BOUND_SEAMS.has(testCase.seam)) continue;
+    const label = `${row.caseId} / ${row.assertion}`;
+    const binding = parseBinding(row.binding);
+    const missing = (reason) => issues.push(issue(
+      'TEST_BINDING_MISSING',
+      'FAIL',
+      `${label} 的用例绑定无效：${reason}。`,
+      '在执行记录的「绑定」列写 `<测试文件>` › <用例标题>（文件相对仓库根，标题取源码中的叶子标题）；只改绑定列不需要重跑证据命令。',
+    ));
+    if (!binding) {
+      missing(row.binding ? `格式应为 \`<测试文件>\` › <用例标题>，当前为 ${row.binding}` : '绑定列为空');
+      continue;
+    }
+    const absolute = path.resolve(base, binding.file);
+    if (!sources.has(absolute)) {
+      sources.set(absolute, await readFile(absolute, 'utf8').then(normalizeTitle, () => null));
+    }
+    const source = sources.get(absolute);
+    if (source === null) {
+      missing(`测试文件不存在：${binding.file}`);
+      continue;
+    }
+    if (!source.includes(normalizeTitle(binding.title))) {
+      missing(`${binding.file} 中找不到标题「${binding.title}」`);
+      continue;
+    }
+    const relative = path.relative(base, absolute).split(path.sep).join('/');
+    let covered = false;
+    for (const log of logs) {
+      const named = argvPathCandidates(log.argv ?? []).filter((candidate) => TEST_FILE_PATTERN.test(candidate) || candidate.includes('*'));
+      if (named.length) {
+        if (bindingNamedBy(relative, named)) covered = true;
+      } else {
+        const packageDir = await packageDirectory(path.resolve(base, log.cwd ?? '.'), base);
+        const inside = path.relative(packageDir, absolute);
+        if (!inside.startsWith('..') && !path.isAbsolute(inside)) covered = true;
+      }
+      if (covered) break;
+    }
+    if (!covered) {
+      issues.push(issue(
+        'TEST_BINDING_OUT_OF_RUN',
+        'FAIL',
+        `${label} 绑定的 ${binding.file} 不在证据命令的运行范围内。`,
+        '证据命令点名测试文件时须包含绑定文件；未点名时绑定文件须位于命令所属包目录内。请改正绑定，或换新标签用覆盖该文件的命令重新运行。',
+      ));
+    }
+  }
+  return issues;
+}
+
+/** 递归列出目录下的脚本文件（不跟随符号链接目录），返回相对特性目录的路径 */
+async function listScripts(featureDir, relative = SCRIPTS_DIR) {
+  let entries;
+  try {
+    entries = await readdir(path.join(featureDir, relative), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const nested = await Promise.all(entries.sort((a, b) => a.name.localeCompare(b.name)).map(async (entry) => {
+    const child = `${relative}/${entry.name}`;
+    if (entry.isDirectory()) return listScripts(featureDir, child);
+    return entry.isFile() && SCRIPT_EXTENSIONS.has(path.extname(entry.name).toLowerCase()) ? [child] : [];
+  }));
+  return nested.flat();
+}
+
+/** 取 import/require 所在行中的全部字符串字面量作为模块说明符 */
+function importedSpecifiers(text) {
+  return text.split(/\r?\n/)
+    .filter((line) => /\b(?:import|require)\b|\bfrom\s*['"`]/.test(line))
+    .flatMap((line) => [...line.matchAll(/(['"`])([^'"`\n]+)\1/g)].map((match) => match[2]));
+}
+
+function dataStoreModule(specifier) {
+  const normalized = specifier.replace(/^node:/, '');
+  return DATA_STORE_MODULES.find((name) => normalized === name
+    || normalized.startsWith(`${name}/`)
+    || new RegExp(`(?:^|/)node_modules/${escapeRegExp(name)}(?:/|$)`).test(normalized));
+}
+
+/**
+ * 从入口之后截取页面内代码片段：跟踪 ( [ { 嵌套，遇到闭合外层调用或对象的括号、或顶层分号时结束。
+ * 括号调用入口截到配对的右括号；CDP 方法名入口截到所在调用参数或对象字面量结束，可跨行。
+ */
+function inPageSegment(text, start) {
+  let level = 0;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '(' || char === '[' || char === '{') level += 1;
+    else if (char === ')' || char === ']' || char === '}') {
+      level -= 1;
+      if (level < 0) return text.slice(start, index);
+    } else if (char === ';' && level === 0) return text.slice(start, index);
+  }
+  return text.slice(start);
+}
+
+function inPageSegments(text) {
+  return [...text.matchAll(IN_PAGE_ENTRY)].map((match) => inPageSegment(text, match.index + match[0].length));
+}
+
+/**
+ * 扫描 scripts/ 下全部脚本：绕过真实登录（注入 Cookie、写令牌、直连数据存储）为不可豁免的 FAIL；
+ * 页面内合成输入只提示，并在对账表标注「非真实输入」。
+ */
+async function scanProcessScripts(featureDir) {
+  const issues = [];
+  const notes = [];
+  const synthetic = new Set();
+  for (const relative of await listScripts(featureDir)) {
+    const text = await readFile(path.join(featureDir, relative), 'utf8');
+    const hits = AUTH_BYPASS_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.label);
+    const modules = [...new Set(importedSpecifiers(text).map(dataStoreModule).filter(Boolean))];
+    hits.push(...modules.map((name) => `引入数据存储模块 ${name}`));
+    const python = text.match(PYTHON_DATA_STORE_IMPORT);
+    if (python) hits.push(`引入数据存储模块 ${python[1]}`);
+    if (hits.length) {
+      issues.push(issue(
+        'AUTH_BYPASS_IN_SCRIPT',
+        'FAIL',
+        `${relative} 命中绕过真实登录或直连数据存储的模式：${hits.join('、')}。`,
+        '过程脚本必须从真实登录后的浏览器会话开始：已有会话直接用，否则在可见窗口用用户提供的测试账号真实登录，或提示用户登录；不得注入 Cookie、写令牌或直连数据库。该检查不可豁免，计划变更或备注不能消除。',
+      ));
+    }
+    const segments = inPageSegments(text);
+    const labels = SYNTHETIC_INPUT_PATTERNS
+      .filter((item) => segments.some((segment) => item.pattern.test(segment)))
+      .map((item) => item.label);
+    if (labels.length) {
+      synthetic.add(relative);
+      notes.push(`SYNTHETIC_INPUT_IN_SCRIPT：${relative} 的页面内代码含 ${labels.join('、')}；引用该脚本的用例在对账表标注「非真实输入」，请人工终审确认是否满足真实输入要求。`);
+    }
+  }
+  return { issues, notes, synthetic };
+}
+
+function tableCell(text) {
+  return String(text ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+}
+
+/** 对账表：每个通过接缝证据检查的 PASS 断言一行，冻结断言原文对照实测值或绑定 */
+function reconciliationTable(passRows, frozenPlan, markerValues, caseScripts, synthetic) {
+  const frozenText = new Map(frozenPlan.cases.flatMap((testCase) => testCase.assertions
+    .map((assertion) => [`${testCase.id}:${assertion.number}`, assertion.text])));
+  return passRows.map(({ row, testCase }) => {
+    const key = `${row.caseId}:${row.assertion}`;
+    const actual = SCRIPTED_SEAMS.has(testCase.seam)
+      ? markerValues.get(key) ?? '（无实测标记）'
+      : BOUND_SEAMS.has(testCase.seam) ? row.binding || '（无绑定）' : row.evidence;
+    const flagged = (caseScripts.get(row.caseId) ?? []).some((script) => synthetic.has(script));
+    return {
+      id: `${row.caseId}-${row.assertion}`,
+      assertion: frozenText.get(key) ?? testCase.assertions.find((item) => item.number === row.assertion)?.text ?? '',
+      actual,
+      flag: flagged ? '非真实输入' : '',
+    };
+  });
+}
+
+async function checkAcceptance(featureDir, plan, context) {
   const issues = [];
   const notes = [];
   const rows = new Map();
   const evidenceByRow = new Map();
-  // 按 TC 汇总 browser PASS 行的日志，判定入口脚本位置
-  const browserLogs = new Map();
+  // 按 TC 汇总 browser/api PASS 行的日志，判定过程脚本位置
+  const scriptedLogs = new Map();
+  // 通过接缝证据检查的 PASS 行及其 exit 0 日志，供断言标记、用例绑定与对账表使用
+  const passRows = [];
   const expectedKeys = new Set(
     plan.cases.flatMap((testCase) => testCase.assertions.map((assertion) => `${testCase.id}:${assertion.number}`)),
   );
   for (const row of plan.results) {
     const key = `${row.caseId}:${row.assertion}`;
     if (!expectedKeys.has(key)) {
-      issues.push(issue3('UNKNOWN_RESULT', 'FAIL', `${row.caseId} / ${row.assertion} 不在计划断言中`));
+      issues.push(issue('UNKNOWN_RESULT', 'FAIL', `${row.caseId} / ${row.assertion} 不在计划断言中`));
     }
-    if (rows.has(key)) issues.push(issue3('DUPLICATE_RESULT', 'FAIL', `${row.caseId} / ${row.assertion} 有重复结果`));
+    if (rows.has(key)) issues.push(issue('DUPLICATE_RESULT', 'FAIL', `${row.caseId} / ${row.assertion} 有重复结果`));
     rows.set(key, row);
   }
   for (const testCase of plan.cases) {
     for (const assertion of testCase.assertions) {
       if (!rows.has(`${testCase.id}:${assertion.number}`)) {
-        issues.push(issue3('MISSING_RESULT', 'BLOCKED', `${testCase.id} / ${assertion.number} 缺少执行结果；请真实执行后填写，不要预先标记 PASS`));
+        issues.push(issue('MISSING_RESULT', 'BLOCKED', `${testCase.id} / ${assertion.number} 缺少执行结果；请真实执行后填写，不要预先标记 PASS`));
       }
     }
   }
@@ -885,14 +925,14 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
   const caseById = new Map(plan.cases.map((testCase) => [testCase.id, testCase]));
   for (const row of rows.values()) {
     if (row.status === 'FAIL') {
-      issues.push(issue3('ASSERTION_FAILED', 'FAIL', `${row.caseId} / ${row.assertion} 失败：${row.evidence} ${row.detail}`.trim()));
+      issues.push(issue('ASSERTION_FAILED', 'FAIL', `${row.caseId} / ${row.assertion} 失败：${row.evidence} ${row.detail}`.trim()));
       continue;
     }
     if (row.status === 'BLOCKED') {
-      issues.push(issue3('ASSERTION_BLOCKED', 'BLOCKED', `${row.caseId} / ${row.assertion} 阻塞：${row.evidence} ${row.detail}`.trim()));
+      issues.push(issue('ASSERTION_BLOCKED', 'BLOCKED', `${row.caseId} / ${row.assertion} 阻塞：${row.evidence} ${row.detail}`.trim()));
       continue;
     }
-    const checked = await validateSchema3Evidence(featureDir, row);
+    const checked = await validateEvidence(featureDir, row);
     issues.push(...checked.issues);
     evidenceByRow.set(row, checked.entries);
     const testCase = caseById.get(row.caseId);
@@ -900,9 +940,10 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
     const images = checked.entries.filter((entry) => entry.image);
     const goodLogs = checked.entries.filter((entry) => entry.log?.exit === 0);
     const mismatch = testCase.seam === 'browser' ? !images.length || !goodLogs.length : !goodLogs.length;
-    if (testCase.seam === 'browser' && !mismatch) {
-      if (!browserLogs.has(row.caseId)) browserLogs.set(row.caseId, { logs: [], assertions: [] });
-      const collected = browserLogs.get(row.caseId);
+    if (!mismatch) passRows.push({ row, testCase, logs: goodLogs.map((entry) => entry.log) });
+    if (SCRIPTED_SEAMS.has(testCase.seam) && !mismatch) {
+      if (!scriptedLogs.has(row.caseId)) scriptedLogs.set(row.caseId, { seam: testCase.seam, logs: [], assertions: [] });
+      const collected = scriptedLogs.get(row.caseId);
       collected.logs.push(...goodLogs.map((entry) => entry.log));
       collected.assertions.push(row.assertion);
     }
@@ -910,7 +951,7 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
       const message = testCase.seam === 'browser'
         ? `${row.caseId} / ${row.assertion} 声明 Seam: browser，缺少截图或 exit 0 的 qa-run 日志`
         : `${row.caseId} / ${row.assertion} 声明 Seam: ${testCase.seam}，缺少 exit 0 的 qa-run 日志`;
-      issues.push(issue3(
+      issues.push(issue(
         'SEAM_EVIDENCE_MISMATCH',
         'FAIL',
         message,
@@ -921,7 +962,8 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
 
   const screenshots = new Map();
   for (const [row, entries] of evidenceByRow) {
-    for (const entry of entries.filter((item) => item.image)) {
+    // _qa/debug/ 下的调试截图不是验收证据，不参与唯一性检查
+    for (const entry of entries.filter((item) => item.image && !item.path.startsWith(DEBUG_DIR))) {
       if (!screenshots.has(entry.path)) screenshots.set(entry.path, new Set());
       screenshots.get(entry.path).add(row.caseId);
     }
@@ -929,7 +971,7 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
   for (const [relative, caseIds] of screenshots) {
     if (caseIds.size < 2) continue;
     const ids = [...caseIds].sort().join('、');
-    issues.push(issue3(
+    issues.push(issue(
       'SHARED_SCREENSHOT',
       'FAIL',
       `${relative} 同时被 ${ids} 引用。`,
@@ -937,22 +979,32 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
     ));
   }
 
-  // 仓库根只在有 browser PASS 行时才需要，用于解析日志 argv 中的相对路径
-  const root = browserLogs.size ? context.root ?? await gitRoot(featureDir) : null;
-  const browserCases = [...browserLogs];
-  // 各 TC 的入口脚本检查互不依赖，并发执行；问题仍按 TC 顺序输出
+  // 仓库根用于解析日志 argv 与绑定中的相对路径
+  const root = passRows.length ? context.root ?? await gitRoot(featureDir) : null;
+  const scriptedCases = [...scriptedLogs];
+  // 各 TC 的过程脚本检查互不依赖，并发执行；问题仍按 TC 顺序输出
+  const caseScripts = new Map();
   const referenced = await Promise.all(
-    browserCases.map(([, collected]) => referencesFeatureScript(featureDir, collected.logs, root)),
+    scriptedCases.map(([, collected]) => referencedProcessScripts(featureDir, collected.logs, root)),
   );
-  browserCases.forEach(([caseId, collected], index) => {
-    if (referenced[index]) return;
-    issues.push(issue3(
-      'BROWSER_SCRIPT_OUTSIDE_FEATURE',
+  scriptedCases.forEach(([caseId, collected], index) => {
+    caseScripts.set(caseId, referenced[index]);
+    if (referenced[index].length) return;
+    issues.push(issue(
+      'PROCESS_SCRIPT_OUTSIDE_SCRIPTS',
       'FAIL',
-      `${caseId} / ${collected.assertions.join('、')} 的 browser 证据日志都没有引用特性目录内存在的过程脚本。`,
-      `把浏览器过程脚本放在特性目录内，并通过 qa-run 以该脚本路径运行；本检查只核对 argv 中的路径，不读取脚本内容，只接受 ${[...SCRIPT_EXTENSIONS].join('、')} 脚本，prechange 快照不算。`,
+      `${caseId} / ${collected.assertions.join('、')} 的 ${collected.seam} 证据日志都没有引用特性目录 ${SCRIPTS_DIR}/ 内存在的过程脚本。`,
+      `把 browser/api 过程脚本放在特性目录的 ${SCRIPTS_DIR}/ 下，并通过 qa-run 以该脚本路径运行；只接受 ${[...SCRIPT_EXTENSIONS].join('、')} 脚本。`,
     ));
   });
+
+  const markers = assertionMarkerIssues(passRows);
+  issues.push(...markers.issues);
+  const bindings = await testBindingIssues(passRows, root, featureDir);
+  issues.push(...bindings);
+  const scan = await scanProcessScripts(featureDir);
+  issues.push(...scan.issues);
+  notes.push(...scan.notes);
 
   const earlyLogs = new Map();
   for (const [row, entries] of evidenceByRow) {
@@ -963,7 +1015,7 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
     }
   }
   for (const [relative, item] of earlyLogs) {
-    issues.push(issue3(
+    issues.push(issue(
       'EVIDENCE_BEFORE_BASELINE',
       'FAIL',
       `${relative} 的开始时间 ${item.started} 早于开工基线 ${context.scope.createdAt}，被 ${item.rows.join('、')} 引用。`,
@@ -974,20 +1026,21 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
   const frozen = await frozenPlanIssues(featureDir, plan, Boolean(context.scope));
   issues.push(...frozen.issues);
   notes.push(...frozen.notes);
+  const table = reconciliationTable(passRows, frozen.frozen ?? plan, markers.values, caseScripts, scan.synthetic);
 
   if (plan.kind === 'fix') {
     const reproductionByCase = new Map(plan.reproductions.map((item) => [item.caseId, item]));
     for (const testCase of plan.cases) {
       const reproduction = reproductionByCase.get(testCase.id);
       if (!reproduction) {
-        issues.push(issue3('MISSING_REPRODUCTION', 'BLOCKED', `${testCase.id} 缺少 ## 修复前复现 行；请先用同一命令保存修复前的红灯日志`));
+        issues.push(issue('MISSING_REPRODUCTION', 'BLOCKED', `${testCase.id} 缺少 ## 修复前复现 行；请先用同一命令保存修复前的红灯日志`));
         continue;
       }
       const checked = await reproductionLog(featureDir, reproduction);
       issues.push(...checked.issues);
       if (!checked.log) continue;
       if (checked.log.exit === 0) {
-        issues.push(issue3('REPRODUCTION_NOT_RED', 'FAIL', `${testCase.id} 的修复前复现日志 exit 为 0，不能证明修复前测试为红灯`));
+        issues.push(issue('REPRODUCTION_NOT_RED', 'FAIL', `${testCase.id} 的修复前复现日志 exit 为 0，不能证明修复前测试为红灯`));
       }
       const greenLogs = plan.results
         .filter((row) => row.caseId === testCase.id && row.status === 'PASS')
@@ -995,15 +1048,15 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
         .map((entry) => entry.log)
         .filter((log) => log?.exit === 0 && JSON.stringify(log.argv) === JSON.stringify(checked.log.argv));
       if (!greenLogs.length) {
-        issues.push(issue3('REPRODUCTION_SOURCE_MISMATCH', 'FAIL', `${testCase.id} 的复现日志与通过日志 argv 不一致；请用同一命令分别保存红、绿日志`));
+        issues.push(issue('REPRODUCTION_SOURCE_MISMATCH', 'FAIL', `${testCase.id} 的复现日志与通过日志 argv 不一致；请用同一命令分别保存红、绿日志`));
         continue;
       }
       for (const green of greenLogs) {
         if (!(checked.log.started < green.started)) {
-          issues.push(issue3('REPRODUCTION_ORDER', 'FAIL', `${testCase.id} 的复现日志开始时间不早于对应通过日志；请保留真实的时间顺序`));
+          issues.push(issue('REPRODUCTION_ORDER', 'FAIL', `${testCase.id} 的复现日志开始时间不早于对应通过日志；请保留真实的时间顺序`));
         }
         if (checked.log.tree !== 'none' && green.tree !== 'none' && checked.log.tree === green.tree) {
-          issues.push(issue3('REPRODUCTION_SAME_TREE', 'FAIL', `${testCase.id} 的复现与通过日志对应相同 tree；请在修复前后的不同代码上分别运行`));
+          issues.push(issue('REPRODUCTION_SAME_TREE', 'FAIL', `${testCase.id} 的复现与通过日志对应相同 tree；请在修复前后的不同代码上分别运行`));
         }
       }
     }
@@ -1018,7 +1071,7 @@ async function checkSchema3Acceptance(featureDir, plan, context) {
       notes.push(`${[...staleCases].sort().join('、')} 的证据日志 tree 与当前代码不一致；核心行为改动后需重跑。`);
     }
   }
-  return result3(issues, notes);
+  return { ...summarize(issues, notes), table };
 }
 
 function markdownSection(markdown, headingPattern) {
@@ -1035,61 +1088,246 @@ function markdownSection(markdown, headingPattern) {
   return lines.slice(start + 1, end).join('\n');
 }
 
-function triageIssues(reportText) {
+/** 解析 ## 三档分流 表格：按表头定位编号、档位、最终状态与理由列 */
+function parseTriage(reportText) {
   const body = markdownSection(reportText, /^## 三档分流\s*$/);
-  if (body === null || !body.trim()) {
-    return [issue3('MISSING_TRIAGE', 'FAIL', 'review-report.md 缺少有效的 ## 三档分流；请给出本次修、转专项或驳回结论')];
-  }
+  if (body === null) return null;
   const lines = body.split(/\r?\n/);
   const rows = [];
   for (let index = 0; index < lines.length; index += 1) {
     if (!lines[index].includes('|')) continue;
     const headers = splitMarkdownRow(lines[index]);
-    const tierIndex = headers.findIndex((cell) => cell.includes('档位'));
+    const column = (name) => headers.findIndex((cell) => cell.includes(name));
+    const tierIndex = column('档位');
     if (tierIndex < 0) continue;
+    const idIndex = column('编号');
+    const finalIndex = column('最终状态');
+    const reasonIndex = column('理由');
     let rowIndex = index + 1;
     for (; rowIndex < lines.length && lines[rowIndex].includes('|'); rowIndex += 1) {
       const cells = splitMarkdownRow(lines[rowIndex]);
       if (cells.every((cell) => /^:?-{3,}:?$/.test(cell.replaceAll(' ', '')))) continue;
-      rows.push(cells[tierIndex]?.trim() ?? '');
+      const cell = (position) => (position >= 0 ? cells[position]?.trim() ?? '' : '');
+      rows.push({
+        id: cell(idIndex).replace(/^\[|\]$/g, ''),
+        tier: cell(tierIndex),
+        final: cell(finalIndex),
+        reason: cell(reasonIndex),
+      });
     }
     index = rowIndex - 1;
   }
-  if (!rows.length) {
-    return body.includes('无发现')
-      ? []
-      : [issue3('MISSING_TRIAGE', 'FAIL', '## 三档分流 没有数据行时必须明确写出“无发现”')];
-  }
-  return rows.flatMap((tier) => TRIAGE_VALUES.has(tier)
-    ? []
-    : [issue3('INVALID_TRIAGE', 'FAIL', `三档分流的档位“${tier || '空'}”无效，只能是本次修、转专项或驳回`)]);
+  return { body, rows };
 }
 
-/** 审查报告只强制审查方式、两轴原文与三档分流；证据审计与 Spec 对账不再是必备章节 */
-function reviewReportIssues(reportText) {
+function triageIssues(triage) {
+  if (triage === null || !triage.body.trim()) {
+    return [issue('MISSING_TRIAGE', 'FAIL', 'review-report.md 缺少有效的 ## 三档分流；请给出本次修、转专项或驳回结论')];
+  }
+  if (!triage.rows.length) {
+    return triage.body.includes('无发现')
+      ? []
+      : [issue('MISSING_TRIAGE', 'FAIL', '## 三档分流 没有数据行时必须明确写出“无发现”')];
+  }
+  return triage.rows.flatMap((row) => TRIAGE_VALUES.has(row.tier)
+    ? []
+    : [issue('INVALID_TRIAGE', 'FAIL', `三档分流的档位“${row.tier || '空'}”无效，只能是本次修、转专项或驳回`)]);
+}
+
+/** 列出 review/ 下的审查原文，按轮次分组：{ round: { standards, spec } } */
+async function readReviewRounds(featureDir) {
+  let entries;
+  try {
+    entries = await readdir(path.join(featureDir, REVIEW_DIR));
+  } catch {
+    return new Map();
+  }
+  const rounds = new Map();
+  for (const entry of entries) {
+    const match = entry.match(/^r(\d+)-(standards|spec-axis)\.md$/);
+    if (!match) continue;
+    const round = Number(match[1]);
+    if (!rounds.has(round)) rounds.set(round, {});
+    rounds.get(round)[match[2] === 'standards' ? 'standards' : 'spec'] = `${REVIEW_DIR}/${entry}`;
+  }
+  return rounds;
+}
+
+/**
+ * 审查原文与分流表对账：最新一轮两轴原文须齐全且不早于当前 tree 的首次打包时间；原文中的每个编号须进入分流表；
+ * 默认本次修的编号改档须写理由；本次修的条目最终未修或修错时阻塞交付。
+ */
+async function reviewRawIssues(featureDir, triage, packageTime) {
+  const issues = [];
+  const rounds = await readReviewRounds(featureDir);
+  const latest = rounds.size ? Math.max(...rounds.keys()) : null;
+  const latestFiles = latest === null ? null : rounds.get(latest);
+  const rawHint = `由 code-review 的两个子代理各自把完整返回写入 ${REVIEW_DIR}/r<n>-standards.md 与 ${REVIEW_DIR}/r<n>-spec-axis.md；在最新审查包（collect）之后重新审查，不要由主 Agent 代写或改写原文。`;
+  if (!latestFiles?.standards || !latestFiles?.spec) {
+    const missing = latest === null
+      ? `${REVIEW_DIR}/ 下没有审查原文`
+      : `第 r${latest} 轮缺少 ${[!latestFiles.standards && 'standards', !latestFiles.spec && 'spec-axis'].filter(Boolean).join('、')} 原文`;
+    issues.push(issue('REVIEW_RAW_MISSING', 'BLOCKED', `${missing}。`, rawHint));
+  } else if (packageTime !== null) {
+    const stale = [];
+    for (const relative of [latestFiles.standards, latestFiles.spec]) {
+      if ((await stat(path.join(featureDir, relative))).mtimeMs < packageTime) stale.push(relative);
+    }
+    if (stale.length) {
+      issues.push(issue('REVIEW_RAW_MISSING', 'BLOCKED', `审查原文早于最新审查包：${stale.join('、')}。`, rawHint));
+    }
+  }
+
+  const ids = new Set();
+  for (const files of rounds.values()) {
+    for (const relative of [files.standards, files.spec].filter(Boolean)) {
+      const text = await readFile(path.join(featureDir, relative), 'utf8');
+      for (const match of text.matchAll(FINDING_ID_PATTERN)) ids.add(match[1]);
+    }
+  }
+  const rows = triage?.rows ?? [];
+  const triaged = new Set(rows.map((row) => row.id));
+  const untriaged = [...ids].filter((id) => !triaged.has(id)).sort();
+  if (untriaged.length) {
+    issues.push(issue(
+      'FINDING_NOT_TRIAGED',
+      'FAIL',
+      `审查原文中的编号未进入 ## 三档分流：${untriaged.join('、')}。`,
+      '分流表每行写一个编号（列：编号、档位、最终状态、轮次轨迹、理由）；原文编号以子代理落盘的原文为准，不要改写原文。',
+    ));
+  }
+  const unexplained = rows
+    .filter((row) => DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix)) && row.tier !== '本次修' && !row.reason)
+    .map((row) => row.id);
+  if (unexplained.length) {
+    issues.push(issue(
+      'DEFAULT_FIX_WITHOUT_REASON',
+      'FAIL',
+      `S-H、P-M、P-W 类发现默认本次修，以下编号改档但理由为空：${unexplained.join('、')}。`,
+      '改为本次修，或在理由列写明转专项或驳回的依据（驳回须引 ADR 或契约）。',
+    ));
+  }
+  const unresolved = rows
+    .filter((row) => row.tier === '本次修' && (!row.final || /未修|修错/.test(row.final)))
+    .map((row) => `${row.id}（${row.final || '未填'}）`);
+  if (unresolved.length) {
+    issues.push(issue(
+      'UNRESOLVED_FINDINGS',
+      'BLOCKED',
+      `本次修条目最终状态未达已修：${unresolved.join('、')}。`,
+      '自动复审最多 2 轮（r2、r3）；用尽后停止自动修复，按分流表清单交人工裁决：改档并写理由、接受现状，或授权追加修复轮。',
+    ));
+  }
+  return { issues, latest: latestFiles };
+}
+
+/** 审查报告只强制审查方式与三档分流；两轴原文由 review/ 下的文件承载 */
+function reviewReportIssues(reportText, triage) {
   const issues = [];
   const method = reportText.split(/\r?\n/).find((line) => /^审查方式[：:]/.test(line));
   if (!method || !method.replace(/^审查方式[：:]/, '').trim()) {
-    issues.push(issue3('MISSING_REVIEW_METHOD', 'FAIL', 'review-report.md 缺少“审查方式：”行；请写明独立审查者或审查会话'));
+    issues.push(issue('MISSING_REVIEW_METHOD', 'FAIL', 'review-report.md 缺少“审查方式：”行；请写明独立审查者或审查会话'));
   } else if (method.includes('自查')) {
-    issues.push(issue3(
+    issues.push(issue(
       'SELF_REVIEW',
       'BLOCKED',
       '审查方式为自查。',
       '中大型改动需要独立于实现者的 Standards 与 Spec 审查（子代理、独立会话或人工）；无法提供时保持 BLOCKED，由人工决定。',
     ));
   }
-
-  const standards = markdownSection(reportText, /^## Standards(?:\s+.*)?$/);
-  if (standards === null || !standards.trim()) {
-    issues.push(issue3('MISSING_STANDARDS_REVIEW', 'FAIL', 'review-report.md 的 ## Standards 缺失或正文为空；请补充规范轴审查'));
-  }
-  const spec = markdownSection(reportText, /^## Spec(?:\s+(?!对账(?:\s|$)).*)?$/);
-  if (spec === null || !spec.trim()) {
-    issues.push(issue3('MISSING_SPEC_SECTION', 'FAIL', 'review-report.md 的 ## Spec 缺失或正文为空；请补充需求轴审查，Spec 对账不能替代该节'));
-  }
-  issues.push(...triageIssues(reportText));
+  issues.push(...triageIssues(triage));
   return issues;
+}
+
+function normalizeWhitespace(text) {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeModel(model) {
+  return String(model).toLowerCase().replace(/\./g, '-');
+}
+
+/** 逐行解析 jsonl，跳过无法解析的行 */
+async function readJsonl(file) {
+  const text = await readFile(file, 'utf8').catch(() => '');
+  return text.split(/\r?\n/).flatMap((line) => {
+    if (!line.trim()) return [];
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function assistantText(entry) {
+  const content = entry?.message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('\n');
+}
+
+/**
+ * 子代理转录交叉核验（只给 NOTE）：在宿主会话目录中找审查包之后的子代理转录，
+ * 核对原文是否出现在某个转录的最后一条返回中，以及子代理模型是否与主会话一致。
+ * 宿主转录格式不是公开契约，找不到会话目录时静默跳过。
+ */
+async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
+  if (!root || !latestFiles?.standards || !latestFiles?.spec) return [];
+  const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(homedir(), '.claude');
+  const projectDir = path.join(configDir, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
+  let sessions;
+  try {
+    sessions = await readdir(projectDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const transcripts = [];
+  for (const session of sessions.filter((entry) => entry.isDirectory())) {
+    const subagentDir = path.join(projectDir, session.name, 'subagents');
+    let files;
+    try {
+      files = await readdir(subagentDir);
+    } catch {
+      continue;
+    }
+    for (const file of files.filter((name) => name.endsWith('.jsonl'))) {
+      const absolute = path.join(subagentDir, file);
+      if (packageTime !== null && (await stat(absolute)).mtimeMs < packageTime) continue;
+      const entries = await readJsonl(absolute);
+      const assistants = entries.filter((entry) => entry?.type === 'assistant' && assistantText(entry).trim());
+      const last = assistants.at(-1);
+      const meta = await readFile(absolute.replace(/\.jsonl$/, '.meta.json'), 'utf8').then(JSON.parse, () => ({}));
+      transcripts.push({
+        path: absolute,
+        session: path.join(projectDir, `${session.name}.jsonl`),
+        text: normalizeWhitespace(last ? assistantText(last) : ''),
+        model: last?.message?.model ?? meta.model ?? null,
+      });
+    }
+  }
+  if (!transcripts.length) return [];
+
+  const notes = [];
+  const sessionModels = new Map();
+  for (const relative of [latestFiles.standards, latestFiles.spec]) {
+    const raw = normalizeWhitespace(await readFile(path.join(featureDir, relative), 'utf8'));
+    const matched = transcripts.find((item) => raw && item.text.includes(raw));
+    if (!matched) {
+      notes.push(`转录核验：${relative} 的内容未出现在任何审查包之后的子代理转录最后一条返回中（已检查 ${transcripts.map((item) => item.path).join('、')}）；请人工确认原文未被改写。`);
+      continue;
+    }
+    if (!matched.model) continue;
+    if (!sessionModels.has(matched.session)) {
+      const models = (await readJsonl(matched.session)).map((entry) => entry?.message?.model).filter(Boolean);
+      sessionModels.set(matched.session, new Set(models.map(normalizeModel)));
+    }
+    const models = sessionModels.get(matched.session);
+    if (models.size && !models.has(normalizeModel(matched.model))) {
+      notes.push(`转录核验：${relative} 对应子代理模型 ${matched.model} 与主会话模型 ${[...models].join('、')} 不一致（${matched.path}）；用户未指定审查模型时子代理应继承主会话模型。`);
+    }
+  }
+  return notes;
 }
 
 async function verificationIssues(featureDir, plan, context) {
@@ -1097,31 +1335,31 @@ async function verificationIssues(featureDir, plan, context) {
   for (const declaration of plan.delivery) {
     const references = evidenceReferences(declaration.evidence);
     if (!references.paths.length) {
-      issues.push(issue3('MISSING_VERIFICATION', 'BLOCKED', `交付验证 ${declaration.command} 没有证据日志；请在最终代码上通过 qa:run 真实执行`));
+      issues.push(issue('MISSING_VERIFICATION', 'BLOCKED', `交付验证 ${declaration.command} 没有证据日志；请在最终代码上通过 qa:run 真实执行`));
       continue;
     }
     const location = evidenceLocation(featureDir, references.paths[0]);
     if (!location) {
-      issues.push(issue3('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `交付验证 ${declaration.command} 的证据越出特性目录`));
+      issues.push(issue('EVIDENCE_OUT_OF_SCOPE', 'FAIL', `交付验证 ${declaration.command} 的证据越出特性目录`));
       continue;
     }
     try {
       const info = await stat(location.absolute);
       if (!info.isFile() || info.size === 0) {
-        issues.push(issue3('INVALID_RUN_LOG', 'FAIL', `交付验证 ${declaration.command} 的证据不是完整 qa-run 日志：${location.relative}`));
+        issues.push(issue('INVALID_RUN_LOG', 'FAIL', `交付验证 ${declaration.command} 的证据不是完整 qa-run 日志：${location.relative}`));
         continue;
       }
     } catch {
-      issues.push(issue3('MISSING_EVIDENCE', 'FAIL', `交付验证 ${declaration.command} 的证据不存在：${location.relative}`));
+      issues.push(issue('MISSING_EVIDENCE', 'FAIL', `交付验证 ${declaration.command} 的证据不存在：${location.relative}`));
       continue;
     }
     const log = parseRunLog(await readFile(location.absolute, 'utf8'));
     if (path.posix.extname(location.relative).toLowerCase() !== '.log' || !completeRunLog(log)) {
-      issues.push(issue3('INVALID_RUN_LOG', 'FAIL', `交付验证 ${declaration.command} 的证据不是完整 qa-run 日志：${location.relative}`));
+      issues.push(issue('INVALID_RUN_LOG', 'FAIL', `交付验证 ${declaration.command} 的证据不是完整 qa-run 日志：${location.relative}`));
       continue;
     }
     if (startedBeforeBaseline(log, context.scope)) {
-      issues.push(issue3(
+      issues.push(issue(
         'EVIDENCE_BEFORE_BASELINE',
         'FAIL',
         `交付验证 ${declaration.command} 的日志开始时间 ${log.started} 早于开工基线 ${context.scope.createdAt}。`,
@@ -1135,7 +1373,7 @@ async function verificationIssues(featureDir, plan, context) {
       expectedArgv = null;
     }
     if (JSON.stringify(log.argv) !== JSON.stringify(expectedArgv)) {
-      issues.push(issue3(
+      issues.push(issue(
         'VERIFICATION_COMMAND_MISMATCH',
         'FAIL',
         `交付验证声明的命令是 ${declaration.command}，日志实际执行的是 ${formatCommand(log.argv)}。`,
@@ -1143,10 +1381,10 @@ async function verificationIssues(featureDir, plan, context) {
       ));
     }
     if (log.exit !== 0) {
-      issues.push(issue3('VERIFICATION_FAILED', 'FAIL', `交付验证 ${declaration.command} 的日志退出码为 ${log.exit}；请修复失败后重新运行`));
+      issues.push(issue('VERIFICATION_FAILED', 'FAIL', `交付验证 ${declaration.command} 的日志退出码为 ${log.exit}；请修复失败后重新运行`));
     }
     if (!context.tree || log.tree === 'none' || log.tree !== context.tree) {
-      issues.push(issue3(
+      issues.push(issue(
         'STALE_VERIFICATION',
         'BLOCKED',
         `交付验证 ${declaration.command} 的日志生成后代码又有改动，或未绑定 tree。`,
@@ -1158,11 +1396,11 @@ async function verificationIssues(featureDir, plan, context) {
 }
 
 /** earlier：规划契约、验收与同名技能检测已得到的结果，审查检查在其后追加 */
-async function checkSchema3Review(featureDir, plan, context, earlier) {
+async function checkReview(featureDir, plan, context, earlier) {
   const issues = [...earlier.issues];
   const notes = [...earlier.notes];
   if (!context.scope) {
-    issues.push(issue3('MISSING_BASELINE', 'BLOCKED', '缺少 scope.json；请在改代码前用 review-package init 建立开工基线'));
+    issues.push(issue('MISSING_BASELINE', 'BLOCKED', `缺少 ${QA_DIR}/scope.json；请在改代码前用 review-package init 建立开工基线`));
   }
   // init 时已有改动的路径：白名单内的，以及白名单外但之后经 add 纳入范围的
   const dirtyAtInit = context.scope?.dirtyAtInit;
@@ -1178,27 +1416,32 @@ async function checkSchema3Review(featureDir, plan, context, earlier) {
   }
 
   let manifest = null;
+  let packageTime = null;
   try {
-    const parsed = JSON.parse(await readFile(path.join(featureDir, 'review-package.json'), 'utf8'));
+    const manifestPath = path.join(featureDir, QA_DIR, 'review-package.json');
+    const parsed = JSON.parse(await readFile(manifestPath, 'utf8'));
     if (!parsed || typeof parsed.treeDigest !== 'string' || !parsed.treeDigest) throw new Error('缺少 treeDigest');
+    // 以当前 tree 首次打包时间为准；旧审查包没有 packagedAt 时退回文件修改时间
+    const packagedAt = Date.parse(parsed.packagedAt);
+    packageTime = Number.isNaN(packagedAt) ? (await stat(manifestPath)).mtimeMs : packagedAt;
     manifest = parsed;
   } catch {
-    issues.push(issue3('MISSING_REVIEW_PACKAGE', 'BLOCKED', 'review-package.json 缺失、无效或没有 treeDigest；请用新版 collect 重新生成'));
+    issues.push(issue('MISSING_REVIEW_PACKAGE', 'BLOCKED', `${QA_DIR}/review-package.json 缺失、无效或没有 treeDigest；请用新版 collect 重新生成`));
   }
   if (manifest) {
     if (Array.isArray(manifest.unreviewed) && manifest.unreviewed.length) {
-      issues.push(issue3('UNREVIEWED_FILES', 'FAIL', `存在未审查文件：${manifest.unreviewed.map((item) => item.path || item).join(', ')}；请补充审查或说明`));
+      issues.push(issue('UNREVIEWED_FILES', 'FAIL', `存在未审查文件：${manifest.unreviewed.map((item) => item.path || item).join(', ')}；请补充审查或说明`));
     }
     if (Array.isArray(manifest.changedFiles) && manifest.changedFiles.length) {
       try {
-        const patch = await readFile(path.join(featureDir, 'review-package.diff'), 'utf8');
-        if (!patch.trim()) issues.push(issue3('EMPTY_REVIEW_DIFF', 'FAIL', '存在代码变更但 review-package.diff 为空；请重新 collect'));
+        const patch = await readFile(path.join(featureDir, QA_DIR, 'review-package.diff'), 'utf8');
+        if (!patch.trim()) issues.push(issue('EMPTY_REVIEW_DIFF', 'FAIL', `存在代码变更但 ${QA_DIR}/review-package.diff 为空；请重新 collect`));
       } catch {
-        issues.push(issue3('MISSING_REVIEW_DIFF', 'FAIL', '存在代码变更但缺少 review-package.diff；请重新 collect'));
+        issues.push(issue('MISSING_REVIEW_DIFF', 'FAIL', `存在代码变更但缺少 ${QA_DIR}/review-package.diff；请重新 collect`));
       }
     }
     if (context.tree && manifest.treeDigest !== context.tree) {
-      issues.push(issue3('STALE_REVIEW_PACKAGE', 'BLOCKED', 'review-package.json 的 treeDigest 与当前代码不一致；请在最终代码上重新 collect 并复审'));
+      issues.push(issue('STALE_REVIEW_PACKAGE', 'BLOCKED', `${QA_DIR}/review-package.json 的 treeDigest 与当前代码不一致；请在最终代码上重新 collect 并增量复审`));
     }
     if (Array.isArray(manifest.preexisting) && manifest.preexisting.length) {
       notes.push(`开工时范围内已有改动，未进入审查包：${manifest.preexisting.join('、')}`);
@@ -1209,62 +1452,64 @@ async function checkSchema3Review(featureDir, plan, context, earlier) {
   try {
     reportText = await readFile(path.join(featureDir, 'review-report.md'), 'utf8');
   } catch {
-    issues.push(issue3('MISSING_REVIEW_REPORT', 'BLOCKED', '缺少 review-report.md；请先 collect 并调用 code-review，再落盘审查方式、两轴原文、三档分流与范围说明'));
+    issues.push(issue('MISSING_REVIEW_REPORT', 'BLOCKED', `缺少 review-report.md；请先 collect 并调用 code-review，待两轴原文落盘到 ${REVIEW_DIR}/ 后再写审查方式、三档分流与范围说明`));
   }
-  if (reportText) issues.push(...reviewReportIssues(reportText));
+  const triage = reportText ? parseTriage(reportText) : null;
+  if (reportText) issues.push(...reviewReportIssues(reportText, triage));
+  const raw = await reviewRawIssues(featureDir, triage, packageTime);
+  issues.push(...raw.issues);
+  notes.push(...await transcriptNotes(context.root, raw.latest, featureDir, packageTime));
 
   const outOfScope = Array.isArray(manifest?.outOfScope) ? manifest.outOfScope : [];
   if (outOfScope.length) {
     const scopeExplanation = reportText ? markdownSection(reportText, /^## 范围说明\s*$/) ?? '' : '';
     const unexplained = outOfScope.map((item) => item.path || item).filter((relative) => !scopeExplanation.includes(relative));
     if (unexplained.length) {
-      issues.push(issue3(
+      issues.push(issue(
         'OUT_OF_SCOPE_CHANGES',
         'BLOCKED',
         `开工后范围外出现改动：${unexplained.join('、')}。`,
-        '属于本任务的文件运行 node tooling/scripts/review-package.mjs add .scratch/<特性> -- <路径> 后重新 collect；不属于本任务的，在 review-report 的 ## 范围说明 逐个写明来源。不要修改 scope.json。',
+        `属于本任务的文件运行 node tooling/scripts/review-package.mjs add .scratch/<特性> -- <路径> 后重新 collect；不属于本任务的，在 review-report 的 ## 范围说明 逐个写明来源。不要修改 ${QA_DIR}/scope.json。`,
       ));
     }
   }
   issues.push(...await verificationIssues(featureDir, plan, context));
-  return result3(issues, notes);
+  return summarize(issues, notes);
 }
 
 export async function checkFeature(featureDir, phase) {
   if (!PHASES.has(phase)) throw new Error(`未知检查阶段：${phase}`);
   const markdown = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8');
   const plan = parsePlan(markdown);
-  if (plan.legacy) {
-    return result('LEGACY', [issue('LEGACY', '未声明受支持的 QA Schema（1/2/3），未校验')]);
+  if (plan.schema !== CURRENT_SCHEMA) {
+    const declared = Number.isNaN(plan.schema) ? '未声明 QA Schema' : `声明的是 QA Schema: ${plan.schema}`;
+    return summarize([issue(
+      'UNSUPPORTED_SCHEMA',
+      'FAIL',
+      `qa-plan.md ${declared}，检查器只支持 QA Schema: ${CURRENT_SCHEMA}。`,
+      `按 Schema ${CURRENT_SCHEMA} 结构重建：执行记录加「绑定」列，过程脚本放 ${SCRIPTS_DIR}/，机器状态放 ${QA_DIR}/。`,
+    )]);
   }
 
   const specText = await readFile(path.join(featureDir, 'spec.md'), 'utf8');
   const specIds = parseSpec(specText);
-  if (plan.schema === 3) {
-    const validated = validateSchema3Plan(plan, specIds);
-    const commandContract = specCommandIssues(plan, parseSpecCommands(specText), phase);
-    // 同名技能检测只在 plan 与 review 阶段运行，且不被其他规划问题提前返回遮住
-    const shadow = phase === 'acceptance' ? { issues: [], notes: [] } : await skillShadowIssues(featureDir);
-    // 计划结构的 NOTE（如 browser 用例超量）与改动前一致，只在 plan 阶段且结构无问题时输出；
-    // 交付命令契约的 NOTE 各阶段都输出
-    const structureNotes = phase === 'plan' && !validated.issues.length ? validated.notes : [];
-    const planFindings = mergeFindings({ issues: validated.issues, notes: structureNotes }, commandContract);
-    // 计划结构与交付命令契约问题在各阶段都提前结束检查（见 ADR-0031 §4）
-    if (planFindings.issues.length || phase === 'plan') {
-      const early = mergeFindings(planFindings, shadow);
-      return result3(early.issues, early.notes);
-    }
-    const context = await schema3Context(featureDir);
-    const findings = mergeFindings(planFindings, await checkSchema3Acceptance(featureDir, plan, context), shadow);
-    if (phase === 'acceptance') return result3(findings.issues, findings.notes);
-    return checkSchema3Review(featureDir, plan, context, findings);
+  const validated = validatePlan(plan, specIds);
+  const commandContract = specCommandIssues(plan, parseSpecCommands(specText), phase);
+  // 同名技能检测只在 plan 与 review 阶段运行，且不被其他规划问题提前返回遮住
+  const shadow = phase === 'acceptance' ? { issues: [], notes: [] } : await skillShadowIssues(featureDir);
+  // 计划结构的 NOTE（如 browser 用例超量）只在 plan 阶段且结构无问题时输出；交付命令契约的 NOTE 各阶段都输出
+  const structureNotes = phase === 'plan' && !validated.issues.length ? validated.notes : [];
+  const planFindings = mergeFindings({ issues: validated.issues, notes: structureNotes }, commandContract);
+  // 计划结构与交付命令契约问题在各阶段都提前结束检查
+  if (planFindings.issues.length || phase === 'plan') {
+    const early = mergeFindings(planFindings, shadow);
+    return summarize(early.issues, early.notes);
   }
-
-  const planIssues = validatePlan(plan, specIds);
-  if (planIssues.length) return result('FAIL', planIssues);
-  if (phase === 'plan') return result('PASS');
-  if (phase === 'acceptance') return checkAcceptance(featureDir, plan);
-  return checkReview(featureDir, plan, specIds, markdown);
+  const context = await featureContext(featureDir);
+  const acceptance = await checkAcceptance(featureDir, plan, context);
+  const findings = mergeFindings(planFindings, acceptance, shadow);
+  if (phase === 'acceptance') return { ...summarize(findings.issues, findings.notes), table: acceptance.table };
+  return { ...await checkReview(featureDir, plan, context, findings), table: acceptance.table };
 }
 
 export function formatReport(report, phase) {
@@ -1275,6 +1520,11 @@ export function formatReport(report, phase) {
     if (!item.hint || hintedCodes.has(item.code)) continue;
     hintedCodes.add(item.code);
     lines.push(`[提示] ${item.code}：${item.hint}`);
+  }
+  if (report.table?.length) {
+    lines.push('', '对账表（人工终审入口：逐行核对实测值或绑定是否证明冻结断言）', '| 用例-断言 | 冻结断言原文 | 实测值或绑定 | 标注 |', '| --- | --- | --- | --- |');
+    lines.push(...report.table.map((row) => `| ${row.id} | ${tableCell(row.assertion)} | ${tableCell(row.actual)} | ${row.flag} |`));
+    lines.push('');
   }
   lines.push(`结果: ${report.status}`);
   if (phase === 'review' && report.status === 'PASS') {
@@ -1297,7 +1547,7 @@ async function main() {
   try {
     const report = await checkFeature(featureDir, phase);
     console.log(formatReport(report, phase));
-    process.exitCode = ['PASS', 'LEGACY'].includes(report.status) ? 0 : 1;
+    process.exitCode = report.status === 'PASS' ? 0 : 1;
   } catch (error) {
     console.error(`[INVALID_INPUT] ${error.message}`);
     process.exitCode = 1;

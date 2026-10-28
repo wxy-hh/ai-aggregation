@@ -1,337 +1,172 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkFeature } from '../qa-check.mjs';
+import { checkFeature, formatReport } from '../qa-check.mjs';
 
+// 本文件覆盖与 Schema 版本无关的通用结构检查、安装模板一致性与 CLI 参数兼容
 const SCRIPT = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
 const TEMPLATE = fileURLToPath(
   new URL('../../../.claude/skills/setup-qa-workflow/templates/qa-check.mjs', import.meta.url),
 );
-const SPEC = `## User Stories\n1. 第一条需求\n2. 第二条需求\n`;
-const VALID_PLAN = [
-  'QA Schema: 1',
-  'QA Mode: inline',
+const SPEC = '## User Stories\n1. 第一条需求\n2. 第二条需求\n\n## 交付命令\n\n```bash\nnode --version\n```\n';
+
+function plan({ mode = 'inline', covers = '1, 2', rows = [
+  '| TC01 | 1 | PASS | `evidence/run.log` | | |',
+  '| TC01 | 2 | PASS | `evidence/run.log` | | |',
+] } = {}) {
+  return [
+    'QA Schema: 4',
+    `QA Mode: ${mode}`,
+    '',
+    '### TC01: 示例',
+    '- Priority: P0',
+    `- Covers: ${covers}`,
+    '- Seam: static',
+    '',
+    '#### 验证断言',
+    '1. 第一条断言',
+    '2. 第二条断言',
+    '',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `node --version` | 待执行 |',
+    '',
+    '## 计划变更',
+    '- 无',
+  ].join('\n');
+}
+
+const RUN_LOG = [
+  '# qa-run v1',
+  '# label: run',
+  '# command: node --version',
+  '# argv: ["node","--version"]',
+  '# cwd: .',
+  '# head: 0123456789abcdef',
+  '# tree: none',
+  '# started: 2026-01-02T00:00:00.000Z',
+  '# ---',
+  'v24.0.0',
+  '# ---',
+  '# finished: 2026-01-02T00:00:01.000Z',
+  '# exit: 0',
   '',
-  '### TC01: 示例',
-  '- Priority: P0',
-  '- Covers: 1, 2',
-  '',
-  '#### 验证断言',
-  '1. 第一条断言',
-  '2. 第二条断言',
-  '',
-  '## 执行记录',
-  '| 用例 | 断言序号 | 状态 | 证据或原因 |',
-  '| --- | --- | --- | --- |',
-  '| TC01 | 1 | PASS | `screenshots/TC01-a.png` |',
-  '| TC01 | 2 | PASS | `screenshots/TC01-b.png` |',
 ].join('\n');
 
-async function workspace(t, { spec = SPEC, plan = VALID_PLAN, evidence } = {}) {
+async function workspace(t, { spec = SPEC, planText = plan(), files = { 'evidence/run.log': RUN_LOG } } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'qa-check-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await mkdir(path.join(dir, 'screenshots'));
-  if (spec !== null) await writeFile(path.join(dir, 'spec.md'), spec);
-  await writeFile(path.join(dir, 'qa-plan.md'), plan);
-  for (const [name, content] of Object.entries(evidence ?? {})) {
-    await writeFile(path.join(dir, 'screenshots', name), content);
+  await writeFile(path.join(dir, 'spec.md'), spec);
+  await writeFile(path.join(dir, 'qa-plan.md'), planText);
+  for (const [relative, content] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
+    await writeFile(path.join(dir, relative), content);
   }
   return dir;
 }
 
-test('合法计划和完整非空证据可以通过验收', async (t) => {
-  const dir = await workspace(t, {
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
+function codes(report) {
+  return report.issues.map((item) => item.code);
+}
 
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'PASS');
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.issues, []);
+test('合法计划与 exit 0 证据可以通过验收', async (t) => {
+  const report = await checkFeature(await workspace(t), 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
 });
 
-test('任一断言处于 BLOCKED 时整体验收不能通过', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace(
-      '| TC01 | 2 | PASS | `screenshots/TC01-b.png` |',
-      '| TC01 | 2 | BLOCKED | 尚未执行 |',
-    ),
-    evidence: { 'TC01-a.png': '证据甲' },
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'BLOCKED');
-  assert.equal(result.ok, false);
+test('证据缺失、为空或越出特性目录时分别报错', async (t) => {
+  const cases = [
+    ['`evidence/none.log`', {}, 'MISSING_EVIDENCE'],
+    ['`evidence/empty.log`', { 'evidence/empty.log': '' }, 'EMPTY_EVIDENCE'],
+    ['`../outside.log`', {}, 'EVIDENCE_OUT_OF_SCOPE'],
+  ];
+  for (const [evidence, files, code] of cases) {
+    const dir = await workspace(t, {
+      planText: plan({ rows: [`| TC01 | 1 | PASS | ${evidence} | | |`, '| TC01 | 2 | PASS | `evidence/run.log` | | |'] }),
+      files: { 'evidence/run.log': RUN_LOG, ...files },
+    });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'FAIL', code);
+    assert.ok(codes(report).includes(code), `${code}: ${formatReport(report)}`);
+  }
 });
 
-test('PASS 引用不存在的文件时返回证据缺失', async (t) => {
-  const dir = await workspace(t, { evidence: { 'TC01-a.png': '证据甲' } });
+test('缺少断言行、重复结果与计划外结果被分别指出', async (t) => {
+  const missing = await checkFeature(await workspace(t, {
+    planText: plan({ rows: ['| TC01 | 1 | PASS | `evidence/run.log` | | |'] }),
+  }), 'acceptance');
+  assert.ok(codes(missing).includes('MISSING_RESULT'), formatReport(missing));
+  assert.notEqual(missing.status, 'PASS');
 
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'MISSING_EVIDENCE'));
+  const duplicate = await checkFeature(await workspace(t, {
+    planText: plan({ rows: [
+      '| TC01 | 1 | PASS | `evidence/run.log` | | |',
+      '| TC01 | 1 | FAIL | `evidence/run.log` | | |',
+      '| TC01 | 2 | PASS | `evidence/run.log` | | |',
+    ] }),
+  }), 'acceptance');
+  assert.ok(codes(duplicate).includes('DUPLICATE_RESULT'), formatReport(duplicate));
+
+  const unknown = await checkFeature(await workspace(t, {
+    planText: plan({ rows: [
+      '| TC01 | 1 | PASS | `evidence/run.log` | | |',
+      '| TC01 | 2 | PASS | `evidence/run.log` | | |',
+      '| TC09 | 1 | PASS | `evidence/run.log` | | |',
+    ] }),
+  }), 'acceptance');
+  assert.ok(codes(unknown).includes('UNKNOWN_RESULT'), formatReport(unknown));
 });
 
-test('PASS 引用零字节文件时返回空证据', async (t) => {
-  const dir = await workspace(t, {
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '' },
-  });
+test('BLOCKED 存在时不通过，FAIL 与 BLOCKED 同时存在时为 FAIL', async (t) => {
+  const blocked = await checkFeature(await workspace(t, {
+    planText: plan({ rows: ['| TC01 | 1 | PASS | `evidence/run.log` | | |', '| TC01 | 2 | BLOCKED | 环境不可用 | | |'] }),
+  }), 'acceptance');
+  assert.equal(blocked.status, 'BLOCKED', formatReport(blocked));
 
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'EMPTY_EVIDENCE'));
+  const failed = await checkFeature(await workspace(t, {
+    planText: plan({ rows: ['| TC01 | 1 | FAIL | `evidence/run.log` | | |', '| TC01 | 2 | BLOCKED | 环境不可用 | | |'] }),
+  }), 'acceptance');
+  assert.equal(failed.status, 'FAIL', formatReport(failed));
 });
 
-test('证据路径越出特性目录时被拒绝', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace('screenshots/TC01-b.png', '../outside.png'),
-    evidence: { 'TC01-a.png': '证据甲' },
-  });
+test('规划阶段只校验结构；用户故事未覆盖或 QA Mode 非法时失败', async (t) => {
+  const planned = await checkFeature(await workspace(t, {
+    planText: plan({ rows: ['| TC01 | 1 | BLOCKED | 尚未执行 | | |', '| TC01 | 2 | BLOCKED | 尚未执行 | | |'] }),
+    files: {},
+  }), 'plan');
+  assert.equal(planned.status, 'PASS', formatReport(planned));
 
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'EVIDENCE_OUT_OF_SCOPE'));
+  const uncovered = await checkFeature(await workspace(t, { planText: plan({ covers: '1' }) }), 'plan');
+  assert.ok(codes(uncovered).includes('UNCOVERED_US'), formatReport(uncovered));
+
+  const mode = await checkFeature(await workspace(t, { planText: plan({ mode: 'auto' }) }), 'plan');
+  assert.ok(codes(mode).includes('INVALID_QA_MODE'), formatReport(mode));
 });
 
-test('缺少任一断言执行行时返回缺失结果且不能通过', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace('| TC01 | 2 | PASS | `screenshots/TC01-b.png` |', ''),
-    evidence: { 'TC01-a.png': '证据甲' },
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'BLOCKED');
-  assert.ok(result.issues.some((item) => item.code === 'MISSING_RESULT' && item.message.includes('TC01 / 2')));
-});
-
-test('同一断言出现重复结果时返回重复错误', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace(
-      '| TC01 | 2 | PASS | `screenshots/TC01-b.png` |',
-      '| TC01 | 1 | PASS | `screenshots/TC01-a.png` |',
-    ),
-    evidence: { 'TC01-a.png': '证据甲' },
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'DUPLICATE_RESULT'));
-});
-
-test('完全没有执行结果时状态为 BLOCKED 而不是 PASS', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${VALID_PLAN.split('## 执行记录')[0]}## 执行记录\n`,
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'BLOCKED');
-  assert.equal(result.ok, false);
-});
-
-test('FAIL 与 BLOCKED 同时存在时总体结果为 FAIL', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace(
-      '| TC01 | 1 | PASS | `screenshots/TC01-a.png` |',
-      '| TC01 | 1 | FAIL | 断言不符 |',
-    ).replace(
-      '| TC01 | 2 | PASS | `screenshots/TC01-b.png` |',
-      '| TC01 | 2 | BLOCKED | 尚未执行 |',
-    ),
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-});
-
-test('命令证据不要求额外截图文件', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replaceAll('`screenshots/TC01-a.png`', 'command: node --test（exit 0）').replaceAll('`screenshots/TC01-b.png`', 'command: node --test（exit 0）'),
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'PASS');
-});
-
-test('计划外的执行结果必须被指出', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${VALID_PLAN}\n| TC99 | 1 | PASS | command: 额外结果 |`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'UNKNOWN_RESULT'));
-});
-
-const REVIEW_OK = [
-  '## Spec 对账',
-  '| US | 状态 | 证据或原因 |',
-  '| --- | --- | --- |',
-  '| 1 | PASS | TC01 / 断言 1 |',
-  '| 2 | PASS | TC01 / 断言 2 |',
-].join('\n');
-
-test('规划阶段只校验结构，不要求提前产生执行证据', async (t) => {
-  const dir = await workspace(t);
-
-  const result = await checkFeature(dir, 'plan');
-  assert.equal(result.status, 'PASS');
-});
-
-test('Spec 用户故事未被任何 TC 覆盖时规划失败', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace('- Covers: 1, 2', '- Covers: 1'),
-  });
-
-  const result = await checkFeature(dir, 'plan');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'UNCOVERED_US' && item.message.includes('US 2')));
-});
-
-test('非法 QA Mode 会被明确拒绝', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace('QA Mode: inline', 'QA Mode: auto'),
-  });
-
-  const result = await checkFeature(dir, 'plan');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'INVALID_QA_MODE'));
-});
-
-test('Markdown 表格允许省略首尾管道符并使用不规则空格', async (t) => {
-  const dir = await workspace(t, {
-    plan: VALID_PLAN.replace(
-      '| TC01 | 1 | PASS | `screenshots/TC01-a.png` |',
-      'TC01|1|PASS|`screenshots/TC01-a.png`',
-    ).replace(
-      '| TC01 | 2 | PASS | `screenshots/TC01-b.png` |',
-      '  TC01  |  2  |  PASS  |  `screenshots/TC01-b.png`  ',
-    ),
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-
-  const result = await checkFeature(dir, 'acceptance');
-  assert.equal(result.status, 'PASS');
-});
-
-test('旧计划返回 LEGACY、未校验和退出 0，且不修改文件', async (t) => {
-  const dir = await workspace(t, { spec: null, plan: '# 历史测试计划\n' });
-  const planPath = path.join(dir, 'qa-plan.md');
-  const before = await stat(planPath);
-
-  const result = await checkFeature(dir, 'acceptance');
-  const after = await stat(planPath);
-  const cli = spawnSync(process.execPath, [SCRIPT, 'acceptance', dir], { encoding: 'utf8' });
-
-  assert.equal(result.status, 'LEGACY');
-  assert.equal(result.ok, false);
-  assert.equal(after.mtimeMs, before.mtimeMs);
-  assert.equal(cli.status, 0);
-  assert.match(cli.stdout, /未校验/);
-  assert.match(cli.stdout, /结果: LEGACY/);
-});
-
-test('完整执行证据和全量 US 对账可以通过 review', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${VALID_PLAN}\n${REVIEW_OK}`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-
-  const result = await checkFeature(dir, 'review');
-  assert.equal(result.status, 'PASS');
-});
-
-test('review 漏掉任一 US 时返回 MISSING_US', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${VALID_PLAN}\n${REVIEW_OK.replace('| 2 | PASS | TC01 / 断言 2 |', '')}`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-
-  const result = await checkFeature(dir, 'review');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'MISSING_US' && item.message.includes('US 2')));
+test('缺少 review-report 时 review 不通过', async (t) => {
+  const report = await checkFeature(await workspace(t), 'review');
+  assert.notEqual(report.status, 'PASS');
+  assert.ok(codes(report).includes('MISSING_REVIEW_REPORT'), formatReport(report));
 });
 
 test('安装模板与工具脚本保持逐字一致', async () => {
-  const [script, template] = await Promise.all([
-    readFile(SCRIPT, 'utf8'),
-    readFile(TEMPLATE, 'utf8'),
-  ]);
+  const [script, template] = await Promise.all([readFile(SCRIPT, 'utf8'), readFile(TEMPLATE, 'utf8')]);
   assert.equal(template, script);
 });
 
 test('CLI 兼容 pnpm 传入的字面量双横线分隔符', async (t) => {
   const dir = await workspace(t);
   const cli = spawnSync(process.execPath, [SCRIPT, '--', 'plan', dir], { encoding: 'utf8' });
-
-  assert.equal(cli.status, 0);
+  assert.equal(cli.status, 0, cli.stdout + cli.stderr);
   assert.match(cli.stdout, /结果: PASS/);
 });
-
-const SCHEMA2_PLAN = VALID_PLAN.replace('QA Schema: 1', 'QA Schema: 2');
-const REPORT_OK = [
-  '# 审查报告',
-  '',
-  '## Standards',
-  '规范轴通过',
-  '',
-  '## Spec',
-  '需求轴通过',
-  '',
-  '## 结论',
-  '- 本次修：无',
-  '- 转专项：无',
-  '- 驳回：无',
-].join('\n');
-
-test('Schema 2 缺少 review-report 时 review 返回 BLOCKED', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-  await writeFile(
-    path.join(dir, 'review-package.json'),
-    JSON.stringify({ version: 1, changedFiles: [], unreviewed: [] }),
-  );
-
-  const result = await checkFeature(dir, 'review');
-  assert.equal(result.status, 'BLOCKED');
-  assert.ok(result.issues.some((item) => item.code === 'MISSING_REVIEW_REPORT'));
-});
-
-test('Schema 2 存在 unreviewed 敏感或过大文件时 review 返回 FAIL', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-  await writeFile(
-    path.join(dir, 'review-package.json'),
-    JSON.stringify({ version: 1, changedFiles: [], unreviewed: [{ path: '.env', reason: '敏感配置' }] }),
-  );
-  await writeFile(path.join(dir, 'review-report.md'), REPORT_OK);
-
-  const result = await checkFeature(dir, 'review');
-  assert.equal(result.status, 'FAIL');
-  assert.ok(result.issues.some((item) => item.code === 'UNREVIEWED_FILES'));
-});
-
-test('Schema 2 具备完整 manifest、diff 与双轴报告时 review 返回 PASS', async (t) => {
-  const dir = await workspace(t, {
-    plan: `${SCHEMA2_PLAN}\n${REVIEW_OK}`,
-    evidence: { 'TC01-a.png': '证据甲', 'TC01-b.png': '证据乙' },
-  });
-  await writeFile(
-    path.join(dir, 'review-package.json'),
-    JSON.stringify({ version: 1, changedFiles: ['file.ts'], unreviewed: [] }),
-  );
-  await writeFile(path.join(dir, 'review-package.diff'), 'diff --git a/file.ts b/file.ts\n+hello\n');
-  await writeFile(path.join(dir, 'review-report.md'), REPORT_OK);
-
-  const result = await checkFeature(dir, 'review');
-  assert.equal(result.status, 'PASS');
-});
-

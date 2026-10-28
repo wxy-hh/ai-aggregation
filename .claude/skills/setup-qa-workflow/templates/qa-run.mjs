@@ -108,6 +108,8 @@ export function parseRunLog(text) {
     finished,
     exit,
     complete,
+    // 命令输出正文（不含头尾），供断言标记核对
+    body: lines.slice(headerEnd > 0 ? headerEnd + 1 : lines.length, complete ? tailStart : end).join('\n'),
   };
 }
 

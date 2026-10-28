@@ -23,6 +23,8 @@ const BINARY_EXTENSIONS = new Set([
   '.woff', '.woff2', '.ttf', '.otf', '.mp3', '.mp4', '.mov', '.avi', '.db', '.sqlite',
 ]);
 const UNKNOWN_HASH = Symbol('未知哈希');
+// 特性目录内的机器状态目录：基线、开工前快照、审查包与调试截图，禁止手改
+export const QA_DIR = '_qa';
 
 function git(repo, args, allowed = [0], encoding = 'utf8') {
   const result = spawnSync('git', args, {
@@ -135,7 +137,7 @@ export async function computeTreeDigest(repo, scopes) {
 }
 
 export async function readScope(feature) {
-  return JSON.parse(await readFile(path.join(feature, 'scope.json'), 'utf8'));
+  return JSON.parse(await readFile(path.join(feature, QA_DIR, 'scope.json'), 'utf8'));
 }
 
 function nameSkippedReason(relative) {
@@ -210,13 +212,13 @@ async function createDirtyAtInit(root, scopes, status) {
 
 async function initReviewBase(repo, argument, scopesInput) {
   const { root, feature } = await resolveFeature(repo, argument);
-  const scopePath = path.join(feature, 'scope.json');
+  const scopePath = path.join(feature, QA_DIR, 'scope.json');
   if (await pathInfo(scopePath)) throw new Error('SCOPE_EXISTS：已有开工基线，禁止重置');
   const scopes = normalizeScopes(scopesInput);
   const base = git(root, ['rev-parse', 'HEAD']).stdout.trim();
   const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']).stdout;
   const dirtyAtInit = await createDirtyAtInit(root, scopes, status);
-  const snapshotRoot = path.join(feature, 'prechange', 'files');
+  const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const skipped = [];
 
   for (const relative of listFiles(root, scopes)) {
@@ -230,7 +232,7 @@ async function initReviewBase(repo, argument, scopesInput) {
     await copyFile(path.join(root, relative), destination);
   }
 
-  const prechangeRoot = path.join(feature, 'prechange');
+  const prechangeRoot = path.join(feature, QA_DIR, 'prechange');
   await mkdir(prechangeRoot, { recursive: true });
   const planPath = path.join(feature, 'qa-plan.md');
   const planFrozen = await fileExists(planPath);
@@ -247,7 +249,7 @@ async function initReviewBase(repo, argument, scopesInput) {
   };
   await writeFile(scopePath, `${JSON.stringify(scope, null, 2)}\n`);
   console.log(`已记录开工前基线 ${base}，快照范围 ${scopes.length} 项，跳过 ${skipped.length} 项。`);
-  console.log(planFrozen ? '计划已冻结：prechange/qa-plan.md' : '未找到 qa-plan.md，计划未冻结');
+  console.log(planFrozen ? `计划已冻结：${QA_DIR}/prechange/qa-plan.md` : '未找到 qa-plan.md，计划未冻结');
   for (const relative of dirtyAtInit.inScope) console.log(`开工时范围内已有改动：${relative}`);
   if (dirtyAtInit.inScope.length) {
     console.log('若属于本任务（如阶段 1–2 写入的 ADR/GLOSSARY、流程工具修复），请运行：');
@@ -273,11 +275,9 @@ function baseSymlinkFiles(root, base, scopes) {
 
 async function addReviewScopes(repo, argument, scopesInput) {
   const { root, feature } = await resolveFeature(repo, argument);
-  const scopePath = path.join(feature, 'scope.json');
+  const scopePath = path.join(feature, QA_DIR, 'scope.json');
   const scope = await readScope(feature);
-  if (scope.version !== 2) {
-    throw new Error(scope.version === 1 ? '旧版 v1 基线不支持 add，请在开工时使用新版 init' : 'add 需要 version 2 基线');
-  }
+  if (scope.version !== 2) throw new Error('add 需要 version 2 基线，请用当前版本 init 重新建立');
   const addedScopes = normalizeScopes(scopesInput);
   const previousScopes = new Set(scope.scopes);
   const files = new Set();
@@ -292,7 +292,7 @@ async function addReviewScopes(repo, argument, scopesInput) {
     for (const relative of listFiles(root, [added])) files.add(relative);
   }
 
-  const snapshotRoot = path.join(feature, 'prechange', 'files');
+  const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const skipped = new Map((scope.skipped ?? []).map((item) => [item.path, item]));
   for (const relative of [...files].sort()) {
     const baseContent = baseFiles.has(relative)
@@ -375,15 +375,14 @@ async function collectOutOfScope(root, scope, expectedScopes) {
 async function collectReviewPackage(repo, argument, scopesInput) {
   const { root, feature } = await resolveFeature(repo, argument);
   const scope = await readScope(feature);
-  const snapshotRoot = path.join(feature, 'prechange', 'files');
+  if (scope.version !== 2) throw new Error('collect 需要 version 2 基线，请用当前版本 init 重新建立');
+  const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const beforeFiles = await snapshotFiles(snapshotRoot);
   const skipped = new Map((scope.skipped ?? []).map((item) => [item.path, item]));
-  if (scope.version === 2) {
-    const narrowed = [...new Set([...beforeFiles, ...skipped.keys()])]
-      .filter((relative) => !inScope(relative, scope.scopes));
-    if (narrowed.length) {
-      throw new Error(`SCOPE_NARROWED：审查范围被收窄：${narrowed.join(', ')}；不要修改 scope.json；扩大范围请用 add`);
-    }
+  const narrowed = [...new Set([...beforeFiles, ...skipped.keys()])]
+    .filter((relative) => !inScope(relative, scope.scopes));
+  if (narrowed.length) {
+    throw new Error(`SCOPE_NARROWED：审查范围被收窄：${narrowed.join(', ')}；不要修改 ${QA_DIR}/scope.json；扩大范围请用 add`);
   }
 
   const expectedScopes = normalizeScopes(scope.scopes);
@@ -435,48 +434,40 @@ async function collectReviewPackage(repo, argument, scopesInput) {
     }
   }
 
-  const isVersion2 = scope.version === 2;
-  const outOfScope = isVersion2 ? await collectOutOfScope(root, scope, expectedScopes) : [];
+  const outOfScope = await collectOutOfScope(root, scope, expectedScopes);
   const fromBase = scope.fromBase ?? [];
-  const preexisting = isVersion2
-    ? (scope.dirtyAtInit?.inScope ?? []).filter((relative) => !inScope(relative, fromBase))
-    : [];
-  const treeDigest = isVersion2 ? await computeTreeDigest(root, expectedScopes) : null;
-  await writeFile(path.join(feature, 'review-package.diff'), patches.join('\n'));
-  const manifest = isVersion2
-    ? {
-        version: 2,
-        base: scope.base,
-        scope: expectedScopes,
-        fromBase,
-        changedFiles,
-        unreviewed,
-        outOfScope,
-        preexisting,
-        treeDigest,
-        package: 'review-package.diff',
-      }
-    : {
-        version: 1,
-        base: scope.base,
-        scope: expectedScopes,
-        changedFiles,
-        unreviewed,
-        package: 'review-package.diff',
-      };
-  await writeFile(path.join(feature, 'review-package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  const preexisting = (scope.dirtyAtInit?.inScope ?? []).filter((relative) => !inScope(relative, fromBase));
+  const treeDigest = await computeTreeDigest(root, expectedScopes);
+  const manifestPath = path.join(feature, QA_DIR, 'review-package.json');
+  const previous = await readFile(manifestPath, 'utf8').then(JSON.parse, () => null);
+  // 代码未变时沿用该 tree 首次打包的时间，重复 collect 不会让已落盘的审查原文显得过期
+  const packagedAt = previous?.treeDigest === treeDigest && typeof previous.packagedAt === 'string'
+    ? previous.packagedAt
+    : new Date().toISOString();
+  await mkdir(path.join(feature, QA_DIR), { recursive: true });
+  await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), patches.join('\n'));
+  const manifest = {
+    version: 2,
+    base: scope.base,
+    scope: expectedScopes,
+    fromBase,
+    changedFiles,
+    unreviewed,
+    outOfScope,
+    preexisting,
+    treeDigest,
+    packagedAt,
+    package: `${QA_DIR}/review-package.diff`,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-  if (isVersion2) {
-    console.log(`审查包已生成：${changedFiles.length} 个变更文件，${unreviewed.length} 个未审查文件，${outOfScope.length} 个范围外改动，${preexisting.length} 个开工前已有改动；tree ${treeDigest.slice(0, 12)}。`);
-    for (const item of outOfScope) console.log(`范围外改动：${item.path}（${item.reason}）`);
-    if (outOfScope.length) {
-      console.log('属于本任务 → add 后重新 collect；不属于本任务（用户或其他进程的改动）→ 在 review-report 的 ## 范围说明 逐个写明来源；不要修改 scope.json');
-    }
-    for (const item of unreviewed) console.log(`未审查文件：${item.path}（${item.reason}）`);
-    for (const relative of preexisting) console.log(`开工时范围内已有改动且未 add：${relative}`);
-  } else {
-    console.log(`审查包已生成：${changedFiles.length} 个变更文件，${unreviewed.length} 个未审查文件。`);
+  console.log(`审查包已生成：${changedFiles.length} 个变更文件，${unreviewed.length} 个未审查文件，${outOfScope.length} 个范围外改动，${preexisting.length} 个开工前已有改动；tree ${treeDigest.slice(0, 12)}。`);
+  for (const item of outOfScope) console.log(`范围外改动：${item.path}（${item.reason}）`);
+  if (outOfScope.length) {
+    console.log(`属于本任务 → add 后重新 collect；不属于本任务（用户或其他进程的改动）→ 在 review-report 的 ## 范围说明 逐个写明来源；不要修改 ${QA_DIR}/scope.json`);
   }
+  for (const item of unreviewed) console.log(`未审查文件：${item.path}（${item.reason}）`);
+  for (const relative of preexisting) console.log(`开工时范围内已有改动且未 add：${relative}`);
 }
 
 async function printDigest(repo, argument) {

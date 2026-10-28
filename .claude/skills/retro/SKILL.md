@@ -44,6 +44,7 @@ You have access to several files in the repo:
 
 ## 项目定制（上游升级时保留本节）
 
-- 以工具轨迹（命令、技能加载行、子代理调用）和实际产物（spec、qa-plan、`prechange/`、证据日志、截图、review-report）为准，不以交付汇报或自检门禁的自述为准。
+- 以工具轨迹（命令、技能加载行、子代理调用）和实际产物（spec、qa-plan、`_qa/prechange/`、`scripts/`、证据日志、截图）为准，不以交付汇报或自检门禁的自述为准。
+- 审查结论以 `review/` 原文与子代理转录（Claude Code 会话目录下 `subagents/agent-*.jsonl`）为准，不以 review-report 为准；逐个编号核对分流表有无漏列、改档或编造。
 - 只列带出处（文件与行号、命令或日志路径）的事实与偏差，不给百分比、“完全符合”“标杆”这类结论。
 - 建议在新会话复盘，但不强制。

@@ -90,9 +90,13 @@ Reporting them separately stops one axis from masking the other.
 
 ## 项目定制（QA 工作流调用时）
 
-QA 工作流在审查前不提交代码，因此由它调用本技能时只替换 diff 来源，其余步骤按上文执行：
+QA 工作流在审查前不提交代码，因此由它调用本技能时替换 diff 来源与原文落盘方式，其余步骤按上文执行：
 
-- 固定点取 `.scratch/<feature>/scope.json` 的 `base`；commit 列表仍用 `git log <base>..HEAD --oneline`。
-- diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
-- `review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
+- 固定点取 `.scratch/<feature>/_qa/scope.json` 的 `base`；commit 列表仍用 `git log <base>..HEAD --oneline`。
+- diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/_qa/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
+- `_qa/review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
+- 两个子代理继承主会话模型，调用时不传 model；用户明确指定审查模型时照做，并在 review-report 的审查方式行写明。前台或后台不限。
+- 每个子代理把完整返回写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（n 为轮次，首轮 1；已存在的文件不得覆盖），返回内容与文件一致。两份原文都落盘后主代理才进入三档分流，第 5 步汇总不再粘贴原文。
+- 每条发现以编号开头：Standards 轴 `[S-H<n>]` 硬违规、`[S-J<n>]` 判断建议；Spec 轴 `[P-M<n>]` 缺失或部分实现、`[P-W<n>]` 实现有误、`[P-X<n>]` 范围蔓延；同轴序号递增，复审新发现接续编号。无发现时写「无发现」。
+- 复审（r2 起）只给子代理它自己的历次原文、上一次 collect 之后新增的修复 diff 与 spec，不给实现者的修复尝试记录；子代理对上轮每个本次修编号写 `[编号] 已修`、`[编号] 未修` 或 `[编号] 修错`，只对修复 diff 报告新发现。
 - 审查期间不执行 `git add`、`git add -N`、commit、stash、reset 或 checkout。

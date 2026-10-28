@@ -7,11 +7,13 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkFeature, formatReport } from '../qa-check.mjs';
 
-// 本文件覆盖 qa-workflow-control-points 特性的控制点检查（US 1–5）
+// 本文件覆盖 qa-workflow-control-points 特性的控制点检查（US 1–5），夹具已迁移到 Schema 4
 const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
 const REVIEW_PACKAGE = fileURLToPath(new URL('../review-package.mjs', import.meta.url));
 const COMMAND = 'node --version';
 const SHOT = '`screenshots/TC01.png`';
+const TEST_FILE = 'tests/a.test.mjs';
+const BINDING = `\`${TEST_FILE}\` › 第一条断言成立`;
 
 function specText({ commands = [COMMAND] } = {}) {
   const lines = ['## User Stories', '1. 第一条需求', ''];
@@ -23,12 +25,12 @@ function planText({
   kind = 'feature',
   seam = 'unit',
   assertions = ['第一条断言'],
-  rows = ['| TC01 | 1 | BLOCKED | 尚未执行 | |'],
+  rows = ['| TC01 | 1 | BLOCKED | 尚未执行 | | |'],
   delivery = [[COMMAND, '待执行']],
   reproduction = [],
 } = {}) {
   return [
-    'QA Schema: 3',
+    'QA Schema: 4',
     'QA Mode: inline',
     `QA Kind: ${kind}`,
     '',
@@ -41,8 +43,8 @@ function planText({
     ...assertions.map((text, index) => `${index + 1}. ${text}`),
     '',
     '## 执行记录',
-    '| 用例 | 断言序号 | 状态 | 证据 | 备注 |',
-    '| --- | --- | --- | --- | --- |',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
     ...rows,
     '',
     '## 交付验证',
@@ -61,7 +63,7 @@ function planText({
 }
 
 /** 手写的 qa-run 日志夹具，用于构造指定开始时间或 argv 的证据 */
-function runLog({ argv = ['node', '--version'], exit = 0, started, cwd = '.', tree = 'none' }) {
+function runLog({ argv = ['node', '--version'], exit = 0, started, cwd = '.', tree = 'none', body = '测试输出' }) {
   return [
     '# qa-run v1',
     '# label: fixture',
@@ -72,7 +74,7 @@ function runLog({ argv = ['node', '--version'], exit = 0, started, cwd = '.', tr
     `# tree: ${tree}`,
     `# started: ${started}`,
     '# ---',
-    '测试输出',
+    body,
     '# ---',
     `# finished: ${started}`,
     `# exit: ${exit}`,
@@ -107,7 +109,11 @@ async function featureRepo(t, {
   git(dir, ['init', '--quiet']);
   git(dir, ['config', 'user.email', 'qa@example.internal']);
   git(dir, ['config', 'user.name', 'QA Test']);
-  for (const [relative, content] of Object.entries({ 'tracked.txt': '原始内容\n', ...committed })) {
+  for (const [relative, content] of Object.entries({
+    'tracked.txt': '原始内容\n',
+    [TEST_FILE]: "import test from 'node:test';\ntest('第一条断言成立', () => {});\n",
+    ...committed,
+  })) {
     await writeDeep(path.join(dir, relative), content);
   }
   git(dir, ['add', '-A']);
@@ -121,7 +127,7 @@ async function featureRepo(t, {
     encoding: 'utf8',
   });
   assert.equal(init.status, 0, init.stderr);
-  const scope = JSON.parse(await readFile(path.join(feature, 'scope.json'), 'utf8'));
+  const scope = JSON.parse(await readFile(path.join(feature, '_qa', 'scope.json'), 'utf8'));
   return { dir, feature, scope };
 }
 
@@ -293,7 +299,7 @@ test('spec 缺少交付命令时 plan 不通过，验收与审查只提示（控
 
   const { dir, feature } = await featureRepo(t, { spec: specText({ commands: null }) });
   qaRun(dir, feature, 'run', ['node', '--version']);
-  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: ['| TC01 | 1 | PASS | `evidence/run.log` | |'] }));
+  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: [`| TC01 | 1 | PASS | \`evidence/run.log\` | ${BINDING} | |`] }));
   const acceptance = await checkFeature(feature, 'acceptance');
   assert.equal(acceptance.status, 'PASS', formatReport(acceptance, 'acceptance'));
   assert.ok(acceptance.notes.some((note) => note.includes('## 交付命令')));
@@ -305,7 +311,7 @@ test('spec 缺少交付命令时 plan 不通过，验收与审查只提示（控
 test('冻结计划已有 PASS 或 FAIL 时验收不通过，只有 BLOCKED 时不报（控制点 TC03）', async (t) => {
   for (const status of ['PASS', 'FAIL']) {
     const { feature } = await featureRepo(t, {
-      plan: planText({ rows: [`| TC01 | 1 | ${status} | \`evidence/old.log\` | |`] }),
+      plan: planText({ rows: [`| TC01 | 1 | ${status} | \`evidence/old.log\` | | |`] }),
     });
     const report = await checkFeature(feature, 'acceptance');
     assert.equal(report.status, 'FAIL');
@@ -319,7 +325,7 @@ test('冻结计划已有 PASS 或 FAIL 时验收不通过，只有 BLOCKED 时�
 test('PASS 证据日志早于基线时验收不通过，基线之后的日志不报（控制点 TC03）', async (t) => {
   const { dir, feature, scope } = await featureRepo(t);
   await writeDeep(path.join(feature, 'evidence', 'early.log'), runLog({ started: shift(scope.createdAt, -60_000) }));
-  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: ['| TC01 | 1 | PASS | `evidence/early.log` | |'] }));
+  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: [`| TC01 | 1 | PASS | \`evidence/early.log\` | ${BINDING} | |`] }));
   const early = await checkFeature(feature, 'acceptance');
   assert.equal(early.status, 'FAIL');
   const issue = early.issues.find((item) => item.code === 'EVIDENCE_BEFORE_BASELINE');
@@ -327,7 +333,7 @@ test('PASS 证据日志早于基线时验收不通过，基线之后的日志不
   assert.match(issue.message, /TC01 \/ 1/);
 
   qaRun(dir, feature, 'late', ['node', '--version']);
-  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: ['| TC01 | 1 | PASS | `evidence/late.log` | |'] }));
+  await writeFile(path.join(feature, 'qa-plan.md'), planText({ rows: [`| TC01 | 1 | PASS | \`evidence/late.log\` | ${BINDING} | |`] }));
   const late = await checkFeature(feature, 'acceptance');
   assert.equal(late.status, 'PASS', formatReport(late, 'acceptance'));
 });
@@ -351,7 +357,7 @@ test('交付日志早于基线时审查不通过，修复轮红日志早于基�
   qaRun(fix.dir, fix.feature, 'green', ['node', '--version']);
   await writeFile(path.join(fix.feature, 'qa-plan.md'), planText({
     kind: 'fix',
-    rows: ['| TC01 | 1 | PASS | `evidence/green.log` | |'],
+    rows: [`| TC01 | 1 | PASS | \`evidence/green.log\` | ${BINDING} | |`],
     reproduction: ['| TC01 | `evidence/red.log` |'],
   }));
   const acceptance = await checkFeature(fix.feature, 'acceptance');
@@ -400,7 +406,7 @@ test('init 白名单外已改、之后经 add 纳入范围的路径同样留下 
 async function browserRepo(t) {
   const repo = await featureRepo(t, { plan: planText({ seam: 'browser' }) });
   await writeDeep(path.join(repo.feature, 'screenshots', 'TC01.png'), '截图');
-  await writeDeep(path.join(repo.feature, 'scripts', 'browser.mjs'), '// 浏览器过程脚本\n');
+  await writeDeep(path.join(repo.feature, 'scripts', 'browser.mjs'), "console.log('[TC01-1] PASS 实测：可见');\nconsole.log('[TC01-2] PASS 实测：可见');\n");
   return repo;
 }
 
@@ -408,7 +414,7 @@ async function acceptWithLog(feature, log, label) {
   await writeDeep(path.join(feature, 'evidence', `${label}.log`), log);
   await writeFile(path.join(feature, 'qa-plan.md'), planText({
     seam: 'browser',
-    rows: [`| TC01 | 1 | PASS | ${SHOT}、\`evidence/${label}.log\` | |`],
+    rows: [`| TC01 | 1 | PASS | ${SHOT}、\`evidence/${label}.log\` | | |`],
   }));
   return checkFeature(feature, 'acceptance');
 }
@@ -420,7 +426,7 @@ test('browser 证据日志没有引用特性目录内的脚本时验收不通过
     started: shift(scope.createdAt, 1000),
   }), 'outside');
   assert.equal(report.status, 'FAIL');
-  const issue = report.issues.find((item) => item.code === 'BROWSER_SCRIPT_OUTSIDE_FEATURE');
+  const issue = report.issues.find((item) => item.code === 'PROCESS_SCRIPT_OUTSIDE_SCRIPTS');
   assert.match(issue.message, /TC01 \/ 1/);
 });
 
@@ -429,7 +435,7 @@ test('相对路径或 file URL 引用特性目录内脚本时通过，文件不�
   qaRun(dir, feature, 'relative', ['node', '.scratch/feature/scripts/browser.mjs']);
   await writeFile(path.join(feature, 'qa-plan.md'), planText({
     seam: 'browser',
-    rows: [`| TC01 | 1 | PASS | ${SHOT}、\`evidence/relative.log\` | |`],
+    rows: [`| TC01 | 1 | PASS | ${SHOT}、\`evidence/relative.log\` | | |`],
   }));
   const relative = await checkFeature(feature, 'acceptance');
   assert.equal(relative.status, 'PASS', formatReport(relative, 'acceptance'));
@@ -440,19 +446,19 @@ test('相对路径或 file URL 引用特性目录内脚本时通过，文件不�
     argv: ['ego-browser', 'nodejs', '-e', `await import('${url}')`],
     started,
   }), 'file-url');
-  assert.ok(!codes(fileUrl).includes('BROWSER_SCRIPT_OUTSIDE_FEATURE'), formatReport(fileUrl, 'acceptance'));
+  assert.ok(!codes(fileUrl).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), formatReport(fileUrl, 'acceptance'));
 
   const missing = await acceptWithLog(feature, runLog({
     argv: ['node', '.scratch/feature/scripts/missing.mjs'],
     started,
   }), 'missing');
-  assert.ok(codes(missing).includes('BROWSER_SCRIPT_OUTSIDE_FEATURE'), formatReport(missing, 'acceptance'));
+  assert.ok(codes(missing).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), formatReport(missing, 'acceptance'));
 });
 
 test('非 browser 接缝不检查入口脚本，只引用截图仍按缺失报错（控制点 TC05）', async (t) => {
   const unit = await featureRepo(t);
   qaRun(unit.dir, unit.feature, 'run', ['node', '--version']);
-  await writeFile(path.join(unit.feature, 'qa-plan.md'), planText({ rows: ['| TC01 | 1 | PASS | `evidence/run.log` | |'] }));
+  await writeFile(path.join(unit.feature, 'qa-plan.md'), planText({ rows: [`| TC01 | 1 | PASS | \`evidence/run.log\` | ${BINDING} | |`] }));
   const unitReport = await checkFeature(unit.feature, 'acceptance');
   assert.equal(unitReport.status, 'PASS', formatReport(unitReport, 'acceptance'));
 
@@ -461,19 +467,19 @@ test('非 browser 接缝不检查入口脚本，只引用截图仍按缺失报�
     argv: ['ego-browser', 'nodejs', '-e', "await page.screenshot({ path: '.scratch/feature/screenshots/TC01.png' })"],
     started: shift(scope.createdAt, 1000),
   }), 'screenshot-only');
-  assert.ok(codes(screenshotOnly).includes('BROWSER_SCRIPT_OUTSIDE_FEATURE'), formatReport(screenshotOnly, 'acceptance'));
+  assert.ok(codes(screenshotOnly).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), formatReport(screenshotOnly, 'acceptance'));
 });
 
 test('计划文件或 prechange 快照中的脚本不算入口脚本（控制点 TC05）', async (t) => {
   const { feature, scope } = await browserRepo(t);
   const started = shift(scope.createdAt, 1000);
-  await writeDeep(path.join(feature, 'prechange', 'files', 'snapshot.mjs'), '// 快照中的脚本\n');
-  for (const [label, target] of [['plan-file', 'qa-plan.md'], ['prechange-script', 'prechange/files/snapshot.mjs']]) {
+  await writeDeep(path.join(feature, '_qa', 'prechange', 'files', 'snapshot.mjs'), '// 快照中的脚本\n');
+  for (const [label, target] of [['plan-file', 'qa-plan.md'], ['prechange-script', '_qa/prechange/files/snapshot.mjs']]) {
     const report = await acceptWithLog(feature, runLog({
       argv: ['ego-browser', 'nodejs', '-e', `await run('.scratch/feature/${target}')`],
       started,
     }), label);
-    assert.ok(codes(report).includes('BROWSER_SCRIPT_OUTSIDE_FEATURE'), `${label}: ${formatReport(report, 'acceptance')}`);
+    assert.ok(codes(report).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), `${label}: ${formatReport(report, 'acceptance')}`);
   }
 });
 
@@ -483,15 +489,16 @@ test('同一 TC 内任一 PASS 日志引用了特性目录内脚本即满足（�
   await writeDeep(path.join(feature, 'evidence', 'inline.log'), runLog({
     argv: ['ego-browser', 'nodejs', '-e', 'await page.reload()'],
     started: shift(scope.createdAt, 1000),
+    body: '[TC01-2] PASS 实测：已刷新',
   }));
   await writeFile(path.join(feature, 'qa-plan.md'), planText({
     seam: 'browser',
     assertions: ['第一条断言', '第二条断言'],
     rows: [
-      `| TC01 | 1 | PASS | ${SHOT}、\`evidence/with-script.log\` | |`,
-      `| TC01 | 2 | PASS | ${SHOT}、\`evidence/inline.log\` | |`,
+      `| TC01 | 1 | PASS | ${SHOT}、\`evidence/with-script.log\` | | |`,
+      `| TC01 | 2 | PASS | ${SHOT}、\`evidence/inline.log\` | | |`,
     ],
   }));
   const report = await checkFeature(feature, 'acceptance');
-  assert.ok(!codes(report).includes('BROWSER_SCRIPT_OUTSIDE_FEATURE'), formatReport(report, 'acceptance'));
+  assert.ok(!codes(report).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), formatReport(report, 'acceptance'));
 });

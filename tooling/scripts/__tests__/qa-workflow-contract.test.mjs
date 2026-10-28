@@ -53,7 +53,7 @@ test('to-spec 将 qa-test-planner 作为默认建议下一步（TC11）', async 
 test('qa planner 将串行 implement 作为规划通过后的建议下一步（TC11、TC12）', async () => {
   const content = await read(paths.qaPlanner);
   assert.match(content, /规划通过后.*建议下一步：`\/implement`/);
-  assert.match(content, /QA Schema: 3/);
+  assert.match(content, /QA Schema: 4/);
 });
 
 test('to-tickets 将串行 implement 作为默认建议下一步（TC11）', async () => {
@@ -87,13 +87,12 @@ test('规划器声明 Seam、交付命令、修复轮与计划冻结（TC12）',
   assert.match(content, /≤5 条/);
 });
 
-test('门禁只在首轮、阶段切换与交付时完整声明（TC11）', async () => {
+test('门禁只在任务首轮与宣称交付时完整声明（TC11）', async () => {
   const [root, template] = await Promise.all([read(paths.root), read(paths.claudeTemplate)]);
   for (const content of [root, template]) {
     assert.match(content, /任务首轮/);
-    assert.match(content, /阶段切换/);
     assert.match(content, /宣称交付/);
-    assert.match(content, /同一阶段内后续回合不重复/);
+    assert.match(content, /其他回合不重复/);
   }
   assert.ok(root.trim().split('\n').length <= 69);
 });
@@ -164,7 +163,9 @@ test('正本与 implement 写明探活、单文件测试、qa-run 和合规登�
     assert.match(content, /node tooling\/scripts\/dev-port\.mjs/);
     assert.match(content, /pnpm --filter @repo\/web test/);
     assert.match(content, /\[id\]/);
-    assert.match(content, /test_user/);
+    assert.match(content, /测试账号/);
+    assert.match(content, /打开登录页/);
+    assert.doesNotMatch(content, /test_user/);
     assert.match(content, /node tooling\/scripts\/qa-run\.mjs/);
   }
   for (const forbidden of ['签发令牌', '写库造会话', '注入 Cookie']) {
@@ -278,5 +279,17 @@ test('发布验收检查真实编排与无能力暂停，而非只查工具（TC
     assert.match(content, /真实\s+\/implement/);
     assert.match(content, /无独立上下文能力/);
     assert.match(content, /手动派发 reviewer/);
+  }
+});
+
+test('安装器不按宿主条件开关绕过登录检查（TC09-3）', async () => {
+  const contents = await Promise.all([
+    read(paths.setup),
+    read('.claude/skills/setup-qa-workflow/templates/skill-customizations.md'),
+    read(paths.workflowTemplate),
+  ]);
+  for (const content of contents) {
+    assert.doesNotMatch(content, /AUTH_BYPASS_IN_SCRIPT/);
+    assert.doesNotMatch(content, /(?:无|没有|不含)数据库[^\n]*(?:跳过|关闭|移除|删除)[^\n]*(?:登录|扫描)/);
   }
 });

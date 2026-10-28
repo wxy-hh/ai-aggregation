@@ -15,7 +15,7 @@ spec 必须包含 Testing Decisions、Out of Scope 和 ## 交付命令（放在 
 在实现步骤中注入或更新项目段：
 
 ```text
-已有 scope.json（规划收口时已 init）时不再 init；没有时在改代码前执行 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单> 固化快照并冻结 Schema 3 计划；阶段产物需要纳入时用 add 以 base 为前值扩大范围，禁止手改 scope.json 或 prechange。默认单会话串行完成就绪工单，不自动提交。命令证据经 node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令> 生成；触及 {CORE_LINKS} 时按 qa-workflow 阶段 5 inline 完成真实浏览器验收，过程脚本放在特性目录并以脚本路径经 qa-run 运行，关键预期必须有硬断言与失败非零退出，环境无法验证 DOM、真实交互或移动几何时记 BLOCKED 或经计划变更转人工，不用低接缝证据替代；在规划和验收边界运行 node tooling/scripts/qa-check.mjs。验收后按 qa-workflow 阶段 6 串联：先 collect 审查包，再实际调用 code-review，由它前台并行启动 Standards / Spec 两个独立上下文子代理；review-report.md 原样保留两份真实独立返回，三档分流由 QA 工作流逐条标注，驳回须引 ADR 或契约，人工终审确认。拿不到两份独立返回时保持待独立审查，不得凭空生成 review-report.md；宿主完全没有独立上下文能力时只交付待审查材料包，不运行最终 qa-check review，由独立会话或人工接续。独立审查完成前不把 backlog、计划等文档写成完成态。QA 工作流负责最终交付命令和 qa-check review；结果: PASS 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审。
+已有 _qa/scope.json（规划收口时已 init）时不再 init；没有时在改代码前执行 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单> 固化快照并冻结 Schema 4 计划；阶段产物需要纳入时用 add 以 base 为前值扩大范围，禁止手改 _qa/。默认单会话串行完成就绪工单，不自动提交。命令证据经 node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令> 生成；触及 {CORE_LINKS} 时按 qa-workflow 阶段 5 inline 完成真实浏览器验收，过程脚本放在 scripts/ 并以脚本路径经 qa-run 运行，每条冻结断言硬断言后输出 [TC01-1] PASS 实测：<值>，失败输出 FAIL 标记并非零退出；unit/integration 的 PASS 行在绑定列写 `<测试文件>` › <用例标题>；登录只用已有会话、用户提供的测试账号真实登录一次或提示用户登录，不得注入 Cookie、直连数据库或签发令牌；环境无法验证 DOM、真实交互或移动几何时记 BLOCKED 或经计划变更转人工，不用低接缝证据替代；在规划和验收边界运行 node tooling/scripts/qa-check.mjs。验收后按 qa-workflow 阶段 6 串联：先 collect 审查包，再实际调用 code-review，由 Standards / Spec 两个独立上下文子代理（继承主会话模型）各自把真实独立返回写入 review/r<n>-*.md；三档分流按编号逐条对账，驳回须引 ADR 或契约；本次修后增量复审，自动上限 2 轮，用尽仍有未修或修错时照常完成交付验证并交人工裁决。拿不到两份子代理原文时保持待独立审查，不得凭空生成 review/ 原文或 review-report.md；宿主完全没有独立上下文能力时只交付待审查材料包，不运行最终 qa-check review，由独立会话或人工接续。独立审查完成前不把 backlog、计划等文档写成完成态。QA 工作流负责最终交付命令和 qa-check review；结果: PASS 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审。
 ```
 
 ## 3. `implement-spec` —— 显式并行、合并回归与审查交接
@@ -23,7 +23,7 @@ spec 必须包含 Testing Decisions、Out of Scope 和 ## 交付命令（放在 
 在并发实现步骤中注入或更新项目段：
 
 ```text
-仅用户明确选择并行时执行，最多 2 个实现子代理，不自动指定模型。已有 scope.json 时不再 init。主 Agent 串行合并并逐次运行集成测试；合并遵循 Git 确认边界。Worktree 不隔离数据库、Redis、端口或上游额度，高耦合任务回退串行。核心链路验收由主编排 Agent inline 完成。随后在 integration 结果上按 qa-workflow 阶段 6 串联：先 collect 审查包，再实际调用 code-review，由它前台并行启动 Standards / Spec 两个独立上下文子代理；review-report.md 原样保留两份真实独立返回，三档分流由 QA 工作流逐条标注，驳回须引 ADR 或契约，人工终审确认。拿不到两份独立返回时保持待独立审查，不得凭空生成 review-report.md；宿主完全没有独立上下文能力时只交付待审查材料包，不运行最终 qa-check review，由独立会话或人工接续。独立审查完成前不把 backlog、计划等文档写成完成态。QA 工作流负责最终交付命令和 qa-check review；结果: PASS 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审。
+仅用户明确选择并行时执行，最多 2 个实现子代理，不自动指定模型。已有 _qa/scope.json 时不再 init。主 Agent 串行合并并逐次运行集成测试；合并遵循 Git 确认边界。Worktree 不隔离数据库、Redis、端口或上游额度，高耦合任务回退串行。核心链路验收由主编排 Agent inline 完成。随后在 integration 结果上按 qa-workflow 阶段 6 串联：先 collect 审查包，再实际调用 code-review，由 Standards / Spec 两个独立上下文子代理（继承主会话模型）各自把真实独立返回写入 review/r<n>-*.md；三档分流按编号逐条对账，驳回须引 ADR 或契约；本次修后增量复审，自动上限 2 轮，用尽仍有未修或修错时照常完成交付验证并交人工裁决。拿不到两份子代理原文时保持待独立审查，不得凭空生成 review/ 原文或 review-report.md；宿主完全没有独立上下文能力时只交付待审查材料包，不运行最终 qa-check review，由独立会话或人工接续。独立审查完成前不把 backlog、计划等文档写成完成态。QA 工作流负责最终交付命令和 qa-check review；结果: PASS 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审。
 ```
 
 ## 4. `handoff` —— 工作区交接
@@ -34,16 +34,20 @@ spec 必须包含 Testing Decisions、Out of Scope 和 ## 交付命令（放在 
 同机断点续接写入 .scratch/<feature>/handoff.md；跨人或跨机器交接写入 docs/handoff/<日期>-<slug>.md。只引用 spec、qa-plan、ADR 和 diff 路径，不复制大段正文，不写入 API Key、Token、Cookie 或个人隐私。
 ```
 
-## 5. `code-review` —— QA 调用时的 diff 来源适配
+## 5. `code-review` —— QA 调用时的 diff 来源与原文落盘
 
-`code-review` 保持 Matt Pocock 上游原文，只在技能末尾追加以下项目段；collect、落盘、三档分流、复审与交付由 qa-workflow 阶段 6–7 负责：
+`code-review` 保持 Matt Pocock 上游原文，只在技能末尾追加以下项目段；collect、三档分流、增量复审上限与交付由 qa-workflow 阶段 6–7 负责：
 
 ```markdown
-QA 工作流在审查前不提交代码，因此由它调用本技能时只替换 diff 来源，其余步骤按上文执行：
+QA 工作流在审查前不提交代码，因此由它调用本技能时替换 diff 来源与原文落盘方式，其余步骤按上文执行：
 
-- 固定点取 `.scratch/<feature>/scope.json` 的 `base`；commit 列表仍用 `git log <base>..HEAD --oneline`。
-- diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
-- `review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
+- 固定点取 `.scratch/<feature>/_qa/scope.json` 的 `base`；commit 列表仍用 `git log <base>..HEAD --oneline`。
+- diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/_qa/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
+- `_qa/review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
+- 两个子代理继承主会话模型，调用时不传 model；用户明确指定审查模型时照做，并在 review-report 的审查方式行写明。前台或后台不限。
+- 每个子代理把完整返回写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（n 为轮次，首轮 1；已存在的文件不得覆盖），返回内容与文件一致。两份原文都落盘后主代理才进入三档分流，第 5 步汇总不再粘贴原文。
+- 每条发现以编号开头：Standards 轴 `[S-H<n>]` 硬违规、`[S-J<n>]` 判断建议；Spec 轴 `[P-M<n>]` 缺失或部分实现、`[P-W<n>]` 实现有误、`[P-X<n>]` 范围蔓延；同轴序号递增，复审新发现接续编号。无发现时写「无发现」。
+- 复审（r2 起）只给子代理它自己的历次原文、上一次 collect 之后新增的修复 diff 与 spec，不给实现者的修复尝试记录；子代理对上轮每个本次修编号写 `[编号] 已修`、`[编号] 未修` 或 `[编号] 修错`，只对修复 diff 报告新发现。
 - 审查期间不执行 `git add`、`git add -N`、commit、stash、reset 或 checkout。
 ```
 

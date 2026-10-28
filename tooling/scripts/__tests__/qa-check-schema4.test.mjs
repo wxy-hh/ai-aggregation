@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ function runLog({
   finished = '2026-01-02T00:00:01.000Z',
   tree = 'none',
   complete = true,
+  body = '测试输出',
 } = {}) {
   const lines = [
     '# qa-run v1',
@@ -32,11 +33,16 @@ function runLog({
     `# tree: ${tree}`,
     `# started: ${started}`,
     '# ---',
-    '测试输出',
+    body,
   ];
   if (complete) lines.push('# ---', `# finished: ${finished}`, `# exit: ${exit}`);
   return `${lines.join('\n')}\n`;
 }
+
+// unit 夹具默认绑定的测试文件与标题；workspace 与 reviewRepo 都会写入该文件
+const TEST_FILE = 'tests/a.test.mjs';
+const TEST_SOURCE = "import test from 'node:test';\ntest('传入过滤条件时两路均收到', () => {});\n";
+const BINDING = `\`${TEST_FILE}\` › 传入过滤条件时两路均收到`;
 
 function singlePlan({
   kind = 'feature',
@@ -50,9 +56,10 @@ function singlePlan({
   changes = '- 无',
   extraCases = '',
   extraResults = '',
+  binding = seam === 'unit' || seam === 'integration' ? BINDING : '',
 } = {}) {
   return [
-    'QA Schema: 3',
+    'QA Schema: 4',
     'QA Mode: inline',
     `QA Kind: ${kind}`,
     '',
@@ -66,9 +73,9 @@ function singlePlan({
     '',
     extraCases,
     '## 执行记录',
-    '| 用例 | 断言序号 | 状态 | 证据 | 备注 |',
-    '| --- | --- | --- | --- | --- |',
-    `| TC01 | 1 | ${status} | ${evidence} | |`,
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    `| TC01 | 1 | ${status} | ${evidence} | ${binding} | |`,
     extraResults,
     '',
     '## 交付验证',
@@ -87,11 +94,13 @@ function singlePlan({
 }
 
 async function workspace(t, { spec = SPEC, plan, evidence = {} }) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'qa-schema3-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-schema4-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(path.join(dir, 'spec.md'), spec);
   await writeFile(path.join(dir, 'qa-plan.md'), plan);
-  for (const [relative, content] of Object.entries(evidence)) {
+  await mkdir(path.join(dir, 'evidence'), { recursive: true });
+  // 临时目录不在 git 仓库内，绑定文件相对特性目录解析
+  for (const [relative, content] of Object.entries({ [TEST_FILE]: TEST_SOURCE, ...evidence })) {
     const file = path.join(dir, relative);
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, content);
@@ -106,26 +115,11 @@ function codes(report) {
 const REPORT_OK = [
   '# 审查报告',
   '',
-  '审查方式：独立子代理完成 Standards 与 Spec 双轴审查',
-  '',
-  '## Standards 规范轴',
-  '规范检查有具体结论。',
-  '',
-  '## Spec 需求轴',
-  '需求检查有具体结论。',
-  '',
-  '## 证据审计',
-  '逐个核对证据与断言。',
-  '',
-  '## Spec 对账',
-  '| US | 状态 | 证据或原因 |',
-  '| --- | --- | --- |',
-  '| 1 | PASS | TC01 / 1 |',
-  '| 2 | PASS | 交付验证 |',
+  '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
   '',
   '## 三档分流',
-  '| 档位 | 说明 |',
-  '| --- | --- |',
+  '| 编号 | 档位 | 最终状态 | 轮次轨迹 | 理由 |',
+  '| --- | --- | --- | --- | --- |',
   '',
   '无发现',
   '',
@@ -133,27 +127,19 @@ const REPORT_OK = [
   '无范围外改动。',
 ].join('\n');
 
-// 上游 code-review 输出加 QA 工作流落盘的最小报告：不含证据审计与 Spec 对账
-const REPORT_UPSTREAM = [
-  '# 审查报告',
-  '',
-  '审查方式：上游 code-review 流程，Standards 与 Spec 两个独立子代理',
-  '',
-  '## Standards',
-  '规范轴原文。',
-  '',
-  '## Spec',
-  '需求轴原文。',
-  '',
-  '## 三档分流',
-  '| 档位 | 说明 |',
-  '| --- | --- |',
-  '',
-  '无发现',
-  '',
-  '## 范围说明',
-  '无范围外改动。',
-].join('\n');
+/** 写入一轮两轴审查原文；默认均为无发现 */
+async function writeRaw(feature, round = 1, { standards = '无发现\n', spec = '无发现\n' } = {}) {
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', `r${round}-standards.md`), standards);
+  await writeFile(path.join(feature, 'review', `r${round}-spec-axis.md`), spec);
+}
+
+function triageReport(rows) {
+  return REPORT_OK.replace(
+    '| --- | --- | --- | --- | --- |\n\n无发现',
+    `| --- | --- | --- | --- | --- |\n${rows.join('\n')}`,
+  );
+}
 
 function git(repo, args) {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
@@ -173,7 +159,9 @@ async function reviewRepo(t, {
   git(dir, ['config', 'user.name', 'QA Test']);
   await writeFile(path.join(dir, 'tracked.txt'), '原始内容\n');
   await writeFile(path.join(dir, 'outside.txt'), '范围外原始内容\n');
-  git(dir, ['add', 'tracked.txt', 'outside.txt']);
+  await mkdir(path.join(dir, 'tests'), { recursive: true });
+  await writeFile(path.join(dir, TEST_FILE), TEST_SOURCE);
+  git(dir, ['add', 'tracked.txt', 'outside.txt', TEST_FILE]);
   git(dir, ['commit', '--quiet', '-m', '初始提交']);
   const feature = path.join(dir, '.scratch', 'feature');
   await mkdir(feature, { recursive: true });
@@ -190,7 +178,7 @@ async function reviewRepo(t, {
   await writeFile(path.join(feature, 'qa-plan.md'), plan);
   if (outsideChange) await writeFile(path.join(dir, 'outside.txt'), '开工后范围外修改\n');
   for (const [label, argv, expected] of [
-    ['run', ['node', '--version'], 0],
+    ['run', ['node', '--test', TEST_FILE], 0],
     ['delivery', deliveryArgv, deliveryExit],
   ]) {
     const executed = spawnSync(process.execPath, [QA_RUN, feature, label, '--', ...argv], {
@@ -205,6 +193,7 @@ async function reviewRepo(t, {
   });
   assert.equal(collected.status, 0, collected.stderr);
   await writeFile(path.join(feature, 'review-report.md'), report);
+  await writeRaw(feature);
   return { dir, feature };
 }
 
@@ -279,7 +268,11 @@ test('browser 截图加日志及其他接缝日志齐全时 acceptance 为 PASS�
   // browser 日志需引用特性目录内的过程脚本；临时目录不在 git 仓库中，因此使用绝对路径
   await writeFile(
     path.join(dir, 'evidence', 'browser.log'),
-    runLog({ label: 'browser', argv: ['node', path.join(dir, 'scripts', 'browser.mjs')] }),
+    runLog({
+      label: 'browser',
+      argv: ['node', path.join(dir, 'scripts', 'browser.mjs')],
+      body: '[TC02-1] PASS 实测：标题可见',
+    }),
   );
   const report = await checkFeature(dir, 'acceptance');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -330,7 +323,10 @@ test('同一 TC 的多条断言可引用同一截图（TC03）', async (t) => {
   });
   await writeFile(
     path.join(dir, 'evidence', 'run.log'),
-    runLog({ argv: ['node', path.join(dir, 'scripts', 'browser.mjs')] }),
+    runLog({
+      argv: ['node', path.join(dir, 'scripts', 'browser.mjs')],
+      body: '[TC01-1] PASS 实测：甲\n[TC01-2] PASS 实测：乙',
+    }),
   );
   const report = await checkFeature(dir, 'acceptance');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -338,7 +334,7 @@ test('同一 TC 的多条断言可引用同一截图（TC03）', async (t) => {
 });
 
 const FROZEN_PLAN = [
-  'QA Schema: 3',
+  'QA Schema: 4',
   'QA Mode: inline',
   '',
   '### TC01: 原用例',
@@ -360,8 +356,8 @@ const FROZEN_PLAN = [
   '1. 静态断言',
   '',
   '## 执行记录',
-  '| 用例 | 断言序号 | 状态 | 证据 | 备注 |',
-  '| --- | --- | --- | --- | --- |',
+  '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+  '| --- | --- | --- | --- | --- | --- |',
   '',
   '## 交付验证',
   '| 命令 | 证据 |',
@@ -374,7 +370,7 @@ const FROZEN_PLAN = [
 ].join('\n');
 
 const CHANGED_PLAN = [
-  'QA Schema: 3',
+  'QA Schema: 4',
   'QA Mode: inline',
   '',
   '### TC01: 改动用例',
@@ -395,11 +391,11 @@ const CHANGED_PLAN = [
   '1. 新增静态断言',
   '',
   '## 执行记录',
-  '| 用例 | 断言序号 | 状态 | 证据 | 备注 |',
-  '| --- | --- | --- | --- | --- |',
-  '| TC01 | 1 | BLOCKED | 尚未执行 | |',
-  '| TC01 | 2 | BLOCKED | 尚未执行 | |',
-  '| TC03 | 1 | BLOCKED | 尚未执行 | |',
+  '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+  '| --- | --- | --- | --- | --- | --- |',
+  '| TC01 | 1 | BLOCKED | 尚未执行 | | |',
+  '| TC01 | 2 | BLOCKED | 尚未执行 | | |',
+  '| TC03 | 1 | BLOCKED | 尚未执行 | | |',
   '',
   '## 交付验证',
   '| 命令 | 证据 |',
@@ -413,8 +409,8 @@ const CHANGED_PLAN = [
 test('冻结计划的每类削弱都要求记录，记录后与追加均不报（TC04、TC12）', async (t) => {
   // 本用例专测计划冻结差异，spec 不声明交付命令，以免交付命令契约提前拦截
   const dir = await workspace(t, { spec: '## User Stories\n1. 第一条需求\n2. 第二条需求\n', plan: CHANGED_PLAN });
-  await mkdir(path.join(dir, 'prechange'));
-  await writeFile(path.join(dir, 'prechange', 'qa-plan.md'), FROZEN_PLAN);
+  await mkdir(path.join(dir, '_qa', 'prechange'), { recursive: true });
+  await writeFile(path.join(dir, '_qa', 'prechange', 'qa-plan.md'), FROZEN_PLAN);
   const report = await checkFeature(dir, 'acceptance');
   const changes = report.issues.filter((item) => item.code === 'UNRECORDED_PLAN_CHANGE');
   assert.equal(changes.length, 7, formatReport(report));
@@ -472,41 +468,22 @@ test('审查方式缺失判 FAIL，自查判 BLOCKED（TC07、TC12）', async (t
   assert.match(issue.hint, /独立/);
 });
 
-test('Standards 与 Spec 节缺失或为空分别报错（TC07）', async (t) => {
+test('报告不含 Standards 与 Spec 章节时不报错，缺审查方式仍 FAIL（TC02-5）', async (t) => {
   const { feature } = await reviewRepo(t);
-  const reportPath = path.join(feature, 'review-report.md');
-  const cases = [
-    [/## Standards 规范轴\n规范检查有具体结论。/, 'MISSING_STANDARDS_REVIEW'],
-    [/## Spec 需求轴\n需求检查有具体结论。/, 'MISSING_SPEC_SECTION'],
-  ];
-  for (const [pattern, code] of cases) {
-    await writeFile(reportPath, REPORT_OK.replace(pattern, ''));
-    const report = await checkFeature(feature, 'review');
-    assert.equal(report.status, 'FAIL');
-    assert.ok(codes(report).includes(code), `${code}: ${formatReport(report)}`);
-  }
-});
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(REPORT_OK, /^## (?:Standards|Spec)\b/m);
 
-test('审查报告只强制审查方式、两轴与三档分流，旧格式仍兼容（控制点 TC06）', async (t) => {
-  const { feature } = await reviewRepo(t, { report: REPORT_UPSTREAM });
-  const upstream = await checkFeature(feature, 'review');
-  assert.equal(upstream.status, 'PASS', formatReport(upstream));
-  assert.deepEqual(upstream.issues, []);
-
-  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK);
-  const legacy = await checkFeature(feature, 'review');
-  assert.equal(legacy.status, 'PASS', formatReport(legacy));
-
-  await writeFile(path.join(feature, 'review-report.md'), REPORT_UPSTREAM.replace('## Spec\n需求轴原文。', ''));
-  const missingSpec = await checkFeature(feature, 'review');
-  assert.equal(missingSpec.status, 'FAIL');
-  assert.ok(codes(missingSpec).includes('MISSING_SPEC_SECTION'));
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace(/^审查方式：.*$/m, ''));
+  const missing = await checkFeature(feature, 'review');
+  assert.equal(missing.status, 'FAIL');
+  assert.ok(codes(missing).includes('MISSING_REVIEW_METHOD'));
 });
 
 test('三档分流拒绝非法档位，空表必须写明无发现（TC07）', async (t) => {
   const { feature } = await reviewRepo(t);
   const reportPath = path.join(feature, 'review-report.md');
-  await writeFile(reportPath, REPORT_OK.replace('| --- | --- |\n\n无发现', '| --- | --- |\n| 稍后处理 | 某问题 |'));
+  await writeFile(reportPath, triageReport(['| S-J1 | 稍后处理 | — | r1 | 某问题 |']));
   const invalid = await checkFeature(feature, 'review');
   assert.equal(invalid.status, 'FAIL');
   assert.ok(codes(invalid).includes('INVALID_TRIAGE'));
@@ -521,10 +498,7 @@ test('三档分流数据行含档位文字且后续有数据时不误判表头�
   const { feature } = await reviewRepo(t);
   await writeFile(
     path.join(feature, 'review-report.md'),
-    REPORT_OK.replace(
-      '| 档位 | 说明 |\n| --- | --- |\n\n无发现',
-      '| 档位 | 说明 |\n| --- | --- |\n| 本次修 | 档位说明文字 |\n| 驳回 | 后续数据 |',
-    ),
+    triageReport(['| S-J1 | 本次修 | 已修 | r1 发现 → r2 已修 | 档位说明文字 |', '| P-X1 | 驳回 | — | r1 | 后续数据 |']),
   );
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -591,7 +565,7 @@ test('产物齐全且新鲜时 review 为 PASS，多个问题一次聚合（TC08
   assert.deepEqual(fresh.issues, []);
 
   await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace(/^审查方式：.*$/m, ''));
-  await rm(path.join(feature, 'review-package.json'));
+  await rm(path.join(feature, '_qa', 'review-package.json'));
   const aggregated = await checkFeature(feature, 'review');
   assert.ok(codes(aggregated).includes('MISSING_REVIEW_METHOD'));
   assert.ok(codes(aggregated).includes('MISSING_REVIEW_PACKAGE'));
@@ -682,39 +656,37 @@ test('合格复现不报复现错误（TC09）', async (t) => {
   assert.ok(!codes(report).some((code) => code.startsWith('REPRODUCTION_')));
 });
 
-test('Schema 1/2 保持兼容，未声明受支持 Schema 时 LEGACY 且 CLI 为 0（TC12）', async (t) => {
-  const legacyPlan = [
-    'QA Schema: 1',
-    'QA Mode: inline',
-    '',
-    '### TC01: 旧计划',
-    '- Priority: P0',
-    '- Covers: 1, 2',
-    '',
-    '#### 验证断言',
-    '1. 旧断言',
-    '',
-    '## 执行记录',
-    '| 用例 | 断言序号 | 状态 | 证据或原因 |',
-    '| TC01 | 1 | PASS | `evidence/a.png` |',
-  ].join('\n');
-  const dir = await workspace(t, { plan: legacyPlan, evidence: { 'evidence/a.png': '旧证据' } });
-  const schema1 = await checkFeature(dir, 'acceptance');
-  assert.equal(schema1.status, 'PASS', formatReport(schema1));
-  await writeFile(path.join(dir, 'qa-plan.md'), legacyPlan.replace('QA Schema: 1', 'QA Schema: 2'));
-  const schema2 = await checkFeature(dir, 'plan');
-  assert.equal(schema2.status, 'PASS', formatReport(schema2));
+test('Schema 1/2/3 与未声明 Schema 的计划一律 FAIL，提示按 Schema 4 重建且不再输出 LEGACY（TC01-2）', async (t) => {
+  for (const header of ['QA Schema: 1', 'QA Schema: 2', 'QA Schema: 3', '']) {
+    const plan = singlePlan().replace('QA Schema: 4', header);
+    const dir = await workspace(t, { plan, evidence: { 'evidence/run.log': runLog() } });
+    for (const phase of ['plan', 'acceptance', 'review']) {
+      const report = await checkFeature(dir, phase);
+      assert.equal(report.status, 'FAIL', `${header} ${phase}`);
+      assert.deepEqual(codes(report), ['UNSUPPORTED_SCHEMA']);
+      assert.match(report.issues[0].hint, /Schema 4/);
+    }
+    const cli = spawnSync(process.execPath, [QA_CHECK, 'acceptance', dir], { encoding: 'utf8' });
+    assert.equal(cli.status, 1);
+    assert.doesNotMatch(cli.stdout, /LEGACY/);
+  }
+});
 
-  await writeFile(path.join(dir, 'qa-plan.md'), '# 未声明 Schema 的历史计划\n');
-  const legacy = await checkFeature(dir, 'acceptance');
-  assert.equal(legacy.status, 'LEGACY');
-  const cli = spawnSync(process.execPath, [QA_CHECK, 'acceptance', dir], { encoding: 'utf8' });
-  assert.equal(cli.status, 0, cli.stderr);
-  assert.match(cli.stdout, /结果: LEGACY/);
+test('Schema 4 计划含绑定列时 plan 为 PASS，缺绑定列时 FAIL（TC01-1）', async (t) => {
+  const good = await workspace(t, { plan: singlePlan() });
+  const passed = await checkFeature(good, 'plan');
+  assert.equal(passed.status, 'PASS', formatReport(passed));
+
+  const noBinding = singlePlan()
+    .replace('| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |', '| 用例 | 断言序号 | 状态 | 证据 | 备注 |');
+  const bad = await workspace(t, { plan: noBinding });
+  const failed = await checkFeature(bad, 'plan');
+  assert.equal(failed.status, 'FAIL');
+  assert.ok(codes(failed).includes('MISSING_BINDING_COLUMN'));
 });
 
 test('当前 Schema 与三个安装模板一致（TC12）', async () => {
-  assert.equal(CURRENT_SCHEMA, 3);
+  assert.equal(CURRENT_SCHEMA, 4);
   for (const name of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs']) {
     const script = await readFile(fileURLToPath(new URL(`../${name}`, import.meta.url)), 'utf8');
     const template = await readFile(
@@ -752,4 +724,485 @@ test('formatReport 先输出 NOTE，再输出问题与结果（TC12）', () => {
     issues: [],
   });
   assert.equal(text, '[NOTE] 提示\n结果: PASS');
+});
+
+// ---- Schema 4 新增检查：过程脚本、断言标记、用例绑定、脚本扫描、对账表、审查对账与转录 ----
+
+/** 多用例 Schema 4 计划；rows 为执行记录数据行（含绑定列） */
+function plan4({ cases, rows, delivery = '`node --version`' }) {
+  return [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    '',
+    ...cases.flatMap((item) => [
+      `### ${item.id}: 示例`,
+      '- Priority: P0',
+      `- Covers: ${item.covers ?? '1, 2'}`,
+      `- Seam: ${item.seam}`,
+      '',
+      '#### 验证断言',
+      ...(item.assertions ?? ['断言甲']).map((text, index) => `${index + 1}. ${text}`),
+      '',
+    ]),
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    `| ${delivery} | 待执行 |`,
+    '',
+    '## 计划变更',
+    '- 无',
+  ].join('\n');
+}
+
+/** 单个 browser 或 api 用例的工作区：脚本放在 scriptPath，日志正文为 body */
+async function scriptedWorkspace(t, {
+  seam = 'browser',
+  body = '[TC01-1] PASS 实测：scrollWidth=375',
+  scriptPath = 'scripts/tc01.mjs',
+  script = '// 过程脚本\n',
+  argvScript = scriptPath,
+  extraFiles = {},
+} = {}) {
+  const evidence = seam === 'browser' ? '`screenshots/TC01.png`、`evidence/tc01.log`' : '`evidence/tc01.log`';
+  const dir = await workspace(t, {
+    plan: plan4({ cases: [{ id: 'TC01', seam }], rows: [`| TC01 | 1 | PASS | ${evidence} | | |`] }),
+    evidence: { 'screenshots/TC01.png': '截图', [scriptPath]: script, ...extraFiles },
+  });
+  await writeFile(
+    path.join(dir, 'evidence', 'tc01.log'),
+    runLog({ label: 'tc01', argv: ['node', path.join(dir, argvScript)], body }),
+  );
+  return dir;
+}
+
+test('browser/api 日志未引用 scripts/ 内存在的脚本时 FAIL，引用时不报（TC01-4）', async (t) => {
+  for (const seam of ['browser', 'api']) {
+    const inside = await scriptedWorkspace(t, { seam });
+    const passed = await checkFeature(inside, 'acceptance');
+    assert.equal(passed.status, 'PASS', `${seam}: ${formatReport(passed)}`);
+
+    const root = await scriptedWorkspace(t, { seam, scriptPath: 'tc01.mjs' });
+    const atRoot = await checkFeature(root, 'acceptance');
+    assert.ok(codes(atRoot).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), `${seam}: ${formatReport(atRoot)}`);
+
+    const missing = await scriptedWorkspace(t, { seam, argvScript: 'scripts/missing.mjs' });
+    const notFound = await checkFeature(missing, 'acceptance');
+    assert.ok(codes(notFound).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), `${seam}: ${formatReport(notFound)}`);
+  }
+});
+
+test('_qa/debug/ 截图不参与唯一性检查，screenshots/ 跨 TC 共用仍 FAIL（TC01-5）', async (t) => {
+  const cases = [{ id: 'TC01', seam: 'browser' }, { id: 'TC02', seam: 'browser', covers: '2' }];
+  const build = (shot) => plan4({
+    cases,
+    rows: [
+      `| TC01 | 1 | PASS | \`screenshots/TC01.png\`、\`${shot}\`、\`evidence/tc01.log\` | | |`,
+      `| TC02 | 1 | PASS | \`screenshots/TC02.png\`、\`${shot}\`、\`evidence/tc02.log\` | | |`,
+    ],
+  });
+  const dir = await workspace(t, {
+    plan: build('_qa/debug/shared.png'),
+    evidence: {
+      'screenshots/TC01.png': '甲',
+      'screenshots/TC02.png': '乙',
+      'screenshots/shared.png': '共用',
+      '_qa/debug/shared.png': '调试',
+      'scripts/run.mjs': '// 过程脚本\n',
+    },
+  });
+  for (const id of ['TC01', 'TC02']) {
+    await writeFile(
+      path.join(dir, 'evidence', `${id.toLowerCase()}.log`),
+      runLog({ argv: ['node', path.join(dir, 'scripts', 'run.mjs')], body: `[${id}-1] PASS 实测：可见` }),
+    );
+  }
+  const debug = await checkFeature(dir, 'acceptance');
+  assert.equal(debug.status, 'PASS', formatReport(debug));
+
+  await writeFile(path.join(dir, 'qa-plan.md'), build('screenshots/shared.png'));
+  const shared = await checkFeature(dir, 'acceptance');
+  assert.ok(codes(shared).includes('SHARED_SCREENSHOT'), formatReport(shared));
+});
+
+test('browser/api 断言标记缺失、为空或冲突时 FAIL，static 不检查（TC05）', async (t) => {
+  for (const seam of ['browser', 'api']) {
+    const good = await scriptedWorkspace(t, { seam });
+    const passed = await checkFeature(good, 'acceptance');
+    assert.ok(!codes(passed).some((code) => code.startsWith('ASSERTION_MARKER')), `${seam}: ${formatReport(passed)}`);
+
+    for (const body of ['页面已打开', '[TC01-1] PASS 实测：', '[TC01-2] PASS 实测：别的断言']) {
+      const dir = await scriptedWorkspace(t, { seam, body });
+      const report = await checkFeature(dir, 'acceptance');
+      assert.equal(report.status, 'FAIL');
+      const marker = report.issues.find((item) => item.code === 'ASSERTION_MARKER_MISSING');
+      assert.match(marker.message, /TC01 \/ 1/, `${seam} ${body}`);
+    }
+
+    const conflict = await scriptedWorkspace(t, { seam, body: '[TC01-1] PASS 实测：375\n[TC01-1] FAIL scrollWidth=420' });
+    const conflicted = await checkFeature(conflict, 'acceptance');
+    assert.ok(codes(conflicted).includes('ASSERTION_MARKER_CONFLICT'), `${seam}: ${formatReport(conflicted)}`);
+  }
+
+  const dir = await workspace(t, {
+    plan: plan4({ cases: [{ id: 'TC01', seam: 'static' }], rows: ['| TC01 | 1 | PASS | `evidence/run.log` | | |'] }),
+    evidence: { 'evidence/run.log': runLog({ body: '没有任何标记' }) },
+  });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+/** 单个 unit 用例：绑定文件位于特性目录内（临时目录不在 git 仓库中） */
+async function boundWorkspace(t, { binding, source = TEST_SOURCE, file = TEST_FILE, argv = ['node', '--test'], cwd = '.', files = {} }) {
+  const dir = await workspace(t, {
+    plan: plan4({ cases: [{ id: 'TC01', seam: 'unit' }], rows: [`| TC01 | 1 | PASS | \`evidence/run.log\` | ${binding} | |`] }),
+    evidence: { [file]: source, ...files },
+  });
+  const log = runLog({ argv, body: 'ok' }).replace('# cwd: .', `# cwd: ${cwd}`);
+  await writeFile(path.join(dir, 'evidence', 'run.log'), log);
+  return dir;
+}
+
+test('unit 绑定有效时不报，绑定为空、文件不存在或找不到标题时 TEST_BINDING_MISSING（TC06-1、TC06-2）', async (t) => {
+  const named = await boundWorkspace(t, { binding: BINDING, argv: ['node', '--test', TEST_FILE] });
+  const passed = await checkFeature(named, 'acceptance');
+  assert.equal(passed.status, 'PASS', formatReport(passed));
+
+  for (const binding of ['', '`tests/none.test.mjs` › 传入过滤条件时两路均收到', `\`${TEST_FILE}\` › 不存在的标题`, '只写了标题']) {
+    const dir = await boundWorkspace(t, { binding });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'FAIL', binding);
+    const missing = report.issues.find((item) => item.code === 'TEST_BINDING_MISSING');
+    assert.match(missing.message, /TC01 \/ 1/, binding);
+  }
+});
+
+test('标题匹配容忍引号与空白差异、参数化字面写法与只写叶子标题（TC06-3）', async (t) => {
+  const source = [
+    "describe('过滤器', () => {",
+    '  test("传入  \'过滤\'  条件时两路均收到", () => {});',
+    "  test.each([1, 2])('第 %s 路收到过滤条件', () => {});",
+    '});',
+  ].join('\n');
+  for (const title of ['传入 "过滤" 条件时两路均收到', '第 %s 路收到过滤条件']) {
+    const dir = await boundWorkspace(t, { binding: `\`${TEST_FILE}\` › ${title}`, source });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'PASS', `${title}: ${formatReport(report)}`);
+  }
+});
+
+test('argv 点名其他测试文件或绑定文件位于包外时 TEST_BINDING_OUT_OF_RUN（TC06-4）', async (t) => {
+  const other = await boundWorkspace(t, { binding: BINDING, argv: ['node', '--test', 'tests/other.test.mjs'] });
+  const report = await checkFeature(other, 'acceptance');
+  assert.ok(codes(report).includes('TEST_BINDING_OUT_OF_RUN'), formatReport(report));
+
+  const globbed = await boundWorkspace(t, { binding: BINDING, argv: ['node', '--test', 'tests/*.test.mjs'] });
+  assert.equal((await checkFeature(globbed, 'acceptance')).status, 'PASS');
+
+  const inside = await boundWorkspace(t, {
+    binding: '`pkg/b.test.mjs` › 包内用例',
+    file: 'pkg/b.test.mjs',
+    source: "test('包内用例', () => {});\n",
+    cwd: 'pkg',
+    files: { 'pkg/package.json': '{}\n' },
+  });
+  assert.equal((await checkFeature(inside, 'acceptance')).status, 'PASS');
+
+  const outside = await boundWorkspace(t, { binding: BINDING, cwd: 'pkg', files: { 'pkg/package.json': '{}\n' } });
+  const outsideReport = await checkFeature(outside, 'acceptance');
+  assert.ok(codes(outsideReport).includes('TEST_BINDING_OUT_OF_RUN'), formatReport(outsideReport));
+});
+
+test('只改绑定列修正标题即可通过，不需要重跑证据命令（TC06-5）', async (t) => {
+  const dir = await boundWorkspace(t, { binding: `\`${TEST_FILE}\` › 写错的标题` });
+  const logBefore = await readFile(path.join(dir, 'evidence', 'run.log'), 'utf8');
+  assert.equal((await checkFeature(dir, 'acceptance')).status, 'FAIL');
+  const plan = await readFile(path.join(dir, 'qa-plan.md'), 'utf8');
+  await writeFile(path.join(dir, 'qa-plan.md'), plan.replace('写错的标题', '传入过滤条件时两路均收到'));
+  const fixed = await checkFeature(dir, 'acceptance');
+  assert.equal(fixed.status, 'PASS', formatReport(fixed));
+  assert.equal(await readFile(path.join(dir, 'evidence', 'run.log'), 'utf8'), logBefore);
+});
+
+test('acceptance 输出对账表，实测取自日志标记、绑定取自执行记录，模拟输入带标注（TC07）', async (t) => {
+  const dir = await workspace(t, {
+    plan: plan4({
+      cases: [
+        { id: 'TC01', seam: 'browser', assertions: ['移动端无横向溢出'] },
+        { id: 'TC02', seam: 'unit', covers: '2', assertions: ['两路均收到过滤条件'] },
+      ],
+      rows: [
+        '| TC01 | 1 | PASS | `screenshots/TC01.png`、`evidence/tc01.log` | | |',
+        `| TC02 | 1 | PASS | \`evidence/run.log\` | ${BINDING} | |`,
+      ],
+    }),
+    evidence: {
+      'screenshots/TC01.png': '截图',
+      'scripts/tc01.mjs': "await page.evaluate(() => document.querySelector('button').click());\n",
+      'evidence/run.log': runLog({ argv: ['node', '--test', TEST_FILE] }),
+    },
+  });
+  await writeFile(
+    path.join(dir, 'evidence', 'tc01.log'),
+    runLog({ argv: ['node', path.join(dir, 'scripts', 'tc01.mjs')], body: '[TC01-1] PASS 实测：scrollWidth=375' }),
+  );
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  const output = formatReport(report, 'acceptance');
+  assert.match(output, /\| 用例-断言 \| 冻结断言原文 \| 实测值或绑定 \| 标注 \|/);
+  assert.match(output, /\| TC01-1 \| 移动端无横向溢出 \| scrollWidth=375 \| 非真实输入 \|/);
+  assert.match(output, /\| TC02-1 \| 两路均收到过滤条件 \| `tests\/a\.test\.mjs` › 传入过滤条件时两路均收到 \| {2}\|/);
+  assert.ok(output.indexOf('对账表') < output.indexOf('结果: PASS'));
+});
+
+test('过程脚本绕过登录或直连数据存储时 AUTH_BYPASS_IN_SCRIPT，未引用的 helper 同样扫描且不可豁免（TC08-1、TC08-2）', async (t) => {
+  const bypasses = {
+    cdp: "await client.send('Network.setCookie', { name: 'sid' });",
+    context: 'await context.addCookies([{ name: "sid" }]);',
+    documentCookie: "await page.evaluate(() => { document.cookie = 'sid=1'; });",
+    localStorage: "await page.evaluate(() => localStorage.setItem('auth_token', 'x'));",
+    bracket: "localStorage['accessToken'] = 'x';",
+    prisma: "import { PrismaClient } from '@prisma/client';",
+    pg: "const { Client } = require('pg');",
+    nested: "const { PrismaClient } = require(path.join(root, 'packages/db/node_modules/@prisma/client'));",
+    mongo: "import { MongoClient } from 'mongodb';",
+    redis: "import Redis from 'ioredis';",
+    supabase: "import { createClient } from '@supabase/supabase-js';",
+    firebase: "import admin from 'firebase-admin';",
+    sqlite: "import Database from 'better-sqlite3';",
+    mysql: "import mysql from 'mysql2/promise';",
+    python: 'import psycopg2\n',
+  };
+  for (const [name, source] of Object.entries(bypasses)) {
+    const extension = name === 'python' ? 'py' : 'mjs';
+    const dir = await scriptedWorkspace(t, {
+      extraFiles: { [`scripts/helper.${extension}`]: source },
+    });
+    await writeFile(
+      path.join(dir, 'qa-plan.md'),
+      (await readFile(path.join(dir, 'qa-plan.md'), 'utf8')).replace('- 无', '- 已获人工豁免：脚本需要直接写库'),
+    );
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'FAIL', `${name}: ${formatReport(report)}`);
+    const bypass = report.issues.find((item) => item.code === 'AUTH_BYPASS_IN_SCRIPT');
+    assert.match(bypass?.message ?? '', /scripts\/helper\./, name);
+  }
+});
+
+test('页面内合成输入只输出 SYNTHETIC_INPUT_IN_SCRIPT 提示，干净脚本无扫描输出（TC08-3、TC08-4）', async (t) => {
+  const samples = [
+    "await page.evaluate(() => input.dispatchEvent(new Event('input')));",
+    "await page.evaluate(() => document.querySelector('a').click());",
+    "await page.$eval('input', (el) => el.focus());",
+    "await page.evaluate(() => { document.querySelector('input').value = '甲'; });",
+    "await cdp.send('Runtime.evaluate', { expression: \"document.querySelector('a').click()\" });",
+  ];
+  for (const script of samples) {
+    const dir = await scriptedWorkspace(t, { script });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'PASS', `${script}: ${formatReport(report)}`);
+    assert.ok(report.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), script);
+  }
+
+  const clean = await scriptedWorkspace(t, {
+    script: "await page.getByRole('button', { name: '提交' }).click();\nawait page.fill('input', '甲');\nconst value = await page.evaluate(() => document.body.scrollWidth);\n",
+  });
+  const report = await checkFeature(clean, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  const output = formatReport(report, 'acceptance');
+  assert.doesNotMatch(output, /SYNTHETIC_INPUT_IN_SCRIPT|AUTH_BYPASS_IN_SCRIPT|非真实输入/);
+});
+
+test('CDP 方法名不在调用括号内时只截取同一行，之后的真实点击不算合成输入（TC08-3）', async (t) => {
+  const dir = await scriptedWorkspace(t, {
+    script: "const message = { method: 'Runtime.evaluate', params: { expression: 'document.title' } };\nawait cdp.send(message.method, message.params);\nawait page.getByRole('button', { name: '提交' }).click();\n",
+  });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'acceptance'), /SYNTHETIC_INPUT_IN_SCRIPT|非真实输入/);
+});
+
+test('多行 Runtime.evaluate 调用中换行后的合成输入仍被检出（TC08-3）', async (t) => {
+  const samples = [
+    "await cdp.send('Runtime.evaluate', {\n  expression: \"document.querySelector('a').click()\",\n});\n",
+    "await cdp.send(\n  'Runtime.evaluate',\n  { expression: \"document.querySelector('a').click()\" },\n);\n",
+  ];
+  for (const script of samples) {
+    const dir = await scriptedWorkspace(t, { script });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'PASS', formatReport(report));
+    assert.ok(report.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), script);
+  }
+});
+
+test('最新一轮缺任一轴原文或原文早于审查包时 REVIEW_RAW_MISSING（TC02-1）', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  await rm(path.join(feature, 'review', 'r1-spec-axis.md'));
+  const missing = await checkFeature(feature, 'review');
+  assert.equal(missing.status, 'BLOCKED', formatReport(missing));
+  assert.match(missing.issues.find((item) => item.code === 'REVIEW_RAW_MISSING').message, /spec-axis/);
+
+  await writeRaw(feature);
+  const old = new Date(Date.now() - 3_600_000);
+  await utimes(path.join(feature, 'review', 'r1-standards.md'), old, old);
+  const stale = await checkFeature(feature, 'review');
+  assert.equal(stale.status, 'BLOCKED', formatReport(stale));
+  assert.match(stale.issues.find((item) => item.code === 'REVIEW_RAW_MISSING').message, /r1-standards\.md/);
+
+  // 代码未变时重复 collect 不让已落盘的原文过期
+  await writeRaw(feature);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const recollect = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(recollect.status, 0, recollect.stderr);
+  const fresh = await checkFeature(feature, 'review');
+  assert.ok(!codes(fresh).includes('REVIEW_RAW_MISSING'), formatReport(fresh));
+
+  await rm(path.join(feature, 'review'), { recursive: true });
+  const none = await checkFeature(feature, 'review');
+  assert.ok(codes(none).includes('REVIEW_RAW_MISSING'), formatReport(none));
+});
+
+test('原文编号未进入分流表时 FINDING_NOT_TRIAGED 并列出缺失编号（TC02-2）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, {
+    standards: '[S-H1] 硬违规\n[S-J1] 判断建议\n',
+    spec: '[P-M1] 缺失\n[P-W1] 有误\n[P-X1] 蔓延\n',
+  });
+  await writeFile(path.join(feature, 'review-report.md'), triageReport([
+    '| S-H1 | 本次修 | 已修 | r1 → r2 已修 | |',
+    '| P-M1 | 本次修 | 已修 | r1 → r2 已修 | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  const missing = report.issues.find((item) => item.code === 'FINDING_NOT_TRIAGED');
+  assert.match(missing.message, /P-W1、P-X1、S-J1/);
+  assert.doesNotMatch(missing.message, /S-H1|P-M1/);
+});
+
+test('S-H/P-M/P-W 改档无理由时 DEFAULT_FIX_WITHOUT_REASON，S-J/P-X 不要求理由（TC02-3）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬\n[S-J1] 判\n', spec: '[P-W1] 误\n[P-X1] 蔓延\n' });
+  await writeFile(path.join(feature, 'review-report.md'), triageReport([
+    '| S-H1 | 转专项 | — | r1 | |',
+    '| P-W1 | 驳回 | — | r1 | 依据 ADR-0032 §2 |',
+    '| S-J1 | 转专项 | — | r1 | |',
+    '| P-X1 | 驳回 | — | r1 | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  const issues = report.issues.filter((item) => item.code === 'DEFAULT_FIX_WITHOUT_REASON');
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].message, /S-H1/);
+  assert.doesNotMatch(issues[0].message, /P-W1|S-J1|P-X1/);
+});
+
+test('两轴无发现且分流表写无发现时 review 为 PASS（TC02-4）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.deepEqual(report.issues, []);
+});
+
+test('以编号最大的轮次为最新一轮，早期轮缺失不报；r4 不因轮次报错（TC03-1、TC03-4）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await rm(path.join(feature, 'review', 'r1-spec-axis.md'));
+  await writeRaw(feature, 2);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+
+  await writeRaw(feature, 3);
+  await writeRaw(feature, 4);
+  const fourth = await checkFeature(feature, 'review');
+  assert.equal(fourth.status, 'PASS', formatReport(fourth));
+
+  await rm(path.join(feature, 'review', 'r4-standards.md'));
+  const partial = await checkFeature(feature, 'review');
+  assert.match(partial.issues.find((item) => item.code === 'REVIEW_RAW_MISSING')?.message ?? '', /r4/);
+});
+
+test('本次修条目最终未修或修错时 UNRESOLVED_FINDINGS，全部已修时 PASS（TC03-2、TC03-3）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬\n', spec: '[P-M1] 缺\n[P-W1] 误\n' });
+  await writeRaw(feature, 3, { standards: '[S-H1] 未修\n', spec: '[P-M1] 修错\n[P-W1] 已修\n' });
+  await writeFile(path.join(feature, 'review-report.md'), triageReport([
+    '| S-H1 | 本次修 | 未修 | r1 → r2 未修 → r3 未修 | |',
+    '| P-M1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | |',
+    '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  const unresolved = report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS');
+  assert.match(unresolved.message, /S-H1（未修）.*P-M1（修错）/);
+  assert.doesNotMatch(unresolved.message, /P-W1/);
+
+  await writeFile(
+    path.join(feature, 'review-report.md'),
+    (await readFile(path.join(feature, 'review-report.md'), 'utf8')).replace('| 未修 |', '| 已修 |').replace('| 修错 |', '| 已修 |'),
+  );
+  const fixed = await checkFeature(feature, 'review');
+  assert.equal(fixed.status, 'PASS', formatReport(fixed));
+});
+
+/** 临时 CLAUDE_CONFIG_DIR，测试结束恢复 */
+async function useConfigDir(t) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-claude-config-'));
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  t.after(async () => {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  });
+  return dir;
+}
+
+async function writeTranscript(configDir, repoDir, { text, model, sessionModel = 'claude-opus-5-5' }) {
+  const { realpath } = await import('node:fs/promises');
+  const root = await realpath(repoDir);
+  const project = path.join(configDir, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
+  const subagents = path.join(project, 'session-1', 'subagents');
+  await mkdir(subagents, { recursive: true });
+  await writeFile(path.join(project, 'session-1.jsonl'), `${JSON.stringify({ type: 'assistant', message: { model: sessionModel, content: [{ type: 'text', text: '主会话' }] } })}\n`);
+  const line = { type: 'assistant', message: { model, content: [{ type: 'thinking', thinking: '…' }, { type: 'text', text }] } };
+  const file = path.join(subagents, 'agent-1.jsonl');
+  await writeFile(file, `${JSON.stringify({ type: 'user', message: { content: '审查' } })}\n${JSON.stringify(line)}\n`);
+  await writeFile(path.join(subagents, 'agent-1.meta.json'), JSON.stringify({ model }));
+  return file;
+}
+
+test('转录最后一条返回不含原文时输出 NOTE，状态不变（TC04-1）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const transcript = await writeTranscript(configDir, dir, { text: '规范轴：无发现', model: 'claude-opus-5-5' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
+  assert.equal(notes.length, 1, formatReport(report));
+  assert.match(notes[0], /review\/r1-spec-axis\.md/);
+  assert.ok(notes[0].includes(transcript));
+});
+
+test('子代理模型与主会话不一致时输出 NOTE，状态不变（TC04-2）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '同一份原文\n', spec: '同一份原文\n' });
+  await writeTranscript(configDir, dir, { text: '同一份原文', model: 'claude-haiku-5.5' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
+  assert.ok(notes.length >= 1, formatReport(report));
+  assert.ok(notes.every((note) => /claude-haiku-5\.5/.test(note) && /主会话模型/.test(note)), notes.join('\n'));
+});
+
+test('找不到会话目录时不输出转录相关内容（TC04-3）', async (t) => {
+  await useConfigDir(t);
+  const { feature } = await reviewRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'review'), /转录/);
 });
