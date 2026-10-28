@@ -92,6 +92,8 @@ export interface ChatState {
   setActiveArtifactId: (id: string | null) => void; // 设置工作台聚焦产物
   setWorkspaceOpen: (open: boolean) => void; // 开关工作台分栏
   closeWorkspace: () => void; // 关闭工作台分栏
+  markArtifactDeposited: (artifactId: string, info: { knowledgeBaseId: string; knowledgeBaseName?: string; documentId: string; depositedAt: string }) => void; // 标记产物已入库 (ADR-0034)
+
 
   // ========== 核心交互功能 ==========
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
@@ -760,6 +762,28 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 关闭工作台分栏
     closeWorkspace: () => set({ isWorkspaceOpen: false }),
 
+    // 标记产物已入库 (ADR-0034)
+    markArtifactDeposited: (artifactId, info) => {
+      const current = get().artifacts;
+      const next = current.map((art) => {
+        if (art.id === artifactId) {
+          return {
+            ...art,
+            kbDeposit: {
+              deposited: true,
+              knowledgeBaseId: info.knowledgeBaseId,
+              knowledgeBaseName: info.knowledgeBaseName,
+              documentId: info.documentId,
+              depositedAt: info.depositedAt,
+            },
+          };
+        }
+        return art;
+      });
+      set({ artifacts: next });
+    },
+
+
     // 切换单个工具的临时启停状态
     setToolOverride: (toolKey, enabled) => {
       const current = get().toolOverrides;
@@ -1122,3 +1146,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
   };
 });
+
+// 仅在本地开发或 E2E 自动化测试环境向 window 暴露用于状态校验，生产环境严格禁用
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
+}
+

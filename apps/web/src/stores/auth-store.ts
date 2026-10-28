@@ -247,3 +247,9 @@ export function createAuthStore(_options?: AuthStoreOptions) {
 
 /** 默认 auth store */
 export const useAuthStore = createAuthStore();
+
+// 仅在本地开发或 E2E 自动化测试环境向 window 暴露用于状态校验，生产环境严格禁用
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as unknown as { __authStore?: typeof useAuthStore }).__authStore = useAuthStore;
+}
+

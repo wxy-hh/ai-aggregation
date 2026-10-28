@@ -98,11 +98,22 @@ export interface ArtifactMeta {
   language?: string;
 }
 
+/** 产物知识库沉淀元数据 (AGENT-KB-LOOP / ADR-0034) */
+export interface ArtifactKbDepositInfo {
+  deposited: boolean;
+  knowledgeBaseId?: string;
+  knowledgeBaseName?: string;
+  documentId?: string;
+  depositedAt?: string;
+}
+
 /** 产物完整实体（包含正文与流式完成态） */
 export interface Artifact extends ArtifactMeta {
   content: string;
   status: 'streaming' | 'complete' | 'error';
   createdAt?: number;
+  /** 知识库沉淀状态 (AGENT-KB-LOOP / ADR-0034) */
+  kbDeposit?: ArtifactKbDepositInfo;
 }
 
 /** 产物开始生成事件（首帧声明产物元数据） */

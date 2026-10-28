@@ -13,8 +13,8 @@
 | **P1 (已完成)** | `KB-URL-INGEST` | **网页 URL / 微信文章一键抓取与入库** | 中（~1.5天）| ★★★★☆ | `apps/worker` · SSRF 防线 · 文本清洗 | **已交付 (v1.2)** |
 | **P2 (已完成)** | `KB-DOCX-PARSE` | **Word (.docx) 与表格 (.csv/.xlsx) 结构化解析** | 中（~2天） | ★★★★☆ | `apps/worker` · 表头上下文注入 | **已交付 (v1.3)** |
 | **P2 (已完成)** | `KB-RERANK-FUSION` | **Rerank 二次语义重排模型 (Cross-Encoder)** | 低（~1天） | ★★★★☆ | `@repo/providers` · 检索管道二次排序 | **已交付 (v1.4)** |
-| **P2 (当前首选)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | **准备立项 (Next)** |
-| **P3 (运营看板)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | 储备池 |
+| **P2 (已完成)** | `KB-META-FILTER` | **多维标签与元数据前置过滤 (Metadata Filter)** | 中（~2天） | ★★★☆☆ | `packages/db` · Agent 结构化意图识别 | **已交付 (v1.5)** |
+| **P3 (当前首选)** | `KB-INSIGHT-GAP` | **低置信度盲区归集与知识洞察看板** | 中（~2天） | ★★★☆☆ | `apps/web` · 运营分析与补全提示 | **储备池 (Next)** |
 | **P3 (深度调优)** | `KB-CHUNK-TUNE` | **切片策略可视化调节与效果预览** | 中（~3天） | ★★★☆☆ | `apps/web` · 上传前置/后置配置 | 储备池 |
 
 ---
@@ -72,6 +72,17 @@
   - 通过 `ego-browser` 可见窗口完成端到端全链路真机验收（截图：`screenshots/TC05.png`、`TC06.png`）。
 - **关联代码**：`packages/providers/src/rerank.ts`、`packages/shared/src/rag-config.ts`、`apps/web/src/lib/rag/hybrid-retrieval.ts`、`apps/web/src/app/api/chat/_lib/agent/tools/knowledge-search.ts`、`apps/web/src/app/knowledge/_components/retrieval-debugger.tsx`。
 
+### `KB-META-FILTER`：多维标签与元数据前置过滤 (P2 已完成)
+- **交付目标**：解决数百篇跨年份、跨部门文档混合检索时的语义交织混淆问题，构建 SQL 强安全白名单绑定、切片元数据打平继承、原地毫秒级批量同步以及零命中放宽兜底（Filter Relaxation Fallback）体系。
+- **交付成果**：
+  - 在 `@repo/db` 扩展 `Document` 模型的 `tags` 与 `metadata`，并在 `document_chunks` 基于 `jsonb_path_ops` 建立 `document_chunks_metadata_gin_idx` 高性能 GIN 索引，支持 `@>` 快速包含匹配；
+  - 实现纯函数 `buildMetadataFilterClause`，严格限制键名为 `/^[a-zA-Z0-9_-]{1,32}$/` 正则白名单，所有过滤值 100% 采用 `$n` 参数化绑定，杜绝 SQL 注入；
+  - 实现 `updateDocumentMetadataInPlace` 原地批量同步切片元数据，使用 `prisma.$transaction` 保证切片批量更新与文档主表更新处于原子事务中，免除重新切片与向量化开销；
+  - 在 `apps/web` 检索管道 `hybridRetrieval` 落实 **Filter Relaxation Fallback**：前置过滤 0 命中时自动触发全库无 filter 检索兜底，返回 `isFilterRelaxed: true`，并在前端与 Agent 工具层醒目展示黄色降级徽章与放宽提示；
+  - 知识库工作台挂载 `DocumentMetadataDialog` 分类标签编辑弹窗，PATCH 接口增加既有元数据保留浅合并防覆盖保护，输入框与按钮采用 `h-12 min-h-[48px]`，标签移除按钮采用伪元素 `after:-inset-3`，满足 375px 窄屏与 $\ge 44\text{px}$ 触区规范；
+  - 通过 `ego-browser` 可见窗口完成全链路真机自动化验收（截图：`screenshots/TC01.png`~`TC04.png`）。
+- **关联代码**：`docs/adr/0032-knowledge-metadata-filtering-and-inheritance.md`、`packages/db/src/rag/metadata-filter.ts`、`packages/db/src/rag/chunk-store.ts`、`apps/web/src/lib/rag/hybrid-retrieval.ts`、`apps/web/src/app/api/chat/_lib/agent/tools/knowledge-search.ts`、`apps/web/src/app/knowledge/_components/document-metadata-dialog.tsx`、`apps/web/src/app/knowledge/_components/retrieval-debugger.tsx`。
+
 
 
 ---
@@ -126,7 +137,7 @@
 
 ---
 
-### 5. `KB-META-FILTER`：多维标签与元数据前置过滤 (P2 架构层)
+### 5. `KB-META-FILTER`：多维标签与元数据前置过滤 (P2 已完成 / ADR-0032)
 - **行业痛点与背景**：
   当单知识库文档数量超过数百篇时，跨年份（2024 vs 2026）、跨部门（财务 vs 行政）、跨业务线的文档容易发生语义交织混淆。
 - **核心方案**：

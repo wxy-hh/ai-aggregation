@@ -7,12 +7,13 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
+import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
+import { DistillFaqDialog } from './distill-faq-dialog';
 import { CitationBadge, wrapCitationsInReactNode, injectCitationBadges } from './citation-badge';
 import { CitationReferenceCard } from './citation-reference-card';
 import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
@@ -87,11 +88,13 @@ const ACTION_BTN_CLASS =
 const ActionButtons = memo(function ActionButtons({
   onCopy,
   onRegenerate,
+  onDistillFaq,
   isUser,
   relay,
 }: {
   onCopy: () => void;
   onRegenerate?: () => void;
+  onDistillFaq?: () => void;
   isUser?: boolean;
   relay?: {
     disabled: boolean;
@@ -179,6 +182,19 @@ const ActionButtons = memo(function ActionButtons({
               d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"
             />
           </svg>
+        </button>
+      )}
+
+      {/* 提炼为 FAQ 按钮 (ADR-0034) - 仅对 AI 消息显示 */}
+      {!isUser && onDistillFaq && (
+        <button
+          data-testid="distill-faq-btn"
+          onClick={onDistillFaq}
+          className={ACTION_BTN_CLASS}
+          title="提炼并沉淀为 FAQ"
+          aria-label="提炼并沉淀为 FAQ"
+        >
+          <Sparkles className="w-4 h-4 text-purple-600 hover:text-purple-700 dark:text-purple-400" />
         </button>
       )}
 
@@ -545,6 +561,23 @@ export const MessageItem = memo(function MessageItem({
 }: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const [distillDialogOpen, setDistillDialogOpen] = useState(false);
+
+  // 获取上一条用户提问内容 (作为 FAQ 标准问上下文)
+  const previousUserQuery = useMemo(() => {
+    if (isUser) return '';
+    const allMessages = useChatStore.getState().messages;
+    const currentIndex = allMessages.findIndex((m) => m.id === message.id);
+    if (currentIndex > 0) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (allMessages[i].role === 'user') {
+          return allMessages[i].content;
+        }
+      }
+    }
+    return '';
+  }, [isUser, message.id]);
 
   // 构造 1-based 物理切片锚点索引表 (ADR-0025)
   const anchorMap = useMemo(() => {
@@ -781,6 +814,7 @@ export const MessageItem = memo(function MessageItem({
             <ActionButtons
               onCopy={handleCopy}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+              onDistillFaq={!isUser && message.content.trim().length > 0 ? () => setDistillDialogOpen(true) : undefined}
               isUser={isUser}
               relay={
                 !isUser
@@ -796,6 +830,17 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
       </div>
+
+      {/* 提炼为知识库 FAQ 弹窗 (ADR-0034) */}
+      {!isUser && (
+        <DistillFaqDialog
+          open={distillDialogOpen}
+          onOpenChange={setDistillDialogOpen}
+          userQuery={previousUserQuery || message.content}
+          aiResponse={message.content}
+          sessionId={activeConversationId}
+        />
+      )}
 
       {/* 接力菜单（显式按钮/右键/长按复用同一菜单） */}
       {!isUser && (

@@ -76,8 +76,8 @@ export async function GET(
 
     return createSuccessResponse({ faqs });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return handleAuthError(error);
+    if (error instanceof AuthError || (error as { name?: string })?.name === 'AuthError') {
+      return handleAuthError(error as AuthError);
     }
     console.error('[faqs] 获取问答对列表失败:', error);
     return ApiError.internalError('获取问答对列表失败，请稍后重试');
@@ -128,8 +128,8 @@ export async function POST(
 
     return createSuccessResponse({ faq }, '创建成功', 201);
   } catch (error) {
-    if (error instanceof AuthError) {
-      return handleAuthError(error);
+    if (error instanceof AuthError || (error as { name?: string })?.name === 'AuthError') {
+      return handleAuthError(error as AuthError);
     }
     console.error('[faqs] 创建问答对失败:', error);
     return ApiError.internalError('创建问答对失败，请稍后重试');

@@ -3,7 +3,7 @@
 import React from 'react';
 import { useChatStore } from '@/stores/chat-store';
 import { cn } from '@/lib/utils';
-import { FileText, Table, Code, Image as ImageIcon, ArrowUpRight, Sparkles } from 'lucide-react';
+import { FileText, Table, Code, Image as ImageIcon, ArrowUpRight, Sparkles, CheckCircle2 } from 'lucide-react';
 import type { ArtifactType } from '@repo/shared';
 
 interface ArtifactCardProps {
@@ -81,6 +81,15 @@ export function ArtifactCard({ artifactId, className }: ArtifactCardProps) {
             <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
               {artifact.title || '交付产物'}
             </span>
+            {artifact.kbDeposit?.deposited && (
+              <span
+                data-testid="artifact-card-deposited-badge"
+                className="flex flex-shrink-0 items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300"
+              >
+                <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-400" />
+                已入库
+              </span>
+            )}
             {isStreaming && (
               <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600 dark:bg-blue-400" />

@@ -65,7 +65,7 @@ export interface DocumentItem {
   version: number;
   chunkCount: number;
   errorMessage: string | null;
-  sourceType?: 'file' | 'url';
+  sourceType?: 'file' | 'url' | 'chat_artifact' | string;
   sourceUrl?: string | null;
   tags?: string[];
   metadata?: Record<string, unknown>;
@@ -447,7 +447,9 @@ export function KnowledgeWorkspace() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {documents.map((doc) => {
                   const lowerName = doc.name.toLowerCase();
-                  const formatLabel = doc.sourceType === 'url'
+                  const formatLabel = doc.sourceType === 'chat_artifact'
+                    ? '来自对话'
+                    : doc.sourceType === 'url'
                     ? '网页'
                     : lowerName.endsWith('.docx')
                     ? 'Word'
@@ -458,14 +460,17 @@ export function KnowledgeWorkspace() {
                     : '文本';
 
                   return (
-                    <Card key={doc.id} className="border border-border/50 shadow-none">
+                    <Card key={doc.id} data-testid={`doc-card-${doc.id}`} className="border border-border/50 shadow-none">
                       <CardContent className="p-4 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center space-x-1.5 min-w-0 flex-1">
                             <Badge
                               variant="outline"
+                              data-testid={doc.sourceType === 'chat_artifact' ? 'doc-source-chat-badge' : undefined}
                               className={`text-[10px] px-1 py-0 shrink-0 ${
-                                doc.sourceType === 'url'
+                                doc.sourceType === 'chat_artifact'
+                                  ? 'border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-50/50 dark:bg-purple-950/20'
+                                  : doc.sourceType === 'url'
                                   ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
                                   : formatLabel === 'Word'
                                   ? 'border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20'
@@ -537,6 +542,7 @@ export function KnowledgeWorkspace() {
                           <Button
                             size="sm"
                             variant="ghost"
+                            data-testid={`preview-doc-${doc.id}`}
                             onClick={() =>
                               setPreviewState({
                                 isOpen: true,
