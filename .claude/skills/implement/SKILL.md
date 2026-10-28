@@ -28,12 +28,12 @@ disable-model-invocation: true
 - 先用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 探活；未就绪时后台运行 `pnpm dev:web`，不得关闭标题不匹配的其他进程。
 - 触及核心链路时按 `docs/agents/qa-workflow.md` 阶段 5 完成真实浏览器验收，遵守真实入口、真实输入事件、独立截图和数值严格断言规则；非核心改动按 spec 运行单元、集成和静态检查。
 - 过程脚本放在 `scripts/`，每条冻结断言先硬断言再输出 `[TC01-1] PASS 实测：<观察值>`，失败输出 `[TC01-1] FAIL <原因>` 并非零退出，不能只打印成功文本；调试截图写入 `_qa/debug/`。环境无法验证 DOM、真实交互或移动几何时记 BLOCKED 或经计划变更转人工，不用低接缝证据替代。
-- 登录：已有会话直接用；没有时用用户在对话中提供的测试账号在可见窗口真实登录页登录一次；未提供则打开登录页并在终端提示用户登录，无人值守记 BLOCKED。过程脚本从已登录状态开始，禁止签发令牌、写库造会话或改密码、注入 Cookie，凭据不得进入命令行、日志或证据。
+- 登录在脚本外完成，过程脚本从已登录状态开始：已有会话直接用；没有时由用户在可见窗口登录，或用用户在对话中提供的专用测试账号在真实登录页登录一次；都没有时打开登录页并在终端提示用户登录，无人值守记 BLOCKED。脚本内不得出现任何登录行为，禁止签发令牌、写库造会话或改密码、注入 Cookie，凭据不得进入命令行、日志或证据。
 - 未执行或证据不足只能记 BLOCKED，不得宣称 PASS。
 
 ## 4. 审查与交付
 
-- 阶段 5 验收后按 `docs/agents/qa-workflow.md` 阶段 6 串联：先运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，再通过宿主真实技能机制调用 `code-review`，固定点取 `_qa/scope.json` 的 base、diff 使用审查包，由 Standards / Spec 两个独立上下文子代理（继承主会话模型）各自把带编号的原文写入 `review/r<n>-*.md`；不得因尚未 commit 而报空 diff。
+- 阶段 5 验收后按 `docs/agents/qa-workflow.md` 阶段 6 串联：先运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，再用 Skill 工具调用 `code-review`（参数写明特性目录与轮次）；审查子代理的派发、编号与落盘规则只在该技能内，不要用 Agent 工具自行派审查子代理。
 - 两份原文落盘后，主 Agent 在 `review-report.md` 写审查方式行、按编号逐条对账的 `## 三档分流` 表与范围说明，不改写 `review/` 原文；实现串行不排斥这项必要审查。
 - 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
 - 本次修由实现者明确修复（先读 `## 修复尝试记录`，不重复已判失败的改法），重跑受影响验证后重新 collect 并按正本做增量复审，自动上限 2 轮；用尽后仍有未修或修错时停止自动修复，照常完成交付验证，由 `qa-check review` 输出 BLOCKED 交人工裁决。测试结论必须与最后一次实际运行一致。

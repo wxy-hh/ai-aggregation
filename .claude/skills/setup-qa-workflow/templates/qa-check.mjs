@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -24,12 +24,18 @@ const DEBUG_DIR = `${QA_DIR}/debug/`;
 // 需要过程脚本与断言标记的接缝；需要用例绑定的接缝
 const SCRIPTED_SEAMS = new Set(['browser', 'api']);
 const BOUND_SEAMS = new Set(['unit', 'integration']);
-// 绕过真实登录的模式：注入 Cookie、写令牌类本地存储键（检查器内置，不按宿主开关）
+// 绕过真实登录的模式：注入 Cookie、写令牌类本地存储键、脚本内登录（检查器内置，不按宿主开关）
 const AUTH_BYPASS_PATTERNS = [
   { label: 'CDP 设置 Cookie', pattern: /\b(?:Network|Storage)\.setCookies?\b/ },
   { label: '浏览器上下文添加 Cookie', pattern: /\.addCookies\s*\(/ },
   { label: '写 document.cookie', pattern: /\bdocument\.cookie\s*=(?!=)/ },
   { label: '本地存储写入令牌类键', pattern: /\b(?:localStorage|sessionStorage)\s*(?:\.setItem\s*\(\s*['"`][^'"`]*token|\[\s*['"`][^'"`]*token[^'"`]*['"`]\s*\]\s*=(?!=))/i },
+  // 登录只发生在脚本外：密码字面量、登录注册与签发令牌接口、生产代码后门上的登录方法
+  { label: '密码字面量', pattern: /\b[\w$]*pass(?:word|wd)?[\w$]*['"]?\s*[:=]\s*(['"`])(?!\1)[^'"`\n]+\1/i },
+  { label: '登录、注册或签发令牌接口', pattern: /\/api\/(?:[\w.-]+\/)*(?:log-?in|sign-?in|register|sign-?up|token)(?=[/?#'"`\s]|$)/im },
+  // 不带 /api 前缀的同类路径只在请求调用中命中，避免误伤 page.goto 打开登录页
+  { label: '登录、注册或签发令牌接口', pattern: /\b(?:fetch|request\.(?:post|put|fetch)|axios\.(?:post|put))\s*\(\s*['"`][^'"`\n]*\/(?:log-?in|sign-?in|register|sign-?up|token)(?=[/?#'"`])/i },
+  { label: 'window.__* 上的登录方法', pattern: /window\.__[\w$]+(?:\.[\w$]+(?:\([^)]*\))?)*\.(?:login|signin|setToken|setAuth|setSession)\s*\(/i },
 ];
 // 数据库驱动、ORM 与 BaaS 管理端 SDK：过程脚本不得绕过产品直连数据存储
 const DATA_STORE_MODULES = [
@@ -38,16 +44,20 @@ const DATA_STORE_MODULES = [
   'mongodb', 'redis', 'ioredis', '@supabase/supabase-js', 'firebase-admin',
 ];
 const PYTHON_DATA_STORE_IMPORT = /^\s*(?:from|import)\s+(psycopg2?|pymysql|mysql\.connector|sqlite3|pymongo|redis|sqlalchemy|supabase|firebase_admin)\b/m;
-// 页面内执行代码的入口；其中的合成事件不是真实输入
+// 页面内执行代码的入口；其中的合成事件与直接改写应用状态不是真实输入
 const IN_PAGE_ENTRY = /(?<![\w$])(?:evaluate|evaluateHandle|evaluateOnNewDocument|\$eval|\$\$eval|addInitScript|waitForFunction)\s*\(|Runtime\.(?:evaluate|callFunctionOn)/g;
 const SYNTHETIC_INPUT_PATTERNS = [
   { label: 'dispatchEvent(', pattern: /\bdispatchEvent\s*\(/ },
   { label: '.click()', pattern: /\.click\(\s*\)/ },
   { label: '.focus()', pattern: /\.focus\(\s*\)/ },
   { label: '.value 赋值', pattern: /\.value\s*=(?!=)/ },
+  { label: '.setState(', pattern: /\.setState\s*\(/ },
+  { label: 'window.__* 访问', pattern: /\bwindow\.__[\w$]/ },
 ];
 // 审查编号：S-H 规范硬违规、S-J 规范判断、P-M 缺失或部分实现、P-W 实现有误、P-X 范围蔓延
 const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
+// 只判断是否含编号时用非全局版本，避免全局正则 test() 的 lastIndex 状态
+const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
 const WORKFLOW_SKILLS = new Set([
@@ -837,8 +847,8 @@ function inPageSegments(text) {
 }
 
 /**
- * 扫描 scripts/ 下全部脚本：绕过真实登录（注入 Cookie、写令牌、直连数据存储）为不可豁免的 FAIL；
- * 页面内合成输入只提示，并在对账表标注「非真实输入」。
+ * 扫描 scripts/ 下全部脚本：绕过真实登录（注入 Cookie、写令牌、脚本内登录、直连数据存储）为不可豁免的 FAIL；
+ * 页面内合成输入与直接改写应用状态只提示，并在对账表标注「非真实输入」。
  */
 async function scanProcessScripts(featureDir) {
   const issues = [];
@@ -855,8 +865,8 @@ async function scanProcessScripts(featureDir) {
       issues.push(issue(
         'AUTH_BYPASS_IN_SCRIPT',
         'FAIL',
-        `${relative} 命中绕过真实登录或直连数据存储的模式：${hits.join('、')}。`,
-        '过程脚本必须从真实登录后的浏览器会话开始：已有会话直接用，否则在可见窗口用用户提供的测试账号真实登录，或提示用户登录；不得注入 Cookie、写令牌或直连数据库。该检查不可豁免，计划变更或备注不能消除。',
+        `${relative} 命中绕过真实登录、脚本内登录或直连数据存储的模式：${hits.join('、')}。`,
+        '脚本应从已登录状态开始；未登录时请提示用户在可见窗口登录，或使用用户提供的测试账号在真实登录页登录一次。脚本内不得出现密码、登录注册接口或登录后门，不得注入 Cookie、写令牌或直连数据库。该检查不可豁免，计划变更或备注不能消除。',
       ));
     }
     const segments = inPageSegments(text);
@@ -1088,12 +1098,13 @@ function markdownSection(markdown, headingPattern) {
   return lines.slice(start + 1, end).join('\n');
 }
 
-/** 解析 ## 三档分流 表格：按表头定位编号、档位、最终状态与理由列 */
+/** 解析 ## 三档分流 表格：按表头定位编号、档位、最终状态、验证证据与理由列 */
 function parseTriage(reportText) {
   const body = markdownSection(reportText, /^## 三档分流\s*$/);
   if (body === null) return null;
   const lines = body.split(/\r?\n/);
   const rows = [];
+  let evidenceColumn = false;
   for (let index = 0; index < lines.length; index += 1) {
     if (!lines[index].includes('|')) continue;
     const headers = splitMarkdownRow(lines[index]);
@@ -1103,6 +1114,8 @@ function parseTriage(reportText) {
     const idIndex = column('编号');
     const finalIndex = column('最终状态');
     const reasonIndex = column('理由');
+    const evidenceIndex = column('验证证据');
+    if (evidenceIndex >= 0) evidenceColumn = true;
     let rowIndex = index + 1;
     for (; rowIndex < lines.length && lines[rowIndex].includes('|'); rowIndex += 1) {
       const cells = splitMarkdownRow(lines[rowIndex]);
@@ -1113,11 +1126,12 @@ function parseTriage(reportText) {
         tier: cell(tierIndex),
         final: cell(finalIndex),
         reason: cell(reasonIndex),
+        evidence: cell(evidenceIndex),
       });
     }
     index = rowIndex - 1;
   }
-  return { body, rows };
+  return { body, rows, evidenceColumn };
 }
 
 function triageIssues(triage) {
@@ -1162,7 +1176,7 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
   const rounds = await readReviewRounds(featureDir);
   const latest = rounds.size ? Math.max(...rounds.keys()) : null;
   const latestFiles = latest === null ? null : rounds.get(latest);
-  const rawHint = `由 code-review 的两个子代理各自把完整返回写入 ${REVIEW_DIR}/r<n>-standards.md 与 ${REVIEW_DIR}/r<n>-spec-axis.md；在最新审查包（collect）之后重新审查，不要由主 Agent 代写或改写原文。`;
+  const rawHint = `在最新审查包（collect）之后用 Skill 工具调用 code-review 重新审查，由该技能把两轴子代理的返回逐字落盘到 ${REVIEW_DIR}/；不要用 Agent 工具自行派审查子代理，也不要由主 Agent 代写或改写原文。`;
   if (!latestFiles?.standards || !latestFiles?.spec) {
     const missing = latest === null
       ? `${REVIEW_DIR}/ 下没有审查原文`
@@ -1178,10 +1192,25 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
     }
   }
 
+  // 最新一轮原文提取不到规范编号又没写「无发现」时，编号对账会静默失效
+  if (latestFiles) {
+    const unnumbered = [];
+    for (const { relative, text } of await roundRaws(featureDir, latestFiles)) {
+      if (!HAS_FINDING_ID.test(text) && !text.includes('无发现')) unnumbered.push(relative);
+    }
+    if (unnumbered.length) {
+      issues.push(issue(
+        'REVIEW_RAW_UNNUMBERED',
+        'FAIL',
+        `最新一轮审查原文没有规范编号，也没有写「无发现」：${unnumbered.join('、')}。`,
+        '编号格式与落盘规则只在 code-review 技能内；collect 后用 Skill 工具调用 code-review 重新审查，不要用 Agent 工具自行派审查子代理。',
+      ));
+    }
+  }
+
   const ids = new Set();
   for (const files of rounds.values()) {
-    for (const relative of [files.standards, files.spec].filter(Boolean)) {
-      const text = await readFile(path.join(featureDir, relative), 'utf8');
+    for (const { text } of await roundRaws(featureDir, files)) {
       for (const match of text.matchAll(FINDING_ID_PATTERN)) ids.add(match[1]);
     }
   }
@@ -1218,7 +1247,85 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
       '自动复审最多 2 轮（r2、r3）；用尽后停止自动修复，按分流表清单交人工裁决：改档并写理由、接受现状，或授权追加修复轮。',
     ));
   }
+  issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, rounds));
   return { issues, latest: latestFiles };
+}
+
+/** 读取某一轮已存在的两轴原文 */
+async function roundRaws(featureDir, files) {
+  return Promise.all([files.standards, files.spec].filter(Boolean).map(async (relative) => {
+    const absolute = path.join(featureDir, relative);
+    const [text, info] = await Promise.all([readFile(absolute, 'utf8'), stat(absolute)]);
+    return { relative, text, time: info.mtimeMs };
+  }));
+}
+
+/** 每个编号首次出现的那一轮原文的修改时间 */
+async function firstRaisedTimes(featureDir, rounds) {
+  const times = new Map();
+  for (const round of [...rounds.keys()].sort((a, b) => a - b)) {
+    for (const { text, time } of await roundRaws(featureDir, rounds.get(round))) {
+      for (const match of text.matchAll(FINDING_ID_PATTERN)) {
+        if (!times.has(match[1])) times.set(match[1], time);
+      }
+    }
+  }
+  return times;
+}
+
+/** 单个验证证据引用的问题；合法时返回 null */
+async function fixEvidenceProblem(featureDir, reference, raisedAt) {
+  const location = evidenceLocation(featureDir, reference);
+  if (!location || !/^(?:evidence|screenshots)\//.test(location.relative)) return `${reference} 不在特性目录 evidence/ 或 screenshots/ 下`;
+  let info;
+  try {
+    info = await stat(location.absolute);
+  } catch {
+    return `${location.relative} 不存在`;
+  }
+  if (!info.isFile() || info.size === 0) return `${location.relative} 为空`;
+  if (raisedAt !== undefined && info.mtimeMs <= raisedAt) return `${location.relative} 早于首次提出该编号的原文`;
+  if (location.relative.startsWith('evidence/') && path.posix.extname(location.relative).toLowerCase() === '.log') {
+    const log = parseRunLog(await readFile(location.absolute, 'utf8'));
+    if (!completeRunLog(log)) return `${location.relative} 不是完整 qa-run 日志`;
+    if (log.exit !== 0) return `${location.relative} 退出码为 ${log.exit}`;
+  }
+  return null;
+}
+
+/**
+ * 修复验证：最终状态为「已修」的行须在「验证证据」列引用修复后产生的 evidence/ 或 screenshots/ 文件，
+ * 或写「静态：<理由>」；证据能否证明修复由人工终审判断。
+ */
+async function fixVerificationIssues(featureDir, rows, evidenceColumn, rounds) {
+  const fixed = rows.filter((row) => /^已修/.test(row.final));
+  if (!fixed.length) return [];
+  const hint = '「已修」行在验证证据列写修复后针对该点运行的证据（反引号包裹的 evidence/ 或 screenshots/ 路径，晚于首次提出该编号的原文；qa-run 日志须 exit 0），不涉及行为的修复写「静态：<理由>」。';
+  if (!evidenceColumn) {
+    return [issue('FIX_UNVERIFIED', 'FAIL', `## 三档分流 有已修条目但没有「验证证据」列：${fixed.map((row) => row.id).join('、')}。`, hint)];
+  }
+  const raised = await firstRaisedTimes(featureDir, rounds);
+  const problems = [];
+  for (const row of fixed) {
+    const text = row.evidence.trim();
+    const staticReason = text.match(/^静态[：:]\s*(.*)$/);
+    if (staticReason) {
+      if (!staticReason[1].trim()) problems.push(`${row.id}（静态理由为空）`);
+      continue;
+    }
+    const references = evidenceReferences(text);
+    if (!references.valid) {
+      problems.push(`${row.id}（${text ? '验证证据不是反引号文件路径' : '验证证据为空'}）`);
+      continue;
+    }
+    for (const reference of references.paths) {
+      const problem = await fixEvidenceProblem(featureDir, reference, raised.get(row.id));
+      if (problem) problems.push(`${row.id}（${problem}）`);
+    }
+  }
+  return problems.length
+    ? [issue('FIX_UNVERIFIED', 'FAIL', `已修条目缺少有效的修复后验证证据：${problems.join('、')}。`, hint)]
+    : [];
 }
 
 /** 审查报告只强制审查方式与三档分流；两轴原文由 review/ 下的文件承载 */
@@ -1267,9 +1374,37 @@ function assistantText(entry) {
   return content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('\n');
 }
 
+function toolUses(entry) {
+  const content = entry?.message?.content;
+  return Array.isArray(content) ? content.filter((part) => part?.type === 'tool_use') : [];
+}
+
+/** 子代理的全部输出片段：每条 assistant 文本，以及消息类工具调用的消息参数 */
+function outputSegments(entries) {
+  return entries.filter((entry) => entry?.type === 'assistant').flatMap((entry) => [
+    assistantText(entry),
+    ...toolUses(entry)
+      .filter((part) => /message/i.test(part.name ?? '') && typeof part.input?.message === 'string')
+      .map((part) => part.input.message),
+  ]).map(normalizeWhitespace).filter(Boolean);
+}
+
+/** 主会话转录中是否有审查包之后的 code-review Skill 调用（技能名带插件前缀时按后缀匹配） */
+async function codeReviewInvoked(sessionFiles, packageTime) {
+  for (const file of sessionFiles) {
+    if (packageTime !== null && (await stat(file)).mtimeMs < packageTime) continue;
+    for (const entry of await readJsonl(file)) {
+      const time = Date.parse(entry?.timestamp);
+      if (packageTime !== null && !(time >= packageTime)) continue;
+      if (toolUses(entry).some((part) => part.name === 'Skill' && /(?:^|:)code-review$/.test(String(part.input?.skill ?? '')))) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 子代理转录交叉核验（只给 NOTE）：在宿主会话目录中找审查包之后的子代理转录，
- * 核对原文是否出现在某个转录的最后一条返回中，以及子代理模型是否与主会话一致。
+ * 核对原文是否出现在某个子代理的输出中、子代理模型是否与主会话一致，以及主会话是否调用了 code-review 技能。
  * 宿主转录格式不是公开契约，找不到会话目录时静默跳过。
  */
 async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
@@ -1281,6 +1416,13 @@ async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
     sessions = await readdir(projectDir, { withFileTypes: true });
   } catch {
     return [];
+  }
+  const notes = [];
+  const sessionFiles = sessions
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+    .map((entry) => path.join(projectDir, entry.name));
+  if (!await codeReviewInvoked(sessionFiles, packageTime)) {
+    notes.push('转录核验：最新审查包之后的主会话转录中没有 code-review 的 Skill 调用；审查应在 collect 后用 Skill 工具调用 code-review，请人工确认审查来源。');
   }
   const transcripts = [];
   for (const session of sessions.filter((entry) => entry.isDirectory())) {
@@ -1295,26 +1437,28 @@ async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
       const absolute = path.join(subagentDir, file);
       if (packageTime !== null && (await stat(absolute)).mtimeMs < packageTime) continue;
       const entries = await readJsonl(absolute);
-      const assistants = entries.filter((entry) => entry?.type === 'assistant' && assistantText(entry).trim());
-      const last = assistants.at(-1);
+      const last = entries.filter((entry) => entry?.type === 'assistant' && entry.message?.model).at(-1);
       const meta = await readFile(absolute.replace(/\.jsonl$/, '.meta.json'), 'utf8').then(JSON.parse, () => ({}));
       transcripts.push({
         path: absolute,
         session: path.join(projectDir, `${session.name}.jsonl`),
-        text: normalizeWhitespace(last ? assistantText(last) : ''),
+        segments: outputSegments(entries),
         model: last?.message?.model ?? meta.model ?? null,
       });
     }
   }
-  if (!transcripts.length) return [];
+  if (!transcripts.length) {
+    notes.push('转录核验：最新一轮原文没有对应的子代理转录（审查包之后没有任何子代理转录）；请人工确认原文不是主 Agent 代写。');
+    return notes;
+  }
 
-  const notes = [];
   const sessionModels = new Map();
+  const unmatched = [];
   for (const relative of [latestFiles.standards, latestFiles.spec]) {
     const raw = normalizeWhitespace(await readFile(path.join(featureDir, relative), 'utf8'));
-    const matched = transcripts.find((item) => raw && item.text.includes(raw));
+    const matched = transcripts.find((item) => raw && item.segments.some((segment) => segment.includes(raw)));
     if (!matched) {
-      notes.push(`转录核验：${relative} 的内容未出现在任何审查包之后的子代理转录最后一条返回中（已检查 ${transcripts.map((item) => item.path).join('、')}）；请人工确认原文未被改写。`);
+      unmatched.push(relative);
       continue;
     }
     if (!matched.model) continue;
@@ -1326,6 +1470,9 @@ async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
     if (models.size && !models.has(normalizeModel(matched.model))) {
       notes.push(`转录核验：${relative} 对应子代理模型 ${matched.model} 与主会话模型 ${[...models].join('、')} 不一致（${matched.path}）；用户未指定审查模型时子代理应继承主会话模型。`);
     }
+  }
+  if (unmatched.length) {
+    notes.push(`转录核验：${unmatched.join('、')} 的内容未出现在任何审查包之后的子代理输出中（已检查 ${transcripts.map((item) => item.path).join('、')}）；请人工确认原文是子代理返回的逐字落盘。`);
   }
   return notes;
 }
@@ -1509,7 +1656,42 @@ export async function checkFeature(featureDir, phase) {
   const acceptance = await checkAcceptance(featureDir, plan, context);
   const findings = mergeFindings(planFindings, acceptance, shadow);
   if (phase === 'acceptance') return { ...summarize(findings.issues, findings.notes), table: acceptance.table };
+  findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table));
   return { ...await checkReview(featureDir, plan, context, findings), table: acceptance.table };
+}
+
+const RECONCILIATION_FILE = `${QA_DIR}/reconciliation.md`;
+
+/** 对账表的 markdown 行；终端输出与 _qa/reconciliation.md 共用 */
+function reconciliationLines(table) {
+  return [
+    '| 用例-断言 | 冻结断言原文 | 实测值或绑定 | 标注 |',
+    '| --- | --- | --- | --- |',
+    ...table.map((row) => `| ${row.id} | ${tableCell(row.assertion)} | ${tableCell(row.actual)} | ${row.flag} |`),
+  ];
+}
+
+function reconciliationDocument(table) {
+  return [
+    '# 对账表',
+    '',
+    '由 qa-check acceptance 生成，请勿手改；Spec 轴审查者逐行核对实测值或绑定是否证明冻结断言。',
+    '',
+    ...reconciliationLines(table),
+    '',
+  ].join('\n');
+}
+
+/** review 阶段：落盘的对账表须与按当前执行记录计算的一致，审查者才看到最新对账表 */
+async function reconciliationIssues(featureDir, table) {
+  const saved = await readFile(path.join(featureDir, RECONCILIATION_FILE), 'utf8').catch(() => null);
+  if (saved === reconciliationDocument(table)) return [];
+  return [issue(
+    'RECONCILIATION_STALE',
+    'FAIL',
+    saved === null ? `缺少 ${RECONCILIATION_FILE}。` : `${RECONCILIATION_FILE} 与按当前执行记录计算的对账表不一致。`,
+    '重跑 qa-check acceptance 生成最新对账表，再重新 collect 并按增量复审交给 Spec 轴核对。',
+  )];
 }
 
 export function formatReport(report, phase) {
@@ -1522,9 +1704,7 @@ export function formatReport(report, phase) {
     lines.push(`[提示] ${item.code}：${item.hint}`);
   }
   if (report.table?.length) {
-    lines.push('', '对账表（人工终审入口：逐行核对实测值或绑定是否证明冻结断言）', '| 用例-断言 | 冻结断言原文 | 实测值或绑定 | 标注 |', '| --- | --- | --- | --- |');
-    lines.push(...report.table.map((row) => `| ${row.id} | ${tableCell(row.assertion)} | ${tableCell(row.actual)} | ${row.flag} |`));
-    lines.push('');
+    lines.push('', '对账表（人工终审入口：逐行核对实测值或绑定是否证明冻结断言）', ...reconciliationLines(report.table), '');
   }
   lines.push(`结果: ${report.status}`);
   if (phase === 'review' && report.status === 'PASS') {
@@ -1546,6 +1726,16 @@ async function main() {
 
   try {
     const report = await checkFeature(featureDir, phase);
+    // 每次 acceptance 都同步对账表；计划结构有问题算不出表时删除旧文件，避免审查者读到过期内容
+    if (phase === 'acceptance') {
+      const target = path.join(featureDir, RECONCILIATION_FILE);
+      if (report.table) {
+        await mkdir(path.join(featureDir, QA_DIR), { recursive: true });
+        await writeFile(target, reconciliationDocument(report.table));
+      } else {
+        await rm(target, { force: true });
+      }
+    }
     console.log(formatReport(report, phase));
     process.exitCode = report.status === 'PASS' ? 0 : 1;
   } catch (error) {

@@ -41,9 +41,10 @@ AI 辅助编码最常见的三类返工：
 
 | 以前靠自述 | 现在靠产物 |
 | --- | --- |
-| 报告里粘贴的审查原文 | 子代理自己写入 `review/` 的原文 + 编号对账 |
+| 报告里粘贴的审查原文 | code-review 把子代理返回逐字落盘到 `review/` + 编号对账 |
 | 执行记录写 PASS | 日志里的 `[TC01-1] PASS 实测：…` 标记、unit 的「文件 › 标题」绑定 |
-| “我用的是真实输入” | `scripts/` 静态扫描：绕过登录硬失败，模拟输入标注 |
+| “我用的是真实输入” | `scripts/` 静态扫描：绕过登录与脚本内登录硬失败，模拟输入标注 |
+| “已修” | 分流表「验证证据」列指向修复后产生的证据 |
 | 人工逐行对照 spec | 一张对账表：冻结断言原文 ↔ 实测值或用例标题 |
 
 设计取舍：**只对机械可修的缺口硬失败**（漏编号、漏标记、绑定写错），语义判断（实测值是否真的证明断言）交给人工看对账表。硬性检查不追求覆盖一切，否则流程会卡死在审查阶段。
@@ -153,7 +154,7 @@ console.log(`[TC01-1] PASS 实测：scrollWidth=${width}`);
 node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<feature>/scripts/tc01-filter.mjs
 ```
 
-### 3. 审查原文（子代理写入 `review/r1-spec-axis.md`）
+### 3. 审查原文（code-review 把 Spec 子代理的返回逐字写入 `review/r1-spec-axis.md`）
 
 ```markdown
 [P-M1] 缺失：spec US 12 要求保留修复尝试记录，diff 中未见对应处理。
@@ -169,11 +170,12 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<featur
 审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型
 
 ## 三档分流
-| 编号 | 档位 | 最终状态 | 轮次轨迹 | 理由 |
-| --- | --- | --- | --- | --- |
-| P-M1 | 本次修 | 已修 | r1 → r2 已修 | |
-| P-W1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | |
-| P-X1 | 驳回 | — | r1 | 依据 ADR-0031 §3 |
+| 编号 | 档位 | 最终状态 | 轮次轨迹 | 验证证据 | 理由 |
+| --- | --- | --- | --- | --- | --- |
+| P-M1 | 本次修 | 已修 | r1 → r2 已修 | `evidence/fix-p-m1.log` `screenshots/tc03-fixed.png` | |
+| S-J2 | 本次修 | 已修 | r1 → r2 已修 | 静态：删除调试日志 | |
+| P-W1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | | |
+| P-X1 | 驳回 | — | r1 | | 依据 ADR-0031 §3 |
 
 ## 修复尝试记录
 - P-W1 r2：只补了冲突分支判断，复审指出标记解析仍取第一条；r3 改为取全部标记后仍漏了空值。
@@ -182,7 +184,7 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<featur
 GLOSSARY.md 的改动开工前已存在，与本特性无关。
 ```
 
-这张表就是交付时的已修 / 未修 / 修错清单。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
+这张表就是交付时的已修 / 未修 / 修错清单。「已修」行的验证证据必须是修复后产生的 `evidence/`、`screenshots/` 文件（针对修复点跑一个脚本、截一张图即可，不必重跑全部验收），或 `静态：<理由>`；证据能否证明修复由人工终审判断。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
 
 ---
 
@@ -205,16 +207,19 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `ASSERTION_MARKER_CONFLICT` | 日志有 FAIL 标记，记录却写 PASS | 如实改为 FAIL 或修复后重跑 |
 | `TEST_BINDING_MISSING` | 绑定为空、文件不存在或找不到标题 | 改绑定列 |
 | `TEST_BINDING_OUT_OF_RUN` | 证据命令没跑到绑定的测试文件 | 改绑定，或用覆盖该文件的命令重跑 |
-| `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动等 | 删掉，改为真实登录；**不可豁免** |
-| `REVIEW_RAW_MISSING` | 最新一轮缺某轴原文，或原文早于审查包 | 重新调用 code-review |
+| `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动、密码字面量、登录或注册接口、`window.__*` 上的登录方法等 | 删掉，脚本从已登录状态开始；**不可豁免** |
+| `REVIEW_RAW_MISSING` | 最新一轮缺某轴原文，或原文早于审查包 | 用 Skill 工具重新调用 code-review |
+| `REVIEW_RAW_UNNUMBERED` | 最新一轮原文没有规范编号也没写「无发现」 | 多半是绕过了 code-review 技能；用 Skill 工具调用它重新审查 |
+| `RECONCILIATION_STALE` | `_qa/reconciliation.md` 缺失或与当前执行记录不一致 | 重跑 acceptance，重新 collect 并复审 |
 | `FINDING_NOT_TRIAGED` | 原文编号没进分流表 | 补行 |
 | `DEFAULT_FIX_WITHOUT_REASON` | S-H/P-M/P-W 没本次修又没写理由 | 写理由或改为本次修 |
+| `FIX_UNVERIFIED` | 「已修」行缺验证证据、证据早于首次提出该编号的原文、日志 exit 非 0，或分流表缺该列 | 针对修复点生成新证据，或写 `静态：<理由>` |
 | `UNRESOLVED_FINDINGS` | 本次修条目最终未修或修错 | 人工裁决 |
 
 NOTE 不改变结果，但值得看：
 
-- `SYNTHETIC_INPUT_IN_SCRIPT`：页面内用了 `dispatchEvent`、`.click()`、`.focus()` 或 `.value` 赋值。合法用途是读状态或构造前置条件；对账表会标「非真实输入」。
-- 转录核验：原文文件和子代理转录最后一条返回对不上，或子代理模型与主会话不同。去 NOTE 给出的转录路径核对。宿主转录格式不是公开契约，所以只给 NOTE。
+- `SYNTHETIC_INPUT_IN_SCRIPT`：页面内用了 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值、`.setState(` 或访问 `window.__*`。合法用途是读状态或构造前置条件；对账表会标「非真实输入」。
+- 转录核验：原文在审查包之后的子代理输出里找不到、审查包之后没有子代理转录、没有 `code-review` 的 Skill 调用，或子代理模型与主会话不同。去 NOTE 给出的转录路径核对。宿主转录格式不是公开契约，所以只给 NOTE。
 - tree 不一致：证据跑完后代码又变了，按正本“NOTE 处置”判断是否重跑。
 
 ---
@@ -279,7 +284,7 @@ SSR/HMR/SSE 页面永远等不到网络空闲，或者 HTML 出来了但还没�
 
 ### 坑 5：为了过登录走捷径
 
-直连数据库签发令牌、改真实用户密码、注入 Cookie，都会产生验收范围外的副作用，现在会被 `AUTH_BYPASS_IN_SCRIPT` 拦下。正确做法：用已有会话；或在对话里给 Agent 一个**专用测试账号**，它在真实登录页登录一次；或让 Agent 打开登录页，你自己登录。
+直连数据库签发令牌、改真实用户密码、注入 Cookie、在脚本里调注册接口造账号或把密码写成常量，都会产生验收范围外的副作用或泄露凭据，现在会被 `AUTH_BYPASS_IN_SCRIPT` 拦下。正确做法：登录在脚本外完成，过程脚本从已登录状态开始。用已有会话；或你在可见窗口自己登录；或在对话里给 Agent 一个**专用测试账号**，它在真实登录页登录一次。
 
 ### 坑 6：证据与断言脱节
 
@@ -311,7 +316,7 @@ SSR/HMR/SSE 页面永远等不到网络空闲，或者 HTML 出来了但还没�
 不会卡死。自动修复停止，交付验证照常执行，`qa-check review` 输出 BLOCKED 并列出未解决编号，你拿到一份材料齐全的交付包做裁决。授权追加修复轮不受自动上限约束。
 
 **Q6：审查子代理用什么模型？**
-默认继承主会话模型，Agent 不自行指定。你明确要求换模型（比如为了省成本）时照做，审查方式行会写明。
+默认继承主会话模型，Agent 不自行指定。你明确要求换模型（比如为了省成本）时照做，审查方式行会写明。宿主环境变量（如 Claude Code 的 `CLAUDE_CODE_SUBAGENT_MODEL`）会悄悄覆盖子代理模型，`qa-check review` 发现不一致时只给 NOTE，不阻断。
 
 **Q7：检查器能证明 Agent 没作弊吗？**
 不能。它能证明产物齐全、编号对得上、日志里有标记、绑定的测试存在且被运行、脚本里没有绕过登录的代码；不能判断实测值是否真的证明断言、截图是否对应、日志是否伪造。这些交给对账表、独立审查和人工终审。所以 `结果: PASS` 只称“机器校验通过”。

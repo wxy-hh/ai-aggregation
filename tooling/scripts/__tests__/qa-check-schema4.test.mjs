@@ -187,6 +187,8 @@ async function reviewRepo(t, {
     });
     assert.equal(executed.status, expected, executed.stderr);
   }
+  // 按正确时序先 acceptance 落盘对账表，再 collect
+  spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
   const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], {
     cwd: dir,
     encoding: 'utf8',
@@ -498,7 +500,7 @@ test('三档分流数据行含档位文字且后续有数据时不误判表头�
   const { feature } = await reviewRepo(t);
   await writeFile(
     path.join(feature, 'review-report.md'),
-    triageReport(['| S-J1 | 本次修 | 已修 | r1 发现 → r2 已修 | 档位说明文字 |', '| P-X1 | 驳回 | — | r1 | 后续数据 |']),
+    verifiedReport(['| S-J1 | 本次修 | 已修 | r1 发现 → r2 已修 | 静态：改文案 | 档位说明文字 |', '| P-X1 | 驳回 | — | r1 | | 后续数据 |']),
   );
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
@@ -1128,10 +1130,10 @@ test('本次修条目最终未修或修错时 UNRESOLVED_FINDINGS，全部已修
   const { feature } = await reviewRepo(t);
   await writeRaw(feature, 1, { standards: '[S-H1] 硬\n', spec: '[P-M1] 缺\n[P-W1] 误\n' });
   await writeRaw(feature, 3, { standards: '[S-H1] 未修\n', spec: '[P-M1] 修错\n[P-W1] 已修\n' });
-  await writeFile(path.join(feature, 'review-report.md'), triageReport([
-    '| S-H1 | 本次修 | 未修 | r1 → r2 未修 → r3 未修 | |',
-    '| P-M1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | |',
-    '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | |',
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| S-H1 | 本次修 | 未修 | r1 → r2 未修 → r3 未修 | 静态：同下 | |',
+    '| P-M1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | 静态：同下 | |',
+    '| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态：改文案 | |',
   ]));
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'BLOCKED', formatReport(report));
@@ -1160,18 +1162,43 @@ async function useConfigDir(t) {
   return dir;
 }
 
-async function writeTranscript(configDir, repoDir, { text, model, sessionModel = 'claude-opus-5-5' }) {
+async function projectDir(configDir, repoDir) {
   const { realpath } = await import('node:fs/promises');
   const root = await realpath(repoDir);
-  const project = path.join(configDir, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
+  return path.join(configDir, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
+}
+
+/** 主会话转录；默认含一次审查包之后的 code-review Skill 调用 */
+async function writeMainSession(configDir, repoDir, { sessionModel = 'claude-opus-5-5', skill = 'code-review' } = {}) {
+  const project = await projectDir(configDir, repoDir);
+  await mkdir(project, { recursive: true });
+  const lines = [{ type: 'assistant', message: { model: sessionModel, content: [{ type: 'text', text: '主会话' }] } }];
+  if (skill) {
+    lines.push({
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { model: sessionModel, content: [{ type: 'tool_use', id: 'toolu_1', name: 'Skill', input: { skill, args: '阶段 6' } }] },
+    });
+  }
+  await writeFile(path.join(project, 'session-1.jsonl'), `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+  return project;
+}
+
+/** 子代理转录：entries 为 assistant 消息 content 列表，按顺序写入 */
+async function writeSubagent(configDir, repoDir, { name = 'agent-1', model, contents }) {
+  const project = await projectDir(configDir, repoDir);
   const subagents = path.join(project, 'session-1', 'subagents');
   await mkdir(subagents, { recursive: true });
-  await writeFile(path.join(project, 'session-1.jsonl'), `${JSON.stringify({ type: 'assistant', message: { model: sessionModel, content: [{ type: 'text', text: '主会话' }] } })}\n`);
-  const line = { type: 'assistant', message: { model, content: [{ type: 'thinking', thinking: '…' }, { type: 'text', text }] } };
-  const file = path.join(subagents, 'agent-1.jsonl');
-  await writeFile(file, `${JSON.stringify({ type: 'user', message: { content: '审查' } })}\n${JSON.stringify(line)}\n`);
-  await writeFile(path.join(subagents, 'agent-1.meta.json'), JSON.stringify({ model }));
+  const lines = [{ type: 'user', message: { content: '审查' } }, ...contents.map((content) => ({ type: 'assistant', message: { model, content } }))];
+  const file = path.join(subagents, `${name}.jsonl`);
+  await writeFile(file, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+  await writeFile(path.join(subagents, `${name}.meta.json`), JSON.stringify({ model }));
   return file;
+}
+
+async function writeTranscript(configDir, repoDir, { text, model, sessionModel = 'claude-opus-5-5' }) {
+  await writeMainSession(configDir, repoDir, { sessionModel });
+  return writeSubagent(configDir, repoDir, { model, contents: [[{ type: 'thinking', thinking: '…' }, { type: 'text', text }]] });
 }
 
 test('转录最后一条返回不含原文时输出 NOTE，状态不变（TC04-1）', async (t) => {
@@ -1190,8 +1217,8 @@ test('转录最后一条返回不含原文时输出 NOTE，状态不变（TC04-1
 test('子代理模型与主会话不一致时输出 NOTE，状态不变（TC04-2）', async (t) => {
   const configDir = await useConfigDir(t);
   const { dir, feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '同一份原文\n', spec: '同一份原文\n' });
-  await writeTranscript(configDir, dir, { text: '同一份原文', model: 'claude-haiku-5.5' });
+  await writeRaw(feature, 1, { standards: '同一份原文：无发现\n', spec: '同一份原文：无发现\n' });
+  await writeTranscript(configDir, dir, { text: '同一份原文：无发现', model: 'claude-haiku-5.5' });
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
   const notes = report.notes.filter((note) => note.startsWith('转录核验'));
@@ -1205,4 +1232,349 @@ test('找不到会话目录时不输出转录相关内容（TC04-3）', async (t
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
   assert.doesNotMatch(formatReport(report, 'review'), /转录/);
+});
+
+// ---- 审查闭环与修复验证（.scratch/qa-workflow-review-closure） ----
+
+test('最新一轮原文无规范编号且未写无发现时 REVIEW_RAW_UNNUMBERED（TC01-1）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-01] 命名不清\n', spec: '[P-01] 超时未实现\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  const found = report.issues.filter((item) => item.code === 'REVIEW_RAW_UNNUMBERED');
+  assert.equal(found.length, 1, formatReport(report));
+  assert.match(found[0].message, /review\/r1-standards\.md/);
+  assert.match(found[0].message, /review\/r1-spec-axis\.md/);
+  assert.match(found[0].hint, /Skill 工具调用 code-review/);
+  assert.match(found[0].hint, /不要用 Agent 工具自行派审查子代理/);
+});
+
+test('原文写无发现时不报 REVIEW_RAW_UNNUMBERED（TC01-2）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('REVIEW_RAW_UNNUMBERED'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('原文含规范编号时不报 REVIEW_RAW_UNNUMBERED，未分流仍报 FINDING_NOT_TRIAGED（TC01-3）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬违规\n', spec: '无发现\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('REVIEW_RAW_UNNUMBERED'), formatReport(report));
+  assert.ok(codes(report).includes('FINDING_NOT_TRIAGED'), formatReport(report));
+});
+
+test('只有早期轮原文缺编号时不报 REVIEW_RAW_UNNUMBERED（TC01-4）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-01] 旧格式\n', spec: '[P-01] 旧格式\n' });
+  await writeRaw(feature, 2);
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('REVIEW_RAW_UNNUMBERED'), formatReport(report));
+});
+
+test('原文出现在子代理非最后一条输出或 SendMessage 消息中时视为匹配（TC02-1）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  await writeMainSession(configDir, dir);
+  await writeSubagent(configDir, dir, {
+    name: 'agent-standards',
+    model: 'claude-opus-5-5',
+    contents: [[{ type: 'text', text: '规范轴：无发现' }], [{ type: 'text', text: '已返回给主代理' }]],
+  });
+  await writeSubagent(configDir, dir, {
+    name: 'agent-spec',
+    model: 'claude-opus-5-5',
+    contents: [[{ type: 'tool_use', id: 'toolu_2', name: 'SendMessage', input: { to: 'main', message: '需求轴：无发现' } }], [{ type: 'text', text: '完成' }]],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'review'), /转录核验/);
+});
+
+test('原文不在任何子代理输出中时 NOTE，状态不变（TC02-2）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  await writeMainSession(configDir, dir);
+  await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '别的内容' }]] });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  const notes = report.notes.filter((note) => note.startsWith('转录核验'));
+  assert.equal(notes.length, 1, formatReport(report));
+  assert.match(notes[0], /review\/r1-standards\.md/);
+  assert.match(notes[0], /review\/r1-spec-axis\.md/);
+});
+
+test('会话目录存在但审查包之后没有子代理转录时 NOTE，状态不变（TC02-3）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeMainSession(configDir, dir);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('最新一轮原文没有对应的子代理转录')), formatReport(report));
+
+  // 审查包之前的子代理转录不算
+  const old = new Date(Date.now() - 3_600_000);
+  const file = await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '无发现' }]] });
+  await utimes(file, old, old);
+  const stale = await checkFeature(feature, 'review');
+  assert.ok(stale.notes.some((note) => note.includes('最新一轮原文没有对应的子代理转录')), formatReport(stale));
+});
+
+test('审查包之后没有 code-review 的 Skill 调用时 NOTE，带插件前缀的调用视为有（TC02-4）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '同一份原文：无发现\n', spec: '同一份原文：无发现\n' });
+  await writeSubagent(configDir, dir, { model: 'claude-opus-5-5', contents: [[{ type: 'text', text: '同一份原文：无发现' }]] });
+  for (const [skill, expected] of [[null, true], ['grilling', true], ['code-review', false], ['team:code-review', false]]) {
+    await writeMainSession(configDir, dir, { skill });
+    const report = await checkFeature(feature, 'review');
+    assert.equal(report.status, 'PASS', formatReport(report));
+    const noted = report.notes.some((note) => note.includes('Skill 调用'));
+    assert.equal(noted, expected, `${skill}: ${formatReport(report)}`);
+  }
+});
+
+/** 带「验证证据」列的分流表报告 */
+function verifiedReport(rows, header = '| 编号 | 档位 | 最终状态 | 轮次轨迹 | 验证证据 | 理由 |') {
+  return REPORT_OK
+    .replace('| 编号 | 档位 | 最终状态 | 轮次轨迹 | 理由 |', header)
+    .replace('| --- | --- | --- | --- | --- |\n\n无发现', `| --- | --- | --- | --- | --- | --- |\n${rows.join('\n')}`);
+}
+
+/** r1 提出 P-W1，r2 复审已修；返回特性目录与 r1 原文时间 */
+async function fixedRepo(t) {
+  const repo = await reviewRepo(t);
+  const old = new Date(Date.now() - 600_000);
+  await writeRaw(repo.feature, 1, { standards: '无发现\n', spec: '[P-W1] 实现有误\n' });
+  for (const name of ['r1-standards.md', 'r1-spec-axis.md']) await utimes(path.join(repo.feature, 'review', name), old, old);
+  await writeRaw(repo.feature, 2, { standards: '无发现\n', spec: '[P-W1] 已修\n' });
+  return repo;
+}
+
+async function fixLog(feature, name, { exit = 0, time } = {}) {
+  const file = path.join(feature, 'evidence', name);
+  await writeFile(file, runLog({ label: name.replace(/\.log$/, ''), exit }));
+  if (time) await utimes(file, time, time);
+}
+
+function fixIssue(report) {
+  return report.issues.find((item) => item.code === 'FIX_UNVERIFIED');
+}
+
+test('已修行验证证据为空或缺列时 FIX_UNVERIFIED（TC03-1、TC03-2）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | | |']));
+  const empty = await checkFeature(feature, 'review');
+  assert.equal(empty.status, 'FAIL', formatReport(empty));
+  assert.match(fixIssue(empty)?.message ?? '', /P-W1/);
+
+  await writeFile(reportPath, triageReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | |']));
+  const noColumn = await checkFeature(feature, 'review');
+  assert.match(fixIssue(noColumn)?.message ?? '', /验证证据/, formatReport(noColumn));
+});
+
+test('验证证据文件不存在或越出 evidence/ 与 screenshots/ 时 FIX_UNVERIFIED（TC03-3）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await writeFile(path.join(feature, 'notes.md'), '自述已修');
+  for (const reference of ['`evidence/missing.log`', '`notes.md`', '`../outside.txt`']) {
+    await writeFile(reportPath, verifiedReport([`| P-W1 | 本次修 | 已修 | r1 → r2 已修 | ${reference} | |`]));
+    const report = await checkFeature(feature, 'review');
+    assert.match(fixIssue(report)?.message ?? '', /P-W1/, `${reference}: ${formatReport(report)}`);
+  }
+});
+
+test('验证证据早于首次提出该编号的原文时 FIX_UNVERIFIED，晚于时不报（TC03-4）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await mkdir(path.join(feature, 'screenshots'), { recursive: true });
+  await writeFile(path.join(feature, 'screenshots', 'fix-old.png'), '旧截图');
+  const older = new Date(Date.now() - 3_600_000);
+  await utimes(path.join(feature, 'screenshots', 'fix-old.png'), older, older);
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | `screenshots/fix-old.png` | |']));
+  const stale = await checkFeature(feature, 'review');
+  assert.match(fixIssue(stale)?.message ?? '', /P-W1/, formatReport(stale));
+
+  await writeFile(path.join(feature, 'screenshots', 'fix-new.png'), '修复后截图');
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | `screenshots/fix-new.png` | |']));
+  const fresh = await checkFeature(feature, 'review');
+  assert.ok(!codes(fresh).includes('FIX_UNVERIFIED'), formatReport(fresh));
+});
+
+test('验证证据为 exit 非 0 的 qa-run 日志时 FIX_UNVERIFIED，exit 0 时不报（TC03-5）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await fixLog(feature, 'fix-red.log', { exit: 1 });
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | `evidence/fix-red.log` | |']));
+  const red = await checkFeature(feature, 'review');
+  assert.match(fixIssue(red)?.message ?? '', /P-W1/, formatReport(red));
+
+  await fixLog(feature, 'fix-green.log');
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | `evidence/fix-green.log` | |']));
+  const green = await checkFeature(feature, 'review');
+  assert.ok(!codes(green).includes('FIX_UNVERIFIED'), formatReport(green));
+});
+
+test('静态理由非空时不报，静态后无理由时 FIX_UNVERIFIED（TC03-6）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态：删除调试代码 | |']));
+  const reasoned = await checkFeature(feature, 'review');
+  assert.ok(!codes(reasoned).includes('FIX_UNVERIFIED'), formatReport(reasoned));
+
+  await writeFile(reportPath, verifiedReport(['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | 静态： | |']));
+  const blank = await checkFeature(feature, 'review');
+  assert.match(fixIssue(blank)?.message ?? '', /P-W1/, formatReport(blank));
+});
+
+test('非已修行验证证据留空不报 FIX_UNVERIFIED（TC03-7）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  await writeRaw(feature, 2, { standards: '[S-J1] 判断\n', spec: '[P-W1] 未修\n[P-X1] 蔓延\n[P-M1] 缺失\n' });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-W1 | 本次修 | 未修 | r1 → r2 未修 | | |',
+    '| S-J1 | 转专项 | — | r2 | | |',
+    '| P-X1 | 驳回 | — | r2 | | 依据 spec Out of Scope |',
+    '| P-M1 | 本次修 | 修错 | r2 修错 | | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('FIX_UNVERIFIED'), formatReport(report));
+});
+
+test('验证证据合法且列顺序不同时 review 为 PASS（TC03-8）', async (t) => {
+  const { feature } = await fixedRepo(t);
+  await fixLog(feature, 'fix-green.log');
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport(
+    ['| P-W1 | 本次修 | 已修 | r1 → r2 已修 | | `evidence/fix-green.log` |'],
+    '| 编号 | 档位 | 最终状态 | 轮次轨迹 | 理由 | 验证证据 |',
+  ));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+async function scanReport(t, script) {
+  const dir = await scriptedWorkspace(t, { extraFiles: { 'scripts/helper.mjs': script } });
+  return checkFeature(dir, 'acceptance');
+}
+
+function bypassIssue(report) {
+  return report.issues.find((item) => item.code === 'AUTH_BYPASS_IN_SCRIPT');
+}
+
+test('脚本内密码字面量 AUTH_BYPASS_IN_SCRIPT，空串或环境变量不报（TC04-1）', async (t) => {
+  for (const script of ["await page.fill('#pwd', 'x');\nconst body = { username: 'e2e', password: 'LoopPass123!' };", "const TEST_PASS = 'x';", 'const opts = { "passwd": "secret" };']) {
+    const report = await scanReport(t, script);
+    assert.equal(report.status, 'FAIL', `${script}: ${formatReport(report)}`);
+    assert.match(bypassIssue(report)?.message ?? '', /scripts\/helper\.mjs.*密码/, script);
+  }
+  for (const script of ["const body = { password: '' };", 'const password = process.env.QA_PASSWORD;', "const passwordInput = page.getByLabel('密码');"]) {
+    const report = await scanReport(t, script);
+    assert.ok(!codes(report).includes('AUTH_BYPASS_IN_SCRIPT'), `${script}: ${formatReport(report)}`);
+  }
+});
+
+test('脚本内登录、注册、签发令牌接口路径 AUTH_BYPASS_IN_SCRIPT（TC04-2）', async (t) => {
+  for (const script of ["await fetch(`${base}/api/auth/login`, { method: 'POST' });", "await request.post('/api/auth/register');", "await fetch('/api/v1/signup');", "await fetch('/api/token');", "await fetch('/signup', { method: 'POST' });", "await request.post(`${base}/login`);"]) {
+    const report = await scanReport(t, script);
+    assert.equal(report.status, 'FAIL', `${script}: ${formatReport(report)}`);
+    assert.match(bypassIssue(report)?.message ?? '', /登录|注册|令牌/, script);
+  }
+  const page = await scanReport(t, "await page.goto(`${base}/login`);\nawait fetch('/api/voice/realtime/session');\nawait fetch('/api/tokens-usage');\nconst signupPath = '/signup';\nawait page.goto(base + signupPath);");
+  assert.ok(!codes(page).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(page));
+});
+
+test('通过 window.__* 调用登录类方法 AUTH_BYPASS_IN_SCRIPT（TC04-3）', async (t) => {
+  for (const script of [
+    "await page.evaluate(() => window.__authStore.getState().login('u', 'p'));",
+    "await page.evaluate(() => window.__x.setToken('t'));",
+    "await page.evaluate(() => { window.__session.setAuth({}); });",
+  ]) {
+    const report = await scanReport(t, script);
+    assert.equal(report.status, 'FAIL', `${script}: ${formatReport(report)}`);
+    assert.match(bypassIssue(report)?.message ?? '', /window\.__/, script);
+  }
+});
+
+test('登录类 FAIL 不可豁免，提示从已登录状态开始（TC04-4）', async (t) => {
+  const dir = await scriptedWorkspace(t, { extraFiles: { 'scripts/helper.mjs': "await fetch('/api/auth/register');" } });
+  await writeFile(
+    path.join(dir, 'qa-plan.md'),
+    (await readFile(path.join(dir, 'qa-plan.md'), 'utf8')).replace('- 无', '- 已获人工豁免：脚本需要注册一次性账号'),
+  );
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.match(bypassIssue(report)?.hint ?? '', /脚本应从已登录状态开始/);
+  assert.match(bypassIssue(report)?.hint ?? '', /真实登录页登录一次/);
+});
+
+test('页面内 setState 与 window.__ 访问只 NOTE 并标注非真实输入（TC04-5）', async (t) => {
+  for (const script of [
+    "await page.evaluate(() => window.__chatStore.setState({ messages: [] }));",
+    "const count = await page.evaluate(() => window.__chatStore.getState().messages.length);",
+  ]) {
+    const dir = await scriptedWorkspace(t, { script });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.equal(report.status, 'PASS', `${script}: ${formatReport(report)}`);
+    assert.ok(report.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), script);
+    assert.match(formatReport(report, 'acceptance'), /\| TC01-1 \|.*\| 非真实输入 \|/);
+  }
+});
+
+test('不含登录与注入模式的脚本无扫描输出（TC04-6）', async (t) => {
+  const dir = await scriptedWorkspace(t, {
+    script: "await page.goto('/knowledge');\nawait page.getByRole('button', { name: '保存到知识库' }).click();\nconst width = await page.evaluate(() => document.body.scrollWidth);\n",
+  });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'acceptance'), /SYNTHETIC_INPUT_IN_SCRIPT|AUTH_BYPASS_IN_SCRIPT|非真实输入/);
+});
+
+function acceptanceCli(dir, feature) {
+  return spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+}
+
+test('acceptance 把对账表写入 _qa/reconciliation.md，内容与终端一致（TC05-1）', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  await rm(path.join(feature, '_qa', 'reconciliation.md'), { force: true });
+  const run = acceptanceCli(dir, feature);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const saved = await readFile(path.join(feature, '_qa', 'reconciliation.md'), 'utf8');
+  const rows = saved.split('\n').filter((line) => line.startsWith('| TC'));
+  assert.equal(rows.length, 1, saved);
+  assert.match(rows[0], /\| TC01-1 \| 第一条断言 \|/);
+  for (const line of saved.split('\n').filter((item) => item.startsWith('|'))) assert.ok(run.stdout.includes(line), line);
+});
+
+test('计划结构有问题时 acceptance 删除旧对账表，不留过期文件（TC05-1）', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  const saved = path.join(feature, '_qa', 'reconciliation.md');
+  await readFile(saved, 'utf8');
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, (await readFile(planPath, 'utf8')).replace('QA Schema: 4', 'QA Schema: 3'));
+  assert.notEqual(acceptanceCli(dir, feature).status, 0);
+  await assert.rejects(readFile(saved, 'utf8'));
+});
+
+test('review 时对账表缺失报 RECONCILIATION_STALE（TC05-2）', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await rm(path.join(feature, '_qa', 'reconciliation.md'));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  const stale = report.issues.find((item) => item.code === 'RECONCILIATION_STALE');
+  assert.match(stale?.hint ?? '', /acceptance/);
+  assert.match(stale?.hint ?? '', /collect/);
+});
+
+test('执行记录变化未重跑 acceptance 时 RECONCILIATION_STALE，重跑后不报（TC05-3）', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, (await readFile(planPath, 'utf8')).replace('传入过滤条件时两路均收到 |', "'传入过滤条件时两路均收到' |"));
+  const stale = await checkFeature(feature, 'review');
+  assert.ok(codes(stale).includes('RECONCILIATION_STALE'), formatReport(stale));
+  assert.equal(acceptanceCli(dir, feature).status, 0);
+  const fresh = await checkFeature(feature, 'review');
+  assert.ok(!codes(fresh).includes('RECONCILIATION_STALE'), formatReport(fresh));
 });

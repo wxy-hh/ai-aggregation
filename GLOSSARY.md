@@ -212,5 +212,9 @@ unit/integration 执行记录中以「测试文件 › 用例标题」指向源�
 _Avoid_: 测试引用, 用例映射, 关联测试
 
 **ReconciliationTable (对账表)**:
-`qa-check acceptance` 输出的「冻结断言原文 ↔ 实测值或用例标题 ↔ 标注」表，是人工终审判断证据语义的入口。
+`qa-check acceptance` 输出并写入 `_qa/reconciliation.md` 的「冻结断言原文 ↔ 实测值或用例标题 ↔ 标注」表，供 Spec 轴审查者逐行核对，也是人工终审判断证据语义的入口。
 _Avoid_: 验收清单, 结果汇总, 对照表
+
+**FixVerification (修复验证证据)**:
+三档分流表中「已修」行的「验证证据」列：指向修复后产生的特性目录 `evidence/`、`screenshots/` 文件（qa-run 日志须 exit 0），或不涉及行为时写 `静态：<理由>`，用于闭合「发现 → 修复 → 验证」。
+_Avoid_: 修复说明, 已修自述, 回归记录

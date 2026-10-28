@@ -223,7 +223,7 @@ test('通用安装模板同步审查交接与完成语义（TC13）', async () =
   assert.match(setup, /注入[^\n]*`code-review`/);
 });
 
-test('独立审查以独立上下文和真实返回交接，无能力时合法暂停（TC01）', async () => {
+test('阶段 6 入口只路由到 code-review 技能，无能力时合法暂停（TC01）', async () => {
   const contents = await Promise.all([
     read(paths.implement),
     read(paths.implementSpec),
@@ -233,10 +233,14 @@ test('独立审查以独立上下文和真实返回交接，无能力时合法�
   ]);
   for (const content of contents) {
     assert.match(content, /独立上下文/);
-    assert.match(content, /真实独立(?:审查)?返回/);
+    assert.match(content, /Skill 工具调用 `?code-review/);
+    assert.match(content, /不要用 Agent 工具自行派审查子代理/);
     assert.match(content, /待独立审查/);
     assert.doesNotMatch(content, /exit 2/);
   }
+  // 入口文件不复述子代理行为；skill-customizations 的 code-review 段本身就是规则所在，不在此列
+  for (const content of contents.slice(0, 4)) assert.doesNotMatch(content, /继承主会话模型/);
+  for (const content of contents.slice(0, 2)) assert.doesNotMatch(content, /r<n>-standards/);
   for (const content of [contents[0], contents[2], contents[3]]) {
     assert.match(content, /不运行最终 `qa-check review`/);
     assert.match(content, /待审查材料包/);
@@ -245,7 +249,8 @@ test('独立审查以独立上下文和真实返回交接，无能力时合法�
   const [root, directive] = await Promise.all([read(paths.root), read(paths.claudeTemplate)]);
   for (const content of [root, directive]) {
     assert.match(content, /独立上下文/);
-    assert.match(content, /真实独立(?:审查)?返回/);
+    assert.match(content, /Skill 工具调用 `code-review`/);
+    assert.doesNotMatch(content, /继承主会话模型/);
     assert.doesNotMatch(content, /exit 2/);
   }
   assert.match(root, /`AGENTS\.md` 是指向本文件的符号链接/);
