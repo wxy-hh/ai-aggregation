@@ -498,6 +498,8 @@ test('三档分流拒绝非法档位，空表必须写明无发现（TC07）', a
 
 test('三档分流数据行含档位文字且后续有数据时不误判表头（TC07）', async (t) => {
   const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-J1] 判断\n', spec: '[P-X1] 蔓延\n' });
+  await writeRaw(feature, 2, { standards: '[S-J1] 已修\n' });
   await writeFile(
     path.join(feature, 'review-report.md'),
     verifiedReport(['| S-J1 | 本次修 | 已修 | r1 发现 → r2 已修 | 静态：改文案 | 档位说明文字 |', '| P-X1 | 驳回 | — | r1 | | 后续数据 |']),
@@ -1166,13 +1168,66 @@ test('分流表最终状态与原文最后一次状态词不一致时 UNRESOLVED
   const mismatch = report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL');
   assert.match(mismatch.message, /S-H1（原文未修，分流表驳回）.*S-J1（原文未修，分流表已修）.*P-W1（原文修错，分流表转专项）/);
 
+  // 人工裁决只写入理由列，不改变机器结果
   await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
     '| S-H1 | 驳回 | 未修 | r1 → r2 未修 | 无 | 人工裁定接受现状 |',
     '| S-J1 | 转专项 | 未修 | r1 → r2 未修 | 无 | 人工裁定转专项 |',
     '| P-W1 | 转专项 | 修错 | r1 → r2 修错 | 无 | 人工裁定转专项 |',
   ]));
   const consistent = await checkFeature(feature, 'review');
-  assert.equal(consistent.status, 'PASS', formatReport(consistent));
+  assert.equal(consistent.status, 'BLOCKED', formatReport(consistent));
+  assert.match(consistent.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message, /S-H1（未修）.*S-J1（未修）.*P-W1（修错）/);
+});
+
+test('改档由下一轮审查者复核：成立时 PASS，不成立须改为本次修且 BLOCKED，漏判按未修', async (t) => {
+  const { feature } = await reviewRepo(t);
+  const reportPath = path.join(feature, 'review-report.md');
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬\n[S-J1] 判\n', spec: '[P-W1] 误\n[P-X1] 蔓延\n' });
+  await writeRaw(feature, 2, { standards: '[S-H1] 改档成立\n', spec: '[P-W1] 改档成立\n' });
+  await writeFile(reportPath, verifiedReport([
+    '| S-H1 | 驳回 | 改档成立 | r1 → r2 改档成立 | | 依据 ADR-0001 |',
+    '| S-J1 | 驳回 | — | r1 | | |',
+    '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
+    '| P-X1 | 驳回 | — | r1 | | |',
+  ]));
+  const accepted = await checkFeature(feature, 'review');
+  assert.equal(accepted.status, 'PASS', formatReport(accepted));
+
+  // 判改档成立却写成本次修：档位冲突
+  await writeFile(reportPath, (await readFile(reportPath, 'utf8')).replace('| S-H1 | 驳回 |', '| S-H1 | 本次修 |'));
+  const flipped = await checkFeature(feature, 'review');
+  assert.equal(flipped.status, 'FAIL', formatReport(flipped));
+  assert.match(flipped.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL').message, /S-H1（原文改档成立，档位本次修）/);
+
+  // 判改档不成立：档位仍为驳回时 FAIL，改为本次修后 BLOCKED
+  await writeRaw(feature, 2, { standards: '[S-H1] 改档不成立\n引用的 ADR 没有这条约定。\n', spec: '[P-W1] 改档成立\n' });
+  await writeFile(reportPath, verifiedReport([
+    '| S-H1 | 驳回 | 改档不成立 | r1 → r2 改档不成立 | | 依据 ADR-0001 |',
+    '| S-J1 | 驳回 | — | r1 | | |',
+    '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
+    '| P-X1 | 驳回 | — | r1 | | |',
+  ]));
+  const kept = await checkFeature(feature, 'review');
+  assert.equal(kept.status, 'FAIL', formatReport(kept));
+  assert.match(kept.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL').message, /S-H1（原文改档不成立，档位驳回）/);
+  await writeFile(reportPath, (await readFile(reportPath, 'utf8')).replace('| S-H1 | 驳回 |', '| S-H1 | 本次修 |'));
+  const retiered = await checkFeature(feature, 'review');
+  assert.equal(retiered.status, 'BLOCKED', formatReport(retiered));
+  assert.match(retiered.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message, /S-H1（改档不成立）/);
+
+  // 复审漏判驳回编号：按未修 BLOCKED；S-J、P-X 不要求复核
+  await writeRaw(feature, 2, { standards: '无发现\n', spec: '[P-W1] 改档成立\n' });
+  await writeFile(reportPath, verifiedReport([
+    '| S-H1 | 驳回 | — | r1 | | 依据 ADR-0001 |',
+    '| S-J1 | 驳回 | — | r1 | | |',
+    '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
+    '| P-X1 | 驳回 | — | r1 | | |',
+  ]));
+  const missed = await checkFeature(feature, 'review');
+  assert.equal(missed.status, 'BLOCKED', formatReport(missed));
+  const message = missed.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message;
+  assert.match(message, /S-H1（无复审判定）/);
+  assert.doesNotMatch(message, /S-J1|P-X1|P-W1/);
 });
 
 /** 临时 CLAUDE_CONFIG_DIR，测试结束恢复 */

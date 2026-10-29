@@ -60,6 +60,8 @@ const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
 // 只判断是否含编号时用非全局版本，避免全局正则 test() 的 lastIndex 状态
 const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
+// 复审状态词：修复结果用于本次修，改档复核用于 S-H、P-M、P-W 的驳回或转专项
+const STATUS_WORD = /^(已修|未修|修错|改档成立|改档不成立)/;
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
 const WORKFLOW_SKILLS = new Set([
   'to-spec', 'to-tickets', 'implement', 'implement-spec', 'tdd', 'code-review', 'pr', 'retro',
@@ -1240,39 +1242,59 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
   // 分流表最终状态以原文最后一次状态词为准，防止表格掩盖复审结论
   const statuses = await rawStatuses(featureDir, rounds);
   const mismatched = rows
-    .filter((row) => statuses.has(row.id) && row.final.match(/^(已修|未修|修错)/)?.[1] !== statuses.get(row.id))
+    .filter((row) => statuses.has(row.id) && row.final.match(STATUS_WORD)?.[1] !== statuses.get(row.id))
     .map((row) => `${row.id}（原文${statuses.get(row.id)}，分流表${row.final || '未填'}）`);
   if (mismatched.length) {
     issues.push(issue(
       'UNRESOLVED_FINDINGS',
       'FAIL',
       `分流表最终状态与审查原文最后一次状态词不一致：${mismatched.join('、')}。`,
-      '最终状态照抄原文状态词（已修、未修、修错；带限定语按未修）；未修或修错的改档由人工裁决。',
+      '最终状态照抄原文状态词（已修、未修、修错、改档成立、改档不成立；带限定语的已修按未修）。',
     ));
   }
+  // 改档由下一轮审查者复核：判不成立的必须回到本次修，判成立的档位不能是本次修
+  const tierConflicts = rows
+    .filter((row) => (statuses.get(row.id) === '改档不成立' && row.tier !== '本次修')
+      || (statuses.get(row.id) === '改档成立' && row.tier === '本次修'))
+    .map((row) => `${row.id}（原文${statuses.get(row.id)}，档位${row.tier}）`);
+  if (tierConflicts.length) {
+    issues.push(issue(
+      'UNRESOLVED_FINDINGS',
+      'FAIL',
+      `档位与审查者的改档复核结论冲突：${tierConflicts.join('、')}。`,
+      '审查者判改档不成立的条目改为本次修，不得再次改档；判改档成立的保持原驳回或转专项档位。',
+    ));
+  }
+  // 已修行与 S-H、P-M、P-W 的改档行都须有复审判定，没有判定按未修处理
+  const unreviewed = rows
+    .filter((row) => !statuses.has(row.id) && (
+      (row.tier === '本次修' && /^已修/.test(row.final))
+      || (DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix)) && row.tier !== '本次修')))
+    .map((row) => `${row.id}（无复审判定）`);
   const unresolved = rows
-    .filter((row) => row.tier === '本次修' && (!row.final || /未修|修错/.test(row.final)))
-    .map((row) => `${row.id}（${row.final || '未填'}）`);
+    .filter((row) => (row.tier === '本次修' && !row.final) || /^(未修|修错|改档不成立)/.test(row.final))
+    .map((row) => `${row.id}（${row.final || '未填'}）`)
+    .concat(unreviewed);
   if (unresolved.length) {
     issues.push(issue(
       'UNRESOLVED_FINDINGS',
       'BLOCKED',
-      `本次修条目最终状态未达已修：${unresolved.join('、')}。`,
-      '自动复审最多 2 轮（r2、r3）；用尽后停止自动修复，按分流表清单交人工裁决：改档并写理由、接受现状，或授权追加修复轮。',
+      `以下条目未经复审确认解决：${unresolved.join('、')}。`,
+      '自动复审最多 2 轮（r2、r3）；用尽后停止自动修复，按分流表清单交人工裁决：人工在理由列写明接受现状或授权追加修复轮，机器结果保持 BLOCKED，提交由人工明确要求后执行。',
     ));
   }
   issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, rounds));
   return { issues, latest: latestFiles };
 }
 
-/** 按复审轮次（r2 起）取每个编号最后一次的状态词；「已修」后带限定语（如「已修一半」）按未修 */
+/** 按复审轮次（r2 起）取每个编号最后一次的状态词；「已修」后带限定语（如「已修一半」）按未修，「改档」后带限定语按改档不成立 */
 async function rawStatuses(featureDir, rounds) {
   const statuses = new Map();
   for (const round of [...rounds.keys()].filter((round) => round > 1).sort((a, b) => a - b)) {
     for (const { text } of await roundRaws(featureDir, rounds.get(round))) {
-      for (const match of text.matchAll(/\[((?:S-[HJ]|P-[MWX])\d+)\]\s*((?:已修|未修|修错|修了)[^\n]*)/g)) {
-        const clean = match[2].match(/^(已修|未修|修错)(?=[\s。.，,；;：:]|$)/);
-        statuses.set(match[1], clean ? clean[1] : '未修');
+      for (const match of text.matchAll(/\[((?:S-[HJ]|P-[MWX])\d+)\]\s*((?:已修|未修|修错|修了|改档)[^\n]*)/g)) {
+        const clean = match[2].match(/^(已修|未修|修错|改档成立|改档不成立)(?=[\s。.，,；;：:]|$)/);
+        statuses.set(match[1], clean ? clean[1] : match[2].startsWith('改档') ? '改档不成立' : '未修');
       }
     }
   }
