@@ -142,4 +142,61 @@ describe('DepositArtifactDialog 组件交互 (TC07 / ADR-0034)', () => {
     expect(storedArt?.kbDeposit?.documentId).toBe('doc_new_1');
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+  it('[TC10-6] 入库版本落后于当前版：提示当前已有新版本，提交内容为当前版并把入库版本绑定到当前版', async () => {
+    const stale: Artifact = {
+      id: 'art_200',
+      type: 'markdown',
+      title: '多版本研报',
+      content: '# 研报\n\n第二版内容',
+      status: 'complete',
+      versions: [
+        { id: 'v1', seq: 1, content: '# 研报\n\n第一版内容', createdAt: 1, source: { kind: 'generated' } },
+        { id: 'v2', seq: 2, content: '# 研报\n\n第二版内容', createdAt: 2, source: { kind: 'patch' } },
+      ],
+      kbDeposit: {
+        deposited: true,
+        knowledgeBaseId: 'kb_1',
+        knowledgeBaseName: '技术知识库',
+        documentId: 'doc_old',
+        depositedAt: new Date().toISOString(),
+        versionId: 'v1',
+      },
+    };
+    useChatStore.setState({ artifacts: [stale], activeArtifactId: stale.id, isWorkspaceOpen: true });
+
+    render(<DepositArtifactDialog open={true} onOpenChange={vi.fn()} artifact={stale} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('already-deposited-hint')).toHaveTextContent('入库于 v1，当前已有新版本 v2');
+    });
+    expect(screen.getByTestId('confirm-deposit-btn')).toHaveTextContent('确认另存新文档');
+
+    fireEvent.click(screen.getByTestId('confirm-deposit-btn'));
+    await waitFor(() => {
+      expect(mockFetchWithAuth).toHaveBeenCalledWith(
+        '/api/knowledge-bases/kb_1/documents/artifact',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+    const call = mockFetchWithAuth.mock.calls.find((c) => String(c[0]).includes('/documents/artifact'))!;
+    const body = JSON.parse(call[1].body as string);
+    expect(body.content).toBe('# 研报\n\n第二版内容');
+    expect(body.content).not.toContain('第一版');
+
+    await waitFor(() => {
+      const stored = useChatStore.getState().artifacts.find((a) => a.id === 'art_200');
+      expect(stored?.kbDeposit?.versionId).toBe('v2');
+      expect(stored?.kbDeposit?.documentId).toBe('doc_new_1');
+    });
+  });
+
+  it('首次入库时记录入库版本；老数据无版本链时记为 v1', async () => {
+    render(<DepositArtifactDialog open={true} onOpenChange={vi.fn()} artifact={sampleArtifact} />);
+    await waitFor(() => expect(screen.getByTestId('confirm-deposit-btn')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('confirm-deposit-btn'));
+    await waitFor(() => {
+      const stored = useChatStore.getState().artifacts.find((a) => a.id === sampleArtifact.id);
+      expect(stored?.kbDeposit?.versionId).toBe('v1');
+    });
+  });
 });

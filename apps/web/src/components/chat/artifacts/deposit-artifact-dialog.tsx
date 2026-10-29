@@ -35,7 +35,7 @@ import {
   CheckCircle2,
   FolderGit2,
 } from 'lucide-react';
-import type { Artifact } from '@repo/shared';
+import { deriveArtifactDepositState, type Artifact } from '@repo/shared';
 
 export interface DepositArtifactDialogProps {
   open: boolean;
@@ -68,6 +68,8 @@ export function DepositArtifactDialog({
   const [error, setError] = React.useState<string | null>(null);
 
   const isAlreadyDeposited = Boolean(artifact?.kbDeposit?.deposited);
+  // 入库状态绑定版本（ADR-0037）：入库版本落后于当前版时提示并以当前版另存
+  const depositState = artifact ? deriveArtifactDepositState(artifact) : { status: 'none' as const };
 
   // 加载知识库列表
   const loadKnowledgeBases = React.useCallback(async () => {
@@ -236,7 +238,11 @@ export function DepositArtifactDialog({
               <strong className="font-semibold">
                 {artifact.kbDeposit?.knowledgeBaseName || '知识库'}
               </strong>
-              <span>，再次提交将新建一份知识库文档。</span>
+              <span>
+                {depositState.status === 'stale'
+                  ? `（入库于 v${depositState.depositedSeq}，当前已有新版本 v${depositState.currentSeq}），本次将把当前版另存为新文档。`
+                  : '，再次提交将新建一份知识库文档。'}
+              </span>
             </div>
           </div>
         )}

@@ -355,6 +355,39 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
     expect(textDeltas).toBe('导语：已完成分析。\n\n请查阅右侧。');
   });
 
+  it('输出触顶（finishReason length）且产物标签未闭合时，最后一个 artifact_end 状态为 error，不冒充完成', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: [
+          '<artifact identifier="art_long" type="markdown" title="超长研报">\n',
+          '# 第一章\n写到一半就被截断',
+        ],
+        finishReason: 'length',
+        response: { id: 'resp_len' },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '写一份超长研报' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+    });
+
+    const events = await readSseEvents(stream);
+    const ends = events.filter((e) => e.type === 'artifact_end');
+    expect(ends).toHaveLength(1);
+    expect(ends[ends.length - 1]).toEqual({ type: 'artifact_end', id: 'art_long', status: 'error' });
+    expect(events.some((e) => e.type === 'warning')).toBe(true);
+  });
+
   it('工具产出图片附件时，通过 tool_result 下发附件，不额外推送 artifact 事件（避免强行弹开工作台）', async () => {
     const imageToolSpec: AgentToolSpec = {
       name: 'image_generate',

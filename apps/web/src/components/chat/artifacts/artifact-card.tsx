@@ -34,6 +34,8 @@ export function ArtifactCard({ artifactId, className }: ArtifactCardProps) {
   const IconComponent = config.icon;
   const isActive = activeArtifactId === artifact.id;
   const isStreaming = artifact.status === 'streaming';
+  // 中止、失败或输出被截断的产物：内容不完整，不得冒充完成品（ADR-0037）
+  const isIncomplete = artifact.status === 'error';
 
   const handleClick = () => {
     setActiveArtifactId(artifact.id);
@@ -94,6 +96,14 @@ export function ArtifactCard({ artifactId, className }: ArtifactCardProps) {
               <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600 dark:bg-blue-400" />
                 生成中
+              </span>
+            )}
+            {isIncomplete && (
+              <span
+                data-testid="artifact-card-incomplete-badge"
+                className="flex flex-shrink-0 items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+              >
+                未完成
               </span>
             )}
           </div>

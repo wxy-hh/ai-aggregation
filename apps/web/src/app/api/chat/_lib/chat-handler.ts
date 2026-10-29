@@ -18,7 +18,7 @@ import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
 import { ProviderClientError, type ChatProviderAdapter, type ChatStreamFinish } from './types';
 import { getAvailableQuota } from '@/lib/billing/quota-service';
-import { estimateTextTokens, getCapabilityPack } from '@repo/shared';
+import { estimateTextTokens, getCapabilityPack, resolveArtifactContext } from '@repo/shared';
 import {
   AGENT_MIN_STEPS,
   AGENT_MODEL,
@@ -84,6 +84,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         disabledToolKeys: rawDisabledToolKeys,
         thinking: rawThinking,
         conversationId: rawConversationId,
+        artifactContext: rawArtifactContext,
       } = body as {
         messages: ChatMessage[];
         model?: string;
@@ -94,6 +95,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         disabledToolKeys?: unknown;
         thinking?: unknown;
         conversationId?: unknown;
+        artifactContext?: unknown;
       };
       // 会话 ID（用于 Langfuse session 与运行记录关联）
       const conversationId =
@@ -120,6 +122,16 @@ export function createChatHandler(config: ChatHandlerConfig) {
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
       }
+
+      // 产物上下文注入（ADR-0037 §4）：仅 agent 模式；服务端复核长度与标题结构，不信任客户端
+      // 注入文本只追加到当次系统提示词，不写入消息历史；其字符数以一条估算专用伪消息计入输入估算
+      const artifactResolution = agent ? resolveArtifactContext(rawArtifactContext) : null;
+      const billingMessages: ChatMessage[] = artifactResolution
+        ? [
+            ...messages,
+            { id: 'artifact-context', role: 'system', content: artifactResolution.text },
+          ]
+        : messages;
 
       // 合规前置拦截：命中即返回安全话术，不预留额度、不调模型、不计费
       const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
@@ -177,7 +189,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         try {
           affordable = resolveAgentStepBudget(
             await getAvailableQuota(user.id),
-            estimateTextTokens(messages),
+            estimateTextTokens(billingMessages),
             activeCapabilityPack?.maxSteps
           );
         } catch (error) {
@@ -230,7 +242,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         feature: agent ? 'chat-agent' : 'chat',
         provider: effectiveProvider,
         model: modelName,
-        messages,
+        messages: billingMessages,
         ...(agentBudget ? { maxOutputTokens: agentBudget.reserveOutputLimit } : {}),
         metadata: { messagesCount, attachmentCount, ...(agent ? { agent: true } : {}) },
         reservationId,
@@ -280,7 +292,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
             const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
             const goalText = (lastUserMessage?.content || '').slice(0, 2000);
             const norm = finish.usage ? normalizeUsage(finish.usage) : null;
-            const resolvedUsage = resolveChatStreamUsage(norm, messages, finish.outputText);
+            const resolvedUsage = resolveChatStreamUsage(norm, billingMessages, finish.outputText);
             const quotaCost = finish.outcome === 'failed' ? 0 : (resolvedUsage.totalTokens ?? 0);
 
             if (prisma?.agentRun?.create) {
@@ -367,6 +379,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           disabledToolKeys,
           thinking,
           trace: agentTrace ?? undefined,
+          artifactContextPrompt: artifactResolution?.text,
           onFinish,
         });
       } else {

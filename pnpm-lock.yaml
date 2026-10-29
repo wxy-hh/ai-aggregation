@@ -128,6 +128,9 @@ importers:
       dexie:
         specifier: ^4.3.0
         version: 4.3.0
+      diff:
+        specifier: 9.0.0
+        version: 9.0.0
       docx:
         specifier: ^9.5.1
         version: 9.5.1
@@ -3753,6 +3756,10 @@ packages:
 
   didyoumean@1.2.2:
     resolution: {integrity: sha512-gxtyfqMg7GKyhQmb056K7M3xszy/myH8w+B4RT+QXBQsvAOdc3XymqDDPHx1BgPgsdAA5SIifona89YtRATDzw==}
+
+  diff@9.0.0:
+    resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
+    engines: {node: '>=0.3.1'}
 
   dijkstrajs@1.0.3:
     resolution: {integrity: sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==}
@@ -9886,6 +9893,8 @@ snapshots:
   dexie@4.3.0: {}
 
   didyoumean@1.2.2: {}
+
+  diff@9.0.0: {}
 
   dijkstrajs@1.0.3: {}
 

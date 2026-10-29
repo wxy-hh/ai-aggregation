@@ -12,7 +12,7 @@
  * 健壮性保障：
  * - 跨 chunk 切片缓冲（支持开闭标签被任意网络 chunk 切断）；
  * - 普通代码中小于号（如 `a < b`）安全防误杀；
- * - 流中断未闭合标签自愈（flush 自动完结并补发 end 事件）。
+ * - 流中断未闭合标签收尾（flush 补发 `artifact_end: error`，截断内容不得冒充正式版本，ADR-0037）。
  */
 
 import type {
@@ -113,8 +113,16 @@ export function createArtifactStreamExtractor(): ArtifactStreamExtractor {
         const id = attrs.identifier || attrs.id || `art_${Date.now()}_${artifactCount}`;
         const title = attrs.title || attrs.name || '交付产物';
         const language = attrs.language || undefined;
+        // 章节补丁定位：标题行原样抄写，空白值视为未提供
+        const section = attrs.section?.trim() || undefined;
 
-        activeArtifact = { id, type, title, ...(language ? { language } : {}) };
+        activeArtifact = {
+          id,
+          type,
+          title,
+          ...(language ? { language } : {}),
+          ...(section ? { section } : {}),
+        };
         events.push({
           type: 'artifact_start',
           artifact: { ...activeArtifact },
@@ -154,7 +162,8 @@ export function createArtifactStreamExtractor(): ArtifactStreamExtractor {
         }
 
         // 没有找到完整 </artifact>，检查末尾是否有可能是截断的闭标签前缀
-        const lastClosePrefixIndex = buffer.lastIndexOf('</');
+        // （含孤立的 `<`：chunk 恰好在 `<` 处切断时也必须留在缓冲区，否则闭标签永远无法识别）
+        const lastClosePrefixIndex = buffer.lastIndexOf('<');
         if (lastClosePrefixIndex !== -1 && buffer.length - lastClosePrefixIndex < '</artifact>'.length) {
           const potentialClosePrefix = buffer.slice(lastClosePrefixIndex);
           if ('</artifact>'.startsWith(potentialClosePrefix)) {
@@ -192,20 +201,24 @@ export function createArtifactStreamExtractor(): ArtifactStreamExtractor {
     const events: ChatStreamEvent[] = [];
 
     if (state === 'inside') {
-      // 未闭合标签自愈
+      // 未闭合标签：残留的闭标签前缀（如 `</artifa`）不是正文，丢弃；其余正文照常发出
       if (buffer.length > 0 && activeArtifact) {
-        events.push({
-          type: 'artifact_delta',
-          id: activeArtifact.id,
-          delta: buffer,
-        });
+        const isClosePrefix = '</artifact>'.startsWith(buffer);
+        if (!isClosePrefix) {
+          events.push({
+            type: 'artifact_delta',
+            id: activeArtifact.id,
+            delta: buffer,
+          });
+        }
         buffer = '';
       }
+      // 截断的半成品必须标 error，不得发 complete 成为正式版本（ADR-0037 修订 ADR-0015）
       if (activeArtifact) {
         events.push({
           type: 'artifact_end',
           id: activeArtifact.id,
-          status: 'complete',
+          status: 'error',
         });
       }
       state = 'outside';

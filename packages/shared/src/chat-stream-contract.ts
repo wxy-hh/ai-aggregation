@@ -96,6 +96,11 @@ export interface ArtifactMeta {
   type: ArtifactType;
   title: string;
   language?: string;
+  /**
+   * 章节定位（可选）：Markdown 章节补丁的标题行原样抄写，如 `## 第三章 方案`；
+   * 仅出现在 `artifact_start` 帧，表示本次输出只替换该章节（ADR-0037）。
+   */
+  section?: string;
 }
 
 /** 产物知识库沉淀元数据 (AGENT-KB-LOOP / ADR-0034) */
@@ -105,7 +110,34 @@ export interface ArtifactKbDepositInfo {
   knowledgeBaseName?: string;
   documentId?: string;
   depositedAt?: string;
+  /** 入库于哪一版（形如 `v2`；老数据缺省按「入库于首版」处理，ADR-0037） */
+  versionId?: string;
 }
+
+/** 产物版本来源（ADR-0037）：模型整篇生成 / 章节补丁合并 / 追加式回滚自某版 */
+export type ArtifactVersionSource =
+  | { kind: 'generated' }
+  | { kind: 'patch' }
+  | { kind: 'rollback'; fromSeq: number };
+
+/** 产物正式版本（仅收到 `artifact_end: complete` 的内容才成为正式版本） */
+export interface ArtifactVersion {
+  /** 版本 id，形如 `v3`，与序号一一对应 */
+  id: string;
+  /** 单调递增的版本序号；淘汰后不复用 */
+  seq: number;
+  content: string;
+  createdAt: number;
+  source: ArtifactVersionSource;
+}
+
+/** 章节补丁未应用的原因：找不到标题 / 标题重复无法唯一定位 / 补丁正文未以该标题行开头 */
+export type SectionPatchFailureReason = 'not-found' | 'duplicate' | 'not-heading-start';
+
+/** 单个章节补丁的应用结果（失败时给出可区分的原因，ADR-0037） */
+export type ArtifactPatchResult =
+  | { section: string; status: 'applied' }
+  | { section: string; status: 'failed'; reason: SectionPatchFailureReason };
 
 /** 产物完整实体（包含正文与流式完成态） */
 export interface Artifact extends ArtifactMeta {
@@ -114,6 +146,16 @@ export interface Artifact extends ArtifactMeta {
   createdAt?: number;
   /** 知识库沉淀状态 (AGENT-KB-LOOP / ADR-0034) */
   kbDeposit?: ArtifactKbDepositInfo;
+  /** 正式版本链（最多 5 个，末尾为当前版；老数据缺省，ADR-0037） */
+  versions?: ArtifactVersion[];
+  /** 一次性提示标记：本次修改未完成，草稿已丢弃并保留上一版 */
+  notice?: 'draft-discarded';
+  /** 流式中的章节补丁草稿（瞬态；收尾时清除，不作为正式版本） */
+  patchDraft?: { section: string; content: string };
+  /** 本轮补丁会话标记（瞬态）：versionSeq 为本轮已合并出的新版本序号，null 表示尚未产生 */
+  patchTurn?: { versionSeq: number | null };
+  /** 最近一轮章节补丁的逐个应用结果，供工作台展示失败章节与原因 */
+  patchReport?: ArtifactPatchResult[];
 }
 
 /** 产物开始生成事件（首帧声明产物元数据） */
@@ -251,11 +293,13 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
     case 'artifact_start': {
       const art = ev.artifact as Record<string, unknown> | null | undefined;
       if (typeof art !== 'object' || art === null) return null;
-      const { id, type, title, language } = art;
+      const { id, type, title, language, section } = art;
       if (typeof id !== 'string' || !id) return null;
       if (type !== 'markdown' && type !== 'table' && type !== 'code' && type !== 'image') return null;
       if (typeof title !== 'string' || !title) return null;
       if (language !== undefined && (typeof language !== 'string' || !language)) return null;
+      // section 为可选：给了就必须是非空字符串，非法则整帧作废（缺省的旧帧照常解析）
+      if (section !== undefined && (typeof section !== 'string' || !section)) return null;
       return {
         type: 'artifact_start',
         artifact: {
@@ -263,6 +307,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
           type,
           title,
           ...(language ? { language } : {}),
+          ...(section ? { section } : {}),
         },
       };
     }

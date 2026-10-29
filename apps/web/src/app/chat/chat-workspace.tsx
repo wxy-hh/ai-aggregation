@@ -9,6 +9,7 @@ import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布�
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
 import { ArtifactWorkspace } from '@/components/chat/artifacts/artifact-workspace'; // P1 交付物独立工作台（ADR-0015）
+import { ArtifactWorkspaceDock } from '@/components/chat/artifacts/artifact-workspace-dock'; // 桌面端工作台容器（可拖拽调宽）
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -324,6 +325,10 @@ export default function ChatWorkspace() {
   const relay = useRelayReceive('chat');
   // 承载传给 ChatInput 的外部草稿（id 用于只消费一次）
   const [relayDraft, setRelayDraft] = useState<{ id: string; text: string } | null>(null);
+  // 产物工作台「让模型重试」：把文本预填进输入框（复用外部草稿通道，只预填不自动发送）
+  const prefillInputDraft = useCallback((text: string) => {
+    setRelayDraft({ id: `artifact-retry-${Date.now()}`, text });
+  }, []);
   // 承载传给 ChatInput 的外部图片附件（来自图像生成页接力，snapshotMediaUrl）
   const [relayAttachmentUrl, setRelayAttachmentUrl] = useState<string | null>(null);
   const [relayAttachmentSourceId, setRelayAttachmentSourceId] = useState<string | null>(null);
@@ -1307,16 +1312,14 @@ export default function ChatWorkspace() {
 
           {/* 桌面端 Artifacts 工作台：单聊模式、展开且有产物时常驻双栏（ADR-0015） */}
           {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
-            <aside className="hidden lg:flex w-[480px] xl:w-[540px] 2xl:w-[600px] flex-shrink-0 flex-col p-4 pl-0 min-h-0 h-full">
-              <ArtifactWorkspace />
-            </aside>
+            <ArtifactWorkspaceDock onPrefillInput={prefillInputDraft} />
           )}
         </div>
 
         {/* 移动端全屏工作台覆盖层（Overlay，ADR-0015） */}
         {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
           <div className="lg:hidden">
-            <ArtifactWorkspace isMobile={true} />
+            <ArtifactWorkspace isMobile={true} onPrefillInput={prefillInputDraft} />
           </div>
         )}
 

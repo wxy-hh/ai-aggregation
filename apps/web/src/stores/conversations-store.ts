@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { createQuotaFallbackStorage } from '@/lib/storage/quota-fallback-storage';
 import { emit, StoreEvents } from './store-events';
 import type { SelectedModel, ComparisonTurn } from '@/types/comparison';
 import type { Artifact } from '@repo/shared';
@@ -557,7 +558,8 @@ export const useConversationsStore = create<ConversationsState>()(
         }),
         {
             name: 'ai-chat-conversations', // 本地存储键名
-            storage: createJSONStorage(() => localStorage),
+            // 超配额时淘汰最旧产物版本后重试，保证会话列表整体写入不失败（ADR-0037）
+            storage: createJSONStorage(() => createQuotaFallbackStorage(localStorage)),
             // 持久化会话列表、全局活动模式、当前会话指针及双模式记忆
             partialize: (state) => ({
                 conversations: state.conversations,

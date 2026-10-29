@@ -298,4 +298,64 @@ describe('/api/events 埋点上报路由测试', () => {
       });
     });
   });
+
+  describe('产物事件 (ADR-0037 §8 / TC12)', () => {
+    it('[TC12-1] 六类产物事件携带合法 props 均正确落库', async () => {
+      mocks.productEventCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'event_artifact', ...args.data, createdAt: new Date('2026-10-29T08:00:00Z') })
+      );
+      const events = [
+        'artifact.copy',
+        'artifact.export',
+        'artifact.patch_applied',
+        'artifact.patch_failed',
+        'artifact.rollback',
+        'artifact.diff_open',
+      ];
+      const props = { artifactType: 'markdown', versionSeq: 3, sizeBucket: '1k_6k' };
+
+      for (const event of events) {
+        const res = await POST(createEventRequest({ event, props }));
+        expect(res.status).toBe(200);
+      }
+
+      expect(mocks.productEventCreate).toHaveBeenCalledTimes(events.length);
+      events.forEach((event, index) => {
+        expect(mocks.productEventCreate.mock.calls[index][0].data).toEqual({
+          userId: 'user_test_123',
+          event,
+          props,
+        });
+      });
+    });
+
+    it('[TC12-2] 隐私红线：产物事件 props 夹带 title / content 等多余字段返回 400 且不落库', async () => {
+      const base = { artifactType: 'markdown', versionSeq: 1, sizeBucket: 'lt_1k' };
+      const forbiddenProps = [
+        { ...base, title: '绝密季度研报' },
+        { ...base, content: '# 正文全文' },
+        { ...base, section: '## 第五章' },
+      ];
+
+      for (const props of forbiddenProps) {
+        const res = await POST(createEventRequest({ event: 'artifact.copy', props }));
+        expect(res.status).toBe(400);
+      }
+      expect(mocks.productEventCreate).not.toHaveBeenCalled();
+    });
+
+    it('产物事件的 props 取值越界（未知体量区间、非正整数版本序号、芯片字段混用）返回 400', async () => {
+      const invalid = [
+        { artifactType: 'markdown', versionSeq: 1, sizeBucket: '12345' },
+        { artifactType: 'markdown', versionSeq: 0, sizeBucket: 'lt_1k' },
+        { artifactType: 'markdown', versionSeq: 1.5, sizeBucket: 'lt_1k' },
+        { signal: 'url' },
+      ];
+      for (const props of invalid) {
+        const res = await POST(createEventRequest({ event: 'artifact.export', props }));
+        expect(res.status).toBe(400);
+      }
+      expect(mocks.productEventCreate).not.toHaveBeenCalled();
+    });
+  });
 });

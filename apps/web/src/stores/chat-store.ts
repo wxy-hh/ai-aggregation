@@ -6,8 +6,22 @@ import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
-import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord, AgentNote, Artifact } from '@repo/shared';
-import { toolCallRecordSchema } from '@repo/shared';
+import { trackArtifactEvent } from '@/lib/events/artifact-events';
+import {
+  buildArtifactContextRequest,
+  type ArtifactContextRequest,
+  type DerivationMetadata,
+  type ChatStreamUsage,
+  type ToolCallRecord,
+  type AgentNote,
+  type Artifact,
+  toolCallRecordSchema,
+  applyArtifactEvent,
+  beginArtifactTurn,
+  finalizeStreamingArtifacts,
+  getArtifactVersions,
+  rollbackArtifact,
+} from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
@@ -80,6 +94,7 @@ export interface ChatState {
   artifacts: Artifact[]; // 当前会话的产物集合池
   activeArtifactId: string | null; // 当前工作台聚焦的产物 ID
   isWorkspaceOpen: boolean; // 桌面端工作台是否展开
+  viewingVersions: Record<string, number>; // 各产物当前查看的历史版本序号（缺省 = 查看当前版，瞬态不持久化，ADR-0037）
 
   // ========== 基础操作 ==========
   setInput: (value: string) => void; // 设置输入框内容
@@ -92,6 +107,8 @@ export interface ChatState {
   setActiveArtifactId: (id: string | null) => void; // 设置工作台聚焦产物
   setWorkspaceOpen: (open: boolean) => void; // 开关工作台分栏
   closeWorkspace: () => void; // 关闭工作台分栏
+  viewArtifactVersion: (artifactId: string, seq: number | null) => void; // 切换查看产物版本（null = 回到当前版，ADR-0037）
+  rollbackArtifactToVersion: (artifactId: string, seq: number) => void; // 追加式回滚到某历史版本（ADR-0037）
   markArtifactDeposited: (artifactId: string, info: { knowledgeBaseId: string; knowledgeBaseName?: string; documentId: string; depositedAt: string }) => void; // 标记产物已入库 (ADR-0034)
 
 
@@ -378,6 +395,16 @@ export async function runChatStreamSession(
       });
     }
   };
+  // 收尾残留的流式产物（正常结束缺 end 帧、中止、失败共用）：
+  // 有上一版则丢弃草稿保留上一版，全新产物保留半成品并标记未完成。返回当前产物池与是否有变化
+  const finalizeArtifacts = (): { artifacts: Artifact[] | undefined; changed: boolean } => {
+    const before = deps.getArtifacts?.();
+    deps.updateArtifacts?.((prev) => finalizeStreamingArtifacts(prev));
+    const after = deps.getArtifacts?.();
+    return { artifacts: after, changed: before !== after };
+  };
+  // 新一轮开始：清除上一轮的章节补丁合并标记与结果，使本轮补丁产生新版本（ADR-0037）
+  deps.updateArtifacts?.((prev) => beginArtifactTurn(prev));
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
@@ -528,21 +555,10 @@ export async function runChatStreamSession(
         persistConversation(next);
       },
       onArtifactStart: (artifact) => {
-        deps.updateArtifacts?.((prev) => {
-          const existing = prev.find((a) => a.id === artifact.id);
-          if (existing) {
-            return prev.map((a) => (a.id === artifact.id ? { ...a, ...artifact } : a));
-          }
-          return [
-            ...prev,
-            {
-              ...artifact,
-              content: '',
-              status: 'streaming' as const,
-              createdAt: Date.now(),
-            },
-          ];
-        });
+        // 经版本引擎演进产物池：同 identifier 再生成从空草稿开始，不再拼接旧正文（ADR-0037）
+        deps.updateArtifacts?.((prev) =>
+          applyArtifactEvent(prev, { type: 'artifact_start', artifact }, Date.now())
+        );
         deps.setActiveArtifactId?.(artifact.id);
         deps.setWorkspaceOpen?.(true);
 
@@ -558,13 +574,30 @@ export async function runChatStreamSession(
       },
       onArtifactDelta: (id, delta) => {
         deps.updateArtifacts?.((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, content: a.content + delta } : a))
+          applyArtifactEvent(prev, { type: 'artifact_delta', id, delta }, Date.now())
         );
       },
       onArtifactEnd: (id, status) => {
+        const reportedBefore = deps.getArtifacts?.().find((a) => a.id === id)?.patchReport?.length ?? 0;
         deps.updateArtifacts?.((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, status } : a))
+          applyArtifactEvent(prev, { type: 'artifact_end', id, status }, Date.now())
         );
+        // 章节补丁结果埋点：本次新增的每条结果各上报一次，失败事件不含章节标题（ADR-0037 §8）
+        const settled = deps.getArtifacts?.().find((a) => a.id === id);
+        if (settled?.patchReport) {
+          const versions = getArtifactVersions(settled);
+          const base = {
+            type: settled.type,
+            versionSeq: versions[versions.length - 1]?.seq ?? 1,
+            contentLength: settled.content.length,
+          };
+          for (const result of settled.patchReport.slice(reportedBefore)) {
+            trackArtifactEvent(
+              result.status === 'applied' ? 'artifact.patch_applied' : 'artifact.patch_failed',
+              base
+            );
+          }
+        }
         persistConversation(deps.getMessages());
       },
       onWarning: (warning) => {
@@ -596,7 +629,7 @@ export async function runChatStreamSession(
     );
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
+      const currentArtifacts = finalizeArtifacts().artifacts;
       emit(StoreEvents.CONVERSATION_UPDATED, {
         id: conversationId,
         messages: finalMessages,
@@ -626,10 +659,15 @@ export async function runChatStreamSession(
         result = finalizeAbortedMessages(messages, (m) => m.id === assistantId);
         return result.next;
       });
-      if (result.changed) {
+      const abortedArtifacts = finalizeArtifacts();
+      if (result.changed || abortedArtifacts.changed) {
         const conversationId = deps.activeConversationId();
         if (conversationId) {
-          emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: result.next });
+          emit(StoreEvents.CONVERSATION_UPDATED, {
+            id: conversationId,
+            messages: result.changed ? result.next : deps.getMessages(),
+            ...(abortedArtifacts.artifacts ? { artifacts: abortedArtifacts.artifacts } : {}),
+          });
         }
       }
       return 'aborted';
@@ -649,9 +687,14 @@ export async function runChatStreamSession(
       }
       return messages.filter((m) => m.id !== assistantId);
     });
+    const failedArtifacts = finalizeArtifacts().artifacts;
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: filtered });
+      emit(StoreEvents.CONVERSATION_UPDATED, {
+        id: conversationId,
+        messages: filtered,
+        ...(failedArtifacts ? { artifacts: failedArtifacts } : {}),
+      });
     }
     return 'failed';
   } finally {
@@ -667,6 +710,13 @@ export const useChatStore = create<ChatState>((set, get) => {
   // AbortController 实例：用于取消正在进行的网络请求
   // 不作为响应式状态，避免触发不必要的重新渲染
   let abortController: AbortController | null = null;
+
+  // 产物上下文请求字段（ADR-0037 §4）：无可编辑产物时返回空对象，请求体与改造前一致
+  const artifactContextField = (): { artifactContext?: ArtifactContextRequest } => {
+    const { artifacts, activeArtifactId, isWorkspaceOpen } = get();
+    const artifactContext = buildArtifactContextRequest({ artifacts, activeArtifactId, isWorkspaceOpen });
+    return artifactContext ? { artifactContext } : {};
+  };
 
   // 统一会话编排的依赖注入（评审 C6）：把消息/错误/当前会话 id 的读写交给 store
   const sessionDeps = (): ChatStreamSessionDeps => ({
@@ -738,6 +788,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     artifacts: [], // 产物集合池（ADR-0015）
     activeArtifactId: null, // 当前工作台聚焦产物 ID
     isWorkspaceOpen: false, // 桌面端工作台是否展开
+    viewingVersions: {}, // 无历史版本查看态
 
     // ========== 基础操作方法 ==========
 
@@ -762,11 +813,53 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 关闭工作台分栏
     closeWorkspace: () => set({ isWorkspaceOpen: false }),
 
-    // 标记产物已入库 (ADR-0034)
+    // 切换查看产物版本：选择当前版（末尾版本）等同于回到当前版，不留历史查看态
+    viewArtifactVersion: (artifactId, seq) => {
+      const { artifacts, viewingVersions } = get();
+      const artifact = artifacts.find((a) => a.id === artifactId);
+      const versions = artifact ? getArtifactVersions(artifact) : [];
+      const isHistorical =
+        seq !== null &&
+        versions.some((v) => v.seq === seq) &&
+        seq !== versions[versions.length - 1]?.seq;
+      if (isHistorical) {
+        set({ viewingVersions: { ...viewingVersions, [artifactId]: seq } });
+      } else if (artifactId in viewingVersions) {
+        const { [artifactId]: _removed, ...rest } = viewingVersions;
+        set({ viewingVersions: rest });
+      }
+    },
+
+    // 追加式回滚（ADR-0037）：把所选历史版本复制为新的末尾版本，工作台随即回到新当前版
+    rollbackArtifactToVersion: (artifactId, seq) => {
+      const { artifacts, viewingVersions, messages, activeConversationId } = get();
+      let changed = false;
+      const next = artifacts.map((art) => {
+        if (art.id !== artifactId) return art;
+        const rolled = rollbackArtifact(art, seq, Date.now());
+        if (rolled !== art) changed = true;
+        return rolled;
+      });
+      if (!changed) return;
+      const { [artifactId]: _removed, ...restViewing } = viewingVersions;
+      set({ artifacts: next, viewingVersions: restViewing });
+      // 回滚产生新版本，同步落盘会话产物池
+      if (activeConversationId) {
+        emit(StoreEvents.CONVERSATION_UPDATED, {
+          id: activeConversationId,
+          messages,
+          artifacts: next,
+        });
+      }
+    },
+
+    // 标记产物已入库 (ADR-0034)；入库状态绑定当时的当前版本（ADR-0037）
     markArtifactDeposited: (artifactId, info) => {
       const current = get().artifacts;
       const next = current.map((art) => {
         if (art.id === artifactId) {
+          const versions = getArtifactVersions(art);
+          const currentVersion = versions[versions.length - 1];
           return {
             ...art,
             kbDeposit: {
@@ -775,6 +868,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               knowledgeBaseName: info.knowledgeBaseName,
               documentId: info.documentId,
               depositedAt: info.depositedAt,
+              ...(currentVersion ? { versionId: currentVersion.id } : {}),
             },
           };
         }
@@ -847,12 +941,19 @@ export const useChatStore = create<ChatState>((set, get) => {
       const sanitizedChanged =
         sanitizedMessages.length !== messages.length ||
         sanitizedMessages.some((m, i) => m !== messages[i]);
-      if (sanitizedChanged) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages, ...(artifacts ? { artifacts } : {}) });
+      // 还原路径收尾残留的流式产物（刷新/崩溃时来不及收到 artifact_end），避免卡在假进度（ADR-0037）
+      const finalizedArtifacts = artifacts ? finalizeStreamingArtifacts(artifacts) : undefined;
+      const artifactsChanged = finalizedArtifacts !== artifacts;
+      if (sanitizedChanged || artifactsChanged) {
+        emit(StoreEvents.CONVERSATION_UPDATED, {
+          id,
+          messages: sanitizedMessages,
+          ...(finalizedArtifacts ? { artifacts: finalizedArtifacts } : {}),
+        });
       }
 
       // 过滤掉纯图片的冗余产物（图片已由消息流原生卡片直接承载，不污染工作台）
-      const initialArtifacts = (artifacts ? [...artifacts] : []).filter(
+      const initialArtifacts = (finalizedArtifacts ? [...finalizedArtifacts] : []).filter(
         (a) => a.type !== 'image'
       );
       const latestArtifactId = initialArtifacts.length > 0 ? initialArtifacts[initialArtifacts.length - 1].id : null;
@@ -867,6 +968,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         toolOverrides: toolOverrides ? { ...toolOverrides } : {}, // 恢复会话级工具覆盖字典
         artifacts: initialArtifacts, // 恢复会话级产物池（ADR-0015）
         activeArtifactId: latestArtifactId, // 聚焦最新产物
+        viewingVersions: {}, // 切换会话后不沿用上一会话的历史版本查看态
         isWorkspaceOpen: false, // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰（可由用户点击顶部或卡片按需展开）
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
@@ -895,6 +997,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         toolOverrides: {}, // 清空工具覆盖字典
         artifacts: [], // 清空产物池
         activeArtifactId: null, // 清空活动产物
+        viewingVersions: {}, // 清空历史版本查看态
         isWorkspaceOpen: false, // 关闭工作台
         // 注意：provider 和 model 保持不变，保留用户的选择
       });
@@ -1015,6 +1118,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
               // 会话级临时停用工具（ADR-0014 / 工单 02）：仅在有被关闭工具时携带差异项
               ...(agentMode && disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
+              // 产物上下文（ADR-0037 §4）：仅 agent 模式且存在可编辑产物时携带；
+              // 工作台展开才带聚焦产物全文，关闭时只带目录
+              ...(agentMode ? artifactContextField() : {}),
             },
             signal: abortController.signal, // 支持取消请求
           },
@@ -1132,6 +1238,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               model,
               thinking: thinkingMode,
               ...(agentMode ? { agent: true } : {}),
+              // 重新生成沿用同一份产物上下文来源（ADR-0037 §4）
+              ...(agentMode ? artifactContextField() : {}),
             },
             signal: abortController.signal,
           }

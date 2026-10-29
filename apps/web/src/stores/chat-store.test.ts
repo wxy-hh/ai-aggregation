@@ -609,4 +609,71 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
     expect(body.agent).toBe(true);
     expect(body.disabledToolKeys).toBeUndefined();
   });
+  describe('产物上下文请求字段（ADR-0037 §4 / TC13）', () => {
+    const doneSse = () =>
+      sseResponse(['data: {"type":"text-delta","text":"好"}\n\n', 'data: {"type":"done"}\n\n']);
+    const artifact = (id: string, content: string) => ({
+      id,
+      type: 'markdown' as const,
+      title: `标题-${id}`,
+      content,
+      status: 'complete' as const,
+    });
+    const sendAndGetBody = async () => {
+      const { useSettingsStore } = await import('@/stores/settings-store');
+      useSettingsStore.setState({ agentModeEnabled: true });
+      expect(await useChatStore.getState().sendMessage()).toBe('sent');
+      return JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    };
+
+    it('agent 模式 + 工作台展开 + 有聚焦产物 → 请求体携带聚焦产物全文与目录', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({
+        input: '把第二章改短',
+        artifacts: [artifact('a', '# A\n\n## 一\n甲'), artifact('b', '# B\n\n## 二\n乙')],
+        activeArtifactId: 'b',
+        isWorkspaceOpen: true,
+      });
+      const body = await sendAndGetBody();
+      expect(body.artifactContext.workspaceOpen).toBe(true);
+      expect(body.artifactContext.focus).toMatchObject({ id: 'b', content: '# B\n\n## 二\n乙' });
+      expect(body.artifactContext.directory.map((d: { id: string }) => d.id)).toEqual(['a', 'b']);
+    });
+
+    it('工作台关闭 → 只携带目录，不携带任何产物正文', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({
+        input: '继续',
+        artifacts: [artifact('a', '# A\n\n## 一\n绝密正文')],
+        activeArtifactId: 'a',
+        isWorkspaceOpen: false,
+      });
+      const body = await sendAndGetBody();
+      expect(body.artifactContext.workspaceOpen).toBe(false);
+      expect(body.artifactContext.focus).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain('绝密正文');
+    });
+
+    it('没有产物时请求体不带 artifactContext（与改造前一致）', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({ input: '你好', artifacts: [] });
+      const body = await sendAndGetBody();
+      expect('artifactContext' in body).toBe(false);
+    });
+
+    it('未开启 agent 模式 → 即使有产物也不携带 artifactContext', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      const { useSettingsStore } = await import('@/stores/settings-store');
+      useSettingsStore.setState({ agentModeEnabled: false });
+      useChatStore.setState({
+        input: '你好',
+        artifacts: [artifact('a', '# A\n\n## 一\n甲')],
+        activeArtifactId: 'a',
+        isWorkspaceOpen: true,
+      });
+      expect(await useChatStore.getState().sendMessage()).toBe('sent');
+      const body = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+      expect('artifactContext' in body).toBe(false);
+    });
+  });
 });

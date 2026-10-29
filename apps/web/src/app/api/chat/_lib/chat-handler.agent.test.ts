@@ -13,6 +13,8 @@ import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session
 import type { AgentToolSpec, ToolRegistry } from '@/lib/agent/registry';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { createImageGenerateTool } from './agent/tools/image-generate';
+import { estimateTextTokens } from '@repo/shared';
+import { AGENT_MAX_STEPS, AGENT_RUN_TIME_BUDGET_MS } from './agent/agent-config';
 
 const {
   currentUserMock,
@@ -24,6 +26,7 @@ const {
   requestAgnesImageMock,
   AgnesUpstreamErrorMock,
   getAvailableQuotaMock,
+  agentRunCreateMock,
 } = vi.hoisted(() => {
   class AgnesUpstreamError extends Error {
     status: number;
@@ -43,9 +46,21 @@ const {
     requestAgnesImageMock: vi.fn(),
     AgnesUpstreamErrorMock: AgnesUpstreamError,
     getAvailableQuotaMock: vi.fn(),
+    agentRunCreateMock: vi.fn(),
   };
 });
 
+// agent_runs 落库：只拦截 agentRun.create 以便核对入参，其余 prisma 字段透传真实客户端
+vi.mock('@repo/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@repo/db')>();
+  const prisma = new Proxy(actual.prisma, {
+    get(target, prop, receiver) {
+      if (prop === 'agentRun') return { create: agentRunCreateMock };
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  return { ...actual, prisma };
+});
 vi.mock('@/lib/auth/get-current-user', () => ({ getCurrentUser: currentUserMock }));
 vi.mock('@repo/redis', () => ({ getRateLimiter: () => rateLimiterMock }));
 vi.mock('@/lib/billing/quota-session', () => ({
@@ -1598,6 +1613,231 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
 
       expect(events.some((e) => e.type === 'text-delta' && e.text === '观测底座测试回答')).toBe(true);
       expect(events.some((e) => e.type === 'done')).toBe(true);
+    });
+  });
+  describe('产物上下文注入（ADR-0037 §4 / AGENT-WORKSPACE 工单 04）', () => {
+    const MD = '# 研报\n\n## 第一章 背景\n背景正文XYZ\n\n## 第二章 结论\n结论正文\n';
+    const ctxOf = (content: string, type = 'markdown', workspaceOpen = true) => ({
+      directory: [{ id: 'rpt', type, title: '行业研报' }],
+      workspaceOpen,
+      ...(workspaceOpen ? { focus: { id: 'rpt', type, title: '行业研报', content } } : {}),
+    });
+    const okResult = () =>
+      makeFakeResult({
+        textParts: ['好的'],
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      });
+    /** 取第 n 次 streamText 调用的 system 与 messages */
+    const callOf = (n = 0) =>
+      streamTextMock.mock.calls[n][0] as { system?: string; messages: unknown };
+
+    it('[TC08-1] 工作台展开且有聚焦产物 → 当次系统提示词含 identifier、标题目录与全文，消息历史不含', async () => {
+      streamTextMock.mockReturnValueOnce(okResult());
+      // 拦截 agent_runs 落库调用，核对落库入参不含产物全文（同时避免测试库外键噪声）
+      agentRunCreateMock.mockClear();
+      agentRunCreateMock.mockResolvedValue({});
+      const res = await handler(agentRequest({ artifactContext: ctxOf(MD) }));
+      expect(res.status).toBe(200);
+      const events = await readSseEvents(res);
+      expect(agentRunCreateMock).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(agentRunCreateMock.mock.calls[0][0])).not.toContain('背景正文XYZ');
+
+      const { system, messages } = callOf();
+      expect(system).toContain('identifier=rpt');
+      expect(system).toContain('## 第一章 背景');
+      expect(system).toContain('背景正文XYZ');
+      expect(JSON.stringify(messages)).not.toContain('背景正文XYZ');
+      // 回传给客户端的 SSE 事件同样不含产物全文
+      expect(JSON.stringify(events)).not.toContain('背景正文XYZ');
+    });
+
+    it('[TC08-2] 工作台关闭 → 只给目录与「打开工作台」引导，不含正文', async () => {
+      streamTextMock.mockReturnValueOnce(okResult());
+      const res = await handler(agentRequest({ artifactContext: ctxOf(MD, 'markdown', false) }));
+      await readSseEvents(res);
+
+      const { system } = callOf();
+      expect(system).toContain('identifier=rpt');
+      expect(system).toContain('打开右侧工作台');
+      expect(system).not.toContain('背景正文XYZ');
+    });
+
+    it('[TC08-3] 有标题 Markdown 30,000 字符注入全文，30,001 字符只给目录并提示拆分', async () => {
+      const head = '# 文档\n\n## 第一章\n';
+      const at = head + '甲'.repeat(30_000 - head.length);
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest({ artifactContext: ctxOf(at) })));
+      expect(callOf(0).system).toContain('<<<ARTIFACT_CONTENT');
+
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest({ artifactContext: ctxOf(at + '乙') })));
+      const over = callOf(1).system ?? '';
+      expect(over).not.toContain('<<<ARTIFACT_CONTENT');
+      expect(over).toContain('拆分');
+      expect(over).toContain('新建');
+    });
+
+    it('[TC08-4] 代码与表格产物 6,000 字符注入全文，6,001 字符只给目录', async () => {
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(
+        await handler(agentRequest({ artifactContext: ctxOf('x'.repeat(6_000), 'code') }))
+      );
+      expect(callOf(0).system).toContain('<<<ARTIFACT_CONTENT');
+
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(
+        await handler(agentRequest({ artifactContext: ctxOf('x'.repeat(6_001), 'code') }))
+      );
+      expect(callOf(1).system).not.toContain('<<<ARTIFACT_CONTENT');
+      expect(callOf(1).system).toContain('不得修改');
+
+      // 表格产物同一阈值：6,000 字符注入全文，6,001 字符只给目录
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(
+        await handler(agentRequest({ artifactContext: ctxOf('x'.repeat(6_000), 'table') }))
+      );
+      expect(callOf(2).system).toContain('<<<ARTIFACT_CONTENT');
+
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(
+        await handler(agentRequest({ artifactContext: ctxOf('x'.repeat(6_001), 'table') }))
+      );
+      expect(callOf(3).system).not.toContain('<<<ARTIFACT_CONTENT');
+      expect(callOf(3).system).toContain('不得修改');
+    });
+
+    it('[TC08-5] 客户端声称 Markdown 但无标题 → 服务端按其余类型 6,000 字符上限处理', async () => {
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(
+        await handler(agentRequest({ artifactContext: ctxOf('无标题长文'.repeat(1_400)) }))
+      );
+      expect(callOf().system).not.toContain('<<<ARTIFACT_CONTENT');
+      expect(callOf().system).toContain('拆分');
+    });
+
+    it('[TC08-6] 注入的产物字符数计入输入估算：带 30,000 字符聚焦产物时的估算大于不带时，差值不小于字符数换算下限', async () => {
+      const head = '# 文档\n\n## 第一章\n';
+      const big = head + '甲'.repeat(30_000 - head.length);
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest()));
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest({ artifactContext: ctxOf(big) })));
+
+      const estimateOf = (call: number) =>
+        estimateTextTokens(
+          quotaSessionReserveMock.mock.calls[call][0].messages as Array<{ content?: string }>
+        );
+      const diff = estimateOf(1) - estimateOf(0);
+      expect(diff).toBeGreaterThan(0);
+      // 下限：注入全文至少按「每 4 字符 1 token」换算（保守低估口径）
+      expect(diff).toBeGreaterThanOrEqual(Math.floor(30_000 / 4));
+    });
+
+    it('[TC08-7] 注入后步数预算与运行时间预算不变：预留输出上限同未注入、仍最多 AGENT_MAX_STEPS 次模型调用、时间预算为 240 秒', async () => {
+      // 本 describe 默认注册表只有 image_generate；这里换成 web_fetch 替身以便多轮调工具打满步数
+      const fetchSpec: AgentToolSpec = {
+        name: 'web_fetch',
+        description: '抓取网页（测试替身）',
+        parameters: z.object({ url: z.string() }),
+        execute: vi.fn().mockResolvedValue({
+          ok: true,
+          contentForModel: '网页正文',
+          summaryForDisplay: '已抓取',
+        }),
+      };
+      registryHolder.current = createToolRegistry([fetchSpec]);
+
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest()));
+      const baseReserve = quotaSessionReserveMock.mock.calls[0][0] as { maxOutputTokens: number };
+
+      for (let i = 1; i <= 4; i++) {
+        streamTextMock.mockReturnValueOnce(
+          makeFakeResult({
+            textParts: [`第 ${i} 轮`],
+            toolCalls: [
+              { toolCallId: `c${i}`, toolName: 'web_fetch', input: { url: `https://example.com/${i}` } },
+            ],
+            usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
+          })
+        );
+      }
+      streamTextMock.mockReturnValueOnce(okResult());
+      const before = streamTextMock.mock.calls.length;
+      await readSseEvents(await handler(agentRequest({ artifactContext: ctxOf(MD) })));
+
+      const injReserve = quotaSessionReserveMock.mock.calls[1][0] as { maxOutputTokens: number };
+      expect(injReserve.maxOutputTokens).toBe(baseReserve.maxOutputTokens);
+      // 4 轮决策 + 1 次收尾 = AGENT_MAX_STEPS（5）次调用，无第 6 次
+      expect(streamTextMock.mock.calls.length - before).toBe(AGENT_MAX_STEPS);
+      expect(AGENT_RUN_TIME_BUDGET_MS).toBe(240_000);
+
+      // 运行时间预算「实际使用」：注入产物上下文的请求同样受 config 注入的预算约束，
+      // 预算 200ms、首个工具睡眠 300ms，则第二个工具被预算跳过（与未注入时行为一致）
+      const budgeted = createChatHandler({
+        getAdapter: () => ({
+          stream: async () => {
+            throw new Error('agent 模式不应委派适配器');
+          },
+        }),
+        agentRunTimeBudgetMs: 200,
+      });
+      const toolCallsOf = () =>
+        makeFakeResult({
+          toolCalls: [
+            { toolCallId: 'b1', toolName: 'web_fetch', input: { url: 'https://example.com/b1' } },
+            { toolCallId: 'b2', toolName: 'web_fetch', input: { url: 'https://example.com/b2' } },
+          ],
+        });
+      streamTextMock.mockReturnValueOnce(toolCallsOf()).mockReturnValueOnce(okResult());
+      fetchSpec.execute = vi.fn().mockImplementationOnce(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return { ok: true, contentForModel: '页面', summaryForDisplay: '已抓取' };
+      });
+      registryHolder.current = createToolRegistry([fetchSpec]);
+      const budgetEvents = await readSseEvents(
+        await budgeted(agentRequest({ artifactContext: ctxOf(MD) }))
+      );
+      const results = budgetEvents.filter((e) => e.type === 'tool_result') as Array<{
+        callId: string;
+        status: string;
+        summary: string;
+      }>;
+      expect(fetchSpec.execute).toHaveBeenCalledTimes(1);
+      expect(results.find((r) => r.callId === 'b2')?.status).toBe('failed');
+      expect(results.find((r) => r.callId === 'b2')?.summary).toContain('预算');
+    });
+
+    it('[附加] 非 agent 请求携带 artifactContext → 忽略，不进入 agent 分支也不改写消息', async () => {
+      const adapterStream = vi.fn().mockResolvedValue(
+        new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        })
+      );
+      const plain = createChatHandler({ getAdapter: () => ({ stream: adapterStream }) });
+      await plain(agentRequest({ agent: false, artifactContext: ctxOf(MD) }));
+
+      const reserve = quotaSessionReserveMock.mock.calls.at(-1)![0] as {
+        feature: string;
+        messages: Array<{ content?: string }>;
+      };
+      expect(reserve.feature).toBe('chat');
+      expect(JSON.stringify(reserve.messages)).not.toContain('背景正文XYZ');
+    });
+
+    it('[TC13] 提示词包含四条修改规范：沿用 identifier、section 抄回标题行、另起文档用新 identifier、工作台关闭不得凭空重写', async () => {
+      streamTextMock.mockReturnValueOnce(okResult());
+      await readSseEvents(await handler(agentRequest()));
+      const system = callOf().system ?? '';
+      expect(system).toContain('沿用其原 identifier');
+      expect(system).toContain('section 必须从「标题目录」中原样抄写');
+      expect(system).toContain('全新的 identifier');
+      expect(system).toContain('不得凭空重写');
+      // TC13-2：仅输出被改章节；TC13-4：提示用户先打开工作台并聚焦产物
+      expect(system).toContain('只包含被修改的章节');
+      expect(system).toContain('先打开右侧工作台并聚焦该产物');
     });
   });
 });

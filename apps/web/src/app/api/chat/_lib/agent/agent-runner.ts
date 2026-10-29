@@ -105,7 +105,21 @@ export interface AgentRunOptions {
   thinking?: boolean;
   /** 可选的可观测性 Root Trace 实例（工单 01 观测底座接入） */
   trace?: ObservabilityTrace;
+  /** 产物上下文注入文本（ADR-0037 §4，服务端复核后生成）：仅追加到当次系统提示词 */
+  artifactContextPrompt?: string;
 }
+
+/**
+ * 交付物与产物规范提示词（ADR-0037）：
+ * 产物输出格式 + 修改既有产物时的 identifier 沿用、章节补丁、另起文档与工作台关闭约束。
+ */
+export const ARTIFACT_GUIDELINE = `【交付物与产物规范】：当回答包含长篇分析研报（>500字）、对比表格、完整代码文件时，请将其作为独立产物（Artifact）输出。格式：<artifact identifier="唯一英文ID" type="markdown|table|code" title="中文标题" language="可选语言">正文</artifact>。在标签外部仅输出简短导引说明（例如「报告已整理在右侧工作台」），不重复铺陈长文。
+修改已有产物时遵守：
+1. 修改已有产物必须沿用其原 identifier，不要换新 ID；
+2. 对带标题结构的 Markdown 长文，只改动被要求修改的章节：输出 <artifact identifier="原ID" type="markdown" title="原标题" section="## 标题行">，其中 section 必须从「标题目录」中原样抄写该标题行（含 # 号与全部文字，不得改写），标签内容以该标题行开头、只包含被修改的章节（含其子章节），不要输出未修改的章节；需修改多个章节时输出多个带 section 的产物标签；
+3. 代码、表格或没有标题结构的短文，沿用原 identifier 整篇输出完整新版本，不使用 section；
+4. 用户要求「另起一份」「新建」「英文版」等独立文档时，使用全新的 identifier，不要覆盖原产物；
+5. 工作台未展开时你看不到产物正文，不得凭空重写已有产物，应提示用户先打开右侧工作台并聚焦该产物。`;
 
 /** 多步 usage 的累加结构（null 表示至今无任何有效 usage） */
 interface UsageTotals {
@@ -155,14 +169,13 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       // 边界与预算计算（支持能力包自适应扩容，ADR-0014 / 工单 01）
       const pack = getCapabilityPack(options.capabilityPack);
       const basePrompt = options.systemPrompt ?? pack?.systemPrompt;
-      const artifactGuideline = `【交付物与产物规范】：当回答包含长篇分析研报（>500字）、对比表格、完整代码文件时，请将其作为独立产物（Artifact）输出。格式：<artifact identifier="唯一英文ID" type="markdown|table|code" title="中文标题" language="可选语言">正文</artifact>。在标签外部仅输出简短导引说明（例如「报告已整理在右侧工作台」），不重复铺陈长文。`;
       const searchGuideline = `【联网检索与精读协同规范 (ADR-0017)】：
 1. 查询新闻、时效线索、最新价格或官方文档时，必须优先使用 web_search 工具输入关键词 Query，严禁使用 web_fetch 抓取搜索引擎结果页（如 bing/duckduckgo/google/baidu）。
 2. 高效两步收敛：先用 web_search 检索获取权威线索与 URL；若搜索摘要已足够详尽，直接组织最终回答；若需要深读官方定价表或具体细则，挑选 1~2 个最权威的官方 URL 使用 web_fetch 进行单页精读。
 3. 避免过度循环：单次任务尽量在 1~3 次工具调用内快速收敛，组织出完整、详实、重点突出的最终专业回答。`;
-      const effectiveSystemPrompt = basePrompt
-        ? `${basePrompt}\n\n${searchGuideline}\n\n${artifactGuideline}`
-        : `${searchGuideline}\n\n${artifactGuideline}`;
+      // 产物上下文仅追加到当次请求的系统提示词，不进入消息历史、不落库（ADR-0037 §4）
+      const guidelineParts = [basePrompt, searchGuideline, ARTIFACT_GUIDELINE, options.artifactContextPrompt];
+      const effectiveSystemPrompt = guidelineParts.filter(Boolean).join('\n\n');
       const effectiveMaxSteps = options.maxSteps ?? pack?.maxSteps ?? AGENT_MAX_STEPS;
       const runTimeBudgetMs = options.runTimeBudgetMs ?? AGENT_RUN_TIME_BUDGET_MS;
       const disabledSet = new Set(options.disabledToolKeys ?? []);

@@ -9,7 +9,7 @@
  */
 
 import { fetchWithAuth } from '@/lib/api/client';
-import type { AgentIntentChipProps, ProductEventName } from '@/schemas/product-event.schema';
+import type { ProductEventName, ProductEventPropsMap } from '@/schemas/product-event.schema';
 
 /**
  * 上报前端行为埋点事件（fire-and-forget，静默失败）
@@ -17,7 +17,7 @@ import type { AgentIntentChipProps, ProductEventName } from '@/schemas/product-e
  * @param event 事件名称（须为白名单中的枚举值，格式 `<surface>.<action>`）
  * @param props 事件元数据（严格受控，遵循隐私红线）
  */
-export function trackEvent(event: ProductEventName, props: AgentIntentChipProps): void {
+export function trackEvent<E extends ProductEventName>(event: E, props: ProductEventPropsMap[E]): void {
   try {
     fetchWithAuth('/api/events', {
       method: 'POST',
