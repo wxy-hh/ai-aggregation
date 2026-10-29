@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: "测试驱动开发（TDD）。遵循红-绿-重构循环，针对模块接缝构建垂直切片测试。"
+description: "测试驱动开发（TDD）。遵循红-绿循环，针对模块接缝构建垂直切片测试。"
 ---
 
 # Test-Driven Development
@@ -36,3 +36,8 @@ When the shape of that interface is itself in question (how deep the module is, 
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
 - **Refactoring is not part of the loop.** It belongs to the review stage (see the `code-review` skill), not the red → green implementation cycle.
+
+## 项目定制（QA 工作流调用时，上游升级时保留本节）
+
+- `.scratch/<feature>/spec.md` 的 Testing Decisions 与已冻结 `qa-plan.md` 的 Seam 视为已确认的 Seam，直接在其上写测试，不再逐个找用户确认。
+- 只有找不到已确认的 Seam、实现中发现与计划冲突或需要新增 Seam 时才停下确认；确认后按 `docs/agents/qa-workflow.md` 在 qa-plan 的 `## 计划变更` 记录。

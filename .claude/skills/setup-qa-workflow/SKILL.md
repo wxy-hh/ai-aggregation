@@ -42,7 +42,7 @@ disable-model-invocation: true
 1. 从 `templates/qa-workflow.md` 生成 `docs/agents/qa-workflow.md`，适配核心链路、dev 命令、端口、E2E 参数及测试命令 `{TEST_COMMAND}`。
 2. 从 `templates/prompt-shortcuts.md` 复制思维快捷键；已有文件跳过。
 3. 向真实 `CLAUDE.md` 或 `AGENTS.md` 注入 `templates/claude-qa-directive.md`，不清空其他段落，不直接编辑符号链接。
-4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`code-review`、`handoff` 和 issue tracker 的项目约定。
+4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`code-review`、`handoff`、`tdd`、`pr` 和 issue tracker 的项目约定。
 5. 将 `templates/qa-check.mjs`、`templates/review-package.mjs` 与 `templates/qa-run.mjs` 复制到 `tooling/scripts/`；不增加 npm 依赖，不得修改宿主 package.json，不添加任何 scripts；三个核心工具直接由 Node 调用。
 6. 确保 `.scratch/` 被忽略；按用户选择设置 `.claude/skills/` 入库规则，仅忽略本地配置和临时 Worktree。
 7. 创建 `docs/handoff/.gitkeep`（目录不存在时）。不得新增 PreToolUse、Stop、SessionStart 或 Git Hook。

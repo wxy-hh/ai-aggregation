@@ -1,14 +1,9 @@
 ---
 name: qa-test-planner
 description: "QA 测试规划器：根据 spec 生成 Schema 4 的 qa-plan.md（冻结断言、接缝选择、执行记录与交付验证），供 QA 工作流阶段 3B 使用。"
-trigger: explicit
 ---
 
 # QA Test Planner
-
-> **Activation:** This skill is triggered only when explicitly called by name (e.g., `/qa-test-planner`, `qa-test-planner`, or `use the skill qa-test-planner`).
-
----
 
 ## 项目约定
 

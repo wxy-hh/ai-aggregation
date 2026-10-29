@@ -299,3 +299,127 @@ test('安装器不按宿主条件开关绕过登录检查（TC09-3）', async ()
     assert.doesNotMatch(content, /(?:无|没有|不含)数据库[^\n]*(?:跳过|关闭|移除|删除)[^\n]*(?:登录|扫描)/);
   }
 });
+
+const customizationsPath = '.claude/skills/setup-qa-workflow/templates/skill-customizations.md';
+
+// 提取 Schema 4 示例代码块，并把示例中的说明性文字规范化，只保留结构
+function schemaSkeleton(content) {
+  const block = content.match(/```markdown\n(QA Schema: 4[\s\S]*?)```/);
+  assert.ok(block, '缺少 Schema 4 示例代码块');
+  return block[1]
+    .split('\n')
+    .map((line) => line.replace(/^(### TC01: ).*/, '$1').replace(/^(1\. ).*/, '$1').trim())
+    .filter(Boolean);
+}
+
+test('正本与规划器的 Schema 4 示例结构一致', async () => {
+  const [workflow, planner] = await Promise.all([read(paths.workflow), read(paths.qaPlanner)]);
+  assert.deepEqual(schemaSkeleton(planner), schemaSkeleton(workflow));
+});
+
+test('只有 S-H、P-M、P-W 的驳回须引 ADR，复审只复核这三类改档', async () => {
+  const [root, directive, customizations, implementSpec] = await Promise.all([
+    read(paths.root),
+    read(paths.claudeTemplate),
+    read(customizationsPath),
+    read(paths.implementSpec),
+  ]);
+  for (const content of [root, directive, customizations]) {
+    assert.doesNotMatch(content, /[（，；]驳回须引 ADR/);
+    assert.match(content, /S-H、P-M、P-W 驳回须引 ADR 或契约/);
+  }
+  assert.doesNotMatch(implementSpec, /，驳回或转专项同样由审查者复核/);
+  assert.match(implementSpec, /S-H、P-M、P-W 被驳回或转专项同样由审查者复核/);
+});
+
+test('implement-spec 缺工单时请用户运行 to-tickets，不由模型调用', async () => {
+  const content = await read(paths.implementSpec);
+  assert.doesNotMatch(content, /先使用 `to-tickets`/);
+  assert.match(content, /请用户运行 `\/to-tickets`/);
+});
+
+test('qa-test-planner 不使用无效 trigger 字段，可由模型调用', async () => {
+  const [content, yaml] = await Promise.all([
+    read(paths.qaPlanner),
+    read('.claude/skills/qa-test-planner/agents/openai.yaml'),
+  ]);
+  assert.doesNotMatch(content, /^trigger:/m);
+  assert.doesNotMatch(content, /disable-model-invocation/);
+  assert.doesNotMatch(content, /triggered only when explicitly called/);
+  assert.match(yaml, /display_name/);
+  assert.doesNotMatch(yaml, /allow_implicit_invocation: false/);
+});
+
+test('tdd 复用已确认的 Seam，描述与正文的红绿循环一致', async () => {
+  const [content, yaml, customizations] = await Promise.all([
+    read('.claude/skills/tdd/SKILL.md'),
+    read('.claude/skills/tdd/agents/openai.yaml'),
+    read(customizationsPath),
+  ]);
+  assert.doesNotMatch(content.split('\n---')[0], /重构/);
+  assert.doesNotMatch(yaml, /refactor/i);
+  for (const text of [content, customizations]) {
+    assert.match(text, /已确认的 Seam/);
+    assert.match(text, /计划变更/);
+  }
+});
+
+test('code-review 定制段列出本仓库规范来源并放宽限字', async () => {
+  const [content, customizations] = await Promise.all([
+    read('.claude/skills/code-review/SKILL.md'),
+    read(customizationsPath),
+  ]);
+  for (const text of [content, customizations]) {
+    assert.match(text, /Standards 子代理的规范来源必须包含/);
+    assert.match(text, /\.claude\/rules\//);
+    assert.match(text, /DESIGN\.md/);
+    assert.match(text, /不得为满足字数限制省略/);
+  }
+});
+
+test('to-spec 定制段约束 US 粒度并只确认未确认的接缝', async () => {
+  const [content, customizations] = await Promise.all([read(paths.toSpec), read(customizationsPath)]);
+  for (const text of [content, customizations]) {
+    assert.match(text, /外部可区分的行为/);
+    assert.match(text, /一个 TC 可覆盖多条 US/);
+  }
+});
+
+test('handoff 记录 QA 续接快照', async () => {
+  const [content, customizations] = await Promise.all([
+    read('.claude/skills/handoff/SKILL.md'),
+    read(customizationsPath),
+  ]);
+  for (const text of [content, customizations]) {
+    assert.match(text, /QA 续接快照/);
+    assert.match(text, /_qa\/scope\.json/);
+    assert.match(text, /审查轮次/);
+  }
+});
+
+test('pr 汇总 qa-check review 结果行与遗留事项', async () => {
+  const [content, customizations, setup] = await Promise.all([
+    read('.claude/skills/pr/SKILL.md'),
+    read(customizationsPath),
+    read(paths.setup),
+  ]);
+  for (const text of [content, customizations]) {
+    assert.match(text, /## 遗留事项/);
+    assert.match(text, /qa-check\.mjs review/);
+    assert.match(text, /待人工裁决编号/);
+  }
+  assert.match(setup, /注入[^\n]*`tdd`[^\n]*`pr`/);
+});
+
+test('implement 交付汇报只附人工终审入口，快车道表格不与核心小改冲突', async () => {
+  const [implement, workflow, template] = await Promise.all([
+    read(paths.implement),
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+  ]);
+  assert.doesNotMatch(implement, /附正本阶段 7 的人工终审清单/);
+  assert.match(implement, /人工终审入口/);
+  for (const content of [workflow, template]) {
+    assert.doesNotMatch(content, /\| 快车道 \|[^\n]*（不建 qa-plan，不跑审查）/);
+  }
+});

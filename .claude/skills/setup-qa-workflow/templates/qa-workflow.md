@@ -25,7 +25,7 @@
 
 | 车道 | 判定 | 路线 |
 | --- | --- | --- |
-| 快车道 | 文案、样式、非核心小修 | `/implement`（不建 qa-plan，不跑审查） |
+| 快车道 | 文案、样式、非核心小修 | `/implement`（不跑审查；非核心不建 qa-plan，核心小改按下文补精简 qa-plan 与阶段 5） |
 | 标准车道 | 独立功能，涉及模块少，串行可完成 | `/grill-with-docs` → `/to-spec` → `/qa-test-planner` → `/implement` |
 | 慢车道 | 跨多模块的复杂业务或大功能，或需要并行调度多个实现子代理 | `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/qa-test-planner` → `/implement-spec` |
 
