@@ -34,8 +34,8 @@ disable-model-invocation: true
 ## 4. 审查与交付
 
 - 阶段 5 验收后按 `docs/agents/qa-workflow.md` 阶段 6 串联：先运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`，再用 Skill 工具调用 `code-review`（参数写明特性目录与轮次）；审查子代理的派发、编号与落盘规则只在该技能内，不要用 Agent 工具自行派审查子代理。
-- 两份原文落盘后，主 Agent 在 `review-report.md` 写审查方式行、按编号逐条对账的 `## 三档分流` 表与范围说明，不改写 `review/` 原文；实现串行不排斥这项必要审查。
-- 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付待审查材料包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
+- 两份原文落盘后，主 Agent 在 `review-report.md` 写审查方式行、按编号逐条核对的 `## 三档分流` 表与范围说明，不改写 `review/` 原文；实现串行不排斥这项必要审查。
+- 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付审查包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
 - 本次修由实现者明确修复（先读 `## 修复尝试记录`，不重复已判失败的改法），重跑受影响验证后重新 collect 并按正本做增量复审，自动上限 2 轮；用尽后仍有未修或修错时停止自动修复，照常完成交付验证，由 `qa-check review` 输出 BLOCKED 交人工裁决。测试结论必须与最后一次实际运行一致。
 - 独立审查完成前不得把 backlog、计划等文档写成完成态，状态回填放在人工终审之后。
 - QA 工作流负责最终交付，在全部浏览器验收结束后于最终代码上执行全部交付命令（之后重跑验收先探活），并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明，不替代独立审查与人工终审。

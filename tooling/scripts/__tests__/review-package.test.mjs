@@ -259,6 +259,20 @@ test('collect 区分开工后新增、继续修改、已提交与稳定的范围
   assert.equal(outOfScope['untouched.txt'], undefined);
 });
 
+test('collect 在包头标注白名单内被开工后提交改过的文件', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  await writeFile(path.join(dir, 'tracked.txt'), '他人提交\n');
+  git(dir, ['add', 'tracked.txt']);
+  git(dir, ['commit', '--quiet', '-m', '他人提交']);
+
+  assert.equal(run(dir, 'collect', feature).status, 0);
+  const patch = await readFile(path.join(feature, '_qa', 'review-package.diff'), 'utf8');
+  assert.match(patch.split('\n')[0], /^# 以下文件含开工后的提交.*tracked\.txt$/);
+  assert.match(patch, /\+他人提交/);
+});
+
 test('tree 摘要与 digest 一致并随范围内内容变化（TC02）', async (t) => {
   const dir = await repo(t);
   const feature = path.join(dir, '.scratch', 'feature');

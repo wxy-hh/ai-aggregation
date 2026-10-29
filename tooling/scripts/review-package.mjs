@@ -444,8 +444,15 @@ async function collectReviewPackage(repo, argument, scopesInput) {
   const packagedAt = previous?.treeDigest === treeDigest && typeof previous.packagedAt === 'string'
     ? previous.packagedAt
     : new Date().toISOString();
+  // 白名单内被开工后的提交改过的文件，diff 里可能混有他人改动，在包头标注供审查者识别
+  const committedInScope = git(root, ['diff', '--name-only', '-z', scope.base, 'HEAD']).stdout
+    .split('\0')
+    .filter((relative) => relative && changedFiles.includes(relative));
+  const header = committedInScope.length
+    ? `# 以下文件含开工后的提交（来源见 git log ${scope.base.slice(0, 7)}..HEAD），其中的改动可能不属于本任务：${committedInScope.join('、')}\n`
+    : '';
   await mkdir(path.join(feature, QA_DIR), { recursive: true });
-  await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), patches.join('\n'));
+  await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), header + patches.join('\n'));
   const manifest = {
     version: 2,
     base: scope.base,

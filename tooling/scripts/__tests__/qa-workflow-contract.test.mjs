@@ -244,7 +244,7 @@ test('阶段 6 入口只路由到 code-review 技能，无能力时合法暂停�
   for (const content of contents.slice(0, 2)) assert.doesNotMatch(content, /r<n>-standards/);
   for (const content of [contents[0], contents[2], contents[3]]) {
     assert.match(content, /不运行最终 `qa-check review`/);
-    assert.match(content, /待审查材料包/);
+    assert.match(content, /只交付审查包/);
   }
 
   const [root, directive] = await Promise.all([read(paths.root), read(paths.claudeTemplate)]);
