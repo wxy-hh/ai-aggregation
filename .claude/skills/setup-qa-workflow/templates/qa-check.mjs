@@ -55,13 +55,21 @@ const SYNTHETIC_INPUT_PATTERNS = [
   { label: 'window.__* 访问', pattern: /\bwindow\.__[\w$]/ },
   { label: '浏览器存储写入', pattern: /\b(?:localStorage|sessionStorage)\.setItem\s*\(/ },
 ];
+// 响应注入：替换或拦截网络响应，证据不再经过真实后端；整份脚本扫描，命中只提示并在对账表标注「响应注入」
+const RESPONSE_INJECTION_PATTERNS = [
+  { label: 'window.fetch 赋值', pattern: /\bwindow\.fetch\s*=(?!=)/ },
+  { label: 'route(', pattern: /\.route\s*\(/ },
+  { label: 'route.fulfill(', pattern: /\.fulfill\s*\(/ },
+  { label: 'cy.intercept(', pattern: /\bcy\.intercept\s*\(/ },
+  { label: 'MSW 处理器', pattern: /\b(?:http|rest)\.(?:get|post|put|patch|delete|all)\s*\(/ },
+];
 // 审查编号：S-H 规范硬违规、S-J 规范判断、P-M 缺失或部分实现、P-W 实现有误、P-X 范围蔓延
 const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
 // 只判断是否含编号时用非全局版本，避免全局正则 test() 的 lastIndex 状态
 const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
-// 复审状态词：修复结果用于本次修，改档复核用于 S-H、P-M、P-W 的驳回或转专项
-const STATUS_WORD = /^(已修|未修|修错|改档成立|改档不成立)/;
+// 分流表处置状态的允许值；留空与「—」表示尚无处置
+const DISPOSITION_VALUES = new Set(['', '—', '已修', '未修', '修错', '改档成立', '改档不成立', '驳回', '转专项']);
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
 const WORKFLOW_SKILLS = new Set([
   'to-spec', 'to-tickets', 'implement', 'implement-spec', 'tdd', 'code-review', 'pr', 'retro',
@@ -851,12 +859,13 @@ function inPageSegments(text) {
 
 /**
  * 扫描 scripts/ 下全部脚本：绕过真实登录（注入 Cookie、写令牌、脚本内登录、直连数据存储）为不可豁免的 FAIL；
- * 页面内合成输入与直接改写应用状态只提示，并在对账表标注「非真实输入」。
+ * 页面内合成输入与直接改写应用状态只提示，并在对账表标注「非真实输入」；响应注入只提示，并标注「响应注入」。
  */
 async function scanProcessScripts(featureDir) {
   const issues = [];
   const notes = [];
   const synthetic = new Set();
+  const injected = new Set();
   for (const relative of await listScripts(featureDir)) {
     const text = await readFile(path.join(featureDir, relative), 'utf8');
     const hits = AUTH_BYPASS_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.label);
@@ -880,8 +889,13 @@ async function scanProcessScripts(featureDir) {
       synthetic.add(relative);
       notes.push(`SYNTHETIC_INPUT_IN_SCRIPT：${relative} 的页面内代码含 ${labels.join('、')}；引用该脚本的用例在对账表标注「非真实输入」，请人工终审确认是否满足真实输入要求。`);
     }
+    const injections = RESPONSE_INJECTION_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.label);
+    if (injections.length) {
+      injected.add(relative);
+      notes.push(`RESPONSE_INJECTION_IN_SCRIPT：${relative} 含 ${injections.join('、')}；引用该脚本的用例在对账表标注「响应注入」，其断言只能证明端侧渲染，触及核心链路时须另有真实链路冒烟。`);
+    }
   }
-  return { issues, notes, synthetic };
+  return { issues, notes, synthetic, injected };
 }
 
 function tableCell(text) {
@@ -889,7 +903,7 @@ function tableCell(text) {
 }
 
 /** 对账表：每个通过接缝证据检查的 PASS 断言一行，冻结断言原文对照实测值或绑定 */
-function reconciliationTable(passRows, frozenPlan, markerValues, caseScripts, synthetic) {
+function reconciliationTable(passRows, frozenPlan, markerValues, caseScripts, synthetic, injected) {
   const frozenText = new Map(frozenPlan.cases.flatMap((testCase) => testCase.assertions
     .map((assertion) => [`${testCase.id}:${assertion.number}`, assertion.text])));
   return passRows.map(({ row, testCase }) => {
@@ -897,12 +911,16 @@ function reconciliationTable(passRows, frozenPlan, markerValues, caseScripts, sy
     const actual = SCRIPTED_SEAMS.has(testCase.seam)
       ? markerValues.get(key) ?? '（无实测标记）'
       : BOUND_SEAMS.has(testCase.seam) ? row.binding || '（无绑定）' : row.evidence;
-    const flagged = (caseScripts.get(row.caseId) ?? []).some((script) => synthetic.has(script));
+    const scripts = caseScripts.get(row.caseId) ?? [];
+    const flags = [
+      scripts.some((script) => injected.has(script)) && '响应注入',
+      scripts.some((script) => synthetic.has(script)) && '非真实输入',
+    ].filter(Boolean);
     return {
       id: `${row.caseId}-${row.assertion}`,
       assertion: frozenText.get(key) ?? testCase.assertions.find((item) => item.number === row.assertion)?.text ?? '',
       actual,
-      flag: flagged ? '非真实输入' : '',
+      flag: flags.join('、'),
     };
   });
 }
@@ -1039,7 +1057,7 @@ async function checkAcceptance(featureDir, plan, context) {
   const frozen = await frozenPlanIssues(featureDir, plan, Boolean(context.scope));
   issues.push(...frozen.issues);
   notes.push(...frozen.notes);
-  const table = reconciliationTable(passRows, frozen.frozen ?? plan, markers.values, caseScripts, scan.synthetic);
+  const table = reconciliationTable(passRows, frozen.frozen ?? plan, markers.values, caseScripts, scan.synthetic, scan.injected);
 
   if (plan.kind === 'fix') {
     const reproductionByCase = new Map(plan.reproductions.map((item) => [item.caseId, item]));
@@ -1101,7 +1119,7 @@ function markdownSection(markdown, headingPattern) {
   return lines.slice(start + 1, end).join('\n');
 }
 
-/** 解析 ## 三档分流 表格：按表头定位编号、档位、最终状态、验证证据与理由列 */
+/** 解析 ## 三档分流 表格：按表头定位编号、档位、处置状态（兼容旧表头「最终状态」）、验证证据与理由列 */
 function parseTriage(reportText) {
   const body = markdownSection(reportText, /^## 三档分流\s*$/);
   if (body === null) return null;
@@ -1115,7 +1133,7 @@ function parseTriage(reportText) {
     const tierIndex = column('档位');
     if (tierIndex < 0) continue;
     const idIndex = column('编号');
-    const finalIndex = column('最终状态');
+    const finalIndex = headers.findIndex((cell) => cell.includes('处置状态') || cell.includes('最终状态'));
     const reasonIndex = column('理由');
     const evidenceIndex = column('验证证据');
     if (evidenceIndex >= 0) evidenceColumn = true;
@@ -1172,7 +1190,8 @@ async function readReviewRounds(featureDir) {
 
 /**
  * 审查原文与分流表对账：最新一轮两轴原文须齐全且不早于当前 tree 的首次打包时间；原文中的每个编号须进入分流表；
- * 默认本次修的编号改档须写理由；本次修的条目最终未修或修错时阻塞交付。
+ * 默认本次修的编号改档须写理由；待复审编号须出现在对应轴其后一轮原文中；分流表自报未解决时阻塞交付。
+ * 分流表是唯一流程状态源，不从原文文字解析状态；原文行只作为人工核对材料输出。
  */
 async function reviewRawIssues(featureDir, triage, packageTime) {
   const issues = [];
@@ -1211,12 +1230,8 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
     }
   }
 
-  const ids = new Set();
-  for (const files of rounds.values()) {
-    for (const { text } of await roundRaws(featureDir, files)) {
-      for (const match of text.matchAll(FINDING_ID_PATTERN)) ids.add(match[1]);
-    }
-  }
+  const index = await rawIndex(featureDir, rounds);
+  const ids = new Set(index.first.keys());
   const rows = triage?.rows ?? [];
   const triaged = new Set(rows.map((row) => row.id));
   const untriaged = [...ids].filter((id) => !triaged.has(id)).sort();
@@ -1225,7 +1240,7 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
       'FINDING_NOT_TRIAGED',
       'FAIL',
       `审查原文中的编号未进入 ## 三档分流：${untriaged.join('、')}。`,
-      '分流表每行写一个编号（列：编号、档位、最终状态、轮次轨迹、理由）；原文编号以子代理落盘的原文为准，不要改写原文。',
+      '分流表每行写一个编号（列：编号、档位、处置状态、轮次轨迹、验证证据、理由）；原文编号以子代理落盘的原文为准，不要改写原文。',
     ));
   }
   const unexplained = rows
@@ -1239,42 +1254,32 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
       '改为本次修，或在理由列写明转专项或驳回的依据（驳回须引 ADR 或契约）。',
     ));
   }
-  // 分流表最终状态以原文最后一次状态词为准，防止表格掩盖复审结论
-  const statuses = await rawStatuses(featureDir, rounds);
-  const mismatched = rows
-    .filter((row) => statuses.has(row.id) && row.final.match(STATUS_WORD)?.[1] !== statuses.get(row.id))
-    .map((row) => `${row.id}（原文${statuses.get(row.id)}，分流表${row.final || '未填'}）`);
-  if (mismatched.length) {
+  // 分流表是唯一流程状态源：处置状态只做枚举校验，不与审查原文的文字比对
+  const invalid = rows
+    .filter((row) => !DISPOSITION_VALUES.has(row.final))
+    .map((row) => `${row.id}（${row.final}）`);
+  if (invalid.length) {
     issues.push(issue(
-      'UNRESOLVED_FINDINGS',
+      'INVALID_DISPOSITION',
       'FAIL',
-      `分流表最终状态与审查原文最后一次状态词不一致：${mismatched.join('、')}。`,
-      '最终状态照抄原文状态词（已修、未修、修错、改档成立、改档不成立；带限定语的已修按未修）。',
+      `分流表处置状态不在允许值内：${invalid.join('、')}。`,
+      `处置状态只能是 ${[...DISPOSITION_VALUES].filter(Boolean).join('、')} 之一或留空；部分修复写未修，残留说明写进理由列。`,
     ));
   }
-  // 改档由下一轮审查者复核：判不成立的必须回到本次修，判成立的档位不能是本次修
-  const tierConflicts = rows
-    .filter((row) => (statuses.get(row.id) === '改档不成立' && row.tier !== '本次修')
-      || (statuses.get(row.id) === '改档成立' && row.tier === '本次修'))
-    .map((row) => `${row.id}（原文${statuses.get(row.id)}，档位${row.tier}）`);
-  if (tierConflicts.length) {
+  // 待复审编号（本次修，以及 S-H、P-M、P-W 被驳回或转专项）须出现在对应轴其后一轮的原文中；只看编号是否出现，不解析结论
+  const missing = await rereviewMissing(featureDir, rounds, index, rows.filter((row) => row.tier === '本次修'
+    || (DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix)) && row.tier !== '本次修')));
+  if (missing.length) {
     issues.push(issue(
-      'UNRESOLVED_FINDINGS',
-      'FAIL',
-      `档位与审查者的改档复核结论冲突：${tierConflicts.join('、')}。`,
-      '审查者判改档不成立的条目改为本次修，不得再次改档；判改档成立的保持原驳回或转专项档位。',
+      'FINDING_NOT_REREVIEWED',
+      'BLOCKED',
+      `以下待复审编号没有出现在对应轴其后一轮的审查原文中：${missing.join('、')}。`,
+      'collect 后用 Skill 工具调用 code-review 做增量复审，复审输入须列出这些编号；S-* 由 Standards 轴、P-* 由 Spec 轴复核。格式问题不得成为修改原文的理由。',
     ));
   }
-  // 已修行与 S-H、P-M、P-W 的改档行都须有复审判定，没有判定按未修处理
-  const unreviewed = rows
-    .filter((row) => !statuses.has(row.id) && (
-      (row.tier === '本次修' && /^已修/.test(row.final))
-      || (DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix)) && row.tier !== '本次修')))
-    .map((row) => `${row.id}（无复审判定）`);
   const unresolved = rows
-    .filter((row) => (row.tier === '本次修' && !row.final) || /^(未修|修错|改档不成立)/.test(row.final))
-    .map((row) => `${row.id}（${row.final || '未填'}）`)
-    .concat(unreviewed);
+    .filter((row) => (row.tier === '本次修' && (!row.final || row.final === '—')) || /^(未修|修错|改档不成立)$/.test(row.final))
+    .map((row) => `${row.id}（${row.final && row.final !== '—' ? row.final : '未填'}）`);
   if (unresolved.length) {
     issues.push(issue(
       'UNRESOLVED_FINDINGS',
@@ -1283,22 +1288,61 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
       '自动复审最多 2 轮（r2、r3）；用尽后停止自动修复，按分流表清单交人工裁决：人工在理由列写明接受现状或授权追加修复轮，机器结果保持 BLOCKED，提交由人工明确要求后执行。',
     ));
   }
-  issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, rounds));
-  return { issues, latest: latestFiles };
+  issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, index));
+  return { issues, latest: latestFiles, rawLines: lastRawLines(index, rows) };
 }
 
-/** 按复审轮次（r2 起）取每个编号最后一次的状态词；「已修」后带限定语（如「已修一半」）按未修，「改档」后带限定语按改档不成立 */
-async function rawStatuses(featureDir, rounds) {
-  const statuses = new Map();
-  for (const round of [...rounds.keys()].filter((round) => round > 1).sort((a, b) => a - b)) {
-    for (const { text } of await roundRaws(featureDir, rounds.get(round))) {
-      for (const match of text.matchAll(/\[((?:S-[HJ]|P-[MWX])\d+)\]\s*((?:已修|未修|修错|修了|改档)[^\n]*)/g)) {
-        const clean = match[2].match(/^(已修|未修|修错|改档成立|改档不成立)(?=[\s。.，,；;：:]|$)/);
-        statuses.set(match[1], clean ? clean[1] : match[2].startsWith('改档') ? '改档不成立' : '未修');
-      }
+/** 编号前缀对应的审查轴：S-* 为 Standards，P-* 为 Spec */
+function axisOf(id) {
+  return id.startsWith('S-') ? 'standards' : 'spec';
+}
+
+/** 一次遍历全部轮次原文：每个编号首次出现的轮次与原文时间，以及最后出现的原文行 */
+async function rawIndex(featureDir, rounds) {
+  const first = new Map();
+  const last = new Map();
+  for (const round of [...rounds.keys()].sort((a, b) => a - b)) {
+    for (const { relative, text, time } of await roundRaws(featureDir, rounds.get(round))) {
+      text.split(/\r?\n/).forEach((line, lineIndex) => {
+        for (const match of line.matchAll(FINDING_ID_PATTERN)) {
+          if (!first.has(match[1])) first.set(match[1], { round, time });
+          last.set(match[1], { location: `${relative}:${lineIndex + 1}`, line: line.trim() });
+        }
+      });
     }
   }
-  return statuses;
+  return { first, last };
+}
+
+/** 待复审编号中，对应轴在首次提出后的下一轮原文没有出现的编号；下一轮尚未进行时视为待复审 */
+async function rereviewMissing(featureDir, rounds, index, rows) {
+  const missing = [];
+  for (const row of rows) {
+    const first = index.first.get(row.id)?.round;
+    if (first === undefined) continue;
+    const next = [...rounds.keys()].filter((round) => round > first).sort((a, b) => a - b)[0];
+    if (next === undefined) {
+      missing.push(`${row.id}（尚无复审轮）`);
+      continue;
+    }
+    const relative = rounds.get(next)[axisOf(row.id)];
+    const text = relative ? await readFile(path.join(featureDir, relative), 'utf8') : '';
+    if (!text.includes(`[${row.id}]`)) missing.push(`${row.id}（r${next} ${axisOf(row.id) === 'standards' ? 'Standards' : 'Spec'} 原文未出现）`);
+  }
+  return missing;
+}
+
+const RAW_EXCERPT_LIMIT = 80;
+
+/** 原文核对：每个分流编号最后出现该编号的原文行（文件:行号与原样截断摘录），只读输出，不参与判定 */
+function lastRawLines(index, rows) {
+  return rows.map((row) => {
+    const found = index.last.get(row.id);
+    const excerpt = found && found.line.length > RAW_EXCERPT_LIMIT
+      ? `${found.line.slice(0, RAW_EXCERPT_LIMIT)}…（截断）`
+      : found?.line ?? '';
+    return { id: row.id, disposition: row.final || '未填', location: found?.location ?? '（原文未出现）', excerpt };
+  });
 }
 
 /** 读取某一轮已存在的两轴原文 */
@@ -1308,19 +1352,6 @@ async function roundRaws(featureDir, files) {
     const [text, info] = await Promise.all([readFile(absolute, 'utf8'), stat(absolute)]);
     return { relative, text, time: info.mtimeMs };
   }));
-}
-
-/** 每个编号首次出现的那一轮原文的修改时间 */
-async function firstRaisedTimes(featureDir, rounds) {
-  const times = new Map();
-  for (const round of [...rounds.keys()].sort((a, b) => a - b)) {
-    for (const { text, time } of await roundRaws(featureDir, rounds.get(round))) {
-      for (const match of text.matchAll(FINDING_ID_PATTERN)) {
-        if (!times.has(match[1])) times.set(match[1], time);
-      }
-    }
-  }
-  return times;
 }
 
 /** 单个验证证据引用的问题；合法时返回 null */
@@ -1344,17 +1375,16 @@ async function fixEvidenceProblem(featureDir, reference, raisedAt) {
 }
 
 /**
- * 修复验证：最终状态为「已修」的行须在「验证证据」列引用修复后产生的 evidence/ 或 screenshots/ 文件，
+ * 修复验证：处置状态为「已修」的行须在「验证证据」列引用修复后产生的 evidence/ 或 screenshots/ 文件，
  * 或写「静态：<理由>」；证据能否证明修复由人工终审判断。
  */
-async function fixVerificationIssues(featureDir, rows, evidenceColumn, rounds) {
+async function fixVerificationIssues(featureDir, rows, evidenceColumn, index) {
   const fixed = rows.filter((row) => /^已修/.test(row.final));
   if (!fixed.length) return [];
   const hint = '「已修」行在验证证据列写修复后针对该点运行的证据（反引号包裹的 evidence/ 或 screenshots/ 路径，晚于首次提出该编号的原文；qa-run 日志须 exit 0），不涉及行为的修复写「静态：<理由>」。';
   if (!evidenceColumn) {
     return [issue('FIX_UNVERIFIED', 'FAIL', `## 三档分流 有已修条目但没有「验证证据」列：${fixed.map((row) => row.id).join('、')}。`, hint)];
   }
-  const raised = await firstRaisedTimes(featureDir, rounds);
   const problems = [];
   for (const row of fixed) {
     const text = row.evidence.trim();
@@ -1369,7 +1399,7 @@ async function fixVerificationIssues(featureDir, rows, evidenceColumn, rounds) {
       continue;
     }
     for (const reference of references.paths) {
-      const problem = await fixEvidenceProblem(featureDir, reference, raised.get(row.id));
+      const problem = await fixEvidenceProblem(featureDir, reference, index.first.get(row.id)?.time);
       if (problem) problems.push(`${row.id}（${problem}）`);
     }
   }
@@ -1671,7 +1701,7 @@ async function checkReview(featureDir, plan, context, earlier) {
     }
   }
   issues.push(...await verificationIssues(featureDir, plan, context));
-  return summarize(issues, notes);
+  return { ...summarize(issues, notes), rawLines: raw.rawLines };
 }
 
 export async function checkFeature(featureDir, phase) {
@@ -1755,6 +1785,16 @@ export function formatReport(report, phase) {
   }
   if (report.table?.length) {
     lines.push('', '对账表（人工终审入口：逐行核对实测值或绑定是否证明冻结断言）', ...reconciliationLines(report.table), '');
+  }
+  if (report.rawLines?.length) {
+    lines.push(
+      '',
+      '原文核对（仅供人工核对，非结论：逐行确认分流表处置状态与审查原文一致）',
+      '| 编号 | 处置状态 | 最后出现位置 | 原文摘录 |',
+      '| --- | --- | --- | --- |',
+      ...report.rawLines.map((row) => `| ${row.id} | ${tableCell(row.disposition)} | ${row.location} | ${tableCell(row.excerpt)} |`),
+      '',
+    );
   }
   lines.push(`结果: ${report.status}`);
   if (phase === 'review' && report.status === 'PASS') {

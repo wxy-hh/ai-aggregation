@@ -1023,6 +1023,59 @@ test('页面内合成输入只输出 SYNTHETIC_INPUT_IN_SCRIPT 提示，干净�
   assert.doesNotMatch(output, /SYNTHETIC_INPUT_IN_SCRIPT|AUTH_BYPASS_IN_SCRIPT|非真实输入/);
 });
 
+test('[TC01-1] window.fetch 赋值输出 RESPONSE_INJECTION_IN_SCRIPT 提示并指明脚本', async (t) => {
+  const dir = await scriptedWorkspace(t, { script: 'await page.evaluate(() => { window.fetch = async () => new Response(\'\'); });\n' });
+  const report = await checkFeature(dir, 'acceptance');
+  const note = report.notes.find((item) => item.startsWith('RESPONSE_INJECTION_IN_SCRIPT'));
+  assert.match(note ?? '', /scripts\/tc01\.mjs/, formatReport(report));
+});
+
+test('[TC01-2] Playwright 路由拦截、Cypress intercept 与 MSW 处理器均输出 RESPONSE_INJECTION_IN_SCRIPT', async (t) => {
+  const samples = [
+    "await page.route('**/api/chat', handler);",
+    'await route.fulfill({ status: 200, body: sse });',
+    "cy.intercept('POST', '/api/chat', { fixture: 'sse.txt' });",
+    "const handlers = [http.get('/api/chat', () => HttpResponse.text(sse))];",
+  ];
+  for (const script of samples) {
+    const dir = await scriptedWorkspace(t, { script });
+    const report = await checkFeature(dir, 'acceptance');
+    assert.ok(report.notes.some((item) => item.startsWith('RESPONSE_INJECTION_IN_SCRIPT')), `${script}: ${formatReport(report)}`);
+  }
+});
+
+test('[TC01-3] 引用含响应注入脚本的用例在对账表标注「响应注入」', async (t) => {
+  const dir = await scriptedWorkspace(t, { script: "await page.route('**/api/chat', handler);\n" });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.match(report.table.find((row) => row.id === 'TC01-1')?.flag ?? '', /响应注入/);
+  assert.match(formatReport(report, 'acceptance'), /\| TC01-1 \|.*响应注入/);
+});
+
+test('[TC01-4] 仅脚本含响应注入时 acceptance 结果为 PASS', async (t) => {
+  const dir = await scriptedWorkspace(t, { script: 'await page.evaluate(() => { window.fetch = stub; });\n' });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('[TC01-5] 同时含输入模拟与响应注入时标注两者', async (t) => {
+  const dir = await scriptedWorkspace(t, {
+    script: "await page.evaluate(() => { window.fetch = stub; document.querySelector('a').click(); });\n",
+  });
+  const report = await checkFeature(dir, 'acceptance');
+  const flag = report.table.find((row) => row.id === 'TC01-1')?.flag ?? '';
+  assert.match(flag, /响应注入/);
+  assert.match(flag, /非真实输入/);
+});
+
+test('[TC01-6] 干净脚本不输出 RESPONSE_INJECTION_IN_SCRIPT 也不标注「响应注入」', async (t) => {
+  const dir = await scriptedWorkspace(t, {
+    script: "const res = await fetch('/api/health');\nawait page.getByRole('button', { name: '发送' }).click();\nconst routeName = page.url();\n",
+  });
+  const report = await checkFeature(dir, 'acceptance');
+  assert.ok(!report.notes.some((item) => item.startsWith('RESPONSE_INJECTION_IN_SCRIPT')), formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'acceptance'), /响应注入/);
+});
+
 test('CDP 方法名不在调用括号内时只截取同一行，之后的真实点击不算合成输入（TC08-3）', async (t) => {
   const dir = await scriptedWorkspace(t, {
     script: "const message = { method: 'Runtime.evaluate', params: { expression: 'document.title' } };\nawait cdp.send(message.method, message.params);\nawait page.getByRole('button', { name: '提交' }).click();\n",
@@ -1154,79 +1207,43 @@ test('本次修条目最终未修或修错时 UNRESOLVED_FINDINGS，全部已修
   assert.equal(fixed.status, 'PASS', formatReport(fixed));
 });
 
-test('分流表最终状态与原文最后一次状态词不一致时 UNRESOLVED_FINDINGS，带限定语的已修按未修', async (t) => {
-  const { feature } = await reviewRepo(t);
-  await writeRaw(feature, 1, { standards: '[S-H1] 硬\n[S-J1] 判\n', spec: '[P-W1] 已修改的函数未处理空值\n' });
-  await writeRaw(feature, 2, { standards: '[S-H1] 未修。\n[S-J1] 已修一半。\n', spec: '[P-W1] 修错。\n' });
-  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
-    '| S-H1 | 驳回 | 驳回 | r1 → r2 未修 | 无 | 依据 ADR-0001 |',
-    '| S-J1 | 本次修 | 已修 | r1 → r2 已修 | 静态：抽函数 | |',
-    '| P-W1 | 转专项 | 转专项 | r1 → r2 修错 | 无 | 转入后续专项 |',
-  ]));
-  const report = await checkFeature(feature, 'review');
-  assert.equal(report.status, 'FAIL', formatReport(report));
-  const mismatch = report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL');
-  assert.match(mismatch.message, /S-H1（原文未修，分流表驳回）.*S-J1（原文未修，分流表已修）.*P-W1（原文修错，分流表转专项）/);
-
-  // 人工裁决只写入理由列，不改变机器结果
-  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
-    '| S-H1 | 驳回 | 未修 | r1 → r2 未修 | 无 | 人工裁定接受现状 |',
-    '| S-J1 | 转专项 | 未修 | r1 → r2 未修 | 无 | 人工裁定转专项 |',
-    '| P-W1 | 转专项 | 修错 | r1 → r2 修错 | 无 | 人工裁定转专项 |',
-  ]));
-  const consistent = await checkFeature(feature, 'review');
-  assert.equal(consistent.status, 'BLOCKED', formatReport(consistent));
-  assert.match(consistent.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message, /S-H1（未修）.*S-J1（未修）.*P-W1（修错）/);
-});
-
-test('改档由下一轮审查者复核：成立时 PASS，不成立须改为本次修且 BLOCKED，漏判按未修', async (t) => {
+test('改档与人工裁决以分流表为准：改档成立行 PASS，改档不成立仍 BLOCKED，复审漏列改档编号 BLOCKED', async (t) => {
   const { feature } = await reviewRepo(t);
   const reportPath = path.join(feature, 'review-report.md');
   await writeRaw(feature, 1, { standards: '[S-H1] 硬\n[S-J1] 判\n', spec: '[P-W1] 误\n[P-X1] 蔓延\n' });
-  await writeRaw(feature, 2, { standards: '[S-H1] 改档成立\n', spec: '[P-W1] 改档成立\n' });
+  await writeRaw(feature, 2, { standards: '**[S-H1]** 改档成立（引用属实）\n', spec: '- [P-W1]：改档成立\n' });
   await writeFile(reportPath, verifiedReport([
     '| S-H1 | 驳回 | 改档成立 | r1 → r2 改档成立 | | 依据 ADR-0001 |',
-    '| S-J1 | 驳回 | — | r1 | | |',
+    '| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |',
     '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
-    '| P-X1 | 驳回 | — | r1 | | |',
+    '| P-X1 | 驳回 | 驳回 | r1 | | spec US1 要求 |',
   ]));
   const accepted = await checkFeature(feature, 'review');
   assert.equal(accepted.status, 'PASS', formatReport(accepted));
 
-  // 判改档成立却写成本次修：档位冲突
-  await writeFile(reportPath, (await readFile(reportPath, 'utf8')).replace('| S-H1 | 驳回 |', '| S-H1 | 本次修 |'));
-  const flipped = await checkFeature(feature, 'review');
-  assert.equal(flipped.status, 'FAIL', formatReport(flipped));
-  assert.match(flipped.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL').message, /S-H1（原文改档成立，档位本次修）/);
-
-  // 判改档不成立：档位仍为驳回时 FAIL，改为本次修后 BLOCKED
-  await writeRaw(feature, 2, { standards: '[S-H1] 改档不成立\n引用的 ADR 没有这条约定。\n', spec: '[P-W1] 改档成立\n' });
+  // 人工裁决只写入理由列，不改变机器结果
   await writeFile(reportPath, verifiedReport([
-    '| S-H1 | 驳回 | 改档不成立 | r1 → r2 改档不成立 | | 依据 ADR-0001 |',
-    '| S-J1 | 驳回 | — | r1 | | |',
-    '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
-    '| P-X1 | 驳回 | — | r1 | | |',
+    '| S-H1 | 本次修 | 改档不成立 | r1 → r2 改档不成立 | | 人工裁定接受现状 |',
+    '| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |',
+    '| P-W1 | 转专项 | 修错 | r1 → r2 修错 | | 人工裁定转专项 |',
+    '| P-X1 | 驳回 | 驳回 | r1 | | spec US1 要求 |',
   ]));
-  const kept = await checkFeature(feature, 'review');
-  assert.equal(kept.status, 'FAIL', formatReport(kept));
-  assert.match(kept.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS' && item.severity === 'FAIL').message, /S-H1（原文改档不成立，档位驳回）/);
-  await writeFile(reportPath, (await readFile(reportPath, 'utf8')).replace('| S-H1 | 驳回 |', '| S-H1 | 本次修 |'));
-  const retiered = await checkFeature(feature, 'review');
-  assert.equal(retiered.status, 'BLOCKED', formatReport(retiered));
-  assert.match(retiered.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message, /S-H1（改档不成立）/);
+  const decided = await checkFeature(feature, 'review');
+  assert.equal(decided.status, 'BLOCKED', formatReport(decided));
+  assert.match(decided.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message, /S-H1（改档不成立）.*P-W1（修错）/);
 
-  // 复审漏判驳回编号：按未修 BLOCKED；S-J、P-X 不要求复核
+  // 复审漏列改档编号：BLOCKED；S-J、P-X 不要求复核
   await writeRaw(feature, 2, { standards: '无发现\n', spec: '[P-W1] 改档成立\n' });
   await writeFile(reportPath, verifiedReport([
-    '| S-H1 | 驳回 | — | r1 | | 依据 ADR-0001 |',
-    '| S-J1 | 驳回 | — | r1 | | |',
+    '| S-H1 | 驳回 | 驳回 | r1 | | 依据 ADR-0001 |',
+    '| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |',
     '| P-W1 | 转专项 | 改档成立 | r1 → r2 改档成立 | | 改动范围超出本特性 |',
-    '| P-X1 | 驳回 | — | r1 | | |',
+    '| P-X1 | 驳回 | 驳回 | r1 | | spec US1 要求 |',
   ]));
   const missed = await checkFeature(feature, 'review');
   assert.equal(missed.status, 'BLOCKED', formatReport(missed));
-  const message = missed.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS').message;
-  assert.match(message, /S-H1（无复审判定）/);
+  const message = missed.issues.find((item) => item.code === 'FINDING_NOT_REREVIEWED').message;
+  assert.match(message, /S-H1/);
   assert.doesNotMatch(message, /S-J1|P-X1|P-W1/);
 });
 
@@ -1424,6 +1441,221 @@ function verifiedReport(rows, header = '| 编号 | 档位 | 最终状态 | 轮�
     .replace('| 编号 | 档位 | 最终状态 | 轮次轨迹 | 理由 |', header)
     .replace('| --- | --- | --- | --- | --- |\n\n无发现', `| --- | --- | --- | --- | --- | --- |\n${rows.join('\n')}`);
 }
+
+/** r1 提出发现、r2 写复审原文，分流表使用指定表头与行；返回特性目录 */
+async function rereviewRepo(t, { r1 = {}, r2, rows, header } = {}) {
+  const { feature } = await reviewRepo(t);
+  const old = new Date(Date.now() - 600_000);
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '无发现\n', ...r1 });
+  if (r2) {
+    for (const name of ['r1-standards.md', 'r1-spec-axis.md']) await utimes(path.join(feature, 'review', name), old, old);
+    await writeRaw(feature, 2, { standards: '无发现\n', spec: '无发现\n', ...r2 });
+  }
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport(rows, header));
+  return feature;
+}
+
+const STATIC_FIXED = '| P-W1 | 本次修 | 已修 | r1 → r2 | 静态：改文案 | |';
+
+test('[TC02-1] 原文加粗写作 **[P-W1] 已修** 时不报 UNRESOLVED_FINDINGS', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '# Spec 轴审查报告(Round 2)\n\n**[P-W1] 已修**\n新版截图已解除加载态。\n' },
+    rows: [STATIC_FIXED],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('UNRESOLVED_FINDINGS'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('[TC02-2] 原文其他写法（加粗编号、冒号、反引号、带限定语）均不报 UNRESOLVED_FINDINGS', async (t) => {
+  for (const line of ['**[P-W1]** 已修', '[P-W1]：已修', '[P-W1] `已修`', '[P-W1] 已修（有残留）']) {
+    const feature = await rereviewRepo(t, { r1: { spec: '[P-W1] 实现有误\n' }, r2: { spec: `${line}\n` }, rows: [STATIC_FIXED] });
+    const report = await checkFeature(feature, 'review');
+    assert.ok(!codes(report).includes('UNRESOLVED_FINDINGS'), `${line}: ${formatReport(report)}`);
+  }
+});
+
+test('[TC02-3] 原文写未修而分流表写已修时不报原文状态词比对问题', async (t) => {
+  const feature = await rereviewRepo(t, { r1: { spec: '[P-W1] 实现有误\n' }, r2: { spec: '[P-W1] 未修\n' }, rows: [STATIC_FIXED] });
+  const report = await checkFeature(feature, 'review');
+  assert.doesNotMatch(formatReport(report), /原文最后一次状态词|与审查原文.*不一致/);
+  assert.ok(!codes(report).includes('UNRESOLVED_FINDINGS'), formatReport(report));
+});
+
+function rereviewIssue(report) {
+  return report.issues.find((item) => item.code === 'FINDING_NOT_REREVIEWED');
+}
+
+test('[TC03-1] 本次修编号未出现在下一轮 Spec 原文时 BLOCKED 并列出该编号', async (t) => {
+  const feature = await rereviewRepo(t, { r1: { spec: '[P-W1] 实现有误\n' }, r2: { spec: '无发现\n' }, rows: [STATIC_FIXED] });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(rereviewIssue(report)?.message ?? '', /P-W1/);
+});
+
+test('[TC03-2] 下一轮 Spec 原文含该编号（任意后续文字）时不报复审缺失', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '- 关于 **[P-W1]**：看过了，截图仍有遮挡但不影响结论\n' },
+    rows: [STATIC_FIXED],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(rereviewIssue(report), undefined, formatReport(report));
+});
+
+test('[TC03-3] 被驳回的 P-M 编号未出现在下一轮 Spec 原文时 BLOCKED', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-M1] 缺失\n' },
+    r2: { spec: '无发现\n' },
+    rows: ['| P-M1 | 驳回 | 驳回 | r1 | | 依据 ADR-0001 |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(rereviewIssue(report)?.message ?? '', /P-M1/);
+});
+
+test('[TC03-4] S-H 编号只出现在下一轮 Spec 原文、不在 Standards 原文时 BLOCKED', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { standards: '[S-H1] 硬违规\n' },
+    r2: { standards: '无发现\n', spec: '另见 [S-H1] 已修\n' },
+    rows: ['| S-H1 | 本次修 | 已修 | r1 → r2 | 静态：改注释 | |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(rereviewIssue(report)?.message ?? '', /S-H1/);
+});
+
+test('[TC03-5] 只有 r1 原文、无待复审编号时不报复审缺失', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { standards: '[S-J1] 判断\n', spec: '[P-X1] 蔓延\n' },
+    rows: ['| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |', '| P-X1 | 驳回 | 驳回 | r1 | | spec US1 要求 |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(rereviewIssue(report), undefined, formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('[TC03-7] 分流表有待复审编号但尚无复审轮时 BLOCKED 并注明尚无复审轮', async (t) => {
+  const feature = await rereviewRepo(t, { r1: { spec: '[P-W1] 实现有误\n' }, rows: [STATIC_FIXED] });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(rereviewIssue(report)?.message ?? '', /P-W1（尚无复审轮）/);
+});
+
+test('[TC03-6] 被驳回的 S-J 编号未出现在下一轮 Standards 原文时不报复审缺失', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { standards: '[S-J1] 判断\n', spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '[P-W1] 已修\n' },
+    rows: ['| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |', STATIC_FIXED],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(rereviewIssue(report), undefined, formatReport(report));
+});
+
+test('[TC04-1] 处置状态为未修时 BLOCKED UNRESOLVED_FINDINGS 并列出该编号', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '[P-W1] 未修\n' },
+    rows: ['| P-W1 | 本次修 | 未修 | r1 → r2 未修 | | |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS')?.message ?? '', /P-W1（未修）/);
+});
+
+test('[TC04-2] 档位本次修、处置状态为空时 BLOCKED UNRESOLVED_FINDINGS 并列出该编号', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '[P-W1] 未修\n' },
+    rows: ['| P-W1 | 本次修 |  | r1 | | |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(report.issues.find((item) => item.code === 'UNRESOLVED_FINDINGS')?.message ?? '', /P-W1（未填）/);
+});
+
+test('[TC04-3] 处置状态为枚举之外的值时 FAIL 并指出编号与非法值', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '[P-W1] 已修\n' },
+    rows: ['| P-W1 | 本次修 | 基本修好 | r1 → r2 | 静态：改文案 | |'],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.match(report.issues.find((item) => item.code === 'INVALID_DISPOSITION')?.message ?? '', /P-W1.*基本修好/);
+});
+
+test('[TC04-4] 表头为「处置状态」或「最终状态」时结果与问题码相同', async (t) => {
+  const outcomes = [];
+  for (const name of ['处置状态', '最终状态']) {
+    const feature = await rereviewRepo(t, {
+      r1: { spec: '[P-W1] 实现有误\n[P-M1] 缺失\n' },
+      r2: { spec: '[P-W1] 已修\n[P-M1] 未修\n' },
+      header: `| 编号 | 档位 | ${name} | 轮次轨迹 | 验证证据 | 理由 |`,
+      rows: [STATIC_FIXED, '| P-M1 | 本次修 | 未修 | r1 → r2 未修 | | |'],
+    });
+    const report = await checkFeature(feature, 'review');
+    outcomes.push({ status: report.status, codes: codes(report).sort() });
+  }
+  assert.equal(outcomes[0].status, 'BLOCKED');
+  assert.deepEqual(outcomes[0], outcomes[1]);
+});
+
+test('[TC05-1] review 输出「原文核对」段，每个编号一行含处置状态与原文位置', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { standards: '[S-J1] 判断\n', spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '首行说明\n[P-W1] 已修\n' },
+    rows: ['| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |', STATIC_FIXED],
+  });
+  const output = formatReport(await checkFeature(feature, 'review'), 'review');
+  assert.match(output, /原文核对/);
+  assert.match(output, /P-W1.*已修.*review\/r2-spec-axis\.md:2/);
+  assert.match(output, /S-J1.*驳回.*review\/r1-standards\.md:1/);
+});
+
+test('[TC05-2] 原文行过长时截断并带截断标记，短行原样输出', async (t) => {
+  const long = `[P-W1] 已修。${'截图与对账表逐行核对完毕，'.repeat(12)}结尾不应出现`;
+  const feature = await rereviewRepo(t, {
+    r1: { standards: '[S-J1] 短行原样\n', spec: '[P-W1] 实现有误\n' },
+    r2: { spec: `${long}\n` },
+    rows: ['| S-J1 | 驳回 | 驳回 | r1 | | 成本大于收益 |', STATIC_FIXED],
+  });
+  const output = formatReport(await checkFeature(feature, 'review'), 'review');
+  const line = output.split('\n').find((item) => item.includes('P-W1') && item.includes('r2-spec-axis.md'));
+  assert.match(line ?? '', /…（截断）/);
+  assert.doesNotMatch(line ?? '', /结尾不应出现/);
+  assert.match(output, /\[S-J1\] 短行原样(?!…)/);
+});
+
+test('[TC05-3] 「原文核对」段首注明仅供人工核对、非结论', async (t) => {
+  const feature = await rereviewRepo(t, { r1: { spec: '[P-W1] 实现有误\n' }, r2: { spec: '[P-W1] 已修\n' }, rows: [STATIC_FIXED] });
+  const output = formatReport(await checkFeature(feature, 'review'), 'review');
+  assert.match(output, /原文核对[^\n]*仅供人工核对，非结论/);
+});
+
+test('[TC06-1] 原文编号未进入分流表时 FAIL FINDING_NOT_TRIAGED', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n[P-W2] 漏列\n' },
+    r2: { spec: '[P-W1] 已修\n' },
+    rows: [STATIC_FIXED],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.match(report.issues.find((item) => item.code === 'FINDING_NOT_TRIAGED')?.message ?? '', /P-W2/);
+});
+
+test('[TC06-2] 已修行验证证据早于首次提出该编号的原文时 FAIL FIX_UNVERIFIED', async (t) => {
+  const feature = await rereviewRepo(t, {
+    r1: { spec: '[P-W1] 实现有误\n' },
+    r2: { spec: '[P-W1] 已修\n' },
+    rows: ['| P-W1 | 本次修 | 已修 | r1 → r2 | `evidence/fix-old.log` | |'],
+  });
+  await fixLog(feature, 'fix-old.log', { time: new Date(Date.now() - 3_600_000) });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.match(fixIssue(report)?.message ?? '', /P-W1.*早于/);
+});
 
 /** r1 提出 P-W1，r2 复审已修；返回特性目录与 r1 原文时间 */
 async function fixedRepo(t) {
