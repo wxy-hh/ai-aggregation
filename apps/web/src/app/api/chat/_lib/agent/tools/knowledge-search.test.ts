@@ -43,8 +43,8 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     await expect(tool.execute({ query: 'ok', topK: 0 }, mockContext)).rejects.toThrow(
       'topK 至少为 1'
     );
-    await expect(tool.execute({ query: 'ok', topK: 99 }, mockContext)).rejects.toThrow(
-      'topK 单次最多 20 条'
+    await expect(tool.execute({ query: 'ok', topK: 101 }, mockContext)).rejects.toThrow(
+      'topK 单次最多 100 条'
     );
   });
 

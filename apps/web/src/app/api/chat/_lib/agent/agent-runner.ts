@@ -50,7 +50,16 @@ import {
   type ToolSet,
 } from 'ai';
 import { createProvider, type ProviderName } from '@repo/providers';
-import { getCapabilityPack, createArtifactStreamExtractor } from '@repo/shared';
+import {
+  getCapabilityPack,
+  createArtifactStreamExtractor,
+  type AgentPlan,
+  type PlanStepStatus,
+  updatePlanStepStatus,
+  attachToolCallToRunningStep,
+  finalizePlanExecution,
+} from '@repo/shared';
+import { generateAgentPlan } from './planner';
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import { encodeSseEvent } from '../sse';
@@ -107,6 +116,8 @@ export interface AgentRunOptions {
   trace?: ObservabilityTrace;
   /** 产物上下文注入文本（ADR-0037 §4，服务端复核后生成）：仅追加到当次系统提示词 */
   artifactContextPrompt?: string;
+  /** 是否开启前置规划阶段（ADR-0038 / AGENT-PLAN-DAG，默认 true） */
+  enablePlanning?: boolean;
 }
 
 /**
@@ -163,6 +174,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let totals: UsageTotals | null = null;
       /** 是否有工具成功产出（生成的图片或抓到的正文）——已随事件下发给用户 */
       let toolProducedOutput = false;
+      /** 当前计划卡片状态机实体 (ADR-0038 / AGENT-PLAN-DAG) */
+      let currentPlan: AgentPlan | null = null;
       /** 整请求起始时刻：运行时间预算（AGENT_RUN_TIME_BUDGET_MS）的判定基准 */
       const startedAt = Date.now();
 
@@ -272,6 +285,47 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         // 决策步最大轮次：留出至少 1 步作为可能的强制收尾步
         const maxDecisionSteps = Math.max(0, effectiveMaxSteps - 1);
         let roundIndex = 0;
+
+        // ==================== 前置规划节点 (ADR-0038 / AGENT-PLAN-DAG) ====================
+        currentPlan = null;
+
+        const emitStepUpdate = (
+          stepId: string,
+          status: PlanStepStatus,
+          summary?: string
+        ) => {
+          if (!currentPlan) return;
+          currentPlan = updatePlanStepStatus(currentPlan, stepId, status, summary);
+          controller.enqueue(
+            encodeSseEvent({
+              type: 'plan_step_update',
+              stepId,
+              status,
+              ...(summary ? { summary } : {}),
+            })
+          );
+        };
+
+        if (options.enablePlanning !== false && !signal.aborted) {
+          try {
+            currentPlan = await generateAgentPlan({
+              model: agentModel,
+              messages: session.getStepPayload().messages,
+              system: effectiveSystemPrompt,
+              signal,
+            });
+            if (currentPlan && currentPlan.steps.length > 0) {
+              // 1. 推送完整初始计划
+              controller.enqueue(encodeSseEvent({ type: 'plan_created', plan: currentPlan }));
+              // 2. 乐观执行：立即自动将第 1 个 Checkpoint 置为 running 并下发
+              const firstStepId = currentPlan.steps[0].id;
+              emitStepUpdate(firstStepId, 'running');
+            }
+          } catch (planErr) {
+            console.warn('[agent] 前置规划失败，平滑降级为常规循环:', planErr);
+            currentPlan = null;
+          }
+        }
 
         // ==================== 主循环：决策步 + 工具执行 ====================
         while (roundIndex < maxDecisionSteps) {
@@ -416,6 +470,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             const callId = call.toolCallId;
             const name = call.toolName;
 
+            if (currentPlan) {
+              currentPlan = attachToolCallToRunningStep(currentPlan, callId);
+            }
+
             // 工具调用事件推送（先于治理判定：即使随即被 skip，前端也先收到卡片）
             controller.enqueue(
               encodeSseEvent({
@@ -481,8 +539,30 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           const toolMessage: ModelMessage = { role: 'tool', content: toolResultParts };
           session.appendToolResult(toolMessage);
 
+          // 步骤流转 (AGENT-PLAN-DAG / ADR-0038)：本轮工具执行完成，推进当前 running 步骤为 completed 并开始下一步
+          if (currentPlan) {
+            const runningIndex = currentPlan.steps.findIndex((s) => s.status === 'running');
+            if (runningIndex !== -1 && runningIndex < currentPlan.steps.length - 1) {
+              const curStepId = currentPlan.steps[runningIndex].id;
+              const lastToolCall = recordedToolCalls[recordedToolCalls.length - 1];
+              const stepSummary = lastToolCall?.summary
+                ? `已完成：${lastToolCall.summary}`
+                : '阶段任务已完成';
+              emitStepUpdate(curStepId, 'completed', stepSummary);
+
+              const nextStepId = currentPlan.steps[runningIndex + 1].id;
+              emitStepUpdate(nextStepId, 'running');
+            }
+          }
+
           // 退化保护与边界熔断（连败 / 全局上限 / 时间耗尽）统一由管道的停止判定表达
           if (pipeline.shouldHalt()) {
+            if (currentPlan) {
+              const runningStep = currentPlan.steps.find((s) => s.status === 'running');
+              if (runningStep) {
+                emitStepUpdate(runningStep.id, 'failed', '连续工具执行失败，熔断进入收尾');
+              }
+            }
             break;
           }
         }
@@ -585,6 +665,27 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         }
 
         // ==================== 完成态上报 ====================
+        // 计划收尾 (AGENT-PLAN-DAG / ADR-0038 / [P-W1] / [P-W13])：诚实状态机收敛
+        if (currentPlan) {
+          const hasFailure = currentPlan.steps.some((s) => s.status === 'failed');
+          for (const step of currentPlan.steps) {
+            if (step.status === 'running') {
+              emitStepUpdate(
+                step.id,
+                hasFailure ? 'failed' : 'completed',
+                hasFailure ? '前序故障中止执行' : '任务交付完成'
+              );
+            } else if (step.status === 'pending') {
+              // 诚实状态机：未执行的步骤无论是否失败，均不能冒充 completed，应标记为 skipped
+              emitStepUpdate(
+                step.id,
+                'skipped',
+                hasFailure ? '前序故障已跳过' : '提前交付，步骤已略过'
+              );
+            }
+          }
+        }
+
         // 输出被 maxOutputTokens 截断时显式提示警告（B-3）
         if (finalFinishReason === 'length') {
           controller.enqueue(
@@ -641,6 +742,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         const baseReason = error instanceof Error ? error.message : String(error);
         const reason = causeMessage ? `${baseReason} (cause: ${causeMessage})` : baseReason;
         console.warn('[agent] 编排失败', { errorId, reason, cause });
+        if (currentPlan) {
+          currentPlan = finalizePlanExecution(currentPlan, signal.aborted ? 'aborted' : 'failed', reason);
+        }
         // 中断或异常同样以「有产出」判 partial：工具已交付产物的轮次不得整轮退款
         await onFinish({
           outcome: hasOutput() ? 'partial' : 'failed',

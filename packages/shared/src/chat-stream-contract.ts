@@ -1,3 +1,10 @@
+import {
+  agentPlanSchema,
+  planStepStatusSchema,
+  type AgentPlan,
+  type PlanStepStatus,
+} from './agent-plan';
+
 // ============================================
 // 聊天流式 SSE 事件契约 — 前后端唯一权威定义
 // --------------------------------------------
@@ -5,7 +12,7 @@
 //   - /api/chat（generic / xunfei / doubao 三适配器）
 //   - /api/destiny/copilot（追问对话）
 //
-// 事件类型（共 8 种，联合类型即完整枚举）：
+// 事件类型（共 10 种，联合类型即完整枚举）：
 //   - text-delta       增量文本（可重复出现；text 一定为非空字符串）
 //   - reasoning-delta  推理增量文本（可重复出现；text 一定为非空字符串；
 //                      仅 supportsReasoning 模型可能产生，先于 text-delta 到达；
@@ -17,6 +24,8 @@
 //   - tool_result      工具执行结束（可重复出现；agent 模式专用；必然先于总结步的首个
 //                      text-delta。注意：决策步正文可先于 tool_call 到达——模型先说一句
 //                      「我查一下」再调工具时 text-delta 更早，消费端不得假设工具事件先于一切正文。
+//   - plan_created     智能体任务初始规划创建事件（可出现一次；agent 模式专用；下发完整阶段检查点列表）
+//   - plan_step_update 智能体检查点状态跃迁更新事件（可重复出现；agent 模式专用；实时同步单步状态与摘要）
 //   - warning          警告信息（可重复出现；不终止流）
 //   - error            错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
 //   - done             正常终止（终止事件；流中最后一个事件）
@@ -178,6 +187,20 @@ export type ChatStreamArtifactEndEvent = {
   status: 'complete' | 'error';
 };
 
+/** 智能体计划生成事件 (AGENT-PLAN-DAG / ADR-0038) */
+export type ChatStreamPlanCreatedEvent = {
+  type: 'plan_created';
+  plan: AgentPlan;
+};
+
+/** 智能体计划步骤状态更新事件 (AGENT-PLAN-DAG / ADR-0038) */
+export type ChatStreamPlanStepUpdateEvent = {
+  type: 'plan_step_update';
+  stepId: string;
+  status: PlanStepStatus;
+  summary?: string;
+};
+
 /** 聊天流式用量统计（done 帧携带） */
 export interface ChatStreamUsage {
   inputTokens: number | null;
@@ -204,6 +227,8 @@ export type ChatStreamEvent =
   | ChatStreamArtifactStartEvent
   | ChatStreamArtifactDeltaEvent
   | ChatStreamArtifactEndEvent
+  | ChatStreamPlanCreatedEvent
+  | ChatStreamPlanStepUpdateEvent
   | ChatStreamDoneEvent
   | ChatStreamWarningEvent
   | ChatStreamErrorEvent;
@@ -327,6 +352,26 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         type: 'artifact_end',
         id: ev.id,
         status: ev.status,
+      };
+    }
+    case 'plan_created': {
+      const parsed = agentPlanSchema.safeParse(ev.plan);
+      if (!parsed.success) return null;
+      return {
+        type: 'plan_created',
+        plan: parsed.data,
+      };
+    }
+    case 'plan_step_update': {
+      if (typeof ev.stepId !== 'string' || !ev.stepId) return null;
+      const parsedStatus = planStepStatusSchema.safeParse(ev.status);
+      if (!parsedStatus.success) return null;
+      if (ev.summary !== undefined && typeof ev.summary !== 'string') return null;
+      return {
+        type: 'plan_step_update',
+        stepId: ev.stepId,
+        status: parsedStatus.data,
+        ...(ev.summary !== undefined ? { summary: ev.summary } : {}),
       };
     }
     case 'done': {

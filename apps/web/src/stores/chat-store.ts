@@ -7,6 +7,7 @@ import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-str
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
 import { trackArtifactEvent } from '@/lib/events/artifact-events';
+import { trackPlanEvent, calculatePlanCompletionRate, recordAgentRunMetric } from '@/lib/events/plan-events';
 import {
   buildArtifactContextRequest,
   type ArtifactContextRequest,
@@ -15,12 +16,15 @@ import {
   type ToolCallRecord,
   type AgentNote,
   type Artifact,
+  type AgentPlan,
   toolCallRecordSchema,
   applyArtifactEvent,
   beginArtifactTurn,
   finalizeStreamingArtifacts,
   getArtifactVersions,
   rollbackArtifact,
+  updatePlanStepStatus,
+  finalizePlanExecution,
 } from '@repo/shared';
 
 // ==================== 类型定义 ====================
@@ -75,6 +79,8 @@ export interface Message {
   artifactIds?: string[];
   // 结构化切片引用映射字典（ADR-0025 / KB-CHAT-CITE）
   citations?: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor>;
+  // 智能体执行计划与阶段检查点 (AGENT-PLAN-DAG / ADR-0038)
+  plan?: AgentPlan;
 }
 
 // 聊天状态管理接口
@@ -116,6 +122,7 @@ export interface ChatState {
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
   reload: (msgId?: string) => Promise<void>; // 重新生成AI回复
   stop: () => void; // 停止当前的AI生成
+  interruptAndResumeWithPlan: (messageId: string, modifiedPlan: AgentPlan) => Promise<void>; // 用户干预计划并中止续跑 (AGENT-PLAN-DAG / ADR-0038)
 
   // ========== 生命周期管理 ==========
   loadConversation: (
@@ -290,7 +297,7 @@ function freezeReasoningDuration(assistantId: string): number | undefined {
  * 已是用户可见的产出（含工具生成的图片附件），不能按「空」丢弃。
  */
 function hasRetainableContent(m: Message): boolean {
-  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length);
+  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length || m.plan);
 }
 
 /**
@@ -313,12 +320,24 @@ function finalizeAbortedMessages(
         m.id === target.id
           ? // 不再流式就必须没有 running 工具调用：中止时工具还没回 tool_result，
             // 不清洗的话过程卡片会永远停在「正在调用…」的转圈态（T07 实测发现）
-            sanitizeToolCalls({ ...m, isStreaming: false, stopped: true })
+            sanitizeToolCalls({
+              ...m,
+              ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+              isStreaming: false,
+              stopped: true,
+            })
           : m
       )
     : options?.keepEmptyStopped
       ? messages.map((m) =>
-          m.id === target.id ? sanitizeToolCalls({ ...m, isStreaming: false, stopped: true }) : m
+          m.id === target.id
+            ? sanitizeToolCalls({
+                ...m,
+                ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+                isStreaming: false,
+                stopped: true,
+              })
+            : m
         )
       : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
@@ -378,6 +397,7 @@ export async function runChatStreamSession(
 ): Promise<ChatStreamOutcome> {
   const scheduleFlush = options?.scheduleFlush ?? defaultScheduleFlush;
 
+  const streamStartTime = Date.now();
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
   let lastPersistAt = 0;
   let streamUsage: ChatStreamUsage | undefined;
@@ -600,6 +620,24 @@ export async function runChatStreamSession(
         }
         persistConversation(deps.getMessages());
       },
+      onPlanCreated: (plan) => {
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => (m.id === assistantId ? { ...m, plan } : m))
+        );
+        persistConversation(next);
+      },
+      onPlanStepUpdate: (stepId, status, summary) => {
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) => {
+            if (m.id !== assistantId || !m.plan) return m;
+            return {
+              ...m,
+              plan: updatePlanStepStatus(m.plan, stepId, status, summary),
+            };
+          })
+        );
+        persistConversation(next);
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))
@@ -622,11 +660,23 @@ export async function runChatStreamSession(
         // 正常结束也走一道清洗，兜住 tool_result 事件缺失时残留的进行中态。
         return {
           ...sanitizeToolCalls(mergeLatestStreamContent(m, latest, reasoningDurationMs)),
+          ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'completed') } : {}),
           isStreaming: false,
           ...(streamUsage ? { usage: streamUsage } : {}),
         };
       })
     );
+    const finishedAssistantMsg = finalMessages.find((m) => m.id === assistantId);
+    if (finishedAssistantMsg?.plan) {
+      // 记录全周期完成率指标 (TC05-2 / [P-M6])
+      const rate = calculatePlanCompletionRate(finishedAssistantMsg.plan.steps);
+      recordAgentRunMetric({
+        planId: finishedAssistantMsg.plan.id,
+        durationMs: Date.now() - streamStartTime,
+        stepCount: finishedAssistantMsg.plan.steps.length,
+        completionRate: rate,
+      });
+    }
     const conversationId = deps.activeConversationId();
     if (conversationId) {
       const currentArtifacts = finalizeArtifacts().artifacts;
@@ -934,7 +984,16 @@ export const useChatStore = create<ChatState>((set, get) => {
         .filter((m) => !(m.isStreaming && !hasRetainableContent(m)))
         .map((m) =>
           stripAgentNotes(
-            sanitizeToolCalls(m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m)
+            sanitizeToolCalls(
+              m.isStreaming
+                ? {
+                    ...m,
+                    ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+                    isStreaming: false,
+                    stopped: true,
+                  }
+                : m
+            )
           )
         );
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
@@ -1137,6 +1196,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                     role: m.role,
                     content: m.content,
                     ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
+                    ...(m.plan ? { plan: m.plan } : {}),
                     ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
                       ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
                       : {}),
@@ -1250,6 +1310,44 @@ export const useChatStore = create<ChatState>((set, get) => {
       } finally {
         set({ isLoading: false });
         abortController = null;
+      }
+    },
+
+    // 中止当前任务并按用户干预后的计划继续执行 (AGENT-PLAN-DAG / ADR-0038)
+    interruptAndResumeWithPlan: async (messageId: string, modifiedPlan: AgentPlan) => {
+      // 1. 如果正在流式生成，先中止旧流
+      const { isLoading, stop, activeConversationId } = get();
+      if (isLoading) {
+        stop();
+      }
+
+      // 2. 埋点上报用户干预
+      trackPlanEvent('plan.intervened', {
+        planId: modifiedPlan.id,
+        stepCount: modifiedPlan.steps.length,
+        action: 'modify_plan',
+      });
+
+      // 3. 更新对应消息的 plan
+      const updatedMessages = get().messages.map((m) =>
+        m.id === messageId ? { ...m, plan: modifiedPlan } : m
+      );
+      set({ messages: updatedMessages });
+      if (activeConversationId) {
+        emit(StoreEvents.CONVERSATION_UPDATED, {
+          id: activeConversationId,
+          messages: updatedMessages,
+        });
+      }
+
+      // 4. 计算当前未完成/调整后的步骤，构造轻量提示并发起续跑
+      const pendingSteps = modifiedPlan.steps.filter(
+        (s) => s.status === 'pending' || s.status === 'running'
+      );
+      if (pendingSteps.length > 0) {
+        const nextStepDesc = pendingSteps.map((s, idx) => `${idx + 1}. ${s.title}`).join('\n');
+        const resumePrompt = `请根据已调整的计划继续执行后续步骤：\n${nextStepDesc}`;
+        await get().sendMessage(resumePrompt);
       }
     },
   };

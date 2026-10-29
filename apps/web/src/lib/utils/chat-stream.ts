@@ -7,6 +7,8 @@ import {
   type ChatStreamToolResultEvent,
   type ChatStreamUsage,
   type ArtifactMeta,
+  type AgentPlan,
+  type PlanStepStatus,
 } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 
@@ -65,6 +67,10 @@ export interface StreamChatResponseHandlers {
   onArtifactDelta?: (id: string, delta: string) => void;
   /** 产物生成结束时回调（可选） */
   onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
+  /** 收到计划创建事件时回调一次（agent 模式；可选，不传则忽略） */
+  onPlanCreated?: (plan: AgentPlan) => void;
+  /** 收到计划步骤状态更新时回调（agent 模式；可选，不传则忽略） */
+  onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -141,6 +147,8 @@ export async function streamChatResponse(
         onArtifactStart: withPet(handlers.onArtifactStart),
         onArtifactDelta: withPet(handlers.onArtifactDelta),
         onArtifactEnd: withPet(handlers.onArtifactEnd),
+        onPlanCreated: withPet(handlers.onPlanCreated),
+        onPlanStepUpdate: withPet(handlers.onPlanStepUpdate),
         onWarning: withPet(handlers.onWarning),
         onDone: withPet((usage?: ChatStreamUsage) => {
           handlers.onDone?.(usage);
@@ -180,6 +188,10 @@ export interface ConsumeChatResponseHandlers {
   onArtifactDelta?: (id: string, delta: string) => void;
   /** 产物生成结束时回调（可选） */
   onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
+  /** 收到计划创建事件时回调一次（agent 模式；可选） */
+  onPlanCreated?: (plan: AgentPlan) => void;
+  /** 收到计划步骤状态更新时回调（agent 模式；可选） */
+  onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -266,6 +278,14 @@ export async function consumeChatResponse(
         case 'artifact_end':
           // 产物生成结束（ADR-0015）
           handlers.onArtifactEnd?.(event.id, event.status);
+          return;
+        case 'plan_created':
+          // 智能体计划生成（ADR-0038）
+          handlers.onPlanCreated?.(event.plan);
+          return;
+        case 'plan_step_update':
+          // 智能体计划单步更新（ADR-0038）
+          handlers.onPlanStepUpdate?.(event.stepId, event.status, event.summary);
           return;
         case 'warning':
           onWarning?.(event.warning);

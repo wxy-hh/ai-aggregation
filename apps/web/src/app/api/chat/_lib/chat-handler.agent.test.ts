@@ -74,6 +74,9 @@ vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
   return { ...actual, streamText: streamTextMock };
 });
+vi.mock('./agent/planner', () => ({
+  generateAgentPlan: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('./agent/tools', () => ({ getDefaultToolRegistry: () => registryHolder.current }));
 // image_generate 使用真实工具实现，只把上游请求换成替身
 vi.mock('@/lib/services/agnes-image', () => ({

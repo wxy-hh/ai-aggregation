@@ -33,11 +33,23 @@ export const ARTIFACT_EVENT_NAMES = [
   'artifact.diff_open',
 ] as const;
 
-export const PRODUCT_EVENT_NAMES = [...AGENT_INTENT_CHIP_EVENT_NAMES, ...ARTIFACT_EVENT_NAMES] as const;
+/** 智能体计划卡片事件 (AGENT-PLAN-DAG / ADR-0038) */
+export const PLAN_EVENT_NAMES = [
+  'plan.expand',
+  'plan.step_skip',
+  'plan.intervened',
+] as const;
+
+export const PRODUCT_EVENT_NAMES = [
+  ...AGENT_INTENT_CHIP_EVENT_NAMES,
+  ...ARTIFACT_EVENT_NAMES,
+  ...PLAN_EVENT_NAMES,
+] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 export type AgentIntentChipEventName = (typeof AGENT_INTENT_CHIP_EVENT_NAMES)[number];
 export type ArtifactEventName = (typeof ARTIFACT_EVENT_NAMES)[number];
+export type PlanEventName = (typeof PLAN_EVENT_NAMES)[number];
 
 /**
  * 智能意图升级芯片事件属性 Schema
@@ -75,11 +87,27 @@ export const artifactEventPropsSchema = z
 
 export type ArtifactEventProps = z.infer<typeof artifactEventPropsSchema>;
 
+/**
+ * 计划事件属性 Schema (AGENT-PLAN-DAG / ADR-0038)
+ * 严格模式（strict）：拒绝标题、正文等隐私字段，仅保留计划 ID 与受控动作
+ */
+export const planEventPropsSchema = z
+  .object({
+    planId: z.string().min(1),
+    stepCount: z.number().int().positive(),
+    action: z.enum(['expand', 'step_skip', 'modify_plan']),
+  })
+  .strict();
+
+export type PlanEventProps = z.infer<typeof planEventPropsSchema>;
+
 /** 事件名到属性形状的映射：trackEvent 据此做到「事件名与 props 一一对应」的编译期约束 */
 export type ProductEventPropsMap = {
   [K in AgentIntentChipEventName]: AgentIntentChipProps;
 } & {
   [K in ArtifactEventName]: ArtifactEventProps;
+} & {
+  [K in PlanEventName]: PlanEventProps;
 };
 
 /**
@@ -98,6 +126,12 @@ export const trackProductEventSchema = z.union(
       .object({
         event: z.enum(ARTIFACT_EVENT_NAMES),
         props: artifactEventPropsSchema,
+      })
+      .strict(),
+    z
+      .object({
+        event: z.enum(PLAN_EVENT_NAMES),
+        props: planEventPropsSchema,
       })
       .strict(),
   ],

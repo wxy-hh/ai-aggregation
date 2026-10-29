@@ -29,6 +29,8 @@ export interface ChatHistoryItem extends BaseHistoryItem {
     content: string;
     /** agent 工具调用记录（可选；旧历史数据无此字段，向后兼容） */
     toolCalls?: ToolCallRecord[];
+    /** agent 计划与检查点（可选，向后兼容） (AGENT-PLAN-DAG / ADR-0038) */
+    plan?: import('@repo/shared').AgentPlan;
     /**
      * agent 工具产出附件（可选，仅 id 以 tool- 开头的产出物，体积小）；
      * 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage

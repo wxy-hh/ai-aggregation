@@ -11,6 +11,7 @@ import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen, Sparkles } fr
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
+import { AgentPlanCard } from './plan/agent-plan-card';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
 import { DistillFaqDialog } from './distill-faq-dialog';
@@ -713,6 +714,14 @@ export const MessageItem = memo(function MessageItem({
               </>
             ) : (
               <div className="markdown-body prose max-w-none prose-p:leading-7 prose-p:text-slate-700 prose-headings:font-heading prose-headings:text-slate-900 prose-strong:text-slate-900 prose-pre:rounded-2xl prose-pre:border prose-pre:border-slate-200 prose-pre:p-0 dark:prose-invert dark:prose-p:text-slate-200 dark:prose-headings:text-white dark:prose-strong:text-white dark:prose-pre:border-slate-700">
+                {/* 智能体执行计划与阶段检查点 (AGENT-PLAN-DAG / ADR-0038) */}
+                {message.plan && (
+                  <AgentPlanCard
+                    messageId={message.id}
+                    plan={message.plan}
+                    isStreaming={isStreaming}
+                  />
+                )}
                 {/* 思考块位于气泡内、正文上方；无推理内容时整棵子树不渲染（讯飞模型/无推理轮次自然退化） */}
                 {hasReasoning && (
                   <ThinkingBlock

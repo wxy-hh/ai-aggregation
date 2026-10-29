@@ -16,6 +16,7 @@ export * from './artifact-stream-extractor';
 export * from './artifact-version-engine';
 export * from './artifact-context';
 export * from './agent-tools';
+export * from './agent-plan';
 export * from './capability-pack';
 export * from './destiny-report';
 export * from './destiny-report-stream-maps';
