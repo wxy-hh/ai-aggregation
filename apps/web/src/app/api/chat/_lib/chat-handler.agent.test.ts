@@ -27,6 +27,7 @@ const {
   AgnesUpstreamErrorMock,
   getAvailableQuotaMock,
   agentRunCreateMock,
+  evaluateAgentProgressMock,
 } = vi.hoisted(() => {
   class AgnesUpstreamError extends Error {
     status: number;
@@ -47,6 +48,8 @@ const {
     AgnesUpstreamErrorMock: AgnesUpstreamError,
     getAvailableQuotaMock: vi.fn(),
     agentRunCreateMock: vi.fn(),
+    // 默认质检通过；各 describe 的 vi.clearAllMocks 不清除 vi.fn 的初始实现
+    evaluateAgentProgressMock: vi.fn(async () => ({ passed: true, missingAspects: [] as string[] })),
   };
 });
 
@@ -77,6 +80,11 @@ vi.mock('ai', async (importOriginal) => {
 vi.mock('./agent/planner', () => ({
   generateAgentPlan: vi.fn().mockResolvedValue(null),
 }));
+// 质检节点替身：避免调用真实模型（否则依赖网络并靠 Fail-open 超时放行），其余导出保留真实实现
+vi.mock('./agent/evaluator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agent/evaluator')>();
+  return { ...actual, evaluateAgentProgress: evaluateAgentProgressMock };
+});
 vi.mock('./agent/tools', () => ({ getDefaultToolRegistry: () => registryHolder.current }));
 // image_generate 使用真实工具实现，只把上游请求换成替身
 vi.mock('@/lib/services/agnes-image', () => ({
@@ -289,6 +297,33 @@ describe('agent 模式编排（HTTP 级）', () => {
           agent: true,
           overriddenProvider: 'xunfei',
           overriddenModel: 'lite',
+        }),
+      })
+    );
+  });
+
+  it('调用工具后质检放行 → finalize metadata 持久化 evaluator 审计字段 (TC04-3 / P-M2)', async () => {
+    // 决策步直接作答会绕过质检（ADR-0039），因此 3 轮常规决策都调工具，用满后进入质检与收尾
+    for (let i = 1; i <= 3; i++) {
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [
+            { toolCallId: `call_e${i}`, toolName: 'web_fetch', input: { url: `https://example.com/${i}` } },
+          ],
+        })
+      );
+    }
+    streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['基于网页内容的回答。'] }));
+
+    await readSseEvents(await handler(agentRequest()));
+
+    expect(evaluateAgentProgressMock).toHaveBeenCalledTimes(1);
+    expect(fakeSession.finalize).toHaveBeenCalledWith(
+      'success',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          agent: true,
+          evaluator: { executed: true, passed: true, remedied: false },
         }),
       })
     );
@@ -783,7 +818,9 @@ describe('agent 模式编排（HTTP 级）', () => {
     });
   });
 
-  it('maxSteps 打满（4 轮决策调工具）：第 5 次模型调用不挂 tools 强制收尾，全程无第 6 次调用', async () => {
+  it('maxSteps 打满（3 轮常规决策 + 1 步自愈决策调工具）：第 5 次模型调用不挂 tools 强制收尾，全程无第 6 次调用', async () => {
+    // 常规决策少 1 轮、预留 1 步给质检自愈（ADR-0039）：首检打回，使最后一个决策步由自愈步用满
+    evaluateAgentProgressMock.mockResolvedValueOnce({ passed: false, missingAspects: ['补充信息'] });
     for (let i = 1; i <= 4; i++) {
       streamTextMock.mockReturnValueOnce(
         makeFakeResult({
@@ -817,6 +854,8 @@ describe('agent 模式编排（HTTP 级）', () => {
   });
 
   it('跨轮累积达到全局第 11 个工具 → 超出部分不真跑，推成对事件且模型收到未执行结果', async () => {
+    // 常规决策少 1 轮、预留 1 步给质检自愈（ADR-0039）：首检打回，使最后一个决策步由自愈步用满
+    evaluateAgentProgressMock.mockResolvedValueOnce({ passed: false, missingAspects: ['补充信息'] });
     // 轮 1: 3 工具（全局 1-3）
     streamTextMock.mockReturnValueOnce(
       makeFakeResult({
@@ -1035,6 +1074,8 @@ describe('agent 模式编排（HTTP 级）', () => {
   describe('agent 模式 · 计费自适应降级（工单 03）', () => {
     it('满额：reserve 的 maxOutputTokens = 2048 × 5；runAgent 实际可用 5 步（可用 streamText 调用次数上限侧证）', async () => {
       getAvailableQuotaMock.mockResolvedValue(50_000);
+      // 常规决策少 1 轮、预留 1 步给质检自愈（ADR-0039）：首检打回，使最后一个决策步由自愈步用满
+      evaluateAgentProgressMock.mockResolvedValueOnce({ passed: false, missingAspects: ['补充信息'] });
 
       for (let i = 1; i <= 4; i++) {
         streamTextMock.mockReturnValueOnce(
@@ -1081,6 +1122,8 @@ describe('agent 模式编排（HTTP 级）', () => {
     it('余额仅够 3 步：reserve 按 3 步冻结，且流的行为上限为 3 步', async () => {
       // 输入 28 tokens，28 + 2048 × 3 = 6172，给 6200（仅够 3 步，不够 4 步 8220）
       getAvailableQuotaMock.mockResolvedValue(6_200);
+      // 常规决策少 1 轮、预留 1 步给质检自愈（ADR-0039）：首检打回，使最后一个决策步由自愈步用满
+      evaluateAgentProgressMock.mockResolvedValueOnce({ passed: false, missingAspects: ['补充信息'] });
 
       // 前 2 轮决策调工具
       for (let i = 1; i <= 2; i++) {
@@ -1115,7 +1158,7 @@ describe('agent 模式编排（HTTP 级）', () => {
         'user'
       );
 
-      // 行为上限为 3 步：前 2 轮调工具后，第 3 轮强制收尾（不挂 tools），无第 4 轮调用
+      // 行为上限为 3 步：1 轮常规决策 + 1 步自愈决策调工具后，第 3 轮强制收尾（不挂 tools），无第 4 轮调用
       expect(streamTextMock).toHaveBeenCalledTimes(3);
       expect(streamTextMock.mock.calls[0][0].tools).toBeDefined();
       expect(streamTextMock.mock.calls[1][0].tools).toBeDefined();
@@ -1766,12 +1809,14 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
         );
       }
       streamTextMock.mockReturnValueOnce(okResult());
+      // 常规决策少 1 轮、预留 1 步给质检自愈（ADR-0039）：首检打回，使最后一个决策步由自愈步用满
+      evaluateAgentProgressMock.mockResolvedValueOnce({ passed: false, missingAspects: ['补充信息'] });
       const before = streamTextMock.mock.calls.length;
       await readSseEvents(await handler(agentRequest({ artifactContext: ctxOf(MD) })));
 
       const injReserve = quotaSessionReserveMock.mock.calls[1][0] as { maxOutputTokens: number };
       expect(injReserve.maxOutputTokens).toBe(baseReserve.maxOutputTokens);
-      // 4 轮决策 + 1 次收尾 = AGENT_MAX_STEPS（5）次调用，无第 6 次
+      // 3 轮常规决策 + 1 步自愈决策 + 1 次收尾 = AGENT_MAX_STEPS（5）次调用，无第 6 次
       expect(streamTextMock.mock.calls.length - before).toBe(AGENT_MAX_STEPS);
       expect(AGENT_RUN_TIME_BUDGET_MS).toBe(240_000);
 

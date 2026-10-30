@@ -17,7 +17,7 @@
  *    - 全程模型调用总数 ≤ maxSteps。
  *
  * 边界四件套（收敛于 agent-config.ts）：
- * - AGENT_MAX_STEPS = 5（最多 4 轮「决策 + 工具」+ 1 次强制收尾步）；
+ * - AGENT_MAX_STEPS = 5（最多 3 轮常规「决策 + 工具」+ 1 步自愈预留 + 1 次强制收尾步，ADR-0039）；
  * - AGENT_MAX_TOOL_CALLS_PER_ROUND = 3（单轮工具上限）；
  * - AGENT_MAX_TOOL_CALLS_TOTAL = 10（每请求全局工具上限）；
  * - AGENT_RUN_TIME_BUDGET_MS = 240s（整请求运行时间预算，决策前与工具执行前双重检查）。
@@ -60,12 +60,19 @@ import {
   finalizePlanExecution,
 } from '@repo/shared';
 import { generateAgentPlan } from './planner';
+import {
+  evaluateAgentProgress,
+  buildRemedyNote,
+  buildRemedyNudge,
+  buildLimitationPrompt,
+  extractUserPrompt,
+} from './evaluator';
 import { normalizeUsage } from '@/lib/ai-usage';
 import type { Message as ChatMessage } from '@/stores/chat-store';
 import { encodeSseEvent } from '../sse';
 import { buildChatBlockedText, detectChatSensitiveTopic } from '../chat-safety';
 import { resolveChatStreamUsage } from '../chat-usage';
-import type { ChatStreamFinish } from '../types';
+import type { ChatStreamFinish, EvaluatorAuditMetadata } from '../types';
 import { summarizeArgs } from '@/lib/agent/tool-policy';
 import { createToolExecutionPipeline } from '@/lib/agent/tool-pipeline';
 import { projectDecisionStream, type RawToolCall } from '@/lib/agent/tool-projector';
@@ -176,6 +183,14 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let toolProducedOutput = false;
       /** 当前计划卡片状态机实体 (ADR-0038 / AGENT-PLAN-DAG) */
       let currentPlan: AgentPlan | null = null;
+      /** 质检节点审计元数据 (ADR-0039 / AGENT-EVAL-CHECK) */
+      const evaluatorMeta: EvaluatorAuditMetadata = {
+        executed: false,
+        passed: true,
+        remedied: false,
+      };
+      /** 质检反思注入的回答局限性说明约束 */
+      let evaluationLimitationPrompt: string | null = null;
       /** 整请求起始时刻：运行时间预算（AGENT_RUN_TIME_BUDGET_MS）的判定基准 */
       const startedAt = Date.now();
 
@@ -282,8 +297,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         const aiProvider = createProvider(options.provider);
         const agentModel = aiProvider(options.model);
 
-        // 决策步最大轮次：留出至少 1 步作为可能的强制收尾步
+        // 决策步最大轮次：留出至少 1 步作为强制收尾步 (ADR-0039)
         const maxDecisionSteps = Math.max(0, effectiveMaxSteps - 1);
+        // 常规决策步上限：决策步 ≥ 2 时预留 1 步专供质检自愈，不需要自愈时该步不使用 (ADR-0039)
+        const regularDecisionStepsLimit =
+          maxDecisionSteps >= 2 ? maxDecisionSteps - 1 : maxDecisionSteps;
         let roundIndex = 0;
 
         // ==================== 前置规划节点 (ADR-0038 / AGENT-PLAN-DAG) ====================
@@ -327,16 +345,15 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           }
         }
 
-        // ==================== 主循环：决策步 + 工具执行 ====================
-        while (roundIndex < maxDecisionSteps) {
-          // 每轮决策开始前检查：用户中断或治理停止条件（时间预算 / 连败熔断 / 全局上限）
-          if (signal.aborted || pipeline.shouldHalt()) {
-            break;
-          }
-
-          roundIndex++;
+        /**
+         * 执行单轮决策步（由常规主循环与自愈决策步共用，消除行为分叉与代码重复，S-J1）
+         */
+        const executeDecisionStep = async (
+          roundLabel: string,
+          stepIndex: number,
+          isRemedy = false
+        ): Promise<{ answerDelivered: boolean; halted: boolean }> => {
           pipeline.beginRound();
-
           const decisionStart = Date.now();
           const stepPayload = session.getStepPayload();
 
@@ -382,8 +399,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           };
           // 记录模型响应：更新链追踪 ID，缺 id 触发断链自愈回退机制（ADR-0010）
           session.recordResponse(decisionResponse);
-
-          accumulate(await decision.usage, `decision_${roundIndex}`);
+          accumulate(await decision.usage, roundLabel);
           finalFinishReason = await decision.finishReason;
 
           const action = projectorOutcome.action;
@@ -407,7 +423,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             }
 
             const gen = options.trace.generation({
-              name: `decision_round_${roundIndex}`,
+              name: roundLabel,
               model: options.model,
               input: stepPayload.messages,
               output: outputSummary,
@@ -423,10 +439,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               startTime: new Date(decisionStart),
               endTime: new Date(),
               metadata: {
-                stepIndex: roundIndex,
+                stepIndex,
                 actionType: action.type,
                 finishReason: finalFinishReason,
                 priceBookVersion: '2026.1',
+                ...(isRemedy ? { isRemedy: true } : {}),
               },
             });
             gen.end();
@@ -437,132 +454,235 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             // 决策步输出最终回答，降级路径，循环结束
             emitText(action.text);
             finalAnswerDelivered = true;
-            break;
+            return { answerDelivered: true, halted: false };
           }
 
           if (action.type === 'nudge_continue') {
             // 服务端工具执行完毕且无文本（如搜索被截断）：补入系统引导语续跑一轮
             session.appendNudge(action.nudgeMessage);
-            continue;
+            return { answerDelivered: false, halted: false };
           }
 
           if (action.type === 'empty_finish') {
             // 空决策（无工具、无文本、无服务端执行）：模型选择不说话，按既有语义收尾
             finalAnswerDelivered = true;
-            break;
+            return { answerDelivered: true, halted: false };
           }
 
           // 动作类型为 execute_local_tools：有待本地执行的自有工具
-          if (action.noteText) {
-            // 决策步思考文本以 agent_note 事件下发，绝不进 text-delta
-            controller.enqueue(encodeSseEvent({ type: 'agent_note', text: action.noteText }));
-          }
-
-          // 顺序执行本轮本地工具调用（去重 / 上限 / 熔断 / 合规 / 引导全部收归管道内部）
-          const toolResultParts: Array<{
-            type: 'tool-result';
-            toolCallId: string;
-            toolName: string;
-            output: { type: 'text', value: string };
-          }> = [];
-
-          for (const call of action.localCalls) {
-            const callId = call.toolCallId;
-            const name = call.toolName;
-
-            if (currentPlan) {
-              currentPlan = attachToolCallToRunningStep(currentPlan, callId);
+          if (action.type === 'execute_local_tools') {
+            if (action.noteText) {
+              // 决策步思考文本以 agent_note 事件下发，绝不进 text-delta
+              controller.enqueue(encodeSseEvent({ type: 'agent_note', text: action.noteText }));
             }
 
-            // 工具调用事件推送（先于治理判定：即使随即被 skip，前端也先收到卡片）
-            controller.enqueue(
-              encodeSseEvent({
-                type: 'tool_call',
-                call: { id: callId, name, argsSummary: summarizeArgs(call.input) },
-              })
-            );
+            // 顺序执行本轮本地工具调用（去重 / 上限 / 熔断 / 合规 / 引导全部收归管道内部）
+            const toolResultParts: Array<{
+              type: 'tool-result';
+              toolCallId: string;
+              toolName: string;
+              output: { type: 'text', value: string };
+            }> = [];
 
-            const outcome = await pipeline.executeCall({
-              toolCallId: callId,
-              toolName: name,
-              input: call.input,
-            });
+            for (const call of action.localCalls) {
+              const callId = call.toolCallId;
+              const name = call.toolName;
 
-            // 工具成功交付产物即视为本轮有产出（是否按 success 结算由 hasOutput 三态判定）
-            if (outcome.ok) {
-              toolProducedOutput = true;
-            }
+              if (currentPlan) {
+                currentPlan = attachToolCallToRunningStep(currentPlan, callId);
+              }
 
-            // 推送 tool_result 事件（重复调用不带 attachment，由管道保证；携带真实耗时与引用字典）
-            controller.enqueue(
-              encodeSseEvent({
-                type: 'tool_result',
-                callId,
+              // 工具调用事件推送（先于治理判定：即使随即被 skip，前端也先收到卡片）
+              controller.enqueue(
+                encodeSseEvent({
+                  type: 'tool_call',
+                  call: { id: callId, name, argsSummary: summarizeArgs(call.input) },
+                })
+              );
+
+              const outcome = await pipeline.executeCall({
+                toolCallId: callId,
+                toolName: name,
+                input: call.input,
+              });
+
+              // 工具成功交付产物即视为本轮有产出（是否按 success 结算由 hasOutput 三态判定）
+              if (outcome.ok) {
+                toolProducedOutput = true;
+              }
+
+              // 推送 tool_result 事件（重复调用不带 attachment，由管道保证；携带真实耗时与引用字典）
+              controller.enqueue(
+                encodeSseEvent({
+                  type: 'tool_result',
+                  callId,
+                  name,
+                  status: outcome.ok ? 'success' : 'failed',
+                  summary: outcome.summaryForDisplay,
+                  ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+                  ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+                  ...(outcome.citations ? { citations: outcome.citations } : {}),
+                })
+              );
+
+              // 记录到运行审计流水（ADR-0015 / 工单 02）
+              recordedToolCalls.push({
+                id: callId,
                 name,
+                argsSummary: summarizeArgs(call.input),
                 status: outcome.ok ? 'success' : 'failed',
                 summary: outcome.summaryForDisplay,
-                ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
                 ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
                 ...(outcome.citations ? { citations: outcome.citations } : {}),
-              })
-            );
+              });
 
-            // 记录到运行审计流水（ADR-0015 / 工单 02）
-            recordedToolCalls.push({
-              id: callId,
-              name,
-              argsSummary: summarizeArgs(call.input),
-              status: outcome.ok ? 'success' : 'failed',
-              summary: outcome.summaryForDisplay,
-              ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
-              ...(outcome.citations ? { citations: outcome.citations } : {}),
-            });
+              // 若工具产出有效附件（如生成的图片），标记为有效产出，不向工作台冗余注入 image artifact
+              if (outcome.ok && outcome.attachment) {
+                toolProducedOutput = true;
+              }
 
-            // 若工具产出有效附件（如生成的图片），标记为有效产出，不向工作台冗余注入 image artifact
-            if (outcome.ok && outcome.attachment) {
-              toolProducedOutput = true;
+              // 回注给模型的内容：软提示 / 未执行 / 过检后内容均由管道组装完毕
+              toolResultParts.push({
+                type: 'tool-result',
+                toolCallId: callId,
+                toolName: name,
+                output: { type: 'text', value: outcome.contentForModel },
+              });
             }
 
-            // 回注给模型的内容：软提示 / 未执行 / 过检后内容均由管道组装完毕
-            toolResultParts.push({
-              type: 'tool-result',
-              toolCallId: callId,
-              toolName: name,
-              output: { type: 'text', value: outcome.contentForModel },
-            });
-          }
+            // 教学重点：工具结果回注（Tool Re-injection）
+            // 按照 LLM 标准协议，将本地执行的结果包装为 role: 'tool' 消息，
+            // 其中 toolResultParts 的每一项都携带了对应模型申请的 toolCallId 与返回值 content，
+            // 重新追加到 session 历史中，模型在下一轮决策才能“看到”工具的数据产出
+            const toolMessage: ModelMessage = { role: 'tool', content: toolResultParts };
+            session.appendToolResult(toolMessage);
 
-          // 教学重点：工具结果回注（Tool Re-injection）
-          // 按照 LLM 标准协议，将本地执行的结果包装为 role: 'tool' 消息，
-          // 其中 toolResultParts 的每一项都携带了对应模型申请的 toolCallId 与返回值 content，
-          // 重新追加到 session 历史中，模型在下一轮决策才能“看到”工具的数据产出
-          const toolMessage: ModelMessage = { role: 'tool', content: toolResultParts };
-          session.appendToolResult(toolMessage);
-
-          // 步骤流转 (AGENT-PLAN-DAG / ADR-0038)：本轮工具执行完成，推进当前 running 步骤为 completed 并开始下一步
-          if (currentPlan) {
-            const runningIndex = currentPlan.steps.findIndex((s) => s.status === 'running');
-            if (runningIndex !== -1 && runningIndex < currentPlan.steps.length - 1) {
-              const curStepId = currentPlan.steps[runningIndex].id;
-              const lastToolCall = recordedToolCalls[recordedToolCalls.length - 1];
-              const stepSummary = lastToolCall?.summary
-                ? `已完成：${lastToolCall.summary}`
-                : '阶段任务已完成';
-              emitStepUpdate(curStepId, 'completed', stepSummary);
-
-              const nextStepId = currentPlan.steps[runningIndex + 1].id;
-              emitStepUpdate(nextStepId, 'running');
-            }
-          }
-
-          // 退化保护与边界熔断（连败 / 全局上限 / 时间耗尽）统一由管道的停止判定表达
-          if (pipeline.shouldHalt()) {
+            // 步骤流转 (AGENT-PLAN-DAG / ADR-0038)：本轮工具执行完成，推进当前 running 步骤为 completed 并开始下一步
             if (currentPlan) {
-              const runningStep = currentPlan.steps.find((s) => s.status === 'running');
-              if (runningStep) {
-                emitStepUpdate(runningStep.id, 'failed', '连续工具执行失败，熔断进入收尾');
+              const runningIndex = currentPlan.steps.findIndex((s) => s.status === 'running');
+              if (runningIndex !== -1 && runningIndex < currentPlan.steps.length - 1) {
+                const curStepId = currentPlan.steps[runningIndex].id;
+                const lastToolCall = recordedToolCalls[recordedToolCalls.length - 1];
+                const stepSummary = lastToolCall?.summary
+                  ? `已完成：${lastToolCall.summary}`
+                  : '阶段任务已完成';
+                emitStepUpdate(curStepId, 'completed', stepSummary);
+
+                const nextStepId = currentPlan.steps[runningIndex + 1].id;
+                emitStepUpdate(nextStepId, 'running');
               }
             }
+
+            // 退化保护与边界熔断（连败 / 全局上限 / 时间耗尽）统一由管道的停止判定表达
+            if (pipeline.shouldHalt()) {
+              if (currentPlan) {
+                const runningStep = currentPlan.steps.find((s) => s.status === 'running');
+                if (runningStep) {
+                  emitStepUpdate(runningStep.id, 'failed', '连续工具执行失败，熔断进入收尾');
+                }
+              }
+              return { answerDelivered: false, halted: true };
+            }
+          }
+
+          return { answerDelivered: false, halted: false };
+        };
+
+        // ==================== 主循环：决策步 + 工具执行 ====================
+        while (roundIndex < regularDecisionStepsLimit) {
+          // 每轮决策开始前检查：用户中断或治理停止条件（时间预算 / 连败熔断 / 全局上限）
+          if (signal.aborted || pipeline.shouldHalt()) {
+            break;
+          }
+
+          roundIndex++;
+          const outcome = await executeDecisionStep(
+            `decision_round_${roundIndex}`,
+            roundIndex,
+            false
+          );
+          if (outcome.answerDelivered || outcome.halted) {
+            break;
+          }
+        }
+
+        // ==================== 收尾前独立质检节点与自愈 (AGENT-EVAL-CHECK / ADR-0039) ====================
+        let evaluatorRetriesCount = 0;
+        while (
+          !finalAnswerDelivered &&
+          (recordedToolCalls.length > 0 || Boolean(currentPlan)) &&
+          !signal.aborted &&
+          evaluatorRetriesCount <= 1
+        ) {
+          evaluatorMeta.executed = true;
+          const toolResultsSummary = recordedToolCalls
+            .map((c, i) => `[工具调用 ${i + 1}: ${c.name}] 参数摘要: ${c.argsSummary}；执行结果: ${c.summary}`)
+            .join('\n');
+          const userPrompt = extractUserPrompt(options.messages);
+
+          const evalResult = await evaluateAgentProgress({
+            model: agentModel,
+            userPrompt,
+            toolResultsSummary,
+            planTitle: currentPlan?.title,
+            signal,
+            trace: options.trace,
+          });
+          evaluatorMeta.passed = evalResult.passed;
+
+          // 质检模型 Token 计入整场会话结算 (P-M1, S-J2)
+          if (evalResult.usage) {
+            accumulate(evalResult.usage, 'evaluator_check');
+          }
+
+          if (evalResult.passed) {
+            // 质检通过，无需局限性约束，结束质检 (P-W6)
+            evaluationLimitationPrompt = '';
+            break;
+          }
+
+          // 质检未通过：
+          if (evaluatorRetriesCount < 1 && roundIndex < maxDecisionSteps && !pipeline.shouldHalt()) {
+            evaluatorRetriesCount++;
+            evaluatorMeta.remedied = true;
+            const remedyNote = buildRemedyNote(evalResult.missingAspects);
+
+            if (currentPlan) {
+              const runningStep =
+                currentPlan.steps.find((s) => s.status === 'running') ??
+                currentPlan.steps[currentPlan.steps.length - 1];
+              if (runningStep) {
+                emitStepUpdate(runningStep.id, 'running', remedyNote);
+              }
+            } else {
+              controller.enqueue(encodeSseEvent({ type: 'agent_note', text: remedyNote }));
+            }
+
+            session.appendNudge({
+              role: 'user',
+              content: buildRemedyNudge(evalResult.suggestion),
+            });
+
+            // 驱动追加的自愈决策步与工具执行 (共用 executeDecisionStep 消除代码重复 / S-J1)
+            roundIndex++;
+            const remedyOutcome = await executeDecisionStep(
+              `decision_round_${roundIndex}_remedy`,
+              roundIndex,
+              true
+            );
+
+            if (remedyOutcome.answerDelivered) {
+              break;
+            }
+            if (remedyOutcome.halted) {
+              // 自愈步执行中触发熔断：不再复检，按本轮缺失项注入局限性约束诚实收尾 (ADR-0039 §3 熔断优先于自愈)
+              evaluationLimitationPrompt = buildLimitationPrompt(evalResult.missingAspects);
+              break;
+            }
+            // 补充检索执行完毕，继续循环，进入下一轮对新收集材料进行复检 (P-W6)
+          } else {
+            // 步数已满或已重试过仍未通过：注入诚实回答局限性约束 (P-W6)
+            evaluationLimitationPrompt = buildLimitationPrompt(evalResult.missingAspects);
             break;
           }
         }
@@ -575,14 +695,25 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           // 收尾步不挂 tools，强制产出最终文本回答（充分利用收尾上限，防止长文报告被截断）
           const effectiveSummaryLimit =
             options.summaryOutputLimit ?? Math.max(stepOutputLimit, AGENT_SUMMARY_OUTPUT_LIMIT);
+
+          const summaryBasePrompt =
+            '请基于上述各轮工具调研检索到的信息，整理并输出完整、详尽、结构化的最终中文回答。请直接输出最终交付内容，不要再输出任何工具调用标记。';
+          const summaryPromptText = [summaryBasePrompt, evaluationLimitationPrompt]
+            .filter(Boolean)
+            .join('\n\n');
+
           const summaryMessages: ModelMessage[] = summaryPayload.isChained
-            ? summaryPayload.messages
+            ? [
+                ...summaryPayload.messages,
+                ...(evaluationLimitationPrompt
+                  ? [{ role: 'user' as const, content: evaluationLimitationPrompt }]
+                  : []),
+              ]
             : [
                 ...summaryPayload.messages,
                 {
                   role: 'user',
-                  content:
-                    '请基于上述各轮工具调研检索到的信息，整理并输出完整、详尽、结构化的最终中文回答。请直接输出最终交付内容，不要再输出任何工具调用标记。',
+                  content: summaryPromptText,
                 },
               ];
 
@@ -707,6 +838,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           artifactRefs: recordedArtifactRefs,
           durationMs: Date.now() - startedAt,
           ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
+          evaluator: evaluatorMeta,
         });
 
         // 结束 Root Trace（工单 01）
@@ -719,6 +851,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               steps: roundIndex + (finalAnswerDelivered ? 0 : 1),
               durationMs: Date.now() - startedAt,
               totalTokens: currentTotals?.totalTokens,
+              evaluator: evaluatorMeta,
             },
           });
           options.trace.end();

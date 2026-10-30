@@ -277,6 +277,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
                   webhookCalls: finish.webhookCalls ?? 0,
                   searchCalls: finish.searchCalls ?? 0,
                   ...(activeCapabilityPack ? { capabilityPack: activeCapabilityPack.key } : {}),
+                  ...(finish.evaluator ? { evaluator: finish.evaluator } : {}),
                 }
               : {}),
             // agent 模式静默覆盖留痕：当用户请求的提供商/模型与强制值不同时，记录被覆盖的原始值以备审计追溯

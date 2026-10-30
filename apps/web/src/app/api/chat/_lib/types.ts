@@ -53,6 +53,15 @@ export interface ChatStreamFinish {
   }>;
   /** P1 工单 02：全生命周期执行总耗时（毫秒） */
   durationMs?: number;
+  /** 独立质检节点审计元数据 (ADR-0039 / AGENT-EVAL-CHECK) */
+  evaluator?: EvaluatorAuditMetadata;
+}
+
+/** 质检审计元数据 */
+export interface EvaluatorAuditMetadata {
+  executed: boolean;
+  passed: boolean;
+  remedied: boolean;
 }
 
 export interface ChatContext {

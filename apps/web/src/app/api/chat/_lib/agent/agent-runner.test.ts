@@ -15,18 +15,36 @@ import type { AgentToolSpec, ToolRegistry } from '@/lib/agent/registry';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { AGENT_MAX_TOOL_CALLS_PER_ROUND } from './agent-config';
 import { runAgent } from './agent-runner';
+import { generateAgentPlan } from './planner';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './runtime-context';
 
 // 仅替换 streamText，保留 tool、zodSchema、stepCountIs 等真实实现
-const { streamTextMock } = vi.hoisted(() => {
+const { streamTextMock, evaluateAgentProgressMock } = vi.hoisted(() => {
   return {
     streamTextMock: vi.fn(),
+    evaluateAgentProgressMock: vi.fn(),
   };
 });
 
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
   return { ...actual, streamText: streamTextMock };
+});
+
+vi.mock('./evaluator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./evaluator')>();
+  return {
+    ...actual,
+    evaluateAgentProgress: evaluateAgentProgressMock,
+  };
+});
+
+vi.mock('./planner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./planner')>();
+  return {
+    ...actual,
+    generateAgentPlan: vi.fn(async () => null),
+  };
 });
 
 /** 统一默认的 token 消耗统计（符合 normalizeUsage 解析规范） */
@@ -107,6 +125,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    evaluateAgentProgressMock.mockResolvedValue({ passed: true, missingAspects: [] });
 
     fakeToolSpec = {
       name: 'test_tool',
@@ -180,9 +199,9 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
     const registry = createToolRegistry([fakeToolSpec]);
     const onFinishMock = vi.fn(async () => {});
 
-    // 前 4 次决策步均返回工具调用，耗尽 4 轮决策步预算（AGENT_MAX_STEPS = 5）
+    // 前 3 次决策步均返回工具调用，耗尽常规决策轮次（AGENT_MAX_STEPS = 5：3 轮常规 + 1 步自愈预留 + 1 步收尾）
     // 传入不同的 input 参数，避免触发 runner 的重复调用去重保护
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
       streamTextMock.mockReturnValueOnce(
         makeFakeResult({
           toolCalls: [{ toolCallId: `c${i}`, toolName: 'test_tool', input: { step: i } }],
@@ -191,11 +210,11 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       );
     }
 
-    // 第 5 次收尾步返回纯文本
+    // 第 4 次收尾步返回纯文本（质检通过，自愈预留步不使用）
     streamTextMock.mockReturnValueOnce(
       makeFakeResult({
         textParts: ['强制收尾最终文本'],
-        response: { id: 'resp_5' },
+        response: { id: 'resp_4' },
       })
     );
 
@@ -213,21 +232,21 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
 
     await readSseEvents(stream);
 
-    expect(streamTextMock).toHaveBeenCalledTimes(5);
+    expect(streamTextMock).toHaveBeenCalledTimes(4);
 
-    // 第 5 次调用（收尾步）：仅 1 条 tool 消息、带 previousResponseId='resp_4'、无 tools 参数、无 maxToolCalls
-    const fifthCall = streamTextMock.mock.calls[4][0];
+    // 第 4 次调用（收尾步）：仅 1 条 tool 消息、带 previousResponseId='resp_3'、无 tools 参数、无 maxToolCalls
+    const fifthCall = streamTextMock.mock.calls[3][0];
     expect(fifthCall.messages).toHaveLength(1);
     expect(fifthCall.messages[0].role).toBe('tool');
     expect(fifthCall.messages[0].content).toEqual([
       {
         type: 'tool-result',
-        toolCallId: 'c4',
+        toolCallId: 'c3',
         toolName: 'test_tool',
         output: { type: 'text', value: '工具结果内容' },
       },
     ]);
-    expect(fifthCall.providerOptions?.openai?.previousResponseId).toBe('resp_4');
+    expect(fifthCall.providerOptions?.openai?.previousResponseId).toBe('resp_3');
     expect(fifthCall.tools).toBeUndefined();
     expect(fifthCall.providerOptions?.openai?.maxToolCalls).toBeUndefined();
   });
@@ -531,6 +550,7 @@ describe('web_search providerExecuted 映射', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    evaluateAgentProgressMock.mockResolvedValue({ passed: true, missingAspects: [] });
 
     fakeToolSpec = {
       name: 'test_tool',
@@ -999,8 +1019,8 @@ describe('web_search providerExecuted 映射', () => {
       const registry = createToolRegistry([fakeToolSpec]);
       const onFinishMock = vi.fn(async () => {});
 
-      // 模拟 7 轮工具调用 + 1 轮收尾步（共 8 次 streamText）
-      for (let i = 1; i <= 7; i++) {
+      // 8 步 = 6 轮常规工具调用 + 1 步自愈预留（质检通过时不使用）+ 1 轮收尾步（共 7 次 streamText）
+      for (let i = 1; i <= 6; i++) {
         streamTextMock.mockReturnValueOnce(
           makeFakeStreamResult({
             streamParts: [],
@@ -1033,10 +1053,10 @@ describe('web_search providerExecuted 映射', () => {
 
       const events = await readSseEvents(stream);
 
-      // 共执行了 7 次决策 + 1 次收尾 = 8 次 streamText 调用
-      expect(streamTextMock).toHaveBeenCalledTimes(8);
+      // 共执行了 6 次决策 + 1 次收尾 = 7 次 streamText 调用
+      expect(streamTextMock).toHaveBeenCalledTimes(7);
       // 收尾步不挂 tools
-      const summaryCall = streamTextMock.mock.calls[7][0] as { tools?: unknown };
+      const summaryCall = streamTextMock.mock.calls[6][0] as { tools?: unknown };
       expect(summaryCall.tools).toBeUndefined();
 
       expect(
@@ -1171,4 +1191,762 @@ describe('可观测性 Generation 记录（工单 01）', () => {
     expect(mockTrace.end).toHaveBeenCalled();
   });
 });
+
+describe('TC02: 编排器自愈反思回路与步数熔断状态机', () => {
+  let fakeToolSpec: AgentToolSpec;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    fakeToolSpec = {
+      name: 'search_tool',
+      description: '搜索测试工具',
+      parameters: z.object({ query: z.string().optional() }),
+      execute: vi.fn(async (input: { query?: string }) => ({
+        ok: true,
+        contentForModel: `结果：${input.query || '默认结果'}`,
+        summaryForDisplay: `已检索：${input.query || '默认'}`,
+      })),
+    };
+  });
+
+  it('1. 质检打回触发自愈回路与1次硬熔断 (TC02-1)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 1. 首轮决策：调用搜索工具检索 A 和 B
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: { query: 'A与B' } }],
+        response: { id: 'resp_round1' },
+      })
+    );
+
+    // 2. 模拟质检评估：第一次判定未通过（遗漏C实体），自愈后复检判定通过 (P-W6)
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['实体C'],
+      suggestion: '请补充搜索实体C',
+    });
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: true,
+      missingAspects: [],
+    });
+
+    // 3. 自愈决策步：模型响应 Nudge 提示，追加调用搜索工具检索 C
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c2', toolName: 'search_tool', input: { query: '实体C' } }],
+        response: { id: 'resp_remedy' },
+      })
+    );
+
+    // 4. 最终收尾步输出
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['包含A、B、C的完整对比研报'],
+        response: { id: 'resp_summary' },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '对比A、B和C' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-1',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 断言执行了 3 次 streamText（第1轮决策 + 自愈决策步 + 收尾步）
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
+
+    // 断言 Evaluator 被调用 2 次（首检打回 + 自愈后复检放行，P-W6）
+    expect(evaluateAgentProgressMock).toHaveBeenCalledTimes(2);
+
+    // 断言工具被调用了两次（首轮 c1 + 自愈轮 c2）
+    expect(fakeToolSpec.execute).toHaveBeenCalledTimes(2);
+
+    // 断言 onFinish 记录了自愈与最终通过状态
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'success',
+        evaluator: {
+          executed: true,
+          passed: true,
+          remedied: true,
+        },
+      })
+    );
+
+    // 断言收尾步未被注入局限性约束 (P-W6: 补检材料齐备后不误杀)
+    const summaryCall = streamTextMock.mock.calls[2][0];
+    const lastSummaryMessage = summaryCall.messages[summaryCall.messages.length - 1];
+    expect(String(lastSummaryMessage.content)).not.toContain('诚实回答局限性约束');
+
+    // 断言正文正常输出
+    expect(events.some((e) => e.type === 'text-delta' && e.text === '包含A、B、C的完整对比研报')).toBe(true);
+  });
+
+  it('5. 连败熔断触发后质检打回不再自愈，直接注入局限性约束收尾 (TC02-5 / P-X4)', async () => {
+    // 工具全部失败：连续失败 3 次触发管道熔断（AGENT_MAX_CONSECUTIVE_FAILURES，ADR-0008）
+    (fakeToolSpec.execute as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      contentForModel: '抓取失败：HTTP 404',
+      summaryForDisplay: '抓取失败：HTTP 404',
+    });
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 首轮决策一次申请 3 个工具调用，全部失败后熔断
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [
+          { toolCallId: 'c1', toolName: 'search_tool', input: { query: '关键词1' } },
+          { toolCallId: 'c2', toolName: 'search_tool', input: { query: '关键词2' } },
+          { toolCallId: 'c3', toolName: 'search_tool', input: { query: '关键词3' } },
+        ],
+        response: { id: 'resp_round1' },
+      })
+    );
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['全部实体'],
+      suggestion: '请更换关键词重新检索',
+    });
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ textParts: ['检索受限的诚实回答'], response: { id: 'resp_summary' } })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '查询最新价格表' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 5,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-5',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+    await readSseEvents(stream);
+
+    // 熔断后不追加自愈决策步：决策 1 次 + 收尾 1 次
+    expect(evaluateAgentProgressMock).toHaveBeenCalledTimes(1);
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    const summaryCall = streamTextMock.mock.calls[1][0];
+    expect(summaryCall.tools).toBeUndefined();
+    const lastSummaryMessage = summaryCall.messages[summaryCall.messages.length - 1];
+    expect(String(lastSummaryMessage.content)).toContain('诚实回答局限性约束');
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: { executed: true, passed: false, remedied: false },
+      })
+    );
+  });
+
+  it('6. 自愈决策步执行中触发连败熔断时，收尾步仍注入局限性约束 (TC02-6 / P-W16)', async () => {
+    // 工具全部失败：首轮 2 次失败未达熔断线，自愈步再失败 1 次达到 AGENT_MAX_CONSECUTIVE_FAILURES（3 次）
+    (fakeToolSpec.execute as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      contentForModel: '抓取失败：HTTP 404',
+      summaryForDisplay: '抓取失败：HTTP 404',
+    });
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [
+          { toolCallId: 'c1', toolName: 'search_tool', input: { query: '关键词1' } },
+          { toolCallId: 'c2', toolName: 'search_tool', input: { query: '关键词2' } },
+        ],
+        response: { id: 'resp_round1' },
+      })
+    );
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['价格数据'],
+      suggestion: '请更换关键词重新检索',
+    });
+    // 自愈决策步：换关键词再检索 1 次，仍失败触发熔断
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c3', toolName: 'search_tool', input: { query: '关键词3' } }],
+        response: { id: 'resp_remedy' },
+      })
+    );
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ textParts: ['检索受限的诚实回答'], response: { id: 'resp_summary' } })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '查询最新价格表' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-6',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+    await readSseEvents(stream);
+
+    // 熔断后不再复检：首检 1 次；决策 + 自愈 + 收尾共 3 次
+    expect(fakeToolSpec.execute).toHaveBeenCalledTimes(3);
+    expect(evaluateAgentProgressMock).toHaveBeenCalledTimes(1);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
+    const summaryCall = streamTextMock.mock.calls[2][0];
+    expect(summaryCall.tools).toBeUndefined();
+    const summaryText = JSON.stringify(summaryCall.messages);
+    expect(summaryText).toContain('诚实回答局限性约束');
+    expect(summaryText).toContain('价格数据');
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: { executed: true, passed: false, remedied: true },
+      })
+    );
+  });
+
+  it('4. 复检仍失败不再自愈并注入局限性约束收尾 (TC02-4 / P-W8)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 首轮决策：检索 A 与 B
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: { query: 'A与B' } }],
+        response: { id: 'resp_round1' },
+      })
+    );
+    // 首检与复检均判定遗漏实体C
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['实体C'],
+      suggestion: '请补充搜索实体C',
+    });
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['实体C'],
+      suggestion: '请补充搜索实体C',
+    });
+    // 自愈决策步：追加检索 C（仍未拿到有效材料）
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c2', toolName: 'search_tool', input: { query: '实体C' } }],
+        response: { id: 'resp_remedy' },
+      })
+    );
+    // 收尾步
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['受检索源所限，暂未获取到实体C数据'],
+        response: { id: 'resp_summary' },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '对比A、B和C' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-4',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 只追加 1 轮自愈：首轮决策 + 自愈决策步 + 收尾步
+    expect(evaluateAgentProgressMock).toHaveBeenCalledTimes(2);
+    expect(fakeToolSpec.execute).toHaveBeenCalledTimes(2);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
+
+    // 收尾步不挂 tools，且携带局限性约束
+    const summaryCall = streamTextMock.mock.calls[2][0];
+    expect(summaryCall.tools).toBeUndefined();
+    const summaryText = JSON.stringify(summaryCall.messages);
+    expect(summaryText).toContain('诚实回答局限性约束');
+    expect(summaryText).toContain('实体C');
+
+    // 自愈反思提示只下发 1 次
+    const remedyNotes = events.filter(
+      (e) => e.type === 'agent_note' && String(e.text).includes('质检反思')
+    );
+    expect(remedyNotes).toHaveLength(1);
+
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: { executed: true, passed: false, remedied: true },
+      })
+    );
+  });
+
+  it('2. 步数耗尽平滑注入局限性收尾 (TC02-2)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 设置 maxSteps: 2（只允许 1 次决策步 + 1 次收尾步）
+    // 决策步调用工具
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: { query: '仅A' } }],
+        response: { id: 'resp_round1' },
+      })
+    );
+
+    // 质检判定未通过（遗漏B）
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['实体B'],
+      suggestion: '缺少实体B',
+    });
+
+    // 收尾步
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['由于检索限制，未能获取B，仅提供A的分析'],
+        response: { id: 'resp_summary' },
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '对比A和B' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 2,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-2',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 因已达最大决策步数，不得追加决策步，只能有 2 次 streamText（决策步 + 收尾步）
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
+
+    // 收尾步参数中注入了局限性约束
+    const summaryCall = streamTextMock.mock.calls[1][0] as { messages: any[] };
+    const lastMsgContent = JSON.stringify(summaryCall.messages);
+    expect(lastMsgContent).toContain('诚实回答局限性约束');
+    expect(lastMsgContent).toContain('实体B');
+
+    // onFinish 记录 executed=true, passed=false, remedied=false (因步数耗尽未自愈)
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: {
+          executed: true,
+          passed: false,
+          remedied: false,
+        },
+      })
+    );
+  });
+
+  it('3. 纯直接回答跳过质检节点 (TC02-3)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+
+    // 模型在第 1 轮决策步直接输出回答，未发起任何工具调用
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['你好！很高兴为您服务。'],
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '你好' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      signal: new AbortController().signal,
+      errorId: 'test-tc02-3',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+    });
+
+    await readSseEvents(stream);
+
+    // 验证质检节点完全不被触发
+    expect(evaluateAgentProgressMock).not.toHaveBeenCalled();
+
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: {
+          executed: false,
+          passed: true,
+          remedied: false,
+        },
+      })
+    );
+  });
+});
+
+describe('TC03: 质检流式通知、思考区呈现与正文纯净性', () => {
+  let fakeToolSpec: AgentToolSpec;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    fakeToolSpec = {
+      name: 'search_tool',
+      description: '搜索工具',
+      parameters: z.object({}),
+      execute: vi.fn(async () => ({
+        ok: true,
+        contentForModel: '检索数据',
+        summaryForDisplay: '完成',
+      })),
+    };
+  });
+
+  it('1. 反思提示轻量透出且正文纯净 (TC03-1)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+
+    // 轮次1：工具调用
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }],
+      })
+    );
+
+    // 质检打回
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['生态成熟度'],
+      suggestion: '补充生态数据',
+    });
+
+    // 自愈步
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c2', toolName: 'search_tool', input: {} }],
+      })
+    );
+
+    // 收尾步
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['这是纯净的正文内容'],
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '生态调研' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc03-1',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 验证推送了包含质检反思的 agent_note 事件
+    const noteEvents = events.filter((e) => e.type === 'agent_note');
+    expect(noteEvents.some((e) => String(e.text).includes('质检反思'))).toBe(true);
+
+    // 验证 text-delta 只有纯正文，绝不包含质检反思词句
+    const textDeltas = events.filter((e) => e.type === 'text-delta').map((e) => e.text);
+    const combinedText = textDeltas.join('');
+    expect(combinedText).toBe('这是纯净的正文内容');
+    expect(combinedText).not.toContain('质检反思');
+  });
+
+  /** 两步计划：首步检索、次步整理（带计划的质检与步骤流转用例共用） */
+  const TWO_STEP_PLAN = {
+    id: 'plan_1',
+    title: '生态调研',
+    steps: [
+      { id: 's1', title: '检索生态数据', status: 'pending' as const },
+      { id: 's2', title: '整理对比结论', status: 'pending' as const },
+    ],
+  };
+
+  it('3. 有计划时质检反思提示经 plan_step_update 推送到当前步骤 (TC03-3 / P-W15)', async () => {
+    vi.mocked(generateAgentPlan).mockResolvedValueOnce(TWO_STEP_PLAN);
+    const registry = createToolRegistry([fakeToolSpec]);
+
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }] })
+    );
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['生态成熟度'],
+      suggestion: '补充生态数据',
+    });
+    evaluateAgentProgressMock.mockResolvedValueOnce({ passed: true, missingAspects: [] });
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ toolCalls: [{ toolCallId: 'c2', toolName: 'search_tool', input: {} }] })
+    );
+    streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['这是纯净的正文内容'] }));
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '生态调研' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc03-3',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+    });
+    const events = await readSseEvents(stream);
+
+    // 反思提示挂在当前 running 步骤上，以 plan_step_update 推送
+    const remedyUpdates = events.filter(
+      (e) => e.type === 'plan_step_update' && String(e.summary ?? '').includes('质检反思')
+    );
+    expect(remedyUpdates).toHaveLength(1);
+    expect(remedyUpdates[0]).toMatchObject({ stepId: 's2', status: 'running' });
+    expect(String(remedyUpdates[0].summary)).toContain('生态成熟度');
+    // 有计划时不再走 agent_note 通道，正文保持纯净
+    expect(events.some((e) => e.type === 'agent_note' && String(e.text).includes('质检反思'))).toBe(false);
+    const combinedText = events.filter((e) => e.type === 'text-delta').map((e) => e.text).join('');
+    expect(combinedText).toBe('这是纯净的正文内容');
+  });
+
+  it('4. 有计划时步骤随决策与自愈依次推进并在交付后收敛 (TC03-4 / P-W11)', async () => {
+    vi.mocked(generateAgentPlan).mockResolvedValueOnce(TWO_STEP_PLAN);
+    const registry = createToolRegistry([fakeToolSpec]);
+
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }] })
+    );
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: false,
+      missingAspects: ['生态成熟度'],
+      suggestion: '补充生态数据',
+    });
+    evaluateAgentProgressMock.mockResolvedValueOnce({ passed: true, missingAspects: [] });
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({ toolCalls: [{ toolCallId: 'c2', toolName: 'search_tool', input: {} }] })
+    );
+    streamTextMock.mockReturnValueOnce(makeFakeResult({ textParts: ['最终正文'] }));
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '生态调研' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 3,
+      signal: new AbortController().signal,
+      errorId: 'test-tc03-4',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+    });
+    const events = await readSseEvents(stream);
+
+    expect(events.some((e) => e.type === 'plan_created')).toBe(true);
+    // 步骤状态序列：首步开始 → 首轮工具后首步完成、次步开始 → 自愈反思挂次步 → 交付后次步完成
+    const transitions = events
+      .filter((e) => e.type === 'plan_step_update')
+      .map((e) => `${e.stepId}:${e.status}`);
+    expect(transitions).toEqual(['s1:running', 's1:completed', 's2:running', 's2:running', 's2:completed']);
+  });
+
+  it('2. 质检通过静默无多余事件扰民 (TC03-2)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+
+    // 轮次1：工具调用
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }],
+      })
+    );
+
+    // 质检判定通过
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: true,
+      missingAspects: [],
+    });
+
+    // 收尾步
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['材料充分，正常交付正文'],
+      })
+    );
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '调研' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 2,
+      signal: new AbortController().signal,
+      errorId: 'test-tc03-2',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+    });
+
+    const events = await readSseEvents(stream);
+
+    // 验证质检通过时不推送任何 agent_note
+    expect(events.filter((e) => e.type === 'agent_note')).toHaveLength(0);
+
+    // 正文直接流式输出
+    expect(events.some((e) => e.type === 'text-delta' && e.text === '材料充分，正常交付正文')).toBe(true);
+  });
+});
+
+describe('TC04: 可观测性 Langfuse Trace 与运行元数据审计', () => {
+  let fakeToolSpec: AgentToolSpec;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    fakeToolSpec = {
+      name: 'search_tool',
+      description: '搜索工具',
+      parameters: z.object({}),
+      execute: vi.fn(async () => ({ ok: true, contentForModel: 'ok', summaryForDisplay: 'ok' })),
+    };
+  });
+
+  it('1. Langfuse独立Generation记录 (TC04-1)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const mockGeneration = { update: vi.fn(), end: vi.fn() };
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      generation: vi.fn(() => mockGeneration),
+      span: vi.fn(() => mockSpan),
+      update: vi.fn(),
+      end: vi.fn(),
+    };
+
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }],
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['回答正文'],
+        })
+      );
+
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: true,
+      missingAspects: [],
+    });
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '测试可观测' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 2,
+      signal: new AbortController().signal,
+      errorId: 'test-obs',
+      runtime: await testRuntime(registry),
+      onFinish: vi.fn(async () => {}),
+      trace: mockTrace,
+    });
+
+    await readSseEvents(stream);
+
+    // 验证 evaluateAgentProgress 收到了 trace 实例
+    expect(evaluateAgentProgressMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trace: mockTrace,
+      })
+    );
+  });
+
+  it('2. onFinish与Trace元数据持久化 (TC04-2)', async () => {
+    const registry = createToolRegistry([fakeToolSpec]);
+    const onFinishMock = vi.fn(async () => {});
+    const mockTrace: any = {
+      generation: vi.fn(() => ({ end: vi.fn() })),
+      span: vi.fn(() => ({ end: vi.fn(), update: vi.fn() })),
+      update: vi.fn(),
+      end: vi.fn(),
+    };
+
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [{ toolCallId: 'c1', toolName: 'search_tool', input: {} }],
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['回答文本'],
+        })
+      );
+
+    evaluateAgentProgressMock.mockResolvedValueOnce({
+      passed: true,
+      missingAspects: [],
+    });
+
+    const stream = runAgent({
+      userId: 'u1',
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      messages: [{ id: 'm1', role: 'user', content: '测试元数据' }] as ChatMessage[],
+      stepOutputLimit: 2048,
+      maxSteps: 2,
+      signal: new AbortController().signal,
+      errorId: 'test-meta',
+      runtime: await testRuntime(registry),
+      onFinish: onFinishMock,
+      trace: mockTrace,
+    });
+
+    await readSseEvents(stream);
+
+    // 验证 onFinish 中的 evaluator 元数据
+    expect(onFinishMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evaluator: {
+          executed: true,
+          passed: true,
+          remedied: false,
+        },
+      })
+    );
+
+    // 验证 trace.update 中的 evaluator 元数据
+    expect(mockTrace.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          evaluator: {
+            executed: true,
+            passed: true,
+            remedied: false,
+          },
+        }),
+      })
+    );
+  });
+});
+
 
