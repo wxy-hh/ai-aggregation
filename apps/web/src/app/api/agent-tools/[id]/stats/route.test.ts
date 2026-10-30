@@ -222,6 +222,48 @@ describe('GET /api/agent-tools/[id]/stats', () => {
     expect(json.data.lastErrorSummary).toBe('连接超时');
   });
 
+  describe('pending_approval 记录（ADR-0041）', () => {
+    const t1 = new Date('2026-10-10T10:00:00.000Z');
+    const t2 = new Date('2026-10-10T10:05:00.000Z');
+    const withPending = [
+      { id: 'call_2', outcome: 'pending_approval', durationMs: 0, statusCode: null, errorKind: null, createdAt: t2 },
+      { id: 'call_1', outcome: 'success', durationMs: 100, statusCode: 200, errorKind: null, createdAt: t1 },
+    ];
+
+    async function fetchStats() {
+      mocks.toolCallFindMany.mockResolvedValueOnce(withPending);
+      const token = signAccessToken(CURRENT_USER_ID, 'user');
+      const res = await GET(makeGetRequest(token), { params: Promise.resolve({ id: TOOL_ID }) });
+      return (await res.json()).data;
+    }
+
+    it('1. 1 条 success 与 1 条 pending_approval 时成功率为 100 (TC12-1)', async () => {
+      expect((await fetchStats()).successRate).toBe(100);
+    });
+
+    it('2. 仅有 success 与 pending_approval 时不产生最近失败摘要 (TC12-2)', async () => {
+      expect((await fetchStats()).lastErrorSummary).toBeNull();
+    });
+
+    it('3. 平均耗时的分母不含 pending_approval 记录 (TC12-3)', async () => {
+      expect((await fetchStats()).avgDurationMs).toBe(100);
+    });
+
+    it('4. totalCalls 仍含 pending_approval 记录 (TC12-4)', async () => {
+      expect((await fetchStats()).totalCalls).toBe(2);
+    });
+
+    it('5. 全部为 pending_approval 时成功率与平均耗时为 null，不出现 NaN (TC12-1)', async () => {
+      mocks.toolCallFindMany.mockResolvedValueOnce([withPending[0]]);
+      const token = signAccessToken(CURRENT_USER_ID, 'user');
+      const res = await GET(makeGetRequest(token), { params: Promise.resolve({ id: TOOL_ID }) });
+      const data = (await res.json()).data;
+      expect(data.successRate).toBeNull();
+      expect(data.avgDurationMs).toBeNull();
+      expect(data.totalCalls).toBe(1);
+    });
+  });
+
   it('失败原因为 http_error 且带 500 时，返回 HTTP 500 错误', async () => {
     const t = new Date('2026-10-10T12:00:00.000Z');
     mocks.toolCallFindMany.mockResolvedValueOnce([

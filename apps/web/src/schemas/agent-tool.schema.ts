@@ -89,6 +89,8 @@ export const baseCreateAgentToolSchema = z.object({
     .nullable(),
   params: z.array(webhookParamItemSchema).max(20, '最多配置 20 个参数').default([]),
   enabled: z.boolean().default(true),
+  /** 调用前需要用户确认（ADR-0041）；缺省时按 method 推导：POST 为 true，GET 为 false */
+  requiresApproval: z.boolean({ invalid_type_error: '确认开关必须为布尔值' }).optional(),
 });
 
 /** 鉴权头成对逻辑校验守卫 */
@@ -111,13 +113,21 @@ function refineAuthPairing(
 
 /** 创建 Webhook 工具请求 Schema（附带 .partial() 能力以供模板及局部场景校验） */
 export const createAgentToolSchema = Object.assign(
-  baseCreateAgentToolSchema.superRefine(refineAuthPairing),
+  baseCreateAgentToolSchema
+    .superRefine(refineAuthPairing)
+    .transform((val) => ({
+      ...val,
+      requiresApproval: val.requiresApproval ?? val.method === 'POST',
+    })),
   {
     partial: () => baseCreateAgentToolSchema.partial().superRefine(refineAuthPairing),
   }
 );
 
 export type CreateAgentToolInput = z.infer<typeof createAgentToolSchema>;
+
+/** 创建请求的入参形状（requiresApproval 可省略，缺省按 method 推导）；供前端表单初值使用 */
+export type CreateAgentToolFormInput = z.input<typeof createAgentToolSchema>;
 
 /** 更新 Webhook 工具请求 Schema */
 export const updateAgentToolSchema = z.object({
@@ -164,6 +174,8 @@ export const updateAgentToolSchema = z.object({
     .nullable(),
   params: z.array(webhookParamItemSchema).max(20, '最多配置 20 个参数').optional(),
   enabled: z.boolean().optional(),
+  /** 调用前需要用户确认；缺省保持不变 */
+  requiresApproval: z.boolean({ invalid_type_error: '确认开关必须为布尔值' }).optional(),
 });
 
 export type UpdateAgentToolInput = z.infer<typeof updateAgentToolSchema>;
@@ -181,6 +193,8 @@ export interface SanitizedAgentTool {
   hasAuthHeaderValue: boolean;
   params: WebhookParamItem[];
   enabled: boolean;
+  /** 调用前是否需要用户确认（ADR-0041） */
+  requiresApproval: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

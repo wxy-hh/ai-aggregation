@@ -77,6 +77,7 @@ import { summarizeArgs } from '@/lib/agent/tool-policy';
 import { createToolExecutionPipeline } from '@/lib/agent/tool-pipeline';
 import { projectDecisionStream, type RawToolCall } from '@/lib/agent/tool-projector';
 import { createChainedMessageSession } from '@/lib/agent/chained-session';
+import { issueApprovalToken } from '@/lib/agent/approval-token';
 import {
   AGENT_MAX_CONSECUTIVE_FAILURES,
   AGENT_MAX_IMAGE_GENERATES,
@@ -125,6 +126,14 @@ export interface AgentRunOptions {
   artifactContextPrompt?: string;
   /** 是否开启前置规划阶段（ADR-0038 / AGENT-PLAN-DAG，默认 true） */
   enablePlanning?: boolean;
+  /** 审批凭证绑定的会话范围（AGENT-HITL-ACTION / ADR-0041），缺省为空串 */
+  approvalScope?: string;
+  /**
+   * 已验签的审批恢复调用（ADR-0041 §3）：编排器在首轮决策前直接执行这一次被批准的调用，
+   * 并把「调用 + 结果」合成一对工具消息注入上下文，模型据此继续，不重新决策。
+   * 调用方（handler）必须已完成验签与一次性标记。
+   */
+  resume?: { callId: string; toolName: string; params: unknown };
 }
 
 /**
@@ -250,6 +259,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let finalFinishReason = 'stop';
       // 是否已在无工具调用的决策步产出最终回答（无需收尾步）
       let finalAnswerDelivered = false;
+      // 是否因写操作等待用户审批而暂停（ADR-0041）：暂停时计划保持原状，不收敛为完成
+      let pausedForApproval = false;
 
       const accumulate = (rawUsage: unknown, step: string) => {
         const n = normalizeUsage(rawUsage);
@@ -352,7 +363,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           roundLabel: string,
           stepIndex: number,
           isRemedy = false
-        ): Promise<{ answerDelivered: boolean; halted: boolean }> => {
+        ): Promise<{ answerDelivered: boolean; halted: boolean; paused?: boolean }> => {
           pipeline.beginRound();
           const decisionStart = Date.now();
           const stepPayload = session.getStepPayload();
@@ -506,6 +517,55 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                 input: call.input,
               });
 
+              // 写操作待审批（ADR-0041）：签发凭证、下发审批请求并结束本次流。
+              // 同轮其后的调用一律不执行；本轮此前已执行的只读结果不带入恢复请求。
+              // 凭证签发失败（密钥缺失）直接抛出，由外层按失败关闭收尾。
+              if (outcome.pendingApproval) {
+                const issued = issueApprovalToken({
+                  userId: options.userId,
+                  scope: options.approvalScope ?? '',
+                  toolName: name,
+                  toolId: outcome.pendingApproval.toolId,
+                  host: outcome.pendingApproval.host,
+                  params: outcome.pendingApproval.params,
+                });
+                controller.enqueue(
+                  encodeSseEvent({
+                    type: 'tool_result',
+                    callId,
+                    name,
+                    status: 'success',
+                    summary: outcome.summaryForDisplay,
+                    ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
+                  })
+                );
+                recordedToolCalls.push({
+                  id: callId,
+                  name,
+                  argsSummary: summarizeArgs(call.input),
+                  status: 'success',
+                  summary: outcome.summaryForDisplay,
+                });
+                controller.enqueue(
+                  encodeSseEvent({
+                    type: 'tool_approval_request',
+                    approval: {
+                      callId,
+                      toolName: name,
+                      host: outcome.pendingApproval.host,
+                      params: outcome.pendingApproval.params as Record<string, unknown>,
+                      token: issued.token,
+                      expiresAt: issued.expiresAt,
+                    },
+                  })
+                );
+                // 等待审批本身是有效终态：按「有产出」正常结算与收尾
+                toolProducedOutput = true;
+                finalAnswerDelivered = true;
+                pausedForApproval = true;
+                return { answerDelivered: true, halted: false, paused: true };
+              }
+
               // 工具成功交付产物即视为本轮有产出（是否按 success 结算由 hasOutput 三态判定）
               if (outcome.ok) {
                 toolProducedOutput = true;
@@ -588,6 +648,65 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           return { answerDelivered: false, halted: false };
         };
 
+        // ==================== 审批恢复：直接执行被批准的那一次调用 (ADR-0041 §3) ====================
+        // 调用方已验签并标记凭证已用；这里不经过模型决策，参数即凭证所绑定的参数。
+        if (options.resume && !signal.aborted) {
+          const { callId, toolName, params } = options.resume;
+          pipeline.beginRound();
+          controller.enqueue(
+            encodeSseEvent({
+              type: 'tool_call',
+              call: { id: callId, name: toolName, argsSummary: summarizeArgs(params) },
+            })
+          );
+          const resumed = await pipeline.executeCall({
+            toolCallId: callId,
+            toolName,
+            input: params,
+            preApproved: true,
+          });
+          if (resumed.ok) {
+            toolProducedOutput = true;
+          }
+          controller.enqueue(
+            encodeSseEvent({
+              type: 'tool_result',
+              callId,
+              name: toolName,
+              status: resumed.ok ? 'success' : 'failed',
+              summary: resumed.summaryForDisplay,
+              ...(resumed.durationMs !== undefined ? { durationMs: resumed.durationMs } : {}),
+            })
+          );
+          recordedToolCalls.push({
+            id: callId,
+            name: toolName,
+            argsSummary: summarizeArgs(params),
+            status: resumed.ok ? 'success' : 'failed',
+            summary: resumed.summaryForDisplay,
+            ...(resumed.durationMs !== undefined ? { durationMs: resumed.durationMs } : {}),
+          });
+          // 合成「调用 + 结果」工具消息对注入上下文，模型据此继续 ReAct 循环
+          session.appendIncrement(
+            {
+              role: 'assistant',
+              content: [{ type: 'tool-call', toolCallId: callId, toolName, input: params }],
+            },
+            { withDecisionMessages: false }
+          );
+          session.appendToolResult({
+            role: 'tool',
+            content: [
+              {
+                type: 'tool-result',
+                toolCallId: callId,
+                toolName,
+                output: { type: 'text', value: resumed.contentForModel },
+              },
+            ],
+          });
+        }
+
         // ==================== 主循环：决策步 + 工具执行 ====================
         while (roundIndex < regularDecisionStepsLimit) {
           // 每轮决策开始前检查：用户中断或治理停止条件（时间预算 / 连败熔断 / 全局上限）
@@ -601,7 +720,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             roundIndex,
             false
           );
-          if (outcome.answerDelivered || outcome.halted) {
+          if (outcome.answerDelivered || outcome.halted || outcome.paused) {
             break;
           }
         }
@@ -797,7 +916,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
         // ==================== 完成态上报 ====================
         // 计划收尾 (AGENT-PLAN-DAG / ADR-0038 / [P-W1] / [P-W13])：诚实状态机收敛
-        if (currentPlan) {
+        // 因等待审批而暂停时不收敛：任务尚未交付，计划保持当前状态等待恢复
+        if (currentPlan && !pausedForApproval) {
           const hasFailure = currentPlan.steps.some((s) => s.status === 'failed');
           for (const step of currentPlan.steps) {
             if (step.status === 'running') {

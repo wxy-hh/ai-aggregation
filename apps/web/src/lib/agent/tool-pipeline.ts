@@ -40,6 +40,11 @@ export interface ToolCallOutcome {
   durationMs?: number;
   /** 结构化切片引用字典（仅知识库检索等工具携带） */
   citations?: ToolExecutionResult['citations'];
+  /**
+   * 写操作待审批标记（ADR-0041）：存在即表示该调用**未执行**，编排器应下发审批请求并结束本次流。
+   * params 为经 schema 校验后的参数，凭证将绑定它。
+   */
+  pendingApproval?: { toolId: string; host: string; params: unknown };
 }
 
 /** 一次工具调用（由编排器从模型决策步投影而来） */
@@ -47,6 +52,11 @@ export interface ToolCall {
   toolCallId: string;
   toolName: string;
   input: unknown;
+  /**
+   * 已获用户批准（ADR-0041）：仅由编排器在审批凭证验签并标记已用后设置，
+   * 为真时跳过审批暂停、直接执行。其余治理（校验 / 上限 / 熔断 / 合规）照常生效。
+   */
+  preApproved?: boolean;
 }
 
 /** 治理限值（常量真源在 app 层 agent-config，由编排器传入） */
@@ -280,6 +290,35 @@ export function createToolExecutionPipeline(
         };
       } else {
         const validation = validateToolArgs(spec, call.input);
+
+        // 写操作审批（ADR-0041）：参数合法才暂停，不合法仍走原有「参数不合法」回注让模型修正。
+        // 暂停不执行、不过合规、不进缓存（用户确认后才会真正执行），也不计入连败熔断。
+        if (validation.ok && spec.approval && !call.preApproved) {
+          try {
+            await spec.approval.onPending(ctx);
+          } catch (error) {
+            // 副作用回调失败（如审计写入）不得阻断暂停：安全方向是「不执行」
+            console.warn(`[agent] 工具「${call.toolName}」暂停回调失败:`, error);
+          }
+          if (trace) {
+            const span = trace.span({
+              name: `tool:${call.toolName}`,
+              input: call.input,
+              output: '等待用户确认',
+              status: 'success',
+              durationMs: 0,
+              metadata: { cached: false, skipped: false, pendingApproval: true },
+            });
+            span.end();
+          }
+          return {
+            ok: true,
+            contentForModel: '该操作需要用户确认，已向用户发起确认请求，尚未执行。',
+            summaryForDisplay: '等待用户确认',
+            pendingApproval: { toolId: spec.approval.toolId, host: spec.approval.host, params: validation.args },
+          };
+        }
+
         outcome = validation.ok
           ? await runToolWithPolicy(spec, validation.args, ctx, DEFAULT_TOOL_POLICY)
           : {

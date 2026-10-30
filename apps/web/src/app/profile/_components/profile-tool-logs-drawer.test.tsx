@@ -27,6 +27,7 @@ const mockTool: SanitizedAgentTool = {
   hasAuthHeaderValue: true,
   params: [],
   enabled: true,
+  requiresApproval: true,
   createdAt: '2026-10-10T10:00:00.000Z',
   updatedAt: '2026-10-10T10:00:00.000Z',
 };

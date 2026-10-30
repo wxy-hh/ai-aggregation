@@ -180,6 +180,7 @@ describe('ChatInput agent 自定义工具感知状态条', () => {
     hasAuthHeaderValue: false,
     params: [],
     enabled,
+    requiresApproval: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });

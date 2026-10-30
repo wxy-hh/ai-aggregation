@@ -282,6 +282,7 @@ openssl rand -hex 24   # BILLING_RECONCILE_SECRET / RTASR_GATEWAY_SECRET
 | `AGNES_INFERENCE_API_URL`       | Agnes 推理地址                                 |
 | `BILLING_RECONCILE_SECRET`      | 计费对账内部接口                               |
 | `RTASR_GATEWAY_SECRET`          | 实时语音网关与 Web 共享密钥                    |
+| `APPROVAL_TOKEN_SECRET`         | 智能体写操作审批凭证签名密钥（至少 32 字符；缺失则需审批的写操作不执行，依赖 Redis） |
 | `NEXT_PUBLIC_RTASR_GATEWAY_URL` | **`wss://`** 生产网关地址（见第 7 节）         |
 
 ### 5.4 可选 / 未配也能登录
@@ -732,6 +733,8 @@ NEXT_PUBLIC_APP_URL="https://www.your-domain.com"
 # AUTH_SECRET 是自研 JWT（HS256）access token 签名密钥，改动它会使已签发的 access token 失效
 AUTH_SECRET="$(openssl rand -hex 32)"
 ANONYMOUS_DEVICE_SALT="$(openssl rand -hex 16)"
+# 智能体写操作审批凭证签名密钥（至少 32 字符）；漏配会让需审批的 Webhook 写工具全部不可用
+APPROVAL_TOKEN_SECRET="$(openssl rand -hex 32)"
 
 # ---------- 账号初始化（seed 用，务必修改默认值）----------
 # 不配置则线上无法通过 seed 创建/升级管理员账号（xkfy），只能手动改库
@@ -1192,6 +1195,7 @@ cat backup_20260822.sql | docker exec -i ai-aggregation-postgres psql -U postgre
 | `AUTH_RATE_LIMIT_FAILURE_MODE` | 认证接口限流故障处置，默认 `closed`（拒绝），`open` 应急放行   | 否             |
 | `MEDIA_PROXY_ALLOWED_DOMAINS` | 媒体代理额外域名白名单（逗号分隔，仅 https）                   | 否             |
 | `ALIYUN_DM_*`                 | 阿里云邮件推送凭证（验证码/重置邮件）；不配则相关接口 503      | 否             |
+| `APPROVAL_TOKEN_SECRET`       | 智能体写操作审批凭证签名密钥（HMAC，至少 32 字符，如 `openssl rand -hex 32`）；缺失时需审批的写操作失败关闭，存量 POST 工具全部不可用；一次性标记依赖 Redis | ✅             |
 | `ARK_API_KEY`                 | 火山方舟 API Key（豆包）                                       | 命理分析需要   |
 | `DEEPSEEK_MODEL`              | DeepSeek API Key（存错变量名）                                 | 命理分析备选   |
 | `ZHIPU_API_KEY`               | 智谱 API Key                                                   | 视频生成需要   |

@@ -290,6 +290,7 @@ function createTestTool(overrides?: Partial<UserWebhookTool>): UserWebhookTool {
     authHeaderValueEnc: null,
     params: [],
     enabled: true,
+    requiresApproval: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

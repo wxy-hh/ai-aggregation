@@ -1,5 +1,4 @@
 /**
- * Unified History Types
  * 统一的历史记录类型定义
  */
 
@@ -31,6 +30,8 @@ export interface ChatHistoryItem extends BaseHistoryItem {
     toolCalls?: ToolCallRecord[];
     /** agent 计划与检查点（可选，向后兼容） (AGENT-PLAN-DAG / ADR-0038) */
     plan?: import('@repo/shared').AgentPlan;
+    /** 写操作审批卡片（可选，向后兼容） (AGENT-HITL-ACTION / ADR-0041) */
+    approval?: import('@/lib/agent/approval-display').MessageApproval;
     /**
      * agent 工具产出附件（可选，仅 id 以 tool- 开头的产出物，体积小）；
      * 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage

@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
         authHeaderValueEnc,
         params: parsed.data.params,
         enabled: parsed.data.enabled,
+        requiresApproval: parsed.data.requiresApproval,
       },
     });
 

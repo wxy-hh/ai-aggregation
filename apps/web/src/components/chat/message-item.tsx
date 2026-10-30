@@ -12,6 +12,7 @@ import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
 import { AgentPlanCard } from './plan/agent-plan-card';
+import { ApprovalCard } from './plan/approval-card';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
 import { DistillFaqDialog } from './distill-faq-dialog';
@@ -720,6 +721,14 @@ export const MessageItem = memo(function MessageItem({
                     messageId={message.id}
                     plan={message.plan}
                     isStreaming={isStreaming}
+                  />
+                )}
+                {/* 写操作审批卡片 (AGENT-HITL-ACTION / ADR-0041)：确认走恢复请求，拒绝为纯前端终止 */}
+                {message.approval && (
+                  <ApprovalCard
+                    approval={message.approval}
+                    onConfirm={() => useChatStore.getState().confirmApproval(message.id)}
+                    onReject={() => useChatStore.getState().rejectApproval(message.id)}
                   />
                 )}
                 {/* 思考块位于气泡内、正文上方；无推理内容时整棵子树不渲染（讯飞模型/无推理轮次自然退化） */}

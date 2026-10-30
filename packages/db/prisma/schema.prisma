@@ -437,6 +437,8 @@ model UserWebhookTool {
   authHeaderValueEnc String?           @db.Text
   params             Json              @default("[]")
   enabled            Boolean           @default(true)
+  // 调用前是否需要用户确认（AGENT-HITL-ACTION / ADR-0041）：新建时 POST 默认 true、GET 默认 false，由 API 层按 method 填入
+  requiresApproval   Boolean           @default(true)
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -459,7 +461,7 @@ model WebhookToolCall {
   statusCode    Int?
   durationMs    Int
   responseBytes Int               @default(0)
-  outcome       String            // 结果状态：success / failed / skipped / blocked
+  outcome       String            // 结果状态：success / failed / skipped / blocked / pending_approval（等待用户确认，不计入成功率分母）
   errorKind     String?
   createdAt     DateTime          @default(now())
 

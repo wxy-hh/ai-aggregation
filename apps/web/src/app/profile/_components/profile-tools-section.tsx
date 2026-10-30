@@ -275,6 +275,10 @@ export function ProfileToolsSection() {
               <p className="mt-0.5 text-[13px] text-[#94A3B8] dark:text-slate-400">
                 配置私有 Webhook 接口，供 AI 智能体在对话中自主调度
               </p>
+              {/* ADR-0041 兼容提示：存量 POST 工具迁移后默认开启调用前确认 */}
+              <p className="mt-0.5 text-[13px] text-day-muted dark:text-slate-400">
+                POST 工具默认需要你确认后才会执行，已有的 POST 工具已自动开启，可在编辑工具时关闭。
+              </p>
             </div>
           </div>
 

@@ -43,11 +43,34 @@ function createWebhookToolSpec(
   ) => Promise<{ allow: true } | { allow: false; result: ToolExecutionResult }>
 ): AgentToolSpec {
   const schema = buildZodSchemaFromParams(record.params);
+  const hostname = tryExtractHostname(record.url);
 
   return {
     name: `wh_${record.callName}`,
     description: record.description,
     parameters: schema,
+    // 写操作审批（ADR-0041）：标记需审批的工具由管道拦截，暂停时只写 pending_approval 审计、不出站
+    ...(record.requiresApproval
+      ? {
+          approval: {
+            toolId: record.id,
+            host: hostname,
+            onPending: async (ctx: ToolExecutionContext) => {
+              await writeAuditRecord({
+                userId: ctx.userId,
+                toolId: record.id,
+                hostname,
+                method: record.method,
+                statusCode: null,
+                durationMs: 0,
+                responseBytes: 0,
+                outcome: 'pending_approval',
+                errorKind: null,
+              });
+            },
+          },
+        }
+      : {}),
     execute: async (args: unknown, ctx: ToolExecutionContext): Promise<ToolExecutionResult> => {
       // 1. 闭包上限拦截检查
       const check = await onBeforeExecute(ctx);

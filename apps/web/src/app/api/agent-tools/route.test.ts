@@ -216,6 +216,32 @@ describe('/api/agent-tools 路由测试', () => {
       expect(tool.authHeaderValue).toBeUndefined();
       expect(JSON.stringify(json)).not.toContain('base64-encrypted-secret-content');
     });
+
+    it('列表返回的每个工具含审批字段 (TC10-3)', async () => {
+      const base = {
+        userId: 'user_1',
+        description: '描述',
+        url: 'https://api.example.com/orders',
+        authHeaderName: null,
+        authHeaderValueEnc: null,
+        params: [],
+        enabled: true,
+        createdAt: new Date('2026-10-02T10:00:00Z'),
+        updatedAt: new Date('2026-10-02T10:00:00Z'),
+      };
+      mocks.toolFindMany.mockResolvedValue([
+        { ...base, id: 'tool_w', name: '写', callName: 'write_tool', method: 'POST', requiresApproval: true },
+        { ...base, id: 'tool_r', name: '读', callName: 'read_tool', method: 'GET', requiresApproval: false },
+      ]);
+
+      const res = await GET(createAuthedRequest('GET'));
+      const json = await res.json();
+
+      expect(json.data.tools.map((t: { requiresApproval: boolean }) => t.requiresApproval)).toEqual([
+        true,
+        false,
+      ]);
+    });
   });
 
   describe('POST /api/agent-tools', () => {
@@ -256,6 +282,30 @@ describe('/api/agent-tools 路由测试', () => {
       expect(json.data.tool.authHeaderValueEnc).toBeUndefined();
       expect(json.data.tool.authHeaderValue).toBeUndefined();
       expect(JSON.stringify(json)).not.toContain(sampleValidToolInput.authHeaderValue);
+    });
+
+    it('POST 工具且请求未带审批字段时，写库的审批字段为 true (TC10-1)', async () => {
+      mocks.toolCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'tool_new', ...args.data, createdAt: new Date(), updatedAt: new Date() })
+      );
+
+      const res = await POST(createAuthedRequest('POST', sampleValidToolInput));
+
+      expect(res.status).toBe(201);
+      expect(mocks.toolCreate.mock.calls[0][0].data.requiresApproval).toBe(true);
+    });
+
+    it('GET 工具且请求未带审批字段时，写库的审批字段为 false (TC10-2)', async () => {
+      mocks.toolCreate.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'tool_new', ...args.data, createdAt: new Date(), updatedAt: new Date() })
+      );
+
+      const res = await POST(
+        createAuthedRequest('POST', { ...sampleValidToolInput, method: 'GET' })
+      );
+
+      expect(res.status).toBe(201);
+      expect(mocks.toolCreate.mock.calls[0][0].data.requiresApproval).toBe(false);
     });
 
     it('非 https 网址拒绝（返回 400 中文提示）', async () => {

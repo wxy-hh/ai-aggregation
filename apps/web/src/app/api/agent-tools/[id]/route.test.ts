@@ -126,6 +126,7 @@ const existingTool = {
   authHeaderValueEnc: 'old-encrypted-secret-value',
   params: [],
   enabled: true,
+  requiresApproval: true,
   createdAt: new Date('2026-10-02T10:00:00Z'),
   updatedAt: new Date('2026-10-02T10:00:00Z'),
 };
@@ -225,6 +226,31 @@ describe('/api/agent-tools/[id] 路由测试', () => {
       const json = await res.json();
       expect(json.details.errors.callName[0]).toContain('调用名已存在');
       expect(mocks.toolUpdate).not.toHaveBeenCalled();
+    });
+
+    it('更新审批字段：写库为新值，响应中的工具含该字段 (TC10-2, TC10-4)', async () => {
+      mocks.toolUpdate.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...existingTool, ...args.data, updatedAt: new Date() })
+      );
+
+      const { req, context } = createRequest('PATCH', 'tool_1', { requiresApproval: false });
+      const res = await PATCH(req, context);
+
+      expect(res.status).toBe(200);
+      expect(mocks.toolUpdate.mock.calls[0][0].data.requiresApproval).toBe(false);
+      const json = await res.json();
+      expect(json.data.tool.requiresApproval).toBe(false);
+    });
+
+    it('未传审批字段时不改动该字段 (TC10-2)', async () => {
+      mocks.toolUpdate.mockImplementation((args: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...existingTool, ...args.data, updatedAt: new Date() })
+      );
+
+      const { req, context } = createRequest('PATCH', 'tool_1', { name: '仅改名' });
+      await PATCH(req, context);
+
+      expect(mocks.toolUpdate.mock.calls[0][0].data).not.toHaveProperty('requiresApproval');
     });
 
     it('凭证缺省（undefined）时保持旧密文不变', async () => {

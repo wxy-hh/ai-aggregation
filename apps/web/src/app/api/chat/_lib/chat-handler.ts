@@ -39,6 +39,11 @@ import { normalizeUsage } from '@/lib/ai-usage';
 import { resolveChatStreamUsage } from './chat-usage';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
+import {
+  ApprovalRejectedError,
+  consumeApprovalToken,
+  verifyApprovalToken,
+} from '@/lib/agent/approval-token';
 import { createRootTrace, flushObservability, type ObservabilityTrace } from '@/lib/observability/langfuse-client';
 
 export interface ChatHandlerConfig {
@@ -85,6 +90,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
         thinking: rawThinking,
         conversationId: rawConversationId,
         artifactContext: rawArtifactContext,
+        approvalResume: rawApprovalResume,
+        approvalScope: rawApprovalScope,
       } = body as {
         messages: ChatMessage[];
         model?: string;
@@ -96,12 +103,17 @@ export function createChatHandler(config: ChatHandlerConfig) {
         thinking?: unknown;
         conversationId?: unknown;
         artifactContext?: unknown;
+        approvalResume?: unknown;
+        approvalScope?: unknown;
       };
       // 会话 ID（用于 Langfuse session 与运行记录关联）
       const conversationId =
         typeof rawConversationId === 'string' && rawConversationId.trim()
           ? rawConversationId.trim()
           : undefined;
+      // 审批凭证绑定的会话范围（ADR-0041）：与 conversationId 分离，避免激活其观测/记忆副作用
+      const approvalScope =
+        typeof rawApprovalScope === 'string' ? rawApprovalScope.trim().slice(0, 200) : '';
       // 深度思考模式开关（ADR-0016 / 工单 03）
       const thinking = rawThinking === true;
       // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
@@ -121,6 +133,15 @@ export function createChatHandler(config: ChatHandlerConfig) {
 
       if (!messages || !Array.isArray(messages) || messages.length === 0) {
         return jsonResponse({ error: 'Messages are required' }, 400);
+      }
+
+      // 审批恢复请求（ADR-0041）：仅 agent 模式识别；字段形状不合法直接 400
+      let approvalResume: ApprovalResumeInput | null = null;
+      if (agent && rawApprovalResume !== undefined) {
+        approvalResume = parseApprovalResume(rawApprovalResume);
+        if (!approvalResume) {
+          return jsonResponse({ error: '审批恢复请求格式不正确，请重新提出需求', errorId }, 400);
+        }
       }
 
       // 产物上下文注入（ADR-0037 §4）：仅 agent 模式；服务端复核长度与标题结构，不信任客户端
@@ -161,7 +182,12 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // 3.5 FAQ 极高置信度前置强短路检测 (ADR-0027)
       // 若提问极度精准命中知识库标准 FAQ，直接秒出权威答案，零 Token 消耗
       const lastUserMsg = messages[messages.length - 1];
-      if (lastUserMsg && lastUserMsg.role === 'user' && typeof lastUserMsg.content === 'string') {
+      if (
+        !approvalResume &&
+        lastUserMsg &&
+        lastUserMsg.role === 'user' &&
+        typeof lastUserMsg.content === 'string'
+      ) {
         const shortCircuitFaq = await checkFaqShortCircuit({
           userId: user.id,
           query: lastUserMsg.content,
@@ -184,6 +210,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // 路由层只负责创建它并把 userId 交给它
       let agentRuntime: AgentRuntimeContext | null = null;
       let agentTrace: ObservabilityTrace | null = null;
+      let verifiedResume: { nonce: string } | null = null;
       if (agent) {
         let affordable;
         try {
@@ -217,6 +244,25 @@ export function createChatHandler(config: ChatHandlerConfig) {
           disabledToolKeys,
         });
 
+        // 审批恢复验签（ADR-0041 §4）：先验签名/绑定/有效期，再确认工具仍可用；
+        // 都在预留额度之前完成，被拒绝的恢复请求不产生任何扣费。
+        if (approvalResume) {
+          // 工具已停用、删除或不再需要审批：没有可绑定的工具身份，直接视为不可用
+          const resumeApproval = agentRuntime.registry.get(approvalResume.toolName)?.approval;
+          if (!resumeApproval) {
+            throw new ApprovalRejectedError('tool_unavailable');
+          }
+          // 工具 ID 与目标域名取自当前库中的工具，而不是请求体：工具被改 URL、删除重建后旧凭证一律失效
+          verifiedResume = verifyApprovalToken(approvalResume.token, {
+            userId: user.id,
+            scope: approvalScope,
+            toolName: approvalResume.toolName,
+            toolId: resumeApproval.toolId,
+            host: resumeApproval.host,
+            params: approvalResume.params,
+          });
+        }
+
         // 统一创建 Root Trace：traceId=errorId、runId=requestId、关联 conversationId（工单 01）
         agentTrace = createRootTrace({
           traceId: errorId,
@@ -248,6 +294,12 @@ export function createChatHandler(config: ChatHandlerConfig) {
         reservationId,
       }, user.role);
       session = reservedSession;
+
+      // 一次性标记（ADR-0041 §4）：放在预留成功之后，额度不足不会烧掉凭证；
+      // 重放返回「已使用」，Redis 不可用则失败关闭。任何拒绝都会在 catch 中释放刚预留的额度。
+      if (verifiedResume) {
+        await consumeApprovalToken(verifiedResume.nonce);
+      }
 
       // 5. 完成态回调：输出合规审计 + 统一结算（适配器路径与 agent 编排共用同一份结算逻辑）
       const onFinish = async (finish: ChatStreamFinish) => {
@@ -381,6 +433,18 @@ export function createChatHandler(config: ChatHandlerConfig) {
           thinking,
           trace: agentTrace ?? undefined,
           artifactContextPrompt: artifactResolution?.text,
+          approvalScope,
+          ...(approvalResume && verifiedResume
+            ? {
+                resume: {
+                  callId: approvalResume.callId,
+                  toolName: approvalResume.toolName,
+                  params: approvalResume.params,
+                },
+                // 恢复请求沿用前端已有计划，不重新规划、不重复下发 plan_created
+                enablePlanning: false,
+              }
+            : {}),
           onFinish,
         });
       } else {
@@ -421,6 +485,24 @@ export function createChatHandler(config: ChatHandlerConfig) {
 }
 
 // ==================== 内部工具函数 ====================
+
+/** 审批恢复请求体（字段已校验形状；签名与绑定由 verifyApprovalToken 校验） */
+interface ApprovalResumeInput {
+  token: string;
+  callId: string;
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
+function parseApprovalResume(raw: unknown): ApprovalResumeInput | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const { token, callId, toolName, params } = raw as Record<string, unknown>;
+  if (typeof token !== 'string' || !token) return null;
+  if (typeof callId !== 'string' || !callId) return null;
+  if (typeof toolName !== 'string' || !toolName) return null;
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
+  return { token, callId, toolName, params: params as Record<string, unknown> };
+}
 
 function createErrorId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -483,6 +565,11 @@ function handleError(error: unknown, errorId: string, startTime: number): Respon
       { error: error.message, errorId },
       error.code === 'FORBIDDEN' ? 403 : 401
     );
+  }
+
+  // 审批被拒绝（ADR-0041）：文案本身就是给用户的下一步指引
+  if (error instanceof ApprovalRejectedError) {
+    return jsonResponse({ error: error.message, errorId }, error.status);
   }
 
   // 计费错误

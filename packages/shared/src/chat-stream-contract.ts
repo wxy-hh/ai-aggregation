@@ -12,7 +12,7 @@ import {
 //   - /api/chat（generic / xunfei / doubao 三适配器）
 //   - /api/destiny/copilot（追问对话）
 //
-// 事件类型（共 10 种，联合类型即完整枚举）：
+// 事件类型（联合类型即完整枚举）：
 //   - text-delta       增量文本（可重复出现；text 一定为非空字符串）
 //   - reasoning-delta  推理增量文本（可重复出现；text 一定为非空字符串；
 //                      仅 supportsReasoning 模型可能产生，先于 text-delta 到达；
@@ -26,6 +26,9 @@ import {
 //                      「我查一下」再调工具时 text-delta 更早，消费端不得假设工具事件先于一切正文。
 //   - plan_created     智能体任务初始规划创建事件（可出现一次；agent 模式专用；下发完整阶段检查点列表）
 //   - plan_step_update 智能体检查点状态跃迁更新事件（可重复出现；agent 模式专用；实时同步单步状态与摘要）
+//   - tool_approval_request 写操作审批请求（可出现一次；agent 模式专用；ADR-0041）：
+//                      需审批的 Webhook 工具被调用时下发，此时请求尚未出站；
+//                      其后流以 done 正常结束，用户确认后由新请求携带凭证恢复
 //   - warning          警告信息（可重复出现；不终止流）
 //   - error            错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
 //   - done             正常终止（终止事件；流中最后一个事件）
@@ -187,6 +190,33 @@ export type ChatStreamArtifactEndEvent = {
   status: 'complete' | 'error';
 };
 
+/**
+ * 写操作审批请求载荷 (AGENT-HITL-ACTION / ADR-0041)。
+ *
+ * params 为模型给出的原始参数（卡片展示用）；token 为服务端 HMAC 签名凭证，
+ * 绑定用户、会话、工具、参数哈希与过期时间，确认时随恢复请求回传。
+ */
+export interface ChatStreamToolApproval {
+  /** 被暂停的工具调用 id */
+  callId: string;
+  /** 工具名（模型侧名称，如 wh_notify） */
+  toolName: string;
+  /** 目标域名（仅 hostname，不含路径与凭证） */
+  host: string;
+  /** 模型给出的调用参数 */
+  params: Record<string, unknown>;
+  /** 审批凭证 */
+  token: string;
+  /** 凭证过期时间（毫秒时间戳） */
+  expiresAt: number;
+}
+
+/** 写操作审批请求事件（agent 模式专用；之后流正常结束） */
+export type ChatStreamToolApprovalRequestEvent = {
+  type: 'tool_approval_request';
+  approval: ChatStreamToolApproval;
+};
+
 /** 智能体计划生成事件 (AGENT-PLAN-DAG / ADR-0038) */
 export type ChatStreamPlanCreatedEvent = {
   type: 'plan_created';
@@ -224,6 +254,7 @@ export type ChatStreamEvent =
   | ChatStreamAgentNoteEvent
   | ChatStreamToolCallEvent
   | ChatStreamToolResultEvent
+  | ChatStreamToolApprovalRequestEvent
   | ChatStreamArtifactStartEvent
   | ChatStreamArtifactDeltaEvent
   | ChatStreamArtifactEndEvent
@@ -243,7 +274,7 @@ export type ChatStreamTerminalEvent = Extract<
  * 解析单个 SSE data: 帧的 JSON payload（已 JSON.parse 的结果）为契约事件。
  *
  * 返回值说明：
- * - 合法的 8 类事件 → 对应事件对象；
+ * - 合法的契约事件（见文件头部枚举）→ 对应事件对象；
  * - null → 非 JSON 对象、未知事件类型或字段不合法。消费端必须显式忽略并继续等待
  *   终止事件（未知类型不代表流结束；只有 done/error/[DONE] 才结束流）。
  */
@@ -313,6 +344,31 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         ...(attachment ? { attachment } : {}),
         ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
         ...(citations ? { citations } : {}),
+      };
+    }
+    case 'tool_approval_request': {
+      // 所有字段都是执行审批所必需：任一缺失或类型不对即整帧作废，不降级成残缺卡片
+      const approval = ev.approval as Record<string, unknown> | null | undefined;
+      if (typeof approval !== 'object' || approval === null) return null;
+      const { callId, toolName, host, params, token, expiresAt } = approval;
+      if (typeof callId !== 'string' || !callId) return null;
+      if (typeof toolName !== 'string' || !toolName) return null;
+      if (typeof host !== 'string' || !host) return null;
+      if (typeof params !== 'object' || params === null || Array.isArray(params)) return null;
+      if (typeof token !== 'string' || !token) return null;
+      if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= 0) {
+        return null;
+      }
+      return {
+        type: 'tool_approval_request',
+        approval: {
+          callId,
+          toolName,
+          host,
+          params: params as Record<string, unknown>,
+          token,
+          expiresAt,
+        },
       };
     }
     case 'artifact_start': {

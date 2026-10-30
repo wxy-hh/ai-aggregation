@@ -782,3 +782,55 @@ describe('可观测性 Span 记录（工单 01）', () => {
     );
   });
 });
+
+describe('写操作审批（AGENT-HITL-ACTION / ADR-0041）', () => {
+  /** 构造声明了审批的假写工具；onPending 为暂停回调 spy */
+  function makeApprovalSpec(execute: AgentToolSpec['execute'], onPending = vi.fn(async () => {})) {
+    return {
+      spec: {
+        ...makeSpec('wh_notify', execute, z.object({ message: z.string() })),
+        approval: { toolId: 'tool-notify', host: 'hooks.example.com', onPending },
+      } satisfies AgentToolSpec,
+      onPending,
+    };
+  }
+
+  it('1. 声明需审批的工具：不执行，返回暂停标记与目标域名、校验后的参数 (TC02-1)', async () => {
+    const execute = vi.fn(async () => okResult());
+    const { spec, onPending } = makeApprovalSpec(execute);
+    const { pipeline } = makePipeline({ registry: createToolRegistry([spec]) });
+    pipeline.beginRound();
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'wh_notify',
+      input: { message: '你好' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(onPending).toHaveBeenCalledTimes(1);
+    expect(outcome.pendingApproval).toEqual({
+      toolId: 'tool-notify',
+      host: 'hooks.example.com',
+      params: { message: '你好' },
+    });
+  });
+
+  it('2. 未声明审批的工具走原路径：execute 被调用 1 次，无暂停标记 (TC02-2)', async () => {
+    const execute = vi.fn(async () => okResult({ contentForModel: '正常结果' }));
+    const { pipeline } = makePipeline({
+      registry: createToolRegistry([makeSpec('wh_query', execute)]),
+    });
+    pipeline.beginRound();
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'wh_query',
+      input: {},
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(outcome.contentForModel).toBe('正常结果');
+    expect(outcome.pendingApproval).toBeUndefined();
+  });
+});

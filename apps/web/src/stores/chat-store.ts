@@ -26,6 +26,13 @@ import {
   updatePlanStepStatus,
   finalizePlanExecution,
 } from '@repo/shared';
+import {
+  buildPlanCheckpointMessage,
+  buildRequestHistory,
+  expireStaleApprovals,
+  resolveApprovalStatus,
+  type MessageApproval,
+} from '@/lib/agent/approval-display';
 
 // ==================== 类型定义 ====================
 
@@ -81,6 +88,8 @@ export interface Message {
   citations?: Record<number, import('@/lib/rag/hybrid-retrieval').CitationAnchor>;
   // 智能体执行计划与阶段检查点 (AGENT-PLAN-DAG / ADR-0038)
   plan?: AgentPlan;
+  // 写操作审批请求卡片（AGENT-HITL-ACTION / ADR-0041）：一等字段随消息落盘，不进正文
+  approval?: MessageApproval;
 }
 
 // 聊天状态管理接口
@@ -123,6 +132,8 @@ export interface ChatState {
   reload: (msgId?: string) => Promise<void>; // 重新生成AI回复
   stop: () => void; // 停止当前的AI生成
   interruptAndResumeWithPlan: (messageId: string, modifiedPlan: AgentPlan) => Promise<void>; // 用户干预计划并中止续跑 (AGENT-PLAN-DAG / ADR-0038)
+  confirmApproval: (messageId: string) => Promise<ChatStreamOutcome | 'skipped'>; // 确认写操作审批：发起恢复请求 (AGENT-HITL-ACTION / ADR-0041)
+  rejectApproval: (messageId: string) => void; // 拒绝写操作审批：纯前端终止，不发请求 (AGENT-HITL-ACTION / ADR-0041)
 
   // ========== 生命周期管理 ==========
   loadConversation: (
@@ -297,7 +308,7 @@ function freezeReasoningDuration(assistantId: string): number | undefined {
  * 已是用户可见的产出（含工具生成的图片附件），不能按「空」丢弃。
  */
 function hasRetainableContent(m: Message): boolean {
-  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length || m.plan);
+  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length || m.plan || m.approval);
 }
 
 /**
@@ -635,6 +646,15 @@ export async function runChatStreamSession(
               plan: updatePlanStepStatus(m.plan, stepId, status, summary),
             };
           })
+        );
+        persistConversation(next);
+      },
+      onToolApprovalRequest: (approval) => {
+        // 审批请求作为消息一等字段落盘（凭证只存在 approval 内，不写入 content）
+        const next = deps.updateMessages((messages) =>
+          messages.map((m) =>
+            m.id === assistantId ? { ...m, approval: { ...approval, status: 'pending' as const } } : m
+          )
         );
         persistConversation(next);
       },
@@ -980,7 +1000,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       // 判空口径与「有留空删」一致：正文/推理/工具记录任一非空即算有内容
       // 另：toolCalls 里残留的 running 中间态一并归一为 failed（刷新时未收到 tool_result）；
       // 过程旁白（agentNotes）属过程性内容，还原时剥离不恢复（spec D-二期-6）
-      const sanitizedMessages = messages
+      const sanitizedMessages = expireStaleApprovals(
+        messages
         .filter((m) => !(m.isStreaming && !hasRetainableContent(m)))
         .map((m) =>
           stripAgentNotes(
@@ -995,7 +1016,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                 : m
             )
           )
-        );
+        )
+      );
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
       const sanitizedChanged =
         sanitizedMessages.length !== messages.length ||
@@ -1138,8 +1160,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: true,
       };
 
-      // 3. 更新 UI 状态
-      const newMessages = [...currentMessages, userMessage, assistantMessage];
+      // 3. 更新 UI 状态（此前待确认的审批卡片因其后已有新消息而失效，ADR-0041）
+      const newMessages = expireStaleApprovals([...currentMessages, userMessage, assistantMessage]);
       set({
         messages: newMessages,
         input: '',
@@ -1162,17 +1184,13 @@ export const useChatStore = create<ChatState>((set, get) => {
           assistantMessage.id,
           {
             body: {
-              // 发送历史消息 + 新用户消息
-              messages: [...currentMessages, userMessage].map((m) => ({
-                role: m.role,
-                content: m.content,
-                attachments: m.attachments,
-              })),
+              // 发送历史消息 + 新用户消息（审批卡片及其凭证不进历史；已拒绝的卡片转成一句话，ADR-0041）
+              messages: buildRequestHistory([...currentMessages, userMessage]),
               provider, // AI提供商
               model, // 模型名称
               thinking: thinkingMode, // 深度思考模式开关（ADR-0016 / 工单 03）
               // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
-              ...(agentMode ? { agent: true } : {}),
+              ...(agentMode ? { agent: true, approvalScope: activeConversationId ?? '' } : {}),
               // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
               ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
               // 会话级临时停用工具（ADR-0014 / 工单 02）：仅在有被关闭工具时携带差异项
@@ -1197,6 +1215,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                     content: m.content,
                     ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
                     ...(m.plan ? { plan: m.plan } : {}),
+                    ...(m.approval ? { approval: m.approval } : {}),
                     ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
                       ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
                       : {}),
@@ -1290,14 +1309,15 @@ export const useChatStore = create<ChatState>((set, get) => {
           assistantMessage.id,
           {
             body: {
-              messages: [...history, userMessage].map((m) => ({
-                role: m.role,
-                content: m.content,
+              // 保持重新生成原有的 { role, content } 请求体，只额外过滤审批卡片并转写拒绝提示（ADR-0041）
+              messages: buildRequestHistory([...history, userMessage]).map(({ role, content }) => ({
+                role,
+                content,
               })),
               provider,
               model,
               thinking: thinkingMode,
-              ...(agentMode ? { agent: true } : {}),
+              ...(agentMode ? { agent: true, approvalScope: activeConversationId ?? '' } : {}),
               // 重新生成沿用同一份产物上下文来源（ADR-0037 §4）
               ...(agentMode ? artifactContextField() : {}),
             },
@@ -1350,7 +1370,127 @@ export const useChatStore = create<ChatState>((set, get) => {
         await get().sendMessage(resumePrompt);
       }
     },
+
+    // 拒绝写操作审批（AGENT-HITL-ACTION / ADR-0041）：纯前端终止，不发请求、不调用模型、不耗额度
+    rejectApproval: (messageId: string) => {
+      const { messages, activeConversationId } = get();
+      const target = messages.find((m) => m.id === messageId);
+      if (!target?.approval || resolveApprovalStatus(target.approval) !== 'pending') return;
+
+      const next = messages.map((m) =>
+        m.id === messageId && m.approval
+          ? { ...m, approval: { ...m.approval, status: 'rejected' as const } }
+          : m
+      );
+      set({ messages: next });
+      if (activeConversationId) {
+        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: next });
+      }
+    },
+
+    // 确认写操作审批（AGENT-HITL-ACTION / ADR-0041）：发起恢复请求，服务端验签后只执行被批准的那一次调用
+    confirmApproval: async (messageId: string) => {
+      const { messages, isLoading, provider, model, activeConversationId, activeCapabilityPackKey, toolOverrides } = get();
+      if (isLoading) return 'skipped';
+      const index = messages.findIndex((m) => m.id === messageId);
+      const target = messages[index];
+      // 只有仍在有效期内、且为最后一条消息的待确认卡片可以确认（其余已失效）
+      if (!target?.approval || resolveApprovalStatus(target.approval) !== 'pending') return 'skipped';
+      if (index !== messages.length - 1) return 'skipped';
+
+      const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
+      const disabledToolKeys = Object.entries(toolOverrides)
+        .filter(([_, enabled]) => enabled === false)
+        .map(([key]) => key);
+      const { callId, toolName, params, token } = target.approval;
+
+      // 历史 = 原对话历史 + 计划已完成检查点（卡片与凭证不进历史）
+      const checkpoint = buildPlanCheckpointMessage(target.plan);
+      const history = [...buildRequestHistory(messages), ...(checkpoint ? [checkpoint] : [])];
+
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      };
+      const newMessages = [
+        ...messages.map((m) =>
+          m.id === messageId && m.approval
+            ? { ...m, approval: { ...m.approval, status: 'confirmed' as const } }
+            : m
+        ),
+        assistantMessage,
+      ];
+      set({ messages: newMessages, isLoading: true, error: null });
+      if (activeConversationId) {
+        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+      }
+
+      try {
+        const outcome = await runChatStreamSession(sessionDeps(), assistantMessage.id, {
+          body: {
+            messages: history,
+            provider,
+            model,
+            thinking: thinkingMode,
+            // 恢复请求只在 agent 模式有意义，与暂停请求的作用域一致才能通过验签
+            agent: true,
+            approvalScope: activeConversationId ?? '',
+            approvalResume: { token, callId, toolName, params },
+            ...(activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
+            ...(disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
+            ...artifactContextField(),
+          },
+          signal: abortController.signal,
+        });
+        if (outcome === 'sent') {
+          void checkAndWarnLowBalance(activeConversationId);
+        }
+        if (outcome === 'failed') {
+          restoreApprovalIfNotAccepted(messageId, assistantMessage.id);
+        }
+        return outcome;
+      } finally {
+        set({ isLoading: false });
+        abortController = null;
+      }
+    },
   };
+
+  /**
+   * 确认失败后的卡片回退（ADR-0041 §4 失败关闭）：请求没有走到「消耗一次性凭证」这一步时，
+   * 卡片退回待确认让用户重试：
+   * - 503 审批服务不可用、429 限流、402 额度不足：服务端在标记凭证已用之前就拒绝了，凭证未消耗；
+   * - 无状态码且没有任何产出（网络中断）：没有收到服务端的任何响应内容，无法确认是否被受理，
+   *   此时重试是安全的，因为若已受理，重复点击只会被一次性凭证拒为 409，不会重复执行。
+   * 其余失败（凭证无效 / 已过期 / 已使用 / 工具不可用，或流中途失败）保持已确认：
+   * 前几类重试也不会成功，后者写操作可能已执行。
+   */
+  function restoreApprovalIfNotAccepted(messageId: string, assistantId: string) {
+    const failure = get().error as (Error & { status?: number }) | null;
+    const retryableStatuses = [402, 429, 503];
+    const notAccepted =
+      failure != null &&
+      (failure.status === undefined || retryableStatuses.includes(failure.status));
+    if (!notAccepted) return;
+    // 流中途失败时本次新建的助手消息已有产出（被保留并标记 failed），说明请求已被受理，不回退；
+    // 只看这一条，会话里更早的失败消息不能作为依据
+    if (get().messages.some((m) => m.id === assistantId)) return;
+    const { activeConversationId } = get();
+    const restored = get().messages.map((m) =>
+      m.id === messageId && m.approval?.status === 'confirmed'
+        ? { ...m, approval: { ...m.approval, status: 'pending' as const } }
+        : m
+    );
+    set({ messages: restored });
+    if (activeConversationId) {
+      emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: restored });
+    }
+  }
 });
 
 // 仅在本地开发或 E2E 自动化测试环境向 window 暴露用于状态校验，生产环境严格禁用
