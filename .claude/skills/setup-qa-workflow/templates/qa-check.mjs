@@ -68,6 +68,14 @@ const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
 // 只判断是否含编号时用非全局版本，避免全局正则 test() 的 lastIndex 状态
 const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
+// 编号之后紧跟（可选加粗、冒号）「无发现」
+const NO_FINDING_AFTER_ID = /^(?:\*\*)?\s*[:：]?\s*无发现/;
+// S-J 默认驳回，不要求进分流表
+const DEFAULT_REJECT_PREFIX = 'S-J';
+// 执行记录备注中的过期证据豁免：「不重跑：」后须有非空理由
+const NO_RERUN_PATTERN = /不重跑[:：]\s*(\S.*)$/;
+// HTML 实体反转义（转录核验比对前对双方使用）
+const HTML_ENTITIES = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' };
 // 分流表处置状态的允许值；留空与「—」表示尚无处置
 const DISPOSITION_VALUES = new Set(['', '—', '已修', '未修', '修错', '改档成立', '改档不成立', '驳回', '转专项']);
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
@@ -915,6 +923,7 @@ function reconciliationTable(passRows, frozenPlan, markerValues, caseScripts, sy
     const flags = [
       scripts.some((script) => injected.has(script)) && '响应注入',
       scripts.some((script) => synthetic.has(script)) && '非真实输入',
+      noRerunReason(row) && `不重跑：${noRerunReason(row)}`,
     ].filter(Boolean);
     return {
       id: `${row.caseId}-${row.assertion}`,
@@ -1096,13 +1105,24 @@ async function checkAcceptance(featureDir, plan, context) {
   if (context.tree) {
     const staleCases = new Set();
     for (const [row, entries] of evidenceByRow) {
+      if (noRerunReason(row)) continue;
       if (entries.some((entry) => entry.log && entry.log.tree !== context.tree)) staleCases.add(row.caseId);
     }
     if (staleCases.size) {
-      notes.push(`${[...staleCases].sort().join('、')} 的证据日志 tree 与当前代码不一致；核心行为改动后需重跑。`);
+      issues.push(issue(
+        'STALE_EVIDENCE',
+        'BLOCKED',
+        `${[...staleCases].sort().join('、')} 的证据日志 tree 与当前代码不一致。`,
+        '在当前代码上换新标签用 qa-run 重跑并更新证据；能确认仅为非行为文档变化时，在执行记录该行备注写「不重跑：<理由>」，由人工终审核对。',
+      ));
     }
   }
   return { ...summarize(issues, notes), table };
+}
+
+/** 执行记录备注中的「不重跑：<理由>」；理由为空时返回 null */
+function noRerunReason(row) {
+  return row.detail.match(NO_RERUN_PATTERN)?.[1].trim() || null;
 }
 
 function markdownSection(markdown, headingPattern) {
@@ -1234,7 +1254,10 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
   const ids = new Set(index.first.keys());
   const rows = triage?.rows ?? [];
   const triaged = new Set(rows.map((row) => row.id));
-  const untriaged = [...ids].filter((id) => !triaged.has(id)).sort();
+  const untriaged = [...ids].filter((id) => !triaged.has(id) && !id.startsWith(DEFAULT_REJECT_PREFIX)).sort();
+  const defaultRejected = [...ids]
+    .filter((id) => !triaged.has(id) && id.startsWith(DEFAULT_REJECT_PREFIX))
+    .sort((a, b) => Number(a.slice(3)) - Number(b.slice(3)));
   if (untriaged.length) {
     issues.push(issue(
       'FINDING_NOT_TRIAGED',
@@ -1289,7 +1312,7 @@ async function reviewRawIssues(featureDir, triage, packageTime) {
     ));
   }
   issues.push(...await fixVerificationIssues(featureDir, rows, triage?.evidenceColumn, index));
-  return { issues, latest: latestFiles, rawLines: lastRawLines(index, rows) };
+  return { issues, latest: latestFiles, rawLines: lastRawLines(index, rows), defaultRejected };
 }
 
 /** 编号前缀对应的审查轴：S-* 为 Standards，P-* 为 Spec */
@@ -1305,6 +1328,8 @@ async function rawIndex(featureDir, rounds) {
     for (const { relative, text, time } of await roundRaws(featureDir, rounds.get(round))) {
       text.split(/\r?\n/).forEach((line, lineIndex) => {
         for (const match of line.matchAll(FINDING_ID_PATTERN)) {
+          // 「[P-M3]:无发现」类写法只是占位，不是发现
+          if (NO_FINDING_AFTER_ID.test(line.slice(match.index + match[0].length))) continue;
           if (!first.has(match[1])) first.set(match[1], { round, time });
           last.set(match[1], { location: `${relative}:${lineIndex + 1}`, line: line.trim() });
         }
@@ -1430,6 +1455,12 @@ function normalizeWhitespace(text) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+/** 转录核验用的规范化：反转义 HTML 实体、剥离首行 HTML 注释，再压缩空白 */
+function normalizeForTranscript(text) {
+  const unescaped = text.replace(/&(?:lt|gt|quot|#39|amp);/g, (entity) => HTML_ENTITIES[entity]);
+  return normalizeWhitespace(unescaped.replace(/^\s*<!--[\s\S]*?-->/, ''));
+}
+
 function normalizeModel(model) {
   return String(model).toLowerCase().replace(/\./g, '-');
 }
@@ -1466,7 +1497,7 @@ function outputSegments(entries) {
     ...toolUses(entry)
       .filter((part) => /message/i.test(part.name ?? '') && typeof part.input?.message === 'string')
       .map((part) => part.input.message),
-  ]).map(normalizeWhitespace).filter(Boolean);
+  ]).map(normalizeForTranscript).filter(Boolean);
 }
 
 /** 主会话转录中是否有审查包之后的 code-review Skill 调用（技能名带插件前缀时按后缀匹配） */
@@ -1535,7 +1566,7 @@ async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
   const sessionModels = new Map();
   const unmatched = [];
   for (const relative of [latestFiles.standards, latestFiles.spec]) {
-    const raw = normalizeWhitespace(await readFile(path.join(featureDir, relative), 'utf8'));
+    const raw = normalizeForTranscript(await readFile(path.join(featureDir, relative), 'utf8'));
     const matched = transcripts.find((item) => raw && item.segments.some((segment) => segment.includes(raw)));
     if (!matched) {
       unmatched.push(relative);
@@ -1701,7 +1732,7 @@ async function checkReview(featureDir, plan, context, earlier) {
     }
   }
   issues.push(...await verificationIssues(featureDir, plan, context));
-  return { ...summarize(issues, notes), rawLines: raw.rawLines };
+  return { ...summarize(issues, notes), rawLines: raw.rawLines, defaultRejected: raw.defaultRejected };
 }
 
 export async function checkFeature(featureDir, phase) {
@@ -1796,7 +1827,11 @@ export function formatReport(report, phase) {
       '',
     );
   }
+  if (report.defaultRejected?.length) lines.push(`默认驳回 S-J：${report.defaultRejected.join('、')}`);
   lines.push(`结果: ${report.status}`);
+  if (report.status !== 'PASS' && report.issues.length) {
+    lines.push(`阻塞原因：${[...new Set(report.issues.map((item) => item.code))].join('、')}`);
+  }
   if (phase === 'review' && report.status === 'PASS') {
     lines.push('校验范围: 审查材料结构、交付日志、tree 与范围完整性');
     lines.push('不包含: 独立审查来源真实性、证据语义质量与交付授权');

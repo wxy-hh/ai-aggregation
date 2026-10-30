@@ -188,3 +188,28 @@ test('无 package.json 的 Git 宿主可直接运行 qa-run（TC12）', async (t
   assert.match(log, /^# qa-run v1\n/);
   assert.match(log, /# exit: 0\n$/);
 });
+
+test('[HR-TC05-1] 整串命令作为单个参数时报用法错误且不落盘', async (t) => {
+  const dir = await repo(t);
+  const result = run(dir, 'whole', ['node --version']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /用法/);
+  await assert.rejects(readFile(path.join(dir, '.scratch', 'feature', 'evidence', 'whole.log'), 'utf8'));
+});
+
+test('[HR-TC05-2] 误用失败后同一标签可用拆分参数正常执行', async (t) => {
+  const dir = await repo(t);
+  assert.notEqual(run(dir, 'whole', ['node --version']).status, 0);
+  const retried = run(dir, 'whole', [process.execPath, '--version']);
+  assert.equal(retried.status, 0, retried.stderr);
+});
+
+test('[HR-TC05-3] 路径含空格的真实可执行文件照常运行', async (t) => {
+  const dir = await repo(t);
+  const script = path.join(dir, 'with space', 'tool.sh');
+  await mkdir(path.dirname(script), { recursive: true });
+  await writeFile(script, '#!/bin/sh\necho 含空格路径\nexit 3\n', { mode: 0o755 });
+  const result = run(dir, 'spaced', [script]);
+  assert.equal(result.status, 3, result.stderr);
+  assert.match(result.stdout, /含空格路径/);
+});

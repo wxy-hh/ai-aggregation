@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -214,6 +215,12 @@ async function main() {
   if (rest[0] === '--') rest.shift();
   if (!feature || !label || !rest.length) {
     console.error('用法: node tooling/scripts/qa-run.mjs <feature-dir> <label> -- <command...>');
+    process.exitCode = 1;
+    return;
+  }
+  // 整串命令被当成单个参数时 spawn 必然 ENOENT；在写日志前拦下，不占用标签
+  if (rest.length === 1 && /\s/.test(rest[0]) && !existsSync(path.resolve(rest[0]))) {
+    console.error(`用法错误：命令需按参数拆开传入，不要整串加引号。\n正确示例: node tooling/scripts/qa-run.mjs ${feature} ${label} -- ${rest[0]}`);
     process.exitCode = 1;
     return;
   }

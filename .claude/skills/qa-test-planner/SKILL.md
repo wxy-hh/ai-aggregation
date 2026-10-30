@@ -59,7 +59,7 @@ QA Kind: feature
 ```
 
 - **Seam 选择**：选最高的合适接缝；browser 只用于 DOM、交互与视觉，其他断言下沉到 api、integration、unit 或 static。browser 默认 ≤5 条/15 分钟。
-- **证据**：只认特性目录内文件；browser 的 PASS 需要 `screenshots/` 下独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。可见、无遮挡、未溢出类断言由过程脚本在截图前硬断言几何（视口相交、代表点未被遮挡、边界与滚动尺寸），页面文本包含只证明存在。同 argv、同 tree、exit 0 的日志可被多个 TC 与交付验证引用。
+- **证据**：只认特性目录内文件；browser 的 PASS 需要 `screenshots/` 下独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。视觉类断言（可见、无遮挡、未溢出）的证据是几何硬断言加目标区域截图：过程脚本在截图前硬断言几何（视口相交、代表点未被遮挡、边界与滚动尺寸），再截取目标区域；页面文本包含只证明存在。同 argv、同 tree、exit 0 的日志可被多个 TC 与交付验证引用。
 - **断言标记与绑定**：browser/api 断言由 `scripts/` 下过程脚本逐条输出 `[TC01-1] PASS 实测：<观察值>`，规划时把断言写成能输出具体观察值的形式；unit/integration 断言在执行记录「绑定」列写 `` `<测试文件>` › <用例标题> ``；static 不绑定。
 - **状态**：只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
 - **交付验证**：原样复制 spec `## 交付命令` 的每条命令（`qa-check plan` 校验包含关系），可以按改动范围追加 typecheck、测试和 lint，不得删减，确需缩减先改 spec 并写明理由；逐条映射 spec 的验收标准；最终代码上用 qa-run 执行并核对 argv、exit 和 tree。
@@ -71,4 +71,4 @@ QA Kind: feature
 
 ### 阶段收口
 
-规划通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道（沿用阶段 1，只写车道名）、本阶段产物（qa-plan 路径、`qa-check plan` 结果与 init 输出）。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。
+规划通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志；计划中写明要新建、基线时尚不存在的新测试路径导致的「No test files」不算红灯，在 `## 范围说明` 记一行即可，不问用户。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道（沿用阶段 1，只写车道名）、本阶段产物（qa-plan 路径、`qa-check plan` 结果与 init 输出）。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。

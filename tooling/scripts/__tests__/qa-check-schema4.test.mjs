@@ -1138,8 +1138,8 @@ test('原文编号未进入分流表时 FINDING_NOT_TRIAGED 并列出缺失编�
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'FAIL', formatReport(report));
   const missing = report.issues.find((item) => item.code === 'FINDING_NOT_TRIAGED');
-  assert.match(missing.message, /P-W1、P-X1、S-J1/);
-  assert.doesNotMatch(missing.message, /S-H1|P-M1/);
+  assert.match(missing.message, /P-W1、P-X1/);
+  assert.doesNotMatch(missing.message, /S-H1|P-M1|S-J1/);
 });
 
 test('S-H/P-M/P-W 改档无理由时 DEFAULT_FIX_WITHOUT_REASON，S-J/P-X 不要求理由（TC02-3）', async (t) => {
@@ -1890,4 +1890,146 @@ test('执行记录变化未重跑 acceptance 时 RECONCILIATION_STALE，重跑�
   assert.equal(acceptanceCli(dir, feature).status, 0);
   const fresh = await checkFeature(feature, 'review');
   assert.ok(!codes(fresh).includes('RECONCILIATION_STALE'), formatReport(fresh));
+});
+
+// ADR-0042：证据前置拦截与审查降噪
+
+/** 第二个 unit 用例，与 TC01 绑定同一测试，共用 run 日志 */
+const SECOND_CASE = ['### TC02: 第二个示例', '- Priority: P0', '- Covers: 1', '- Seam: unit', '', '#### 验证断言', '1. 第二条断言', ''].join('\n');
+
+function rowNote(plan, caseId, note) {
+  return plan.replace(new RegExp(`(\\| ${caseId} \\| 1 \\| PASS \\| [^\\n]*\\| )\\|$`, 'm'), `$1${note} |`);
+}
+
+test('[HR-TC01-1] 行为证据 tree 过期且无豁免时 acceptance 报 STALE_EVIDENCE', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  await writeFile(path.join(dir, 'tracked.txt'), '日志生成后的代码修改\n');
+  const report = await checkFeature(feature, 'acceptance');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.match(report.issues.find((item) => item.code === 'STALE_EVIDENCE')?.message ?? '', /TC01/);
+});
+
+test('[HR-TC01-2] 备注写「不重跑：<理由>」时放行并在对账表标注', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, rowNote(await readFile(planPath, 'utf8'), 'TC01', '不重跑：仅改注释'));
+  await writeFile(path.join(dir, 'tracked.txt'), '日志生成后的代码修改\n');
+  const run = acceptanceCli(dir, feature);
+  assert.doesNotMatch(run.stdout, /STALE_EVIDENCE/, run.stdout);
+  const saved = await readFile(path.join(feature, '_qa', 'reconciliation.md'), 'utf8');
+  assert.match(saved, /\| TC01-1 \|.*不重跑：仅改注释 \|/);
+});
+
+test('[HR-TC01-3] 「不重跑：」后无理由时仍报 STALE_EVIDENCE', async (t) => {
+  const { dir, feature } = await reviewRepo(t);
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, rowNote(await readFile(planPath, 'utf8'), 'TC01', '不重跑：'));
+  await writeFile(path.join(dir, 'tracked.txt'), '日志生成后的代码修改\n');
+  const report = await checkFeature(feature, 'acceptance');
+  assert.ok(codes(report).includes('STALE_EVIDENCE'), formatReport(report));
+});
+
+test('[HR-TC01-4] 两行过期只有一行豁免时只列出未豁免的 TC', async (t) => {
+  const plan = singlePlan({
+    extraCases: SECOND_CASE,
+    extraResults: `| TC02 | 1 | PASS | \`evidence/run.log\` | ${BINDING} | |`,
+  });
+  const { dir, feature } = await reviewRepo(t, { plan });
+  const planPath = path.join(feature, 'qa-plan.md');
+  await writeFile(planPath, rowNote(await readFile(planPath, 'utf8'), 'TC02', '不重跑：仅改注释'));
+  await writeFile(path.join(dir, 'tracked.txt'), '日志生成后的代码修改\n');
+  const report = await checkFeature(feature, 'acceptance');
+  const message = report.issues.find((item) => item.code === 'STALE_EVIDENCE')?.message ?? '';
+  assert.match(message, /TC01/, formatReport(report));
+  assert.doesNotMatch(message, /TC02/);
+});
+
+test('[HR-TC01-5] 证据 tree 与当前一致时不报 STALE_EVIDENCE', async (t) => {
+  const { feature } = await reviewRepo(t);
+  const report = await checkFeature(feature, 'acceptance');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(!codes(report).includes('STALE_EVIDENCE'));
+});
+
+test('[HR-TC02-1] 编号后紧跟无发现的三种写法不产生待分流编号', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { spec: '[P-M3]:无发现\n[P-X1]：无发现\n**[P-M2]** 无发现\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('FINDING_NOT_TRIAGED'), formatReport(report));
+});
+
+test('[HR-TC02-2] 真实编号未进表时仍报 FINDING_NOT_TRIAGED', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { spec: '[P-M3]:无发现\n[P-W1] 截图被遮挡\n' });
+  const report = await checkFeature(feature, 'review');
+  const message = report.issues.find((item) => item.code === 'FINDING_NOT_TRIAGED')?.message ?? '';
+  assert.match(message, /P-W1/, formatReport(report));
+  assert.doesNotMatch(message, /P-M3/);
+});
+
+test('[HR-TC03-1] 未进表的 S-J 不报 FINDING_NOT_TRIAGED', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-J1] 判断一\n[S-J2] 判断二\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('FINDING_NOT_TRIAGED'), formatReport(report));
+});
+
+test('[HR-TC03-2] review 输出默认驳回 S-J 清单', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-J1] 判断一\n[S-J2] 判断二\n' });
+  const report = await checkFeature(feature, 'review');
+  assert.match(formatReport(report, 'review'), /默认驳回 S-J：S-J1、S-J2/);
+});
+
+test('[HR-TC03-3] 未进表的 S-H 仍报 FINDING_NOT_TRIAGED', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-H1] 硬违规\n[S-J1] 判断\n' });
+  const report = await checkFeature(feature, 'review');
+  const message = report.issues.find((item) => item.code === 'FINDING_NOT_TRIAGED')?.message ?? '';
+  assert.match(message, /S-H1/, formatReport(report));
+  assert.doesNotMatch(message, /S-J1/);
+});
+
+test('[HR-TC03-4] S-J 都已进表时不输出默认驳回清单', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '[S-J1] 判断\n' });
+  await writeFile(path.join(feature, 'review-report.md'), triageReport(['| S-J1 | 驳回 | 驳回 | r1 | 成本大于收益 |']));
+  const report = await checkFeature(feature, 'review');
+  assert.doesNotMatch(formatReport(report, 'review'), /默认驳回 S-J/);
+});
+
+test('[HR-TC04-1] 原文首行注释与实体转义差异不触发转录不匹配 NOTE', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  const body = '比较 a < b && c > d：无发现';
+  await writeRaw(feature, 1, { standards: `<!-- 主代理注：说明 -->\n\n${body}\n`, spec: `${body}\n` });
+  await writeTranscript(configDir, dir, { text: '比较 a &lt; b &amp;&amp; c &gt; d：无发现', model: 'claude-opus-5-5' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report));
+});
+
+test('[HR-TC04-2] 实体转义之外的文字差异仍触发转录不匹配 NOTE', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '比较 a < b：无发现\n', spec: '比较 a < b：无发现\n' });
+  await writeTranscript(configDir, dir, { text: '比较 a &lt; c：无发现', model: 'claude-opus-5-5' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report));
+});
+
+test('[HR-TC06-1] 非 PASS 时结果行之后输出阻塞原因', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { spec: '[P-W1] 误\n' });
+  await writeRaw(feature, 3, { spec: '[P-W1] 未修\n' });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport(['| P-W1 | 本次修 | 未修 | r1 → r3 未修 | | |']));
+  const report = await checkFeature(feature, 'review');
+  const output = formatReport(report, 'review');
+  assert.match(output, /结果: BLOCKED\n阻塞原因：[^\n]*UNRESOLVED_FINDINGS/, output);
+});
+
+test('[HR-TC06-2] PASS 时不输出阻塞原因', async (t) => {
+  const { feature } = await reviewRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.doesNotMatch(formatReport(report, 'review'), /阻塞原因/);
 });

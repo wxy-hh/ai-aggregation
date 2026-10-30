@@ -219,7 +219,7 @@ test('通用安装模板同步审查交接与完成语义（TC13）', async () =
     assert.match(content, /人工终审/);
   }
   assert.match(workflow, /触发条件/);
-  assert.match(workflow, /NOTE 处置/);
+  assert.match(workflow, /证据过期/);
   assert.match(customizations, /## \d+\. `code-review`/);
   assert.match(setup, /注入[^\n]*`code-review`/);
 });
@@ -422,4 +422,66 @@ test('implement 交付汇报只附人工终审入口，快车道表格不与核�
   for (const content of [workflow, template]) {
     assert.doesNotMatch(content, /\| 快车道 \|[^\n]*（不建 qa-plan，不跑审查）/);
   }
+});
+
+// ADR-0042：证据前置拦截与审查降噪的规则契约
+const codeReviewPaths = ['.claude/skills/code-review/SKILL.md', '.claude/skills/setup-qa-workflow/templates/skill-customizations.md'];
+const workflowPaths = [paths.workflow, paths.workflowTemplate];
+
+async function eachMatch(files, pattern) {
+  for (const file of files) assert.match(await read(file), pattern, file);
+}
+
+test('[HR-TC07-1] 交付命令在首次 collect 前预跑，阶段 7 仍在最终代码上执行', async () => {
+  await eachMatch(workflowPaths, /首次 collect 之前先跑一次/);
+  await eachMatch(workflowPaths, /QA 工作流在最终代码上通过 qa-run 执行每条交付命令/);
+});
+
+test('[HR-TC07-2] 视觉类断言证据为几何硬断言加目标区域截图', async () => {
+  await eachMatch([...workflowPaths, paths.qaPlanner], /几何硬断言.*目标区域截图/s);
+});
+
+test('[HR-TC07-3] 计划变更不得新增冻结断言之外的呈现要求', async () => {
+  await eachMatch(workflowPaths, /计划变更不得新增冻结断言之外的呈现要求/);
+});
+
+test('[HR-TC07-4] Spec 轴只按冻结断言原文核对截图，取景不全不编号', async () => {
+  await eachMatch(codeReviewPaths, /只按冻结断言原文核对截图/);
+  await eachMatch(codeReviewPaths, /截图只是取景不全时不编号/);
+});
+
+test('[HR-TC07-5] 返回截断时照原样落盘并保持待独立审查，禁止追问重写', async () => {
+  await eachMatch(codeReviewPaths, /截断或不完整时照原样落盘.*待独立审查.*不得追问、续传或让子代理重写/s);
+});
+
+test('[HR-TC07-6] 原文不得加头注或还原转义，说明写进 review-report', async () => {
+  await eachMatch(codeReviewPaths, /不得在原文中加头注、还原转义.*review-report/s);
+});
+
+test('[HR-TC07-7] 复审输入含本轮修复改过的文件，不再要求新增修复 diff', async () => {
+  for (const file of [...workflowPaths, ...codeReviewPaths]) {
+    const text = await read(file);
+    assert.match(text, /本轮修复改过的文件/, file);
+    assert.doesNotMatch(text, /上一次 collect 之后新增的修复 diff|新增修复 diff/, file);
+  }
+});
+
+test('[HR-TC07-8] 无发现不带编号', async () => {
+  await eachMatch(codeReviewPaths, /「无发现」不带编号/);
+});
+
+test('[HR-TC07-9] S-J 默认驳回且不必进表', async () => {
+  await eachMatch(workflowPaths, /S-J 默认驳回且不必进表/);
+});
+
+test('[HR-TC07-10] S-J 只报有明确当前成本的问题', async () => {
+  await eachMatch(codeReviewPaths, /S-J 只报有明确当前成本的问题/);
+});
+
+test('[HR-TC07-11] 对应 spec US 或冻结断言的未核实项必须编号', async () => {
+  await eachMatch(codeReviewPaths, /未核实项对应 spec 的 US 或冻结断言时.*\[P-M<n>\]/s);
+});
+
+test('[HR-TC07-12] 基线时不存在的新测试路径不算红灯', async () => {
+  await eachMatch([...workflowPaths, paths.qaPlanner], /基线时尚不存在的新测试路径.*不算红灯/s);
 });
