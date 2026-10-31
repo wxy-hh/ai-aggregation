@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useChatStore } from './chat-store';
+import { useChatStore, type Message } from './chat-store';
+import type { Artifact } from '@repo/shared';
 import { on, StoreEvents } from './store-events';
 import { authFetch } from '@/lib/api/client';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
@@ -534,22 +535,37 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
     expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: true });
   });
 
-  it('loadConversation 恢复绑定的 toolOverrides，reset 予以重置', () => {
+  it('loadConversation 正确恢复消息列表、产物池、能力包及工具覆盖字典', () => {
+    const mockMessages: Message[] = [
+      { id: 'u1', role: 'user', content: '分析这份代码' },
+      { id: 'a1', role: 'assistant', content: '这是分析结果' },
+    ];
+    const mockArtifacts: Artifact[] = [
+      { id: 'art-1', type: 'code', title: '分析脚本', content: 'console.log(1)', status: 'complete' },
+    ];
+
     useChatStore.getState().loadConversation(
       'conv-override-1',
-      [],
+      mockMessages,
       'doubao',
       'doubao-seed-evolving',
       'deep-research',
-      { web_fetch: false, weather: true }
+      { web_fetch: false, weather: true },
+      mockArtifacts
     );
 
-    expect(useChatStore.getState().activeConversationId).toBe('conv-override-1');
-    expect(useChatStore.getState().activeCapabilityPackKey).toBe('deep-research');
-    expect(useChatStore.getState().toolOverrides).toEqual({ web_fetch: false, weather: true });
+    const state = useChatStore.getState();
+    expect(state.activeConversationId).toBe('conv-override-1');
+    expect(state.messages).toEqual(mockMessages);
+    expect(state.artifacts).toEqual(mockArtifacts);
+    expect(state.activeArtifactId).toBe('art-1');
+    expect(state.activeCapabilityPackKey).toBe('deep-research');
+    expect(state.toolOverrides).toEqual({ web_fetch: false, weather: true });
 
     useChatStore.getState().reset();
     expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(useChatStore.getState().messages).toEqual([]);
+    expect(useChatStore.getState().artifacts).toEqual([]);
     expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
     expect(useChatStore.getState().toolOverrides).toEqual({});
   });

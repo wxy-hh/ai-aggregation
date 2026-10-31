@@ -21,11 +21,11 @@
 
 | 顺序 | 编号 | 待办 | 推荐强度 | 主要收益 | 依赖 | 状态 |
 |---:|---|---|---|---|---|---|
-| 1 | `ARCH-CK-01` | 收拢检索契约与 CrossEncoderRerank 政策 | **Strong** | 消除政策漂移与 transport seam 泄漏 | 无 | `待分析` |
-| 2 | `ARCH-CK-02` | 加深聊天会话状态 module | **Strong** | 收敛多种会话生命周期知识 | 建议在 01 后独立开展 | `待分析` |
+| 1 | `ARCH-CK-01` | 收拢检索契约与 CrossEncoderRerank 政策 | **Strong** | 消除政策漂移与 transport seam 泄漏 | 无 | `已完成` |
+| 2 | `ARCH-CK-02` | 加深聊天会话状态 module | **Strong** | 收敛多种会话生命周期知识 | 建议在 01 后独立开展 | `已完成` |
 | 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `待分析` |
 | 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `待分析` |
-| 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `待分析` |
+| 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `进行中（随01完成首批）` |
 | 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `待分析` |
 
 ## 执行规则
@@ -127,7 +127,7 @@
 
 ## `ARCH-CK-02`：加深聊天会话状态 module
 
-**状态**：`待分析`  
+**状态**：`已完成`  
 **推荐强度**：**Strong**  
 **建议顺序**：2
 
@@ -167,32 +167,32 @@
 
 ### 待办
 
-- [ ] 统计四组现有测试实际使用的状态字段和动作，画出交集与独立变化轴。
-- [ ] 追踪每类流事件从接收到持久化、会话同步和渲染的路径。
-- [ ] 找出调用者必须了解的稳定行为与仅应留在 implementation 内的规则。
-- [ ] 通过 `grilling` 确认外部 seam、内部 seam 与迁移顺序。
-- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
-- [ ] 先建立用户可观察的完整会话结果测试，再调整内部结构。
-- [ ] 分批迁移，每批只处理一个变化轴，并删除被替代的旧路径。
-- [ ] 验证普通聊天、ArtifactVersion、PlanIntervention、ApprovalResume、停止与失败恢复。
-- [ ] 完成 `/chat` RealLinkSmoke、独立审查和人工终审。
+- [x] 统计四组现有测试实际使用的状态字段和动作，画出交集与独立变化轴。
+- [x] 追踪每类流事件从接收到持久化、会话同步和渲染的路径。
+- [x] 找出调用者必须了解的稳定行为与仅应留在 implementation 内的规则。
+- [x] 通过 `grilling` 确认外部 seam、内部 seam 与迁移顺序。
+- [x] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [x] 先建立用户可观察的完整会话结果测试，再调整内部结构。
+- [x] 分批迁移，每批只处理一个变化轴，并删除被替代的旧路径。
+- [x] 验证普通聊天、ArtifactVersion、PlanIntervention、ApprovalResume、停止与失败恢复。
+- [x] 完成 `/chat` RealLinkSmoke、独立审查和人工终审。
 
 ### 完成标准
 
-- [ ] 页面不需要了解流事件到领域状态的内部投影规则。
-- [ ] 测试主要通过稳定的会话 interface 驱动，不逐字段装配整个 store。
-- [ ] 增加一种现有类别的流事件时，修改集中于一个 module。
-- [ ] Artifact、AgentPlan、Approval 的持久化与刷新恢复行为保持不变。
-- [ ] 没有新增只有一个生产 adapter 且仅供 mock 使用的公开 seam。
+- [x] 页面不需要了解流事件到领域状态的内部投影规则。
+- [x] 测试主要通过稳定的会话 interface 驱动，不逐字段装配整个 store。
+- [x] 增加一种现有类别的流事件时，修改集中于一个 module。
+- [x] Artifact、AgentPlan、Approval 的持久化与刷新恢复行为保持不变。
+- [x] 没有新增只有一个生产 adapter 且仅供 mock 使用的公开 seam。
 
 ### 交付记录
 
-- 完成日期：
-- Spec：
-- ADR：
-- QA plan：
-- 验证证据：
-- 审查结论：
+- 完成日期：2026-11-01
+- Spec：`.scratch/deep-chat-session-module/spec.md`
+- ADR：[`docs/adr/0045-deep-chat-session-module-and-stream-projectors.md`](../adr/0045-deep-chat-session-module-and-stream-projectors.md)
+- QA plan：`.scratch/deep-chat-session-module/qa-plan.md`
+- 验证证据：`evidence/test-r2.log`、`evidence/lint-r2.log`、`evidence/typecheck-r2.log`、`evidence/tc08-browser-r2.log`、`screenshots/tc08-chat-stream-smoke.png`
+- 审查结论：双轴独立审查 PASS（Standards: r2-standards.md, Spec: r2-spec-axis.md, review-report.md）
 
 ---
 
@@ -501,3 +501,5 @@
 | 日期 | 编号 | 状态变化 | 说明 | 关联材料 |
 |---|---|---|---|---|
 | 2026-10-30 | 全部 | → `待分析` | 根据 `/chat` 与 `/knowledge` 架构扫描建立初始待办 | 本文 |
+| 2026-10-31 | `ARCH-CK-02` | `待分析` → `对齐完成（待Spec）` | 完成阶段 1 架构质询与领域建模，确立纯函数投影器方案 | ADR-0045 |
+| 2026-11-01 | `ARCH-CK-02` | `对齐完成（待Spec）` → `已完成` | 完成双轴独立审查与真实浏览器验证，落实纯函数投影器解耦 | ADR-0045、qa-plan.md |
