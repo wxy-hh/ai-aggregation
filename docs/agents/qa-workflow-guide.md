@@ -209,7 +209,7 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `ASSERTION_MARKER_CONFLICT` | 日志有 FAIL 标记，记录却写 PASS | 如实改为 FAIL 或修复后重跑 |
 | `TEST_BINDING_MISSING` | 绑定为空、文件不存在或找不到标题 | 改绑定列 |
 | `TEST_BINDING_OUT_OF_RUN` | 证据命令没跑到绑定的测试文件 | 改绑定，或用覆盖该文件的命令重跑 |
-| `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动、密码字面量、登录或注册接口、`window.__*` 上的登录方法等 | 删掉，脚本从已登录状态开始；**不可豁免** |
+| `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动（含工作区里直接依赖驱动的包，如本仓库 `@repo/db`）、密码字面量、登录或注册接口、`window.__*` 上的登录方法等 | 删掉，脚本从已登录状态开始；**不可豁免** |
 | `REVIEW_RAW_MISSING` | 最新一轮缺某轴原文，或原文早于审查包 | 用 Skill 工具重新调用 code-review |
 | `REVIEW_RAW_UNNUMBERED` | 最新一轮原文没有规范编号也没写「无发现」 | 多半是绕过了 code-review 技能；用 Skill 工具调用它重新审查 |
 | `RECONCILIATION_STALE` | `_qa/reconciliation.md` 缺失或与当前执行记录不一致 | 重跑 acceptance，重新 collect 并复审 |
@@ -225,7 +225,7 @@ NOTE 不改变结果，但值得看：
 
 - `SYNTHETIC_INPUT_IN_SCRIPT`：页面内用了 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值、`.setState(` 或访问 `window.__*`。合法用途是读状态或构造前置条件；对账表会标「非真实输入」。
 - `RESPONSE_INJECTION_IN_SCRIPT`：脚本替换或拦截了网络响应（`window.fetch` 赋值、路由拦截与 fulfill、`cy.intercept`、MSW 处理器）。合法用途是构造前端前置或故障态；对账表会标「响应注入」，这些行的断言只能写端侧结果，核心链路另需真实链路冒烟。
-- 转录核验：原文在审查包之后的子代理输出里找不到、审查包之后没有子代理转录、没有 `code-review` 的 Skill 调用，或子代理模型与主会话不同。去 NOTE 给出的转录路径核对。比对前会反转义 HTML 实体并剥离首行注释；宿主转录格式不是公开契约，所以只给 NOTE。
+- 转录核验：原文在审查包之后的子代理输出里找不到、审查包之后没有子代理转录、没有 `code-review` 的 Skill 调用，或子代理模型与主会话不同。去 NOTE 给出的转录路径核对。比对前会反转义 HTML 实体并剥离首行注释；宿主转录格式不是公开契约，所以只给 NOTE。审查方式行声明 `宿主=` 为 Claude Code 以外的宿主时不做这项核验，只给一条提示你到该宿主会话记录核对来源的 NOTE。
 
 ---
 
@@ -249,7 +249,7 @@ NOTE 不改变结果，但值得看：
 | 标准车道 | 独立功能，涉及模块少，串行可完成 | grill → spec → qa-test-planner → implement |
 | 慢车道 | 跨多模块的复杂业务或大功能，或需要并行子代理 | grill → spec → to-tickets → qa-test-planner → implement-spec |
 
-车道在阶段 1 定一次，每个技能结束只建议路线上的下一步。触及认证、对话、图像、视频、语音、历史、计费等核心链路时，哪条车道都要做浏览器验收。implement-spec 按工单依赖图调度，只有互不阻塞的工单才并行，其余仍串行。交接用 `/handoff`，见下一节。
+车道在阶段 1 定，实现中发现判错时按正本「车道升级」停下报告、经你确认后只升不降，每个技能结束只建议当前车道路线上的下一步。触及认证、对话、图像、视频、语音、历史、计费等核心链路时，哪条车道都要做浏览器验收。implement-spec 按工单依赖图调度，只有互不阻塞的工单才并行，其余仍串行。交接用 `/handoff`，见下一节。
 
 ---
 

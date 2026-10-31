@@ -98,6 +98,7 @@ QA 工作流在审查前不提交代码，因此由它调用本技能时替换 d
 - diff 改用 QA 工作流事先 collect 生成的 `.scratch/<feature>/_qa/review-package.diff`（包含未提交改动和相关未跟踪文件），两个子代理的 diff 输入都传这个文件路径，代替 `git diff <fixed-point>...HEAD`。
 - `_qa/review-package.json` 中 `changedFiles` 为空且没有 `unreviewed` 时视为空 diff，按上文在启动子代理前结束。
 - 两个子代理继承主会话模型，调用时不传 model；用户明确指定审查模型时照做，并在 review-report 的审查方式行写明。前台或后台不限。
+- review-report 的审查方式行以 `宿主=<宿主名>；` 开头声明审查所在宿主（如 `审查方式：宿主=Claude Code；…`）；声明为其他宿主时 qa-check 跳过 Claude Code 转录核验，改由人工按该行核对来源。
 - 子代理只返回审查内容，不要求它写文件；格式问题不得成为修改原文的理由。主代理把每个子代理的返回逐字写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（n 为轮次，首轮 1），不删改、不总结、不重排，已存在的文件不得覆盖。两份原文都落盘后主代理才进入三档分流，第 5 步汇总不再粘贴原文。
 - 每轴每轮只派一个子代理，不重派替代子代理；返回被截断或不完整时照原样落盘，在 review-report 审查方式行写明该轴不完整，该轮保持待独立审查，不得追问、续传或让子代理重写；某轴失败或没有返回时同样保持待独立审查，主代理不得代写原文。
 - 不得在原文中加头注、还原转义或做任何加工；需要说明的写进 review-report。

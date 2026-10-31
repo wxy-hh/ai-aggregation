@@ -485,3 +485,47 @@ test('[HR-TC07-11] 对应 spec US 或冻结断言的未核实项必须编号', a
 test('[HR-TC07-12] 基线时不存在的新测试路径不算红灯', async () => {
   await eachMatch([...workflowPaths, paths.qaPlanner], /基线时尚不存在的新测试路径.*不算红灯/s);
 });
+
+// ---- 车道升级与宿主适用范围（.scratch/qa-workflow-lane-host-scan，ADR-0043、ADR-0044） ----
+
+/** 安装定制段中某个技能的注入段落（从「## N. `技能`」到下一个二级标题） */
+async function customizationSection(skill) {
+  const text = await read(customizationsPath);
+  const start = text.search(new RegExp(`^## \\d+\\. \`${skill}\``, 'm'));
+  assert.ok(start >= 0, `${customizationsPath} 缺少 ${skill} 段`);
+  const rest = text.slice(start + 1);
+  const end = rest.search(/^## /m);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+test('[LH-TC01] 正本、安装正本、implement 与其安装定制段写明车道升级', async () => {
+  await eachMatch([...workflowPaths, paths.implement], /车道升级/);
+  assert.match(await customizationSection('implement'), /车道升级/);
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.doesNotMatch(content, /后续技能沿用，不重新判定/, file);
+    // 只在车道升级要点内查关键词：`/to-tickets` 在车道表格里本来就有
+    const points = content.slice(content.indexOf('**车道升级**'), content.indexOf('每个技能收口只写一个'));
+    assert.ok(points.length > 0, `${file} 缺少车道升级要点`);
+    for (const keyword of ['只升不降', '/to-tickets', 'baseline-upgrade-', '待新基线复验']) {
+      assert.ok(points.includes(keyword), `${file} 的车道升级要点缺少 ${keyword}`);
+    }
+  }
+});
+
+test('[LH-TC06] 后续技能收口沿用当前车道，不再沿用阶段 1', async () => {
+  for (const file of [paths.toSpec, paths.toTickets, paths.qaPlanner, customizationsPath]) {
+    assert.doesNotMatch(await read(file), /沿用阶段 1/, file);
+  }
+  await eachMatch([paths.toSpec, paths.toTickets, paths.qaPlanner], /沿用当前车道/);
+  for (const skill of ['to-spec', 'to-tickets']) assert.match(await customizationSection(skill), /沿用当前车道/, skill);
+});
+
+test('[LH-TC07] 正本写明宿主适用范围与审查方式行的宿主字段', async () => {
+  for (const file of workflowPaths) {
+    const boundary = (await read(file)).split('## 四、')[0].split('## 三、')[1] ?? '';
+    assert.match(boundary, /只保证 Claude Code/, file);
+    assert.match(boundary, /转录核验/, file);
+  }
+  await eachMatch([...workflowPaths, '.claude/skills/code-review/SKILL.md'], /宿主=/);
+});

@@ -372,6 +372,7 @@ async function readSkills(directory) {
 
 /**
  * Claude Code 中个人级技能优先于项目级：流程技能同名且内容不同时阻塞，其余同名只提示。
+ * 该检查防的是下次在 Claude Code 中执行时被遮蔽，与检查器在哪个宿主运行无关，因此不按宿主跳过。
  * 输出只列技能名，不输出个人技能内容。
  */
 async function skillShadowIssues(featureDir) {
@@ -393,7 +394,7 @@ async function skillShadowIssues(featureDir) {
           'SHADOWED_WORKFLOW_SKILL',
           'BLOCKED',
           `个人级技能与项目流程技能 ${workflowName} 同名且内容不同，Claude Code 会加载个人级版本，项目版不会生效。`,
-          '把个人级技能目录（设置 CLAUDE_CONFIG_DIR 时为其下的 skills，否则为 ~/.claude/skills）中的同名技能移走或改名后重新运行；不要修改项目技能去迁就个人版本。',
+          '把个人级技能目录（设置 CLAUDE_CONFIG_DIR 时为其下的 skills，否则为 ~/.claude/skills）中的同名技能移走或改名后重新运行；不要修改项目技能去迁就个人版本。该检查防的是下次在 Claude Code 中执行时流程技能被遮蔽，在其他宿主运行时同样检查。',
         ));
       } else {
         sharedNames.add(workflowName ?? collided[0]);
@@ -401,7 +402,7 @@ async function skillShadowIssues(featureDir) {
     }
   }
   const notes = sharedNames.size
-    ? [`个人级技能与项目技能同名：${[...sharedNames].sort().join('、')}；Claude Code 中个人级优先，请确认个人版是期望使用的版本。`]
+    ? [`个人级技能与项目技能同名：${[...sharedNames].sort().join('、')}；Claude Code 中个人级优先，请确认个人版是期望使用的版本；在其他宿主运行时同样检查。`]
     : [];
   return { issues, notes };
 }
@@ -845,6 +846,125 @@ function dataStoreModule(specifier) {
 }
 
 /**
+ * 工作区中 dependencies 直接含数据存储驱动的包；返回包名与包目录绝对路径，以及推导未完全生效时的 NOTE。
+ * 只看 dependencies，不看 devDependencies，不沿传递依赖扩散。
+ */
+async function workspaceDataStorePackages(root) {
+  const packages = [];
+  const problems = [];
+  const { patterns, problem } = await workspacePatterns(root);
+  if (problem) problems.push(problem);
+  for (const directory of await expandWorkspacePatterns(root, patterns)) {
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8'));
+    } catch {
+      problems.push(`${path.relative(root, path.join(directory, 'package.json'))} 无法解析`);
+      continue;
+    }
+    const dependencies = Object.keys(manifest.dependencies ?? {});
+    if (manifest.name && dependencies.some((name) => DATA_STORE_MODULES.includes(name))) {
+      packages.push({ name: manifest.name, directory });
+    }
+  }
+  const notes = problems.length
+    ? [`工作区推导未完全生效：${problems.join('、')}；本次按基础名单与已解析的工作区包扫描过程脚本。`]
+    : [];
+  return { packages, notes };
+}
+
+/**
+ * 工作区包目录的匹配模式：优先读 pnpm-workspace.yaml 的 packages 简单列表，
+ * 没有时读根 package.json 的 workspaces（数组，或对象的 packages 字段）；以 ! 开头的排除项忽略
+ */
+async function workspacePatterns(root) {
+  const yaml = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8').catch(() => null);
+  if (yaml !== null) {
+    const patterns = [];
+    let inPackages = false;
+    for (const line of yaml.split(/\r?\n/)) {
+      if (/^packages\s*:\s*$/.test(line)) {
+        inPackages = true;
+        continue;
+      }
+      if (inPackages && /^\S/.test(line)) inPackages = false;
+      const item = inPackages && line.match(/^\s+-\s+(['"]?)([^'"#]+?)\1\s*$/);
+      if (item) patterns.push(item[2]);
+    }
+    return { patterns: patterns.filter((pattern) => !pattern.startsWith('!')), problem: null };
+  }
+  const text = await readFile(path.join(root, 'package.json'), 'utf8').catch(() => null);
+  if (text === null) return { patterns: [], problem: null };
+  let manifest;
+  try {
+    manifest = JSON.parse(text);
+  } catch {
+    return { patterns: [], problem: 'package.json 无法解析' };
+  }
+  const workspaces = Array.isArray(manifest.workspaces) ? manifest.workspaces : manifest.workspaces?.packages;
+  const patterns = Array.isArray(workspaces) ? workspaces.filter((item) => typeof item === 'string') : [];
+  return { patterns: patterns.filter((pattern) => !pattern.startsWith('!')), problem: null };
+}
+
+/** 展开工作区模式：只支持精确目录与以 /* 结尾的一层目录，只保留含 package.json 的目录 */
+async function expandWorkspacePatterns(root, patterns) {
+  const directories = [];
+  for (const pattern of patterns) {
+    const oneLevel = pattern.endsWith('/*');
+    const base = path.join(root, oneLevel ? pattern.slice(0, -2) : pattern);
+    const candidates = oneLevel
+      ? (await readdir(base, { withFileTypes: true }).catch(() => []))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(base, entry.name))
+      : [base];
+    for (const candidate of candidates) {
+      if ((await stat(path.join(candidate, 'package.json')).catch(() => null))?.isFile()) directories.push(candidate);
+    }
+  }
+  return directories;
+}
+
+/**
+ * 说明符是否指向工作区数据存储包：包名本身、以「包名/」开头的子路径，
+ * 或相对脚本目录、绝对路径解析后落在包目录内的路径（两侧按真实路径比较，避免 /var 与 /private/var 之类的符号链接差异）
+ */
+async function workspaceDataStoreModule(specifier, packages, scriptDir) {
+  const byName = packages.find((item) => specifier === item.name || specifier.startsWith(`${item.name}/`));
+  if (byName) return byName.name;
+  const local = specifier.startsWith('file://') ? fileURLToPathOrNull(specifier) : specifier;
+  if (!local || !(path.isAbsolute(local) || /^\.\.?(?:\/|$)/.test(local))) return null;
+  const absolute = await realPathOfLongestExisting(path.resolve(scriptDir, local));
+  return packages.find((item) => {
+    const inside = path.relative(item.directory, absolute);
+    return !inside.startsWith('..') && !path.isAbsolute(inside);
+  })?.name ?? null;
+}
+
+/** 解析路径中最长的已存在前缀的真实路径，再拼回不存在的剩余部分 */
+async function realPathOfLongestExisting(target) {
+  const rest = [];
+  let current = target;
+  for (;;) {
+    try {
+      return path.join(await realpath(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return target;
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function fileURLToPathOrNull(url) {
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 从入口之后截取页面内代码片段：跟踪 ( [ { 嵌套，遇到闭合外层调用或对象的括号、或顶层分号时结束。
  * 括号调用入口截到配对的右括号；CDP 方法名入口截到所在调用参数或对象字面量结束，可跨行。
  */
@@ -867,6 +987,7 @@ function inPageSegments(text) {
 
 /**
  * 扫描 scripts/ 下全部脚本：绕过真实登录（注入 Cookie、写令牌、脚本内登录、直连数据存储）为不可豁免的 FAIL；
+ * 数据存储模块含第三方驱动，以及工作区中 dependencies 直接含这些驱动的包；
  * 页面内合成输入与直接改写应用状态只提示，并在对账表标注「非真实输入」；响应注入只提示，并标注「响应注入」。
  */
 async function scanProcessScripts(featureDir) {
@@ -874,10 +995,19 @@ async function scanProcessScripts(featureDir) {
   const notes = [];
   const synthetic = new Set();
   const injected = new Set();
+  const root = await gitRoot(featureDir);
+  const workspace = root ? await workspaceDataStorePackages(root) : { packages: [], notes: [] };
+  const workspacePackages = workspace.packages;
+  notes.push(...workspace.notes);
   for (const relative of await listScripts(featureDir)) {
     const text = await readFile(path.join(featureDir, relative), 'utf8');
     const hits = AUTH_BYPASS_PATTERNS.filter((item) => item.pattern.test(text)).map((item) => item.label);
-    const modules = [...new Set(importedSpecifiers(text).map(dataStoreModule).filter(Boolean))];
+    const specifiers = importedSpecifiers(text);
+    const scriptDir = path.dirname(path.resolve(featureDir, relative));
+    const workspaceModules = await Promise.all(
+      specifiers.map((specifier) => workspaceDataStoreModule(specifier, workspacePackages, scriptDir)),
+    );
+    const modules = [...new Set([...specifiers.map(dataStoreModule), ...workspaceModules].filter(Boolean))];
     hits.push(...modules.map((name) => `引入数据存储模块 ${name}`));
     const python = text.match(PYTHON_DATA_STORE_IMPORT);
     if (python) hits.push(`引入数据存储模块 ${python[1]}`);
@@ -1433,6 +1563,17 @@ async function fixVerificationIssues(featureDir, rows, evidenceColumn, index) {
     : [];
 }
 
+/**
+ * 审查方式行中的显式宿主声明：只认 `宿主=<宿主名>`，宿主名止于全角或半角分号或行尾（宿主名本身可含空格，如 Kimi Code）。
+ * 返回 null 表示未声明；宿主名为 Claude Code（大小写不敏感）时 claude 为 true。
+ */
+function declaredReviewHost(reportText) {
+  const method = reportText.split(/\r?\n/).find((line) => /^审查方式[：:]/.test(line)) ?? '';
+  const name = method.match(/宿主=([^；;]*)/)?.[1]?.trim();
+  if (!name) return null;
+  return { name, claude: /^claude code$/i.test(name) };
+}
+
 /** 审查报告只强制审查方式与三档分流；两轴原文由 review/ 下的文件承载 */
 function reviewReportIssues(reportText, triage) {
   const issues = [];
@@ -1514,9 +1655,9 @@ async function codeReviewInvoked(sessionFiles, packageTime) {
 }
 
 /**
- * 子代理转录交叉核验（只给 NOTE）：在宿主会话目录中找审查包之后的子代理转录，
+ * 子代理转录交叉核验（只给 NOTE）：在 Claude Code 会话目录中找审查包之后的子代理转录，
  * 核对原文是否出现在某个子代理的输出中、子代理模型是否与主会话一致，以及主会话是否调用了 code-review 技能。
- * 宿主转录格式不是公开契约，找不到会话目录时静默跳过。
+ * 宿主转录格式不是公开契约，找不到会话目录时静默跳过；审查方式行声明其他宿主时由调用方跳过本核验。
  */
 async function transcriptNotes(root, latestFiles, featureDir, packageTime) {
   if (!root || !latestFiles?.standards || !latestFiles?.spec) return [];
@@ -1716,7 +1857,13 @@ async function checkReview(featureDir, plan, context, earlier) {
   if (reportText) issues.push(...reviewReportIssues(reportText, triage));
   const raw = await reviewRawIssues(featureDir, triage, packageTime);
   issues.push(...raw.issues);
-  notes.push(...await transcriptNotes(context.root, raw.latest, featureDir, packageTime));
+  // 转录核验只对 Claude Code 完成的审查有意义：声明为其他宿主时跳过，未声明时沿用原检查
+  const host = reportText ? declaredReviewHost(reportText) : null;
+  if (host && !host.claude) {
+    notes.push(`转录核验：审查方式行声明宿主为 ${host.name}，Claude Code 转录核验不适用；请人工按审查方式行到该宿主的会话记录核对审查来源。`);
+  } else {
+    notes.push(...await transcriptNotes(context.root, raw.latest, featureDir, packageTime));
+  }
 
   const outOfScope = Array.isArray(manifest?.outOfScope) ? manifest.outOfScope : [];
   if (outOfScope.length) {

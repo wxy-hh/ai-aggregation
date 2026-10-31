@@ -71,4 +71,4 @@ QA Kind: feature
 
 ### 阶段收口
 
-规划通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志；计划中写明要新建、基线时尚不存在的新测试路径导致的「No test files」不算红灯，在 `## 范围说明` 记一行即可，不问用户。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道（沿用阶段 1，只写车道名）、本阶段产物（qa-plan 路径、`qa-check plan` 结果与 init 输出）。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。
+规划通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志；计划中写明要新建、基线时尚不存在的新测试路径导致的「No test files」不算红灯，在 `## 范围说明` 记一行即可，不问用户。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道（沿用当前车道，只写车道名）、本阶段产物（qa-plan 路径、`qa-check plan` 结果与 init 输出）。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。
