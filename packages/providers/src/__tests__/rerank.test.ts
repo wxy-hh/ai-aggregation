@@ -135,7 +135,30 @@ describe('@repo/providers Rerank 二次精排深模块 (rerank.ts) 单元测试'
     );
   });
 
-  it('5. API 错误处理：非 200 响应抛出错误并记录 warn 日志', async () => {
+  it('5. 真实信号超时中断：网络耗时超过 timeoutMs 时触发 AbortError 并抛出清晰提示', async () => {
+    const mockFetch = vi.fn().mockImplementation((_url, init) => {
+      return new Promise((_, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const abortError = new Error('The operation was aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        });
+      });
+    });
+
+    const provider = new SiliconFlowRerankProvider({
+      apiKey: 'test-key',
+      timeoutMs: 50, // 50ms 快速超时
+      fetchFn: mockFetch as any,
+      logger: mockLogger,
+    });
+
+    await expect(
+      provider.rerank('查询词', ['切片文本 1'])
+    ).rejects.toThrowError(/超时/);
+  });
+
+  it('6. API 错误处理：非 200 响应抛出错误并记录 warn 日志', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,

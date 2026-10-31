@@ -22,7 +22,7 @@ import type { ChatStreamFinish } from '../app/api/chat/_lib/types';
 import { createEvalTrace, evalTraceRecorder } from './eval-tracer';
 import { createKnowledgeSearchTool } from '../app/api/chat/_lib/agent/tools/knowledge-search';
 import { validateCitations } from '@/lib/rag/citation';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 
 // Mock streamText，夺回模型响应控制权
 const { streamTextMock } = vi.hoisted(() => {

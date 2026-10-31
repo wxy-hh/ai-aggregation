@@ -486,5 +486,62 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
       expect(screen.getByText(/指定前置标签在库中无匹配切片，系统已自动放宽限制/)).toBeInTheDocument();
     });
   });
+
+  it('8. 取消勾选 Rerank 精排复选框时，向后端显式发送 enableRerank: false (ARCH-CK-01)', async () => {
+    const user = userEvent.setup();
+
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          query: '关闭精排测试',
+          preparedLexicalQuery: '关闭 精排',
+          topK: 20,
+          isReranked: false,
+          chunks: [],
+          denseMatches: [],
+          lexicalMatches: [],
+          durationMs: 15,
+          stats: {
+            embeddingDurationMs: 5,
+            denseDurationMs: 5,
+            lexicalDurationMs: 3,
+            fusionDurationMs: 2,
+            totalDurationMs: 15,
+          },
+        },
+      }),
+    });
+
+    render(<RetrievalDebugger knowledgeBaseId="kb_test_123" />);
+
+    // 默认是勾选的，用户点击取消勾选
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toBeChecked();
+    await user.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+
+    const input = screen.getByPlaceholderText(/输入查询测试混合检索/);
+    await user.type(input, '关闭精排测试');
+
+    const submitBtn = screen.getByRole('button', { name: /测试检索/ });
+    await user.click(submitBtn);
+
+    // 验证向后端显式传递了 enableRerank: false
+    await waitFor(() => {
+      expect(mockFetchWithAuth).toHaveBeenCalledWith(
+        '/api/knowledge-bases/kb_test_123/query',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            query: '关闭精排测试',
+            topK: 20,
+            enableRerank: false,
+          }),
+        })
+      );
+    });
+  });
 });
 

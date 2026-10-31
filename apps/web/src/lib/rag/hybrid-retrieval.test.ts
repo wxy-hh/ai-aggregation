@@ -839,6 +839,152 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(result.chunks[1].chunkId).toBe('chunk_seq_2');
     expect(result.chunks[1].content).toContain('第二小节');
   });
+
+  it('13. TC05: 响应切片及两路召回明细完成展示契约投影（剔除底层私有字段并提供 rankScore）', async () => {
+    const rawDenseChunk: DocumentChunkDenseMatch = {
+      id: 'chunk_contract_dense',
+      documentId: 'doc_c1',
+      documentName: 'contract.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_private_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '展示契约稠密切片正文',
+      contentSegmented: '展示 契约 稠密 切片 正文',
+      headingPath: '契约章节',
+      pageNumber: 1,
+      tokenCount: 15,
+      metadata: { secretField: 'forbidden' } as any,
+      createdAt: new Date(),
+      similarity: 0.9123,
+    };
+
+    const rawLexicalChunk: DocumentChunkLexicalMatch = {
+      id: 'chunk_contract_lexical',
+      documentId: 'doc_c2',
+      documentName: 'contract_lex.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_private_456',
+      documentVersion: 1,
+      chunkIndex: 1,
+      content: '展示契约词法切片正文',
+      contentSegmented: '展示 契约 词法 切片 正文',
+      headingPath: '词法章节',
+      pageNumber: 2,
+      tokenCount: 18,
+      metadata: { privateTag: 'hidden' } as any,
+      createdAt: new Date(),
+      rank: 0.3842, // ts_rank_cd 原始得分
+    };
+
+    const result = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '契约投影测试',
+        topK: 2,
+        enableRerank: false,
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [rawDenseChunk],
+        searchLexicalFn: async () => [rawLexicalChunk],
+      }
+    );
+
+    // 1. TC05-1 验证：最终切片列表中剔除 userId, metadata 与 tags
+    expect(result.chunks.length).toBe(2);
+    for (const chunk of result.chunks) {
+      expect((chunk as any).userId).toBeUndefined();
+      expect((chunk as any).metadata).toBeUndefined();
+      expect((chunk as any).tags).toBeUndefined();
+      expect(chunk.chunkId).toBeDefined();
+      expect(chunk.documentId).toBeDefined();
+      expect(chunk.documentName).toBeDefined();
+      expect(chunk.documentVersion).toBeDefined();
+      expect(chunk.content).toBeDefined();
+      expect(chunk.citationAnchor).toBeDefined();
+    }
+
+    // 2. TC05-2 验证：词法明细同时提供 rank (名次 1) 与 rankScore (0.3842)
+    expect(result.lexicalMatches.length).toBe(1);
+    const lexicalMatch = result.lexicalMatches[0];
+    expect(lexicalMatch.rank).toBe(1);
+    expect(lexicalMatch.rankScore).toBe(0.3842);
+    expect((lexicalMatch as any).userId).toBeUndefined();
+    expect((lexicalMatch as any).metadata).toBeUndefined();
+
+    // 稠密路明细验证
+    expect(result.denseMatches.length).toBe(1);
+    const denseMatch = result.denseMatches[0];
+    expect(denseMatch.rank).toBe(1);
+    expect(denseMatch.similarity).toBe(0.9123);
+    expect((denseMatch as any).userId).toBeUndefined();
+    expect((denseMatch as any).metadata).toBeUndefined();
+  });
+
+  it('14. TC06-2: 显式 enableRerank 优先（false 跳过精排）与环境变量 RAG_RERANK_ENABLED 回退', async () => {
+    const chunkA: DocumentChunkDenseMatch = {
+      id: 'chunk_a',
+      documentId: 'doc_a',
+      documentName: 'doc_a.md',
+      knowledgeBaseId: 'kb_123',
+      userId: 'user_123',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '切片 A',
+      contentSegmented: '切片 A',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      similarity: 0.9,
+    };
+
+    const mockRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn().mockResolvedValue([{ index: 0, relevanceScore: 0.99 }]),
+    };
+
+    // 1. 显式 enableRerank: false 优先：即使环境变量为 true 也不调用精排
+    vi.stubEnv('RAG_RERANK_ENABLED', 'true');
+    const resultExplicitFalse = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '显式关闭测试',
+        enableRerank: false,
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [chunkA],
+        searchLexicalFn: async () => [],
+        rerankProvider: mockRerankProvider,
+      }
+    );
+    expect(mockRerankProvider.rerank).not.toHaveBeenCalled();
+    expect(resultExplicitFalse.isReranked).toBe(false);
+
+    // 2. 未传 enableRerank 时回退到环境变量
+    vi.stubEnv('RAG_RERANK_ENABLED', 'false');
+    const resultEnvFallback = await hybridRetrieval(
+      {
+        userId: 'user_123',
+        knowledgeBaseId: 'kb_123',
+        query: '环境回退测试',
+      },
+      {
+        embedQueryFn: async () => new Array(1024).fill(0),
+        searchDenseFn: async () => [chunkA],
+        searchLexicalFn: async () => [],
+        rerankProvider: mockRerankProvider,
+      }
+    );
+    expect(mockRerankProvider.rerank).not.toHaveBeenCalled();
+    expect(resultEnvFallback.isReranked).toBe(false);
+  });
 });
 
 

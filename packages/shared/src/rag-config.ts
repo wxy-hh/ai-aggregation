@@ -221,7 +221,7 @@ export const RAG_RERANK_CONFIG = {
 
 /**
  * 运行时判定 Rerank 二次精排是否开启
- * 优先读取环境变量 RAG_RERANK_ENABLED，未显式配置时严格遵循默认值 false
+ * 优先读取环境变量 RAG_RERANK_ENABLED，未显式配置时遵循常量 RAG_RERANK_ENABLED（默认开启 true）
  */
 export function isRagRerankEnabled(): boolean {
   const envVal = process.env.RAG_RERANK_ENABLED;

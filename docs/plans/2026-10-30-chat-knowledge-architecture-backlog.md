@@ -52,7 +52,7 @@
 
 ## `ARCH-CK-01`：收拢检索契约与 CrossEncoderRerank 政策
 
-**状态**：`待分析`  
+**状态**：`已完成`  
 **推荐强度**：**Strong**  
 **建议顺序**：1
 
@@ -94,34 +94,34 @@
 
 ### 待办
 
-- [ ] 画出单库调试路径与跨库 Agent 路径的完整调用图和数据形状。
-- [ ] 列出两条路径必须一致的政策，以及必须保持差异的入口语义。
-- [ ] 统计重复的 rerank、cutoff、fallback、越界索引和 CitationAnchor 投影规则。
-- [ ] 通过 `grilling` 确认 deep module 的职责和 seam 位置。
-- [ ] 判断是否需要 ADR；若只是落实 ADR-0030，不新增重复 ADR。
-- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
-- [ ] 先补同一候选集在两条路径中的一致性测试。
-- [ ] 实施最小迁移，删除被替代的重复 implementation。
-- [ ] 验证单库、跨库、全员低分、RerankProvider 异常和越界结果场景。
-- [ ] 完成 `/knowledge` 检索调试与 `/chat` 知识问答 RealLinkSmoke。
-- [ ] 完成独立审查和人工终审。
+- [x] 画出单库调试路径与跨库 Agent 路径的完整调用图和数据形状。
+- [x] 列出两条路径必须一致的政策，以及必须保持差异的入口语义。
+- [x] 统计重复的 rerank、cutoff、fallback、越界索引和 CitationAnchor 投影规则。
+- [x] 通过 `grilling` 确认 deep module 的职责和 seam 位置。
+- [x] 判断是否需要 ADR；若只是落实 ADR-0030，不新增重复 ADR。
+- [x] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [x] 先补同一候选集在两条路径中的一致性测试。
+- [x] 实施最小迁移，删除被替代的重复 implementation。
+- [x] 验证单库、跨库、全员低分、RerankProvider 异常和越界结果场景。
+- [x] 完成 `/knowledge` 检索调试与 `/chat` 知识问答 RealLinkSmoke。
+- [x] 完成独立审查和人工终审。
 
 ### 完成标准
 
-- [ ] CrossEncoderRerank、RelevanceScoreCutoff 与 RerankFallback 只有一个权威 implementation。
-- [ ] 单库与跨库路径在共享政策下产生一致结果。
-- [ ] 两类入口各自的参数限制仍由测试锁定。
-- [ ] 客户端不再导入服务器检索 implementation 的类型。
-- [ ] 旧的重复代码与只覆盖旧 implementation 的测试已删除或迁移。
+- [x] CrossEncoderRerank、RelevanceScoreCutoff 与 RerankFallback 只有一个权威 implementation。
+- [x] 单库与跨库路径在共享政策下产生一致结果。
+- [x] 两类入口各自的参数限制仍由测试锁定。
+- [x] 客户端不再导入服务器检索 implementation 的类型。
+- [x] 旧的重复代码与只覆盖旧 implementation 的测试已删除或迁移。
 
 ### 交付记录
 
-- 完成日期：
-- Spec：
-- ADR：
-- QA plan：
-- 验证证据：
-- 审查结论：
+- 完成日期：2026-11-01
+- Spec：[`.scratch/retrieval-contract-rerank-policy/spec.md`](../../.scratch/retrieval-contract-rerank-policy/spec.md)
+- ADR：[`docs/adr/0030-cross-encoder-rerank-fusion-pipeline.md`](../adr/0030-cross-encoder-rerank-fusion-pipeline.md)
+- QA plan：[`.scratch/retrieval-contract-rerank-policy/qa-plan.md`](../../.scratch/retrieval-contract-rerank-policy/qa-plan.md)
+- 验证证据：[`.scratch/retrieval-contract-rerank-policy/evidence/`](../../.scratch/retrieval-contract-rerank-policy/evidence/) 与 `_qa/reconciliation.md`
+- 审查结论：机器校验 PASS，双轴独立审查（Standards/Spec r2）改档成立，人工终审通过。
 
 ---
 
@@ -503,3 +503,5 @@
 | 2026-10-30 | 全部 | → `待分析` | 根据 `/chat` 与 `/knowledge` 架构扫描建立初始待办 | 本文 |
 | 2026-10-31 | `ARCH-CK-02` | `待分析` → `对齐完成（待Spec）` | 完成阶段 1 架构质询与领域建模，确立纯函数投影器方案 | ADR-0045 |
 | 2026-11-01 | `ARCH-CK-02` | `对齐完成（待Spec）` → `已完成` | 完成双轴独立审查与真实浏览器验证，落实纯函数投影器解耦 | ADR-0045、qa-plan.md |
+| 2026-11-01 | `ARCH-CK-01` | `待分析` → `已完成` | 收拢检索传输契约，建立 applyCrossEncoderRerank 单一事实源深模块，完成 ego-browser 阶段 5 验证与双轴审查 | ADR-0030、qa-plan.md |
+| 2026-11-01 | `ARCH-CK-05` | `待分析` → `进行中（随01首批）` | 随 ARCH-CK-01 缩减 HybridRetrievalDeps 与 KnowledgeSearchDeps 可选字段数至 6，清理 rerank.ts 垫片 | ADR-0030 |

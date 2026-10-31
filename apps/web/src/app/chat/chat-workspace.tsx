@@ -22,12 +22,11 @@ import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
 import { useSettingsStore } from '@/stores/settings-store';
-import { CAPABILITY_PACKS } from '@repo/shared';
+import { CAPABILITY_PACKS, type CitationAnchor } from '@repo/shared';
 import {
   DocumentPreviewDrawer,
   type MatchedCitationAnchor,
 } from '@/app/knowledge/_components/document-preview-drawer';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块

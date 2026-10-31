@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { BookOpen, ChevronDown, ChevronUp, FileText, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 import { formatCitationAnchorText } from '@/lib/rag/citation';
 
 export interface CitationReferenceCardProps {

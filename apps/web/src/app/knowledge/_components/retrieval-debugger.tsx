@@ -28,7 +28,9 @@ import { fetchWithAuth } from '@/lib/api/client';
 import type {
   HybridRetrievalResult,
   RetrievedChunk,
-} from '@/lib/rag/hybrid-retrieval';
+  DocumentChunkDenseMatchView,
+  DocumentChunkLexicalMatchView,
+} from '@repo/shared';
 import {
   Search,
   Zap,
@@ -200,15 +202,13 @@ export function RetrievalDebugger({ knowledgeBaseId }: RetrievalDebuggerProps) {
       const requestPayload: {
         query: string;
         topK: number;
-        enableRerank?: boolean;
+        enableRerank: boolean;
         filter?: { tags?: string[] };
       } = {
         query: targetQuery,
         topK,
+        enableRerank,
       };
-      if (enableRerank) {
-        requestPayload.enableRerank = true;
-      }
       if (filterTags.length > 0) {
         requestPayload.filter = {
           tags: filterTags,
@@ -743,20 +743,6 @@ function FusedChunkCard({
           )}
         </div>
 
-        {/* 标签徽章 */}
-        {chunk.tags && chunk.tags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
-            {chunk.tags.map((t: string) => (
-              <span
-                key={t}
-                className="text-[10px] px-1 py-0 rounded bg-muted/60 text-muted-foreground font-normal"
-              >
-                #{t}
-              </span>
-            ))}
-          </div>
-        )}
-
         {/* 正文切片摘要 */}
         <div className="text-xs text-foreground/90 leading-relaxed break-words whitespace-pre-wrap">
           {isExpanded ? chunk.content : truncateText(chunk.content, 120)}
@@ -799,7 +785,7 @@ function DenseMatchCard({
   onToggle,
   onPreview,
 }: {
-  match: any;
+  match: DocumentChunkDenseMatchView;
   isExpanded: boolean;
   onToggle: () => void;
   onPreview: (target: {
@@ -892,7 +878,7 @@ function LexicalMatchCard({
   onToggle,
   onPreview,
 }: {
-  match: any;
+  match: DocumentChunkLexicalMatchView;
   isExpanded: boolean;
   onToggle: () => void;
   onPreview: (target: {
@@ -923,7 +909,7 @@ function LexicalMatchCard({
             #{match.rank}
           </span>
           <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-            得分: {match.rank?.toFixed(4) ?? '0.0000'}
+            得分: {match.rankScore?.toFixed(4) ?? '0.0000'}
           </span>
         </div>
 

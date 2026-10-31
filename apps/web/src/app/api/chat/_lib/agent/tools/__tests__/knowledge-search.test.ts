@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createKnowledgeSearchTool } from '../knowledge-search';
 import type { ToolExecutionContext } from '@/lib/agent/registry';
-import type { RetrievedChunk } from '@/lib/rag/hybrid-retrieval';
+import type { RetrievedChunk } from '@repo/shared';
 
 describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0036)', () => {
   const mockContext: ToolExecutionContext = {
@@ -55,7 +55,6 @@ describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
-      isRerankEnabledFn: () => false,
     });
 
     const result = await tool.execute({ query: '权限控制' }, mockContext);
@@ -99,7 +98,6 @@ describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
-      isRerankEnabledFn: () => false,
     });
 
     const result = await tool.execute(
@@ -156,7 +154,6 @@ describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
-      isRerankEnabledFn: () => false,
     });
 
     const result = await tool.execute({ query: '权限说明' }, mockContext);
@@ -214,7 +211,6 @@ describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
-      isRerankEnabledFn: () => false,
     });
 
     // query 为空但带 headingPath
@@ -275,7 +271,6 @@ describe('knowledge_search 只读工具下钻与通读单元测试 (TC07 / ADR-0
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
-      isRerankEnabledFn: () => false,
     });
 
     // 验证通读模式未传 topK 时：经 schema 解析 topK 为 undefined，内部默认放宽至 100

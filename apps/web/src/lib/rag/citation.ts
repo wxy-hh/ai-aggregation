@@ -7,7 +7,7 @@
  * 3. 稳定锚点格式化：将切片锚点格式化为包含“文档名称 + 单调版本号 + 页码 / 标题层级”的可读溯源标识
  */
 
-import type { CitationAnchor } from './hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 
 /** 单条引用关系映射 */
 export interface CitationReference {

@@ -86,3 +86,25 @@
 ### 权衡与取舍 (Trade-offs)
 - **外部 API 延迟增加**：开启 Rerank 后，知识库端到端检索耗时将增加约 150~300ms，但相较于大模型后续首字生成（TTFT 500~1500ms），此耗时增量完全在可接受区间；
 - **API 成本**：增加了 Rerank 模型的 Token 消耗，但通过候选池截取 30 条与 `BAAI/bge-reranker-v2-m3` 的极低单价，成本增量微乎其微。
+
+---
+
+## 补充小节：精排政策收拢与模型响应防御 (ARCH-CK-01 补充)
+
+* **日期**：2026-10-31
+* **决策依据**：消除单库检索与 Agent 跨库检索双重维护导致的政策漂移，修补模型越界响应防御漏洞。
+
+### 1. 政策统一收拢至 Deep Module
+- 新增 `apps/web/src/lib/rag/rerank-policy.ts`，作为 CrossEncoderRerank 政策的单一事实源深模块：
+  - 单库混合检索（`hybridRetrieval`）与 Agent 多库检索工具（`knowledge_search`）均委托 `applyCrossEncoderRerank` 执行精排；
+  - 候选池截断（`maxCandidates: 30`）、相关性安全过滤（`minRelevanceScore: 0.20`）、降级标记与结构化日志（`feature: 'rag-rerank', degradation: 'rrf-fallback'`）由该模块统一处理。
+
+### 2. 模型响应合法性防御拦截（防数据错配与越界）
+- 严禁信任外部模型返回的数组下标。执行严格防御校验：
+  - 若模型返回下标小于 0、大于等于候选池长度、非整数或包含重复下标，整份响应判定为不可信；
+  - 废除旧代码中 `candidateList[res.index] ?? candidateList[0]` 静默使用首个切片替代的错误实现；
+  - 判定为不可信响应后，触发标准 `RerankFallback` 降级，返回原 RRF 排名结果并标记 `isDegraded: true`。
+
+### 3. RAG 传输契约与接口瘦身
+- 数据传输模型统一下沉至 `@repo/shared/src/rag-retrieval.ts`，剥离底层数据库私有字段；
+- `HybridRetrievalDeps` 与 `KnowledgeSearchDeps` 移除无生产实现的 `isRerankEnabledFn`（字段数 7 → 6），测试统一通过 `vi.stubEnv` 驱动。

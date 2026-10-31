@@ -1,35 +1,45 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createKnowledgeSearchTool } from './knowledge-search';
 import type { ToolExecutionContext } from '@/lib/agent/registry';
-import type { RetrievedChunk } from '@/lib/rag/hybrid-retrieval';
+import type { RetrievedChunk } from '@repo/shared';
 
 describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const mockContext: ToolExecutionContext = {
     userId: 'user-alice',
     signal: new AbortController().signal,
     errorId: 'err-test-123',
   };
 
-  const createMockChunk = (overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => ({
-    chunkId: 'chunk-1',
-    documentId: 'doc-1',
-    documentName: '珀金协议规范',
-    documentVersion: 1,
-    content: '连续失败 3 次触发熔断。',
-    contentSegmented: '连续 失败 3 次 触发 熔断',
-    score: 0.033,
-    denseRank: 1,
-    lexicalRank: 1,
-    citationAnchor: {
-      documentId: 'doc-1',
-      documentName: '珀金协议规范',
-      documentVersion: 1,
-      pageNumber: 2,
-      headingPath: '2.1 熔断条件',
-      chunkIndex: 0,
-    },
-    ...overrides,
-  });
+  const createMockChunk = (overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => {
+    const content = overrides.content ?? '连续失败 3 次触发熔断。';
+    return {
+      chunkId: 'chunk-1',
+      documentId: overrides.documentId ?? 'doc-1',
+      documentName: overrides.documentName ?? '珀金协议规范',
+      documentVersion: overrides.documentVersion ?? 1,
+      content,
+      contentSegmented: '连续 失败 3 次 触发 熔断',
+      score: 0.033,
+      denseRank: 1,
+      lexicalRank: 1,
+      citationAnchor: {
+        knowledgeBaseId: 'kb-1',
+        documentId: overrides.documentId ?? 'doc-1',
+        documentName: overrides.documentName ?? '珀金协议规范',
+        documentVersion: overrides.documentVersion ?? 1,
+        pageNumber: 2,
+        headingPath: '2.1 熔断条件',
+        chunkIndex: 0,
+        snippet: content.slice(0, 300),
+        ...(overrides.citationAnchor || {}),
+      },
+      ...overrides,
+    };
+  };
 
   it('1. 参数校验：query 必填，topK 必须在合理范围内', async () => {
     const tool = createKnowledgeSearchTool();
@@ -352,7 +362,6 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockRerankProvider,
-      isRerankEnabledFn: () => true,
     });
 
     const result = await tool.execute({ query: '多库测试', topK: 2 }, mockContext);
@@ -419,7 +428,6 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockRerankProvider,
-      isRerankEnabledFn: () => true,
     });
 
     const result = await tool.execute({ query: '无关提问' }, mockContext);
@@ -470,7 +478,6 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockFailingRerank,
-      isRerankEnabledFn: () => true,
     });
 
     const result = await tool.execute({ query: '降级测试' }, mockContext);
@@ -508,10 +515,11 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
 
     const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb_1', name: '企业知识库' }]);
 
+    vi.stubEnv('RAG_RERANK_ENABLED', 'false');
+
     const tool = createKnowledgeSearchTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
-      isRerankEnabledFn: () => false,
     });
 
     const result = await tool.execute(
@@ -541,6 +549,70 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.contentForModel).toContain('通用差旅报销标准参考');
     // 验证 summaryForDisplay 包含放宽提示
     expect(result.summaryForDisplay).toContain('已放宽过滤');
+  });
+
+  it('13. TC06-1: Agent 章节通读模式下 topK 自动放宽至 100 且跳过精排打乱 (ADR-0036)', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      chunks: Array.from({ length: 100 }, (_, i) => ({
+        chunkId: `seq_${i}`,
+        documentId: 'doc_1',
+        documentName: 'architecture.md',
+        documentVersion: 1,
+        content: `连续章节内容 ${i}`,
+        contentSegmented: `连续 章节 ${i}`,
+        score: 1.0 - i * 0.005,
+        citationAnchor: {
+          documentId: 'doc_1',
+          documentName: 'architecture.md',
+          documentVersion: 1,
+          pageNumber: 1,
+          headingPath: '3. 核心机制',
+          chunkIndex: i,
+          snippet: `连续章节内容 ${i}`,
+        },
+      })),
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 25,
+      stats: {
+        embeddingDurationMs: 0,
+        denseDurationMs: 15,
+        lexicalDurationMs: 10,
+        fusionDurationMs: 0,
+        totalDurationMs: 25,
+      },
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb_1', name: '技术库' }]);
+    const mockRerankProvider = {
+      name: 'siliconflow',
+      model: 'BAAI/bge-reranker-v2-m3',
+      rerank: vi.fn(),
+    };
+
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      rerankProvider: mockRerankProvider,
+    });
+
+    const result = await tool.execute(
+      {
+        query: '*',
+        headingPath: '3. 核心机制',
+      },
+      mockContext
+    );
+
+    expect(mockRetrieval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topK: 100,
+        headingPath: '3. 核心机制',
+      })
+    );
+    // 验证通读模式直接按序返回，不调用 Rerank Provider
+    expect(mockRerankProvider.rerank).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
   });
 });
 

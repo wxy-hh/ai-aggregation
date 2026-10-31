@@ -5,7 +5,7 @@ import {
   validateCitations,
   formatRetrievedChunksWithCitations,
 } from './citation';
-import type { CitationAnchor } from './hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 
 describe('RAG 引用溯源与锚点核验 (citation.ts)', () => {
   describe('extractCitationIndices', () => {
@@ -60,6 +60,21 @@ describe('RAG 引用溯源与锚点核验 (citation.ts)', () => {
         chunkIndex: 4,
       };
       expect(formatCitationAnchorText(anchor)).toBe('《纯文本笔记》(v1) · 切片 #5');
+    });
+
+    it('TC05-3: 缺失 knowledgeBaseId 历史切片锚点容错（正常格式化与保留 snippet 快照）', () => {
+      const anchorWithoutKb: CitationAnchor = {
+        documentId: 'doc-legacy',
+        documentName: '历史遗留文档',
+        documentVersion: 1,
+        pageNumber: 3,
+        headingPath: '2. 历史章节',
+        chunkIndex: 1,
+        snippet: '这是历史切片快照文本。',
+      };
+      expect(anchorWithoutKb.knowledgeBaseId).toBeUndefined();
+      expect(formatCitationAnchorText(anchorWithoutKb)).toBe('《历史遗留文档》(v1) · 第 3 页 · 2. 历史章节');
+      expect(anchorWithoutKb.snippet).toBe('这是历史切片快照文本。');
     });
   });
 

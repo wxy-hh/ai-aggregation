@@ -29,7 +29,7 @@ import {
   type RejectionEvalSample,
 } from './metrics';
 import { validateCitations, formatRetrievedChunksWithCitations } from '@/lib/rag/citation';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 
 /** 评测集行结构 */
 interface RagEvalDatasetItem {

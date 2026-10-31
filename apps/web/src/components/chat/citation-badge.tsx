@@ -8,7 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 import { formatCitationAnchorText } from '@/lib/rag/citation';
 
 export interface CitationBadgeProps {

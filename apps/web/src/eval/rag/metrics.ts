@@ -17,7 +17,7 @@
  */
 
 import { validateCitations, extractCitationIndices } from '@/lib/rag/citation';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
+import type { CitationAnchor } from '@repo/shared';
 
 /**
  * 金标定位锚点（三元组或二元组格式）

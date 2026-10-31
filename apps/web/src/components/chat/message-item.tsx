@@ -18,7 +18,6 @@ import { ArtifactCard } from './artifacts/artifact-card';
 import { DistillFaqDialog } from './distill-faq-dialog';
 import { CitationBadge, wrapCitationsInReactNode, injectCitationBadges } from './citation-badge';
 import { CitationReferenceCard } from './citation-reference-card';
-import type { CitationAnchor } from '@/lib/rag/hybrid-retrieval';
 import { extractCitationIndices } from '@/lib/rag/citation';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
@@ -26,7 +25,7 @@ import { RelayAction } from '@/components/relay/relay-action';
 import { RelayMenu } from '@/components/relay/relay-menu';
 import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
-import type { RelayReferenceItem } from '@repo/shared';
+import type { RelayReferenceItem, CitationAnchor } from '@repo/shared';
 
 /** 格式化消息 token 消耗展示文案 */
 export function formatUsageText(usage: NonNullable<Message['usage']>): string {
