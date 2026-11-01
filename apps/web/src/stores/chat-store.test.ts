@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useChatStore, type Message } from './chat-store';
 import type { Artifact } from '@repo/shared';
-import { on, StoreEvents } from './store-events';
+import { resetConversationPort, setConversationPort } from './conversation-port';
 import { authFetch } from '@/lib/api/client';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 
@@ -390,7 +390,7 @@ describe('useChatStore.loadConversation（toolCalls 恢复清洗，B-9）', () =
   });
 
   it('过程旁白（agentNotes）还原时被剥离，工具记录原样保留（spec D-二期-6：旁白属过程性内容）', () => {
-    // 流式期间的 CONVERSATION_UPDATED 落盘快照会带着旁白；刷新还原时剥离，
+    // 流式期间的会话落盘快照会带着旁白；刷新还原时剥离，
     // 但工具调用记录沿用一期 B-10 结构继续恢复
     useChatStore.getState().loadConversation(
       'conv-3',
@@ -443,13 +443,14 @@ describe('useChatStore.sendMessage（agent 过程旁白，二期）', () => {
       ])
     );
     useChatStore.setState({ activeConversationId: 'conv-agent-notes' });
-    // 监听历史保存事件，锁定「旁白不写入历史持久化」（工单 04 验收口径）
+    // 通过假端口观察历史保存，锁定「旁白不写入历史持久化」（工单 04 验收口径）
     const savedItems: Array<{ messages: Array<Record<string, unknown>> }> = [];
-    const off = on(
-      StoreEvents.CHAT_HISTORY_SAVED,
-      (payload: { item: { messages: Array<Record<string, unknown>> } }) =>
-        savedItems.push(payload.item)
-    );
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: (item) =>
+        savedItems.push(item as unknown as { messages: Array<Record<string, unknown>> }),
+    });
 
     try {
       const result = await useChatStore.getState().sendMessage();
@@ -476,7 +477,7 @@ describe('useChatStore.sendMessage（agent 过程旁白，二期）', () => {
       expect(savedAssistant).not.toHaveProperty('agentNotes');
       expect(savedAssistant.content).toBe('A 与 B 的对比结果');
     } finally {
-      off();
+      resetConversationPort();
     }
   });
 });
@@ -533,6 +534,29 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
 
     useChatStore.getState().setToolOverride('image_generate', true);
     expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: true });
+  });
+
+  it('setToolOverride 变更一次：工具覆盖经会话端口落盘恰好一次', () => {
+    // 通过假端口观察落盘调用，断言单次开关只产生一次持久化请求
+    const savedOverrides: Array<{ id: string; overrides?: Record<string, boolean> }> = [];
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: (id, overrides) => savedOverrides.push({ id, overrides }),
+      appendHistory: () => {},
+    });
+
+    try {
+      useChatStore.setState({ activeConversationId: 'conv-tools', toolOverrides: {} });
+      useChatStore.getState().setToolOverride('web_search', false);
+
+      expect(savedOverrides).toHaveLength(1);
+      expect(savedOverrides[0]).toEqual({
+        id: 'conv-tools',
+        overrides: { web_search: false },
+      });
+    } finally {
+      resetConversationPort();
+    }
   });
 
   it('loadConversation 正确恢复消息列表、产物池、能力包及工具覆盖字典', () => {

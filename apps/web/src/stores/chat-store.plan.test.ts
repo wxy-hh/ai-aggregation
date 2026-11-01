@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useChatStore, runChatStreamSession, type ChatStreamSessionDeps, type Message } from './chat-store';
-import { StoreEvents, on } from './store-events';
 import type { AgentPlan } from '@repo/shared';
 
 // Mock 埋点

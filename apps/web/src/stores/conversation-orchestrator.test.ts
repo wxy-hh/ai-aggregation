@@ -1,33 +1,27 @@
 /**
- * conversations-store.orchestrator.test.ts —— 会话编排中枢单元测试（候选 05）
+ * conversation-orchestrator.test.ts —— 会话编排模块测试
  *
  * 锁定的外部行为：
- * 1. switchMode 双模式记忆（M-1）流转：
- *    - 在单聊与对比模式间切换时，自动恢复各自模式最近活跃的会话指针；
- *    - 记忆指针对应会话被删除或无记忆时，平滑进入草稿新建态；
- * 2. switchConversation 原子联动：
- *    - 选中对比会话自动切为 compare 模式并触发 comparisonStore.loadComparison；
- *    - 选中单聊会话自动切为 single 模式并触发 chatStore.loadConversation；
- *    - 交叉取消进行中的流式生成（stop / abort）；
- * 3. startNewSession 统一新建契约：
- *    - compare 模式重置为空草稿，保留模式不变；
- *    - single 模式优先复用空单聊或创建新单聊；
- * 4. 外部唤起契约（E-1）：
- *    - openComparisonSession 正确加载对比会话；
- *    - openHistorySession 从历史记录恢复为单聊会话并载入；
- *    - prepareRelaySession 确保处于单聊模式且具备有效会话槽位。
+ * 1. switchMode 双模式记忆（M-1）流转；
+ * 2. switchConversation 原子联动与交叉流中止；
+ * 3. startNewSession 统一新建契约；
+ * 4. 外部唤起契约（E-1）；
+ * 5. 删除当前会话后的同模式流转；
+ * 6. 一个动作只产生一次加载/停止副作用。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { conversationOrchestrator } from './conversation-orchestrator';
 import { useConversationsStore } from './conversations-store';
 import { useChatStore } from './chat-store';
 import { useComparisonStore } from './comparison-store';
 import type { ChatHistoryItem } from '@/types/history';
+import type { AgentPlan } from '@repo/shared';
+import type { MessageApproval } from '@/lib/agent/approval-display';
 import type { Artifact } from '@repo/shared';
 
-describe('ConversationsStore 会话编排中枢（候选 05）', () => {
+describe('会话编排模块', () => {
   beforeEach(() => {
-    // 重置所有相关 store
     useConversationsStore.setState({
       conversations: [],
       currentConversationId: null,
@@ -43,24 +37,20 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
   it('switchMode 双模式记忆流转：在单聊与对比模式间切换时恢复各模式活跃指针', () => {
     const store = useConversationsStore.getState();
 
-    // 创建一个单聊会话与一个对比会话
     const singleId = store.createConversation('xunfei', 'lite');
     const compareId = store.createComparisonConversation([], '测试对比');
 
-    // 选中单聊会话
-    useConversationsStore.getState().switchConversation(singleId);
+    conversationOrchestrator.switchConversation(singleId);
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
     expect(useConversationsStore.getState().lastActiveSingleId).toBe(singleId);
 
-    // 切换到对比模式：自动切至 compareId
-    useConversationsStore.getState().switchMode('compare');
+    conversationOrchestrator.switchMode('compare');
     expect(useConversationsStore.getState().mode).toBe('compare');
     expect(useConversationsStore.getState().currentConversationId).toBe(compareId);
     expect(useConversationsStore.getState().lastActiveCompareId).toBe(compareId);
 
-    // 切回单聊模式：自动恢复为 singleId
-    useConversationsStore.getState().switchMode('single');
+    conversationOrchestrator.switchMode('single');
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
   });
@@ -70,7 +60,6 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     const singleId = store.createConversation('xunfei', 'lite');
     const compareId = store.createComparisonConversation([], '测试对比');
 
-    // 模拟单聊会话中已生成产物，且工作台展开
     const mockArtifact: Artifact = {
       id: 'art-1',
       title: '季度述职汇报',
@@ -79,43 +68,38 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       status: 'complete',
     };
 
-    useConversationsStore.getState().switchConversation(singleId);
+    conversationOrchestrator.switchConversation(singleId);
     useChatStore.setState({
       activeConversationId: singleId,
       artifacts: [mockArtifact],
       activeArtifactId: 'art-1',
       isWorkspaceOpen: true,
     });
-    // 会话列表同步记录产物池
     useConversationsStore.getState().updateMessages(singleId, [], [mockArtifact]);
 
-    // 确认切走前工作台处于展开态且有产物
     expect(useChatStore.getState().artifacts).toHaveLength(1);
     expect(useChatStore.getState().isWorkspaceOpen).toBe(true);
 
-    // 切换到对比模式
-    useConversationsStore.getState().switchMode('compare');
+    conversationOrchestrator.switchMode('compare');
     expect(useConversationsStore.getState().mode).toBe('compare');
     expect(useConversationsStore.getState().currentConversationId).toBe(compareId);
 
-    // 切回单聊模式：验证产物池完整还原且工作台保持展开（ADR-0015）
-    useConversationsStore.getState().switchMode('single');
+    conversationOrchestrator.switchMode('single');
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
 
     const restoredChat = useChatStore.getState();
     expect(restoredChat.artifacts).toHaveLength(1);
     expect(restoredChat.artifacts[0].id).toBe('art-1');
-    expect(restoredChat.isWorkspaceOpen).toBe(false); // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰
+    expect(restoredChat.isWorkspaceOpen).toBe(false);
     expect(restoredChat.activeArtifactId).toBe('art-1');
   });
 
   it('switchMode 切到对比模式：中断进行中的单聊流式生成并按「有留空删」收尾保留', () => {
     const store = useConversationsStore.getState();
     const singleId = store.createConversation('xunfei', 'lite');
-    useConversationsStore.getState().switchConversation(singleId);
+    conversationOrchestrator.switchConversation(singleId);
 
-    // 模拟单聊流式进行中：isLoading + 一条流式 assistant 消息（正文空、推理已有内容）
     useChatStore.setState({
       isLoading: true,
       activeConversationId: singleId,
@@ -131,8 +115,7 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       ],
     });
 
-    // 切到对比模式应先同步中断单聊流（否则后台流与切回时的快照覆盖竞态会丢掉该轮回复）
-    useConversationsStore.getState().switchMode('compare');
+    conversationOrchestrator.switchMode('compare');
 
     const chat = useChatStore.getState();
     expect(chat.isLoading).toBe(false);
@@ -142,8 +125,7 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
   });
 
   it('switchMode 切到单聊模式：对称中断进行中的对比页流式生成', () => {
-    // 先进入对比模式并选中一个对比会话（含一个已选模型）
-    useConversationsStore.getState().switchMode('compare');
+    conversationOrchestrator.switchMode('compare');
     const compareId = useConversationsStore.getState().createComparisonConversation(
       [
         {
@@ -155,12 +137,11 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       ],
       '测试对比'
     );
-    useConversationsStore.getState().switchConversation(compareId);
+    conversationOrchestrator.switchConversation(compareId);
     expect(useConversationsStore.getState().mode).toBe('compare');
 
-    // 切回单聊模式应先停掉对比页在途流（与 switchConversation 的交叉中止对称）
     const stopModelSpy = vi.spyOn(useComparisonStore.getState(), 'stopModel');
-    useConversationsStore.getState().switchMode('single');
+    conversationOrchestrator.switchMode('single');
 
     expect(stopModelSpy).toHaveBeenCalledWith('xunfei:lite');
     expect(useConversationsStore.getState().mode).toBe('single');
@@ -172,29 +153,39 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     const singleId = store.createConversation('xunfei', 'lite');
     const compareId = store.createComparisonConversation([], '测试对比');
 
-    // 切换至对比会话
-    useConversationsStore.getState().switchConversation(compareId);
+    conversationOrchestrator.switchConversation(compareId);
     expect(useConversationsStore.getState().mode).toBe('compare');
     expect(useConversationsStore.getState().currentConversationId).toBe(compareId);
     expect(useComparisonStore.getState().activeComparisonId).toBe(compareId);
 
-    // 切换至单聊会话
-    useConversationsStore.getState().switchConversation(singleId);
+    conversationOrchestrator.switchConversation(singleId);
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).toBe(singleId);
     expect(useChatStore.getState().activeConversationId).toBe(singleId);
   });
 
+  it('switchConversation 只加载一次目标会话运行时', () => {
+    const store = useConversationsStore.getState();
+    const firstId = store.createConversation('xunfei', 'lite');
+    const secondId = store.createConversation('xunfei', 'lite');
+
+    conversationOrchestrator.switchConversation(firstId);
+    const loadSpy = vi.spyOn(useChatStore.getState(), 'loadConversation');
+
+    conversationOrchestrator.switchConversation(secondId);
+
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    loadSpy.mockRestore();
+  });
+
   it('startNewSession 统一新建契约：对比模式置空草稿，单聊模式复用或创建', () => {
-    // 对比模式下新建
-    useConversationsStore.getState().switchMode('compare');
-    useConversationsStore.getState().startNewSession('compare');
+    conversationOrchestrator.switchMode('compare');
+    conversationOrchestrator.startNewSession('compare');
     expect(useConversationsStore.getState().mode).toBe('compare');
     expect(useConversationsStore.getState().currentConversationId).toBeNull();
     expect(useComparisonStore.getState().turns).toEqual([]);
 
-    // 单聊模式下新建
-    useConversationsStore.getState().startNewSession('single');
+    conversationOrchestrator.startNewSession('single');
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).not.toBeNull();
   });
@@ -216,7 +207,7 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    useConversationsStore.getState().openHistorySession(historyItem);
+    conversationOrchestrator.openHistorySession(historyItem);
 
     const state = useConversationsStore.getState();
     expect(state.mode).toBe('single');
@@ -267,7 +258,7 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    useConversationsStore.getState().openHistorySession(historyItem);
+    conversationOrchestrator.openHistorySession(historyItem);
 
     const restored = useChatStore.getState().messages[1];
     expect(restored.toolCalls).toHaveLength(1);
@@ -278,11 +269,47 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
     });
   });
 
+  it('openHistorySession 恢复计划与审批，不补造引用与产物关联（双快照）', () => {
+    const historyItem: ChatHistoryItem = {
+      id: 'hist-3',
+      title: '审批历史',
+      type: 'chat',
+      preview: '写入文件',
+      date: '今天',
+      messages: [
+        { role: 'user', content: '写入文件' },
+        {
+          role: 'assistant',
+          content: '需要确认后写入。',
+          plan: { id: 'plan-1', title: '写入计划', steps: [] } as unknown as AgentPlan,
+          approval: {
+            id: 'approval-1',
+            status: 'pending',
+            action: 'write_file',
+          } as unknown as MessageApproval,
+        },
+      ],
+      provider: 'doubao',
+      model: 'doubao-seed-evolving',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    conversationOrchestrator.openHistorySession(historyItem);
+
+    const restored = useChatStore.getState().messages[1];
+    expect(restored.plan).toMatchObject({ id: 'plan-1' });
+    expect(restored.approval).toMatchObject({ id: 'approval-1' });
+    // 归档不保存引用与产物关联，历史唤起时不补造
+    expect(restored.citations).toBeUndefined();
+    expect(restored.artifactIds).toBeUndefined();
+  });
+
   it('prepareRelaySession 接力唤起：对比模式下进入自动切到单聊并就绪', () => {
-    useConversationsStore.getState().switchMode('compare');
+    conversationOrchestrator.switchMode('compare');
     expect(useConversationsStore.getState().mode).toBe('compare');
 
-    useConversationsStore.getState().prepareRelaySession();
+    conversationOrchestrator.prepareRelaySession();
     expect(useConversationsStore.getState().mode).toBe('single');
     expect(useConversationsStore.getState().currentConversationId).not.toBeNull();
   });
@@ -300,15 +327,12 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
       { id: 'm4', role: 'assistant', content: '回答二' },
     ]);
 
-    // 当前在 id2
-    useConversationsStore.getState().switchConversation(id2);
+    conversationOrchestrator.switchConversation(id2);
     expect(useChatStore.getState().activeConversationId).toBe(id2);
     expect(useChatStore.getState().messages[0].content).toBe('第二轮');
 
-    // 删除当前会话 id2
-    useConversationsStore.getState().deleteConversation(id2);
+    conversationOrchestrator.deleteConversation(id2);
 
-    // 自动流转至同模式的 id1 并联动重载 chatStore，杜绝数据丢失
     const afterDelete = useConversationsStore.getState();
     expect(afterDelete.currentConversationId).toBe(id1);
     expect(useChatStore.getState().activeConversationId).toBe(id1);
@@ -318,18 +342,16 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
   it('deleteConversation 删除对比会话时：同步重置 comparisonStore 运行时', () => {
     const store = useConversationsStore.getState();
     const compareId = store.createComparisonConversation([], '待删对比');
-    useConversationsStore.getState().switchConversation(compareId);
+    conversationOrchestrator.switchConversation(compareId);
     expect(useComparisonStore.getState().activeComparisonId).toBe(compareId);
 
-    // 删除当前对比会话
-    useConversationsStore.getState().deleteConversation(compareId);
+    conversationOrchestrator.deleteConversation(compareId);
     expect(useComparisonStore.getState().activeComparisonId).toBeNull();
   });
 
   it('startNewSession 单聊新建时：动态继承用户当前选择的模型配置', () => {
-    // 用户当前选择了 doubao / doubao-seed-evolving
     useChatStore.getState().switchProvider('doubao', 'doubao-seed-evolving');
-    useConversationsStore.getState().startNewSession('single');
+    conversationOrchestrator.startNewSession('single');
 
     const cur = useConversationsStore.getState().getCurrentConversation();
     expect(cur?.provider).toBe('doubao');
@@ -339,31 +361,24 @@ describe('ConversationsStore 会话编排中枢（候选 05）', () => {
   it('会话工具覆盖隔离与还原：切换会话无损恢复 toolOverrides，新建会话重置（ADR-0014 / 工单 02）', () => {
     const store = useConversationsStore.getState();
 
-    // 1. 创建两个会话
     const idA = store.createConversation('doubao', 'doubao-seed-evolving', 'deep-research');
     const idB = store.createConversation('doubao', 'doubao-seed-evolving', 'visual-report');
 
-    // 2. 为会话 A 设置覆盖项：禁用 web_fetch
     store.updateConversationToolOverrides(idA, { web_fetch: false });
-    // 为会话 B 设置覆盖项：禁用 image_generate
     store.updateConversationToolOverrides(idB, { image_generate: false });
 
-    // 3. 切换至会话 A：chatStore 恢复会话 A 的 capabilityPack 与 toolOverrides
-    store.switchConversation(idA);
+    conversationOrchestrator.switchConversation(idA);
     expect(useChatStore.getState().activeConversationId).toBe(idA);
     expect(useChatStore.getState().activeCapabilityPackKey).toBe('deep-research');
     expect(useChatStore.getState().toolOverrides).toEqual({ web_fetch: false });
 
-    // 4. 切换至会话 B：chatStore 恢复会话 B 的 capabilityPack 与 toolOverrides（严格隔离，不污染）
-    store.switchConversation(idB);
+    conversationOrchestrator.switchConversation(idB);
     expect(useChatStore.getState().activeConversationId).toBe(idB);
     expect(useChatStore.getState().activeCapabilityPackKey).toBe('visual-report');
     expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: false });
 
-    // 5. 新建会话：重置 toolOverrides 为空字典，capabilityPack 为 null
-    store.startNewSession('single');
+    conversationOrchestrator.startNewSession('single');
     expect(useChatStore.getState().toolOverrides).toEqual({});
     expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
   });
 });
-

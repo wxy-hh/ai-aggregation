@@ -1,8 +1,10 @@
 'use client';
 
 import { create } from 'zustand';
-import { emit, StoreEvents } from './store-events';
+import type { Attachment, Message, ProviderName } from '@/types/chat-message';
+import { getConversationPort } from './conversation-port';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
+import { toArchivedMessages } from '@/lib/conversation/message-snapshots';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -55,62 +57,13 @@ import {
 
 // ==================== 类型定义 ====================
 
-// AI 提供商类型：讯飞星火、豆包或 DeepSeek
-export type ProviderName = 'xunfei' | 'doubao' | 'deepseek';
-
-// 附件上传状态：上传中 | 就绪 | 错误
-export type AttachmentStatus = 'uploading' | 'ready' | 'error';
-
-// 附件类型定义
-export interface Attachment {
-  id: string; // 附件唯一标识
-  type: 'image' | 'file'; // 附件类型：图片或文件
-  name: string; // 文件名
-  size?: number; // 文件大小（字节）
-  // 图片附件：存储 base64 编码的数据 URL
-  imageUrl?: string;
-  // 文件附件：存储上传后服务器返回的文件 ID
-  fileId?: string;
-  // 当前上传状态
-  status: AttachmentStatus;
-  // 错误信息（仅在 status 为 'error' 时有值）
-  error?: string;
-  // 来源标识（接力图片用：追踪接力来源，清空引用时清理）
-  sourceId?: string;
-}
-
-// 消息类型定义
-export interface Message {
-  id: string; // 消息唯一标识
-  role: 'user' | 'assistant' | 'system'; // 消息角色：用户 | AI助手 | 系统
-  content: string; // 消息文本内容
-  isStreaming?: boolean; // 是否正在流式传输（AI回复时为 true）
-  stopped?: boolean; // 是否被用户/隐式中止（保留部分内容时标记）
-  failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
-  truncationWarning?: string; // 回答可能被截断时的提示
-  usage?: ChatStreamUsage; // 本次对话的 Token 消耗统计（done 帧携带）
-  reasoningContent?: string; // 模型真实推理内容（仅 supportsReasoning 模型可能产生，永不回传上游）
-  reasoningDurationMs?: number; // 思考时长：首个推理增量到达 → 分界点（首 text-delta / done / error / abort）冻结
-  // 附件列表（可选）
-  // 用户消息 = 用户上传的附件；AI 消息 = agent 工具产出的附件（如生成的图片）
-  attachments?: Attachment[];
-  // agent 模式下的工具调用记录（过程可见 + 刷新回看）。
-  // 未开启 agent 或本轮无工具调用时为 undefined —— 渲染与现状完全一致。
-  toolCalls?: ToolCallRecord[];
-  // agent 模式的过程旁白（二期多步循环）：中间轮决策文本。
-  // beforeCallIndex = 旁白到达时 toolCalls 的长度（即插入到第几个工具调用之前）。
-  // 进过程卡片、不进正文、不入历史持久化（历史拍平时被丢弃）。类型单源在 @repo/shared。
-  agentNotes?: AgentNote[];
-  // 本条消息关联生成的产物标识引用列表（ADR-0015）
-  artifactIds?: string[];
-  // 结构化切片引用映射字典（ADR-0025 / KB-CHAT-CITE）
-  citations?: Record<number, CitationAnchor>;
-  // 智能体执行计划与阶段检查点 (AGENT-PLAN-DAG / ADR-0038)
-  plan?: AgentPlan;
-  // 写操作审批请求卡片（AGENT-HITL-ACTION / ADR-0041）：一等字段随消息落盘，不进正文
-  approval?: MessageApproval;
-}
-
+// 会话相关类型从单一事实源转发，保持既有导入路径兼容
+export type {
+  ProviderName,
+  AttachmentStatus,
+  Attachment,
+  Message,
+} from '@/types/chat-message';
 // 聊天状态管理接口
 export interface ChatState {
   // ========== 状态数据 ==========
@@ -361,7 +314,7 @@ function finalizeAbortedMessages(
 
 /**
  * 剥离过程旁白（二期）：旁白是过程性内容，只服务于本轮 live 展示，
- * 刷新还原时不恢复（spec D-二期-6「不入历史持久化」；流式期间 CONVERSATION_UPDATED
+ * 刷新还原时不恢复（spec D-二期-6「不入历史持久化」；流式期间的会话落盘事件
  * 落盘的会话列表快照里可能带着旁白，加载时在此剥离）。
  * 注意只挂在 loadConversation 还原路径：done/abort/failed 的 live 收尾共用
  * sanitizeToolCalls 但**不**剥离——收尾后用户仍应能在过程卡片里回看完整旁白。
@@ -390,6 +343,8 @@ export async function runChatStreamSession(
   options?: RunChatStreamSessionOptions
 ): Promise<ChatStreamOutcome> {
   const scheduleFlush = options?.scheduleFlush ?? defaultScheduleFlush;
+  // 落盘统一走会话端口：事件总线已删除，聊天 store 不感知具体会话/历史 store
+  const port = getConversationPort();
 
   const streamStartTime = Date.now();
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
@@ -402,11 +357,7 @@ export async function runChatStreamSession(
     const conversationId = deps.activeConversationId();
     if (conversationId) {
       const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
-      emit(StoreEvents.CONVERSATION_UPDATED, {
-        id: conversationId,
-        messages: next,
-        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
-      });
+      port.saveMessages(conversationId, next, currentArtifacts);
     }
   };
   // 收尾残留的流式产物（正常结束缺 end帧、中止、失败共用）：
@@ -461,7 +412,7 @@ export async function runChatStreamSession(
             const persistedMessages = currentMessages.map((m) =>
               m.id === assistantId ? { ...m, content: text } : m
             );
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: persistedMessages });
+            port.saveMessages(conversationId, persistedMessages);
           }
         }
       },
@@ -579,11 +530,7 @@ export async function runChatStreamSession(
     const conversationId = deps.activeConversationId();
     if (conversationId) {
       const currentArtifacts = finalizeArtifacts().artifacts;
-      emit(StoreEvents.CONVERSATION_UPDATED, {
-        id: conversationId,
-        messages: finalMessages,
-        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
-      });
+      port.saveMessages(conversationId, finalMessages, currentArtifacts);
     }
     onDone?.(finalMessages);
     return 'sent';
@@ -612,11 +559,11 @@ export async function runChatStreamSession(
       if (result.changed || abortedArtifacts.changed) {
         const conversationId = deps.activeConversationId();
         if (conversationId) {
-          emit(StoreEvents.CONVERSATION_UPDATED, {
-            id: conversationId,
-            messages: result.changed ? result.next : deps.getMessages(),
-            ...(abortedArtifacts.artifacts ? { artifacts: abortedArtifacts.artifacts } : {}),
-          });
+          port.saveMessages(
+            conversationId,
+            result.changed ? result.next : deps.getMessages(),
+            abortedArtifacts.artifacts
+          );
         }
       }
       return 'aborted';
@@ -639,11 +586,7 @@ export async function runChatStreamSession(
     const failedArtifacts = finalizeArtifacts().artifacts;
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, {
-        id: conversationId,
-        messages: filtered,
-        ...(failedArtifacts ? { artifacts: failedArtifacts } : {}),
-      });
+      port.saveMessages(conversationId, filtered, failedArtifacts);
     }
     return 'failed';
   } finally {
@@ -718,7 +661,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     if (!changed) return;
     set({ messages: next });
     if (activeConversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: next });
+      getConversationPort().saveMessages(activeConversationId, next);
     }
   };
 
@@ -794,11 +737,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ artifacts: next, viewingVersions: restViewing });
       // 回滚产生新版本，同步落盘会话产物池
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, {
-          id: activeConversationId,
-          messages,
-          artifacts: next,
-        });
+        getConversationPort().saveMessages(activeConversationId, messages, next);
       }
     },
 
@@ -834,10 +773,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ toolOverrides: next });
       const conversationId = get().activeConversationId;
       if (conversationId) {
-        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
-          id: conversationId,
-          toolOverrides: next,
-        });
+        getConversationPort().saveToolOverrides(conversationId, next);
       }
     },
 
@@ -847,10 +783,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ toolOverrides: next });
       const conversationId = get().activeConversationId;
       if (conversationId) {
-        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
-          id: conversationId,
-          toolOverrides: next,
-        });
+        getConversationPort().saveToolOverrides(conversationId, next);
       }
     },
 
@@ -905,11 +838,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const finalizedArtifacts = artifacts ? finalizeStreamingArtifacts(artifacts) : undefined;
       const artifactsChanged = finalizedArtifacts !== artifacts;
       if (sanitizedChanged || artifactsChanged) {
-        emit(StoreEvents.CONVERSATION_UPDATED, {
-          id,
-          messages: sanitizedMessages,
-          ...(finalizedArtifacts ? { artifacts: finalizedArtifacts } : {}),
-        });
+        getConversationPort().saveMessages(id, sanitizedMessages, finalizedArtifacts);
       }
 
       // 过滤掉纯图片的冗余产物（图片已由消息流原生卡片直接承载，不污染工作台）
@@ -1052,7 +981,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       // 同步到对话列表（通过事件总线，避免静态依赖）
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+        getConversationPort().saveMessages(activeConversationId, newMessages);
       }
 
       try {
@@ -1087,18 +1016,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               const historyItem = {
                 id: activeConversationId, // 使用对话ID作为历史记录ID
                 ...createChatHistoryItem(
-                  // 保留 agent 工具记录与工具产出附件（B-10：历史入口恢复后可回看过程与生成图）；
-                  // 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
-                  finalMessages.map((m) => ({
-                    role: m.role,
-                    content: m.content,
-                    ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
-                    ...(m.plan ? { plan: m.plan } : {}),
-                    ...(m.approval ? { approval: m.approval } : {}),
-                    ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
-                      ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
-                      : {}),
-                  })),
+                  // 历史归档走唯一转换入口：保留工具记录、计划、审批与工具产出附件，
+                  // 丢弃用户上传附件原文、过程旁白、推理、用量、引用与产物关联
+                  toArchivedMessages(finalMessages),
                   provider,
                   model || 'unknown'
                 ),
@@ -1107,7 +1027,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               };
-              emit(StoreEvents.CHAT_HISTORY_SAVED, { item: historyItem });
+              getConversationPort().appendHistory(historyItem);
             }
           }
         );
@@ -1177,7 +1097,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
 
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+        getConversationPort().saveMessages(activeConversationId, newMessages);
       }
 
       try {
@@ -1233,10 +1153,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       );
       set({ messages: updatedMessages });
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, {
-          id: activeConversationId,
-          messages: updatedMessages,
-        });
+        getConversationPort().saveMessages(activeConversationId, updatedMessages);
       }
 
       // 4. 计算当前未完成/调整后的步骤，构造轻量提示并发起续跑
@@ -1259,7 +1176,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const next = projectRejectApproval(messages, messageId);
       set({ messages: next });
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: next });
+        getConversationPort().saveMessages(activeConversationId, next);
       }
     },
 
@@ -1302,7 +1219,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       ];
       set({ messages: newMessages, isLoading: true, error: null });
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+        getConversationPort().saveMessages(activeConversationId, newMessages);
       }
 
       try {
@@ -1363,7 +1280,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     );
     set({ messages: restored });
     if (activeConversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: restored });
+      getConversationPort().saveMessages(activeConversationId, restored);
     }
   }
 });

@@ -23,7 +23,7 @@
 |---:|---|---|---|---|---|---|
 | 1 | `ARCH-CK-01` | 收拢检索契约与 CrossEncoderRerank 政策 | **Strong** | 消除政策漂移与 transport seam 泄漏 | 无 | `已完成` |
 | 2 | `ARCH-CK-02` | 加深聊天会话状态 module | **Strong** | 收敛多种会话生命周期知识 | 建议在 01 后独立开展 | `已完成` |
-| 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `待分析` |
+| 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `待实现` |
 | 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `待分析` |
 | 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `进行中（随01完成首批）` |
 | 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `待分析` |
@@ -198,7 +198,7 @@
 
 ## `ARCH-CK-03`：统一 Conversations 协调 seam
 
-**状态**：`待分析`  
+**状态**：`待实现`  
 **推荐强度**：**Strong**  
 **建议顺序**：3
 
@@ -240,10 +240,10 @@
 
 ### 待办
 
-- [ ] 列出每个跨 store 用户动作及其直接调用、事件处理和最终副作用。
-- [ ] 找出同一动作可能被两条路径重复执行的场景。
-- [ ] 定义运行时消息到持久化消息必须保留、转换和丢弃的字段清单。
-- [ ] 通过 `grilling` 确认唯一协调 seam 的位置与 adapter 角色。
+- [x] 列出每个跨 store 用户动作及其直接调用、事件处理和最终副作用。
+- [x] 找出同一动作可能被两条路径重复执行的场景。
+- [x] 定义运行时消息到持久化消息必须保留、转换和丢弃的字段清单。
+- [x] 通过 `grilling` 确认唯一协调 seam 的位置与 adapter 角色。
 - [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
 - [ ] 先补“一个用户动作只产生一次效果”的测试。
 - [ ] 补充 AgentPlan、Approval、Artifact 引用经过加载与保存后的保真测试。
@@ -262,8 +262,8 @@
 ### 交付记录
 
 - 完成日期：
-- Spec：
-- ADR：
+- Spec：`.scratch/conversation-orchestrator/spec.md`
+- ADR：[`docs/adr/0046-conversation-orchestrator-and-dual-snapshot-persistence.md`](../adr/0046-conversation-orchestrator-and-dual-snapshot-persistence.md)
 - QA plan：
 - 验证证据：
 - 审查结论：
@@ -505,3 +505,8 @@
 | 2026-11-01 | `ARCH-CK-02` | `对齐完成（待Spec）` → `已完成` | 完成双轴独立审查与真实浏览器验证，落实纯函数投影器解耦 | ADR-0045、qa-plan.md |
 | 2026-11-01 | `ARCH-CK-01` | `待分析` → `已完成` | 收拢检索传输契约，建立 applyCrossEncoderRerank 单一事实源深模块，完成 ego-browser 阶段 5 验证与双轴审查 | ADR-0030、qa-plan.md |
 | 2026-11-01 | `ARCH-CK-05` | `待分析` → `进行中（随01首批）` | 随 ARCH-CK-01 缩减 HybridRetrievalDeps 与 KnowledgeSearchDeps 可选字段数至 6，清理 rerank.ts 垫片 | ADR-0030 |
+| 2026-11-01 | `ARCH-CK-03` | `待分析` → `待规格` | 完成阶段 1 架构质询与领域建模；确认命令式 orchestrator、依赖倒置端口、统一删除矩阵与双快照模型；发现并纳入两条事件死路径与能力包刷新丢失 | ADR-0046、GLOSSARY.md |
+| 2026-11-01 | `ARCH-CK-03` | `待规格`（spec 已编写，待工单与 qa-plan） | 完成阶段 2 规格与测试接缝设计；主 seam 为 orchestrator 公开命令，内部 seam 为 ConversationPort 假实现 | `.scratch/conversation-orchestrator/spec.md` |
+| 2026-11-01 | `ARCH-CK-03` | `待规格`（工单已拆分，待 qa-plan） | 完成阶段 3A 工单拆分：6 个垂直切片，01 无阻塞，02/03/04 依赖 01，05 依赖 01+04，06 为事件总线删除收尾 | `.scratch/conversation-orchestrator/issues/` |
+| 2026-11-01 | `ARCH-CK-03` | `待规格` → `待实现` | 完成阶段 3B：11 个 TC、62 条断言，`qa-check plan` PASS，基线三条交付命令全绿，审查基线已冻结 | `.scratch/conversation-orchestrator/qa-plan.md` |
+| 2026-11-01 | `ARCH-CK-03` | `待实现` → `实现完成（待验收）` | 6 个工单全部实现，删除事件总线与协调器，聊天 store 落盘经 `ConversationPort`；全量测试 218 文件 2084 用例、typecheck、lint 通过，构建首屏共享 chunk 104 kB；待阶段 5 浏览器验收与双轴独立审查 | `.scratch/conversation-orchestrator/issues/` |

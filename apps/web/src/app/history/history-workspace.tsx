@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import { motion } from 'framer-motion';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import type { HistoryType, ImageHistoryItem } from '@/types/history';
@@ -52,7 +53,6 @@ export default function HistoryWorkspace() {
   const setFilter = useHistoryStore((state) => state.setFilter);
   const getFilteredItems = useHistoryStore((state) => state.getFilteredItems);
   const getStats = useHistoryStore((state) => state.getStats);
-  const deleteItem = useHistoryStore((state) => state.deleteItem);
 
   const activeTab = filter.type || 'all';
   const searchQuery = filter.search || '';
@@ -90,11 +90,12 @@ export default function HistoryWorkspace() {
 
   const confirmDelete = useCallback(() => {
     if (deleteId) {
-      deleteItem(deleteId);
+      // 删除传播（会话、音频侧、接力失效）由编排模块统一执行
+      void conversationOrchestrator.deleteHistoryItem(deleteId);
       setIsDeleteDialogOpen(false);
       setDeleteId(null);
     }
-  }, [deleteId, deleteItem]);
+  }, [deleteId]);
 
   // 处理图片下载
   const handleDownloadImage = useCallback(async (item: ImageHistoryItem) => {

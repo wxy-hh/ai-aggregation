@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useHistoryStore } from '@/stores/history-store';
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import { Button } from '@/components/ui/button';
 
 export default function DebugHistoryPage() {
   const [mounted, setMounted] = useState(false);
   const items = useHistoryStore((state) => state.items);
-  const stats = useHistoryStore((state) => state.getStats());
-  const clearHistory = useHistoryStore((state) => state.clearHistory);
+  // getStats 每次调用返回新对象，直接作为选择器会让快照不稳定而无限重渲染；改为随 items 计算
+  const stats = useMemo(() => useHistoryStore.getState().getStats(), [items]);
 
   useEffect(() => {
     setMounted(true);
@@ -57,7 +58,8 @@ export default function DebugHistoryPage() {
           variant="destructive"
           onClick={() => {
             if (confirm('确定要清空所有历史记录吗？')) {
-              clearHistory();
+              // 清空传播由编排模块统一执行
+              void conversationOrchestrator.clearHistory();
               alert('已清空');
             }
           }}

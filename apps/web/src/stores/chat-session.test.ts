@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { runChatStreamSession, type ChatStreamSessionDeps, type Message } from './chat-store';
 import { authFetch } from '@/lib/api/client';
-import { on, StoreEvents } from './store-events';
+import { resetConversationPort, setConversationPort } from './conversation-port';
 
 // 网络层 mock：runChatStreamSession 走真实 streamChatResponse / consumeChatResponse（评审 C6 三态单点可测）
 vi.mock('@/lib/api/client', () => ({
@@ -99,16 +99,21 @@ function requestBody() {
 
 describe('runChatStreamSession（评审 C6：统一会话语义映射）', () => {
   let onUpdated: Mock<(payload: any) => void>;
-  let off: () => void;
 
   beforeEach(() => {
     mockedAuthFetch.mockReset();
     onUpdated = vi.fn((_payload: any) => undefined);
-    off = on(StoreEvents.CONVERSATION_UPDATED, onUpdated);
+    // 通过假端口观察落盘请求，载荷形状与事件总线时期保持一致
+    setConversationPort({
+      saveMessages: (id, messages, artifacts) =>
+        onUpdated(artifacts ? { id, messages, artifacts } : { id, messages }),
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
   });
 
   afterEach(() => {
-    off();
+    resetConversationPort();
   });
 
   it('成功流：返回 sent，assistant 关闭 isStreaming，onDone 收到最终消息并同步会话', async () => {
@@ -133,7 +138,7 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
     expect(onUpdated).toHaveBeenCalledWith({ id: 'conv-1', messages });
   });
 
-  it('成功流携带 usage：返回 sent，assistant 消息写入 usage 并在 CONVERSATION_UPDATED 中落盘', async () => {
+  it('成功流携带 usage：返回 sent，assistant 消息写入 usage 并经会话端口落盘', async () => {
     const expectedUsage = {
       inputTokens: 120,
       outputTokens: 80,
@@ -532,16 +537,21 @@ describe('runChatStreamSession（评审 C6：统一会话语义映射）', () =>
 
 describe('runChatStreamSession（推理流：持久化 / 时长冻结 / 中断保留）', () => {
   let onUpdated: Mock<(payload: any) => void>;
-  let off: () => void;
 
   beforeEach(() => {
     mockedAuthFetch.mockReset();
     onUpdated = vi.fn((_payload: any) => undefined);
-    off = on(StoreEvents.CONVERSATION_UPDATED, onUpdated);
+    // 通过假端口观察落盘请求，载荷形状与事件总线时期保持一致
+    setConversationPort({
+      saveMessages: (id, messages, artifacts) =>
+        onUpdated(artifacts ? { id, messages, artifacts } : { id, messages }),
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
   });
 
   afterEach(() => {
-    off();
+    resetConversationPort();
   });
 
   it('推理+正文流：reasoningContent 持久化到消息，时长在首个 text-delta 分界点冻结', async () => {

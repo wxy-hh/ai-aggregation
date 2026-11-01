@@ -5,7 +5,7 @@ import '@/styles/ziwei-theme.css';
 import 'highlight.js/styles/github-dark.css';
 import { ThemeInitializer } from '@/components/theme/theme-initializer';
 import { QueryProvider } from '@/components/providers/query-provider';
-import { StoreCoordinator } from '@/components/providers/store-coordinator';
+import { ConversationOrchestratorMount } from '@/components/providers/conversation-orchestrator-mount';
 import { Toaster } from '@/components/ui/toaster';
 import { QuotaExhaustedDialog } from '@/components/quota-exhausted-dialog';
 
@@ -81,7 +81,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeInitializer />
-        <StoreCoordinator />
+        <ConversationOrchestratorMount />
         <QueryProvider>
           {children}
           <QuotaExhaustedDialog />

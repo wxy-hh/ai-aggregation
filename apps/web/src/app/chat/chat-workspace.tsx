@@ -31,10 +31,12 @@ import {
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
 import {
-  useConversationsStore, // 会话列表与编排中枢 Store
-  useConversationsActions, // 编排中枢统一操作方法
+  useConversationsStore, // 会话列表与当前指针 Store
+  useConversationsActions, // 会话 store 的原子操作方法
   type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
 } from '@/stores/conversations-store';
+// 跨 store 的会话编排动作（切换、模式流转、新建、外部唤起、删除）统一由编排模块提供
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import {
   useChatStore, // 当前单聊消息管理 Store（管理当前单聊的消息、发送与流式状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
@@ -249,21 +251,23 @@ export default function ChatWorkspace() {
     setShowMobileModelDrawer(false);
   }, [agentModeEnabled]);
 
-  // 批量获取会话编排中枢操作方法（浅比较优化）
+  // 批量获取会话 store 的原子操作方法（浅比较优化）
   const {
-    createConversation,
-    switchConversation,
-    deleteConversation,
     findEmptyConversation,
     getGroupedConversations,
     getCurrentConversation,
-    updateConversationSettings,
+  } = useConversationsActions();
+
+  // 跨 store 编排动作从编排模块取用（模块常量，非 hook 返回值）
+  const {
+    switchConversation,
+    deleteConversation,
     switchMode,
     startNewSession,
     openComparisonSession,
     openHistorySession,
     prepareRelaySession,
-  } = useConversationsActions();
+  } = conversationOrchestrator;
 
   // 模式切换别名，兼容分段控制器命名
   const setComparisonMode = switchMode;
@@ -279,12 +283,9 @@ export default function ChatWorkspace() {
     activeConversationId,
     sendMessage,
     reload,
-    loadConversation,
-    switchProvider,
     reset,
     setAttachment,
     attachment,
-    setCapabilityPackKey,
     artifacts,
     activeArtifactId,
     isWorkspaceOpen,
@@ -299,12 +300,9 @@ export default function ChatWorkspace() {
       activeConversationId: state.activeConversationId,
       sendMessage: state.sendMessage,
       reload: state.reload,
-      loadConversation: state.loadConversation,
-      switchProvider: state.switchProvider,
       reset: state.reset,
       setAttachment: state.setAttachment,
       attachment: state.attachment,
-      setCapabilityPackKey: state.setCapabilityPackKey,
       artifacts: state.artifacts,
       activeArtifactId: state.activeArtifactId,
       isWorkspaceOpen: state.isWorkspaceOpen,
@@ -352,16 +350,13 @@ export default function ChatWorkspace() {
     ) {
       setRelayAttachmentUrl(relayBundleMediaUrl);
       setRelayAttachmentSourceId(relay.bundle.id);
-      // 自动切换到豆包模型以支持图片附件
+      // 自动切换到豆包模型以支持图片附件；模型与当前会话绑定由编排命令同时保存
       if (provider !== 'doubao') {
-        switchProvider('doubao', 'doubao-seed-evolving');
-        if (activeConversationId) {
-          updateConversationSettings(activeConversationId, 'doubao', 'doubao-seed-evolving');
-        }
+        conversationOrchestrator.updateSessionModel('doubao', 'doubao-seed-evolving');
         toast.success('已自动切换到豆包模型以支持图片附件');
       }
     }
-  }, [relay.initialized, relay.bundle?.id, provider, switchProvider, activeConversationId]);
+  }, [relay.initialized, relay.bundle?.id, provider]);
 
   // ============ 接力会话落点保证（E-1 契约）============
   // 目标=对话的接力到达时，由中枢保证处于单聊模式且存在有效单聊会话承载
@@ -384,11 +379,6 @@ export default function ChatWorkspace() {
 
   // 获取当前激活的对话对象（包含完整信息）
   const currentConversation = getCurrentConversation();
-
-  // 当前会话是否为「并行对比」会话
-  // 单聊模式下若停留在比较会话上，发送消息需新建单聊会话，
-  // 否则会因比较会话消息存于 turns（而非 messages）导致消息丢失或写错会话
-  const isCurrentConversationCompare = currentConversation?.mode === 'compare';
 
   // 获取按时间分组的对话列表
   // 返回格式：[{ title: '今天', items: [...] }, { title: '昨天', items: [...] }, ...]
@@ -439,7 +429,8 @@ export default function ChatWorkspace() {
         useSettingsStore.getState().setAgentMode(true);
       }
       if (pack) {
-        setCapabilityPackKey(pack);
+        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留
+        conversationOrchestrator.updateSessionCapabilityPack(pack);
       }
       if (goal) {
         setRelayDraft({
@@ -525,16 +516,8 @@ export default function ChatWorkspace() {
 
       // 检查是否有可用的单聊会话
       // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
-      // 则新建一个单聊会话，避免消息写入比较会话而丢失
-      if (!currentConversationId || isCurrentConversationCompare) {
-        // 需要先创建一个新对话
-        // 使用当前选中的 AI 提供商和模型
-        const newId = createConversation(provider, model);
-
-        // 立即加载这个新对话到 Chat Store
-        // 传入空消息列表 []，因为是新对话
-        loadConversation(newId, [], provider, model || 'lite'); // 确保 model 有默认值
-      }
+      // 由编排命令创建并加载一个单聊会话，避免消息写入比较会话而丢失
+      conversationOrchestrator.ensureActiveConversation();
 
       // 发送消息（携带接力派生元数据，仅成功路径写入历史）
       const result = await sendMessage(content, derivation);
@@ -554,12 +537,6 @@ export default function ChatWorkspace() {
     },
     // 依赖项列表：这些值变化时，函数会重新创建
     [
-      currentConversationId,
-      isCurrentConversationCompare,
-      createConversation,
-      provider,
-      model,
-      loadConversation,
       sendMessage,
       relay,
       attachment?.sourceId,
@@ -576,17 +553,11 @@ export default function ChatWorkspace() {
   // 用户在模型选择器中选择不同的模型时调用
   const handleSwitchProvider = useCallback(
     (newProvider: ProviderName, newModel: string) => {
-      // 1. 更新 Chat Store 中的提供商和模型
-      //    这会影响后续发送的消息使用哪个 AI 模型
-      switchProvider(newProvider, newModel);
-
-      // 2. 如果有当前对话，也要更新对话的设置
-      //    这样下次加载这个对话时，会使用正确的模型
-      if (currentConversationId) {
-        updateConversationSettings(currentConversationId, newProvider, newModel);
-      }
+      // 运行时 provider/model 与当前会话绑定由编排命令同时更新，
+      // 保证下次加载或刷新该会话时使用正确的模型
+      conversationOrchestrator.updateSessionModel(newProvider, newModel);
     },
-    [switchProvider, currentConversationId, updateConversationSettings]
+    []
   );
 
   // ============ 打开知识库切片全文预览抽屉 ============
@@ -1096,7 +1067,8 @@ export default function ChatWorkspace() {
                                       type="button"
                                       data-testid={`capability-pack-card-${pack.key}`}
                                       onClick={() => {
-                                        setCapabilityPackKey(pack.key);
+                                        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留
+                                        conversationOrchestrator.updateSessionCapabilityPack(pack.key);
                                         setRelayDraft({
                                           id: `pack-${pack.key}-${Date.now()}`,
                                           text: pack.promptTemplate,

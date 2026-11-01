@@ -12,6 +12,7 @@ import {
   useHistoryInitialized,
   useSelectedHistoryIds,
 } from '@/stores/audio-history-store';
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import { AudioHistoryItem, ProcessingStatus } from '@/types/audio-history';
 import { HistoryEditDialog } from './history-edit-dialog';
 import { HistoryDeleteDialog } from './history-delete-dialog';
@@ -108,8 +109,6 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
     clearError,
     getStorageInfo,
     updateItem,
-    deleteItem,
-    deleteSelectedItems,
     toggleSelection,
     clearSelection,
     selectAll,
@@ -247,11 +246,11 @@ export function RecordingLibrary({ onHistoryItemClick }: RecordingLibraryProps =
 
   const handleConfirmDelete = async () => {
     try {
+      // 删除传播由编排模块统一执行：音频两端一起删除并标记接力来源失效
+      await conversationOrchestrator.deleteAudioItems(deletingItems.map((item) => item.id));
       if (deletingItems.length === 1) {
-        await deleteItem(deletingItems[0].id);
         toast.success('历史记录已删除');
       } else {
-        await deleteSelectedItems();
         toast.success(`已删除 ${deletingItems.length} 条记录`);
       }
       setDeletingItems([]);

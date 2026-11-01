@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useChatStore, runChatStreamSession, type ChatStreamSessionDeps, type Message } from './chat-store';
-import { StoreEvents, on } from './store-events';
+import { resetConversationPort, setConversationPort } from './conversation-port';
 import type { Artifact } from '@repo/shared';
 
 // 埋点走真实网络会干扰 fetch 的一次性 mock，统一替换为可断言的替身
 const trackerMock = vi.hoisted(() => ({ trackEvent: vi.fn() }));
 vi.mock('@/lib/events/tracker', () => ({ trackEvent: trackerMock.trackEvent }));
+
+afterEach(() => {
+  resetConversationPort();
+});
 
 describe('chat-store Artifacts 状态机与工作台联动 (ADR-0015)', () => {
   beforeEach(() => {
@@ -217,8 +221,12 @@ function makeSession(initialArtifacts: Artifact[] = []) {
   ];
   let artifacts: Artifact[] = initialArtifacts;
   const emitted: Array<{ id: string; messages: Message[]; artifacts?: Artifact[] }> = [];
-  const off = on(StoreEvents.CONVERSATION_UPDATED, (payload) => {
-    emitted.push(payload as { id: string; messages: Message[]; artifacts?: Artifact[] });
+  // 假端口按事件时期的载荷形状记录落盘请求
+  setConversationPort({
+    saveMessages: (id, messages, artifacts) =>
+      emitted.push(artifacts ? { id, messages, artifacts } : { id, messages }),
+    saveToolOverrides: () => {},
+    appendHistory: () => {},
   });
   const deps: ChatStreamSessionDeps = {
     getMessages: () => messages,
@@ -265,7 +273,7 @@ function makeSession(initialArtifacts: Artifact[] = []) {
       body: { messages: [] },
       signal: new AbortController().signal,
     });
-    off();
+    resetConversationPort();
     return outcome;
   };
 
@@ -365,7 +373,12 @@ describe('chat-store 产物收尾可信化与版本引擎接入 (ADR-0037 / 工�
 
   it('loadConversation 还原遇到存储中残留 streaming 的产物时收尾为确定状态并回写会话', () => {
     const emitted: unknown[] = [];
-    const off = on(StoreEvents.CONVERSATION_UPDATED, (p) => emitted.push(p));
+    setConversationPort({
+      saveMessages: (id, messages, artifacts) =>
+        emitted.push(artifacts ? { id, messages, artifacts } : { id, messages }),
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
     const stuckWithPrev: Artifact = { ...completeArtifact(), content: '半截草稿', status: 'streaming' };
     const stuckFresh: Artifact = {
       id: 'fresh',
@@ -380,7 +393,7 @@ describe('chat-store 产物收尾可信化与版本引擎接入 (ADR-0037 / 工�
         stuckWithPrev,
         stuckFresh,
       ]);
-    off();
+    resetConversationPort();
     const arts = useChatStore.getState().artifacts;
     expect(arts.some((a) => a.status === 'streaming')).toBe(false);
     expect(arts.find((a) => a.id === 'rpt')?.content).toBe('旧版正文');
@@ -486,14 +499,19 @@ describe('chat-store 产物版本查看、回滚与入库版本绑定 (ADR-0037)
     expect(useChatStore.getState().viewingVersions['art-v']).toBeUndefined();
   });
 
-  it('rollbackArtifactToVersion 追加新末尾版本、清除查看态，并经 CONVERSATION_UPDATED 落盘', () => {
+  it('rollbackArtifactToVersion 追加新末尾版本、清除查看态，并经会话端口落盘', () => {
     const handler = vi.fn();
-    const off = on(StoreEvents.CONVERSATION_UPDATED, handler);
+    setConversationPort({
+      saveMessages: (id, messages, artifacts) =>
+        handler(artifacts ? { id, messages, artifacts } : { id, messages }),
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
     useChatStore.setState({ activeConversationId: 'conv-rb' });
     useChatStore.getState().viewArtifactVersion('art-v', 1);
 
     useChatStore.getState().rollbackArtifactToVersion('art-v', 1);
-    off();
+    resetConversationPort();
 
     const state = useChatStore.getState();
     const art = state.artifacts[0];

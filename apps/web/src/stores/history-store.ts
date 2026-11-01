@@ -7,7 +7,6 @@ import { createDexieStorage } from '@/lib/storage/zustand-dexie-storage';
 import { HistoryItem, HistoryType, HistoryFilter, HistoryStats } from '@/types/history';
 import { generateUUID } from '@/lib/utils/uuid';
 import { authFetch } from '@/lib/api/client';
-import { emit, StoreEvents } from './store-events';
 
 // ==================== 类型定义 ====================
 
@@ -23,8 +22,8 @@ interface HistoryState {
   setFilter: (filter: Partial<HistoryFilter>) => void;
   addItem: (item: HistoryItem) => void;
   updateItem: (id: string, updates: Partial<HistoryItem>) => void;
-  deleteItem: (id: string, _isSyncDelete?: boolean) => void;
-  deleteItems: (ids: string[], _isSyncDelete?: boolean) => void;
+  deleteItem: (id: string) => void;
+  deleteItems: (ids: string[]) => void;
   clearHistory: (type?: HistoryType) => void;
   fetchHistory: () => Promise<void>;
 
@@ -185,64 +184,22 @@ export const useHistoryStore = create<HistoryState>()(
         }));
       },
 
-      // 删除单个历史记录
-      deleteItem: (id, _isSyncDelete = false) => {
-        // 先获取要删除的项，用于判断类型
-        const itemToDelete = get().items.find((item) => item.id === id);
-
+      // 删除单个历史记录（原子操作：只改本 store；关联数据由编排模块统一传播）
+      deleteItem: (id) => {
         set((state) => ({
           items: state.items.filter((item) => item.id !== id),
         }));
-
-        // 通过事件总线同步（避免循环依赖）
-        if (!_isSyncDelete) {
-          emit(StoreEvents.CONVERSATION_DELETED, { id });
-          emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids: [id] });
-
-          if (itemToDelete?.type === 'voice') {
-            emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
-          }
-        }
       },
 
-      // 批量删除历史记录
-      deleteItems: (ids, _isSyncDelete = false) => {
-        // 先获取要删除的项，用于判断类型
-        const itemsToDelete = get().items.filter((item) => ids.includes(item.id));
-        const voiceIdsToDelete = itemsToDelete.filter((item) => item.type === 'voice').map((item) => item.id);
-
+      // 批量删除历史记录（原子操作：只改本 store）
+      deleteItems: (ids) => {
         set((state) => ({
           items: state.items.filter((item) => !ids.includes(item.id)),
         }));
-
-        // 通过事件总线同步（避免循环依赖）
-        if (!_isSyncDelete) {
-          emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids });
-
-          ids.forEach((id) => {
-            emit(StoreEvents.CONVERSATION_DELETED, { id });
-          });
-
-          voiceIdsToDelete.forEach((id) => {
-            emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
-          });
-        }
       },
 
-      // 清空历史记录
+      // 清空历史记录（原子操作：只改本 store）
       clearHistory: (type) => {
-        // 获取要被删除的记录 ID，用于同步删除与接力失效标记
-        const state = get();
-        const deletedIds = Array.from(
-          new Set(state.items.filter((item) => (type ? item.type === type : true)).map((item) => item.id))
-        );
-        const chatIdsToDelete = type === 'chat' || !type
-          ? state.items.filter((item) => (type ? item.type === type : item.type === 'chat')).map((item) => item.id)
-          : [];
-        const voiceIdsToDelete = type === 'voice' || !type
-          ? state.items.filter((item) => (type ? item.type === type : item.type === 'voice')).map((item) => item.id)
-          : [];
-
         if (type) {
           set((state) => ({
             items: state.items.filter((item) => item.type !== type),
@@ -250,17 +207,6 @@ export const useHistoryStore = create<HistoryState>()(
         } else {
           set({ items: [] });
         }
-
-        // 通过事件总线同步（避免循环依赖）
-        emit(StoreEvents.RELAY_SOURCES_INVALIDATED, { ids: deletedIds });
-
-        chatIdsToDelete.forEach((id) => {
-          emit(StoreEvents.CONVERSATION_DELETED, { id });
-        });
-
-        voiceIdsToDelete.forEach((id) => {
-          emit(StoreEvents.AUDIO_HISTORY_DELETED, { id });
-        });
       },
 
       // 从服务器获取历史记录（远端未接入时保留本地 IndexedDB 数据）

@@ -2,7 +2,8 @@
  * 统一的历史记录类型定义
  */
 
-import type { DerivationMetadata, ToolCallRecord } from '@repo/shared';
+import type { DerivationMetadata } from '@repo/shared';
+import type { ArchivedMessage } from '@/types/chat-message';
 
 export type HistoryType = 'chat' | 'voice' | 'image' | 'video' | 'destiny' | 'agent';
 
@@ -23,27 +24,11 @@ export interface ChatHistoryItem extends BaseHistoryItem {
   tags?: string[];
   model: string;
   provider: string;
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    /** agent 工具调用记录（可选；旧历史数据无此字段，向后兼容） */
-    toolCalls?: ToolCallRecord[];
-    /** agent 计划与检查点（可选，向后兼容） (AGENT-PLAN-DAG / ADR-0038) */
-    plan?: import('@repo/shared').AgentPlan;
-    /** 写操作审批卡片（可选，向后兼容） (AGENT-HITL-ACTION / ADR-0041) */
-    approval?: import('@/lib/agent/approval-display').MessageApproval;
-    /**
-     * agent 工具产出附件（可选，仅 id 以 tool- 开头的产出物，体积小）；
-     * 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
-     */
-    attachments?: Array<{
-      id: string;
-      type: 'image' | 'file';
-      name: string;
-      imageUrl?: string;
-      status: string;
-    }>;
-  }>;
+  /**
+   * 历史归档消息：只保留正文、工具记录、计划、审批与工具产出附件；
+   * 用户上传附件原文（base64）刻意不入历史，避免撑爆本地存储
+   */
+  messages: ArchivedMessage[];
   // 比较会话扩展（单聊时缺省，向后兼容）
   mode?: 'single' | 'compare'; // 会话模式
   conversationId?: string; // 比较会话 id，点击后回 /chat 按 id 载入

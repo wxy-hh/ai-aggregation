@@ -3,22 +3,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { createQuotaFallbackStorage } from '@/lib/storage/quota-fallback-storage';
-import { emit, StoreEvents } from './store-events';
 import type { SelectedModel, ComparisonTurn } from '@/types/comparison';
+import type { Message } from '@/types/chat-message';
 import type { Artifact } from '@repo/shared';
 
 // ==================== 类型定义 ====================
 
-// 单条消息类型
-export interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    createdAt?: number;
-    citations?: Record<number, any>;
-    toolCalls?: any[];
-    attachments?: any[];
-}
+// 单条消息类型：本地快照使用完整运行时消息字段，不再裁剪
+export type ChatMessage = Message;
 
 // 对话类型
 export interface Conversation {
@@ -85,31 +77,15 @@ function extractTitle(messages: ChatMessage[]): string {
     return '新对话';
 }
 
-import { useChatStore } from './chat-store';
-import { useComparisonStore } from './comparison-store';
-
-// ==================== 交叉流中止（switchMode / switchConversation 共用） ====================
-
-/**
- * 切换目标模式（或切到目标模式的会话）前，同步中断被离开模式的在途流：
- * - 目标为 compare：停掉单聊流式生成——stop() 同步收尾（按「有留空删」保留已流出内容并落会话快照），
- *   否则后台流与切回时的 loadConversation 快照覆盖竞态会丢掉该轮回复；
- * - 目标为 single：停掉对比页各模型的在途请求（同类竞态的对称防护）。
- */
-const abortCrossModeStreams = (targetMode: 'single' | 'compare') => {
-    if (targetMode === 'compare') {
-        try { useChatStore.getState().stop(); } catch {}
-    } else {
-        try {
-            const comp = useComparisonStore.getState();
-            if (comp) {
-                comp.selectedModels.forEach(m => comp.stopModel(`${m.provider}:${m.model}`));
-            }
-        } catch {}
-    }
-};
-
 // ==================== Store 接口 ====================
+
+/** 会话指针、模式与双模式记忆的原子补丁 */
+export interface SessionStatePatch {
+    currentConversationId?: string | null;
+    mode?: 'single' | 'compare';
+    lastActiveSingleId?: string | null;
+    lastActiveCompareId?: string | null;
+}
 
 interface ConversationsState {
     // 状态
@@ -124,15 +100,14 @@ interface ConversationsState {
     getCurrentConversation: () => Conversation | null;
     getGroupedConversations: () => ConversationGroup[];
 
-    // 操作方法
+    // 原子操作：跨 store 编排由 conversation-orchestrator 负责
     setIsLoaded: (loaded: boolean) => void;
+    setSessionState: (patch: SessionStatePatch) => void;
     createConversation: (provider?: string, model?: string, capabilityPack?: string) => string;
-    switchConversation: (id: string) => void;
     updateMessages: (id: string, messages: ChatMessage[], artifacts?: Artifact[]) => void;
     updateConversationSettings: (id: string, provider: string, model: string) => void;
     updateConversationCapabilityPack: (id: string, capabilityPack?: string | null) => void;
     updateConversationToolOverrides: (id: string, toolOverrides?: Record<string, boolean>) => void;
-    deleteConversation: (id: string, _isSyncDelete?: boolean) => void;
 
     // 比较会话：创建与更新轮次分支
     createComparisonConversation: (selectedModels: SelectedModel[], firstPromptTitle?: string) => string;
@@ -140,15 +115,8 @@ interface ConversationsState {
     // 比较会话：同步已选模型（取消/新增模型后持久化，避免刷新后回退）
     updateComparisonSelectedModels: (id: string, selectedModels: SelectedModel[]) => void;
 
-    // 新增：查找空对话
+    // 查找空对话
     findEmptyConversation: () => Conversation | undefined;
-
-    // 编排中枢动作（候选 05：会话与模式原子联动）
-    switchMode: (targetMode: 'single' | 'compare') => void;
-    startNewSession: (mode?: 'single' | 'compare') => void;
-    openComparisonSession: (id: string) => void;
-    openHistorySession: (historyItem: import('@/types/history').ChatHistoryItem) => void;
-    prepareRelaySession: () => void;
 }
 
 // ==================== Store 实现 ====================
@@ -166,6 +134,9 @@ export const useConversationsStore = create<ConversationsState>()(
 
             // 设置加载状态
             setIsLoaded: (loaded) => set({ isLoaded: loaded }),
+
+            // 原子更新会话指针、模式与双模式记忆
+            setSessionState: (patch) => set(patch),
 
             // 获取当前对话
             getCurrentConversation: () => {
@@ -311,176 +282,6 @@ export const useConversationsStore = create<ConversationsState>()(
                 }));
             },
 
-            // 切换对话（原子驱动模式流转、数据加载与交叉流中止）
-            switchConversation: (id) => {
-                const conv = get().conversations.find((c) => c.id === id);
-                if (!conv) return;
-                const isCompare = conv.mode === 'compare';
-
-                if (isCompare) {
-                    abortCrossModeStreams('compare');
-                    set({
-                        currentConversationId: id,
-                        mode: 'compare',
-                        lastActiveCompareId: id,
-                    });
-                    try { useComparisonStore.getState().loadComparison(id); } catch {}
-                } else {
-                    abortCrossModeStreams('single');
-                    set({
-                        currentConversationId: id,
-                        mode: 'single',
-                        lastActiveSingleId: id,
-                    });
-                    try {
-                        useChatStore.getState().loadConversation(
-                            conv.id,
-                            conv.messages as any,
-                            conv.provider as any,
-                            conv.model,
-                            conv.capabilityPack,
-                            conv.toolOverrides,
-                            conv.artifacts
-                        );
-                    } catch {}
-                }
-            },
-
-            // 模式切换状态机（M-1 策略：双模式记忆流转，消灭幽灵态）
-            switchMode: (targetMode) => {
-                const current = get();
-                if (current.mode === targetMode) return;
-
-                const updates: Partial<ConversationsState> = { mode: targetMode };
-                if (current.mode === 'single' && current.currentConversationId) {
-                    updates.lastActiveSingleId = current.currentConversationId;
-                    // 同步当前单聊产物池，防切走前未及落盘导致产物丢失（ADR-0015）
-                    const activeArtifacts = useChatStore.getState().artifacts;
-                    if (activeArtifacts && activeArtifacts.length > 0) {
-                        get().updateMessages(current.currentConversationId, useChatStore.getState().messages, activeArtifacts);
-                    }
-                } else if (current.mode === 'compare' && current.currentConversationId) {
-                    updates.lastActiveCompareId = current.currentConversationId;
-                }
-
-                if (targetMode === 'compare') {
-                    // 切走前先同步中断单聊流式生成（防快照覆盖竞态，语义见 abortCrossModeStreams）
-                    abortCrossModeStreams('compare');
-                    const targetId = updates.lastActiveCompareId ?? current.lastActiveCompareId;
-                    const targetConv = targetId ? current.conversations.find((c) => c.id === targetId && c.mode === 'compare') : null;
-
-                    if (targetConv) {
-                        set({ ...updates, currentConversationId: targetConv.id });
-                        try { useComparisonStore.getState().loadComparison(targetConv.id); } catch {}
-                    } else {
-                        set({ ...updates, currentConversationId: null });
-                        try { useComparisonStore.getState().startNewComparison(); } catch {}
-                    }
-                } else {
-                    // 切走前对称中断对比页在途流（防同类快照覆盖竞态）
-                    abortCrossModeStreams('single');
-                    const targetId = updates.lastActiveSingleId ?? current.lastActiveSingleId;
-                    const targetConv = targetId ? current.conversations.find((c) => c.id === targetId && c.mode !== 'compare') : null;
-
-                    if (targetConv) {
-                        set({ ...updates, currentConversationId: targetConv.id });
-                        try {
-                            useChatStore.getState().loadConversation(
-                                targetConv.id,
-                                targetConv.messages as any,
-                                targetConv.provider as any,
-                                targetConv.model,
-                                targetConv.capabilityPack,
-                                targetConv.toolOverrides,
-                                targetConv.artifacts
-                            );
-                        } catch {}
-                    } else {
-                        const emptyConv = current.findEmptyConversation();
-                        if (emptyConv && emptyConv.mode !== 'compare') {
-                            set({ ...updates, currentConversationId: emptyConv.id });
-                            try {
-                                useChatStore.getState().loadConversation(emptyConv.id, [], emptyConv.provider as any, emptyConv.model);
-                            } catch {}
-                        } else {
-                            set(updates);
-                            const currentChat = useChatStore.getState();
-                            const userProvider = currentChat?.provider || 'xunfei';
-                            const userModel = currentChat?.model || 'lite';
-                            const newId = get().createConversation(userProvider, userModel);
-                            try {
-                                useChatStore.getState().loadConversation(newId, [], userProvider, userModel);
-                            } catch {}
-                        }
-                    }
-                }
-            },
-
-            // 统一新建会话入口
-            startNewSession: (targetMode) => {
-                const mode = targetMode ?? get().mode;
-                if (mode === 'compare') {
-                    set({ mode: 'compare', currentConversationId: null });
-                    try { useComparisonStore.getState().startNewComparison(); } catch {}
-                } else {
-                    set({ mode: 'single' });
-                    const emptyConv = get().findEmptyConversation();
-                    if (emptyConv && emptyConv.mode !== 'compare') {
-                        get().switchConversation(emptyConv.id);
-                    } else {
-                        const currentChat = useChatStore.getState();
-                        const userProvider = currentChat?.provider || 'xunfei';
-                        const userModel = currentChat?.model || 'lite';
-                        const newId = get().createConversation(userProvider, userModel);
-                        try {
-                            useChatStore.getState().loadConversation(newId, [], userProvider, userModel);
-                        } catch {}
-                    }
-                }
-            },
-
-            // 外部唤起对比会话（E-1 契约）
-            openComparisonSession: (id) => {
-                get().switchConversation(id);
-            },
-
-            // 外部从历史记录唤起单聊会话（E-1 契约）
-            openHistorySession: (historyItem) => {
-                const provider = (historyItem.provider || 'xunfei') as any;
-                const model = historyItem.model || 'lite';
-                const newId = get().createConversation(provider, model);
-                const historyMessages = (historyItem.messages || []).map((msg, index) => ({
-                    id: `${newId}-msg-${index}`,
-                    role: msg.role as 'user' | 'assistant',
-                    content: msg.content,
-                    // 透传 agent 工具记录与工具产出附件（B-10）：历史入口恢复后可回看过程与生成图
-                    ...(msg.toolCalls?.length ? { toolCalls: msg.toolCalls } : {}),
-                    ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
-                }));
-                set({
-                    mode: 'single',
-                    currentConversationId: newId,
-                    lastActiveSingleId: newId,
-                });
-                get().updateMessages(newId, historyMessages as any);
-                try {
-                    useChatStore.getState().loadConversation(newId, historyMessages as any, provider, model);
-                } catch {}
-            },
-
-            // 外部跨模态接力到达对话时的就绪保证（E-1 契约）
-            prepareRelaySession: () => {
-                const current = get();
-                if (current.mode === 'compare') {
-                    get().switchMode('single');
-                }
-                const updated = get();
-                const currentConv = updated.getCurrentConversation();
-                if (!currentConv || currentConv.mode === 'compare') {
-                    get().startNewSession('single');
-                }
-            },
-
             // 更新对话消息与产物（ADR-0015）
             updateMessages: (id, messages, artifacts) => {
                 set(state => ({
@@ -511,50 +312,6 @@ export const useConversationsStore = create<ConversationsState>()(
                 }));
             },
 
-            // 删除对话（联动清理失效的模式记忆指针并安全重载运行时，消灭删除孤岛）
-            deleteConversation: (id, _isSyncDelete = false) => {
-                const { conversations, currentConversationId, mode } = get();
-                const isDeletingCurrent = id === currentConversationId;
-                const updated = conversations.filter(conv => conv.id !== id);
-
-                const updates: Partial<ConversationsState> = {
-                    conversations: updated,
-                };
-                if (id === get().lastActiveSingleId) updates.lastActiveSingleId = null;
-                if (id === get().lastActiveCompareId) updates.lastActiveCompareId = null;
-
-                // 若 comparison-store 当前指向已删会话，同步重置运行时
-                try {
-                    const comp = useComparisonStore.getState();
-                    if (comp.activeComparisonId === id) {
-                        comp.startNewComparison();
-                    }
-                } catch {}
-
-                if (isDeletingCurrent) {
-                    // 按当前全局模式挑选同模式的候选会话
-                    const sameModeCandidates = updated.filter(c =>
-                        mode === 'compare' ? c.mode === 'compare' : c.mode !== 'compare'
-                    );
-
-                    if (sameModeCandidates.length > 0) {
-                        const nextId = sameModeCandidates[0].id;
-                        set({ ...updates, currentConversationId: nextId });
-                        get().switchConversation(nextId);
-                    } else {
-                        // 该模式下已无会话，执行安全新建/重置草稿
-                        set({ ...updates, currentConversationId: null });
-                        get().startNewSession(mode);
-                    }
-                } else {
-                    set(updates);
-                }
-
-                // 通过事件总线同步删除 history-store（避免循环依赖）
-                if (!_isSyncDelete) {
-                    emit(StoreEvents.CONVERSATION_DELETED, { id });
-                }
-            },
         }),
         {
             name: 'ai-chat-conversations', // 本地存储键名
@@ -569,33 +326,9 @@ export const useConversationsStore = create<ConversationsState>()(
                 lastActiveCompareId: state.lastActiveCompareId,
             }),
             onRehydrateStorage: () => (state) => {
-                // 数据恢复完成后，设置加载状态并联动恢复对应运行时的状态（消灭刷新数据覆盖）
-                if (state) {
-                    state.setIsLoaded(true);
-                    const { mode, currentConversationId, conversations } = state;
-                    if (currentConversationId) {
-                        const conv = conversations.find(c => c.id === currentConversationId);
-                        if (conv) {
-                            if (mode === 'compare' && conv.mode === 'compare') {
-                                try {
-                                    useComparisonStore.getState().loadComparison(conv.id);
-                                } catch {}
-                            } else if (mode === 'single' && conv.mode !== 'compare') {
-                                try {
-                                    useChatStore.getState().loadConversation(
-                                        conv.id,
-                                        conv.messages as any,
-                                        conv.provider as any,
-                                        conv.model,
-                                        conv.capabilityPack,
-                                        conv.toolOverrides,
-                                        conv.artifacts
-                                    );
-                                } catch {}
-                            }
-                        }
-                    }
-                }
+                // 水合只标记加载完成；刷新恢复规则由 conversationOrchestrator.initialize 统一执行，
+                // 避免水合回调与页面初始化各走一套恢复路径
+                state?.setIsLoaded(true);
             },
         }
     )
@@ -616,18 +349,17 @@ export const useConversationMode = () => useConversationsStore(state => state.mo
 export const useIsConversationsLoaded = () => useConversationsStore(state => state.isLoaded);
 
 // 获取操作方法集合（浅比较，避免不必要的重新渲染）
+/**
+ * 会话 store 的原子操作集合。
+ *
+ * 跨 store 的编排动作（切换、模式流转、新建、外部唤起、删除）不在本 hook 中，
+ * 统一由 conversationOrchestrator 提供。
+ */
 export const useConversationsActions = () => useConversationsStore(
     useShallow((state) => ({
         createConversation: state.createConversation,
-        switchConversation: state.switchConversation,
-        switchMode: state.switchMode,
-        startNewSession: state.startNewSession,
-        openComparisonSession: state.openComparisonSession,
-        openHistorySession: state.openHistorySession,
-        prepareRelaySession: state.prepareRelaySession,
         updateMessages: state.updateMessages,
         updateConversationSettings: state.updateConversationSettings,
-        deleteConversation: state.deleteConversation,
         findEmptyConversation: state.findEmptyConversation,
         getCurrentConversation: state.getCurrentConversation,
         getGroupedConversations: state.getGroupedConversations,

@@ -354,10 +354,9 @@ export const useComparisonStore = create<ComparisonState>()(
       input: '',
       error: null,
 
-      setMode: (mode) => {
-        useConversationsStore.getState().switchMode(mode);
-        set({ mode });
-      },
+      // 仅更新对比运行时自身的模式镜像；跨 store 的模式流转由
+      // conversationOrchestrator.switchMode 统一编排，store 之间不互相调用
+      setMode: (mode) => set({ mode }),
 
       setInput: (value) => set({ input: value }),
 
