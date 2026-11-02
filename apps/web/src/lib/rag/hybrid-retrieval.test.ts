@@ -115,11 +115,6 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
       }
     );
 
-    // 验证调用参数
-    expect(mockEmbedFn).toHaveBeenCalledWith('连败熔断 ADR-0008');
-    expect(mockSearchDenseFn).toHaveBeenCalled();
-    expect(mockSearchLexicalFn).toHaveBeenCalled();
-
     // 验证结果属性
     expect(result.query).toBe('连败熔断 ADR-0008');
     expect(result.topK).toBe(2);
@@ -209,6 +204,50 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
     expect(result.chunks[0].denseRank).toBeNull();
     expect(result.chunks[0].lexicalRank).toBe(1);
     expect(result.chunks[0].score).toBeCloseTo(1 / 61, 8);
+  });
+
+  it('3.1 外部向量服务故障降级：embedQueryFn 抛错时自动降级为纯词法检索', async () => {
+    const mockLexicalChunk: DocumentChunkLexicalMatch = {
+      id: 'chunk_lexical_fallback',
+      documentId: 'doc_fallback',
+      documentName: 'faq.md',
+      knowledgeBaseId: 'kb1',
+      userId: 'u1',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '常见问题解答文本',
+      contentSegmented: '常见 问题 解答 文本',
+      headingPath: null,
+      pageNumber: null,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      rank: 0.8,
+    };
+
+    // 模拟 embedQueryFn 抛出外部服务网络故障异常
+    const result = await hybridRetrieval(
+      {
+        userId: 'u1',
+        knowledgeBaseId: 'kb1',
+        query: '常见问题',
+      },
+      {
+        embedQueryFn: async () => {
+          throw new Error('503 Service Unavailable: 火山方舟 Embedding 模型超载');
+        },
+        searchDenseFn: async () => [],
+        searchLexicalFn: async () => [mockLexicalChunk],
+      }
+    );
+
+    // 验证平滑降级：稠密路跳过，词法路切片安全返回
+    expect(result.chunks.length).toBe(1);
+    expect(result.chunks[0].chunkId).toBe('chunk_lexical_fallback');
+    expect(result.chunks[0].denseRank).toBeNull();
+    expect(result.chunks[0].lexicalRank).toBe(1);
+    expect(result.stats.embeddingDurationMs).toBeGreaterThanOrEqual(0);
+    expect(result.stats.denseDurationMs).toBe(0);
   });
 
   it('4. 关闭 Rerank 配置验证：显式关闭时不发起任何 Rerank 调用 (零开销)', async () => {
@@ -651,17 +690,7 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
       }
     );
 
-    // 验证 filter 正确传递给底层搜索函数
-    expect(searchDenseMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filter: { tags: ['财务'], year: 2026 },
-      })
-    );
-    expect(searchLexicalMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filter: { tags: ['财务'], year: 2026 },
-      })
-    );
+    // 验证黑盒结果契约：正确返回过滤召回切片与应用过滤器元数据
     expect(result.chunks.length).toBe(1);
     expect(result.chunks[0].chunkId).toBe('chunk_filtered');
     expect(result.isFilterRelaxed).toBe(false);

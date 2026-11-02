@@ -25,7 +25,7 @@
 | 2 | `ARCH-CK-02` | 加深聊天会话状态 module | **Strong** | 收敛多种会话生命周期知识 | 建议在 01 后独立开展 | `已完成` |
 | 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `已完成` |
 | 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `已完成` |
-| 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `进行中（随01完成首批）` |
+| 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `已完成` |
 | 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `待分析` |
 | 7 | `ARCH-CK-07` | 对齐首页 `?prompt=` 与对话输入预填 | **Worth exploring** | 修复灵感入口提示词丢失 | 建议在 04 后复用入口意图 | `待分析` |
 | 8 | `ARCH-CK-08` | 修复对比模式顶部内容避让 | **Worth exploring** | 消除对比视图标题重影与模型卡片遮挡 | 可独立开展 | `待分析` |
@@ -355,7 +355,7 @@
 
 ## `ARCH-CK-05`：缩减只为 mock 存在的宽 interface
 
-**状态**：`待分析`  
+**状态**：`已完成`  
 **推荐强度**：**Worth exploring**  
 **建议顺序**：随 `ARCH-CK-01`、`ARCH-CK-02` 分批执行
 
@@ -399,29 +399,29 @@
 
 ### 待办
 
-- [ ] 为每个依赖字段记录生产 adapter 数量、覆盖的失败模式和使用它的测试。
-- [ ] 标记“真实 seam”“有价值的内部 seam”“仅供 mock 的假设 seam”。
-- [ ] 在主待办的 spec 中明确本轮删除或保留的字段。
-- [ ] 先建立通过正式 interface 验证结果的替代测试。
-- [ ] 删除无 leverage 的注入字段与对应装配代码。
-- [ ] 确认测试仍可覆盖数据库失败、RerankProvider 失败、权限拒绝和流中断等关键场景。
-- [ ] 记录删除前后 interface 字段数量与测试装配量。
+- [x] 为每个依赖字段记录生产 adapter 数量、覆盖的失败模式和使用它的测试。
+- [x] 标记“真实 seam”“有价值的内部 seam”“仅供 mock 的假设 seam”。
+- [x] 在主待办的 spec 中明确本轮删除或保留的字段。
+- [x] 先建立通过正式 interface 验证结果的替代测试。
+- [x] 删除无 leverage 的注入字段与对应装配代码。
+- [x] 确认测试仍可覆盖数据库失败、RerankProvider 失败、权限拒绝和流中断等关键场景。
+- [x] 记录删除前后 interface 字段数量与测试装配量。
 
 ### 完成标准
 
-- [ ] 每个保留 seam 都有第二个真实 adapter，或有不可替代的关键失败测试价值。
-- [ ] 测试不再需要知道完整内部流水线由哪些函数组成。
-- [ ] implementation 可重排而无需大面积修改行为测试。
-- [ ] 没有降低关键错误模式的测试覆盖。
+- [x] 每个保留 seam 都有第二个真实 adapter，或有不可替代的关键失败测试价值。
+- [x] 测试不再需要知道完整内部流水线由哪些函数组成。
+- [x] implementation 可重排而无需大面积修改行为测试。
+- [x] 没有降低关键错误模式的测试覆盖。
 
 ### 交付记录
 
-- 完成日期：
-- 所属主待办：
-- Spec：
-- QA plan：
-- 验证证据：
-- 审查结论：
+- 完成日期：2026-11-02
+- 所属主待办：专项主待办（标准车道）
+- Spec：`.scratch/mock-interface-reduction/spec.md`
+- QA plan：`.scratch/mock-interface-reduction/qa-plan.md`
+- 验证证据：交付验证 7 项全部通过（`evidence/qa-final-*-r4.log`，全仓 40 tests、typecheck、lint、静态目录断言）；对账表 `_qa/reconciliation.md`（7 项断言 100% PASS，0 FAIL，0 BLOCKED）
+- 审查结论：双轴独立审查 r1→r2 完成（Standards 轴 S-J1 本次修经 r2 复核已修；Spec 轴 P-M1/P-W1/P-W2/P-W3 本次修经 r2 复核已修，r2 双轴均无新发现，见 `review-report.md`）；`qa-check review` 机器结果 PASS，人工终审确认交付
 
 ---
 

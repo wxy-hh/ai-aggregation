@@ -74,7 +74,6 @@ export interface HybridRetrievalDeps {
   searchDenseFn?: typeof searchDocumentChunksDense;
   searchLexicalFn?: typeof searchDocumentChunksLexical;
   getSequentialChunksFn?: typeof getSequentialChapterChunks;
-  tokenizeFn?: (text: string) => string;
   rerankProvider?: RerankProvider;
 }
 
@@ -233,10 +232,9 @@ export async function hybridRetrieval(
   const embedFn = deps.embedQueryFn || defaultEmbedQuery;
   const searchDense = deps.searchDenseFn || searchDocumentChunksDense;
   const searchLexical = deps.searchLexicalFn || searchDocumentChunksLexical;
-  const tokenize = deps.tokenizeFn || prepareLexicalQuery;
 
   // 1. 生成词法检索查询词
-  const preparedLexicalQuery = tokenize(query);
+  const preparedLexicalQuery = prepareLexicalQuery(query);
 
   let embeddingDurationMs = 0;
   let denseDurationMs = 0;

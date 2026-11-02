@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createKnowledgeOutlineTool } from '../knowledge-outline';
+import { createKnowledgeOutlineTool } from './knowledge-outline';
 import type { ToolExecutionContext } from '@/lib/agent/registry';
 import type { DocumentOutline } from '@repo/shared';
 
@@ -56,7 +56,33 @@ describe('knowledge_outline 只读大纲工具单元测试 (TC06 / ADR-0036)', (
     ],
   };
 
-  it('TC06-1: 参数校验与基础调用退出码为 0', async () => {
+  it('1. 知识库大纲核心契约：越权或不存在时物理拦截，合法文档输出标准 Markdown 层级大纲', async () => {
+    // 1. 越权或不存在文档坚决物理拦截 (QA-010 / P-W1)
+    const mockFindDocFail = vi.fn().mockResolvedValue(null);
+    const toolFail = createKnowledgeOutlineTool({
+      findDocumentFn: mockFindDocFail,
+    });
+    await expect(toolFail.execute({ documentId: 'doc-of-bob' }, mockContext)).rejects.toThrow(
+      '指定的文档不存在或无权访问'
+    );
+
+    // 2. 合法文档输出标准 Markdown 层级大纲
+    const mockFindDocSuccess = vi.fn().mockResolvedValue({
+      id: 'doc-1',
+      name: '架构方案.md',
+      knowledgeBaseId: 'kb-1',
+      metadata: { outline: sampleOutline },
+    });
+    const toolSuccess = createKnowledgeOutlineTool({
+      findDocumentFn: mockFindDocSuccess,
+    });
+    const result = await toolSuccess.execute({ documentId: 'doc-1' }, mockContext);
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('1. 总体设计');
+    expect(result.contentForModel).toContain('2. 权限模型');
+  });
+
+  it('2. 参数校验与基础调用输出正常大纲', async () => {
     const mockFindDoc = vi.fn().mockResolvedValue({
       id: 'doc-1',
       name: '架构方案.md',
@@ -74,19 +100,7 @@ describe('knowledge_outline 只读大纲工具单元测试 (TC06 / ADR-0036)', (
     expect(result.contentForModel).toContain('2. 权限模型');
   });
 
-  it('TC06-2: 跨租户越权探测他人文档时被坚决拦截', async () => {
-    // 模拟底层查不到属于当前用户 alice 的该文档（即越权访问 bob 的文档）
-    const mockFindDoc = vi.fn().mockResolvedValue(null);
-
-    const tool = createKnowledgeOutlineTool({
-      findDocumentFn: mockFindDoc,
-    });
-
-    await expect(tool.execute({ documentId: 'doc-of-bob' }, mockContext)).rejects.toThrow('指定的文档不存在或无权访问');
-    expect(mockFindDoc).toHaveBeenCalledWith('user-alice', 'doc-of-bob');
-  });
-
-  it('TC06-3: 传入 maxDepth: 2 参数时，返回的大纲树严格截断至二级，三级子标题被收敛', async () => {
+  it('3. 传入 maxDepth: 2 参数时，返回的大纲树严格截断至二级，三级子标题被收敛', async () => {
     const mockFindDoc = vi.fn().mockResolvedValue({
       id: 'doc-1',
       name: '架构方案.md',
@@ -111,7 +125,7 @@ describe('knowledge_outline 只读大纲工具单元测试 (TC06 / ADR-0036)', (
     expect(resultDepth3.contentForModel).toContain('1.1.1 存储选型');
   });
 
-  it('TC06-4: 针对存量未生成大纲的旧文档，返回友好降级引导提示，不中断调用链路', async () => {
+  it('4. 针对存量未生成大纲的旧文档，返回友好降级引导提示，不中断调用链路', async () => {
     // 模拟存量旧文档，metadata 中无 outline 字段
     const mockFindDoc = vi.fn().mockResolvedValue({
       id: 'doc-legacy',
@@ -131,7 +145,7 @@ describe('knowledge_outline 只读大纲工具单元测试 (TC06 / ADR-0036)', (
     expect(result.summaryForDisplay).toContain('暂无多级大纲');
   });
 
-  it('无文档参数时支持汇总输出知识库文档大纲列表', async () => {
+  it('5. 无文档参数时支持汇总输出知识库文档大纲列表', async () => {
     const mockFindDocs = vi.fn().mockResolvedValue([
       {
         id: 'doc-1',

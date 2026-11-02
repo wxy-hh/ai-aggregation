@@ -71,7 +71,6 @@ export interface KnowledgeSearchDeps {
     knowledgeBaseId: string
   ) => Promise<{ id: string; name: string } | null>;
   findBestFaqMatchFn?: typeof findBestFaqMatch;
-  embedFaqFn?: typeof embedFaqText;
   rerankProvider?: RerankProvider;
 }
 
@@ -110,7 +109,6 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
   const findKbsFn = deps.findKnowledgeBasesFn || defaultFindKnowledgeBases;
   const verifyKbFn = deps.verifyKnowledgeBaseFn || defaultVerifyKnowledgeBase;
   const findFaqFn = deps.findBestFaqMatchFn || findBestFaqMatch;
-  const embedFn = deps.embedFaqFn || embedFaqText;
   const rerankProvider = deps.rerankProvider;
 
   return {
@@ -204,7 +202,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
                 userId,
                 knowledgeBaseIds: kbIds,
                 query: trimmedQuery,
-                embedFn,
+                embedFn: embedFaqText,
               }).catch((err) => {
                 console.warn('[knowledge_search] FAQ 检索降级:', err);
                 return null;

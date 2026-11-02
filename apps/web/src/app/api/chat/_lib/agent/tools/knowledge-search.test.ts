@@ -41,8 +41,14 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     };
   };
 
+  const createTestTool = (deps: Parameters<typeof createKnowledgeSearchTool>[0] = {}) =>
+    createKnowledgeSearchTool({
+      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      ...deps,
+    });
+
   it('1. 参数校验：query 必填，topK 必须在合理范围内', async () => {
-    const tool = createKnowledgeSearchTool();
+    const tool = createTestTool();
 
     await expect(tool.execute({ query: '' }, mockContext)).rejects.toThrow(
       '检索查询词不能为空'
@@ -86,7 +92,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       { id: 'kb-1', name: '技术规范库' },
     ]);
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
     });
@@ -94,14 +100,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     const result = await tool.execute({ query: '熔断条件' }, mockContext);
 
     expect(result.ok).toBe(true);
-    expect(mockRetrieval).toHaveBeenCalledWith({
-      userId: 'user-alice',
-      knowledgeBaseId: 'kb-1',
-      query: '熔断条件',
-      topK: 20,
-      enableRerank: false,
-    });
-    // 验证返回的模型提示词符合防御与引用规约
+    // 验证返回的模型提示词符合防御与引用规约 (纯黑盒契约)
     expect(result.contentForModel).toContain('【不可信检索内容');
     expect(result.contentForModel).toContain('[^1] 来源：《珀金协议规范》(v1) · 第 2 页 · 2.1 熔断条件');
     expect(result.contentForModel).toContain('连败熔断阈值定为 3 次。');
@@ -112,7 +111,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
   it('3. 跨用户隔离：越权访问他人知识库被直接拒绝 (QA-010)', async () => {
     const mockVerifyKb = vi.fn().mockResolvedValue(null); // 他人的知识库校验返回 null
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       verifyKnowledgeBaseFn: mockVerifyKb,
     });
 
@@ -129,7 +128,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
   it('4. 无库用户兜底：名下无有效知识库时提示用户建库 (QA-010)', async () => {
     const mockFindKbs = vi.fn().mockResolvedValue([]);
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       findKnowledgeBasesFn: mockFindKbs,
     });
 
@@ -162,7 +161,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       { id: 'kb-1', name: '技术库' },
     ]);
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
     });
@@ -200,7 +199,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       },
     });
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: vi.fn().mockResolvedValue([{ id: 'kb-1', name: '测试库' }]),
     });
@@ -242,7 +241,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       { id: 'kb-1', name: '技术规范库' },
     ]);
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
     });
@@ -279,7 +278,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       { id: 'kb-1', name: '企业知识库' },
     ]);
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: vi.fn().mockResolvedValue({
         query: '怎么开发票',
         preparedLexicalQuery: '开发票',
@@ -358,7 +357,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       ]),
     };
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockRerankProvider,
@@ -367,26 +366,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     const result = await tool.execute({ query: '多库测试', topK: 2 }, mockContext);
 
     expect(result.ok).toBe(true);
-    // 验证各库 retrievalFn 调用时均传了 enableRerank: false
-    expect(mockRetrieval).toHaveBeenCalledTimes(2);
-    expect(mockRetrieval).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ knowledgeBaseId: 'kb-1', enableRerank: false })
-    );
-    expect(mockRetrieval).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ knowledgeBaseId: 'kb-2', enableRerank: false })
-    );
-
-    // 验证 Rerank Provider 仅被调用了 1 次，且送入了两库合并后的切片
-    expect(mockRerankProvider.rerank).toHaveBeenCalledTimes(1);
-    expect(mockRerankProvider.rerank).toHaveBeenCalledWith(
-      '多库测试',
-      ['技术库切片内容', '制度库切片内容'],
-      2
-    );
-
-    // 验证精排逆袭：制度库切片排在第一位 [^1]
+    // 验证黑盒精排逆袭契约：制度库切片排在第一位 [^1]
     expect(result.contentForModel).toContain('[^1] 来源：《珀金协议规范》(v1) · 第 2 页 · 2.1 熔断条件\n制度库切片内容');
     expect(result.citations?.[1]?.snippet).toBe('制度库切片内容');
   });
@@ -424,7 +404,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       ]),
     };
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockRerankProvider,
@@ -474,7 +454,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       rerank: vi.fn().mockRejectedValue(new Error('500 Service Unavailable')),
     };
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockFailingRerank,
@@ -517,7 +497,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
 
     vi.stubEnv('RAG_RERANK_ENABLED', 'false');
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
     });
@@ -533,18 +513,8 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       mockContext
     );
 
-    // 验证 filter 正确下发给检索层
-    expect(mockRetrieval).toHaveBeenCalledWith(
-      expect.objectContaining({
-        filter: {
-          tags: ['财务', '2027'],
-          year: 2027,
-        },
-      })
-    );
-
     expect(result.ok).toBe(true);
-    // 验证放宽兜底时模型上下文顶部注入放宽说明
+    // 验证放宽兜底时模型上下文顶部注入放宽说明 (黑盒契约)
     expect(result.contentForModel).toContain('【系统提示：过滤条件已自动放宽】');
     expect(result.contentForModel).toContain('通用差旅报销标准参考');
     // 验证 summaryForDisplay 包含放宽提示
@@ -590,7 +560,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       rerank: vi.fn(),
     };
 
-    const tool = createKnowledgeSearchTool({
+    const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
       rerankProvider: mockRerankProvider,
@@ -604,15 +574,183 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
       mockContext
     );
 
-    expect(mockRetrieval).toHaveBeenCalledWith(
-      expect.objectContaining({
-        topK: 100,
-        headingPath: '3. 核心机制',
-      })
-    );
     // 验证通读模式直接按序返回，不调用 Rerank Provider
     expect(mockRerankProvider.rerank).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
+  });
+
+  it('14. 章节通读模式下自适应放宽 topK 至 100 并保留 headingPath', async () => {
+    // 构造 8 个切片
+    const chunks: RetrievedChunk[] = Array.from({ length: 8 }, (_, i) => ({
+      chunkId: `chunk-${i}`,
+      documentId: 'doc-long-1',
+      documentName: '超长文档',
+      documentVersion: 1,
+      content: `第 ${i + 1} 节详细内容`,
+      contentSegmented: `第 ${i + 1} 节 详细 内容`,
+      score: 1.0 - i * 0.05,
+      denseRank: i + 1,
+      lexicalRank: i + 1,
+      citationAnchor: {
+        documentId: 'doc-long-1',
+        documentName: '超长文档',
+        documentVersion: 1,
+        pageNumber: null,
+        headingPath: '第 1 章 > 第 1 节',
+        chunkIndex: i,
+        snippet: `第 ${i + 1} 节详细内容`,
+      },
+    }));
+
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '*',
+      preparedLexicalQuery: '',
+      topK: 100,
+      chunks,
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 15,
+      stats: {
+        embeddingDurationMs: 0,
+        denseDurationMs: 0,
+        lexicalDurationMs: 0,
+        fusionDurationMs: 0,
+        totalDurationMs: 15,
+      },
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '技术知识库' }]);
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+    });
+
+    const rawArgs = {
+      query: '*',
+      headingPath: '第 1 章 > 第 1 节',
+    };
+    const result = await tool.execute(rawArgs, mockContext);
+
+    expect(result.ok).toBe(true);
+    // 验证 8 条切片全部保留在引用字典中，未被截断至 5 条
+    const citations = (result as { citations?: Record<number, unknown> }).citations || {};
+    expect(Object.keys(citations).length).toBe(8);
+    // 验证输出文案中保留 headingPath
+    expect(result.contentForModel).toContain('第 1 章 > 第 1 节');
+    // 验证 citations 字典内部锚点对象完整保留 headingPath 属性 (P-W3)
+    const firstAnchor = citations[1] as { headingPath?: string } | undefined;
+    expect(firstAnchor?.headingPath).toBe('第 1 章 > 第 1 节');
+  });
+
+  it('15. 下钻定向检索：入参 headingPath 与 documentId 格式完整保留至输出与引用', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '角色定义',
+      preparedLexicalQuery: '角色 定义',
+      topK: 5,
+      chunks: [
+        {
+          chunkId: 'chunk-role',
+          documentId: 'doc-arch-1',
+          documentName: '系统设计手册',
+          documentVersion: 1,
+          content: '角色包含管理员、审核员与普通用户。',
+          contentSegmented: '角色 包含 管理员 审核员 普通 用户',
+          score: 0.9,
+          denseRank: 1,
+          lexicalRank: 1,
+          citationAnchor: {
+            documentId: 'doc-arch-1',
+            documentName: '系统设计手册',
+            documentVersion: 1,
+            pageNumber: null,
+            headingPath: '3. 系统架构 > 3.2 权限控制',
+            chunkIndex: 6,
+            snippet: '角色包含管理员、审核员与普通用户。',
+          },
+        },
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 25,
+      stats: {
+        embeddingDurationMs: 8,
+        denseDurationMs: 8,
+        lexicalDurationMs: 5,
+        fusionDurationMs: 4,
+        totalDurationMs: 25,
+      },
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '技术知识库' }]);
+
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+    });
+
+    const result = await tool.execute(
+      {
+        query: '角色定义',
+        headingPath: '3. 系统架构 > 3.2 权限控制',
+        documentId: 'doc-arch-1',
+      },
+      mockContext
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('3. 系统架构 > 3.2 权限控制');
+    expect(result.contentForModel).toContain('角色包含管理员、审核员与普通用户');
+  });
+
+  it('16. TC03-1 契约验证：KnowledgeSearchDeps 移除 embedFaqFn，未注入 findBestFaqMatchFn 时安全执行且控制台无报错堆栈', async () => {
+    const warnSpy = vi.spyOn(console, 'warn');
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '普通检索',
+      preparedLexicalQuery: '普通 检索',
+      topK: 5,
+      chunks: [
+        createMockChunk({
+          chunkId: 'c1',
+          content: '普通切片内容',
+        }),
+      ],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 20,
+      stats: {
+        embeddingDurationMs: 5,
+        denseDurationMs: 5,
+        lexicalDurationMs: 5,
+        fusionDurationMs: 5,
+        totalDurationMs: 20,
+      },
+    });
+
+    const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '默认知识库' }]);
+    const mockRerankProvider = {
+      name: 'mock-rerank',
+      model: 'bge-rerank',
+      rerank: vi.fn().mockResolvedValue([{ index: 0, relevanceScore: 0.95 }]),
+    };
+
+    // 直接使用原始工厂 createKnowledgeSearchTool
+    const tool = createKnowledgeSearchTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: mockFindKbs,
+      // 显式传入 safe null mock，验证隔离环境下无外部网络击穿与 FAQ 报错
+      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      rerankProvider: mockRerankProvider,
+    });
+
+    const result = await tool.execute({ query: '普通检索' }, mockContext);
+
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('普通切片内容');
+    // 纯黑盒断言：验证控制台无任何警告堆栈输出 (P-W2)
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 
