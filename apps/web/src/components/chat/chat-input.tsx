@@ -352,19 +352,17 @@ export function ChatInput({
     lastImpressionKeyRef.current = null;
     lastIntentDraftRef.current = '';
 
-    // 发送后立即清理本地附件，避免被预填 effect 再次填回造成残留
-    // （接力图带 sourceId；同步清来源，不依赖异步发送结果）
-    if (attachment?.sourceId && onExternalAttachmentConsumed) {
-      onExternalAttachmentConsumed(attachment.sourceId);
-    }
-    setAttachment(null);
-
-    // 调用父组件传入的发送函数
+    // 调用父组件传入的发送函数（附件由 chat-store 发送逻辑校验通过后消费）
     try {
       const result = await onSend(textToSend);
-      // 若 onSend 返回 false（例如网络失败、BillingError 额度不足等），恢复草稿到输入框
+      // 若 onSend 返回 false（例如网络失败、模型不支持附件、BillingError 额度不足等），恢复草稿到输入框
       if (result === false) {
         applyInput(savedDraft);
+      } else {
+        // 发送成功后同步清理外部接力附件来源
+        if (attachment?.sourceId && onExternalAttachmentConsumed) {
+          onExternalAttachmentConsumed(attachment.sourceId);
+        }
       }
     } catch {
       // 异常情况下同样恢复草稿

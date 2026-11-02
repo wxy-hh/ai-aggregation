@@ -14,13 +14,16 @@ import { useConversationsStore } from './conversations-store';
 import { useChatStore } from './chat-store';
 import { useComparisonStore } from './comparison-store';
 import { useHistoryStore } from './history-store';
+import { useSettingsStore } from './settings-store';
 import { useAudioHistoryStore } from './audio-history-store';
-import { markSourcesInvalidBySourceIds } from './relay-store';
+import { markSourcesInvalidBySourceIds, useRelayStore } from './relay-store';
 import { hasRetainableContent } from './chat-projectors';
 import { fromArchivedMessages } from '@/lib/conversation/message-snapshots';
+import { resolveChatEntryIntent } from '@/lib/chat/chat-entry';
 import { setConversationPort, type ConversationPort } from './conversation-port';
 import type { ChatHistoryItem, HistoryType } from '@/types/history';
 import type { Message } from '@/types/chat-message';
+import type { RelayBundle } from '@repo/shared';
 
 export type SessionMode = 'single' | 'compare';
 
@@ -44,6 +47,31 @@ setConversationPort(defaultConversationPort);
 
 /** 刷新恢复是否已执行（应用生命周期内只恢复一次） */
 let hasInitialized = false;
+
+/** 对话页面入口参数：执行后统一清理，避免刷新重复触发 */
+const CHAT_ENTRY_PARAMS = [
+  'new',
+  'goal',
+  'pack',
+  'agent',
+  'historyId',
+  'comparisonId',
+] as const;
+
+/** 定点删除入口参数，保留 relayId、prompt 与未知参数 */
+function clearChatEntryParams(): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  for (const key of CHAT_ENTRY_PARAMS) {
+    url.searchParams.delete(key);
+  }
+  const nextSearch = url.searchParams.toString();
+  window.history.replaceState(
+    {},
+    '',
+    `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`
+  );
+}
 
 /**
  * 切换目标模式（或切到目标模式的会话）前，同步中断被离开模式的在途流：
@@ -393,6 +421,55 @@ export const conversationOrchestrator = {
     }
   },
 
+  /**
+   * 页面入口命令：按固定优先级执行 URL 入口意图，并清理已消费的入口参数。
+   * 返回新建分支的 goal 预填文本，供页面写入外部草稿通道。
+   */
+  enterChatFromUrl(search: string): { draftText: string | null } {
+    const state = useConversationsStore.getState();
+    const firstSingle = state.conversations.find(
+      (conversation) => conversation.mode !== 'compare'
+    );
+    const intent = resolveChatEntryIntent(search, {
+      currentConversationId: state.currentConversationId,
+      mode: state.mode,
+      firstSingleConversationId: firstSingle?.id ?? null,
+    });
+
+    let draftText: string | null = null;
+
+    switch (intent.kind) {
+      case 'comparison':
+        conversationOrchestrator.openComparisonSession(intent.comparisonId);
+        break;
+      case 'history': {
+        const historyItem = useHistoryStore.getState().getItemById(intent.historyId);
+        if (historyItem?.type === 'chat') {
+          conversationOrchestrator.openHistorySession(historyItem);
+        }
+        break;
+      }
+      case 'new':
+        conversationOrchestrator.startNewSession();
+        if (intent.enableAgent) {
+          useSettingsStore.getState().setAgentMode(true);
+        }
+        if (intent.capabilityPack) {
+          conversationOrchestrator.updateSessionCapabilityPack(intent.capabilityPack);
+        }
+        draftText = intent.goal;
+        break;
+      case 'restore-first-single':
+        conversationOrchestrator.switchConversation(intent.conversationId);
+        break;
+      case 'keep-current':
+        break;
+    }
+
+    clearChatEntryParams();
+    return { draftText };
+  },
+
   /** 外部跨模态接力到达对话时的就绪保证（E-1 契约） */
   prepareRelaySession(): void {
     if (useConversationsStore.getState().mode === 'compare') {
@@ -402,6 +479,32 @@ export const conversationOrchestrator = {
     if (!currentConversation || currentConversation.mode === 'compare') {
       conversationOrchestrator.startNewSession('single');
     }
+  },
+
+  /**
+   * Relay 到达处理：保证单聊落点；图片来源在非豆包模型下自动切换并返回决策结果。
+   * 草稿填充、附件状态与提示文案由页面负责；命令本身幂等。
+   */
+  applyRelayArrival(bundle: RelayBundle): {
+    switchedModel: boolean;
+    isImageRelay: boolean;
+  } {
+    conversationOrchestrator.prepareRelaySession();
+
+    const firstItem = bundle.items[0];
+    const isImageRelay =
+      Boolean(firstItem?.snapshotMediaUrl) &&
+      firstItem?.sourceType === 'image' &&
+      firstItem?.sourceModule === 'image';
+
+    if (!isImageRelay) return { switchedModel: false, isImageRelay };
+
+    if (useChatStore.getState().provider === 'doubao') {
+      return { switchedModel: false, isImageRelay };
+    }
+
+    conversationOrchestrator.updateSessionModel('doubao', 'doubao-seed-evolving');
+    return { switchedModel: true, isImageRelay };
   },
 
   /**
@@ -462,6 +565,44 @@ export const conversationOrchestrator = {
       // 聊天 store 未初始化时忽略
     }
     return newId;
+  },
+
+  /**
+   * 发送事务：确保会话 → 读取接力派生元数据 → 发送 → 成功才提交接力并清理匹配附件。
+   * 返回聊天 store 的四态结果，供页面决定输入框恢复与提示。
+   */
+  async sendChatMessage(
+    content: string
+  ): Promise<'sent' | 'aborted' | 'failed' | 'skipped'> {
+    conversationOrchestrator.ensureActiveConversation();
+
+    const relay = useRelayStore.getState();
+    const activeId = relay.activeByTarget.chat;
+    const bundle = activeId ? relay.bundles[activeId] : null;
+    // 接力两段式：发送前只读派生元数据，成功后才清引用与草稿（REQ-016）
+    const derivation = bundle
+      ? {
+          derivedFromRelayId: bundle.id,
+          derivedFromReferenceIds: bundle.items.map((item) => item.id),
+        }
+      : undefined;
+
+    const result = await useChatStore.getState().sendMessage(content, derivation);
+
+    if (result !== 'sent') return result;
+
+    if (bundle) {
+      relay.clearActiveForTarget('chat');
+      relay.clearDraftForTarget('chat');
+
+      // 只清理来源匹配的接力附件，避免误删用户手动上传的附件
+      const attachment = useChatStore.getState().attachment;
+      if (attachment?.sourceId === bundle.id) {
+        useChatStore.getState().setAttachment(null);
+      }
+    }
+
+    return result;
   },
 
   /**

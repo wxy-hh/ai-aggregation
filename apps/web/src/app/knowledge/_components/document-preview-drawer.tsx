@@ -37,19 +37,7 @@ import {
   Hash,
   Sparkles,
 } from 'lucide-react';
-
-export interface FocusedCitationAnchor {
-  chunkIndex: number;
-  headingPath?: string | null;
-  pageNumber?: number | null;
-}
-
-export interface MatchedCitationAnchor {
-  chunkIndex: number;
-  headingPath?: string | null;
-  pageNumber?: number | null;
-  score?: number;
-}
+import type { FocusedCitationAnchor, MatchedCitationAnchor } from '@/types/citation';
 
 export interface DocumentPreviewDrawerProps {
   open: boolean;

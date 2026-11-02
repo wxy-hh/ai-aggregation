@@ -7,7 +7,7 @@
  * 3. 会话 store 不再导出编排方法；
  * 4. 聊天 store 不 import 会话、对比、历史或音频历史 store；
  * 5. 端口、编排模块与双快照类型的签名中不出现 any；
- * 6. 聊天工作区经编排命令完成发送前建会话与模型切换。
+ * 6. 聊天工作区经编排命令完成发送事务与模型切换。
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -96,10 +96,11 @@ describe('结构约束与旧路径清除（TC09）', () => {
     }
   });
 
-  it('聊天工作区经编排命令完成发送前建会话与模型切换，不直接双写', () => {
+  it('聊天工作区经编排命令完成发送事务与模型切换，不直接双写', () => {
     const source = read('app/chat/chat-workspace.tsx');
-    expect(source).toContain('conversationOrchestrator.ensureActiveConversation');
+    expect(source).toContain('conversationOrchestrator.sendChatMessage');
     expect(source).toContain('conversationOrchestrator.updateSessionModel');
+    expect(source).not.toContain('ensureActiveConversation');
     expect(source).not.toContain('loadConversation(');
     expect(source).not.toContain('switchProvider(');
     expect(source).not.toContain('setCapabilityPackKey(');

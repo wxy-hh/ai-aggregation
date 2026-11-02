@@ -23,10 +23,12 @@
 |---:|---|---|---|---|---|---|
 | 1 | `ARCH-CK-01` | 收拢检索契约与 CrossEncoderRerank 政策 | **Strong** | 消除政策漂移与 transport seam 泄漏 | 无 | `已完成` |
 | 2 | `ARCH-CK-02` | 加深聊天会话状态 module | **Strong** | 收敛多种会话生命周期知识 | 建议在 01 后独立开展 | `已完成` |
-| 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `待实现` |
-| 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `待分析` |
+| 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `已完成` |
+| 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `已完成` |
 | 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `进行中（随01完成首批）` |
 | 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `待分析` |
+| 7 | `ARCH-CK-07` | 对齐首页 `?prompt=` 与对话输入预填 | **Worth exploring** | 修复灵感入口提示词丢失 | 建议在 04 后复用入口意图 | `待分析` |
+| 8 | `ARCH-CK-08` | 修复对比模式顶部内容避让 | **Worth exploring** | 消除对比视图标题重影与模型卡片遮挡 | 可独立开展 | `待分析` |
 
 ## 执行规则
 
@@ -198,7 +200,7 @@
 
 ## `ARCH-CK-03`：统一 Conversations 协调 seam
 
-**状态**：`待实现`  
+**状态**：`已完成`  
 **推荐强度**：**Strong**  
 **建议顺序**：3
 
@@ -244,35 +246,35 @@
 - [x] 找出同一动作可能被两条路径重复执行的场景。
 - [x] 定义运行时消息到持久化消息必须保留、转换和丢弃的字段清单。
 - [x] 通过 `grilling` 确认唯一协调 seam 的位置与 adapter 角色。
-- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
-- [ ] 先补“一个用户动作只产生一次效果”的测试。
-- [ ] 补充 AgentPlan、Approval、Artifact 引用经过加载与保存后的保真测试。
-- [ ] 迁移直接调用或事件路径，并删除被替代的一套协调逻辑。
-- [ ] 验证会话切换、删除、刷新恢复、模式切换和 Relay 失效。
-- [ ] 完成 `/chat` 与 `/history` RealLinkSmoke、独立审查和人工终审。
+- [x] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [x] 先补“一个用户动作只产生一次效果”的测试。
+- [x] 补充 AgentPlan、Approval、Artifact 引用经过加载与保存后的保真测试。
+- [x] 迁移直接调用或事件路径，并删除被替代的一套协调逻辑。
+- [x] 验证会话切换、删除、刷新恢复、模式切换和 Relay 失效。
+- [x] 完成 `/chat` 与 `/history` RealLinkSmoke、独立审查和人工终审。
 
 ### 完成标准
 
-- [ ] 每种跨 store 动作只有一个权威协调路径。
-- [ ] 协调时序、循环防护和消息转换规则集中在一个 module。
-- [ ] 事件 payload 与持久化 interface 不再使用 `any`。
-- [ ] 一个会话动作只触发一次加载、删除或同步。
-- [ ] Conversation 刷新后关键消息字段保持完整。
+- [x] 每种跨 store 动作只有一个权威协调路径。
+- [x] 协调时序、循环防护和消息转换规则集中在一个 module。
+- [x] 事件 payload 与持久化 interface 不再使用 `any`。
+- [x] 一个会话动作只触发一次加载、删除或同步。
+- [x] Conversation 刷新后关键消息字段保持完整。
 
 ### 交付记录
 
-- 完成日期：
+- 完成日期：2026-11-01
 - Spec：`.scratch/conversation-orchestrator/spec.md`
 - ADR：[`docs/adr/0046-conversation-orchestrator-and-dual-snapshot-persistence.md`](../adr/0046-conversation-orchestrator-and-dual-snapshot-persistence.md)
-- QA plan：
-- 验证证据：
-- 审查结论：
+- QA plan：[`.scratch/conversation-orchestrator/qa-plan.md`](../../.scratch/conversation-orchestrator/qa-plan.md)
+- 验证证据：`evidence/deliver-test-4.log`、`deliver-typecheck-4.log`、`deliver-lint-4.log`；浏览器 `evidence/tc01-browser-11.log`、`tc02-browser-10.log`、`tc03-browser-2.log`、`tc04-browser-6.log`（TC04-1/TC04-3 记 BLOCKED：`tc04-blocked-1.log`）；截图 `screenshots/tc01-chat-switch.png`、`tc02-delete-propagation.png`、`tc03-associated-state.png`、`tc04-refresh-fidelity.png`；对账表 `_qa/reconciliation.md`
+- 审查结论：双轴独立审查 r1→r2 完成（S-H1/H2/H3、S-J2/J4 本次修并经 r2 复核已修；S-J1 转专项、S-J3 驳回改档成立；Spec 轴 r2 无发现，见 `review-report.md`）；`qa-check review` 机器结果为 BLOCKED（`ASSERTION_BLOCKED`：TC04-1/TC04-3 因嵌入服务 402 无法构造引用语料），人工终审裁决接受该阻塞并确认完成
 
 ---
 
 ## `ARCH-CK-04`：让 `ChatWorkspace` 回到页面编排
 
-**状态**：`待分析`  
+**状态**：`已完成`  
 **推荐强度**：**Worth exploring**  
 **建议顺序**：4
 
@@ -307,35 +309,47 @@
 - 若 `ARCH-CK-02`、`ARCH-CK-03` 已提供稳定 interface，应直接复用，不建立平行 seam。
 - 修改 UI 前必须读取 `DESIGN.md` 和 `.claude/rules/ui.md`。
 
+### 阶段 1 已确认（2026-11-02）
+
+- 形态：纯函数规则 + `conversationOrchestrator` 命令，不新建页面控制器 hook；属于落实 ADR-0045 与 ADR-0046，不新增 ADR。
+- URL 入口：`resolveChatEntryIntent(search, snapshot)` 纯函数返回判别联合，`enterChatFromUrl(search)` 命令执行；执行后删除全部入口参数键（`new`/`goal`/`pack`/`agent`/`historyId`/`comparisonId`），保留 `relayId`、`prompt` 与未知参数。
+- URL 入口优先级沿用现状：`comparisonId` > `historyId` > `new` > 无指针时恢复首个单聊 > 保持当前；`goal`/`pack`/`agent` 只在 `new` 分支内生效，`historyId` 指向非 chat 记录时静默忽略；页面在 `isLoaded` 后只调用一次，幂等由页面初始化标记保证。
+- URL 参数处置：保留 `goal`/`pack`/`agent` 消费分支（E-1 契约，当前无内部生成方）；`prompt` 不补消费，另立 `ARCH-CK-07`。
+- 发送事务：新增 orchestrator `sendChatMessage(content)` 命令，负责 ensure 会话、Relay 两段式与成功清理 chat-store 附件；页面保留吸底滚动与接力图片 UI state 清理，原样透传四态结果。
+- Relay 到达：新增 `applyRelayArrival(bundle)` 命令，判定并执行「准备单聊会话 + 非豆包时切模型」，返回 `{ switchedModel }` 供页面提示；草稿与图片附件 state 留在页面。
+- Citation 聚合：新建纯函数 module，聚合、去重、排序与空结果回退单锚点均在其中；`MatchedCitationAnchor` 类型从 `document-preview-drawer.tsx` 移入该 module。
+- 错误提示：合并为单一 effect，文案用通用「请求失败，请稍后重试」，补页面级回归用例。
+- 测试口径：规则测试全部落在纯函数/命令层，页面只新增 1 个错误回归测试并复用现有 mock；本轮新增测试不新增任何 `vi.mock`。
+
 ### 待办
 
-- [ ] 为重复错误提示建立确定性回归用例，确认是否真实发生。
-- [ ] 列出 URL 参数到页面状态的初始化规则及优先级。
-- [ ] 列出发送事务中会话创建、Relay prepare/commit 和失败恢复时序。
-- [ ] 统计 Citation 聚合和预览导航的调用者知识面。
-- [ ] 通过 `grilling` 确认哪些规则值得形成 deep module。
-- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
-- [ ] 按规则集逐批迁移，保持页面渲染结构稳定。
-- [ ] 验证新会话、历史会话、CapabilityPack、Relay、引用预览、错误和停止场景。
-- [ ] 在 375px 窄屏和桌面端完成真实浏览器验收。
-- [ ] 完成独立审查和人工终审。
+- [x] 为重复错误提示建立确定性回归用例，确认是否真实发生。
+- [x] 列出 URL 参数到页面状态的初始化规则及优先级。
+- [x] 列出发送事务中会话创建、Relay prepare/commit 和失败恢复时序。
+- [x] 统计 Citation 聚合和预览导航的调用者知识面。
+- [x] 通过 `grilling` 确认哪些规则值得形成 deep module。
+- [x] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [x] 按规则集逐批迁移，保持页面渲染结构稳定。
+- [x] 验证新会话、历史会话、CapabilityPack、Relay、引用预览、错误和停止场景。
+- [x] 在 375px 窄屏和桌面端完成真实浏览器验收。
+- [x] 完成独立审查和人工终审。
 
 ### 完成标准
 
-- [ ] 每个错误只产生一次符合约定的用户提示。
-- [ ] URL、发送事务与 Citation 规则可通过窄 interface 独立测试。
-- [ ] `ChatWorkspace` 不再直接维护跨 store 业务时序。
-- [ ] 桌面端与移动端行为及布局没有回退。
-- [ ] 页面测试的 mock 装配量下降，且未通过新的 shallow module 转移复杂度。
+- [x] 每个错误只产生一次符合约定的用户提示。
+- [x] URL、发送事务与 Citation 规则可通过窄 interface 独立测试。
+- [x] `ChatWorkspace` 不再直接维护跨 store 业务时序。
+- [x] 桌面端与移动端行为及布局没有回退。
+- [x] 页面测试的 mock 装配量下降，且未通过新的 shallow module 转移复杂度。
 
 ### 交付记录
 
-- 完成日期：
-- Spec：
-- ADR：
-- QA plan：
-- 验证证据：
-- 审查结论：
+- 完成日期：2026-11-02
+- Spec：`.scratch/chat-workspace-orchestration/spec.md`
+- ADR：落实 ADR-0045、ADR-0046
+- QA plan：`.scratch/chat-workspace-orchestration/qa-plan.md`
+- 验证证据：全量测试 224 文件 2134 用例、typecheck、lint 通过；浏览器验收 5 份日志 `evidence/tc07~tc11` 与 5 份截图 `screenshots/tc07~tc11`；对账表 `_qa/reconciliation.md`（69 项断言 100% PASS，0 FAIL，0 BLOCKED）
+- 审查结论：双轴独立审查 r1→r4 完成（S-H1/J2/J3/J4/J5/J6/J8、P-W1/W2 本次修复核已修；S-J1/J7、P-W4/M4/X1 驳回；P-W3 转专项立项 ARCH-CK-08；P-M1~M3 经检索平滑降级与 DeepSeek 适配在 r4 全量通过）；`qa-check review` 机器结果 PASS，人工终审确认交付
 
 ---
 
@@ -484,6 +498,104 @@
 
 ---
 
+## `ARCH-CK-07`：对齐首页 `?prompt=` 与对话输入预填
+
+**状态**：`待分析`  
+**推荐强度**：**Worth exploring**  
+**建议顺序**：建议在 `ARCH-CK-04` 后
+
+### 目标
+
+让首页与最近创作入口携带的 `?prompt=` 在进入 `/chat` 后预填到输入框，与 `?goal=` 的预填语义一致，不自动发送。
+
+### 证据位置
+
+- `apps/web/src/components/home/home-content.tsx:98`
+- `apps/web/src/components/home/home-content.tsx:141`
+- `apps/web/src/app/chat/chat-workspace.tsx:401-404`
+
+### 当前 friction
+
+- 首页「灵感」入口生成 `/chat?new=true&prompt=...`，但 `ChatWorkspace` 只读取 `new`/`goal`/`pack`/`agent`，`prompt` 被静默丢弃。
+- `?goal=` 与 `?prompt=` 表达同一意图却只有一条生效，参数语义漂移。
+
+### 约束与非目标
+
+- 复用 `ARCH-CK-04` 的 ChatEntryIntent，不建立第二条 URL 解析路径。
+- 不改变首页跳转文案与视觉。
+- 不新增自动发送行为。
+
+### 待办
+
+- [ ] 确认 `prompt` 与 `goal` 合并为同一意图字段，或在入口意图中并列并定优先级。
+- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [ ] 为首页「灵感」→ 对话预填建立端到端用例。
+- [ ] 在 375px 窄屏与桌面端完成真实浏览器验收。
+
+### 完成标准
+
+- [ ] 带 `?prompt=` 进入对话后输入框预填对应文本且不自动发送。
+- [ ] `?goal=` 与 `?prompt=` 的预填行为有明确优先级或等价语义。
+- [ ] URL 清理后不残留已消费参数。
+
+### 交付记录
+
+- 完成日期：
+- Spec：
+- ADR：
+- QA plan：
+- 验证证据：
+- 审查结论：
+
+---
+
+## `ARCH-CK-08`：修复对比模式顶部内容避让
+
+**状态**：`待分析`  
+**推荐强度**：**Worth exploring**  
+**建议顺序**：可独立开展
+
+### 目标
+
+让 `/chat` 对比模式的内容区避开悬浮顶栏，消除标题重影与模型概览卡片被遮挡。
+
+### 证据位置
+
+- `apps/web/src/app/chat/chat-workspace.tsx`（对比模式直接挂载 `ComparisonView`）
+- `.scratch/chat-workspace-orchestration/screenshots/tc07-entry.png`（`ARCH-CK-04` 验收截图，标题与对比内容重影）
+
+### 当前 friction
+
+- 单聊消息区通过顶部内边距避开悬浮顶栏，对比视图未设置同等避让，内容顶入半透明 header 下方。
+- 该问题在 `ARCH-CK-04` 基线 `3ff3393` 已存在，非该轮引入。
+
+### 约束与非目标
+
+- 只补顶部避让与遮罩关系，不重做对比视图布局。
+- 修改前读取 `DESIGN.md` 与 `.claude/rules/ui.md`。
+
+### 待办
+
+- [ ] 在桌面端与 375px 窄屏复现并确认避让值。
+- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [ ] 补齐后验证对比视图滚动与输入区不被遮挡。
+
+### 完成标准
+
+- [ ] 对比模式标题与首轮内容不重叠，模型概览卡片完整可见。
+- [ ] 单聊模式布局无回退。
+
+### 交付记录
+
+- 完成日期：
+- Spec：
+- ADR：
+- QA plan：
+- 验证证据：
+- 审查结论：
+
+---
+
 ## 明确不做
 
 以下内容不因本轮架构审查而自动进入待办：
@@ -510,3 +622,7 @@
 | 2026-11-01 | `ARCH-CK-03` | `待规格`（工单已拆分，待 qa-plan） | 完成阶段 3A 工单拆分：6 个垂直切片，01 无阻塞，02/03/04 依赖 01，05 依赖 01+04，06 为事件总线删除收尾 | `.scratch/conversation-orchestrator/issues/` |
 | 2026-11-01 | `ARCH-CK-03` | `待规格` → `待实现` | 完成阶段 3B：11 个 TC、62 条断言，`qa-check plan` PASS，基线三条交付命令全绿，审查基线已冻结 | `.scratch/conversation-orchestrator/qa-plan.md` |
 | 2026-11-01 | `ARCH-CK-03` | `待实现` → `实现完成（待验收）` | 6 个工单全部实现，删除事件总线与协调器，聊天 store 落盘经 `ConversationPort`；全量测试 218 文件 2084 用例、typecheck、lint 通过，构建首屏共享 chunk 104 kB；待阶段 5 浏览器验收与双轴独立审查 | `.scratch/conversation-orchestrator/issues/` |
+| 2026-11-02 | `ARCH-CK-03` | `实现完成（待验收）` → `已完成` | 实现于 2026-11-01 交付并提交（3ff3393）；双轴审查 r2 与 `qa-check review` 的 BLOCKED 项（TC04-1/TC04-3 外部 402）经人工终审裁决接受，确认完成 | ADR-0046、`review-report.md`、`qa-plan.md` |
+| 2026-11-02 | `ARCH-CK-04` | `待分析` → `待规格` | 完成阶段 1 架构质询：确认纯函数入口意图 + orchestrator 命令；发送事务、Relay 到达下沉；Citation 聚合纯函数；错误提示合并为单一 effect；保留 goal/pack/agent，另立 `ARCH-CK-07` 记录 prompt 预填缺失；不新增 ADR（落实 ADR-0045/0046） | 本文、GLOSSARY.md |
+| 2026-11-02 | `ARCH-CK-04` | `待规格`（spec 已编写，待 qa-plan） | 完成阶段 2 规格：44 条用户故事、4 条测试接缝与交付命令；标准车道，下一步 `/qa-test-planner` | `.scratch/chat-workspace-orchestration/spec.md` |
+| 2026-11-02 | `ARCH-CK-04` | `待规格` → `已完成` | 完成阶段 3B~6 全流程，69 项断言 100% 通过（0 FAIL，0 BLOCKED），消除知识库 500 崩溃（纯词法全文检索平滑降级），修复附件发送时序与引用清理联动，双轴审查 r4 无发现，人工终审通过 | `.scratch/chat-workspace-orchestration/` |

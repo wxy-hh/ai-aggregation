@@ -23,10 +23,9 @@ import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
 import { useSettingsStore } from '@/stores/settings-store';
 import { CAPABILITY_PACKS, type CitationAnchor } from '@repo/shared';
-import {
-  DocumentPreviewDrawer,
-  type MatchedCitationAnchor,
-} from '@/app/knowledge/_components/document-preview-drawer';
+import { DocumentPreviewDrawer } from '@/app/knowledge/_components/document-preview-drawer';
+import { collectDocumentAnchors } from '@/lib/chat/citation-anchors';
+import type { MatchedCitationAnchor } from '@/types/citation';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
@@ -264,9 +263,6 @@ export default function ChatWorkspace() {
     deleteConversation,
     switchMode,
     startNewSession,
-    openComparisonSession,
-    openHistorySession,
-    prepareRelaySession,
   } = conversationOrchestrator;
 
   // 模式切换别名，兼容分段控制器命名
@@ -281,11 +277,8 @@ export default function ChatWorkspace() {
     provider,
     model,
     activeConversationId,
-    sendMessage,
     reload,
     reset,
-    setAttachment,
-    attachment,
     artifacts,
     activeArtifactId,
     isWorkspaceOpen,
@@ -298,11 +291,8 @@ export default function ChatWorkspace() {
       provider: state.provider,
       model: state.model,
       activeConversationId: state.activeConversationId,
-      sendMessage: state.sendMessage,
       reload: state.reload,
       reset: state.reset,
-      setAttachment: state.setAttachment,
-      attachment: state.attachment,
       artifacts: state.artifacts,
       activeArtifactId: state.activeArtifactId,
       isWorkspaceOpen: state.isWorkspaceOpen,
@@ -334,37 +324,28 @@ export default function ChatWorkspace() {
   // 接力到达且有文本快照时，若当前输入为空则直接预填，非空则由「填入输入框」显式触发
   const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
   const relayBundleMediaUrl = relay.bundle?.items[0]?.snapshotMediaUrl ?? '';
+  // 接力到达：草稿与附件属于页面 UI 状态；落点保证与图片判定由编排命令完成
   useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
+    if (!isLoaded) return;
+
     // 接力上下文进入输入框：文本作为用户引导句（可编辑），不自动发送
     if (relayBundleText && !relay.draft) {
       setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
       relay.setDraft(relayBundleText);
     }
-    // 接力图片进入附件列表：图像生成页接力到对话时携带 snapshotMediaUrl
-    // 仅当来源为 image 且包含媒体地址时处理（其他来源如文本/转写无媒体）
-    if (
-      relayBundleMediaUrl &&
-      relay.bundle.items[0]?.sourceType === 'image' &&
-      relay.bundle.items[0]?.sourceModule === 'image'
-    ) {
+
+    // 落点保证（E-1 契约）、图片判定与自动切模型；命令幂等，重复执行不重复切换
+    const { switchedModel, isImageRelay } =
+      conversationOrchestrator.applyRelayArrival(relay.bundle);
+    if (isImageRelay) {
       setRelayAttachmentUrl(relayBundleMediaUrl);
       setRelayAttachmentSourceId(relay.bundle.id);
-      // 自动切换到豆包模型以支持图片附件；模型与当前会话绑定由编排命令同时保存
-      if (provider !== 'doubao') {
-        conversationOrchestrator.updateSessionModel('doubao', 'doubao-seed-evolving');
-        toast.success('已自动切换到豆包模型以支持图片附件');
-      }
     }
-  }, [relay.initialized, relay.bundle?.id, provider]);
-
-  // ============ 接力会话落点保证（E-1 契约）============
-  // 目标=对话的接力到达时，由中枢保证处于单聊模式且存在有效单聊会话承载
-  useEffect(() => {
-    if (!relay.initialized || !relay.bundle) return;
-    if (!isLoaded) return;
-    prepareRelaySession();
-  }, [relay.initialized, relay.bundle?.id, isLoaded, prepareRelaySession]);
+    if (switchedModel) {
+      toast.success('已自动切换到豆包模型以支持图片附件');
+    }
+  }, [relay.initialized, relay.bundle?.id, isLoaded]);
 
   // ============ 错误提示全局监听 ============
   // 当对话发生异常时（如网络故障、提供方错误、配额超限），统一向用户弹出友好提示
@@ -385,77 +366,19 @@ export default function ChatWorkspace() {
   const groupedConversations = getGroupedConversations();
 
   // ============ URL 参数处理（页面初始化逻辑） ============
-  // 这个 useEffect 在页面首次加载时执行，处理 URL 中的参数
-  // 例如：/chat?new=true（创建新对话）或 /chat?historyId=xxx（加载历史对话）
+  // 入口优先级、执行与 URL 清理统一由会话编排命令处理；
+  // 页面只消费需要呈现的草稿预填文本，并在本页面生命周期内只执行一次
   useEffect(() => {
-    // 如果数据还没加载完成，或者已经初始化过了，就不执行
     if (!isLoaded || hasInitialized.current) return;
-
-    // 标记为已初始化，防止重复执行
     hasInitialized.current = true;
 
-    // 解析 URL 中的查询参数
-    const urlParams = new URLSearchParams(window.location.search);
-
-    // 检查是否是创建新对话的请求（URL 中有 ?new=true）
-    const isNewConversation = urlParams.get('new') === 'true';
-    const goal = urlParams.get('goal');
-    const pack = urlParams.get('pack');
-    const enableAgent = urlParams.get('agent') === 'true';
-
-    // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
-    const historyId = urlParams.get('historyId');
-
-    // 检查是否是从历史记录页重新打开比较会话（URL 中有 ?comparisonId=xxx）
-    const comparisonId = urlParams.get('comparisonId');
-
-    if (comparisonId) {
-      // 场景 0：外部唤起对比会话（E-1 契约）
-      openComparisonSession(comparisonId);
-      window.history.replaceState({}, '', '/chat');
-    } else if (historyId) {
-      // 场景 1：外部从历史记录唤起单聊会话（E-1 契约）
-      import('@/stores/history-store').then(({ useHistoryStore }) => {
-        const historyItem = useHistoryStore.getState().getItemById(historyId);
-        if (historyItem && historyItem.type === 'chat') {
-          openHistorySession(historyItem as import('@/types/history').ChatHistoryItem);
-        }
-      });
-      window.history.replaceState({}, '', '/chat');
-    } else if (isNewConversation) {
-      // 场景 2：统一新建会话（E-1 契约，支持重跑参数注入，ADR-0015）
-      startNewSession();
-      if (enableAgent) {
-        useSettingsStore.getState().setAgentMode(true);
-      }
-      if (pack) {
-        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留
-        conversationOrchestrator.updateSessionCapabilityPack(pack);
-      }
-      if (goal) {
-        setRelayDraft({
-          id: `rerun-${Date.now()}`,
-          text: goal,
-        });
-      }
-      window.history.replaceState({}, '', '/chat');
-    } else if (!currentConversationId && comparisonMode === 'single') {
-      // 场景 3：单聊模式且无当前指针时，若存在单聊历史则默认加载首个单聊会话
-      const firstSingle = conversations.find(c => c.mode !== 'compare');
-      if (firstSingle) {
-        switchConversation(firstSingle.id);
-      }
+    const { draftText } = conversationOrchestrator.enterChatFromUrl(
+      window.location.search
+    );
+    if (draftText) {
+      setRelayDraft({ id: `goal-${Date.now()}`, text: draftText });
     }
-  }, [
-    isLoaded,
-    conversations,
-    currentConversationId,
-    startNewSession,
-    switchConversation,
-    openComparisonSession,
-    openHistorySession,
-    sendMessage,
-  ]);
+  }, [isLoaded]);
 
   // 点击外部关闭模型选择器
   useEffect(() => {
@@ -491,57 +414,29 @@ export default function ChatWorkspace() {
     });
   }, [messages, isLoading]);
 
-  // 生成失败的全局错误提示（error 此前被订阅但从未渲染，失败时用户无感知）
-  useEffect(() => {
-    if (error) toast.error(error.message || '生成失败，请重试');
-  }, [error]);
-
   // ============ 消息展示处理 ============
   const isEmptyChat = messages.length === 0;
 
   // ============ 发送消息处理函数 ============
-  // useCallback 用于缓存函数，避免每次渲染都创建新函数
-  // 只有当依赖项变化时，才会创建新的函数实例
-  const handleSend = useCallback(
-    async (content: string) => {
-      // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
-      isAtBottomRef.current = true;
-      const scrollEl = messagesScrollRef.current;
-      if (scrollEl) {
-        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
-      }
+  // 会话创建、接力两段式与附件清理统一由编排命令处理；
+  // 页面只负责吸底滚动、接力图片的 UI 状态与输入框需要的布尔结果
+  const handleSend = useCallback(async (content: string) => {
+    // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
+    isAtBottomRef.current = true;
+    const scrollEl = messagesScrollRef.current;
+    if (scrollEl) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+    }
 
-      // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
-      const derivation = relay.prepareExecution();
-
-      // 检查是否有可用的单聊会话
-      // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
-      // 由编排命令创建并加载一个单聊会话，避免消息写入比较会话而丢失
-      conversationOrchestrator.ensureActiveConversation();
-
-      // 发送消息（携带接力派生元数据，仅成功路径写入历史）
-      const result = await sendMessage(content, derivation);
-      // 成功才完成接力（清引用+草稿+图片附件）；失败/取消/早退保留引用允许原地重试
-      if (result === 'sent') {
-        relay.commitExecution();
-        // 同时清理对话输入框中的接力图片附件
-        setRelayAttachmentUrl(null);
-        setRelayAttachmentSourceId(null);
-        // 清理 ChatStore 中的附件（如果仍是接力图片）
-        if (attachment?.sourceId === relay.bundle?.id) {
-          setAttachment(null);
-        }
-        return true;
-      }
-      return false;
-    },
-    // 依赖项列表：这些值变化时，函数会重新创建
-    [
-      sendMessage,
-      relay,
-      attachment?.sourceId,
-    ]
-  );
+    const result = await conversationOrchestrator.sendChatMessage(content);
+    // 成功才清理接力图片 UI 状态；失败/取消/早退保留引用允许原地重试
+    if (result === 'sent') {
+      setRelayAttachmentUrl(null);
+      setRelayAttachmentSourceId(null);
+      return true;
+    }
+    return false;
+  }, []);
 
   // ============ 新建会话处理函数 ============
   // 用户点击"新建对话"按钮时调用，由中枢根据全局模式权威统一执行新建契约
@@ -563,28 +458,8 @@ export default function ChatWorkspace() {
   // ============ 打开知识库切片全文预览抽屉 ============
   const handleOpenCitation = useCallback(
     (anchor: CitationAnchor) => {
-      // 聚合所有属于该文档的切片（从当前消息列表中归集，激活 ChunkNavigator 穿梭）
-      const anchors: MatchedCitationAnchor[] = [];
-      const seenIndices = new Set<number>();
-
-      for (const msg of messages) {
-        if (!msg.citations) continue;
-        for (const c of Object.values(msg.citations)) {
-          if (
-            (c.documentId === anchor.documentId || c.documentName === anchor.documentName) &&
-            !seenIndices.has(c.chunkIndex)
-          ) {
-            seenIndices.add(c.chunkIndex);
-            anchors.push({
-              chunkIndex: c.chunkIndex,
-              headingPath: c.headingPath,
-              pageNumber: c.pageNumber,
-            });
-          }
-        }
-      }
-
-      anchors.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      // 同文档切片的聚合、去重、排序与空结果回退由纯函数处理
+      const anchors = collectDocumentAnchors(messages, anchor);
 
       setCitationPreviewState({
         isOpen: true,
@@ -597,16 +472,7 @@ export default function ChatWorkspace() {
           headingPath: anchor.headingPath,
           pageNumber: anchor.pageNumber,
         },
-        allMatchedAnchors:
-          anchors.length > 0
-            ? anchors
-            : [
-                {
-                  chunkIndex: anchor.chunkIndex,
-                  headingPath: anchor.headingPath,
-                  pageNumber: anchor.pageNumber,
-                },
-              ],
+        allMatchedAnchors: anchors,
         fallbackSnippet: anchor.snippet,
       });
     },
@@ -1230,10 +1096,14 @@ export default function ChatWorkspace() {
                           bundle={relay.bundle}
                           onViewSource={() => setRelayPreviewOpen(true)}
                           onRemove={() => {
+                            const bundleId = relay.bundle?.id;
                             relay.remove();
                             // 同步清理对话输入框中的接力图片附件
                             setRelayAttachmentUrl(null);
                             setRelayAttachmentSourceId(null);
+                            if (bundleId && useChatStore.getState().attachment?.sourceId === bundleId) {
+                              useChatStore.getState().setAttachment(null);
+                            }
                           }}
                           showFill={Boolean(relayBundleText) && !relayDraft}
                           fillLabel={RELAY_COPY.referenceBar.fillInput}

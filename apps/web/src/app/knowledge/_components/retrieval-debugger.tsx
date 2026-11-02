@@ -46,10 +46,8 @@ import {
   BookOpen,
   Tag,
 } from 'lucide-react';
-import {
-  DocumentPreviewDrawer,
-  type MatchedCitationAnchor,
-} from './document-preview-drawer';
+import { DocumentPreviewDrawer } from './document-preview-drawer';
+import type { MatchedCitationAnchor } from '@/types/citation';
 
 export interface RetrievalDebuggerProps {
   knowledgeBaseId: string;

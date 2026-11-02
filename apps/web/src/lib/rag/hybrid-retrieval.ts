@@ -243,14 +243,27 @@ export async function hybridRetrieval(
   let lexicalDurationMs = 0;
   let fusionDurationMs = 0;
 
-  // 2. 向量化查询词
+  // 2. 向量化查询词（支持外部向量化模型服务故障时平滑降级为纯词法检索）
+  let queryVector: number[] | null = null;
   const embedStartTime = performance.now();
-  const queryVector = await embedFn(query);
-  embeddingDurationMs = Math.round(performance.now() - embedStartTime);
+  try {
+    queryVector = await embedFn(query);
+    embeddingDurationMs = Math.round(performance.now() - embedStartTime);
+  } catch (err: unknown) {
+    embeddingDurationMs = Math.round(performance.now() - embedStartTime);
+    logger.warn('[hybrid-retrieval] 向量化服务异常，自动降级为纯词法全文检索', {
+      feature: 'rag-embedding-fallback',
+      knowledgeBaseId,
+      query,
+      durationMs: embeddingDurationMs,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // 3. 并行调用稠密向量检索与词法全文检索（支持前置 filter 与 headingPath 前缀收敛）
   let [denseResults, lexicalResults] = await Promise.all([
     (async () => {
+      if (!queryVector) return [];
       const start = performance.now();
       const res = await searchDense({
         userId,
@@ -286,6 +299,7 @@ export async function hybridRetrieval(
   if (hasFilter && denseResults.length === 0 && lexicalResults.length === 0) {
     const [relaxedDense, relaxedLexical] = await Promise.all([
       (async () => {
+        if (!queryVector) return [];
         const start = performance.now();
         const res = await searchDense({
           userId,
@@ -421,7 +435,7 @@ export async function hybridRetrieval(
     lexicalMatches: lexicalMatchesWithRank,
     durationMs: totalDurationMs,
     isReranked: rerankOutcome.isReranked,
-    isDegraded: rerankOutcome.isDegraded,
+    isDegraded: rerankOutcome.isDegraded || !queryVector,
     filteredLowScoreCount: rerankOutcome.filteredLowScoreCount,
     isFilterRelaxed,
     appliedFilter: options.filter as MetadataFilterLoose | undefined,
