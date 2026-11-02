@@ -34,6 +34,13 @@ import { FaqManagementPanel } from './_components/faq-management-panel';
 import { UrlImportDialog } from './_components/url-import-dialog';
 import { DocumentMetadataDialog } from './_components/document-metadata-dialog';
 import {
+  useKnowledgeLifecycle,
+} from './_lib/use-knowledge-lifecycle';
+import {
+  type KnowledgeBaseItem,
+  type DocumentItem,
+} from './_lib/knowledge-lifecycle-rules';
+import {
   BookOpen,
   Plus,
   FileText,
@@ -48,36 +55,26 @@ import {
   Tag,
 } from 'lucide-react';
 
-export interface KnowledgeBaseItem {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-  documentCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface DocumentItem {
-  id: string;
-  name: string;
-  status: 'pending' | 'processing' | 'ready' | 'failed';
-  version: number;
-  chunkCount: number;
-  errorMessage: string | null;
-  sourceType?: 'file' | 'url' | 'chat_artifact' | string;
-  sourceUrl?: string | null;
-  tags?: string[];
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { KnowledgeBaseItem, DocumentItem };
 
 export function KnowledgeWorkspace() {
-  const [knowledgeBases, setKnowledgeBases] = React.useState<KnowledgeBaseItem[]>([]);
-  const [selectedKbId, setSelectedKbId] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState('debugger');
+
+  const {
+    knowledgeBases,
+    selectedKbId,
+    selectedKb,
+    documents,
+    loading,
+    docsLoading,
+    setSelectedKbId,
+    refreshAll,
+    refreshCurrentDocs,
+    handleFileUploadSuccess,
+    handleUrlImportSuccess,
+    handleMetadataSuccess,
+    handleCreateKbSuccess,
+  } = useKnowledgeLifecycle({ activeTab });
 
   // 新建知识库弹窗状态
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
@@ -85,10 +82,6 @@ export function KnowledgeWorkspace() {
   const [newKbDesc, setNewKbDesc] = React.useState('');
   const [createSubmitting, setCreateSubmitting] = React.useState(false);
   const [createError, setCreateError] = React.useState<string | null>(null);
-
-  // 文档列表状态
-  const [documents, setDocuments] = React.useState<DocumentItem[]>([]);
-  const [docsLoading, setDocsLoading] = React.useState(false);
 
   // 网页外链导入弹窗状态 (ADR-0028)
   const [isUrlImportOpen, setIsUrlImportOpen] = React.useState(false);
@@ -113,67 +106,6 @@ export function KnowledgeWorkspace() {
 
   // 文档多维标签与元数据编辑弹窗状态 (ADR-0032 / KB-META-FILTER)
   const [metadataTargetDoc, setMetadataTargetDoc] = React.useState<DocumentItem | null>(null);
-
-  // 1. 获取知识库列表
-  const loadKnowledgeBases = React.useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetchWithAuth('/api/knowledge-bases');
-      const json = await res.json();
-      if (res.ok && json.success) {
-        const list: KnowledgeBaseItem[] = json.data?.knowledgeBases || [];
-        setKnowledgeBases(list);
-        if (list.length > 0 && !selectedKbId) {
-          setSelectedKbId(list[0].id);
-        }
-      }
-    } catch (err) {
-      console.error('[knowledge] 加载知识库列表失败:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedKbId]);
-
-  React.useEffect(() => {
-    loadKnowledgeBases();
-  }, [loadKnowledgeBases]);
-
-  // 2. 加载选中文档列表
-  const loadDocuments = React.useCallback(async (kbId: string) => {
-    try {
-      setDocsLoading(true);
-      const res = await fetchWithAuth(`/api/knowledge-bases/${kbId}/documents`);
-      const json = await res.json();
-      if (res.ok && json.success) {
-        setDocuments(json.data?.documents || []);
-      }
-    } catch (err) {
-      console.error('[knowledge] 加载文档列表失败:', err);
-    } finally {
-      setDocsLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    if (selectedKbId && activeTab === 'documents') {
-      loadDocuments(selectedKbId);
-    }
-  }, [selectedKbId, activeTab, loadDocuments]);
-
-  // 当有处于处理中或待处理的文档时，开启 3 秒轻量轮询更新文档终态 (ADR-0028)
-  React.useEffect(() => {
-    if (!selectedKbId || activeTab !== 'documents') return;
-    const hasUnfinished = documents.some(
-      (d) => d.status === 'pending' || d.status === 'processing'
-    );
-    if (!hasUnfinished) return;
-
-    const timer = setInterval(() => {
-      loadDocuments(selectedKbId);
-    }, 3000);
-
-    return () => clearInterval(timer);
-  }, [selectedKbId, activeTab, documents, loadDocuments]);
 
   // 处理文档本地文件上传 (支持 .docx / .xlsx / .csv / .pdf / .md / .txt，拦截 .doc / .xls)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,7 +136,7 @@ export function KnowledgeWorkspace() {
         throw new Error(json.error || json.message || '上传文档失败');
       }
 
-      await loadDocuments(selectedKbId);
+      await handleFileUploadSuccess();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '上传失败，请重试';
       console.error('[knowledge] 上传文档异常:', err);
@@ -243,9 +175,10 @@ export function KnowledgeWorkspace() {
       setIsCreateOpen(false);
       setNewKbName('');
       setNewKbDesc('');
-      await loadKnowledgeBases();
       if (json.data?.knowledgeBase?.id) {
-        setSelectedKbId(json.data.knowledgeBase.id);
+        await handleCreateKbSuccess(json.data.knowledgeBase.id);
+      } else {
+        await refreshAll();
       }
     } catch (err: unknown) {
       setCreateError(err instanceof Error ? err.message : '创建失败，请重试');
@@ -253,8 +186,6 @@ export function KnowledgeWorkspace() {
       setCreateSubmitting(false);
     }
   };
-
-  const selectedKb = knowledgeBases.find((kb) => kb.id === selectedKbId);
 
   return (
     <div className="w-full h-full min-h-0 flex-1 overflow-y-auto custom-scrollbar">
@@ -275,8 +206,8 @@ export function KnowledgeWorkspace() {
           <Button
             variant="outline"
             size="sm"
-            onClick={loadKnowledgeBases}
-            className="min-h-[44px] sm:min-h-[36px] rounded-xl text-xs"
+            onClick={refreshAll}
+            className="min-h-[44px] h-11 rounded-xl text-xs"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
             <span>刷新</span>
@@ -287,7 +218,7 @@ export function KnowledgeWorkspace() {
               setCreateError(null);
               setIsCreateOpen(true);
             }}
-            className="min-h-[44px] sm:min-h-[36px] rounded-xl text-xs font-semibold"
+            className="min-h-[44px] h-11 rounded-xl text-xs font-semibold"
           >
             <Plus className="w-4 h-4 mr-1.5" />
             <span>新建知识库</span>
@@ -404,7 +335,7 @@ export function KnowledgeWorkspace() {
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="min-h-[44px] sm:min-h-[40px] h-10 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
+                  className="min-h-[44px] h-11 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
                   data-testid="upload-document-button"
                 >
                   {uploading ? (
@@ -419,7 +350,7 @@ export function KnowledgeWorkspace() {
                   size="sm"
                   variant="outline"
                   onClick={() => setIsUrlImportOpen(true)}
-                  className="min-h-[44px] sm:min-h-[40px] h-10 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
+                  className="min-h-[44px] h-11 rounded-xl text-xs gap-1.5 flex items-center font-semibold"
                 >
                   <Globe className="w-3.5 h-3.5" />
                   <span>导入网页</span>
@@ -428,8 +359,8 @@ export function KnowledgeWorkspace() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => loadDocuments(selectedKb.id)}
-                  className="min-h-[44px] sm:min-h-[36px] rounded-xl text-xs"
+                  onClick={refreshCurrentDocs}
+                  className="min-h-[44px] h-11 rounded-xl text-xs"
                 >
                   <RefreshCw className="w-3.5 h-3.5 mr-1" />
                   <span>刷新状态</span>
@@ -649,10 +580,7 @@ export function KnowledgeWorkspace() {
           open={isUrlImportOpen}
           onOpenChange={setIsUrlImportOpen}
           knowledgeBaseId={selectedKb.id}
-          onSuccess={() => {
-            loadDocuments(selectedKb.id);
-            loadKnowledgeBases();
-          }}
+          onSuccess={handleUrlImportSuccess}
         />
       )}
 
@@ -665,11 +593,7 @@ export function KnowledgeWorkspace() {
           }}
           knowledgeBaseId={selectedKb.id}
           document={metadataTargetDoc}
-          onSuccess={({ id, tags }) => {
-            setDocuments((prev) =>
-              prev.map((d) => (d.id === id ? { ...d, tags } : d))
-            );
-          }}
+          onSuccess={handleMetadataSuccess}
         />
       )}
 

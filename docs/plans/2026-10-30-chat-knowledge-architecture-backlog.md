@@ -26,7 +26,7 @@
 | 3 | `ARCH-CK-03` | 统一 Conversations 协调 seam | **Strong** | 建立跨 store 协调的唯一事实位置 | 与 02 联合定界 | `已完成` |
 | 4 | `ARCH-CK-04` | 让 `ChatWorkspace` 回到页面编排 | **Worth exploring** | 提升导航、发送、引用和错误处理的 locality | 建议在 02、03 后 | `已完成` |
 | 5 | `ARCH-CK-05` | 缩减只为 mock 存在的宽 interface | **Worth exploring** | 降低测试对 implementation 的耦合 | 可随 01、02 分批处理 | `已完成` |
-| 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `待分析` |
+| 6 | `ARCH-CK-06` | 把 `KnowledgeWorkspace` 生命周期变成可测规则 | **Worth exploring** | 固化轮询、选择和定向刷新规则 | 可独立开展 | `已完成` |
 | 7 | `ARCH-CK-07` | 对齐首页 `?prompt=` 与对话输入预填 | **Worth exploring** | 修复灵感入口提示词丢失 | 建议在 04 后复用入口意图 | `待分析` |
 | 8 | `ARCH-CK-08` | 修复对比模式顶部内容避让 | **Worth exploring** | 消除对比视图标题重影与模型卡片遮挡 | 可独立开展 | `待分析` |
 
@@ -427,7 +427,7 @@
 
 ## `ARCH-CK-06`：把 `KnowledgeWorkspace` 生命周期变成可测规则
 
-**状态**：`待分析`  
+**状态**：`已完成`  
 **推荐强度**：**Worth exploring**  
 **建议顺序**：6，可独立提前
 
@@ -464,37 +464,45 @@
 - 不把每个局部状态拆成独立 module。
 - 修改 UI 前必须读取 `DESIGN.md` 和 `.claude/rules/ui.md`。
 
+### 阶段 1 已确认（2026-11-02）
+
+- 形态：纯函数规则（`apps/web/src/app/knowledge/_lib/knowledge-lifecycle-rules.ts`）+ 生命周期 Hook（`apps/web/src/app/knowledge/_lib/use-knowledge-lifecycle.ts`），`KnowledgeWorkspace` 退回纯 UI 编排；属于落实既有 ADR-0028 / ADR-0032 约定，不新建 ADR。
+- 轮询策略与时序：仅在 `activeTab === 'documents'` 且存在非终态文档（`pending` 或 `processing`）时激活 3s 轮询；全部文档进入终态（`ready` 或 `failed`）即销毁定时器；切换知识库或离开 Tab 时通过请求编号与 Timer 清理立即阻断旧请求，杜绝跨库数据串写。
+- 选择自愈（Selection Pruning）：新列表拉取后，若原选中 ID 仍有效则保持；若失效或当前未选且列表非空，回退选中首个；列表为空时重置为 null。
+- 定向刷新范围（Refresh Scope）：上传或导入成功刷新当前文档列表并对齐知识库列表文档计数；标签元数据修改仅前端局部 patch；新建知识库刷新列表并自动切换选中；顶部全局刷新同时重载两端；操作异常严格隔离，不破坏当前有效选区。
+- 测试切片：规则层纯函数单测（穷举终态与自愈分支）+ Hook 状态与定时器测试（`renderHook` + fakeTimers）+ 页面轻量装配回归测试。
+
 ### 待办
 
-- [ ] 画出选择知识库、加载文档、启动轮询、停止轮询和定向刷新的状态图。
-- [ ] 明确文档处理终态及每个终态的轮询停止条件。
-- [ ] 为切换知识库时旧轮询停止建立测试。
-- [ ] 为文档进入终态后停止刷新建立测试。
-- [ ] 为上传或创建失败时选择状态保持建立测试。
-- [ ] 为 Dialog 成功后只刷新相关数据建立测试。
-- [ ] 通过 `grilling` 确认数据生命周期 deep module 的职责和 seam。
-- [ ] 编写 spec 与 Schema 4 `qa-plan.md`。
-- [ ] 实施最小迁移，保持现有子 module interface 稳定。
-- [ ] 验证文件上传、UrlDocument 入库、metadata 编辑、FAQ 与 DocumentPreview。
-- [ ] 在 375px 窄屏和桌面端完成真实浏览器验收。
-- [ ] 完成独立审查和人工终审。
+- [x] 画出选择知识库、加载文档、启动轮询、停止轮询和定向刷新的状态图。
+- [x] 明确文档处理终态及每个终态的轮询停止条件。
+- [x] 为切换知识库时旧轮询停止建立测试。
+- [x] 为文档进入终态后停止刷新建立测试。
+- [x] 为上传或创建失败时选择状态保持建立测试。
+- [x] 为 Dialog 成功后只刷新相关数据建立测试。
+- [x] 通过 `grilling` 确认数据生命周期 deep module 的职责和 seam。
+- [x] 编写 spec 与 Schema 4 `qa-plan.md`。
+- [x] 实施最小迁移，保持现有子 module interface 稳定。
+- [x] 验证文件上传、UrlDocument 入库、metadata 编辑、FAQ 与 DocumentPreview。
+- [x] 在 375px 窄屏和桌面端完成真实浏览器验收。
+- [x] 完成独立审查和人工终审。
 
 ### 完成标准
 
-- [ ] 切换知识库后旧轮询不会继续更新当前页面。
-- [ ] 所有文档进入终态后轮询停止。
-- [ ] 上传、创建或 Dialog 失败不会破坏当前有效选择。
-- [ ] 成功操作只刷新受影响的数据。
-- [ ] 页面通过稳定结果渲染，不直接解释轮询和刷新时序。
+- [x] 切换知识库后旧轮询不会继续更新当前页面。
+- [x] 所有文档进入终态后轮询停止。
+- [x] 上传、创建或 Dialog 失败不会破坏当前有效选择。
+- [x] 成功操作只刷新受影响的数据。
+- [x] 页面通过稳定结果渲染，不直接解释轮询和刷新时序。
 
 ### 交付记录
 
-- 完成日期：
-- Spec：
-- ADR：
-- QA plan：
-- 验证证据：
-- 审查结论：
+- 完成日期：2026-11-02
+- Spec：`.scratch/knowledge-workspace-lifecycle/spec.md`
+- ADR：落实既有 ADR-0028、ADR-0032
+- QA plan：`.scratch/knowledge-workspace-lifecycle/qa-plan.md`
+- 验证证据：全量测试 226 文件 2166 用例通过、typecheck 通过、lint 通过；浏览器验收 5 份截图 `screenshots/tc06-*.png` 与 `evidence/tc06-browser-4.log`；对账表 `_qa/reconciliation.md`（39 项断言 100% PASS，0 FAIL，0 BLOCKED）；复盘过程证据 `retro-evidence.md`
+- 审查结论：双轴独立审查 r1→r2 完成（r1 提出的 S-J1~3、P-W1~4、P-M1、P-X1 全部在本次修复核已修，r2 双轴均确认无新发现，见 `review-report.md`）；`qa-check review` 机器结果 PASS，人工终审确认交付
 
 ---
 
