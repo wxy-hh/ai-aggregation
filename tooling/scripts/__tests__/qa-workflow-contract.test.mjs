@@ -364,7 +364,7 @@ test('tdd 复用已确认的 Seam，描述与正文的红绿循环一致', async
   }
 });
 
-test('code-review 定制段列出本仓库规范来源并放宽限字', async () => {
+test('code-review 定制段包含规范来源、审查绑定与来源纠偏', async () => {
   const [content, customizations] = await Promise.all([
     read('.claude/skills/code-review/SKILL.md'),
     read(customizationsPath),
@@ -374,6 +374,10 @@ test('code-review 定制段列出本仓库规范来源并放宽限字', async ()
     assert.match(text, /\.claude\/rules\//);
     assert.match(text, /DESIGN\.md/);
     assert.match(text, /不得为满足字数限制省略/);
+    assert.match(text, /QA_REVIEW_BINDING/);
+    assert.match(text, /不读取、比较或提示模型差异/);
+    assert.match(text, /同轮纠偏/);
+    assert.match(text, /待复核编号/);
   }
 });
 
@@ -528,4 +532,39 @@ test('[LH-TC07] 正本写明宿主适用范围与审查方式行的宿主字段'
     assert.match(boundary, /转录核验/, file);
   }
   await eachMatch([...workflowPaths, '.claude/skills/code-review/SKILL.md'], /宿主=/);
+});
+
+test('planner 与 Spec 对账要求实际谓词可证伪（QA-PROV TC15-1）', async () => {
+  const planner = await read(paths.qaPlanner);
+  assert.match(planner, /数量、顺序和否定约束/);
+  assert.match(planner, /可证伪/);
+  for (const file of codeReviewPaths) {
+    const content = await read(file);
+    assert.match(content, /叶子测试的实际断言/, file);
+    assert.match(content, /过程脚本的硬断言/, file);
+    assert.match(content, /实现错误[^\n]*仍(?:然)?会通过[^\n]*P-W/, file);
+  }
+});
+
+test('上游鉴权与额度失败由用户选择处置路径（QA-PROV TC17-1）', async () => {
+  const guide = await read(paths.guide);
+  assert.match(guide, /阻塞、换 provider、授权当前特性修复或转专项/);
+  assert.match(guide, /不得为消除 BLOCKED 擅自修改业务行为/);
+});
+
+test('可证伪性补强不新增流程或审查角色（QA-PROV TC15-2）', async () => {
+  const [workflow, planner] = await Promise.all([read(paths.workflow), read(paths.qaPlanner)]);
+  assert.match(workflow, /\[6\. 双轴审查\]/);
+  assert.match(workflow, /Standards[\s\S]*Spec/);
+  assert.match(planner, /不额外增加第三名 QA 或裁决代理/);
+  assert.doesNotMatch(`${workflow}\n${planner}`, /冻结前独立评审|第三轴|机器语义评分/);
+});
+
+test('真实 dogfood 仍是不可冒充的发布门禁（QA-PROV TC17-2）', async () => {
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.match(content, /干净会话的真实 `?\/implement`?/, file);
+    assert.match(content, /工具测试与手动派发 reviewer 不冒充/, file);
+    assert.match(content, /待发布验收/, file);
+  }
 });

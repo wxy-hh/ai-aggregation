@@ -79,11 +79,11 @@ pnpm infra:logs
 
 ### qa-check.mjs
 
-通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。只接受 Schema 4：核对断言标记、用例绑定、过程脚本扫描、审查原文编号对账与交付验证新鲜度；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；以分流表为唯一缺陷清单，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
 
 ### review-package.mjs
 
-改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时用 `collect` 生成 diff 与 v2 manifest；manifest 的 `packagedAt` 在 tree 未变时沿用首次打包时间，供 qa-check 判断审查原文新鲜度。`digest` 输出当前范围 tree；这些命令均不改变 Git index，机器状态写入特性目录的 `_qa/`，禁止手改。
+改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时用 `collect` 生成 diff 与 v2 manifest；manifest 的 `packagedAt` 在 tree 未变时沿用首次打包时间，供 qa-check 与转录中的事件时间关联，不以文件 mtime 判断审查原文或修复证据新鲜度。`digest` 输出当前范围 tree；这些命令均不改变 Git index，机器状态写入特性目录的 `_qa/`，禁止手改。
 
 ### qa-run.mjs
 

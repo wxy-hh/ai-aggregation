@@ -361,7 +361,7 @@ test('审查方式行声明非 Claude Code 宿主时转录核验只输出一条�
   assert.equal(notes.length, 1, formatReport(report, 'review'));
   assert.match(notes[0], /Kimi Code/);
   assert.match(notes[0], /不适用/);
-  assert.ok(!report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report, 'review'));
+  assert.ok(!report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
   assert.equal(report.status, 'PASS', formatReport(report, 'review'));
 });
 
@@ -369,7 +369,7 @@ test('审查方式行只在说明文字中提到其他宿主、没有宿主字�
   const { dir, feature } = await reviewRepo(t, '审查方式：两轴独立子代理（Kimi Code reviewer 类型）');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
   assert.ok(!report.notes.some((note) => note.includes('不适用')), formatReport(report, 'review'));
 });
 
@@ -377,14 +377,14 @@ test('审查方式行声明宿主为 Claude Code 时转录核验照常进行（T
   const { dir, feature } = await reviewRepo(t, '审查方式：宿主=Claude Code；两轴独立子代理');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
 });
 
 test('宿主声明为小写 claude code 时同样照常核验（TC02-6）', async (t) => {
   const { dir, feature } = await reviewRepo(t, '审查方式：宿主=claude code；两轴独立子代理');
   await claudeTranscripts(t, dir);
   const report = await checkFeature(feature, 'review');
-  assert.ok(report.notes.some((note) => note.includes('未出现在任何审查包之后的子代理输出中')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('来源未核验')), formatReport(report, 'review'));
 });
 
 test('声明其他宿主不影响自查拦截（TC02-7）', async (t) => {

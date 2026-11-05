@@ -1,6 +1,6 @@
 # 0042. QA 证据前置拦截与审查降噪
 
-* **状态**：已接受
+* **状态**：已接受（决策 3 的原文不可覆盖与转录仅 NOTE 部分被 ADR-0047 修订）
 * **日期**：2026-10-30
 * **范围**：QA 工作流正本与指南、code-review / qa-test-planner 技能、`tooling/scripts/qa-check.mjs`、`tooling/scripts/qa-run.mjs` 与安装模板
 * **相关**：ADR-0035（部分取代，见下表）、ADR-0040、ADR-0033
