@@ -93,6 +93,8 @@ node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白
 
 # 阶段 6：子代理写原文后按轴封存（每轴一次，宿主名按实际填写）
 node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r1 --axis standards --file review/r1-standards.md --reviewer-kind subagent --host "<宿主名>"
+# r2 复审追加 --pending-ids；无子代理宿主由用户另开会话或终端审查后用 external-session
+node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r2 --axis spec --file review/r2-spec-axis.md --reviewer-kind subagent --host "<宿主名>" --pending-ids "P-M1,P-W1"
 
 # 阶段 7：最终机器校验
 node tooling/scripts/qa-check.mjs review .scratch/<feature>
@@ -225,6 +227,16 @@ console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
 ```
 
 新协议下上述原文由子代理直接写入 `review/r1-spec-axis.md` 并 seal；无 challenge 的旧轮次才由主代理逐字落盘。
+
+**审查来源凭据怎么用（有 challenge 的新轮次）**：
+
+1. `collect` 把轮次、nonce、treeDigest 与打包时间写入 `_qa/review-challenge.json`。需要显式开新一轮时用 `--round r<n>`；再次 collect 会换 nonce，旧凭据不能用于新轮次。
+2. 主代理把 `QA_REVIEW_BINDING` 与 `QA_REVIEW_NONCE` 两行写进子代理 prompt，并附上可复制执行的 seal 命令与宿主名。审查子代理必须能写文件、能执行命令；只读探索型代理（如 Kimi Code 的 `explore` profile）不能担任审查者。
+3. 子代理把最终审查内容直接写入原文文件，再按轴 seal：r1 用 `--axis standards|spec --file review/r1-… --reviewer-kind subagent --host "<宿主名>"`；r2 起追加 `--pending-ids "<编号,...>"`，把收到的待复核编号原样带入凭据。无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce 运行 `--reviewer-kind external-session`；主代理不得自动启动 `codex exec` 等无头审查者。
+4. `seal` 校验轮次、轴、路径、challenge 与当前审查包一致，拒绝覆盖已有凭据，成功时打印 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`，子代理把这一行放进最终返回。主代理只检查原文与 `.source.json` 是否存在，不转抄、不改写、不重算。
+5. `qa-check review` 输出「来源核验」强度行：找到同 nonce 的 Claude Code 子代理转录且哈希行一致为「转录（强）」；只有自述凭据且内部一致为「自述凭据（弱）」；两者都没有为「未核验（人工）」。凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希矛盾 FAIL，nonce 不符 BLOCKED。强度行不改变 PASS / BLOCKED 语义，弱档不能称来源已核验。
+
+seal 拒绝覆盖已有凭据，是为了防止主代理「修一下原文再重封」。原文有问题时按真实返回保留并保持待独立审查，或按新轮次重新审查；不要手改 challenge、凭据或原文。
 
 编号含义：`S-H` 规范硬违规、`S-J` 规范判断建议、`P-M` 缺失或部分实现、`P-W` 实现有误、`P-X` 范围蔓延。无发现时写「无发现」，不带编号；S-J 只报有明确当前成本的问题。
 
