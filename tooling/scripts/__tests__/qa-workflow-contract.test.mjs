@@ -454,8 +454,8 @@ test('[HR-TC07-4] Spec 轴只按冻结断言原文核对截图，取景不全不
   await eachMatch(codeReviewPaths, /截图只是取景不全时不编号/);
 });
 
-test('[HR-TC07-5] 返回截断时照原样落盘并保持待独立审查，禁止追问重写', async () => {
-  await eachMatch(codeReviewPaths, /截断或不完整时照原样落盘.*待独立审查.*不得追问、续传或让子代理重写/s);
+test('[HR-TC07-5] 返回截断时保留已有内容并保持待独立审查，禁止追问重写', async () => {
+  await eachMatch(codeReviewPaths, /截断或不完整时(?:照原样落盘|保留已写入内容或按原样处理).*待独立审查.*不得追问、续传或让子代理重写/s);
 });
 
 test('[HR-TC07-6] 原文不得加头注或还原转义，说明写进 review-report', async () => {
@@ -525,11 +525,14 @@ test('[LH-TC06] 后续技能收口沿用当前车道，不再沿用阶段 1', as
   for (const skill of ['to-spec', 'to-tickets']) assert.match(await customizationSection(skill), /沿用当前车道/, skill);
 });
 
-test('[LH-TC07] 正本写明宿主适用范围与审查方式行的宿主字段', async () => {
+test('[LH-TC07] 正本写明宿主无关凭据协议与审查方式说明字段', async () => {
   for (const file of workflowPaths) {
     const boundary = (await read(file)).split('## 四、')[0].split('## 三、')[1] ?? '';
-    assert.match(boundary, /只保证 Claude Code/, file);
-    assert.match(boundary, /转录核验/, file);
+    assert.match(boundary, /review-package seal/, file);
+    assert.match(boundary, /转录（强）/, file);
+    assert.match(boundary, /自述凭据（弱）/, file);
+    assert.match(boundary, /未核验（人工）/, file);
+    assert.match(boundary, /无 challenge 的旧轮次/, file);
   }
   await eachMatch([...workflowPaths, '.claude/skills/code-review/SKILL.md'], /宿主=/);
 });
@@ -565,6 +568,102 @@ test('真实 dogfood 仍是不可冒充的发布门禁（QA-PROV TC17-2）', asy
     const content = await read(file);
     assert.match(content, /干净会话的真实 `?\/implement`?/, file);
     assert.match(content, /工具测试与手动派发 reviewer 不冒充/, file);
+    assert.match(content, /待发布验收/, file);
+  }
+});
+
+test('code-review 技能要求子代理自写原文并 seal，主代理不得转抄', async () => {
+  for (const file of codeReviewPaths) {
+    const content = await read(file);
+    assert.match(content, /QA_REVIEW_NONCE/, file);
+    assert.match(content, /review-package\.mjs seal/, file);
+    assert.match(content, /QA_REVIEW_RECEIPT/, file);
+    assert.match(content, /子代理把最终审查内容直接写入/, file);
+    assert.match(content, /主代理不转抄、不改写、不重算审查原文/, file);
+  }
+});
+
+test('新协议取消同轮纠偏且旧轮次明确保留', async () => {
+  for (const file of [...codeReviewPaths, ...workflowPaths]) {
+    const content = await read(file);
+    assert.match(content, /新协议不再允许同轮原文纠偏|新协议不得改原文或重算凭据/, file);
+  }
+  for (const file of codeReviewPaths) {
+    assert.match(await read(file), /无 challenge 的旧轮次仍按旧规则[^\n]*同轮纠偏/, file);
+  }
+});
+
+test('code-review 技能要求可写审查者并禁止主代理自动无头审查', async () => {
+  for (const file of codeReviewPaths) {
+    const content = await read(file);
+    assert.match(content, /写文件与执行命令权限/, file);
+    assert.match(content, /只读探索型代理不得担任审查者/, file);
+    assert.match(content, /explore/, file);
+    assert.match(content, /coder/, file);
+    assert.match(content, /external-session/, file);
+    assert.match(content, /主代理不得自动启动 `codex exec`/, file);
+    assert.match(content, /派发审查子代理前先选定具备写文件与执行命令权限的 profile/, file);
+    assert.match(content, /不重派替代代理/, file);
+  }
+});
+
+test('工作流文档与安装模板同步凭据协议措辞', async () => {
+  const [workflow, template, guide, root, claudeTemplate, glossary] = await Promise.all([
+    read(paths.workflow),
+    read(paths.workflowTemplate),
+    read(paths.guide),
+    read(paths.root),
+    read(paths.claudeTemplate),
+    read('GLOSSARY.md'),
+  ]);
+  for (const content of [workflow, template]) {
+    assert.match(content, /review-challenge\.json/);
+    assert.match(content, /review-package seal/);
+    assert.match(content, /来源核验/);
+  }
+  assert.match(guide, /review-challenge\.json|review-package seal/);
+  assert.match(guide, /自述凭据（弱）/);
+  assert.match(guide, /有 challenge 时子代理自写并 seal/);
+  assert.match(guide, /旧轮次由主代理逐字落盘/);
+  assert.match(guide, /旧轮次可按真实最终返回同轮纠偏/);
+  assert.match(root, /review-package seal/);
+  assert.match(claudeTemplate, /review-package seal/);
+  assert.match(glossary, /ReviewChallenge/);
+  assert.match(glossary, /ReviewSourceReceipt/);
+  assert.match(glossary, /SourceVerificationStrength/);
+});
+
+test('qa-check 提示把逐字纠偏限定在旧轮次，新协议按新轮次重审', async () => {
+  const qaCheck = await read('tooling/scripts/qa-check.mjs');
+  assert.match(qaCheck, /旧轮次可按该轮子代理的真实最终返回逐字纠正当轮原文/);
+  assert.match(qaCheck, /有 challenge 的新协议按新轮次重新审查/);
+  assert.match(qaCheck, /有 challenge 的新协议由子代理自写原文并 seal/);
+  assert.doesNotMatch(qaCheck, /只能按该轮子代理的真实最终返回逐字纠正当轮原文/);
+});
+
+test('工具脚本与安装模板保持逐字一致且新测试复用既有接缝', async () => {
+  for (const name of ['qa-check.mjs', 'review-package.mjs']) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(tool, template, name);
+  }
+  const schema4 = await read('tooling/scripts/__tests__/qa-check-schema4.test.mjs');
+  assert.match(schema4, /receiptRepo/);
+  assert.match(schema4, /checkFeature/);
+  const reviewPackage = await read('tooling/scripts/__tests__/review-package.test.mjs');
+  assert.match(reviewPackage, /seal 生成最小凭据并打印 nonce 与原文哈希/);
+});
+
+test('发布契约保留 Claude 强档与 Kimi 弱档真机验收要求', async () => {
+  const adr = await read('docs/adr/0048-qa-review-source-receipt.md');
+  assert.match(adr, /Claude Code 强档/);
+  assert.match(adr, /Kimi Code 弱档/);
+  assert.match(adr, /external-session fixture/);
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.match(content, /干净会话的真实 `?\/implement`?/, file);
     assert.match(content, /待发布验收/, file);
   }
 });

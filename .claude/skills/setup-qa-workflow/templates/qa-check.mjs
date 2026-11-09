@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { computeTreeDigest, inScope, QA_DIR, readScope } from './review-package.mjs';
+import { computeTreeDigest, inScope, QA_DIR, readScope, RECEIPT_LINE_PATTERN } from './review-package.mjs';
 import { formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
 
 export const CURRENT_SCHEMA = 4;
@@ -21,6 +22,9 @@ const SCRIPT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts',
 const SCRIPTS_DIR = 'scripts';
 const REVIEW_DIR = 'review';
 const DEBUG_DIR = `${QA_DIR}/debug/`;
+// 宿主无关的审查来源凭据：collect 发放 challenge，子代理自写原文并由 seal 生成凭据
+const CHALLENGE_FILE = 'review-challenge.json';
+const SOURCE_RECEIPT_SUFFIX = '.source.json';
 // 需要过程脚本与断言标记的接缝；需要用例绑定的接缝
 const SCRIPTED_SEAMS = new Set(['browser', 'api']);
 const BOUND_SEAMS = new Set(['unit', 'integration']);
@@ -1410,7 +1414,7 @@ async function reviewRawIssues(featureDir, triage) {
   const rounds = await readReviewRounds(featureDir);
   const latest = rounds.size ? Math.max(...rounds.keys()) : null;
   const latestFiles = latest === null ? null : rounds.get(latest);
-  const rawHint = `在最新审查包（collect）之后用 Skill 工具调用 code-review 重新审查，由该技能把两轴子代理的返回逐字落盘到 ${REVIEW_DIR}/；不要用 Agent 工具自行派审查子代理，也不要由主 Agent 代写或改写原文。`;
+  const rawHint = `在最新审查包（collect）之后用 Skill 工具调用 code-review 重新审查；有 challenge 的新协议由子代理自写原文并 seal 生成 .source.json，旧轮次由主代理把两轴子代理的返回逐字落盘到 ${REVIEW_DIR}/；不要用 Agent 工具自行派审查子代理，也不要由主 Agent 代写或改写原文。`;
   if (!latestFiles?.standards || !latestFiles?.spec) {
     const missing = latest === null
       ? `${REVIEW_DIR}/ 下没有审查原文`
@@ -1732,29 +1736,34 @@ function transcriptPrompt(entries) {
 }
 
 function transcriptBinding(entries) {
-  return transcriptPrompt(entries).match(/^QA_REVIEW_BINDING:\s*(\S+\|r\d+\|(?:standards|spec))\s*$/m)?.[1] ?? null;
+  // 允许 prompt 中的绑定行带缩进或反引号；不要求行首，避免把说明性引用误判为无绑定
+  return transcriptPrompt(entries).match(/QA_REVIEW_BINDING:\s*(\S+\|r\d+\|(?:standards|spec))/m)?.[1] ?? null;
 }
 
-/** 显式绑定的原文与最终返回精确比较，返回门禁问题、提示与缺陷事件时间 */
-async function auditTranscriptProvenance(root, latestFiles, featureDir, packageTime, requiredIds, rows) {
-  const issues = [];
-  const findingTimes = new Map();
-  if (!root || !latestFiles?.standards || !latestFiles?.spec) return { issues: [], notes: [], findingTimes };
+/** 子代理转录中的 nonce；新协议用它精确定位本轮审查 */
+function transcriptNonce(entries) {
+  return transcriptPrompt(entries).match(/QA_REVIEW_NONCE:\s*([^\s`"']+)/m)?.[1] ?? null;
+}
+
+/** 最终返回中的凭据行；只认 nonce 与 64 位十六进制哈希 */
+function parseReceiptLine(output) {
+  const match = output.match(RECEIPT_LINE_PATTERN);
+  return match ? { nonce: match[1], hash: match[2] } : { nonce: null, hash: null };
+}
+
+/** 读取本仓库全部 Claude Code 子代理转录；会话目录不可读时返回 readable=false */
+async function scanClaudeTranscripts(root) {
   const configDir = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(homedir(), '.claude');
   const projectDir = path.join(configDir, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'));
   let sessions;
   try {
     sessions = await readdir(projectDir, { withFileTypes: true });
   } catch {
-    return { issues, notes: [`转录核验：来源未核验（${latestFiles.standards}、${latestFiles.spec}）；无法读取 Claude Code 会话目录，请人工核对审查来源。`], findingTimes };
+    return { readable: false, sessionFiles: [], transcripts: [] };
   }
-  const notes = [];
   const sessionFiles = sessions
     .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
     .map((entry) => path.join(projectDir, entry.name));
-  if (!await codeReviewInvoked(sessionFiles, packageTime)) {
-    notes.push('转录核验：最新审查包之后的主会话转录中没有 code-review 的 Skill 调用；审查应在 collect 后用 Skill 工具调用 code-review，请人工确认审查来源。');
-  }
   const transcripts = [];
   for (const session of sessions.filter((entry) => entry.isDirectory())) {
     const subagentDir = path.join(projectDir, session.name, 'subagents');
@@ -1765,20 +1774,130 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
       continue;
     }
     for (const file of files.filter((name) => name.endsWith('.jsonl'))) {
-      const absolute = path.join(subagentDir, file);
-      const entries = await readJsonl(absolute);
+      const entries = await readJsonl(path.join(subagentDir, file));
       const output = finalOutput(entries);
       transcripts.push({
         binding: transcriptBinding(entries),
+        nonce: transcriptNonce(entries),
         prompt: transcriptPrompt(entries),
         final: output.text,
         time: output.time,
+        receiptLine: parseReceiptLine(output.text),
       });
     }
   }
+  return { readable: true, sessionFiles, transcripts };
+}
+
+/** 读取本轮审查的 challenge；不存在时返回 null（旧轮次兼容），存在但无效时给出提示 */
+async function readReviewChallenge(featureDir) {
+  const file = path.join(featureDir, QA_DIR, CHALLENGE_FILE);
+  let text;
+  try {
+    text = await readFile(file, 'utf8');
+  } catch {
+    return { challenge: null, problem: null };
+  }
+  try {
+    const challenge = JSON.parse(text);
+    const valid = challenge
+      && challenge.schemaVersion === 1
+      && typeof challenge.feature === 'string' && challenge.feature
+      && typeof challenge.round === 'string' && /^r\d+$/.test(challenge.round)
+      && typeof challenge.nonce === 'string' && challenge.nonce
+      && typeof challenge.treeDigest === 'string' && challenge.treeDigest
+      && typeof challenge.packagedAt === 'string' && !Number.isNaN(Date.parse(challenge.packagedAt));
+    return valid
+      ? { challenge, problem: null }
+      : { challenge: null, problem: `${QA_DIR}/${CHALLENGE_FILE} 缺少有效字段` };
+  } catch {
+    return { challenge: null, problem: `${QA_DIR}/${CHALLENGE_FILE} 无法解析` };
+  }
+}
+
+/** 原文对应的凭据路径与轴 */
+function receiptRelative(reportRelative) {
+  return reportRelative.replace(/\.md$/, SOURCE_RECEIPT_SUFFIX);
+}
+
+function reportAxis(reportRelative) {
+  return reportRelative.endsWith('-standards.md') ? 'standards' : 'spec';
+}
+
+async function readSourceReceipt(featureDir, reportRelative) {
+  const relative = receiptRelative(reportRelative);
+  let text;
+  try {
+    text = await readFile(path.join(featureDir, relative), 'utf8');
+  } catch {
+    return { receipt: null, relative, problem: 'missing' };
+  }
+  let receipt;
+  try {
+    receipt = JSON.parse(text);
+  } catch {
+    return { receipt: null, relative, problem: 'malformed' };
+  }
+  const valid = receipt
+    && receipt.schemaVersion === 1
+    && typeof receipt.feature === 'string'
+    && typeof receipt.round === 'string'
+    && typeof receipt.axis === 'string'
+    && (receipt.axis === 'standards' || receipt.axis === 'spec')
+    && typeof receipt.nonce === 'string'
+    && (receipt.reviewerKind === 'subagent' || receipt.reviewerKind === 'external-session')
+    && typeof receipt.host === 'string'
+    && typeof receipt.reportPath === 'string'
+    && /^[0-9a-f]{64}$/.test(receipt.sha256 ?? '')
+    && (receipt.pendingIds === undefined
+      || (Array.isArray(receipt.pendingIds) && receipt.pendingIds.every((id) => typeof id === 'string')))
+    && typeof receipt.completedAt === 'string' && !Number.isNaN(Date.parse(receipt.completedAt));
+  return valid ? { receipt, relative, problem: null } : { receipt: null, relative, problem: 'malformed' };
+}
+
+/**
+ * 单轴凭据与原文、challenge 的一致性：
+ * ok / missing / malformed / stale（nonce 不符）/ mismatch（文件、轮次、轴或哈希不符）。
+ */
+async function receiptAxisCheck(featureDir, reportRelative, challenge) {
+  const report = await readFile(path.join(featureDir, reportRelative)).catch(() => null);
+  const hash = report === null ? null : createHash('sha256').update(report).digest('hex');
+  const checked = await readSourceReceipt(featureDir, reportRelative);
+  if (!checked.receipt) return { ...checked, hash, state: checked.problem === 'missing' ? 'missing' : 'malformed' };
+  const { receipt } = checked;
+  const round = reportRelative.match(/r(\d+)-(?:standards|spec-axis)\.md$/)?.[1];
+  // nonce 先判：跨特性、旧轮次或旧 collect 的凭据都按「来源过期」BLOCKED，而不是结构不符 FAIL
+  if (receipt.nonce !== challenge.nonce) return { ...checked, hash, state: 'stale' };
+  if (receipt.feature !== challenge.feature) return { ...checked, hash, state: 'mismatch', reason: '特性路径' };
+  if (receipt.round !== `r${round}`) return { ...checked, hash, state: 'mismatch', reason: '轮次' };
+  if (receipt.axis !== reportAxis(reportRelative)) return { ...checked, hash, state: 'mismatch', reason: '轴' };
+  if (receipt.reportPath !== reportRelative) return { ...checked, hash, state: 'mismatch', reason: '原文路径' };
+  if (!hash || receipt.sha256 !== hash) return { ...checked, hash, state: 'mismatch', reason: '原文哈希' };
+  return { ...checked, hash, state: 'ok' };
+}
+
+/** 显式绑定的原文与最终返回精确比较，返回门禁问题、提示与缺陷事件时间 */
+async function auditTranscriptProvenance(root, latestFiles, featureDir, packageTime, requiredIds, rows) {
+  const issues = [];
+  const findingTimes = new Map();
+  if (!root || !latestFiles?.standards || !latestFiles?.spec) return { issues: [], notes: [], findingTimes, verifiedAxes: 0 };
+  const scanned = await scanClaudeTranscripts(root);
+  if (!scanned.readable) {
+    return {
+      issues,
+      notes: [`转录核验：来源未核验（${latestFiles.standards}、${latestFiles.spec}）；无法读取 Claude Code 会话目录，请人工核对审查来源。`],
+      findingTimes,
+      verifiedAxes: 0,
+    };
+  }
+  const notes = [];
+  if (!await codeReviewInvoked(scanned.sessionFiles, packageTime)) {
+    notes.push('转录核验：最新审查包之后的主会话转录中没有 code-review 的 Skill 调用；审查应在 collect 后用 Skill 工具调用 code-review，请人工确认审查来源。');
+  }
+  const transcripts = scanned.transcripts;
   if (!transcripts.length) {
     notes.push(`转录核验：来源未核验（${latestFiles.standards}、${latestFiles.spec}）；没有可读取的子代理转录，请人工核对审查来源。`);
-    return { issues, notes, findingTimes };
+    return { issues, notes, findingTimes, verifiedAxes: 0 };
   }
 
   const unmatched = [];
@@ -1796,6 +1915,7 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
     if (candidates.length === 1) findingTimes.set(row.id, candidates[0].time);
   }
   const round = latestFiles.standards.match(/review\/(r\d+)-standards\.md$/)?.[1];
+  let verified = 0;
   for (const [axis, relative] of [['standards', latestFiles.standards], ['spec', latestFiles.spec]]) {
     const raw = normalizeForTranscript(await readFile(path.join(featureDir, relative), 'utf8'));
     const binding = `${feature}|${round}|${axis}`;
@@ -1818,6 +1938,8 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
     } else if (raw !== matched.final) {
       mismatched.push(relative);
     }
+    if (matched.final && raw === matched.final && Number.isFinite(matched.time)
+      && (!(packageTime !== null && matched.time < packageTime))) verified += 1;
   }
   if (missingInputs.length) {
     issues.push(issue('REVIEW_REINPUT_MISSING', 'FAIL', `复审子代理实际输入缺少待复核编号：${[...new Set(missingInputs)].join('、')}。`, '按分流表把待复核编号及理由交给对应轴重新复审；最终返回中的编号不能代替实际输入。'));
@@ -1829,7 +1951,7 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
     issues.push(issue('REVIEW_SOURCE_STALE', 'BLOCKED', `最新审查返回的事件时间早于当前 tree 的 collect：${stale.join('、')}。`, '在当前审查包之后重新执行双轴审查；不要通过 touch 原文或转录来消除此问题。'));
   }
   if (mismatched.length) {
-    issues.push(issue('REVIEW_SOURCE_MISMATCH', 'FAIL', `审查原文与对应子代理最终返回不一致：${mismatched.join('、')}。`, '只能按该轮子代理的真实最终返回逐字纠正当轮原文，不得润色或补结论；无法定位来源时保持待人工核验。'));
+    issues.push(issue('REVIEW_SOURCE_MISMATCH', 'FAIL', `审查原文与对应子代理最终返回不一致：${mismatched.join('、')}。`, '旧轮次可按该轮子代理的真实最终返回逐字纠正当轮原文，不得润色或补结论；有 challenge 的新协议按新轮次重新审查，不得改原文或重算凭据；无法定位来源时保持待人工核验。'));
   }
   if (timeUnknown.length) {
     notes.push(`转录核验：来源时间未核验（${timeUnknown.join('、')}）；最终返回缺少可靠事件时间，请人工核对它是否对应当前 collect。`);
@@ -1837,6 +1959,173 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
   if (unmatched.length) {
     notes.push(`转录核验：来源未核验（${unmatched.join('、')}）；无法关联当前特性、轮次与轴的唯一子代理转录，请人工核对审查来源。`);
   }
+  return { issues, notes, findingTimes, verifiedAxes: verified };
+}
+
+/**
+ * 新协议（有 challenge）的来源核验：
+ * 先校验两轴自述凭据，再用同 nonce 的 Claude Code 转录做更强的哈希行核对。
+ * 找不到转录不判失败；只有可证明的矛盾才 FAIL/BLOCKED。
+ */
+async function auditReceiptSources(root, latestFiles, featureDir, challenge, requiredIds, rows, declaredHost, manifest) {
+  const issues = [];
+  const notes = [];
+  const findingTimes = new Map();
+  // 双轴原文未齐全时，REVIEW_RAW_MISSING 已给出 BLOCKED；这里只补强度行，不能让 undefined 进入路径拼接
+  if (!latestFiles?.standards || !latestFiles?.spec) {
+    notes.push('来源核验：未核验（人工）');
+    return { issues, notes, findingTimes };
+  }
+  const axes = [['standards', latestFiles.standards], ['spec', latestFiles.spec]];
+  const results = new Map();
+  if (manifest && challenge.treeDigest !== manifest.treeDigest) {
+    issues.push(issue(
+      'REVIEW_SOURCE_MISMATCH',
+      'FAIL',
+      `challenge 的 treeDigest 与当前审查包不一致（${challenge.treeDigest.slice(0, 12)} / ${String(manifest.treeDigest).slice(0, 12)}）。`,
+      '重新 collect 后用同一 challenge 审查；不要手改 challenge 或审查包。',
+    ));
+  }
+  if (manifest && challenge.packagedAt !== manifest.packagedAt) {
+    issues.push(issue(
+      'REVIEW_SOURCE_MISMATCH',
+      'FAIL',
+      'challenge 的 packagedAt 与当前审查包不一致。',
+      '重新 collect 后用同一 challenge 审查；不要手改 challenge 或审查包。',
+    ));
+  }
+  const hostMismatch = [];
+  for (const [axis, relative] of axes) {
+    const result = await receiptAxisCheck(featureDir, relative, challenge);
+    results.set(axis, result);
+    if (result.state === 'missing') {
+      notes.push(`来源核验：${relative} 缺少自述凭据（${receiptRelative(relative)}）；请人工核对审查来源。`);
+    } else if (result.state === 'malformed') {
+      notes.push(`来源核验：${relative} 的自述凭据格式错误；请人工核对审查来源。`);
+    } else if (result.state === 'stale') {
+      issues.push(issue(
+        'REVIEW_SOURCE_STALE',
+        'BLOCKED',
+        `${relative} 的凭据 nonce 与当前 challenge 不一致。`,
+        '使用当前 collect 的 challenge 重新审查并 seal；不要手改凭据。',
+      ));
+    } else if (result.state === 'mismatch') {
+      issues.push(issue(
+        'REVIEW_SOURCE_MISMATCH',
+        'FAIL',
+        `${relative} 的自述凭据与原文不一致（${result.reason}）。`,
+        '按当前轮次重新写原文并 seal；凭据不得由主代理改写或重算。',
+      ));
+    } else if (Date.parse(result.receipt.completedAt) < Date.parse(challenge.packagedAt)) {
+      notes.push(`来源核验：${relative} 的自述时间早于 collect；请人工核对它是否对应当前审查包。`);
+    }
+    if (declaredHost && result.state === 'ok' && result.receipt.host.toLowerCase() !== declaredHost.name.toLowerCase()) {
+      hostMismatch.push(`${relative}（${result.receipt.host}）`);
+    }
+  }
+  if (hostMismatch.length) {
+    notes.push(`来源核验：审查方式声明的宿主与凭据 host 不一致：${hostMismatch.join('、')}；请人工核对。`);
+  }
+
+  const scanned = await scanClaudeTranscripts(root);
+  const strong = new Set();
+  const missingInputs = [];
+  if (!scanned.readable) {
+    notes.push('来源核验：无法读取 Claude Code 会话目录；按自述凭据或人工核验。');
+  } else {
+    if (!await codeReviewInvoked(scanned.sessionFiles, Date.parse(challenge.packagedAt))) {
+      notes.push('转录核验：collect 之后的主会话转录中没有 code-review 的 Skill 调用；请人工确认审查来源。');
+    }
+    for (const [axis, relative] of axes) {
+      const result = results.get(axis);
+      const binding = `${challenge.feature}|${challenge.round}|${axis}`;
+      const candidates = scanned.transcripts.filter((item) => item.binding === binding && item.nonce === challenge.nonce);
+      if (!candidates.length) continue;
+      if (candidates.length > 1) {
+        notes.push(`来源核验：${relative} 找到多个同 nonce 的子代理转录，无法唯一定位；请人工核对审查来源。`);
+        continue;
+      }
+      const candidate = candidates[0];
+      if (!candidate.receiptLine.hash || candidate.receiptLine.nonce !== challenge.nonce) {
+        notes.push(`来源核验：${relative} 的同 nonce 转录没有可用的凭据行；按自述凭据或人工核验。`);
+        continue;
+      }
+      if (!result.hash || candidate.receiptLine.hash !== result.hash) {
+        issues.push(issue(
+          'REVIEW_SOURCE_MISMATCH',
+          'FAIL',
+          `${relative} 的子代理转录凭据行与磁盘原文哈希不一致。`,
+          '按该子代理真实最终返回与磁盘原文核对；不得润色或补结论。',
+        ));
+        continue;
+      }
+      if (!Number.isFinite(candidate.time)) {
+        notes.push(`来源核验：${relative} 的转录时间无法确认；请人工核对它是否对应当前 collect。`);
+        continue;
+      }
+      if (candidate.time < Date.parse(challenge.packagedAt)) {
+        issues.push(issue(
+          'REVIEW_SOURCE_STALE',
+          'BLOCKED',
+          `${relative} 的子代理最终返回早于当前 collect。`,
+          '在当前审查包之后重新执行双轴审查；不要通过 touch 原文或转录来消除此问题。',
+        ));
+        continue;
+      }
+      if (challenge.round !== 'r1') {
+        missingInputs.push(...requiredIds.filter((id) => axisOf(id) === axis && !new RegExp(`\\[${id}\\]|\\b${id}\\b`).test(candidate.prompt)));
+      }
+      strong.add(axis);
+    }
+  }
+  if (missingInputs.length) {
+    issues.push(issue(
+      'REVIEW_REINPUT_MISSING',
+      'FAIL',
+      `复审子代理实际输入缺少待复核编号：${[...new Set(missingInputs)].join('、')}。`,
+      '按分流表把待复核编号及理由交给对应轴重新复审；最终返回中的编号不能代替实际输入。',
+    ));
+  }
+
+  for (const [axis, relative] of axes) {
+    if (strong.has(axis)) continue;
+    const result = results.get(axis);
+    if (result.state !== 'ok') continue;
+    const required = requiredIds.filter((id) => axisOf(id) === axis);
+    if (!required.length) continue;
+    const provided = new Set(result.receipt.pendingIds ?? []);
+    const missing = required.filter((id) => !provided.has(id));
+    if (missing.length) {
+      notes.push(`来源核验：${relative} 的自述凭据缺少复审必交编号 ${missing.join('、')}；请人工核对复审输入。`);
+    }
+  }
+
+  const transcriptTimes = new Map();
+  for (const item of scanned.transcripts) {
+    if (item.binding && Number.isFinite(item.time)) transcriptTimes.set(item.binding, item.time);
+  }
+  for (const row of rows ?? []) {
+    const round = Number(row.trajectory.match(/\br(\d+)\b/)?.[1]);
+    if (!Number.isFinite(round)) continue;
+    const axis = axisOf(row.id);
+    const time = transcriptTimes.get(`${challenge.feature}|r${round}|${axis}`);
+    if (Number.isFinite(time)) {
+      findingTimes.set(row.id, time);
+      continue;
+    }
+    const relative = `review/r${round}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+    const checked = await readSourceReceipt(featureDir, relative);
+    if (checked.receipt) {
+      const parsed = Date.parse(checked.receipt.completedAt);
+      if (Number.isFinite(parsed)) findingTimes.set(row.id, parsed);
+    }
+  }
+
+  const bothStrong = strong.has('standards') && strong.has('spec');
+  const bothReceipt = results.get('standards').state === 'ok' && results.get('spec').state === 'ok';
+  if (bothStrong) notes.push('来源核验：转录（强）');
+  else if (bothReceipt) notes.push('来源核验：自述凭据（弱）');
+  else notes.push('来源核验：未核验（人工）');
   return { issues, notes, findingTimes };
 }
 
@@ -1969,22 +2258,35 @@ async function checkReview(featureDir, plan, context, earlier) {
   const raw = await reviewRawIssues(featureDir, triage);
   issues.push(...raw.issues);
   let findingTimes = new Map();
-  // 转录核验只对 Claude Code 完成的审查有意义：声明为其他宿主时跳过，未声明时沿用原检查
   const host = reportText ? declaredReviewHost(reportText) : null;
-  if (host && !host.claude) {
-    notes.push(`转录核验：审查方式行声明宿主为 ${host.name}，Claude Code 转录核验不适用；请人工按审查方式行到该宿主的会话记录核对审查来源。`);
-  } else {
-    const currentRound = Number(raw.latest?.standards?.match(/review\/r(\d+)-standards\.md$/)?.[1] ?? 1);
-    const requiredIds = triage?.rows.filter((row) => {
-      if (row.tier !== '本次修' && !DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix))) return false;
-      const firstRound = Number(row.trajectory.match(/\br(\d+)\b/)?.[1]);
-      if (!Number.isFinite(firstRound) || firstRound >= currentRound) return false;
-      return !resolvedBeforeRound(row, currentRound);
-    }).map((row) => row.id) ?? [];
-    const provenance = await auditTranscriptProvenance(context.root, raw.latest, featureDir, packageTime, requiredIds, raw.rows);
+  const currentRound = Number(raw.latest?.standards?.match(/review\/r(\d+)-standards\.md$/)?.[1] ?? 1);
+  const requiredIds = triage?.rows.filter((row) => {
+    if (row.tier !== '本次修' && !DEFAULT_FIX_PREFIXES.some((prefix) => row.id.startsWith(prefix))) return false;
+    const firstRound = Number(row.trajectory.match(/\br(\d+)\b/)?.[1]);
+    if (!Number.isFinite(firstRound) || firstRound >= currentRound) return false;
+    return !resolvedBeforeRound(row, currentRound);
+  }).map((row) => row.id) ?? [];
+  const challengeInfo = await readReviewChallenge(featureDir);
+  if (challengeInfo.challenge && raw.latest) {
+    // 新协议：按证据判定，宿主声明只用于提示不一致；没有同 nonce 转录时降为自述凭据或人工
+    const provenance = await auditReceiptSources(context.root, raw.latest, featureDir, challengeInfo.challenge, requiredIds, raw.rows, host, manifest);
     issues.push(...provenance.issues);
     notes.push(...provenance.notes);
     findingTimes = provenance.findingTimes;
+  } else {
+    if (challengeInfo.challenge && !raw.latest) notes.push('来源核验：未核验（人工）');
+    if (challengeInfo.problem) notes.push(`来源核验：${challengeInfo.problem}；按旧协议处理，请人工核对 challenge。`);
+    // 旧轮次兼容：声明为非 Claude Code 时跳过转录核验，未声明时沿用原检查
+    if (host && !host.claude) {
+      notes.push(`转录核验：审查方式行声明宿主为 ${host.name}，Claude Code 转录核验不适用；请人工按审查方式行到该宿主的会话记录核对审查来源。`);
+      if (raw.latest) notes.push('来源核验：未核验（人工）');
+    } else if (raw.latest) {
+      const provenance = await auditTranscriptProvenance(context.root, raw.latest, featureDir, packageTime, requiredIds, raw.rows);
+      issues.push(...provenance.issues);
+      notes.push(...provenance.notes);
+      notes.push(provenance.verifiedAxes >= 2 ? '来源核验：旧协议（转录全等比对）' : '来源核验：未核验（人工）');
+      findingTimes = provenance.findingTimes;
+    }
   }
   issues.push(...await fixVerificationIssues(featureDir, raw.rows, triage?.evidenceColumn, findingTimes));
 

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -36,6 +37,46 @@ function run(repo, command, feature, paths = []) {
   });
 }
 
+function runArgs(repo, args) {
+  return spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: repo,
+    encoding: 'utf8',
+  });
+}
+
+/** 建立基线并 collect；返回特性目录与 challenge */
+async function collected(t, { round } = {}) {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  await writeFile(path.join(dir, 'tracked.txt'), '原始行\n本任务修改\n');
+  const args = ['collect', feature, ...(round ? ['--round', round] : [])];
+  const collect = runArgs(dir, args);
+  assert.equal(collect.status, 0, collect.stderr);
+  const challenge = JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8'));
+  return { dir, feature, challenge };
+}
+
+function sealArgs(feature, overrides = {}) {
+  const values = {
+    round: 'r1',
+    axis: 'standards',
+    file: 'review/r1-standards.md',
+    kind: 'subagent',
+    host: 'Claude Code',
+    ...overrides,
+  };
+  return [
+    'seal',
+    feature,
+    '--round', values.round,
+    '--axis', values.axis,
+    '--file', values.file,
+    '--reviewer-kind', values.kind,
+    '--host', values.host,
+  ];
+}
+
 test('快照只包含开工后的修改、创建和删除，不改变 index，且机器状态只写入 _qa', async (t) => {
   const dir = await repo(t);
   const feature = path.join(dir, '.scratch', 'feature');
@@ -67,7 +108,7 @@ test('快照只包含开工后的修改、创建和删除，不改变 index，�
   assert.deepEqual(new Set(manifest.changedFiles), new Set(['tracked.txt', 'created.txt', 'delete-me.txt', 'existing-untracked.txt']));
   // Schema 4：机器状态只写入 _qa/，特性目录顶层不再生成（TC01-3）
   assert.deepEqual((await readdir(feature)).sort(), ['_qa']);
-  assert.deepEqual((await readdir(path.join(feature, '_qa'))).sort(), ['prechange', 'review-package.diff', 'review-package.json', 'scope.json']);
+  assert.deepEqual((await readdir(path.join(feature, '_qa'))).sort(), ['prechange', 'review-challenge.json', 'review-package.diff', 'review-package.json', 'scope.json']);
 });
 
 test('开工前未跟踪内容未改变时不会进入审查包', async (t) => {
@@ -329,3 +370,195 @@ test('范围外文件 git mv 到范围内时保留原路径（TC06）', async (t
   assert.ok(!paths.includes('scoped.txt'));
 });
 
+
+test('collect 发放一次性 challenge 并绑定当前审查包', async (t) => {
+  const { dir, feature, challenge } = await collected(t, { round: 'r2' });
+  const manifest = JSON.parse(await readFile(path.join(feature, '_qa', 'review-package.json'), 'utf8'));
+  assert.equal(challenge.round, 'r2');
+  assert.ok(challenge.nonce);
+  assert.equal(challenge.treeDigest, manifest.treeDigest);
+  assert.equal(challenge.packagedAt, manifest.packagedAt);
+
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r2-standards.md'), '[S-J1] 判断建议\n');
+  const seal = sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md' });
+  const firstSeal = runArgs(dir, seal);
+  assert.equal(firstSeal.status, 0, firstSeal.stderr);
+  const receiptPath = path.join(feature, 'review', 'r2-standards.source.json');
+  const firstReceipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(runArgs(dir, ['collect', feature, '--round', 'r2']).status, 0);
+  const next = JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8'));
+  assert.notEqual(next.nonce, challenge.nonce);
+  assert.equal(next.round, 'r2');
+
+  const replay = runArgs(dir, seal);
+  assert.equal(replay.status, 1);
+  assert.match(replay.stderr, /凭据.*(?:nonce|已存在)/);
+  assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')), firstReceipt);
+
+  assert.equal(runArgs(dir, ['collect', feature, '--round', 'r1']).status, 0);
+  const explicit = JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8'));
+  assert.equal(explicit.round, 'r1');
+});
+
+test('collect 未指定轮次时按现有审查原文推导下一轮', async (t) => {
+  const { dir, feature, challenge } = await collected(t);
+  assert.equal(challenge.round, 'r1');
+
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+  await writeFile(path.join(feature, 'review', 'r1-spec-axis.md'), '[P-M1] 缺失\n');
+  assert.equal(runArgs(dir, ['collect', feature]).status, 0);
+  const next = JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8'));
+  assert.equal(next.round, 'r2');
+  assert.notEqual(next.nonce, challenge.nonce);
+});
+
+test('collect 未指定轮次时按最新已有轮次推导（单轴与跳轮）', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+  assert.equal(runArgs(dir, ['collect', feature]).status, 0);
+  assert.equal(JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8')).round, 'r2');
+
+  await writeFile(path.join(feature, 'review', 'r3-standards.md'), '[S-J1] 判断建议\n');
+  await writeFile(path.join(feature, 'review', 'r3-spec-axis.md'), '[P-M1] 缺失\n');
+  assert.equal(runArgs(dir, ['collect', feature]).status, 0);
+  assert.equal(JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8')).round, 'r4');
+});
+
+test('seal 拒绝与审查包 manifest 不一致的 challenge', async (t) => {
+  for (const [field, value] of [['treeDigest', '0'.repeat(64)], ['packagedAt', new Date(0).toISOString()]]) {
+    const { dir, feature } = await collected(t);
+    const challengePath = path.join(feature, '_qa', 'review-challenge.json');
+    const challenge = JSON.parse(await readFile(challengePath, 'utf8'));
+    await writeFile(challengePath, `${JSON.stringify({ ...challenge, [field]: value }, null, 2)}\n`);
+    await mkdir(path.join(feature, 'review'), { recursive: true });
+    await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+    const seal = runArgs(dir, sealArgs(feature));
+    assert.equal(seal.status, 1, `${field}: ${seal.stdout}`);
+    assert.match(seal.stderr, new RegExp(field));
+    assert.deepEqual((await readdir(path.join(feature, 'review'))).sort(), ['r1-standards.md']);
+  }
+});
+
+test('seal 拒绝非法轴值', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+  const seal = runArgs(dir, [...sealArgs(feature), '--axis', 'other']);
+  assert.equal(seal.status, 1);
+  assert.match(seal.stderr, /--axis/);
+});
+
+test('seal 生成最小凭据并打印 nonce 与原文哈希', async (t) => {
+  const { dir, feature, challenge } = await collected(t);
+  const standards = '## Standards\n[P-W1] 实现有误\n';
+  const spec = '## Spec\n[P-M2] 缺失\n';
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), standards);
+  await writeFile(path.join(feature, 'review', 'r1-spec-axis.md'), spec);
+
+  const standardsSeal = runArgs(dir, sealArgs(feature));
+  assert.equal(standardsSeal.status, 0, standardsSeal.stderr);
+  const standardsHash = createHash('sha256').update(standards).digest('hex');
+  assert.equal(standardsSeal.stdout.trim(), `QA_REVIEW_RECEIPT: ${challenge.nonce}|${standardsHash}`);
+  const standardsReceipt = JSON.parse(await readFile(path.join(feature, 'review', 'r1-standards.source.json'), 'utf8'));
+  assert.deepEqual(Object.keys(standardsReceipt).sort(), [
+    'axis', 'completedAt', 'feature', 'host', 'nonce', 'reportPath', 'reviewerKind', 'round', 'schemaVersion', 'sha256',
+  ]);
+  assert.equal(standardsReceipt.schemaVersion, 1);
+  assert.equal(standardsReceipt.feature, '.scratch/feature');
+  assert.equal(standardsReceipt.round, 'r1');
+  assert.equal(standardsReceipt.axis, 'standards');
+  assert.equal(standardsReceipt.nonce, challenge.nonce);
+  assert.equal(standardsReceipt.reviewerKind, 'subagent');
+  assert.equal(standardsReceipt.host, 'Claude Code');
+  assert.equal(standardsReceipt.reportPath, 'review/r1-standards.md');
+  assert.equal(standardsReceipt.sha256, standardsHash);
+  assert.ok(!Number.isNaN(Date.parse(standardsReceipt.completedAt)));
+
+  const specSeal = runArgs(dir, sealArgs(feature, {
+    axis: 'spec',
+    file: 'review/r1-spec-axis.md',
+    kind: 'external-session',
+    host: 'Codex',
+  }));
+  assert.equal(specSeal.status, 0, specSeal.stderr);
+  const specReceipt = JSON.parse(await readFile(path.join(feature, 'review', 'r1-spec-axis.source.json'), 'utf8'));
+  assert.equal(specReceipt.axis, 'spec');
+  assert.equal(specReceipt.reportPath, 'review/r1-spec-axis.md');
+  assert.equal(specReceipt.reviewerKind, 'external-session');
+  assert.equal(specReceipt.host, 'Codex');
+  assert.equal(specReceipt.sha256, createHash('sha256').update(spec).digest('hex'));
+});
+
+test('seal 拒绝错误轮次、轴、路径与缺失 challenge', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '[S-J1] 判断建议\n');
+  await writeFile(path.join(feature, 'review', 'other.md'), '[S-J1] 其他\n');
+
+  const attempts = [
+    runArgs(dir, sealArgs(feature, { round: 'r2' })),
+    runArgs(dir, sealArgs(feature, { axis: 'spec' })),
+    runArgs(dir, sealArgs(feature, { file: 'review/other.md' })),
+  ];
+  for (const attempt of attempts) {
+    assert.equal(attempt.status, 1, attempt.stdout);
+    assert.match(attempt.stderr, /seal|轮次|轴|路径|challenge/);
+  }
+  assert.deepEqual((await readdir(path.join(feature, 'review'))).sort(), ['other.md', 'r1-standards.md']);
+
+  await rm(path.join(feature, '_qa', 'review-challenge.json'));
+  const missing = runArgs(dir, sealArgs(feature));
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /review-challenge\.json/);
+  assert.deepEqual((await readdir(path.join(feature, 'review'))).sort(), ['other.md', 'r1-standards.md']);
+});
+
+test('seal 拒绝覆盖已存在的凭据', async (t) => {
+  const { dir, feature } = await collected(t);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  const report = path.join(feature, 'review', 'r1-standards.md');
+  await writeFile(report, '[S-J1] 判断建议\n');
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 0);
+
+  const receiptPath = path.join(feature, 'review', 'r1-standards.source.json');
+  const before = await readFile(receiptPath, 'utf8');
+  await writeFile(report, '[S-J1] 判断建议（已修改）\n');
+  const second = runArgs(dir, sealArgs(feature));
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /已存在|拒绝覆盖/);
+  assert.equal(await readFile(receiptPath, 'utf8'), before);
+});
+
+test('凭据只包含元数据与哈希，不包含审查正文', async (t) => {
+  const { dir, feature } = await collected(t);
+  const secretish = '这是一段不应出现在凭据里的审查正文。';
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), `[S-J1] ${secretish}\n`);
+  assert.equal(runArgs(dir, sealArgs(feature)).status, 0);
+
+  const receiptText = await readFile(path.join(feature, 'review', 'r1-standards.source.json'), 'utf8');
+  assert.doesNotMatch(receiptText, /不应出现在凭据里的审查正文/);
+  const receipt = JSON.parse(receiptText);
+  assert.equal('model' in receipt, false);
+  assert.equal('prompt' in receipt, false);
+  assert.equal('report' in receipt, false);
+});
+
+test('seal 在复审轮写入待复核编号', async (t) => {
+  const { dir, feature } = await collected(t, { round: 'r2' });
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r2-standards.md'), '[S-J1] 判断建议\n');
+  const seal = runArgs(dir, [
+    ...sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md' }),
+    '--pending-ids', 'P-W2, P-M1',
+  ]);
+  assert.equal(seal.status, 0, seal.stderr);
+  const receipt = JSON.parse(await readFile(path.join(feature, 'review', 'r2-standards.source.json'), 'utf8'));
+  assert.deepEqual(receipt.pendingIds, ['P-W2', 'P-M1']);
+});

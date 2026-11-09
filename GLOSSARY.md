@@ -313,6 +313,18 @@ _Avoid_: 问题序号, 意见编号, 审查条目
 审查者在独立于主执行代理的上下文中，依据实际收到的审查输入形成并返回结论；审查有效性不取决于审查者与主执行代理是否使用相同模型。
 _Avoid_: 同模型复核, 主代理自审, 模型一致性核验
 
+**ReviewChallenge (审查挑战)**:
+`review-package collect` 为每轮审查发放的一次性凭据，写入 `_qa/review-challenge.json`，包含 nonce、轮次、treeDigest 与打包时间；再次 collect 会更换 nonce，旧凭据不能用于新轮次。
+_Avoid_: 审查令牌, 会话 ID, 审查包 ID
+
+**ReviewSourceReceipt (审查来源凭据)**:
+审查子代理自写原文后由 `review-package seal` 生成、与原文同名的 `.source.json`，记录 nonce、round、axis、reviewerKind、host、reportPath、sha256 与 completedAt；凭据是自述证据，不证明作者或独立性。
+_Avoid_: 审查签名, 来源证明, 原文回执
+
+**SourceVerificationStrength (来源核验强度)**:
+`qa-check` 对审查来源的证据分级：找到同 nonce 的 Claude Code 子代理转录且哈希行一致为「转录（强）」；只有自述凭据且内部一致为「自述凭据（弱）」；两者都没有为「未核验（人工）」。强度行不改变 PASS / BLOCKED 语义。
+_Avoid_: 审查可信度, 质量评分, 来源评分
+
 **IncrementalReReview (增量复审)**:
 本次修之后只核对上轮本次修编号是否已修、未修或修错，并且只对修复 diff 报新发现的复审方式；自动上限 2 轮，用尽后交人工裁决。
 _Avoid_: 全量重审, 二次审查, 循环审查

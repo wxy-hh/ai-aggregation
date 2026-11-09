@@ -8,7 +8,7 @@
 2. 一张图看懂七个阶段
 3. 谁来触发：人工命令与模型技能
 4. 特性目录长什么样（Schema 4）
-5. 产物示例：qa-plan、过程脚本、审查原文、分流表
+5. 产物示例：qa-plan、过程脚本、几何证据、审查原文、分流表
 6. 检查器输出怎么读：FAIL、BLOCKED 与 NOTE
 7. 人工终审怎么做
 8. 快慢车道
@@ -41,7 +41,7 @@ AI 辅助编码最常见的三类返工：
 
 | 以前靠自述 | 现在靠产物 |
 | --- | --- |
-| 报告里粘贴的审查原文 | code-review 把子代理返回逐字落盘到 `review/` + 编号对账 |
+| 报告里粘贴的审查原文 | 有 challenge 时子代理自写原文并 seal 生成凭据；无 challenge 的旧轮次由主代理逐字落盘到 `review/` + 编号对账 |
 | 执行记录写 PASS | 日志里的 `[TC01-1] PASS 实测：…` 标记、unit 的「文件 › 标题」绑定 |
 | “我用的是真实输入” | `scripts/` 静态扫描：绕过登录与脚本内登录硬失败，模拟输入标注 |
 | “已修” | 分流表「验证证据」列指向修复后产生的证据 |
@@ -51,7 +51,7 @@ AI 辅助编码最常见的三类返工：
 
 ### 和 Matt Pocock 技能体系的关系
 
-本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 保持上游原文，只在末尾“项目定制”段替换 diff 来源与原文落盘方式。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
+本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 保持上游原文，只在末尾“项目定制”段替换 diff 来源与原文落盘方式（有 challenge 时子代理自写并 seal，无 challenge 的旧轮次由主代理逐字落盘）。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
 
 ---
 
@@ -74,9 +74,43 @@ AI 辅助编码最常见的三类返工：
 - **交付命令放在全部浏览器验收之后**：构建命令会改写 dev server 产物，曾经打断正在进行的验收。
 - **复审是增量的、有上限**：全量重审每轮都可能冒出新发现，修—审循环没有终点。现在复审只核对上轮“本次修”是否修好，审查者拿到完整审查包与主代理列出的本轮修复改过的文件，新发现只针对这些文件；自动最多 2 轮，用尽后交人工裁决，流程照常走完交付验证，不会中断。
 
+### 阶段收口的关键命令
+
+```bash
+# 阶段 3B：计划通过后先跑交付命令基线，再建基线并冻结计划
+node tooling/scripts/qa-check.mjs plan .scratch/<feature>
+node tooling/scripts/qa-run.mjs .scratch/<feature> baseline-delivery -- <交付命令>
+node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>
+
+# 阶段 4：阶段 1–2 产物需要纳入时扩大范围
+node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>
+
+# 阶段 5：证据与对账表
+node tooling/scripts/qa-check.mjs acceptance .scratch/<feature>
+
+# 阶段 6：审查包，再用 Skill 工具调用 code-review
+node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>
+
+# 阶段 6：子代理写原文后按轴封存（每轴一次，宿主名按实际填写）
+node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r1 --axis standards --file review/r1-standards.md --reviewer-kind subagent --host "<宿主名>"
+
+# 阶段 7：最终机器校验
+node tooling/scripts/qa-check.mjs review .scratch/<feature>
+```
+
+`init` 前执行记录不得有 PASS 行；基线红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志。`tooling/`、`docs/`、`.claude/` 等与工作流共用的目录，路径白名单写到具体文件。
+
 ---
 
 ## 三、谁来触发：人工命令与模型技能
+
+### 宿主与同名技能
+
+流程主路径是宿主无关的审查来源凭据（ADR-0048）：`collect` 发放 challenge，审查子代理自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，`qa-check` 按证据分级——同 nonce 的 Claude Code 转录为「转录（强）」，只有凭据为「自述凭据（弱）」，都没有为「未核验（人工）」。只读探索型子代理不能担任审查者；Codex 等无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce seal，主代理不得自动启动无头审查者。无 challenge 的旧轮次继续走旧逻辑（Claude Code 全等比对，其他宿主人工 NOTE）。个人级同名技能检测仍在 `plan` 与 `review` 阶段执行（在其他宿主运行时同样检查），流程技能同名且内容不同时判 BLOCKED。
+
+### 成本边界
+
+默认 inline 规划、单会话串行实现，不自动增加规划或实现代理、不指定或升级模型；显式独立规划最多 1 个，显式并行实现最多 2 个。Worktree 只隔离文件和分支，不隔离数据库、Redis、端口、上游额度或测试账号，高耦合任务回退串行。不新增 Hooks 或自动重试，`qa-check` 只在阶段边界显式运行并聚合问题。
 
 | 只能人工敲的命令 | 为什么 |
 | --- | --- |
@@ -106,7 +140,7 @@ AI 辅助编码最常见的三类返工：
 ├── qa-plan.md           ← 人读：冻结断言 + 执行记录 + 交付验证
 ├── review-report.md     ← 人读：审查方式、三档分流、范围说明
 ├── issues/              ← 拆票时才有
-├── review/              ← 审查子代理原文（r1-standards.md、r1-spec-axis.md、r2-…）
+├── review/              ← 审查原文与同名 .source.json（r1-standards.md、r1-standards.source.json、…）；子代理自写，新协议不得改原文或重算凭据
 ├── scripts/             ← browser/api 过程脚本与 helper
 ├── evidence/            ← qa-run 日志，不可覆盖
 ├── screenshots/         ← 每个 TC 一张验收截图
@@ -135,6 +169,9 @@ AI 辅助编码最常见的三类返工：
 - browser/api 行的证据是截图（browser）和日志；绑定列留空，靠日志里的标记证明。
 - unit/integration 行写绑定：反引号里是相对仓库根的测试文件，`›` 后是源码里的叶子标题（不用写 describe 路径；参数化测试照抄源码里的 `%s` 写法）。
 - 绑定写错只改这一列，重跑 `qa-check acceptance` 即可，不用重跑测试。
+- 修复已交付特性时，计划头写 `QA Kind: fix`，每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志；不改写原特性的执行记录。
+- 计划在 init 时冻结；删改断言、Seam、Covers 或交付命令必须写进 `## 计划变更`。计划变更不得新增冻结断言之外的呈现要求（如「某几项同屏」），确需新要求时追加断言。
+- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；全部浏览器验收结束后先预跑一次并回填，让 r1 审查看到真实结果。
 
 ### 2. 过程脚本的断言标记
 
@@ -154,7 +191,32 @@ console.log(`[TC01-1] PASS 实测：scrollWidth=${width}`);
 node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<feature>/scripts/tc01-filter.mjs
 ```
 
-### 3. 审查原文（code-review 把 Spec 子代理的返回逐字写入 `review/r1-spec-axis.md`）
+### 3. 视觉类断言：几何硬断言加目标区域截图
+
+```js
+// scripts/tc05-overlay.mjs —— 断言编辑按钮未被遮挡
+const target = page.locator('[data-testid="edit-button"]');
+await target.scrollIntoViewIfNeeded();
+const box = await target.boundingBox();
+const viewport = page.viewportSize();
+const visible = !!box && box.y + box.height > 0 && box.y < viewport.height;
+const covered = visible && await page.evaluate(({ x, y }) => {
+  const el = document.elementFromPoint(x, y);
+  return !el || !el.closest('[data-testid="edit-button"]');
+}, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+if (!visible || covered) {
+  console.log(`[TC05-1] FAIL visible=${visible} covered=${covered}`);
+  process.exit(1);
+}
+await target.screenshot({ path: `.scratch/<feature>/screenshots/TC05.png` });
+console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
+```
+
+截图不能证明数值，也不能单独证明可见：先让目标处于无遮挡位置，脚本硬断言目标与视口相交且代表点未被其他元素遮挡，再截取目标区域；断言未溢出时另断言边界与滚动尺寸。Spec 轴审查仍会按冻结断言原文复核截图。
+
+**真实链路冒烟**：触及核心链路时至少一条 browser 用例走真实登录、真实输入与真实后端，只断言本次新产生的用户可见终态（如流式结束、无错误态、控制台无报错），不断言模型非确定性分支。响应注入只在本次改了对应渲染代码时补充构造前端前置或故障态，备注写明「响应注入」，不得替代真实链路冒烟。页面内 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值只用于读取状态或构造前置条件，并在备注写明。
+
+### 4. 审查原文（有 challenge 时子代理自写并 seal；旧轮次由主代理逐字落盘）
 
 ```markdown
 [P-M1] 缺失：spec US 12 要求保留修复尝试记录，diff 中未见对应处理。
@@ -162,9 +224,11 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<featur
 [P-X1] 范围蔓延：新增了 spec 未要求的 --verbose 参数。
 ```
 
+新协议下上述原文由子代理直接写入 `review/r1-spec-axis.md` 并 seal；无 challenge 的旧轮次才由主代理逐字落盘。
+
 编号含义：`S-H` 规范硬违规、`S-J` 规范判断建议、`P-M` 缺失或部分实现、`P-W` 实现有误、`P-X` 范围蔓延。无发现时写「无发现」，不带编号；S-J 只报有明确当前成本的问题。
 
-### 4. 三档分流表（`review-report.md`）
+### 5. 三档分流表（`review-report.md`）
 
 ```markdown
 审查方式：宿主=Claude Code；code-review 的 Standards 与 Spec 两个独立子代理
@@ -184,7 +248,7 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<featur
 GLOSSARY.md 的改动开工前已存在，与本特性无关。
 ```
 
-这张表是唯一缺陷清单与流程状态源，也是交付时的已修 / 未修 / 修错清单：主代理按审查原文将真实发现逐条进表，检查器不从正文自动发现缺陷，只核对已列编号有原文依据；漏列由人工终审对照原文发现。当前档位与处置状态写当前事实，历史变化写轮次轨迹，转专项或改档成立不锁定后续修复；检查器不解析原文状态词，按轮次轨迹核对待复审编号是否出现在对应轴其后一轮原文，并核对修复证据；表格是否忠实于原文，由人工对照 `qa-check review` 的「原文核对」段确认。S-J 默认驳回且不必进表，只有要修、转专项或需单独说明风险的才进表；P-X 默认撤回越界改动，规则见正本阶段 6 第 4 条。「已修」行的验证证据必须是修复后产生的 `evidence/`、`screenshots/` 文件（针对修复点跑一个脚本、截一张图即可，不必重跑全部验收），或 `静态：<理由>`；不以文件 mtime 判定先后，有可靠事件时间时才核对日志 `started` 与轮次轨迹所指的缺陷审查返回，证据能否证明修复由人工终审判断。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
+分流表是唯一缺陷清单与流程状态源，也是交付时的已修 / 未修 / 修错清单：主代理按审查原文将真实发现逐条进表，检查器不从正文自动发现缺陷，只核对已列编号有原文依据；漏列由人工终审对照原文发现。当前档位与处置状态写当前事实，历史变化写轮次轨迹，转专项或改档成立不锁定后续修复；检查器不解析原文状态词，按轮次轨迹核对待复审编号是否出现在对应轴其后一轮原文，并核对修复证据；表格是否忠实于原文，由人工对照 `qa-check review` 的「原文核对」段确认。S-J 默认驳回且不必进表，只有要修、转专项或需单独说明风险的才进表；P-X 默认撤回越界改动，规则见正本阶段 6 第 4 条。「已修」行的验证证据必须是修复后产生的 `evidence/`、`screenshots/` 文件（针对修复点跑一个脚本、截一张图即可，不必重跑全部验收），或 `静态：<理由>`；不以文件 mtime 判定先后，有可靠事件时间时才核对日志 `started` 与轮次轨迹所指的缺陷审查返回，证据能否证明修复由人工终审判断。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
 
 ---
 
@@ -211,7 +275,7 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `TEST_BINDING_OUT_OF_RUN` | 证据命令没跑到绑定的测试文件 | 改绑定，或用覆盖该文件的命令重跑 |
 | `AUTH_BYPASS_IN_SCRIPT` | `scripts/` 里有注入 Cookie、写令牌、引入数据库驱动（含工作区里直接依赖驱动的包，如本仓库 `@repo/db`）、密码字面量、登录或注册接口、`window.__*` 上的登录方法等 | 删掉，脚本从已登录状态开始；**不可豁免** |
 | `REVIEW_RAW_MISSING` | 最新一轮缺某轴原文 | 用 Skill 工具重新调用 code-review |
-| `REVIEW_SOURCE_MISMATCH` / `REVIEW_SOURCE_STALE` | 已定位来源的原文与最终返回不同，或最终返回时间早于当前 collect | 按真实最终返回同轮纠偏，或在当前 collect 后重新审查 |
+| `REVIEW_SOURCE_MISMATCH` / `REVIEW_SOURCE_STALE` | 已定位来源的原文与最终返回不同，或最终返回时间早于当前 collect | 旧轮次可按真实最终返回同轮纠偏；有 challenge 的新协议按新轮次重新审查，不得改原文或重算凭据 |
 | `REVIEW_REINPUT_MISSING` | 复审子代理实际输入缺待复核编号 | 把编号与理由真正交给对应轴复审 |
 | `REVIEW_RAW_UNNUMBERED` | 最新一轮原文没有规范编号也没写「无发现」 | 多半是绕过了 code-review 技能；用 Skill 工具调用它重新审查 |
 | `RECONCILIATION_STALE` | `_qa/reconciliation.md` 缺失或与当前执行记录不一致 | 重跑 acceptance，重新 collect 并复审 |
@@ -223,11 +287,13 @@ GLOSSARY.md 的改动开工前已存在，与本特性无关。
 | `FINDING_NOT_REREVIEWED` | 轮次轨迹所指的上轮本次修或 S-H/P-M/P-W 改档编号没有出现在对应轴其后一轮原文中 | 增量复审时把这些编号交给对应轴；不要改原文 |
 | `UNRESOLVED_FINDINGS` | 分流表自报未修、修错、改档不成立，或本次修未填 | 人工裁决 |
 
+另有一类预检：`qa-check` 在 `plan` 与 `review` 阶段检测 Claude Code 个人级同名技能，流程技能同名且内容不同时判 BLOCKED；有 challenge 的新轮次按证据判定来源，宿主声明只作说明；无 challenge 的旧轮次仍按声明兼容。示例编号（演示用的 `[P-M1]` 等）不建档复审，真实缺陷漏复审与时间倒挂证据仍会被拦截。
+
 NOTE 不改变结果，但值得看：
 
 - `SYNTHETIC_INPUT_IN_SCRIPT`：页面内用了 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值、`.setState(` 或访问 `window.__*`。合法用途是读状态或构造前置条件；仅保存原始 `fetch` 引用不算，对账表会标「非真实输入」。
 - `RESPONSE_INJECTION_IN_SCRIPT`：脚本替换或拦截了网络响应（`window.fetch` 赋值、路由拦截与 fulfill、`cy.intercept`、MSW 处理器）。合法用途是构造前端前置或故障态；对账表会标「响应注入」，这些行的断言只能写端侧结果，核心链路另需真实链路冒烟。
-- 转录核验：明确原文失真、复审输入缺编号或最终返回早于 collect 会阻断；无法关联轮次、读取转录或确认事件时间时只给「来源未核验／来源时间未核验」NOTE，交人工。没有 Skill 调用记录也只提示；模型差异不读取、不比较、不提示。非 Claude Code 宿主按审查方式行到对应会话人工核对。
+- 来源核验：有 challenge 的新轮次先校验两轴 `.source.json`（nonce、哈希、轮次、轴、时间），再用同 nonce 的 Claude Code 转录核对哈希行；凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希或结构矛盾 FAIL，nonce 不符 BLOCKED；自述凭据缺复审编号只给 NOTE，Claude 转录实际输入缺编号仍 FAIL。无 challenge 的旧轮次沿用全等比对：明确原文失真、复审输入缺编号或最终返回早于 collect 会阻断；无法关联轮次、读取转录或确认事件时间时只给「来源未核验／来源时间未核验」NOTE，交人工。没有 Skill 调用记录也只提示；模型差异不读取、不比较、不提示。
 
 ---
 
@@ -238,6 +304,8 @@ NOTE 不改变结果，但值得看：
 1. **对账表**（`qa-check acceptance` 输出）：每行是“状态 | 冻结原文／当前断言 | 实测值、失败原因或用例标题 | 标注”，PASS、FAIL、BLOCKED 都在同一张表。先看状态，再核对实测值和实际谓词能不能证伪，例如断言要求“编辑按钮热区 ≥44px”，实测写的却是调试台输入框，就是问题。带「非真实输入」「响应注入」的行重点看：响应注入的断言写了“调用工具”“完成质检”之类服务端行为就是越界。
 2. **分流表**：先对照 `qa-check review` 输出的「原文核对」段，确认每个编号的处置状态与审查原文最后一次说法一致；再看驳回、转专项理由是否成立；未修、修错条目做裁决：改档并写理由、接受现状，或授权追加修复轮（不计入自动上限）。
 3. 抽查截图与 NOTE 指向的转录。
+
+**拿不到独立审查时**：未实际调用或拿不到两份真实独立返回时保持「待独立审查」；宿主无独立上下文能力时，collect 后只交付审查包，不运行最终 `qa-check review`，由独立会话或人工接续；外部会话必须由用户启动，主代理不得自动启动无头审查者。不得自动重试、代写原文、代 seal 或提出 commit。
 
 完整清单见正本第五节第 7 小节。
 
@@ -252,6 +320,14 @@ NOTE 不改变结果，但值得看：
 | 慢车道 | 跨多模块的复杂业务或大功能，或需要并行子代理 | grill → spec → to-tickets → qa-test-planner → implement-spec |
 
 车道在阶段 1 定，实现中发现判错时按正本「车道升级」停下报告、经你确认后只升不降，每个技能结束只建议当前车道路线上的下一步。触及认证、对话、图像、视频、语音、历史、计费等核心链路时，哪条车道都要做浏览器验收。implement-spec 按工单依赖图调度，只有互不阻塞的工单才并行，其余仍串行。交接用 `/handoff`，见下一节。
+
+**车道升级细则**（ADR-0043）：升级沿用当前特性目录。
+
+- 快车道 → 标准车道：由用户依次运行 `/grill-with-docs`（只问未决事项）、`/to-spec`、`/qa-test-planner`。
+- 标准车道 → 慢车道：必须补 `/to-tickets`，即使仍串行实现。
+- 升级前的 qa-run 日志只作历史，init 前执行记录不得有 PASS 行；基线标签用 `baseline-upgrade-*`，`## 范围说明` 写明「含在途改动，非原始开工前基线」，基线红灯先问用户，不得记为既有失败。
+- 未提交的在途改动在 init 后立即对同一批路径 add；已提交的改动在 `## 范围说明` 记下起始提交，把 `<起点>..HEAD` 的 diff 作为补充材料交双轴审查；起点不明时停下请用户指定。
+- 升级前已实现的工单保持 `ready-for-agent`，正文注明「升级前已实现，待新基线复验」。
 
 ---
 
@@ -305,6 +381,10 @@ SSR/HMR/SSE 页面永远等不到网络空闲，或者 HTML 出来了但还没�
 
 无 GUI、无法验证 DOM 或移动几何时，记 BLOCKED 或经计划变更转人工，不要用单元测试或命令输出冒充 browser 证据。
 
+### 坑 8：用截图代替几何断言
+
+截图看起来“按钮在”，不代表热区达标、未被遮挡或没有溢出。视觉类断言先在脚本里硬断言目标与视口相交、代表点未被其他元素遮挡，再截目标区域；数值在脚本内严格断言，截图只作佐证。计划变更也不能新增冻结断言之外的呈现要求（如「某几项同屏」），确需新要求时追加断言。
+
 ---
 
 ## 十一、FAQ
@@ -339,6 +419,15 @@ SSR/HMR/SSE 页面永远等不到网络空闲，或者 HTML 出来了但还没�
 **Q10：QA 工作流自身怎么发布验收？**
 工具测试不够。另以干净会话做一次真实 /implement dogfood，确认独立上下文审查真实发生、无独立上下文能力时能合法暂停；手动派发 reviewer 不冒充这项发布验收，未完成时保持“待发布验收”，不得写成完成态。QA 工作流负责最终交付，code-review 只返回两轴发现。
 
+**Q11：非 Claude Code 宿主怎么核对审查来源？**
+子代理转录格式不是公开契约，所以不逐宿主适配。`collect` 发放一次性 challenge，子代理自写原文并 seal 出带 nonce、sha256 与事件时间的凭据；`qa-check` 只认产物：Claude Code 有同 nonce 转录时做哈希行强核验，其他宿主按「自述凭据（弱）」处理，两者都没有时交人工。Codex 等无子代理宿主由用户手动另开独立会话审查，并用同一 nonce seal。
+
+**Q12：修复已交付特性的缺陷怎么走？**
+新建 `.scratch/<feature>-fix-<n>/`，spec 只列本轮缺陷并引用原 US，计划头写 `QA Kind: fix`；每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志，不改写原特性的执行记录。
+
+**Q13：视觉类断言只截图不够吗？**
+不够。截图不能证明数值、热区和遮挡。先在脚本里硬断言目标与视口相交、代表点未被其他元素遮挡，再截取目标区域；Spec 轴仍按冻结断言原文复核截图。
+
 ---
 
-> 相关文件：正本 `docs/agents/qa-workflow.md`；根规则 `CLAUDE.md`；决策记录 `docs/adr/`（Schema 4 见 ADR-0033）；思维快捷键 `docs/agents/prompt-shortcuts.md`。
+> 相关文件：正本 `docs/agents/qa-workflow.md`；根规则 `CLAUDE.md`；决策记录 `docs/adr/`（Schema 4 见 ADR-0033，审查来源核验见 ADR-0048）；思维快捷键 `docs/agents/prompt-shortcuts.md`。

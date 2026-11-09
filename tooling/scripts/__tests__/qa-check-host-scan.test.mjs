@@ -315,6 +315,8 @@ async function reviewRepo(t, method) {
   run([QA_RUN, feature, 'delivery', '--', 'node', '--version']);
   spawnSync(process.execPath, [QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
   run([REVIEW_PACKAGE, 'collect', feature]);
+  // 本组测试覆盖旧轮次的宿主声明行为：删除 challenge 以模拟无 challenge 的历史特性
+  await rm(path.join(feature, '_qa', 'review-challenge.json'), { force: true });
   await writeFile(path.join(feature, 'review-report.md'), reportWith(method));
   await writeDeep(path.join(feature, 'review', 'r1-standards.md'), '规范轴：无发现\n');
   await writeDeep(path.join(feature, 'review', 'r1-spec-axis.md'), '需求轴：无发现\n');

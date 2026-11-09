@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFile,
   lstat,
@@ -25,6 +25,15 @@ const BINARY_EXTENSIONS = new Set([
 const UNKNOWN_HASH = Symbol('未知哈希');
 // 特性目录内的机器状态目录：基线、开工前快照、审查包与调试截图，禁止手改
 export const QA_DIR = '_qa';
+// 每轮审查的挑战与子代理自写原文的凭据；文件名与 code-review 的落盘约定一致
+const CHALLENGE_FILE = 'review-challenge.json';
+const RECEIPT_SUFFIX = '.source.json';
+const REVIEW_DIR = 'review';
+/** 凭据行是生产端（seal）与检查端（qa-check）共用的协议格式 */
+export const RECEIPT_LINE_PATTERN = /QA_REVIEW_RECEIPT:\s*`?([^\s`"']+)\|([0-9a-f]{64})\b/;
+export function formatReceiptLine(nonce, hash) {
+  return `QA_REVIEW_RECEIPT: ${nonce}|${hash}`;
+}
 
 function git(repo, args, allowed = [0], encoding = 'utf8') {
   const result = spawnSync('git', args, {
@@ -138,6 +147,147 @@ export async function computeTreeDigest(repo, scopes) {
 
 export async function readScope(feature) {
   return JSON.parse(await readFile(path.join(feature, QA_DIR, 'scope.json'), 'utf8'));
+}
+
+/** 特性目录相对仓库根的路径，使用 posix 分隔符写入凭据 */
+function featureRelative(root, feature) {
+  return path.relative(root, feature).split(path.sep).join('/');
+}
+
+/** 轮次规范化为 r<n>；接受 r1 与 1 两种写法 */
+function normalizeRound(value) {
+  const match = String(value ?? '').trim().match(/^(?:r)?(\d+)$/);
+  if (!match || Number(match[1]) < 1) throw new Error(`非法轮次：${value}；使用 r1、r2 或 1、2`);
+  return `r${Number(match[1])}`;
+}
+
+/** 未显式指定轮次时，按 review/ 已有原文的最大轮次推导下一轮 */
+async function nextReviewRound(feature) {
+  let entries;
+  try {
+    entries = await readdir(path.join(feature, REVIEW_DIR));
+  } catch {
+    return 'r1';
+  }
+  let max = 0;
+  for (const entry of entries) {
+    const match = entry.match(/^r(\d+)-(?:standards|spec-axis)\.md$/);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `r${max + 1}`;
+}
+
+async function readChallenge(feature) {
+  const file = path.join(feature, QA_DIR, CHALLENGE_FILE);
+  let text;
+  try {
+    text = await readFile(file, 'utf8');
+  } catch {
+    throw new Error(`缺少 ${QA_DIR}/${CHALLENGE_FILE}；请先运行 collect`);
+  }
+  let challenge;
+  try {
+    challenge = JSON.parse(text);
+  } catch {
+    throw new Error(`${QA_DIR}/${CHALLENGE_FILE} 无法解析；请重新运行 collect`);
+  }
+  if (!challenge || challenge.schemaVersion !== 1 || typeof challenge.nonce !== 'string' || !challenge.nonce) {
+    throw new Error(`${QA_DIR}/${CHALLENGE_FILE} 缺少有效字段；请重新运行 collect`);
+  }
+  return challenge;
+}
+
+/** seal 的命名参数；不接受位置参数，避免把 Markdown 路径误当成范围 */
+function parseSealFlags(args) {
+  const flags = {};
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg.startsWith('--')) throw new Error(`seal 不接受位置参数：${arg}`);
+    const name = arg.slice(2);
+    const value = args[index + 1];
+    if (value === undefined || value.startsWith('--')) throw new Error(`seal 参数 ${arg} 缺少值`);
+    flags[name] = value;
+    index += 1;
+  }
+  return flags;
+}
+
+function normalizePendingIds(value) {
+  // 保留子代理实际收到的顺序，US 15 要求「原样写入」；只做去空与去重
+  return [...new Set(String(value).split(/[\s,，]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+/** 子代理自写原文后封存：校验 challenge 并把最小凭据写到同名 .source.json */
+async function sealReview(repo, argument, args) {
+  const { root, feature } = await resolveFeature(repo, argument);
+  const flags = parseSealFlags(args);
+  const round = normalizeRound(flags.round);
+  const axis = flags.axis;
+  if (axis !== 'standards' && axis !== 'spec') throw new Error(`seal 的 --axis 只能是 standards 或 spec，当前为 ${axis ?? '空'}`);
+  const fileName = `r${round.slice(1)}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+  const requested = path.posix.normalize(String(flags.file ?? '').replaceAll(path.sep, '/'));
+  const reportPath = `${REVIEW_DIR}/${fileName}`;
+  if (requested !== reportPath) {
+    throw new Error(`seal 只接受本轮本轴原文路径：${reportPath}（收到 ${flags.file ?? '空'}）`);
+  }
+  const reviewerKind = flags['reviewer-kind'];
+  if (reviewerKind !== 'subagent' && reviewerKind !== 'external-session') {
+    throw new Error('seal 的 --reviewer-kind 只能是 subagent 或 external-session');
+  }
+  if (!flags.host?.trim()) throw new Error('seal 需要非空的 --host');
+
+  const report = path.join(feature, reportPath);
+  const info = await pathInfo(report);
+  if (!info?.isFile() || info.size === 0) {
+    throw new Error(`原文不存在或为空：${reportPath}；请先写入完整审查内容再 seal`);
+  }
+  const challenge = await readChallenge(feature);
+  if (challenge.round !== round) {
+    throw new Error(`challenge 的轮次是 ${challenge.round}，与 seal 的 ${round} 不一致；请用当前轮次或重新 collect`);
+  }
+  if (challenge.feature !== featureRelative(root, feature)) {
+    throw new Error(`challenge 的特性路径 ${challenge.feature} 与当前特性不一致；请重新 collect`);
+  }
+  // challenge 必须与当前审查包 manifest 绑定，防止手改或跨轮次复用
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(path.join(feature, QA_DIR, 'review-package.json'), 'utf8'));
+  } catch {
+    throw new Error(`缺少 ${QA_DIR}/review-package.json；请先运行 collect`);
+  }
+  if (challenge.treeDigest !== manifest.treeDigest) {
+    throw new Error('challenge 的 treeDigest 与当前审查包不一致；请重新 collect');
+  }
+  if (challenge.packagedAt !== manifest.packagedAt) {
+    throw new Error('challenge 的 packagedAt 与当前审查包不一致；请重新 collect');
+  }
+
+  const receiptPath = `${REVIEW_DIR}/${fileName.replace(/\.md$/, RECEIPT_SUFFIX)}`;
+  const absoluteReceipt = path.join(feature, receiptPath);
+  if (await fileExists(absoluteReceipt)) {
+    const existing = await readFile(absoluteReceipt, 'utf8').then(JSON.parse, () => null);
+    const nonceNote = existing?.nonce && existing.nonce !== challenge.nonce ? '，且 nonce 与当前 challenge 不一致' : '';
+    throw new Error(`凭据已存在：${receiptPath}${nonceNote}；seal 拒绝覆盖，需要修正请按新轮次重新审查`);
+  }
+
+  const content = await readFile(report);
+  const hash = sha256(content);
+  const receipt = {
+    schemaVersion: 1,
+    feature: featureRelative(root, feature),
+    round,
+    axis,
+    nonce: challenge.nonce,
+    reviewerKind,
+    host: flags.host.trim(),
+    reportPath,
+    sha256: hash,
+    completedAt: new Date().toISOString(),
+  };
+  const pendingIds = flags['pending-ids'] ? normalizePendingIds(flags['pending-ids']) : [];
+  if (pendingIds.length) receipt.pendingIds = pendingIds;
+  await writeFile(absoluteReceipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
+  console.log(formatReceiptLine(challenge.nonce, hash));
 }
 
 function nameSkippedReason(relative) {
@@ -372,8 +522,9 @@ async function collectOutOfScope(root, scope, expectedScopes) {
   return [...outOfScope.values()];
 }
 
-async function collectReviewPackage(repo, argument, scopesInput) {
+async function collectReviewPackage(repo, argument, scopesInput, roundInput) {
   const { root, feature } = await resolveFeature(repo, argument);
+  const round = roundInput ? normalizeRound(roundInput) : await nextReviewRound(feature);
   const scope = await readScope(feature);
   if (scope.version !== 2) throw new Error('collect 需要 version 2 基线，请用当前版本 init 重新建立');
   const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
@@ -467,8 +618,19 @@ async function collectReviewPackage(repo, argument, scopesInput) {
     package: `${QA_DIR}/review-package.diff`,
   };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  // 每轮审查发放一次性 challenge；再次 collect 会换 nonce，旧凭据不能用于新轮次
+  const challenge = {
+    schemaVersion: 1,
+    feature: featureRelative(root, feature),
+    round,
+    nonce: randomUUID(),
+    treeDigest,
+    packagedAt,
+  };
+  await writeFile(path.join(feature, QA_DIR, CHALLENGE_FILE), `${JSON.stringify(challenge, null, 2)}\n`);
 
   console.log(`审查包已生成：${changedFiles.length} 个变更文件，${unreviewed.length} 个未审查文件，${outOfScope.length} 个范围外改动，${preexisting.length} 个开工前已有改动；tree ${treeDigest.slice(0, 12)}。`);
+  console.log(`审查 challenge 已生成：${round}，nonce ${challenge.nonce}；子代理写原文后用 review-package seal 封存。`);
   for (const item of outOfScope) console.log(`范围外改动：${item.path}（${item.reason}）`);
   if (outOfScope.length) {
     console.log(`属于本任务 → add 后重新 collect；不属于本任务（用户或其他进程的改动）→ 在 review-report 的 ## 范围说明 逐个写明来源；不要修改 ${QA_DIR}/scope.json`);
@@ -483,16 +645,33 @@ async function printDigest(repo, argument) {
   console.log(`tree: ${await computeTreeDigest(root, scope.scopes)}`);
 }
 
+/** collect 从参数中取出可选的 --round；其余参数仍交给范围解析 */
+function splitRoundFlag(args) {
+  const paths = [];
+  let round;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === '--round') {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith('--')) throw new Error('collect 的 --round 缺少值');
+      round = value;
+      index += 1;
+    } else {
+      paths.push(args[index]);
+    }
+  }
+  return { round, paths };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--') args.shift();
-  const [command, feature, ...scopes] = args;
-  const usage = '用法: review-package <init|add|collect|digest> <feature-dir> [-- <path...>]';
+  const [command, feature, ...rest] = args;
+  const usage = '用法: review-package <init|add|collect|digest|seal> <feature-dir> [--round r<n>] [-- <path...>]';
   if (command === '--help' || command === 'help' || !command) {
     console.log(usage);
     return;
   }
-  if (!feature || !['init', 'add', 'collect', 'digest'].includes(command)) {
+  if (!feature || !['init', 'add', 'collect', 'digest', 'seal'].includes(command)) {
     console.error(usage);
     process.exitCode = 1;
     return;
@@ -500,9 +679,12 @@ async function main() {
 
   try {
     const repo = process.cwd();
-    if (command === 'init') await initReviewBase(repo, feature, scopes);
-    else if (command === 'add') await addReviewScopes(repo, feature, scopes);
-    else if (command === 'collect') await collectReviewPackage(repo, feature, scopes);
+    if (command === 'init') await initReviewBase(repo, feature, rest);
+    else if (command === 'add') await addReviewScopes(repo, feature, rest);
+    else if (command === 'collect') {
+      const { round, paths } = splitRoundFlag(rest);
+      await collectReviewPackage(repo, feature, paths, round);
+    } else if (command === 'seal') await sealReview(repo, feature, rest);
     else await printDigest(repo, feature);
   } catch (error) {
     console.error(error.message);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -134,6 +135,81 @@ async function writeRaw(feature, round = 1, { standards = '无发现\n', spec = 
   await writeFile(path.join(feature, 'review', `r${round}-spec-axis.md`), spec);
 }
 
+async function readChallenge(feature) {
+  return JSON.parse(await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8'));
+}
+
+/** 按当前磁盘原文写一份自述凭据；用于验证 receipt 协议而非 seal 命令本身 */
+async function writeReceipt(feature, {
+  round = 'r1',
+  axis = 'standards',
+  nonce,
+  reviewerKind = 'subagent',
+  host = 'Claude Code',
+  pendingIds,
+  completedAt,
+  hash,
+  featureOverride,
+} = {}) {
+  const challenge = await readChallenge(feature);
+  const fileName = `r${round.slice(1)}-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+  const report = await readFile(path.join(feature, 'review', fileName));
+  const receipt = {
+    schemaVersion: 1,
+    feature: featureOverride ?? challenge.feature,
+    round,
+    axis,
+    nonce: nonce ?? challenge.nonce,
+    reviewerKind,
+    host,
+    reportPath: `review/${fileName}`,
+    sha256: hash ?? createHash('sha256').update(report).digest('hex'),
+    completedAt: completedAt ?? new Date().toISOString(),
+  };
+  if (pendingIds) receipt.pendingIds = pendingIds;
+  await writeFile(path.join(feature, 'review', fileName.replace(/\.md$/, '.source.json')), `${JSON.stringify(receipt, null, 2)}\n`);
+  return receipt;
+}
+
+async function writeReceipts(feature, { round = 'r1', nonce, pendingIds, ...rest } = {}) {
+  const challenge = await readChallenge(feature);
+  return {
+    standards: await writeReceipt(feature, { round, axis: 'standards', nonce: nonce ?? challenge.nonce, pendingIds, ...rest }),
+    spec: await writeReceipt(feature, { round, axis: 'spec', nonce: nonce ?? challenge.nonce, pendingIds, ...rest }),
+  };
+}
+
+/** 新协议仓库：保留 challenge，并为两轴写入有效凭据 */
+async function receiptRepo(t, options = {}) {
+  const result = await reviewRepo(t, { ...options, challenge: true });
+  const challenge = await readChallenge(result.feature);
+  await writeReceipts(result.feature, { nonce: challenge.nonce });
+  return { ...result, challenge };
+}
+
+/** 为单轴写一份同 nonce 子代理转录；hash 与 timestamp 可覆盖以覆盖强档负向分支 */
+async function strongTranscript(configDir, dir, feature, challenge, {
+  axis = 'standards',
+  name = `agent-${axis}`,
+  hash,
+  timestamp = new Date().toISOString(),
+  finalText,
+  quoteBinding = false,
+} = {}) {
+  const relative = `review/r1-${axis === 'standards' ? 'standards' : 'spec-axis'}.md`;
+  const fileHash = createHash('sha256').update(await readFile(path.join(feature, relative))).digest('hex');
+  return writeSubagent(configDir, dir, {
+    name,
+    binding: `.scratch/feature|r1|${axis}`,
+    promptExtra: quoteBinding
+      ? `  \`QA_REVIEW_NONCE: ${challenge.nonce}\``
+      : `QA_REVIEW_NONCE: ${challenge.nonce}`,
+    quoteBinding,
+    timestamp,
+    contents: [[{ type: 'text', text: finalText ?? `QA_REVIEW_RECEIPT: ${challenge.nonce}|${hash ?? fileHash}` }]],
+  });
+}
+
 function triageReport(rows) {
   return REPORT_OK.replace(
     '| --- | --- | --- | --- | --- |\n\n无发现',
@@ -151,6 +227,7 @@ async function reviewRepo(t, {
   deliveryArgv = ['node', '--version'],
   deliveryExit = 0,
   outsideChange = false,
+  challenge = false,
 } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'qa-review3-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -194,6 +271,8 @@ async function reviewRepo(t, {
     encoding: 'utf8',
   });
   assert.equal(collected.status, 0, collected.stderr);
+  // 既有测试模拟旧协议特性：删除 challenge 以继续走全等比对；新协议测试显式保留
+  if (!challenge) await rm(path.join(feature, '_qa', 'review-challenge.json'), { force: true });
   await writeFile(path.join(feature, 'review-report.md'), report);
   await writeRaw(feature);
   return { dir, feature };
@@ -1369,11 +1448,20 @@ async function writeMainSession(configDir, repoDir, { sessionModel = 'claude-opu
 }
 
 /** 子代理转录：entries 为 assistant 消息 content 列表，按顺序写入 */
-async function writeSubagent(configDir, repoDir, { name = 'agent-1', model, contents, binding, promptExtra = '', timestamp = new Date().toISOString() }) {
+async function writeSubagent(configDir, repoDir, {
+  name = 'agent-1',
+  model,
+  contents,
+  binding,
+  promptExtra = '',
+  quoteBinding = false,
+  timestamp = new Date().toISOString(),
+}) {
   const project = await projectDir(configDir, repoDir);
   const subagents = path.join(project, 'session-1', 'subagents');
   await mkdir(subagents, { recursive: true });
-  const prompt = ['审查', binding ? `QA_REVIEW_BINDING: ${binding}` : '', promptExtra].filter(Boolean).join('\n');
+  const bindingLine = binding ? `QA_REVIEW_BINDING: ${binding}` : '';
+  const prompt = ['审查', quoteBinding ? `  \`${bindingLine}\`` : bindingLine, promptExtra].filter(Boolean).join('\n');
   const lines = [{ type: 'user', message: { content: prompt } }, ...contents.map((content) => ({ type: 'assistant', timestamp, message: { model, content } }))];
   const file = path.join(subagents, `${name}.jsonl`);
   await writeFile(file, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
@@ -2485,4 +2573,370 @@ test('[HR-TC06-2] PASS 时不输出阻塞原因', async (t) => {
   const report = await checkFeature(feature, 'review');
   assert.equal(report.status, 'PASS', formatReport(report));
   assert.doesNotMatch(formatReport(report, 'review'), /阻塞原因/);
+});
+
+test('同 nonce 的转录凭据行与原文哈希一致时按强档核验', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  for (const [axis, relative, name] of [
+    ['standards', 'review/r1-standards.md', 'agent-standards'],
+    ['spec', 'review/r1-spec-axis.md', 'agent-spec'],
+  ]) {
+    const hash = createHash('sha256').update(await readFile(path.join(feature, relative))).digest('hex');
+    await writeSubagent(configDir, dir, {
+      name,
+      binding: `.scratch/feature|r1|${axis}`,
+      promptExtra: `QA_REVIEW_NONCE: ${challenge.nonce}`,
+      contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: ${challenge.nonce}|${hash}` }]],
+    });
+  }
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
+  assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+
+  for (const mode of ['missing', 'malformed']) {
+    for (const name of ['r1-standards', 'r1-spec-axis']) {
+      const receipt = path.join(feature, 'review', `${name}.source.json`);
+      if (mode === 'missing') await rm(receipt, { force: true });
+      else await writeFile(receipt, '{}\n');
+    }
+    const strong = await checkFeature(feature, 'review');
+    assert.equal(strong.status, 'PASS', `${mode}: ${formatReport(strong)}`);
+    assert.ok(strong.notes.includes('来源核验：转录（强）'), `${mode}: ${formatReport(strong)}`);
+    assert.ok(strong.notes.some((note) => note.includes(mode === 'missing' ? '缺少自述凭据' : '自述凭据格式错误')), `${mode}: ${formatReport(strong)}`);
+  }
+});
+
+test('没有同 nonce 转录时降为弱档或人工而不判失败', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  for (const [axis, name] of [['standards', 'agent-standards'], ['spec', 'agent-spec']]) {
+    await writeSubagent(configDir, dir, {
+      name,
+      binding: `.scratch/feature|r1|${axis}`,
+      promptExtra: 'QA_REVIEW_NONCE: 旧轮次-nonce',
+      contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: 旧轮次-nonce|${'a'.repeat(64)}` }]],
+    });
+  }
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+  assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+});
+
+test('复审输入缺少必交编号时强档仍失败', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRereviewRepo(t);
+  await writeMainSession(configDir, dir);
+  for (const [axis, relative, name] of [
+    ['standards', 'review/r2-standards.md', 'agent-standards'],
+    ['spec', 'review/r2-spec-axis.md', 'agent-spec'],
+  ]) {
+    const hash = createHash('sha256').update(await readFile(path.join(feature, relative))).digest('hex');
+    await writeSubagent(configDir, dir, {
+      name,
+      binding: `.scratch/feature|r2|${axis}`,
+      promptExtra: `QA_REVIEW_NONCE: ${challenge.nonce}`,
+      contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: ${challenge.nonce}|${hash}` }]],
+    });
+  }
+  const report = await checkFeature(feature, 'review');
+  assert.ok(codes(report).includes('REVIEW_REINPUT_MISSING'), formatReport(report));
+  const message = report.issues.find((item) => item.code === 'REVIEW_REINPUT_MISSING').message;
+  assert.match(message, /P-W1/);
+});
+
+test('只有凭据时输出自述凭据弱档', async (t) => {
+  const { feature } = await receiptRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+});
+
+test('弱档不新增 PASS-WEAK 状态', async (t) => {
+  const { feature } = await receiptRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.ok(['PASS', 'FAIL', 'BLOCKED'].includes(report.status));
+  assert.doesNotMatch(formatReport(report, 'review'), /PASS-WEAK/);
+});
+
+test('凭据哈希与原文不一致时 review 失败', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '无发现（seal 后又被修改）\n');
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+});
+
+test('凭据 nonce 与当前 challenge 不一致时 review 阻断', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeReceipt(feature, { axis: 'standards', nonce: '旧轮次-nonce' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_SOURCE_STALE'), formatReport(report));
+});
+
+test('凭据缺失、格式错误或时间早于 collect 只给 NOTE', async (t) => {
+  const expected = {
+    missing: '缺少自述凭据',
+    malformed: '自述凭据格式错误',
+    early: '自述时间早于 collect',
+  };
+  for (const mode of ['missing', 'malformed', 'early']) {
+    const { feature, challenge } = await receiptRepo(t);
+    const receipts = [
+      path.join(feature, 'review', 'r1-standards.source.json'),
+      path.join(feature, 'review', 'r1-spec-axis.source.json'),
+    ];
+    if (mode === 'missing') {
+      for (const file of receipts) await rm(file, { force: true });
+    } else if (mode === 'malformed') {
+      for (const file of receipts) await writeFile(file, '{}\n');
+    } else {
+      await writeReceipts(feature, {
+        nonce: challenge.nonce,
+        completedAt: new Date(Date.parse(challenge.packagedAt) - 1000).toISOString(),
+      });
+    }
+    const report = await checkFeature(feature, 'review');
+    assert.equal(report.status, 'PASS', `${mode}: ${formatReport(report)}`);
+    assert.ok(report.notes.some((note) => note.includes(expected[mode])), `${mode}: ${formatReport(report)}`);
+    assert.ok(!codes(report).some((code) => code === 'REVIEW_SOURCE_MISMATCH' || code === 'REVIEW_SOURCE_STALE'), `${mode}: ${formatReport(report)}`);
+  }
+
+  const { feature } = await receiptRereviewRepo(t);
+  await writeReceipts(feature, { round: 'r2', pendingIds: {} });
+  const malformed = await checkFeature(feature, 'review');
+  assert.equal(malformed.status, 'PASS', formatReport(malformed));
+  assert.ok(malformed.notes.some((note) => note.includes('自述凭据格式错误')), formatReport(malformed));
+  assert.ok(malformed.notes.includes('来源核验：未核验（人工）'), formatReport(malformed));
+});
+
+test('宿主声明与凭据宿主不一致只给 NOTE', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace(
+    '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
+    '审查方式：宿主=Kimi Code；两轴独立子代理',
+  ));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('审查方式声明的宿主与凭据 host 不一致')), formatReport(report));
+});
+
+test('空原文或有凭据也不能绕过原文检查', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '');
+  await writeReceipt(feature, { axis: 'standards' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_RAW_UNNUMBERED'), formatReport(report));
+});
+
+test('自述凭据缺待复核编号只给 NOTE', async (t) => {
+  const { feature } = await receiptRereviewRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('缺少复审必交编号') && note.includes('P-W1')), formatReport(report));
+});
+
+test('自述凭据含全部待复核编号时不报缺失', async (t) => {
+  const { feature } = await receiptRereviewRepo(t, { pendingIds: ['P-W1'] });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(!report.notes.some((note) => note.includes('缺少复审必交编号')), formatReport(report));
+});
+
+test('新轮次宿主声明不改变按证据选择路径', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace(
+    '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
+    '审查方式：宿主=Kimi Code；两轴独立子代理',
+  ));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+  assert.ok(!codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+});
+
+test('无 challenge 的旧轮次仍按旧逻辑核验', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '规范轴：无发现\n', spec: '需求轴：无发现\n' });
+  await writeMainSession(configDir, dir);
+  await writeSubagent(configDir, dir, {
+    name: 'agent-standards',
+    binding: '.scratch/feature|r1|standards',
+    contents: [[{ type: 'text', text: '规范轴：内容不同\n' }]],
+  });
+  await writeSubagent(configDir, dir, {
+    name: 'agent-spec',
+    binding: '.scratch/feature|r1|spec',
+    contents: [[{ type: 'text', text: '需求轴：无发现\n' }]],
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+
+  const legacy = await reviewRepo(t);
+  await writeRaw(legacy.feature, 1);
+  await writeFile(path.join(legacy.feature, 'review-report.md'), REPORT_OK.replace(
+    '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
+    '审查方式：宿主=Kimi Code；两轴独立子代理',
+  ));
+  const legacyReport = await checkFeature(legacy.feature, 'review');
+  assert.equal(legacyReport.status, 'PASS', formatReport(legacyReport));
+  assert.ok(legacyReport.notes.some((note) => note.includes('Claude Code 转录核验不适用')), formatReport(legacyReport));
+  assert.ok(!codes(legacyReport).includes('REVIEW_SOURCE_MISMATCH'), formatReport(legacyReport));
+});
+
+test('外部会话凭据按弱档接受', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeReceipts(feature, { reviewerKind: 'external-session', host: 'Codex' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+});
+
+/** r2 复审夹具：r1 的 P-W1 在 r2 已修，两轴凭据可带待复核编号 */
+async function receiptRereviewRepo(t, { pendingIds } = {}) {
+  const { dir, feature } = await reviewRepo(t, { challenge: true });
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '[P-W1] 未修\n' });
+  const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r2'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(collected.status, 0, collected.stderr);
+  const challenge = await readChallenge(feature);
+  await writeRaw(feature, 2, { standards: '无发现\n', spec: '[P-W1] 已修\n' });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-W1 | 本次修 | 已修 | r1 未修 → r2 已修 | 静态：测试 | |',
+  ]));
+  await writeReceipts(feature, { round: 'r2', nonce: challenge.nonce, pendingIds });
+  return { dir, feature, challenge };
+}
+
+test('challenge 未落盘审查原文时仍输出来源核验未核验', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await rm(path.join(feature, 'review'), { recursive: true, force: true });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：未核验（人工）'), formatReport(report));
+});
+
+test('强档转录哈希不一致时 review 失败', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, {
+    axis: 'standards',
+    hash: 'a'.repeat(64),
+  });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'FAIL', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), formatReport(report));
+});
+
+test('强档转录早于 collect 时阻断', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  const early = new Date(Date.parse(challenge.packagedAt) - 1000).toISOString();
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', timestamp: early });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec' });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_SOURCE_STALE'), formatReport(report));
+});
+
+test('多个同 nonce 转录时只给 NOTE 不判强档', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', name: 'agent-a' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', name: 'agent-b' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(report.notes.some((note) => note.includes('多个同 nonce')), formatReport(report));
+  assert.ok(!report.notes.includes('来源核验：转录（强）'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('同 nonce 转录没有凭据行时只给 NOTE', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', finalText: '只有审查结论，没有凭据行' });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(report.notes.some((note) => note.includes('没有可用的凭据行')), formatReport(report));
+  assert.ok(!report.notes.includes('来源核验：转录（强）'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('转录时间无法确认时只给 NOTE', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', timestamp: null });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec' });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(report.notes.some((note) => note.includes('转录时间无法确认')), formatReport(report));
+  assert.ok(!report.notes.includes('来源核验：转录（强）'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('转录 prompt 的绑定行带缩进和反引号时仍按强档核验', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir);
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'standards', quoteBinding: true });
+  await strongTranscript(configDir, dir, feature, challenge, { axis: 'spec', quoteBinding: true });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
+});
+
+test('单轴凭据缺失只影响该轴并保留另一轴', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await rm(path.join(feature, 'review', 'r1-standards.source.json'));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('r1-standards.md 缺少自述凭据')), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：未核验（人工）'), formatReport(report));
+  assert.ok(!codes(report).some((code) => code === 'REVIEW_SOURCE_MISMATCH' || code === 'REVIEW_SOURCE_STALE'), formatReport(report));
+});
+
+test('跨特性凭据按来源过期阻断', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await writeReceipt(feature, {
+    axis: 'standards',
+    nonce: 'other-feature-nonce',
+    featureOverride: '.scratch/other',
+  });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_SOURCE_STALE'), formatReport(report));
+});
+
+test('challenge 与审查包 manifest 不一致时 review 失败', async (t) => {
+  for (const [field, value] of [['treeDigest', '0'.repeat(64)], ['packagedAt', new Date(0).toISOString()]]) {
+    const { feature, challenge } = await receiptRepo(t);
+    const challengePath = path.join(feature, '_qa', 'review-challenge.json');
+    await writeFile(challengePath, `${JSON.stringify({ ...challenge, [field]: value }, null, 2)}\n`);
+    const report = await checkFeature(feature, 'review');
+    assert.equal(report.status, 'FAIL', `${field}: ${formatReport(report)}`);
+    assert.ok(codes(report).includes('REVIEW_SOURCE_MISMATCH'), `${field}: ${formatReport(report)}`);
+  }
+});
+
+test('challenge 只有单轴原文时不抛异常并输出未核验', async (t) => {
+  const { feature } = await receiptRepo(t);
+  await rm(path.join(feature, 'review', 'r1-spec-axis.md'));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_RAW_MISSING'), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：未核验（人工）'), formatReport(report));
 });
