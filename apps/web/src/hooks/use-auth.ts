@@ -74,11 +74,44 @@ export function useRedirectRealUserToHome() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const router = useRouter();
 
+  // 检查是否是被中间件拦截回登录页（如 ?redirect=...）或显式登出（?logout=...）
+  // 这两种情况下服务端均已确认当前请求无有效 Cookie 凭证；客户端若存在残留登录态，必须熔断自愈，严禁跳往 /home 导致死循环
+  const isServerUnauthenticated = typeof window !== 'undefined' && (() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      return searchParams.has('redirect') || searchParams.has('logout');
+    } catch {
+      return false;
+    }
+  })();
+
   useEffect(() => {
+    if (isServerUnauthenticated) {
+      if (isAuthenticated) {
+        // 服务端明确判定未登录，强制同步重置客户端脏状态并清理存储
+        useAuthStore.setState({
+          user: null,
+          accessToken: null,
+          isAuthenticated: false,
+          status: 'ready',
+        });
+        try {
+          localStorage.removeItem('ai-app-auth');
+        } catch {
+          // 忽略存储清理异常
+        }
+      }
+      return;
+    }
+
     if (status === 'ready' && isAuthenticated) {
       router.replace('/home');
     }
-  }, [status, isAuthenticated, router]);
+  }, [status, isAuthenticated, isServerUnauthenticated, router]);
+
+  if (isServerUnauthenticated) {
+    return false;
+  }
 
   return status === 'ready' && isAuthenticated;
 }

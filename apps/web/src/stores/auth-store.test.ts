@@ -132,4 +132,43 @@ describe('accessToken 内存化契约', () => {
     expect(persisted.state?.user?.username).toBe('test_user');
     expect(persisted.state?.accessToken).toBeUndefined();
   });
+
+  it('logout 同步清空内存状态与 localStorage，阻断持久化脏数据写回', async () => {
+    seedPersistedSession();
+    logoutMock.mockResolvedValue({ success: true });
+
+    // mock window.location.href
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = { href: '' } as unknown as Location;
+
+    const store = createAuthStore();
+    expect(store.getState().isAuthenticated).toBe(true);
+    expect(localStorage.getItem('ai-app-auth')).not.toBeNull();
+
+    await store.getState().logout();
+
+    // 验证内存状态第一时间同步置为未登录
+    expect(store.getState().isAuthenticated).toBe(false);
+    expect(store.getState().user).toBeNull();
+    expect(store.getState().accessToken).toBeNull();
+    expect(store.getState().status).toBe('ready');
+
+    // 验证 localStorage 被物理清除
+    expect(localStorage.getItem('ai-app-auth')).toBeNull();
+    expect(window.location.href).toBe('/login?logout=1');
+  });
+
+  it('initialize 刷新失败时彻底置为未登录状态', async () => {
+    seedPersistedSession();
+    refreshMock.mockResolvedValue({ accessToken: null });
+
+    const store = createAuthStore();
+    expect(store.getState().isAuthenticated).toBe(true);
+
+    await store.getState().initialize();
+
+    expect(store.getState().isAuthenticated).toBe(false);
+    const persisted = JSON.parse(localStorage.getItem('ai-app-auth') ?? '{}');
+    expect(persisted.state?.isAuthenticated).toBe(false);
+  });
 });

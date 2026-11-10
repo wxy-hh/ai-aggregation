@@ -90,20 +90,29 @@ export function createAuthStore(_options?: AuthStoreOptions) {
         },
 
         logout: async () => {
-          // 清除持久化的登录数据，防止公共电脑上的残留
+          // 1. 立即同步重置内存中的所有认证状态，阻断任何可能的持久化重新写回
+          set({
+            user: null,
+            accessToken: null,
+            isAuthenticated: false,
+            status: 'ready',
+          });
+
+          // 2. 清除持久化的登录数据，防止公共电脑上的残留
           try {
             localStorage.removeItem('ai-app-auth');
           } catch {
             // 忽略清除失败
           }
 
-          // 登出接口只接受 POST，用请求调用（服务端清 cookie），再由前端跳转登录页。
+          // 3. 登出接口只接受 POST，用请求调用（服务端清 cookie），再由前端跳转登录页。
           try {
             await authApi.logout();
           } catch {
             // 忽略登出接口失败
           }
 
+          // 4. 硬跳转刷新应用上下文
           window.location.href = '/login?logout=1';
         },
 
@@ -199,13 +208,23 @@ export function createAuthStore(_options?: AuthStoreOptions) {
             if (newToken) {
               await fetchUser();
             } else {
-              // 无有效令牌，置为未登录
+              // 无有效令牌，置为未登录并清理失效本地持久化数据
               set({ user: null, accessToken: null, isAuthenticated: false });
+              try {
+                localStorage.removeItem('ai-app-auth');
+              } catch {
+                // 忽略清除失败
+              }
             }
           })()
             .catch((bootstrapError) => {
               console.warn('[auth-store] 认证引导异常:', bootstrapError);
               set({ user: null, accessToken: null, isAuthenticated: false });
+              try {
+                localStorage.removeItem('ai-app-auth');
+              } catch {
+                // 忽略清除失败
+              }
             })
             .finally(() => {
               // 引导收尾：单向迁移到 'ready'
