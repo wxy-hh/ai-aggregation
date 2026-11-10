@@ -8,7 +8,7 @@ vi.hoisted(() => {
 
 import { prisma } from '../client';
 import {
-  insertDocumentChunks,
+  insertDocumentChunksWithInheritance,
   searchDocumentChunksDense,
   searchDocumentChunksLexical,
   updateDocumentMetadataInPlace,
@@ -75,7 +75,7 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
     docV1Id = doc1.id;
 
     // 插入 doc1 的切片（含 ADR-0008 编号和中文切词）
-    await insertDocumentChunks([
+    await insertDocumentChunksWithInheritance([
       {
         documentId: docV1Id,
         knowledgeBaseId: kbAId,
@@ -102,7 +102,13 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
         tokenCount: 30,
         embedding: distantVector,
       },
-    ]);
+    ], {
+      sourceType: 'file',
+      name: 'architecture-guide.md',
+      storageKey: `docs/${userAId}/${kbAId}/v1/architecture-guide.md`,
+      tags: [],
+      metadata: {},
+    });
 
     // 4. 创建经历版本升级的文档 (从 version 1 升级到 version 2)
     const doc2 = await prisma.document.create({
@@ -118,7 +124,7 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
     docV2Id = doc2.id;
 
     // 插入旧版本 version=1 的废弃切片
-    await insertDocumentChunks([
+    await insertDocumentChunksWithInheritance([
       {
         documentId: docV2Id,
         knowledgeBaseId: kbAId,
@@ -143,7 +149,13 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
         tokenCount: 30,
         embedding: similarVector,
       },
-    ]);
+    ], {
+      sourceType: 'file',
+      name: 'versioned-doc.md',
+      storageKey: `docs/${userAId}/${kbAId}/v2/versioned-doc.md`,
+      tags: [],
+      metadata: {},
+    });
 
     // 5. 创建软删除文档 (deletedAt 非空)
     const docDeleted = await prisma.document.create({
@@ -159,7 +171,7 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
     });
     docDeletedId = docDeleted.id;
 
-    await insertDocumentChunks([
+    await insertDocumentChunksWithInheritance([
       {
         documentId: docDeletedId,
         knowledgeBaseId: kbAId,
@@ -172,7 +184,13 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
         tokenCount: 20,
         embedding: baseVector,
       },
-    ]);
+    ], {
+      sourceType: 'file',
+      name: 'secret-deleted.md',
+      storageKey: `docs/${userAId}/${kbAId}/v1/secret-deleted.md`,
+      tags: [],
+      metadata: {},
+    });
   });
 
   afterAll(async () => {
@@ -364,6 +382,319 @@ describe('ChunkStore 检索增强集成测试 (工单 06)', () => {
       filter: { tags: ['未存在标签_xyz'] },
     });
     expect(lexicalMismatched.length).toBe(0);
+  });
+});
+
+describe('ChunkStore 切片系统字段保留 (C1 / ADR-0032 2026-11-10 修订)', () => {
+  let userId: string;
+  let kbId: string;
+
+  const baseVector = new Array(1024).fill(0);
+  baseVector[0] = 1.0;
+
+  /** 模拟 Worker 写入的完整切片（含 B 层系统字段） */
+  const workerStyleMetadata = (storageKey: string, fileName: string, tags: string[]) => ({
+    tags,
+    sourceType: 'file',
+    fileName,
+    storageKey,
+    parsedContentKey: storageKey.replace(/\/[^/]+$/, '/content.md'),
+  });
+
+  async function fetchChunkMetadata(documentId: string) {
+    const rows = await prisma.$queryRaw<Array<{ metadata: unknown }>>`
+      SELECT "metadata" FROM "document_chunks"
+      WHERE "document_id" = ${documentId}
+      ORDER BY "chunk_index" ASC;
+    `;
+    return rows.map((r) => r.metadata as Record<string, unknown>);
+  }
+
+  async function seedWorkerStyleDoc(name: string) {
+    const doc = await prisma.document.create({
+      data: {
+        knowledgeBaseId: kbId,
+        userId,
+        name,
+        storageKey: `docs/${userId}/${kbId}/v1/${name}`,
+        version: 1,
+        status: 'ready',
+        sourceType: 'file',
+        tags: ['原始标签'],
+        metadata: { department: 'rd', outline: { title: '应被剔除' } },
+      },
+    });
+    const facts = {
+      sourceType: 'file',
+      name,
+      storageKey: `docs/${userId}/${kbId}/v1/${name}`,
+      tags: ['原始标签'],
+      metadata: {},
+    };
+    await insertDocumentChunksWithInheritance([
+      {
+        documentId: doc.id,
+        knowledgeBaseId: kbId,
+        userId,
+        documentVersion: 1,
+        chunkIndex: 0,
+        content: `${name} 的第一段切片内容：连败熔断触发条件。`,
+        contentSegmented: `${name} 的 第一段 切片 内容 连败 熔断 触发 条件`,
+        tokenCount: 20,
+        metadata: workerStyleMetadata(`docs/${userId}/${kbId}/v1/${name}`, name, ['原始标签']),
+        embedding: baseVector,
+      },
+      {
+        documentId: doc.id,
+        knowledgeBaseId: kbId,
+        userId,
+        documentVersion: 1,
+        chunkIndex: 1,
+        content: `${name} 的第二段切片内容：珀金协议规范。`,
+        contentSegmented: `${name} 的 第二段 切片 内容 珀金 协议 规范`,
+        tokenCount: 18,
+        metadata: workerStyleMetadata(`docs/${userId}/${kbId}/v1/${name}`, name, ['原始标签']),
+        embedding: baseVector,
+      },
+    ], facts);
+    return doc;
+  }
+
+  beforeAll(async () => {
+    const user = await prisma.user.create({
+      data: { username: `c1_field_keep_${Date.now()}`, tokens: 10000 },
+    });
+    userId = user.id;
+    const kb = await prisma.knowledgeBase.create({
+      data: { userId, name: 'C1字段保留测试库' },
+    });
+    kbId = kb.id;
+  });
+
+  afterAll(async () => {
+    if (userId) {
+      await prisma.user.delete({ where: { id: userId } });
+    }
+    await prisma.$disconnect();
+  });
+
+  it('TC01-1 断言1: 编辑标签与自定义元数据后 B 层系统字段逐键保留', async () => {
+    const doc = await seedWorkerStyleDoc('c1-keep-a.md');
+    const before = await fetchChunkMetadata(doc.id);
+    expect(before[0].sourceType).toBe('file');
+
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['架构规范', '2026'],
+      metadata: { department: '平台组', year: 2026 },
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    for (const chunk of after) {
+      expect(chunk.sourceType).toBe(before[0].sourceType);
+      expect(chunk.fileName).toBe(before[0].fileName);
+      expect(chunk.storageKey).toBe(before[0].storageKey);
+      expect(chunk.parsedContentKey).toBe(before[0].parsedContentKey);
+    }
+  });
+
+  it('TC01-2 断言2: A 层为编辑后值，未涉及的主表自定义键保留，outline 不流入切片', async () => {
+    const doc = await seedWorkerStyleDoc('c1-keep-b.md');
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['新标签'],
+      // retention 模拟路由层浅合并后携带的既有自定义键（见 TC03-3 路由合并断言）
+      metadata: { department: '平台组', retention: '长期' },
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    expect(after[0].tags).toEqual(['新标签']);
+    expect(after[0].department).toBe('平台组');
+    // 未涉及的既有自定义键随合并载荷保留到切片
+    expect(after[0].retention).toBe('长期');
+    expect(after[0]).not.toHaveProperty('outline');
+    expect(after[0]).not.toHaveProperty('year');
+  });
+
+  it('TC01-3 断言3: 切片私有键因合并语义保留', async () => {
+    const doc = await seedWorkerStyleDoc('c1-keep-c.md');
+    // 构造切片私有键（逐片不同的值，模拟任何调用方的切片级扩展）
+    await prisma.$executeRaw`
+      UPDATE "document_chunks"
+      SET "metadata" = "metadata" || '{"privateFlag": true}'::jsonb
+      WHERE "document_id" = ${doc.id};
+    `;
+
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['新标签'],
+      metadata: { department: '平台组' },
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    for (const chunk of after) {
+      expect(chunk.privateFlag).toBe(true);
+    }
+  });
+
+  it('TC01-4 断言4: MetadataFilter 按新标签命中、按旧标签不命中', async () => {
+    const doc = await seedWorkerStyleDoc('c1-keep-d.md');
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['架构规范'],
+      metadata: { department: '平台组' },
+    });
+
+    const matched = await searchDocumentChunksLexical({
+      userId,
+      knowledgeBaseId: kbId,
+      query: '连败 熔断',
+      topK: 5,
+      filter: { tags: ['架构规范'] },
+    });
+    expect(matched.length).toBeGreaterThan(0);
+    expect(matched.some((m) => m.documentId === doc.id)).toBe(true);
+
+    const oldTagMissed = await searchDocumentChunksLexical({
+      userId,
+      knowledgeBaseId: kbId,
+      query: '连败 熔断',
+      topK: 5,
+      filter: { tags: ['原始标签'] },
+    });
+    expect(oldTagMissed.filter((m) => m.documentId === doc.id).length).toBe(0);
+  });
+
+  it('TC01-5 断言5: 编辑前后切片 content、contentSegmented、embedding 不变（不重切块不重向量化）', async () => {
+    const doc = await seedWorkerStyleDoc('c1-keep-e.md');
+    const before = await prisma.$queryRaw<Array<{ content: string; content_segmented: string; embedding: string }>>`
+      SELECT "content", "content_segmented", "embedding"::text AS "embedding"
+      FROM "document_chunks"
+      WHERE "document_id" = ${doc.id}
+      ORDER BY "chunk_index" ASC;
+    `;
+
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['架构规范'],
+      metadata: { department: '平台组' },
+    });
+
+    const after = await prisma.$queryRaw<Array<{ content: string; content_segmented: string; embedding: string }>>`
+      SELECT "content", "content_segmented", "embedding"::text AS "embedding"
+      FROM "document_chunks"
+      WHERE "document_id" = ${doc.id}
+      ORDER BY "chunk_index" ASC;
+    `;
+    expect(after.map((r) => r.content)).toEqual(before.map((r) => r.content));
+    expect(after.map((r) => r.content_segmented)).toEqual(before.map((r) => r.content_segmented));
+    expect(after.map((r) => r.embedding)).toEqual(before.map((r) => r.embedding));
+  });
+
+  it('TC02-1 断言1: 空标签编辑后切片 tags 为 [] 且系统字段仍在', async () => {
+    const doc = await seedWorkerStyleDoc('c1-empty-tags.md');
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: [],
+      metadata: {},
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    for (const chunk of after) {
+      expect(chunk.tags).toEqual([]);
+      expect(chunk.sourceType).toBe('file');
+      expect(chunk.storageKey).toBe(`docs/${userId}/${kbId}/v1/c1-empty-tags.md`);
+    }
+  });
+
+  it('TC05-1 断言1: 存量残缺切片（缺失 B 层键）在编辑后自动补齐为主表派生值', async () => {
+    const doc = await seedWorkerStyleDoc('c1-self-heal.md');
+    // 构造存量脏数据：抹掉 B 层键（模拟历史整体覆盖 bug）
+    await prisma.$executeRaw`
+      UPDATE "document_chunks"
+      SET "metadata" = '{}'::jsonb
+      WHERE "document_id" = ${doc.id};
+    `;
+    const dirty = await fetchChunkMetadata(doc.id);
+    expect(dirty[0]).not.toHaveProperty('sourceType');
+
+    await updateDocumentMetadataInPlace({
+      documentId: doc.id,
+      userId,
+      tags: ['自愈标签'],
+      metadata: {},
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    for (const chunk of after) {
+      expect(chunk.sourceType).toBe('file');
+      expect(chunk.fileName).toBe('c1-self-heal.md');
+      expect(chunk.storageKey).toBe(`docs/${userId}/${kbId}/v1/c1-self-heal.md`);
+      expect(chunk.parsedContentKey).toBe(`docs/${userId}/${kbId}/v1/content.md`);
+    }
+  });
+
+  it('TC08 store 半边: replaceDocumentChunksInTransaction 经继承事实构造的切片元数据与共享纯函数逐键一致', async () => {
+    const doc = await prisma.document.create({
+      data: {
+        knowledgeBaseId: kbId,
+        userId,
+        name: 'c1-replace.md',
+        storageKey: `docs/${userId}/${kbId}/v1/c1-replace.md`,
+        version: 2,
+        status: 'processing',
+        sourceType: 'file',
+        tags: ['旧标签'],
+        metadata: { author: 'alice', outline: { title: '应被剔除' } },
+      },
+    });
+
+    const { replaceDocumentChunksInTransaction } = await import('../rag/chunk-store');
+    const { buildChunkInheritedMetadata } = await import('@repo/shared');
+
+    await replaceDocumentChunksInTransaction({
+      documentId: doc.id,
+      version: 2,
+      metadata: { author: 'alice' },
+      inheritance: {
+        sourceType: 'file',
+        name: 'c1-replace.md',
+        storageKey: `docs/${userId}/${kbId}/v1/c1-replace.md`,
+        tags: ['重建标签'],
+        metadata: { author: 'alice', outline: { title: '应被剔除' } },
+      },
+      chunks: [
+        {
+          documentId: doc.id,
+          knowledgeBaseId: kbId,
+          userId,
+          documentVersion: 2,
+          chunkIndex: 0,
+          content: '重建后的切片内容。',
+          contentSegmented: '重建 后 的 切片 内容',
+          tokenCount: 10,
+          embedding: baseVector,
+        },
+      ],
+    });
+
+    const after = await fetchChunkMetadata(doc.id);
+    expect(after.length).toBe(1);
+    const expected = buildChunkInheritedMetadata({
+      sourceType: 'file',
+      name: 'c1-replace.md',
+      storageKey: `docs/${userId}/${kbId}/v1/c1-replace.md`,
+      tags: ['重建标签'],
+      metadata: { author: 'alice', outline: { title: '应被剔除' } },
+    });
+    expect(after[0]).toEqual(expected);
+    expect(after[0].parsedContentKey).toBe(`docs/${userId}/${kbId}/v1/content.md`);
   });
 });
 

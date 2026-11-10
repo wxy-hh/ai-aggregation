@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     currentUser: { id: 'user_1', username: 'testuser' },
     docFindFirst: vi.fn(),
     docUpdate: vi.fn(),
+    updateMetaInPlace: vi.fn(),
   };
 });
 
@@ -26,9 +27,10 @@ vi.mock('@repo/db', () => ({
       update: mocks.docUpdate,
     },
   },
+  updateDocumentMetadataInPlace: mocks.updateMetaInPlace,
 }));
 
-import { GET, DELETE } from './route';
+import { GET, DELETE, PATCH } from './route';
 
 describe('GET & DELETE /api/knowledge-bases/[id]/documents/[docId] (单文档状态轮询与软删除)', () => {
   const routeContext = {
@@ -149,6 +151,73 @@ describe('GET & DELETE /api/knowledge-bases/[id]/documents/[docId] (单文档状
         data: {
           deletedAt: expect.any(Date),
         },
+      });
+    });
+  });
+
+  describe('PATCH /api/knowledge-bases/[id]/documents/[docId] (C1 系统保护键守门)', () => {
+    const patchUrl = 'http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1';
+
+    beforeEach(() => {
+      mocks.updateMetaInPlace.mockReset();
+    });
+
+    const existingDoc = {
+      id: 'doc_1',
+      tags: ['旧标签'],
+      metadata: { department: 'rd' },
+    };
+
+    it('TC03-1 断言1: metadata 含系统派生键 storageKey 返回 400 与中文文案', async () => {
+      mocks.docFindFirst.mockResolvedValueOnce(existingDoc);
+
+      const req = new NextRequest(patchUrl, {
+        method: 'PATCH',
+        body: JSON.stringify({ metadata: { storageKey: 'hacked/key' } }),
+      });
+      const res = await PATCH(req, routeContext);
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toContain('系统保护字段');
+      expect(mocks.updateMetaInPlace).not.toHaveBeenCalled();
+    });
+
+    it('TC03-2 断言2: metadata 含溯源键 sourceSessionId 返回 400', async () => {
+      mocks.docFindFirst.mockResolvedValueOnce(existingDoc);
+
+      const req = new NextRequest(patchUrl, {
+        method: 'PATCH',
+        body: JSON.stringify({ metadata: { sourceSessionId: 'sess_hack' } }),
+      });
+      const res = await PATCH(req, routeContext);
+
+      expect(res.status).toBe(400);
+      expect(mocks.updateMetaInPlace).not.toHaveBeenCalled();
+    });
+
+    it('TC03-3 断言3: 仅传合法自定义键与标签时 200 且切片同步', async () => {
+      mocks.docFindFirst.mockResolvedValueOnce(existingDoc);
+      mocks.updateMetaInPlace.mockResolvedValueOnce({ documentId: 'doc_1', updatedChunkCount: 2 });
+
+      const req = new NextRequest(patchUrl, {
+        method: 'PATCH',
+        body: JSON.stringify({ tags: ['新标签'], metadata: { year: 2026 } }),
+      });
+      const res = await PATCH(req, routeContext);
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.tags).toEqual(['新标签']);
+      // 主表既有 metadata 浅层合并保留
+      expect(body.data.metadata.department).toBe('rd');
+      expect(body.data.metadata.year).toBe(2026);
+      expect(mocks.updateMetaInPlace).toHaveBeenCalledWith({
+        documentId: 'doc_1',
+        userId: 'user_1',
+        tags: ['新标签'],
+        metadata: { department: 'rd', year: 2026 },
       });
     });
   });

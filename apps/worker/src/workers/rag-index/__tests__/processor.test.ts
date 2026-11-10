@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { RagIndexJobData } from '@repo/queue';
+import { buildChunkInheritedMetadata } from '@repo/shared';
 import { processRagIndexJob } from '../processor';
 
 describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
@@ -17,10 +18,19 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     status: string;
     deletedAt: Date | null;
     errorMessage: string | null;
+    tags?: string[];
+    sourceType?: string;
+    metadata?: Record<string, unknown>;
   } | null;
 
   let updateCalls: Array<{ where: { id: string }; data: Record<string, unknown> }>;
-  let replaceCalls: Array<{ documentId: string; version: number; chunks: any[]; metadata?: any }>;
+  let replaceCalls: Array<{
+    documentId: string;
+    version: number;
+    chunks: any[];
+    metadata?: any;
+    inheritance?: any;
+  }>;
   const mockEmbeddingModel = {
     specificationVersion: 'v1',
     modelId: 'mock-bge-m3',
@@ -344,11 +354,15 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       'text/markdown'
     );
 
-    // 验证切片包含 parsedContentKey
+    // 验证切片经继承事实构造后含 parsedContentKey（C1：processor 不再自行拼 metadata，
+    // 由共享构造规则在 chunk-store 层统一拼装）
     expect(replaceCalls.length).toBe(1);
-    expect(replaceCalls[0].chunks[0].metadata.parsedContentKey).toBe(
-      'docs/user_test_789/doc_test_123/v1/content.md'
+    expect(replaceCalls[0].chunks[0].metadata).toBeUndefined();
+    expect(replaceCalls[0].inheritance.storageKey).toBe(
+      'docs/user_test_789/doc_test_123/v1/inventory.csv'
     );
+    const inherited = buildChunkInheritedMetadata(replaceCalls[0].inheritance);
+    expect(inherited.parsedContentKey).toBe('docs/user_test_789/doc_test_123/v1/content.md');
   });
 
   it('P-W7 验证：存量文档重建索引时，旧 outline 不会污染切片 metadata，且 Document 大纲元数据被干净覆盖', async () => {
@@ -417,9 +431,16 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(replaceCalls.length).toBe(1);
     const insertedChunk = replaceCalls[0].chunks[0];
 
-    // 断言 1：切片的 metadata 绝对不包含 outline 字段，根除切片数据膨胀 (P-W7 / S-J3)
-    expect(insertedChunk.metadata).not.toHaveProperty('outline');
-    expect(insertedChunk.metadata.author).toBe('alice');
+    // 断言 1（C1 新契约）：processor 不再自行拼切片 metadata，改传文档继承事实；
+    // outline 由共享构造规则剔除，根除切片数据膨胀 (P-W7 / S-J3)
+    expect(insertedChunk.metadata).toBeUndefined();
+    expect(replaceCalls[0].inheritance.metadata.author).toBe('alice');
+    const inherited = buildChunkInheritedMetadata(replaceCalls[0].inheritance);
+    expect(inherited).not.toHaveProperty('outline');
+    expect(inherited.author).toBe('alice');
+    expect(inherited.sourceType).toBe('file');
+    expect(inherited.fileName).toBe('test.md');
+    expect(inherited.tags).toEqual(['安全']);
 
     // 断言 2：Document 的新 metadata 成功更新为新解析出的大纲，不再残留旧大纲
     expect(replaceCalls[0].metadata.outline.tree[0].title).toBe('新章节标题');

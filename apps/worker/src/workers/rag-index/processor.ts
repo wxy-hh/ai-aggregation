@@ -271,13 +271,13 @@ export async function processRagIndexJob(
     throw error;
   }
 
-  // 6. 构造入库切片数据结构
-  const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
+  // 6. 准备入库切片数据；切片元数据不再由 processor 拼装，
+  //    改传文档继承事实，由共享构造规则在 chunk-store 层统一构造 (C1 / ADR-0032 修订)
   const rawDocMetadata =
     doc.metadata && typeof doc.metadata === 'object' && !Array.isArray(doc.metadata)
       ? (doc.metadata as Record<string, unknown>)
       : {};
-  // 显式解构剔除历史旧 outline，确保切片 metadata 干净且更新时不会残留过期大纲 (P-W7 / ADR-0036)
+  // 显式解构剔除历史旧 outline，确保 Document 主表 metadata 干净且更新时不会残留过期大纲 (P-W7 / ADR-0036)
   const { outline: _oldOutline, ...cleanDocMetadata } = rawDocMetadata;
 
   const updatedDocMetadata: Record<string, unknown> = {
@@ -298,14 +298,6 @@ export async function processRagIndexJob(
     headingPath: chunk.headingPath,
     pageNumber: chunk.pageNumber,
     tokenCount: chunk.tokenCount,
-    metadata: {
-      ...cleanDocMetadata,
-      tags: doc.tags || [],
-      sourceType: doc.sourceType,
-      fileName,
-      storageKey,
-      parsedContentKey,
-    },
     embedding: allEmbeddings[idx],
   }));
 
@@ -316,6 +308,16 @@ export async function processRagIndexJob(
       version,
       chunks: chunksToInsert,
       metadata: updatedDocMetadata,
+      inheritance: {
+        sourceType:
+          (doc as { sourceType?: string }).sourceType ||
+          (jobData as { sourceType?: string }).sourceType ||
+          'file',
+        name: fileName,
+        storageKey,
+        tags: (doc as { tags?: string[] }).tags || [],
+        metadata: cleanDocMetadata,
+      },
     });
 
     logger.info('RAG 文档索引成功入库', {

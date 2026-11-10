@@ -13,10 +13,13 @@ import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 import { PDFParse } from 'pdf-parse';
-import { RAG_CHUNK_CONFIG, type DocumentOutline } from '@repo/shared';
+import { RAG_CHUNK_CONFIG, estimateTokenCount, type DocumentOutline } from '@repo/shared';
 import { parseDocxBuffer } from './docx-parser';
 import { parseTableBuffer, parseCsvString } from './table-parser';
 import { buildDocumentOutline } from './outline-extractor';
+
+// 中英混合 Token 估算的唯一事实源已迁入 @repo/shared (C1)，此处转出口保持既有引用路径不变
+export { estimateTokenCount };
 
 /**
  * 带有可选完整 Markdown 提纯快照与层级大纲树的切片集合 (ADR-0036)
@@ -73,18 +76,6 @@ export function segmentChinese(text: string): string {
     .join(' ');
 }
 
-/**
- * 估算文本 Token 数量（中英混合启发式计算）
- */
-export function estimateTokenCount(text: string): number {
-  if (!text) return 0;
-  // 匹配中文字符及全角标点
-  const chineseChars = text.match(/[一-龥　-〿！-～]/g)?.length || 0;
-  // 剩余其他字符（英文/数字/空格）
-  const otherChars = Math.max(0, text.length - chineseChars);
-  // 中文字符约 1 字符 ≈ 1 token，西文字符约 4 字符 ≈ 1 token
-  return Math.ceil(chineseChars + otherChars / 4);
-}
 
 /**
  * Markdown 章节扫描与标题层级提取

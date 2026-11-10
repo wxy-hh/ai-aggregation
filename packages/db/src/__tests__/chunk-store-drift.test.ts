@@ -8,7 +8,7 @@ vi.hoisted(() => {
 
 import { prisma } from '../client';
 import {
-  insertDocumentChunks,
+  insertDocumentChunksWithInheritance,
   deleteDocumentChunks,
   searchDocumentChunksDense,
   searchDocumentChunksLexical,
@@ -174,21 +174,30 @@ describe('RAG 数据库 Schema Drift 与 ChunkStore 契约验证', () => {
     dummyEmbedding[0] = 0.8;
     dummyEmbedding[1] = 0.6;
 
-    const count = await insertDocumentChunks([
+    const count = await insertDocumentChunksWithInheritance(
+      [
+        {
+          documentId: testDocId,
+          knowledgeBaseId: testKbId,
+          userId: testUserId,
+          documentVersion: 1,
+          chunkIndex: 0,
+          content: 'AI 聚合平台的混合检索架构基于倒数排名融合算法与 PostgreSQL pgvector。',
+          contentSegmented: 'AI 聚合 平台 的 混合 检索 架构 基于 倒数 排名 融合 算法 与 PostgreSQL pgvector',
+          headingPath: '架构设计 > 混合检索',
+          pageNumber: 1,
+          tokenCount: 65,
+          embedding: dummyEmbedding,
+        },
+      ],
       {
-        documentId: testDocId,
-        knowledgeBaseId: testKbId,
-        userId: testUserId,
-        documentVersion: 1,
-        chunkIndex: 0,
-        content: 'AI 聚合平台的混合检索架构基于倒数排名融合算法与 PostgreSQL pgvector。',
-        contentSegmented: 'AI 聚合 平台 的 混合 检索 架构 基于 倒数 排名 融合 算法 与 PostgreSQL pgvector',
-        headingPath: '架构设计 > 混合检索',
-        pageNumber: 1,
-        tokenCount: 65,
-        embedding: dummyEmbedding,
-      },
-    ]);
+        sourceType: 'file',
+        name: 'test-spec.md',
+        storageKey: `docs/${testUserId}/${testKbId}/v1/test-spec.md`,
+        tags: [],
+        metadata: {},
+      }
+    );
     expect(count).toBe(1);
 
     // 稠密向量路检索：用相同向量检索，相似度应接近 1.0

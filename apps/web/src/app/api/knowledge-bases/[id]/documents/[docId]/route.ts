@@ -8,6 +8,7 @@
 
 import { NextRequest } from 'next/server';
 import { prisma, updateDocumentMetadataInPlace } from '@repo/db';
+import { isProtectedMetadataKey } from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
@@ -129,6 +130,10 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         for (const [key, val] of Object.entries(body.metadata)) {
           if (!/^[a-zA-Z0-9_-]{1,32}$/.test(key)) {
             return ApiError.badRequest(`元数据键名非法: ${key}，仅允许 1-32 位字母、数字、下划线及连字符`);
+          }
+          // C1 / ADR-0032 修订：系统派生键与溯源键只从主表权威重算，禁止请求体写入
+          if (isProtectedMetadataKey(key)) {
+            return ApiError.badRequest(`元数据键名 ${key} 为系统保护字段，禁止手动更新`);
           }
           nextMetadata[key] = val;
         }

@@ -10,6 +10,11 @@
 
 import { prisma } from '../client';
 import type { Prisma } from '@prisma/client';
+import {
+  buildChunkInheritedMetadata,
+  deriveParsedContentKey,
+  type ChunkInheritanceFacts,
+} from '@repo/shared';
 import { buildMetadataFilterClause, type MetadataFilter } from './metadata-filter';
 
 /**
@@ -114,8 +119,12 @@ function generateId(): string {
 /**
  * 批量插入文档切片（使用 raw SQL 写入 Unsupported vector 字段）
  * 支持传入 Prisma 事务客户端在事务内执行
+ *
+ * 私有原语：仅供本模块内 replaceDocumentChunksInTransaction 与
+ * insertDocumentChunksWithInheritance 使用，外部调用者必须经带继承事实的高层接口，
+ * 由共享构造规则统一拼装切片元数据 (C1 / ADR-0032 修订)。
  */
-export async function insertDocumentChunks(
+async function insertDocumentChunks(
   chunks: InsertDocumentChunkInput[],
   client: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<number> {
@@ -196,13 +205,27 @@ export async function deleteDocumentChunks(
  * 1. 事务内删除同文档旧版本切片（或当前版本残留）
  * 2. 事务内批量插入新版本切片
  * 3. 事务内更新 Document 状态为 ready 与 chunkCount，并清除错误信息
+ *
+ * 传入 inheritance（文档继承事实）时，切片 metadata 由共享构造规则统一拼装（C1 / ADR-0032 修订），
+ * 调用者不再自行拼元数据；chunk 上显式给出的 metadata 作为切片私有键叠加在继承层之上。
  */
 export async function replaceDocumentChunksInTransaction(params: {
   documentId: string;
   version: number;
   chunks: InsertDocumentChunkInput[];
   metadata?: Record<string, unknown>;
+  inheritance?: ChunkInheritanceFacts;
 }): Promise<{ chunkCount: number }> {
+  const inheritedMetadata = params.inheritance
+    ? buildChunkInheritedMetadata(params.inheritance)
+    : null;
+  const chunksToInsert = inheritedMetadata
+    ? params.chunks.map((chunk) => ({
+        ...chunk,
+        metadata: { ...inheritedMetadata, ...(chunk.metadata ?? {}) },
+      }))
+    : params.chunks;
+
   return prisma.$transaction(async (tx) => {
     // 1. 事务内清理该文档的旧版本切片与当前版本（幂等防重）
     await tx.$executeRaw`
@@ -212,12 +235,12 @@ export async function replaceDocumentChunksInTransaction(params: {
     `;
 
     // 2. 事务内插入新切片
-    await insertDocumentChunks(params.chunks, tx);
+    await insertDocumentChunks(chunksToInsert, tx);
 
     // 3. 事务内原子更新文档状态为 ready 与切片数，同步更新元数据（包含大纲树）
     const updateData: { status: string; chunkCount: number; errorMessage: null; metadata?: Prisma.InputJsonValue } = {
       status: 'ready',
-      chunkCount: params.chunks.length,
+      chunkCount: chunksToInsert.length,
       errorMessage: null,
     };
     if (params.metadata) {
@@ -229,8 +252,151 @@ export async function replaceDocumentChunksInTransaction(params: {
       data: updateData,
     });
 
-    return { chunkCount: params.chunks.length };
+    return { chunkCount: chunksToInsert.length };
   });
+}
+
+/**
+ * 带继承事实的文档切片批量插入（C1：ArtifactKnowledgeDeposit 等同步入库路径使用）
+ * 切片 metadata 由共享构造规则统一拼装，调用者不再自行拼元数据。
+ */
+export async function insertDocumentChunksWithInheritance(
+  chunks: InsertDocumentChunkInput[],
+  inheritance: ChunkInheritanceFacts,
+  client: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<number> {
+  const inheritedMetadata = buildChunkInheritedMetadata(inheritance);
+  return insertDocumentChunks(
+    chunks.map((chunk) => ({
+      ...chunk,
+      metadata: { ...inheritedMetadata, ...(chunk.metadata ?? {}) },
+    })),
+    client
+  );
+}
+
+/**
+ * 回填切片缺失的系统派生键（B 层）核心逻辑 (migrations/002 的数据面)
+ *
+ * 仅补齐缺失的 sourceType / fileName / storageKey / parsedContentKey
+ * （从 documents 主表权威重算），不触碰 tags 与自定义键，不覆盖已有值。
+ * 按文档游标分批，幂等可重跑（二次执行 updatedChunks 为 0）。
+ */
+export async function reconcileChunkMetadataFields(params?: {
+  onProgress?: (doc: { id: string; name: string }, updatedChunks: number) => void;
+  batchSize?: number;
+}): Promise<{
+  processedDocs: number;
+  updatedChunks: number;
+  details: Record<
+    string,
+    { name: string; oldValues: Record<string, unknown>; newValues: Record<string, unknown>; updatedChunks: number }
+  >;
+}> {
+  const batchSize = params?.batchSize ?? 100;
+  const details: Record<
+    string,
+    { name: string; oldValues: Record<string, unknown>; newValues: Record<string, unknown>; updatedChunks: number }
+  > = {};
+  let processedDocs = 0;
+  let updatedChunksTotal = 0;
+  let cursor: string | null = null;
+
+  const findDirtyDocs = async (afterId: string | null): Promise<Array<{ document_id: string }>> => {
+    const dirtyCondition = `
+      AND (
+        NOT (dc.metadata ? 'sourceType')
+        OR NOT (dc.metadata ? 'storageKey')
+        OR NOT (dc.metadata ? 'fileName')
+        OR NOT (dc.metadata ? 'parsedContentKey')
+      )`;
+    if (afterId) {
+      return prisma.$queryRawUnsafe(
+        `SELECT DISTINCT dc.document_id
+         FROM "document_chunks" dc
+         JOIN "documents" d ON d.id = dc.document_id
+         WHERE d.deleted_at IS NULL
+           AND dc.document_id > $1
+           ${dirtyCondition}
+         ORDER BY dc.document_id
+         LIMIT $2;`,
+        afterId,
+        batchSize
+      );
+    }
+    return prisma.$queryRawUnsafe(
+      `SELECT DISTINCT dc.document_id
+       FROM "document_chunks" dc
+       JOIN "documents" d ON d.id = dc.document_id
+       WHERE d.deleted_at IS NULL
+         ${dirtyCondition}
+       ORDER BY dc.document_id
+       LIMIT $1;`,
+      batchSize
+    );
+  };
+
+  for (;;) {
+    const dirtyDocs = await findDirtyDocs(cursor);
+    if (dirtyDocs.length === 0) break;
+    cursor = dirtyDocs[dirtyDocs.length - 1].document_id;
+
+    for (const row of dirtyDocs) {
+      const doc = await prisma.document.findUnique({
+        where: { id: row.document_id },
+        select: { id: true, name: true, sourceType: true, storageKey: true },
+      });
+      if (!doc) continue;
+
+      const newValues: Record<string, unknown> = {
+        sourceType: doc.sourceType,
+        fileName: doc.name,
+        storageKey: doc.storageKey,
+        parsedContentKey: deriveParsedContentKey(doc.storageKey),
+      };
+
+      // 记录修复前的旧值供审计（缺失键为 null）
+      const beforeChunks = await prisma.$queryRaw<Array<{ metadata: Record<string, unknown> }>>`
+        SELECT "metadata" FROM "document_chunks"
+        WHERE "document_id" = ${doc.id} AND "document_version" = (
+          SELECT "version" FROM "documents" WHERE "id" = ${doc.id}
+        )
+        LIMIT 1;
+      `;
+      const oldMetadata = (beforeChunks[0]?.metadata ?? {}) as Record<string, unknown>;
+      const oldValues: Record<string, unknown> = {};
+      for (const key of Object.keys(newValues)) {
+        oldValues[key] = oldMetadata[key] ?? null;
+      }
+
+      const updated = await prisma.$executeRaw`
+        UPDATE "document_chunks" dc
+        SET "metadata" = dc."metadata" || jsonb_build_object(
+          'sourceType', ${doc.sourceType},
+          'fileName', ${doc.name},
+          'storageKey', ${doc.storageKey},
+          'parsedContentKey', ${deriveParsedContentKey(doc.storageKey)}
+        )
+        FROM "documents" d
+        WHERE dc."document_id" = d.id
+          AND dc."document_id" = ${doc.id}
+          AND dc."document_version" = d."version"
+          AND (
+            NOT (dc."metadata" ? 'sourceType')
+            OR NOT (dc."metadata" ? 'storageKey')
+            OR NOT (dc."metadata" ? 'fileName')
+            OR NOT (dc."metadata" ? 'parsedContentKey')
+          );
+      `;
+
+      processedDocs += 1;
+      updatedChunksTotal += updated;
+      details[doc.id] = { name: doc.name, oldValues, newValues, updatedChunks: updated };
+      params?.onProgress?.({ id: doc.id, name: doc.name }, updated);
+    }
+  }
+
+  return { processedDocs, updatedChunks: updatedChunksTotal, details };
 }
 
 /**
@@ -815,8 +981,10 @@ export async function searchMemoryChunksLexical(params: {
 }
 
 /**
- * 原地即时同步更新文档及其切片的标签与元数据 (ADR-0032)
- * 无需重新切块与重新向量化，毫秒级原子更新
+ * 原地即时同步更新文档及其切片的标签与元数据 (ADR-0032 / ADR-0032 2026-11-10 修订)
+ * 无需重新切块与重新向量化，毫秒级原子更新。
+ * 切片 metadata 采用合并语义：仅覆写 A 层（用户继承键）与 B 层（系统派生键，主表权威重算），
+ * 切片私有键因 `metadata || $1` 拼接天然保留，历史缺失的系统字段在下次编辑时自动补齐。
  */
 export async function updateDocumentMetadataInPlace(params: {
   documentId: string;
@@ -828,28 +996,31 @@ export async function updateDocumentMetadataInPlace(params: {
   const { documentId, userId, tags, metadata = {}, client } = params;
 
   const runWithClient = async (tx: Prisma.TransactionClient | typeof prisma) => {
-    // 1. 验证文档归属并获取当前版本
+    // 1. 验证文档归属并获取当前版本与系统字段权威来源
     const doc = await tx.document.findFirst({
       where: { id: documentId, userId, deletedAt: null },
-      select: { id: true, version: true },
+      select: { id: true, version: true, sourceType: true, name: true, storageKey: true },
     });
 
     if (!doc) {
       throw new Error('文档不存在或无权操作');
     }
 
-    // 2. 构造打平继承后的切片元数据
-    const mergedChunkMetadata = {
-      ...metadata,
+    // 2. 构造打平继承后的切片元数据载荷（A 层编辑后值 + B 层主表重算值，剔除 outline）
+    const mergedChunkMetadata = buildChunkInheritedMetadata({
+      sourceType: doc.sourceType,
+      name: doc.name,
+      storageKey: doc.storageKey,
       tags,
-    };
+      metadata,
+    });
     const metadataJsonStr = JSON.stringify(mergedChunkMetadata);
 
-    // 3. 原地批量更新该版本的所有切片
+    // 3. 原地批量合并更新该版本的所有切片（切片私有键保留，B 层自愈）
     const updatedChunkCount = await tx.$executeRawUnsafe(
       `
       UPDATE "document_chunks"
-      SET "metadata" = $1::jsonb
+      SET "metadata" = "metadata" || $1::jsonb
       WHERE "document_id" = $2
         AND "document_version" = $3
         AND "user_id" = $4;

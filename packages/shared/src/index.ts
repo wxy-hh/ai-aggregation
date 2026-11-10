@@ -28,6 +28,7 @@ export * from './compatibility-contract';
 export * from './rag-config';
 export * from './rag-outline';
 export * from './rag-retrieval';
+export * from './rag-chunk-metadata';
 export * from './security/url-guard';
 
 // 城市经纬度数据 (用于八字测算真太阳时修正)

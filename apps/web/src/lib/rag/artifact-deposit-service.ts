@@ -8,10 +8,10 @@
  * 4. 对象存储双轨同步：尝试将 content.md 写入对象存储作为全文快照备份。
  */
 
-import { prisma, insertDocumentChunks, type InsertDocumentChunkInput } from '@repo/db';
+import { prisma, insertDocumentChunksWithInheritance } from '@repo/db';
 import { createStorageProvider } from '@repo/storage';
 import { embedFaqText, segmentFaqText } from './faq-service';
-import type { DepositArtifactInput } from '@repo/shared';
+import { estimateTokenCount, type DepositArtifactInput } from '@repo/shared';
 
 export interface ArtifactChunkSlice {
   chunkIndex: number;
@@ -93,7 +93,7 @@ export function splitArtifactMarkdown(
         chunkIndex: chunkIndex++,
         content: section.text,
         headingPath: section.headingPath,
-        tokenCount: Math.ceil(section.text.length / 3),
+        tokenCount: estimateTokenCount(section.text),
       });
       continue;
     }
@@ -115,7 +115,7 @@ export function splitArtifactMarkdown(
           chunkIndex: chunkIndex++,
           content: accum,
           headingPath: section.headingPath,
-          tokenCount: Math.ceil(accum.length / 3),
+          tokenCount: estimateTokenCount(accum),
         });
         accum = trimmed;
       }
@@ -127,7 +127,7 @@ export function splitArtifactMarkdown(
           chunkIndex: chunkIndex++,
           content: slice,
           headingPath: section.headingPath,
-          tokenCount: Math.ceil(slice.length / 3),
+          tokenCount: estimateTokenCount(slice),
         });
         accum = accum.slice(maxChunkSize).trim();
       }
@@ -138,7 +138,7 @@ export function splitArtifactMarkdown(
         chunkIndex: chunkIndex++,
         content: accum.trim(),
         headingPath: section.headingPath,
-        tokenCount: Math.ceil(accum.trim().length / 3),
+        tokenCount: estimateTokenCount(accum.trim()),
       });
     }
   }
@@ -148,7 +148,7 @@ export function splitArtifactMarkdown(
       chunkIndex: 0,
       content: normalized.slice(0, maxChunkSize),
       headingPath: null,
-      tokenCount: Math.ceil(normalized.slice(0, maxChunkSize).length / 3),
+      tokenCount: estimateTokenCount(normalized.slice(0, maxChunkSize)),
     });
   }
 
@@ -231,8 +231,9 @@ export async function depositArtifactToKnowledgeBase(
       },
     });
 
-    // 批量插入切片并绑定向量
-    const chunkInputs: InsertDocumentChunkInput[] = preparedChunks.map((pc) => ({
+    // 批量插入切片并绑定向量；切片元数据不再自行拼装，
+    // 由共享构造规则经 insertDocumentChunksWithInheritance 统一构造 (C1 / ADR-0032 修订)
+    const chunkInputs = preparedChunks.map((pc) => ({
       documentId: doc.id,
       knowledgeBaseId,
       userId,
@@ -243,16 +244,25 @@ export async function depositArtifactToKnowledgeBase(
       headingPath: pc.headingPath,
       tokenCount: pc.tokenCount,
       embedding: pc.embedding,
-      metadata: {
-        tags: input.tags ?? [],
-        sourceType: 'chat_artifact',
-        sourceSessionId: input.sourceSessionId || null,
-        sourceArtifactId: input.artifactId,
-        chunkIndex: pc.chunkIndex,
-      },
     }));
 
-    await insertDocumentChunks(chunkInputs, tx);
+    await insertDocumentChunksWithInheritance(
+      chunkInputs,
+      {
+        sourceType: 'chat_artifact',
+        name: input.title,
+        storageKey,
+        tags: input.tags ?? [],
+        metadata: {
+          sourceType: 'chat_artifact',
+          sourceSessionId: input.sourceSessionId || null,
+          sourceArtifactId: input.artifactId,
+          depositedAt: new Date().toISOString(),
+          artifactType: input.type,
+        },
+      },
+      tx
+    );
 
     return doc;
   });
