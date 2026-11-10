@@ -4,6 +4,12 @@ import { QuotaSession } from '@/lib/billing/quota-session';
 import { withQuotaUnary } from './with-quota-unary';
 
 describe('withQuotaUnary', () => {
+  it('TC08-2: Web 旧路径导入的 withQuotaUnary 与 @repo/db 导出为同一函数引用', async () => {
+    const { withQuotaUnary: dbPipe } = await import('@repo/db');
+    const { withQuotaUnary: webPipe } = await import('./with-quota-unary');
+    expect(webPipe).toBe(dbPipe);
+  });
+
   it('run 正常执行时，按 success 终态结算并透传 usage 与 outputText，返回业务结果', async () => {
     const fakeSession = {
       outputLimit: 1024,
@@ -26,7 +32,6 @@ describe('withQuotaUnary', () => {
         model: 'lite',
         messages: [{ content: 'prompt' }],
       },
-      userRole: 'user',
       finalize: {
         requestId: 'req-1',
         action: 'video-prompt-optimize',

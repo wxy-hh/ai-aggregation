@@ -7,6 +7,7 @@ export * from './billing/ai-usage';
 export * from './billing/usage-measurement';
 export * from './billing/quota-service';
 export * from './billing/quota-session';
+export * from './billing/with-quota-unary';
 export * from './rag';
 export type * from '@prisma/client';
 

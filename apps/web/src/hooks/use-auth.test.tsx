@@ -109,7 +109,7 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
 
   it('带有 redirect 参数时（服务端中间件拦截回登录页）：即使客户端存在残留认证态，也不跳转 /home 并自愈清理', async () => {
     delete (window as unknown as { location?: unknown }).location;
-    window.location = new URL('http://localhost:3030/login?redirect=%2Fhome') as unknown as Location;
+    window.location = new URL('http://localhost:3030/login?redirect=%2Fhome') as unknown as string & Location;
     localStorage.setItem('ai-app-auth', JSON.stringify({ state: { user: { id: 'u2' }, isAuthenticated: true } }));
 
     useAuthStore.setState({
@@ -136,7 +136,7 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
 
   it('带有 logout 参数时：不跳转 /home 并自愈清理残留', async () => {
     delete (window as unknown as { location?: unknown }).location;
-    window.location = new URL('http://localhost:3030/login?logout=1') as unknown as Location;
+    window.location = new URL('http://localhost:3030/login?logout=1') as unknown as string & Location;
     localStorage.setItem('ai-app-auth', JSON.stringify({ state: { user: { id: 'u2' }, isAuthenticated: true } }));
 
     useAuthStore.setState({

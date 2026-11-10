@@ -69,6 +69,10 @@ export async function POST(request: Request) {
         user.role === 'admin'
           ? undefined
           : getBillingRequestId(request, body as Record<string, unknown>);
+      // ADR-0049 Fail-Closed：非管理员的计费幂等键缺失即拒绝入队，杜绝静默落入免计费路径
+      if (user.role !== 'admin' && (!billingRequestId || typeof billingRequestId !== 'string')) {
+        throw new Error('非管理员奇门分析请求缺少计费幂等键，拒绝入队');
+      }
       await store.initializeAnalysis(analysisId);
 
       // 本地排盘：由算法精确计算盘局，不再依赖 LLM 生成

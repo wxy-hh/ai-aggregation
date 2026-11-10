@@ -139,7 +139,7 @@ describe('accessToken 内存化契约', () => {
 
     // mock window.location.href
     delete (window as unknown as { location?: unknown }).location;
-    window.location = { href: '' } as unknown as Location;
+    window.location = { href: '' } as unknown as string & Location;
 
     const store = createAuthStore();
     expect(store.getState().isAuthenticated).toBe(true);

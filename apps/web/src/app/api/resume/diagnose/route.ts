@@ -76,7 +76,7 @@ export async function POST(req: Request) {
           maxOutputTokens: 1200,
           metadata: { hasJobDescription: Boolean(jobDescription?.trim()) },
         },
-        userRole: user.role,
+        userRole: user.role === 'admin' ? 'admin' : undefined, // ADR-0049：管道仅接受 'admin' 两态，普通用户缺省
         finalize: {
           requestId,
           action: 'resume-diagnose',
