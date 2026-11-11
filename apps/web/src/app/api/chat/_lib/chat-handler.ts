@@ -361,7 +361,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
           }
         }
 
-        return finalizeResult;
+        return;
       };
 
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）

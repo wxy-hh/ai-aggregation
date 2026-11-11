@@ -8,4 +8,5 @@ export type {
   QuotaSessionReleaseInput,
   QuotaFinalizeContext,
   QuotaOutcome,
+  SettlementResult,
 } from '@repo/db';
