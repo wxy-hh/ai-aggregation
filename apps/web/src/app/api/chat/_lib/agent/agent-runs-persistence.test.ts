@@ -1,3 +1,8 @@
+import {
+  setupAiSdkMocks,
+  streamTextMock,
+  generateTextMock,
+} from '../testing/mock-ai-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createChatHandler } from '../chat-handler';
 import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
@@ -10,7 +15,6 @@ const mocks = vi.hoisted(() => {
   return {
     currentUser: { id: 'user_agent_run_test', role: 'user' },
     rateLimiter: { check: vi.fn().mockResolvedValue({ allowed: true }) },
-    streamTextMock: vi.fn(),
     prismaAgentRunCreate: vi.fn(),
     quotaSessionReserveMock: vi.fn(),
   };
@@ -44,11 +48,6 @@ vi.mock('@repo/db', async (importOriginal) => {
   };
 });
 
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: mocks.streamTextMock };
-});
-
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: vi.fn().mockResolvedValue(100000),
 }));
@@ -56,6 +55,7 @@ vi.mock('@/lib/billing/quota-service', () => ({
 describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
   });
@@ -73,7 +73,7 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
     });
 
     // mock 决策步与收尾步
-    mocks.streamTextMock.mockReturnValueOnce({
+    streamTextMock.mockReturnValueOnce({
       fullStream: (async function* () {
         yield { type: 'text-delta', text: '已为您调研完毕，生成报告。' };
       })(),

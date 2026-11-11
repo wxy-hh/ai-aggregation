@@ -6,6 +6,11 @@
  * 这样事件序列、计费参数、合规接线、降级与失败语义都在真实代码路径上被验证。
  */
 
+import {
+  setupAiSdkMocks,
+  streamTextMock,
+  generateTextMock,
+} from './testing/mock-ai-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createChatHandler } from './chat-handler';
@@ -20,7 +25,6 @@ const {
   currentUserMock,
   rateLimiterMock,
   quotaSessionReserveMock,
-  streamTextMock,
   toolExecuteMock,
   registryHolder,
   requestAgnesImageMock,
@@ -41,7 +45,6 @@ const {
     currentUserMock: vi.fn(),
     rateLimiterMock: { check: vi.fn() },
     quotaSessionReserveMock: vi.fn(),
-    streamTextMock: vi.fn(),
     toolExecuteMock: vi.fn(),
     registryHolder: { current: null as unknown },
     requestAgnesImageMock: vi.fn(),
@@ -72,11 +75,6 @@ vi.mock('@/lib/billing/quota-session', () => ({
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: getAvailableQuotaMock,
 }));
-// 仅替换 streamText，保留 tool / zodSchema / stepCountIs 等真实实现
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: streamTextMock };
-});
 vi.mock('./agent/planner', () => ({
   generateAgentPlan: vi.fn().mockResolvedValue(null),
 }));
@@ -157,6 +155,7 @@ describe('agent 模式编排（HTTP 级）', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
 
@@ -1312,6 +1311,7 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
     rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
@@ -1915,6 +1915,7 @@ describe('审批恢复契约接入（评审 C4）', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
 

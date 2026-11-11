@@ -11,6 +11,11 @@
  * 7. GET 方法 query 拼接与参数校验。
  */
 
+import {
+  setupAiSdkMocks,
+  streamTextMock,
+  generateTextMock,
+} from './testing/mock-ai-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -100,8 +105,6 @@ const {
   currentUserMock,
   rateLimiterMock,
   quotaSessionReserveMock,
-  streamTextMock,
-  generateTextMock,
   getAvailableQuotaMock,
   prismaAuditCreateMock,
   httpsRequestMock,
@@ -112,8 +115,6 @@ const {
   const currentUserMock = vi.fn();
   const rateLimiterMock = { check: vi.fn() };
   const quotaSessionReserveMock = vi.fn();
-  const streamTextMock = vi.fn();
-  const generateTextMock = vi.fn();
   const getAvailableQuotaMock = vi.fn();
   const prismaAuditCreateMock = vi.fn();
 
@@ -214,8 +215,6 @@ const {
     currentUserMock,
     rateLimiterMock,
     quotaSessionReserveMock,
-    streamTextMock,
-    generateTextMock,
     getAvailableQuotaMock,
     prismaAuditCreateMock,
     httpsRequestMock,
@@ -237,10 +236,6 @@ vi.mock('@/lib/billing/quota-session', () => ({
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: getAvailableQuotaMock,
 }));
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: streamTextMock, generateText: generateTextMock };
-});
 vi.mock('@repo/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@repo/db')>();
   return {
@@ -324,14 +319,11 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('WEBHOOK_SECRET_KEY', TEST_SECRET_KEY);
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
     vi.stubEnv('APPROVAL_TOKEN_SECRET', APPROVAL_TEST_SECRET);
-
-    // 规划 / 质检的 generateText 一律失败：与未接真实模型时的降级行为一致（计划缺省、质检 fail-open）
-    generateTextMock.mockReset();
-    generateTextMock.mockRejectedValue(new Error('测试环境不接真实模型'));
     redisState.used.clear();
     redisState.down = false;
 

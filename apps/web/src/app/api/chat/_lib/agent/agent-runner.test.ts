@@ -8,6 +8,11 @@
  * 4. 验证核心：Responses API 链式增量回传（previousResponseId、仅发送 tool-result 增量、决策步 maxToolCalls=3、收尾步无 maxToolCalls）与无响应 id 时的全量回退机制。
  */
 
+import {
+  setupAiSdkMocks,
+  streamTextMock,
+  generateTextMock,
+} from '../testing/mock-ai-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { WireMessage } from '@repo/shared';
@@ -18,17 +23,10 @@ import { runAgent } from './agent-runner';
 import { generateAgentPlan } from './planner';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './runtime-context';
 
-// 仅替换 streamText，保留 tool、zodSchema、stepCountIs 等真实实现
-const { streamTextMock, evaluateAgentProgressMock } = vi.hoisted(() => {
+const { evaluateAgentProgressMock } = vi.hoisted(() => {
   return {
-    streamTextMock: vi.fn(),
     evaluateAgentProgressMock: vi.fn(),
   };
-});
-
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: streamTextMock };
 });
 
 vi.mock('./evaluator', async (importOriginal) => {
@@ -45,6 +43,10 @@ vi.mock('./planner', async (importOriginal) => {
     ...actual,
     generateAgentPlan: vi.fn(async () => null),
   };
+});
+
+beforeEach(() => {
+  setupAiSdkMocks();
 });
 
 /** 统一默认的 token 消耗统计（符合 normalizeUsage 解析规范） */

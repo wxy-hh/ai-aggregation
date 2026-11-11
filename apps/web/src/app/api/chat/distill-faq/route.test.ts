@@ -1,9 +1,12 @@
+import {
+  setupAiSdkMocks,
+  generateTextMock,
+} from '../_lib/testing/mock-ai-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   currentUser: { id: 'user_1', username: 'testuser' },
-  generateText: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/get-current-user', () => ({
@@ -16,10 +19,6 @@ vi.mock('@/lib/auth/get-current-user', () => ({
   }),
 }));
 
-vi.mock('ai', () => ({
-  generateText: mocks.generateText,
-}));
-
 vi.mock('@repo/providers', () => ({
   createProvider: () => () => ({}),
 }));
@@ -29,14 +28,15 @@ import { POST } from './route';
 describe('POST /api/chat/distill-faq (TC06: 对话提炼 FAQ API)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     mocks.currentUser = { id: 'user_1', username: 'testuser' };
-    mocks.generateText.mockResolvedValue({
+    generateTextMock.mockResolvedValue({
       text: JSON.stringify({
         question: '如何申请差旅报销？',
         answer: '进入财务系统，在日常报销中填写行程单并上传发票。',
         similarQuestions: ['差旅报销流程是什么', '怎么报销出差费用'],
       }),
-    });
+    } as any);
   });
 
   it('断言 1: 未登录返回 HTTP 401', async () => {
@@ -82,7 +82,7 @@ describe('POST /api/chat/distill-faq (TC06: 对话提炼 FAQ API)', () => {
   });
 
   it('断言 4: 模型调用抛出异常时平滑降级返回 isFallback=true 且状态码为 200', async () => {
-    mocks.generateText.mockRejectedValue(new Error('上游网络异常'));
+    generateTextMock.mockRejectedValue(new Error('上游网络异常'));
     const req = new NextRequest('http://localhost:3000/api/chat/distill-faq', {
       method: 'POST',
       body: JSON.stringify({
