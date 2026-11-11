@@ -92,6 +92,10 @@ _Avoid_: 完整消息, 快照消息, Store 消息传输
 客户端把 ConversationSnapshot 明确投影为线上消息与请求体的纯函数过程；审批卡片与凭证绝不进历史，已拒绝卡片转写为一句系统提示，损坏的历史附件在源头自愈剥离。
 _Avoid_: 历史拼接, 消息组装, 快照直传
 
+**ChatCompletionLifecycle (聊天完成生命周期)**:
+聊天流结束的单一收口：拥有「恰好一次」的完成处理与严格同步的副作用顺序契约（输出合规 → 结算 → 审计落库 → 观测 flush → 记忆派发）；普通聊天与 Agent 模式统一管辖，仅 Agent 分支构造 AgentRun 记录。
+_Avoid_: 完成回调, onFinish, 结束处理, 后置钩子, 流收尾函数
+
 ## 任务化与产物资产 (Taskification & Artifacts)
 
 **Artifact (产物)**:
@@ -161,6 +165,10 @@ _Avoid_: 批量冻结, 预扣批量, 多模型预留
 **结算 (Settlement)**:
 交付成功后的终态动作，按上游真实用量从预留额度中扣减并落账；一元场景下以用户可见交付完成（含结果持久化）为结算前提。
 _Avoid_: 扣款, 支付, 清算
+
+**SettlementResult (结算结果)**:
+完成生命周期中 `QuotaSession.finalize` 返回的终态事实：`settled` 表示计费是否有效闭环（释放成功、扣减成功或免预留归档成功），`settledUnits` 为最终计费单位数（failed 恒为 0）；底层结算物理失败时 `settled=false`，审计据此诚实记账。
+_Avoid_: 计费返回值, 扣费状态, FinalizeResult, 额度结果, 账单回执
 
 **释放 (Release)**:
 失败终态动作，全额退还预留额度，不产生任何费用；已结算会话受终态守卫保护，释放为空操作。
