@@ -6,7 +6,6 @@
  */
 
 import type { ProviderName } from '@repo/providers';
-import type { Message as ChatMessage } from '@/stores/chat-store';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { getRateLimiter } from '@repo/redis';
@@ -18,7 +17,7 @@ import { getDefaultModel } from '@repo/providers';
 import { createSseResponse } from './sse';
 import { ProviderClientError, type ChatProviderAdapter, type ChatStreamFinish } from './types';
 import { getAvailableQuota } from '@/lib/billing/quota-service';
-import { estimateTextTokens, getCapabilityPack, resolveArtifactContext } from '@repo/shared';
+import { estimateTextTokens, getCapabilityPack, resolveArtifactContext, parseChatRequestBody, type WireMessage } from '@repo/shared';
 import {
   AGENT_MIN_STEPS,
   AGENT_MODEL,
@@ -77,81 +76,44 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // 2. 限流
       await checkRateLimit(user.id, errorId);
 
-      // 3. 解析请求
-      const body = await req.json();
+      // 3. 解析请求（评审 C4 / ADR-0050）：白名单运行时解析取代类型断言。
+      // 未知字段静默剥离；已知字段畸变 400（error/code/errorId/details）；
+      // 布尔门控脏值归一化 false（B-7）；历史残缺附件自愈剥离，末条损坏 400。
+      const rawBody: unknown = await req.json();
+      const parsed = parseChatRequestBody(rawBody);
+      if (!parsed.ok) {
+        return jsonResponse(
+          {
+            error: parsed.error.message,
+            code: parsed.error.code,
+            errorId,
+            details: parsed.error.details,
+          },
+          400
+        );
+      }
       const {
         messages,
         model,
-        provider = 'xunfei',
+        provider,
         reservationId,
-        agent: rawAgent,
-        capabilityPack: rawCapabilityPack,
-        disabledToolKeys: rawDisabledToolKeys,
-        thinking: rawThinking,
-        conversationId: rawConversationId,
-        artifactContext: rawArtifactContext,
-        approvalResume: rawApprovalResume,
-        approvalScope: rawApprovalScope,
-      } = body as {
-        messages: ChatMessage[];
-        model?: string;
-        provider?: ProviderName;
-        reservationId?: string;
-        agent?: unknown;
-        capabilityPack?: unknown;
-        disabledToolKeys?: unknown;
-        thinking?: unknown;
-        conversationId?: unknown;
-        artifactContext?: unknown;
-        approvalResume?: unknown;
-        approvalScope?: unknown;
-      };
-      // 会话 ID（用于 Langfuse session 与运行记录关联）
-      const conversationId =
-        typeof rawConversationId === 'string' && rawConversationId.trim()
-          ? rawConversationId.trim()
-          : undefined;
-      // 审批凭证绑定的会话范围（ADR-0041）：与 conversationId 分离，避免激活其观测/记忆副作用
-      const approvalScope =
-        typeof rawApprovalScope === 'string' ? rawApprovalScope.trim().slice(0, 200) : '';
-      // 深度思考模式开关（ADR-0016 / 工单 03）
-      const thinking = rawThinking === true;
-      // agent 标志只认严格 true（B-7）：truthy 脏数据（"false"/1/旧客户端脏字段）
-      // 不得静默进入强制换模型 + chat-agent 计费的 agent 模式
-      const agent = rawAgent === true;
-      // 场景能力包（ADR-0014 / 工单 01）：仅在 agent 模式且为合法字符串时放行
-      const capabilityPack =
-        agent && typeof rawCapabilityPack === 'string' && rawCapabilityPack.trim()
-          ? rawCapabilityPack.trim()
-          : undefined;
+        agent,
+        capabilityPack,
+        disabledToolKeys,
+        thinking,
+        conversationId,
+        artifactContext,
+        approvalResume,
+        approvalScope,
+      } = parsed.body;
+
+      // 场景能力包（ADR-0014 / 工单 01）：契约已在 agent 门控内完成形状归一，此处只取解析结果
       const activeCapabilityPack = agent ? getCapabilityPack(capabilityPack) : undefined;
-      // 会话级临时停用工具列表（ADR-0014 / 工单 02）：仅接收字符串数组
-      const disabledToolKeys =
-        agent && Array.isArray(rawDisabledToolKeys)
-          ? rawDisabledToolKeys.filter((k): k is string => typeof k === 'string' && Boolean(k.trim()))
-          : undefined;
-
-      if (!messages || !Array.isArray(messages) || messages.length === 0) {
-        return jsonResponse({ error: 'Messages are required' }, 400);
-      }
-
-      // 审批恢复请求（ADR-0041）：仅 agent 模式识别；字段形状不合法直接 400
-      let approvalResume: ApprovalResumeInput | null = null;
-      if (agent && rawApprovalResume !== undefined) {
-        approvalResume = parseApprovalResume(rawApprovalResume);
-        if (!approvalResume) {
-          return jsonResponse({ error: '审批恢复请求格式不正确，请重新提出需求', errorId }, 400);
-        }
-      }
-
       // 产物上下文注入（ADR-0037 §4）：仅 agent 模式；服务端复核长度与标题结构，不信任客户端
       // 注入文本只追加到当次系统提示词，不写入消息历史；其字符数以一条估算专用伪消息计入输入估算
-      const artifactResolution = agent ? resolveArtifactContext(rawArtifactContext) : null;
-      const billingMessages: ChatMessage[] = artifactResolution
-        ? [
-            ...messages,
-            { id: 'artifact-context', role: 'system', content: artifactResolution.text },
-          ]
+      const artifactResolution = agent ? resolveArtifactContext(artifactContext) : null;
+      const billingMessages: WireMessage[] = artifactResolution
+        ? [...messages, { role: 'system', content: artifactResolution.text }]
         : messages;
 
       // 合规前置拦截：命中即返回安全话术，不预留额度、不调模型、不计费
@@ -162,7 +124,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         return createSseResponse(createBlockedStream(buildChatBlockedText(topic)));
       }
 
-      const requestId = getBillingRequestId(req, body as Record<string, unknown>);
+      const requestId = getBillingRequestId(req, rawBody as Record<string, unknown>);
       // agent 模式：服务端强制 provider/model（spec §5.2 静默覆盖，不报错）
       const effectiveProvider: ProviderName = agent ? AGENT_PROVIDER : provider;
       const modelName = agent ? AGENT_MODEL : model || getDefaultModel(effectiveProvider);
@@ -485,24 +447,6 @@ export function createChatHandler(config: ChatHandlerConfig) {
 }
 
 // ==================== 内部工具函数 ====================
-
-/** 审批恢复请求体（字段已校验形状；签名与绑定由 verifyApprovalToken 校验） */
-interface ApprovalResumeInput {
-  token: string;
-  callId: string;
-  toolName: string;
-  params: Record<string, unknown>;
-}
-
-function parseApprovalResume(raw: unknown): ApprovalResumeInput | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const { token, callId, toolName, params } = raw as Record<string, unknown>;
-  if (typeof token !== 'string' || !token) return null;
-  if (typeof callId !== 'string' || !callId) return null;
-  if (typeof toolName !== 'string' || !toolName) return null;
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
-  return { token, callId, toolName, params: params as Record<string, unknown> };
-}
 
 function createErrorId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;

@@ -1890,3 +1890,104 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
   });
 });
 
+
+
+// ==================== 审批恢复契约接入（评审 C4 / ADR-0050） ====================
+
+const { verifyApprovalTokenMock, consumeApprovalTokenMock } = vi.hoisted(() => ({
+  verifyApprovalTokenMock: vi.fn(),
+  consumeApprovalTokenMock: vi.fn(),
+}));
+
+// 验签接缝替身：真实模块其余导出（ApprovalRejectedError / issueApprovalToken）保留
+vi.mock('@/lib/agent/approval-token', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/agent/approval-token')>();
+  return {
+    ...actual,
+    verifyApprovalToken: verifyApprovalTokenMock,
+    consumeApprovalToken: consumeApprovalTokenMock,
+  };
+});
+
+describe('审批恢复契约接入（评审 C4）', () => {
+  let handler: ReturnType<typeof createChatHandler>;
+  let fakeSession: ReturnType<typeof createFakeQuotaSession>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
+
+    currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
+    rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
+    getAvailableQuotaMock.mockResolvedValue(100_000);
+
+    fakeSession = createFakeQuotaSession({ outputLimit: 4096 });
+    quotaSessionReserveMock.mockResolvedValue(fakeSession);
+
+    // 带审批声明的工具替身：验签需要 registry.get(toolName)?.approval 提供 toolId/host
+    const approvalSpec: AgentToolSpec = {
+      name: 'web_fetch',
+      description: '抓取网页（测试替身）',
+      parameters: z.object({ url: z.string() }),
+      approval: {
+        toolId: 'tool-1',
+        host: 'example.com',
+        onPending: async () => {},
+      },
+      execute: toolExecuteMock,
+    };
+    const approvalRegistry: ToolRegistry = {
+      get: (name) => (name === 'web_fetch' ? approvalSpec : undefined),
+      list: () => [approvalSpec],
+      has: (name) => name === 'web_fetch',
+    };
+    registryHolder.current = approvalRegistry;
+
+    toolExecuteMock.mockResolvedValue({
+      ok: true,
+      contentForModel: '网页正文内容：已抓取的目标页面。',
+      summaryForDisplay: '已抓取 example.com（正文 12 字）',
+    });
+
+    handler = createChatHandler({
+      getAdapter: () => ({
+        stream: async () => {
+          throw new Error('agent 模式不应委派适配器');
+        },
+      }),
+    });
+  });
+
+  it('TC08-5: approvalResume 形状合法 → 验签接缝以请求 token 被调用 1 次并进入执行', async () => {
+    verifyApprovalTokenMock.mockReturnValue({ nonce: 'nonce-1' });
+    consumeApprovalTokenMock.mockResolvedValue(undefined);
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        textParts: ['已按批准完成抓取并总结。'],
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      })
+    );
+
+    const response = await handler(
+      agentRequest({
+        approvalResume: {
+          token: 'tk-1',
+          callId: 'call-1',
+          toolName: 'web_fetch',
+          params: { url: 'https://example.com/a' },
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(verifyApprovalTokenMock).toHaveBeenCalledTimes(1);
+    expect(verifyApprovalTokenMock).toHaveBeenCalledWith(
+      'tk-1',
+      expect.objectContaining({ userId: 'test-user-id', scope: '', toolName: 'web_fetch' })
+    );
+    expect(consumeApprovalTokenMock).toHaveBeenCalledWith('nonce-1');
+    // 恢复执行真实发生：被批准的那一次调用被执行（preApproved 直接执行，不重新决策）
+    expect(toolExecuteMock).toHaveBeenCalledTimes(1);
+  });
+});

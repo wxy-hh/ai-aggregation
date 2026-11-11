@@ -6,7 +6,7 @@
  */
 
 import type { ProviderName } from '@repo/providers';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 
 /**
  * 聊天流结束结果（adapter → handler 的唯一结算输入）。
@@ -68,7 +68,8 @@ export interface ChatContext {
   userId: string;
   provider: ProviderName;
   model: string;
-  messages: ChatMessage[];
+  /** 窄化的线上消息（聊天请求传输契约，评审 C4）：adapter 只消费 role/content/附件载荷 */
+  messages: WireMessage[];
   /** 本次预留允许的输出 token 上限（adapter 据此限制生成） */
   outputLimit: number;
   signal: AbortSignal;

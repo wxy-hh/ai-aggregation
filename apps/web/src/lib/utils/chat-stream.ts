@@ -12,6 +12,7 @@ import {
   type ChatStreamToolApproval,
 } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
+import type { ChatTransportBody } from '@/lib/chat/request-projection';
 
 /**
  * 统一聊天流编排（评审 C4：单聊 sendMessage/reload 与对比 runModel 三处重复收敛）。
@@ -26,8 +27,8 @@ import { authFetch } from '@/lib/api/client';
  * - 流被截断（未收到 done/error）：consumeChatResponse 抛「回答流被中断」，原样透传。
  */
 export interface StreamChatRequest {
-  /** POST 请求体（不含 method/signal 等 fetch 选项） */
-  body: Record<string, unknown>;
+  /** POST 请求体（聊天请求传输契约的投影形状，评审 C4；不含 method/signal 等 fetch 选项） */
+  body: ChatTransportBody;
   signal: AbortSignal;
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { runChatStreamSession, type ChatStreamSessionDeps, type Message } from './chat-store';
+import type { StreamChatRequest } from '@/lib/utils/chat-stream';
 import { authFetch } from '@/lib/api/client';
 import { resetConversationPort, setConversationPort } from './conversation-port';
 
@@ -90,9 +91,9 @@ function makeMessages(): Message[] {
   ];
 }
 
-function requestBody() {
+function requestBody(): StreamChatRequest {
   return {
-    body: { messages: [{ role: 'user', content: '你好' }], provider: 'xunfei', model: undefined },
+    body: { messages: [{ role: 'user', content: '你好' }], provider: 'xunfei', thinking: false },
     signal: new AbortController().signal,
   };
 }

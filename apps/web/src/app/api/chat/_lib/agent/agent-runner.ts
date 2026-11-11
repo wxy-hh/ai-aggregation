@@ -68,7 +68,7 @@ import {
   extractUserPrompt,
 } from './evaluator';
 import { normalizeUsage } from '@/lib/ai-usage';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 import { encodeSseEvent } from '../sse';
 import { buildChatBlockedText, detectChatSensitiveTopic } from '../chat-safety';
 import { resolveChatStreamUsage } from '../chat-usage';
@@ -95,7 +95,7 @@ export interface AgentRunOptions {
   userId: string;
   provider: ProviderName;
   model: string;
-  messages: ChatMessage[];
+  messages: WireMessage[];
   /** 单步输出上限（预留总量由 handler 侧按步数系数放大） */
   stepOutputLimit: number;
   /** 收尾步输出上限（用于长篇技术研报/完整交付物，默认 8192） */

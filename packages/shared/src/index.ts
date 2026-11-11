@@ -12,6 +12,7 @@ export * from './qimen-chart';
 export * from './ziwei-glossary';
 export * from './destiny-model-client';
 export * from './chat-stream-contract';
+export * from './chat-wire-contract';
 export * from './artifact-stream-extractor';
 export * from './artifact-version-engine';
 export * from './artifact-context';

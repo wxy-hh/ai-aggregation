@@ -495,7 +495,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onWarning = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [], provider: 'xunfei' }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onWarning }
     );
 
@@ -506,7 +506,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       '/api/chat',
       expect.objectContaining({ method: 'POST' })
     );
-    expect(seenBody).toEqual({ messages: [], provider: 'xunfei' });
+    expect(seenBody).toEqual({ messages: [], provider: 'xunfei', model: 'lite', thinking: false });
   });
 
   it('正常流 done 携带 usage 时透传给 handlers.onDone', async () => {
@@ -524,7 +524,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     );
     const onDone = vi.fn();
     await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onDone }
     );
     expect(onDone).toHaveBeenCalledTimes(1);
@@ -540,7 +540,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     );
     const onWarning = vi.fn();
     await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onWarning }
     );
     expect(onWarning).toHaveBeenCalledWith('回答在此处被截断，内容可能不完整');
@@ -559,7 +559,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onReasoning = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onReasoning }
     );
 
@@ -580,7 +580,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onChunk = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk }
     );
 
@@ -601,7 +601,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onAgentNote = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onAgentNote }
     );
 
@@ -622,7 +622,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onChunk = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk }
     );
 
@@ -635,12 +635,12 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       new Response(JSON.stringify({ error: '服务不可用' }), { status: 500 })
     );
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toThrow('服务不可用');
 
     mockedAuthFetch.mockResolvedValue(new Response('not json', { status: 503 }));
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toThrow('请求失败: 503');
   });
 
@@ -649,7 +649,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     abortError.name = 'AbortError';
     mockedAuthFetch.mockRejectedValue(abortError);
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

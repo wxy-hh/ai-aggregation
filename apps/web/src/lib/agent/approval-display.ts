@@ -6,6 +6,7 @@
  */
 
 import type { ChatStreamToolApproval } from '@repo/shared';
+import type { WireMessage } from '@repo/shared';
 
 /** 卡片状态：待确认 / 已确认 / 已拒绝 / 已失效 */
 export type ApprovalStatus = 'pending' | 'confirmed' | 'rejected' | 'expired';
@@ -52,54 +53,15 @@ export function expireStaleApprovals<T extends MessageWithApproval>(
   return changed ? next : messages;
 }
 
-interface HistoryMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  attachments?: unknown;
-  approval?: MessageApproval;
-}
-
-/** 请求历史中的一条消息（与服务端 messages 约定一致） */
-export interface RequestHistoryMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  attachments?: unknown;
-}
-
-/**
- * 构造随聊天请求发送的历史消息。
- *
- * 普通消息保持 `{ role, content, attachments }` 原样；带审批卡片的消息：
- * - 卡片本身（含凭证）绝不进入请求；
- * - 正文为空时不发送这条助手消息（避免空内容助手消息）；
- * - 已拒绝的卡片追加一句「用户拒绝了执行 X」，让模型下一轮可见。
- */
-export function buildRequestHistory(messages: HistoryMessage[]): RequestHistoryMessage[] {
-  const history: RequestHistoryMessage[] = [];
-  for (const m of messages) {
-    if (!m.approval) {
-      history.push({ role: m.role, content: m.content, attachments: m.attachments });
-      continue;
-    }
-    if (m.content) {
-      history.push({ role: m.role, content: m.content, attachments: m.attachments });
-    }
-    if (m.approval.status === 'rejected') {
-      history.push({ role: 'system', content: `用户拒绝了执行 ${m.approval.toolName}` });
-    }
-  }
-  return history;
-}
-
 interface PlanLike {
   steps: Array<{ title: string; status: string; summary?: string }>;
 }
 
 /**
  * 恢复请求携带的计划已完成检查点：只含已完成步骤，提示模型沿用计划、不重复已完成的工作。
- * 没有已完成步骤时返回 null。
+ * 没有已完成步骤时返回 null。输出为窄化线上消息，直接并入请求投影历史（评审 C4）。
  */
-export function buildPlanCheckpointMessage(plan: PlanLike | undefined): RequestHistoryMessage | null {
+export function buildPlanCheckpointMessage(plan: PlanLike | undefined): WireMessage | null {
   if (!plan) return null;
   const done = plan.steps.filter((s) => s.status === 'completed');
   if (done.length === 0) return null;

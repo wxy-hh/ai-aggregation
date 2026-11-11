@@ -112,7 +112,7 @@ describe('chat-store Artifacts 状态机与工作台联动 (ADR-0015)', () => {
       deps,
       'asst-1',
       {
-        body: { messages: [] },
+        body: { messages: [], provider: 'xunfei', thinking: false },
         signal: new AbortController().signal,
       }
     );
@@ -270,7 +270,7 @@ function makeSession(initialArtifacts: Artifact[] = []) {
       new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
     );
     const outcome = await runChatStreamSession(deps, 'asst-1', {
-      body: { messages: [] },
+      body: { messages: [], provider: 'xunfei', thinking: false },
       signal: new AbortController().signal,
     });
     resetConversationPort();

@@ -29,10 +29,10 @@ import {
 } from '@repo/shared';
 import {
   buildPlanCheckpointMessage,
-  buildRequestHistory,
   resolveApprovalStatus,
   type MessageApproval,
 } from '@/lib/agent/approval-display';
+import { buildChatRequestBody } from '@/lib/chat/request-projection';
 import {
   projectReasoningStart,
   projectCalculateReasoningDuration,
@@ -991,22 +991,20 @@ export const useChatStore = create<ChatState>((set, get) => {
           sessionDeps(),
           assistantMessage.id,
           {
-            body: {
-              // 发送历史消息 + 新用户消息（审批卡片及其凭证不进历史；已拒绝的卡片转成一句话，ADR-0041）
-              messages: buildRequestHistory([...currentMessages, userMessage]),
+            // 请求体经唯一投影出口组装（评审 C4）：历史投影（审批剥离/拒绝转写/附件自愈）
+            // 与顶层 agent 门控字段都在 request-projection 内完成
+            body: buildChatRequestBody({
+              mode: 'send',
+              messages: [...currentMessages, userMessage],
               provider, // AI提供商
               model, // 模型名称
               thinking: thinkingMode, // 深度思考模式开关（ADR-0016 / 工单 03）
-              // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
-              ...(agentMode ? { agent: true, approvalScope: activeConversationId ?? '' } : {}),
-              // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
-              ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
-              // 会话级临时停用工具（ADR-0014 / 工单 02）：仅在有被关闭工具时携带差异项
-              ...(agentMode && disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
-              // 产物上下文（ADR-0037 §4）：仅 agent 模式且存在可编辑产物时携带；
-              // 工作台展开才带聚焦产物全文，关闭时只带目录
-              ...(agentMode ? artifactContextField() : {}),
-            },
+              agentMode,
+              conversationId: activeConversationId,
+              capabilityPackKey: activeCapabilityPackKey,
+              disabledToolKeys,
+              artifactContext: agentMode ? artifactContextField().artifactContext : null,
+            }),
             signal: abortController.signal, // 支持取消请求
           },
           (finalMessages) => {
@@ -1044,11 +1042,15 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 重新生成
     reload: async (msgId) => {
-      const { messages, isLoading, provider, model, activeConversationId } = get();
+      const { messages, isLoading, provider, model, activeConversationId, activeCapabilityPackKey, toolOverrides } = get();
       if (isLoading) return;
       // 重新生成沿用当前的 agent 开关与思考模式状态（与 sendMessage 同一来源）
       const agentMode = useSettingsStore.getState().agentModeEnabled;
       const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
+      // 会话级临时停用工具差异项（ADR-0014 / 工单 02；评审 C4 修复：reload 漏传漂移）
+      const disabledToolKeys = Object.entries(toolOverrides)
+        .filter(([_, enabled]) => enabled === false)
+        .map(([key]) => key);
 
       // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
       let lastUserIndex = messages.length - 1;
@@ -1107,19 +1109,20 @@ export const useChatStore = create<ChatState>((set, get) => {
           sessionDeps(),
           assistantMessage.id,
           {
-            body: {
-              // 保持重新生成原有的 { role, content } 请求体，只额外过滤审批卡片并转写拒绝提示（ADR-0041）
-              messages: buildRequestHistory([...history, userMessage]).map(({ role, content }) => ({
-                role,
-                content,
-              })),
+            // 请求体经唯一投影出口组装（评审 C4）；reload 维持不带附件的既有行为，
+            // 并修复漏传 capabilityPack / disabledToolKeys 的既有漂移（与 sendMessage 同出口）
+            body: buildChatRequestBody({
+              mode: 'reload',
+              messages: [...history, userMessage],
               provider,
               model,
               thinking: thinkingMode,
-              ...(agentMode ? { agent: true, approvalScope: activeConversationId ?? '' } : {}),
-              // 重新生成沿用同一份产物上下文来源（ADR-0037 §4）
-              ...(agentMode ? artifactContextField() : {}),
-            },
+              agentMode,
+              conversationId: activeConversationId,
+              capabilityPackKey: activeCapabilityPackKey,
+              disabledToolKeys,
+              artifactContext: agentMode ? artifactContextField().artifactContext : null,
+            }),
             signal: abortController.signal,
           }
         );
@@ -1196,9 +1199,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         .map(([key]) => key);
       const { callId, toolName, params, token } = target.approval;
 
-      // 历史 = 原对话历史 + 计划已完成检查点（卡片与凭证不进历史）
+      // 历史投影 + 计划已完成检查点（卡片与凭证不进历史）——组装统一走请求投影出口（评审 C4）
       const checkpoint = buildPlanCheckpointMessage(target.plan);
-      const history = [...buildRequestHistory(messages), ...(checkpoint ? [checkpoint] : [])];
 
       if (abortController) abortController.abort();
       abortController = new AbortController();
@@ -1224,19 +1226,21 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       try {
         const outcome = await runChatStreamSession(sessionDeps(), assistantMessage.id, {
-          body: {
-            messages: history,
+          body: buildChatRequestBody({
+            mode: 'approval_resume',
+            messages,
+            planCheckpoint: checkpoint,
             provider,
             model,
             thinking: thinkingMode,
             // 恢复请求只在 agent 模式有意义，与暂停请求的作用域一致才能通过验签
-            agent: true,
-            approvalScope: activeConversationId ?? '',
+            agentMode: true,
+            conversationId: activeConversationId,
+            capabilityPackKey: activeCapabilityPackKey,
+            disabledToolKeys,
+            artifactContext: artifactContextField().artifactContext,
             approvalResume: { token, callId, toolName, params },
-            ...(activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
-            ...(disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
-            ...artifactContextField(),
-          },
+          }),
           signal: abortController.signal,
         });
         if (outcome === 'sent') {

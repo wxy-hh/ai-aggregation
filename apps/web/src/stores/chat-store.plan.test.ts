@@ -82,7 +82,7 @@ describe('TC04: 客户端 Chat Store 计划消费、持久化与干预动作', (
     );
 
     const outcome = await runChatStreamSession(deps, 'asst-1', {
-      body: { messages: [] },
+      body: { messages: [], provider: 'xunfei', thinking: false },
       signal: new AbortController().signal,
     });
 

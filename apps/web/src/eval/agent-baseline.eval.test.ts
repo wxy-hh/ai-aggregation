@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { z } from 'zod';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 import type { AgentToolSpec, ToolRegistry } from '@/lib/agent/registry';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { runAgent } from '../app/api/chat/_lib/agent/agent-runner';
@@ -132,7 +132,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '你好' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '你好' }],
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: traceId,
@@ -220,7 +220,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '查一下北京天气' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '查一下北京天气' }],
       maxSteps: 2, // 1 轮决策 + 1 轮强制收尾步
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
@@ -314,7 +314,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '搜 Next.js 15' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '搜 Next.js 15' }],
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: traceId,
@@ -383,7 +383,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
         userId: 'test_eval_user',
         provider: 'doubao',
         model: 'doubao-pro',
-        messages: [{ id: 'm1', role: 'user', content: '开始慢任务' }] as ChatMessage[],
+        messages: [{ role: 'user', content: '开始慢任务' }],
         stepOutputLimit: 2048,
         runTimeBudgetMs: 500, // 500ms 时间预算
         signal: new AbortController().signal,
@@ -469,7 +469,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '查询故障数据' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '查询故障数据' }],
       maxSteps: 5, // 设定最大步数为 5
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
@@ -563,7 +563,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '现在几点？' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '现在几点？' }],
       maxSteps: 2,
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
@@ -668,7 +668,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '我们系统的连败熔断条件是什么？' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '我们系统的连败熔断条件是什么？' }],
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: traceId,
@@ -839,7 +839,7 @@ describe('Phase 0: Agent 基线冒烟评测与防御机制验证', () => {
       userId: 'test_eval_user',
       provider: 'doubao',
       model: 'doubao-pro',
-      messages: [{ id: 'm1', role: 'user', content: '查看文档里的说明' }] as ChatMessage[],
+      messages: [{ role: 'user', content: '查看文档里的说明' }],
       stepOutputLimit: 2048,
       signal: new AbortController().signal,
       errorId: traceId,

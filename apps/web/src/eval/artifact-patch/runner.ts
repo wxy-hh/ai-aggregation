@@ -16,7 +16,7 @@ import {
   type ChatStreamEvent,
 } from '@repo/shared';
 import { createToolRegistry } from '@/lib/agent/registry';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 import { runAgent } from '../../app/api/chat/_lib/agent/agent-runner';
 import {
   AGENT_MAX_STEPS,
@@ -80,7 +80,7 @@ export function buildEvalArtifactPrompt(testCase: PatchEvalCase): string {
 
 /** 真实运行一次：返回模型输出的契约事件；调用层异常以 error 事件体现 */
 export async function runRealOnce(testCase: PatchEvalCase): Promise<ChatStreamEvent[]> {
-  const messages: ChatMessage[] = [{ id: `eval-${testCase.id}`, role: 'user', content: testCase.instruction }];
+  const messages: WireMessage[] = [{ role: 'user', content: testCase.instruction }];
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REAL_RUN_TIMEOUT_MS);
   try {
