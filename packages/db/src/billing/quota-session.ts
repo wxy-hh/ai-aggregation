@@ -66,6 +66,14 @@ export interface QuotaSessionReleaseInput {
 /** 三态结算结果（对齐 chat 侧 ChatStreamFinish 的 outcome 语义） */
 export type QuotaOutcome = 'success' | 'partial' | 'failed';
 
+/** 结算结果契约（ADR-0051 决策 3） */
+export interface SettlementResult {
+  /** 结算是否成功闭环（底层 settle/release 物理失败时为 false） */
+  settled: boolean;
+  /** 最终结算单位数（失败、释放或失败吞错恒为 0；成功/部分为实际结算或兜底额；免预留为归档额） */
+  settledUnits: number;
+}
+
 /** finalize 的上下文：结算元数据 + admin 无预留时的用量归档信息 */
 export interface QuotaFinalizeContext {
   /** 计费幂等键（与 reserve 时一致或子流派生键） */
@@ -88,6 +96,7 @@ export interface QuotaFinalizeContext {
 
 export class QuotaSession {
   private settled = false;
+  private lastSettlementResult: SettlementResult | null = null;
 
   private constructor(
     public readonly reservationId: string,
@@ -214,22 +223,50 @@ export class QuotaSession {
   /**
    * 三态统一结算 — 唯一决策表（chat 与各路由共用；chat 侧 finalizeChatStream 已并入，评审 C1）。
    *
-   * - success → 按 usage（缺失时按输入估算 + 输出估算兜底）结算 status='success'；
-   * - partial → 流中断但已有部分输出：按同一兜底口径结算 status='partial'（不退款）；
-   * - failed  → 无任何产出：释放预留（取消应退款）。
-   *
-   * admin 等无预留会话：success/partial 降级为用量归档（safeRecordAiUsage），
-   * failed 自动跳过。settle/release 内部幂等（settled 守卫），重复调用安全。
+   * 返回 SettlementResult 结算结果契约（ADR-0051 决策 3）：
+   * - failed：release 成功 → { settled: true, settledUnits: 0 }；release 抛错被吞 → { settled: false, settledUnits: 0 }；
+   * - 有预留 success/partial：按既有口径构造 measurement 并 settle；
+   *     settle 成功 → { settled: true, settledUnits: measurement.quotaUnits }；
+   *     settle 抛错被吞 → { settled: false, settledUnits: 0 }；
+   *     measurement 为空（无用量数据）→ 既有行为是释放，返回 { settled: true, settledUnits: 0 }（释放失败则 settled: false）；
+   * - 免预留（admin 无预留）：success/partial 走 safeRecordAiUsage 归档 → { settled: true, settledUnits: normalizeUsage(ctx.usage).totalTokens ?? 0 }；
+   *     failed → 既有行为直接跳过，返回 { settled: true, settledUnits: 0 }；
+   * - 幂等守卫：若会话已完成结算/释放（this.settled 为 true），重复调用为 no-op，返回已终态结果以反映终态事实。
    */
-  async finalize(outcome: QuotaOutcome, ctx: QuotaFinalizeContext): Promise<void> {
+  async finalize(outcome: QuotaOutcome, ctx: QuotaFinalizeContext): Promise<SettlementResult> {
+    if (this.settled) {
+      // 已终态幂等守卫：重复调用 no-op，反映已终态事实
+      return this.lastSettlementResult ?? { settled: true, settledUnits: 0 };
+    }
+
     if (outcome === 'failed') {
+      if (!this.hasReservation) {
+        const result: SettlementResult = { settled: true, settledUnits: 0 };
+        this.settled = true;
+        this.lastSettlementResult = result;
+        return result;
+      }
+
       await this.release({ reason: ctx.reason ?? '流式失败', meterType: 'tokens' });
-      return;
+      const result: SettlementResult = {
+        settled: this.settled,
+        settledUnits: 0,
+      };
+      if (this.settled) {
+        this.lastSettlementResult = result;
+      }
+      return result;
     }
 
     if (!this.hasReservation) {
-      // 无预留路径（admin）：仍记用量，便于个人中心分项归档
-      if (!ctx.userId) return;
+      // 无预留路径（admin）：仍记用量，便于个人中心分项归档；无 userId 时跳过
+      if (!ctx.userId) {
+        const result: SettlementResult = { settled: true, settledUnits: 0 };
+        this.settled = true;
+        this.lastSettlementResult = result;
+        return result;
+      }
+
       const usage = normalizeUsage(ctx.usage);
       await safeRecordAiUsage({
         userId: ctx.userId,
@@ -247,15 +284,37 @@ export class QuotaSession {
         usage,
         metadata: ctx.metadata,
       });
-      return;
+
+      const result: SettlementResult = {
+        settled: true,
+        settledUnits: usage.totalTokens ?? 0,
+      };
+      this.settled = true;
+      this.lastSettlementResult = result;
+      return result;
     }
 
     const fallbackTokens = this.inputUnits + estimateOutputTokens(ctx.outputText);
+    const measurement = ctx.usage !== undefined
+      ? createTokenMeasurement(ctx.usage, fallbackTokens)
+      : null;
+
+    if (!measurement) {
+      await this.release({ reason: '无可用用量数据', meterType: 'tokens' });
+      const result: SettlementResult = {
+        settled: this.settled,
+        settledUnits: 0,
+      };
+      if (this.settled) {
+        this.lastSettlementResult = result;
+      }
+      return result;
+    }
+
     await this.settle({
       action: ctx.action,
       endpoint: ctx.endpoint,
-      rawUsage: ctx.usage,
-      fallbackTokens,
+      measurement,
       status: outcome === 'partial' ? 'partial' : 'success',
       metadata: ctx.metadata,
     }, {
@@ -265,5 +324,19 @@ export class QuotaSession {
       requestId: ctx.requestId,
       userId: ctx.userId,
     });
+
+    if (this.settled) {
+      const result: SettlementResult = {
+        settled: true,
+        settledUnits: measurement.quotaUnits,
+      };
+      this.lastSettlementResult = result;
+      return result;
+    }
+
+    return {
+      settled: false,
+      settledUnits: 0,
+    };
   }
 }
