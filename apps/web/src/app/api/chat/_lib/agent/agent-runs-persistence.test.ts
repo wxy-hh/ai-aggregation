@@ -82,8 +82,9 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
   it('agent 任务执行完成时，将目标文本、步骤、工具与 Quota 结算结果同源写入 agent_runs', async () => {
     const fakeSession = createFakeQuotaSession({
       finalize: vi.fn().mockResolvedValue({
-        finalTokens: 1888,
-        success: true,
+        // 结算结果契约（SettlementResult）：配额成本与结算同源（ADR-0051 决策 4）
+        settled: true,
+        settledUnits: 300,
       }),
     });
 

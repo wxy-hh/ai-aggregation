@@ -27,15 +27,13 @@ import {
   resolveAgentStepBudget,
   type AgentStepBudget,
 } from './agent/agent-config';
-import { prisma, type UserWebhookTool } from '@repo/db';
+import { type UserWebhookTool } from '@repo/db';
 import {
   detectChatSensitiveTopic,
   buildChatBlockedText,
   createBlockedStream,
 } from './chat-safety';
 import { checkFaqShortCircuit, createFaqShortCircuitStream } from './faq-short-circuit';
-import { normalizeUsage } from '@/lib/ai-usage';
-import { resolveChatStreamUsage } from './chat-usage';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
 import {
@@ -43,7 +41,8 @@ import {
   consumeApprovalToken,
   verifyApprovalToken,
 } from '@/lib/agent/approval-token';
-import { createRootTrace, flushObservability, type ObservabilityTrace } from '@/lib/observability/langfuse-client';
+import { createRootTrace, type ObservabilityTrace } from '@/lib/observability/langfuse-client';
+import { ChatCompletionLifecycle, type ChatCompletionContext } from './completion';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
@@ -263,105 +262,31 @@ export function createChatHandler(config: ChatHandlerConfig) {
         await consumeApprovalToken(verifiedResume.nonce);
       }
 
-      // 5. 完成态回调：输出合规审计 + 统一结算（适配器路径与 agent 编排共用同一份结算逻辑）
-      const onFinish = async (finish: ChatStreamFinish) => {
-        const outputTopic = finish.outputText ? detectChatSensitiveTopic(finish.outputText) : null;
-        if (outputTopic) {
-          console.warn('[chat] 输出命中合规审计', { errorId, userId: user.id, topic: outputTopic });
-        }
-        const finalizeResult = await reservedSession.finalize(finish.outcome, {
-          requestId,
-          action: 'chat-stream',
-          endpoint: '/api/chat',
-          usage: finish.usage,
-          outputText: finish.outputText,
-          reason: finish.reason,
-          provider: effectiveProvider,
-          model: modelName,
-          userId: user.id,
-          feature: agent ? 'chat-agent' : 'chat',
-          metadata: {
-            errorId,
-            messagesCount,
-            attachmentCount,
-            ...(agent
-              ? {
-                  agent: true,
-                  // 观测计数由运行时上下文经 finish 统一交付（ADR-0011），路由层不再触碰调次闭包
-                  webhookCalls: finish.webhookCalls ?? 0,
-                  searchCalls: finish.searchCalls ?? 0,
-                  ...(activeCapabilityPack ? { capabilityPack: activeCapabilityPack.key } : {}),
-                  ...(finish.evaluator ? { evaluator: finish.evaluator } : {}),
-                }
-              : {}),
-            // agent 模式静默覆盖留痕：当用户请求的提供商/模型与强制值不同时，记录被覆盖的原始值以备审计追溯
-            ...(agent && provider !== AGENT_PROVIDER ? { overriddenProvider: provider } : {}),
-            ...(agent && model && model !== AGENT_MODEL ? { overriddenModel: model } : {}),
-            ...(outputTopic ? { safetyFlag: outputTopic } : {}),
-          },
-        });
-
-        // P1 工单 02：若开启 Agent 模式，事务落盘 agent_runs 记录（ADR-0015）
-        if (agent) {
-          try {
-            const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
-            const goalText = (lastUserMessage?.content || '').slice(0, 2000);
-            const norm = finish.usage ? normalizeUsage(finish.usage) : null;
-            const resolvedUsage = resolveChatStreamUsage(norm, billingMessages, finish.outputText);
-            const quotaCost = finish.outcome === 'failed' ? 0 : (resolvedUsage.totalTokens ?? 0);
-
-            if (prisma?.agentRun?.create) {
-              await prisma.agentRun.create({
-                data: {
-                  userId: user.id,
-                  conversationId: conversationId ?? null,
-                  messageId: null,
-                  goalText: goalText || '无目标文本',
-                  steps: finish.steps ?? 1,
-                  toolCalls: finish.toolCalls ? (finish.toolCalls as any) : [],
-                  artifactRefs: finish.artifactRefs ? (finish.artifactRefs as any) : [],
-                  capabilityPack: activeCapabilityPack?.key || null,
-                  outcome: finish.outcome,
-                  quotaCost,
-                  durationMs: finish.durationMs ?? 0,
-                },
-              });
-            }
-          } catch (dbError) {
-            console.warn('[chat] agent_runs 记录落盘失败 (容错不阻断):', dbError);
-          }
-        }
-
-        // 异步刷新 Langfuse 观测事件队列（未配置时 no-op）
-        await flushObservability();
-
-        // 工单 09：若用户开启会话记忆检索，防抖 30s 派发 memory-index 任务（使用 sessionId 作为去重 jobId）
-        if (conversationId) {
-          try {
-            const dbUser = await (prisma?.user?.findUnique
-              ? prisma.user.findUnique({
-                  where: { id: user.id },
-                  select: { memorySearchEnabled: true },
-                })
-              : null);
-            if (dbUser?.memorySearchEnabled) {
-              const { memoryIndexQueue } = await import('@repo/queue');
-              await memoryIndexQueue.add(
-                'memory-index',
-                { userId: user.id, sessionId: conversationId },
-                {
-                  jobId: `memory-index-${conversationId}`,
-                  delay: 30_000,
-                  removeOnComplete: true,
-                }
-              );
-            }
-          } catch (memoryQueueErr) {
-            console.warn('[chat] 派发会话记忆索引任务失败 (容错不阻断):', memoryQueueErr);
-          }
-        }
-
-        return;
+      // 5. 完成态回调：收口到聊天完成生命周期 module（评审 C5 / ADR-0051）。
+      // 副作用顺序契约、恰好一次守卫与 AgentRun 审计构造的唯一事实源在 ChatCompletionLifecycle，
+      // 路由只提供会话上下文与完成事实。
+      const completionContext: ChatCompletionContext = {
+        userId: user.id,
+        requestId,
+        errorId,
+        conversationId: conversationId ?? null,
+        effectiveProvider,
+        modelName,
+        messages,
+        reservedSession,
+        messagesCount,
+        attachmentCount,
+        agentContext: {
+          enabled: agent,
+          ...(activeCapabilityPack ? { activeCapabilityPack } : {}),
+          // agent 模式静默覆盖留痕：用户请求的提供商/模型与强制值不同时，记录原始值以备审计追溯
+          ...(agent && provider !== AGENT_PROVIDER ? { overriddenProvider: provider } : {}),
+          ...(agent && model && model !== AGENT_MODEL ? { overriddenModel: model } : {}),
+        },
+      };
+      const completionLifecycle = new ChatCompletionLifecycle();
+      const onFinish = async (finish: ChatStreamFinish): Promise<void> => {
+        await completionLifecycle.complete(completionContext, finish);
       };
 
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）
