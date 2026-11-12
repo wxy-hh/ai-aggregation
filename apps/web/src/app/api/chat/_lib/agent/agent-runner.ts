@@ -202,6 +202,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let evaluationLimitationPrompt: string | null = null;
       /** 整请求起始时刻：运行时间预算（AGENT_RUN_TIME_BUDGET_MS）的判定基准 */
       const startedAt = Date.now();
+      // 高精度起始刻度：完成上报的耗时用它计算（Date.now 毫秒精度会把亚毫秒瞬时崩溃记成 0，
+      // 与「未记录耗时」的默认值 0 语义碰撞）
+      const startedAtPerf = performance.now();
 
       // 边界与预算计算（支持能力包自适应扩容，ADR-0014 / 工单 01）
       const pack = getCapabilityPack(options.capabilityPack);
@@ -259,6 +262,8 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
       let finalFinishReason = 'stop';
       // 是否已在无工具调用的决策步产出最终回答（无需收尾步）
       let finalAnswerDelivered = false;
+      // 决策步轮次计数需在完成快照出口（buildFinishPayload）可见，故声明于 try 外与累积状态同域
+      let roundIndex = 0;
       // 是否因写操作等待用户审批而暂停（ADR-0041）：暂停时计划保持原状，不收敛为完成
       let pausedForApproval = false;
 
@@ -304,6 +309,31 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
        */
       const hasOutput = () => Boolean(text) || toolProducedOutput;
 
+      // 完成快照出口（评审 C5 工单 03）：正常与异常路径共用同一份执行事实生成完成上报，
+      // 审计字段一律取自编排过程累积状态，字段完整性不再依赖两处调用点手工同步
+      const buildFinishPayload = (payload: {
+        outcome: ChatStreamFinish['outcome'];
+        reason?: string;
+        /** 异常中断路径：steps 只计实际尝试过的决策轮次，不预支未发生的收尾步 */
+        abnormal?: boolean;
+      }): ChatStreamFinish => ({
+        outcome: payload.outcome,
+        usage: totals,
+        outputText: text,
+        searchCalls: searchCallsCount,
+        // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
+        webhookCalls: runtime.finishMetadata().webhookCalls,
+        steps: payload.abnormal
+          ? roundIndex
+          : roundIndex + (finalAnswerDelivered ? 0 : 1),
+        toolCalls: recordedToolCalls,
+        artifactRefs: recordedArtifactRefs,
+        // 计时取整后保底 1ms：0 会被误读为「未记录耗时」（与数据库默认值 0 的失效语义碰撞）
+        durationMs: Math.max(1, Math.round(performance.now() - startedAtPerf)),
+        ...(payload.reason ? { reason: payload.reason } : {}),
+        evaluator: evaluatorMeta,
+      });
+
       try {
         const aiProvider = createProvider(options.provider);
         const agentModel = aiProvider(options.model);
@@ -313,7 +343,6 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         // 常规决策步上限：决策步 ≥ 2 时预留 1 步专供质检自愈，不需要自愈时该步不使用 (ADR-0039)
         const regularDecisionStepsLimit =
           maxDecisionSteps >= 2 ? maxDecisionSteps - 1 : maxDecisionSteps;
-        let roundIndex = 0;
 
         // ==================== 前置规划节点 (ADR-0038 / AGENT-PLAN-DAG) ====================
         currentPlan = null;
@@ -946,20 +975,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
         // 判定是否有产出（正文或工具交付产物任一存在）
         const produced = hasOutput();
-        await onFinish({
-          outcome: produced ? 'success' : 'failed',
-          usage: totals,
-          outputText: text,
-          searchCalls: searchCallsCount,
-          // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
-          webhookCalls: runtime.finishMetadata().webhookCalls,
-          steps: roundIndex + (finalAnswerDelivered ? 0 : 1),
-          toolCalls: recordedToolCalls,
-          artifactRefs: recordedArtifactRefs,
-          durationMs: Date.now() - startedAt,
-          ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
-          evaluator: evaluatorMeta,
-        });
+        await onFinish(
+          buildFinishPayload({
+            outcome: produced ? 'success' : 'failed',
+            ...(produced ? {} : { reason: 'agent 未产生任何回答内容' }),
+          })
+        );
 
         // 结束 Root Trace（工单 01）
         if (options.trace) {
@@ -998,15 +1019,21 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         if (currentPlan) {
           currentPlan = finalizePlanExecution(currentPlan, signal.aborted ? 'aborted' : 'failed', reason);
         }
-        // 中断或异常同样以「有产出」判 partial：工具已交付产物的轮次不得整轮退款
-        await onFinish({
-          outcome: hasOutput() ? 'partial' : 'failed',
-          usage: totals,
-          outputText: text,
-          reason,
-          searchCalls: searchCallsCount,
-          webhookCalls: runtime.finishMetadata().webhookCalls,
-        });
+        // 中断或异常同样以「有产出」判 partial：工具已交付产物的轮次不得整轮退款。
+        // 产出判定扩展为含「成功执行的工具调用」——任务已实际推进（工具成功或挂起审批）即视为有产出，
+        // 与冻结测试契约（qa-plan TC04-2/3）对齐；被取消/失败的工具不计入产出（整轮释放语义保持），
+        // 正常收尾分支的产出判定维持现状不变
+        const interruptedWithOutput =
+          Boolean(text) ||
+          toolProducedOutput ||
+          recordedToolCalls.some((tc) => tc.status === 'success');
+        await onFinish(
+          buildFinishPayload({
+            outcome: interruptedWithOutput ? 'partial' : 'failed',
+            reason,
+            abnormal: true,
+          })
+        );
         if (options.trace) {
           options.trace.update({
             output: text,

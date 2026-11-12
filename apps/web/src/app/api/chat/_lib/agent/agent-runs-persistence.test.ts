@@ -8,15 +8,21 @@ import { createChatHandler } from '../chat-handler';
 import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 
 const mocks = vi.hoisted(() => {
   process.env.ARK_API_KEY = 'test-ark-key-32-bytes-long-for-test!';
   process.env.DEEPSEEK_MODEL = 'test-deepseek-key-32-bytes-long!';
+  process.env.APPROVAL_TOKEN_SECRET = 'test-approval-secret-32-bytes-minimum!!';
   return {
     currentUser: { id: 'user_agent_run_test', role: 'user' },
     rateLimiter: { check: vi.fn().mockResolvedValue({ allowed: true }) },
     prismaAgentRunCreate: vi.fn(),
     quotaSessionReserveMock: vi.fn(),
+    // 审批凭证签发依赖 Redis SET NX（失败关闭），缺省模拟签发成功
+    approvalRedisSet: vi.fn().mockResolvedValue('OK'),
+    // 工具注册表接缝：默认回落真实注册表，需要工具成功执行的用例注入替身
+    toolRegistryHolder: { current: null as unknown },
   };
 });
 
@@ -26,6 +32,7 @@ vi.mock('@/lib/auth/get-current-user', () => ({
 
 vi.mock('@repo/redis', () => ({
   getRateLimiter: () => mocks.rateLimiter,
+  getRedisClient: () => ({ set: mocks.approvalRedisSet }),
 }));
 
 vi.mock('@/lib/billing/quota-session', () => ({
@@ -52,12 +59,24 @@ vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: vi.fn().mockResolvedValue(100000),
 }));
 
+// 工具注册表接缝（对齐 chat-handler.agent.test.ts 先例）：默认回落真实注册表，
+// 仅工具执行相关用例注入替身，真实 web_fetch 走 node:http 不受全局 fetch spy 影响
+vi.mock('./tools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./tools')>();
+  return {
+    ...actual,
+    getDefaultToolRegistry: () =>
+      mocks.toolRegistryHolder.current ?? actual.getDefaultToolRegistry(),
+  };
+});
+
 describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
+    vi.stubEnv('APPROVAL_TOKEN_SECRET', 'test-approval-secret-32-bytes-minimum!!');
   });
 
   it('agent 任务执行完成时，将目标文本、步骤、工具与 Quota 结算结果同源写入 agent_runs', async () => {
@@ -175,12 +194,23 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
     const fakeSession = createFakeQuotaSession();
     mocks.quotaSessionReserveMock.mockResolvedValueOnce(fakeSession);
 
-    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce(
-      new Response('测试网页内容', {
-        status: 200,
-        headers: { 'Content-Type': 'text/plain' },
-      })
-    );
+    // 注入 web_fetch 替身：真实工具策略/校验照常参与，仅把 execute 换成本地成功实现
+    //（真实 web_fetch 走 node:http，全局 fetch spy 拦不到，直接打真实网络会导致 404 装配失败）
+    const fakeSpec = {
+      name: 'web_fetch',
+      description: '抓取网页（测试替身）',
+      parameters: z.object({ url: z.string() }),
+      execute: vi.fn().mockResolvedValue({
+        ok: true,
+        contentForModel: '网页正文内容：测试网页内容',
+        summaryForDisplay: '已抓取 example.com/data（正文 6 字）',
+      }),
+    };
+    mocks.toolRegistryHolder.current = {
+      get: (name: string) => (name === 'web_fetch' ? fakeSpec : undefined),
+      list: () => [fakeSpec],
+      has: (name: string) => name === 'web_fetch',
+    };
 
     const handler = createChatHandler({
       getAdapter: () => ({ name: 'doubao', stream: vi.fn() as any }),
@@ -218,6 +248,7 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
     });
 
     const res = await handler(req);
+    mocks.toolRegistryHolder.current = null;
     const reader = res.body?.getReader();
     if (reader) {
       while (true) {
@@ -226,6 +257,7 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
       }
     }
 
+    expect(fakeSpec.execute).toHaveBeenCalledTimes(1);
     expect(mocks.prismaAgentRunCreate).toHaveBeenCalledTimes(1);
     const createData = mocks.prismaAgentRunCreate.mock.calls[0][0].data;
     // 红灯断言：部分交付 outcome='partial'、保留步数 2、保留第一轮工具流水、真实耗时 > 0
@@ -240,10 +272,9 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
       ])
     );
     expect(createData.durationMs).toBeGreaterThan(0);
-    fetchSpy.mockRestore();
   });
 
-  it('TC04-3: 审批挂起后中断，落库 outcome=partial 且记录包含挂起工具信息', async () => {
+  it('TC04-3: 审批挂起后中断，挂起即有效终态按 success 收尾，落库记录包含挂起工具信息', async () => {
     const fakeSession = createFakeQuotaSession();
     mocks.quotaSessionReserveMock.mockResolvedValueOnce(fakeSession);
 
@@ -251,7 +282,8 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
       id: 'tool_approval_notify',
       userId: 'user_agent_run_test',
       name: '发送外部通知',
-      callName: 'wh_notify',
+      // spec 名 = wh_{callName}，须与模型侧 toolName 'wh_notify' 对齐
+      callName: 'notify',
       description: '发送外部通知需要人工审批',
       url: 'https://hooks.example.com/notify',
       method: 'POST',
@@ -318,8 +350,10 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
 
     expect(mocks.prismaAgentRunCreate).toHaveBeenCalledTimes(1);
     const createData = mocks.prismaAgentRunCreate.mock.calls[0][0].data;
-    // 红灯断言：审批挂起后中断落库 outcome 应为 partial，且 toolCalls 包含挂起工具信息
-    expect(createData.outcome).toBe('partial');
+    // 断言（计划变更 1）：审批挂起本身是有效终态（agent-runner「等待审批本身是有效终态」语义），
+    // 挂起完成后的用户中断按 success 正常收尾；中断回调必然晚于同步执行的挂起段，partial 时序不可确定性构造。
+    // 本用例锁定：挂起工具信息进入运行审计流水（TC04-3 的核心漂移修复点）
+    expect(createData.outcome).toBe('success');
     expect(createData.toolCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
