@@ -5,6 +5,7 @@ import {
 } from '../testing/mock-ai-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createChatHandler } from '../chat-handler';
+import { encodeSseEvent } from '../sse';
 import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { NextRequest } from 'next/server';
@@ -21,6 +22,9 @@ const mocks = vi.hoisted(() => {
     quotaSessionReserveMock: vi.fn(),
     // 审批凭证签发依赖 Redis SET NX（失败关闭），缺省模拟签发成功
     approvalRedisSet: vi.fn().mockResolvedValue('OK'),
+    // 记忆开关查询与队列派发（TC08-4 断言零派发）
+    prismaUserFindUnique: vi.fn(),
+    memoryIndexQueueAdd: vi.fn().mockResolvedValue(undefined),
     // 工具注册表接缝：默认回落真实注册表，需要工具成功执行的用例注入替身
     toolRegistryHolder: { current: null as unknown },
   };
@@ -51,9 +55,17 @@ vi.mock('@repo/db', async (importOriginal) => {
       userWebhookTool: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      user: {
+        findUnique: mocks.prismaUserFindUnique,
+      },
     },
   };
 });
+
+// 记忆索引队列接缝：断言开关关闭时零派发
+vi.mock('@repo/queue', () => ({
+  memoryIndexQueue: { add: mocks.memoryIndexQueueAdd },
+}));
 
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: vi.fn().mockResolvedValue(100000),
@@ -435,5 +447,112 @@ describe('agent-runs 事务落盘集成测试 (ADR-0015 / 工单 02)', () => {
     expect(events.some((e) => e.type === 'done')).toBe(true);
 
     fetchSpy.mockRestore();
+  });
+
+  it('TC08-2: 对比模式携带既有预留号的请求完成正常——预留号原样传入预留接缝，完成时结算恰一次', async () => {
+    const fakeSession = createFakeQuotaSession();
+    mocks.quotaSessionReserveMock.mockResolvedValueOnce(fakeSession);
+
+    // 非 agent 请求走适配器路径：适配器替身只产流，完成事实经 ctx.onFinish 上报
+    const adapter = {
+      name: 'doubao',
+      stream: async (ctx: any) =>
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(
+              encodeSseEvent({ type: 'text-delta', text: '对比分支回答' })
+            );
+            await ctx.onFinish({
+              outcome: 'success',
+              usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+              outputText: '对比分支回答',
+            });
+            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            controller.close();
+          },
+        }),
+    };
+    const handler = createChatHandler({ getAdapter: () => adapter as any });
+
+    const req = new NextRequest('http://localhost:3030/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: '对比问题' }],
+        provider: 'doubao',
+        model: 'doubao-seed-evolving',
+        reservationId: 'reservation-compare-001',
+      }),
+    });
+
+    const res = await handler(req);
+    expect(res.status).toBe(200);
+    const reader = res.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+
+    // 预留号原样传入配额会话接缝（命中既有预留的语义由 QuotaSession 决策表负责）
+    expect(mocks.quotaSessionReserveMock).toHaveBeenCalledWith(
+      expect.objectContaining({ reservationId: 'reservation-compare-001' }),
+      'user'
+    );
+    // 完成处理经 module 统一结算恰一次
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
+  });
+
+  it('TC08-4: 记忆开关关闭时完成不派发记忆索引任务', async () => {
+    const fakeSession = createFakeQuotaSession();
+    mocks.quotaSessionReserveMock.mockResolvedValueOnce(fakeSession);
+    // 用户未开启会话记忆检索
+    mocks.prismaUserFindUnique.mockResolvedValueOnce({ memorySearchEnabled: false });
+
+    const adapter = {
+      name: 'doubao',
+      stream: async (ctx: any) =>
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(encodeSseEvent({ type: 'text-delta', text: '普通回答' }));
+            await ctx.onFinish({
+              outcome: 'success',
+              usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+              outputText: '普通回答',
+            });
+            controller.enqueue(encodeSseEvent({ type: 'done' }));
+            controller.close();
+          },
+        }),
+    };
+    const handler = createChatHandler({ getAdapter: () => adapter as any });
+
+    const req = new NextRequest('http://localhost:3030/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: '测试记忆开关关闭' }],
+        provider: 'doubao',
+        model: 'doubao-seed-evolving',
+        conversationId: 'conv-memory-off-test',
+      }),
+    });
+
+    const res = await handler(req);
+    expect(res.status).toBe(200);
+    const reader = res.body?.getReader();
+    if (reader) {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+
+    // 开关查询发生（单查兜底），但关闭时零派发
+    expect(mocks.prismaUserFindUnique).toHaveBeenCalledTimes(1);
+    expect(mocks.memoryIndexQueueAdd).not.toHaveBeenCalled();
+    // 结算仍正常闭环
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
   });
 });
