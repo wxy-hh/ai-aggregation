@@ -42,6 +42,51 @@ export type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
 
+/** 奇门遁甲受保护的数据与协议运行时字段（禁止通用 patch 写入） */
+export type QimenProtectedFieldKey =
+  | 'analysisId'
+  | 'baseResult'
+  | 'baseStatus'
+  | 'baseError'
+  | 'sections'
+  | 'sectionStatuses'
+  | 'sectionErrors'
+  | 'blockingLoading';
+
+/** 奇门工作区通用 patch 允许写入的 UI 交互字段 */
+export type QimenUIPatchState = Omit<QimenWorkspaceCache, QimenProtectedFieldKey>;
+
+/** 工作区通用 patch 支持的字段状态映射表（可按模块逐个渐进启用 Omit 保护） */
+export type DestinyWorkspaceUIPatchState = {
+  bazi: DestinyWorkspaceCacheState['bazi'];
+  ziwei: DestinyWorkspaceCacheState['ziwei'];
+  qimen: QimenUIPatchState;
+  astrology: DestinyWorkspaceCacheState['astrology'];
+};
+
+export type DestinyWorkspacePatch<TModule extends DestinyModuleKey> = Partial<
+  DestinyWorkspaceUIPatchState[TModule]
+>;
+
+/** 奇门单分区推演结果联合 */
+export type QimenSectionOutcome<K extends QimenAsyncSectionKey = QimenAsyncSectionKey> =
+  | {
+      status: 'completed';
+      data: NonNullable<QimenAsyncSections[K]>;
+    }
+  | {
+      status: 'failed';
+      error: string;
+    };
+
+/** 奇门工作区从历史回填载荷 */
+export type RestoreQimenWorkspacePayload = {
+  analysisId: string | null;
+  baseResult: QimenAnalysisBaseResult | null;
+  sections: QimenAsyncSections;
+  formData: QimenFormData;
+};
+
 /** 星座寰宇解读分区增量补丁 */
 export type AstrologyInterpretationSectionPatch = {
   headline?: AstrologyHeadline;
@@ -168,13 +213,34 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   setWorkspaceState: <TModule extends DestinyModuleKey>(
     module: TModule,
     patch:
-      | Partial<DestinyWorkspaceCacheState[TModule]>
-      | ((current: DestinyWorkspaceCacheState[TModule]) => Partial<DestinyWorkspaceCacheState[TModule]>)
+      | DestinyWorkspacePatch<TModule>
+      | ((current: DestinyWorkspaceCacheState[TModule]) => DestinyWorkspacePatch<TModule>)
   ) => void;
   resetWorkspace: (module: DestinyModuleKey) => void;
   restoreWorkspace: (module: DestinyModuleKey) => void;
   markResultReady: (module: DestinyModuleKey) => void;
   resetAllWorkspaces: () => void;
+  /** 奇门：发起全新会话（全量重置并进入表单加载态） */
+  beginQimenSession: () => void;
+  /** 奇门：记录分析任务已创建 */
+  applyQimenTaskCreated: (analysisId: string) => void;
+  /** 奇门：基础盘面就绪，激活三分区加载 */
+  applyQimenBaseResult: (result: QimenAnalysisBaseResult) => void;
+  /** 奇门：分区结果到达（迟到保护 + 三分区全 settled 原子推进结果态） */
+  applyQimenSectionResult: <K extends QimenAsyncSectionKey>(
+    key: K,
+    outcome: QimenSectionOutcome<K>
+  ) => void;
+  /** 奇门：会话失败（记录错误并释放 loading，phase='base' 时落盘 baseStatus/baseError） */
+  failQimenSession: (
+    message: string,
+    kind: QimenErrorKind,
+    phase?: 'task' | 'base'
+  ) => void;
+  /** 奇门：安静取消（仅释放 blockingLoading，绝不写入 error） */
+  abortQimenSession: () => void;
+  /** 奇门：从历史记录无损恢复工作区（按 sections 实际 key 重建 sectionStatuses 并直达结果态） */
+  restoreQimenWorkspace: (payload: RestoreQimenWorkspacePayload) => void;
   /** 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪 */
   beginAstrologySession: () => void;
   /** 解读重试：重置解读为待就绪，保持星盘真值与布局不动 */
@@ -345,6 +411,178 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
           ...createDefaultDestinyWorkspaceState(),
           provider: state.provider,
         })),
+
+      // 奇门：发起全新会话（全量重置并进入表单加载态）
+      beginQimenSession: () =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            step: 'form',
+            lastView: 'form',
+            hasResult: false,
+            blockingLoading: true,
+            error: null,
+            errorKind: null,
+            analysisId: null,
+            baseResult: null,
+            baseStatus: 'loading',
+            baseError: null,
+            sections: {},
+            sectionErrors: {},
+            sectionStatuses: {
+              strategyOverview: 'idle',
+              timingWindows: 'idle',
+              chartSummary: 'idle',
+            },
+          },
+        })),
+
+      // 奇门：记录分析任务已创建
+      applyQimenTaskCreated: (analysisId) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            analysisId,
+          },
+        })),
+
+      // 奇门：基础盘面就绪，激活三分区加载
+      applyQimenBaseResult: (result) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            baseResult: result,
+            baseStatus: 'completed',
+            baseError: null,
+            sectionStatuses: {
+              strategyOverview: 'loading',
+              timingWindows: 'loading',
+              chartSummary: 'loading',
+            },
+          },
+        })),
+
+      // 奇门：分区结果到达（迟到保护 + 三分区全 settled 原子推进结果态）
+      applyQimenSectionResult: (key, outcome) =>
+        set((state) => {
+          const current = state.qimen;
+          // 迟到保护：该分区当前如果已是 completed，则整体丢弃
+          if (current.sectionStatuses[key] === 'completed') {
+            return state;
+          }
+
+          const nextSections: QimenAsyncSections = { ...current.sections };
+          const nextStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus> = {
+            ...current.sectionStatuses,
+          };
+          const nextErrors: Partial<Record<QimenAsyncSectionKey, string>> = {
+            ...current.sectionErrors,
+          };
+
+          if (outcome.status === 'completed') {
+            nextSections[key] = outcome.data as never;
+            nextStatuses[key] = 'completed';
+            delete nextErrors[key];
+          } else {
+            nextStatuses[key] = 'failed';
+            nextErrors[key] = outcome.error;
+          }
+
+          // 检查三分区是否全部 settled
+          const requiredKeys: QimenAsyncSectionKey[] = [
+            'strategyOverview',
+            'timingWindows',
+            'chartSummary',
+          ];
+          const allSettled = requiredKeys.every(
+            (k) => nextStatuses[k] === 'completed' || nextStatuses[k] === 'failed'
+          );
+
+          return {
+            ...state,
+            qimen: {
+              ...current,
+              sections: nextSections,
+              sectionStatuses: nextStatuses,
+              sectionErrors: nextErrors,
+              ...(allSettled
+                ? {
+                    blockingLoading: false,
+                    hasResult: true,
+                    step: 'result',
+                    lastView: 'result',
+                  }
+                : {}),
+            },
+          };
+        }),
+
+      // 奇门：会话失败（记录错误并释放 loading，phase='base' 时落盘 baseStatus/baseError）
+      failQimenSession: (message, kind, phase) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            blockingLoading: false,
+            error: message,
+            errorKind: kind,
+            ...(phase === 'base'
+              ? {
+                  baseStatus: 'failed',
+                  baseError: message,
+                }
+              : {}),
+          },
+        })),
+
+      // 奇门：安静取消（仅释放 blockingLoading，绝不写入 error）
+      abortQimenSession: () =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            blockingLoading: false,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 奇门：从历史记录无损恢复工作区（按 sections 实际 key 重建 sectionStatuses 并直达结果态）
+      restoreQimenWorkspace: (payload) =>
+        set((state) => {
+          const sections = payload.sections || {};
+          const hasSection = (key: QimenAsyncSectionKey) =>
+            Object.prototype.hasOwnProperty.call(sections, key) && sections[key] !== undefined;
+
+          return {
+            ...state,
+            qimen: {
+              ...state.qimen,
+              step: 'result',
+              lastView: 'result',
+              hasResult: true,
+              blockingLoading: false,
+              error: null,
+              errorKind: null,
+              analysisId: payload.analysisId,
+              baseResult: payload.baseResult,
+              baseStatus: 'completed',
+              baseError: null,
+              sections,
+              sectionErrors: {},
+              formData: payload.formData,
+              fieldErrors: {},
+              sectionStatuses: {
+                strategyOverview: hasSection('strategyOverview') ? 'completed' : 'idle',
+                timingWindows: hasSection('timingWindows') ? 'completed' : 'idle',
+                chartSummary: hasSection('chartSummary') ? 'completed' : 'idle',
+              },
+            },
+          };
+        }),
 
       // 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪
       beginAstrologySession: () =>
