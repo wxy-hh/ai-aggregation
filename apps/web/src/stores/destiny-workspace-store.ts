@@ -56,10 +56,22 @@ export type QimenProtectedFieldKey =
 /** 奇门工作区通用 patch 允许写入的 UI 交互字段 */
 export type QimenUIPatchState = Omit<QimenWorkspaceCache, QimenProtectedFieldKey>;
 
+/** 紫微斗数受保护的数据与协议运行时字段（禁止通用 patch 写入） */
+export type ZiweiProtectedFieldKey =
+  | 'report'
+  | 'chartData'
+  | 'lockedSections'
+  | 'streaming'
+  | 'streamStatus'
+  | 'blockingLoading';
+
+/** 紫微工作区通用 patch 允许写入的 UI 交互字段 */
+export type ZiweiUIPatchState = Omit<ZiweiWorkspaceCache, ZiweiProtectedFieldKey>;
+
 /** 工作区通用 patch 支持的字段状态映射表（可按模块逐个渐进启用 Omit 保护） */
 export type DestinyWorkspaceUIPatchState = {
   bazi: DestinyWorkspaceCacheState['bazi'];
-  ziwei: DestinyWorkspaceCacheState['ziwei'];
+  ziwei: ZiweiUIPatchState;
   qimen: QimenUIPatchState;
   astrology: DestinyWorkspaceCacheState['astrology'];
 };
@@ -85,6 +97,14 @@ export type RestoreQimenWorkspacePayload = {
   baseResult: QimenAnalysisBaseResult | null;
   sections: QimenAsyncSections;
   formData: QimenFormData;
+};
+
+/** 紫微工作区从历史回填载荷 */
+export type RestoreZiweiWorkspacePayload = {
+  report: DestinyReport | null;
+  chartData: ZiweiChartData | null;
+  lockedSections: ZiweiLockedSections;
+  formData: BaziFormData;
 };
 
 /** 星座寰宇解读分区增量补丁 */
@@ -241,6 +261,23 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   abortQimenSession: () => void;
   /** 奇门：从历史记录无损恢复工作区（按 sections 实际 key 重建 sectionStatuses 并直达结果态） */
   restoreQimenWorkspace: (payload: RestoreQimenWorkspacePayload) => void;
+  /** 紫微：发起全新会话（全量重置并进入表单加载态） */
+  beginZiweiSession: () => void;
+  /** 紫微：更新流状态 */
+  applyZiweiStreamStatus: (status: DestinyStreamStatus) => void;
+  /** 紫微：分区结果到达（迟到保护、首宫聚焦、解包 chartData、原子推进结果态） */
+  applyZiweiSection: <K extends keyof ZiweiLockedSections>(
+    key: K,
+    payload: ZiweiLockedSections[K]
+  ) => void;
+  /** 紫微：报告定稿完成（释放流状态与阻塞加载，落盘报告） */
+  applyZiweiComplete: (report: DestinyReport) => void;
+  /** 紫微：会话失败（落盘错误并释放流状态与阻塞加载） */
+  failZiweiSession: (message: string, kind: ZiweiErrorKind) => void;
+  /** 紫微：安静取消（仅释放运行时标志，绝不写入 error） */
+  abortZiweiSession: () => void;
+  /** 紫微：从历史记录无损恢复工作区 */
+  restoreZiweiWorkspace: (payload: RestoreZiweiWorkspacePayload) => void;
   /** 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪 */
   beginAstrologySession: () => void;
   /** 解读重试：重置解读为待就绪，保持星盘真值与布局不动 */
@@ -583,6 +620,147 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
             },
           };
         }),
+
+      // 紫微：发起全新会话（全量重置并进入表单加载态）
+      beginZiweiSession: () =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            step: 'form',
+            lastView: 'form',
+            hasResult: false,
+            blockingLoading: true,
+            streaming: true,
+            error: null,
+            errorKind: null,
+            report: null,
+            chartData: null,
+            lockedSections: {},
+            streamStatus: 'queued',
+            tab: 'overview',
+            activePalaceLabel: '命宫',
+          },
+        })),
+
+      // 紫微：更新流状态
+      applyZiweiStreamStatus: (status) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            streamStatus: status,
+          },
+        })),
+
+      // 紫微：分区结果到达（迟到保护、首宫聚焦、解包 chartData、原子推进结果态）
+      applyZiweiSection: (key, payload) =>
+        set((state) => {
+          const current = state.ziwei;
+          if (current.lockedSections[key]) {
+            return state;
+          }
+
+          const nextLockedSections: ZiweiLockedSections = {
+            ...current.lockedSections,
+            [key]: payload,
+          };
+
+          let nextChartData = current.chartData;
+          if (key === 'chartData') {
+            nextChartData = payload as ZiweiChartData;
+          }
+
+          let nextActivePalaceLabel = current.activePalaceLabel;
+          if (key === 'palaceAnalysis' && Array.isArray(payload) && payload.length > 0) {
+            const firstLabel = (payload[0] as { label?: string }).label;
+            if (firstLabel) {
+              nextActivePalaceLabel = firstLabel;
+            }
+          }
+
+          return {
+            ...state,
+            ziwei: {
+              ...current,
+              lockedSections: nextLockedSections,
+              chartData: nextChartData,
+              activePalaceLabel: nextActivePalaceLabel,
+              blockingLoading: false,
+              hasResult: true,
+              step: 'result',
+              lastView: 'result',
+            },
+          };
+        }),
+
+      // 紫微：报告定稿完成（释放流状态与阻塞加载，落盘报告）
+      applyZiweiComplete: (report) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            report,
+            streaming: false,
+            streamStatus: null,
+            blockingLoading: false,
+            hasResult: true,
+            step: 'result',
+            lastView: 'result',
+          },
+        })),
+
+      // 紫微：会话失败（落盘错误并释放流状态与阻塞加载）
+      failZiweiSession: (message, kind) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            error: message,
+            errorKind: kind,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+          },
+        })),
+
+      // 紫微：安静取消（仅释放运行时标志，绝不写入 error）
+      abortZiweiSession: () =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 紫微：从历史记录无损恢复工作区
+      restoreZiweiWorkspace: (payload) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            step: 'result',
+            lastView: 'result',
+            hasResult: true,
+            blockingLoading: false,
+            streaming: false,
+            error: null,
+            errorKind: null,
+            report: payload.report,
+            chartData: payload.chartData,
+            lockedSections: payload.lockedSections,
+            streamStatus: null,
+            tab: 'overview',
+            activePalaceLabel: '命宫',
+            formData: payload.formData,
+            fieldErrors: {},
+          },
+        })),
 
       // 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪
       beginAstrologySession: () =>

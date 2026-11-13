@@ -5,17 +5,11 @@ import { Briefcase, Heart, HeartPulse, HelpCircle, Sparkles, Wallet } from 'luci
 import { PersonalityIcon } from './icons/personality-icon';
 import { useShallow } from 'zustand/react/shallow';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { authFetch } from '@/lib/api/client';
-import { consumeSse, readSseErrorMessage } from '@/lib/utils/sse-client';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
-import { useHistoryStore } from '@/stores/history-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
-import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
-// 跨模态接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（REQ §4.6.4 紫微裁剪）
-import { useRelayReceive } from '@/components/relay/use-relay-receive';
-import { generateUUID } from '@/lib/utils/uuid';
+import { ziweiSession } from '@/lib/destiny/ziwei-session';
 import { cn } from '@/lib/utils';
 import { BaziInputForm } from './bazi-input-form';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
@@ -26,7 +20,6 @@ import { ZiweiChartHeader } from './ziwei-chart-header';
 import { ZiweiPalaceGrid } from './ziwei-palace-grid';
 import { ZiweiThemeToggle } from './ziwei-theme-toggle';
 import { GlossaryTooltip } from './ziwei-glossary';
-import { mapFormToBaziRequest } from './bazi-mappers';
 import type { BaziFormData } from './bazi-types';
 import type {
   DestinyModule,
@@ -37,30 +30,9 @@ import type {
   ZiweiLockedSections,
   ZiweiPalaceAnalysis,
   ZiweiSectionKey,
-  ZiweiStreamEvent,
 } from './types';
 
 // ─── 类型 ───
-
-/** AI 返回的宫位标签 → iztro 宫位名映射 */
-const AI_TO_IZTRO_PALACE: Record<string, string> = {
-  父母宫: '父母',
-  福德宫: '福德',
-  田宅宫: '田宅',
-  官禄宫: '官禄',
-  命宫: '命宫',
-  兄弟宫: '兄弟',
-  奴仆宫: '仆役',
-  夫妻宫: '夫妻',
-  迁移宫: '迁移',
-  子女宫: '子女',
-  财帛宫: '财帛',
-  疾厄宫: '疾厄',
-};
-
-function normalizePalaceLabel(label: string): string {
-  return AI_TO_IZTRO_PALACE[label] ?? label;
-}
 
 type ZiweiWorkspaceProps = {
   isActive: boolean;
@@ -128,29 +100,6 @@ function validateForm(formData: BaziFormData): Partial<Record<keyof BaziFormData
   return errors;
 }
 
-// ─── 错误处理 ───
-
-function classifyResponseError(status: number): ZiweiErrorKind {
-  if (status === 400 || status === 422) return 'validation';
-  if (status === 408 || status === 504) return 'timeout';
-  if (status === 429 || status >= 500) return 'model';
-  return 'unknown';
-}
-
-function displayError(kind: ZiweiErrorKind, fallback?: string): string {
-  if (fallback?.trim()) return fallback;
-  switch (kind) {
-    case 'validation':
-      return '参数错误：请检查姓名、出生日期、时间及地点后重试。';
-    case 'timeout':
-      return '超时错误：模型推演时间过长，请稍后重试。';
-    case 'model':
-      return '模型错误：紫微斗数分析服务暂不可用，请稍后重试。';
-    default:
-      return '系统异常：紫微斗数分析失败，请稍后重试。';
-  }
-}
-
 // ─── 主组件 ───
 
 export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProps) {
@@ -168,25 +117,16 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     tab,
     activePalaceLabel,
     setWorkspaceState,
-    resetWorkspace,
     restoreWorkspace,
-    markResultReady,
     provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.ziwei,
       setWorkspaceState: state.setWorkspaceState,
-      resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
-      markResultReady: state.markResultReady,
       provider: state.provider,
     }))
   );
-  const abortRef = useRef<AbortController | null>(null);
-  const currentHistoryIdRef = useRef<string | null>(null);
-
-  // 接力：紫微目标接收。紫微无 AI 顾问，承接语义为「生成命盘即完成接力」（区别于八字的顾问追问）。
-  const relay = useRelayReceive('destiny');
 
   // 主题解析：手动偏好 > 跟随系统（暗→夜幕 / 亮→白昼），仅作用于结果步
   const ziweiThemePref = useZiweiThemeStore((s) => s.pref);
@@ -217,51 +157,24 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     return () => root.classList.remove('ziwei-night-root', 'ziwei-day-root');
   }, [step, resultNight]);
 
+  // 模块激活时恢复视图，并尝试从 URL 历史参数恢复
   useEffect(() => {
-    if (isActive) restoreWorkspace('ziwei');
+    if (isActive) {
+      restoreWorkspace('ziwei');
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const historyId = params.get('historyId');
+        if (historyId) {
+          ziweiSession.restoreFromHistory(historyId);
+        }
+      }
+    }
   }, [isActive, restoreWorkspace]);
 
-  const isHistoryInitialized = useHistoryStore((state) => state.isInitialized);
-
-  // 从历史记录恢复
-  useEffect(() => {
-    if (!isActive || !isHistoryInitialized) return;
-    const params = new URLSearchParams(window.location.search);
-    const historyId = params.get('historyId');
-    if (!historyId) return;
-    const historyItem = useHistoryStore.getState().getItemById(historyId);
-    if (historyItem?.type !== 'destiny' || historyItem.subType !== 'ziwei') return;
-    const savedReportData = historyItem.reportData as Record<string, unknown> | null;
-    const savedReport = savedReportData?.report as never;
-    const savedChartData = (savedReportData?.chartData as never) || null;
-    setWorkspaceState('ziwei', {
-      step: 'result',
-      lastView: 'result',
-      hasResult: true,
-      blockingLoading: false,
-      streaming: false,
-      error: null,
-      errorKind: null,
-      report: savedReport,
-      chartData: savedChartData,
-      lockedSections: (savedReportData?.lockedSections as ZiweiLockedSections) || {},
-      streamStatus: null,
-      tab: 'overview',
-      activePalaceLabel: '命宫',
-      formData: (historyItem.formData as BaziFormData) || formData,
-      fieldErrors: {},
-    });
-    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
-    const url = new URL(window.location.href);
-    url.searchParams.delete('historyId');
-    window.history.replaceState({}, '', url.toString());
-    // formData 仅用作后备值，历史记录恢复以 item.formData 为准
-    // setWorkspaceState 为 Zustand 稳定引用
-  }, [isActive, isHistoryInitialized]);
-
+  // 组件卸载时安静暂停推演，释放在途网络
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      ziweiSession.cancel();
     };
   }, []);
 
@@ -283,162 +196,15 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
       return;
     }
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    currentHistoryIdRef.current = generateUUID();
-
-    setWorkspaceState('ziwei', {
-      step: 'form',
-      lastView: 'form',
-      hasResult: false,
-      blockingLoading: true,
-      streaming: true,
-      error: null,
-      errorKind: null,
-      report: null,
-      chartData: null,
-      lockedSections: {},
-      streamStatus: 'queued',
-      tab: 'overview',
-      activePalaceLabel: '命宫',
-    });
-
-    let currentErrorKind: ZiweiErrorKind = 'unknown';
-
-    try {
-      const response = await authFetch('/api/destiny/ziwei-report', {
-        method: 'POST',
-        body: JSON.stringify({ ...mapFormToBaziRequest(formData), provider }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        currentErrorKind = classifyResponseError(response.status);
-        const errText = await readSseErrorMessage(response);
-        throw new Error(displayError(currentErrorKind, errText));
-      }
-
-      const receivedSections: ZiweiLockedSections = {};
-      let sawComplete = false;
-
-      await consumeSse<ZiweiStreamEvent>(response, {
-        onEvent: (event) => {
-          if (event.type === 'status') {
-            setWorkspaceState('ziwei', { streamStatus: event.status });
-            return;
-          }
-
-          if (event.type === 'section-final') {
-            if (receivedSections[event.sectionKey]) return;
-
-            const key = event.sectionKey as keyof ZiweiLockedSections;
-            let payload = event.payload;
-
-            // 将 AI 返回的宫位标签（如"父母宫"）归一化为 iztro 名称（如"父母"）
-            if (event.sectionKey === 'palaceAnalysis' && Array.isArray(event.payload)) {
-              payload = (event.payload as ZiweiPalaceAnalysis[]).map((item) => ({
-                ...item,
-                label: normalizePalaceLabel(item.label),
-              }));
-            }
-
-            (receivedSections as Record<string, unknown>)[event.sectionKey] = payload;
-
-            setWorkspaceState('ziwei', (current) => ({
-              lockedSections: current.lockedSections[event.sectionKey]
-                ? current.lockedSections
-                : { ...current.lockedSections, [event.sectionKey]: payload },
-              chartData:
-                event.sectionKey === 'chartData'
-                  ? (event.payload as ZiweiChartData)
-                  : current.chartData,
-              blockingLoading: false,
-              activePalaceLabel:
-                event.sectionKey === 'palaceAnalysis' &&
-                Array.isArray(payload) &&
-                (payload as ZiweiPalaceAnalysis[])[0]?.label
-                  ? (payload as ZiweiPalaceAnalysis[])[0].label
-                  : current.activePalaceLabel,
-            }));
-            markResultReady('ziwei');
-            return;
-          }
-
-          if (event.type === 'complete') {
-            sawComplete = true;
-            setWorkspaceState('ziwei', (current) => ({
-              report: event.report,
-              streaming: false,
-              streamStatus: null,
-            }));
-            markResultReady('ziwei');
-
-            // 保存到历史记录（包含 chartData 和 lockedSections 以便恢复时重建完整状态）
-            const currentState = useDestinyWorkspaceStore.getState().ziwei;
-            const enhancedReportData = {
-              report: event.report,
-              chartData: currentState.chartData,
-              lockedSections: currentState.lockedSections,
-            };
-            const previewText =
-              event.report.coreTone?.headline ||
-              event.report.coreTone?.description ||
-              '紫微斗数星盘分析';
-            const historyItem = createDestinyHistoryItem(
-              'ziwei',
-              formData as unknown as Record<string, unknown>,
-              enhancedReportData as unknown as Record<string, unknown>,
-              'doubao-seed-2-0',
-              {
-                id: currentHistoryIdRef.current || undefined,
-                title: `${formData.name}的紫微斗数命理报告`,
-                preview: previewText.slice(0, 150),
-                coreTone: event.report.coreTone?.tag || '紫微斗数',
-                // 接力派生：记录来源（REQ-013）；紫微无顾问，生成命盘即完成接力
-                derivation: relay.prepareExecution(),
-              }
-            );
-            useHistoryStore.getState().addItem(historyItem);
-            // 紫微承接语义：生成命盘成功即完成接力（清引用+草稿，REQ-016/§4.6.4 紫微裁剪）
-            relay.commitExecution();
-            return;
-          }
-
-          if (event.type === 'error') {
-            throw new Error(event.error);
-          }
-        },
-      });
-
-      if (!sawComplete) {
-        setWorkspaceState('ziwei', {
-          blockingLoading: false,
-          streaming: false,
-          streamStatus: null,
-        });
-      }
-    } catch (nextError) {
-      if (nextError instanceof Error && nextError.name === 'AbortError') return;
-      const rawMessage = nextError instanceof Error ? nextError.message : undefined;
-      setWorkspaceState('ziwei', {
-        errorKind: currentErrorKind,
-        error: displayError(currentErrorKind, rawMessage),
-      });
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setWorkspaceState('ziwei', { blockingLoading: false, streaming: false });
-    }
+    await ziweiSession.start(formData, { provider });
   };
 
   const reset = () => {
-    abortRef.current?.abort();
-    resetWorkspace('ziwei');
+    ziweiSession.reset();
   };
 
   const handleRecalculate = () => {
-    abortRef.current?.abort();
-    resetWorkspace('ziwei');
+    ziweiSession.reset();
   };
 
   return (
