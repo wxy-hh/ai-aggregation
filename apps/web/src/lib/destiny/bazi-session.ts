@@ -1,4 +1,5 @@
 import { authFetch } from '@/lib/api/client';
+import { classifyDestinyResponseError } from './destiny-errors';
 import {
   useDestinyWorkspaceStore,
   type BaziErrorKind,
@@ -22,17 +23,10 @@ import type {
 } from '@/app/destiny/_components/types';
 
 /** 模块级闭包单例状态 */
-let latestRequestToken = 0;
+let latestRunId = 0;
 let latestAbortController: AbortController | null = null;
 
-export function classifyResponseError(status: number): BaziErrorKind {
-  if (status === 400 || status === 422) return 'validation';
-  if (status === 408 || status === 504) return 'timeout';
-  if (status === 429 || status >= 500) return 'model';
-  return 'unknown';
-}
-
-export function displayError(kind: BaziErrorKind, fallback?: string): string {
+function displayError(kind: BaziErrorKind, fallback?: string): string {
   if (fallback?.trim()) return fallback;
   switch (kind) {
     case 'validation':
@@ -65,8 +59,8 @@ async function start(
   // 中止先前正在进行的在途请求
   latestAbortController?.abort();
 
-  latestRequestToken += 1;
-  const currentToken = latestRequestToken;
+  latestRunId += 1;
+  const currentRunId = latestRunId;
   const controller = new AbortController();
   latestAbortController = controller;
 
@@ -87,10 +81,10 @@ async function start(
       signal: controller.signal,
     });
 
-    if (currentToken !== latestRequestToken) return;
+    if (currentRunId !== latestRunId) return;
 
     if (!response.ok) {
-      currentErrorKind = classifyResponseError(response.status);
+      currentErrorKind = classifyDestinyResponseError(response.status);
       const errText = await readSseErrorMessage(response);
       throw new Error(displayError(currentErrorKind, errText));
     }
@@ -99,7 +93,7 @@ async function start(
 
     await consumeSse<BaziStreamEvent>(response, {
       onEvent: (event) => {
-        if (currentToken !== latestRequestToken) return;
+        if (currentRunId !== latestRunId) return;
 
         if (event.type === 'status') {
           useDestinyWorkspaceStore.getState().applyBaziStreamStatus(event.status);
@@ -140,13 +134,13 @@ async function start(
       },
     });
 
-    if (currentToken !== latestRequestToken) return;
+    if (currentRunId !== latestRunId) return;
 
     if (!sawComplete) {
       useDestinyWorkspaceStore.getState().abortBaziSession();
     }
   } catch (err) {
-    if (currentToken !== latestRequestToken) return;
+    if (currentRunId !== latestRunId) return;
     if (err instanceof Error && err.name === 'AbortError') return;
 
     const rawMessage = err instanceof Error ? err.message : undefined;
@@ -182,7 +176,7 @@ function cancel(): void {
 function reset(): void {
   latestAbortController?.abort();
   latestAbortController = null;
-  latestRequestToken += 1;
+  latestRunId += 1;
   useDestinyWorkspaceStore.getState().resetWorkspace('bazi');
 }
 
@@ -226,7 +220,7 @@ function restoreFromHistory(historyId: string): boolean {
 export function _resetBaziSessionForTest(): void {
   latestAbortController?.abort();
   latestAbortController = null;
-  latestRequestToken = 0;
+  latestRunId += 1;
 }
 
 export const baziSession = {

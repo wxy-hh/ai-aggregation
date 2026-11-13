@@ -1,4 +1,5 @@
 import { authFetch } from '@/lib/api/client';
+import { classifyDestinyResponseError } from './destiny-errors';
 import {
   useDestinyWorkspaceStore,
   type DestinyProvider,
@@ -30,13 +31,6 @@ function clearAllTimeouts(): void {
     clearTimeout(timer);
   }
   activeTimeouts.clear();
-}
-
-function classifyResponseError(status: number): QimenErrorKind {
-  if (status === 400 || status === 422) return 'validation';
-  if (status === 408 || status === 504) return 'timeout';
-  if (status === 429 || status >= 500) return 'model';
-  return 'unknown';
 }
 
 function toDisplayError(kind: QimenErrorKind, fallback?: string): string {
@@ -262,7 +256,7 @@ async function start(
     if (currentRunId !== latestRunId) return;
 
     if (!response.ok) {
-      const kind = classifyResponseError(response.status);
+      const kind = classifyDestinyResponseError(response.status);
       const rawMessage = await readErrorMessage(response);
       useDestinyWorkspaceStore.getState().failQimenSession(
         toDisplayError(kind, rawMessage),

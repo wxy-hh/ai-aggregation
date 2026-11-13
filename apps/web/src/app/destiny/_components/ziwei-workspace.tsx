@@ -6,6 +6,7 @@ import { PersonalityIcon } from './icons/personality-icon';
 import { useShallow } from 'zustand/react/shallow';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useDestinyWorkspaceStore, type ZiweiErrorKind } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useZiweiThemeStore } from '@/stores/ziwei-theme-store';
 import { resolveZiweiTheme } from '@/lib/utils/ziwei-theme';
@@ -157,6 +158,9 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
     return () => root.classList.remove('ziwei-night-root', 'ziwei-day-root');
   }, [step, resultNight]);
 
+  // 历史库水合完成后才允许 URL 恢复：冷启动时 IndexedDB 水合异步，过早读取会静默失败且不重试
+  const isZiweiHistoryInitialized = useHistoryStore((state) => state.isInitialized);
+
   // 模块激活时恢复视图，并尝试从 URL 历史参数恢复
   useEffect(() => {
     if (isActive) {
@@ -164,12 +168,12 @@ export function ZiweiWorkspace({ isActive, onLoadingChange }: ZiweiWorkspaceProp
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const historyId = params.get('historyId');
-        if (historyId) {
+        if (historyId && isZiweiHistoryInitialized) {
           ziweiSession.restoreFromHistory(historyId);
         }
       }
     }
-  }, [isActive, restoreWorkspace]);
+  }, [isActive, restoreWorkspace, isZiweiHistoryInitialized]);
 
   // 组件卸载时安静暂停推演，释放在途网络
   useEffect(() => {

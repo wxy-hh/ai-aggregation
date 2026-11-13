@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
+import { useHistoryStore } from '@/stores/history-store';
 import { qimenSession } from '@/lib/destiny/qimen-session';
 import { cn } from '@/lib/utils';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
@@ -80,6 +81,9 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
     onLoadingChange?.(blockingLoading);
   }, [blockingLoading, onLoadingChange]);
 
+  // 历史库水合完成后才允许 URL 恢复：冷启动时 IndexedDB 水合异步，过早读取会静默失败且不重试
+  const isQimenHistoryInitialized = useHistoryStore((state) => state.isInitialized);
+
   // 模块激活时恢复视图，并尝试从 URL 历史参数恢复
   useEffect(() => {
     if (isActive) {
@@ -87,12 +91,12 @@ export function QimenWorkspace({ isActive, onLoadingChange }: QimenWorkspaceProp
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const historyId = params.get('historyId');
-        if (historyId) {
+        if (historyId && isQimenHistoryInitialized) {
           qimenSession.restoreFromHistory(historyId);
         }
       }
     }
-  }, [isActive, restoreWorkspace]);
+  }, [isActive, restoreWorkspace, isQimenHistoryInitialized]);
 
   // 组件卸载时安静暂停推演，释放在途网络与定时器
   useEffect(() => {
