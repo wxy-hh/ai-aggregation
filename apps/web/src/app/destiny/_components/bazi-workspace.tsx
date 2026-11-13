@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { authFetch } from '@/lib/api/client';
-import { consumeSse, readSseErrorMessage } from '@/lib/utils/sse-client';
-import { useDestinyWorkspaceStore, type BaziErrorKind } from '@/stores/destiny-workspace-store';
+import { useDestinyWorkspaceStore } from '@/stores/destiny-workspace-store';
 import { useHistoryStore } from '@/stores/history-store';
-import { createDestinyHistoryItem } from '@/lib/utils/history-helpers';
-import { generateUUID } from '@/lib/utils/uuid';
+import { baziSession } from '@/lib/destiny/bazi-session';
+import { buildPartialReport } from '@/lib/destiny/bazi-report-merge';
 import { cn } from '@/lib/utils';
 import type { DestinyHistoryItem } from '@/types/history';
 import { BaziInputForm } from './bazi-input-form';
@@ -15,14 +13,11 @@ import { DestinyShell } from './layout/destiny-shell';
 import { DestinyModelSwitcher } from '@/components/destiny/model-switcher';
 import { DestinyPageScaffold } from './layout/destiny-page-scaffold';
 import { StarDecodeOverlay } from './onboarding/star-decode-overlay';
-import { mapFormToBaziRequest } from './bazi-mappers';
 // 跨模态接力：命盘生成后经 externalDraft 预填顾问（绝不复用 queuedQuestion，REQ §4.6.4）
 import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import type { BaziFormData } from './bazi-types';
 import type {
   BaziLockedSections,
-  BaziSectionKey,
-  BaziStreamEvent,
   DestinyReport,
   PartialDestinyReport,
 } from './types';
@@ -139,28 +134,6 @@ function validateForm(formData: BaziFormData): Partial<Record<keyof BaziFormData
   return errors;
 }
 
-function classifyResponseError(status: number): BaziErrorKind {
-  if (status === 400 || status === 422) return 'validation';
-  if (status === 408 || status === 504) return 'timeout';
-  if (status === 429 || status >= 500) return 'model';
-  return 'unknown';
-}
-
-function toDisplayError(kind: BaziErrorKind, fallback?: string): string {
-  if (fallback?.trim()) return fallback;
-
-  switch (kind) {
-    case 'validation':
-      return '参数错误：请检查姓名、出生日期、时间及地点后重试。';
-    case 'timeout':
-      return '超时错误：模型推演时间过长，请稍后重试。';
-    case 'model':
-      return '模型错误：分析服务暂不可用，请稍后重试。';
-    default:
-      return '系统异常：八字分析失败，请稍后重试。';
-  }
-}
-
 export function BaziWorkspace({
   isActive,
   activeModule,
@@ -178,22 +151,16 @@ export function BaziWorkspace({
     lockedSections,
     streamStatus,
     setWorkspaceState,
-    resetWorkspace,
     restoreWorkspace,
-    markResultReady,
     provider,
   } = useDestinyWorkspaceStore(
     useShallow((state) => ({
       ...state.bazi,
       setWorkspaceState: state.setWorkspaceState,
-      resetWorkspace: state.resetWorkspace,
       restoreWorkspace: state.restoreWorkspace,
-      markResultReady: state.markResultReady,
       provider: state.provider,
     }))
   );
-  const abortRef = useRef<AbortController | null>(null);
-  const currentHistoryIdRef = useRef<string | null>(null);
 
   // ─── 八字合盘本地流程状态（与个人报告 step 分离，独立占满主内容区） ───
   // 必须放在 submit / 历史恢复 effect 之前声明，保证闭包与 hooks 顺序稳定
@@ -209,6 +176,18 @@ export function BaziWorkspace({
   const { generate: generateCompatibility, abort: abortCompatibility } =
     useCompatibilityFlow();
 
+  // 清空合盘本地状态助手（主盘提交与重算前调用，留在页面，绝不传入 session）
+  const resetLocalCompatibilityState = useCallback(() => {
+    abortCompatibility();
+    setCompatStep('idle');
+    setCompatReport(null);
+    setCompatStatus(null);
+    setCompatError(null);
+    setCompatLoadingView(false);
+    setPartnerForm(createDefaultPartnerForm());
+    setCompatRelation('romance');
+  }, [abortCompatibility]);
+
   // 同步合盘流程激活态到 store：合盘层是覆盖式全屏视图，外层需隐藏表单专属入口（模型切换/接力横幅）
   useEffect(() => {
     setWorkspaceState('bazi', (current) => {
@@ -220,6 +199,12 @@ export function BaziWorkspace({
   // 订阅历史列表：用于本地态丢失后仍能回看「上次合盘」
   const historyItems = useHistoryStore((s) => s.items);
   const isHistoryReady = useHistoryStore((s) => s.isInitialized);
+
+  const latestBaziHistoryId = useMemo(() => {
+    return historyItems.find(
+      (item) => item.type === 'destiny' && item.subType === 'bazi'
+    )?.id;
+  }, [historyItems]);
 
   // 接力：八字目标接收。命盘生成后把引用文本经 externalDraft 预填到 AI 顾问输入框。
   const relay = useRelayReceive('destiny');
@@ -235,13 +220,10 @@ export function BaziWorkspace({
     },
     [relay.bundle?.id]
   );
-  // 顾问发送预填内容成功：完成一次接力（清活动引用与草稿）
-  const handleRelayDraftSent = useMemo(
-    () => () => {
-      relay.commitExecution();
-    },
-    [relay.bundle?.id]
-  );
+  // 顾问发送预填内容成功：完成一次接力（代理至会话命令模块闭环）
+  const handleRelayDraftSent = useCallback(() => {
+    baziSession.commitAdvisorRelay();
+  }, []);
 
   useEffect(() => {
     onLoadingChange?.(blockingLoading);
@@ -289,8 +271,6 @@ export function BaziWorkspace({
         setWorkspaceState('bazi', {
           formData: form.self,
           fieldErrors: {},
-          blockingLoading: false,
-          streaming: false,
           error: null,
           errorKind: null,
         });
@@ -329,24 +309,8 @@ export function BaziWorkspace({
     }
 
     if (historyItem.subType !== 'bazi') return;
-    // 兼容旧格式（reportData 直接是 mergedReport）和新格式（{ report, lockedSections }）
-    const reportData = historyItem.reportData as Record<string, unknown> | null;
-    const isNewFormat = reportData != null && 'report' in reportData && 'lockedSections' in reportData;
-    currentHistoryIdRef.current = historyId;
-    setWorkspaceState('bazi', {
-      step: 'result',
-      lastView: 'result',
-      hasResult: true,
-      blockingLoading: false,
-      streaming: false,
-      error: null,
-      errorKind: null,
-      report: (isNewFormat ? (reportData as Record<string, unknown>).report : reportData) as never,
-      lockedSections: (isNewFormat ? (reportData as Record<string, unknown>).lockedSections : {}) as BaziLockedSections,
-      streamStatus: null,
-      formData: (historyItem.formData as BaziFormData) || formData,
-      fieldErrors: {},
-    });
+    baziSession.restoreFromHistory(historyId);
+
     // 恢复个人八字时，若存在关联合盘，预填以便结果页展示「查看合盘」
     const linkedCompat = findRelatedCompatibilityItem(useHistoryStore.getState().items, {
       sourceBaziHistoryId: historyId,
@@ -362,17 +326,11 @@ export function BaziWorkspace({
         setCompatStep('idle');
       }
     }
-    // 恢复完成后清理 URL 中的 historyId，避免刷新或切换 tab 时重复触发
-    const url = new URL(window.location.href);
-    url.searchParams.delete('historyId');
-    window.history.replaceState({}, '', url.toString());
-    // formData 仅用作后备值，历史记录恢复以 item.formData 为准，无需作为依赖
-    // setWorkspaceState 为 Zustand 稳定引用，无需声明为依赖
   }, [isActive, isBaziHistoryInitialized]);
 
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      baziSession.cancel();
     };
   }, []);
 
@@ -382,83 +340,6 @@ export function BaziWorkspace({
       fieldErrors: { ...current.fieldErrors, [key]: undefined },
     }));
   };
-
-  const setLockedSection = (
-    target: BaziLockedSections,
-    sectionKey: BaziSectionKey,
-    payload: BaziLockedSections[BaziSectionKey]
-  ) => {
-    (target as Record<BaziSectionKey, BaziLockedSections[BaziSectionKey]>)[sectionKey] = payload;
-  };
-
-  const buildPartialReport = (sections: BaziLockedSections): PartialDestinyReport => {
-    const partial: PartialDestinyReport = {};
-    if (sections.baziBasis) {
-      partial.baziBasis = {
-        ...sections.baziBasis,
-        decadeFortuneInsights:
-          sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
-      };
-    }
-    if (sections.profileOverview) partial.profile = sections.profileOverview;
-    if (sections.coreDestinyTone) partial.coreTone = sections.coreDestinyTone;
-    if (sections.pillars) partial.pillars = sections.pillars;
-    if (sections.elementsAndTenGods) {
-      partial.elements = sections.elementsAndTenGods.elements;
-      partial.tenGods = sections.elementsAndTenGods.tenGods;
-      partial.balanceInsight = sections.elementsAndTenGods.balanceInsight;
-      partial.patternHighlights = sections.elementsAndTenGods.patternHighlights;
-      partial.lifeDimensions = sections.elementsAndTenGods.lifeDimensions;
-      partial.lifeDimensionHighlights = sections.elementsAndTenGods.lifeDimensionHighlights;
-      partial.tenGodDomains = sections.elementsAndTenGods.tenGodDomains;
-    }
-    const partialModules: Partial<DestinyReport['modules']> = {};
-    if (sections.modulePersonality) partialModules.personality = sections.modulePersonality;
-    if (sections.moduleCareer) partialModules.career = sections.moduleCareer;
-    if (sections.moduleLove) partialModules.love = sections.moduleLove;
-    if (sections.moduleWealth) partialModules.wealth = sections.moduleWealth;
-    if (sections.moduleHealth) partialModules.health = sections.moduleHealth;
-    if (Object.keys(partialModules).length > 0) partial.modules = partialModules;
-    if (sections.timeline) partial.timeline = sections.timeline;
-    return partial;
-  };
-
-  const mergeLockedSectionsIntoReport = (
-    nextReport: DestinyReport,
-    sections: BaziLockedSections
-  ): DestinyReport => ({
-    ...nextReport,
-    baziBasis: sections.baziBasis
-      ? {
-          ...sections.baziBasis,
-          decadeFortuneInsights:
-            sections.decadeFortuneInsights ?? sections.baziBasis.decadeFortuneInsights,
-        }
-      : nextReport.baziBasis,
-    profile: sections.profileOverview ?? nextReport.profile,
-    coreTone: sections.coreDestinyTone ?? nextReport.coreTone,
-    pillars: sections.pillars ?? nextReport.pillars,
-    elements: sections.elementsAndTenGods?.elements ?? nextReport.elements,
-    tenGods: sections.elementsAndTenGods?.tenGods ?? nextReport.tenGods,
-    balanceInsight: sections.elementsAndTenGods?.balanceInsight ?? nextReport.balanceInsight,
-    patternHighlights:
-      sections.elementsAndTenGods?.patternHighlights ?? nextReport.patternHighlights,
-    lifeDimensions: sections.elementsAndTenGods?.lifeDimensions ?? nextReport.lifeDimensions,
-    lifeDimensionHighlights:
-      sections.elementsAndTenGods?.lifeDimensionHighlights ?? nextReport.lifeDimensionHighlights,
-    tenGodDomains: sections.elementsAndTenGods?.tenGodDomains ?? nextReport.tenGodDomains,
-    modules: {
-      personality: sections.modulePersonality ?? nextReport.modules.personality,
-      career: sections.moduleCareer ?? nextReport.modules.career,
-      love: sections.moduleLove ?? nextReport.modules.love,
-      wealth: sections.moduleWealth ?? nextReport.modules.wealth,
-      health: sections.moduleHealth ?? nextReport.modules.health,
-    },
-    timeline: sections.timeline ?? nextReport.timeline,
-  });
-
-  const hasAnyDisplayableSection = (sections: BaziLockedSections) =>
-    Object.keys(sections).length > 0;
 
   const submit = async () => {
     const errors = validateForm(formData);
@@ -471,163 +352,17 @@ export function BaziWorkspace({
       return;
     }
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    currentHistoryIdRef.current = generateUUID();
-
-    // 新一轮个人八字测算：清空合盘本地态，避免串到上一份对象
-    abortCompatibility();
-    setCompatStep('idle');
-    setCompatReport(null);
-    setCompatStatus(null);
-    setCompatError(null);
-    setCompatLoadingView(false);
-    setPartnerForm(createDefaultPartnerForm());
-    setCompatRelation('romance');
-
-    setWorkspaceState('bazi', {
-      step: 'form',
-      lastView: 'form',
-      hasResult: false,
-      blockingLoading: true,
-      streaming: true,
-      error: null,
-      errorKind: null,
-      lockedSections: {},
-      report: null,
-      streamStatus: 'queued',
-    });
-
-    let currentErrorKind: BaziErrorKind = 'unknown';
-
-    try {
-      const response = await authFetch('/api/destiny/report', {
-        method: 'POST',
-        body: JSON.stringify({ ...mapFormToBaziRequest(formData), provider }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        currentErrorKind = classifyResponseError(response.status);
-        setWorkspaceState('bazi', { errorKind: currentErrorKind });
-        throw new Error(toDisplayError(currentErrorKind, await readSseErrorMessage(response)));
-      }
-
-      const receivedSections: BaziLockedSections = {};
-      let sawComplete = false;
-
-      await consumeSse<BaziStreamEvent>(response, { onEvent: (event) => {
-        if (event.type === 'status') {
-          setWorkspaceState('bazi', { streamStatus: event.status });
-          return;
-        }
-
-        if (event.type === 'section-final') {
-          if (receivedSections[event.sectionKey]) return;
-          setLockedSection(receivedSections, event.sectionKey, event.payload);
-          setWorkspaceState('bazi', (current) => ({
-            lockedSections: current.lockedSections[event.sectionKey]
-              ? current.lockedSections
-              : { ...current.lockedSections, [event.sectionKey]: event.payload },
-            blockingLoading: hasAnyDisplayableSection({
-              ...receivedSections,
-              ...current.lockedSections,
-            })
-              ? false
-              : current.blockingLoading,
-          }));
-          if (hasAnyDisplayableSection(receivedSections)) {
-            markResultReady('bazi');
-          }
-          return;
-        }
-
-        if (event.type === 'complete') {
-          sawComplete = true;
-          const mergedReport = mergeLockedSectionsIntoReport(event.report, receivedSections);
-          setWorkspaceState('bazi', (current) => ({
-            report: mergedReport,
-            lockedSections: { ...receivedSections, ...current.lockedSections },
-            blockingLoading: false,
-            streaming: false,
-            streamStatus: null,
-          }));
-          markResultReady('bazi');
-
-          // 保存到历史记录（包含 lockedSections 以便恢复时重建完整状态）
-          const currentState = useDestinyWorkspaceStore.getState().bazi;
-          const enhancedReportData = {
-            report: mergedReport,
-            lockedSections: currentState.lockedSections,
-          };
-          const previewText =
-            mergedReport.coreTone?.headline ||
-            mergedReport.coreTone?.description ||
-            '八字格局精批';
-          const historyItem = createDestinyHistoryItem(
-            'bazi',
-            formData as unknown as Record<string, unknown>,
-            enhancedReportData as unknown as Record<string, unknown>,
-            'doubao-seed-2-0',
-            {
-              id: currentHistoryIdRef.current || undefined,
-              title: `${formData.name}的八字命理报告`,
-              preview: previewText.slice(0, 150),
-              coreTone: mergedReport.coreTone?.tag || '八字命理',
-              // 接力派生：有活动引用时记录来源（REQ-013）；完成接力时机在顾问发送成功（§4.6.4-5）
-              derivation: relay.prepareExecution(),
-            }
-          );
-          useHistoryStore.getState().addItem(historyItem);
-          return;
-        }
-
-        if (event.type === 'error') {
-          throw new Error(event.error);
-        }
-      }});
-
-      if (!sawComplete) {
-        throw new Error('分析连接已中断，请稍后重试。');
-      }
-    } catch (nextError) {
-      if (nextError instanceof Error && nextError.name === 'AbortError') {
-        return;
-      }
-      const rawMessage = nextError instanceof Error ? nextError.message : undefined;
-      setWorkspaceState('bazi', {
-        errorKind: currentErrorKind,
-        error: toDisplayError(currentErrorKind, rawMessage),
-      });
-    } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-      }
-      setWorkspaceState('bazi', {
-        blockingLoading: false,
-        streaming: false,
-      });
-    }
+    resetLocalCompatibilityState();
+    await baziSession.start(formData, { provider });
   };
 
   const reset = () => {
-    abortRef.current?.abort();
-    resetWorkspace('bazi');
+    baziSession.reset();
   };
 
   const handleRecalculate = () => {
-    abortRef.current?.abort();
-    abortCompatibility();
-    setCompatStep('idle');
-    setCompatReport(null);
-    setCompatStatus(null);
-    setCompatError(null);
-    setCompatLoadingView(false);
-    setPartnerForm(createDefaultPartnerForm());
-    setCompatRelation('romance');
-    currentHistoryIdRef.current = null;
-    resetWorkspace('bazi');
+    resetLocalCompatibilityState();
+    baziSession.reset();
   };
 
   const partialReport = useMemo(() => buildPartialReport(lockedSections), [lockedSections]);
@@ -635,10 +370,10 @@ export function BaziWorkspace({
   const relatedCompatHistory = useMemo(() => {
     if (!isHistoryReady) return null;
     return findRelatedCompatibilityItem(historyItems, {
-      sourceBaziHistoryId: currentHistoryIdRef.current,
+      sourceBaziHistoryId: latestBaziHistoryId,
       selfName: formData.name,
     });
-  }, [historyItems, isHistoryReady, formData.name, compatReport?.id]);
+  }, [historyItems, isHistoryReady, latestBaziHistoryId, formData.name, compatReport?.id]);
 
   // 本地尚无合盘结果时，从历史档案回填（同会话返回 / 刷新后仍可「查看上次合盘」）
   useEffect(() => {
@@ -769,7 +504,7 @@ export function BaziWorkspace({
       partnerForm,
       relationType: relation,
       provider,
-      sourceBaziHistoryId: currentHistoryIdRef.current,
+      sourceBaziHistoryId: latestBaziHistoryId,
       existingReportId: compatReport?.id,
       viewOnly,
       onStatus: setCompatStatus,
@@ -783,7 +518,7 @@ export function BaziWorkspace({
             sourceBaziHistoryId:
               next.sourceBaziHistoryId ??
               prev.sourceBaziHistoryId ??
-              currentHistoryIdRef.current,
+              latestBaziHistoryId,
           };
         });
         setCompatRelation(relation);
