@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAuthStore, type AuthStatus } from './auth-store';
 
 const refreshMock = vi.fn();
@@ -87,12 +87,12 @@ describe('auth-store 引导状态契约与下线匿名后的未登录拦截', ()
     expect(guardWouldRedirect(store.getState().status, store.getState().isAuthenticated)).toBe(false);
   });
 
-  it('已持久化登录态时 rehydrate 即 ready', () => {
+  it('已持久化登录态时 rehydrate 仍等待真实引导', () => {
     seedPersistedSession();
     const store = createAuthStore();
 
     expect(store.getState().isAuthenticated).toBe(true);
-    expect(store.getState().status).toBe('ready');
+    expect(store.getState().status).toBe('bootstrapping');
   });
 
   it('登录动作不改写引导状态，仅更新用户和 accessToken', async () => {
@@ -170,5 +170,104 @@ describe('accessToken 内存化契约', () => {
     expect(store.getState().isAuthenticated).toBe(false);
     const persisted = JSON.parse(localStorage.getItem('ai-app-auth') ?? '{}');
     expect(persisted.state?.isAuthenticated).toBe(false);
+  });
+});
+
+describe('认证恢复生命周期', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    for (const mock of [refreshMock, getMeMock, loginMock, registerMock, logoutMock]) {
+      mock.mockReset();
+    }
+  });
+
+  it('持久化登录快照在真实引导前保持 bootstrapping', () => {
+    seedPersistedSession();
+
+    const store = createAuthStore();
+
+    expect(store.getState().isAuthenticated).toBe(true);
+    expect(store.getState().status).toBe('bootstrapping');
+  });
+
+  it('已完成引导后重复 initialize 不再次刷新', async () => {
+    refreshMock.mockResolvedValue({ accessToken: 'valid-token' });
+    getMeMock.mockResolvedValue({ success: true, data: { user: TEST_USER } });
+    const store = createAuthStore();
+
+    await store.getState().initialize();
+    const callsAfterFirstBootstrap = refreshMock.mock.calls.length;
+    await store.getState().initialize();
+
+    expect(refreshMock).toHaveBeenCalledTimes(callsAfterFirstBootstrap);
+  });
+});
+
+describe('跨标签会话写锁', () => {
+  const originalLocksDescriptor = Object.getOwnPropertyDescriptor(navigator, 'locks');
+
+  beforeEach(() => {
+    localStorage.clear();
+    for (const mock of [refreshMock, getMeMock, loginMock, registerMock, logoutMock]) {
+      mock.mockReset();
+    }
+  });
+
+  afterEach(() => {
+    if (originalLocksDescriptor) {
+      Object.defineProperty(navigator, 'locks', originalLocksDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, 'locks');
+    }
+  });
+
+  function installWebLocks() {
+    let queue = Promise.resolve();
+    const request = vi.fn(<T,>(_name: string, callback: () => Promise<T>): Promise<T> => {
+      const result = queue.then(callback);
+      queue = result.then(() => undefined, () => undefined);
+      return result;
+    });
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request },
+    });
+    return request;
+  }
+
+  it('并发刷新通过 Web Locks 串行执行', async () => {
+    installWebLocks();
+    let active = 0;
+    let maxActive = 0;
+    let calls = 0;
+    refreshMock.mockImplementation(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      calls += 1;
+      return { accessToken: `token-${calls}` };
+    });
+    const firstStore = createAuthStore();
+    const secondStore = createAuthStore();
+
+    await Promise.all([
+      firstStore.getState().refreshAccessToken(),
+      secondStore.getState().refreshAccessToken(),
+    ]);
+
+    expect(maxActive).toBe(1);
+  });
+
+  it('退出与刷新共用同一把锁', async () => {
+    const lockRequest = installWebLocks();
+    logoutMock.mockResolvedValue({ success: true });
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = { href: '' } as unknown as string & Location;
+    const store = createAuthStore();
+
+    await store.getState().logout();
+
+    expect(lockRequest).toHaveBeenCalledWith('ai-aggregation-auth-refresh', expect.any(Function));
   });
 });

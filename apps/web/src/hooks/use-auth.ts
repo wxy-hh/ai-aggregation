@@ -65,17 +65,17 @@ export function useAccessToken() {
 }
 
 /**
- * 「未登录专属页」（/login、/register 等）的真实用户重定向规则。
+ * 登录页的真实用户重定向规则。
  *
  * @returns 是否正在跳转——调用方据此先渲染占位，避免表单闪一下又被跳走
  */
 export function useRedirectRealUserToHome() {
   const status = useAuthStore((s) => s.status);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const initialize = useAuthStore((s) => s.initialize);
   const router = useRouter();
 
-  // 检查是否是被中间件拦截回登录页（如 ?redirect=...）或显式登出（?logout=...）
-  // 这两种情况下服务端均已确认当前请求无有效 Cookie 凭证；客户端若存在残留登录态，必须熔断自愈，严禁跳往 /home 导致死循环
+  // 来源回跳或显式登出表示客户端应清理残留快照，不能仅凭快照再次跳回首页
   const isServerUnauthenticated = typeof window !== 'undefined' && (() => {
     try {
       const searchParams = new URLSearchParams(window.location.search);
@@ -88,7 +88,7 @@ export function useRedirectRealUserToHome() {
   useEffect(() => {
     if (isServerUnauthenticated) {
       if (isAuthenticated) {
-        // 服务端明确判定未登录，强制同步重置客户端脏状态并清理存储
+        // 显式回跳/登出入口强制同步重置客户端脏状态并清理存储
         useAuthStore.setState({
           user: null,
           accessToken: null,
@@ -104,14 +104,16 @@ export function useRedirectRealUserToHome() {
       return;
     }
 
+    void initialize();
+
     if (status === 'ready' && isAuthenticated) {
       router.replace('/home');
     }
-  }, [status, isAuthenticated, isServerUnauthenticated, router]);
+  }, [status, isAuthenticated, isServerUnauthenticated, initialize, router]);
 
   if (isServerUnauthenticated) {
     return false;
   }
 
-  return status === 'ready' && isAuthenticated;
+  return status === 'bootstrapping' || (status === 'ready' && isAuthenticated);
 }

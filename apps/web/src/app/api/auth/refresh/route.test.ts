@@ -101,4 +101,22 @@ describe('POST /api/auth/refresh', () => {
     expect(response.status).toBe(401);
     expect(mocks.refreshTokenFindUnique).not.toHaveBeenCalled();
   });
+
+  it('token 不存在时返回 401 并清除失效 Cookie', async () => {
+    mocks.refreshTokenFindUnique.mockResolvedValue(null);
+
+    const response = await POST(refreshRequest());
+
+    expect(response.status).toBe(401);
+    expect(mocks.cookieJar.get('refresh_token')).toBe('');
+  });
+
+  it('内部异常不得清除可能仍有效的 Cookie', async () => {
+    mocks.refreshTokenFindUnique.mockRejectedValue(new Error('database unavailable'));
+
+    const response = await POST(refreshRequest());
+
+    expect(response.status).toBe(500);
+    expect(mocks.cookieJar.get('refresh_token')).toBe('plain-refresh-token');
+  });
 });

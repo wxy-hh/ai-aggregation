@@ -42,6 +42,19 @@ export interface AuthStoreOptions {
   // 保留可选配置类型以兼容测试注入
 }
 
+const AUTH_SESSION_WRITE_LOCK = 'ai-aggregation-auth-refresh';
+
+function supportsSessionWriteLock() {
+  return typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function';
+}
+
+async function withSessionWriteLock<T>(callback: () => Promise<T>): Promise<T> {
+  if (supportsSessionWriteLock()) {
+    return await navigator.locks.request(AUTH_SESSION_WRITE_LOCK, callback);
+  }
+  return callback();
+}
+
 // 防止并发初始化调用导致的竞争条件
 let initializePromise: Promise<void> | null = null;
 
@@ -59,6 +72,7 @@ export function createAuthStore(_options?: AuthStoreOptions) {
   // 防止并发刷新：401 请求、引导自身、fetchUser 都可能同时要求刷新，
   // 共享同一枚在途 Promise，收敛成一次请求。
   let refreshInFlight: Promise<string | null> | null = null;
+  let hasInitialized = false;
 
   return create<AuthState>()(
     persist(
@@ -107,7 +121,7 @@ export function createAuthStore(_options?: AuthStoreOptions) {
 
           // 3. 登出接口只接受 POST，用请求调用（服务端清 cookie），再由前端跳转登录页。
           try {
-            await authApi.logout();
+            await withSessionWriteLock(() => authApi.logout());
           } catch {
             // 忽略登出接口失败
           }
@@ -120,7 +134,7 @@ export function createAuthStore(_options?: AuthStoreOptions) {
           if (!refreshInFlight) {
             refreshInFlight = (async () => {
               try {
-                const res = await authApi.refresh();
+                const res = await withSessionWriteLock(() => authApi.refresh());
                 if (res.accessToken) {
                   set({ accessToken: res.accessToken });
                   return res.accessToken;
@@ -193,15 +207,20 @@ export function createAuthStore(_options?: AuthStoreOptions) {
         },
 
         initialize: async () => {
+          if (hasInitialized) return;
           // 防止并发调用（React StrictMode 会导致 useEffect 执行两次）
-          if (initializePromise) return initializePromise;
+          if (initializePromise) {
+            await initializePromise;
+            hasInitialized = true;
+            return;
+          }
 
           initializePromise = (async () => {
             const { refreshAccessToken, fetchUser } = get();
 
             // 优先通过 refresh token 静默续期获取新 token
             let newToken = await refreshAccessToken();
-            if (!newToken) {
+            if (!newToken && !supportsSessionWriteLock()) {
               newToken = await refreshAccessToken();
             }
 
@@ -234,6 +253,7 @@ export function createAuthStore(_options?: AuthStoreOptions) {
           try {
             await initializePromise;
           } finally {
+            hasInitialized = true;
             initializePromise = null;
           }
         },
@@ -254,11 +274,6 @@ export function createAuthStore(_options?: AuthStoreOptions) {
           user: state.user,
           isAuthenticated: state.isAuthenticated,
         }),
-        onRehydrateStorage: () => (state) => {
-          if (state?.isAuthenticated) {
-            state.status = 'ready';
-          }
-        },
       }
     )
   );

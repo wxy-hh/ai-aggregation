@@ -67,14 +67,14 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
     replaceMock.mockReset();
   });
 
-  it('引导未结束时不判定（既不跳转也不返回跳转中）', async () => {
+  it('引导未结束时显示跳转占位但不发起 replace', async () => {
     useAuthStore.setState({ status: 'bootstrapping', isAuthenticated: false, user: null });
 
     const { result } = renderHook(() => useRedirectRealUserToHome());
     await act(async () => {});
 
     expect(replaceMock).not.toHaveBeenCalled();
-    expect(result.current).toBe(false);
+    expect(result.current).toBe(true);
   });
 
   it('已登录用户：replace /home 且返回跳转中（登录页据此不渲染表单）', async () => {

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-/** 仅供未登录访客访问的认证页面 */
-const UNAUTH_ONLY_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
+/** 认证与账号恢复页面：是否可访问不取决于 Cookie 存在性 */
+const AUTH_FLOW_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
 
 export function middleware(req: NextRequest) {
   const { pathname, search, origin } = req.nextUrl;
@@ -19,17 +19,12 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL(hasToken ? '/home' : '/login', origin));
   }
 
-  // 3. 已登录用户访问未登录白名单页面时，自动重定向到 /home
-  if (hasToken && UNAUTH_ONLY_PATHS.includes(pathname)) {
-    return NextResponse.redirect(new URL('/home', origin));
-  }
-
-  // 4. 未登录访客访问白名单页面放行
-  if (UNAUTH_ONLY_PATHS.includes(pathname)) {
+  // 3. 认证页始终放行：Cookie 存在不等于会话有效，登录页由客户端真实引导结果决定去向
+  if (AUTH_FLOW_PATHS.includes(pathname)) {
     return NextResponse.next();
   }
 
-  // 5. 未登录访客访问任何受保护业务页面，302 拦截并重定向到登录页（携带来源路径意图回跳）
+  // 4. 未登录访客访问任何受保护业务页面，302 拦截并重定向到登录页（携带来源路径意图回跳）
   if (!hasToken) {
     const redirectTarget = `${pathname}${search}`;
     const loginUrl = new URL('/login', origin);

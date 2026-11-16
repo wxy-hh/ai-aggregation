@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, hashRefreshToken, setRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, hashRefreshToken, setRefreshTokenCookie, clearRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { ApiError } from '@/lib/api/responses';
 
 export async function POST(_req: NextRequest) {
@@ -21,6 +21,7 @@ export async function POST(_req: NextRequest) {
       if (record) {
         await prisma.refreshToken.delete({ where: { id: record.id } });
       }
+      await clearRefreshTokenCookie();
       return ApiError.unauthorized('刷新令牌已过期，请重新登录');
     }
 
@@ -32,11 +33,13 @@ export async function POST(_req: NextRequest) {
 
     if (!user) {
       await prisma.refreshToken.delete({ where: { id: record.id } });
+      await clearRefreshTokenCookie();
       return ApiError.unauthorized('用户不存在');
     }
 
     if (user.status === 'disabled') {
       await prisma.refreshToken.delete({ where: { id: record.id } });
+      await clearRefreshTokenCookie();
       return ApiError.forbidden('账号已被停用，请联系管理员');
     }
 
