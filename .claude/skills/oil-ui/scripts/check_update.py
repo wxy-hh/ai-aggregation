@@ -27,7 +27,7 @@ from typing import NamedTuple
 ROOT = Path(__file__).resolve().parent.parent
 API = os.environ.get("OIL_API", "https://ui.oiloil.org").rstrip("/")
 # 固定经过检查的 CLI：无 npm 依赖，下载包必须通过 SHA-256 与归档路径校验。
-CLI = "github:oil-oil/oil-cli#b6fb811d42a72d327e5060518347b125d9a098ca"
+CLI = "github:oil-oil/oil-cli#e6ee580c01e854919ee50ef1f3de6876c3c52c18"
 UPDATE_ENV_KEYS = {
     "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME",
     "SYSTEMROOT", "WINDIR", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_MESSAGES",
