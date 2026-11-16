@@ -49,7 +49,8 @@ export type BaziProtectedFieldKey =
   | 'lockedSections'
   | 'streaming'
   | 'streamStatus'
-  | 'blockingLoading';
+  | 'blockingLoading'
+  | 'activeReportHistoryId';
 
 /** 八字工作区通用 patch 允许写入的 UI 交互字段（compatActive 保留 UI 权限） */
 export type BaziUIPatchState = Omit<BaziWorkspaceCache, BaziProtectedFieldKey>;
@@ -105,6 +106,7 @@ export type QimenSectionOutcome<K extends QimenAsyncSectionKey = QimenAsyncSecti
 
 /** 八字工作区从历史回填载荷 */
 export type RestoreBaziWorkspacePayload = {
+  historyId: string;
   report: DestinyReport | null;
   lockedSections: BaziLockedSections;
   formData: BaziFormData;
@@ -156,6 +158,8 @@ export type BaziWorkspaceCache = BaseWorkspaceCache<
   report: DestinyReport | null;
   lockedSections: BaziLockedSections;
   streamStatus: DestinyStreamStatus | null;
+  /** 当前激活报告档案 id（S-J1：新测算 run 档案 / 历史恢复档案；合盘关联以此为准） */
+  activeReportHistoryId: string | null;
 };
 
 export type ZiweiWorkspaceCache = BaseWorkspaceCache<
@@ -259,8 +263,8 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   restoreWorkspace: (module: DestinyModuleKey) => void;
   markResultReady: (module: DestinyModuleKey) => void;
   resetAllWorkspaces: () => void;
-  /** 八字：发起全新会话（全量重置并进入表单加载态） */
-  beginBaziSession: () => void;
+  /** 八字：发起全新会话（全量重置并进入表单加载态）。historyId 必须为本次 run 的历史落盘档案 id（两者同源，TC03-1 守卫） */
+  beginBaziSession: (historyId: string) => void;
   /** 八字：更新流状态 */
   applyBaziStreamStatus: (status: DestinyStreamStatus) => void;
   /** 八字：分区结果到达（迟到保护、首次出现可展示分区原子推进结果态） */
@@ -349,6 +353,7 @@ function createDefaultBaziWorkspaceCache(): BaziWorkspaceCache {
     lockedSections: {},
     streamStatus: null,
     compatActive: false,
+    activeReportHistoryId: null,
   };
 }
 
@@ -657,8 +662,8 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
           };
         }),
 
-      // 八字：发起全新会话（全量重置并进入表单加载态）
-      beginBaziSession: () =>
+      // 八字：发起全新会话（全量重置并进入表单加载态）；historyId 与本次 run 的历史落盘档案 id 同源
+      beginBaziSession: (historyId) =>
         set((state) => ({
           ...state,
           bazi: {
@@ -673,6 +678,7 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
             report: null,
             lockedSections: {},
             streamStatus: 'queued',
+            activeReportHistoryId: historyId,
           },
         })),
 
@@ -778,6 +784,7 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
             lockedSections: payload.lockedSections,
             formData: payload.formData,
             fieldErrors: {},
+            activeReportHistoryId: payload.historyId,
           },
         })),
 

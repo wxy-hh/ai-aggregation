@@ -150,6 +150,7 @@ export function BaziWorkspace({
     report,
     lockedSections,
     streamStatus,
+    activeReportHistoryId,
     setWorkspaceState,
     restoreWorkspace,
     provider,
@@ -199,12 +200,6 @@ export function BaziWorkspace({
   // 订阅历史列表：用于本地态丢失后仍能回看「上次合盘」
   const historyItems = useHistoryStore((s) => s.items);
   const isHistoryReady = useHistoryStore((s) => s.isInitialized);
-
-  const latestBaziHistoryId = useMemo(() => {
-    return historyItems.find(
-      (item) => item.type === 'destiny' && item.subType === 'bazi'
-    )?.id;
-  }, [historyItems]);
 
   // 接力：八字目标接收。命盘生成后把引用文本经 externalDraft 预填到 AI 顾问输入框。
   const relay = useRelayReceive('destiny');
@@ -370,10 +365,10 @@ export function BaziWorkspace({
   const relatedCompatHistory = useMemo(() => {
     if (!isHistoryReady) return null;
     return findRelatedCompatibilityItem(historyItems, {
-      sourceBaziHistoryId: latestBaziHistoryId,
+      sourceBaziHistoryId: activeReportHistoryId,
       selfName: formData.name,
     });
-  }, [historyItems, isHistoryReady, latestBaziHistoryId, formData.name, compatReport?.id]);
+  }, [historyItems, isHistoryReady, activeReportHistoryId, formData.name, compatReport?.id]);
 
   // 本地尚无合盘结果时，从历史档案回填（同会话返回 / 刷新后仍可「查看上次合盘」）
   useEffect(() => {
@@ -504,7 +499,7 @@ export function BaziWorkspace({
       partnerForm,
       relationType: relation,
       provider,
-      sourceBaziHistoryId: latestBaziHistoryId,
+      sourceBaziHistoryId: activeReportHistoryId,
       existingReportId: compatReport?.id,
       viewOnly,
       onStatus: setCompatStatus,
@@ -518,7 +513,7 @@ export function BaziWorkspace({
             sourceBaziHistoryId:
               next.sourceBaziHistoryId ??
               prev.sourceBaziHistoryId ??
-              latestBaziHistoryId,
+              activeReportHistoryId,
           };
         });
         setCompatRelation(relation);

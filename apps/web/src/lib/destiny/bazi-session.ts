@@ -70,7 +70,7 @@ async function start(
 
   const store = useDestinyWorkspaceStore.getState();
   const provider = options?.provider ?? store.provider;
-  store.beginBaziSession();
+  store.beginBaziSession(runHistoryId);
 
   let currentErrorKind: BaziErrorKind = 'unknown';
 
@@ -199,6 +199,7 @@ function restoreFromHistory(historyId: string): boolean {
   const savedFormData = (historyItem.formData as BaziFormData) || createDefaultBaziFormData();
 
   useDestinyWorkspaceStore.getState().restoreBaziWorkspace({
+    historyId,
     report: savedReport,
     lockedSections: savedLockedSections,
     formData: savedFormData,

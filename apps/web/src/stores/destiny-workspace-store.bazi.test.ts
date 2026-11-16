@@ -58,7 +58,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
   });
 
   it('TC10-1: applyBaziSection 首个可展示分区到达后原子推进结果态', () => {
-    useDestinyWorkspaceStore.getState().beginBaziSession();
+    useDestinyWorkspaceStore.getState().beginBaziSession('seed-run-id');
     const initialState = useDestinyWorkspaceStore.getState().bazi;
     expect(initialState.blockingLoading).toBe(true);
     expect(initialState.hasResult).toBe(false);
@@ -75,7 +75,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
   });
 
   it('TC10-2: 同 key 二次 section 到达被迟到保护拒绝（保留首个 payload）', () => {
-    useDestinyWorkspaceStore.getState().beginBaziSession();
+    useDestinyWorkspaceStore.getState().beginBaziSession('seed-run-id');
     useDestinyWorkspaceStore.getState().applyBaziSection('coreDestinyTone', MOCK_CORE_TONE);
 
     const lateCoreTone: DestinyCoreTone = {
@@ -92,7 +92,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
   });
 
   it('TC10-3: 存在锁定分区时 applyBaziComplete(serverReport) 权威合并生效（锁定分区优先覆盖）', () => {
-    useDestinyWorkspaceStore.getState().beginBaziSession();
+    useDestinyWorkspaceStore.getState().beginBaziSession('seed-run-id');
 
     // 锁定个性与主基调
     const lockedPersonality: DestinyModule = {
@@ -123,7 +123,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
   });
 
   it('TC10-4: abortBaziSession 仅释放运行时标志，error 保持 null', () => {
-    useDestinyWorkspaceStore.getState().beginBaziSession();
+    useDestinyWorkspaceStore.getState().beginBaziSession('seed-run-id');
     expect(useDestinyWorkspaceStore.getState().bazi.streaming).toBe(true);
     expect(useDestinyWorkspaceStore.getState().bazi.blockingLoading).toBe(true);
 
@@ -147,6 +147,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
     };
 
     useDestinyWorkspaceStore.getState().restoreBaziWorkspace({
+      historyId: 'archive-seed-1',
       report: MOCK_SERVER_REPORT,
       lockedSections,
       formData: customFormData,
@@ -168,7 +169,7 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
   });
 
   it('beginBaziSession / applyBaziStreamStatus / failBaziSession 状态迁移规范', () => {
-    useDestinyWorkspaceStore.getState().beginBaziSession();
+    useDestinyWorkspaceStore.getState().beginBaziSession('seed-run-id');
 
     const beginState = useDestinyWorkspaceStore.getState().bazi;
     expect(beginState.step).toBe('form');
@@ -219,5 +220,47 @@ describe('destiny-workspace-store 八字具名 action 契约 (TC10 & 契约防�
 
     // @ts-expect-error setWorkspaceState 对 bazi 排他剔除了 blockingLoading
     useDestinyWorkspaceStore.getState().setWorkspaceState('bazi', { blockingLoading: true });
+  });
+});
+
+describe('activeReportHistoryId 激活档案契约（S-J1 修复轮 TC01/TC02）', () => {
+  beforeEach(() => {
+    useDestinyWorkspaceStore.getState().resetAllWorkspaces();
+  });
+
+  it('TC01-1: beginBaziSession(historyId) 全量重置并原子写入激活档案 id', () => {
+    // 先污染为结果态
+    useDestinyWorkspaceStore.getState().applyBaziComplete(MOCK_SERVER_REPORT);
+    useDestinyWorkspaceStore.getState().beginBaziSession('run-id-1');
+
+    const state = useDestinyWorkspaceStore.getState().bazi;
+    expect(state.activeReportHistoryId).toBe('run-id-1');
+    expect(state.step).toBe('form');
+    expect(state.hasResult).toBe(false);
+  });
+
+  it('TC01-2: restoreBaziWorkspace 回填 historyId 并直达结果态', () => {
+    useDestinyWorkspaceStore.getState().restoreBaziWorkspace({
+      historyId: 'archive-9',
+      report: MOCK_SERVER_REPORT,
+      lockedSections: {},
+      formData: createDefaultBaziFormData(),
+    });
+
+    const state = useDestinyWorkspaceStore.getState().bazi;
+    expect(state.activeReportHistoryId).toBe('archive-9');
+    expect(state.step).toBe('result');
+    expect(state.hasResult).toBe(true);
+  });
+
+  it('TC01-3: resetWorkspace 后激活档案归 null', () => {
+    useDestinyWorkspaceStore.getState().beginBaziSession('run-id-2');
+    useDestinyWorkspaceStore.getState().resetWorkspace('bazi');
+    expect(useDestinyWorkspaceStore.getState().bazi.activeReportHistoryId).toBeNull();
+  });
+
+  it('TC02-2: 通用 patch 拒写激活档案字段（编译期类型防线）', () => {
+    // @ts-expect-error setWorkspaceState 对 bazi 排他剔除了 activeReportHistoryId（编译期拒绝，运行时同其他受保护字段不物理拦截）
+    useDestinyWorkspaceStore.getState().setWorkspaceState('bazi', { activeReportHistoryId: 'x' });
   });
 });

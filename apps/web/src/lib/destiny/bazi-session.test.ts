@@ -319,3 +319,67 @@ describe('bazi-session 会话命令深模块 (TC11 & 会话规范)', () => {
     expect(url.searchParams.has('historyId')).toBe(false);
   });
 });
+
+describe('bazi-session 激活档案同源（S-J1 修复轮 TC03）', () => {
+  beforeEach(() => {
+    authFetchMock.mockReset();
+    useDestinyWorkspaceStore.getState().resetAllWorkspaces();
+    useHistoryStore.setState({ items: [] });
+    useRelayStore.getState().clearActiveForTarget('destiny');
+    useRelayStore.getState().clearDraftForTarget('destiny');
+    _resetBaziSessionForTest();
+  });
+
+  afterEach(() => {
+    _resetBaziSessionForTest();
+  });
+
+  it('TC03-1: start() 流式完成后历史落盘档案 id 与激活档案字段同源', async () => {
+    const stream = manualSseStream();
+    authFetchMock.mockResolvedValueOnce(stream.response);
+
+    const formData = {
+      ...createDefaultBaziFormData(),
+      name: '同源命主',
+    };
+
+    const sessionPromise = baziSession.start(formData);
+    stream.push({ type: 'section-final', sectionKey: 'coreDestinyTone', payload: MOCK_CORE_TONE });
+    stream.push({ type: 'complete', report: MOCK_REPORT });
+    stream.close();
+    await sessionPromise;
+
+    const historyItems = useHistoryStore.getState().items;
+    expect(historyItems.length).toBe(1);
+    expect(useDestinyWorkspaceStore.getState().bazi.activeReportHistoryId).toBe(historyItems[0].id);
+  });
+
+  it('TC03-2: restoreFromHistory 后激活档案字段等于该档案 id 且不产生新历史', () => {
+    useHistoryStore.setState({
+      items: [
+        {
+          id: 'hist-bazi-active-1',
+          type: 'destiny',
+          subType: 'bazi',
+          title: '激活档案命主的八字命理报告',
+          preview: '预览文本',
+          date: '刚刚',
+          model: 'doubao-seed-2-0',
+          coreTone: '食神格',
+          formData: { ...createDefaultBaziFormData(), name: '激活档案命主' } as unknown as Record<string, unknown>,
+          reportData: {
+            report: MOCK_REPORT,
+            lockedSections: { coreDestinyTone: MOCK_CORE_TONE },
+          },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    const success = baziSession.restoreFromHistory('hist-bazi-active-1');
+    expect(success).toBe(true);
+    expect(useDestinyWorkspaceStore.getState().bazi.activeReportHistoryId).toBe('hist-bazi-active-1');
+    expect(useHistoryStore.getState().items.length).toBe(1);
+  });
+});

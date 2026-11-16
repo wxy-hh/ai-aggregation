@@ -303,14 +303,19 @@ function RecentCreationSkeleton() {
   );
 }
 
-/** 侧边栏最近文件列表（同样来自统一历史） */
-export function RecentFilesSidebarList() {
+/** 侧边栏最近文件列表（同样来自统一历史，支持搜索过滤） */
+export function RecentFilesSidebarList({ query = '' }: { query?: string }) {
   const items = useHistoryItems();
   const isInitialized = useHistoryInitialized();
-  const recentItems = useMemo(
-    () => (isInitialized ? pickRecentHistoryItems(items, 4) : []),
-    [isInitialized, items]
-  );
+  const recentItems = useMemo(() => {
+    if (!isInitialized) return [];
+    let list = items;
+    const trimmed = query.trim().toLowerCase();
+    if (trimmed) {
+      list = list.filter((item) => item.title.toLowerCase().includes(trimmed));
+    }
+    return pickRecentHistoryItems(list, 4);
+  }, [isInitialized, items, query]);
   const router = useRouter();
 
   if (!isInitialized) {
@@ -325,7 +330,9 @@ export function RecentFilesSidebarList() {
 
   if (recentItems.length === 0) {
     return (
-      <p className="px-2 py-1 text-xs text-slate-400">暂无最近文件，开始创作后会出现在这里</p>
+      <p className="px-2 py-1 text-xs text-slate-400">
+        {query.trim() ? '未找到匹配的最近文件' : '暂无最近文件，开始创作后会出现在这里'}
+      </p>
     );
   }
 
