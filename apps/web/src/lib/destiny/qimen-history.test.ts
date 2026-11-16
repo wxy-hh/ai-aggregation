@@ -96,6 +96,25 @@ describe('qimen-history 薄缝契约测试', () => {
     expect(itemEmpty.title).toBe('奇门遁甲推演 · 盘局分析');
   });
 
+  it('saveQimenHistoryRecord：失败分区错误随 reportData 持久化', () => {
+    const formData = createDefaultQimenFormData();
+    formData.description = '验证失败分区恢复';
+
+    const item = saveQimenHistoryRecord(
+      formData,
+      MOCK_BASE_RESULT,
+      { timingWindows: MOCK_SECTIONS.timingWindows },
+      'analysis-section-errors',
+      {
+        sectionErrors: { strategyOverview: '综合格局评估生成失败' },
+      }
+    );
+
+    expect(item.reportData).toMatchObject({
+      sectionErrors: { strategyOverview: '综合格局评估生成失败' },
+    });
+  });
+
   it('saveQimenHistoryRecord：支持稳定 id 与接力 derivation 注入', () => {
     const formData = createDefaultQimenFormData();
     formData.description = '接力推演测试';

@@ -132,6 +132,7 @@ async function start(
       {
         id: runHistoryId,
         derivation,
+        sectionErrors: qimenState.sectionErrors,
       }
     );
 
@@ -335,6 +336,8 @@ function restoreFromHistory(historyId: string): boolean {
     analysisId: (savedData.analysisId as string) || null,
     baseResult: (savedData.baseResult as QimenAnalysisBaseResult) || null,
     sections: (savedData.sections as QimenAsyncSections) || {},
+    sectionErrors:
+      (savedData.sectionErrors as Partial<Record<QimenAsyncSectionKey, string>>) || {},
     formData: (savedData.formData as QimenFormData) || (item.formData as QimenFormData),
   };
 

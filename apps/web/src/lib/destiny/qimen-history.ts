@@ -4,6 +4,7 @@ import type { DestinyHistoryItem } from '@/types/history';
 import type { DerivationMetadata } from '@repo/shared';
 import type {
   QimenAnalysisBaseResult,
+  QimenAsyncSectionKey,
   QimenAsyncSections,
   QimenFormData,
 } from '@/app/destiny/_components/qimen-types';
@@ -11,6 +12,8 @@ import type {
 export type SaveQimenHistoryOptions = {
   id?: string;
   derivation?: DerivationMetadata;
+  /** 失败分区错误随历史保存，供恢复时重建诚实失败态 */
+  sectionErrors?: Partial<Record<QimenAsyncSectionKey, string>>;
 };
 
 /**
@@ -34,6 +37,7 @@ export function saveQimenHistoryRecord(
   const reportData = {
     baseResult,
     sections,
+    ...(options?.sectionErrors ? { sectionErrors: options.sectionErrors } : {}),
     analysisId,
     formData,
   };

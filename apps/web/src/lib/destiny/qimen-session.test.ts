@@ -216,6 +216,9 @@ describe('qimen-session 会话命令深模块 (TC03)', () => {
     expect(historyItems.length).toBe(1);
     expect(historyItems[0]?.derivedFromRelayId).toBe('bundle-qimen-relay-1');
     expect(historyItems[0]?.derivedFromReferenceIds).toEqual(['ref-item-1']);
+    expect((historyItems[0] as any)?.reportData?.sectionErrors).toEqual({
+      timingWindows: '分区超时',
+    });
 
     // Relay 闭环验证：active 与 draft 被清除
     expect(useRelayStore.getState().activeByTarget.destiny).toBeNull();
@@ -271,6 +274,43 @@ describe('qimen-session 会话命令深模块 (TC03)', () => {
     expect(useHistoryStore.getState().items.length).toBe(1);
 
     // URL 中的 historyId 被清理
+    expect(new URL(window.location.href).searchParams.has('historyId')).toBe(false);
+  });
+
+  it('TC03-8: restoreFromHistory 透传失败分区错误且不二次落盘', () => {
+    useHistoryStore.setState({
+      items: [
+        {
+          id: 'hist-qimen-restore-with-errors',
+          type: 'destiny',
+          subType: 'qimen',
+          title: '历史失败分区恢复',
+          preview: '历史预览',
+          date: '刚刚',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          model: 'doubao',
+          formData: sampleFormData,
+          reportData: {
+            analysisId: 'aid-restored-errors',
+            baseResult: MOCK_BASE,
+            sections: { strategyOverview: MOCK_STRATEGY, chartSummary: MOCK_SUMMARY },
+            sectionErrors: { timingWindows: '时机窗口生成失败' },
+            formData: sampleFormData,
+          },
+        } as any,
+      ],
+    });
+    window.history.pushState({}, '', '/destiny?module=qimen&historyId=hist-qimen-restore-with-errors');
+
+    expect(qimenSession.restoreFromHistory('hist-qimen-restore-with-errors')).toBe(true);
+
+    const state = useDestinyWorkspaceStore.getState().qimen;
+    expect(state.sectionStatuses.timingWindows).toBe('failed');
+    expect(state.sectionErrors.timingWindows).toBe('时机窗口生成失败');
+    expect(state.sectionStatuses.strategyOverview).toBe('completed');
+    expect(state.sectionStatuses.chartSummary).toBe('completed');
+    expect(useHistoryStore.getState().items.length).toBe(1);
     expect(new URL(window.location.href).searchParams.has('historyId')).toBe(false);
   });
 

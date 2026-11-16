@@ -298,6 +298,29 @@ describe('destiny-workspace-store 奇门具名 action 契约 (TC02 & TC04)', () 
     });
   });
 
+  it('TC02-9: restoreQimenWorkspace 将带错误记录的缺失分区恢复为 failed', () => {
+    useDestinyWorkspaceStore.getState().restoreQimenWorkspace({
+      analysisId: 'restored-analysis-with-errors',
+      baseResult: MOCK_BASE_RESULT,
+      sections: {
+        strategyOverview: MOCK_STRATEGY,
+        chartSummary: MOCK_SUMMARY,
+      },
+      sectionErrors: { timingWindows: '时机窗口生成失败' },
+      formData: createDefaultQimenFormData(),
+    });
+
+    const state = useDestinyWorkspaceStore.getState().qimen;
+    expect(state.sectionStatuses).toEqual({
+      strategyOverview: 'completed',
+      timingWindows: 'failed',
+      chartSummary: 'completed',
+    });
+    expect(state.sectionErrors).toEqual({ timingWindows: '时机窗口生成失败' });
+    expect(state.step).toBe('result');
+    expect(state.hasResult).toBe(true);
+  });
+
   it('TC04-2: 编译期类型防线：裸 patch 写入奇门数据或协议字段被 TypeScript 拒绝', () => {
     // 允许的 UI 字段 patch 正常通过
     useDestinyWorkspaceStore.getState().setWorkspaceState('qimen', {

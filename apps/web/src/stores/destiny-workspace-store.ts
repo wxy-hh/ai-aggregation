@@ -117,6 +117,8 @@ export type RestoreQimenWorkspacePayload = {
   analysisId: string | null;
   baseResult: QimenAnalysisBaseResult | null;
   sections: QimenAsyncSections;
+  /** 可选失败分区错误；旧历史缺省时保持原有 idle 兼容语义 */
+  sectionErrors?: Partial<Record<QimenAsyncSectionKey, string>>;
   formData: QimenFormData;
 };
 
@@ -632,6 +634,7 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
       restoreQimenWorkspace: (payload) =>
         set((state) => {
           const sections = payload.sections || {};
+          const sectionErrors = payload.sectionErrors ?? {};
           const hasSection = (key: QimenAsyncSectionKey) =>
             Object.prototype.hasOwnProperty.call(sections, key) && sections[key] !== undefined;
 
@@ -650,13 +653,25 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
               baseStatus: 'completed',
               baseError: null,
               sections,
-              sectionErrors: {},
+              sectionErrors,
               formData: payload.formData,
               fieldErrors: {},
               sectionStatuses: {
-                strategyOverview: hasSection('strategyOverview') ? 'completed' : 'idle',
-                timingWindows: hasSection('timingWindows') ? 'completed' : 'idle',
-                chartSummary: hasSection('chartSummary') ? 'completed' : 'idle',
+                strategyOverview: hasSection('strategyOverview')
+                  ? 'completed'
+                  : sectionErrors.strategyOverview
+                    ? 'failed'
+                    : 'idle',
+                timingWindows: hasSection('timingWindows')
+                  ? 'completed'
+                  : sectionErrors.timingWindows
+                    ? 'failed'
+                    : 'idle',
+                chartSummary: hasSection('chartSummary')
+                  ? 'completed'
+                  : sectionErrors.chartSummary
+                    ? 'failed'
+                    : 'idle',
               },
             },
           };
