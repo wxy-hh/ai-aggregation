@@ -302,8 +302,11 @@ describe('RetrievalDebugger 检索调试台组件测试', () => {
             name: '架构规约.md',
             version: 1,
             chunkCount: 5,
-            fileType: 'markdown',
+            status: 'ready',
+            sourceFormat: 'md',
+            renderMode: 'markdown',
             content: '# 架构规约\n\n## 熔断章节\n\n连败熔断触发条件：连续 3 次工具调用失败则自动终止循环。',
+            chunks: [],
           },
         }),
       });

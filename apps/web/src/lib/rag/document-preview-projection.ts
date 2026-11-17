@@ -18,14 +18,17 @@ import {
   type SourceFormat,
 } from '@repo/shared';
 import type { StorageProvider } from '@repo/storage';
+import type {
+  DocumentPreviewChunk,
+  DocumentPreviewData,
+  DocumentRenderMode,
+} from './document-preview-contract';
 
-/** 当前版本切片的最小预览字段 */
-export interface DocumentPreviewChunk {
-  chunkIndex: number;
-  content: string;
-  headingPath: string | null;
-  pageNumber: number | null;
-}
+export type {
+  DocumentPreviewChunk,
+  DocumentPreviewData,
+  DocumentRenderMode,
+} from './document-preview-contract';
 
 /** 投影所需的文档事实；格式只从 sourceType 与 storageKey 派生 */
 export interface DocumentPreviewDocumentFacts {
@@ -42,31 +45,6 @@ export interface DocumentPreviewDocumentFacts {
 
 /** 正文来源只留在服务端与测试，不进入 HTTP DTO */
 export type DocumentBodySource = 'stored' | 'derived' | 'chunks';
-
-/** 渲染方式只描述正文如何呈现；unknown 只属于 SourceFormat */
-export type DocumentRenderMode = 'pdf-chunks' | 'markdown';
-
-/**
- * 预览 HTTP DTO。
- * fileType 是供旧 Drawer 过渡使用的别名，最终由工单 06 删除；
- * bodySource 不属于 DTO，不得序列化到响应。
- */
-export interface DocumentPreviewData {
-  id: string;
-  name: string;
-  version: number;
-  chunkCount: number | null;
-  status: string;
-  errorMessage: string | null;
-  sourceFormat: SourceFormat;
-  renderMode?: DocumentRenderMode;
-  fileType: string;
-  content: string;
-  chunks: DocumentPreviewChunk[];
-  originalUrl: string | null;
-  sourceType: string;
-  sourceUrl: string | null;
-}
 
 export interface DocumentPreviewProjectionResult {
   data: DocumentPreviewData;
@@ -98,17 +76,6 @@ interface PrimaryBodySource {
   bodySource: 'stored' | 'derived';
   key: string;
 }
-
-/** 过渡期 fileType 映射；unknown 固定为 unknown，不得映射成 Markdown */
-const LEGACY_FILE_TYPES: Record<SourceFormat, string> = {
-  pdf: 'pdf',
-  md: 'markdown',
-  txt: 'text',
-  docx: 'docx',
-  xlsx: 'xlsx',
-  csv: 'csv',
-  unknown: 'unknown',
-};
 
 const FAILED_FALLBACK_MESSAGE = '文档解析索引失败';
 const SIGNED_URL_EXPIRES_IN = 3600;
@@ -246,7 +213,6 @@ export class DocumentPreviewProjection {
           : document.errorMessage,
       sourceFormat,
       ...(fields.renderMode ? { renderMode: fields.renderMode } : {}),
-      fileType: LEGACY_FILE_TYPES[sourceFormat],
       content: fields.content,
       chunks: fields.chunks,
       originalUrl: fields.originalUrl,

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { DocumentPreviewChunk } from './document-preview-contract';
 import {
   DocumentPreviewProjection,
   DocumentPreviewReadError,
-  type DocumentPreviewChunk,
   type DocumentPreviewDocumentFacts,
 } from './document-preview-projection';
 
@@ -97,7 +97,9 @@ describe('DocumentPreviewProjection 非 ready 投影', () => {
     expect(result.data.sourceFormat).toBe('docx');
     expect(result.data.status).toBe('failed');
     expect(result.data.errorMessage).toBe('DOCX 文件结构损坏，无法完成解析');
-    expect(result.data.fileType).toBe('docx');
+    expect(result.data).not.toHaveProperty('fileType');
+    expect(result.data).not.toHaveProperty('bodySource');
+    expect(result.data.renderMode).toBeUndefined();
     expect(result.data.originalUrl).toBe('https://storage.example.com/original.docx?token=abc');
     expect(getUrl).toHaveBeenCalledWith(document.storageKey, 3600);
     expect(download).not.toHaveBeenCalled();
@@ -119,7 +121,8 @@ describe('DocumentPreviewProjection 非 ready 投影', () => {
       const result = await projection.projectNonReady(document);
 
       expect(result.data.sourceFormat).toBe('md');
-      expect(result.data.fileType).toBe('markdown');
+      expect(result.data).not.toHaveProperty('fileType');
+      expect(result.data.renderMode).toBeUndefined();
       expect(result.data.originalUrl).toBeNull();
       expect(result.data.sourceUrl).toBe('https://example.com/articles/1');
       expect(getUrl).not.toHaveBeenCalled();
@@ -155,13 +158,14 @@ describe('DocumentPreviewProjection 非 ready 投影', () => {
       expect(result.data.status).toBe('failed');
       expect(result.data.errorMessage).toBe('文档解析索引失败');
       expect(result.data.sourceFormat).toBe('docx');
-      expect(result.data.fileType).toBe('docx');
+      expect(result.data).not.toHaveProperty('fileType');
+      expect(result.data.renderMode).toBeUndefined();
     } finally {
       warnSpy.mockRestore();
     }
   });
 
-  it('非 ready unknown 的过渡 fileType 固定为 unknown', async () => {
+  it('非 ready unknown 的 sourceFormat 固定为 unknown 不冒充 Markdown', async () => {
     const { projection } = createProjection();
     const document = buildDocument({
       status: 'failed',
@@ -173,7 +177,7 @@ describe('DocumentPreviewProjection 非 ready 投影', () => {
     const result = await projection.projectNonReady(document);
 
     expect(result.data.sourceFormat).toBe('unknown');
-    expect(result.data.fileType).toBe('unknown');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(result.data.renderMode).toBeUndefined();
   });
 });
@@ -184,13 +188,11 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
       {
         format: 'md',
         fileName: '规范.md',
-        fileType: 'markdown',
         content: '# 规范正文\n\n正文来自源资产。',
       },
       {
         format: 'txt',
         fileName: '说明.txt',
-        fileType: 'text',
         content: '纯文本正文来自源资产。',
       },
     ] as const;
@@ -219,7 +221,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
       expect(result.data.content).toBe(testCase.content);
       expect(result.data.chunks).toEqual(TWO_CHUNKS);
       expect(result.data.chunkCount).toBe(2);
-      expect(result.data.fileType).toBe(testCase.fileType);
+      expect(result.data).not.toHaveProperty('fileType');
       expect(download).toHaveBeenCalledWith(document.storageKey);
       expect(download).not.toHaveBeenCalledWith('docs/user_1/doc_1/v3/content.md');
       expect(loadCurrentVersionChunks).toHaveBeenCalledWith(document);
@@ -228,9 +230,9 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
 
   it('TC06-2 DOCX/XLSX/CSV derived 正文矩阵', async () => {
     const cases = [
-      { format: 'docx', fileName: '季度报告.docx', fileType: 'docx' },
-      { format: 'xlsx', fileName: '经营报表.xlsx', fileType: 'xlsx' },
-      { format: 'csv', fileName: '明细.csv', fileType: 'csv' },
+      { format: 'docx', fileName: '季度报告.docx' },
+      { format: 'xlsx', fileName: '经营报表.xlsx' },
+      { format: 'csv', fileName: '明细.csv' },
     ] as const;
     const derivedContent = '# 提纯正文\n\n统一由共享布局定位的 Markdown。';
     const derivedKey = 'docs/user_1/doc_1/v3/content.md';
@@ -261,7 +263,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
       expect(result.data.renderMode).toBe('markdown');
       expect(result.data.content).toBe(derivedContent);
       expect(result.data.chunkCount).toBe(2);
-      expect(result.data.fileType).toBe(testCase.fileType);
+      expect(result.data).not.toHaveProperty('fileType');
       expect(download).toHaveBeenCalledWith(derivedKey);
       expect(download).not.toHaveBeenCalledWith(document.storageKey);
     }
@@ -290,7 +292,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
     expect(result.data.content).toBe('');
     expect(result.data.chunks).toEqual(PDF_CHUNKS);
     expect(result.data.chunkCount).toBe(2);
-    expect(result.data.fileType).toBe('pdf');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(result.data.originalUrl).toBe('https://storage.example.com/技术白皮书.pdf?token=pdf');
     expect(getUrl).toHaveBeenCalledWith(document.storageKey, 3600);
     expect(download).not.toHaveBeenCalled();
@@ -315,7 +317,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
     expect(result.data.content).toBe('');
     expect(result.data.chunks).toEqual(TWO_CHUNKS);
     expect(result.data.chunkCount).toBe(2);
-    expect(result.data.fileType).toBe('unknown');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(download).not.toHaveBeenCalled();
   });
 
@@ -348,7 +350,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
     expect(result.data.originalUrl).toBe(snapshotUrl);
     expect(result.data.sourceUrl).toBe('https://example.com/articles/1');
     expect(result.data.originalUrl).not.toBe(result.data.sourceUrl);
-    expect(result.data.fileType).toBe('markdown');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(download).toHaveBeenCalledWith(document.storageKey);
     expect(getUrl).toHaveBeenCalledWith(document.storageKey, 3600);
   });
@@ -375,7 +377,7 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
     expect(result.data.sourceType).toBe('chat_artifact');
     expect(result.data.sourceUrl).toBeNull();
     expect(result.data.originalUrl).toBe(snapshotUrl);
-    expect(result.data.fileType).toBe('markdown');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(getUrl).toHaveBeenCalledWith(document.storageKey, 3600);
   });
 
@@ -419,15 +421,15 @@ describe('DocumentPreviewProjection 读取失败与降级', () => {
     expect(result.data.chunks).toEqual(TWO_CHUNKS);
     expect(result.data.chunkCount).toBe(2);
     expect(result.data.renderMode).toBe('markdown');
-    expect(result.data.fileType).toBe('markdown');
+    expect(result.data).not.toHaveProperty('fileType');
     expect(download).toHaveBeenCalledWith(document.storageKey);
   });
 
   it('TC07-2 derived 读取失败仅回退 chunks', async () => {
     const cases = [
-      { fileName: '季度报告.docx', fileType: 'docx' },
-      { fileName: '经营报表.xlsx', fileType: 'xlsx' },
-      { fileName: '明细.csv', fileType: 'csv' },
+      { fileName: '季度报告.docx' },
+      { fileName: '经营报表.xlsx' },
+      { fileName: '明细.csv' },
     ] as const;
     const derivedKey = 'docs/user_1/doc_1/v3/content.md';
 
@@ -456,7 +458,7 @@ describe('DocumentPreviewProjection 读取失败与降级', () => {
       expect(result.data.content).toBe('');
       expect(result.data.chunks).toEqual(TWO_CHUNKS);
       expect(result.data.chunkCount).toBe(2);
-      expect(result.data.fileType).toBe(testCase.fileType);
+      expect(result.data).not.toHaveProperty('fileType');
       expect(download).toHaveBeenCalledWith(derivedKey);
       expect(download).not.toHaveBeenCalledWith(document.storageKey);
     }

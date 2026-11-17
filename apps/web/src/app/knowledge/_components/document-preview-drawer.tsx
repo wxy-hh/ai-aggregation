@@ -19,7 +19,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchWithAuth } from '@/lib/api/client';
 import { CodeBlock } from '@/components/chat/code-block';
@@ -36,7 +35,9 @@ import {
   ChevronRight,
   Hash,
   Sparkles,
+  Info,
 } from 'lucide-react';
+import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import type { FocusedCitationAnchor, MatchedCitationAnchor } from '@/types/citation';
 
 export interface DocumentPreviewDrawerProps {
@@ -62,24 +63,32 @@ export interface DocumentPreviewDrawerProps {
   sourceUrl?: string | null;
 }
 
-interface DocumentContentData {
-  id: string;
-  name: string;
-  version: number;
-  chunkCount: number | null;
-  status: 'pending' | 'processing' | 'ready' | 'failed';
-  errorMessage?: string | null;
-  fileType: 'markdown' | 'text' | 'pdf' | 'docx' | 'xlsx' | 'csv' | string;
-  content: string;
-  originalUrl?: string | null;
-  sourceType?: string;
-  sourceUrl?: string | null;
-  chunks?: Array<{
-    chunkIndex: number;
-    content: string;
-    headingPath?: string | null;
-    pageNumber?: number | null;
-  }>;
+/** sourceFormat 的用户可读徽标文案；unknown 不得冒充 Markdown */
+const SOURCE_FORMAT_LABELS: Record<DocumentPreviewData['sourceFormat'], string> = {
+  pdf: 'PDF',
+  md: 'Markdown',
+  txt: 'TXT',
+  docx: 'Word',
+  xlsx: 'Excel',
+  csv: 'CSV',
+  unknown: '未知格式',
+};
+
+/** ready 归一化预览的静态披露；不虚构行、列或工作表数量 */
+function resolveNormalizedNotice(
+  data: DocumentPreviewData | null,
+  status: string
+): string | null {
+  if (!data || status !== 'ready') {
+    return null;
+  }
+  if (data.sourceFormat === 'docx') {
+    return '预览为归一化文本，图片与原始版式可能未保留；完整事实请以原件为准。';
+  }
+  if (data.sourceFormat === 'xlsx' || data.sourceFormat === 'csv') {
+    return '预览为归一化表格，可能未展示全部工作表、行或列；完整事实请以原件为准。';
+  }
+  return null;
 }
 
 export function DocumentPreviewDrawer({
@@ -98,13 +107,15 @@ export function DocumentPreviewDrawer({
   fallbackSnippet,
   sourceUrl,
 }: DocumentPreviewDrawerProps) {
-  const [data, setData] = React.useState<DocumentContentData | null>(null);
+  const [data, setData] = React.useState<DocumentPreviewData | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   // 计算当前有效文档状态与错误提示 (US-12)
   const effectiveStatus = data?.status || initialStatus || 'ready';
   const effectiveErrorMessage = data?.errorMessage || initialErrorMessage || null;
+  const readyChunks = data?.chunks ?? [];
+  const normalizedNotice = resolveNormalizedNotice(data, effectiveStatus);
 
   // 滚动容器引用与高亮节点引用
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
@@ -255,11 +266,14 @@ export function DocumentPreviewDrawer({
                       <span>{data.chunkCount} 个切片</span>
                     </>
                   )}
-                  {data?.fileType && (
+                  {data?.sourceFormat && (
                     <>
                       <span>•</span>
-                      <span className="uppercase font-mono text-[10px] px-1.5 py-0.2 rounded bg-muted">
-                        {data.fileType}
+                      <span
+                        data-testid="document-format-badge"
+                        className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                      >
+                        {SOURCE_FORMAT_LABELS[data.sourceFormat] ?? '未知格式'}
                       </span>
                     </>
                   )}
@@ -288,7 +302,7 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center text-primary hover:text-primary"
+                  className="min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center text-primary hover:text-primary"
                 >
                   <a
                     href={(data?.sourceUrl || sourceUrl) as string}
@@ -307,7 +321,7 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center"
+                  className="min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center"
                 >
                   <a
                     href={data.originalUrl}
@@ -316,7 +330,7 @@ export function DocumentPreviewDrawer({
                     download
                     data-testid="document-download-link"
                   >
-                    {data.fileType === 'pdf' ? (
+                    {data.sourceFormat === 'pdf' ? (
                       <>
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">查看原版 PDF</span>
@@ -479,10 +493,21 @@ export function DocumentPreviewDrawer({
 
           {!loading && !error && effectiveStatus === 'ready' && data && (
             <div className="max-w-none text-foreground/90 text-sm leading-relaxed space-y-4">
+              {normalizedNotice && (
+                <div
+                  data-testid="document-normalized-notice"
+                  role="note"
+                  className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground"
+                >
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                  <p className="min-w-0 break-words">{normalizedNotice}</p>
+                </div>
+              )}
+
               {/* PDF 格式切片分段渲染 */}
-              {data.fileType === 'pdf' && data.chunks && data.chunks.length > 0 ? (
+              {data.renderMode === 'pdf-chunks' && readyChunks.length > 0 ? (
                 <div className="space-y-4">
-                  {data.chunks.map((c) => {
+                  {readyChunks.map((c) => {
                     const isMatched = focusedAnchor?.chunkIndex === c.chunkIndex;
                     return (
                       <div
@@ -510,10 +535,10 @@ export function DocumentPreviewDrawer({
                     );
                   })}
                 </div>
-              ) : data.chunks && data.chunks.length > 0 ? (
+              ) : readyChunks.length > 0 ? (
                 /* Markdown / TXT 分块切片渲染并支持定位与高亮联动 (Spec 契约) */
                 <div className="space-y-4">
-                  {data.chunks.map((c) => {
+                  {readyChunks.map((c) => {
                     const isMatched = focusedAnchor?.chunkIndex === c.chunkIndex;
                     return (
                       <div

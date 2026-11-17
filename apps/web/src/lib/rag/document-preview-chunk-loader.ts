@@ -7,10 +7,8 @@
  */
 
 import { prisma } from '@repo/db';
-import type {
-  DocumentPreviewChunk,
-  DocumentPreviewDocumentFacts,
-} from './document-preview-projection';
+import type { DocumentPreviewChunk } from './document-preview-contract';
+import type { DocumentPreviewDocumentFacts } from './document-preview-projection';
 
 export interface DocumentPreviewChunkScope {
   knowledgeBaseId: string;

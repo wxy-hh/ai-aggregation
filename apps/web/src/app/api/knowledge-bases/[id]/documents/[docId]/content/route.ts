@@ -17,6 +17,7 @@ import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
 import { createDocumentPreviewChunkLoader } from '@/lib/rag/document-preview-chunk-loader';
+import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import { DocumentPreviewProjection } from '@/lib/rag/document-preview-projection';
 
 interface RouteContext {
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
     });
 
     const { data } = await projection.project(document);
-    return createSuccessResponse(data);
+    return createSuccessResponse<DocumentPreviewData>(data);
   } catch (error) {
     if (error instanceof AuthError) {
       return handleAuthError(error);
