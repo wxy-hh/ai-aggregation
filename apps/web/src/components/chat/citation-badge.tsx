@@ -26,7 +26,8 @@ export interface CitationBadgeProps {
 
 /**
  * 消息内可点击引用上标徽标组件 (QA-004)
- * 点击展开 Popover 展示切片来源详情（文档名、单调版本、页码或标题层级）
+ * - 提供 onOpenCitation 时：角标直接打开全文抽屉 (ADR-0025)；
+ * - 未提供时：点击展开 Popover 展示切片来源详情（文档名、单调版本、页码或标题层级）。
  */
 export function CitationBadge({
   index,
@@ -61,31 +62,39 @@ export function CitationBadge({
     }
   };
 
-  const handleTriggerClick = (e: React.MouseEvent) => {
+  /** 有全文抽屉回调时直接导航，不再经过 Popover 触发器合并事件 */
+  const handleDirectOpen = (e: React.MouseEvent) => {
     if (anchor && onOpenCitation) {
       onOpenCitation(anchor);
     }
   };
 
+  const badgeButton = (
+    <button
+      type="button"
+      data-testid={`citation-badge-${index}`}
+      aria-label={`查看引用 [^${index}] 来源`}
+      onClick={onOpenCitation ? handleDirectOpen : undefined}
+      className={cn(
+        'inline-flex items-center justify-center align-super text-[11px] font-semibold leading-none',
+        'mx-0.5 px-1 py-0.5 rounded-md cursor-pointer select-none transition-colors duration-fast ease-out-expo',
+        'border border-blue-200 bg-blue-50/80 text-blue-700 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300',
+        'dark:border-blue-900/60 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/60',
+        className
+      )}
+    >
+      [^{index}]
+    </button>
+  );
+
+  // ADR-0025：提供全文抽屉回调时，角标直接打开抽屉，不再弹出旧版 Popover
+  if (onOpenCitation) {
+    return badgeButton;
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid={`citation-badge-${index}`}
-          aria-label={`查看引用 [^${index}] 来源`}
-          onClick={handleTriggerClick}
-          className={cn(
-            'inline-flex items-center justify-center align-super text-[11px] font-semibold leading-none',
-            'mx-0.5 px-1 py-0.5 rounded-md cursor-pointer select-none transition-colors duration-fast ease-out-expo',
-            'border border-blue-200 bg-blue-50/80 text-blue-700 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300',
-            'dark:border-blue-900/60 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/60',
-            className
-          )}
-        >
-          [^{index}]
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{badgeButton}</PopoverTrigger>
 
       <PopoverContent
         align="start"
