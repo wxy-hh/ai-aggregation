@@ -5,19 +5,25 @@ import React from 'react';
 import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import { DocumentPreviewDrawer, type DocumentPreviewDrawerProps } from './document-preview-drawer';
 
-// Mock fetchWithAuth
+// 替换认证请求
 const mockFetchWithAuth = vi.fn();
 vi.mock('@/lib/api/client', () => ({
   fetchWithAuth: (...args: any[]) => mockFetchWithAuth(...args),
 }));
 
-// Mock file-saver，验证同源下载经认证请求后由浏览器保存
+// 替换 file-saver，验证同源下载经认证请求后由浏览器保存
 const mockSaveAs = vi.hoisted(() => vi.fn());
 vi.mock('file-saver', () => ({
   saveAs: mockSaveAs,
 }));
 
-// Mock CodeBlock
+// 替换 sonner，验证下载失败的用户可见提示
+const mockToastError = vi.hoisted(() => vi.fn());
+vi.mock('sonner', () => ({
+  toast: { error: mockToastError },
+}));
+
+// 替换代码块组件
 vi.mock('@/components/chat/code-block', () => ({
   CodeBlock: ({ language, children }: any) => (
     <pre data-testid="mock-code-block" data-language={language}>
@@ -135,7 +141,12 @@ describe('DocumentPreviewDrawer 组件', () => {
     await waitFor(() => {
       expect(screen.getByText('文档解析或切片失败')).toBeInTheDocument();
       expect(screen.getByText('DOCX 文件结构损坏，无法完成解析')).toBeInTheDocument();
-      expect(screen.getByTestId('document-format-badge')).toHaveTextContent('Word');
+      const formatBadge = screen.getByTestId('document-format-badge');
+      expect(formatBadge).toHaveTextContent('Word');
+      expect(formatBadge).toHaveClass('rounded-full');
+      expect(formatBadge).toHaveClass('text-xs');
+      // 徽标不得位于 <p> 内，避免 div 徽章制造非法 DOM
+      expect(formatBadge.closest('p')).toBeNull();
       expect(screen.queryByText('Markdown')).not.toBeInTheDocument();
       expect(screen.queryByText(/个切片/)).not.toBeInTheDocument();
 
@@ -304,7 +315,7 @@ describe('DocumentPreviewDrawer 组件', () => {
     });
   });
 
-  it('同源下载链接经认证请求取回字节后保存', async () => {
+  it('同源下载进行中禁用并显示加载，成功后恢复且不重复下载', async () => {
     const originalUrl = '/api/knowledge-bases/kb_1/documents/doc_1/download';
     const blob = new Blob(['源资产字节'], { type: 'application/octet-stream' });
     mockPreviewSuccess(
@@ -316,10 +327,14 @@ describe('DocumentPreviewDrawer 组件', () => {
         originalUrl,
       })
     );
-    mockFetchWithAuth.mockResolvedValueOnce({
-      ok: true,
-      blob: async () => blob,
-    });
+
+    let resolveDownload: (response: unknown) => void = () => {};
+    mockFetchWithAuth.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDownload = resolve;
+        })
+    );
 
     renderDrawer({ documentName: '季度报告.docx' });
 
@@ -327,12 +342,63 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(screen.getByText('季度报告.docx')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByTestId('document-download-link'));
+    const downloadLink = screen.getByTestId('document-download-link');
+    fireEvent.click(downloadLink);
+
+    await waitFor(() => {
+      expect(screen.getByText('下载中...')).toBeInTheDocument();
+      expect(downloadLink).toHaveAttribute('aria-disabled', 'true');
+      expect(downloadLink).toHaveAttribute('aria-busy', 'true');
+      expect(downloadLink).toHaveClass('pointer-events-none');
+    });
+
+    // 进行中再次点击不得发起第二次下载
+    fireEvent.click(downloadLink);
+    expect(mockFetchWithAuth).toHaveBeenCalledTimes(2);
+
+    resolveDownload({ ok: true, blob: async () => blob });
 
     await waitFor(() => {
       expect(mockFetchWithAuth).toHaveBeenNthCalledWith(2, originalUrl);
       expect(mockSaveAs).toHaveBeenCalledWith(blob, '季度报告.docx');
+      expect(screen.getByText('下载原文件')).toBeInTheDocument();
+      expect(downloadLink).not.toHaveAttribute('aria-disabled', 'true');
+      expect(downloadLink).not.toHaveClass('pointer-events-none');
     });
+
+    expect(mockFetchWithAuth).toHaveBeenCalledTimes(2);
+    expect(mockSaveAs).toHaveBeenCalledTimes(1);
+  });
+
+  it('同源下载失败以中文 toast 提示并恢复可点击', async () => {
+    const originalUrl = '/api/knowledge-bases/kb_1/documents/doc_1/download';
+    mockPreviewSuccess(
+      createPreviewData({
+        name: '季度报告.docx',
+        sourceFormat: 'docx',
+        renderMode: 'markdown',
+        content: '# 季度报告',
+        originalUrl,
+      })
+    );
+    mockFetchWithAuth.mockResolvedValueOnce({ ok: false, status: 503 });
+
+    renderDrawer({ documentName: '季度报告.docx' });
+
+    await waitFor(() => {
+      expect(screen.getByText('季度报告.docx')).toBeInTheDocument();
+    });
+
+    const downloadLink = screen.getByTestId('document-download-link');
+    fireEvent.click(downloadLink);
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith('下载失败（HTTP 503）');
+      expect(screen.getByText('下载原文件')).toBeInTheDocument();
+      expect(downloadLink).not.toHaveAttribute('aria-disabled', 'true');
+    });
+
+    expect(mockSaveAs).not.toHaveBeenCalled();
   });
 
   it('TC09-6 请求失败显示聊天历史快照', async () => {
