@@ -300,7 +300,7 @@ describe('DocumentPreviewDrawer 组件', () => {
           id: 'doc_proc',
           name: '待处理文件.md',
           version: 1,
-          chunkCount: 0,
+          chunkCount: null,
           status: 'processing',
           fileType: 'markdown',
           content: '',
@@ -324,6 +324,7 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(screen.getByText('文档正在切片索引中')).toBeInTheDocument();
       expect(screen.getByText(/该文档正在后台进行智能切片与向量化构建/)).toBeInTheDocument();
       expect(screen.getByText('索引中')).toBeInTheDocument();
+      expect(screen.queryByText(/个切片/)).not.toBeInTheDocument();
     });
   });
 
@@ -334,14 +335,15 @@ describe('DocumentPreviewDrawer 组件', () => {
         success: true,
         data: {
           id: 'doc_failed',
-          name: '损坏文件.pdf',
+          name: '损坏文档.docx',
           version: 1,
-          chunkCount: 0,
+          chunkCount: null,
           status: 'failed',
-          errorMessage: 'PDF 文件损坏或包含不支持的加密算法',
-          fileType: 'pdf',
+          errorMessage: 'DOCX 文件结构损坏，无法完成解析',
+          fileType: 'docx',
           content: '',
           chunks: [],
+          originalUrl: 'https://storage.example.com/failed.docx?token=abc',
         },
       }),
     });
@@ -352,16 +354,22 @@ describe('DocumentPreviewDrawer 组件', () => {
         onOpenChange={vi.fn()}
         knowledgeBaseId="kb_1"
         documentId="doc_failed"
-        documentName="损坏文件.pdf"
+        documentName="损坏文档.docx"
         initialStatus="failed"
-        initialErrorMessage="PDF 文件损坏或包含不支持的加密算法"
+        initialErrorMessage="DOCX 文件结构损坏，无法完成解析"
       />
     );
 
     await waitFor(() => {
       expect(screen.getByText('文档解析或切片失败')).toBeInTheDocument();
-      expect(screen.getByText('PDF 文件损坏或包含不支持的加密算法')).toBeInTheDocument();
+      expect(screen.getByText('DOCX 文件结构损坏，无法完成解析')).toBeInTheDocument();
       expect(screen.getByText('失败')).toBeInTheDocument();
+      expect(screen.getByText('docx')).toBeInTheDocument();
+      expect(screen.getByTestId('document-download-link')).toHaveAttribute(
+        'href',
+        'https://storage.example.com/failed.docx?token=abc'
+      );
+      expect(screen.queryByText(/个切片/)).not.toBeInTheDocument();
     });
   });
 
