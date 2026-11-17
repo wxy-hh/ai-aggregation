@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildChunkInheritedMetadata, estimateTokenCount } from '@repo/shared';
+import {
+  buildArtifactStorageKey,
+  buildChunkInheritedMetadata,
+  estimateTokenCount,
+} from '@repo/shared';
 
 const mocks = vi.hoisted(() => ({
   txDocumentCreate: vi.fn(),
@@ -104,5 +108,38 @@ describe('depositArtifactToKnowledgeBase 直接测试 (C1 / TC07)', () => {
     expect(composed.sourceArtifactId).toBe('art_1');
     expect(composed).toHaveProperty('depositedAt');
     expect(composed.artifactType).toBe('markdown');
+  });
+
+  it('TC04-3 Artifact 上传与持久化共用共享 key 构造', async () => {
+    // 固定调用方产生的时间与随机事实，让期望值来自共享构造器而非字符串模板
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1760000000000);
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.123456789);
+
+    try {
+      await depositArtifactToKnowledgeBase(baseParams);
+
+      const expectedKey = buildArtifactStorageKey({
+        userId: 'user_1',
+        timestamp: 1760000000000,
+        randomToken: '4fzzzxjy',
+      });
+
+      // 对象存储上传、主表持久化与切片继承事实使用同一 key，且与共享构造器完全一致
+      expect(mocks.storageUpload).toHaveBeenCalledWith(
+        expectedKey,
+        expect.any(Buffer),
+        'text/markdown'
+      );
+      expect(mocks.txDocumentCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ storageKey: expectedKey }),
+        })
+      );
+      const [, inheritance] = mocks.insertWithInheritance.mock.calls[0];
+      expect(inheritance.storageKey).toBe(expectedKey);
+    } finally {
+      nowSpy.mockRestore();
+      randomSpy.mockRestore();
+    }
   });
 });
