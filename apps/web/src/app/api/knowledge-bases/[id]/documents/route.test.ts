@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { buildFileStorageKey } from '@repo/shared';
 
 const mocks = vi.hoisted(() => {
   return {
@@ -366,6 +367,29 @@ describe('POST & GET /api/knowledge-bases/[id]/documents (工单 04 / 文档上�
         })
       );
       expect(mocks.docCreate).not.toHaveBeenCalled();
+    });
+
+    it('TC04-1 文件上传使用共享 file key 构造', async () => {
+      // 让主表创建返回路由实际生成的事实（含 Document ID），以便用同一事实调用共享构造器
+      mocks.docCreate.mockImplementationOnce(async ({ data }: any) => ({ ...data }));
+
+      const req = createMultipartRequest('pdf-bytes', '产品设计.pdf', 'application/pdf');
+      const res = await POST(req, routeContext);
+
+      expect(res.status).toBe(202);
+
+      const [uploadedKey] = mocks.storageUpload.mock.calls[0];
+      const persisted = mocks.docCreate.mock.calls[0][0].data;
+      const expectedKey = buildFileStorageKey({
+        userId: 'user_1',
+        documentId: persisted.id,
+        version: persisted.version,
+        safeFileName: persisted.name,
+      });
+
+      // 上传对象与主表持久化使用同一 key，且与共享 file 构造器输出完全一致
+      expect(uploadedKey).toBe(expectedKey);
+      expect(persisted.storageKey).toBe(expectedKey);
     });
   });
 });

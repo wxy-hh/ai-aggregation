@@ -15,6 +15,7 @@ import { prisma } from '@repo/db';
 import {
   RAG_CAPACITY_LIMITS,
   RAG_CAPACITY_ERROR_MESSAGES,
+  buildUrlStorageKey,
   validateUrlLiteral,
 } from '@repo/shared';
 import { ragIndexQueue, JOB_NAMES } from '@repo/queue';
@@ -95,9 +96,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
         const pathSuffix = item.url.pathname.replace(/^\/|\/$/g, '').slice(0, 24);
         const initialName = pathSuffix ? `${item.hostname}/${pathSuffix}` : item.hostname;
 
-        // 生成存储路径规范：docs/{userId}/url-{timestamp}-{rand}/v1/content.md
-        const randomId = Math.random().toString(36).slice(2, 10);
-        const storageKey = `docs/${user.id}/url-${Date.now()}-${randomId}/v1/content.md`;
+        // 存储路径由共享布局构造器统一产出：docs/{userId}/url-{timestamp}-{rand}/v1/content.md
+        const storageKey = buildUrlStorageKey({
+          userId: user.id,
+          timestamp: Date.now(),
+          randomToken: Math.random().toString(36).slice(2, 10),
+        });
 
         const doc = await tx.document.create({
           data: {

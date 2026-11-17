@@ -9,6 +9,11 @@
  * 3. 原地更新只允许覆写 A+B 层，切片私有键由 `metadata || $1` 拼接语义天然保留。
  */
 
+import { deriveParsedContentKey } from './document-storage-layout';
+
+// C1 兼容转出口：实现已迁至 DocumentStorageLayout，原导入位置保持可用
+export { deriveParsedContentKey };
+
 /** B 层：系统派生键（从 Document 主表列权威重算） */
 export const SYSTEM_DERIVED_KEYS = ['sourceType', 'fileName', 'storageKey', 'parsedContentKey'] as const;
 
@@ -43,13 +48,6 @@ export interface ChunkInheritanceFacts {
   tags: string[];
   /** 文档主表 metadata（可含 outline，构造时显式剔除；含 C 层溯源键时原样继承） */
   metadata: Record<string, unknown>;
-}
-
-/**
- * 由存储定位派生提纯内容键（去掉尾段文件名，固定替换为 content.md）
- */
-export function deriveParsedContentKey(storageKey: string): string {
-  return storageKey.replace(/\/[^/]+$/, '/content.md');
 }
 
 /**

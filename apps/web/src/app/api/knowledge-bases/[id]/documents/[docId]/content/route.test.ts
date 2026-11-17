@@ -3,12 +3,10 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => {
   return {
-    currentUser: { id: 'user_1', username: 'testuser' },
+    currentUser: { id: 'user_1', username: 'testuser' } as { id: string; username: string } | null,
     kbFindUnique: vi.fn(),
     docFindFirst: vi.fn(),
-    chunkFindMany: vi.fn(),
-    storageDownload: vi.fn(),
-    storageGetUrl: vi.fn(),
+    project: vi.fn(),
   };
 });
 
@@ -31,16 +29,23 @@ vi.mock('@repo/db', () => ({
       findFirst: mocks.docFindFirst,
     },
     documentChunk: {
-      findMany: mocks.chunkFindMany,
+      findMany: vi.fn(),
     },
   },
 }));
 
 vi.mock('@repo/storage', () => ({
   createStorageProvider: vi.fn(() => ({
-    download: mocks.storageDownload,
-    getUrl: mocks.storageGetUrl,
+    download: vi.fn(),
+    getUrl: vi.fn(),
   })),
+}));
+
+// 路由测试只验证 HTTP 装配；正文矩阵由 DocumentPreviewProjection 测试覆盖
+vi.mock('@/lib/rag/document-preview-projection', () => ({
+  DocumentPreviewProjection: class {
+    project = mocks.project;
+  },
 }));
 
 import { GET } from './route';
@@ -54,19 +59,19 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     vi.clearAllMocks();
     mocks.currentUser = { id: 'user_1', username: 'testuser' };
     mocks.kbFindUnique.mockResolvedValue({ id: 'kb_1', userId: 'user_1' });
-    mocks.chunkFindMany.mockResolvedValue([]);
   });
 
-  it('未登录访问返回 401', async () => {
-    mocks.currentUser = null as any;
+  it('TC08-1 未登录返回 401', async () => {
+    mocks.currentUser = null;
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1/content');
     const res = await GET(req, routeContext);
 
     expect(res.status).toBe(401);
+    expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('跨租户或不存在知识库统一返回 404', async () => {
+  it('TC08-2 跨租户或不存在知识库返回 404', async () => {
     mocks.kbFindUnique.mockResolvedValueOnce(null);
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_other/documents/doc_1/content');
@@ -77,9 +82,10 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toContain('知识库不存在');
+    expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('文档不存在、已软删除或不属于当前用户时返回 404', async () => {
+  it('TC08-3 文档不存在软删除或跨租户返回 404', async () => {
     mocks.docFindFirst.mockResolvedValueOnce(null);
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_deleted/content');
@@ -90,10 +96,11 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toContain('文档不存在');
+    expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('正常获取 Markdown 文档内容，从存储提供者读取 UTF-8 纯文本', async () => {
-    const mockDoc = {
+  it('TC08-4 成功 DTO 不含 fileType/bodySource', async () => {
+    mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_1',
       knowledgeBaseId: 'kb_1',
       userId: 'user_1',
@@ -102,11 +109,30 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
       status: 'ready',
       version: 1,
       chunkCount: 12,
+      sourceType: 'file',
+      sourceUrl: null,
+      errorMessage: null,
       deletedAt: null,
+    });
+    const projectionData = {
+      id: 'doc_1',
+      name: '架构规范.md',
+      version: 1,
+      chunkCount: 2,
+      status: 'ready',
+      errorMessage: null,
+      sourceFormat: 'md',
+      renderMode: 'markdown',
+      content: '# 架构设计规范',
+      chunks: [
+        { chunkIndex: 0, content: '第一片', headingPath: '简介', pageNumber: null },
+        { chunkIndex: 1, content: '第二片', headingPath: '分层', pageNumber: null },
+      ],
+      originalUrl: 'https://storage.example.com/架构规范.md?token=abc',
+      sourceType: 'file',
+      sourceUrl: null,
     };
-    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
-    const mdContent = '# 架构设计规范\n\n## 1. 简介\n\n本规范定义了服务分层与数据隔离原则。';
-    mocks.storageDownload.mockResolvedValueOnce(Buffer.from(mdContent, 'utf-8'));
+    mocks.project.mockResolvedValueOnce({ data: projectionData, bodySource: 'stored' });
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1/content');
     const res = await GET(req, routeContext);
@@ -114,28 +140,41 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
-    expect(json.data.content).toBe(mdContent);
-    expect(json.data.fileType).toBe('markdown');
-    expect(json.data.name).toBe('架构规范.md');
-    expect(json.data.version).toBe(1);
-    expect(json.data.chunkCount).toBe(12);
-    expect(json.data.status).toBe('ready');
+    expect(json.data).toEqual(projectionData);
+    expect(json.data).not.toHaveProperty('fileType');
+    expect(json.data).not.toHaveProperty('bodySource');
   });
 
-  it('针对失败（failed）状态文档：返回结构化失败状态与原因面板数据，不抛出 500 (US-12)', async () => {
-    const mockDoc = {
+  it('TC08-5 非 ready 不含 renderMode 且计数为 null', async () => {
+    mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_failed',
       knowledgeBaseId: 'kb_1',
       userId: 'user_1',
       name: '解析异常.md',
       storageKey: 'docs/user_1/doc_failed/v1/解析异常.md',
       status: 'failed',
-      errorMessage: '文件编码格式异常，无法完成切片',
       version: 1,
-      chunkCount: 0,
+      chunkCount: 12,
+      sourceType: 'file',
+      sourceUrl: null,
+      errorMessage: '文件编码格式异常，无法完成切片',
       deletedAt: null,
+    });
+    const projectionData = {
+      id: 'doc_failed',
+      name: '解析异常.md',
+      version: 1,
+      chunkCount: null,
+      status: 'failed',
+      errorMessage: '文件编码格式异常，无法完成切片',
+      sourceFormat: 'md',
+      content: '',
+      chunks: [],
+      originalUrl: 'https://storage.example.com/解析异常.md?token=abc',
+      sourceType: 'file',
+      sourceUrl: null,
     };
-    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
+    mocks.project.mockResolvedValueOnce({ data: projectionData });
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_failed/content');
     const res = await GET(req, {
@@ -145,56 +184,16 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.success).toBe(true);
-    expect(json.data.status).toBe('failed');
-    expect(json.data.errorMessage).toBe('文件编码格式异常，无法完成切片');
-    expect(json.data.content).toBe('');
+    expect(json.data).toEqual(projectionData);
+    expect(json.data.chunkCount).toBeNull();
+    expect(json.data.renderMode).toBeUndefined();
+    expect(json.data).not.toHaveProperty('renderMode');
+    expect(json.data).not.toHaveProperty('fileType');
+    expect(json.data).not.toHaveProperty('bodySource');
   });
 
-  it('针对 PDF 文档：聚合切片结构化文本并附带带签名的原版临时下载 URL', async () => {
-    const mockDoc = {
-      id: 'doc_pdf',
-      knowledgeBaseId: 'kb_1',
-      userId: 'user_1',
-      name: '技术白皮书.pdf',
-      storageKey: 'docs/user_1/doc_pdf/v1/技术白皮书.pdf',
-      status: 'ready',
-      version: 2,
-      chunkCount: 2,
-      deletedAt: null,
-    };
-    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
-    mocks.chunkFindMany.mockResolvedValueOnce([
-      {
-        chunkIndex: 0,
-        content: '第一章：概述\n这是技术白皮书第一部分。',
-        headingPath: '第一章 概述',
-        pageNumber: 1,
-      },
-      {
-        chunkIndex: 1,
-        content: '第二章：核心架构\n这是技术白皮书第二部分。',
-        headingPath: '第二章 核心架构',
-        pageNumber: 3,
-      },
-    ]);
-    mocks.storageGetUrl.mockResolvedValueOnce('https://storage.example.com/docs/technical.pdf?token=abc');
-
-    const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_pdf/content');
-    const res = await GET(req, {
-      params: Promise.resolve({ id: 'kb_1', docId: 'doc_pdf' }),
-    });
-
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json.success).toBe(true);
-    expect(json.data.fileType).toBe('pdf');
-    expect(json.data.originalUrl).toBe('https://storage.example.com/docs/technical.pdf?token=abc');
-    expect(json.data.chunks).toHaveLength(2);
-    expect(json.data.content).toContain('第一章：概述');
-  });
-
-  it('存储层发生异常时优雅降级为 500 并返回中文错误', async () => {
-    const mockDoc = {
+  it('TC08-6 投影读取失败映射中文 500', async () => {
+    mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_1',
       knowledgeBaseId: 'kb_1',
       userId: 'user_1',
@@ -203,16 +202,24 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
       status: 'ready',
       version: 1,
       chunkCount: 5,
+      sourceType: 'file',
+      sourceUrl: null,
+      errorMessage: null,
       deletedAt: null,
-    };
-    mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
-    mocks.storageDownload.mockRejectedValueOnce(new Error('S3 Connection Timeout'));
+    });
+    mocks.project.mockRejectedValueOnce(new Error('文档正文读取失败'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1/content');
-    const res = await GET(req, routeContext);
+    try {
+      const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1/content');
+      const res = await GET(req, routeContext);
 
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.error).toContain('获取文档内容失败');
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.error).toContain('获取文档内容失败');
+      expect(json.data).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

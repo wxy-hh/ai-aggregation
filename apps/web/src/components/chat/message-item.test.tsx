@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MessageItem } from './message-item';
 import type { Message } from '@/stores/chat-store';
 
@@ -125,5 +126,95 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     const citeBadge = screen.getByTestId('citation-badge-1');
     fireEvent.click(citeBadge);
     expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+  });
+
+  it('user-event 真实 pointer 点击行内角标直接打开全文抽屉且不弹 Popover (ADR-0025)', async () => {
+    const user = userEvent.setup();
+    const onOpenCitation = vi.fn();
+    const mockCitation = {
+      knowledgeBaseId: 'kb-test-1',
+      documentId: 'doc-100',
+      documentName: '珀金协议规范',
+      documentVersion: 1,
+      pageNumber: 2,
+      headingPath: '2.1 熔断条件',
+      chunkIndex: 0,
+      snippet: '连续失败 3 次触发熔断。',
+    };
+
+    const message: Message = {
+      id: 'msg-cite-pointer',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
+      isStreaming: false,
+      citations: {
+        1: mockCitation,
+      },
+    };
+
+    render(<MessageItem message={message} onOpenCitation={onOpenCitation} />);
+
+    const badge = screen.getByTestId('citation-badge-1');
+    await user.click(badge);
+
+    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+    // 有全文抽屉回调时不得再依赖旧 Popover 交互
+    expect(badge).not.toHaveAttribute('aria-haspopup');
+    expect(screen.queryByText('引用来源 [^1]')).not.toBeInTheDocument();
+  });
+
+  it('提供 onOpenCitation 但引用无锚点时仍弹出 Popover 并提示未匹配物理切片锚点 (Spec P-X1)', async () => {
+    const user = userEvent.setup();
+    const onOpenCitation = vi.fn();
+
+    const message: Message = {
+      id: 'msg-cite-no-anchor',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
+      isStreaming: false,
+    };
+
+    render(<MessageItem message={message} onOpenCitation={onOpenCitation} />);
+
+    // 无锚点时角标仍是 Popover 触发器，而非直达全文抽屉的裸按钮
+    const badge = screen.getByTestId('citation-badge-1');
+    expect(badge).toHaveAttribute('aria-haspopup', 'dialog');
+
+    await user.click(badge);
+
+    expect(await screen.findByText('引用来源 [^1]')).toBeInTheDocument();
+    expect(screen.getByText(/该条引用未匹配到物理切片锚点/)).toBeInTheDocument();
+    expect(onOpenCitation).not.toHaveBeenCalled();
+  });
+
+  it('未提供 onOpenCitation 时点击行内角标仍展示 Popover 来源详情', async () => {
+    const user = userEvent.setup();
+    const mockCitation = {
+      knowledgeBaseId: 'kb-test-1',
+      documentId: 'doc-100',
+      documentName: '珀金协议规范',
+      documentVersion: 1,
+      pageNumber: 2,
+      headingPath: '2.1 熔断条件',
+      chunkIndex: 0,
+      snippet: '连续失败 3 次触发熔断。',
+    };
+
+    const message: Message = {
+      id: 'msg-cite-popover',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
+      isStreaming: false,
+      citations: {
+        1: mockCitation,
+      },
+    };
+
+    render(<MessageItem message={message} />);
+
+    await user.click(screen.getByTestId('citation-badge-1'));
+
+    expect(await screen.findByText('引用来源 [^1]')).toBeInTheDocument();
+    expect(screen.getByText('《珀金协议规范》')).toBeInTheDocument();
   });
 });

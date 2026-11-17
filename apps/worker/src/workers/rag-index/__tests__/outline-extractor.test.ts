@@ -222,7 +222,7 @@ describe('RAG 文档层级大纲树抽取器单元测试 (outline-extractor - TC
 - 模块 B
 `;
     const buffer = Buffer.from(md, 'utf-8');
-    const result = await parseDocument(buffer, 'spec.md');
+    const result = await parseDocument(buffer, 'spec.md', 'md');
 
     expect(result.outline).toBeDefined();
     expect(result.outline?.totalNodes).toBe(2);

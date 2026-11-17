@@ -1,5 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const pushMock = vi.fn();
@@ -23,6 +25,12 @@ vi.mock('@/lib/api/auth', () => ({
 
 import { useAuthStore } from '@/stores/auth-store';
 import { useRedirectRealUserToHome, useRequireAuth } from './use-auth';
+
+/** 水合一致性探针：只暴露 hook 的跳转判定结果，避免把登录页视觉结构耦合进测试 */
+function HydrationProbe() {
+  const isRedirecting = useRedirectRealUserToHome();
+  return <div data-testid="auth-redirect-probe">{isRedirecting ? 'spinner' : 'form'}</div>;
+}
 
 describe('useRequireAuth 的跳转时机', () => {
   beforeEach(() => {
@@ -156,5 +164,46 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
       expect(localStorage.getItem('ai-app-auth')).toBeNull();
     });
+  });
+
+  it('SSR 首帧与带 redirect 参数的客户端水合首帧一致，不产生 hydration 错误', async () => {
+    refreshMock.mockReturnValue(new Promise(() => {}));
+    useAuthStore.setState({
+      status: 'bootstrapping',
+      isAuthenticated: false,
+      user: null,
+      accessToken: null,
+    });
+
+    const originalWindow = globalThis.window;
+    vi.stubGlobal('window', undefined);
+    const serverHtml = renderToString(<HydrationProbe />);
+    vi.stubGlobal('window', originalWindow);
+
+    expect(serverHtml).toContain('spinner');
+
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = new URL(
+      'http://localhost:3030/login?redirect=%2Fknowledge'
+    ) as unknown as string & Location;
+
+    const container = document.createElement('div');
+    container.innerHTML = serverHtml;
+    const hydrationErrors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <HydrationProbe />, {
+        onRecoverableError: (error) => hydrationErrors.push(error),
+        onUncaughtError: (error) => hydrationErrors.push(error),
+      });
+    });
+
+    expect(
+      hydrationErrors.filter((error) =>
+        String(error).includes('Hydration failed because the server rendered')
+      )
+    ).toHaveLength(0);
+
+    act(() => root?.unmount());
   });
 });

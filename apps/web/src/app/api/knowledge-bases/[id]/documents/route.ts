@@ -6,7 +6,7 @@
  * - POST /api/knowledge-bases/[id]/documents：向知识库上传文档（multipart/form-data）
  *   - 仅支持 PDF/Markdown/TXT，超限与非法文件立即拒绝且 DB/Storage 零残留
  *   - 配额检查（50 文档/20000 切片）超限返回 429
- *   - 对象存储 key 规约：docs/{userId}/{documentId}/v{version}/{filename}
+ *   - 对象存储 key 由 @repo/shared 的 buildFileStorageKey 统一构造：docs/{userId}/{documentId}/v{version}/{filename}
  *   - 幂等性：相同 userId+requestId 不产生重复行
  *   - 同文档重上传：version+1 且状态置为 pending
  *   - DB 行 status=pending 即返回 202
@@ -17,6 +17,7 @@ import { prisma } from '@repo/db';
 import {
   RAG_CAPACITY_LIMITS,
   RAG_CAPACITY_ERROR_MESSAGES,
+  buildFileStorageKey,
   validateRagDocument,
 } from '@repo/shared';
 import { createStorageProvider } from '@repo/storage';
@@ -216,8 +217,13 @@ export async function POST(req: NextRequest, context: RouteContext) {
       : (globalThis.crypto?.randomUUID?.() ?? `doc_${Date.now()}_${Math.random().toString(36).slice(2)}`);
     const targetVersion = existingDoc ? existingDoc.version + 1 : 1;
 
-    // 8. 对象存储 key 规约：docs/{userId}/{documentId}/v{version}/{filename}
-    const storageKey = `docs/${user.id}/${targetDocId}/v${targetVersion}/${safeFileName}`;
+    // 8. 对象存储 key 由共享布局构造器统一产出：docs/{userId}/{documentId}/v{version}/{filename}
+    const storageKey = buildFileStorageKey({
+      userId: user.id,
+      documentId: targetDocId,
+      version: targetVersion,
+      safeFileName,
+    });
 
     // 9. 将文件写入对象存储
     const buffer = Buffer.from(await file.arrayBuffer());

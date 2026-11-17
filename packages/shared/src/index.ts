@@ -27,6 +27,19 @@ export * from './token-estimate';
 export * from './model-json';
 export * from './compatibility-contract';
 export * from './rag-config';
+// DocumentStorageLayout 纯契约；deriveParsedContentKey 与 C1 转出口为同一定义
+export {
+  buildArtifactStorageKey,
+  buildFileStorageKey,
+  buildUrlStorageKey,
+  deriveParsedContentKey,
+  deriveSourceFormat,
+  requiresDerivedContent,
+  type DocumentSourceFormatFacts,
+  type FileStorageKeyFacts,
+  type SourceFormat,
+  type TimestampedStorageKeyFacts,
+} from './document-storage-layout';
 export * from './rag-outline';
 export * from './rag-retrieval';
 export * from './rag-chunk-metadata';

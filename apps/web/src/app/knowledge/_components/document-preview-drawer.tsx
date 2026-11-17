@@ -22,7 +22,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchWithAuth } from '@/lib/api/client';
+import { cn } from '@/lib/utils';
 import { CodeBlock } from '@/components/chat/code-block';
+import { saveAs } from 'file-saver';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -36,7 +39,9 @@ import {
   ChevronRight,
   Hash,
   Sparkles,
+  Info,
 } from 'lucide-react';
+import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import type { FocusedCitationAnchor, MatchedCitationAnchor } from '@/types/citation';
 
 export interface DocumentPreviewDrawerProps {
@@ -62,24 +67,37 @@ export interface DocumentPreviewDrawerProps {
   sourceUrl?: string | null;
 }
 
-interface DocumentContentData {
-  id: string;
-  name: string;
-  version: number;
-  chunkCount: number;
-  status: 'pending' | 'processing' | 'ready' | 'failed';
-  errorMessage?: string | null;
-  fileType: 'markdown' | 'text' | 'pdf' | 'docx' | 'xlsx' | 'csv' | string;
-  content: string;
-  originalUrl?: string | null;
-  sourceType?: string;
-  sourceUrl?: string | null;
-  chunks?: Array<{
-    chunkIndex: number;
-    content: string;
-    headingPath?: string | null;
-    pageNumber?: number | null;
-  }>;
+/** sourceFormat 的用户可读徽标文案；unknown 不得冒充 Markdown */
+const SOURCE_FORMAT_LABELS: Record<DocumentPreviewData['sourceFormat'], string> = {
+  pdf: 'PDF',
+  md: 'Markdown',
+  txt: 'TXT',
+  docx: 'Word',
+  xlsx: 'Excel',
+  csv: 'CSV',
+  unknown: '未知格式',
+};
+
+/** ready 归一化预览的静态披露；不虚构行、列或工作表数量 */
+function resolveNormalizedNotice(
+  data: DocumentPreviewData | null,
+  status: string
+): string | null {
+  if (!data || status !== 'ready') {
+    return null;
+  }
+  if (data.sourceFormat === 'docx') {
+    return '预览为归一化文本，图片与原始版式可能未保留；完整事实请以原件为准。';
+  }
+  if (data.sourceFormat === 'xlsx' || data.sourceFormat === 'csv') {
+    return '预览为归一化表格，可能未展示全部工作表、行或列；完整事实请以原件为准。';
+  }
+  return null;
+}
+
+/** 同源下载路由不能靠 `<a>` 自动携带 Bearer Token，需先经认证请求取回字节 */
+function isSameOriginDownloadUrl(url: string): boolean {
+  return url.startsWith('/');
 }
 
 export function DocumentPreviewDrawer({
@@ -98,13 +116,23 @@ export function DocumentPreviewDrawer({
   fallbackSnippet,
   sourceUrl,
 }: DocumentPreviewDrawerProps) {
-  const [data, setData] = React.useState<DocumentContentData | null>(null);
+  const [data, setData] = React.useState<DocumentPreviewData | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const downloadInFlightRef = React.useRef(false);
 
   // 计算当前有效文档状态与错误提示 (US-12)
   const effectiveStatus = data?.status || initialStatus || 'ready';
   const effectiveErrorMessage = data?.errorMessage || initialErrorMessage || null;
+  const readyChunks = data?.chunks ?? [];
+  const normalizedNotice = resolveNormalizedNotice(data, effectiveStatus);
+  // 下载入口的可访问名，文案与可见态保持一致（窄屏隐藏文字时仍可无障碍朗读）
+  const downloadActionLabel = downloading
+    ? '下载中'
+    : data?.sourceFormat === 'pdf'
+      ? '查看原版 PDF'
+      : '下载原文件';
 
   // 滚动容器引用与高亮节点引用
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
@@ -145,6 +173,43 @@ export function DocumentPreviewDrawer({
       setError(null);
     }
   }, [open, knowledgeBaseId, documentId, loadContent]);
+
+  // 同源下载路由需要 Authorization；绝对签名 URL 继续交给浏览器直链下载
+  const handleDownloadClick = React.useCallback(
+    async (event: React.MouseEvent<HTMLAnchorElement>) => {
+      const url = data?.originalUrl;
+      if (!url || !isSameOriginDownloadUrl(url)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (downloadInFlightRef.current) {
+        return;
+      }
+
+      downloadInFlightRef.current = true;
+      setDownloading(true);
+      try {
+        const res = await fetchWithAuth(url);
+        if (!res.ok) {
+          throw new Error(`下载失败（HTTP ${res.status}）`);
+        }
+        const blob = await res.blob();
+        saveAs(blob, data.name || 'document');
+      } catch (err: unknown) {
+        console.error('[DocumentPreviewDrawer] 下载源资产失败:', err);
+        const message =
+          err instanceof Error && err.message.startsWith('下载失败')
+            ? err.message
+            : '下载文档失败，请稍后重试';
+        toast.error(message);
+      } finally {
+        downloadInFlightRef.current = false;
+        setDownloading(false);
+      }
+    },
+    [data]
+  );
 
   // 自动滚动至高亮切片（聚焦平滑滚动）
   React.useEffect(() => {
@@ -247,32 +312,45 @@ export function DocumentPreviewDrawer({
                 <DialogTitle className="text-base sm:text-lg font-bold text-foreground truncate">
                   {data?.name || documentName || '文档全文预览'}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-1 flex items-center flex-wrap gap-2">
-                  <span>版本: v{data?.version ?? documentVersion ?? 1}</span>
-                  <span>•</span>
-                  <span>{data?.chunkCount ?? 0} 个切片</span>
-                  {data?.fileType && (
-                    <>
-                      <span>•</span>
-                      <span className="uppercase font-mono text-[10px] px-1.5 py-0.2 rounded bg-muted">
-                        {data.fileType}
-                      </span>
-                    </>
-                  )}
-                  {effectiveStatus !== 'ready' && (
-                    <>
-                      <span>•</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          effectiveStatus === 'failed'
-                            ? 'bg-destructive/15 text-destructive'
-                            : 'bg-secondary text-secondary-foreground'
-                        }`}
-                      >
-                        {effectiveStatus === 'failed' ? '失败' : '索引中'}
-                      </span>
-                    </>
-                  )}
+                <DialogDescription
+                  asChild
+                  className="text-xs text-muted-foreground mt-1 flex items-center flex-wrap gap-2"
+                >
+                  <div>
+                    <span>版本: v{data?.version ?? documentVersion ?? 1}</span>
+                    {data?.chunkCount != null && (
+                      <>
+                        <span>•</span>
+                        <span>{data.chunkCount} 个切片</span>
+                      </>
+                    )}
+                    {data?.sourceFormat && (
+                      <>
+                        <span>•</span>
+                        <Badge
+                          variant="secondary"
+                          data-testid="document-format-badge"
+                          className="rounded-full px-1.5 py-0 text-xs font-medium"
+                        >
+                          {SOURCE_FORMAT_LABELS[data.sourceFormat] ?? '未知格式'}
+                        </Badge>
+                      </>
+                    )}
+                    {effectiveStatus !== 'ready' && (
+                      <>
+                        <span>•</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            effectiveStatus === 'failed'
+                              ? 'bg-destructive/15 text-destructive'
+                              : 'bg-secondary text-secondary-foreground'
+                          }`}
+                        >
+                          {effectiveStatus === 'failed' ? '失败' : '索引中'}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </DialogDescription>
               </div>
             </div>
@@ -284,13 +362,15 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center text-primary hover:text-primary"
+                  className="min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center text-primary hover:text-primary"
                 >
                   <a
                     href={(data?.sourceUrl || sourceUrl) as string}
                     target="_blank"
                     rel="noopener noreferrer"
                     data-testid="document-source-link"
+                    aria-label="跳转原文"
+                    title="跳转原文"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">跳转原文</span>
@@ -303,7 +383,10 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center"
+                  className={cn(
+                    'min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center',
+                    downloading && 'pointer-events-none opacity-60'
+                  )}
                 >
                   <a
                     href={data.originalUrl}
@@ -311,8 +394,19 @@ export function DocumentPreviewDrawer({
                     rel="noopener noreferrer"
                     download
                     data-testid="document-download-link"
+                    onClick={handleDownloadClick}
+                    aria-label={downloadActionLabel}
+                    title={downloadActionLabel}
+                    aria-disabled={downloading}
+                    aria-busy={downloading}
+                    tabIndex={downloading ? -1 : undefined}
                   >
-                    {data.fileType === 'pdf' ? (
+                    {downloading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span className="hidden sm:inline">下载中...</span>
+                      </>
+                    ) : data.sourceFormat === 'pdf' ? (
                       <>
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">查看原版 PDF</span>
@@ -475,10 +569,21 @@ export function DocumentPreviewDrawer({
 
           {!loading && !error && effectiveStatus === 'ready' && data && (
             <div className="max-w-none text-foreground/90 text-sm leading-relaxed space-y-4">
+              {normalizedNotice && (
+                <div
+                  data-testid="document-normalized-notice"
+                  role="note"
+                  className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/20 p-3 text-xs leading-relaxed text-muted-foreground"
+                >
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                  <p className="min-w-0 break-words">{normalizedNotice}</p>
+                </div>
+              )}
+
               {/* PDF 格式切片分段渲染 */}
-              {data.fileType === 'pdf' && data.chunks && data.chunks.length > 0 ? (
+              {data.renderMode === 'pdf-chunks' && readyChunks.length > 0 ? (
                 <div className="space-y-4">
-                  {data.chunks.map((c) => {
+                  {readyChunks.map((c) => {
                     const isMatched = focusedAnchor?.chunkIndex === c.chunkIndex;
                     return (
                       <div
@@ -506,10 +611,10 @@ export function DocumentPreviewDrawer({
                     );
                   })}
                 </div>
-              ) : data.chunks && data.chunks.length > 0 ? (
+              ) : readyChunks.length > 0 ? (
                 /* Markdown / TXT 分块切片渲染并支持定位与高亮联动 (Spec 契约) */
                 <div className="space-y-4">
-                  {data.chunks.map((c) => {
+                  {readyChunks.map((c) => {
                     const isMatched = focusedAnchor?.chunkIndex === c.chunkIndex;
                     return (
                       <div
