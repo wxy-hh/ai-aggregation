@@ -35,11 +35,18 @@ export {
   deriveParsedContentKey,
   deriveSourceFormat,
   requiresDerivedContent,
+  SOURCE_FORMATS,
   type DocumentSourceFormatFacts,
   type FileStorageKeyFacts,
   type SourceFormat,
   type TimestampedStorageKeyFacts,
 } from './document-storage-layout';
+// 文档生命周期状态纯契约：四态、运行时清单与边界守卫
+export {
+  DOCUMENT_STATUSES,
+  isDocumentStatus,
+  type DocumentStatus,
+} from './document-status';
 export * from './rag-outline';
 export * from './rag-retrieval';
 export * from './rag-chunk-metadata';

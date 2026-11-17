@@ -42,6 +42,7 @@ import {
   Info,
 } from 'lucide-react';
 import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
+import type { DocumentStatus } from '@repo/shared';
 import type { FocusedCitationAnchor, MatchedCitationAnchor } from '@/types/citation';
 
 export interface DocumentPreviewDrawerProps {
@@ -51,7 +52,7 @@ export interface DocumentPreviewDrawerProps {
   documentId: string | null;
   documentName?: string;
   documentVersion?: number;
-  initialStatus?: 'pending' | 'processing' | 'ready' | 'failed';
+  initialStatus?: DocumentStatus;
   initialErrorMessage?: string | null;
   /** 当前选中的切片锚点 */
   focusedAnchor?: FocusedCitationAnchor;
@@ -79,11 +80,8 @@ const SOURCE_FORMAT_LABELS: Record<DocumentPreviewData['sourceFormat'], string> 
 };
 
 /** ready 归一化预览的静态披露；不虚构行、列或工作表数量 */
-function resolveNormalizedNotice(
-  data: DocumentPreviewData | null,
-  status: string
-): string | null {
-  if (!data || status !== 'ready') {
+function resolveNormalizedNotice(data: DocumentPreviewData | null): string | null {
+  if (!data || data.status !== 'ready') {
     return null;
   }
   if (data.sourceFormat === 'docx') {
@@ -95,9 +93,26 @@ function resolveNormalizedNotice(
   return null;
 }
 
-/** 同源下载路由不能靠 `<a>` 自动携带 Bearer Token，需先经认证请求取回字节 */
-function isSameOriginDownloadUrl(url: string): boolean {
-  return url.startsWith('/');
+/** 内部 API 下载路由需要 Bearer Token，必须先经认证请求取回字节 */
+function isAuthenticatedDownloadPath(url: string): boolean {
+  // 正向白名单天然免疫 `//host` 与 `/\host` 协议相对逃逸
+  return url.startsWith('/api/');
+}
+
+/** 外部签名直链可以交给浏览器原生下载，不附加平台凭据 */
+function isExternalDownloadUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/** 下载入口文案：可访问名、title 与可见文案共用同一来源 */
+function getDownloadActionLabel(
+  downloading: boolean,
+  sourceFormat?: DocumentPreviewData['sourceFormat']
+): string {
+  if (downloading) {
+    return '下载中';
+  }
+  return sourceFormat === 'pdf' ? '查看原版 PDF' : '下载原文件';
 }
 
 export function DocumentPreviewDrawer({
@@ -126,13 +141,9 @@ export function DocumentPreviewDrawer({
   const effectiveStatus = data?.status || initialStatus || 'ready';
   const effectiveErrorMessage = data?.errorMessage || initialErrorMessage || null;
   const readyChunks = data?.chunks ?? [];
-  const normalizedNotice = resolveNormalizedNotice(data, effectiveStatus);
-  // 下载入口的可访问名，文案与可见态保持一致（窄屏隐藏文字时仍可无障碍朗读）
-  const downloadActionLabel = downloading
-    ? '下载中'
-    : data?.sourceFormat === 'pdf'
-      ? '查看原版 PDF'
-      : '下载原文件';
+  const normalizedNotice = resolveNormalizedNotice(data);
+  // 可访问名与可见文案同源，窄屏隐藏文字时仍由 aria-label 朗读
+  const downloadActionLabel = getDownloadActionLabel(downloading, data?.sourceFormat);
 
   // 滚动容器引用与高亮节点引用
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
@@ -174,11 +185,22 @@ export function DocumentPreviewDrawer({
     }
   }, [open, knowledgeBaseId, documentId, loadContent]);
 
-  // 同源下载路由需要 Authorization；绝对签名 URL 继续交给浏览器直链下载
+  // 三态分流：内部 API 附加凭据取字节，外部签名直链交给浏览器，其余地址 fail-closed
   const handleDownloadClick = React.useCallback(
     async (event: React.MouseEvent<HTMLAnchorElement>) => {
       const url = data?.originalUrl;
-      if (!url || !isSameOriginDownloadUrl(url)) {
+      if (!url) {
+        event.preventDefault();
+        return;
+      }
+
+      if (isExternalDownloadUrl(url)) {
+        return;
+      }
+
+      if (!isAuthenticatedDownloadPath(url)) {
+        event.preventDefault();
+        console.warn('[DocumentPreviewDrawer] 拒绝非法的下载链接:', url);
         return;
       }
 
@@ -402,21 +424,13 @@ export function DocumentPreviewDrawer({
                     tabIndex={downloading ? -1 : undefined}
                   >
                     {downloading ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span className="hidden sm:inline">下载中...</span>
-                      </>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     ) : data.sourceFormat === 'pdf' ? (
-                      <>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">查看原版 PDF</span>
-                      </>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     ) : (
-                      <>
-                        <Download className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">下载原文件</span>
-                      </>
+                      <Download className="w-3.5 h-3.5" />
                     )}
+                    <span className="hidden sm:inline">{downloadActionLabel}</span>
                   </a>
                 </Button>
               )}

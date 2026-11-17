@@ -20,7 +20,6 @@ function buildDocument(
     sourceType: 'file',
     sourceUrl: null,
     errorMessage: null,
-    chunkCount: 12,
     ...overrides,
   };
 }
@@ -135,7 +134,8 @@ describe('DocumentPreviewProjection 非 ready 投影', () => {
   it('TC05-4 非 ready 不展示主表旧切片计数', async () => {
     for (const status of ['pending', 'processing', 'failed'] as const) {
       const { projection } = createProjection();
-      const document = buildDocument({ status, chunkCount: 12 });
+      // 模拟 Prisma 主表遗留计数：投影接口不声明该字段，也不得采信
+      const document = { ...buildDocument({ status }), chunkCount: 12 };
 
       const result = await projection.projectNonReady(document);
 
@@ -383,12 +383,15 @@ describe('DocumentPreviewProjection ready 正文矩阵', () => {
   });
 
   it('TC06-7 ready 切片计数以实际 chunks 为准', async () => {
-    const document = buildDocument({
-      status: 'ready',
-      name: '规范.md',
-      storageKey: 'docs/user_1/doc_1/v3/规范.md',
+    const document = {
+      ...buildDocument({
+        status: 'ready',
+        name: '规范.md',
+        storageKey: 'docs/user_1/doc_1/v3/规范.md',
+      }),
+      // 模拟 Prisma 主表遗留计数：ready 计数必须取本次 chunks.length
       chunkCount: 99,
-    });
+    };
     const { projection } = createProjection({
       chunks: TWO_CHUNKS,
       download: async () => Buffer.from('# 规范正文', 'utf-8'),

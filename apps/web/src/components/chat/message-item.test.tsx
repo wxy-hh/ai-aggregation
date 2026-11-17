@@ -5,12 +5,24 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MessageItem } from './message-item';
 import type { Message } from '@/stores/chat-store';
+import type { CitationAnchor } from '@repo/shared';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
 
-describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => {
+const MOCK_CITATION: CitationAnchor = {
+  knowledgeBaseId: 'kb-test-1',
+  documentId: 'doc-100',
+  documentName: '珀金协议规范',
+  documentVersion: 1,
+  pageNumber: 2,
+  headingPath: '2.1 熔断条件',
+  chunkIndex: 0,
+  snippet: '连续失败 3 次触发熔断。',
+};
+
+describe('MessageItem Markdown 渲染', () => {
   it('行内代码（如工具名 `web_fetch`）渲染为行内 code 标签，不展示代码块的复制按钮与语言标', () => {
     const message: Message = {
       id: 'msg-1',
@@ -46,7 +58,9 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     expect(screen.getByText('console.log("hello");')).toBeInTheDocument();
     expect(screen.getByText('复制')).toBeInTheDocument();
   });
+});
 
+describe('MessageItem 引用角标与来源', () => {
   it('知识库问题命中检索后：回答正文含 [^1] 样式引用编号，气泡元信息行展示来源计数 (QA-004)', () => {
     const message: Message = {
       id: 'msg-rag-1',
@@ -82,16 +96,6 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
 
   it('点击引用角标或参考来源折叠卡片触发 onOpenCitation 回调 (TC01/TC04 / ADR-0025)', async () => {
     const onOpenCitation = vi.fn();
-    const mockCitation = {
-      knowledgeBaseId: 'kb-test-1',
-      documentId: 'doc-100',
-      documentName: '珀金协议规范',
-      documentVersion: 1,
-      pageNumber: 2,
-      headingPath: '2.1 熔断条件',
-      chunkIndex: 0,
-      snippet: '连续失败 3 次触发熔断。',
-    };
 
     const message: Message = {
       id: 'msg-cite-test',
@@ -99,7 +103,7 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
       content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
       isStreaming: false,
       citations: {
-        1: mockCitation,
+        1: MOCK_CITATION,
       },
     };
 
@@ -119,28 +123,18 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     // 3. 点击折叠列表中的条目，触发 onOpenCitation
     const itemBtn = screen.getByTestId('citation-ref-item-1');
     fireEvent.click(itemBtn);
-    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+    expect(onOpenCitation).toHaveBeenCalledWith(MOCK_CITATION);
 
     // 4. 点击正文行内角标 [^1]，同样直接触发 onOpenCitation (TC01)
     onOpenCitation.mockClear();
     const citeBadge = screen.getByTestId('citation-badge-1');
     fireEvent.click(citeBadge);
-    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+    expect(onOpenCitation).toHaveBeenCalledWith(MOCK_CITATION);
   });
 
   it('user-event 真实 pointer 点击行内角标直接打开全文抽屉且不弹 Popover (ADR-0025)', async () => {
     const user = userEvent.setup();
     const onOpenCitation = vi.fn();
-    const mockCitation = {
-      knowledgeBaseId: 'kb-test-1',
-      documentId: 'doc-100',
-      documentName: '珀金协议规范',
-      documentVersion: 1,
-      pageNumber: 2,
-      headingPath: '2.1 熔断条件',
-      chunkIndex: 0,
-      snippet: '连续失败 3 次触发熔断。',
-    };
 
     const message: Message = {
       id: 'msg-cite-pointer',
@@ -148,7 +142,7 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
       content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
       isStreaming: false,
       citations: {
-        1: mockCitation,
+        1: MOCK_CITATION,
       },
     };
 
@@ -157,7 +151,7 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     const badge = screen.getByTestId('citation-badge-1');
     await user.click(badge);
 
-    expect(onOpenCitation).toHaveBeenCalledWith(mockCitation);
+    expect(onOpenCitation).toHaveBeenCalledWith(MOCK_CITATION);
     // 有全文抽屉回调时不得再依赖旧 Popover 交互
     expect(badge).not.toHaveAttribute('aria-haspopup');
     expect(screen.queryByText('引用来源 [^1]')).not.toBeInTheDocument();
@@ -189,16 +183,6 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
 
   it('未提供 onOpenCitation 时点击行内角标仍展示 Popover 来源详情', async () => {
     const user = userEvent.setup();
-    const mockCitation = {
-      knowledgeBaseId: 'kb-test-1',
-      documentId: 'doc-100',
-      documentName: '珀金协议规范',
-      documentVersion: 1,
-      pageNumber: 2,
-      headingPath: '2.1 熔断条件',
-      chunkIndex: 0,
-      snippet: '连续失败 3 次触发熔断。',
-    };
 
     const message: Message = {
       id: 'msg-cite-popover',
@@ -206,7 +190,7 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
       content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
       isStreaming: false,
       citations: {
-        1: mockCitation,
+        1: MOCK_CITATION,
       },
     };
 

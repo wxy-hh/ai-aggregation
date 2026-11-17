@@ -99,6 +99,40 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(mocks.project).not.toHaveBeenCalled();
   });
 
+  it('S-J2 非法文档状态返回中文 500 且不进入投影', async () => {
+    mocks.docFindFirst.mockResolvedValueOnce({
+      id: 'doc_corrupt',
+      knowledgeBaseId: 'kb_1',
+      userId: 'user_1',
+      name: '状态异常.md',
+      storageKey: 'docs/user_1/doc_corrupt/v1/状态异常.md',
+      status: 'archived',
+      version: 1,
+      chunkCount: 0,
+      sourceType: 'file',
+      sourceUrl: null,
+      errorMessage: null,
+      deletedAt: null,
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const req = new NextRequest(
+        'http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_corrupt/content'
+      );
+      const res = await GET(req, {
+        params: Promise.resolve({ id: 'kb_1', docId: 'doc_corrupt' }),
+      });
+
+      expect(res.status).toBe(500);
+      const json = await res.json();
+      expect(json.error).toContain('文档状态异常');
+      expect(mocks.project).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('TC08-4 成功 DTO 不含 fileType/bodySource', async () => {
     mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_1',

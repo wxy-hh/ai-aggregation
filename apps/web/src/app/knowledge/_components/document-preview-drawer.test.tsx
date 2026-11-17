@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, createEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import { DocumentPreviewDrawer, type DocumentPreviewDrawerProps } from './document-preview-drawer';
@@ -354,7 +354,7 @@ describe('DocumentPreviewDrawer 组件', () => {
     fireEvent.click(downloadLink);
 
     await waitFor(() => {
-      expect(screen.getByText('下载中...')).toBeInTheDocument();
+      expect(screen.getByText('下载中')).toBeInTheDocument();
       expect(downloadLink).toHaveAttribute('aria-disabled', 'true');
       expect(downloadLink).toHaveAttribute('aria-busy', 'true');
       expect(downloadLink).toHaveAttribute('aria-label', '下载中');
@@ -687,4 +687,22 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(overlay).toBeNull();
     });
   });
+
+  it.each(['//evil.example.com/file', '/\\evil.example.com/file'])(
+    '协议相对或反斜杠逃逸的下载地址 %s 被直接阻断且不发起认证请求 (S-J6)',
+    async (originalUrl) => {
+      mockPreviewSuccess(createPreviewData({ originalUrl }));
+
+      renderDrawer({ documentName: '测试文档.md' });
+
+      const link = await screen.findByTestId('document-download-link');
+      const clickEvent = createEvent.click(link, { bubbles: true, cancelable: true });
+      fireEvent(link, clickEvent);
+
+      expect(clickEvent.defaultPrevented).toBe(true);
+      // 仅内容加载发起过一次认证请求，非法下载地址不得触发第二次
+      expect(mockFetchWithAuth).toHaveBeenCalledTimes(1);
+      expect(mockFetchWithAuth).not.toHaveBeenCalledWith(originalUrl);
+    }
+  );
 });

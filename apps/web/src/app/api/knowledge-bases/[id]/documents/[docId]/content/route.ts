@@ -11,11 +11,12 @@
  */
 
 import { NextRequest } from 'next/server';
-import { prisma } from '@repo/db';
 import { createStorageProvider } from '@repo/storage';
+import { isDocumentStatus } from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
+import { loadOwnedDocument } from '@/lib/api/owned-document';
 import { createDocumentPreviewChunkLoader } from '@/lib/rag/document-preview-chunk-loader';
 import type { DocumentPreviewData } from '@/lib/rag/document-preview-contract';
 import { DocumentPreviewProjection } from '@/lib/rag/document-preview-projection';
@@ -29,30 +30,29 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const user = await getCurrentUser(req);
     const { id: knowledgeBaseId, docId } = await context.params;
 
-    // 1. 严格校验知识库存在性与归属（越权访问统一 404）
-    const kb = await prisma.knowledgeBase.findUnique({
-      where: { id: knowledgeBaseId },
+    // 1-2. 认证后的知识库与文档归属校验由共享读取器统一完成（越权统一 404）
+    const access = await loadOwnedDocument({
+      userId: user.id,
+      knowledgeBaseId,
+      docId,
     });
 
-    if (!kb || kb.userId !== user.id) {
-      return ApiError.notFound('知识库不存在');
+    if (!access.ok) {
+      return access.response;
     }
 
-    // 2. 严格校验目标文档存在性、未软删除且归属当前用户
-    const document = await prisma.document.findFirst({
-      where: {
-        id: docId,
-        knowledgeBaseId,
-        userId: user.id,
-        deletedAt: null,
-      },
-    });
+    const { document } = access;
 
-    if (!document) {
-      return ApiError.notFound('文档不存在');
+    // 3. Prisma 列是 string；进入投影前收窄为四态，脏数据落 500 而不是伪装成索引中
+    if (!isDocumentStatus(document.status)) {
+      console.error('[knowledge-bases/documents/[docId]/content] 文档状态异常:', {
+        documentId: document.id,
+        status: document.status,
+      });
+      return ApiError.internalError('文档状态异常，请稍后重试');
     }
 
-    // 3. 依赖装配：存储与当前版本切片加载器由投影按状态与来源决定是否使用
+    // 4. 依赖装配：存储与当前版本切片加载器由投影按状态与来源决定是否使用
     const projection = new DocumentPreviewProjection({
       getStorage: createStorageProvider,
       loadCurrentVersionChunks: createDocumentPreviewChunkLoader({
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
       }),
     });
 
-    const { data } = await projection.project(document);
+    const { data } = await projection.project({ ...document, status: document.status });
     return createSuccessResponse<DocumentPreviewData>(data);
   } catch (error) {
     if (error instanceof AuthError) {

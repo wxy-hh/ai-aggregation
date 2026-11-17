@@ -67,34 +67,58 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     },
   } as any);
 
-  it('成功全流程：下载 → 解析 → 分词 → 批量向量化 → 事务原子入库', async () => {
-    const mdContent = '# 知识库架构\n本项目基于 RAG 混合检索。';
-    const mockStorage = {
+  /**
+   * 构造模板化处理器依赖：默认 Markdown 正文、1024 维向量与事务替换桩。
+   * 特殊用例通过 download / embedMany / replaceChunks 覆盖，避免每处重复装配。
+   */
+  const createDefaultDeps = (
+    options: {
+      download?: () => Promise<Buffer>;
+      embedMany?: any;
+      replaceChunks?: any;
+    } = {}
+  ) => {
+    const storage = {
       upload: vi.fn(),
-      download: vi.fn(async () => Buffer.from(mdContent, 'utf-8')),
+      download: vi.fn(
+        options.download ?? (async () => Buffer.from('# 默认正文\n默认内容。', 'utf-8'))
+      ),
       delete: vi.fn(),
       getUrl: vi.fn(),
     };
-
-    const mockEmbedMany = vi.fn(async ({ values }: any) => {
-      return {
+    const embedManyFn =
+      options.embedMany ??
+      vi.fn(async ({ values }: any) => ({
         embeddings: values.map(() => new Array(1024).fill(0.123)),
         usage: { tokens: values.length * 10 },
-      };
+      }));
+    const replaceChunksFn =
+      options.replaceChunks ??
+      vi.fn(async (params: any) => {
+        replaceCalls.push(params);
+        return { chunkCount: params.chunks.length };
+      });
+
+    return {
+      deps: {
+        prismaClient: createMockDb(),
+        storage: storage as any,
+        embedManyFn: embedManyFn as any,
+        replaceChunksFn: replaceChunksFn as any,
+        embeddingModel: mockEmbeddingModel,
+      },
+      storage,
+      embedManyFn,
+      replaceChunksFn,
+    };
+  };
+
+  it('成功全流程：下载 → 解析 → 分词 → 批量向量化 → 事务原子入库', async () => {
+    const { deps, embedManyFn } = createDefaultDeps({
+      download: async () => Buffer.from('# 知识库架构\n本项目基于 RAG 混合检索。', 'utf-8'),
     });
 
-    const mockReplaceChunks = vi.fn(async (params: any) => {
-      replaceCalls.push(params);
-      return { chunkCount: params.chunks.length };
-    });
-
-    const result = await processRagIndexJob(dummyJobData, {
-      prismaClient: createMockDb(),
-      storage: mockStorage as any,
-      embedManyFn: mockEmbedMany as any,
-      replaceChunksFn: mockReplaceChunks as any,
-      embeddingModel: mockEmbeddingModel,
-    });
+    const result = await processRagIndexJob(dummyJobData, deps);
 
     expect(result.success).toBe(true);
     expect(result.chunkCount).toBeGreaterThan(0);
@@ -103,7 +127,7 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(updateCalls[0].data.status).toBe('processing');
 
     // 向量化调用断言
-    expect(mockEmbedMany).toHaveBeenCalled();
+    expect(embedManyFn).toHaveBeenCalled();
 
     // 事务替换断言：入参包含 version=1，切片含有 1024 维向量与空格分词
     expect(replaceCalls.length).toBe(1);
@@ -116,31 +140,11 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
 
   it('重传版本化删旧插新：version=2 时切片正确带入新版本并在事务中替换', async () => {
     const v2JobData = { ...dummyJobData, version: 2 };
-    const mdContent = '# 知识库更新版本\n更新后的技术规范。';
-    const mockStorage = {
-      upload: vi.fn(),
-      download: vi.fn(async () => Buffer.from(mdContent, 'utf-8')),
-      delete: vi.fn(),
-      getUrl: vi.fn(),
-    };
-
-    const mockEmbedMany = vi.fn(async ({ values }: any) => ({
-      embeddings: values.map(() => new Array(1024).fill(0.456)),
-      usage: { tokens: values.length * 10 },
-    }));
-
-    const mockReplaceChunks = vi.fn(async (params: any) => {
-      replaceCalls.push(params);
-      return { chunkCount: params.chunks.length };
+    const { deps } = createDefaultDeps({
+      download: async () => Buffer.from('# 知识库更新版本\n更新后的技术规范。', 'utf-8'),
     });
 
-    const result = await processRagIndexJob(v2JobData, {
-      prismaClient: createMockDb(),
-      storage: mockStorage as any,
-      embedManyFn: mockEmbedMany as any,
-      replaceChunksFn: mockReplaceChunks as any,
-      embeddingModel: mockEmbeddingModel,
-    });
+    const result = await processRagIndexJob(v2JobData, deps);
 
     expect(result.success).toBe(true);
     expect(result.version).toBe(2);
@@ -155,17 +159,11 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       fileName: 'corrupted.pdf',
       storageKey: 'docs/user_test_789/doc_test_123/v1/corrupted.pdf',
     };
-    const mockStorage = {
-      upload: vi.fn(),
-      download: vi.fn(async () => Buffer.from('corrupted-pdf-invalid-header')),
-      delete: vi.fn(),
-      getUrl: vi.fn(),
-    };
-
-    const result = await processRagIndexJob(corruptedJob, {
-      prismaClient: createMockDb(),
-      storage: mockStorage as any,
+    const { deps } = createDefaultDeps({
+      download: async () => Buffer.from('corrupted-pdf-invalid-header'),
     });
+
+    const result = await processRagIndexJob(corruptedJob, deps);
 
     // 致命错误应当直接返回结果，而不是抛出异常让队列无限死等
     expect(result.success).toBe(false);
@@ -179,25 +177,16 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
   });
 
   it('瞬态网络或接口异常：更新文档 failed 并向外抛出异常供 BullMQ 退避重试', async () => {
-    const mockStorage = {
-      upload: vi.fn(),
-      download: vi.fn(async () => Buffer.from('# 普通内容\n正文。')),
-      delete: vi.fn(),
-      getUrl: vi.fn(),
-    };
-
-    const mockEmbedMany = vi.fn(async () => {
-      throw new Error('503 Service Unavailable upstream network spike');
+    const { deps } = createDefaultDeps({
+      download: async () => Buffer.from('# 普通内容\n正文。'),
+      embedMany: vi.fn(async () => {
+        throw new Error('503 Service Unavailable upstream network spike');
+      }),
     });
 
-    await expect(
-      processRagIndexJob(dummyJobData, {
-        prismaClient: createMockDb(),
-        storage: mockStorage as any,
-        embedManyFn: mockEmbedMany as any,
-        embeddingModel: mockEmbeddingModel,
-      })
-    ).rejects.toThrow('503 Service Unavailable');
+    await expect(processRagIndexJob(dummyJobData, deps)).rejects.toThrow(
+      '503 Service Unavailable'
+    );
 
     const lastUpdate = updateCalls[updateCalls.length - 1];
     expect(lastUpdate.data.status).toBe('failed');

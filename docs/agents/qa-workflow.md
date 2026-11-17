@@ -111,7 +111,7 @@ QA Kind: feature
 
 - 已有 `_qa/scope.json` 时不再 init；没有时在改第一行代码前 init。需要扩大范围时运行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`。
 - 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号。
-- 每个垂直切片遵循 TDD 红绿循环；命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`，同名日志不得覆盖，失败换新标签。同 argv、同 tree、exit 0 的 qa-run 日志可同时被多个 TC 与交付验证引用；argv 或 tree 变化须换新标签重跑，失败日志保留。
+- 每个垂直切片遵循 TDD 红绿循环；切片写码前必须先用 qa-run 落盘一次见证断言失败的红灯（推荐标签 `red-<切片或工单>`），绿灯日志不得替代，不得事后补造；隔离 worktree 中产生的最后一次红灯与对应绿灯须在合并或提交前复制回主工作区 `.scratch/<feature>/evidence/`。命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`，同名日志不得覆盖，失败换新标签。同 argv、同 tree、exit 0 的 qa-run 日志可同时被多个 TC 与交付验证引用；argv 或 tree 变化须换新标签重跑，失败日志保留。
 - unit/integration 的 PASS 行在「绑定」列写 `` `<测试文件>` › <用例标题> ``（文件相对仓库根，标题取源码叶子标题，参数化按源码字面写法）；绑定写错只改执行记录，不重跑。
 
 ### 4. 真实验收（阶段 5）

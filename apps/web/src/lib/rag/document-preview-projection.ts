@@ -15,16 +15,11 @@ import {
   deriveParsedContentKey,
   deriveSourceFormat,
   requiresDerivedContent,
+  type DocumentStatus,
   type SourceFormat,
 } from '@repo/shared';
 import type { StorageProvider } from '@repo/storage';
 import type {
-  DocumentPreviewChunk,
-  DocumentPreviewData,
-  DocumentRenderMode,
-} from './document-preview-contract';
-
-export type {
   DocumentPreviewChunk,
   DocumentPreviewData,
   DocumentRenderMode,
@@ -37,12 +32,11 @@ export interface DocumentPreviewDocumentFacts {
   knowledgeBaseId: string;
   name: string;
   version: number;
-  status: string;
+  status: DocumentStatus;
   storageKey: string;
   sourceType: string;
   sourceUrl: string | null;
   errorMessage: string | null;
-  chunkCount: number;
 }
 
 /** 正文来源只留在服务端与测试，不进入 HTTP DTO */
@@ -143,8 +137,7 @@ export class DocumentPreviewProjection {
       sourceType: document.sourceType,
       storageKey: document.storageKey,
     });
-    const storage = document.sourceType === 'file' ? this.tryGetStorage() : null;
-    const originalUrl = await this.resolveOriginalUrl(document, storage, false);
+    const originalUrl = await this.resolveNonReadyOriginalUrl(document);
 
     return {
       data: this.toPreviewData(document, sourceFormat, {
@@ -169,7 +162,7 @@ export class DocumentPreviewProjection {
 
     const [chunks, originalUrl, primaryText] = await Promise.all([
       this.deps.loadCurrentVersionChunks(document),
-      this.resolveOriginalUrl(document, storage, true),
+      this.resolveReadyOriginalUrl(document, storage),
       primary ? this.readPrimaryText(storage, primary.key) : Promise.resolve(null),
     ]);
 
@@ -259,17 +252,31 @@ export class DocumentPreviewProjection {
   }
 
   /**
-   * best-effort 签名源资产：ready 覆盖 file/URL/Artifact，非 ready 只覆盖 file。
+   * 非 ready 只给 file 来源签名当前版本原件；URL/Artifact 不猜测尚未存在的快照。
    * 签名失败只令 originalUrl 为空，不修改文档状态或阻断正文。
    */
-  private async resolveOriginalUrl(
-    document: DocumentPreviewDocumentFacts,
-    storage: PreviewStorage | null,
-    ready: boolean
+  private async resolveNonReadyOriginalUrl(
+    document: DocumentPreviewDocumentFacts
   ): Promise<string | null> {
-    if (!ready && document.sourceType !== 'file') {
+    if (document.sourceType !== 'file') {
       return null;
     }
+    return this.signOriginalUrl(document, this.tryGetStorage());
+  }
+
+  /** ready 覆盖 file/URL/Artifact 的源资产签名，策略差异只留在入口命名里 */
+  private async resolveReadyOriginalUrl(
+    document: DocumentPreviewDocumentFacts,
+    storage: PreviewStorage | null
+  ): Promise<string | null> {
+    return this.signOriginalUrl(document, storage);
+  }
+
+  /** best-effort 签名源资产；相对地址映射到同源认证下载路由 */
+  private async signOriginalUrl(
+    document: DocumentPreviewDocumentFacts,
+    storage: PreviewStorage | null
+  ): Promise<string | null> {
     if (!storage) {
       return null;
     }

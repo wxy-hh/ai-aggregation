@@ -6,8 +6,11 @@
  * Node SDK、Buffer 或环境变量；时间戳与随机 token 一律由调用方传入。
  */
 
+/** 源资产格式运行时清单：类型由元组派生，新增格式只改这一处 */
+export const SOURCE_FORMATS = ['pdf', 'md', 'txt', 'docx', 'xlsx', 'csv', 'unknown'] as const;
+
 /** 源资产格式：与 Document.sourceType（来源渠道）和 RenderMode（渲染方式）相互独立 */
-export type SourceFormat = 'pdf' | 'md' | 'txt' | 'docx' | 'xlsx' | 'csv' | 'unknown';
+export type SourceFormat = (typeof SOURCE_FORMATS)[number];
 
 /** SourceFormat 派生的最小文档事实 */
 export interface DocumentSourceFormatFacts {
@@ -94,9 +97,20 @@ export function buildArtifactStorageKey(facts: TimestampedStorageKeyFacts): stri
  * 该 SourceFormat 是否需要额外写入衍生 Markdown 正文。
  * 当前只有 DOCX/XLSX/CSV 为真；MD/TXT 的 parsedContentKey 仍无条件派生，
  * 但它只是缓存位置，不表示需要或存在衍生对象。
+ * 用完整记录承载策略：新增 SourceFormat 时漏写条目会直接编译失败。
  */
+const REQUIRES_DERIVED_CONTENT: Readonly<Record<SourceFormat, boolean>> = {
+  pdf: false,
+  md: false,
+  txt: false,
+  docx: true,
+  xlsx: true,
+  csv: true,
+  unknown: false,
+};
+
 export function requiresDerivedContent(sourceFormat: SourceFormat): boolean {
-  return sourceFormat === 'docx' || sourceFormat === 'xlsx' || sourceFormat === 'csv';
+  return REQUIRES_DERIVED_CONTENT[sourceFormat];
 }
 
 /**

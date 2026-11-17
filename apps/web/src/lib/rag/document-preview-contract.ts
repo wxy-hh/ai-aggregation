@@ -10,7 +10,7 @@
  * - fileType 已删除，不保留兼容别名。
  */
 
-import type { SourceFormat } from '@repo/shared';
+import type { DocumentStatus, SourceFormat } from '@repo/shared';
 
 /** 当前版本切片的最小预览字段 */
 export interface DocumentPreviewChunk {
@@ -30,7 +30,7 @@ export interface DocumentPreviewData {
   version: number;
   /** ready 为当前版本实际切片数；非 ready 为 null */
   chunkCount: number | null;
-  status: string;
+  status: DocumentStatus;
   errorMessage: string | null;
   /** 所有 200 状态返回 */
   sourceFormat: SourceFormat;

@@ -11,12 +11,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@repo/db';
 import { createStorageProvider } from '@repo/storage';
 import { deriveSourceFormat, type SourceFormat } from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, handleAuthError } from '@/lib/api/responses';
+import { loadOwnedDocument } from '@/lib/api/owned-document';
 
 interface RouteContext {
   params: Promise<{ id: string; docId: string }>;
@@ -53,34 +53,17 @@ export async function GET(req: NextRequest, context: RouteContext) {
     const user = await getCurrentUser(req);
     const { id: knowledgeBaseId, docId } = await context.params;
 
-    const kb = await prisma.knowledgeBase.findUnique({
-      where: { id: knowledgeBaseId },
-      select: { id: true, userId: true },
+    const access = await loadOwnedDocument({
+      userId: user.id,
+      knowledgeBaseId,
+      docId,
     });
 
-    if (!kb || kb.userId !== user.id) {
-      return ApiError.notFound('知识库不存在');
+    if (!access.ok) {
+      return access.response;
     }
 
-    const document = await prisma.document.findFirst({
-      where: {
-        id: docId,
-        knowledgeBaseId,
-        userId: user.id,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        storageKey: true,
-        sourceType: true,
-      },
-    });
-
-    if (!document) {
-      return ApiError.notFound('文档不存在');
-    }
-
+    const { document } = access;
     const storage = createStorageProvider();
     const bytes = await storage.download(document.storageKey);
     const sourceFormat = deriveSourceFormat({

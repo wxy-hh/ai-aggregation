@@ -12,7 +12,7 @@ import {
   deriveParsedContentKey,
   deriveSourceFormat,
   requiresDerivedContent,
-  type SourceFormat,
+  SOURCE_FORMATS,
 } from '../document-storage-layout';
 import { deriveParsedContentKey as deriveParsedContentKeyFromC1 } from '../rag-chunk-metadata';
 import { deriveParsedContentKey as deriveParsedContentKeyFromRoot } from '../index';
@@ -118,19 +118,14 @@ describe('document-storage-layout 文档存储布局纯契约 (C7 工单 01)', (
   });
 
   it('TC01-6 derived 规则格式矩阵', () => {
-    // 只有 DOCX/XLSX/CSV 需要额外写入衍生 Markdown 正文
-    const matrix: ReadonlyArray<[SourceFormat, boolean]> = [
-      ['pdf', false],
-      ['md', false],
-      ['txt', false],
-      ['docx', true],
-      ['xlsx', true],
-      ['csv', true],
-      ['unknown', false],
-    ];
+    // 只有 DOCX/XLSX/CSV 需要额外写入衍生 Markdown 正文；
+    // 遍历运行时清单而非手写数组，新增格式未进策略矩阵时本用例直接红灯
+    const derivedFormats = new Set(['docx', 'xlsx', 'csv']);
 
-    for (const [sourceFormat, expected] of matrix) {
-      expect(requiresDerivedContent(sourceFormat), sourceFormat).toBe(expected);
+    for (const sourceFormat of SOURCE_FORMATS) {
+      expect(requiresDerivedContent(sourceFormat), sourceFormat).toBe(
+        derivedFormats.has(sourceFormat)
+      );
     }
   });
 
