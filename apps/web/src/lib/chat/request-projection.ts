@@ -12,6 +12,7 @@ import {
   toWireAttachment,
   type ApprovalResumePayload,
   type BatchReserveRequestBody,
+  type ChatScene,
   type WireMessage,
 } from '@repo/shared';
 import type { ProviderName } from '@repo/providers';
@@ -49,6 +50,7 @@ export interface BuildChatRequestInput {
 export interface ChatTransportBody {
   messages: WireMessage[];
   provider: string;
+  chatScene?: ChatScene;
   model?: string;
   thinking: boolean;
   agent?: true;
@@ -109,7 +111,12 @@ export function buildChatRequestBody(input: BuildChatRequestInput): ChatTranspor
     }
   }
 
-  const body: ChatTransportBody = { messages: wireMessages, provider, thinking };
+  const body: ChatTransportBody = {
+    messages: wireMessages,
+    provider,
+    chatScene: mode === 'compare' ? 'compare' : 'single',
+    thinking,
+  };
   if (model) body.model = model;
   if (agentMode) {
     body.agent = true;

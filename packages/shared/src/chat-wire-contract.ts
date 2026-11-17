@@ -38,11 +38,16 @@ export interface ApprovalResumePayload {
   params: Record<string, unknown>;
 }
 
+export const CHAT_SCENES = ['single', 'compare'] as const;
+export type ChatScene = (typeof CHAT_SCENES)[number];
+
 /** 聊天请求体（parseChatRequestBody 成功产出的归一化形状） */
 export interface ChatRequestBody {
   messages: WireMessage[];
   /** 缺省 'xunfei'（契约内默认值，取代调用方逐处兜底） */
   provider: ChatWireProvider;
+  /** 普通聊天或对比模式；旧客户端缺省归为 single */
+  chatScene: ChatScene;
   model?: string;
   thinking: boolean;
   agent: boolean;
@@ -290,6 +295,16 @@ export function parseChatRequestBody(input: unknown): ChatRequestParseResult {
   const reservationId = parseOptionalString(raw, 'reservationId');
   if (!reservationId.ok) return reservationId;
 
+  let chatScene: ChatScene = 'single';
+  if (raw.chatScene !== undefined) {
+    if (!CHAT_SCENES.includes(raw.chatScene as ChatScene)) {
+      return fail('INVALID_CHAT_REQUEST', '聊天场景不合法', [
+        { path: 'chatScene', message: `chatScene 必须是 ${CHAT_SCENES.join(' / ')} 之一` },
+      ]);
+    }
+    chatScene = raw.chatScene as ChatScene;
+  }
+
   // 布尔门控：只认严格 true，其余脏值归一化为 false（B-7 计费安全语义）
   const agent = raw.agent === true;
   const thinking = raw.thinking === true;
@@ -324,6 +339,7 @@ export function parseChatRequestBody(input: unknown): ChatRequestParseResult {
   const body: ChatRequestBody = {
     messages,
     provider,
+    chatScene,
     agent,
     thinking,
     approvalScope:

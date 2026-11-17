@@ -13,12 +13,16 @@
  */
 
 import { z } from 'zod';
-import { prisma, findBestFaqMatch, incrementFaqHitCount } from '@repo/db';
+import { prisma } from '@repo/db';
 import { ToolError, type AgentToolSpec, type ToolExecutionResult } from '@/lib/agent/registry';
 import { hybridRetrieval } from '@/lib/rag/hybrid-retrieval';
 import { formatRetrievedChunksWithCitations } from '@/lib/rag/citation';
-import { embedFaqText } from '@/lib/rag/faq-service';
 import { detectChatSensitiveTopic } from '../../chat-safety';
+import { knowledgeFaqMatchPolicy } from '../../faq-match-policy-defaults';
+import type {
+  KnowledgeFaqMatchDecision,
+  KnowledgeFaqMatchInput,
+} from '../../faq-match-policy';
 import type { RerankProvider } from '@repo/providers';
 import { RAG_RERANK_CONFIG, type RetrievedChunk, type CitationAnchor } from '@repo/shared';
 import { applyCrossEncoderRerank } from '@/lib/rag/rerank-policy';
@@ -70,7 +74,7 @@ export interface KnowledgeSearchDeps {
     userId: string,
     knowledgeBaseId: string
   ) => Promise<{ id: string; name: string } | null>;
-  findBestFaqMatchFn?: typeof findBestFaqMatch;
+  matchFaqFn?: (input: KnowledgeFaqMatchInput) => Promise<KnowledgeFaqMatchDecision>;
   rerankProvider?: RerankProvider;
 }
 
@@ -108,7 +112,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
   const retrievalFn = deps.hybridRetrievalFn || hybridRetrieval;
   const findKbsFn = deps.findKnowledgeBasesFn || defaultFindKnowledgeBases;
   const verifyKbFn = deps.verifyKnowledgeBaseFn || defaultVerifyKnowledgeBase;
-  const findFaqFn = deps.findBestFaqMatchFn || findBestFaqMatch;
+  const matchFaqFn = deps.matchFaqFn || knowledgeFaqMatchPolicy.match;
   const rerankProvider = deps.rerankProvider;
 
   return {
@@ -167,7 +171,6 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
 
       // 通读模式默认放宽至 100 条 (ADR-0036 / P-W5)；普通问答模式默认 5 条
       const effectiveTopK = inputTopK ?? (isSequentialChapterMode ? 100 : 5);
-      const kbIds = targetKnowledgeBaseIds.map((kb) => kb.id);
 
       try {
         let anyFilterRelaxed = false;
@@ -198,11 +201,11 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
             })
           ),
           !isSequentialChapterMode && trimmedQuery
-            ? findFaqFn({
+            ? matchFaqFn({
                 userId,
-                knowledgeBaseIds: kbIds,
                 query: trimmedQuery,
-                embedFn: embedFaqText,
+                scene: 'agent-retrieval',
+                ...(knowledgeBaseId ? { knowledgeBaseId } : {}),
               }).catch((err) => {
                 console.warn('[knowledge_search] FAQ 检索降级:', err);
                 return null;
@@ -210,10 +213,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
             : Promise.resolve(null),
         ]);
 
-        // 若命中 FAQ 且属于强权威口径，异步增加命中统计
-        if (bestFaq && bestFaq.isGroundTruth) {
-          incrementFaqHitCount(bestFaq.faqId).catch(() => {});
-        }
+        const groundTruthFaq = bestFaq?.kind === 'ground-truth' ? bestFaq.faq : null;
 
         // 跨库切片汇总并按 chunkId 去重
         const allCandidates = results.flat();
@@ -266,12 +266,12 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
           contentForModel = relaxedHeader + contentForModel;
         }
 
-        // 若命中官方权威 FAQ，置顶权威回答文本块 (ADR-0027)
-        if (bestFaq && bestFaq.isGroundTruth) {
+        // 若命中官方权威 FAQ，置顶权威回答文本块 (ADR-0055)
+        if (groundTruthFaq) {
           const faqHeader = [
             '【官方权威标准口径 (Ground Truth)】：',
-            `标准问题：${bestFaq.question}`,
-            `权威答案：${bestFaq.answer}`,
+            `标准问题：${groundTruthFaq.question}`,
+            `权威答案：${groundTruthFaq.answer}`,
             '（注意：请优先基于上述官方标准口径回答用户，若检索到的普通文档切片与此冲突，以官方口径为准。）',
             '',
             '---',
@@ -282,7 +282,7 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
 
         const matchCount = fusedChunks.length;
         let summaryText = matchCount > 0 ? `命中 ${matchCount} 条切片` : '未命中相关内容';
-        if (bestFaq && bestFaq.isGroundTruth) {
+        if (groundTruthFaq) {
           summaryText = `命中官方FAQ${matchCount > 0 ? ` + ${matchCount}条切片` : ''}`;
         }
         if (anyFilterRelaxed) {

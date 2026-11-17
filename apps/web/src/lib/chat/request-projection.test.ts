@@ -96,6 +96,28 @@ describe('buildChatRequestBody 请求投影（评审 C4）', () => {
     });
   });
 
+  it('TC01-3: chatScene 按模式投影为 compare 或 single', () => {
+    const compare = buildChatRequestBody({
+      mode: 'compare',
+      messages: [{ role: 'user', content: '同一个问题' }],
+      provider: 'xunfei',
+      thinking: false,
+      agentMode: false,
+    });
+    expect(compare.chatScene).toBe('compare');
+
+    for (const mode of ['send', 'reload', 'approval_resume'] as const) {
+      const body = buildChatRequestBody({
+        mode,
+        messages: [{ role: 'user', content: '普通消息' }],
+        provider: 'xunfei',
+        thinking: false,
+        agentMode: false,
+      });
+      expect(body.chatScene).toBe('single');
+    }
+  });
+
   it('附加覆盖：approval_resume 模式——历史投影 + 计划检查点 + 审批载荷', () => {
     const body = buildChatRequestBody({
       mode: 'approval_resume',

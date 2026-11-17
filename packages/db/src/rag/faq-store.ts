@@ -42,6 +42,8 @@ export interface FaqDenseMatch {
   answer: string;
   matchedQuestionText: string;
   similarity: number;
+  enabled: boolean;
+  knowledgeBaseUpdatedAt: Date;
 }
 
 export interface FaqWithQuestionsResult {
@@ -368,6 +370,8 @@ export async function searchFaqsDense(params: {
     answer: string;
     matched_question_text: string;
     similarity: number;
+    enabled: boolean;
+    knowledge_base_updated_at: Date;
   }
 
   const rows = await prisma.$queryRawUnsafe<RawFaqMatch[]>(
@@ -379,11 +383,15 @@ export async function searchFaqsDense(params: {
       f."question",
       f."answer",
       q."question_text" AS "matched_question_text",
+      f."enabled",
+      kb."updated_at" AS "knowledge_base_updated_at",
       (1 - (q."embedding" <=> $1::vector)) AS "similarity"
     FROM "knowledge_faq_questions" q
     INNER JOIN "knowledge_faqs" f ON q."faq_id" = f."id"
+    INNER JOIN "knowledge_bases" kb ON kb."id" = f."knowledge_base_id"
     WHERE q."user_id" = $2
       AND q."knowledge_base_id" = ANY($3::text[])
+      AND kb."status" = 'active'
       AND f."enabled" = true
       AND q."embedding" IS NOT NULL
     ORDER BY q."embedding" <=> $1::vector ASC
@@ -403,55 +411,44 @@ export async function searchFaqsDense(params: {
     answer: row.answer,
     matchedQuestionText: row.matched_question_text,
     similarity: Number(row.similarity),
+    enabled: row.enabled,
+    knowledgeBaseUpdatedAt: new Date(row.knowledge_base_updated_at),
   }));
 }
 
+export interface FaqKnowledgeBaseFact {
+  id: string;
+  updatedAt: Date;
+  status: string;
+}
+
 /**
- * 寻找最相关的 FAQ 并执行短路与权威口径决策判定 (ADR-0027)
+ * 列出用户可用于 FAQ 匹配的活跃知识库（最近更新优先）
  */
-export async function findBestFaqMatch(params: {
-  userId: string;
-  knowledgeBaseIds: string[];
-  query: string;
-  embedFn: (text: string) => Promise<number[]>;
-}): Promise<{
-  faqId: string;
-  knowledgeBaseId: string;
-  question: string;
-  answer: string;
-  matchedQuestionText: string;
-  similarity: number;
-  isShortCircuit: boolean;
-  isGroundTruth: boolean;
-} | null> {
-  const { userId, knowledgeBaseIds, query, embedFn } = params;
-  if (!query || !query.trim() || knowledgeBaseIds.length === 0) {
-    return null;
-  }
-
-  const queryVector = await embedFn(query.trim());
-  const matches = await searchFaqsDense({
-    userId,
-    knowledgeBaseIds,
-    queryVector,
-    topK: 1,
+export async function listActiveKnowledgeBasesForFaq(
+  userId: string,
+  limit = 3
+): Promise<FaqKnowledgeBaseFact[]> {
+  return prisma.knowledgeBase.findMany({
+    where: { userId, status: 'active' },
+    select: { id: true, updatedAt: true, status: true },
+    orderBy: { updatedAt: 'desc' },
+    take: limit,
   });
+}
 
-  const best = matches[0];
-  if (!best) return null;
-
-  const isGroundTruth = best.similarity >= RAG_FAQ_CONFIG.groundTruthThreshold;
-  const isShortCircuit = best.similarity >= RAG_FAQ_CONFIG.shortCircuitThreshold;
-
-  if (!isGroundTruth) {
-    return null;
-  }
-
-  return {
-    ...best,
-    isShortCircuit,
-    isGroundTruth,
-  };
+/**
+ * 校验显式指定的知识库属于当前用户且处于活跃状态
+ */
+export async function validateKnowledgeBaseForFaq(
+  userId: string,
+  knowledgeBaseId: string
+): Promise<boolean> {
+  const kb = await prisma.knowledgeBase.findUnique({
+    where: { id: knowledgeBaseId },
+    select: { userId: true, status: true },
+  });
+  return Boolean(kb && kb.userId === userId && kb.status === 'active');
 }
 
 /**

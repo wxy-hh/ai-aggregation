@@ -13,8 +13,10 @@ import {
   deleteFaq,
   toggleFaqStatus,
   searchFaqsDense,
-  findBestFaqMatch,
   getFaqsByKnowledgeBase,
+  listActiveKnowledgeBasesForFaq,
+  validateKnowledgeBaseForFaq,
+  incrementFaqHitCount,
 } from '../rag/faq-store';
 
 describe('FAQStore 数据访问与向量检索测试 (TC06 / ADR-0027)', () => {
@@ -83,7 +85,7 @@ describe('FAQStore 数据访问与向量检索测试 (TC06 / ADR-0027)', () => {
   afterAll(async () => {
     // 清理测试数据
     await prisma.knowledgeBase.deleteMany({
-      where: { id: { in: [kbAId, kbBId] } },
+      where: { userId: { in: [userAId, userBId] } },
     });
     await prisma.user.deleteMany({
       where: { id: { in: [userAId, userBId] } },
@@ -178,28 +180,73 @@ describe('FAQStore 数据访问与向量检索测试 (TC06 / ADR-0027)', () => {
     expect(reMatches.length).toBeGreaterThan(0);
   });
 
-  it('findBestFaqMatch 正确判断 isShortCircuit 与 isGroundTruth', async () => {
-    // 匹配度极高 (Cosine >= 0.92)
-    const exactMatch = await findBestFaqMatch({
+  it('TC07-1: 新 FAQ 候选适配层返回活跃库、候选事实与知识库更新时间', async () => {
+    const newer = await prisma.knowledgeBase.create({
+      data: { userId: userAId, name: '最近更新库' },
+    });
+    await prisma.$executeRawUnsafe(
+      `UPDATE knowledge_bases SET updated_at = NOW() + INTERVAL '1 hour' WHERE id = $1`,
+      newer.id
+    );
+
+    const activeKbs = await listActiveKnowledgeBasesForFaq(userAId, 3);
+    expect(activeKbs[0]?.id).toBe(newer.id);
+    expect(activeKbs.map((kb) => kb.id)).toContain(kbAId);
+    expect(activeKbs.every((kb) => kb.status === 'active')).toBe(true);
+
+    expect(await validateKnowledgeBaseForFaq(userAId, kbAId)).toBe(true);
+    expect(await validateKnowledgeBaseForFaq(userBId, kbAId)).toBe(false);
+
+    const candidates = await searchFaqsDense({
       userId: userAId,
       knowledgeBaseIds: [kbAId],
-      query: '如何申请退款？',
-      embedFn: mockEmbed,
+      queryVector: createTestVector(0, 1.0),
+      topK: 3,
     });
-
-    expect(exactMatch).not.toBeNull();
-    expect(exactMatch?.isShortCircuit).toBe(true);
-    expect(exactMatch?.isGroundTruth).toBe(true);
-    expect(exactMatch?.similarity).toBeGreaterThanOrEqual(0.92);
-
-    // 完全无关问题
-    const noMatch = await findBestFaqMatch({
-      userId: userAId,
-      knowledgeBaseIds: [kbAId],
-      query: '今天天气怎么样？',
-      embedFn: mockEmbed,
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates[0]).toMatchObject({
+      faqId: expect.any(String),
+      knowledgeBaseId: kbAId,
+      enabled: true,
+      knowledgeBaseUpdatedAt: expect.any(Date),
     });
-
-    expect(noMatch).toBeNull();
+    expect(candidates[0]).not.toHaveProperty('isShortCircuit');
+    expect(candidates[0]).not.toHaveProperty('isGroundTruth');
   });
+
+  it('TC07-2: 归档知识库不进入活跃列表且其 FAQ 不进入检索候选', async () => {
+    const archived = await prisma.knowledgeBase.create({
+      data: { userId: userAId, name: '归档库', status: 'archived' },
+    });
+    await insertFaqWithQuestions({
+      userId: userAId,
+      knowledgeBaseId: archived.id,
+      question: '归档库专属问题？',
+      answer: '归档库答案',
+      embedFn: mockEmbed,
+      tokenizeFn: mockTokenize,
+    });
+
+    const activeKbs = await listActiveKnowledgeBasesForFaq(userAId, 3);
+    expect(activeKbs.some((kb) => kb.id === archived.id)).toBe(false);
+    expect(await validateKnowledgeBaseForFaq(userAId, archived.id)).toBe(false);
+
+    const candidates = await searchFaqsDense({
+      userId: userAId,
+      knowledgeBaseIds: [archived.id],
+      queryVector: createTestVector(0, 1.0),
+      topK: 3,
+    });
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('TC07-3: 命中计数按 FAQ ID 原子增加 1', async () => {
+    const list = await getFaqsByKnowledgeBase(userAId, kbAId);
+    const target = list[0]!;
+    const before = target.hitCount;
+    await incrementFaqHitCount(target.id);
+    const after = await prisma.knowledgeFaq.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.hitCount).toBe(before + 1);
+  });
+
 });
