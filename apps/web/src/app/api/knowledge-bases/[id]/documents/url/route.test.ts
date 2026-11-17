@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { buildUrlStorageKey } from '@repo/shared';
 
 const mocks = vi.hoisted(() => ({
   currentUser: { id: 'user_1', username: 'testuser' },
@@ -181,5 +182,51 @@ describe('POST /api/knowledge-bases/[id]/documents/url (TC04: 外链批量录入
       }),
       expect.any(Object)
     );
+  });
+
+  it('TC04-2 URL 导入使用共享 URL key 构造', async () => {
+    // 固定调用方产生的时间与随机事实，让期望值来自共享构造器而非字符串模板
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1760000000000);
+    const randomSpy = vi
+      .spyOn(Math, 'random')
+      .mockReturnValueOnce(0.123456789)
+      .mockReturnValueOnce(0.987654321);
+    // 主表创建回显传入事实，避免替身自身消耗随机序列
+    mocks.docCreate.mockImplementation(async ({ data }: any) => ({ ...data }));
+
+    try {
+      const req = new NextRequest('http://localhost:3000/api/knowledge-bases/kb_1/documents/url', {
+        method: 'POST',
+        body: JSON.stringify({
+          urls: ['https://example.com/arch', 'https://example.com/blog'],
+        }),
+      });
+      const res = await POST(req, routeContext);
+      expect(res.status).toBe(202);
+
+      const expectedKeys = [
+        buildUrlStorageKey({
+          userId: 'user_1',
+          timestamp: 1760000000000,
+          randomToken: '4fzzzxjy',
+        }),
+        buildUrlStorageKey({
+          userId: 'user_1',
+          timestamp: 1760000000000,
+          randomToken: 'zk00000y',
+        }),
+      ];
+
+      // 主表持久化 key 与共享 URL 构造器输出完全一致
+      const persistedKeys = mocks.docCreate.mock.calls.map(([arg]: any[]) => arg.data.storageKey);
+      expect(persistedKeys).toEqual(expectedKeys);
+
+      // 队列载荷沿用同一持久化 key，不另行拼装
+      const queuedKeys = mocks.queueAdd.mock.calls.map(([, job]: any[]) => job.storageKey);
+      expect(queuedKeys).toEqual(expectedKeys);
+    } finally {
+      nowSpy.mockRestore();
+      randomSpy.mockRestore();
+    }
   });
 });

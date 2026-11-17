@@ -11,7 +11,11 @@
 import { prisma, insertDocumentChunksWithInheritance } from '@repo/db';
 import { createStorageProvider } from '@repo/storage';
 import { embedFaqText, segmentFaqText } from './faq-service';
-import { estimateTokenCount, type DepositArtifactInput } from '@repo/shared';
+import {
+  buildArtifactStorageKey,
+  estimateTokenCount,
+  type DepositArtifactInput,
+} from '@repo/shared';
 
 export interface ArtifactChunkSlice {
   chunkIndex: number;
@@ -196,9 +200,12 @@ export async function depositArtifactToKnowledgeBase(
     })
   );
 
-  // 3. 构建 storageKey 并尝试上传对象存储备份
-  const randomId = Math.random().toString(36).slice(2, 10);
-  const storageKey = `docs/${userId}/artifact-${Date.now()}-${randomId}/v1/content.md`;
+  // 3. 由共享布局构造器产出 storageKey，并尝试上传对象存储备份
+  const storageKey = buildArtifactStorageKey({
+    userId,
+    timestamp: Date.now(),
+    randomToken: Math.random().toString(36).slice(2, 10),
+  });
 
   try {
     const storage = createStorageProvider();
