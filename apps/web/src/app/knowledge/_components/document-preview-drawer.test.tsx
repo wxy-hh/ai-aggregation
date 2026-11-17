@@ -11,6 +11,12 @@ vi.mock('@/lib/api/client', () => ({
   fetchWithAuth: (...args: any[]) => mockFetchWithAuth(...args),
 }));
 
+// Mock file-saver，验证同源下载经认证请求后由浏览器保存
+const mockSaveAs = vi.hoisted(() => vi.fn());
+vi.mock('file-saver', () => ({
+  saveAs: mockSaveAs,
+}));
+
 // Mock CodeBlock
 vi.mock('@/components/chat/code-block', () => ({
   CodeBlock: ({ language, children }: any) => (
@@ -295,6 +301,37 @@ describe('DocumentPreviewDrawer 组件', () => {
 
       expect(sourceLink).not.toHaveAttribute('href', originalUrl);
       expect(downloadLink).not.toHaveAttribute('href', sourceUrl);
+    });
+  });
+
+  it('同源下载链接经认证请求取回字节后保存', async () => {
+    const originalUrl = '/api/knowledge-bases/kb_1/documents/doc_1/download';
+    const blob = new Blob(['源资产字节'], { type: 'application/octet-stream' });
+    mockPreviewSuccess(
+      createPreviewData({
+        name: '季度报告.docx',
+        sourceFormat: 'docx',
+        renderMode: 'markdown',
+        content: '# 季度报告',
+        originalUrl,
+      })
+    );
+    mockFetchWithAuth.mockResolvedValueOnce({
+      ok: true,
+      blob: async () => blob,
+    });
+
+    renderDrawer({ documentName: '季度报告.docx' });
+
+    await waitFor(() => {
+      expect(screen.getByText('季度报告.docx')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('document-download-link'));
+
+    await waitFor(() => {
+      expect(mockFetchWithAuth).toHaveBeenNthCalledWith(2, originalUrl);
+      expect(mockSaveAs).toHaveBeenCalledWith(blob, '季度报告.docx');
     });
   });
 

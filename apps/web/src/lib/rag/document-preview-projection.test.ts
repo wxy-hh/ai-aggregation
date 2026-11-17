@@ -12,6 +12,7 @@ function buildDocument(
 ): DocumentPreviewDocumentFacts {
   return {
     id: 'doc_1',
+    knowledgeBaseId: 'kb_1',
     name: '季度报告.md',
     version: 3,
     status: 'pending',
@@ -601,5 +602,25 @@ describe('DocumentPreviewProjection 读取失败与降级', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it('TC07-6 相对存储地址映射同源认证下载路由', async () => {
+    const document = buildDocument({
+      status: 'failed',
+      errorMessage: 'DOCX 文件结构损坏，无法完成解析',
+    });
+    const relative = createProjection({
+      getUrl: async () => '/docs/user_1/doc_1/v3/季度报告.docx',
+    });
+    const absoluteUrl = 'https://storage.example.com/original.docx?token=abc&expires=3600';
+    const absolute = createProjection({ getUrl: async () => absoluteUrl });
+
+    const relativeResult = await relative.projection.projectNonReady(document);
+    const absoluteResult = await absolute.projection.projectNonReady(document);
+
+    expect(relativeResult.data.originalUrl).toBe(
+      '/api/knowledge-bases/kb_1/documents/doc_1/download'
+    );
+    expect(absoluteResult.data.originalUrl).toBe(absoluteUrl);
   });
 });

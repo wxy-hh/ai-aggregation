@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchWithAuth } from '@/lib/api/client';
 import { CodeBlock } from '@/components/chat/code-block';
+import { saveAs } from 'file-saver';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -91,6 +92,11 @@ function resolveNormalizedNotice(
   return null;
 }
 
+/** 同源下载路由不能靠 `<a>` 自动携带 Bearer Token，需先经认证请求取回字节 */
+function isSameOriginDownloadUrl(url: string): boolean {
+  return url.startsWith('/');
+}
+
 export function DocumentPreviewDrawer({
   open,
   onOpenChange,
@@ -156,6 +162,29 @@ export function DocumentPreviewDrawer({
       setError(null);
     }
   }, [open, knowledgeBaseId, documentId, loadContent]);
+
+  // 同源下载路由需要 Authorization；绝对签名 URL 继续交给浏览器直链下载
+  const handleDownloadClick = React.useCallback(
+    async (event: React.MouseEvent<HTMLAnchorElement>) => {
+      const url = data?.originalUrl;
+      if (!url || !isSameOriginDownloadUrl(url)) {
+        return;
+      }
+
+      event.preventDefault();
+      try {
+        const res = await fetchWithAuth(url);
+        if (!res.ok) {
+          throw new Error(`下载失败（HTTP ${res.status}）`);
+        }
+        const blob = await res.blob();
+        saveAs(blob, data.name || 'document');
+      } catch (err: unknown) {
+        console.error('[DocumentPreviewDrawer] 下载源资产失败:', err);
+      }
+    },
+    [data]
+  );
 
   // 自动滚动至高亮切片（聚焦平滑滚动）
   React.useEffect(() => {
@@ -329,6 +358,7 @@ export function DocumentPreviewDrawer({
                     rel="noopener noreferrer"
                     download
                     data-testid="document-download-link"
+                    onClick={handleDownloadClick}
                   >
                     {data.sourceFormat === 'pdf' ? (
                       <>
