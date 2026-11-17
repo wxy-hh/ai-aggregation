@@ -61,7 +61,7 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     mocks.kbFindUnique.mockResolvedValue({ id: 'kb_1', userId: 'user_1' });
   });
 
-  it('未登录访问返回 401', async () => {
+  it('TC08-1 未登录返回 401', async () => {
     mocks.currentUser = null;
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_1/content');
@@ -71,7 +71,7 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('跨租户或不存在知识库统一返回 404', async () => {
+  it('TC08-2 跨租户或不存在知识库返回 404', async () => {
     mocks.kbFindUnique.mockResolvedValueOnce(null);
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_other/documents/doc_1/content');
@@ -85,7 +85,7 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('文档不存在、已软删除或不属于当前用户时返回 404', async () => {
+  it('TC08-3 文档不存在软删除或跨租户返回 404', async () => {
     mocks.docFindFirst.mockResolvedValueOnce(null);
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_deleted/content');
@@ -99,7 +99,7 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(mocks.project).not.toHaveBeenCalled();
   });
 
-  it('ready 文档按投影数据返回 200，响应不含 bodySource', async () => {
+  it('TC08-4 成功 DTO 不含 fileType/bodySource', async () => {
     mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_1',
       knowledgeBaseId: 'kb_1',
@@ -123,7 +123,6 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
       errorMessage: null,
       sourceFormat: 'md',
       renderMode: 'markdown',
-      fileType: 'markdown',
       content: '# 架构设计规范',
       chunks: [
         { chunkIndex: 0, content: '第一片', headingPath: '简介', pageNumber: null },
@@ -142,10 +141,11 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.data).toEqual(projectionData);
+    expect(json.data).not.toHaveProperty('fileType');
     expect(json.data).not.toHaveProperty('bodySource');
   });
 
-  it('非 ready 文档按投影数据返回 200，不含 renderMode 且切片计数为 null', async () => {
+  it('TC08-5 非 ready 不含 renderMode 且计数为 null', async () => {
     mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_failed',
       knowledgeBaseId: 'kb_1',
@@ -168,7 +168,6 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
       status: 'failed',
       errorMessage: '文件编码格式异常，无法完成切片',
       sourceFormat: 'md',
-      fileType: 'markdown',
       content: '',
       chunks: [],
       originalUrl: 'https://storage.example.com/解析异常.md?token=abc',
@@ -188,10 +187,12 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(json.data).toEqual(projectionData);
     expect(json.data.chunkCount).toBeNull();
     expect(json.data.renderMode).toBeUndefined();
+    expect(json.data).not.toHaveProperty('renderMode');
+    expect(json.data).not.toHaveProperty('fileType');
     expect(json.data).not.toHaveProperty('bodySource');
   });
 
-  it('投影读取失败时返回 500 与中文错误', async () => {
+  it('TC08-6 投影读取失败映射中文 500', async () => {
     mocks.docFindFirst.mockResolvedValueOnce({
       id: 'doc_1',
       knowledgeBaseId: 'kb_1',
