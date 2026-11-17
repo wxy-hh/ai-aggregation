@@ -2,12 +2,13 @@
  * RAG 文档索引任务核心处理器 (Processor)
  *
  * 核心设计契约：
- * 1. 下载：通过 @repo/storage 下载文档 Buffer
- * 2. 解析：PDF/MD/TXT 文本提取与 500~800 tokens 语义切块
+ * 1. 下载：通过 @repo/storage 下载文档 Buffer；格式派生必须与下载 buffer 同源使用 jobData.storageKey
+ * 2. 解析：按 SourceFormat 选择解析器，完成 PDF/MD/TXT 文本提取与 500~800 tokens 语义切块
  * 3. 分词：jieba 中文分词，空格分隔写入分词列
  * 4. 向量化：embedMany 批量调用（<=64 条/批），记录用量观测日志（feature='rag-index'，不扣配额）
  * 5. 事务入库：同一事务内原子删除旧版本切片 + 插入新版本切片 + 更新 Document 状态为 ready 与 chunkCount
- * 6. 异常控制：区分致命错误（文件损坏、空内容直接置 failed 中文原因不重试）与瞬态错误（交由 BullMQ 重试）
+ * 6. 衍生缓存：仅 DOCX/XLSX/CSV 按共享布局规则额外写入 content.md；MD/TXT/URL 不重复写入
+ * 7. 异常控制：区分致命错误（文件损坏、空内容、未知格式直接置 failed 中文原因不重试）与瞬态错误（交由 BullMQ 重试）
  */
 
 import { embedMany } from 'ai';
@@ -16,7 +17,13 @@ import { logger } from '@repo/logger';
 import { prisma, replaceDocumentChunksInTransaction } from '@repo/db';
 import { createStorageProvider, StorageProvider } from '@repo/storage';
 import { createEmbeddingModel } from '@repo/providers';
-import { RAG_EMBEDDING_BATCH_SIZE, RAG_EMBEDDING_MODEL } from '@repo/shared';
+import {
+  RAG_EMBEDDING_BATCH_SIZE,
+  RAG_EMBEDDING_MODEL,
+  deriveParsedContentKey,
+  deriveSourceFormat,
+  requiresDerivedContent,
+} from '@repo/shared';
 import { guardedFetch, SsrfSecurityError } from '@repo/shared/server';
 import type { RagIndexJobData } from '@repo/queue';
 import { parseDocument, DocumentParseError, ParsedDocumentChunks } from './parser';
@@ -78,7 +85,12 @@ export async function processRagIndexJob(
     };
   }
 
-  // 2. 将文档状态标记为处理中 (processing)
+  // 2. 派生源格式：Document.sourceType 优先，jobData.sourceType 兼容旧任务回退，最后按 file-like 处理。
+  //    必须使用任务自带的 storageKey（与实际下载 buffer 同源），不得使用可能已指向重传新版本的 document.storageKey。
+  const sourceType = doc.sourceType || jobData.sourceType || 'file';
+  const sourceFormat = deriveSourceFormat({ sourceType, storageKey });
+
+  // 3. 将文档状态标记为处理中 (processing)
   await db.document.update({
     where: { id: documentId },
     data: {
@@ -88,13 +100,10 @@ export async function processRagIndexJob(
   });
 
   let parsedChunks: ParsedDocumentChunks;
-  let effectiveFileName = fileName;
   try {
     let fileBuffer: Buffer;
-    const isUrlDoc =
-      (jobData.sourceType === 'url' || (doc as { sourceType?: string }).sourceType === 'url') &&
-      Boolean(jobData.sourceUrl || (doc as { sourceUrl?: string | null }).sourceUrl);
-    const targetUrl = jobData.sourceUrl || (doc as { sourceUrl?: string | null }).sourceUrl || '';
+    const isUrlDoc = sourceType === 'url' && Boolean(jobData.sourceUrl || doc.sourceUrl);
+    const targetUrl = jobData.sourceUrl || doc.sourceUrl || '';
 
     if (isUrlDoc) {
       const fetchFn = deps.guardedFetchFn || guardedFetch;
@@ -147,7 +156,7 @@ export async function processRagIndexJob(
       }
 
       const extracted = extractFn(htmlResponse.text, targetUrl);
-      effectiveFileName = `${extracted.title}.md`;
+      // URL 源资产固定为归一化 Markdown，真实标题只用于文档名称与上下文，不再为解析合成后缀
       fileBuffer = Buffer.from(extracted.markdown, 'utf8');
 
       // 存储提纯后的 Markdown，保持存储与切片体系一致
@@ -159,17 +168,18 @@ export async function processRagIndexJob(
         data: { name: extracted.title },
       });
     } else {
-      // 3. 从对象存储下载文件
+      // 4. 从对象存储下载任务指定版本的文件
       fileBuffer = await storage.download(storageKey);
     }
 
-    // 4. 解析文档并执行语义切块与中文分词
-    const parseResult = await parseDocument(fileBuffer, effectiveFileName);
+    // 5. 按显式 SourceFormat 解析文档并执行语义切块与中文分词
+    const parseResult = await parseDocument(fileBuffer, fileName, sourceFormat);
     parsedChunks = parseResult;
 
-    // 若解析出衍生 Markdown（如 Word 或表格）且非 URL 文档，将完整 Markdown 缓存写入对象存储供全文抽屉直读 (ADR-0029)
-    if (parseResult.fullMarkdown && !isUrlDoc) {
-      const parsedContentKey = storageKey.replace(/\/[^/]+$/, '/content.md');
+    // 6. 仅 DOCX/XLSX/CSV 通过共享布局规则写入衍生 Markdown 缓存；
+    //    MD/TXT 的 fullMarkdown 只用于解析与大纲，URL 只保留自身源资产 (ADR-0053)
+    if (requiresDerivedContent(sourceFormat) && parseResult.fullMarkdown) {
+      const parsedContentKey = deriveParsedContentKey(storageKey);
       try {
         await storage.upload(
           parsedContentKey,
@@ -224,7 +234,7 @@ export async function processRagIndexJob(
     throw error;
   }
 
-  // 5. 批量向量化 (embedMany)
+  // 7. 批量向量化 (embedMany)
   const embeddingModel = deps.embeddingModel || createEmbeddingModel();
   const allEmbeddings: number[][] = [];
   const totalBatches = Math.ceil(parsedChunks.length / RAG_EMBEDDING_BATCH_SIZE);
@@ -271,7 +281,7 @@ export async function processRagIndexJob(
     throw error;
   }
 
-  // 6. 准备入库切片数据；切片元数据不再由 processor 拼装，
+  // 8. 准备入库切片数据；切片元数据不再由 processor 拼装，
   //    改传文档继承事实，由共享构造规则在 chunk-store 层统一构造 (C1 / ADR-0032 修订)
   const rawDocMetadata =
     doc.metadata && typeof doc.metadata === 'object' && !Array.isArray(doc.metadata)
@@ -301,7 +311,7 @@ export async function processRagIndexJob(
     embedding: allEmbeddings[idx],
   }));
 
-  // 7. 事务内原子删旧版本切片 + 插入新切片 + 更新 Document 状态为 ready 与 chunkCount，并持久化大纲元数据 (ADR-0036)
+  // 9. 事务内原子删旧版本切片 + 插入新切片 + 更新 Document 状态为 ready 与 chunkCount，并持久化大纲元数据 (ADR-0036)
   try {
     await replaceChunks({
       documentId,
@@ -309,10 +319,7 @@ export async function processRagIndexJob(
       chunks: chunksToInsert,
       metadata: updatedDocMetadata,
       inheritance: {
-        sourceType:
-          (doc as { sourceType?: string }).sourceType ||
-          (jobData as { sourceType?: string }).sourceType ||
-          'file',
+        sourceType,
         name: fileName,
         storageKey,
         tags: (doc as { tags?: string[] }).tags || [],
