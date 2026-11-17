@@ -79,7 +79,7 @@ pnpm infra:logs
 
 ### qa-check.mjs
 
-通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；以分流表为唯一缺陷清单，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；以分流表与默认驳回清单共同构成缺陷清单、分流表为唯一流程状态源，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
 
 ### review-package.mjs
 
@@ -87,11 +87,15 @@ pnpm infra:logs
 
 ### qa-run.mjs
 
-使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 真实执行并记录 argv、HEAD、tree、时间和退出码。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。
+使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 真实执行并记录 argv、HEAD、tree、时间和退出码。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。日志里的 `tree` 是**行为证据树**：只忽略根 `GLOSSARY.md`、`CONTEXT.md`、各目录 `README.md`、`docs/adr/` 与 `docs/features/` 中的 Markdown；其他 Markdown 默认计入，尤其保留源码旁由业务、构建或测试运行时读取的内容。豁免路径不得作为运行时内容源，且仍进入审查包 diff。
 
 ### dev-port.mjs 探活
 
-使用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 按端口决议范围寻找标题为 AI 聚合平台的服务。标题不匹配时不要关闭其他进程；未找到时按输出启动 `pnpm dev:web` 后重试。
+使用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 按端口决议范围寻找标题为 AI 聚合平台的服务；标题匹配后再校验首页引用的首个 `/_next/static/` JS chunk 返回 200，拦截 HTML 200 但前端资源全 404 的半死 Next 服务。标题不匹配时不要关闭其他进程；未找到时按输出启动 `pnpm dev:web` 后重试。
+
+### qa-browser-helper.mjs
+
+阶段 5 浏览器验收的仓库级薄辅助模块：`resolveRepoRoot()` 从模块位置解析仓库根（不依赖 `cwd`），`acquireQaPage()` 按 TaskSpace ownership 接管或新建页面，`createMarker()` 统一断言标记与非零退出，`captureMobileGeometry()` 要求必填的 `assert` 几何断言，等待断言成功后截图并在 `finally` 复位视口。只封装通用机制，不绑定业务选择器。
 
 ### 工具测试
 

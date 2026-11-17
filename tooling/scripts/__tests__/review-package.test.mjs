@@ -467,7 +467,7 @@ test('seal 生成最小凭据并打印 nonce 与原文哈希', async (t) => {
   assert.equal(standardsSeal.stdout.trim(), `QA_REVIEW_RECEIPT: ${challenge.nonce}|${standardsHash}`);
   const standardsReceipt = JSON.parse(await readFile(path.join(feature, 'review', 'r1-standards.source.json'), 'utf8'));
   assert.deepEqual(Object.keys(standardsReceipt).sort(), [
-    'axis', 'completedAt', 'feature', 'host', 'nonce', 'reportPath', 'reviewerKind', 'round', 'schemaVersion', 'sha256',
+    'axis', 'completedAt', 'feature', 'host', 'nonce', 'reportPath', 'reviewerKind', 'round', 'schemaVersion', 'sha256', 'treeDigest',
   ]);
   assert.equal(standardsReceipt.schemaVersion, 1);
   assert.equal(standardsReceipt.feature, '.scratch/feature');

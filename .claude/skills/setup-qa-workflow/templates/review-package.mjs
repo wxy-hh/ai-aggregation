@@ -135,14 +135,36 @@ async function hashFileOrNull(repo, relative) {
   }
 }
 
-export async function computeTreeDigest(repo, scopes) {
+export async function computeTreeDigest(repo, scopes, { exclude } = {}) {
   const lines = [];
   for (const relative of listFiles(repo, scopes)) {
+    if (exclude?.(relative)) continue;
     const info = await pathInfo(path.join(repo, relative));
     if (!info || (!info.isFile() && !info.isSymbolicLink())) continue;
     lines.push(`${relative}\0${await hashFile(repo, relative)}`);
   }
   return sha256(lines.join('\n'));
+}
+
+/**
+ * 仅明确说明文档不影响行为证据新鲜度；其他 Markdown 默认计入，
+ * 避免漏掉源码旁由业务、构建或测试运行时读取的内容。排除项仍接受双轴审查。
+ */
+export function isNonContractDoc(relative) {
+  const value = relative.split(path.sep).join('/');
+  if (!value.toLowerCase().endsWith('.md')) return false;
+  if (value === 'CLAUDE.md' || value === 'AGENTS.md') return false;
+  if (value.startsWith('.claude/') || value.startsWith('docs/agents/')) return false;
+  return value === 'GLOSSARY.md'
+    || value === 'CONTEXT.md'
+    || value.split('/').pop() === 'README.md'
+    || value.startsWith('docs/adr/')
+    || value.startsWith('docs/features/');
+}
+
+/** 行为证据树：用于 qa-run 日志、STALE_EVIDENCE 与 STALE_VERIFICATION */
+export function computeEvidenceTreeDigest(repo, scopes) {
+  return computeTreeDigest(repo, scopes, { exclude: isNonContractDoc });
 }
 
 export async function readScope(feature) {
@@ -282,6 +304,8 @@ async function sealReview(repo, argument, args) {
     host: flags.host.trim(),
     reportPath,
     sha256: hash,
+    // 该轴审查时的审查包摘要；供 qa-check 判断另一轴能否沿用同一 tree 的旧轮次
+    treeDigest: challenge.treeDigest,
     completedAt: new Date().toISOString(),
   };
   const pendingIds = flags['pending-ids'] ? normalizePendingIds(flags['pending-ids']) : [];

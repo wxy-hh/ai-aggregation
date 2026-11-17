@@ -165,6 +165,14 @@ export function isAppHtml(html) {
   return APP_TITLE_PATTERN.test(html);
 }
 
+/** 首页引用的首个 Next.js 静态 JS 脚本路径；CSS 等非脚本资源不参与判定，没有时返回 null */
+export function firstStaticChunk(html) {
+  const text = String(html);
+  const fromScript = text.match(/<script[^>]+src=["'](\/_next\/static\/[^"']+\.js(?:\?[^"']*)?)["']/i)?.[1];
+  if (fromScript) return fromScript;
+  return text.match(/["'](\/_next\/static\/[^"']+\.js(?:\?[^"']*)?)["']/i)?.[1] ?? null;
+}
+
 export async function probeWebApp({
   ports = Array.from({ length: MAX_PORT_ATTEMPTS }, (_, index) => WEB_PORT_RANGE.start + index),
   path: requestPath = '/login',
@@ -179,8 +187,23 @@ export async function probeWebApp({
         signal: AbortSignal.timeout(timeoutMs),
       });
       const html = await response.text();
-      if (isAppHtml(html)) return { url: `http://localhost:${port}`, port };
-      others.push({ port, reason: '标题不匹配' });
+      if (!isAppHtml(html)) {
+        others.push({ port, reason: '标题不匹配' });
+        continue;
+      }
+      // HTML 200 但静态 JS chunk 404 表示 Next.js 半死（未水合），不能判定就绪
+      const chunk = firstStaticChunk(html);
+      if (chunk) {
+        const asset = await fetch(`http://127.0.0.1:${port}${chunk}`, {
+          redirect: 'follow',
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!asset.ok) {
+          others.push({ port, reason: `静态资源不可用：${chunk}（HTTP ${asset.status}）` });
+          continue;
+        }
+      }
+      return { url: `http://localhost:${port}`, port };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       others.push({ port, reason: `请求失败：${message}` });

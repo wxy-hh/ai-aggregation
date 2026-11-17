@@ -21,7 +21,7 @@ disable-model-invocation: true
 只读确认：
 
 - 根 `package.json` 的 dev 命令、包管理器、首选端口与测试命令；
-- Playwright 配置、E2E 目录和运行命令；
+- Playwright 配置、E2E 目录和运行命令；选择原生 Node 驱动时，只读检查宿主根 `package.json` 是否将 `playwright` 声明为根级直接开发依赖，仅安装在工作区子包中不算；
 - `CLAUDE.md` / `AGENTS.md` 及其符号链接关系；
 - `docs/agents/`、`docs/handoff/`、`.gitignore` 和 `.claude/skills/` 是否入库；
 - 用户可见核心链路，以及 `docs/agents/qa-workflow.md`、`tooling/scripts/` 核心工具是否已存在。

@@ -80,4 +80,6 @@ US 粒度（项目定制，上游升级时保留本节）：上文“极其详�
 
 spec 内容要求（项目定制，上游升级时保留本节）：Testing Decisions 与 Out of Scope 不得省略；在 Testing Decisions 之后增加 `## 交付命令`，用一个代码块逐行写出最终需要真实运行的完整命令，`qa-check plan` 会核对计划是否原样包含。推翻既有 ADR、评测结论或默认值时，在 Implementation Decisions 写明被推翻项、依据与各选项代价；宣称质量或性能收益时写明所需效果证据，否则写成机制描述。
 
+仅 `QA Kind: fix` 要求留存修复前红灯复现日志；`QA Kind: feature` 不得在 Testing Decisions 或后续 qa-plan 中把「修复前复现日志」写成验收或审查项，所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变。`qa-plan.md` 只测产品外部可观察行为，不得把 `qa-check`、截图独立性、`review/` 或 `handoff.md` 合规性写成元用例。
+
 发布 spec 后按统一阶段收口报告（项目定制，上游升级时保留本节）：当前已完成阶段 2、车道（沿用当前车道，只写车道名）、本阶段产物（spec 路径）和建议下一步，只写一个命令：标准车道**建议下一步：`/qa-test-planner`**；慢车道**建议下一步：`/to-tickets`**；快车道**建议下一步：`/implement`**。

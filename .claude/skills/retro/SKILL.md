@@ -45,6 +45,8 @@ You have access to several files in the repo:
 ## 项目定制（上游升级时保留本节）
 
 - 以工具轨迹（命令、技能加载行、子代理调用）和实际产物（spec、qa-plan、`_qa/prechange/`、`scripts/`、证据日志、截图）为准，不以交付汇报或自检门禁的自述为准。
+- 按特性目录内全部文件与截图的最后修改时间，检索所有晚于特性建档的关联会话（含跨天续跑与交付后复验），不只分析用户指定的单个会话。
+- 必须用宿主图像读取工具抽查真实截图图像与 `scripts/` 过程脚本逻辑（如 Kimi Code 用 `ReadMediaFile`、Claude Code 用 `Read`），不能只核对 `wire.jsonl`、日志文本或 `qa-check` 输出。
 - 审查结论以 `review/` 原文与子代理转录（Claude Code 会话目录下 `subagents/agent-*.jsonl`）为准，不以 review-report 为准；逐个编号核对分流表有无漏列、改档或编造。
 - 只列带出处（文件与行号、命令或日志路径）的事实与偏差，不给百分比、“完全符合”“标杆”这类结论。
 - 建议在新会话复盘，但不强制。

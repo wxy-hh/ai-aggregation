@@ -164,6 +164,7 @@ async function writeReceipt(feature, {
     host,
     reportPath: `review/${fileName}`,
     sha256: hash ?? createHash('sha256').update(report).digest('hex'),
+    treeDigest: challenge.treeDigest,
     completedAt: completedAt ?? new Date().toISOString(),
   };
   if (pendingIds) receipt.pendingIds = pendingIds;
@@ -2330,13 +2331,114 @@ function bypassIssue(report) {
   return report.issues.find((item) => item.code === 'AUTH_BYPASS_IN_SCRIPT');
 }
 
-test('脚本内密码字面量 AUTH_BYPASS_IN_SCRIPT，空串或环境变量不报（TC04-1）', async (t) => {
-  for (const script of ["await page.fill('#pwd', 'x');\nconst body = { username: 'e2e', password: 'LoopPass123!' };", "const TEST_PASS = 'x';", 'const opts = { "passwd": "secret" };']) {
+test('TC03-1 密码扫描不误伤 PASS 变量名，真实凭据仍拦截', async (t) => {
+  const clean = await scanReport(t, 'const PASS_LABEL = "PASS";\nconst passCount = 1;\n');
+  assert.ok(!codes(clean).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(clean));
+  for (const script of ['const password = "secret123";\n', 'const passwd = "s3cret";\n', 'const pwd = "s3cret";\n']) {
+    const report = await scanReport(t, script);
+    assert.ok(codes(report).includes('AUTH_BYPASS_IN_SCRIPT'), `${script}: ${formatReport(report)}`);
+  }
+});
+
+test('TC03-2 注释剥离不误报，字符串内登录接口仍拦截', async (t) => {
+  const commented = await scanReport(t, '// password = "secret"\n// el.click()\nconst x = 1;\n');
+  assert.ok(!codes(commented).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(commented));
+  assert.ok(!commented.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), formatReport(commented));
+  const inString = await scanReport(t, 'await page.goto("http://localhost:3030/api/login");\n');
+  assert.ok(codes(inString).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(inString));
+  // 正则字面量不得被误判为行注释或块注释，其后的登录接口仍应被拦截
+  const afterRegex = await scanReport(t, 'const slashes = /\\/\\//;\nconst block = /\\/*/;\nawait fetch("/api/login");\n');
+  assert.ok(codes(afterRegex).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(afterRegex));
+});
+
+test('TC09-2 JavaScript 私有字段不按 Python 注释剥离', async (t) => {
+  const privateField = await scanReport(t, 'class Login { #password = "secret"; }\n');
+  assert.ok(codes(privateField).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(privateField));
+
+  const dir = await scriptedWorkspace(t, { extraFiles: { 'scripts/helper.py': '# password = "secret"\n' } });
+  const python = await checkFeature(dir, 'acceptance');
+  assert.ok(!codes(python).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(python));
+});
+
+test('TC03-3 inPageSegment 跳过字符串与正则内括号不提前截断', async (t) => {
+  for (const script of [
+    "await page.evaluate(() => { const s = 'a)b'; document.querySelector('#x').click(); });\n",
+    "await page.evaluate(() => { const re = /\\)/; document.querySelector('#x').click(); });\n",
+  ]) {
+    const report = await scanReport(t, script);
+    assert.ok(report.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), `${script}: ${formatReport(report)}`);
+  }
+});
+
+test('TC03-4 已闭环轨迹的旧编号不再误报缺少复审必交编号', async (t) => {
+  const { dir, feature } = await reviewRepo(t, { challenge: true });
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '[P-M1] 缺失\n' });
+  await writeRaw(feature, 2, { standards: '无发现\n', spec: '[P-M1] 未修\n' });
+  await writeRaw(feature, 3, { standards: '无发现\n', spec: '[P-M1] 已修\n' });
+  await writeRaw(feature, 4, { standards: '无发现\n', spec: '[P-M1] 已修（维持）\n' });
+  await writeRaw(feature, 5, { standards: '无发现\n', spec: '[P-M1] 已修（维持）\n' });
+  const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r5'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(collected.status, 0, collected.stderr);
+  const challenge = await readChallenge(feature);
+  await writeReceipts(feature, { round: 'r5', nonce: challenge.nonce });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-M1 | 本次修 | 已修 | r3 发现 → 本次修 | 静态：测试 | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!report.notes.some((note) => note.includes('缺少复审必交编号') && note.includes('P-M1')), formatReport(report));
+});
+
+test('TC03-5 不同路径但内容相同的截图按 SHARED_SCREENSHOT 拦截', async (t) => {
+  const extraCases = [
+    '### TC02: 第二个浏览器场景',
+    '- Priority: P0',
+    '- Covers: 2',
+    '- Seam: browser',
+    '',
+    '#### 验证断言',
+    '1. 页面真实可见',
+    '',
+  ].join('\n');
+  for (const same of [true, false]) {
+    const plan = singlePlan({
+      seam: 'browser',
+      evidence: '`evidence/a.png`、`evidence/browser.log`',
+      extraCases,
+      extraResults: '| TC02 | 1 | PASS | `evidence/b.png`、`evidence/browser.log` | |',
+    });
+    const dir = await workspace(t, {
+      plan,
+      evidence: {
+        'evidence/a.png': '相同截图内容',
+        'evidence/b.png': same ? '相同截图内容' : '不同截图内容',
+        'scripts/browser.mjs': '// 浏览器过程脚本\n',
+      },
+    });
+    await writeFile(path.join(dir, 'evidence', 'browser.log'), runLog({
+      label: 'browser',
+      argv: ['node', path.join(dir, 'scripts', 'browser.mjs')],
+      body: '[TC01-1] PASS 实测：标题可见\n[TC02-1] PASS 实测：标题可见',
+    }));
+    const report = await checkFeature(dir, 'acceptance');
+    if (same) {
+      assert.equal(report.status, 'FAIL', formatReport(report));
+      assert.ok(codes(report).includes('SHARED_SCREENSHOT'), formatReport(report));
+    } else {
+      assert.equal(report.status, 'PASS', formatReport(report));
+    }
+  }
+});
+
+test('脚本内密码字面量 AUTH_BYPASS_IN_SCRIPT，空串、环境变量或 PASS 变量名不报（TC04-1）', async (t) => {
+  for (const script of ["await page.fill('#pwd', 'x');\nconst body = { username: 'e2e', password: 'LoopPass123!' };", 'const opts = { "passwd": "secret" };']) {
     const report = await scanReport(t, script);
     assert.equal(report.status, 'FAIL', `${script}: ${formatReport(report)}`);
     assert.match(bypassIssue(report)?.message ?? '', /scripts\/helper\.mjs.*密码/, script);
   }
-  for (const script of ["const body = { password: '' };", 'const password = process.env.QA_PASSWORD;', "const passwordInput = page.getByLabel('密码');"]) {
+  for (const script of ["const body = { password: '' };", 'const password = process.env.QA_PASSWORD;', "const passwordInput = page.getByLabel('密码');", "const TEST_PASS = 'x';"]) {
     const report = await scanReport(t, script);
     assert.ok(!codes(report).includes('AUTH_BYPASS_IN_SCRIPT'), `${script}: ${formatReport(report)}`);
   }
@@ -2939,4 +3041,126 @@ test('challenge 只有单轴原文时不抛异常并输出未核验', async (t) 
   assert.equal(report.status, 'BLOCKED', formatReport(report));
   assert.ok(codes(report).includes('REVIEW_RAW_MISSING'), formatReport(report));
   assert.ok(report.notes.includes('来源核验：未核验（人工）'), formatReport(report));
+});
+
+/** 构造 r1 双轴 + 可选 r2 单轴复审的仓库（带 challenge） */
+async function singleAxisRepo(t, { changeCodeBeforeR2 = false } = {}) {
+  const { dir, feature } = await reviewRepo(t, { challenge: true });
+  const challenge1 = await readChallenge(feature);
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '[P-W1] 实现有误\n' });
+  await writeReceipts(feature, { nonce: challenge1.nonce });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-W1 | 本次修 | 已修 | r1 发现 → r2 已修 | 静态：测试 | |',
+  ]));
+  if (changeCodeBeforeR2) await writeFile(path.join(dir, 'tracked.txt'), 'r1 审查后的代码修改\n');
+  const collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r2'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(collected.status, 0, collected.stderr);
+  const challenge2 = await readChallenge(feature);
+  await writeFile(path.join(feature, 'review', 'r2-spec-axis.md'), '[P-W1] 已修\n');
+  await writeReceipt(feature, {
+    round: 'r2',
+    axis: 'spec',
+    nonce: challenge2.nonce,
+    pendingIds: ['P-W1'],
+  });
+  return { dir, feature, challenge1, challenge2 };
+}
+
+test('TC02-1 r1 缺少任一轴原文时 review 阻断', async (t) => {
+  const { feature } = await reviewRepo(t, { challenge: true });
+  const challenge = await readChallenge(feature);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await rm(path.join(feature, 'review', 'r1-spec-axis.md'), { force: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '无发现\n');
+  await writeReceipt(feature, { round: 'r1', axis: 'standards', nonce: challenge.nonce });
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+  assert.ok(codes(report).includes('REVIEW_RAW_MISSING'), formatReport(report));
+});
+
+test('TC02-2 r2+ 审查包未变时允许无待复核项的轴沿用同一 treeDigest 旧轮次', async (t) => {
+  const { feature } = await singleAxisRepo(t);
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('REVIEW_RAW_MISSING'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('沿用第 r1 轮原文')), formatReport(report));
+});
+
+test('TC02-3 r2+ 审查包变化时缺席轴仍报 REVIEW_RAW_MISSING', async (t) => {
+  const { feature } = await singleAxisRepo(t, { changeCodeBeforeR2: true });
+  const report = await checkFeature(feature, 'review');
+  assert.ok(codes(report).includes('REVIEW_RAW_MISSING'), formatReport(report));
+  assert.equal(report.status, 'BLOCKED', formatReport(report));
+});
+
+test('TC02-4 声明与凭据均为非 Claude 宿主的新协议不扫描 Claude 转录', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge } = await receiptRepo(t);
+  await writeMainSession(configDir, dir, { skill: null });
+  await writeReceipts(feature, { nonce: challenge.nonce, host: 'Kimi Code' });
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace(
+    '审查方式：code-review 的 Standards 与 Spec 两个独立子代理，继承主会话模型',
+    '审查方式：宿主=Kimi Code；两轴独立子代理',
+  ));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(report.notes.includes('来源核验：自述凭据（弱）'), formatReport(report));
+  assert.ok(report.notes.some((note) => note.includes('跳过 Claude 转录扫描')), formatReport(report));
+  assert.ok(!report.notes.some((note) => note.includes('没有 code-review 的 Skill 调用')), formatReport(report));
+});
+
+test('TC01-1~3 行为证据树排除非契约文档而审查包保留文档且契约文档仍触发过期', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-dual-tree-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  git(dir, ['init', '--quiet']);
+  git(dir, ['config', 'user.email', 'qa@example.internal']);
+  git(dir, ['config', 'user.name', 'QA Test']);
+  await writeFile(path.join(dir, 'tracked.txt'), '代码初始\n');
+  await writeFile(path.join(dir, 'GLOSSARY.md'), '# 术语\n');
+  await mkdir(path.join(dir, 'docs', 'agents'), { recursive: true });
+  await writeFile(path.join(dir, 'docs', 'agents', 'qa-workflow.md'), '# 正本\n');
+  await mkdir(path.join(dir, 'tests'), { recursive: true });
+  await writeFile(path.join(dir, TEST_FILE), TEST_SOURCE);
+  git(dir, ['add', 'tracked.txt', 'GLOSSARY.md', 'docs/agents/qa-workflow.md', TEST_FILE]);
+  git(dir, ['commit', '--quiet', '-m', '初始提交']);
+
+  const feature = path.join(dir, '.scratch', 'feature');
+  await mkdir(feature, { recursive: true });
+  await writeFile(path.join(feature, 'spec.md'), SPEC);
+  const plan = singlePlan();
+  await writeFile(path.join(feature, 'qa-plan.md'), plan.replace(/\| (?:PASS|FAIL) \|/g, '| BLOCKED |'));
+  const init = spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt', 'GLOSSARY.md', 'docs/agents/qa-workflow.md'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(init.status, 0, init.stderr);
+  await writeFile(path.join(feature, 'qa-plan.md'), plan);
+  for (const [label, argv] of [['run', ['node', '--test', TEST_FILE]], ['delivery', ['node', '--version']]]) {
+    assert.equal(spawnSync(process.execPath, [QA_RUN, feature, label, '--', ...argv], { cwd: dir, encoding: 'utf8' }).status, 0);
+  }
+  assert.equal(acceptanceCli(dir, feature).status, 0);
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], { cwd: dir, encoding: 'utf8' }).status, 0);
+  const challenge = await readChallenge(feature);
+  await writeRaw(feature);
+  await writeReceipts(feature, { nonce: challenge.nonce });
+  await writeFile(path.join(feature, 'review-report.md'), REPORT_OK.replace('审查方式：', '审查方式：宿主=Kimi Code；'));
+
+  // 1. 仅修改 GLOSSARY.md：行为与交付证据不报 STALE_EVIDENCE/STALE_VERIFICATION，但审查包报 STALE_REVIEW_PACKAGE
+  await writeFile(path.join(dir, 'GLOSSARY.md'), '# 术语\n新增说明\n');
+  const afterGlossaryAcc = await checkFeature(feature, 'acceptance');
+  assert.ok(!codes(afterGlossaryAcc).includes('STALE_EVIDENCE'), formatReport(afterGlossaryAcc));
+  const afterGlossaryRev = await checkFeature(feature, 'review');
+  assert.ok(!codes(afterGlossaryRev).includes('STALE_EVIDENCE'), formatReport(afterGlossaryRev));
+  assert.ok(!codes(afterGlossaryRev).includes('STALE_VERIFICATION'), formatReport(afterGlossaryRev));
+  assert.ok(codes(afterGlossaryRev).includes('STALE_REVIEW_PACKAGE'), formatReport(afterGlossaryRev));
+
+  // 2. 改回 GLOSSARY.md 后修改契约文档 docs/agents/qa-workflow.md：行为与交付证据均触发 STALE
+  await writeFile(path.join(dir, 'GLOSSARY.md'), '# 术语\n');
+  await writeFile(path.join(dir, 'docs', 'agents', 'qa-workflow.md'), '# 正本\n新条款\n');
+  const afterContract = await checkFeature(feature, 'review');
+  assert.ok(codes(afterContract).includes('STALE_EVIDENCE'), formatReport(afterContract));
+  assert.ok(codes(afterContract).includes('STALE_VERIFICATION'), formatReport(afterContract));
 });

@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { computeTreeDigest, readScope, resolveFeature } from './review-package.mjs';
+import { computeEvidenceTreeDigest, readScope, resolveFeature } from './review-package.mjs';
 
 const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SAFE_ARGUMENT = /^[A-Za-z0-9_./:@%+=,-]+$/;
@@ -124,7 +124,7 @@ function headAt(root) {
 async function treeAt(root, feature) {
   try {
     const scope = await readScope(feature);
-    return await computeTreeDigest(root, scope.scopes);
+    return await computeEvidenceTreeDigest(root, scope.scopes);
   } catch (error) {
     if (error.code === 'ENOENT') return 'none';
     throw error;

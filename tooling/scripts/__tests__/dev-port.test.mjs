@@ -43,6 +43,47 @@ function execute(file, args) {
   });
 }
 
+test('TC04-1 首页标题匹配且静态 JS chunk 返回 200 时判定就绪', async (t) => {
+  const port = await serve(t, (request, response) => {
+    if (request.url === '/_next/static/chunks/main.js') {
+      response.writeHead(200, { 'content-type': 'application/javascript' });
+      response.end('console.log(1)');
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<html><head><title>AI 聚合平台</title><link rel="stylesheet" href="/_next/static/css/app.css"><script src="/_next/static/chunks/main.js"></script></head><body>应用</body></html>');
+  });
+  const { probeWebApp } = await import(new URL('../dev-port.mjs', import.meta.url).href);
+  const result = await probeWebApp({ ports: [port], timeoutMs: 2000 });
+  assert.deepEqual(result, { url: `http://localhost:${port}`, port });
+});
+
+test('TC04-2 首页标题匹配但静态 JS chunk 404 时不判定就绪', async (t) => {
+  const port = await serve(t, (request, response) => {
+    if (request.url === '/_next/static/chunks/main.js') {
+      response.writeHead(404);
+      response.end('not found');
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<html><head><title>AI 聚合平台</title><script src="/_next/static/chunks/main.js"></script></head><body>半死</body></html>');
+  });
+  const { probeWebApp } = await import(new URL('../dev-port.mjs', import.meta.url).href);
+  const result = await probeWebApp({ ports: [port], timeoutMs: 2000 });
+  assert.equal(result.url, null);
+  assert.match(result.others[0]?.reason ?? '', /静态资源不可用.*404/);
+});
+
+test('TC04-3 首页不含静态 chunk 引用时保持向后兼容', async (t) => {
+  const port = await serve(t, (request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<html><head><title>AI 聚合平台</title></head><body>极简页面</body></html>');
+  });
+  const { probeWebApp } = await import(new URL('../dev-port.mjs', import.meta.url).href);
+  const result = await probeWebApp({ ports: [port], timeoutMs: 2000 });
+  assert.deepEqual(result, { url: `http://localhost:${port}`, port });
+});
+
 test('探活按给定端口跟随重定向并识别本应用标题（TC10）', async (t) => {
   const otherPort = await serve(t, (request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });

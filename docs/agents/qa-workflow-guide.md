@@ -51,7 +51,7 @@ AI 辅助编码最常见的三类返工：
 
 ### 和 Matt Pocock 技能体系的关系
 
-本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 保持上游原文，只在末尾“项目定制”段替换 diff 来源与原文落盘方式（有 challenge 时子代理自写并 seal，无 challenge 的旧轮次由主代理逐字落盘）。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
+本工作流继承 [Matt Pocock Skills](https://github.com/mattpocock/skills) 的需求盘问、领域建模、Seam、垂直切片和双轴审查。`code-review` 已内聚为前后一致的单一中文指令（保留上游署名与 Fowler 坏味道基线，替换 diff 来源与原文落盘方式：有 challenge 时子代理自写并 seal，无 challenge 的旧轮次由主代理逐字落盘）。本项目额外加了：spec 后的 qa-plan、核心链路的可见浏览器验收、`_qa/` 基线与审查包、三档分流与增量复审。
 
 ---
 
@@ -72,7 +72,7 @@ AI 辅助编码最常见的三类返工：
 
 - **计划在 init 时冻结**：先写断言再看实现，防止“观察实现再反向固化预期”。之后删改断言必须写进 `## 计划变更`。
 - **交付命令放在全部浏览器验收之后**：构建命令会改写 dev server 产物，曾经打断正在进行的验收。
-- **复审是增量的、有上限**：全量重审每轮都可能冒出新发现，修—审循环没有终点。现在复审只核对上轮“本次修”是否修好，审查者拿到完整审查包与主代理列出的本轮修复改过的文件，新发现只针对这些文件；自动最多 2 轮，用尽后交人工裁决，流程照常走完交付验证，不会中断。
+- **复审是增量的、有上限**：全量重审每轮都可能冒出新发现，修—审循环没有终点。现在复审只核对上轮“本次修”是否修好，审查者拿到完整审查包与主代理列出的本轮修复改过的文件和 QA 产物变化，新发现只针对这些文件；`treeDigest` 未变且仅改分流或轨迹文字时，无待复核项的另一轴可沿用旧轮次，执行记录、绑定、日志或截图变化时 Spec 轴必须复审，过程脚本变化时双轴必须复审；自动最多 2 轮，用尽后交人工裁决，流程照常走完交付验证，不会中断。
 
 ### 阶段收口的关键命令
 
@@ -126,7 +126,7 @@ node tooling/scripts/qa-check.mjs review .scratch/<feature>
 | `qa-test-planner` | spec 之后 |
 | `tdd` | `/implement` 内的红绿循环 |
 | `diagnosing-bugs` | 验收 FAIL 需要定位根因 |
-| `ego-browser` | 阶段 5 可见窗口验收 |
+| `ego-browser` | 阶段 5 需复用已登录桌面会话或人工接管登录时的可见窗口验收 |
 | `code-review` | 阶段 6 双轴审查 |
 | `pr`、`retro` | 交付与复盘 |
 
@@ -173,7 +173,8 @@ node tooling/scripts/qa-check.mjs review .scratch/<feature>
 - 绑定写错只改这一列，重跑 `qa-check acceptance` 即可，不用重跑测试。
 - 修复已交付特性时，计划头写 `QA Kind: fix`，每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志；不改写原特性的执行记录。
 - 计划在 init 时冻结；删改断言、Seam、Covers 或交付命令必须写进 `## 计划变更`。计划变更不得新增冻结断言之外的呈现要求（如「某几项同屏」），确需新要求时追加断言。
-- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；全部浏览器验收结束后先预跑一次并回填，让 r1 审查看到真实结果。
+- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；最终交付命令统一在阶段 7 最终代码上执行一次，不再要求 `collect` 前预跑，阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行。阶段 7 若因命令失败修改代码或契约文档，必须回到阶段 6 复审并重跑受影响验收与全部交付命令；未改代码的环境重试不触发复审。
+- 阶段 5 默认只规划 1–3 条核心真实浏览器主链路与关键视口；组件测试能覆盖的故障注入与分支矩阵不下放到浏览器。
 
 ### 2. 过程脚本的断言标记
 
@@ -196,10 +197,14 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<featur
 ### 3. 视觉类断言：几何硬断言加目标区域截图
 
 ```js
-// scripts/tc05-overlay.mjs —— 断言编辑按钮未被遮挡
-const target = page.locator('[data-testid="edit-button"]');
-await target.scrollIntoViewIfNeeded();
-const box = await target.boundingBox();
+// scripts/tc05-overlay.mjs —— 轻量几何断言用 Playwright，由 Node 直接执行（不走 playwright test）
+import { chromium } from 'playwright';
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+await page.goto(`${process.env.QA_BASE_URL ?? 'http://localhost:3030'}/knowledge`);
+await page.getByTestId('edit-button').scrollIntoViewIfNeeded();
+const box = await page.getByTestId('edit-button').boundingBox();
 const viewport = page.viewportSize();
 const visible = !!box && box.y + box.height > 0 && box.y < viewport.height;
 const covered = visible && await page.evaluate(({ x, y }) => {
@@ -208,11 +213,15 @@ const covered = visible && await page.evaluate(({ x, y }) => {
 }, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
 if (!visible || covered) {
   console.log(`[TC05-1] FAIL visible=${visible} covered=${covered}`);
+  await browser.close();
   process.exit(1);
 }
-await target.screenshot({ path: `.scratch/<feature>/screenshots/TC05.png` });
+await page.getByTestId('edit-button').screenshot({ path: `.scratch/<feature>/screenshots/TC05-<label>.png` });
 console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
+await browser.close();
 ```
+
+遵循宿主工具优先级；无更高优先级规则时，轻量用例脚本由 Node 直接执行，不走 `playwright test`（`apps/web/playwright.config.ts` 只用于仓库既有 e2e）。原生 Node 驱动要求宿主根 `package.json` 将 `playwright` 声明为**根级直接开发依赖**，仅安装在工作区子包中无法供 `.scratch/` 脚本解析；安装器只报告缺口，不修改宿主清单。需要复用用户已登录桌面会话或人工接管登录时，改用 `ego-browser` 可见窗口；仓库级薄辅助模块 `tooling/scripts/qa-browser-helper.mjs` 提供仓库根解析、TaskSpace 接管、断言标记与「设置视口 → 几何断言 → 截图 → 复位视口」顺序。
 
 截图不能证明数值，也不能单独证明可见：先让目标处于无遮挡位置，脚本硬断言目标与视口相交且代表点未被其他元素遮挡，再截取目标区域；断言未溢出时另断言边界与滚动尺寸。Spec 轴审查仍会按冻结断言原文复核截图。
 
@@ -235,10 +244,11 @@ console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
 3. 子代理把最终审查内容直接写入原文文件，再按轴 seal：r1 用 `--axis standards|spec --file review/r1-… --reviewer-kind subagent --host "<宿主名>"`；r2 起追加 `--pending-ids "<编号,...>"`，把收到的待复核编号原样带入凭据。无子代理宿主由用户手动另开独立会话或终端审查，用同一 nonce 运行 `--reviewer-kind external-session`；主代理不得自动启动 `codex exec` 等无头审查者。
 4. `seal` 校验轮次、轴、路径、challenge 与当前审查包一致，拒绝覆盖已有凭据，成功时打印 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`，子代理把这一行放进最终返回。主代理只检查原文与 `.source.json` 是否存在，不转抄、不改写、不重算。
 5. `qa-check review` 输出「来源核验」强度行：找到同 nonce 的 Claude Code 子代理转录且哈希行一致为「转录（强）」；只有自述凭据且内部一致为「自述凭据（弱）」；两者都没有为「未核验（人工）」。凭据缺失、格式错误或自述时间早于 collect 只给 NOTE，哈希矛盾 FAIL，nonce 不符 BLOCKED。强度行不改变 PASS / BLOCKED 语义，弱档不能称来源已核验。
+6. 「自述凭据（弱）」只防跨轮串包与漏执行，不能防恶意主代理自写自封；弱档下人工终审需重点对照 `review/` 原文、分流表与默认驳回清单，或按需用 `/retro` 抽查宿主原生会话。
 
 seal 拒绝覆盖已有凭据，是为了防止主代理「修一下原文再重封」。原文有问题时按真实返回保留并保持待独立审查，或按新轮次重新审查；不要手改 challenge、凭据或原文。
 
-编号含义：`S-H` 规范硬违规、`S-J` 规范判断建议、`P-M` 缺失或部分实现、`P-W` 实现有误、`P-X` 范围蔓延。无发现时写「无发现」，不带编号；S-J 只报有明确当前成本的问题。
+编号含义：`S-H` 规范硬违规、`S-J` 规范判断建议、`P-M` 缺失或部分实现、`P-W` 实现有误、`P-X` 范围蔓延。无发现时写「无发现」，不带编号；S-J 只报有明确当前成本的问题，不打算本次修时默认驳回、不进三档分流表，但须在 `## 默认驳回` 中列出编号与原文位置。
 
 ### 5. 三档分流表（`review-report.md`）
 
@@ -253,6 +263,9 @@ seal 拒绝覆盖已有凭据，是为了防止主代理「修一下原文再重
 | P-W1 | 本次修 | 修错 | r1 → r2 修错 → r3 修错 | | |
 | P-X1 | 本次修 | 已修 | r1 → r2 已修 | 静态：撤回 spec 未要求的 --verbose 参数 | |
 
+## 默认驳回
+- S-J1：`review/r1-standards.md`
+
 ## 修复尝试记录
 - P-W1 r2：只补了冲突分支判断，复审指出标记解析仍取第一条；r3 改为取全部标记后仍漏了空值。
 
@@ -260,7 +273,7 @@ seal 拒绝覆盖已有凭据，是为了防止主代理「修一下原文再重
 GLOSSARY.md 的改动开工前已存在，与本特性无关。
 ```
 
-分流表是唯一缺陷清单与流程状态源，也是交付时的已修 / 未修 / 修错清单：主代理按审查原文将真实发现逐条进表，检查器不从正文自动发现缺陷，只核对已列编号有原文依据；漏列由人工终审对照原文发现。当前档位与处置状态写当前事实，历史变化写轮次轨迹，转专项或改档成立不锁定后续修复；检查器不解析原文状态词，按轮次轨迹核对待复审编号是否出现在对应轴其后一轮原文，并核对修复证据；表格是否忠实于原文，由人工对照 `qa-check review` 的「原文核对」段确认。S-J 默认驳回且不必进表，只有要修、转专项或需单独说明风险的才进表；P-X 默认撤回越界改动，规则见正本阶段 6 第 4 条。「已修」行的验证证据必须是修复后产生的 `evidence/`、`screenshots/` 文件（针对修复点跑一个脚本、截一张图即可，不必重跑全部验收），或 `静态：<理由>`；不以文件 mtime 判定先后，有可靠事件时间时才核对日志 `started` 与轮次轨迹所指的缺陷审查返回，证据能否证明修复由人工终审判断。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
+分流表与默认驳回清单共同构成缺陷清单，分流表是唯一流程状态源，也是交付时的已修 / 未修 / 修错清单：主代理按审查原文将需处置发现逐条进表，其余 S-J 在 `## 默认驳回` 中集中列出编号与原文位置，不强制逐条理由；检查器不从正文自动发现缺陷，只核对分流表已列编号有原文依据，漏列由人工终审对照原文发现。当前档位与处置状态写当前事实，历史变化写轮次轨迹，转专项或改档成立不锁定后续修复；检查器不解析原文状态词，按轮次轨迹核对待复审编号是否出现在对应轴其后一轮原文，并核对修复证据；表格是否忠实于原文，由人工对照 `qa-check review` 的「原文核对」段确认。S-J 默认驳回且不必进表，只有要修、转专项或需单独说明风险的才进表；P-X 默认撤回越界改动，规则见正本阶段 6 第 4 条。「已修」行的验证证据必须是修复后产生的 `evidence/`、`screenshots/` 文件（针对修复点跑一个脚本、截一张图即可，不必重跑全部验收），或 `静态：<理由>`；不以文件 mtime 判定先后，有可靠事件时间时才核对日志 `started` 与轮次轨迹所指的缺陷审查返回，证据能否证明修复由人工终审判断。`修复尝试记录` 只给下一次修复参考，不提供给审查者，保持审查独立。
 
 ---
 
@@ -405,7 +418,7 @@ SSR/HMR/SSE 页面永远等不到网络空闲，或者 HTML 出来了但还没�
 不用，走快车道。触及核心链路时补 P0 浏览器验收。
 
 **Q2：`ego-browser` 弹出窗口后能手动操作吗？**
-可以。验证码、短信登录等可人工接管后交还 Agent。工具选择遵循宿主优先级，无 GUI 时降级 Playwright 并说明。
+可以。验证码、短信登录等可人工接管后交还 Agent。轻量 DOM/视口验证或无需复用桌面登录态时优先用 Playwright；只有需要复用已登录会话或人工接管登录时才用 `ego-browser` 可见窗口。
 
 **Q3：为什么 AI 不能自己 commit？**
 提交与推送需要明确责任边界。用户明确要求提交时，Agent 展示文件列表、验证结果和提交信息后执行；push、merge 等需二次确认。

@@ -204,7 +204,7 @@ test('[HR-TC05-2] 误用失败后同一标签可用拆分参数正常执行', as
   assert.equal(retried.status, 0, retried.stderr);
 });
 
-test('[HR-TC05-3] 路径含空格的真实可执行文件照常运行', async (t) => {
+test('路径含空格的真实可执行文件照常运行', async (t) => {
   const dir = await repo(t);
   const script = path.join(dir, 'with space', 'tool.sh');
   await mkdir(path.dirname(script), { recursive: true });
@@ -212,4 +212,63 @@ test('[HR-TC05-3] 路径含空格的真实可执行文件照常运行', async (t
   const result = run(dir, 'spaced', [script]);
   assert.equal(result.status, 3, result.stderr);
   assert.match(result.stdout, /含空格路径/);
+});
+
+test('行为证据 tree 忽略非契约说明文档，契约类文档改动仍更新摘要', async (t) => {
+  const dir = await repo(t);
+  await writeFile(path.join(dir, 'GLOSSARY.md'), '# 术语表\n');
+  await mkdir(path.join(dir, 'docs', 'agents'), { recursive: true });
+  await writeFile(path.join(dir, 'docs', 'agents', 'qa-workflow.md'), '# 正本\n');
+  git(dir, ['add', 'GLOSSARY.md', 'docs/agents/qa-workflow.md']);
+  git(dir, ['commit', '--quiet', '-m', '添加文档']);
+
+  const feature = path.join(dir, '.scratch', 'feature');
+  const init = spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt', 'GLOSSARY.md', 'docs/agents/qa-workflow.md'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(init.status, 0, init.stderr);
+
+  assert.equal(run(dir, 'before-doc').status, 0);
+  const { parseRunLog } = await import(SCRIPT_URL.href);
+  const beforeTree = parseRunLog(await readFile(path.join(feature, 'evidence', 'before-doc.log'), 'utf8')).tree;
+
+  // 修改非工作流说明文档 GLOSSARY.md 后，行为证据 tree 保持不变
+  await writeFile(path.join(dir, 'GLOSSARY.md'), '# 术语表\n新增术语\n');
+  assert.equal(run(dir, 'after-glossary').status, 0);
+  const afterGlossaryTree = parseRunLog(await readFile(path.join(feature, 'evidence', 'after-glossary.log'), 'utf8')).tree;
+  assert.equal(afterGlossaryTree, beforeTree);
+
+  // 修改工作流契约文档 docs/agents/qa-workflow.md 后，行为证据 tree 必须变化
+  await writeFile(path.join(dir, 'docs', 'agents', 'qa-workflow.md'), '# 正本\n更新条款\n');
+  assert.equal(run(dir, 'after-contract').status, 0);
+  const afterContractTree = parseRunLog(await readFile(path.join(feature, 'evidence', 'after-contract.log'), 'utf8')).tree;
+  assert.notEqual(afterContractTree, beforeTree);
+});
+
+test('TC01-4 运行时 Markdown 改动仍更新行为证据 tree', async (t) => {
+  const dir = await repo(t);
+  const runtimeDoc = path.join(dir, 'apps', 'web', 'src', 'content', 'help.md');
+  await mkdir(path.dirname(runtimeDoc), { recursive: true });
+  await writeFile(runtimeDoc, '# 运行时帮助\n');
+  git(dir, ['add', 'apps/web/src/content/help.md']);
+  git(dir, ['commit', '--quiet', '-m', '添加运行时文档']);
+
+  const init = spawnSync(process.execPath, [
+    REVIEW_PACKAGE,
+    'init',
+    '.scratch/feature',
+    '--',
+    'tracked.txt',
+    'apps/web/src/content/help.md',
+  ], { cwd: dir, encoding: 'utf8' });
+  assert.equal(init.status, 0, init.stderr);
+  assert.equal(run(dir, 'runtime-before').status, 0);
+
+  const { parseRunLog } = await import(SCRIPT_URL.href);
+  const before = parseRunLog(await readFile(path.join(dir, '.scratch/feature/evidence/runtime-before.log'), 'utf8'));
+  await writeFile(runtimeDoc, '# 运行时帮助\n更新内容\n');
+  assert.equal(run(dir, 'runtime-after').status, 0);
+  const after = parseRunLog(await readFile(path.join(dir, '.scratch/feature/evidence/runtime-after.log'), 'utf8'));
+  assert.notEqual(after.tree, before.tree);
 });

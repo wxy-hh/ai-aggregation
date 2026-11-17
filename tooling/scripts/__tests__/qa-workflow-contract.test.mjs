@@ -436,9 +436,96 @@ async function eachMatch(files, pattern) {
   for (const file of files) assert.match(await read(file), pattern, file);
 }
 
-test('[HR-TC07-1] 交付命令在首次 collect 前预跑，阶段 7 仍在最终代码上执行', async () => {
-  await eachMatch(workflowPaths, /首次 collect 之前先跑一次/);
-  await eachMatch(workflowPaths, /QA 工作流在最终代码上通过 qa-run 执行每条交付命令/);
+test('[HR-TC07-1] 最终交付命令只在阶段 7 执行，不再 collect 前预跑', async () => {
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.doesNotMatch(content, /首次 collect 之前先跑一次/, file);
+    assert.match(content, /QA 工作流在最终代码上通过 qa-run 执行每条交付命令/, file);
+    assert.match(content, /阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行/, file);
+  }
+  assert.match(await read(paths.guide), /不再要求 `collect` 前预跑/);
+});
+
+test('[ADR-0054] 正本与安装模板写明单轴复审、只读审查、假失败认领与弱档边界', async () => {
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.match(content, /仅修改分流或轨迹文字/, file);
+    assert.match(content, /不重跑测试套件、`typecheck`、`lint` 或启动服务/, file);
+    assert.match(content, /不得读取同轮另一轴原文/, file);
+    assert.match(content, /`no_final_message` 时，先核对/, file);
+    assert.match(content, /`QA Kind: feature` 不设修复前复现日志门禁/, file);
+    assert.match(content, /所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变/, file);
+    assert.match(content, /禁止把 `qa-check` 结果、截图独立性、`review\/`、`review-report\.md` 或 `handoff\.md` 合规性写成元用例/, file);
+    assert.match(content, /「自述凭据（弱）」只防跨轮串包与漏执行/, file);
+    assert.doesNotMatch(content, /`code-review` 使用上游原文/, file);
+  }
+});
+
+test('[ADR-0054] 交付前校准保留留痕、受影响轴复审与阶段 7 回退闭环', async () => {
+  for (const file of workflowPaths) {
+    const content = await read(file);
+    assert.match(content, /## 默认驳回/, file);
+    assert.match(content, /编号与原文位置/, file);
+    assert.match(content, /执行记录、绑定、日志或截图变化时 Spec 轴必须复审/, file);
+    assert.match(content, /过程脚本变化时 Standards 与 Spec 双轴必须复审/, file);
+    assert.match(content, /修改代码或契约文档.*回到阶段 6/, file);
+    assert.match(content, /重跑受影响验收与全部交付命令/, file);
+    assert.match(content, /阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行/, file);
+    assert.match(content, /所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变/, file);
+  }
+  for (const file of [...workflowPaths, paths.qaPlanner, paths.guide, 'docs/adr/0054-qa-workflow-friction-reduction-and-browser-split.md']) {
+    const content = await read(file);
+    assert.match(content, /核心真实浏览器主链路/, file);
+    assert.doesNotMatch(content, /核心真机主链路/, file);
+  }
+});
+
+test('[ADR-0054] 浏览器按场景分流并限制 1–3 条核心主链路', async () => {
+  for (const file of [...workflowPaths, paths.root, paths.guide]) {
+    const content = await read(file);
+    assert.match(content, /1–3 条核心/, file);
+    assert.match(content, /Playwright/, file);
+    assert.match(content, /`ego-browser` 可见窗口/, file);
+    assert.match(content, /遵循宿主工具优先级/, file);
+  }
+  const guide = await read(paths.guide);
+  assert.doesNotMatch(guide, /page\.locator\('\[data-testid="edit-button"\]'\)/, '指南不应再提供错位 locator 示例');
+  assert.match(guide, /不走 `playwright test`/);
+  assert.match(guide, /根级直接开发依赖/);
+  assert.match(await read(paths.setup), /根级直接开发依赖/);
+});
+
+test('[ADR-0054] code-review 为单一中文指令并限制审查执行边界', async () => {
+  const content = await read('.claude/skills/code-review/SKILL.md');
+  assert.doesNotMatch(content, /Under 400 words/);
+  assert.match(content, /普通审查/);
+  assert.match(content, /git diff <fixed-point>\.\.\.HEAD/);
+  assert.match(content, /仅 QA 工作流调用时/);
+  assert.doesNotMatch(content, /两轴同时以\*\*前台\*\*/);
+  assert.match(content, /上游为 Matt Pocock Skills/);
+  assert.match(content, /Fowler 坏味道基线/);
+  assert.match(content, /不得重跑测试套件、`typecheck`、`lint` 或启动服务/);
+  assert.match(content, /严禁读取同轮另一轴的 `review\/` 原文/);
+  assert.match(content, /严禁跨特性读取其他 `\.scratch\/` 目录/);
+  assert.match(content, /禁止封存后删除 `\.source\.json` 重封/);
+});
+
+test('[ADR-0054] retro 要求跨会话检索与真实原件抽查', async () => {
+  const content = await read('.claude/skills/retro/SKILL.md');
+  assert.match(content, /按特性目录内全部文件与截图的最后修改时间，检索所有晚于特性建档的关联会话/);
+  assert.match(content, /必须用宿主图像读取工具抽查真实截图图像与 `scripts\/` 过程脚本逻辑/);
+  assert.doesNotMatch(content, /必须用 Read 抽查真实截图图像/);
+});
+
+test('[ADR-0054] to-spec 与 qa-test-planner 同步 feature 红灯与元用例规则', async () => {
+  const [toSpec, planner] = await Promise.all([read(paths.toSpec), read(paths.qaPlanner)]);
+  for (const content of [toSpec, planner]) {
+    assert.match(content, /QA Kind: feature/);
+    assert.match(content, /红灯/);
+    assert.match(content, /元用例/);
+  }
+  assert.match(toSpec, /不得把 `qa-check`、截图独立性、`review\/` 或 `handoff\.md` 合规性写成元用例/);
+  assert.match(planner, /禁止把 `qa-check` 结果、截图独立性、`review\/`、`review-report\.md` 或 `handoff\.md` 合规性写成元用例/);
 });
 
 test('[HR-TC07-2] 视觉类断言证据为几何硬断言加目标区域截图', async () => {
@@ -642,7 +729,7 @@ test('qa-check 提示把逐字纠偏限定在旧轮次，新协议按新轮次�
 });
 
 test('工具脚本与安装模板保持逐字一致且新测试复用既有接缝', async () => {
-  for (const name of ['qa-check.mjs', 'review-package.mjs']) {
+  for (const name of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs']) {
     const [tool, template] = await Promise.all([
       read(`tooling/scripts/${name}`),
       read(`.claude/skills/setup-qa-workflow/templates/${name}`),
