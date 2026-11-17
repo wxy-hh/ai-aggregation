@@ -33,6 +33,8 @@ export type {
 /** 投影所需的文档事实；格式只从 sourceType 与 storageKey 派生 */
 export interface DocumentPreviewDocumentFacts {
   id: string;
+  /** 文档所属知识库，用于生成同源认证下载路由 */
+  knowledgeBaseId: string;
   name: string;
   version: number;
   status: string;
@@ -79,6 +81,22 @@ interface PrimaryBodySource {
 
 const FAILED_FALLBACK_MESSAGE = '文档解析索引失败';
 const SIGNED_URL_EXPIRES_IN = 3600;
+
+/** 绝对 HTTP(S) 签名地址原样保留；其余相对地址视为本地存储路径 */
+function isAbsoluteHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/**
+ * 本地存储只返回 `/docs/...` 相对路径，不能直接作为浏览器下载地址。
+ * 映射到当前知识库与文档的同源认证下载路由，由下载路由按数据库中的
+ * storageKey 读取对象，避免把请求路径当作文件路径。
+ */
+function buildAuthenticatedDownloadUrl(document: DocumentPreviewDocumentFacts): string {
+  return `/api/knowledge-bases/${encodeURIComponent(
+    document.knowledgeBaseId
+  )}/documents/${encodeURIComponent(document.id)}/download`;
+}
 
 /**
  * 选择 ready 文档的首选正文来源。
@@ -257,7 +275,11 @@ export class DocumentPreviewProjection {
     }
 
     try {
-      return (await storage.getUrl(document.storageKey, SIGNED_URL_EXPIRES_IN)) || null;
+      const url = await storage.getUrl(document.storageKey, SIGNED_URL_EXPIRES_IN);
+      if (!url) {
+        return null;
+      }
+      return isAbsoluteHttpUrl(url) ? url : buildAuthenticatedDownloadUrl(document);
     } catch (error) {
       console.warn('[document-preview-projection] 获取源资产签名 URL 失败:', error);
       return null;
