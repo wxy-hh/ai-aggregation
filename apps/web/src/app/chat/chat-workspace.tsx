@@ -729,7 +729,7 @@ export default function ChatWorkspace() {
                       >
                         {currentTitle}
                       </h1>
-                      <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
+                      <div className="mt-1 hidden items-center gap-2 lg:flex">
                         {isCompareMode ? (
                           // 对比模式：多模型选择器（含「已选 N 个模型」与成本提示）
                           <ModelSelector variant="header" />
@@ -811,6 +811,7 @@ export default function ChatWorkspace() {
                             )}
                           </div>
                         )}
+                        <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
                       </div>
                     </div>
                   </div>
@@ -839,8 +840,10 @@ export default function ChatWorkspace() {
                       </button>
                     )}
 
-                    {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
-                    <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                    {/* 窄屏模式切换留在操作区；桌面端已跟在模型名后面 */}
+                    <div className="lg:hidden">
+                      <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                    </div>
                     <button
                       type="button"
                       aria-label="打开会话列表"

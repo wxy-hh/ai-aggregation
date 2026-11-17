@@ -443,6 +443,14 @@ export const conversationOrchestrator = {
         conversationOrchestrator.openComparisonSession(intent.comparisonId);
         break;
       case 'history': {
+        const existing = useConversationsStore
+          .getState()
+          .conversations.find((conversation) => conversation.id === intent.historyId);
+        if (existing) {
+          // 会话还在列表里时直接打开，避免按历史归档再复制一份
+          conversationOrchestrator.switchConversation(existing.id);
+          break;
+        }
         const historyItem = useHistoryStore.getState().getItemById(intent.historyId);
         if (historyItem?.type === 'chat') {
           conversationOrchestrator.openHistorySession(historyItem);
@@ -669,10 +677,13 @@ export const conversationOrchestrator = {
    */
   async deleteHistoryItem(id: string): Promise<void> {
     const item = useHistoryStore.getState().getItemById(id);
+    const projectedChat = useConversationsStore
+      .getState()
+      .conversations.some((conversation) => conversation.id === id);
     const sourceIds = collectRelaySourceIds([id]);
     useHistoryStore.getState().deleteItem(id);
 
-    if (item?.type === 'chat') {
+    if (item?.type === 'chat' || (!item && projectedChat)) {
       stopStreamIfGenerating(id);
       removeConversationsAndRebind([id]);
     } else if (item?.type === 'voice') {

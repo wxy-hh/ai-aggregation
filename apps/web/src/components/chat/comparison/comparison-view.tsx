@@ -13,7 +13,6 @@ import { cn } from '@/lib/utils';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
-import { toModelKey } from '@/types/comparison';
 import { ModelOverviewRail } from './model-overview-rail';
 import { FocusAnswerPane } from './focus-answer-pane';
 import { ComparisonInput } from './comparison-input';
@@ -128,21 +127,9 @@ const EmptyState = memo(function EmptyState({ models }: { models: SelectedModel[
       <div className="space-y-1.5">
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">并行对比，一题多问</h2>
         <p className="mx-auto max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
-          已选 {models.length} 个模型。输入同一个问题同时发送，先看全局状态，再聚焦比较两份完整答案，选中更好的继续追问。
+          已选 {models.length} 个模型。在下方输入同一个问题，点「同时发送」。
         </p>
       </div>
-      {models.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {models.map((m) => (
-            <span
-              key={toModelKey(m.provider, m.model)}
-              className="inline-flex items-center rounded-full border border-white/60 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300"
-            >
-              {m.label}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 });

@@ -47,6 +47,9 @@ export const RECENT_CREATION_TYPE_META: Record<
 export function getHistoryItemHref(item: HistoryItem): string | null {
   switch (item.type) {
     case 'chat':
+      if (item.mode === 'compare' && item.conversationId) {
+        return `/chat?comparisonId=${item.conversationId}`;
+      }
       return `/chat?historyId=${item.id}`;
     case 'agent':
       return `/history`;

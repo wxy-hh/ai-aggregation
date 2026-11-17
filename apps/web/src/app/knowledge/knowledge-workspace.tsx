@@ -8,8 +8,8 @@
  *    - 呈现知识库列表、文档计数
  *    - 支持新建知识库弹窗（触区 >= 44px，按钮 text="新建知识库"，placeholder="知识库名称" 对齐 QA-002）
  * 2. 详情视图双 Tab（对齐 QA-003）：
+ *    - role="tab" text="文档管理"：默认打开，加载文档列表、上传入口与切片/版本状态
  *    - role="tab" text="检索调试"：加载 RetrievalDebugger 组件
- *    - role="tab" text="文档管理"：加载文档列表、上传入口与切片/版本状态
  * 3. 移动端窄屏适配（对齐 QA-017）：
  *    - 最小触控区域 >= 44px，全屏自适应不溢出
  */
@@ -58,7 +58,7 @@ import {
 export type { KnowledgeBaseItem, DocumentItem };
 
 export function KnowledgeWorkspace() {
-  const [activeTab, setActiveTab] = React.useState('debugger');
+  const [activeTab, setActiveTab] = React.useState('documents');
 
   const {
     knowledgeBases,
@@ -226,6 +226,13 @@ export function KnowledgeWorkspace() {
         </div>
       </div>
 
+      {loading && knowledgeBases.length === 0 && (
+        <div className="space-y-3" aria-busy="true" aria-label="正在加载知识库">
+          <div className="h-11 w-56 animate-pulse rounded-xl bg-muted" />
+          <div className="h-48 animate-pulse rounded-2xl bg-muted/70" />
+        </div>
+      )}
+
       {/* 知识库水平选择条/卡片区 */}
       {knowledgeBases.length > 0 && (
         <div className="flex items-center space-x-3 overflow-x-auto pb-2 scrollbar-none">
@@ -286,18 +293,18 @@ export function KnowledgeWorkspace() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
           <TabsList className="w-full grid grid-cols-3 min-h-[44px] h-11 p-1 bg-muted/40 border border-border/40 rounded-xl">
             <TabsTrigger
-              value="debugger"
-              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
-            >
-              <Search className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">检索调试</span>
-            </TabsTrigger>
-            <TabsTrigger
               value="documents"
               className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
             >
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">文档管理</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="debugger"
+              className="min-h-[36px] h-9 rounded-lg text-xs font-semibold px-2 sm:px-4 flex items-center justify-center space-x-1.5"
+            >
+              <Search className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">检索调试</span>
             </TabsTrigger>
             <TabsTrigger
               value="faqs"

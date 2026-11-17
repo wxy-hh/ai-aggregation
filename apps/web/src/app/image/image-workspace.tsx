@@ -591,11 +591,23 @@ export default function ImageWorkspace() {
                     ) : (
                       <>
                         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">
-                          准备好开始创作了吗？
+                          {prompt.trim() ? '提示词已写好' : '先写一句想画的画面'}
                         </h2>
-                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-10 leading-relaxed">
-                          在左侧输入提示词，选择风格并点击「立即生成」开始您的艺术之旅。
+                        <p className="text-slate-500 dark:text-slate-400 max-w-sm mb-6 leading-relaxed line-clamp-3">
+                          {prompt.trim()
+                            ? prompt.trim()
+                            : '选一个快捷题材，或在参数区写下提示词，再点立即生成。'}
                         </p>
+                        {prompt.trim() ? (
+                          <Button
+                            onClick={() => handleGenerate()}
+                            disabled={isGenerating}
+                            className="mb-6 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-6 text-white shadow-lg"
+                          >
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            立即生成
+                          </Button>
+                        ) : null}
 
                         <div className="flex flex-wrap justify-center gap-3">
                           {quickStarts.map((item, i) => (

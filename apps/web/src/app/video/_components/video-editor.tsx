@@ -262,9 +262,11 @@ export function VideoEditor() {
             </div>
 
             {/* 底部控制条（固定高度壳内 CTA 已在文档流占位，不再预留大段底部空间） */}
-            <div className="px-4 pb-4 lg:px-6 lg:pb-6">
-              <TimelineBar videoUrl={videoUrl} />
-            </div>
+            {videoUrl ? (
+              <div className="px-4 pb-4 lg:px-6 lg:pb-6">
+                <TimelineBar videoUrl={videoUrl} />
+              </div>
+            ) : null}
           </section>
 
           {/* 右侧资源栏：空间不足时优先收缩，避免挤压预览区 */}

@@ -64,6 +64,20 @@ describe('对话页面入口命令', () => {
     expect(state.mode).toBe('single');
   });
 
+  it('?historyId= 对应已有会话时直接打开，不另复制一份', () => {
+    const id = useConversationsStore.getState().createConversation('deepseek', 'deepseek-chat');
+    useConversationsStore.getState().updateMessages(id, [
+      { id: 'm1', role: 'user', content: '核对引用' },
+    ]);
+    useConversationsStore.setState({ currentConversationId: null });
+
+    conversationOrchestrator.enterChatFromUrl(`?historyId=${id}`);
+
+    const state = useConversationsStore.getState();
+    expect(state.conversations).toHaveLength(1);
+    expect(state.currentConversationId).toBe(id);
+  });
+
   it('?historyId= 恢复历史会话正文', () => {
     useHistoryStore.getState().addItem(createChatHistoryItem('h-1'));
 

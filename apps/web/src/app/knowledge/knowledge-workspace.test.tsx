@@ -101,7 +101,7 @@ describe('KnowledgeWorkspace (TC05 页面级装配测试)', () => {
     expect(setSelectedKbId).toHaveBeenCalledWith('kb-2');
 
     // 点击顶部刷新按钮触发 refreshAll
-    const refreshBtn = screen.getByRole('button', { name: /刷新/ });
+    const refreshBtn = screen.getByRole('button', { name: '刷新' });
     fireEvent.click(refreshBtn);
     expect(refreshAll).toHaveBeenCalled();
   });
