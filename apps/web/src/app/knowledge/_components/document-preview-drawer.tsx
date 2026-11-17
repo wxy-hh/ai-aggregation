@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchWithAuth } from '@/lib/api/client';
+import { cn } from '@/lib/utils';
 import { CodeBlock } from '@/components/chat/code-block';
 import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
@@ -126,6 +127,12 @@ export function DocumentPreviewDrawer({
   const effectiveErrorMessage = data?.errorMessage || initialErrorMessage || null;
   const readyChunks = data?.chunks ?? [];
   const normalizedNotice = resolveNormalizedNotice(data, effectiveStatus);
+  // 下载入口的可访问名，文案与可见态保持一致（窄屏隐藏文字时仍可无障碍朗读）
+  const downloadActionLabel = downloading
+    ? '下载中'
+    : data?.sourceFormat === 'pdf'
+      ? '查看原版 PDF'
+      : '下载原文件';
 
   // 滚动容器引用与高亮节点引用
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
@@ -362,6 +369,8 @@ export function DocumentPreviewDrawer({
                     target="_blank"
                     rel="noopener noreferrer"
                     data-testid="document-source-link"
+                    aria-label="跳转原文"
+                    title="跳转原文"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">跳转原文</span>
@@ -374,9 +383,10 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className={`min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center ${
-                    downloading ? 'pointer-events-none opacity-60' : ''
-                  }`}
+                  className={cn(
+                    'min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center',
+                    downloading && 'pointer-events-none opacity-60'
+                  )}
                 >
                   <a
                     href={data.originalUrl}
@@ -385,6 +395,8 @@ export function DocumentPreviewDrawer({
                     download
                     data-testid="document-download-link"
                     onClick={handleDownloadClick}
+                    aria-label={downloadActionLabel}
+                    title={downloadActionLabel}
                     aria-disabled={downloading}
                     aria-busy={downloading}
                     tabIndex={downloading ? -1 : undefined}

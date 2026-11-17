@@ -73,3 +73,11 @@
 ### 代价与权衡 (Trade-offs)
 1. **不支持重度 CSR 单页**：对于极少数纯客户端 JS 异步渲染数据且无 SSR 的 SPA 页面，Readability 提取出的正文可能较短或不完整（但覆盖了 95% 以上的微信文章、技术博客与权威文档，该取舍完全合理）；
 2. **外部网络波动**：目标站点的反爬风控（如 Cloudflare 5s 盾或人机验证）可能导致抓取失败，需通过明确的失败状态与中文原因提示用户。
+
+---
+
+## 修订记录
+
+### 2026-11-16 修订：URL 存储 key 以实际布局为准（C7）
+
+ADR-0053 局部取代本 ADR 第 4 节的 URL key 示例：实现与后续兼容布局使用 `docs/{userId}/url-{timestamp}-{random}/v1/content.md`，不改为预生成 Document ID 的 `{safeTitle}.md` 形状，也不迁移旧对象。理由是避免为目录形状统一改变 ID 生成、上传与事务时序。URL 抓取、SSRF 防御、Markdown 提纯与 `sourceUrl` 外部溯源决策不变；`originalUrl` 与 `sourceUrl` 的预览语义由 ADR-0053 补充。

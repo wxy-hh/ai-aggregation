@@ -205,8 +205,32 @@ _Avoid_: 微信爬虫, 微信正文抓取, 微信脚本, 微信解析器
 _Avoid_: 外部抓取, 请求客户端, 通用fetch, 爬取器
 
 **DocumentPreview (文档全文预览)**:
-在知识库检索调试台或文档管理列表中，以非阻塞滑动抽屉（桌面端 Sheet / 移动端 Drawer）形式只读查阅源文档完整内容的交互容器。
-_Avoid_: 文件弹窗, 内容对话框, 附件查看器
+在知识库检索调试台、文档管理列表或聊天引用预览中，以非阻塞滑动抽屉（桌面端 Sheet / 移动端 Drawer）形式只读核对文档正文与引用切片的交互容器。Word 归一化视图可能不保留图片与原始版式，表格归一化视图可能未展示全部工作表、行或列；完整原始事实由原件保留，切片聚合不视为连续全文。
+_Avoid_: 文件弹窗, 内容对话框, 附件查看器, 原样文件阅读器
+
+**DocumentStorageLayout (文档存储布局)**:
+文档源资产与提纯 Markdown 缓存的对象定位契约，拥有各入库来源的 key 构造、SourceFormat 派生、提纯位置派生及是否需要衍生正文的纯规则；保持既有物理对象位置兼容，不执行存储读写、数据库访问或对象迁移。新索引的 Markdown/TXT 源资产不再生成重复提纯对象，历史对象保留；派生的 parsedContentKey 只表示缓存位置，不承诺对象存在或应被该格式读取。
+_Avoid_: 路径字符串拼接, 存储客户端, 文件上传服务, key 正则, 对象存在证明
+
+**DocumentPreviewProjection (文档预览读取投影)**:
+将文档状态、SourceFormat、源资产与当前版本切片转换为 DocumentPreview 只读视图的服务端计算过程，统一拥有状态门控、DocumentBodySource、切片回退、源资产下载与读取失败语义；不承担认证与租户归属校验，也不改变文档解析、索引或物理存储布局。
+_Avoid_: 内容路由, 文件下载器, 文档解析器, 预览 UI, 数据库仓储
+
+**DocumentBodySource (预览正文来源)**:
+就绪文档正文的事实来源及保真语义：`stored` 表示直接读取源资产，`derived` 表示读取 StructuredDocNormalization 生成的提纯 Markdown，`chunks` 表示当前版本切片视图；非就绪文档不产生正文来源。切片视图允许逐片表头与上下文重复，不冒充连续全文；该分类独立于索引状态与预览可用性状态。
+_Avoid_: 正文拼接, 原文兜底, 文件类型, 内容拼装
+
+**DocumentSourceAsset (文档源资产)**:
+文档在对象存储中的源对象，与外部网页原文地址和索引状态相互独立：本地上传文档对应上传原件，UrlDocument 与 ArtifactKnowledgeDeposit 对应归一化 Markdown 快照。外部网页原文地址只承担外部溯源，不属于文档源资产，也不与存储快照互相替代。
+_Avoid_: 原文链接, 预览正文, 切片内容
+
+**SourceFormat (源资产格式)**:
+文档当前源资产的对象格式，与 Document.sourceType 表示的来源渠道、DocumentPreview 的渲染方式相互独立；本地上传文档保留上传文件格式，UrlDocument 与 ArtifactKnowledgeDeposit 的源资产为归一化 Markdown。该格式是存储布局派生事实，同时驱动 Worker 解析器选择与预览正文政策，不以文档展示标题为依据，也不另设用户可编辑字段；展示标题只承担名称与表格上下文语义。
+_Avoid_: 文件后缀, 展示类型, 渲染格式, 标题后缀, fileType
+
+**RenderMode (文档预览渲染方式)**:
+DocumentPreview 消费正文的方式，与文档来源和 SourceFormat 解耦；PDF 使用切片渲染，其余受支持文档使用 Markdown 渲染，不能仅因源资产是 Word 或表格就把原始二进制当作可渲染正文。
+_Avoid_: 原始文件类型, 来源类型, 文件格式, fileType
 
 **CitationAnchorHighlight (切片锚点定位高亮)**:
 依据检索命中切片的结构化锚点（chunkIndex、headingPath、pageNumber），在全文预览视图中自动平滑滚动并将对应正文段落赋予焦点强调色，免除用户二次全文搜索。

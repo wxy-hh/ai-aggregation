@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { useShallow } from 'zustand/shallow';
@@ -75,17 +75,24 @@ export function useRedirectRealUserToHome() {
   const initialize = useAuthStore((s) => s.initialize);
   const router = useRouter();
 
-  // 来源回跳或显式登出表示客户端应清理残留快照，不能仅凭快照再次跳回首页
-  const isServerUnauthenticated = typeof window !== 'undefined' && (() => {
-    try {
-      const searchParams = new URLSearchParams(window.location.search);
-      return searchParams.has('redirect') || searchParams.has('logout');
-    } catch {
-      return false;
-    }
-  })();
+  // 来源回跳或显式登出表示客户端应清理残留快照，不能仅凭快照再次跳回首页。
+  // 查询参数只能在水合完成后读取：服务端没有 window，首帧若直接按查询参数分支，
+  // 会出现服务端渲染占位、客户端渲染登录表单的 hydration mismatch。
+  const [isServerUnauthenticated, setIsServerUnauthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      setIsServerUnauthenticated(searchParams.has('redirect') || searchParams.has('logout'));
+    } catch {
+      setIsServerUnauthenticated(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 查询参数判定完成前不执行跳转/清理，避免带 redirect 的残留认证态被误跳 /home
+    if (isServerUnauthenticated === null) return;
+
     if (isServerUnauthenticated) {
       if (isAuthenticated) {
         // 显式回跳/登出入口强制同步重置客户端脏状态并清理存储
@@ -111,7 +118,7 @@ export function useRedirectRealUserToHome() {
     }
   }, [status, isAuthenticated, isServerUnauthenticated, initialize, router]);
 
-  if (isServerUnauthenticated) {
+  if (isServerUnauthenticated === true) {
     return false;
   }
 

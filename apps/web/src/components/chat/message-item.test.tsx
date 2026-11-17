@@ -163,6 +163,30 @@ describe('MessageItem Markdown 渲染 (行内代码 vs 独立代码块)', () => 
     expect(screen.queryByText('引用来源 [^1]')).not.toBeInTheDocument();
   });
 
+  it('提供 onOpenCitation 但引用无锚点时仍弹出 Popover 并提示未匹配物理切片锚点 (Spec P-X1)', async () => {
+    const user = userEvent.setup();
+    const onOpenCitation = vi.fn();
+
+    const message: Message = {
+      id: 'msg-cite-no-anchor',
+      role: 'assistant',
+      content: '根据珀金协议 [^1] 规定，满足条件将熔断。',
+      isStreaming: false,
+    };
+
+    render(<MessageItem message={message} onOpenCitation={onOpenCitation} />);
+
+    // 无锚点时角标仍是 Popover 触发器，而非直达全文抽屉的裸按钮
+    const badge = screen.getByTestId('citation-badge-1');
+    expect(badge).toHaveAttribute('aria-haspopup', 'dialog');
+
+    await user.click(badge);
+
+    expect(await screen.findByText('引用来源 [^1]')).toBeInTheDocument();
+    expect(screen.getByText(/该条引用未匹配到物理切片锚点/)).toBeInTheDocument();
+    expect(onOpenCitation).not.toHaveBeenCalled();
+  });
+
   it('未提供 onOpenCitation 时点击行内角标仍展示 Popover 来源详情', async () => {
     const user = userEvent.setup();
     const mockCitation = {

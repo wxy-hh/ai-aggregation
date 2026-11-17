@@ -154,6 +154,9 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(downloadLink).toHaveAttribute('href', originalUrl);
       expect(downloadLink).not.toHaveAttribute('href', externalUrl);
       expect(downloadLink).toHaveTextContent('下载原文件');
+      // 窄屏隐藏可见文案时，中文可访问名仍可朗读
+      expect(downloadLink).toHaveAttribute('aria-label', '下载原文件');
+      expect(downloadLink).toHaveAttribute('title', '下载原文件');
       expect(downloadLink).toHaveClass('min-h-[44px]');
       expect(downloadLink).toHaveClass('min-w-[44px]');
     });
@@ -196,6 +199,8 @@ describe('DocumentPreviewDrawer 组件', () => {
 
       const openPdfBtn = screen.getByText('查看原版 PDF');
       expect(openPdfBtn.closest('a')).toHaveAttribute('href', originalUrl);
+      expect(openPdfBtn.closest('a')).toHaveAttribute('aria-label', '查看原版 PDF');
+      expect(openPdfBtn.closest('a')).toHaveAttribute('title', '查看原版 PDF');
     });
   });
 
@@ -305,10 +310,13 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(sourceLink).toHaveAttribute('target', '_blank');
       expect(sourceLink).toHaveAttribute('rel', 'noopener noreferrer');
       expect(sourceLink).toHaveTextContent('跳转原文');
+      expect(sourceLink).toHaveAttribute('aria-label', '跳转原文');
+      expect(sourceLink).toHaveAttribute('title', '跳转原文');
 
       const downloadLink = screen.getByTestId('document-download-link');
       expect(downloadLink).toHaveAttribute('href', originalUrl);
       expect(downloadLink).toHaveTextContent('下载原文件');
+      expect(downloadLink).toHaveAttribute('aria-label', '下载原文件');
 
       expect(sourceLink).not.toHaveAttribute('href', originalUrl);
       expect(downloadLink).not.toHaveAttribute('href', sourceUrl);
@@ -349,6 +357,7 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(screen.getByText('下载中...')).toBeInTheDocument();
       expect(downloadLink).toHaveAttribute('aria-disabled', 'true');
       expect(downloadLink).toHaveAttribute('aria-busy', 'true');
+      expect(downloadLink).toHaveAttribute('aria-label', '下载中');
       expect(downloadLink).toHaveClass('pointer-events-none');
     });
 
@@ -362,6 +371,7 @@ describe('DocumentPreviewDrawer 组件', () => {
       expect(mockFetchWithAuth).toHaveBeenNthCalledWith(2, originalUrl);
       expect(mockSaveAs).toHaveBeenCalledWith(blob, '季度报告.docx');
       expect(screen.getByText('下载原文件')).toBeInTheDocument();
+      expect(downloadLink).toHaveAttribute('aria-label', '下载原文件');
       expect(downloadLink).not.toHaveAttribute('aria-disabled', 'true');
       expect(downloadLink).not.toHaveClass('pointer-events-none');
     });

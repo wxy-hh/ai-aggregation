@@ -3,7 +3,9 @@
  *
  * 核心设计契约：
  * 1. 向量列 (embedding vector(1024)) 与词法全文检索生成列 (content_tsv tsvector)
- *    为 Prisma Unsupported 类型，严禁经由 ORM 进行读写，所有读写操作必须收敛于本模块 raw SQL。
+ *    为 Prisma Unsupported 类型，严禁经由 ORM 进行读写，这两类列的读写必须收敛于本模块 raw SQL。
+ *    普通预览字段（切片正文、元数据、页码等）不属于该约束，调用方可直接用 Prisma 查询，
+ *    不为此增加仅一层转发的间接层。
  * 2. 检索阶段 ACL 权限控制（userId / knowledgeBaseId）必须在 SQL 层前置过滤，严禁全量拉取后在应用层过滤。
  * 3. 稠密向量路基于 cosine 距离运算符 (<=>)，词法检索路基于 simple 字典与 ts_rank_cd。
  */
