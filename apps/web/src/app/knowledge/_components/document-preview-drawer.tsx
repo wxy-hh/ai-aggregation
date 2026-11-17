@@ -19,10 +19,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchWithAuth } from '@/lib/api/client';
 import { CodeBlock } from '@/components/chat/code-block';
 import { saveAs } from 'file-saver';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -115,7 +117,9 @@ export function DocumentPreviewDrawer({
 }: DocumentPreviewDrawerProps) {
   const [data, setData] = React.useState<DocumentPreviewData | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const downloadInFlightRef = React.useRef(false);
 
   // 计算当前有效文档状态与错误提示 (US-12)
   const effectiveStatus = data?.status || initialStatus || 'ready';
@@ -172,6 +176,12 @@ export function DocumentPreviewDrawer({
       }
 
       event.preventDefault();
+      if (downloadInFlightRef.current) {
+        return;
+      }
+
+      downloadInFlightRef.current = true;
+      setDownloading(true);
       try {
         const res = await fetchWithAuth(url);
         if (!res.ok) {
@@ -181,6 +191,14 @@ export function DocumentPreviewDrawer({
         saveAs(blob, data.name || 'document');
       } catch (err: unknown) {
         console.error('[DocumentPreviewDrawer] 下载源资产失败:', err);
+        const message =
+          err instanceof Error && err.message.startsWith('下载失败')
+            ? err.message
+            : '下载文档失败，请稍后重试';
+        toast.error(message);
+      } finally {
+        downloadInFlightRef.current = false;
+        setDownloading(false);
       }
     },
     [data]
@@ -287,39 +305,45 @@ export function DocumentPreviewDrawer({
                 <DialogTitle className="text-base sm:text-lg font-bold text-foreground truncate">
                   {data?.name || documentName || '文档全文预览'}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-1 flex items-center flex-wrap gap-2">
-                  <span>版本: v{data?.version ?? documentVersion ?? 1}</span>
-                  {data?.chunkCount != null && (
-                    <>
-                      <span>•</span>
-                      <span>{data.chunkCount} 个切片</span>
-                    </>
-                  )}
-                  {data?.sourceFormat && (
-                    <>
-                      <span>•</span>
-                      <span
-                        data-testid="document-format-badge"
-                        className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {SOURCE_FORMAT_LABELS[data.sourceFormat] ?? '未知格式'}
-                      </span>
-                    </>
-                  )}
-                  {effectiveStatus !== 'ready' && (
-                    <>
-                      <span>•</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          effectiveStatus === 'failed'
-                            ? 'bg-destructive/15 text-destructive'
-                            : 'bg-secondary text-secondary-foreground'
-                        }`}
-                      >
-                        {effectiveStatus === 'failed' ? '失败' : '索引中'}
-                      </span>
-                    </>
-                  )}
+                <DialogDescription
+                  asChild
+                  className="text-xs text-muted-foreground mt-1 flex items-center flex-wrap gap-2"
+                >
+                  <div>
+                    <span>版本: v{data?.version ?? documentVersion ?? 1}</span>
+                    {data?.chunkCount != null && (
+                      <>
+                        <span>•</span>
+                        <span>{data.chunkCount} 个切片</span>
+                      </>
+                    )}
+                    {data?.sourceFormat && (
+                      <>
+                        <span>•</span>
+                        <Badge
+                          variant="secondary"
+                          data-testid="document-format-badge"
+                          className="rounded-full px-1.5 py-0 text-xs font-medium"
+                        >
+                          {SOURCE_FORMAT_LABELS[data.sourceFormat] ?? '未知格式'}
+                        </Badge>
+                      </>
+                    )}
+                    {effectiveStatus !== 'ready' && (
+                      <>
+                        <span>•</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            effectiveStatus === 'failed'
+                              ? 'bg-destructive/15 text-destructive'
+                              : 'bg-secondary text-secondary-foreground'
+                          }`}
+                        >
+                          {effectiveStatus === 'failed' ? '失败' : '索引中'}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </DialogDescription>
               </div>
             </div>
@@ -350,7 +374,9 @@ export function DocumentPreviewDrawer({
                   variant="outline"
                   size="sm"
                   asChild
-                  className="min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center"
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-xl text-xs gap-1.5 flex items-center justify-center ${
+                    downloading ? 'pointer-events-none opacity-60' : ''
+                  }`}
                 >
                   <a
                     href={data.originalUrl}
@@ -359,8 +385,16 @@ export function DocumentPreviewDrawer({
                     download
                     data-testid="document-download-link"
                     onClick={handleDownloadClick}
+                    aria-disabled={downloading}
+                    aria-busy={downloading}
+                    tabIndex={downloading ? -1 : undefined}
                   >
-                    {data.sourceFormat === 'pdf' ? (
+                    {downloading ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span className="hidden sm:inline">下载中...</span>
+                      </>
+                    ) : data.sourceFormat === 'pdf' ? (
                       <>
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">查看原版 PDF</span>
