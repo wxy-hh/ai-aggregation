@@ -133,9 +133,12 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
       errorMessage: '文件编码格式异常，无法完成切片',
       version: 1,
       chunkCount: 0,
+      sourceType: 'file',
+      sourceUrl: null,
       deletedAt: null,
     };
     mocks.docFindFirst.mockResolvedValueOnce(mockDoc);
+    mocks.storageGetUrl.mockResolvedValueOnce('https://storage.example.com/failed.md?token=abc');
 
     const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/documents/doc_failed/content');
     const res = await GET(req, {
@@ -148,6 +151,9 @@ describe('GET /api/knowledge-bases/[id]/documents/[docId]/content (只读文档�
     expect(json.data.status).toBe('failed');
     expect(json.data.errorMessage).toBe('文件编码格式异常，无法完成切片');
     expect(json.data.content).toBe('');
+    expect(json.data.chunks).toEqual([]);
+    expect(json.data.chunkCount).toBeNull();
+    expect(json.data.originalUrl).toBe('https://storage.example.com/failed.md?token=abc');
   });
 
   it('针对 PDF 文档：聚合切片结构化文本并附带带签名的原版临时下载 URL', async () => {

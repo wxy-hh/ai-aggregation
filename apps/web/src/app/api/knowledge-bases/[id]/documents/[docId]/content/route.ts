@@ -5,6 +5,7 @@
  * - GET /api/knowledge-bases/[id]/documents/[docId]/content
  *   - 权限守卫：强制认证用户并校验知识库与文档所属权 (userId === user.id)；
  *   - 越权/不存在/已软删除：一律返回 404 Not Found；
+ *   - 非 ready：交给 DocumentPreviewProjection 返回真实状态事实、空正文/切片与源资产下载边界；
  *   - Markdown/TXT：通过对象存储下载原始 Buffer 并转为 UTF-8 正文字符串；
  *   - PDF：聚合数据库已处理切片并生成 1 小时有效期的原版安全临时下载 URL。
  */
@@ -15,6 +16,7 @@ import { createStorageProvider } from '@repo/storage';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
+import { DocumentPreviewProjection } from '@/lib/rag/document-preview-projection';
 
 interface RouteContext {
   params: Promise<{ id: string; docId: string }>;
@@ -48,26 +50,18 @@ export async function GET(req: NextRequest, context: RouteContext) {
       return ApiError.notFound('文档不存在');
     }
 
+    // 非 ready：由投影返回真实状态事实、空正文/切片与源资产下载边界，不读取正文或切片
+    if (document.status !== 'ready') {
+      const projection = new DocumentPreviewProjection({
+        getStorage: createStorageProvider,
+      });
+      const { data } = await projection.projectNonReady(document);
+      return createSuccessResponse(data);
+    }
+
     const fileName = document.name;
     const lastDotIndex = fileName.lastIndexOf('.');
     const ext = lastDotIndex !== -1 ? fileName.slice(lastDotIndex).toLowerCase() : '';
-
-    // 若文档状态为失败：直接返回结构化失败状态模型，不抛 500，供前端展示失败原因面板 (US-12)
-    if (document.status === 'failed') {
-      return createSuccessResponse({
-        id: document.id,
-        name: document.name,
-        version: document.version,
-        chunkCount: document.chunkCount,
-        status: 'failed',
-        errorMessage: document.errorMessage || '文档解析索引失败',
-        fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'text' : 'markdown',
-        content: '',
-        chunks: [],
-        sourceType: document.sourceType,
-        sourceUrl: document.sourceUrl,
-      });
-    }
 
     // 查询该版本切片元数据（用于高亮锚点与章节导航）
     const chunks = await prisma.documentChunk.findMany({
@@ -143,9 +137,6 @@ export async function GET(req: NextRequest, context: RouteContext) {
         console.warn('[document/content] 从存储层读取原文件失败，回退从切片聚合正文:', storageErr);
         if (chunks.length > 0) {
           content = chunks.map((c) => c.content).join('\n\n');
-        } else if (document.status === 'pending' || document.status === 'processing') {
-          // 处理中且无切片：优雅返回空内容模型，供前端展示处理中状态 (US-12)
-          content = '';
         } else {
           throw storageErr;
         }

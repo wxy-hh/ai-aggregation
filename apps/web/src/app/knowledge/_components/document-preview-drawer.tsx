@@ -66,7 +66,7 @@ interface DocumentContentData {
   id: string;
   name: string;
   version: number;
-  chunkCount: number;
+  chunkCount: number | null;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   errorMessage?: string | null;
   fileType: 'markdown' | 'text' | 'pdf' | 'docx' | 'xlsx' | 'csv' | string;
@@ -249,8 +249,12 @@ export function DocumentPreviewDrawer({
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-1 flex items-center flex-wrap gap-2">
                   <span>版本: v{data?.version ?? documentVersion ?? 1}</span>
-                  <span>•</span>
-                  <span>{data?.chunkCount ?? 0} 个切片</span>
+                  {data?.chunkCount != null && (
+                    <>
+                      <span>•</span>
+                      <span>{data.chunkCount} 个切片</span>
+                    </>
+                  )}
                   {data?.fileType && (
                     <>
                       <span>•</span>
