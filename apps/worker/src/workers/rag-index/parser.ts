@@ -2,18 +2,24 @@
  * RAG 文档解析、切块与应用层分词器
  *
  * 核心设计契约：
- * 1. PDF：提取各页文本并记录实际页码（pageNumber，1-based），若文件损坏抛出明确的致命中文异常
- * 2. Markdown：扫描标题结构并维护标题栈，产出 headingPath（例如「一级标题 > 二级标题」）
- * 3. TXT：按自然段落与语义切块
- * 4. 语义切块器：基于 RecursiveCharacterTextSplitter（500~800 tokens，约 10% 重叠）
- * 5. 应用层中文分词：基于 @node-rs/jieba 预载词典，空格分隔写入 contentSegmented
+ * 1. 解析器选择：调用方按显式 SourceFormat 分流；fileName 只保留 Word/表格标题、工作簿上下文与错误语义
+ * 2. PDF：提取各页文本并记录实际页码（pageNumber，1-based），若文件损坏抛出明确的致命中文异常
+ * 3. Markdown：扫描标题结构并维护标题栈，产出 headingPath（例如「一级标题 > 二级标题」）
+ * 4. TXT：按自然段落与语义切块
+ * 5. 语义切块器：基于 RecursiveCharacterTextSplitter（500~800 tokens，约 10% 重叠）
+ * 6. 应用层中文分词：基于 @node-rs/jieba 预载词典，空格分隔写入 contentSegmented
  */
 
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 import { PDFParse } from 'pdf-parse';
-import { RAG_CHUNK_CONFIG, estimateTokenCount, type DocumentOutline } from '@repo/shared';
+import {
+  RAG_CHUNK_CONFIG,
+  estimateTokenCount,
+  type DocumentOutline,
+  type SourceFormat,
+} from '@repo/shared';
 import { parseDocxBuffer } from './docx-parser';
 import { parseTableBuffer, parseCsvString } from './table-parser';
 import { buildDocumentOutline } from './outline-extractor';
@@ -262,50 +268,53 @@ export async function parseTxtString(content: string): Promise<ParsedChunk[]> {
 }
 
 /**
- * 统一文档解析入口：按文件后缀分流到不同解析器
+ * 统一文档解析入口：只按显式 SourceFormat 分流到对应解析器。
+ * fileName 仅作为 Word/表格的标题、工作簿上下文与错误语义，绝不参与解析器选择。
  */
 export async function parseDocument(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
+  sourceFormat: SourceFormat
 ): Promise<ParsedDocumentChunks> {
-  const lower = fileName.toLowerCase();
+  switch (sourceFormat) {
+    case 'pdf': {
+      const chunks = await parsePdfBuffer(buffer);
+      return Object.assign(chunks, { fullMarkdown: undefined, outline: undefined });
+    }
 
-  if (lower.endsWith('.pdf')) {
-    const chunks = await parsePdfBuffer(buffer);
-    return Object.assign(chunks, { fullMarkdown: undefined, outline: undefined });
+    case 'docx': {
+      const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
+      const outline = buildDocumentOutline(fullMarkdown, chunks);
+      return Object.assign(chunks, { fullMarkdown, outline });
+    }
+
+    case 'xlsx': {
+      const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
+      return Object.assign(chunks, { fullMarkdown, outline: undefined });
+    }
+
+    case 'csv': {
+      const { chunks, fullMarkdown } = await parseCsvString(buffer.toString('utf-8'), fileName);
+      return Object.assign(chunks, { fullMarkdown, outline: undefined });
+    }
+
+    case 'md': {
+      const textContent = buffer.toString('utf-8');
+      const chunks = await parseMarkdownString(textContent);
+      const outline = buildDocumentOutline(textContent, chunks);
+      return Object.assign(chunks, { fullMarkdown: textContent, outline });
+    }
+
+    case 'txt': {
+      const textContent = buffer.toString('utf-8');
+      const chunks = await parseTxtString(textContent);
+      return Object.assign(chunks, { fullMarkdown: textContent, outline: undefined });
+    }
+
+    case 'unknown':
+      throw new DocumentParseError(
+        `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown、TXT、Word 与表格文件`,
+        true
+      );
   }
-
-  if (lower.endsWith('.docx')) {
-    const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
-    const outline = buildDocumentOutline(fullMarkdown, chunks);
-    return Object.assign(chunks, { fullMarkdown, outline });
-  }
-
-  if (lower.endsWith('.xlsx')) {
-    const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
-    return Object.assign(chunks, { fullMarkdown, outline: undefined });
-  }
-
-  const textContent = buffer.toString('utf-8');
-
-  if (lower.endsWith('.csv')) {
-    const { chunks, fullMarkdown } = await parseCsvString(textContent, fileName);
-    return Object.assign(chunks, { fullMarkdown, outline: undefined });
-  }
-
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-    const chunks = await parseMarkdownString(textContent);
-    const outline = buildDocumentOutline(textContent, chunks);
-    return Object.assign(chunks, { fullMarkdown: textContent, outline });
-  }
-
-  if (lower.endsWith('.txt')) {
-    const chunks = await parseTxtString(textContent);
-    return Object.assign(chunks, { fullMarkdown: textContent, outline: undefined });
-  }
-
-  throw new DocumentParseError(
-    `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown、TXT、Word 与表格文件`,
-    true
-  );
 }
