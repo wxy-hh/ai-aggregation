@@ -37,17 +37,6 @@ export interface UpdateFaqInput {
   enabled?: boolean;
 }
 
-export interface FaqMatchResult {
-  faqId: string;
-  knowledgeBaseId: string;
-  question: string;
-  answer: string;
-  matchedQuestionText: string;
-  similarity: number;
-  isShortCircuit: boolean;
-  isGroundTruth: boolean;
-}
-
 export interface FaqImportResult {
   total: number;
   successCount: number;

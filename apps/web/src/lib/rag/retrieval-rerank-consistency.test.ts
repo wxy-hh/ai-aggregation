@@ -86,7 +86,7 @@ describe('单库检索与 Agent 跨库检索精排政策一致性集成测试 (T
           searchLexicalFn: async () => [],
         }),
       findKnowledgeBasesFn: async () => [{ id: 'kb-1', name: '技术库' }],
-      findBestFaqMatchFn: async () => null,
+      matchFaqFn: async () => ({ kind: 'no-match', reason: 'below-threshold' }),
       rerankProvider: mockProvider,
     });
 
@@ -144,7 +144,7 @@ describe('单库检索与 Agent 跨库检索精排政策一致性集成测试 (T
           searchLexicalFn: async () => [],
         }),
       findKnowledgeBasesFn: async () => [{ id: 'kb-1', name: '技术库' }],
-      findBestFaqMatchFn: async () => null,
+      matchFaqFn: async () => ({ kind: 'no-match', reason: 'below-threshold' }),
       rerankProvider: failingProvider,
     });
 
@@ -198,7 +198,7 @@ describe('单库检索与 Agent 跨库检索精排政策一致性集成测试 (T
           searchLexicalFn: async () => [],
         }),
       findKnowledgeBasesFn: async () => [{ id: 'kb-1', name: '技术库' }],
-      findBestFaqMatchFn: async () => null,
+      matchFaqFn: async () => ({ kind: 'no-match', reason: 'below-threshold' }),
       rerankProvider: allLowProvider,
     });
 
@@ -228,7 +228,7 @@ describe('单库检索与 Agent 跨库检索精排政策一致性集成测试 (T
           searchLexicalFn: async () => [],
         }),
       findKnowledgeBasesFn: async () => [{ id: 'kb-1', name: '技术库' }],
-      findBestFaqMatchFn: async () => null,
+      matchFaqFn: async () => ({ kind: 'no-match', reason: 'below-threshold' }),
       rerankProvider: failingProvider,
     });
 

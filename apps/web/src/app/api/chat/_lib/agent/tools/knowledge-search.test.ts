@@ -43,7 +43,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
 
   const createTestTool = (deps: Parameters<typeof createKnowledgeSearchTool>[0] = {}) =>
     createKnowledgeSearchTool({
-      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      matchFaqFn: vi.fn().mockResolvedValue({ kind: 'no-match', reason: 'below-threshold' }),
       ...deps,
     });
 
@@ -110,9 +110,11 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
 
   it('3. 跨用户隔离：越权访问他人知识库被直接拒绝 (QA-010)', async () => {
     const mockVerifyKb = vi.fn().mockResolvedValue(null); // 他人的知识库校验返回 null
+    const mockMatchFaq = vi.fn();
 
     const tool = createTestTool({
       verifyKnowledgeBaseFn: mockVerifyKb,
+      matchFaqFn: mockMatchFaq,
     });
 
     const result = await tool.execute(
@@ -123,6 +125,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.ok).toBe(false);
     expect(result.contentForModel).toContain('指定的知识库不存在或您无权访问');
     expect(result.summaryForDisplay).toBe('指定的知识库不存在或无权访问');
+    expect(mockMatchFaq).not.toHaveBeenCalled();
   });
 
   it('4. 无库用户兜底：名下无有效知识库时提示用户建库 (QA-010)', async () => {
@@ -264,14 +267,15 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
 
   it('8. TC07-1: 当提问与 FAQ 相似度在 0.78 到 0.92 区间时，置顶包含【官方权威标准口径 (Ground Truth)】文本块 (ADR-0027)', async () => {
     const mockFindFaq = vi.fn().mockResolvedValue({
-      faqId: 'faq-123',
-      knowledgeBaseId: 'kb-1',
-      question: '如何申请发票？',
-      answer: '请在财务中心点击索取发票，系统自动开具电子专票。',
-      matchedQuestionText: '怎么开发票',
-      similarity: 0.85,
-      isShortCircuit: false,
-      isGroundTruth: true,
+      kind: 'ground-truth',
+      faq: {
+        faqId: 'faq-123',
+        knowledgeBaseId: 'kb-1',
+        question: '如何申请发票？',
+        answer: '请在财务中心点击索取发票，系统自动开具电子专票。',
+        matchedQuestionText: '怎么开发票',
+        similarity: 0.85,
+      },
     });
 
     const mockFindKbs = vi.fn().mockResolvedValue([
@@ -296,7 +300,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
         },
       }),
       findKnowledgeBasesFn: mockFindKbs,
-      findBestFaqMatchFn: mockFindFaq,
+      matchFaqFn: mockFindFaq,
     });
 
     const result = await tool.execute({ query: '怎么开发票' }, mockContext);
@@ -306,6 +310,13 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.contentForModel).toContain('标准问题：如何申请发票？');
     expect(result.contentForModel).toContain('权威答案：请在财务中心点击索取发票，系统自动开具电子专票。');
     expect(result.summaryForDisplay).toContain('命中官方FAQ');
+    expect(mockFindFaq).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-alice',
+        query: '怎么开发票',
+        scene: 'agent-retrieval',
+      })
+    );
   });
 
   it('9. TC04.1: 多知识库并发检索时各库粗排召回，外层统一发起 1 次 Rerank 交叉打分 (ADR-0030)', async () => {
@@ -620,10 +631,11 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     });
 
     const mockFindKbs = vi.fn().mockResolvedValue([{ id: 'kb-1', name: '技术知识库' }]);
+    const mockMatchFaq = vi.fn();
     const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
-      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      matchFaqFn: mockMatchFaq,
     });
 
     const rawArgs = {
@@ -641,6 +653,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     // 验证 citations 字典内部锚点对象完整保留 headingPath 属性 (P-W3)
     const firstAnchor = citations[1] as { headingPath?: string } | undefined;
     expect(firstAnchor?.headingPath).toBe('第 1 章 > 第 1 节');
+    expect(mockMatchFaq).not.toHaveBeenCalled();
   });
 
   it('15. 下钻定向检索：入参 headingPath 与 documentId 格式完整保留至输出与引用', async () => {
@@ -687,7 +700,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     const tool = createTestTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
-      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      matchFaqFn: vi.fn().mockResolvedValue({ kind: 'no-match', reason: 'below-threshold' }),
     });
 
     const result = await tool.execute(
@@ -704,7 +717,7 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     expect(result.contentForModel).toContain('角色包含管理员、审核员与普通用户');
   });
 
-  it('16. TC03-1 契约验证：KnowledgeSearchDeps 移除 embedFaqFn，未注入 findBestFaqMatchFn 时安全执行且控制台无报错堆栈', async () => {
+  it('16. TC03-1 契约验证：KnowledgeSearchDeps 未注入 matchFaqFn 时安全执行且控制台无报错堆栈', async () => {
     const warnSpy = vi.spyOn(console, 'warn');
     const mockRetrieval = vi.fn().mockResolvedValue({
       query: '普通检索',
@@ -739,8 +752,8 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     const tool = createKnowledgeSearchTool({
       hybridRetrievalFn: mockRetrieval,
       findKnowledgeBasesFn: mockFindKbs,
-      // 显式传入 safe null mock，验证隔离环境下无外部网络击穿与 FAQ 报错
-      findBestFaqMatchFn: vi.fn().mockResolvedValue(null),
+      // 显式传入 safe no-match mock，验证隔离环境下无外部网络击穿与 FAQ 报错
+      matchFaqFn: vi.fn().mockResolvedValue({ kind: 'no-match', reason: 'below-threshold' }),
       rerankProvider: mockRerankProvider,
     });
 
@@ -751,6 +764,202 @@ describe('knowledge_search 只读工具 (工单 08 / ADR-0021)', () => {
     // 纯黑盒断言：验证控制台无任何警告堆栈输出 (P-W2)
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  it('17. FAQ 政策输入只含知识库级范围，不携带文档/章节/元数据过滤', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '角色定义',
+      preparedLexicalQuery: '角色 定义',
+      topK: 20,
+      chunks: [createMockChunk({ chunkId: 'c-filter', content: '过滤后的切片' })],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 10,
+      stats: {
+        embeddingDurationMs: 1,
+        denseDurationMs: 1,
+        lexicalDurationMs: 1,
+        fusionDurationMs: 1,
+        totalDurationMs: 10,
+      },
+    });
+    const mockMatchFaq = vi.fn().mockResolvedValue({ kind: 'no-match', reason: 'below-threshold' });
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: vi.fn().mockResolvedValue([{ id: 'kb-1', name: '制度库' }]),
+      matchFaqFn: mockMatchFaq,
+    });
+
+    await tool.execute(
+      {
+        query: '角色定义',
+        documentId: 'doc-1',
+        headingPath: '3. 系统架构 > 3.2 权限控制',
+        filter: { tags: ['财务'] },
+      },
+      mockContext
+    );
+
+    const policyInput = mockMatchFaq.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(policyInput).toMatchObject({
+      userId: 'user-alice',
+      query: '角色定义',
+      scene: 'agent-retrieval',
+    });
+    expect(policyInput).not.toHaveProperty('documentId');
+    expect(policyInput).not.toHaveProperty('headingPath');
+    expect(policyInput).not.toHaveProperty('filter');
+  });
+
+  it('18. 普通文档检索保留最近创建三库，FAQ 政策可独立命中另一知识库', async () => {
+    const kbs = [
+      { id: 'kb-created-1', name: '新库1' },
+      { id: 'kb-created-2', name: '新库2' },
+      { id: 'kb-created-3', name: '新库3' },
+      { id: 'kb-created-4', name: '新库4' },
+    ];
+    const mockRetrieval = vi.fn().mockImplementation(async ({ knowledgeBaseId }) => ({
+      query: '退款',
+      preparedLexicalQuery: '退款',
+      topK: 5,
+      chunks: [createMockChunk({ chunkId: `chunk-${knowledgeBaseId}`, content: `切片-${knowledgeBaseId}` })],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 5,
+      stats: {
+        embeddingDurationMs: 1,
+        denseDurationMs: 1,
+        lexicalDurationMs: 1,
+        fusionDurationMs: 1,
+        totalDurationMs: 5,
+      },
+    }));
+    const mockMatchFaq = vi.fn().mockResolvedValue({
+      kind: 'ground-truth',
+      faq: {
+        faqId: 'faq-other',
+        knowledgeBaseId: 'kb-created-4',
+        question: '退款多久到账？',
+        answer: '1–3 个工作日。',
+        matchedQuestionText: '退款多久到账？',
+        similarity: 0.88,
+      },
+    });
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: vi.fn().mockResolvedValue(kbs),
+      matchFaqFn: mockMatchFaq,
+    });
+
+    const result = await tool.execute({ query: '退款多久到账？' }, mockContext);
+
+    expect(mockRetrieval).toHaveBeenCalledTimes(3);
+    const searchedKbIds = mockRetrieval.mock.calls.map(
+      (call) => (call[0] as { knowledgeBaseId: string }).knowledgeBaseId
+    );
+    expect(searchedKbIds).toEqual(['kb-created-1', 'kb-created-2', 'kb-created-3']);
+    expect(result.contentForModel).toContain('切片-kb-created-1');
+    expect(result.contentForModel).toContain('官方权威标准口径 (Ground Truth)');
+    expect(result.contentForModel).toContain('1–3 个工作日。');
+  });
+
+  it('19. FAQ 政策异常时普通文档切片仍返回', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '制度',
+      preparedLexicalQuery: '制度',
+      topK: 5,
+      chunks: [createMockChunk({ chunkId: 'c-ok', content: '文档切片仍可用' })],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 5,
+      stats: {
+        embeddingDurationMs: 1,
+        denseDurationMs: 1,
+        lexicalDurationMs: 1,
+        fusionDurationMs: 1,
+        totalDurationMs: 5,
+      },
+    });
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: vi.fn().mockResolvedValue([{ id: 'kb-1', name: '制度库' }]),
+      matchFaqFn: vi.fn().mockRejectedValue(new Error('faq down')),
+    });
+
+    const result = await tool.execute({ query: '制度是什么' }, mockContext);
+
+    expect(result.ok).toBe(true);
+    expect(result.contentForModel).toContain('文档切片仍可用');
+    expect(result.contentForModel).not.toContain('官方权威标准口径 (Ground Truth)');
+  });
+
+  it('21. FAQ no-match 不注入权威口径且摘要不声称官方命中', async () => {
+    const tool = createTestTool({
+      hybridRetrievalFn: vi.fn().mockResolvedValue({
+        query: '普通检索',
+        preparedLexicalQuery: '普通 检索',
+        topK: 5,
+        chunks: [createMockChunk({ chunkId: 'c-plain', content: '普通切片' })],
+        denseMatches: [],
+        lexicalMatches: [],
+        durationMs: 5,
+        stats: {
+          embeddingDurationMs: 1,
+          denseDurationMs: 1,
+          lexicalDurationMs: 1,
+          fusionDurationMs: 1,
+          totalDurationMs: 5,
+        },
+      }),
+      findKnowledgeBasesFn: vi.fn().mockResolvedValue([{ id: 'kb-1', name: '制度库' }]),
+      matchFaqFn: vi.fn().mockResolvedValue({ kind: 'no-match', reason: 'below-threshold' }),
+    });
+
+    const result = await tool.execute({ query: '普通检索' }, mockContext);
+
+    expect(result.contentForModel).not.toContain('官方权威标准口径 (Ground Truth)');
+    expect(result.summaryForDisplay).not.toContain('命中官方FAQ');
+    expect(result.contentForModel).toContain('普通切片');
+  });
+
+  it('20. Agent 长问题不被普通短路的 500 字符限制截断', async () => {
+    const mockRetrieval = vi.fn().mockResolvedValue({
+      query: '长问题',
+      preparedLexicalQuery: '长问题',
+      topK: 5,
+      chunks: [],
+      denseMatches: [],
+      lexicalMatches: [],
+      durationMs: 5,
+      stats: {
+        embeddingDurationMs: 1,
+        denseDurationMs: 1,
+        lexicalDurationMs: 1,
+        fusionDurationMs: 1,
+        totalDurationMs: 5,
+      },
+    });
+    const mockMatchFaq = vi.fn().mockResolvedValue({
+      kind: 'ground-truth',
+      faq: {
+        faqId: 'faq-long',
+        knowledgeBaseId: 'kb-1',
+        question: '长问题标准问',
+        answer: '长问题标准答案。',
+        matchedQuestionText: '长问题标准问',
+        similarity: 0.8,
+      },
+    });
+    const tool = createTestTool({
+      hybridRetrievalFn: mockRetrieval,
+      findKnowledgeBasesFn: vi.fn().mockResolvedValue([{ id: 'kb-1', name: '制度库' }]),
+      matchFaqFn: mockMatchFaq,
+    });
+
+    const result = await tool.execute({ query: '退'.repeat(501) }, mockContext);
+
+    expect(mockMatchFaq).toHaveBeenCalledTimes(1);
+    expect(result.contentForModel).toContain('长问题标准答案。');
   });
 });
 

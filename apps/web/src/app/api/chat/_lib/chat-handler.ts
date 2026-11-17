@@ -95,6 +95,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         messages,
         model,
         provider,
+        chatScene,
         reservationId,
         agent,
         capabilityPack,
@@ -145,14 +146,23 @@ export function createChatHandler(config: ChatHandlerConfig) {
       const lastUserMsg = messages[messages.length - 1];
       if (
         !approvalResume &&
+        !agent &&
+        chatScene !== 'compare' &&
+        !reservationId &&
         lastUserMsg &&
         lastUserMsg.role === 'user' &&
         typeof lastUserMsg.content === 'string'
       ) {
-        const shortCircuitFaq = await checkFaqShortCircuit({
-          userId: user.id,
-          query: lastUserMsg.content,
-        });
+        let shortCircuitFaq: Awaited<ReturnType<typeof checkFaqShortCircuit>> = null;
+        try {
+          shortCircuitFaq = await checkFaqShortCircuit({
+            userId: user.id,
+            query: lastUserMsg.content,
+            hasCurrentAttachments: Boolean(lastUserMsg.attachments?.length),
+          });
+        } catch (error) {
+          console.warn('[chat] FAQ 前置短路异常，按无 FAQ 降级', { errorId, error });
+        }
         if (shortCircuitFaq) {
           console.log('[chat] 触发 FAQ 前置强短路直出', {
             userId: user.id,

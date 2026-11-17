@@ -32,6 +32,7 @@ const {
   getAvailableQuotaMock,
   agentRunCreateMock,
   evaluateAgentProgressMock,
+  faqShortCircuitMock,
 } = vi.hoisted(() => {
   class AgnesUpstreamError extends Error {
     status: number;
@@ -53,6 +54,7 @@ const {
     agentRunCreateMock: vi.fn(),
     // 默认质检通过；各 describe 的 vi.clearAllMocks 不清除 vi.fn 的初始实现
     evaluateAgentProgressMock: vi.fn(async () => ({ passed: true, missingAspects: [] as string[] })),
+    faqShortCircuitMock: vi.fn(),
   };
 });
 
@@ -71,6 +73,19 @@ vi.mock('@/lib/auth/get-current-user', () => ({ getCurrentUser: currentUserMock 
 vi.mock('@repo/redis', () => ({ getRateLimiter: () => rateLimiterMock }));
 vi.mock('@/lib/billing/quota-session', () => ({
   QuotaSession: { reserve: quotaSessionReserveMock },
+}));
+vi.mock('./faq-short-circuit', () => ({
+  checkFaqShortCircuit: faqShortCircuitMock,
+  createFaqShortCircuitStream: () =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encode = (value: unknown) =>
+          new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`);
+        controller.enqueue(encode({ type: 'text-delta', text: '官方标准口径答复\n不应出现' }));
+        controller.enqueue(encode({ type: 'done' }));
+        controller.close();
+      },
+    }),
 }));
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: getAvailableQuotaMock,
@@ -155,6 +170,7 @@ describe('agent 模式编排（HTTP 级）', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    faqShortCircuitMock.mockReset();
     setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
@@ -223,6 +239,47 @@ describe('agent 模式编排（HTTP 级）', () => {
     );
     expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
     expect(fakeSession.finalize.mock.calls[0][0]).toBe('success');
+  });
+
+  it('FAQ 高置信度不前置短路：Agent 继续模型编排与配额生命周期', async () => {
+    faqShortCircuitMock.mockResolvedValue({
+      question: '如何申请退款？',
+      answer: '在订单中心申请退款即可。',
+      faqId: 'faq-1',
+    });
+    streamTextMock
+      .mockReturnValueOnce(
+        makeFakeResult({
+          toolCalls: [
+            { toolCallId: 'call_faq', toolName: 'web_fetch', input: { url: 'https://example.com' } },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['Agent 正常回答'],
+          usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        })
+      );
+
+    const response = await handler(
+      agentRequest({ messages: [{ role: 'user', content: '如何申请退款？' }] })
+    );
+    expect(response.status).toBe(200);
+    const events = await readSseEvents(response);
+
+    expect(faqShortCircuitMock).not.toHaveBeenCalled();
+    expect(events).toContainEqual({ type: 'text-delta', text: 'Agent 正常回答' });
+    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    expect(quotaSessionReserveMock).toHaveBeenCalledTimes(1);
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
+    const runData = agentRunCreateMock.mock.calls[0]?.[0]?.data as {
+      toolCalls?: unknown[];
+      durationMs?: number;
+    };
+    expect(runData.toolCalls).toHaveLength(1);
+    expect(typeof runData.durationMs).toBe('number');
   });
 
   it('模型调用工具 → 事件序列 tool_call → tool_result → text-delta → done，且 usage 为两步汇总', async () => {
@@ -1311,6 +1368,7 @@ describe('agent 模式 · image_generate（真实工具实现 + 上游替身）'
 
   beforeEach(() => {
     vi.clearAllMocks();
+    faqShortCircuitMock.mockReset();
     setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
@@ -1915,6 +1973,7 @@ describe('审批恢复契约接入（评审 C4）', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    faqShortCircuitMock.mockReset();
     setupAiSdkMocks();
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');

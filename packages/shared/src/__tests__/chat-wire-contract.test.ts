@@ -381,6 +381,28 @@ describe('projectWireHistory', () => {
   });
 });
 
+describe('parseChatRequestBody chatScene', () => {
+  it('TC01-1: chatScene 缺省归一为 single，合法 compare 原样保留', () => {
+    const missing = parseChatRequestBody(minimalBody());
+    expect(missing.ok).toBe(true);
+    if (!missing.ok) return;
+    expect(missing.body.chatScene).toBe('single');
+
+    const compare = parseChatRequestBody(minimalBody({ chatScene: 'compare' }));
+    expect(compare.ok).toBe(true);
+    if (!compare.ok) return;
+    expect(compare.body.chatScene).toBe('compare');
+  });
+
+  it('TC01-2: 非法 chatScene 拒绝且 details 指向 chatScene', () => {
+    const result = parseChatRequestBody(minimalBody({ chatScene: 'compare-typo' }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_CHAT_REQUEST');
+    expect(result.error.details.some((item) => item.path === 'chatScene')).toBe(true);
+  });
+});
+
 describe('parseBatchReserveBody', () => {
   it('批量预留解析：空 models 拒绝、超 8 拒绝、逐元素 provider 校验、无 user 消息拒绝', () => {
     const base = { messages: [{ role: 'user', content: '对比' }] };
