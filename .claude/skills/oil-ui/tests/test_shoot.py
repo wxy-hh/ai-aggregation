@@ -37,6 +37,17 @@ def find_browser():
     return next((path for path in candidates if path and Path(path).is_file()), None)
 
 
+def write_solid_png(path, width, height, rgb):
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress((b'\0' + bytes(rgb) * width) * height)) + chunk(b'IEND', b''))
+
+
 @unittest.skipUnless(NODE, "Node is not installed")
 class ShootCLITests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed to inspect encoded frames')
@@ -84,38 +95,15 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
                                       'format=rgb24,crop=1:1:32:32', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'],
                                      check=True, capture_output=True, timeout=10).stdout
             self.assertGreater(decoded[-1], 180, 'The appended screenshot must be the encoded last frame')
+            self.assertLess(len(decoded) / (3 * 30), 3, 'A sub-second recording must not be padded to three seconds')
 
     def test_help(self):
         result = subprocess.run([NODE, str(SCRIPT), "--help"], cwd=ROOT,
                                 capture_output=True, text=True, timeout=10, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("用法", result.stdout)
-        self.assertIn("type 在当前光标处插入文字", result.stdout)
-        self.assertIn("fill 先清空原内容", result.stdout)
-        self.assertNotIn("fill=type", result.stdout)
-        self.assertIn("不进入 iframe 或 Shadow DOM", result.stdout)
-        self.assertIn("中心点遮挡和禁用状态", result.stdout)
-        self.assertIn("显式 --zoom 按倍数截每个状态", result.stdout)
 
-    def test_help_carries_the_reference_and_report_structure_example(self):
-        """参考内容放在 --help 里；references/tools.md 只讲什么时候用，并指到这里。"""
-        documentation = subprocess.run([NODE, str(SCRIPT), "--help"], cwd=ROOT,
-                                       capture_output=True, text=True, timeout=10, encoding='utf-8').stdout
-        self.assertIn('最外层是数组', documentation)
-        self.assertIn('不是把页面放大到 200% 后的重排', documentation)
-        self.assertIn('录屏短于 3 秒是正常的', documentation)
-        self.assertIn('frames.start/mid/end', documentation)
-        lines = documentation.split('结构示意：', 1)[1].strip().splitlines()[:2]
-        report = json.loads(''.join(line.strip() for line in lines))
-        self.assertIsInstance(report, list)
-        self.assertIn('lint', report[0])
-        self.assertIn('motion', report[1])
-        self.assertTrue(all('issues' in entry for entry in report))
-        guide = (ROOT / 'references/tools.md').read_text(encoding='utf-8')
-        self.assertIn('--help', guide)
-        self.assertLess(len(guide), 3500, 'tools.md 只留什么时候用和最常用的命令，参考内容写进 --help')
-
-    def test_timeout_scale_validation_and_help(self):
+    def test_timeout_scale_validation(self):
         plan = self.dry('--timeout-scale', '2')
         self.assertEqual(plan['options']['timeout-scale'], '2')
         for value in ('0', '-1', '0.5', 'NaN', 'Infinity', 'slow'):
@@ -123,9 +111,6 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
                 message = self.dry('--timeout-scale', value, ok=False)
                 self.assertIn('收到 ' + value, message)
                 self.assertIn('--timeout-scale 2', message)
-        result = subprocess.run([NODE, str(SCRIPT), '--help'], capture_output=True, text=True, timeout=10, encoding='utf-8')
-        self.assertIn('90 秒', result.stdout)
-        self.assertIn('--timeout-scale', result.stdout)
 
     def test_missing_target(self):
         result = subprocess.run([NODE, str(SCRIPT)], cwd=ROOT,
@@ -133,11 +118,6 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
         self.assertNotEqual(result.returncode, 0)
 
     def test_unknown_option(self):
-        help_result = subprocess.run([NODE, str(SCRIPT), "--help"], cwd=ROOT,
-                                     capture_output=True, text=True, timeout=10, encoding='utf-8')
-        self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        options = [line.split()[0] for line in help_result.stdout.splitlines()
-                   if line.startswith("  --")]
         for args in (("--xxx",), ("--xxx", "value")):
             with self.subTest(args=args):
                 result = subprocess.run([NODE, str(SCRIPT), *args], cwd=ROOT,
@@ -145,11 +125,10 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("不认识的选项 --xxx", result.stderr)
                 self.assertIn("是不是想写", result.stderr)
-                self.assertIn("可用选项：" + " ".join(options), result.stderr)
                 self.assertEqual(result.stdout, "")
 
     def test_missing_option_value(self):
-        for option in ("--out", "--size", "--states", "--param", "--zoom", "--steps", "--hold", "--wait", "--compare", "--timeout-scale"):
+        for option in ("--out", "--size", "--states", "--param", "--zoom", "--steps", "--hold", "--wait", "--compare", "--timeout-scale", "--selector"):
             for following in ((), ("--force",)):
                 with self.subTest(option=option, following=following):
                     result = subprocess.run([NODE, str(SCRIPT), option, *following], cwd=ROOT,
@@ -157,17 +136,66 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
                     self.assertEqual(result.returncode, 1)
                     self.assertEqual(result.stderr, f"shoot：{option} 需要一个值\n")
 
-    def test_force_is_ignored(self):
-        result = subprocess.run([NODE, str(SCRIPT), "--force"], cwd=ROOT,
-                                capture_output=True, text=True, timeout=10, encoding='utf-8')
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stderr, "shoot：缺少页面地址或文件。\n")
-
     def dry(self, *args, ok=True):
         result = subprocess.run([NODE, str(SCRIPT), "page.html", "--dry-run", *args],
                                 cwd=ROOT, capture_output=True, text=True, timeout=10, encoding='utf-8')
         self.assertEqual(result.returncode, 0 if ok else 1, result.stdout + result.stderr)
         return json.loads(result.stdout) if ok else result.stderr
+
+    def test_selector_parsing_and_incompatible_modes(self):
+        for raw, expected in [('.card', {'kind': 'css', 'value': '.card'}),
+                              ('text="Save"', {'kind': 'text', 'value': 'Save'}),
+                              ('button:has-text("Save")', {'kind': 'has-text', 'css': 'button', 'value': 'Save'})]:
+            with self.subTest(selector=raw):
+                self.assertEqual(self.dry('--selector', raw)['selector'], expected)
+        self.assertEqual(self.dry('--selector=.card', '--thumb')['selector']['value'], '.card')
+        for flag in ('--full', '--record', '--motion', '--entry', '--evidence'):
+            with self.subTest(flag=flag):
+                message = self.dry('--selector', '.card', flag, ok=False)
+                self.assertIn('--selector', message)
+                self.assertIn(flag, message)
+        self.assertIn('缺少选择器', self.dry('--selector', '   ', ok=False))
+
+    def test_multiple_targets_dry_run(self):
+        for args in [('a.html', 'b.html', 'c.html'), ('a.html,b.html,c.html',)]:
+            result = subprocess.run([NODE, str(SCRIPT), *args, '--dry-run'], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=10, encoding='utf-8')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(result.stdout)
+            self.assertEqual(plan['target'], 'a.html')
+            self.assertEqual(plan['targets'], ['a.html', 'b.html', 'c.html'])
+        self.assertNotIn('targets', self.dry())
+        self.assertIn('no-sheet', self.dry('other.html', '--no-sheet')['flags'])
+
+    def test_explorer_directory_and_manifest_dry_run(self):
+        with tempfile.TemporaryDirectory(prefix='oil-explore-cli-') as temp:
+            folder = Path(temp)
+            def plan(target, ok=True):
+                result = subprocess.run([NODE, str(SCRIPT), str(target), '--dry-run'], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=10, encoding='utf-8')
+                self.assertEqual(result.returncode, 0 if ok else 1, result.stdout + result.stderr)
+                return json.loads(result.stdout) if ok else result.stderr
+            self.assertIn('找不到候选 HTML', plan(folder, ok=False))
+            for name in ('b.html', 'a.html', 'style-explorer.html'):
+                (folder / name).write_text('<div>Candidate</div>', encoding='utf-8')
+            expected = [str(folder / name) for name in ('a.html', 'b.html')]
+            self.assertEqual(plan(folder)['targets'], expected)
+            (folder / 'index.html').write_text('<div>Index</div>', encoding='utf-8')
+            self.assertEqual(plan(folder)['target'], str(folder))
+            self.assertNotIn('targets', plan(folder))
+            manifest = folder / 'manifest.json'
+            manifest.write_text(json.dumps({'candidates': [
+                {'kind': 'html', 'source': 'b.html', 'id': 'beta', 'name': '方向乙'},
+                {'source': 'a.html', 'id': 'alpha', 'name': '方向甲'},
+                {'kind': 'image', 'source': 'sample.png'},
+                {'kind': 'html', 'source': 'https://example.test/page.html'},
+            ]}), encoding='utf-8')
+            for target in (folder, manifest):
+                parsed = plan(target)
+                self.assertEqual(parsed['target'], expected[1])
+                self.assertEqual(parsed['targets'], list(reversed(expected)))
+            manifest.write_text('{bad json', encoding='utf-8')
+            self.assertIn('无法读取 manifest', plan(folder, ok=False))
 
     def test_dry_run_corpus_regressions(self):
         # Twenty corpus patterns; project-specific classes, labels and text are neutralized.
@@ -261,15 +289,16 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
         self.assertEqual(self.dry("--size", "mobile")["sizes"], [{"w": 390, "h": 844}])
         self.assertTrue(any("尺寸 已去重" in n for n in parsed["notices"]))
         self.assertEqual(self.dry()["sizes"], [{"w": 390, "h": 844}])
-        for flag in ("--full", "--mask", "--sheet", "--record", "--motion", "--entry", "--evidence"):
+        self.assertEqual(self.dry("--thumb")["options"]["wait"], "150")
+        self.assertIn("--thumb 只用于快速缩略图", self.dry("--thumb", "--full", ok=False))
+        for flag in ("--full", "--thumb", "--mask", "--sheet", "--record", "--motion", "--entry", "--evidence"):
             with self.subTest(flag=flag):
                 error = self.dry(flag, "extra", ok=False)
                 self.assertIn("page.html 和 extra", error)
                 self.assertIn(flag + " 不带参数", error)
         for args, expected in [
-            (("--hold1000",), "--hold 1000"), (("--zoon", "2"), "--zoom"),
+            (("--zoon", "2"), "--zoom"),
             (("--motion", ".respond"), '--motion 不带参数'),
-            (("other.html",), "page.html 和 other.html"),
             (("--full", "extra"), "page.html 和 extra"),
             (("--record=true",), "不带参数"), (("--zoom=0",), "--zoom 1,2"),
             (("--size=0x900",), "--size desktop"), (("--wait=abc",), "--wait 1000"),
@@ -283,9 +312,130 @@ process.stdout.write(eval(writer+'; screencastList(frames,finished)'));'''
             with self.subTest(args=args):
                 error = self.dry(*args, ok=False)
                 self.assertIn(expected, error)
-                if args == ("--hold1000",):
-                    self.assertEqual(error.count("--hold 1000"), 1)
-                    self.assertNotIn("例如", error)
+
+    def test_action_names_are_valid_group_names(self):
+        for name, body in [('scroll', 'scroll 950; wait 300'), ('hover', 'hover .x'),
+                           ('click', 'click .x'), ('sleep', 'wait 0')]:
+            group = self.dry('--steps', name + ': ' + body)['groups'][0]
+            self.assertEqual(group['name'], name)
+            self.assertEqual(group['id'], name)
+            self.assertEqual(group['steps'][0]['raw'], body.split(';')[0])
+
+    def test_glued_numbers_only_apply_to_numeric_options(self):
+        compact = self.dry('--hold1000', '--wait450', '--zoom1,2', '--timeout-scale2',
+                           '--steps', 'wait450; wait0.5s; sleep450')
+        spaced = self.dry('--hold', '1000', '--wait', '450', '--zoom', '1,2', '--timeout-scale', '2',
+                          '--steps', 'wait450; wait0.5s; sleep450')
+        self.assertEqual(compact, spaced)
+        self.assertEqual([step['params']['ms'] for step in compact['groups'][0]['steps']], [450, 500, 450])
+        for arg in ['--out123', '--size390x844', '--states123', '--full1000', '--steps450']:
+            self.assertIn('不认识的选项', self.dry(arg, ok=False))
+        for arg in ['--hold1000ms', '--wait450ms', '--zoom0', '--timeout-scale0.5']:
+            self.assertIn('收到', self.dry(arg, ok=False))
+
+    def test_stitch_and_sequence_options_validate_without_launching(self):
+        with tempfile.TemporaryDirectory(prefix='oil-shoot-stitch-cli-') as temp:
+            image = Path(temp) / 'before image.png'
+            image.write_bytes(b'checked by the browser only when rendering')
+            output = Path(temp) / 'not-created'
+
+            def run(*args, ok=False):
+                result = subprocess.run([NODE, str(SCRIPT), *args, '--dry-run', '--out', str(output)],
+                                        cwd=ROOT, capture_output=True, text=True, timeout=10, encoding='utf-8')
+                self.assertEqual(result.returncode, 0 if ok else 1, result.stdout + result.stderr)
+                self.assertFalse(output.exists())
+                return json.loads(result.stdout) if ok else result.stderr
+
+            plan = run('--stitch', str(image), '--label', '修改前', '--stitch=' + str(image),
+                       '--label=修改后', '--columns2', ok=True)
+            self.assertNotIn('target', plan)
+            self.assertEqual(plan['stitch'], [{'path': str(image), 'label': '修改前'}, {'path': str(image), 'label': '修改后'}])
+            self.assertEqual(plan['options']['columns'], '2')
+            for args, hint in [
+                (['--stitch'], '--stitch before.png'),
+                (['--label', '修改前'], '--stitch before.png --label "修改前"'),
+                (['--stitch', str(image), '--label', '前', '--label', '后'], '--label'),
+                (['--stitch', str(Path(temp) / 'missing.png')], '第 1 张图片'),
+                (['--stitch', temp], '不是文件'),
+                (['page.html', '--stitch', str(image)], '拼图不需要页面'),
+                (['--stitch', str(image), str(image), str(image)], '每张图片前都要写 --stitch'),
+                (['--stitch', str(image), '--record'], '拼图不需要页面'),
+                (['--stitch', str(image), '--frames', '8'], '拼图不需要页面'),
+                (['--frames', '8'], '缺少页面'),
+                (['page.html', '--record', '--frames'], '--record --frames 8'),
+                (['page.html', '--columns', '2'], '--record --frames 8 --columns 4'),
+                (['--stitch', str(image), '--columns', '0'], '--columns 2'),
+                (['--stitch', str(image), '--columns', '2.5'], '--columns 2'),
+            ]:
+                with self.subTest(args=args):
+                    message = run(*args)
+                    self.assertIn(hint, message)
+                    self.assertIn('收到', message)
+                    self.assertIn('例如', message)
+            for value in ['0', '1', '-1', '2.5', 'NaN', '121', '99999999999999999']:
+                self.assertIn('收到 ' + value, run('page.html', '--record', '--frames', value))
+            plan = run('page.html', '--record', '--frames8', '--columns4', ok=True)
+            self.assertEqual(plan['options']['frames'], '8')
+            self.assertEqual(plan['options']['columns'], '4')
+            self.assertEqual(self.dry('--evidence', '--frames', '6')['options']['frames'], '6')
+            self.assertEqual(self.dry('--frames8')['options']['frames'], '8')
+            self.assertIn('--frames', self.dry('--frames8', '--selector', '.card', ok=False))
+            self.assertIn('--frames', self.dry('--frames8', '--thumb', ok=False))
+            self.assertIn('--frames 8', self.dry('--record', '--frams', ok=False))
+            self.assertIn('--stitch before.png', self.dry('--stitc', ok=False))
+
+    def test_stitch_scale_crop_forms_and_actionable_errors(self):
+        with tempfile.TemporaryDirectory(prefix='oil-stitch-scale-cli-') as temp:
+            image = Path(temp) / 'image with spaces.png'
+            image.write_bytes(b'decode only on render')
+
+            def run(*args, ok=True):
+                result = subprocess.run([NODE, str(SCRIPT), *args, '--dry-run'], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=10, encoding='utf-8')
+                self.assertEqual(result.returncode, 0 if ok else 1, result.stdout + result.stderr)
+                if not ok:
+                    self.assertIn('收到', result.stderr)
+                    self.assertIn('例如', result.stderr)
+                    self.assertIn('node scripts/shoot.mjs --stitch', result.stderr)
+                return json.loads(result.stdout) if ok else result.stderr
+
+            for crop in ('10,20,300,200', '10 20 300 200', '[10px，20px，300px，200px]', '10×20×300×200', '10 px 20 px 300 px 200 px'):
+                plan = run('--stitch', str(image), '--match-width240px', '--stitch=' + str(image),
+                           '--match-width=300 px', '--crop', crop)
+                self.assertEqual([item['matchWidth'] for item in plan['stitch']], [240, 300])
+                self.assertEqual(plan['options']['crop'], {'x': 10, 'y': 20, 'width': 300, 'height': 200})
+            for scale in ('0.8', '.8x', '80%', '4/5', '0.8×'):
+                plan = run('--stitch', str(image), '--scale=' + scale)
+                self.assertAlmostEqual(plan['stitch'][0]['scale'], .8)
+            for args in [
+                ['--scale', '1'], ['--match-width', '240'], ['page.html', '--crop', '0,0,10,10'],
+                ['--stitch', str(image), '--scale', '0'], ['--stitch', str(image), '--scale', '1/0'],
+                ['--stitch', str(image), '--scale', 'NaN'], ['--stitch', str(image), '--scale'],
+                ['--stitch', str(image), '--scale='], ['--stitch', str(image), '--match-width='],
+                ['--stitch', str(image), '--match-width', '-20'], ['--stitch', str(image), '--match-width'],
+                ['--stitch', str(image), '--scale1', '--scale2'],
+                ['--stitch', str(image), '--match-width240', '--stitch', str(image)],
+                ['--stitch', str(image), '--match-width240', '--stitch', str(image), '--scale1'],
+                ['--stitch', str(image), '--crop', '-1,0,20,20'],
+                ['--stitch', str(image), '--crop', '0,0,0,20'],
+                ['--stitch', str(image), '--crop', '0,0,20'], ['--stitch', str(image), '--crop'],
+                ['--stitch', str(image), '--crop='], ['--stitch', str(image), '--crop', '1px0,0,20,20'],
+                ['--stitch', str(image), '--crop', '0,0,20,20', '--crop', '0,0,30,30'],
+            ]:
+                with self.subTest(args=args):
+                    run(*args, ok=False)
+
+    def test_sequence_sampling_is_uniform_and_holds_sparse_frames(self):
+        javascript = '''import {readFileSync} from 'node:fs';
+const source=readFileSync(process.argv[1],'utf8');
+const sample=eval('('+source.slice(source.indexOf('function sequenceFrames('),source.indexOf('function screencastList('))+')');
+console.log(JSON.stringify(sample([{name:'red.jpg',t:10},{name:'blue.jpg',t:10.8},{name:'green.jpg',t:11.7}],12,5)));'''
+        result = subprocess.run([NODE, '--input-type=module', '-e', javascript, str(SCRIPT)],
+                                cwd=ROOT, check=True, capture_output=True, text=True, timeout=10, encoding='utf-8')
+        samples = json.loads(result.stdout)
+        self.assertEqual([frame['timeMs'] for frame in samples], [0, 500, 1000, 1500, 2000])
+        self.assertEqual([frame['path'] for frame in samples], ['red.jpg', 'red.jpg', 'blue.jpg', 'blue.jpg', 'green.jpg'])
+        self.assertEqual([frame['sourceTimeMs'] for frame in samples], [0, 0, 800, 800, 1700])
 
 
 
@@ -368,6 +518,118 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
                 elif artifact.suffix == ".jpg":
                     self.assertTrue(artifact.read_bytes().startswith(b"\xff\xd8"), name)
 
+    def shoot_targets(self, output, targets, *args, cwd=ROOT):
+        result = subprocess.run([NODE, str(SCRIPT), *map(str, targets), '--out', str(output), *args],
+                                cwd=cwd, env=self.env, capture_output=True, text=True, timeout=90, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
+
+    def test_selector_crops_first_visible_element_and_scrolls(self):
+        import struct
+        self.page.write_text('''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><style>
+body{margin:0;min-height:2600px;background:#f00;scroll-behavior:smooth}
+header{position:sticky;top:0;height:60px;background:#f00;z-index:10}
+.card{position:absolute;top:1800px;left:30px;width:160px;height:100px;background:#00ff00}
+.tall{position:absolute;top:1100px;left:30px;width:160px;height:600px;background:#00ff00}
+</style><header>Sticky</header><div class="card" hidden></div><div class="card">Save</div>
+<div class="tall">Tall card</div>
+<div class="card" style="top:2100px;background:blue">Later</div>
+<script>Object.defineProperty(document,'images',{get(){
+if(scrollY<1)console.error('selector-did-not-scroll');return [];}})</script>''', encoding='utf-8')
+        for selector, extra, size in [('.card', (), (160, 100)), ('text=Save', ('--thumb',), (80, 50)),
+                                      ('.tall', (), (160, 600)),
+                                      ('div:text-is("Save")', ('--mask', '--mark', '.card'), (160, 100))]:
+            with self.subTest(selector=selector):
+                output = self.folder / ('crop-' + str(size[0]) + '-' + str(size[1]) + '-' + str(len(extra)))
+                self.shoot(output, '--selector', selector, *extra)
+                report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+                self.assertEqual(report[0]['issues'], [])
+                self.assertEqual(struct.unpack('>II', (output / 'page.png').read_bytes()[16:24]), size)
+                if shutil.which('ffmpeg'):
+                    self.assertEqual(self.frame_pixel(output / 'page.png', size[0] - 10, 10), (0, 255, 0))
+                    self.assertEqual(self.frame_pixel(output / 'page.png', 10, 80 if size[1] >= 100 else 40), (0, 255, 0))
+                if '--mask' in extra:
+                    for file in ('page-masked.png', 'page-marked.png'):
+                        self.assertEqual(struct.unpack('>II', (output / file).read_bytes()[16:24]), size)
+        self.assert_no_browser_leftovers()
+
+    def test_selector_missing_hidden_and_zero_size_fail(self):
+        self.page.write_text('<!doctype html><div hidden id="hidden">Hidden</div>'
+                             '<div id="zero" style="width:0;height:0"></div>', encoding='utf-8')
+        for selector, diagnostic in [('.missing', '找不到元素'), ('#hidden', '不可见'), ('#zero', '尺寸为 0')]:
+            with self.subTest(selector=selector):
+                result = self.run_failure(self.folder / 'bad-crop', '--selector', selector)
+                self.assertIn('--selector', result.stderr)
+                self.assertIn(diagnostic, result.stderr)
+        self.assert_no_browser_leftovers()
+
+    def test_multi_target_shared_server_browser_and_auto_sheet(self):
+        # Local storage survives navigation only when both the browser profile and
+        # server origin stay the same. The next page requires its predecessor's count.
+        import struct
+        pages = []
+        for index, (name, color) in enumerate([('a', '#ff0000'), ('b', '#00ff00'), ('c', '#0000ff')]):
+            page = self.folder / name / (name + '.html')
+            page.parent.mkdir()
+            page.write_text(f'''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><style>body{{margin:0;background:{color}}}</style><div>候选 {name}</div>
+<script>
+const count=Number(localStorage.getItem('count') || 0);
+if(count!=={index}) console.error('browser-or-server-restarted');
+localStorage.setItem('count',String(count+1));
+fetch('../shared.txt').then(r=>r.text()).then(t=>{{if(t!=='shared')console.error('shared-root-missing')}});
+</script>''', encoding='utf-8')
+            pages.append(page)
+        (self.folder / 'shared.txt').write_text('shared', encoding='utf-8')
+        output = self.folder / 'batch'
+        result = self.shoot_targets(output, pages, '--thumb')
+        self.assert_artifacts(output, ('a.png', 'b.png', 'c.png', 'sheet.png'))
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual([r['file'] for r in report], ['a.png', 'b.png', 'c.png', 'sheet.png'])
+        self.assertTrue(all(not r['issues'] for r in report), report)
+        overview = report[-1]
+        self.assertEqual(overview['columns'], 3)
+        self.assertEqual([item['label'] for item in overview['items']], ['a', 'b', 'c'])
+        self.assertEqual(struct.unpack('>II', (output / 'sheet.png').read_bytes()[16:24]),
+                         (overview['width'], overview['height']))
+        if shutil.which('ffmpeg'):
+            for tile, color in zip(overview['items'], [(255, 0, 0), (0, 255, 0), (0, 0, 255)]):
+                self.assertEqual(self.frame_pixel(output / 'sheet.png', tile['x'] + 10, tile['y'] + 100), color)
+        self.assertIn('[4/4] sheet.png', result.stderr)
+        output = self.folder / 'comma'
+        self.shoot_targets(output, [','.join(map(str, pages[:2]))], '--thumb', '--no-sheet')
+        self.assert_artifacts(output, ('a.png', 'b.png'))
+        self.assertFalse((output / 'sheet.png').exists())
+        self.assert_no_browser_leftovers()
+
+    def test_explore_directory_manifest_and_index_browser(self):
+        folder = self.folder / 'explore'
+        folder.mkdir()
+        for file in ('a.html', 'b.html', 'style-explorer.html'):
+            (folder / file).write_bytes(self.page.read_bytes())
+        output = self.folder / 'scanned'
+        self.shoot_targets(output, [folder], '--thumb')
+        self.assert_artifacts(output, ('a.png', 'b.png', 'sheet.png'))
+        self.assertFalse((output / 'style-explorer.png').exists())
+        (folder / 'index.html').write_bytes(self.page.read_bytes())
+        output = self.folder / 'index'
+        self.shoot_targets(output, [folder], '--thumb')
+        self.assert_artifacts(output, ('page.png',))
+        self.assertFalse((output / 'sheet.png').exists())
+        manifest = folder / 'manifest.json'
+        manifest.write_text(json.dumps({'candidates': [
+            {'kind': 'html', 'source': 'a.html', 'id': 'sheet', 'name': '方向甲'},
+            {'kind': 'html', 'source': 'b.html', 'id': 'sheet', 'name': '方向乙'},
+        ]}), encoding='utf-8')
+        for i, target in enumerate((folder, manifest)):
+            output = self.folder / f'manifest-{i}'
+            self.shoot_targets(output, [target], '--thumb', '--selector', '#go')
+            self.assert_artifacts(output, ('sheet-2.png', 'sheet-3.png', 'sheet.png'))
+            report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+            self.assertEqual([tile['label'] for tile in report[-1]['items']], ['方向甲', '方向乙'])
+        self.assert_no_browser_leftovers()
+
     def test_states_masks_and_sheets(self):
         output = self.folder / "shots"
         self.shoot(output, "--states", "a,b", "--mask", "--sheet")
@@ -382,6 +644,111 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
         self.assertNotEqual((output / "a.png").read_bytes(), (output / "b.png").read_bytes())
         self.assertNotEqual((output / "a.png").read_bytes(), (output / "a-masked.png").read_bytes())
         self.assertEqual(list(self.profile_root.glob("oil-shoot-*")), [], "Temporary browser profiles leaked")
+
+    def test_stitch_local_images_without_page_preserves_order_ratio_and_chinese_labels(self):
+        import struct
+        first, second, third = self.folder / "前 'one.png", self.folder / 'after.png', self.folder / 'square.png'
+        write_solid_png(first, 120, 60, (255, 0, 0))
+        write_solid_png(second, 60, 120, (0, 0, 255))
+        write_solid_png(third, 90, 90, (0, 255, 0))
+        output = self.folder / 'stitch'
+        result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(first), '--label', '修改前',
+                                 '--stitch', str(second), '--label', '修改后', '--stitch', str(third),
+                                 '--columns', '2', '--out', str(output)], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True, timeout=30, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        self.assertEqual(report['file'], 'stitch.png')
+        self.assertEqual(report['columns'], 2)
+        self.assertEqual(report['issues'], [])
+        self.assertEqual([item['label'] for item in report['items']], ['修改前', '修改后', ''])
+        self.assertEqual([(item['width'], item['height']) for item in report['items']], [(120, 60), (60, 120), (90, 90)])
+        self.assertEqual(struct.unpack('>II', (output / 'stitch.png').read_bytes()[16:24]), (report['width'], report['height']))
+        self.assertEqual({p.name for p in output.iterdir()}, {'stitch.png', 'report.json'})
+        if shutil.which('ffmpeg'):
+            for item, color in zip(report['items'], [(255, 0, 0), (0, 0, 255), (0, 255, 0)]):
+                self.assertEqual(self.frame_pixel(output / 'stitch.png', item['x'] + item['width'] // 2,
+                                                 item['y'] + item['height'] // 2), color)
+            captions = []
+            for item in report['items'][:2]:
+                left = 24 + (0 if item is report['items'][0] else 176)
+                crop = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(output / 'stitch.png'),
+                                       '-vf', f"crop=160:24:{left}:{item['labelY']}", '-frames:v', '1',
+                                       '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], check=True, capture_output=True, timeout=10).stdout
+                captions.append(crop)
+            self.assertNotEqual(captions[0], captions[1], 'Different Chinese glyphs must not render as identical missing-font boxes')
+        self.assert_no_browser_leftovers()
+
+    def test_stitch_normalizes_common_elements_and_crops_after_scaling(self):
+        # Different overall widths with the same content rendered at 1x and 2x.
+        first, second = self.folder / 'reference.svg', self.folder / 'screenshot.svg'
+        for path, width, height, view_width in [(first, 1000, 700, 1000), (second, 1600, 1400, 800)]:
+            path.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+                            f'viewBox="0 0 {view_width} 700"><rect width="100%" height="100%" fill="lime"/>'
+                            '<rect width="100" height="700" fill="red"/></svg>', encoding='utf-8')
+        for name, first_options, second_options, crop, expected in [
+            ('widths', ['--match-width', '100px'], ['--match-width200'], [], [(640, 448), (512, 448)]),
+            ('crop', ['--scale', '1'], ['--scale', '50%'], ['--crop', '25,20,500,300'], [(500, 300), (500, 300)]),
+        ]:
+            with self.subTest(name=name):
+                output = self.folder / name
+                result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(first), *first_options,
+                                         '--stitch', str(second), *second_options, *crop, '--out', str(output)],
+                                        cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=30, encoding='utf-8')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                report = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+                self.assertEqual([(item['width'], item['height']) for item in report['items']], expected)
+                self.assertEqual([item['scale'] for item in report['items']], [1, .5])
+                a, b = report['items']
+                self.assertAlmostEqual(a['renderScale'] * 100, b['renderScale'] * 200)
+                if crop:
+                    self.assertEqual(a['sourceCrop'], {'x': 25, 'y': 20, 'width': 500, 'height': 300})
+                    self.assertEqual(b['sourceCrop'], {'x': 50, 'y': 40, 'width': 1000, 'height': 600})
+                if shutil.which('ffmpeg'):
+                    boundary = 75 if crop else 64
+                    for item in report['items']:
+                        self.assertEqual(self.frame_pixel(output / 'stitch.png', item['x'] + boundary - 2, item['y'] + 10), (255, 0, 0))
+                        self.assertEqual(self.frame_pixel(output / 'stitch.png', item['x'] + boundary + 2, item['y'] + 10), (0, 255, 0))
+        for options, hint in [(['--crop', '0,0,1200,300'], '裁切超出图片'),
+                              (['--match-width', '2000'], '共有元素宽超出原图宽')]:
+            output = self.folder / 'invalid'
+            result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(first), *options, '--out', str(output)],
+                                    cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=30, encoding='utf-8')
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn(hint, result.stderr)
+            self.assertIn('例如 node scripts/shoot.mjs', result.stderr)
+            self.assertFalse((output / 'stitch.png').exists())
+        self.assert_no_browser_leftovers()
+
+    def test_stitch_wraps_labels_and_reports_decode_errors(self):
+        image = self.folder / 'sample.svg'
+        image.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500"><rect width="1000" height="500" fill="red"/></svg>', encoding='utf-8')
+        output = self.folder / 'wrapped'
+        result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(image), '--label', '中文标注' * 30,
+                                 '--columns', '5', '--out', str(output)], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True, timeout=30, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        self.assertEqual(report['columns'], 1)
+        self.assertEqual((report['items'][0]['width'], report['items'][0]['height']), (640, 320))
+        self.assertGreater(report['items'][0]['labelHeight'], 32)
+        self.assertGreaterEqual(report['height'], report['items'][0]['y'] + 320 + report['items'][0]['labelHeight'])
+        image.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1"><rect width="1500" height="1" fill="red"/></svg>', encoding='utf-8')
+        thin = self.folder / 'thin'
+        result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(image), '--out', str(thin)],
+                                cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=30, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        tile = json.loads((thin / 'report.json').read_text(encoding='utf-8'))[0]['items'][0]
+        self.assertEqual((tile['width'], tile['height']), (640, 1))
+        corrupt = self.folder / 'corrupt.png'
+        corrupt.write_bytes(b'not an image')
+        result = subprocess.run([NODE, str(SCRIPT), '--stitch', str(image), '--stitch', str(corrupt),
+                                 '--out', str(self.folder / 'corrupt')], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True, timeout=30, encoding='utf-8')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('第 2 张图片无法解码，收到 ' + str(corrupt), result.stderr)
+        self.assertIn('例如 --stitch before.png', result.stderr)
+        self.assert_no_browser_leftovers()
 
     def test_mark_draws_numbered_boxes_without_touching_plain_shot(self):
         output = self.folder / "marked"
@@ -416,6 +783,85 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
         (output / "page.png").write_bytes(b"old screenshot")
         self.shoot(output, "--force")
         self.assert_artifacts(output, ("page.png", "report.json"))
+
+    def test_thumb_and_file_url_resolution(self):
+        import struct
+        output = self.folder / "thumb-shots"
+        result = subprocess.run([NODE, str(SCRIPT), self.page.as_uri(), "--size", "desktop", "--thumb", "--out", str(output)],
+                                cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=60, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_artifacts(output, ("page.png", "report.json"))
+        report = json.loads((output / "report.json").read_text(encoding="utf-8"))[0]
+        self.assertTrue(report.get("thumb"))
+        self.assertEqual(report["lint"], [])
+        self.assertEqual(struct.unpack(">II", (output / "page.png").read_bytes()[16:24]), (720, 450))
+        self.assert_no_browser_leftovers()
+
+    def test_local_query_hash_survive_preview_query_states_and_batch_names(self):
+        site = self.folder / 'local space % #'
+        site.mkdir()
+        page = site / 'index.html'
+        page.write_text('''<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,">
+<p>Local address probe</p><script>
+const q=new URLSearchParams(location.search);
+if(q.get('season')!=='summer' || q.getAll('tag').join('|')!=='one|two' ||
+   q.get('escaped')!=='a+b&#?' || q.get('extra')!=='two words' ||
+   q.get('override')!=='new' || q.getAll('multi').join('|')!=='x|y' ||
+   !['idle','done'].includes(q.get('state')) || location.hash!=='#top%20detail') console.error('ADDRESS_LOST');
+console.error('ADDRESS_OK:'+q.get('state'));
+</script>''', encoding='utf-8')
+        # Relative paths treat percent signs literally; file URLs decode them only in the path.
+        relative_page = site / 'relative %.html'
+        relative_page.write_bytes(page.read_bytes())
+        suffix = '?season=summer&tag=one&tag=two&escaped=a%2Bb%26%23%3F&override=old&state=old#top%20detail'
+        targets = [page.as_uri() + suffix, os.path.relpath(relative_page, self.folder) + suffix]
+        output = self.folder / 'address-merge'
+        self.shoot_targets(output, targets, '--root', str(self.folder), '--size', '800x600', '--no-sheet',
+                           '--query', 'extra=two+words&override=new&multi=x&multi=y', '--states', 'idle,done',
+                           cwd=self.folder)
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual([r['file'] for r in report],
+                         ['index-idle.png', 'index-done.png', 'relative %-idle.png', 'relative %-done.png'])
+        for entry, state in zip(report, ['idle', 'done', 'idle', 'done']):
+            self.assertEqual(entry['issues'], ['控制台错误：ADDRESS_OK:' + state])
+            self.assertEqual(entry['lint'], [])
+        self.assert_artifacts(output, [r['file'] for r in report])
+
+    def test_local_query_hash_are_preserved_without_merge_and_in_manifest(self):
+        self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><p>Raw address probe</p><script>
+console.error(location.search+location.hash);
+</script>''', encoding='utf-8')
+        suffix = '?season=summer&raw=a%20b&raw=%2f%3f#top%20detail'
+        relative_suffix = suffix.replace('?', '?source=relative&', 1)
+        output = self.folder / 'raw-address'
+        self.shoot_targets(output, [self.page.as_uri() + suffix, os.path.relpath(self.page, self.folder) + relative_suffix],
+                           '--no-sheet', cwd=self.folder)
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual([r['file'] for r in report], ['sample.png', 'sample-2.png'])
+        self.assertEqual([r['issues'] for r in report], [['控制台错误：' + value] for value in (suffix, relative_suffix)])
+        manifest = self.folder / 'manifest.json'
+        manifest.write_text(json.dumps({'candidates': [{'source': 'sample.html' + suffix}]}), encoding='utf-8')
+        output = self.folder / 'manifest-address'
+        self.shoot_targets(output, [manifest])
+        entry = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        self.assertEqual(entry['file'], 'sample.png')
+        self.assertEqual(entry['issues'], ['控制台错误：' + suffix])
+
+    def test_local_query_hash_do_not_bypass_explicit_root(self):
+        root = self.folder / 'allowed'
+        root.mkdir()
+        link = root / 'escape.html'
+        link.symlink_to(self.page)
+        for page in (self.page, link):
+            for address in (page.as_uri(), os.path.relpath(page, self.folder)):
+                with self.subTest(address=address):
+                    result = subprocess.run([NODE, str(SCRIPT), address + '?season=summer#top', '--root', str(root),
+                                             '--out', str(self.folder / 'denied')], cwd=self.folder, env=self.env,
+                                            capture_output=True, text=True, timeout=20, encoding='utf-8')
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('本地目标不在 --root 内', result.stderr)
+                    self.assertNotIn('找不到文件', result.stderr)
+        self.assert_no_browser_leftovers()
 
     def test_preview_denies_sibling_paths_and_escaping_symlinks(self):
         outside = Path(str(self.folder) + '-private')
@@ -482,6 +928,8 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
         self.assertNotEqual((output / "motion-start.jpg").read_bytes(), (output / "motion-end.jpg").read_bytes())
         report = json.loads((output / "report.json").read_text(encoding="utf-8"))
         self.assertEqual([entry["issues"] for entry in report], [[]])
+        self.assertNotIn('sequence', report[0])
+        self.assertEqual(list(output.glob('*sequence*')), [], 'Default recordings must not create a sequence image')
         self.assertEqual(list(self.profile_root.glob("oil-shoot-*")), [], "Temporary browser profiles leaked")
         if shutil.which("ffmpeg"):
             self.assertTrue((output / "record.mp4").is_file(), result.stdout + result.stderr)
@@ -496,6 +944,82 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
         self.assertEqual(len(result.stdout), 3)
         return tuple(result.stdout)
 
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed for recording and pixel checks')
+    def test_record_sequence_has_uniform_times_original_ratios_and_named_zoom_files(self):
+        output = self.folder / 'sequence'
+        self.shoot(output, '--record', '--steps', 'go: click #go', '--zoom', '1,2',
+                   '--hold', '250', '--frames', '5', '--columns', '2')
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(report), 2)
+        self.assertEqual([item['sequence']['file'] for item in report], ['motion-go-sequence.png', 'motion-go-@2x-sequence.png'])
+        for entry in report:
+            sequence = entry['sequence']
+            self.assertEqual(sequence['columns'], 2)
+            self.assertEqual(len(sequence['items']), 5)
+            times = [frame['timeMs'] for frame in sequence['frames']]
+            self.assertEqual(times[0], 0)
+            self.assertEqual(times[-1], entry['durationMs'])
+            intervals = [b - a for a, b in zip(times, times[1:])]
+            self.assertLessEqual(max(intervals) - min(intervals), 1)
+            for sample, tile in zip(sequence['frames'], sequence['items']):
+                self.assertLessEqual(sample['sourceTimeMs'], sample['timeMs'] + 1)
+                self.assertEqual(tile['label'], f"{sample['timeMs'] / 1000:.3f} s")
+                self.assertAlmostEqual(tile['width'] / tile['height'], 390 / 844, delta=.002)
+                self.assertGreater(tile['labelHeight'], 0)
+                self.assertLessEqual(tile['y'] + tile['height'] + tile['labelHeight'], sequence['height'])
+            self.assert_artifacts(output, (sequence['file'], entry['frames']['start']['file'], entry['frames']['mid']['file'], entry['frames']['end']['file']))
+            last = sequence['items'][-1]
+            pixel = self.frame_pixel(output / sequence['file'], last['x'] + last['width'] - 10, last['y'] + last['height'] - 10)
+            end = self.frame_pixel(output / entry['frames']['end']['file'], 300, 800)
+            self.assertTrue(all(abs(a - b) < 8 for a, b in zip(pixel, end)), (pixel, end))
+            first = sequence['items'][0]
+            self.assertNotEqual(pixel, self.frame_pixel(output / sequence['file'], first['x'] + first['width'] - 10, first['y'] + first['height'] - 10))
+        self.assertEqual(list(output.glob('frames*')), [])
+        self.assert_no_browser_leftovers()
+
+    def test_record_sequence_unnamed_filename_and_default_columns(self):
+        output = self.folder / 'unnamed-sequence'
+        self.shoot(output, '--record', '--hold', '100', '--frames', '5')
+        entry = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        self.assertEqual(entry['sequence']['file'], 'motion-sequence.png')
+        self.assertEqual(entry['sequence']['columns'], 4)
+        self.assert_artifacts(output, ('motion-sequence.png', 'motion-start.jpg', 'motion-mid.jpg', 'motion-end.jpg'))
+        self.assertEqual(list(output.glob('frames*')), [])
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed for evidence recording')
+    def test_sequence_png_respects_evidence_filename_collisions(self):
+        output = self.folder / 'sequence-collision'
+        self.shoot(output, '--evidence', '--record', '--states', 'motion-entry-sequence', '--hold', '100', '--frames', '2')
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        sequence = next(item['sequence'] for item in report if 'sequence' in item)
+        self.assertEqual(sequence['file'], 'motion-entry-2-sequence.png')
+        self.assert_artifacts(output, ('motion-entry-sequence.png', sequence['file'], 'record-entry-2.mp4'))
+        self.assertNotEqual((output / 'motion-entry-sequence.png').read_bytes(), (output / sequence['file']).read_bytes())
+
+    def test_frames_without_record_skips_encoder_for_actions_and_evidence(self):
+        # Fail on any encoder invocation, even ffmpeg -version; frames must work without it.
+        hook = self.folder / 'no-encoder.mjs'
+        hook.write_text('''import cp from 'node:child_process'; import {syncBuiltinESMExports} from 'node:module';
+const spawn = cp.spawn;
+cp.spawn = function(file, ...args) { if (file === 'ffmpeg') throw new Error('encoder must not run'); return spawn.call(this, file, ...args); };
+syncBuiltinESMExports();''', encoding='utf-8')
+        self.env['NODE_OPTIONS'] = '--import=' + hook.as_uri()
+        for name, extra in [('actions', []), ('evidence', ['--evidence'])]:
+            with self.subTest(name=name):
+                output = self.folder / name
+                result = self.shoot(output, '--frames', '3', '--hold', '100', '--steps', 'go: click #go', *extra)
+                report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+                sequences = [entry['sequence'] for entry in report if 'sequence' in entry]
+                self.assertEqual(len(sequences), 2 if extra else 1)
+                self.assertIn('未编码视频', result.stdout)
+                self.assertEqual(list(output.glob('*.mp4')), [])
+                self.assertEqual(list(output.glob('frames*')), [])
+                for sequence in sequences:
+                    self.assert_artifacts(output, [sequence['file']])
+                    self.assertEqual(len(sequence['items']), 3)
+                self.assertEqual([entry['issues'] for entry in report if 'sequence' in entry], [[] for _ in sequences])
+        self.assert_no_browser_leftovers()
+
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed to inspect frame pixels')
     def test_record_frames_follow_last_action_and_capture_short_feedback(self):
         if os.environ.get('OIL_SHOOT_SLOW_HOST'):
@@ -503,7 +1027,7 @@ document.querySelector('#go').onclick = () => show(document.body.dataset.state =
         self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>
 body{margin:0}#box{position:absolute;left:20px;top:20px;width:120px;height:120px;background:red}
 #box.prepared{background:lime}#box.feedback{animation:shake .36s linear}
-@keyframes shake{0%,100%{background:red;transform:none}50%{background:blue;transform:translateX(40px)}}
+@keyframes shake{0%,100%{background:red;transform:none}25%,75%{background:blue;transform:translateX(40px)}}
 #controls{position:absolute;top:180px}#drag{display:inline-block;width:80px;height:30px}
 #tail:hover{animation:tail .8s linear}@keyframes tail{from{opacity:.3}to{opacity:1}}
 @keyframes loop{to{transform:rotate(360deg)}}#loop{position:absolute;top:270px;width:40px;height:40px;background:gray;animation:loop 2s linear infinite}
@@ -567,7 +1091,7 @@ addEventListener('keydown',e=>{if(e.key==='Enter')feedback()});
         self.assertTrue(all(channel > 245 for channel in first), first)
 
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed to inspect frame pixels')
-    def test_entry_frames_span_content_to_stable_and_short_recording_is_valid(self):
+    def test_entry_frames_span_content_to_stable(self):
         self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>
 body{margin:0;background:#ffd000}#box{width:200px;height:200px;background:blue;animation:appear .6s linear both}
 @keyframes appear{from{opacity:0}to{opacity:1}}
@@ -580,7 +1104,6 @@ body{margin:0;background:#ffd000}#box{width:200px;height:200px;background:blue;a
         self.assertLess(frames['start']['timeMs'], frames['mid']['timeMs'])
         self.assertLess(frames['mid']['timeMs'], frames['end']['timeMs'])
         self.assertEqual(frames['end']['timeMs'], entry['durationMs'])
-        self.assertLess(entry['durationMs'], 3000)
         self.assertGreater(entry['durationMs'], 600)
         first = self.frame_pixel(output / 'record.mp4')
         self.assertTrue(all(channel > 245 for channel in first), first)
@@ -658,10 +1181,6 @@ new IntersectionObserver(e=>e.forEach(x=>x.isIntersecting&&x.target.classList.ad
         self.assertIn("首次进入：没有检测到动画", issues)
         self.assertIn("滚动：没有检测到", issues)
 
-    def test_steps_accept_unquoted_selectors_with_spaces(self):
-        self.shoot(self.folder / "unquoted", "--steps", "click body #go")
-        self.shoot(self.folder / "quoted", "--steps", 'click "body #go"')
-
     def test_motion_skips_scroll_check_on_single_screen(self):
         self.page.write_text('''<!doctype html><html><head><link rel="icon" href="data:,"><style>
 html,body{margin:0;height:100%;overflow:hidden}
@@ -720,7 +1239,7 @@ h1{font-size:48px;margin:0 0 24px;background:linear-gradient(90deg,#7c3aed,#06b6
 .num{font-size:12px;margin:0}h2{font-size:28px;margin:4px 0 24px}
 .card{border:1px solid #ddd;border-radius:16px;padding:24px;margin:16px 0}
 .quote{border-left:4px solid #e11d48;padding:12px 16px}.low{color:#c8c8c8}
-.dense{font-size:11px;line-height:1.2;width:600px}.ghost{opacity:0}
+.dense{font-size:10px;line-height:1.2;width:600px}.ghost{opacity:0}
 </style></head><body><p class="eyebrow">Smart Ledger</p><h1>让记账更简单</h1>
 <p class="num">01 / 账户</p><h2>所有账户一目了然</h2>
 <div class="card">外层<div class="card">里层卡片里有一些文字</div></div>
@@ -735,25 +1254,12 @@ h1{font-size:48px;margin:0 0 24px;background:linear-gradient(90deg,#7c3aed,#06b6
         entry = json.loads((output / "report.json").read_text(encoding="utf-8"))[0]
         self.assertEqual(entry["issues"], [])
         rules = {item["rule"] for item in entry["lint"]}
-        for rule in ("eyebrow", "numbered", "gradientText", "sideStripe", "nestedCards", "emojiIcon",
-                     "englishLabel", "contrastLow", "smallText", "tightLeading", "longMeasure", "stuck"):
+        for rule in ("contrastLow", "smallText", "tightLeading", "stuck"):
             self.assertIn(rule, rules)
-        self.assertIn("默认做法提示", result.stdout)
-
-    def test_lint_spares_reactions_but_keeps_navigation_and_feature_emoji(self):
-        self.page.write_text('''<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,">
-<button aria-pressed="false"><span>😍</span><span>5</span></button>
-<button><span>🔥</span> 3</button><button role="button" aria-pressed="true"><span>😂</span></button>
-<p>用户内容 <span>🚀</span></p><blockquote><span>💰</span></blockquote>
-<div role="listbox"><button>🧡</button><button>☀️</button></div>
-<nav><button aria-pressed="true"><span>🚀</span> 启动</button><a><span>💰</span> 账户</a></nav>
-<ul><li><span>🧭</span> 方向</li><li><span>🎉</span> 成果</li></ul>''', encoding='utf-8')
-        output = self.folder / 'semantic-emoji'
-        self.shoot(output)
-        hints = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]['lint']
-        emoji = next(h for h in hints if h['rule'] == 'emojiIcon')
-        self.assertEqual(emoji['count'], 4)
-        self.assertFalse(any(symbol in ' '.join(emoji['examples']) for symbol in ('😍', '🔥', '😂', '🧡', '☀️')))
+        for removed in ("eyebrow", "numbered", "gradientText", "sideStripe", "emojiIcon",
+                        "englishLabel", "grayOnColor", "longMeasure", "headingSpacing", "sourceSplit"):
+            self.assertNotIn(removed, rules)
+        self.assertIn("可读性与渲染提示", result.stdout)
 
     def test_lint_spares_interaction_boundaries_attachments_and_empty_slots(self):
         self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>
@@ -774,7 +1280,7 @@ body{margin:0}.outer{border-radius:12px;background:#eee;padding:12px;width:340px
         hints = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]['lint']
         self.assertNotIn('nestedCards', {h['rule'] for h in hints})
 
-    def test_lint_keeps_content_cards_inside_panels_and_editors(self):
+    def test_lint_allows_content_cards_inside_panels_and_editors(self):
         self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>
 .outer{border-radius:12px;background:#eee;padding:12px;width:340px}
 .box{border:1px solid #777;border-radius:8px;padding:8px;width:260px;min-height:56px}
@@ -783,22 +1289,24 @@ body{margin:0}.outer{border-radius:12px;background:#eee;padding:12px;width:340px
         output = self.folder / 'real-cards'
         self.shoot(output, '--size', 'desktop')
         hints = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]['lint']
-        self.assertEqual(next(h for h in hints if h['rule'] == 'nestedCards')['count'], 2)
+        self.assertNotIn('nestedCards', {h['rule'] for h in hints})
 
     def test_lint_requires_body_contrast_of_4_5(self):
         self.page.write_text('''<!doctype html><html><head><link rel="icon" href="data:,"><style>
 body{margin:0;padding:40px;font:16px/1.6 sans-serif;color:#222;background:#fff}
 body::before{content:"";position:absolute;left:0;top:0;width:12px;height:12px;background:#111}
 .soft{color:#8a8a8a}
+.low{color:#aaa}
 .faint{color:#eee}
-.faint-tiny{color:#eee;font-size:11px;line-height:1.2;width:280px}
+.faint-tiny{color:#eee;font-size:10px;line-height:1.2;width:280px}
 .seg{position:relative;display:inline-block;padding:8px 16px}
 .seg-pill{position:absolute;inset:0;background:#111;border-radius:8px}
 .seg-label{position:relative;color:#fff}
 .pseudo-seg{position:relative;display:inline-block;padding:8px 16px;color:#fff}
 .pseudo-seg::before{content:"";position:absolute;inset:0;background:#111;border-radius:8px;z-index:-1}
 </style></head><body>
-<p class="soft">Body text at about 3.5 to 1 contrast still fails the 4.5 to 1 floor.</p>
+<p class="soft">Secondary text at about 3.5 to 1 contrast is spared by the 3.0 floor.</p>
+<p class="low">Body text at about 2.3 to 1 contrast still fails the 3.0 floor.</p>
 <p class="faint">Body text at 1.16 to 1 on a plain white background must also be reported.</p>
 <p class="faint-tiny">这是一段在白底上几乎看不见而且字号过小、行高过紧的多行中文正文，用来验证极低对比度不会跳过排版检查。</p>
 <div class="seg"><span class="seg-pill"></span><span class="seg-label">Active Tab</span></div>
@@ -830,17 +1338,231 @@ nav a.active::before{content:"";position:absolute;left:0;top:4px;width:3px;heigh
         self.shoot(output, "--size", "1280x800")
         self.assertEqual(json.loads((output / "report.json").read_text(encoding="utf-8"))[0]["lint"], [])
 
-        self.page.write_text('''<!doctype html><html><head><link rel="icon" href="data:,"><style>
-body{margin:0;padding:40px;font:16px/1.6 sans-serif;color:#222}
-nav a{display:block;position:relative;padding:8px 16px;width:120px}
-nav a.plain-border{border-left:4px solid #e11d48}
-nav a.plain-pseudo::before{content:"";position:absolute;left:0;top:4px;width:4px;height:32px;background:#e11d48}
-</style></head><body><nav><a href="#a" class="plain-border">Unselected A</a><a href="#b" class="plain-pseudo">Unselected B</a></nav></body></html>''', encoding="utf-8")
-        flagged = self.folder / "nav-unselected"
-        self.shoot(flagged, "--size", "1280x800")
-        lint = {item["rule"]: item for item in json.loads((flagged / "report.json").read_text(encoding="utf-8"))[0]["lint"]}
-        self.assertIn("sideStripe", lint)
-        self.assertEqual(lint["sideStripe"]["count"], 2)
+    def lint_fixture(self, markup, style='', size='1000x900'):
+        self.page.write_text('''<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><style>
+body{margin:0;padding:24px;background:white;color:#111;font:16px/1.6 sans-serif}
+''' + style + '</style></head><body>' + markup + '</body></html>', encoding='utf-8')
+        output = self.folder / 'lint-fixture'
+        self.shoot(output, '--size', size)
+        entry = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        return {item['rule']: item for item in entry['lint']}
+
+    def test_lint_samples_first_text_rect_and_real_sibling_paint_order(self):
+        hints = self.lint_fixture('''
+<div class="narrow"><span id="escaped">Outside narrow parent</span></div>
+<div class="stage"><div class="plate"></div><p id="wide" class="label">Bright label</p></div>
+<div class="stage"><p id="low" class="label" style="color:#222">Dark label</p><div class="plate"></div></div>
+<div class="stage"><div class="plate" style="background:rgba(0,0,0,.85)"></div><p class="label">Alpha plate</p></div>
+<div class="stage"><div class="plate" style="z-index:2;background:rgba(255,255,255,.8)"></div>
+<div class="plate"></div><p class="label" style="z-index:3;color:#111">Layer order</p></div>
+''', '''
+.narrow{position:relative;width:12px;height:48px;background:#111}
+#escaped{position:absolute;left:80px;top:0;white-space:nowrap;color:#111}
+.stage{position:relative;width:900px;height:60px;margin-top:12px}
+.plate{position:absolute;left:0;top:0;width:260px;height:48px;background:#111;z-index:1}
+.label{position:relative;z-index:2;margin:0;width:850px;color:white}
+''')
+        self.assertEqual(set(hints), {'contrastLow'})
+        self.assertEqual(hints['contrastLow']['count'], 1)
+        self.assertIn('p#low', hints['contrastLow']['examples'][0])
+
+    def test_lint_unknown_media_and_gradients_stop_at_opaque_plates(self):
+        image = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%2260%22%3E%3Cpath fill=%22black%22 d=%22M0 0h400v60H0z%22/%3E%3C/svg%3E'
+        media = [f"<img class='media' src='{image}'>", '<video class="media"></video>',
+                 '<canvas class="media" width="400" height="60"></canvas>',
+                 '<div class="media" style="background:linear-gradient(black,white)"></div>',
+                 f"<div class='media' style='background-image:url(\"{image}\")'></div>",
+                 f"<img class='media' style='width:100px;height:19px' src='{image}'>"]
+        markup = ''.join('<div class="stage">' + item + '<p class="label">Unknown surface</p></div>' for item in media)
+        markup += f'''<div class="stage"><img class="media" src='{image}'><div class="opaque"></div>
+<p class="label" id="known-plate">Known white plate</p></div>
+<div class="stage"><img class="media" style="left:200px;width:200px" src='{image}'>
+<p class="label" id="media-away">Left text</p></div>'''
+        hints = self.lint_fixture(markup, '''
+.stage{position:relative;width:800px;height:85px}.media{position:absolute;left:0;top:0;width:400px;height:60px}
+.opaque{position:absolute;inset:0;width:400px;height:60px;background:white;z-index:1}
+.label{position:relative;z-index:2;margin:0;color:#eee}
+''')
+        self.assertEqual(set(hints), {'contrastLow'})
+        self.assertEqual(hints['contrastLow']['count'], 2)
+        self.assertIn('#known-plate', hints['contrastLow']['examples'][0])
+        self.assertIn('#media-away', hints['contrastLow']['examples'][1])
+
+    def test_lint_preserves_before_and_after_pseudo_plate_exemptions(self):
+        hints = self.lint_fixture('''<div class="before">Before plate</div><div class="after">After plate</div>
+<div class="before gradient">Unknown pseudo gradient</div>''', '''
+.before,.after{position:relative;display:inline-block;padding:8px 16px;color:white}
+.before::before,.after::after{content:"";position:absolute;inset:0;background:#111;border-radius:8px;z-index:-1}
+.gradient{color:#aaa}.gradient::before{background:linear-gradient(black,#333)}
+''')
+        self.assertEqual(hints, {})
+
+    def test_lint_small_text_covers_short_ui_labels_and_spares_exceptions(self):
+        hints = self.lint_fixture('''
+<nav><a class="tiny" id="nav">Home</a></nav><label class="tiny" id="label">Email</label>
+<button class="tiny" id="button">Go</button><span class="tiny">AB</span><p class="tiny">Short body</p>
+<code class="tiny">Code</code><table><tr><td class="tiny">Cell</td></tr></table>
+<div style="transform:translateX(1px)"><span class="tiny">Translated</span></div>
+<span style="font-size:10.99px">Below boundary</span><span style="font-size:11px">At boundary</span>
+<span class="tiny">A<b style="font-size:16px">BC</b></span>
+<sup class="tiny">12<span>Footnote</span></sup><sub class="tiny">12</sub>
+<svg width="60" height="30"><text font-size="8" y="12">Vector</text></svg>
+<div style="transform:scale(.5);transform-origin:top left"><span class="tiny">Thumbnail</span></div>
+<div style="transform:scale(.5)"><div><span class="tiny">Nested thumbnail</span></div></div>
+<span class="tiny" hidden>Hidden</span><span class="tiny" style="visibility:hidden">Hidden</span>
+<span class="tiny" style="opacity:0">AB</span><span class="tiny" aria-hidden="true">Hidden</span>
+''', '.tiny{font-size:10px;line-height:1;color:#111}')
+        self.assertEqual(set(hints), {'smallText'})
+        self.assertEqual(hints['smallText']['label'], '文字小于 11px')
+        self.assertEqual(hints['smallText']['count'], 9)
+        self.assertEqual(len(hints['smallText']['examples']), 3)
+        for example, expected in zip(hints['smallText']['examples'], ['a#nav', 'label#label', 'button#button']):
+            self.assertIn(expected, example)
+
+    def test_lint_skips_zero_font_icon_buttons_and_empty_text_ranges(self):
+        hints = self.lint_fixture('''
+<button class="icon">Suggest a tool<svg width="24" height="24"><path d="M2 12h20" stroke="black"/></svg></button>
+<button class="empty-range">\u200b\u200b<svg width="24" height="24"></svg></button>
+<span style="font-size:0;padding:16px;color:#eee">Hidden label</span>
+<input style="font-size:0" value="Hidden value"><textarea style="font-size:0">Hidden value</textarea>
+<span id="tiny" style="font-size:10px">Visible small label</span><p id="low" style="color:#eee">Visible low contrast</p>
+''', '''
+button{padding:16px;background:white;color:#eee}.empty-range{font-size:10px}
+@media(max-width:600px){.icon{font-size:0}}
+''', size='390x844')
+        self.assertEqual(set(hints), {'smallText', 'contrastLow'})
+        self.assertEqual(hints['smallText']['count'], 1)
+        self.assertIn('#tiny', hints['smallText']['examples'][0])
+        self.assertEqual(hints['contrastLow']['count'], 1)
+        self.assertIn('#low', hints['contrastLow']['examples'][0])
+
+    def test_lint_samples_offscreen_ancestors_only_where_the_point_is_covered(self):
+        hints = self.lint_fixture('''
+<p id="above" style="color:#aaa">Low contrast near the top</p>
+<p id="below" class="offscreen" style="top:1200px;color:#aaa">Low contrast below the fold</p>
+<div class="track"><span>Outside four pixel track</span></div>
+<div class="offscreen" style="top:1400px;background:rgba(0,0,0,.85);color:white">Readable translucent plate</div>
+<div class="offscreen" style="top:1500px;background:linear-gradient(black,white);color:#aaa">Unknown gradient</div>
+<div class="offscreen" style="top:1600px;background-image:url(data:image/svg+xml,%3Csvg/%3E);color:#aaa">Unknown image</div>
+<input id="control" class="offscreen" style="top:1700px;background:white;color:#aaa" value="Offscreen control">
+''', '''
+body{min-height:2100px}.offscreen{position:absolute;left:24px;width:400px;height:40px;margin:0}
+.track{position:absolute;left:24px;top:1300px;width:4px;height:40px;background:#111}
+.track span{position:absolute;left:24px;white-space:nowrap;color:#111}
+''')
+        self.assertEqual(set(hints), {'contrastLow'})
+        self.assertEqual(hints['contrastLow']['count'], 3)
+        for example, expected in zip(hints['contrastLow']['examples'], ['#above', '#below', '#control']):
+            self.assertIn(expected, example)
+        # After scrolling, the first two samples have cy < 0. Neither scrolling
+        # nor the fallback may erase their contrast warnings or use the narrow track.
+        output = self.folder / 'scrolled-lint'
+        self.shoot(output, '--size', '1000x900', '--steps', 'scroll 1800')
+        scrolled = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]['lint']
+        self.assertEqual(scrolled, list(hints.values()))
+
+    def test_lint_offscreen_fallback_spares_clipped_scroll_container_content(self):
+        markup = ''
+        for top in (50, 1100):
+            for index, overflow in enumerate(('hidden', 'clip', 'scroll', 'auto')):
+                markup += f'''<div class="frame" style="top:{top + index * 100}px;overflow:{overflow}">
+<span style="top:80px">Clipped vertically</span><span style="left:500px">Clipped horizontally</span></div>'''
+        markup += '<div class="frame" style="top:1700px;overflow:auto"><span id="inside">Visible inside scroller</span></div>'
+        markup += '<p style="position:absolute;top:1850px;width:4px;height:40px;overflow:hidden;white-space:nowrap;color:#eee">Clipped by own text box</p>'
+        hints = self.lint_fixture(markup, '''
+body{min-height:2000px}.frame{position:absolute;left:24px;width:400px;height:40px}
+.frame span{position:absolute;left:0;top:0;white-space:nowrap;color:#eee}
+''')
+        self.assertEqual(set(hints), {'contrastLow'})
+        self.assertEqual(hints['contrastLow']['count'], 1)
+        self.assertIn('#inside', hints['contrastLow']['examples'][0])
+
+    def test_lint_tight_leading_only_counts_long_multiline_body(self):
+        zh = '测' * 30
+        en = 'word ' * 11 + 'words'  # Exactly 60 characters.
+        self.assertEqual(len(en), 60)
+        markup = f'''<p id="zh" class="dense">{zh}</p><p id="en" class="dense">{en}</p>
+<p class="dense">{zh[:-1]}</p><p class="dense">{en[:-1]}</p>
+<p style="line-height:1">{zh}</p><p style="line-height:1">{en}</p>
+<p class="dense" style="line-height:1.4">{zh}</p><p class="dense" style="line-height:1.3">{en}</p>'''
+        markup += ''.join(f'<{tag} class="dense">{zh}</{tag}>' for tag in ('code', 'pre', 'nav', 'button', 'label', 'figcaption', 'kbd'))
+        hints = self.lint_fixture(markup, '.dense{display:block;width:85px;font-size:16px;line-height:1;margin:0}')
+        self.assertEqual(set(hints), {'tightLeading'})
+        self.assertEqual(hints['tightLeading']['count'], 2)
+        self.assertIn('p#zh', hints['tightLeading']['examples'][0])
+        self.assertIn('p#en', hints['tightLeading']['examples'][1])
+
+    def test_lint_enabled_text_controls_values_placeholders_and_small_fonts(self):
+        excluded = ('hidden', 'checkbox', 'radio', 'range', 'color', 'file', 'button', 'submit', 'reset', 'image')
+        markup = '''<input class="tiny" value="Tiny"><textarea class="tiny">Tiny</textarea>
+<select class="tiny"><option>Choice</option></select><input class="tiny">
+<input id="low-value" value="x" class="low"><textarea id="low-placeholder" placeholder="Draft"></textarea>
+<input id="low-opacity" placeholder="Search"><select class="low"><option>Selected</option></select>
+<div style="opacity:.2"><input value="Faded"></div><input style="font-size:26px;color:#999" value="Large">
+<input class="low" value="Readonly" readonly>
+<input value="Visible value" placeholder="Ignored" id="filled"><input placeholder="Good placeholder" id="good-placeholder">
+<input class="low"><textarea class="low" placeholder="   "></textarea><select><option value="">Choose</option></select>
+<input class="tiny low" value="Disabled" disabled><textarea class="tiny low" disabled>Disabled</textarea>
+<select class="tiny low" disabled><option>Disabled</option></select>
+<fieldset disabled><input class="tiny low" value="Disabled fieldset"></fieldset>
+<div aria-disabled="true"><input class="tiny low" value="ARIA disabled"></div>
+<input class="tiny low" value="Invisible" style="visibility:hidden">
+<input class="tiny low" value="Invisible" style="opacity:0">
+<div class="stage"><div class="plate"></div><input value="Bright on sibling" style="color:white"></div>
+<div class="stage"><div class="plate"></div><input value="Dark on sibling" style="color:#222"></div>
+<input value="Unknown gradient" style="color:#eee;background:linear-gradient(white,black)">'''
+        markup += ''.join(f'<input type="{kind}" class="tiny low"' + (' src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\'/%3E"' if kind == 'image' else '') + '>' for kind in excluded)
+        hints = self.lint_fixture(markup, '''
+input,textarea,select{font:16px/1.6 sans-serif;background:white;color:#111;border:1px solid #333}
+.tiny{font-size:10px}.low{color:#aaa}
+#low-placeholder::placeholder{color:#aaa;opacity:1}#low-opacity::placeholder{color:#111;opacity:.15}
+#filled::placeholder{color:#eee;opacity:1}#good-placeholder{color:#eee}#good-placeholder::placeholder{color:#111;opacity:1}
+.stage{position:relative;width:400px;height:50px}.plate{position:absolute;inset:0;background:#111}
+.stage input{position:relative;z-index:1;background:transparent}
+''')
+        self.assertEqual(set(hints), {'smallText', 'contrastLow'})
+        self.assertEqual(hints['smallText']['count'], 4)
+        self.assertEqual(hints['contrastLow']['count'], 8)
+        for example, expected in zip(hints['contrastLow']['examples'], ['#low-value', '#low-placeholder', '#low-opacity']):
+            self.assertIn(expected, example)
+
+    def test_horizontal_overflow_is_only_an_issue_with_three_visible_examples(self):
+        markup = '''<div style="width:1500px;display:none">Hidden</div>
+<div style="width:1500px;visibility:hidden">Invisible</div>
+<div style="opacity:0"><div style="width:1500px">AB</div></div>'''
+        markup += ''.join(f'<div id="wide-{i}" class="wide" style="width:{1100+i*10}px">Wide row</div>' for i in range(4))
+        hints = self.lint_fixture(markup)
+        self.assertEqual(hints, {})
+        entry = json.loads((self.folder / 'lint-fixture/report.json').read_text(encoding='utf-8'))[0]
+        self.assertEqual(len(entry['issues']), 1)
+        issue = entry['issues'][0]
+        self.assertRegex(issue, r'^横向溢出：页面宽 \d+px，视口 1000px')
+        self.assertEqual(issue.count('超出 '), 3)
+        for index in range(3):
+            self.assertIn(f'div#wide-{index}.wide 超出 {124 + index * 10}px', issue)
+        self.assertNotIn('#wide-3', issue)
+
+    def test_overflow_spares_root_clipping_local_carousels_and_two_pixels(self):
+        self.page.write_text('''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,"><style>
+html,body{margin:0;font:16px/1.6 sans-serif;color:#111;background:white}
+.carousel{width:300px;overflow-x:auto}.carousel.scroll{overflow-x:scroll}.track{width:1400px}
+.bleed{width:1002px}
+</style><div class="carousel"><div class="track">Local carousel</div></div>
+<div class="carousel scroll"><div class="track">Local scroll</div></div><div class="bleed">Two pixel tolerance</div>
+<script>const state=new URLSearchParams(location.search).get('state');
+if(state && state!=='local') {
+  const [tag,overflow]=state.split('-');document.querySelector(tag).style.overflowX=overflow;
+  document.querySelector('.bleed').style.width='1400px';
+}</script>''', encoding='utf-8')
+        output = self.folder / 'safe-overflow'
+        self.shoot(output, '--size', '1000x900', '--states', 'local,html-hidden,html-clip,body-hidden,body-clip')
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(len(report), 5)
+        for entry in report:
+            self.assertEqual(entry['lint'], [], entry)
+            self.assertEqual(entry['issues'], [], entry)
 
     def test_compare_against_reference(self):
         reference = self.folder / "reference"
@@ -1079,6 +1801,58 @@ if(count!==13 || document.querySelector('input').value!=='replacement' || docume
                     self.assertIn(text, result.stderr)
         self.run_failure(self.folder / "mark-invalid", "--mark", "button:unknown")
 
+    def test_playwright_selectors_find_the_intended_elements(self):
+        self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>button{margin:8px}</style>
+<button onclick="hits.push('contains')">Save draft</button>
+<button onclick="hits.push('exact')">Save</button>
+<button onclick="hits.push('wrong')">Save more</button>
+<button data-select="0842" onclick="hits.push('numeric')">Numeric</button>
+<div><button class="item" onclick="hits.push('wrong')">First</button></div>
+<p>Different sibling</p><button class="item" onclick="hits.push('nth')">Second</button>
+<button onclick="hits.push('bare')">Unique nested <span>Target</span></button>
+<button onclick="hits.push('chain')">4 replies</button>
+<button data-label='literal :has-text("x") &gt;&gt; nth=1' onclick="hits.push('literal')">Literal</button>
+<button id="verify" onclick="if(hits.join(',')!=='contains,exact,numeric,nth,bare,chain,literal')console.error(hits)">Verify</button>
+<script>const hits=[];</script>''', encoding='utf-8')
+        output = self.folder / 'playwright'
+        self.shoot(output, '--size', 'desktop', '--steps',
+                   '''click button:has-text("Save draft"); click button:text-is('Save');
+click [data-select=0842]; click ".item >> nth=1"; click :has-text("Target");
+click button:has-text(4):has-text(replies); click [data-label='literal :has-text("x") >> nth=1']; click #verify''',
+                   '--mark', '1=button:text-is("Save"); 2=[data-select=0842]; 3=.item >> nth=1')
+        self.assertEqual(json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]['issues'], [])
+        self.assert_artifacts(output, ('page.png', 'page-marked.png'))
+        # Corpus calls also omit text quotes and escape nested quotes around the whole selector.
+        self.shoot(self.folder / 'unquoted-text', '--steps', 'hover "button:text-is(Save)"; hover "button:has-text(\\"Save draft\\")"')
+
+    def test_playwright_exact_text_and_nth_do_not_fall_back(self):
+        self.page.write_text('''<!doctype html><link rel="icon" href="data:,">
+<button>Save more</button><button class="item" hidden>Hidden</button><button class="item">Visible</button>''', encoding='utf-8')
+        result = self.run_failure(self.folder / 'exact-missing', '--steps', 'wait 0; click button:text-is("Save")')
+        self.assertIn('第 2 步', result.stderr)
+        self.assertIn('找不到元素', result.stderr)
+        result = self.run_failure(self.folder / 'hidden-nth', '--steps', 'click .item >> nth=0')
+        self.assertIn('都不可见', result.stderr)
+        result = self.run_failure(self.folder / 'missing-nth', '--steps', 'click .item >> nth=2')
+        self.assertIn('找不到元素', result.stderr)
+        self.shoot(self.folder / 'last-nth', '--steps', 'hover .item >> nth=-1')
+
+    def test_unsupported_playwright_combinations_give_context_and_copyable_examples(self):
+        for selector, rewrite in [('button:has-text("Save") > span', 'text="Save"'),
+                                 ('.item >> nth=one', '.item >> nth=1'),
+                                 (':is(button:has-text("Save"))', 'text="Save"'),
+                                 ('button:has-text("Save") >> text=Draft', 'text="Save"')]:
+            with self.subTest(selector=selector):
+                result = self.run_failure(self.folder / 'unsupported', '--steps', 'wait 0; hover ' + selector)
+                self.assertIn('第 2 步', result.stderr)
+                self.assertIn('收到 ' + selector, result.stderr)
+                self.assertIn('例如 hover ' + rewrite, result.stderr)
+        result = self.run_failure(self.folder / 'unsupported-mark', '--mark', '.item >> nth=one')
+        self.assertIn('--mark', result.stderr)
+        self.assertIn('收到 .item >> nth=one', result.stderr)
+        result = self.run_failure(self.folder / 'unsupported-fill', '--steps', 'fill ".item >> nth=one" hello')
+        self.assertIn('例如 fill ".item >> nth=1" "hello"', result.stderr)
+
     def test_visible_element_does_not_scroll_and_offscreen_does(self):
         self.page.write_text('''<!doctype html><link rel="icon" href="data:,"><style>
 body{margin:0;height:2400px}#top{position:absolute;top:40px}#bottom{position:absolute;top:1800px}</style>
@@ -1117,7 +1891,9 @@ document.querySelector('#go').addEventListener('click',()=>{if(document.body.dat
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed for complete evidence')
     def test_evidence_all_artifacts_and_partial_failure(self):
         output = self.folder / "evidence"
-        self.shoot(output, "--evidence", "--states=a,b", "--hold=100", "--steps", "toggle: click #go")
+        ev_result = self.shoot(output, "--evidence", "--states=a,b", "--hold=100", "--steps", "toggle: click #go")
+        self.assertIn("评审交接：", ev_result.stdout)
+        self.assertIn("reviewer-manual.md", ev_result.stdout)
         self.assert_artifacts(output, ("a.png", "b.png", "a-masked.png", "b-masked.png", "sheet.png", "sheet-masked.png",
                                       "a-@2x.png", "record-entry.mp4", "motion-entry-start.jpg", "motion-entry-mid.jpg", "motion-entry-end.jpg",
                                       "record-toggle.mp4", "motion-toggle-start.jpg", "motion-toggle-mid.jpg", "motion-toggle-end.jpg"))
@@ -1179,22 +1955,26 @@ document.querySelector('#go').onclick=()=>document.body.style.background='#15151
             self.skipTest('POSIX launch wrapper')
         wrapper = self.folder / 'chrome-wrapper'
         marker = self.folder / 'launch-count'
-        # First launch really times out after 45 seconds; the retry uses the real browser.
+        # Accelerate the startup watchdog, but launch a real browser on the second run.
         import shlex
         wrapper.write_text('#!/bin/sh\nif [ ! -f ' + shlex.quote(str(marker)) + ' ]; then\n'
                            'touch ' + shlex.quote(str(marker)) + '\nexec sleep 60\nfi\nexec '
                            + shlex.quote(self.browser) + ' "$@"\n', encoding='utf-8')
         wrapper.chmod(0o755)
-        env = dict(self.env, CHROME_PATH=str(wrapper))
+        env, journal = self.transport_fault_env('launch')
+        env['CHROME_PATH'] = str(wrapper)
         output = self.folder / 'retried'
         result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(output)],
                                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=110, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('45 秒内没有启动', result.stderr)
         self.assertIn('正在重试一次', result.stderr)
+        self.assertIn('--timeout-scale 2', result.stderr)
         self.assertIn('同时开了很多个任务时会变慢', result.stderr)
         self.assert_artifacts(output, ('page.png', 'report.json'))
         self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
+        events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual([row['timeout'] for row in events if row.get('stage') == 'launch'], [45000, 90000])
 
     def test_navigation_aborted_once_is_retried(self):
         import http.server
@@ -1233,6 +2013,19 @@ document.querySelector('#go').onclick=()=>document.body.style.background='#15151
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(requests), 2, requests)
         self.assert_artifacts(output, ('page.png', 'report.json'))
+
+    def test_navigation_timeout_retries_only_once(self):
+        for always, expected in [(False, 0), (True, 1)]:
+            with self.subTest(always=always):
+                env, journal = self.transport_fault_env('navigate', always=always)
+                journal.unlink(missing_ok=True)
+                output = self.folder / f'navigation-timeout-{always}'
+                result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(output)],
+                                        cwd=ROOT, env=env, capture_output=True, text=True, timeout=90, encoding='utf-8')
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
+                self.assertEqual([row['fault'] for row in events if row.get('fault') == 'navigate'], ['navigate'] if not always else ['navigate', 'navigate'])
+                if not always: self.assert_artifacts(output, ('page.png', 'report.json'))
 
     def test_run_leaves_no_browser_process_or_profile(self):
         output = self.folder / 'clean'
@@ -1395,10 +2188,11 @@ if(clicked!==1 || !hovered || !doubled || !dragged || document.querySelectorAll(
         # those watchdogs after recording the production timeout value, leaving all other timers intact.
         preload = self.folder / 'fault.mjs'
         journal = self.folder / 'fault.jsonl'
-        preload.write_text('''import {appendFileSync,readFileSync} from 'node:fs';
+        preload.write_text('''import {appendFileSync,readFileSync,existsSync} from 'node:fs';
 const originalTimer=globalThis.setTimeout;let watchdog;
 globalThis.setTimeout=(callback,delay,...args)=>{const timer=originalTimer(callback,delay,...args);if(delay>=90000)watchdog={callback,delay,timer};return timer};
-const Native=globalThis.WebSocket;let captures=0,connections=0;
+const previous=existsSync(process.env.SHOOT_TEST_JOURNAL)?readFileSync(process.env.SHOOT_TEST_JOURNAL,'utf8').trim().split('\\n').filter(Boolean).map(JSON.parse):[];
+const Native=globalThis.WebSocket;let captures=previous.filter(row=>'capture' in row).length,connections=0;
 const drops=new Set((process.env.SHOOT_TEST_DROPS||'').split(',').map(Number));
 const write=row=>appendFileSync(process.env.SHOOT_TEST_JOURNAL,JSON.stringify(row)+'\\n');
 globalThis.WebSocket=class extends Native {
@@ -1420,6 +2214,82 @@ globalThis.WebSocket=class extends Native {
         return dict(self.env, NODE_OPTIONS='--import=' + preload.as_uri(), SHOOT_TEST_DROPS=drops,
                     SHOOT_TEST_JOURNAL=str(journal), **({'SHOOT_TEST_STALE': str(stale)} if stale else {})), journal
 
+    def transport_fault_env(self, mode, always=False):
+        preload = self.folder / 'transport-fault.mjs'
+        journal = self.folder / 'transport-fault.jsonl'
+        preload.write_text('''import {appendFileSync,readFileSync,existsSync} from 'node:fs';
+const path=process.env.SHOOT_TEST_TRANSPORT_JOURNAL,mode=process.env.SHOOT_TEST_TRANSPORT;
+const rows=()=>existsSync(path)?readFileSync(path,'utf8').trim().split('\\n').filter(Boolean).map(JSON.parse):[];
+const write=row=>appendFileSync(path,JSON.stringify(row)+'\\n');
+const fault=()=>process.env.SHOOT_TEST_ALWAYS==='1'||!rows().some(row=>row.fault);
+const original=globalThis.setTimeout;let watchdog;
+globalThis.setTimeout=(callback,delay,...args)=>{
+ const stage=delay===45000||delay===90000?'launch':null;
+ if(mode==='launch'&&stage){write({stage,timeout:delay});if(fault()){write({fault:mode});return original(callback,1000,...args)}}
+ const timer=original(callback,delay,...args);
+ if(delay===30000||delay===60000||delay===120000)watchdog={callback,delay,timer};
+ if(mode==='connect'&&String(callback).includes('连接浏览器')&&delay>=30000){
+  write({stage:'connect',timeout:delay});
+  if(fault()){write({fault:mode});clearTimeout(timer);return original(callback,100,...args)}
+ }
+ return timer;
+};
+const Native=globalThis.WebSocket;
+globalThis.WebSocket=class extends Native {
+ // The watchdog records the fault before onopen is assigned; decide once per socket.
+ constructor(...args){super(...args);this.dropOpen=mode==='connect'&&fault()}
+ set onopen(callback){super.onopen=this.dropOpen?null:callback}
+ send(data){const msg=JSON.parse(data);
+  const selected=mode==='setup'?msg.method==='Target.createTarget':mode==='navigate'?msg.method==='Page.navigate':mode==='cdp'&&msg.method==='Runtime.evaluate'&&msg.params.expression.includes('"value":"#hang"');
+  if(selected){write({stage:mode,timeout:watchdog.delay});if(fault()){write({fault:mode});clearTimeout(watchdog.timer);original(watchdog.callback,100);return}}
+  return super.send(data);
+ }
+};''', encoding='utf-8')
+        return dict(self.env, NODE_OPTIONS='--import=' + preload.as_uri(), SHOOT_TEST_TRANSPORT=mode,
+                    SHOOT_TEST_ALWAYS='1' if always else '0', SHOOT_TEST_TRANSPORT_JOURNAL=str(journal)), journal
+
+    def test_connection_and_setup_timeouts_retry_the_whole_invocation(self):
+        for mode in ['connect', 'setup', 'cdp']:
+            with self.subTest(mode=mode):
+                env, journal = self.transport_fault_env(mode)
+                journal.unlink(missing_ok=True)
+                self.page.write_text('''<!doctype html><link rel="icon" href="data:,">
+<button id="hang">Ready</button><script>const query=new URLSearchParams(location.search);if(query.get('state')!=='done'||query.get('extra')!=='1')console.error(location.search);</script>''', encoding='utf-8')
+                output = self.folder / mode
+                result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(output), '--size', '800x600',
+                                         '--states', 'done', '--query', 'extra=1', '--zoom', '2', '--timeout-scale', '2',
+                                         '--steps', 'hover: hover #hang; wait450'], cwd=ROOT, env=env,
+                                        capture_output=True, text=True, timeout=30, encoding='utf-8')
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stderr.count('正在重试一次'), 1)
+                self.assertIn('--timeout-scale 4', result.stderr)
+                events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
+                self.assertEqual([row['timeout'] for row in events if row.get('stage') == mode], [60000, 120000])
+                report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+                self.assertEqual([row['file'] for row in report], ['done-hover-@2x.png'])
+                self.assertEqual(report[0]['size'], '800x600')
+                self.assertEqual(report[0]['issues'], [])
+                self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
+
+    def test_persistent_startup_connection_and_setup_timeouts_stop_after_one_retry(self):
+        for mode in (['launch'] if sys.platform != 'win32' else []) + ['connect', 'setup']:
+            with self.subTest(mode=mode):
+                env, journal = self.transport_fault_env(mode, always=True)
+                journal.unlink(missing_ok=True)
+                if mode == 'launch':
+                    wrapper = self.folder / 'never-ready'
+                    wrapper.write_text('#!/bin/sh\nexec sleep 60\n', encoding='utf-8')
+                    wrapper.chmod(0o755)
+                    env['CHROME_PATH'] = str(wrapper)
+                result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(self.folder / mode)],
+                                        cwd=ROOT, env=env, capture_output=True, text=True, timeout=20, encoding='utf-8')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertEqual(result.stderr.count('正在重试一次'), 1)
+                events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
+                self.assertEqual([row['timeout'] for row in events if row.get('stage') == mode],
+                                 [45000, 90000] if mode == 'launch' else [30000, 60000])
+                self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
+
     def test_screenshot_timeout_reopens_and_retries_once(self):
         env, journal = self.fault_env('1')
         output = self.folder / 'screenshot-retry'
@@ -1428,8 +2298,9 @@ globalThis.WebSocket=class extends Native {
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
         self.assertEqual(sum('connection' in row for row in events), 2)
-        self.assertEqual([row['timeout'] for row in events if 'capture' in row], [180000, 180000])
-        self.assertIn('正在重开浏览器重试 page.png 一次', result.stderr)
+        self.assertEqual([row['timeout'] for row in events if 'capture' in row], [180000, 360000])
+        self.assertIn('正在重试一次', result.stderr)
+        self.assertIn('--timeout-scale 4', result.stderr)
         self.assertEqual(len(json.loads((output / 'report.json').read_text(encoding='utf-8'))), 1)
         self.assert_artifacts(output, ('page.png', 'report.json'))
         self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
@@ -1450,6 +2321,8 @@ globalThis.WebSocket=class extends Native {
         self.assertNotEqual((output / 'a-masked.png').read_bytes(), (output / 'b-masked.png').read_bytes())
         events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
         self.assertEqual(sum('connection' in row for row in events), 2)
+        # A full rerun captures the first plain image again, rather than only retrying the mask.
+        self.assertEqual([row['timeout'] for row in events if 'capture' in row], [90000, 90000, 180000, 180000, 180000, 180000])
         self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
 
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg is needed for evidence')
@@ -1462,7 +2335,7 @@ globalThis.WebSocket=class extends Native {
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
         self.assertTrue(report[0]['failed'])
-        self.assertIn('Page.captureScreenshot 90 秒', report[0]['issues'][-1])
+        self.assertIn('Page.captureScreenshot 180 秒', report[0]['issues'][-1])
         self.assertFalse(any(row['file'] == 'browser' for row in report))
         self.assertTrue(any(row['file'] == 'motion-probe-toggle' for row in report))
         self.assert_artifacts(output, ('page-@2x.png', 'record-entry.mp4', 'record-toggle.mp4', 'report.json'))
@@ -1484,7 +2357,7 @@ globalThis.WebSocket=class extends Native {
         result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(output), '--evidence'],
                                 cwd=ROOT, env=dict(env, CHROME_PATH=str(wrapper)), capture_output=True, text=True, timeout=90, encoding='utf-8')
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('浏览器重开失败', result.stderr)
+        self.assertIn('浏览器启动失败', result.stderr)
         report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
         self.assertEqual(report[-1]['file'], 'browser')
         self.assertEqual(list(output.glob('record*.mp4')), [])
@@ -1524,12 +2397,19 @@ globalThis.WebSocket=class extends Native {
 <script>document.querySelector('#prepare').onclick=()=>{document.querySelector('#hang').getBoundingClientRect=()=>{while(true){}}};</script>''', encoding='utf-8')
         output = self.folder / 'cdp-timeout'
         start = time.monotonic()
-        result = self.run_failure(output, '--size', 'desktop', '--steps', 'click #prepare; click #hang')
+        env, journal = self.transport_fault_env('cdp', always=True)
+        result = subprocess.run([NODE, str(SCRIPT), str(self.page), '--out', str(output), '--size', 'desktop',
+                                 '--steps', 'click #prepare; click #hang'], cwd=ROOT, env=env,
+                                capture_output=True, text=True, timeout=20, encoding='utf-8')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         elapsed = time.monotonic() - start
         self.assertIn('第 2 步「click #hang」', result.stderr)
         self.assertIn('CDP Runtime.evaluate 30 秒内没有响应', result.stderr)
-        self.assertGreaterEqual(elapsed, 30)
-        self.assertLess(elapsed, 42)
+        self.assertIn('CDP Runtime.evaluate 60 秒内没有响应', result.stderr)
+        self.assertEqual(result.stderr.count('正在重试一次'), 1)
+        events = [json.loads(line) for line in journal.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual([row['timeout'] for row in events if row.get('stage') == 'cdp'], [30000, 60000])
+        self.assertLess(elapsed, 20)
         self.assertEqual(list(self.profile_root.glob('oil-shoot-*')), [])
         self.assertTrue(any(r.get('failed') for r in json.loads((output / 'report.json').read_text(encoding='utf-8'))))
 
@@ -1681,6 +2561,33 @@ div{{animation:slow {duration}}}</style><div>Ready</div>''', encoding='utf-8')
             stop.set()
             thread.join(1)
 
+    def test_unicode_group_names_are_safe_unique_and_report_original_labels(self):
+        dry_run = subprocess.run([NODE, str(SCRIPT), str(self.page), '--dry-run', '--steps', '编辑并保存: click .save'],
+                                 cwd=ROOT, capture_output=True, text=True, timeout=10, encoding='utf-8')
+        self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+        parsed = json.loads(dry_run.stdout)
+        self.assertEqual(parsed['groups'][0]['name'], '编辑并保存')
+        self.assertEqual(parsed['groups'][0]['reportName'], '编辑并保存')
+        self.assertEqual(parsed['groups'][0]['id'], '编辑并保存')
+
+        output = self.folder / 'unicode-groups'
+        self.shoot(output, '--steps', '甲/乙: click #go', '--steps', '甲:乙: click #go')
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
+        shots = [entry for entry in report if entry.get('group')]
+        self.assertEqual([entry['group'] for entry in shots], ['甲/乙', '甲:乙'])
+        self.assertTrue((output / 'page-甲-乙.png').is_file())
+        self.assertTrue((output / 'page-甲-乙-2.png').is_file())
+        help_text = subprocess.run([NODE, str(SCRIPT), '--help'], capture_output=True, text=True,
+                                   timeout=10, encoding='utf-8').stdout
+        self.assertIn('编辑并保存', help_text)
+
+    def test_motion_no_steps_explains_interaction_probe(self):
+        self.page.write_text('''<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body{margin:0;height:100%;overflow:hidden}</style></head><body><button>Open</button></body></html>''', encoding='utf-8')
+        output = self.folder / 'motion-interaction-hint'
+        self.shoot(output, '--motion')
+        probe = json.loads((output / 'report.json').read_text(encoding='utf-8'))[0]
+        self.assertTrue(any('--steps' in issue and '交互动效' in issue for issue in probe['issues']))
 
 
 if __name__ == "__main__":

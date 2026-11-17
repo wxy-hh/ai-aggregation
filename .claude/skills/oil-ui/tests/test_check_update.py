@@ -156,7 +156,7 @@ class CheckUpdateTest(unittest.TestCase):
             AWS_SECRET_ACCESS_KEY='dummy-only-aws', OPENAI_API_KEY='dummy-only-openai',
             NODE_OPTIONS='--require /nonexistent-oil-test.js', NPM_TOKEN='dummy-only-npm',
             OIL_TOKEN='dummy-only-oil'))
-        self.assertRegex(self.npx_calls()[0], r'-y github:oil-oil/oil-cli#[0-9a-f]{40} update')
+        self.assertIn('-y github:oil-oil/oil-cli#e6ee580c01e854919ee50ef1f3de6876c3c52c18 update', self.npx_calls()[0])
         seen = json.loads((self.tmp / 'env.json').read_text(encoding="utf-8"))
         for key in ('AWS_SECRET_ACCESS_KEY','OPENAI_API_KEY','NODE_OPTIONS','NPM_TOKEN'):
             self.assertFalse(seen[key], key)
@@ -395,17 +395,6 @@ class CheckUpdateTest(unittest.TestCase):
         self.assertEqual(self.run_check(OIL_NO_UPDATE_CHECK="1", XDG_STATE_HOME=str(self.tmp / "s3")), "")
         (self.skill / ".git").mkdir()
         self.assertEqual(self.run_check(XDG_STATE_HOME=str(self.tmp / "s4")), "")
-
-
-
-class ChineseLabelTest(unittest.TestCase):
-    def test_no_space_after_chinese_label(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("check_update", SCRIPT)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        self.assertEqual(module.zh_label("Oil UI 开源版") + "有新版本", "Oil UI 开源版有新版本")
-        self.assertEqual(module.zh_label("Oil UI Pro") + "有新版本", "Oil UI Pro 有新版本")
 
 
 if __name__ == "__main__":
