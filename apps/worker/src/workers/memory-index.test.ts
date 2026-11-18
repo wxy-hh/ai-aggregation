@@ -227,4 +227,144 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
     expect(result.reason).toContain('无未索引的新消息');
     expect(mockEmbedTexts).not.toHaveBeenCalled();
   });
+
+  it('补派发：插入后发现高于水位线的新消息时返回 needsCatchup=true', async () => {
+    const now = new Date();
+    const mockDb = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'user-enabled', memorySearchEnabled: true }),
+      },
+      conversationMemoryChunk: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      message: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'msg-1',
+            sessionId: 'sess-catchup',
+            role: 'user',
+            content: '第一轮问题',
+            createdAt: new Date(now.getTime() - 2000),
+          },
+          {
+            id: 'msg-2',
+            sessionId: 'sess-catchup',
+            role: 'assistant',
+            content: '第一轮回答',
+            createdAt: new Date(now.getTime() - 1000),
+          },
+        ]),
+        findFirst: vi.fn().mockResolvedValue({ id: 'msg-3' }),
+      },
+    } as any;
+
+    const result = await processMemoryIndexJob(
+      { userId: 'user-enabled', sessionId: 'sess-catchup' },
+      {
+        prismaClient: mockDb,
+        embedTextsFn: vi.fn().mockResolvedValue([dummyVector]),
+        insertChunksFn: vi.fn(async (chunks) => chunks.length),
+      }
+    );
+
+    expect(result.needsCatchup).toBe(true);
+    expect(mockDb.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          sessionId: 'sess-catchup',
+          createdAt: { gt: expect.any(Date) },
+        },
+      })
+    );
+  });
+
+  it('补派发：没有更高水位线的新消息时返回 needsCatchup=false', async () => {
+    const now = new Date();
+    const mockDb = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'user-enabled', memorySearchEnabled: true }),
+      },
+      conversationMemoryChunk: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      message: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'msg-1',
+            sessionId: 'sess-catchup-2',
+            role: 'user',
+            content: '第一轮问题',
+            createdAt: new Date(now.getTime() - 2000),
+          },
+          {
+            id: 'msg-2',
+            sessionId: 'sess-catchup-2',
+            role: 'assistant',
+            content: '第一轮回答',
+            createdAt: new Date(now.getTime() - 1000),
+          },
+        ]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    } as any;
+
+    const result = await processMemoryIndexJob(
+      { userId: 'user-enabled', sessionId: 'sess-catchup-2' },
+      {
+        prismaClient: mockDb,
+        embedTextsFn: vi.fn().mockResolvedValue([dummyVector]),
+        insertChunksFn: vi.fn(async (chunks) => chunks.length),
+      }
+    );
+
+    expect(result.needsCatchup).toBe(false);
+  });
+
+  it('切片写入守卫返回 0 时标记 skipped 且不补派发', async () => {
+    const now = new Date();
+    const mockDb = {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'user-enabled', memorySearchEnabled: true }),
+      },
+      conversationMemoryChunk: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      message: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'msg-1',
+            sessionId: 'sess-race',
+            role: 'user',
+            content: '关闭期间的问题',
+            createdAt: new Date(now.getTime() - 2000),
+          },
+          {
+            id: 'msg-2',
+            sessionId: 'sess-race',
+            role: 'assistant',
+            content: '关闭期间的回答',
+            createdAt: new Date(now.getTime() - 1000),
+          },
+        ]),
+        findFirst: vi.fn().mockResolvedValue({ id: 'msg-3' }),
+      },
+    } as any;
+
+    const result = await processMemoryIndexJob(
+      { userId: 'user-enabled', sessionId: 'sess-race' },
+      {
+        prismaClient: mockDb,
+        embedTextsFn: vi.fn().mockResolvedValue([dummyVector]),
+        insertChunksFn: vi.fn().mockResolvedValue(0),
+      }
+    );
+
+    expect(result.skipped).toBe(true);
+    expect(result.chunkCount).toBe(0);
+    expect(result.needsCatchup).toBe(false);
+    expect(result.reason).toContain('关闭');
+  });
 });

@@ -10,6 +10,8 @@
  */
 
 import { useEffect } from 'react';
+import { toast } from 'sonner';
+import { deleteConversations } from '@/lib/api/conversations';
 import { useConversationsStore } from './conversations-store';
 import { useChatStore } from './chat-store';
 import { useComparisonStore } from './comparison-store';
@@ -44,6 +46,19 @@ const defaultConversationPort: ConversationPort = {
 };
 
 setConversationPort(defaultConversationPort);
+
+/**
+ * 清理服务端记忆会话（ADR-0058）。本地删除保持即时；失败时提示用户重试，
+ * 不静默吞掉「服务端仍有记忆」的隐私缺口。
+ */
+async function purgeServerMemory(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  try {
+    await deleteConversations(ids);
+  } catch {
+    toast.error('服务端记忆清理失败，请重试');
+  }
+}
 
 /** 刷新恢复是否已执行（应用生命周期内只恢复一次） */
 let hasInitialized = false;
@@ -559,11 +574,17 @@ export const conversationOrchestrator = {
   ensureActiveConversation(): string {
     const store = useConversationsStore.getState();
     const current = store.getCurrentConversation();
+    const chat = useChatStore.getState();
     if (current && current.mode !== 'compare') {
+      // 会话列表已有当前会话，但运行时可能尚未加载（刷新/新建后直接发送）：
+      // 同步 chat-store 的 activeConversationId，否则请求体缺少 conversationId，
+      // 服务端会因缺少会话身份跳过记忆持久化。
+      if (chat.activeConversationId !== current.id) {
+        loadSingleRuntime(current);
+      }
       return current.id;
     }
 
-    const chat = useChatStore.getState();
     const provider = chat?.provider || 'xunfei';
     const model = chat?.model || 'lite';
     const newId = store.createConversation(provider, model);
@@ -670,6 +691,7 @@ export const conversationOrchestrator = {
     removeConversationsAndRebind([id]);
     useHistoryStore.getState().deleteItem(id);
     markSourcesInvalidBySourceIds(sourceIds);
+    void purgeServerMemory([id]);
   },
 
   /**
@@ -686,6 +708,7 @@ export const conversationOrchestrator = {
     if (item?.type === 'chat' || (!item && projectedChat)) {
       stopStreamIfGenerating(id);
       removeConversationsAndRebind([id]);
+      await purgeServerMemory([id]);
     } else if (item?.type === 'voice') {
       await useAudioHistoryStore.getState().deleteAudioItemOnly(id);
     }
@@ -707,6 +730,8 @@ export const conversationOrchestrator = {
     useHistoryStore.getState().deleteItems(ids);
     chatIds.forEach(stopStreamIfGenerating);
     removeConversationsAndRebind(chatIds);
+
+    await purgeServerMemory(chatIds);
 
     // 各语音记录相互独立，并发删除避免逐条等待 IndexedDB 事务
     await Promise.all(
@@ -741,6 +766,7 @@ export const conversationOrchestrator = {
       )
     );
 
+    await purgeServerMemory(chatIds);
     markSourcesInvalidBySourceIds(sourceIds);
   },
 

@@ -11,7 +11,12 @@
  * 规范：ADR-0051 / spec.md 决策 2, 4, 5, 6, 7
  */
 
-import { prisma } from '@repo/db';
+import {
+  prisma,
+  persistMemoryTurn,
+  type PersistMemoryTurnInput,
+  type PersistMemoryTurnResult,
+} from '@repo/db';
 import { detectChatSensitiveTopic } from '../chat-safety';
 import { flushObservability } from '@/lib/observability/langfuse-client';
 import type { ChatStreamFinish } from '../types';
@@ -36,6 +41,9 @@ export class ChatCompletionLifecycle {
   private readonly memoryIndexQueue?: {
     add: (name: string, data: any, opts: any) => Promise<any>;
   };
+  private readonly persistMemoryTurn: (
+    input: PersistMemoryTurnInput
+  ) => Promise<PersistMemoryTurnResult>;
   private readonly flushTimeoutMs: number;
   private readonly logger: {
     warn: (message: string, ...args: any[]) => void;
@@ -48,6 +56,7 @@ export class ChatCompletionLifecycle {
     this.detectSensitiveTopic = dependencies.detectSensitiveTopic ?? detectChatSensitiveTopic;
     this.flushObservability = dependencies.flushObservability ?? flushObservability;
     this.memoryIndexQueue = dependencies.memoryIndexQueue;
+    this.persistMemoryTurn = dependencies.persistMemoryTurnFn ?? persistMemoryTurn;
     this.flushTimeoutMs = dependencies.flushTimeoutMs ?? DEFAULT_FLUSH_TIMEOUT_MS;
     this.logger = dependencies.logger ?? console;
   }
@@ -95,6 +104,7 @@ export class ChatCompletionLifecycle {
       safetyFlag: null,
       quotaSettled: false,
       agentRunPersisted: false,
+      memoryPersisted: false,
       observabilityFlushed: false,
       memoryJobDispatched: false,
     };
@@ -223,7 +233,59 @@ export class ChatCompletionLifecycle {
       sideEffects.agentRunPersisted = false;
     }
 
-    // 副作用 4: 观测 flush (超时熔断，默认 500ms)
+    // 副作用 4: 记忆输入消息持久化 (ADR-0058)
+    // 只有开启记忆、会话/轮次身份齐全且本轮有完整正文时才写入；写入失败不阻断响应，但跳过派发。
+    let memoryEnabled = context.memorySearchEnabled;
+    if (memoryEnabled === undefined) {
+      const prismaClient = this.prisma;
+      const dbUser = await (prismaClient?.user?.findUnique
+        ? prismaClient.user.findUnique({
+            where: { id: context.userId },
+            select: { memorySearchEnabled: true },
+          })
+        : null);
+      memoryEnabled = dbUser?.memorySearchEnabled ?? false;
+    }
+
+    if (memoryEnabled) {
+      const lastUserMessage = [...context.messages].reverse().find((m) => m.role === 'user');
+      const userContent = lastUserMessage?.content ?? '';
+      const assistantContent = finish.outputText ?? '';
+
+      if (!context.conversationId || !context.turnId) {
+        this.logger.warn('[chat] 记忆输入消息缺少会话或轮次身份，已跳过持久化', {
+          requestId: context.requestId,
+          userId: context.userId,
+          conversationId: context.conversationId ?? null,
+          hasTurnId: Boolean(context.turnId),
+        });
+      } else if (userContent.trim() && assistantContent.trim()) {
+        try {
+          const persisted = await this.persistMemoryTurn({
+            userId: context.userId,
+            sessionId: context.conversationId,
+            turnId: context.turnId,
+            requestId: context.requestId,
+            userContent,
+            assistantContent,
+          });
+          sideEffects.memoryPersisted = persisted.persisted;
+          if (!persisted.persisted) {
+            this.logger.warn('[chat] 记忆输入消息未写入', {
+              requestId: context.requestId,
+              userId: context.userId,
+              conversationId: context.conversationId,
+              reason: persisted.reason,
+            });
+          }
+        } catch (persistErr) {
+          this.logger.warn('[chat] 记忆输入消息持久化失败 (容错不阻断):', persistErr);
+          sideEffects.memoryPersisted = false;
+        }
+      }
+    }
+
+    // 副作用 5: 观测 flush (超时熔断，默认 500ms)
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       const timeoutMs = this.flushTimeoutMs;
@@ -245,36 +307,20 @@ export class ChatCompletionLifecycle {
       }
     }
 
-    // 副作用 5: 记忆派发 (防抖 30s 派发 memory-index 任务)
-    if (context.conversationId) {
+    // 副作用 6: 记忆派发 (防抖 30s 派发 memory-index 任务)
+    if (memoryEnabled && sideEffects.memoryPersisted && context.conversationId) {
       try {
-        let memoryEnabled = context.memorySearchEnabled;
-        if (memoryEnabled === undefined) {
-          const prismaClient = this.prisma;
-          const dbUser = await (prismaClient?.user?.findUnique
-            ? prismaClient.user.findUnique({
-                where: { id: context.userId },
-                select: { memorySearchEnabled: true },
-              })
-            : null);
-          memoryEnabled = dbUser?.memorySearchEnabled ?? false;
-        }
-
-        if (memoryEnabled) {
-          const queue = this.memoryIndexQueue ?? (await import('@repo/queue')).memoryIndexQueue;
-          await queue.add(
-            'memory-index',
-            { userId: context.userId, sessionId: context.conversationId },
-            {
-              jobId: `memory-index-${context.conversationId}`,
-              delay: 30_000,
-              removeOnComplete: true,
-            }
-          );
-          sideEffects.memoryJobDispatched = true;
-        } else {
-          sideEffects.memoryJobDispatched = false;
-        }
+        const queue = this.memoryIndexQueue ?? (await import('@repo/queue')).memoryIndexQueue;
+        await queue.add(
+          'memory-index',
+          { userId: context.userId, sessionId: context.conversationId },
+          {
+            jobId: `memory-index-${context.conversationId}`,
+            delay: 30_000,
+            removeOnComplete: true,
+          }
+        );
+        sideEffects.memoryJobDispatched = true;
       } catch (memoryQueueErr) {
         this.logger.warn('[chat] 派发会话记忆索引任务失败 (容错不阻断):', memoryQueueErr);
         sideEffects.memoryJobDispatched = false;

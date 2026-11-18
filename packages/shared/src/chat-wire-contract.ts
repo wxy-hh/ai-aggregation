@@ -59,6 +59,8 @@ export interface ChatRequestBody {
   /** 审批凭证绑定的会话范围（ADR-0041，与 conversationId 分离），默认 '' */
   approvalScope: string;
   conversationId?: string;
+  /** 稳定轮次标识：客户端当前轮用户消息的本地 ID，用于记忆输入消息幂等（ADR-0058） */
+  turnId?: string;
   requestId?: string;
   reservationId?: string;
 }
@@ -226,7 +228,7 @@ function parseWireMessage(raw: unknown, index: number, isLast: boolean): Message
 
 function parseOptionalString(
   raw: Record<string, unknown>,
-  key: 'model' | 'requestId' | 'reservationId'
+  key: 'model' | 'requestId' | 'reservationId' | 'turnId'
 ): { ok: true; value?: string } | { ok: false; error: ChatRequestParseError } {
   const value = raw[key];
   if (value === undefined) return { ok: true, value: undefined };
@@ -294,6 +296,8 @@ export function parseChatRequestBody(input: unknown): ChatRequestParseResult {
   if (!requestId.ok) return requestId;
   const reservationId = parseOptionalString(raw, 'reservationId');
   if (!reservationId.ok) return reservationId;
+  const turnId = parseOptionalString(raw, 'turnId');
+  if (!turnId.ok) return turnId;
 
   let chatScene: ChatScene = 'single';
   if (raw.chatScene !== undefined) {
@@ -350,6 +354,10 @@ export function parseChatRequestBody(input: unknown): ChatRequestParseResult {
   if (trimmedModel) body.model = trimmedModel;
   if (requestId.value) body.requestId = normalizeId(requestId.value, WIRE_ID_MAX);
   if (reservationId.value) body.reservationId = normalizeId(reservationId.value, WIRE_ID_MAX);
+  if (turnId.value) {
+    const normalizedTurnId = normalizeId(turnId.value, WIRE_ID_MAX);
+    if (normalizedTurnId) body.turnId = normalizedTurnId;
+  }
   const conversationId = normalizeId(raw.conversationId, WIRE_ID_MAX);
   if (conversationId) body.conversationId = conversationId;
   if (capabilityPack) body.capabilityPack = capabilityPack;

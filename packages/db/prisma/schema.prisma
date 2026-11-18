@@ -102,11 +102,18 @@ model Message {
   sessionId String
   role      String
   content   String   @db.Text
+  // 记忆输入消息的轮次与完成身份（ADR-0058）；普通聊天历史不使用这两列
+  turnId    String?  @map("turn_id")
+  requestId String?  @map("request_id")
+  // 幂等键：user 为 turn:<turnId>，assistant 为 complete:<requestId>
+  idempotencyKey String? @map("idempotency_key")
   createdAt DateTime @default(now())
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@unique([sessionId, idempotencyKey])
   @@index([sessionId])
+  @@index([sessionId, turnId])
   @@map("messages")
 }
 

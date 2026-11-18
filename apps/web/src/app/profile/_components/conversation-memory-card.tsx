@@ -107,7 +107,7 @@ export function ConversationMemoryCard() {
             </label>
           </div>
           <p className="mt-3 text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
-            开启后历史会话将建立加密向量索引用于检索；关闭后将彻底删除已索引的记忆切片。
+            开启后新产生的对话将建立加密向量索引；关闭后将彻底删除已索引的记忆切片与为记忆保存的对话内容。
           </p>
         </div>
 
@@ -139,7 +139,7 @@ export function ConversationMemoryCard() {
               关闭会话记忆检索确认
             </DialogTitle>
             <DialogDescription className="text-sm leading-relaxed text-[#64748B] dark:text-slate-400">
-              关闭后将彻底删除已索引的记忆切片，历史对话数据将不再被检索。此操作不可撤销，是否确认关闭？
+              关闭后将彻底删除已索引的记忆切片与为记忆保存的对话内容，历史对话数据将不再被检索。此操作不可撤销，是否确认关闭？
             </DialogDescription>
           </DialogHeader>
 

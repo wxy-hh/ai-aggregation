@@ -55,6 +55,57 @@ describe('buildChatRequestBody 请求投影（评审 C4）', () => {
     expect(JSON.stringify(body.messages)).not.toContain('imageUrl');
   });
 
+  it('TC03-0: send/reload/approval_resume 模式的 conversationId 原样进入请求体', () => {
+    for (const mode of ['send', 'reload', 'approval_resume'] as const) {
+      const body = buildChatRequestBody({
+        mode,
+        messages: [{ role: 'user', content: '普通消息' }],
+        provider: 'xunfei',
+        thinking: false,
+        agentMode: false,
+        conversationId: 'conv-1700000000000',
+      });
+      expect(body.conversationId).toBe('conv-1700000000000');
+    }
+  });
+
+  it('TC03-1: send/reload/approval_resume 模式的 turnId 原样进入请求体', () => {
+    for (const mode of ['send', 'reload', 'approval_resume'] as const) {
+      const body = buildChatRequestBody({
+        mode,
+        messages: [{ role: 'user', content: '普通消息' }],
+        provider: 'xunfei',
+        thinking: false,
+        agentMode: false,
+        turnId: 'user-1700000000000',
+      });
+      expect(body.turnId).toBe('user-1700000000000');
+    }
+  });
+
+  it('TC03-2: 对比模式即使传入 turnId 也不进入请求体', () => {
+    const body = buildChatRequestBody({
+      mode: 'compare',
+      messages: [{ role: 'user', content: '同一个问题' }],
+      provider: 'xunfei',
+      thinking: false,
+      agentMode: false,
+      turnId: 'user-1700000000000',
+    });
+    expect(body.turnId).toBeUndefined();
+  });
+
+  it('TC03-3: 未提供 turnId 时请求体不带该字段', () => {
+    const body = buildChatRequestBody({
+      mode: 'send',
+      messages: [{ role: 'user', content: '普通消息' }],
+      provider: 'xunfei',
+      thinking: false,
+      agentMode: false,
+    });
+    expect(body.turnId).toBeUndefined();
+  });
+
   it('TC07-3: 对比模式 models 入参含 UI 字段时输出每项恰含 provider 与 model 两键', () => {
     const models = [
       { provider: 'xunfei', model: 'spark', label: '讯飞星火', providerLabel: '科大讯飞' },

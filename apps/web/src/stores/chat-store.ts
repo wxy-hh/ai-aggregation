@@ -1001,6 +1001,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               thinking: thinkingMode, // 深度思考模式开关（ADR-0016 / 工单 03）
               agentMode,
               conversationId: activeConversationId,
+              turnId: userMessage.id,
               capabilityPackKey: activeCapabilityPackKey,
               disabledToolKeys,
               artifactContext: agentMode ? artifactContextField().artifactContext : null,
@@ -1072,6 +1073,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       const history = messages.slice(0, index);
       const content = messages[index].content;
+      // 重新生成复用被重新生成那一轮的 user 消息 ID，保证服务端不会重复写 user 行
+      const turnId = messages[index].id;
 
       // 中断
       if (abortController) abortController.abort();
@@ -1119,6 +1122,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               thinking: thinkingMode,
               agentMode,
               conversationId: activeConversationId,
+              turnId,
               capabilityPackKey: activeCapabilityPackKey,
               disabledToolKeys,
               artifactContext: agentMode ? artifactContextField().artifactContext : null,
@@ -1236,6 +1240,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             // 恢复请求只在 agent 模式有意义，与暂停请求的作用域一致才能通过验签
             agentMode: true,
             conversationId: activeConversationId,
+            turnId: [...messages].reverse().find((m) => m.role === 'user')?.id,
             capabilityPackKey: activeCapabilityPackKey,
             disabledToolKeys,
             artifactContext: artifactContextField().artifactContext,

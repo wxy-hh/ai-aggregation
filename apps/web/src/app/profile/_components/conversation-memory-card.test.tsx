@@ -55,7 +55,7 @@ describe('ConversationMemoryCard 设置卡片与隐私确认弹窗', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('默认未开启')).toBeInTheDocument();
     expect(
-      screen.getByText(/开启后历史会话将建立加密向量索引用于检索；关闭后将彻底删除已索引的记忆切片/)
+      screen.getByText(/开启后新产生的对话将建立加密向量索引；关闭后将彻底删除已索引的记忆切片与为记忆保存的对话内容/)
     ).toBeInTheDocument();
   });
 
@@ -93,7 +93,9 @@ describe('ConversationMemoryCard 设置卡片与隐私确认弹窗', () => {
     // 确认弹窗出现，包含关闭后删除切片的警告提示
     await waitFor(() => {
       expect(screen.getByText('关闭会话记忆检索确认')).toBeInTheDocument();
-      expect(screen.getAllByText(/关闭后将彻底删除已索引的记忆切片/).length).toBeGreaterThanOrEqual(2);
+      expect(
+        screen.getAllByText(/关闭后将彻底删除已索引的记忆切片与为记忆保存的对话内容/).length
+      ).toBeGreaterThanOrEqual(2);
     });
 
     // 此时尚未调用 updateProfile

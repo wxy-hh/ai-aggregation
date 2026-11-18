@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => {
   return {
-    mockDeleteMemoryChunksByUser: vi.fn().mockResolvedValue(3),
     mockUserUpdate: vi.fn(),
     mockUserFindUnique: vi.fn(),
+    mockTransaction: vi.fn(),
+    mockTxQueryRaw: vi.fn(),
+    mockTxUserUpdate: vi.fn(),
+    mockTxChunkDeleteMany: vi.fn(),
+    mockTxSessionDeleteMany: vi.fn(),
   };
 });
 
@@ -15,8 +19,9 @@ vi.mock('@repo/db', () => ({
       findUnique: mocks.mockUserFindUnique,
       update: mocks.mockUserUpdate,
     },
+    $transaction: mocks.mockTransaction,
   },
-  deleteMemoryChunksByUser: mocks.mockDeleteMemoryChunksByUser,
+  deleteMemoryChunksByUser: vi.fn(),
 }));
 
 vi.mock('@/lib/api/with-auth', () => ({
@@ -27,8 +32,20 @@ vi.mock('@/lib/api/with-auth', () => ({
 
 import { PATCH } from './route';
 
-describe('PATCH /api/profile/update (会话记忆开关与隐私闭环 / QA-005 / QA-006)', () => {
-  it('开启记忆检索：正常更新 User.memorySearchEnabled 为 true', async () => {
+describe('PATCH /api/profile/update (会话记忆开关与隐私闭环 / QA-005 / QA-006 / ADR-0058)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.mockTransaction.mockImplementation(async (callback: any) =>
+      callback({
+        $queryRaw: mocks.mockTxQueryRaw,
+        user: { update: mocks.mockTxUserUpdate },
+        conversationMemoryChunk: { deleteMany: mocks.mockTxChunkDeleteMany },
+        chatSession: { deleteMany: mocks.mockTxSessionDeleteMany },
+      })
+    );
+  });
+
+  it('开启记忆检索：只更新 User.memorySearchEnabled，不删除任何数据', async () => {
     mocks.mockUserUpdate.mockResolvedValue({
       id: 'test-user-id',
       username: 'test_user',
@@ -53,12 +70,12 @@ describe('PATCH /api/profile/update (会话记忆开关与隐私闭环 / QA-005 
         data: expect.objectContaining({ memorySearchEnabled: true }),
       })
     );
-    // 开启时不触发清空
-    expect(mocks.mockDeleteMemoryChunksByUser).not.toHaveBeenCalled();
+    expect(mocks.mockTransaction).not.toHaveBeenCalled();
+    expect(mocks.mockTxSessionDeleteMany).not.toHaveBeenCalled();
   });
 
-  it('关闭记忆检索：立即物理级联删除当前用户的全部存量记忆切片 (QA-006 授权撤回闭环)', async () => {
-    mocks.mockUserUpdate.mockResolvedValue({
+  it('关闭记忆检索：同一事务内锁定用户行、更新开关并删除会话与切片', async () => {
+    mocks.mockTxUserUpdate.mockResolvedValue({
       id: 'test-user-id',
       username: 'test_user',
       email: 'test@example.com',
@@ -77,8 +94,32 @@ describe('PATCH /api/profile/update (会话记忆开关与隐私闭环 / QA-005 
     const json = await res.json();
     expect(json.data.user.memorySearchEnabled).toBe(false);
 
-    // 关键断言：严格调用 deleteMemoryChunksByUser 清除该用户数据
-    expect(mocks.mockDeleteMemoryChunksByUser).toHaveBeenCalledWith('test-user-id');
+    expect(mocks.mockTransaction).toHaveBeenCalledTimes(1);
+    expect(mocks.mockTxQueryRaw).toHaveBeenCalledTimes(1);
+    expect(mocks.mockTxUserUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'test-user-id' },
+        data: expect.objectContaining({ memorySearchEnabled: false }),
+      })
+    );
+    expect(mocks.mockTxChunkDeleteMany).toHaveBeenCalledWith({
+      where: { userId: 'test-user-id' },
+    });
+    expect(mocks.mockTxSessionDeleteMany).toHaveBeenCalledWith({
+      where: { userId: 'test-user-id' },
+    });
+  });
+
+  it('关闭记忆检索时事务失败则返回 500，不返回成功', async () => {
+    mocks.mockTransaction.mockRejectedValue(new Error('db down'));
+
+    const req = new NextRequest('http://localhost:3000/api/profile/update', {
+      method: 'PATCH',
+      body: JSON.stringify({ memorySearchEnabled: false }),
+    });
+
+    const res = await PATCH(req);
+    expect(res.status).toBe(500);
   });
 
   it('参数非法时返回 400', async () => {

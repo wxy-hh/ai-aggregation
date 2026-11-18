@@ -20,8 +20,25 @@ import type { AgentPlan } from '@repo/shared';
 import type { MessageApproval } from '@/lib/agent/approval-display';
 import type { Artifact } from '@repo/shared';
 
+const mocks = vi.hoisted(() => ({
+  mockDeleteConversations: vi.fn(),
+  mockToastError: vi.fn(),
+}));
+
+vi.mock('@/lib/api/conversations', () => ({
+  deleteConversations: mocks.mockDeleteConversations,
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: mocks.mockToastError,
+  },
+}));
+
 describe('会话编排模块', () => {
   beforeEach(() => {
+    mocks.mockDeleteConversations.mockReset();
+    mocks.mockToastError.mockReset();
     useConversationsStore.setState({
       conversations: [],
       currentConversationId: null,
@@ -337,6 +354,58 @@ describe('会话编排模块', () => {
     expect(afterDelete.currentConversationId).toBe(id1);
     expect(useChatStore.getState().activeConversationId).toBe(id1);
     expect(useChatStore.getState().messages[0].content).toBe('第一轮');
+  });
+
+  it('deleteConversation 同时请求服务端清理记忆会话', async () => {
+    mocks.mockDeleteConversations.mockResolvedValue(1);
+    const id = useConversationsStore.getState().createConversation('xunfei', 'lite');
+
+    conversationOrchestrator.deleteConversation(id);
+
+    await vi.waitFor(() => {
+      expect(mocks.mockDeleteConversations).toHaveBeenCalledWith([id]);
+    });
+  });
+
+  it('deleteConversation 服务端清理失败时提示中文错误且本地仍删除', async () => {
+    mocks.mockDeleteConversations.mockRejectedValue(new Error('network'));
+    const id = useConversationsStore.getState().createConversation('xunfei', 'lite');
+
+    conversationOrchestrator.deleteConversation(id);
+
+    await vi.waitFor(() => {
+      expect(mocks.mockToastError).toHaveBeenCalledWith('服务端记忆清理失败，请重试');
+    });
+    expect(
+      useConversationsStore.getState().conversations.some((conversation) => conversation.id === id)
+    ).toBe(false);
+  });
+
+  it('deleteConversation 失败后再次触发会重试服务端清理', async () => {
+    mocks.mockDeleteConversations
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(1);
+    const id = useConversationsStore.getState().createConversation('xunfei', 'lite');
+
+    conversationOrchestrator.deleteConversation(id);
+    await vi.waitFor(() => {
+      expect(mocks.mockToastError).toHaveBeenCalledTimes(1);
+    });
+
+    conversationOrchestrator.deleteConversation(id);
+    await vi.waitFor(() => {
+      expect(mocks.mockDeleteConversations).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('ensureActiveConversation 复用当前会话时同步 chat-store 的 activeConversationId', () => {
+    const id = useConversationsStore.getState().createConversation('xunfei', 'lite');
+    useChatStore.setState({ activeConversationId: null });
+
+    const resolved = conversationOrchestrator.ensureActiveConversation();
+
+    expect(resolved).toBe(id);
+    expect(useChatStore.getState().activeConversationId).toBe(id);
   });
 
   it('deleteConversation 删除对比会话时：同步重置 comparisonStore 运行时', () => {

@@ -13,14 +13,14 @@
 import { embedTexts, segmentForIndex } from '@repo/text';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { logger } from '@repo/logger';
-import { prisma, insertMemoryChunks, type InsertMemoryChunkInput } from '@repo/db';
+import { prisma, insertMemoryChunksIfEnabled, type InsertMemoryChunkInput } from '@repo/db';
 import { estimateTokenCount } from '@repo/shared';
 import type { MemoryIndexJobData } from '@repo/queue';
 
 export interface ProcessMemoryIndexDependencies {
   prismaClient?: typeof prisma;
   embedTextsFn?: typeof embedTexts;
-  insertChunksFn?: typeof insertMemoryChunks;
+  insertChunksFn?: (chunks: InsertMemoryChunkInput[]) => Promise<number>;
 }
 
 export interface ProcessMemoryIndexResult {
@@ -29,6 +29,8 @@ export interface ProcessMemoryIndexResult {
   chunkCount: number;
   skipped?: boolean;
   reason?: string;
+  /** 插入后是否发现更高水位线的新消息，需要补派发一次追赶任务 */
+  needsCatchup?: boolean;
 }
 
 /**
@@ -179,19 +181,43 @@ export async function processMemoryIndexJob(
     embedding: embeddings[idx],
   }));
 
-  const insertChunks = deps.insertChunksFn || insertMemoryChunks;
-  await insertChunks(chunksToInsert);
+  const insertChunks = deps.insertChunksFn || insertMemoryChunksIfEnabled;
+  const insertedCount = await insertChunks(chunksToInsert);
+
+  // 事务级开关复核可能拒绝写入（关闭记忆与在途索引竞态，ADR-0058）
+  if (insertedCount === 0) {
+    logger.info('记忆切片未写入：用户已关闭会话记忆检索', { sessionId, userId });
+    return {
+      success: true,
+      sessionId,
+      chunkCount: 0,
+      skipped: true,
+      reason: '用户已关闭会话记忆检索',
+      needsCatchup: false,
+    };
+  }
 
   logger.info('会话记忆增量索引成功落盘', {
     sessionId,
     userId,
-    chunkCount: chunksToInsert.length,
+    chunkCount: insertedCount,
     newMessagesCount: newMessages.length,
   });
+
+  // 收尾补派发：插入期间若有更高水位线的新消息，交给 Worker 再入队一次追赶任务
+  const findFirst = (db.message as any).findFirst;
+  const newerMessage =
+    typeof findFirst === 'function'
+      ? await findFirst({
+          where: { sessionId, createdAt: { gt: new Date(latestMessageTime) } },
+          select: { id: true },
+        })
+      : null;
 
   return {
     success: true,
     sessionId,
-    chunkCount: chunksToInsert.length,
+    chunkCount: insertedCount,
+    needsCatchup: Boolean(newerMessage),
   };
 }

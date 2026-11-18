@@ -770,21 +770,26 @@ export async function getSequentialChapterChunks(params: {
   }));
 }
 
+/** 记忆切片写入的执行器：Prisma 客户端或事务上下文 */
+type MemoryChunkExecutor = {
+  $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
+};
+
 /**
- * 插入会话记忆切片（使用 raw SQL 写入 Unsupported 字段）
+ * 写入一批会话记忆切片（raw SQL 维护 Unsupported 字段）。
+ * 普通写入与事务守卫写入共用同一段 SQL，避免表结构变更时分叉。
  */
-export async function insertMemoryChunks(
+async function insertMemoryChunkRows(
+  executor: MemoryChunkExecutor,
   chunks: InsertMemoryChunkInput[]
 ): Promise<number> {
-  if (chunks.length === 0) return 0;
-
   let insertedCount = 0;
   for (const chunk of chunks) {
     const id = chunk.id || generateId();
     const vectorStr = formatVector(chunk.embedding);
     const metadataStr = JSON.stringify(chunk.metadata ?? {});
 
-    await prisma.$executeRawUnsafe(
+    await executor.$executeRawUnsafe(
       `
       INSERT INTO "conversation_memory_chunks" (
         "id", "user_id", "session_id", "message_id",
@@ -815,8 +820,44 @@ export async function insertMemoryChunks(
     );
     insertedCount++;
   }
-
   return insertedCount;
+}
+
+/**
+ * 插入会话记忆切片（使用 raw SQL 写入 Unsupported 字段）
+ */
+export async function insertMemoryChunks(
+  chunks: InsertMemoryChunkInput[]
+): Promise<number> {
+  if (chunks.length === 0) return 0;
+  return insertMemoryChunkRows(prisma, chunks);
+}
+
+/**
+ * 插入会话记忆切片，并在同一事务内锁定用户行复核记忆开关（ADR-0058）。
+ *
+ * 与关闭记忆的 profile 事务共用同一把用户行锁：若关闭先提交，本函数读到 false 后返回 0；
+ * 若本函数先提交，关闭事务随后会删除已写入的切片。返回 0 表示未写入。
+ */
+export async function insertMemoryChunksIfEnabled(
+  chunks: InsertMemoryChunkInput[]
+): Promise<number> {
+  if (chunks.length === 0) return 0;
+
+  const userId = chunks[0]!.userId;
+  if (chunks.some((chunk) => chunk.userId !== userId)) {
+    throw new Error('insertMemoryChunksIfEnabled 要求所有切片属于同一用户');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ memory_search_enabled: boolean }>>`
+      SELECT "memory_search_enabled" FROM "users" WHERE "id" = ${userId} FOR UPDATE
+    `;
+
+    if (!rows[0]?.memory_search_enabled) return 0;
+
+    return insertMemoryChunkRows(tx, chunks);
+  });
 }
 
 /**

@@ -7,8 +7,9 @@
 import { Worker } from 'bullmq';
 import { logger } from '@repo/logger';
 import { resolveBullMQConnectionOptions } from '@repo/shared/server';
-import type { MemoryIndexJobData } from '@repo/queue';
+import { memoryIndexQueue, type MemoryIndexJobData } from '@repo/queue';
 import { processMemoryIndexJob } from './memory-index/processor';
+import { dispatchMemoryCatchup } from './memory-index/catchup';
 
 export const memoryIndexWorker = new Worker<MemoryIndexJobData>(
   'memory-index',
@@ -22,6 +23,14 @@ export const memoryIndexWorker = new Worker<MemoryIndexJobData>(
     });
 
     const result = await processMemoryIndexJob(job.data);
+
+    if (result.needsCatchup) {
+      await dispatchMemoryCatchup(memoryIndexQueue, job.data);
+      logger.info('memory-index worker 追加追赶任务', {
+        sessionId: job.data.sessionId,
+        userId: job.data.userId,
+      });
+    }
 
     logger.info('memory-index worker 任务处理完毕', {
       jobId: job.id,

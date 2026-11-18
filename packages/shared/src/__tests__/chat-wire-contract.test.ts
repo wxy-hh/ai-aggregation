@@ -163,6 +163,35 @@ describe('parseChatRequestBody', () => {
     expect(result.body.conversationId).toHaveLength(128);
   });
 
+  it('TC04-11a: 合法 turnId 原样保留', () => {
+    const result = parseChatRequestBody(minimalBody({ turnId: 'user-1700000000000' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body.turnId).toBe('user-1700000000000');
+  });
+
+  it('TC04-11b: 空白 turnId 归一化为 undefined', () => {
+    const result = parseChatRequestBody(minimalBody({ turnId: '   ' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body.turnId).toBeUndefined();
+  });
+
+  it('TC04-11c: 超长 turnId 截断 128', () => {
+    const result = parseChatRequestBody(minimalBody({ turnId: 't'.repeat(200) }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.body.turnId).toHaveLength(128);
+  });
+
+  it('TC04-11d: 非字符串 turnId 返回 400', () => {
+    const result = parseChatRequestBody(minimalBody({ turnId: 123 }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('INVALID_CHAT_REQUEST');
+    expect(result.error.details[0]?.path).toBe('turnId');
+  });
+
   it('TC04-12: model 为全空白字符串时输出不含 model 字段', () => {
     const result = parseChatRequestBody(minimalBody({ model: '   ' }));
     expect(result.ok).toBe(true);

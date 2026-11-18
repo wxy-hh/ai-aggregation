@@ -138,6 +138,7 @@ describe('TC08: Chat Store 审批卡片：拒绝、确认恢复、落盘与失�
     });
     expect(body.agent).toBe(true);
     expect(body.approvalScope).toBe('conv-1');
+    expect(body.turnId).toBe('u-1');
     const sent = body.messages as Array<{ role: string; content: string }>;
     expect(sent[0]).toMatchObject({ role: 'user', content: '把发布结果通知到群里' });
     const checkpoint = sent.find((m) => m.content.includes('检索发布说明'));

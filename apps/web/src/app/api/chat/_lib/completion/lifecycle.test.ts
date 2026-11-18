@@ -10,6 +10,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
   let mockFlushObservability: any;
   let mockMemoryQueue: any;
   let mockDetectSensitiveTopic: any;
+  let mockPersistMemoryTurn: any;
 
   beforeEach(() => {
     mockPrisma = {
@@ -34,6 +35,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
     };
 
     mockDetectSensitiveTopic = vi.fn().mockReturnValue(null);
+    mockPersistMemoryTurn = vi.fn().mockResolvedValue({ persisted: true });
   });
 
   function createTestContext(overrides?: Partial<ChatCompletionContext>): {
@@ -49,6 +51,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       requestId: 'req-001',
       errorId: 'err-001',
       conversationId: 'conv-001',
+      turnId: 'user-turn-001',
       effectiveProvider: 'deepseek',
       modelName: 'deepseek-chat',
       messages: [
@@ -102,6 +105,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -166,6 +170,11 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       callSequence.push('observability_flush');
     });
 
+    mockPersistMemoryTurn.mockImplementation(async () => {
+      callSequence.push('memory_persist');
+      return { persisted: true };
+    });
+
     mockMemoryQueue.add.mockImplementation(async () => {
       callSequence.push('memory_dispatch');
       return { id: 'job-1' };
@@ -181,6 +190,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -190,6 +200,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       'detect_safety',
       'finalize_settle',
       'agent_run_persist',
+      'memory_persist',
       'observability_flush',
       'memory_dispatch',
     ]);
@@ -210,6 +221,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -255,6 +267,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
       flushTimeoutMs: 50,
     });
@@ -305,6 +318,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -369,6 +383,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -403,6 +418,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -431,6 +447,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -468,6 +485,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -523,6 +541,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -553,6 +572,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
 
@@ -575,6 +595,7 @@ describe('ChatCompletionLifecycle 单元测试矩阵 (TC07 / ADR-0051)', () => {
       logger: mockLogger,
       flushObservability: mockFlushObservability,
       memoryIndexQueue: mockMemoryQueue,
+      persistMemoryTurnFn: mockPersistMemoryTurn,
       detectSensitiveTopic: mockDetectSensitiveTopic,
     });
     await lifecycle2.complete(contextNoUser, finish);

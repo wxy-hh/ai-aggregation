@@ -1,4 +1,5 @@
 export { prisma } from './client';
+export * from './chat';
 export * from './ai-usage';
 export * from './quota-ledger';
 export * from './media-tasks';

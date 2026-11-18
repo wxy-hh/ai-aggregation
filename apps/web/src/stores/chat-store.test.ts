@@ -272,6 +272,8 @@ describe('useChatStore.reload（重新生成守卫与行为）', () => {
     await useChatStore.getState().reload('user-2');
 
     expect(mockedAuthFetch).toHaveBeenCalledTimes(1);
+    const reloadBody = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    expect(reloadBody.turnId).toBe('user-2');
     const { messages, isLoading, error } = useChatStore.getState();
     expect(messages).toHaveLength(4);
     expect(messages[0]).toMatchObject({ id: 'user-1', content: '第 1 轮提问' });
@@ -592,6 +594,22 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
     expect(useChatStore.getState().artifacts).toEqual([]);
     expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
     expect(useChatStore.getState().toolOverrides).toEqual({});
+  });
+
+  it('sendMessage 请求体携带当前用户消息的 turnId', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"收到"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    useChatStore.setState({ activeConversationId: 'conv-turn-send', input: '记住暗号' });
+
+    await useChatStore.getState().sendMessage();
+
+    const sentUserMessage = useChatStore.getState().messages[0];
+    const body = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    expect(body.turnId).toBe(sentUserMessage.id);
   });
 
   it('agent 模式下 sendMessage 计算并携带 disabledToolKeys（差异减项传参）', async () => {

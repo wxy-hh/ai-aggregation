@@ -4,7 +4,11 @@
  * 规范：ADR-0051 / spec.md 决策 6
  */
 
-import type { QuotaSession } from '@repo/db';
+import type {
+  QuotaSession,
+  PersistMemoryTurnInput,
+  PersistMemoryTurnResult,
+} from '@repo/db';
 import type { ChatStreamFinish } from '../types';
 
 /**
@@ -19,6 +23,8 @@ export interface ChatCompletionContext {
   errorId: string;
   /** 会话 ID（可选） */
   conversationId?: string | null;
+  /** 稳定轮次标识：当前轮 user 消息的本地 ID（ADR-0058） */
+  turnId?: string;
   /** 实际生效的 AI 提供方 */
   effectiveProvider: string;
   /** 模型名称 */
@@ -56,6 +62,8 @@ export interface ChatCompletionSideEffects {
   quotaSettled: boolean;
   /** AgentRun 审计记录是否已落库（非 agent 模式或落库失败为 false） */
   agentRunPersisted: boolean;
+  /** 记忆输入消息是否已写入（未开启、无正文或写入失败为 false） */
+  memoryPersisted: boolean;
   /** 可观测性事件是否已刷新（超时熔断或失败为 false） */
   observabilityFlushed: boolean;
   /** 记忆索引任务是否已成功派发（未开启或派发失败为 false） */
@@ -90,6 +98,10 @@ export interface ChatCompletionDependencies {
   memoryIndexQueue?: {
     add: (name: string, data: any, opts: any) => Promise<any>;
   };
+  /** 记忆输入消息持久化实现（默认使用 @repo/db 的事务写入；测试可注入替身） */
+  persistMemoryTurnFn?: (
+    input: PersistMemoryTurnInput
+  ) => Promise<PersistMemoryTurnResult>;
   /** 观测性刷新超时限制（毫秒），默认 500ms */
   flushTimeoutMs?: number;
   /** 结构化日志记录器，默认 console */

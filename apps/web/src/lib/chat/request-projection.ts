@@ -38,6 +38,8 @@ export interface BuildChatRequestInput {
   thinking: boolean;
   agentMode: boolean;
   conversationId?: string | null;
+  /** 稳定轮次标识：当前轮用户消息的本地 ID（ADR-0058） */
+  turnId?: string | null;
   capabilityPackKey?: string | null;
   disabledToolKeys?: string[];
   artifactContext?: unknown;
@@ -55,6 +57,8 @@ export interface ChatTransportBody {
   thinking: boolean;
   agent?: true;
   approvalScope?: string;
+  conversationId?: string;
+  turnId?: string;
   capabilityPack?: string;
   disabledToolKeys?: string[];
   artifactContext?: unknown;
@@ -84,6 +88,7 @@ export function buildChatRequestBody(input: BuildChatRequestInput): ChatTranspor
     thinking,
     agentMode,
     conversationId,
+    turnId,
     capabilityPackKey,
     disabledToolKeys,
     artifactContext,
@@ -118,6 +123,10 @@ export function buildChatRequestBody(input: BuildChatRequestInput): ChatTranspor
     thinking,
   };
   if (model) body.model = model;
+  // 会话身份必须随单聊/Agent 请求上线，否则服务端无法建立记忆会话（ADR-0058）
+  if (conversationId && mode !== 'compare') body.conversationId = conversationId;
+  // 对比模式不进入记忆链路（ADR-0058）：turnId 只随单聊/Agent 请求发送
+  if (turnId && mode !== 'compare') body.turnId = turnId;
   if (agentMode) {
     body.agent = true;
     body.approvalScope = conversationId ?? '';
