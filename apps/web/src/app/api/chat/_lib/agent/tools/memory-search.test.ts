@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { logger } from '@repo/logger';
 import { createMemorySearchTool } from './memory-search';
 import { createAgentRuntimeContext } from '../runtime-context';
 import { createToolRegistry } from '@/lib/agent/registry';
@@ -158,5 +159,121 @@ describe('memory_search 工具与跨用户隔离单测 (工单 09 / QA-005 / QA-
 
     expect(runtimeEnabled.registry.has('memory_search')).toBe(true);
     expect(runtimeEnabled.registry.get('memory_search')?.name).toBe('memory_search');
+  });
+});
+
+
+describe('TC05 记忆检索词法降级', () => {
+  const dummyVector = new Array(1024).fill(0.1);
+  const ctx = {
+    userId: 'user-a',
+    signal: new AbortController().signal,
+    errorId: 'err-test',
+  };
+  const denseMatch = {
+    id: 'chunk-1',
+    userId: 'user-a',
+    sessionId: 'sess-1',
+    messageId: 'msg-1',
+    chunkIndex: 0,
+    content: '记住暗号：蓝色大象 42',
+    contentSegmented: '记住 暗号 蓝色 大象 42',
+    tokenCount: 10,
+    metadata: {},
+    createdAt: new Date('2026-10-23T10:00:00Z'),
+    similarity: 0.92,
+  };
+
+  it('TC05-4 正常检索时词法检索入口收到的 query 等于 segmentForQuery 输出', async () => {
+    const searchLexicalFn = vi.fn().mockResolvedValue([]);
+    const segmentQueryFn = vi.fn(() => '暗号 是什么');
+
+    const tool = createMemorySearchTool({
+      embedQueryFn: async () => dummyVector,
+      segmentQueryFn,
+      searchDenseFn: async () => [],
+      searchLexicalFn,
+    });
+
+    await tool.execute({ query: '暗号是什么' }, ctx);
+
+    expect(segmentQueryFn).toHaveBeenCalledWith('暗号是什么');
+    expect(searchLexicalFn).toHaveBeenCalledWith(
+      expect.objectContaining({ query: '暗号 是什么' })
+    );
+  });
+
+  it('TC05-5 分词器不可用时词法检索入口调用 0 次', async () => {
+    const searchLexicalFn = vi.fn();
+
+    const tool = createMemorySearchTool({
+      embedQueryFn: async () => dummyVector,
+      segmentQueryFn: () => null,
+      searchDenseFn: async () => [denseMatch],
+      searchLexicalFn,
+    });
+
+    await tool.execute({ query: '暗号是什么' }, ctx);
+
+    expect(searchLexicalFn).toHaveBeenCalledTimes(0);
+  });
+
+  it('TC05-6 分词器不可用时稠密检索入口调用 1 次且工具返回 ok=true', async () => {
+    const searchDenseFn = vi.fn().mockResolvedValue([denseMatch]);
+
+    const tool = createMemorySearchTool({
+      embedQueryFn: async () => dummyVector,
+      segmentQueryFn: () => null,
+      searchDenseFn,
+      searchLexicalFn: vi.fn(),
+    });
+
+    const result = await tool.execute({ query: '暗号是什么' }, ctx);
+
+    expect(searchDenseFn).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it('TC05-7 分词器不可用时 contentForModel 包含稠密检索结果内容', async () => {
+    const tool = createMemorySearchTool({
+      embedQueryFn: async () => dummyVector,
+      segmentQueryFn: () => null,
+      searchDenseFn: async () => [denseMatch],
+      searchLexicalFn: vi.fn(),
+    });
+
+    const result = await tool.execute({ query: '暗号是什么' }, ctx);
+
+    expect(result.contentForModel).toContain('蓝色大象 42');
+  });
+
+  it('TC05-8 降级告警包含 userId 与 errorId 且不包含查询原文', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const uniqueQuery = 'UNIQUE_C9_MEMORY_QUERY_888';
+
+    try {
+      const tool = createMemorySearchTool({
+        embedQueryFn: async () => dummyVector,
+        segmentQueryFn: () => null,
+        searchDenseFn: async () => [],
+        searchLexicalFn: vi.fn(),
+      });
+
+      await tool.execute({ query: uniqueQuery }, ctx);
+
+      const degradedCall = warnSpy.mock.calls.find(([message]) =>
+        String(message).includes('分词不可用')
+      );
+      expect(degradedCall?.[1]).toEqual(
+        expect.objectContaining({
+          feature: 'memory-lexical-degraded',
+          userId: 'user-a',
+          errorId: 'err-test',
+        })
+      );
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(uniqueQuery);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

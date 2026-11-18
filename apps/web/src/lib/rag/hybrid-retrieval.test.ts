@@ -1,28 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  hybridRetrieval,
-  prepareLexicalQuery,
-  type RetrievedChunk,
-} from './hybrid-retrieval';
+import { hybridRetrieval, type RetrievedChunk } from './hybrid-retrieval';
 import type {
   DocumentChunkDenseMatch,
   DocumentChunkLexicalMatch,
 } from '@repo/db';
+import { logger } from '@repo/logger';
 
 describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
-  it('1. prepareLexicalQuery：正确切分中文字词并保留技术编号', () => {
-    const res1 = prepareLexicalQuery('连败熔断');
-    expect(res1).toContain('连败');
-    expect(res1).toContain('熔断');
-
-    const res2 = prepareLexicalQuery('ADR-0008');
-    expect(res2).toContain('ADR');
-    expect(res2).toContain('0008');
-
-    const res3 = prepareLexicalQuery('   ');
-    expect(res3).toBe('');
-  });
-
   it('2. hybridRetrieval：并发两路检索、手写 RRF 融合与来源锚点结构化装配', async () => {
     // 构造模拟切片数据
     const mockDenseMatch1: DocumentChunkDenseMatch = {
@@ -1016,4 +1000,124 @@ describe('RAG 混合检索深模块 (hybrid-retrieval) 单元测试', () => {
   });
 });
 
+describe('TC06 词法路降级与空查询', () => {
+  const vector = new Array(1024).fill(0.1);
 
+  function makeDenseChunk(id: string, similarity = 0.9): DocumentChunkDenseMatch {
+    return {
+      id,
+      documentId: 'doc_1',
+      documentName: 'architecture.md',
+      knowledgeBaseId: 'kb1',
+      userId: 'u1',
+      documentVersion: 1,
+      chunkIndex: 0,
+      content: '连败熔断机制说明',
+      contentSegmented: '连败 熔断 机制 说明',
+      headingPath: null,
+      pageNumber: 1,
+      tokenCount: 10,
+      metadata: {},
+      createdAt: new Date(),
+      similarity,
+    };
+  }
+
+  it('TC06-1 正常查询时词法检索入口收到 segmentForQuery 的输出', async () => {
+    const searchLexicalFn = vi.fn().mockResolvedValue([]);
+    const segmentQueryFn = vi.fn(() => '连败 熔断');
+
+    await hybridRetrieval(
+      { userId: 'u1', knowledgeBaseId: 'kb1', query: '连败熔断', enableRerank: false },
+      {
+        embedQueryFn: async () => vector,
+        segmentQueryFn,
+        searchDenseFn: async () => [makeDenseChunk('chunk_dense')],
+        searchLexicalFn,
+      }
+    );
+
+    expect(segmentQueryFn).toHaveBeenCalledWith('连败熔断');
+    expect(searchLexicalFn).toHaveBeenCalledWith(
+      expect.objectContaining({ query: '连败 熔断' })
+    );
+  });
+
+  it('TC06-2/3/4 分词不可用时跳过词法并返回稠密结果', async () => {
+    const searchLexicalFn = vi.fn();
+
+    const result = await hybridRetrieval(
+      { userId: 'u1', knowledgeBaseId: 'kb1', query: '连败熔断', enableRerank: false },
+      {
+        embedQueryFn: async () => vector,
+        segmentQueryFn: () => null,
+        searchDenseFn: async () => [makeDenseChunk('chunk_dense')],
+        searchLexicalFn,
+      }
+    );
+
+    expect(searchLexicalFn).toHaveBeenCalledTimes(0);
+    expect(result.chunks.map((chunk) => chunk.chunkId)).toEqual(['chunk_dense']);
+  });
+
+  it('TC06-5 降级告警包含 knowledgeBaseId 且不包含查询原文', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const uniqueQuery = 'UNIQUE_C9_QUERY_TOKEN_777';
+
+    try {
+      await hybridRetrieval(
+        { userId: 'u1', knowledgeBaseId: 'kb1', query: uniqueQuery, enableRerank: false },
+        {
+          embedQueryFn: async () => vector,
+          segmentQueryFn: () => null,
+          searchDenseFn: async () => [],
+          searchLexicalFn: async () => [],
+        }
+      );
+
+      const degradedCall = warnSpy.mock.calls.find(([message]) =>
+        String(message).includes('分词不可用')
+      );
+      expect(degradedCall?.[1]).toEqual(
+        expect.objectContaining({
+          feature: 'rag-lexical-degraded',
+          knowledgeBaseId: 'kb1',
+        })
+      );
+      expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(uniqueQuery);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('TC06-6/7 空查询在入口校验阶段拒绝且两路检索均不调用', async () => {
+    const searchDenseFn = vi.fn();
+    const searchLexicalFn = vi.fn();
+
+    await expect(
+      hybridRetrieval(
+        { userId: 'u1', knowledgeBaseId: 'kb1', query: '   ' },
+        { searchDenseFn, searchLexicalFn }
+      )
+    ).rejects.toThrow(/不能为空/);
+
+    expect(searchDenseFn).toHaveBeenCalledTimes(0);
+    expect(searchLexicalFn).toHaveBeenCalledTimes(0);
+  });
+
+  it('TC06-8 向量化与分词同时不可用时返回空 chunks 且不抛出', async () => {
+    const result = await hybridRetrieval(
+      { userId: 'u1', knowledgeBaseId: 'kb1', query: '连败熔断', enableRerank: false },
+      {
+        embedQueryFn: async () => {
+          throw new Error('embedding unavailable');
+        },
+        segmentQueryFn: () => null,
+        searchDenseFn: async () => [],
+        searchLexicalFn: async () => [],
+      }
+    );
+
+    expect(result.chunks).toEqual([]);
+  });
+});

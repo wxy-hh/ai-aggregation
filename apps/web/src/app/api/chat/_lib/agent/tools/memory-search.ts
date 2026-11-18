@@ -9,7 +9,6 @@
  */
 
 import { z } from 'zod';
-import { embed } from 'ai';
 import {
   searchMemoryChunksDense,
   searchMemoryChunksLexical,
@@ -17,12 +16,11 @@ import {
   type ConversationMemoryChunkLexicalMatch,
   type ConversationMemoryChunkRow,
 } from '@repo/db';
-import { createEmbeddingModel } from '@repo/providers';
 import { RAG_RETRIEVAL_CONFIG } from '@repo/shared';
+import { logger } from '@repo/logger';
+import { embedText, segmentForQuery } from '@repo/text';
 import { ToolError, type AgentToolSpec, type ToolExecutionContext, type ToolExecutionResult } from '@/lib/agent/registry';
 import { reciprocalRankFusion } from '@/lib/rag/rrf';
-import { Jieba } from '@node-rs/jieba';
-import { dict } from '@node-rs/jieba/dict';
 
 const memorySearchParameters = z.object({
   query: z
@@ -42,23 +40,9 @@ const memorySearchParameters = z.object({
 
 export type MemorySearchInput = z.infer<typeof memorySearchParameters>;
 
-let jiebaInstance: Jieba | null = null;
-function getJieba(): Jieba {
-  if (!jiebaInstance) {
-    jiebaInstance = Jieba.withDict(dict);
-  }
-  return jiebaInstance;
-}
-
-export function segmentMemoryQuery(text: string): string {
-  if (!text || !text.trim()) return '';
-  const jieba = getJieba();
-  const words = jieba.cut(text, false);
-  return words.map((w) => w.trim()).filter(Boolean).join(' ');
-}
-
 export interface MemorySearchDependencies {
   embedQueryFn?: (query: string) => Promise<number[]>;
+  segmentQueryFn?: typeof segmentForQuery;
   searchDenseFn?: typeof searchMemoryChunksDense;
   searchLexicalFn?: typeof searchMemoryChunksLexical;
 }
@@ -91,22 +75,21 @@ export function createMemorySearchTool(deps: MemorySearchDependencies = {}): Age
 
       try {
         // 1. 双路并行召回准备：向量化与分词
-        const embedFn =
-          deps.embedQueryFn ||
-          (async (q: string) => {
-            const { embedding } = await embed({
-              model: createEmbeddingModel(),
-              value: q,
-            });
-            return embedding;
-          });
+        const embedFn = deps.embedQueryFn || embedText;
+        const segmentQuery = deps.segmentQueryFn || segmentForQuery;
 
         const denseSearch = deps.searchDenseFn || searchMemoryChunksDense;
         const lexicalSearch = deps.searchLexicalFn || searchMemoryChunksLexical;
 
-        const preparedLexicalQuery = segmentMemoryQuery(query);
+        const preparedLexicalQuery = segmentQuery(query);
+        if (preparedLexicalQuery === null) {
+          logger.warn('[memory-search] 分词不可用，跳过词法召回并降级为纯向量检索', {
+            feature: 'memory-lexical-degraded',
+            userId,
+            errorId: ctx.errorId,
+          });
+        }
 
-        // 并行执行向量化与分词检索
         const [queryVector] = await Promise.all([
           embedFn(query),
         ]);

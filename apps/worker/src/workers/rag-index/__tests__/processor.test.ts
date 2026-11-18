@@ -67,6 +67,12 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     },
   } as any);
 
+  const asEmbedTexts = (embedManyFn: any) =>
+    vi.fn(async (values: string[]) => {
+      const result = await embedManyFn({ values });
+      return result.embeddings;
+    });
+
   /**
    * 构造模板化处理器依赖：默认 Markdown 正文、1024 维向量与事务替换桩。
    * 特殊用例通过 download / embedMany / replaceChunks 覆盖，避免每处重复装配。
@@ -92,6 +98,7 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
         embeddings: values.map(() => new Array(1024).fill(0.123)),
         usage: { tokens: values.length * 10 },
       }));
+    const embedTextsFn = asEmbedTexts(embedManyFn);
     const replaceChunksFn =
       options.replaceChunks ??
       vi.fn(async (params: any) => {
@@ -103,18 +110,17 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       deps: {
         prismaClient: createMockDb(),
         storage: storage as any,
-        embedManyFn: embedManyFn as any,
+        embedTextsFn: embedTextsFn as any,
         replaceChunksFn: replaceChunksFn as any,
-        embeddingModel: mockEmbeddingModel,
       },
       storage,
-      embedManyFn,
+      embedTextsFn,
       replaceChunksFn,
     };
   };
 
   it('成功全流程：下载 → 解析 → 分词 → 批量向量化 → 事务原子入库', async () => {
-    const { deps, embedManyFn } = createDefaultDeps({
+    const { deps, embedTextsFn } = createDefaultDeps({
       download: async () => Buffer.from('# 知识库架构\n本项目基于 RAG 混合检索。', 'utf-8'),
     });
 
@@ -127,7 +133,7 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     expect(updateCalls[0].data.status).toBe('processing');
 
     // 向量化调用断言
-    expect(embedManyFn).toHaveBeenCalled();
+    expect(embedTextsFn).toHaveBeenCalled();
 
     // 事务替换断言：入参包含 version=1，切片含有 1024 维向量与空格分词
     expect(replaceCalls.length).toBe(1);
@@ -261,9 +267,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       storage: mockStorage as any,
       guardedFetchFn: mockGuardedFetch as any,
       extractContentFn: mockExtractContent as any,
-      embedManyFn: mockEmbedMany as any,
+      embedTextsFn: asEmbedTexts(mockEmbedMany),
       replaceChunksFn: mockReplaceChunks as any,
-      embeddingModel: mockEmbeddingModel,
     });
 
     expect(result.success).toBe(true);
@@ -337,9 +342,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     const result = await processRagIndexJob(csvJobData, {
       prismaClient: createMockDb(),
       storage: mockStorage as any,
-      embedManyFn: mockEmbedMany as any,
+      embedTextsFn: asEmbedTexts(mockEmbedMany),
       replaceChunksFn: mockReplaceChunks as any,
-      embeddingModel: mockEmbeddingModel,
     });
 
     expect(result.success).toBe(true);
@@ -420,9 +424,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
     const result = await processRagIndexJob(dummyJobData, {
       prismaClient: mockDbWithOldOutline as any,
       storage: mockStorage as any,
-      embedManyFn: mockEmbedMany as any,
+      embedTextsFn: asEmbedTexts(mockEmbedMany),
       replaceChunksFn: mockReplaceChunks as any,
-      embeddingModel: mockEmbeddingModel,
     });
 
     expect(result.success).toBe(true);
@@ -477,9 +480,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       const result = await processRagIndexJob(jobData, {
         prismaClient: createMockDb(),
         storage: mockStorage as any,
-        embedManyFn: mockEmbedMany as any,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
         replaceChunksFn: mockReplaceChunks as any,
-        embeddingModel: mockEmbeddingModel,
       });
 
       expect(result.success).toBe(true);
@@ -523,9 +525,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       const result = await processRagIndexJob(legacyJobData, {
         prismaClient: createMockDb(),
         storage: mockStorage as any,
-        embedManyFn: mockEmbedMany as any,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
         replaceChunksFn: mockReplaceChunks as any,
-        embeddingModel: mockEmbeddingModel,
       });
 
       expect(result.success).toBe(true);
@@ -571,9 +572,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
           prismaClient: createMockDb(),
           storage: fileStorage as any,
           guardedFetchFn: unexpectedFetch as any,
-          embedManyFn: mockEmbedMany as any,
+          embedTextsFn: asEmbedTexts(mockEmbedMany),
           replaceChunksFn: mockReplaceChunks as any,
-          embeddingModel: mockEmbeddingModel,
         }
       );
       expect(fileResult.success).toBe(true);
@@ -627,9 +627,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
             markdown: '# 回退标题\n\n回退正文。',
             contentLength: 20,
           })) as any,
-          embedManyFn: mockEmbedMany as any,
+          embedTextsFn: asEmbedTexts(mockEmbedMany),
           replaceChunksFn: mockReplaceChunks as any,
-          embeddingModel: mockEmbeddingModel,
         }
       );
       expect(urlResult.success).toBe(true);
@@ -657,9 +656,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
         {
           prismaClient: createMockDb(),
           storage: defaultStorage as any,
-          embedManyFn: mockEmbedMany as any,
+          embedTextsFn: asEmbedTexts(mockEmbedMany),
           replaceChunksFn: mockReplaceChunks as any,
-          embeddingModel: mockEmbeddingModel,
         }
       );
       expect(defaultResult.success).toBe(true);
@@ -716,9 +714,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
         storage: mockStorage as any,
         guardedFetchFn: mockGuardedFetch as any,
         extractContentFn: mockExtractContent as any,
-        embedManyFn: mockEmbedMany as any,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
         replaceChunksFn: mockReplaceChunks as any,
-        embeddingModel: mockEmbeddingModel,
       });
 
       expect(result.success).toBe(true);
@@ -752,8 +749,7 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       const result = await processRagIndexJob(unknownJobData, {
         prismaClient: createMockDb(),
         storage: mockStorage as any,
-        embedManyFn: mockEmbedMany as any,
-        embeddingModel: mockEmbeddingModel,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
       });
 
       expect(result.success).toBe(false);
@@ -827,9 +823,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
       const deps = {
         prismaClient: createMockDb(),
         storage: mockStorage as any,
-        embedManyFn: mockEmbedMany as any,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
         replaceChunksFn: mockReplaceChunks as any,
-        embeddingModel: mockEmbeddingModel,
       };
 
       for (const testCase of cases) {
@@ -921,9 +916,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
         const deps = {
           prismaClient: createMockDb(),
           storage: mockStorage as any,
-          embedManyFn: mockEmbedMany as any,
+          embedTextsFn: asEmbedTexts(mockEmbedMany),
           replaceChunksFn: mockReplaceChunks as any,
-          embeddingModel: mockEmbeddingModel,
         };
 
         for (const { job } of structuredJobs) {
@@ -995,9 +989,8 @@ describe('RAG 索引处理器单元测试 (processRagIndexJob)', () => {
         storage: mockStorage as any,
         guardedFetchFn: mockGuardedFetch as any,
         extractContentFn: mockExtractContent as any,
-        embedManyFn: mockEmbedMany as any,
+        embedTextsFn: asEmbedTexts(mockEmbedMany),
         replaceChunksFn: mockReplaceChunks as any,
-        embeddingModel: mockEmbeddingModel,
       });
 
       expect(result.success).toBe(true);

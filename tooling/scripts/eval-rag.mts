@@ -156,7 +156,8 @@ async function runRagEvaluation() {
 
   // 动态导入各深模块
   const { prisma, searchDocumentChunksDense, searchDocumentChunksLexical } = await import('../../packages/db/src/index');
-  const { hybridRetrieval, prepareLexicalQuery } = await import('../../apps/web/src/lib/rag/hybrid-retrieval');
+  const { hybridRetrieval } = await import('../../apps/web/src/lib/rag/hybrid-retrieval');
+  const { segmentForQuery } = await import('@repo/text');
   const {
     calculateHitRateAtK,
     calculateMRR,
@@ -271,7 +272,7 @@ async function runRagEvaluation() {
           }));
         } else if (group.id === 'lexical-only') {
           // 纯词法召回
-          const preparedQuery = prepareLexicalQuery(query);
+          const preparedQuery = segmentForQuery(query) ?? '';
           const lexicalMatches = await searchDocumentChunksLexical({
             userId,
             knowledgeBaseId,

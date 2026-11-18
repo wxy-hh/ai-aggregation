@@ -7,12 +7,10 @@
  * 3. Markdown：扫描标题结构并维护标题栈，产出 headingPath（例如「一级标题 > 二级标题」）
  * 4. TXT：按自然段落与语义切块
  * 5. 语义切块器：基于 RecursiveCharacterTextSplitter（500~800 tokens，约 10% 重叠）
- * 6. 应用层中文分词：基于 @node-rs/jieba 预载词典，空格分隔写入 contentSegmented
+ * 6. 应用层中文分词：统一由 @repo/text 的索引端入口提供，空格分隔写入 contentSegmented
  */
 
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { Jieba } from '@node-rs/jieba';
-import { dict } from '@node-rs/jieba/dict';
 import { PDFParse } from 'pdf-parse';
 import {
   RAG_CHUNK_CONFIG,
@@ -20,6 +18,7 @@ import {
   type DocumentOutline,
   type SourceFormat,
 } from '@repo/shared';
+import { SegmentationUnavailableError, segmentForIndex } from '@repo/text';
 import { parseDocxBuffer } from './docx-parser';
 import { parseTableBuffer, parseCsvString } from './table-parser';
 import { buildDocumentOutline } from './outline-extractor';
@@ -56,32 +55,6 @@ export class DocumentParseError extends Error {
     this.name = 'DocumentParseError';
   }
 }
-
-// 结巴分词全局单例（带默认词典）
-let jiebaInstance: Jieba | null = null;
-
-function getJieba(): Jieba {
-  if (!jiebaInstance) {
-    jiebaInstance = Jieba.withDict(dict);
-  }
-  return jiebaInstance;
-}
-
-/**
- * 应用层中文分词函数，输出为空格分隔的词串
- */
-export function segmentChinese(text: string): string {
-  if (!text || !text.trim()) {
-    return '';
-  }
-  const jieba = getJieba();
-  const words = jieba.cut(text, false);
-  return words
-    .map((w) => w.trim())
-    .filter(Boolean)
-    .join(' ');
-}
-
 
 /**
  * Markdown 章节扫描与标题层级提取
@@ -174,7 +147,7 @@ export async function parsePdfBuffer(buffer: Buffer): Promise<ParsedChunk[]> {
       chunks.push({
         chunkIndex: chunkIndex++,
         content: trimmed,
-        contentSegmented: segmentChinese(trimmed),
+        contentSegmented: segmentForIndex(trimmed),
         headingPath: null,
         pageNumber: page.num,
         tokenCount: estimateTokenCount(trimmed),
@@ -218,7 +191,7 @@ export async function parseMarkdownString(content: string): Promise<ParsedChunk[
       chunks.push({
         chunkIndex: chunkIndex++,
         content: trimmed,
-        contentSegmented: segmentChinese(trimmed),
+        contentSegmented: segmentForIndex(trimmed),
         headingPath: section.headingPath,
         pageNumber: null,
         tokenCount: estimateTokenCount(trimmed),
@@ -253,7 +226,7 @@ export async function parseTxtString(content: string): Promise<ParsedChunk[]> {
     chunks.push({
       chunkIndex: chunkIndex++,
       content: trimmed,
-      contentSegmented: segmentChinese(trimmed),
+      contentSegmented: segmentForIndex(trimmed),
       headingPath: null,
       pageNumber: null,
       tokenCount: estimateTokenCount(trimmed),
@@ -276,45 +249,52 @@ export async function parseDocument(
   fileName: string,
   sourceFormat: SourceFormat
 ): Promise<ParsedDocumentChunks> {
-  switch (sourceFormat) {
-    case 'pdf': {
-      const chunks = await parsePdfBuffer(buffer);
-      return Object.assign(chunks, { fullMarkdown: undefined, outline: undefined });
-    }
+  try {
+    switch (sourceFormat) {
+      case 'pdf': {
+        const chunks = await parsePdfBuffer(buffer);
+        return Object.assign(chunks, { fullMarkdown: undefined, outline: undefined });
+      }
 
-    case 'docx': {
-      const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
-      const outline = buildDocumentOutline(fullMarkdown, chunks);
-      return Object.assign(chunks, { fullMarkdown, outline });
-    }
+      case 'docx': {
+        const { chunks, fullMarkdown } = await parseDocxBuffer(buffer, fileName);
+        const outline = buildDocumentOutline(fullMarkdown, chunks);
+        return Object.assign(chunks, { fullMarkdown, outline });
+      }
 
-    case 'xlsx': {
-      const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
-      return Object.assign(chunks, { fullMarkdown, outline: undefined });
-    }
+      case 'xlsx': {
+        const { chunks, fullMarkdown } = await parseTableBuffer(buffer, fileName);
+        return Object.assign(chunks, { fullMarkdown, outline: undefined });
+      }
 
-    case 'csv': {
-      const { chunks, fullMarkdown } = await parseCsvString(buffer.toString('utf-8'), fileName);
-      return Object.assign(chunks, { fullMarkdown, outline: undefined });
-    }
+      case 'csv': {
+        const { chunks, fullMarkdown } = await parseCsvString(buffer.toString('utf-8'), fileName);
+        return Object.assign(chunks, { fullMarkdown, outline: undefined });
+      }
 
-    case 'md': {
-      const textContent = buffer.toString('utf-8');
-      const chunks = await parseMarkdownString(textContent);
-      const outline = buildDocumentOutline(textContent, chunks);
-      return Object.assign(chunks, { fullMarkdown: textContent, outline });
-    }
+      case 'md': {
+        const textContent = buffer.toString('utf-8');
+        const chunks = await parseMarkdownString(textContent);
+        const outline = buildDocumentOutline(textContent, chunks);
+        return Object.assign(chunks, { fullMarkdown: textContent, outline });
+      }
 
-    case 'txt': {
-      const textContent = buffer.toString('utf-8');
-      const chunks = await parseTxtString(textContent);
-      return Object.assign(chunks, { fullMarkdown: textContent, outline: undefined });
-    }
+      case 'txt': {
+        const textContent = buffer.toString('utf-8');
+        const chunks = await parseTxtString(textContent);
+        return Object.assign(chunks, { fullMarkdown: textContent, outline: undefined });
+      }
 
-    case 'unknown':
-      throw new DocumentParseError(
-        `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown、TXT、Word 与表格文件`,
-        true
-      );
+      case 'unknown':
+        throw new DocumentParseError(
+          `不支持的文件格式: ${fileName}，仅支持 PDF、Markdown、TXT、Word 与表格文件`,
+          true
+        );
+    }
+  } catch (error) {
+    if (error instanceof SegmentationUnavailableError) {
+      throw new DocumentParseError('中文分词不可用，文档索引终止', true);
+    }
+    throw error;
   }
 }

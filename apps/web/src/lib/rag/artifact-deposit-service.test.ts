@@ -26,7 +26,8 @@ vi.mock('@repo/storage', () => ({
   createStorageProvider: () => ({ upload: mocks.storageUpload }),
 }));
 
-import { depositArtifactToKnowledgeBase } from './artifact-deposit-service';
+import { segmentForIndex } from '@repo/text';
+import { depositArtifactToKnowledgeBase, splitArtifactMarkdown } from './artifact-deposit-service';
 
 describe('depositArtifactToKnowledgeBase 直接测试 (C1 / TC07)', () => {
   const baseParams = {
@@ -40,8 +41,8 @@ describe('depositArtifactToKnowledgeBase 直接测试 (C1 / TC07)', () => {
       tags: ['竞品', '调研'],
       sourceSessionId: 'sess_1',
     },
-    embedFn: async () => new Array(1024).fill(0.1),
-    segmentFn: (text: string) => text,
+    embedTextsFn: async (values: string[]) =>
+      values.map(() => new Array(1024).fill(0.1)),
   };
 
   beforeEach(() => {
@@ -141,5 +142,147 @@ describe('depositArtifactToKnowledgeBase 直接测试 (C1 / TC07)', () => {
       nowSpy.mockRestore();
       randomSpy.mockRestore();
     }
+  });
+});
+
+
+describe('TC04 产物入库批量化与失败回滚', () => {
+  const manySections = Array.from({ length: 70 }, (_, index) => `## 小节${index}\n内容${index}`).join('\n\n');
+  const baseInput = {
+    artifactId: 'art_many',
+    title: '多章节产物',
+    content: manySections,
+    type: 'markdown' as const,
+    tags: [],
+    sourceSessionId: 'sess_many',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.txDocumentCreate.mockResolvedValue({ id: 'doc_many' });
+    mocks.insertWithInheritance.mockResolvedValue(70);
+    mocks.storageUpload.mockResolvedValue(undefined);
+  });
+
+  it('TC04-1 70 个切片沉淀时批量向量化入口调用 1 次且入参长度 70', async () => {
+    expect(splitArtifactMarkdown(manySections)).toHaveLength(70);
+    const embedTextsFn = vi.fn(async (values: string[]) =>
+      values.map(() => new Array(1024).fill(0.1))
+    );
+
+    await depositArtifactToKnowledgeBase({
+      userId: 'user_1',
+      knowledgeBaseId: 'kb_1',
+      input: baseInput,
+      embedTextsFn,
+    });
+
+    expect(embedTextsFn).toHaveBeenCalledTimes(1);
+    expect(embedTextsFn.mock.calls[0]?.[0]).toHaveLength(70);
+  });
+
+  it('TC04-2 同一沉淀过程中单条向量化入口调用 0 次', async () => {
+    const embedTextsFn = vi.fn(async (values: string[]) =>
+      values.map(() => new Array(1024).fill(0.1))
+    );
+    const embedTextFn = vi.fn();
+
+    await depositArtifactToKnowledgeBase({
+      userId: 'user_1',
+      knowledgeBaseId: 'kb_1',
+      input: baseInput,
+      embedTextsFn,
+      // @ts-expect-error 单条入口不属于本服务依赖，仅用于断言未被调用
+      embedTextFn,
+    });
+
+    expect(embedTextFn).toHaveBeenCalledTimes(0);
+  });
+
+  it('TC04-3 沉淀成功后 contentSegmented 等于 segmentForIndex(content)', async () => {
+    const embedTextsFn = async (values: string[]) =>
+      values.map(() => new Array(1024).fill(0.1));
+
+    await depositArtifactToKnowledgeBase({
+      userId: 'user_1',
+      knowledgeBaseId: 'kb_1',
+      input: baseInput,
+      embedTextsFn,
+    });
+
+    const [chunks] = mocks.insertWithInheritance.mock.calls[0];
+    for (const chunk of chunks) {
+      expect(chunk.contentSegmented).toBe(segmentForIndex(chunk.content));
+    }
+  });
+
+  it('TC04-4 沉淀成功后切片 embedding 与批量向量化替身返回一致', async () => {
+    const vector = new Array(1024).fill(0.321);
+    const embedTextsFn = async (values: string[]) => values.map(() => vector);
+
+    await depositArtifactToKnowledgeBase({
+      userId: 'user_1',
+      knowledgeBaseId: 'kb_1',
+      input: baseInput,
+      embedTextsFn,
+    });
+
+    const [chunks] = mocks.insertWithInheritance.mock.calls[0];
+    for (const chunk of chunks) {
+      expect(chunk.embedding).toEqual(vector);
+    }
+  });
+
+  it('TC04-5 分词器不可用时沉淀拒绝且文档创建调用 0 次', async () => {
+    const embedTextsFn = async (values: string[]) =>
+      values.map(() => new Array(1024).fill(0.1));
+
+    await expect(
+      depositArtifactToKnowledgeBase({
+        userId: 'user_1',
+        knowledgeBaseId: 'kb_1',
+        input: baseInput,
+        embedTextsFn,
+        segmentFn: () => {
+          throw new Error('segmentation unavailable');
+        },
+      })
+    ).rejects.toThrow('segmentation unavailable');
+
+    expect(mocks.txDocumentCreate).toHaveBeenCalledTimes(0);
+  });
+
+  it('TC04-6 向量化不可用时沉淀拒绝且文档创建调用 0 次', async () => {
+    const embedTextsFn = async () => {
+      throw new Error('embedding unavailable');
+    };
+
+    await expect(
+      depositArtifactToKnowledgeBase({
+        userId: 'user_1',
+        knowledgeBaseId: 'kb_1',
+        input: baseInput,
+        embedTextsFn,
+      })
+    ).rejects.toThrow('embedding unavailable');
+
+    expect(mocks.txDocumentCreate).toHaveBeenCalledTimes(0);
+  });
+
+  it('TC04-7 上述两种失败下切片批量写入调用均为 0 次', async () => {
+    const embedTextsFn = async () => {
+      throw new Error('embedding unavailable');
+    };
+
+    await expect(
+      depositArtifactToKnowledgeBase({
+        userId: 'user_1',
+        knowledgeBaseId: 'kb_1',
+        input: baseInput,
+        embedTextsFn,
+      })
+    ).rejects.toThrow('embedding unavailable');
+
+    expect(mocks.insertWithInheritance).toHaveBeenCalledTimes(0);
   });
 });

@@ -4,18 +4,19 @@
  * 核心设计契约：
  * 1. 双路并行检索：
  *    - 稠密向量路 (Dense)：基于余弦距离 (<=>) Top-20 召回
- *    - 词法全文路 (Lexical)：基于 jieba 应用层分词与 ts_rank_cd Top-20 召回
+ *    - 词法全文路 (Lexical)：基于应用层分词与 ts_rank_cd Top-20 召回
  * 2. 倒数排名融合 (RRF)：
  *    - 调用手写自研标准 RRF 算法 (k=60)，绝不跨路比较原始分数，依据位次确定性融合。
  * 3. 结构化输出：
  *    - 每条检索切片必须统一携带来源锚点 (CitationAnchor)：文档 ID、文档名称、版本号、页码/标题路径、切片序号。
  * 4. 可观测性：
  *    - 统计并输出各阶段耗时（向量化耗时、向量检索耗时、全文检索耗时、融合耗时、总耗时）。
- * 5. 依赖注入：
- *    - 支持注入 mock 的向量化函数与检索访问层，供单元测试 100% 独立于真实数据库与外部 API 执行。
+ * 5. 失败策略：
+ *    - 查询端分词不可用时跳过词法路并退化为纯向量，不以正则词法查询同一索引。
+ * 6. 依赖注入：
+ *    - 支持注入 mock 的向量化函数、查询分词函数与检索访问层，供单元测试 100% 独立于真实数据库与外部 API 执行。
  */
 
-import { embed } from 'ai';
 import {
   searchDocumentChunksDense,
   searchDocumentChunksLexical,
@@ -24,7 +25,6 @@ import {
   type DocumentChunkLexicalMatch,
   type MetadataFilter,
 } from '@repo/db';
-import { createEmbeddingModel } from '@repo/providers';
 import {
   RAG_RETRIEVAL_CONFIG,
   type CitationAnchor,
@@ -36,11 +36,10 @@ import {
   type MetadataFilterLoose,
 } from '@repo/shared';
 import { logger } from '@repo/logger';
+import { embedText, segmentForQuery } from '@repo/text';
 import { reciprocalRankFusion } from './rrf';
 import type { RerankProvider } from '@repo/providers';
 import { applyCrossEncoderRerank } from './rerank-policy';
-import { Jieba } from '@node-rs/jieba';
-import { dict } from '@node-rs/jieba/dict';
 
 // 导出共享传输契约类型供平滑迁移过渡
 export type {
@@ -71,64 +70,18 @@ export interface HybridRetrievalOptions {
  */
 export interface HybridRetrievalDeps {
   embedQueryFn?: (query: string) => Promise<number[]>;
+  segmentQueryFn?: typeof segmentForQuery;
   searchDenseFn?: typeof searchDocumentChunksDense;
   searchLexicalFn?: typeof searchDocumentChunksLexical;
   getSequentialChunksFn?: typeof getSequentialChapterChunks;
   rerankProvider?: RerankProvider;
 }
 
-// 结巴分词单例
-let jiebaInstance: Jieba | null = null;
-
-function getJieba(): Jieba {
-  if (!jiebaInstance) {
-    jiebaInstance = Jieba.withDict(dict);
-  }
-  return jiebaInstance;
-}
-
 /**
- * 为 simple 字典的 tsquery 预处理查询词
- * 中文按词切分并以空格隔开，保留专有技术代号与英数字符串
- */
-export function prepareLexicalQuery(query: string): string {
-  if (!query || !query.trim()) {
-    return '';
-  }
-
-  try {
-    const jieba = getJieba();
-    const words = jieba.cut(query.trim(), false);
-    const cleaned = words
-      .map((w) => w.trim())
-      .filter((w) => w.length > 0);
-
-    if (cleaned.length > 0) {
-      return cleaned.join(' ');
-    }
-  } catch (err) {
-    console.warn('[hybrid-retrieval] jieba 分词异常，降级为正则分词:', err);
-  }
-
-  // 降级正则分词：连续汉字与字母数字连词
-  const fallbackTokens = query.match(/[一-龥]+|[a-zA-Z0-9_.-]+/g);
-  if (fallbackTokens && fallbackTokens.length > 0) {
-    return fallbackTokens.join(' ');
-  }
-
-  return query.trim();
-}
-
-/**
- * 默认查询词向量化实现（调用火山方舟 doubao-embedding-large 模型）
+ * 默认查询词向量化实现（统一向量化政策）
  */
 async function defaultEmbedQuery(query: string): Promise<number[]> {
-  const model = createEmbeddingModel();
-  const { embedding } = await embed({
-    model,
-    value: query,
-  });
-  return embedding;
+  return embedText(query);
 }
 
 /**
@@ -230,11 +183,18 @@ export async function hybridRetrieval(
   }
 
   const embedFn = deps.embedQueryFn || defaultEmbedQuery;
+  const segmentQuery = deps.segmentQueryFn || segmentForQuery;
   const searchDense = deps.searchDenseFn || searchDocumentChunksDense;
   const searchLexical = deps.searchLexicalFn || searchDocumentChunksLexical;
 
-  // 1. 生成词法检索查询词
-  const preparedLexicalQuery = prepareLexicalQuery(query);
+  // 1. 生成词法检索查询词；分词不可用时跳过词法路
+  const preparedLexicalQuery = segmentQuery(query);
+  if (preparedLexicalQuery === null) {
+    logger.warn('[hybrid-retrieval] 分词不可用，跳过词法召回并降级为纯向量检索', {
+      feature: 'rag-lexical-degraded',
+      knowledgeBaseId,
+    });
+  }
 
   let embeddingDurationMs = 0;
   let denseDurationMs = 0;
@@ -252,7 +212,6 @@ export async function hybridRetrieval(
     logger.warn('[hybrid-retrieval] 向量化服务异常，自动降级为纯词法全文检索', {
       feature: 'rag-embedding-fallback',
       knowledgeBaseId,
-      query,
       durationMs: embeddingDurationMs,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -276,6 +235,7 @@ export async function hybridRetrieval(
       return res;
     })(),
     (async () => {
+      if (!preparedLexicalQuery) return [];
       const start = performance.now();
       const res = await searchLexical({
         userId,
@@ -311,6 +271,7 @@ export async function hybridRetrieval(
         return res;
       })(),
       (async () => {
+        if (!preparedLexicalQuery) return [];
         const start = performance.now();
         const res = await searchLexical({
           userId,
@@ -332,7 +293,6 @@ export async function hybridRetrieval(
       logger.info('[hybrid-retrieval] 过滤条件零召回，自动触发全库放宽兜底检索', {
         feature: 'rag-metadata-filter',
         filter: options.filter,
-        query,
         relaxedCount: relaxedDense.length + relaxedLexical.length,
       });
     }
@@ -426,7 +386,7 @@ export async function hybridRetrieval(
 
   return {
     query,
-    preparedLexicalQuery,
+    preparedLexicalQuery: preparedLexicalQuery ?? '',
     topK,
     chunks: rerankOutcome.chunks,
     denseMatches: denseMatchesWithRank,

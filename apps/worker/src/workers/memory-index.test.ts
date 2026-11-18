@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { segmentForIndex } from '@repo/text';
 import { processMemoryIndexJob } from './memory-index/processor';
 
 describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => {
@@ -21,13 +22,13 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
       },
     } as any;
 
-    const mockEmbedMany = vi.fn();
+    const mockEmbedTexts = vi.fn();
 
     const result = await processMemoryIndexJob(
       { userId: 'user-disabled', sessionId: 'sess-1' },
       {
         prismaClient: mockDb,
-        embedManyFn: mockEmbedMany,
+        embedTextsFn: mockEmbedTexts,
       }
     );
 
@@ -35,7 +36,7 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
     expect(result.skipped).toBe(true);
     expect(result.chunkCount).toBe(0);
     expect(result.reason).toContain('用户未开启');
-    expect(mockEmbedMany).not.toHaveBeenCalled();
+    expect(mockEmbedTexts).not.toHaveBeenCalled();
     expect(mockDb.message.findMany).not.toHaveBeenCalled();
   });
 
@@ -78,25 +79,32 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
       },
     } as any;
 
-    const mockEmbedMany = vi.fn().mockResolvedValue({
-      embeddings: [dummyVector],
-    });
+    const mockEmbedTexts = vi.fn().mockResolvedValue([dummyVector]);
 
     const result = await processMemoryIndexJob(
       { userId: 'user-enabled', sessionId: 'sess-watermark' },
       {
         prismaClient: mockDb,
-        embedManyFn: mockEmbedMany,
+        embedTextsFn: mockEmbedTexts,
         insertChunksFn: mockInsertChunksFn,
       }
     );
 
     expect(result.success).toBe(true);
     expect(result.chunkCount).toBe(1);
-    expect(mockEmbedMany).toHaveBeenCalled();
+    expect(mockEmbedTexts).toHaveBeenCalledTimes(1);
+    expect(mockEmbedTexts.mock.calls[0]?.[0]).toEqual(
+      mockInsertedChunks.map((chunk: any) => chunk.content)
+    );
+    expect(mockEmbedTexts.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ feature: 'memory-index' })
+    );
     expect(mockInsertChunksFn).toHaveBeenCalled();
     expect(mockInsertedChunks[0].content).toContain('蓝色大象42');
     expect(mockInsertedChunks[0].chunkIndex).toBe(0);
+    expect(mockInsertedChunks[0].contentSegmented).toBe(
+      segmentForIndex(mockInsertedChunks[0].content)
+    );
   });
 
   it('连续多轮对话后：第二轮只索引新消息，无重复切片、无遗漏消息', async () => {
@@ -150,15 +158,13 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
       },
     } as any;
 
-    const mockEmbedMany = vi.fn().mockResolvedValue({
-      embeddings: [dummyVector],
-    });
+    const mockEmbedTexts = vi.fn().mockResolvedValue([dummyVector]);
 
     const result = await processMemoryIndexJob(
       { userId: 'user-enabled', sessionId: 'sess-multi' },
       {
         prismaClient: mockDb,
-        embedManyFn: mockEmbedMany,
+        embedTextsFn: mockEmbedTexts,
         insertChunksFn: mockInsertChunksFn,
       }
     );
@@ -206,19 +212,19 @@ describe('会话记忆增量索引 Worker (工单 09 / QA-005 / QA-006)', () => 
       },
     } as any;
 
-    const mockEmbedMany = vi.fn();
+    const mockEmbedTexts = vi.fn();
 
     const result = await processMemoryIndexJob(
       { userId: 'user-enabled', sessionId: 'sess-empty' },
       {
         prismaClient: mockDb,
-        embedManyFn: mockEmbedMany,
+        embedTextsFn: mockEmbedTexts,
       }
     );
 
     expect(result.success).toBe(true);
     expect(result.chunkCount).toBe(0);
     expect(result.reason).toContain('无未索引的新消息');
-    expect(mockEmbedMany).not.toHaveBeenCalled();
+    expect(mockEmbedTexts).not.toHaveBeenCalled();
   });
 });

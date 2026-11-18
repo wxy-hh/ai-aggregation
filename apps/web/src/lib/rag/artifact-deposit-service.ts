@@ -3,14 +3,14 @@
  *
  * 核心机制：
  * 1. 纯文本内存切块：解析 Markdown 标题层级栈（headingPath），按语义段落/空行分块（默认 500 字符）；
- * 2. 同步并发向量化：调用 BAAI/bge-m3 接口计算 1024 维切片向量并同步完成中文分词；
+ * 2. 同步批量向量化：按统一批量政策计算 1024 维切片向量，并同步完成应用层分词；
  * 3. 单事务落盘：在单一数据库事务内完成 Document（直接置 ready）与 DocumentChunk 批量插入，端到端 <= 1.5s；
  * 4. 对象存储双轨同步：尝试将 content.md 写入对象存储作为全文快照备份。
  */
 
 import { prisma, insertDocumentChunksWithInheritance } from '@repo/db';
 import { createStorageProvider } from '@repo/storage';
-import { embedFaqText, segmentFaqText } from './faq-service';
+import { embedTexts, segmentForIndex } from '@repo/text';
 import {
   buildArtifactStorageKey,
   estimateTokenCount,
@@ -163,8 +163,8 @@ export interface DepositArtifactServiceParams {
   userId: string;
   knowledgeBaseId: string;
   input: DepositArtifactInput;
-  embedFn?: (text: string) => Promise<number[]>;
-  segmentFn?: (text: string) => string;
+  embedTextsFn?: typeof embedTexts;
+  segmentFn?: typeof segmentForIndex;
 }
 
 /**
@@ -177,8 +177,8 @@ export async function depositArtifactToKnowledgeBase(
     userId,
     knowledgeBaseId,
     input,
-    embedFn = embedFaqText,
-    segmentFn = segmentFaqText,
+    embedTextsFn = embedTexts,
+    segmentFn = segmentForIndex,
   } = params;
 
   // 1. 内存切片
@@ -187,18 +187,19 @@ export async function depositArtifactToKnowledgeBase(
     throw new Error('产物内容不能为空或无法切块');
   }
 
-  // 2. 并发计算向量与分词
-  const preparedChunks = await Promise.all(
-    rawChunks.map(async (c) => {
-      const embedding = await embedFn(c.content);
-      const contentSegmented = segmentFn(c.content);
-      return {
-        ...c,
-        embedding,
-        contentSegmented,
-      };
-    })
+  // 2. 统一批量向量化与应用层分词（顺序保持，失败即整体失败）
+  const embeddings = await embedTextsFn(
+    rawChunks.map((chunk) => chunk.content),
+    {
+      feature: 'artifact-deposit',
+      context: { userId, knowledgeBaseId, artifactId: input.artifactId },
+    }
   );
+  const preparedChunks = rawChunks.map((chunk, index) => ({
+    ...chunk,
+    embedding: embeddings[index],
+    contentSegmented: segmentFn(chunk.content),
+  }));
 
   // 3. 由共享布局构造器产出 storageKey，并尝试上传对象存储备份
   const storageKey = buildArtifactStorageKey({

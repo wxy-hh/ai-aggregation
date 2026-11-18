@@ -7,8 +7,17 @@ const mocks = vi.hoisted(() => {
     docFindFirst: vi.fn(),
     docUpdate: vi.fn(),
     updateMetaInPlace: vi.fn(),
+    segmentForIndex: vi.fn(),
+    embedTexts: vi.fn(),
   };
 });
+
+vi.mock('@repo/text', () => ({
+  segmentForIndex: mocks.segmentForIndex,
+  segmentForQuery: vi.fn(),
+  embedText: vi.fn(),
+  embedTexts: mocks.embedTexts,
+}));
 
 vi.mock('@/lib/auth/get-current-user', () => ({
   getCurrentUser: vi.fn(async () => {
@@ -219,6 +228,21 @@ describe('GET & DELETE /api/knowledge-bases/[id]/documents/[docId] (单文档状
         tags: ['新标签'],
         metadata: { department: 'rd', year: 2026 },
       });
+    });
+
+    it('TC07-1/2 更新标签不触发分词与向量化', async () => {
+      mocks.docFindFirst.mockResolvedValueOnce(existingDoc);
+      mocks.updateMetaInPlace.mockResolvedValueOnce({ documentId: 'doc_1', updatedChunkCount: 2 });
+
+      const req = new NextRequest(patchUrl, {
+        method: 'PATCH',
+        body: JSON.stringify({ tags: ['新标签'] }),
+      });
+      const res = await PATCH(req, routeContext);
+
+      expect(res.status).toBe(200);
+      expect(mocks.segmentForIndex).toHaveBeenCalledTimes(0);
+      expect(mocks.embedTexts).toHaveBeenCalledTimes(0);
     });
   });
 });

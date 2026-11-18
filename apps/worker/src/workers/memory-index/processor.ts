@@ -4,25 +4,22 @@
  * 核心设计契约：
  * 1. 严格 Opt-in 门禁：先检查用户 memorySearchEnabled，若未开启或已关闭立即终止（隐私保障，QA-005/006）
  * 2. 消息增量水位线：结合已有切片的最大 chunkIndex 与已索引消息时间戳/ID，只处理未索引的新消息对
- * 3. 语义切块与分词：使用 RecursiveCharacterTextSplitter 切块，并通过 jieba 进行应用层中文分词
- * 4. 向量化：通过 BAAI/bge-m3 模型批量生成 1024 维向量，记录用量日志（feature='memory-index'，不扣配额）
+ * 3. 语义切块与分词：使用 RecursiveCharacterTextSplitter 切块，并通过统一应用层分词 module 写入分词列
+ * 4. 向量化：通过统一批量向量化政策调用 BAAI/bge-m3 生成 1024 维向量，记录逐批用量日志（feature='memory-index'，不扣配额）
  * 5. 幂等入库：基于 (session_id, chunk_index) 递增写入 conversation_memory_chunks
- * 6. 依赖注入：支持注入 mock 数据库客户端与向量模型，支持脱机确定性单测
+ * 6. 依赖注入：支持注入 mock 数据库客户端与批量向量化入口，支持脱机确定性单测
  */
 
-import { embedMany } from 'ai';
-import type { EmbeddingModel } from 'ai';
+import { embedTexts, segmentForIndex } from '@repo/text';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { logger } from '@repo/logger';
 import { prisma, insertMemoryChunks, type InsertMemoryChunkInput } from '@repo/db';
-import { createEmbeddingModel } from '@repo/providers';
+import { estimateTokenCount } from '@repo/shared';
 import type { MemoryIndexJobData } from '@repo/queue';
-import { segmentChinese, estimateTokenCount } from '../rag-index/parser';
 
 export interface ProcessMemoryIndexDependencies {
   prismaClient?: typeof prisma;
-  embedManyFn?: typeof embedMany;
-  embeddingModel?: EmbeddingModel;
+  embedTextsFn?: typeof embedTexts;
   insertChunksFn?: typeof insertMemoryChunks;
 }
 
@@ -43,7 +40,7 @@ export async function processMemoryIndexJob(
 ): Promise<ProcessMemoryIndexResult> {
   const { userId, sessionId } = jobData;
   const db = deps.prismaClient || prisma;
-  const embedBatch = deps.embedManyFn || embedMany;
+  const embedAll = deps.embedTextsFn || embedTexts;
 
   logger.info('开始处理会话记忆增量索引任务', { userId, sessionId });
 
@@ -153,13 +150,10 @@ export async function processMemoryIndexJob(
     };
   }
 
-  // 5. 批量向量化 (BAAI/bge-m3, 1024 维)
-  const model =
-    deps.embeddingModel ||
-    (deps.embedManyFn ? ({} as EmbeddingModel) : createEmbeddingModel());
-  const { embeddings } = await embedBatch({
-    model,
-    values: textChunks,
+  // 5. 批量向量化（统一分批政策：64 条/批、顺序保持、逐批观测）
+  const embeddings = await embedAll(textChunks, {
+    feature: 'memory-index',
+    context: { sessionId, userId },
   });
 
   logger.info('会话记忆索引向量化完成', {
@@ -176,7 +170,7 @@ export async function processMemoryIndexJob(
     messageId: latestMessage.id,
     chunkIndex: lastChunkIndex + 1 + idx,
     content: text,
-    contentSegmented: segmentChinese(text),
+    contentSegmented: segmentForIndex(text),
     tokenCount: estimateTokenCount(text),
     metadata: {
       lastIndexedMessageCreatedAt: latestMessageTime,

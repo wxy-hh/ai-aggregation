@@ -1,9 +1,7 @@
 /**
- * FAQ 服务端业务支撑逻辑（向量化与分词装配）
+ * FAQ 服务端分词支撑逻辑
  */
 
-import { embed } from 'ai';
-import { createEmbeddingModel } from '@repo/providers';
 import { Jieba } from '@node-rs/jieba';
 import { dict } from '@node-rs/jieba/dict';
 
@@ -37,15 +35,4 @@ export function segmentFaqText(text: string): string {
 
   const fallbackTokens = text.match(/[一-龥]+|[a-zA-Z0-9_.-]+/g);
   return fallbackTokens ? fallbackTokens.join(' ') : text.trim();
-}
-
-/**
- * FAQ 默认向量化函数
- */
-export async function embedFaqText(text: string): Promise<number[]> {
-  const { embedding } = await embed({
-    model: createEmbeddingModel(),
-    value: text.trim(),
-  });
-  return embedding;
 }

@@ -10,13 +10,9 @@
  */
 
 import * as XLSX from 'xlsx';
-import { RAG_TABLE_CONFIG } from '@repo/shared';
-import {
-  ParsedChunk,
-  DocumentParseError,
-  segmentChinese,
-  estimateTokenCount,
-} from './parser';
+import { RAG_TABLE_CONFIG, estimateTokenCount } from '@repo/shared';
+import { segmentForIndex } from '@repo/text';
+import { ParsedChunk, DocumentParseError } from './parser';
 
 export interface TableParseResult {
   chunks: ParsedChunk[];
@@ -155,7 +151,7 @@ function processSingleSheetData(
     chunks.push({
       chunkIndex: startChunkIndex + chunks.length,
       content: chunkContent,
-      contentSegmented: segmentChinese(chunkContent),
+      contentSegmented: segmentForIndex(chunkContent),
       headingPath,
       pageNumber: null,
       tokenCount: estimateTokenCount(chunkContent),

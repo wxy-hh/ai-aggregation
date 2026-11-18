@@ -4,7 +4,7 @@ import {
   searchFaqsDense,
   validateKnowledgeBaseForFaq,
 } from '@repo/db';
-import { embedFaqText } from '@/lib/rag/faq-service';
+import { embedText } from '@repo/text';
 import {
   createKnowledgeFaqMatchPolicy,
   type KnowledgeFaqPolicyDeps,
@@ -13,7 +13,7 @@ import {
 const defaultDeps: KnowledgeFaqPolicyDeps = {
   findActiveKnowledgeBases: listActiveKnowledgeBasesForFaq,
   validateKnowledgeBase: validateKnowledgeBaseForFaq,
-  embedQuery: embedFaqText,
+  embedQuery: embedText,
   findCandidates: async ({ userId, knowledgeBaseIds, queryVector, limit }) =>
     searchFaqsDense({
       userId,

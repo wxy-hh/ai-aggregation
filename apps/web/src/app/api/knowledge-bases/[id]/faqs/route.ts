@@ -9,7 +9,8 @@ import { RAG_FAQ_CONFIG } from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
-import { embedFaqText, segmentFaqText } from '@/lib/rag/faq-service';
+import { embedText } from '@repo/text';
+import { segmentFaqText } from '@/lib/rag/faq-service';
 
 const createFaqSchema = z.object({
   question: z
@@ -122,7 +123,7 @@ export async function POST(
       answer,
       similarQuestions,
       enabled,
-      embedFn: embedFaqText,
+      embedFn: embedText,
       tokenizeFn: segmentFaqText,
     });
 

@@ -39,8 +39,11 @@ vi.mock('@repo/db', () => ({
 }));
 
 vi.mock('@/lib/rag/faq-service', () => ({
-  embedFaqText: mocks.embedText,
   segmentFaqText: mocks.segmentText,
+}));
+
+vi.mock('@repo/text', () => ({
+  embedText: mocks.embedText,
 }));
 
 import { GET as getFaqsList, POST as createFaq } from '../route';
@@ -154,6 +157,51 @@ describe('FAQ 管理 API 路由契约与权限测试 (TC08 / ADR-0027)', () => {
       const json = await res.json();
       expect(json.data.faq.id).toBe('faq_new');
       expect(mocks.insertFaq).toHaveBeenCalled();
+    });
+
+    it('TC08-1/2/3 创建 FAQ 时按问法调用分词与向量化并写入分词结果', async () => {
+      let capturedSegmented: string[] = [];
+
+      mocks.insertFaq.mockImplementationOnce(async (params: any) => {
+        const questions = [params.question, ...(params.similarQuestions ?? [])];
+        capturedSegmented = [];
+        for (const question of questions) {
+          await params.embedFn(question);
+          capturedSegmented.push(params.tokenizeFn(question));
+        }
+        return {
+          id: 'faq_new',
+          knowledgeBaseId: 'kb_1',
+          userId: 'user_1',
+          question: params.question,
+          answer: params.answer,
+          similarQuestions: params.similarQuestions ?? [],
+          enabled: true,
+          hitCount: 0,
+        };
+      });
+
+      const req = new NextRequest('http://localhost:3030/api/knowledge-bases/kb_1/faqs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: '如何重置密码？',
+          answer: '点击登录页的忘记密码链接进行重置。',
+          similarQuestions: ['忘记密码怎么办'],
+        }),
+      });
+      const res = await createFaq(req, { params: Promise.resolve({ id: 'kb_1' }) });
+
+      expect(res.status).toBe(201);
+      expect(mocks.segmentText).toHaveBeenCalledTimes(2);
+      expect(mocks.embedText).toHaveBeenCalledTimes(2);
+      expect(capturedSegmented).toEqual(['分 词', '分 词']);
+      expect(mocks.insertFaq.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          tokenizeFn: mocks.segmentText,
+          embedFn: mocks.embedText,
+        })
+      );
     });
   });
 

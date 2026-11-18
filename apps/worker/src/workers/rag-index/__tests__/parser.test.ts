@@ -1,11 +1,11 @@
 import * as XLSX from 'xlsx';
 import type { SourceFormat } from '@repo/shared';
+import { segmentForIndex } from '@repo/text';
 import { describe, expect, it } from 'vitest';
 import {
   parseDocument,
   parseMarkdownString,
   parseTxtString,
-  segmentChinese,
   extractMarkdownSections,
   DocumentParseError,
 } from '../parser';
@@ -147,19 +147,6 @@ function buildMinimalXlsxBuffer(): Buffer {
 }
 
 describe('RAG 文档解析器单元测试 (parser)', () => {
-  describe('中文分词 (segmentChinese)', () => {
-    it('正确执行结巴分词并以空格分隔输出', () => {
-      const text = '南京市长江大桥';
-      const result = segmentChinese(text);
-      expect(result).toBe('南京市 长江大桥');
-    });
-
-    it('空字符串或全空格返回空字符串', () => {
-      expect(segmentChinese('')).toBe('');
-      expect(segmentChinese('   ')).toBe('');
-    });
-  });
-
   describe('Markdown 标题层级提取 (extractMarkdownSections)', () => {
     it('保留标题层级嵌套路径并在平级时正确回退', () => {
       const markdown = `
@@ -390,6 +377,28 @@ describe('RAG 文档解析器单元测试 (parser)', () => {
       await expect(parseDocument(Buffer.from('dummy'), 'document.exe', 'unknown')).rejects.toThrow(
         /不支持的文件格式/
       );
+    });
+  });
+
+  describe('索引端分词契约 (TC02)', () => {
+    it('TC02-1 Markdown 解析切片 contentSegmented 等于 segmentForIndex(content)', async () => {
+      const chunks = await parseDocument(
+        Buffer.from('# 标题\n连败熔断机制说明。\n\n第二段：工具调用失败。', 'utf-8'),
+        'test.md',
+        'md'
+      );
+      expect(chunks.length).toBeGreaterThan(0);
+      for (const chunk of chunks) {
+        expect(chunk.contentSegmented).toBe(segmentForIndex(chunk.content));
+      }
+    });
+
+    it('TC02-2 表格解析切片 contentSegmented 等于 segmentForIndex(content)', async () => {
+      const chunks = await parseDocument(buildMinimalXlsxBuffer(), 'data.xlsx', 'xlsx');
+      expect(chunks.length).toBeGreaterThan(0);
+      for (const chunk of chunks) {
+        expect(chunk.contentSegmented).toBe(segmentForIndex(chunk.content));
+      }
     });
   });
 });

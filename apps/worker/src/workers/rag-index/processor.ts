@@ -4,22 +4,18 @@
  * 核心设计契约：
  * 1. 下载：通过 @repo/storage 下载文档 Buffer；格式派生必须与下载 buffer 同源使用 jobData.storageKey
  * 2. 解析：按 SourceFormat 选择解析器，完成 PDF/MD/TXT 文本提取与 500~800 tokens 语义切块
- * 3. 分词：jieba 中文分词，空格分隔写入分词列
- * 4. 向量化：embedMany 批量调用（<=64 条/批），记录用量观测日志（feature='rag-index'，不扣配额）
+ * 3. 分词：统一应用层分词 module，索引侧 fail-closed
+ * 4. 向量化：统一批量向量化政策（64 条/批、顺序、逐批观测），不扣配额
  * 5. 事务入库：同一事务内原子删除旧版本切片 + 插入新版本切片 + 更新 Document 状态为 ready 与 chunkCount
  * 6. 衍生缓存：仅 DOCX/XLSX/CSV 按共享布局规则额外写入 content.md；MD/TXT/URL 不重复写入
- * 7. 异常控制：区分致命错误（文件损坏、空内容、未知格式直接置 failed 中文原因不重试）与瞬态错误（交由 BullMQ 重试）
+ * 7. 异常控制：区分致命错误（文件损坏、空内容、未知格式、分词不可用直接置 failed 中文原因不重试）与瞬态错误（交由 BullMQ 重试）
  */
 
-import { embedMany } from 'ai';
-import type { EmbeddingModel } from 'ai';
 import { logger } from '@repo/logger';
 import { prisma, replaceDocumentChunksInTransaction } from '@repo/db';
 import { createStorageProvider, StorageProvider } from '@repo/storage';
-import { createEmbeddingModel } from '@repo/providers';
+import { embedTexts } from '@repo/text';
 import {
-  RAG_EMBEDDING_BATCH_SIZE,
-  RAG_EMBEDDING_MODEL,
   deriveParsedContentKey,
   deriveSourceFormat,
   requiresDerivedContent,
@@ -31,10 +27,9 @@ import { extractContentFromHtml } from './html-extractor';
 
 export interface ProcessRagIndexDependencies {
   storage?: StorageProvider;
-  embedManyFn?: typeof embedMany;
+  embedTextsFn?: typeof embedTexts;
   replaceChunksFn?: typeof replaceDocumentChunksInTransaction;
   prismaClient?: typeof prisma;
-  embeddingModel?: EmbeddingModel;
   guardedFetchFn?: typeof guardedFetch;
   extractContentFn?: typeof extractContentFromHtml;
 }
@@ -58,7 +53,7 @@ export async function processRagIndexJob(
   const { documentId, knowledgeBaseId, userId, version, storageKey, fileName } = jobData;
   const db = deps.prismaClient || prisma;
   const storage = deps.storage || createStorageProvider();
-  const embedBatch = deps.embedManyFn || embedMany;
+  const embedAll = deps.embedTextsFn || embedTexts;
   const replaceChunks = deps.replaceChunksFn || replaceDocumentChunksInTransaction;
 
   logger.info('开始处理 RAG 文档索引任务', {
@@ -234,38 +229,17 @@ export async function processRagIndexJob(
     throw error;
   }
 
-  // 7. 批量向量化 (embedMany)
-  const embeddingModel = deps.embeddingModel || createEmbeddingModel();
-  const allEmbeddings: number[][] = [];
-  const totalBatches = Math.ceil(parsedChunks.length / RAG_EMBEDDING_BATCH_SIZE);
+  // 7. 批量向量化（统一分批政策：64 条/批、顺序保持、逐批观测）
+  let allEmbeddings: number[][];
 
   try {
-    for (let i = 0; i < parsedChunks.length; i += RAG_EMBEDDING_BATCH_SIZE) {
-      const batchChunks = parsedChunks.slice(i, i + RAG_EMBEDDING_BATCH_SIZE);
-      const batchValues = batchChunks.map((c) => c.content);
-      const batchIndex = Math.floor(i / RAG_EMBEDDING_BATCH_SIZE) + 1;
-      const startedAt = Date.now();
-
-      const { embeddings } = await embedBatch({
-        model: embeddingModel,
-        values: batchValues,
-      });
-
-      const durationMs = Date.now() - startedAt;
-      allEmbeddings.push(...embeddings);
-
-      // 记录用量观测结构化日志（feature='rag-index'，不扣配额）
-      logger.info('Embedding 向量化调用完成', {
+    allEmbeddings = await embedAll(
+      parsedChunks.map((chunk) => chunk.content),
+      {
         feature: 'rag-index',
-        documentId,
-        userId,
-        batchIndex,
-        totalBatches,
-        batchSize: batchChunks.length,
-        durationMs,
-        model: RAG_EMBEDDING_MODEL,
-      });
-    }
+        context: { documentId, userId },
+      }
+    );
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'Embedding 接口调用失败';
     logger.error('RAG 文档向量化失败', error as Error, { documentId });

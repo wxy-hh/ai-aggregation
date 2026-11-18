@@ -8,7 +8,8 @@ import { RAG_FAQ_CONFIG } from '@repo/shared';
 import { getCurrentUser } from '@/lib/auth/get-current-user';
 import { AuthError } from '@/lib/auth/errors';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
-import { embedFaqText, segmentFaqText } from '@/lib/rag/faq-service';
+import { embedText } from '@repo/text';
+import { segmentFaqText } from '@/lib/rag/faq-service';
 import { parseCsvRows, mapCsvToFaqItems } from '@/lib/rag/csv-parser';
 
 export async function POST(
@@ -74,7 +75,7 @@ export async function POST(
           answer: item.answer,
           similarQuestions: item.similarQuestions,
           enabled: true,
-          embedFn: embedFaqText,
+          embedFn: embedText,
           tokenizeFn: segmentFaqText,
         });
         successCount++;

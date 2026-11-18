@@ -348,7 +348,7 @@ export async function verifyLexicalSearchCoverage(
   console.log('====================================================');
 
   for (const query of testQueries) {
-    // 对查询词执行结巴应用层分词，空格分隔后送入 simple 字典的 ts_rank_cd 匹配
+    // 对查询词执行应用层分词，空格分隔后送入 simple 字典的 ts_rank_cd 匹配
     const segmentedQuery = segmentFn ? segmentFn(query) : query;
     const hits = await searchLexicalFn({
       userId,
@@ -412,7 +412,7 @@ export async function runDocsCorpusSeed(options: {
   const { POST: postDocHandler } = await import('../../apps/web/src/app/api/knowledge-bases/[id]/documents/route');
   const { ragIndexWorker } = await import('../../apps/worker/src/workers/rag-index');
   const { searchDocumentChunksLexical } = await import('../../packages/db/src/rag/chunk-store');
-  const { segmentChinese } = await import('../../apps/worker/src/workers/rag-index/parser');
+  const { segmentForIndex } = await import('@repo/text');
 
   try {
     // 1. 定位或创建目标用户
@@ -541,7 +541,7 @@ export async function runDocsCorpusSeed(options: {
       kb.id,
       searchDocumentChunksLexical,
       prisma,
-      segmentChinese
+      segmentForIndex
     );
 
     console.log('\n🎉 恭喜！docs/ 首发语料 seed 脚本执行大功告成！');
