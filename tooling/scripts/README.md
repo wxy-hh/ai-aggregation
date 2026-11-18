@@ -79,7 +79,7 @@ pnpm infra:logs
 
 ### qa-check.mjs
 
-通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；以分流表与默认驳回清单共同构成缺陷清单、分流表为唯一流程状态源，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查；`gate-plan-*` 与 `gate-acceptance-*` 门禁日志必须经 `qa-run` 直接调用 `node .../qa-check.mjs` 生成，快捷方式生成的 argv 不会被门禁识别。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；以分流表与默认驳回清单共同构成缺陷清单、分流表为唯一流程状态源，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
 
 ### review-package.mjs
 
@@ -93,13 +93,17 @@ pnpm infra:logs
 
 使用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 按端口决议范围寻找标题为 AI 聚合平台的服务；标题匹配后再校验首页引用的首个 `/_next/static/` JS chunk 返回 200，拦截 HTML 200 但前端资源全 404 的半死 Next 服务。标题不匹配时不要关闭其他进程；未找到时按输出启动 `pnpm dev:web` 后重试。
 
+### qa-spec-review.mjs
+
+Schema 4 的 Spec 审查覆盖清单纯函数模块：`specReviewChecklistDocument()` 序列化与解析 `_qa/spec-review-checklist.json`，`parseSpecReviewCoverage()` 解析审查原文中的五列覆盖表；文件系统与 Git 核验留在 `qa-check.mjs`，由 `qa-check` 与 `review-package` 直接导入。
+
 ### qa-browser-helper.mjs
 
-阶段 5 浏览器验收的仓库级薄辅助模块：`resolveRepoRoot()` 从模块位置解析仓库根（不依赖 `cwd`），`acquireQaPage()` 按 TaskSpace ownership 接管或新建页面，`createMarker()` 统一断言标记与非零退出，`captureMobileGeometry()` 要求必填的 `assert` 几何断言，等待断言成功后截图并在 `finally` 复位视口。只封装通用机制，不绑定业务选择器。
+阶段 5 浏览器验收的仓库级薄辅助模块：`resolveRepoRoot()` 从模块位置解析仓库根（不依赖 `cwd`），`acquireQaPage()` 按 TaskSpace ownership 接管或新建页面，`createMarker()` 统一断言标记与非零退出，`captureTargetGeometry()` 用同一 target 完成 probe、几何硬断言与矩形裁剪截图，`captureMobileGeometry()` 在其上增加移动视口设置并在 `finally` 复位视口。只封装通用机制，不绑定业务选择器。
 
 ### 工具测试
 
-运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时检查三个脚本的逐字一致性。
+运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时检查四个工具与 `qa-browser-helper.mjs` 对应模板的逐字一致性。
 
 ## 使用前
 

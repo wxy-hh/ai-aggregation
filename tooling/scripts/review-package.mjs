@@ -16,6 +16,7 @@ import {
 import { devNull } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { SPEC_REVIEW_CHECKLIST_FILE, SPEC_REVIEW_CHECKLIST_VERSION } from './qa-spec-review.mjs';
 
 const MAX_TEXT_SIZE = 512 * 1024;
 const BINARY_EXTENSIONS = new Set([
@@ -384,18 +385,43 @@ async function createDirtyAtInit(root, scopes, status) {
   return { inScope: inScopePaths, outOfScope };
 }
 
+function plannedNewPaths(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## 计划新建路径\s*$/.test(line));
+  if (start < 0) return new Set();
+  const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
+  const values = lines.slice(start + 1, end < 0 ? lines.length : end).flatMap((line) => {
+    const match = line.match(/^-\s+`([^`]+)`\s*$/);
+    return match ? [match[1]] : [];
+  });
+  return new Set(values.length ? normalizeScopes(values) : []);
+}
+
 async function initReviewBase(repo, argument, scopesInput) {
   const { root, feature } = await resolveFeature(repo, argument);
   const scopePath = path.join(feature, QA_DIR, 'scope.json');
   if (await pathInfo(scopePath)) throw new Error('SCOPE_EXISTS：已有开工基线，禁止重置');
   const scopes = normalizeScopes(scopesInput);
   const base = git(root, ['rev-parse', 'HEAD']).stdout.trim();
+  const planPath = path.join(feature, 'qa-plan.md');
+  const planText = await readFile(planPath, 'utf8').catch(() => '');
+  const schema4 = /^QA Schema:\s*4\s*$/m.test(planText);
+  const plannedNew = plannedNewPaths(planText);
+  if (schema4) {
+    for (const relative of scopes) {
+      if (await pathInfo(path.join(root, relative))) continue;
+      if (baseTreeFiles(root, base, [relative]).length) continue;
+      if (plannedNew.has(relative)) continue;
+      throw new Error(`UNKNOWN_SCOPE_PATH：${relative} 当前与 base 均不存在，且未在 ## 计划新建路径 声明`);
+    }
+  }
   const status = git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']).stdout;
   const dirtyAtInit = await createDirtyAtInit(root, scopes, status);
   const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const skipped = [];
 
   for (const relative of listFiles(root, scopes)) {
+    if (!await pathInfo(path.join(root, relative)) && baseTreeFiles(root, base, [relative]).length) continue;
     const reason = await skippedReason(root, relative);
     if (reason) {
       skipped.push({ path: relative, reason, sha256: await hashFileOrNull(root, relative) });
@@ -408,7 +434,6 @@ async function initReviewBase(repo, argument, scopesInput) {
 
   const prechangeRoot = path.join(feature, QA_DIR, 'prechange');
   await mkdir(prechangeRoot, { recursive: true });
-  const planPath = path.join(feature, 'qa-plan.md');
   const planFrozen = await fileExists(planPath);
   if (planFrozen) await copyFile(planPath, path.join(prechangeRoot, 'qa-plan.md'));
   await writeFile(path.join(prechangeRoot, 'status.txt'), status);
@@ -641,6 +666,16 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput) {
     packagedAt,
     package: `${QA_DIR}/review-package.diff`,
   };
+  const planText = await readFile(path.join(feature, 'qa-plan.md'), 'utf8').catch(() => '');
+  if (/^QA Review Coverage:\s*1\s*$/m.test(planText)) {
+    if (!await fileExists(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE))) {
+      throw new Error(`MISSING_SPEC_REVIEW_CHECKLIST：计划声明 QA Review Coverage: 1，但缺少 ${SPEC_REVIEW_CHECKLIST_FILE}；请先经 qa-check acceptance 生成`);
+    }
+    manifest.specReviewChecklist = {
+      version: SPEC_REVIEW_CHECKLIST_VERSION,
+      path: SPEC_REVIEW_CHECKLIST_FILE,
+    };
+  }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   // 每轮审查发放一次性 challenge；再次 collect 会换 nonce，旧凭据不能用于新轮次
   const challenge = {

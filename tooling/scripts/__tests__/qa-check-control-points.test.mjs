@@ -502,3 +502,39 @@ test('同一 TC 内任一 PASS 日志引用了特性目录内脚本即满足（�
   const report = await checkFeature(feature, 'acceptance');
   assert.ok(!codes(report).includes('PROCESS_SCRIPT_OUTSIDE_SCRIPTS'), formatReport(report, 'acceptance'));
 });
+
+test('TC05 空测试输出即使 exit 0 也不能作为执行或交付绿证据', async (t) => {
+  const execution = await featureRepo(t);
+  await writeDeep(path.join(execution.feature, 'evidence/empty.log'), runLog({
+    started: shift(execution.scope.createdAt, 1000),
+    body: 'No projects matched the filters',
+  }));
+  await writeFile(path.join(execution.feature, 'qa-plan.md'), planText({
+    rows: [`| TC01 | 1 | PASS | \`evidence/empty.log\` | ${BINDING} | |`],
+  }));
+  const acceptance = await checkFeature(execution.feature, 'acceptance');
+  assert.ok(codes(acceptance).includes('EMPTY_EVIDENCE'), formatReport(acceptance, 'acceptance'));
+
+  const delivery = await featureRepo(t, {
+    plan: planText({ delivery: [[COMMAND, '`evidence/delivery.log`']] }),
+  });
+  await writeDeep(path.join(delivery.feature, 'evidence/delivery.log'), runLog({
+    started: shift(delivery.scope.createdAt, 1000),
+    body: 'Test Files  0 passed (0)',
+  }));
+  const review = await checkFeature(delivery.feature, 'review');
+  assert.ok(codes(review).includes('EMPTY_VERIFICATION'), formatReport(review, 'review'));
+
+  const failed = await featureRepo(t);
+  await writeDeep(path.join(failed.feature, 'evidence/failed.log'), runLog({
+    started: shift(failed.scope.createdAt, 1000),
+    body: 'No test files found',
+    exit: 1,
+  }));
+  await writeFile(path.join(failed.feature, 'qa-plan.md'), planText({
+    rows: [`| TC01 | 1 | PASS | \`evidence/failed.log\` | ${BINDING} | |`],
+  }));
+  const failedReport = await checkFeature(failed.feature, 'acceptance');
+  assert.ok(codes(failedReport).includes('EVIDENCE_EXIT_NONZERO'));
+  assert.ok(!codes(failedReport).includes('EMPTY_EVIDENCE'));
+});

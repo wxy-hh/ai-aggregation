@@ -174,11 +174,26 @@ test('正本与 implement 写明探活、单文件测试、qa-run 和合规登�
   }
 });
 
-test('安装器复制三个工具并验证直接 Node 调用（TC12）', async () => {
+test('安装器复制四个工具与浏览器辅助模块并验证直接 Node 调用（TC12）', async () => {
   const content = await read(paths.setup);
-  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'node tooling/scripts/qa-run.mjs .scratch/<feature>']) {
+  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-spec-review.mjs', 'templates/qa-browser-helper.mjs', 'node tooling/scripts/qa-run.mjs .scratch/<feature>']) {
     assert.match(content, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('安装流程模板不把未分发模块写死为唯一实现（TC08）', async () => {
+  const [template, setup] = await Promise.all([read(paths.workflowTemplate), read(paths.setup)]);
+  assert.match(template, /helper 提供 `captureTargetGeometry`/);
+  assert.match(template, /未提供时按同一契约自写/);
+  assert.match(setup, /templates\/qa-browser-helper\.mjs/);
+});
+
+test('工具索引列出全部可分发 QA 工具与视觉目标原语（TC08）', async () => {
+  const readme = await read('tooling/scripts/README.md');
+  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-spec-review.mjs', 'qa-browser-helper.mjs', 'captureTargetGeometry', 'gate-plan-*']) {
+    assert.match(readme, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.doesNotMatch(readme, /三个脚本的逐字一致性/);
 });
 
 test('没有通过配置新增 Hooks（TC12）', async () => {
@@ -729,7 +744,7 @@ test('qa-check 提示把逐字纠偏限定在旧轮次，新协议按新轮次�
 });
 
 test('工具脚本与安装模板保持逐字一致且新测试复用既有接缝', async () => {
-  for (const name of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs']) {
+  for (const name of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-spec-review.mjs', 'qa-browser-helper.mjs']) {
     const [tool, template] = await Promise.all([
       read(`tooling/scripts/${name}`),
       read(`.claude/skills/setup-qa-workflow/templates/${name}`),
@@ -753,4 +768,46 @@ test('发布契约保留 Claude 强档与 Kimi 弱档真机验收要求', async 
     assert.match(content, /干净会话的真实 `?\/implement`?/, file);
     assert.match(content, /待发布验收/, file);
   }
+});
+
+test('ADR-0057 正本与安装正本同步对账覆盖、视觉目标、空证据和收口门禁', async () => {
+  for (const file of [paths.workflow, paths.workflowTemplate]) {
+    const content = await read(file);
+    for (const required of [
+      'QA Review Coverage: 1', 'spec-review-checklist.json', '对账覆盖', '变更成立',
+      'VisualTarget', 'EMPTY_EVIDENCE', '计划新建路径', 'VERIFICATION_BEFORE_REVIEW', 'gate-plan-',
+    ]) {
+      assert.match(content, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), file);
+    }
+  }
+  const workflow = await read(paths.workflow);
+  assert.ok(workflow.trim().split('\n').length <= 180);
+});
+
+test('ADR-0057 审查与实现技能落实降噪、失败暂停和最终时序', async () => {
+  const review = await read('.claude/skills/code-review/SKILL.md');
+  assert.match(review, /对账覆盖/);
+  assert.match(review, /变更成立/);
+  assert.match(review, /quota|配额/);
+  assert.match(review, /不自动换模型/);
+  assert.match(review, /不逐 hunk|不逐文件/);
+  for (const file of [paths.implement, paths.implementSpec]) {
+    const content = await read(file);
+    assert.match(content, /当前独立审查/);
+    assert.match(content, /完成后/);
+    assert.match(content, /gate-review-/);
+  }
+});
+
+test('ADR-0057 门禁日志、backlog 与发布验收状态同步', async () => {
+  for (const file of [paths.root, paths.claudeTemplate, paths.qaPlanner]) {
+    const content = await read(file);
+    assert.match(content, /gate-plan-|gate-acceptance-|gate-review-/);
+  }
+  const backlog = await read('docs/plans/qa-workflow-backlog.md');
+  assert.match(backlog, /QA-WF-05[\s\S]*?已实现/);
+  assert.match(backlog, /QA-WF-01[\s\S]*?待发布验收|待执行/);
+  const report = await read('docs/reports/qa-workflow-evolution-report.md');
+  assert.match(report, /ADR-0057/);
+  assert.match(report, /待发布验收/);
 });

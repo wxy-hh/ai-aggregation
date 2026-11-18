@@ -562,3 +562,35 @@ test('seal 在复审轮写入待复核编号', async (t) => {
   const receipt = JSON.parse(await readFile(path.join(feature, 'review', 'r2-standards.source.json'), 'utf8'));
   assert.deepEqual(receipt.pendingIds, ['P-W2', 'P-M1']);
 });
+
+test('TC06 Schema 4 只放行显式声明的计划新建路径', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await mkdir(path.join(dir, 'existing-dir'), { recursive: true });
+  await writeFile(path.join(dir, 'existing-dir', 'nested.txt'), '现存目录内容\n');
+  await writeFile(path.join(feature, 'qa-plan.md'), 'QA Schema: 4\n\n## 计划新建路径\n- `planned.txt`\n');
+  const unknown = run(dir, 'init', feature, ['tracked.txt', 'typo.txt']);
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /UNKNOWN_SCOPE_PATH.*typo\.txt/);
+
+  const planned = run(dir, 'init', feature, ['tracked.txt', 'planned.txt', 'existing-dir']);
+  assert.equal(planned.status, 0, planned.stderr);
+  const scope = JSON.parse(await readFile(path.join(feature, '_qa', 'scope.json'), 'utf8'));
+  assert.ok(scope.scopes.includes('planned.txt'));
+  assert.ok(scope.scopes.includes('tracked.txt'));
+  assert.ok(scope.scopes.includes('existing-dir'));
+});
+
+test('TC06 base 已删除文件和普通无计划新文件保持兼容', async (t) => {
+  const deleted = await repo(t);
+  const deletedFeature = path.join(deleted, '.scratch', 'feature');
+  await writeFile(path.join(deletedFeature, 'qa-plan.md'), 'QA Schema: 4\n');
+  await rm(path.join(deleted, 'delete-me.txt'));
+  const deletedResult = run(deleted, 'init', deletedFeature, ['delete-me.txt']);
+  assert.equal(deletedResult.status, 0, deletedResult.stderr);
+
+  const ordinary = await repo(t);
+  const ordinaryFeature = path.join(ordinary, '.scratch', 'feature');
+  const ordinaryResult = run(ordinary, 'init', ordinaryFeature, ['created.txt']);
+  assert.equal(ordinaryResult.status, 0, ordinaryResult.stderr);
+});

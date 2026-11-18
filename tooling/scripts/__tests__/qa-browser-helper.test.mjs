@@ -3,9 +3,19 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
 
 // 仓库级薄浏览器辅助模块的公开接口测试：只验证通用机制，不绑定任何业务选择器
 const HELPER = new URL('../qa-browser-helper.mjs', import.meta.url);
+
+function geometry(target = '#target', overrides = {}) {
+  return {
+    target,
+    rect: { x: 10, y: 20, width: 120, height: 80 },
+    hit: target,
+    ...overrides,
+  };
+}
 
 test('TC05-1 仓库根解析不受 cwd 影响', async () => {
   const { resolveRepoRoot } = await import(HELPER.href);
@@ -55,49 +65,130 @@ test('TC05-2 acquireQaPage 按 ownership 接管或新建页面', async () => {
   assert.deepEqual(calls, [['takeOverTaskSpace', 2]]);
 });
 
-test('TC05-3 captureMobileGeometry 先几何断言再截图后复位视口', async () => {
+test('TC03 显式目标在硬断言后按同一矩形裁剪截图', async () => {
+  const { captureTargetGeometry } = await import(HELPER.href);
+  const calls = [];
+  const page = {
+    evaluate: async (probe, target) => {
+      calls.push(['evaluate', target]);
+      return probe(target);
+    },
+    screenshot: async (options) => calls.push(['screenshot', options]),
+  };
+  const result = await captureTargetGeometry(page, {
+    target: '#target',
+    screenshotPath: 'shot.png',
+    probe: (target) => geometry(target),
+    assert: (value) => assert.equal(value.rect.width, 120),
+  });
+  assert.equal(result.target, '#target');
+  assert.deepEqual(calls, [
+    ['evaluate', '#target'],
+    ['screenshot', { path: 'shot.png', clip: { x: 10, y: 20, width: 120, height: 80 } }],
+  ]);
+});
+
+test('TC03 目标不一致、矩形无效或硬断言失败均不截图', async () => {
+  const { captureTargetGeometry } = await import(HELPER.href);
+  for (const mode of ['mismatch', 'invalid', 'assert']) {
+    const calls = [];
+    const page = {
+      evaluate: async () => mode === 'mismatch'
+        ? geometry('#other')
+        : geometry('#target', mode === 'invalid' ? { rect: { x: 0, y: 0, width: 0, height: 80 } } : {}),
+      screenshot: async () => calls.push(['screenshot']),
+    };
+    await assert.rejects(captureTargetGeometry(page, {
+      target: '#target',
+      screenshotPath: 'shot.png',
+      probe: () => {},
+      assert: () => {
+        if (mode === 'assert') throw new Error('几何未通过');
+      },
+    }));
+    assert.deepEqual(calls, [], mode);
+  }
+});
+
+test('TC03 缺少 target、probe 或 assert 时立即拒绝', async () => {
+  const { captureTargetGeometry, captureMobileGeometry } = await import(HELPER.href);
+  for (const options of [
+    { screenshotPath: 'shot.png', probe: () => {}, assert: () => {} },
+    { target: '#target', screenshotPath: 'shot.png', assert: () => {} },
+    { target: '#target', screenshotPath: 'shot.png', probe: () => {} },
+  ]) {
+    await assert.rejects(captureTargetGeometry({}, options), /视觉目标|probe|几何硬断言/);
+  }
+  const calls = [];
+  await assert.rejects(captureMobileGeometry({
+    cdp: async () => calls.push(['cdp']),
+  }, { screenshotPath: 'shot.png', probe: () => {}, assert: () => {} }), /视觉目标/);
+  assert.deepEqual(calls, []);
+});
+
+test('TC05-3 移动视口复用显式目标截图并在失败后复位', async () => {
   const { captureMobileGeometry } = await import(HELPER.href);
   const log = [];
   const page = {
-    cdp: async (method, params) => {
-      log.push(['cdp', method, params.width]);
+    cdp: async (method, params) => log.push(['cdp', method, params.width]),
+    evaluate: async (probe, target) => {
+      log.push(['evaluate', target]);
+      return { ...geometry(target), scrollWidth: 375 };
     },
-    evaluate: async () => {
-      log.push(['evaluate']);
-      return { scrollWidth: 375 };
-    },
-    screenshot: async ({ path: target }) => {
-      log.push(['screenshot', target]);
-    },
+    screenshot: async (options) => log.push(['screenshot', options]),
   };
 
   const result = await captureMobileGeometry(page, {
+    target: '#target',
     screenshotPath: 'shot.png',
-    assert: (geometry) => assert.equal(geometry.scrollWidth, 375),
+    probe: (target) => geometry(target),
+    assert: (value) => assert.equal(value.scrollWidth, 375),
   });
-  assert.deepEqual(result, { scrollWidth: 375 });
+  assert.equal(result.target, '#target');
   assert.deepEqual(log.map((item) => item[0]), ['cdp', 'evaluate', 'screenshot', 'cdp']);
   assert.equal(log[0][2], 375);
+  assert.equal(log[1][1], '#target');
+  assert.deepEqual(log[2][1].clip, { x: 10, y: 20, width: 120, height: 80 });
   assert.equal(log[3][2], 0);
 
-  // 几何断言失败时不截图，但仍复位视口
   const failedLog = [];
   const failingPage = {
     cdp: async (method, params) => failedLog.push(['cdp', params.width]),
     evaluate: async () => {
       failedLog.push(['evaluate']);
-      return { scrollWidth: 500 };
+      return { ...geometry(), scrollWidth: 500 };
     },
     screenshot: async () => failedLog.push(['screenshot']),
   };
-  await assert.rejects(
-    captureMobileGeometry(failingPage, {
-      screenshotPath: 'shot.png',
-      assert: (geometry) => assert.equal(geometry.scrollWidth, 375),
-    }),
-  );
+  await assert.rejects(captureMobileGeometry(failingPage, {
+    target: '#target',
+    screenshotPath: 'shot.png',
+    probe: (target) => geometry(target),
+    assert: (value) => assert.equal(value.scrollWidth, 375),
+  }));
   assert.deepEqual(failedLog.map((item) => item[0]), ['cdp', 'evaluate', 'cdp']);
   assert.equal(failedLog.at(-1)[1], 0);
+
+  const screenshotFailureLog = [];
+  const screenshotFailingPage = {
+    cdp: async (method, params) => screenshotFailureLog.push(['cdp', params.width]),
+    evaluate: async (probe, target) => {
+      screenshotFailureLog.push(['evaluate']);
+      return probe(target);
+    },
+    screenshot: async () => {
+      screenshotFailureLog.push(['screenshot']);
+      throw new Error('截图失败');
+    },
+  };
+  await assert.rejects(captureMobileGeometry(screenshotFailingPage, {
+    target: '#target',
+    screenshotPath: 'shot.png',
+    probe: (target) => geometry(target),
+    assert: () => {},
+  }), /截图失败/);
+  assert.deepEqual(screenshotFailureLog.map((item) => item[0]), ['cdp', 'evaluate', 'screenshot', 'cdp']);
+  assert.equal(screenshotFailureLog.at(-1)[1], 0);
 });
 
 test('TC09-1 QA 过程脚本可解析根级 Playwright 直接依赖', async () => {
@@ -107,35 +198,32 @@ test('TC09-1 QA 过程脚本可解析根级 Playwright 直接依赖', async () =
   assert.equal(typeof chromium.launch, 'function');
 });
 
+test('TC08 安装模板与浏览器辅助模块保持逐字一致', async () => {
+  const [tool, template] = await Promise.all([
+    readFile(HELPER, 'utf8'),
+    readFile(new URL('../../../.claude/skills/setup-qa-workflow/templates/qa-browser-helper.mjs', import.meta.url), 'utf8'),
+  ]);
+  assert.equal(tool, template);
+});
+
 test('TC09-3 几何断言必填且等待异步断言成功后才截图', async () => {
   const { captureMobileGeometry } = await import(HELPER.href);
-  const missingAssertLog = [];
-  const page = {
-    cdp: async (method, params) => missingAssertLog.push(['cdp', params.width]),
-    evaluate: async () => missingAssertLog.push(['evaluate']),
-    screenshot: async () => missingAssertLog.push(['screenshot']),
-  };
-  await assert.rejects(captureMobileGeometry(page, {
-    screenshotPath: 'shot.png',
-    probe: () => ({ scrollWidth: 375 }),
-  }), /几何硬断言/);
-  assert.deepEqual(missingAssertLog, []);
-
   const asyncAssertLog = [];
   const asyncPage = {
     cdp: async (method, params) => asyncAssertLog.push(['cdp', params.width]),
     evaluate: async () => {
       asyncAssertLog.push(['evaluate']);
-      return { scrollWidth: 500 };
+      return { ...geometry(), scrollWidth: 500 };
     },
     screenshot: async () => asyncAssertLog.push(['screenshot']),
   };
   await assert.rejects(captureMobileGeometry(asyncPage, {
+    target: '#target',
     screenshotPath: 'shot.png',
-    probe: () => ({ scrollWidth: 500 }),
-    assert: async (geometry) => {
+    probe: (target) => geometry(target),
+    assert: async (value) => {
       await Promise.resolve();
-      assert.equal(geometry.scrollWidth, 375);
+      assert.equal(value.scrollWidth, 375);
     },
   }));
   assert.deepEqual(asyncAssertLog.map((item) => item[0]), ['cdp', 'evaluate', 'cdp']);

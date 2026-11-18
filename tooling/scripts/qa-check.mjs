@@ -7,7 +7,14 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { computeEvidenceTreeDigest, computeTreeDigest, inScope, QA_DIR, readScope, RECEIPT_LINE_PATTERN } from './review-package.mjs';
-import { formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
+import { emptyEvidenceReason, formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
+import {
+  parseSpecReviewChecklist,
+  parseSpecReviewCoverage,
+  SPEC_REVIEW_CHECKLIST_FILE,
+  SPEC_REVIEW_CHECKLIST_VERSION,
+  specReviewChecklistDocument,
+} from './qa-spec-review.mjs';
 
 export const CURRENT_SCHEMA = 4;
 
@@ -247,6 +254,7 @@ export function parsePlan(markdown) {
     bindingColumn,
     mode,
     kind,
+    reviewCoverage: markdown.match(/^QA Review Coverage:\s*(\S+)\s*$/m)?.[1] ?? null,
     cases,
     results,
     delivery,
@@ -263,6 +271,9 @@ function validatePlan(plan, specIds) {
   }
   if (!['feature', 'fix'].includes(plan.kind)) {
     issues.push(issue('INVALID_QA_KIND', 'FAIL', `QA Kind 必须是 feature 或 fix，当前为 ${plan.kind}`));
+  }
+  if (plan.reviewCoverage !== null && plan.reviewCoverage !== '1') {
+    issues.push(issue('INVALID_QA_REVIEW_COVERAGE', 'FAIL', 'QA Review Coverage 只能声明为 1；旧计划可省略该字段'));
   }
   if (!plan.cases.length) issues.push(issue('NO_TEST_CASES', 'FAIL', '测试计划没有 TC 用例'));
   if (!plan.bindingColumn) {
@@ -600,6 +611,8 @@ async function validateEvidence(featureDir, row) {
     entry.log = log;
     if (log.exit !== 0) {
       issues.push(issue('EVIDENCE_EXIT_NONZERO', 'FAIL', `${row.caseId} / ${row.assertion} 的 PASS 证据日志退出码为 ${log.exit}：${location.relative}；请修复后重新执行`));
+    } else if (emptyEvidenceReason(log.body)) {
+      issues.push(issue('EMPTY_EVIDENCE', 'FAIL', `${row.caseId} / ${row.assertion} 的日志虽 exit 0，但${emptyEvidenceReason(log.body)}：${location.relative}`));
     }
   }
   return { issues, entries };
@@ -1228,6 +1241,11 @@ function reconciliationTable(rows, frozenPlan, currentPlan, markerValues, caseSc
       assertion: frozenAssertion === currentAssertion ? currentAssertion : `冻结：${frozenAssertion}<br>当前：${currentAssertion}`,
       actual,
       flag: flags.join('、'),
+      seam: testCase.seam,
+      sourceCandidates: BOUND_SEAMS.has(testCase.seam)
+        ? [row.binding.match(/^`([^`]+)`/)?.[1]].filter(Boolean)
+        : scripts,
+      changed: frozenAssertion !== currentAssertion,
     };
   });
 }
@@ -2358,7 +2376,146 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
   return { issues, notes, findingTimes };
 }
 
-async function verificationIssues(featureDir, plan, context) {
+function coverageCitations(source) {
+  return [...source.matchAll(/`([^`\n]+):(\d+)`/g)].map((match) => ({ path: match[1], line: Number(match[2]) }));
+}
+
+async function citationIsValid(root, featureDir, row, citation, cache) {
+  const hasCandidates = row.sourceCandidates.length > 0;
+  if (hasCandidates && !row.sourceCandidates.includes(citation.path)) return false;
+  const bases = hasCandidates
+    ? [['browser', 'api'].includes(row.seam) ? featureDir : root]
+    : [featureDir, root];
+  for (const base of bases) {
+    if (!base || !Number.isInteger(citation.line) || citation.line < 1) continue;
+    const absolute = path.resolve(base, citation.path);
+    const relative = path.relative(base, absolute);
+    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
+    try {
+      if (!(await stat(absolute)).isFile()) continue;
+      if (!cache.has(absolute)) cache.set(absolute, (await readFile(absolute, 'utf8')).split(/\r?\n/).length);
+      if (citation.line <= cache.get(absolute)) return true;
+    } catch {
+      // 尝试下一个允许的来源根目录
+    }
+  }
+  return false;
+}
+
+/** 新协议只机械核对覆盖完整性、逐字绑定和真实源码位置，不判断谓词语义 */
+async function specReviewCoverageIssues(root, featureDir, checklist, markdown) {
+  const issues = [];
+  let coverage;
+  try {
+    coverage = parseSpecReviewCoverage(markdown);
+  } catch (error) {
+    return [issue('SPEC_REVIEW_COVERAGE_INVALID', 'FAIL', `对账覆盖表无法解析：${error.message}`)];
+  }
+  const expected = new Map(checklist.rows.map((row) => [row.id, row]));
+  const seen = new Set();
+  const cache = new Map();
+  for (const response of coverage.rows) {
+    if (!['已核实', '未核实'].includes(response.verdict)) {
+      issues.push(issue('SPEC_REVIEW_COVERAGE_INVALID', 'FAIL', `${response.ids.join('、')} 的结论只能是已核实或未核实`));
+    }
+    if (!['不适用', '变更成立', '变更不成立'].includes(response.change)) {
+      issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${response.ids.join('、')} 的计划变更复核值无效：${response.change || '空'}`));
+    }
+    const citations = coverageCitations(response.source);
+    for (const id of response.ids) {
+      const row = expected.get(id);
+      if (!row) {
+        issues.push(issue('SPEC_REVIEW_COVERAGE_UNKNOWN', 'FAIL', `对账覆盖表包含清单外 ID：${id}`));
+        continue;
+      }
+      if (seen.has(id)) {
+        issues.push(issue('SPEC_REVIEW_COVERAGE_DUPLICATE', 'FAIL', `对账覆盖表重复响应 ${id}`));
+        continue;
+      }
+      seen.add(id);
+      if (response.actual !== row.actual) {
+        issues.push(issue('SPEC_REVIEW_BINDING_MISMATCH', 'FAIL', `${id} 的实测值或绑定未逐字复制清单`));
+      }
+      if (response.verdict === '未核实') {
+        issues.push(issue('SPEC_REVIEW_INCOMPLETE', 'BLOCKED', `${id} 仍标记为未核实；须核实或按规则形成 P-M`));
+      }
+      if (row.changed) {
+        if (response.change === '变更不成立') {
+          issues.push(issue('SPEC_PLAN_CHANGE_REJECTED', 'FAIL', `${id} 的计划变更被审查者判为不成立；恢复原断言或重新验收`));
+        } else if (response.change !== '变更成立') {
+          issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${id} 的冻结断言已变化，必须判变更成立或变更不成立`));
+        }
+      } else if (response.change !== '不适用') {
+        issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${id} 未发生计划变更，复核列必须写不适用`));
+      }
+      let sourceValid = response.source.replace(/`[^`\n]+:\d+`/g, '').trim().length > 0;
+      if (sourceValid) {
+        sourceValid = false;
+        for (const citation of citations) {
+          if (await citationIsValid(root, featureDir, row, citation, cache)) {
+            sourceValid = true;
+            break;
+          }
+        }
+      }
+      if (!sourceValid) {
+        issues.push(issue(
+          'SPEC_REVIEW_SOURCE_INVALID',
+          'FAIL',
+          `${id} 没有与接缝匹配且行号存在的源码引用`,
+          row.sourceCandidates.length ? `允许的来源：${row.sourceCandidates.join('、')}` : '引用特性证据或仓库源码的 path:line，并填写谓词摘要',
+        ));
+      }
+    }
+  }
+  const missing = checklist.rows.map((row) => row.id).filter((id) => !seen.has(id));
+  if (missing.length) {
+    issues.push(issue('SPEC_REVIEW_COVERAGE_MISSING', 'BLOCKED', `Spec 原文缺少对账覆盖：${missing.join('、')}`));
+  }
+  return issues;
+}
+
+async function currentReviewCompletedAt(featureDir, latestFiles) {
+  if (!latestFiles?.standards || !latestFiles?.spec) return null;
+  const times = [];
+  for (const relative of [latestFiles.standards, latestFiles.spec]) {
+    const checked = await readSourceReceipt(featureDir, relative);
+    const time = Date.parse(checked.receipt?.completedAt ?? '');
+    if (!Number.isFinite(time)) return null;
+    times.push(time);
+  }
+  return Math.max(...times);
+}
+
+async function gateEvidenceIssues(featureDir, context) {
+  const issues = [];
+  for (const phase of ['plan', 'acceptance']) {
+    const entries = await readdir(path.join(featureDir, 'evidence')).catch(() => []);
+    const logs = [];
+    for (const entry of entries.filter((name) => name.startsWith(`gate-${phase}-`) && name.endsWith('.log'))) {
+      const log = parseRunLog(await readFile(path.join(featureDir, 'evidence', entry), 'utf8'));
+      if (!log?.complete || !log.argv) continue;
+      if (path.basename(log.argv[0]) !== 'node' || path.basename(log.argv[1] ?? '') !== 'qa-check.mjs' || log.argv[2] !== phase) continue;
+      logs.push(log);
+    }
+    const valid = phase === 'plan'
+      ? logs.some((log) => log.exit === 0)
+      : logs.some((log) => log.tree === context.evidenceTree);
+    if (!valid) {
+      issues.push(issue(
+        'GATE_EVIDENCE_MISSING',
+        'BLOCKED',
+        phase === 'plan'
+          ? '缺少 exit 0 的 gate-plan-* 门禁日志。'
+          : '缺少当前行为树上的完整 gate-acceptance-* 门禁日志。',
+        `经 qa-run 运行 qa-check ${phase}，标签使用 gate-${phase}-*；不要手写门禁输出。`,
+      ));
+    }
+  }
+  return issues;
+}
+
+async function verificationIssues(featureDir, plan, context, { enforceOrder = false, reviewCompletedAt = null } = {}) {
   const issues = [];
   for (const declaration of plan.delivery) {
     const references = evidenceReferences(declaration.evidence);
@@ -2394,6 +2551,15 @@ async function verificationIssues(featureDir, plan, context) {
         BASELINE_HINT,
       ));
     }
+    const started = Date.parse(log.started ?? '');
+    if (enforceOrder && Number.isFinite(reviewCompletedAt) && Number.isFinite(started) && started < reviewCompletedAt) {
+      issues.push(issue(
+        'VERIFICATION_BEFORE_REVIEW',
+        'FAIL',
+        `交付验证 ${declaration.command} 的开始时间 ${log.started} 早于当前双轴最晚完成时间 ${new Date(reviewCompletedAt).toISOString()}。`,
+        '在当前独立审查与修复复审完成后，用新标签重跑全部交付命令；不要修改日志时间。',
+      ));
+    }
     let expectedArgv = null;
     try {
       expectedArgv = splitShellWords(declaration.command);
@@ -2410,6 +2576,8 @@ async function verificationIssues(featureDir, plan, context) {
     }
     if (log.exit !== 0) {
       issues.push(issue('VERIFICATION_FAILED', 'FAIL', `交付验证 ${declaration.command} 的日志退出码为 ${log.exit}；请修复失败后重新运行`));
+    } else if (emptyEvidenceReason(log.body)) {
+      issues.push(issue('EMPTY_VERIFICATION', 'FAIL', `交付验证 ${declaration.command} 虽 exit 0，但${emptyEvidenceReason(log.body)}`));
     }
     if (!context.evidenceTree || log.tree === 'none' || log.tree !== context.evidenceTree) {
       issues.push(issue(
@@ -2486,6 +2654,23 @@ async function checkReview(featureDir, plan, context, earlier) {
   if (reportText) issues.push(...reviewReportIssues(reportText, triage));
   const raw = await reviewRawIssues(featureDir, triage);
   issues.push(...raw.issues);
+  if (manifest?.specReviewChecklist) {
+    try {
+      if (manifest.specReviewChecklist.version !== SPEC_REVIEW_CHECKLIST_VERSION
+        || manifest.specReviewChecklist.path !== SPEC_REVIEW_CHECKLIST_FILE) {
+        throw new Error('manifest 的清单版本或路径不受支持');
+      }
+      const checklist = parseSpecReviewChecklist(await readFile(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), 'utf8'));
+      if (raw.latest?.spec) {
+        const specReview = await readFile(path.join(featureDir, raw.latest.spec), 'utf8');
+        issues.push(...await specReviewCoverageIssues(context.root, featureDir, checklist, specReview));
+      }
+    } catch (error) {
+      issues.push(issue('SPEC_REVIEW_CHECKLIST_STALE', 'BLOCKED', `Spec 审查清单不可用：${error.message}`));
+    }
+  } else if (plan.reviewCoverage === '1') {
+    notes.push('Spec 对账覆盖：旧审查包没有清单声明，保持人工核对；重新 collect 生成新协议审查包。');
+  }
   let findingTimes = new Map();
   const host = reportText ? declaredReviewHost(reportText) : null;
   const requiredIds = raw.requiredIds;
@@ -2513,6 +2698,15 @@ async function checkReview(featureDir, plan, context, earlier) {
   }
   issues.push(...await fixVerificationIssues(featureDir, raw.rows, triage?.evidenceColumn, findingTimes));
 
+  const enforceOrder = Boolean(manifest?.specReviewChecklist);
+  const reviewCompletedAt = enforceOrder ? await currentReviewCompletedAt(featureDir, raw.latest) : null;
+  if (enforceOrder) {
+    if (!Number.isFinite(reviewCompletedAt)) {
+      notes.push('交付时序：当前有效双轴缺少可用 completedAt，最终命令与审查的先后交人工核对。');
+    }
+    issues.push(...await gateEvidenceIssues(featureDir, context));
+  }
+
   const outOfScope = Array.isArray(manifest?.outOfScope) ? manifest.outOfScope : [];
   if (outOfScope.length) {
     const scopeExplanation = reportText ? markdownSection(reportText, /^## 范围说明\s*$/) ?? '' : '';
@@ -2526,7 +2720,7 @@ async function checkReview(featureDir, plan, context, earlier) {
       ));
     }
   }
-  issues.push(...await verificationIssues(featureDir, plan, context));
+  issues.push(...await verificationIssues(featureDir, plan, context, { enforceOrder, reviewCompletedAt }));
   return { ...summarize(issues, notes), rawLines: raw.rawLines };
 }
 
@@ -2562,7 +2756,7 @@ export async function checkFeature(featureDir, phase) {
   const acceptance = await checkAcceptance(featureDir, plan, context);
   const findings = mergeFindings(planFindings, acceptance, shadow);
   if (phase === 'acceptance') return { ...summarize(findings.issues, findings.notes), table: acceptance.table };
-  findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table));
+  findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table, { checklistRequired: plan.reviewCoverage === '1' }));
   return { ...await checkReview(featureDir, plan, context, findings), table: acceptance.table };
 }
 
@@ -2589,15 +2783,28 @@ function reconciliationDocument(table) {
 }
 
 /** review 阶段：落盘的对账表须与按当前执行记录计算的一致，审查者才看到最新对账表 */
-async function reconciliationIssues(featureDir, table) {
+async function reconciliationIssues(featureDir, table, { checklistRequired = false } = {}) {
+  const issues = [];
   const saved = await readFile(path.join(featureDir, RECONCILIATION_FILE), 'utf8').catch(() => null);
-  if (saved === reconciliationDocument(table)) return [];
-  return [issue(
-    'RECONCILIATION_STALE',
-    'FAIL',
-    saved === null ? `缺少 ${RECONCILIATION_FILE}。` : `${RECONCILIATION_FILE} 与按当前执行记录计算的对账表不一致。`,
-    '重跑 qa-check acceptance 生成最新对账表，再重新 collect 并按增量复审交给 Spec 轴核对。',
-  )];
+  if (saved !== reconciliationDocument(table)) {
+    issues.push(issue(
+      'RECONCILIATION_STALE',
+      'FAIL',
+      saved === null ? `缺少 ${RECONCILIATION_FILE}。` : `${RECONCILIATION_FILE} 与按当前执行记录计算的对账表不一致。`,
+      '重跑 qa-check acceptance 生成最新对账表，再重新 collect 并按增量复审交给 Spec 轴核对。',
+    ));
+  }
+  const savedChecklist = await readFile(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), 'utf8').catch(() => null);
+  const expectedChecklist = specReviewChecklistDocument(table);
+  if ((checklistRequired && savedChecklist === null) || (savedChecklist !== null && savedChecklist !== expectedChecklist)) {
+    issues.push(issue(
+      'SPEC_REVIEW_CHECKLIST_STALE',
+      'FAIL',
+      savedChecklist === null ? `缺少 ${SPEC_REVIEW_CHECKLIST_FILE}。` : `${SPEC_REVIEW_CHECKLIST_FILE} 与当前执行记录不一致。`,
+      '经 qa-check acceptance 重新生成对账表和 Spec 审查清单，不要手改 _qa/。',
+    ));
+  }
+  return issues;
 }
 
 export function formatReport(report, phase) {
@@ -2651,8 +2858,16 @@ async function main() {
       if (report.table) {
         await mkdir(path.join(featureDir, QA_DIR), { recursive: true });
         await writeFile(target, reconciliationDocument(report.table));
+        const planText = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8');
+        const checklistTarget = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
+        if (/^QA Review Coverage:\s*1\s*$/m.test(planText)) {
+          await writeFile(checklistTarget, specReviewChecklistDocument(report.table));
+        } else {
+          await rm(checklistTarget, { force: true });
+        }
       } else {
         await rm(target, { force: true });
+        await rm(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), { force: true });
       }
     }
     console.log(formatReport(report, phase));

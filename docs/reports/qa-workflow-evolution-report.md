@@ -1,20 +1,21 @@
 # QA 工作流优化记录
 
 > 生成时间：2026-11-05
-> 最近更新：2026-11-17（补充 ADR-0054、人工审查通用性修复与跨仓同步）
+> 最近更新：2026-11-18（补充 C8/C9 产物复核、ADR-0057 在途修复与双模型审计收敛，待独立审查和发布验收）
 > 范围：2026-10-08 ~ 2026-11-17 之间以 QA 工作流为主体的 28 次主仓提交；另记录通用仓同步提交 `d1fc362`
 > 数据来源：git 提交历史、提交说明、`docs/adr/` 决策记录、两仓测试与发布 lint；各次真实运行的复盘材料位于本机 `.scratch/`（不入库，见 `docs/agents/issue-tracker.md`）
 > 相关文件：正本 `docs/agents/qa-workflow.md`、参考书 `docs/agents/qa-workflow-guide.md`、检查器 `tooling/scripts/qa-check.mjs` / `qa-run.mjs` / `review-package.mjs`、浏览器辅助 `tooling/scripts/qa-browser-helper.mjs`、契约测试 `tooling/scripts/__tests__/qa-workflow-contract.test.mjs`
+> 本轮审计与收敛修复的详细记录：`docs/reports/2026-11-18-qa-workflow-audit-remediation.md`
 
 ## 概览
 
-截至 11-17，共 28 次主仓提交（不含通用仓同步提交与本次报告文档更新）。三个核心产物的规模变化：
+截至 11-18，共 30 次主仓提交（含本次 ADR-0057 实现与审计收敛修复；不含通用仓同步提交）。三个核心产物的规模变化：
 
-| 产物 | 起点 | 现状（11-17） |
+| 产物 | 起点 | 现状（11-18） |
 | --- | --- | --- |
 | 正本 `qa-workflow.md` | 86 行（初版） | 180 行（契约测试上限 180 行） |
-| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 2666 行；工具测试 336 项全过 |
-| QA 相关 ADR | 0 | 13 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054 |
+| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 2881 行；工具测试 361 项全过 |
+| QA 相关 ADR | 0 | 14 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054、0057 |
 
 每次大改动几乎都源自一次真实运行暴露的问题，而不是预先设计：agent-kb-loop 暴露了审查闭环漏洞（ADR-0033/0035），KB-CHAT-CITE 与知识库预览修复暴露了证据造假路径（ADR-0026），agent-hitl-action 暴露了流程成本倒挂（ADR-0042），一次外部评价暴露了车道与宿主缺口（ADR-0043/0044），四次真实需求复盘又暴露了审查来源、事件时间与正文编号语义边界（ADR-0047 及 ADR-0040 修订）。本记录按七个阶段逐次说明。
 
@@ -204,13 +205,32 @@
 - **验证**：多组新增行为均先红后绿，含 Playwright 根级解析、JS 私有字段与 Python 注释分流、必填异步几何断言、普通/QA 审查双路径及跨宿主文档契约。最终 `final5-test.log` 为 **336 pass / 0 fail**，`final5-lint.log` 为 exit 0；当前仓 `qa-check plan` 与 `acceptance` 均 PASS，覆盖 TC01–TC09；真实 Playwright ESM 导入及 `chromium.launch` 检查通过。通用仓 **294 pass / 0 fail**，发布 lint PASS（20 个技能、96 个文本文件）。两仓 `git diff --check` 均通过，三个核心脚本与安装模板逐字一致。
 - **提交与状态**：主仓提交为 `825d021 feat(qa): 优化工作流证据与浏览器验收`，通用仓提交为 `d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`，均未 push。r1/r2 的七项既有发现已复核修复；后续按用户明确要求改为人工审查、跳过 r3 双轴并直接提交，因此未运行最终 `qa-check review`，独立复审、干净会话真实 `/implement` dogfood 与发布验收仍待完成。无关未跟踪文件与目录未纳入提交。
 
+## 阶段九：C8/C9 语义证据与收口硬化（11-18，ADR-0057，在途）
+
+### 29. Spec 对账覆盖、VisualTarget 与 GateEvidence（待独立审查）
+
+- **真实证据**：C8 最终日志全绿且两轴“无发现”，Spec 原文却引用未进入审查包的 schema/迁移、不存在的 hook、错误 SSE 和另一套 TC 映射；C9 实际为 70 PASS + 4 BLOCKED，原文却写 76 PASS，并把可观察的 RRF 融合结果断言替换为向量召回。两次任务还将结果区/助手消息/对比区域的几何目标缩小为标题或状态卡。C9 的 `No projects matched` 基线 exit 0，两次最终命令均早于独立审查完成。
+- **改动**：Schema 4 新计划声明 `QA Review Coverage: 1`；acceptance 生成版本化 SpecReviewChecklist，新 manifest 启用 `## 对账覆盖` 机械完整性、逐字绑定、真实源码位置与计划变更复核，旧包兼容。新增零依赖 `qa-spec-review.mjs` 并随安装器分发。
+- **视觉与基线**：Helper 以显式 VisualTarget 绑定 probe、几何硬断言与裁剪矩形，移动视口统一复位；qa-run/qa-check 将空项目、无测试文件和 0 项测试的 exit 0 转为空证据失败；Schema 4 init 对当前/base 均不存在的路径要求 `## 计划新建路径`。
+- **收口**：新协议交付日志不得早于当前双轴最晚 completedAt；plan/acceptance/review 经 qa-run 以 `gate-*` 落盘。Standards 无发现降噪，基础设施失败不自动换模型或同轮重派。
+- **边界**：不升级 Schema 5，不新增 Hook、HMAC、语义正则裁判或实现代理；不修改 C8/C9 历史正文。结构化覆盖只能防漏行、错绑定和假引用，不能证明审查者语义判断正确。
+- **验证与状态**：新增纯函数、真实 CLI、Helper 失败安全和真实 Playwright 目标裁剪证据；最终全量交付、独立双轴、人工终审及下一次干净会话 `/implement` dogfood 分开记录，未完成前保持待审查/待发布验收，不宣称节时收益。
+
+### 30. 双模型审查与安装契约收敛（11-18，ADR-0057 后续）
+
+- **审查输入**：C8/C9 两份真实 `retro-evidence`；r1 双轴由 GPT-5.6-terra（Standards）与 DeepSeek 4.1（Spec）独立完成并封存。Standards 无发现；Spec 报 TC07-5、TC02-7 两项回归保护缺口。
+- **交叉质询**：Terra 证伪两项 P-M，确认属于“当前行为正确、未来回归可能静默通过”的测试保护问题；DeepSeek 反查 Standards 无发现，确认安装器与 README 的工具索引漂移，并指出 `pnpm qa:check` 与 gate 日志 argv 形状不一致。
+- **修复**：新增 `templates/qa-browser-helper.mjs` 并纳入五脚本逐字同步；README 补 `qa-spec-review.mjs`、`captureTargetGeometry` 与 gate 直调说明；流程模板改为“helper 提供时使用，未提供时按同一契约自写”；新增 TC02-10、TC07-5 正向保护；修正 ADR-0057 决策 10 与 qa-plan 过期计数。
+- **验证**：361/361 工具测试、69/69 文档契约、ESLint exit 0、acceptance PASS、真实 Chrome TC09 4/4、五个脚本与模板 `cmp` 全部一致；证据见 `impl-full-tooling-tests-audit.log`、`gate-acceptance-audit-2.log`、`tc09-visual-target-audit.log`。
+- **状态**：r2 Spec 轴封存 `[P-M1] 已修`、`[P-M2] 已修`，TC07-5 判“变更成立”；按用户指令未再派 r2 Standards 子代理，主代理直接审查仅修正文档，不构成独立凭据。`qa-check review` 仍因 `REVIEW_RAW_MISSING`、`STALE_REVIEW_PACKAGE`、`MISSING_REVIEW_REPORT` 与 `MISSING_VERIFICATION` 阻塞；详细审计记录见 `docs/reports/2026-11-18-qa-workflow-audit-remediation.md`。
+
 ## 规律小结
 
-1. **改动由真实运行驱动**：28 次主仓提交中至少 10 次的直接来源是某次真实需求或审查复盘的记录（本地 `.scratch/` 复盘与 ADR 背景一节都可查证）。
+1. **改动由真实运行驱动**：30 次主仓提交中至少 10 次的直接来源是某次真实需求或审查复盘的记录（本地 `.scratch/` 复盘与 ADR 背景一节都可查证）。
 2. **文档与检查器成对演进**：规则先写进正本，能机械判定的部分随后进 qa-check，由契约测试防止多处文档副本漂移；ADR-0048 把 Claude 专用声明推进为宿主无关的 challenge/receipt 产物，ADR-0054 又通过双树、单轴复用与真实脚本测试减少无效重跑，同时把真实性判断留给人工终审。
 3. **降噪与加规则交替进行**：0033/0035 加门禁，0040/0042 与 ADR-0047 做减法；ADR-0042 明确"同类问题两轮之后仍只能靠提示词约束的，转为人工检查项"，ADR-0047 把机器无法可靠完成的“从正文发现缺陷”交还人工终审，ADR-0054 则明确只有实质审查输入未变时才允许单轴复用。
 4. **通用性来自路径与依赖边界**：普通 `code-review` 与 QA 专用协议并存，原生 Playwright 由宿主根项目声明直接依赖，安装器只检测不修改清单；项目定制可保留，但不进入通用仓。
-5. **遗留事项**：发布验收 dogfood（`QA-WF-01`，正本阶段 7 要求）、审查发现分类统计（`QA-WF-02`）、QA-WF-06 人工终审、CLAUDE.md 精简（`QA-WF-07`）等在 `docs/plans/qa-workflow-backlog.md` 跟踪；本阶段按用户指令跳过 r3 双轴，不冒充发布验收。
+5. **遗留事项**：发布验收 dogfood（`QA-WF-01`，正本阶段 7 要求）、审查发现分类统计（`QA-WF-02`）、QA-WF-06 人工终审、CLAUDE.md 精简（`QA-WF-07`）等在 `docs/plans/qa-workflow-backlog.md` 跟踪；本阶段按用户指令跳过 r3 双轴，本轮同样按用户指令未补 r2 Standards 独立审查，均不冒充发布验收。
 
 ## 附：提交速查表
 
@@ -244,5 +264,6 @@
 | 26 | 11-05 | `0f2bf82` | 审查来源核验、事件时间与分流唯一缺陷清单 | 0047（修订 0035/0040） |
 | 27 | 11-09 | 本次提交（见 git log） | 宿主无关审查来源凭据、强弱档分级与跨宿主交接 | 0048（待发布验收） |
 | 28 | 11-17 | `825d021` | 工作流减负、浏览器分流与通用性校准 | 0054（待发布验收） |
+| 29-30 | 11-18 | 本次提交（见 git log） | ADR-0057 语义证据硬化与双模型审计收敛 | 0057（待独立审查） |
 
-通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 28 次序号）。
+通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 30 次序号）。

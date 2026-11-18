@@ -272,3 +272,31 @@ test('TC01-4 运行时 Markdown 改动仍更新行为证据 tree', async (t) => 
   const after = parseRunLog(await readFile(path.join(dir, '.scratch/feature/evidence/runtime-after.log'), 'utf8'));
   assert.notEqual(after.tree, before.tree);
 });
+
+test('TC04 exit 0 的空项目或零测试输出会转为 EMPTY_EVIDENCE', async (t) => {
+  const dir = await repo(t);
+  const cases = [
+    ['empty-project', 'No projects matched the filters in "/tmp/repo"', '没有匹配任何项目'],
+    ['empty-files', 'No test files found, exiting with code 0', '没有找到测试文件'],
+    ['empty-vitest', 'Test Files  0 passed (0)\nTests  0 passed (0)', '测试文件数为 0'],
+    ['empty-node', '# tests 0\n# pass 0', '测试用例数为 0'],
+  ];
+  for (const [label, output, reason] of cases) {
+    const result = run(dir, label, [process.execPath, '-e', `console.log(${JSON.stringify(output)})`]);
+    assert.equal(result.status, 1, `${label}: ${result.stderr}`);
+    assert.match(result.stderr, new RegExp(reason));
+    const text = await readFile(path.join(dir, '.scratch', 'feature', 'evidence', `${label}.log`), 'utf8');
+    assert.match(text, /EMPTY_EVIDENCE/);
+    assert.match(text, /# exit: 1\n$/);
+  }
+  assert.equal(run(dir, 'ordinary-success').status, 0);
+});
+
+test('TC04 emptyEvidenceReason 不误伤非空测试摘要', async () => {
+  const { emptyEvidenceReason } = await import(SCRIPT_URL.href);
+  assert.equal(emptyEvidenceReason('Test Files  3 passed (3)\nTests  21 passed (21)'), null);
+  assert.equal(emptyEvidenceReason('# tests 2\n# pass 2'), null);
+  assert.equal(emptyEvidenceReason('| TC04-1 | PASS | 子进程输出 `No projects matched the filters` | 绑定 |'), null);
+  assert.equal(emptyEvidenceReason('| TC04-2 | PASS | 子进程输出 `No test files found` | 绑定 |'), null);
+  assert.equal(emptyEvidenceReason('| TC04-3 | PASS | 子进程输出 `Test Files 0 passed (0)` | 绑定 |'), null);
+});

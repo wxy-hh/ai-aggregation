@@ -2,8 +2,6 @@
 
 本规范组合规格、TDD、真实验收和独立双轴审查。原则：Agent 自述不算证据；机器只对机械可修的缺口硬失败，语义判断集中到对账表与分流表交给人工终审。
 
----
-
 ## 一、核心闭环
 
 ```text
@@ -58,7 +56,7 @@
 ├── scripts/       # browser/api 过程脚本与 helper
 ├── evidence/      # qa-run 日志
 ├── screenshots/   # 每个 TC 一张验收截图
-└── _qa/           # scope.json、prechange/、review-package.*、review-challenge.json、reconciliation.md（对账表）、debug/（调试截图），禁止手改
+└── _qa/           # scope.json、prechange/、review-package.*、review-challenge.json、reconciliation.md、spec-review-checklist.json、debug/，禁止手改
 ```
 
 ## 五、阶段执行规范
@@ -71,12 +69,13 @@
 
 ### 2. 测试规划（阶段 3B）
 
-标准车道在 spec 后、慢车道在 `/to-tickets` 后运行 `/qa-test-planner`，默认 inline。Schema 4 最小结构：
+标准车道在 spec 后、慢车道在 `/to-tickets` 后运行 `/qa-test-planner`，默认 inline。新计划声明 `QA Review Coverage: 1`，启用版本化 Spec 审查清单；旧计划省略时保持兼容。Schema 4 最小结构：
 
 ```markdown
 QA Schema: 4
 QA Mode: inline
 QA Kind: feature
+QA Review Coverage: 1
 
 ### TC01: 场景名称
 - Priority: P0
@@ -107,7 +106,7 @@ QA Kind: feature
 - 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；仅 `QA Kind: fix` 时每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志，`QA Kind: feature` 不设修复前复现日志门禁；所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变。
 - `qa-plan.md` 只测产品外部可观察行为；禁止把 `qa-check` 结果、截图独立性、`review/`、`review-report.md` 或 `handoff.md` 合规性写成元用例（TC），也不得在 `scripts/` 自写元校验脚本。
 - 计划变更不得新增冻结断言之外的呈现要求（如「某几项同屏」）；确需新要求时追加断言。
-- 规划后运行 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`；通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志。qa-plan 写明要新建、基线时尚不存在的新测试路径导致的「No test files」不算红灯，在 `## 范围说明` 记一行并引用基线日志，不问用户；路径存在却无测试仍按红灯处理。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物按提示 add；`tooling/`、`docs/`、`.claude/` 等与工作流共用的目录，白名单写到具体文件。删改既有断言、Seam、Covers 或交付命令须在 `## 计划变更` 说明。
+- 规划后经 qa-run 落盘门禁（标签 `gate-plan-*`），再跑 `baseline-*` 交付命令；红灯先问用户，计划内基线时尚不存在的新测试路径导致的「No test files」不算红灯但记基线不适用。`No projects matched`、找不到测试或 0 项测试会触发 `EMPTY_EVIDENCE`，不得当绿基线。随后 `review-package init` 建基线并冻结计划；Schema 4 白名单中当前与 base 均不存在的路径必须在 `## 计划新建路径` 逐项声明，否则 `UNKNOWN_SCOPE_PATH`。阶段 1–2 产物按提示 add，共用目录白名单写到具体文件。删改既有断言、Seam、Covers 或交付命令须在 `## 计划变更` 说明。
 
 ### 3. 实现（阶段 4）
 
@@ -125,11 +124,11 @@ QA Kind: feature
 - **过程脚本**：放在 `scripts/` 并经 qa-run 以脚本路径运行。每条冻结断言先硬断言，再输出 `[TC01-1] PASS 实测：<观察值>`；失败输出 `[TC01-1] FAIL <原因>` 并非零退出。只打印成功文本不算断言。
 - **真实链路冒烟**：触及核心链路时至少一条 browser 用例走真实登录、真实输入与真实后端，只断言本次新产生的用户可见终态（如流式结束、无错误态、控制台无报错），不断言模型非确定性分支，后者由 integration 证明。响应注入（替换或拦截网络响应）只在本次改了对应渲染代码时补充构造前端前置或故障态，备注写明「响应注入」、断言只写端侧结果，不得替代真实链路冒烟。
 - **真实输入**：使用真实输入事件；页面内 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值只用于读取状态或构造前置条件，并在备注写明。
-- **截图**：每个 TC 在自己的场景截图写入 `screenshots/`，调试截图写入 `_qa/debug/`；截图不能证明数值，数值在脚本内严格断言。文本包含只证明存在。视觉类断言（可见、无遮挡、未溢出）的证据是几何硬断言加目标区域截图：先让目标处于无遮挡位置，脚本在截图前硬断言目标元素与视口相交且代表点未被其他元素遮挡（如 `getBoundingClientRect()` 加 `elementFromPoint()`），断言未溢出时另断言边界与滚动尺寸；再截取目标区域（推荐按目标元素矩形裁剪，不强制 API）。截图仍由 Spec 轴按冻结断言原文复核。
+- **截图**：每个 TC 独立截图，数值在脚本内严格断言。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何硬断言与目标区域截图必须指向同一对象，不得换成标题、状态卡或整页；代表点未遮挡、边界与滚动尺寸按断言硬检查。helper 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，断言成功后按矩形裁剪；未提供时按同一契约自写，移动视口同样在 finally 复位。截图仍由 Spec 轴按冻结断言与 VisualTarget 复核。
 - **环境不足**：DOM、真实交互或移动几何无法验证时记 BLOCKED，或经计划变更转人工；不得用低接缝证据替代 browser。
 - **异步与失败**：等待水合后的可操作元素，不用 `networkidle`；等待成功或明确失败终态并设上限，保留失败截图与 Console/网络证据，修复后重跑原断言。
 
-验收后运行 `node tooling/scripts/qa-check.mjs acceptance .scratch/<feature>`。它核对断言标记、用例绑定、脚本位置，并扫描 `scripts/` 及确定性的 Shell 标准输入与静态相对导入闭包；动态引用不猜测。绕过登录（注入 Cookie、写令牌类本地存储、引入数据库驱动或 BaaS 管理端 SDK）与脚本内登录（密码字面量、登录或注册类接口路径、`window.__*` 上的登录方法）为不可豁免的 FAIL；页面内模拟输入（含 `.setState(` 与 `window.__*` 访问）只给 NOTE 并标注「非真实输入」，仅保存原始 `fetch` 引用不标注；响应注入（`window.fetch` 赋值、路由拦截与 fulfill、`cy.intercept`、MSW 处理器）只给 NOTE 并标注「响应注入」。对账表覆盖 PASS、FAIL、BLOCKED，计划变更时并列冻结原文与当前断言，同时写入 `_qa/reconciliation.md` 供 Spec 轴审查；执行记录变化后先重跑 acceptance 再 collect。
+验收后经 qa-run 运行 `node tooling/scripts/qa-check.mjs acceptance .scratch/<feature>`（标签 `gate-acceptance-*`）。它核对断言标记、用例绑定、脚本位置，并扫描 `scripts/` 及确定性的 Shell 标准输入与静态相对导入闭包；动态引用不猜测。绕过登录（注入 Cookie、写令牌类本地存储、引入数据库驱动或 BaaS 管理端 SDK）与脚本内登录（密码字面量、登录或注册类接口路径、`window.__*` 上的登录方法）为不可豁免的 FAIL；页面内模拟输入（含 `.setState(` 与 `window.__*` 访问）只给 NOTE 并标注「非真实输入」，仅保存原始 `fetch` 引用不标注；响应注入（`window.fetch` 赋值、路由拦截与 fulfill、`cy.intercept`、MSW 处理器）只给 NOTE 并标注「响应注入」。对账表覆盖 PASS、FAIL、BLOCKED，计划变更时并列冻结原文与当前断言，同时写入 `_qa/reconciliation.md`；声明 `QA Review Coverage: 1` 时另写 `_qa/spec-review-checklist.json`，记录全量 ID、逐字实测/绑定、源码候选与计划变更。执行记录变化后先重跑 acceptance 再 collect，禁止手改 `_qa/`。
 
 **证据过期**：执行记录引用的 qa-run 日志 tree 与当前代码不一致时，acceptance 报 `STALE_EVIDENCE`（BLOCKED）。核心实现变化须换新标签重跑受影响验收；能确认仅为非行为文档变化时，在该行备注写「不重跑：<理由>」放行，对账表标注该理由由人工终审核对；理由为空仍阻塞。
 
@@ -137,8 +136,8 @@ QA Kind: feature
 
 `code-review` 使用本仓内聚的单一中文指令，按下列项目规则执行：
 
-1. **collect**：运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`。collect 会写入 `_qa/review-challenge.json`（nonce、轮次、treeDigest、打包时间）；可用 `--round r<n>` 指定轮次，未指定时按现有审查原文推导。再次 collect 会换 nonce，旧凭据不能用于新轮次。范围外改动属于本任务时先 add 再 collect，其他来源在 `## 范围说明` 逐项解释。不得为审查 `git add -N` 或自动 commit。
-2. **双轴**：用 Skill 工具调用 `code-review`，参数写明特性目录与轮次；审查子代理的派发、编号与落盘规则只在该技能内，不要用 Agent 工具自行派审查子代理。有 challenge 时，子代理必须自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，最终返回包含 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`；主代理不转抄、不改写。两轴原文与凭据都落盘后才进入分流。
+1. **collect**：运行 `node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>`。collect 会写入 `_qa/review-challenge.json`（nonce、轮次、treeDigest、打包时间），新协议 manifest 另声明 `specReviewChecklist`；旧包无声明时不强制补表，只按兼容路径人工核对。可用 `--round r<n>` 指定轮次，未指定时按现有审查原文推导。再次 collect 会换 nonce，旧凭据不能用于新轮次。范围外改动属于本任务时先 add 再 collect，其他来源在 `## 范围说明` 逐项解释。不得为审查 `git add -N` 或自动 commit。
+2. **双轴**：用 Skill 工具调用 `code-review`，参数写明特性目录与轮次；审查子代理的派发、编号与落盘规则只在该技能内，不要用 Agent 工具自行派审查子代理。有 challenge 时，子代理必须自写 `review/` 原文并运行 `review-package seal` 生成 `.source.json`，最终返回包含 `QA_REVIEW_RECEIPT: <nonce>|<sha256>`；主代理不转抄、不改写。两轴原文与凭据都落盘后才进入分流。新协议 Spec 原文另含 `## 对账覆盖` 五列表：逐项（同绑定可合并 ID）复制实测/绑定，写已核实/未核实、`path:line` 源码位置与谓词摘要；变化断言判 `变更成立` 或 `变更不成立`，未变化写不适用。机器只查 ID 完备、绑定相等和引用存在，未核实阻塞、不成立 FAIL，语义仍交人工。
    - `r1` 必须双轴齐全；`r2+` 审查包 `treeDigest` 未变且仅修改分流或轨迹文字时，只需有待复核编号的轴产出最新轮原文，另一轴可沿用同一 `treeDigest` 的旧轮次。执行记录、绑定、日志或截图变化时 Spec 轴必须复审，过程脚本变化时 Standards 与 Spec 双轴必须复审；主代理在复审输入列明 QA 产物变化，检查器不猜测变化语义，由人工终审核对。
    - 审查子代理默认只读静态核对，不重跑测试套件、`typecheck`、`lint` 或启动服务；不得读取同轮另一轴原文，也不得跨特性读取其他 `.scratch/` 目录。
    - 子代理报超时或 `no_final_message` 时，先核对对应 `review/` 原文与 `.source.json` 是否已匹配当前 nonce 与哈希；齐全一致即认领为独立审查完成，不追问、不 `resume`。
@@ -156,10 +155,10 @@ QA Kind: feature
 
 ### 6. 交付验证（阶段 7）
 
-- 最终交付命令在全部浏览器验收结束后执行，不再 collect 前预跑；阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行。之后需要重跑验收时先探活 dev server。
+- 最终交付命令在全部浏览器验收和当前独立审查/必要复审完成后执行；阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行。新协议交付日志早于双轴最晚 completedAt 时 `VERIFICATION_BEFORE_REVIEW` 为 FAIL。之后需要重跑验收先探活 dev server。
 - QA 工作流在最终代码上通过 qa-run 执行每条交付命令并更新 `## 交付验证`，负责最终交付；`code-review` 只返回两轴发现。
 - 若因交付命令失败而修改代码或契约文档，必须回到阶段 6 重新 collect、按既有规则复审，并重跑受影响验收与全部交付命令；未改代码的环境重试不触发复审，自动复审上限已用尽时交人工授权。
-- 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对交付日志、审查包新鲜度、分流编号的原文依据与轨迹所指复审出现，输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工））与「原文核对」段（每个编号最后出现的原文行，仅供人工核对，非结论）。本会话输出的 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明。
+- 经 qa-run 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`（标签 `gate-review-*`），保存真实门禁输出并核对交付日志、审查包新鲜度、对账覆盖、分流编号与复审轨迹。输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工））与「原文核对」段（每个编号最后出现的原文行，仅供人工核对，非结论）。本会话输出的 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明。
 - 汇报的测试结论与最后一次实际运行一致；人工终审前不把 backlog、计划等文档写成完成态。
 - 最终汇报只含门禁结果行、变更摘要、验证结论与待人工裁决编号；分流表、执行记录与 diff 用路径链接，不重贴。
 

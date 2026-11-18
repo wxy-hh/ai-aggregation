@@ -5,7 +5,8 @@
  * - `resolveRepoRoot()`：从模块自身位置解析仓库根，摆脱 `ego-browser nodejs` 的 `cwd=/` 与不继承环境变量；
  * - `acquireQaPage()`：按 TaskSpace ownership 接管或新建页面；
  * - `createMarker()`：统一的 `[TCxx-n] PASS 实测：<值>` / `FAIL <原因>` 标记与退出码；
- * - `captureMobileGeometry()`：固定「设置移动视口 → 几何断言 → 截图 → 复位视口」顺序。
+ * - `captureTargetGeometry()`：显式目标经几何硬断言后按同一矩形裁剪截图；
+ * - `captureMobileGeometry()`：在显式目标截图外增加移动视口设置与复位。
  */
 
 import path from 'node:path';
@@ -71,17 +72,46 @@ export function createMarker(tcId) {
 }
 
 /**
- * 移动视口几何截图：设置视口 → 几何断言 → 截图 → 复位视口。
- * @param {object} page ego-browser 页面
- * @param {{ screenshotPath: string, width?: number, height?: number, probe: Function, assert: Function }} options
+ * 显式视觉目标：probe 与截图共用 target，硬断言成功后按目标矩形裁剪。
+ * @param {object} page 支持 evaluate(probe, target) 与 screenshot({ path, clip }) 的页面
+ * @param {{ target: string, screenshotPath: string, probe: Function, assert: Function }} options
+ */
+export async function captureTargetGeometry(page, {
+  target,
+  screenshotPath,
+  probe,
+  assert: verify,
+}) {
+  if (typeof target !== 'string' || !target.trim()) throw new TypeError('必须提供非空视觉目标');
+  if (typeof probe !== 'function') throw new TypeError('必须提供视觉目标 probe');
+  if (typeof verify !== 'function') throw new TypeError('必须提供几何硬断言');
+  const geometry = await page.evaluate(probe, target);
+  await verify(geometry);
+  if (geometry?.target !== target) throw new Error('几何目标与截图目标不一致');
+  const clip = geometry.rect;
+  if (![clip?.x, clip?.y, clip?.width, clip?.height].every(Number.isFinite)
+    || clip.width <= 0 || clip.height <= 0) {
+    throw new Error('视觉目标矩形无效');
+  }
+  await page.screenshot({ path: screenshotPath, clip });
+  return geometry;
+}
+
+/**
+ * 移动视口几何截图：设置视口 → 显式目标几何断言与截图 → 复位视口。
+ * @param {object} page 浏览器页面
+ * @param {{ target: string, screenshotPath: string, width?: number, height?: number, probe: Function, assert: Function }} options
  */
 export async function captureMobileGeometry(page, {
+  target,
   screenshotPath,
   width = 375,
   height = 667,
   probe,
   assert: verify,
 }) {
+  if (typeof target !== 'string' || !target.trim()) throw new TypeError('必须提供非空视觉目标');
+  if (typeof probe !== 'function') throw new TypeError('必须提供视觉目标 probe');
   if (typeof verify !== 'function') throw new TypeError('必须提供几何硬断言');
   await page.cdp('Emulation.setDeviceMetricsOverride', {
     width,
@@ -90,11 +120,7 @@ export async function captureMobileGeometry(page, {
     mobile: true,
   });
   try {
-    const geometry = await page.evaluate(probe);
-    // 几何硬断言必须先于截图；断言抛错时不截图，直接复位视口
-    await verify(geometry);
-    await page.screenshot({ path: screenshotPath });
-    return geometry;
+    return await captureTargetGeometry(page, { target, screenshotPath, probe, assert: verify });
   } finally {
     await page.cdp('Emulation.setDeviceMetricsOverride', {
       width: 0,

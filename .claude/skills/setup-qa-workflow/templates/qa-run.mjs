@@ -10,6 +10,16 @@ import { computeEvidenceTreeDigest, readScope, resolveFeature } from './review-p
 const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SAFE_ARGUMENT = /^[A-Za-z0-9_./:@%+=,-]+$/;
 
+/** exit 0 不代表命令实际执行了项目或测试；只识别明确空运行摘要 */
+export function emptyEvidenceReason(output) {
+  const text = String(output ?? '').replace(/\u001b\[[0-9;]*m/g, '');
+  if (/^\s*No projects matched the filters(?:\s|,|$)/im.test(text)) return '没有匹配任何项目';
+  if (/^\s*No test files found(?:\s|,|$)/im.test(text)) return '没有找到测试文件';
+  if (/^\s*Test Files\s+0 passed\s+\(0\)/im.test(text)) return '测试文件数为 0';
+  if (/^# tests 0\s*$/m.test(text)) return '测试用例数为 0';
+  return null;
+}
+
 export function formatCommand(argv) {
   return argv.map((argument) => {
     if (SAFE_ARGUMENT.test(argument)) return argument;
@@ -176,11 +186,13 @@ async function runEvidence(repo, featureArgument, label, argv) {
     });
     let queue = Promise.resolve();
     let hasBody = false;
+    let outputTail = '';
     let lastByte = null;
     let startupError = null;
     const forward = (chunk, stream) => {
       if (!chunk.length) return;
       hasBody = true;
+      outputTail = (outputTail + chunk.toString('utf8')).slice(-256 * 1024);
       lastByte = chunk[chunk.length - 1];
       queue = queue.then(() => handle.write(chunk));
       stream.write(chunk);
@@ -196,8 +208,15 @@ async function runEvidence(repo, featureArgument, label, argv) {
     });
     await queue;
     if (hasBody && lastByte !== 10) await handle.write('\n');
-    const exitCode = startupError ? 127 : signal ? 1 : code ?? 1;
-    const exitDescription = startupError ? '127' : signal ? `signal ${signal}` : String(code ?? 1);
+    let exitCode = startupError ? 127 : signal ? 1 : code ?? 1;
+    const emptyReason = exitCode === 0 ? emptyEvidenceReason(outputTail) : null;
+    if (emptyReason) {
+      exitCode = 1;
+      const diagnostic = `[qa-run] EMPTY_EVIDENCE：${emptyReason}，不能把 exit 0 当作有效绿证据\n`;
+      await handle.writeFile(diagnostic, 'utf8');
+      console.error(diagnostic.trimEnd());
+    }
+    const exitDescription = startupError ? '127' : emptyReason ? '1' : signal ? `signal ${signal}` : String(code ?? 1);
     await handle.writeFile(`# ---\n# finished: ${new Date().toISOString()}\n# exit: ${exitDescription}\n`, 'utf8');
     await handle.close();
     handle = null;

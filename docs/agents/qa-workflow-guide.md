@@ -78,7 +78,7 @@ AI 辅助编码最常见的三类返工：
 
 ```bash
 # 阶段 3B：计划通过后先跑交付命令基线，再建基线并冻结计划
-node tooling/scripts/qa-check.mjs plan .scratch/<feature>
+node tooling/scripts/qa-run.mjs .scratch/<feature> gate-plan-initial -- node tooling/scripts/qa-check.mjs plan .scratch/<feature>
 node tooling/scripts/qa-run.mjs .scratch/<feature> baseline-delivery -- <交付命令>
 node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>
 
@@ -86,7 +86,7 @@ node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名
 node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>
 
 # 阶段 5：证据与对账表
-node tooling/scripts/qa-check.mjs acceptance .scratch/<feature>
+node tooling/scripts/qa-run.mjs .scratch/<feature> gate-acceptance-initial -- node tooling/scripts/qa-check.mjs acceptance .scratch/<feature>
 
 # 阶段 6：审查包，再用 Skill 工具调用 code-review
 node tooling/scripts/review-package.mjs collect .scratch/<feature> -- <路径白名单>
@@ -97,7 +97,7 @@ node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r1 --axi
 node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r2 --axis spec --file review/r2-spec-axis.md --reviewer-kind subagent --host "<宿主名>" --pending-ids "P-M1,P-W1"
 
 # 阶段 7：最终机器校验
-node tooling/scripts/qa-check.mjs review .scratch/<feature>
+node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node tooling/scripts/qa-check.mjs review .scratch/<feature>
 ```
 
 `init` 前执行记录不得有 PASS 行；基线红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志。`tooling/`、`docs/`、`.claude/` 等与工作流共用的目录，路径白名单写到具体文件。
@@ -146,7 +146,7 @@ node tooling/scripts/qa-check.mjs review .scratch/<feature>
 ├── scripts/             ← browser/api 过程脚本与 helper
 ├── evidence/            ← qa-run 日志，不可覆盖
 ├── screenshots/         ← 每个 TC 一张验收截图
-└── _qa/                 ← 机器状态：scope.json、prechange/、review-package.*、debug/
+└── _qa/                 ← 机器状态：scope.json、prechange/、review-package.*、reconciliation.md、spec-review-checklist.json、debug/
 ```
 
 打开目录时，**先看顶层三份文档**；要核对证据再进子目录；`_qa/` 一般不用看，也不要手改。调试截图放 `_qa/debug/`，不会被当成验收截图。
@@ -172,8 +172,8 @@ node tooling/scripts/qa-check.mjs review .scratch/<feature>
 - unit/integration 行写绑定：反引号里是相对仓库根的测试文件，`›` 后是源码里的叶子标题（不用写 describe 路径；参数化测试照抄源码里的 `%s` 写法）。
 - 绑定写错只改这一列，重跑 `qa-check acceptance` 即可，不用重跑测试。
 - 修复已交付特性时，计划头写 `QA Kind: fix`，每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志；不改写原特性的执行记录。
-- 计划在 init 时冻结；删改断言、Seam、Covers 或交付命令必须写进 `## 计划变更`。计划变更不得新增冻结断言之外的呈现要求（如「某几项同屏」），确需新要求时追加断言。
-- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；最终交付命令统一在阶段 7 最终代码上执行一次，不再要求 `collect` 前预跑，阶段 3B 基线命令与阶段 4 TDD 红绿证据仍按原规则执行。阶段 7 若因命令失败修改代码或契约文档，必须回到阶段 6 复审并重跑受影响验收与全部交付命令；未改代码的环境重试不触发复审。
+- 新计划声明 `QA Review Coverage: 1`；acceptance 同步生成 SpecReviewChecklist，Spec 原文以 `## 对账覆盖` 逐项响应。计划删改断言、Seam、Covers 或交付命令必须写进 `## 计划变更`，变化断言由 Spec 轴判 `变更成立/变更不成立`。当前/base 均不存在的白名单新路径须列入 `## 计划新建路径`。
+- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；不再要求 `collect` 前预跑，最终交付命令在全部浏览器验收、当前独立审查和必要复审完成后执行，新协议过早日志报 `VERIFICATION_BEFORE_REVIEW`。阶段 7 修码必须回阶段 6，未改代码的环境重试不触发复审。
 - 阶段 5 默认只规划 1–3 条核心真实浏览器主链路与关键视口；组件测试能覆盖的故障注入与分支矩阵不下放到浏览器。
 
 ### 2. 过程脚本的断言标记
@@ -221,7 +221,7 @@ console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
 await browser.close();
 ```
 
-遵循宿主工具优先级；无更高优先级规则时，轻量用例脚本由 Node 直接执行，不走 `playwright test`（`apps/web/playwright.config.ts` 只用于仓库既有 e2e）。原生 Node 驱动要求宿主根 `package.json` 将 `playwright` 声明为**根级直接开发依赖**，仅安装在工作区子包中无法供 `.scratch/` 脚本解析；安装器只报告缺口，不修改宿主清单。需要复用用户已登录桌面会话或人工接管登录时，改用 `ego-browser` 可见窗口；仓库级薄辅助模块 `tooling/scripts/qa-browser-helper.mjs` 提供仓库根解析、TaskSpace 接管、断言标记与「设置视口 → 几何断言 → 截图 → 复位视口」顺序。
+遵循宿主工具优先级；轻量脚本由 Node 直接执行，不走 `playwright test`；原生 Node 驱动要求根级直接开发依赖 `playwright`。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何与截图不得替换成标题、状态卡或整页。`qa-browser-helper.mjs` 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，硬断言后按矩形裁剪；未提供 helper 时按同一契约自写，移动视口同样负责设置和 finally 复位。安装器会随四个核心工具分发该辅助模块模板。
 
 截图不能证明数值，也不能单独证明可见：先让目标处于无遮挡位置，脚本硬断言目标与视口相交且代表点未被其他元素遮挡，再截取目标区域；断言未溢出时另断言边界与滚动尺寸。Spec 轴审查仍会按冻结断言原文复核截图。
 

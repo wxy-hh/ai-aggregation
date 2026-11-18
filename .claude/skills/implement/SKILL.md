@@ -25,7 +25,7 @@ disable-model-invocation: true
 
 ## 3. 验收
 
-- 计划使用 Schema 4。规划后运行 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`，验收后运行 `acceptance`，并把输出的对账表留给人工终审。
+- 计划使用 Schema 4；plan、acceptance 分别经 qa-run 以 `gate-plan-*`、`gate-acceptance-*` 落盘，保留对账表和新协议 Spec 审查清单。
 - 先用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 探活；未就绪时后台运行 `pnpm dev:web`，不得关闭标题不匹配的其他进程。
 - 触及核心链路时按 `docs/agents/qa-workflow.md` 阶段 5 完成真实浏览器验收，遵守真实入口、真实输入事件、独立截图和数值严格断言规则；非核心改动按 spec 运行单元、集成和静态检查。
 - 过程脚本放在 `scripts/`，每条冻结断言先硬断言再输出 `[TC01-1] PASS 实测：<观察值>`，失败输出 `[TC01-1] FAIL <原因>` 并非零退出，不能只打印成功文本；调试截图写入 `_qa/debug/`。环境无法验证 DOM、真实交互或移动几何时记 BLOCKED 或经计划变更转人工，不用低接缝证据替代。
@@ -39,5 +39,5 @@ disable-model-invocation: true
 - 未实际调用 `code-review` 或拿不到两份真实独立返回时，状态为“待独立审查”。实现者不得凭空生成 `review/` 原文、`review-report.md` 或填写“独立审查”。宿主完全没有独立上下文能力时，只交付审查包并合法暂停，不运行最终 `qa-check review`，由独立会话或人工接续，不自动重试或提出 commit。
 - 本次修由实现者明确修复（先读 `## 修复尝试记录`，不重复已判失败的改法），重跑受影响验证后重新 collect 并按正本做增量复审，自动上限 2 轮（r2、r3）；S-H、P-M、P-W 被驳回或转专项时同样进入复审，由审查者复核，判改档不成立的改为本次修、不得再次改档；用尽后仍有未修、修错或改档不成立时停止自动修复，照常完成交付验证，由 `qa-check review` 输出 BLOCKED 交人工裁决。测试结论必须与最后一次实际运行一致。
 - 独立审查完成前不得把 backlog、计划等文档写成完成态，状态回填放在人工终审之后。
-- QA 工作流负责最终交付，在全部浏览器验收结束后于最终代码上执行全部交付命令（之后重跑验收先探活），并运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，核对 argv、exit、tree 和审查包新鲜度；本会话 `结果: PASS` 只称“机器校验通过”，不证明独立来源、不判断证据语义、不构成交付授权，汇报须附该行及范围说明，不替代独立审查与人工终审。
+- QA 工作流负责最终交付：全部浏览器验收、当前独立审查与必要复审完成后，才在最终代码上执行全部交付命令；新协议早于双轴最晚 completedAt 会报 `VERIFICATION_BEFORE_REVIEW`。随后经 qa-run 以 `gate-review-*` 运行 `node tooling/scripts/qa-check.mjs review .scratch/<feature>`，保存真实输出；`结果: PASS` 只称机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代人工终审。
 - 报告实际修改、测试输出、未验证项和新增 Agent 次数，如实区分独立审查完成与待人工终审，并附人工终审入口路径（`_qa/reconciliation.md` 对账表与 `review-report.md` 分流表），清单按正本阶段 7 执行，不重贴。不要自动 commit、push 或合并；是否提交由用户按 `.claude/rules/git-workflow.md` 决定。

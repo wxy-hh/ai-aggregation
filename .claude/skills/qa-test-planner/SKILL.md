@@ -29,12 +29,13 @@ description: "QA 测试规划器：根据 spec 生成 Schema 4 的 qa-plan.md（
 
 ### Schema 4 输出契约
 
-计划声明 `QA Schema: 4`、`QA Mode: inline|independent` 和可选 `QA Kind: feature|fix`（默认 feature）。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers、Seam 和连续编号的验证断言：
+计划声明 `QA Schema: 4`、`QA Mode: inline|independent`、可选 `QA Kind: feature|fix`（默认 feature）；新计划另写 `QA Review Coverage: 1`，旧计划省略以保持兼容。Spec 保持 `## User Stories` 数字列表；每个 TC 使用 `### TC01: ...` 形式，包含 Priority、Covers、Seam 和连续编号的验证断言：
 
 ```markdown
 QA Schema: 4
 QA Mode: inline
 QA Kind: feature
+QA Review Coverage: 1
 
 ### TC01: 示例场景
 - Priority: P0
@@ -61,7 +62,7 @@ QA Kind: feature
 - **Seam 选择**：选最高的合适接缝；browser 只用于 DOM、交互与视觉，其他断言下沉到 api、integration、unit 或 static。阶段 5 默认只规划 1–3 条核心真实浏览器主链路与关键视口，组件测试能覆盖的故障注入与分支矩阵不下放到浏览器；browser 时间盒默认 ≤5 条/15 分钟。
 - **计划边界**：`qa-plan.md` 只测产品外部可观察行为，禁止把 `qa-check` 结果、截图独立性、`review/`、`review-report.md` 或 `handoff.md` 合规性写成元用例（TC），也不得在 `scripts/` 自写元校验脚本。
 - **红灯门禁**：仅 `QA Kind: fix` 要求每个 TC 引用修复前红灯复现日志；`QA Kind: feature` 不设修复前复现日志门禁，所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变。
-- **证据**：只认特性目录内文件；browser 的 PASS 需要 `screenshots/` 下独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。视觉类断言（可见、无遮挡、未溢出）的证据是几何硬断言加目标区域截图：过程脚本在截图前硬断言几何（视口相交、代表点未被遮挡、边界与滚动尺寸），再截取目标区域；页面文本包含只证明存在。同 argv、同 tree、exit 0 的日志可被多个 TC 与交付验证引用。
+- **证据**：只认特性目录内文件；browser 的 PASS 需要 `screenshots/` 下独立截图和 exit 0 的 qa-run 日志，其他接缝需要 exit 0 的 qa-run 日志。同一截图不得跨 TC，自由文本命令不算证据。视觉类断言的证据仍是几何硬断言加目标区域截图：先写 `- Target: <语义区域> | <稳定定位器>` 冻结 **VisualTarget**；几何硬断言与目标区域裁剪截图必须使用同一对象，不能用标题、状态卡或整页替代。仓库 Helper 的 `captureTargetGeometry` 校验同一 target 和有效矩形，硬断言后才裁剪；自定义脚本仍按同一契约审查。
 - **断言标记与绑定**：browser/api 断言由 `scripts/` 下过程脚本逐条输出 `[TC01-1] PASS 实测：<观察值>`，规划时把断言写成能输出具体观察值的形式；unit/integration 断言在执行记录「绑定」列写 `` `<测试文件>` › <用例标题> ``；static 不绑定。
 - **状态**：只使用 `PASS / FAIL / BLOCKED`；未执行、环境降级和证据不足均为 BLOCKED，不设置 DEGRADED。全部断言 PASS 才通过，任一 FAIL 则失败，其余为阻塞。
 - **交付验证**：原样复制 spec `## 交付命令` 的每条命令（`qa-check plan` 校验包含关系），可以按改动范围追加 typecheck、测试和 lint，不得删减，确需缩减先改 spec 并写明理由；逐条映射 spec 的验收标准；最终代码上用 qa-run 执行并核对 argv、exit 和 tree。
@@ -69,8 +70,8 @@ QA Kind: feature
 - **计划冻结**：计划在 init 时冻结。删除 TC、改 Seam、减 Covers、改写或删除既有断言、改删交付命令，必须在 `## 计划变更` 说明；追加不受限，规划时就要写准。
 - **只认 Schema 4**：其他或未声明的 Schema 报 `UNSUPPORTED_SCHEMA`，按 Schema 4 结构重建。
 
-计划完成后运行一次 `node tooling/scripts/qa-check.mjs plan .scratch/<feature>`；验收后运行 `acceptance`，真实独立双轴审查并生成报告后运行 `review`。失败时一次性查看全部问题，不自动重试，不为追求退出码修改业务断言。
+计划完成后经 qa-run 保存门禁：plan 用 `gate-plan-*`，acceptance 用 `gate-acceptance-*`，最终 review 用 `gate-review-*`。失败时一次查看全部问题，不自动重试，不为追求退出码修改业务断言。
 
 ### 阶段收口
 
-规划通过后、init 之前，用 qa-run 跑一遍交付命令（标签 `baseline-*`），有红灯先问用户：修复则作为独立小修提交后再 init，不修则在 `## 范围说明` 记为既有失败并引用基线日志；计划中写明要新建、基线时尚不存在的新测试路径导致的「No test files」不算红灯，在 `## 范围说明` 记一行即可，不问用户。随后运行 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径白名单>` 建立基线并冻结计划，阶段 1–2 产物（GLOSSARY、ADR 等）按 init 提示 add；然后报告当前已完成阶段 3B、车道（沿用当前车道，只写车道名）、本阶段产物（qa-plan 路径、`qa-check plan` 结果与 init 输出）。规划通过后，标准车道**建议下一步：`/implement`**；慢车道**建议下一步：`/implement-spec`**；只写这一个命令。
+规划通过后、init 之前，用 qa-run 跑 `baseline-*` 交付命令。计划内基线时尚不存在的新测试路径导致的「No test files」不算红灯但记基线不适用；`No projects matched`、找不到测试或 0 项测试触发 `EMPTY_EVIDENCE`，不得作为绿基线。Schema 4 白名单若含当前与 base 均不存在的新路径，必须在 qa-plan 增加 `## 计划新建路径`，逐项写 `- \`path\``，否则 init 报 `UNKNOWN_SCOPE_PATH`。随后 init 冻结计划并 add 阶段 1–2 产物；规划门禁以 `gate-plan-*` 经 qa-run 落盘。报告当前已完成阶段 3B、车道（沿用当前车道）与产物；标准车道**建议下一步：`/implement`**，慢车道**建议下一步：`/implement-spec`**，只写一个命令。

@@ -45,18 +45,18 @@ Standards 子代理的规范来源必须包含：根及改动所在子目录的 
 
 **Standards 子代理 prompt 必须包含**：完整 diff 来源与提交列表、第 3 节的规范来源与坏味道基线全文，以及 brief：
 
-> 逐文件/逐 hunk 报告：(a) diff 违反成文规范的每一处，引用规范文件与条款；(b) 发现的基线坏味道，点名并引用 hunk。区分硬违规与判断建议：成文规范可判硬违规，基线坏味道一律是判断建议；仓库成文规范优先于基线。跳过工具已强制的内容。
+> 只报告有依据的编号发现与实际核对范围：(a) diff 违反成文规范的每一处，引用规范文件与条款；(b) 基线坏味道点名并引用 hunk。硬违规与 S-J 按仓库规则区分。无发现只写「无发现」加实际读取文件/范围，不逐文件、不逐 hunk 重复无发现，不写 Fowler 十二项全无发现矩阵，不用“完全、100%、严格”等无证据总评。
 
-**Spec 子代理 prompt 必须包含**：diff 来源与提交列表、spec 路径或内容，以及下方 brief；仅 QA 工作流调用时另给 `_qa/reconciliation.md` 与 `qa-plan.md` 执行记录证据列引用的 `screenshots/`。
+**Spec 子代理 prompt 必须包含**：diff 来源与提交列表、spec 路径或内容，以及下方 brief；仅 QA 工作流调用时另给 `_qa/reconciliation.md`、`_qa/spec-review-checklist.json`（manifest 声明时）与 `qa-plan.md` 执行记录证据列引用的 `screenshots/`。
 
-> 报告：(a) spec 要求但缺失或只实现了一部分的需求；(b) diff 中没有被要求的行为（范围蔓延）；(c) 看起来实现了但实现有误的需求。每条引用 spec 原文。逐行核对对账表的实测值或绑定是否证明冻结断言：unit/integration 沿绑定查看叶子测试的实际断言，browser/api 查看过程脚本的硬断言，不能只看用例标题或 PASS 标记；若实现错误而谓词仍会通过，以 `[P-W<n>]` 报告并引用该行。只按冻结断言原文核对截图：截图证明断言不成立，或暴露真实的遮挡、错位、空白等视觉错误时以 `[P-W<n>]` 报告并写明截图路径；脚本已硬断言、截图只是取景不全时不编号，写在正文。未核实项对应 spec 的 US 或冻结断言时，必须核实或以 `[P-M<n>]` 编号并写明未核实。对账表标注「响应注入」的行，断言涉及工具调用、质检、持久化、计费等服务端行为的以 `[P-W<n>]` 报告；特性触及核心链路却没有任何未标注「响应注入」的 browser 证据时以 `[P-M<n>]` 报告。
+> 报告 spec 缺失/部分实现、范围蔓延与错误实现，每条引用 spec 原文。逐行核对实测值或绑定是否证明冻结断言：unit/integration 沿绑定查看叶子测试的实际断言，browser/api 查看过程脚本的硬断言，不能只看标题或 PASS。若实现错误而谓词仍会通过，以 `[P-W<n>]` 报告并引用该行。只按冻结断言原文核对截图；截图必须支撑其 **VisualTarget**（语义区域 + 稳定定位器）。单纯取景不全但硬断言与截图仍是同一目标时，沿用「脚本已硬断言、截图只是取景不全时不编号」，只写正文；目标被替换成标题、状态卡或整页时按 `[P-W<n>]` 报告。未核实项对应 spec 的 US 或冻结断言时，必须核实或以 `[P-M<n>]` 编号并写明未核实。manifest 声明 specReviewChecklist 时，原文必须包含 `## 对账覆盖` 五列表：`| 审查项 | 对账实测值或绑定 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |`；逐字复制清单 actual，同绑定可合并 ID，结论写已核实/未核实，引用真实 `path:line`。冻结与当前断言不同写 `变更成立` 或 `变更不成立`，未变化写不适用。响应注入与核心链路真实冒烟沿用正本规则；acceptance 有 BLOCKED 时只能写“无新增审查发现”，不得宣称整体通过。
 
 **审查执行边界（必须写入两个 prompt）**：
 
 - **只读静态核对**：不得重跑测试套件、`typecheck`、`lint` 或启动服务；测试是否通过以 `qa-run` 日志与阶段 7 `qa-check` 为准。仅当怀疑某条叶子测试虚假通过时，打开该测试源码核对谓词。
 - **严禁读取同轮另一轴的 `review/` 原文**，保持双轴独立。
 - **严禁跨特性读取其他 `.scratch/` 目录**；编号与格式以本技能为准。
-- 审查子代理必须具备写文件与执行命令权限；只读探索型代理不得担任审查者（如 Kimi Code 的 `explore` profile 不能担任，需选可写的 `coder` 等 profile）。派发审查子代理前先选定具备写文件与执行命令权限的 profile。
+- 派发审查子代理前先选定具备写文件与执行命令权限的 profile；审查子代理必须具备写文件与执行命令权限，只读探索型代理不得担任审查者（如 Kimi Code 的 `explore` profile 不能担任，需选可写的 `coder` 等 profile）。quota/配额耗尽、无效模型别名、语言服务不可用、用户取消或无返回时，不自动换模型、不重派同轴同轮代理；保留已落盘内容并保持待独立审查，由用户决定后续会话。
 
 **QA 绑定与封存（仅 QA 工作流调用时）**：每个子代理 prompt 写入两行 `QA_REVIEW_BINDING: .scratch/<feature>|r<n>|standards`（Spec 轴用 `spec`）与 `QA_REVIEW_NONCE: <nonce>`；nonce 从 `_qa/review-challenge.json` 读取，使用仓库相对特性目录与实际轮次，不得省略或复用其他轮次。prompt 同时给出可复制执行的 seal 命令与宿主名。子代理把最终审查内容直接写入 `.scratch/<feature>/review/r<n>-standards.md` 或 `review/r<n>-spec-axis.md`（首轮 n 为 1），再运行 `node tooling/scripts/review-package.mjs seal .scratch/<feature> --round r<n> --axis standards|spec --file review/r<n>-standards.md|review/r<n>-spec-axis.md --reviewer-kind subagent --host "<宿主名>"`（r2 起加 `--pending-ids "<编号,...>"`），让最终返回包含 seal 打印的 `QA_REVIEW_RECEIPT: <nonce>|<sha256>` 一行。
 
