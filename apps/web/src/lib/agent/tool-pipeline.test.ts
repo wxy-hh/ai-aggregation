@@ -47,6 +47,7 @@ function makePipeline(overrides: {
   runTimeBudgetMs?: number;
   now?: () => number;
   guardContent?: (content: string, toolName: string) => string;
+  trace?: any;
 } = {}): PipelineHarness {
   const guardCalls: PipelineHarness['guardCalls'] = [];
   // 自定义 guard 也包一层记录，便于断言「过检是否发生、入参是什么」
@@ -63,6 +64,7 @@ function makePipeline(overrides: {
     runTimeBudgetMs: overrides.runTimeBudgetMs ?? 1_000_000,
     now: overrides.now ?? (() => 0),
     guardContent,
+    trace: overrides.trace,
   });
   return { pipeline, guardCalls };
 }
@@ -674,5 +676,161 @@ describe('耗时统计（durationMs，工单 P0a-01）', () => {
     expect(first.durationMs).toBe(40);
     expect(second.durationMs).toBeUndefined();
     expect('durationMs' in second).toBe(false);
+  });
+});
+
+describe('可观测性 Span 记录（工单 01）', () => {
+  it('真实执行时记录 Span 并携带耗时与结果', async () => {
+    let clock = 100;
+    const execute = vi.fn(async () => {
+      clock = 220;
+      return okResult();
+    });
+    const registry = createToolRegistry([makeSpec('web_search', execute)]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      now: () => clock,
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'call_obs_1',
+      toolName: 'web_search',
+      input: { query: 'test query' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        input: { query: 'test query' },
+        status: 'success',
+        durationMs: 120,
+      })
+    );
+    expect(mockSpan.end).toHaveBeenCalled();
+  });
+
+  it('被跳过拦截时记录 Span 为 failed 且标记 skipped', async () => {
+    const registry = createToolRegistry([makeSpec('web_search', vi.fn())]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      limits: { maxCallsPerRound: 0 },
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'call_obs_skip',
+      toolName: 'web_search',
+      input: { query: 'skipped query' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        status: 'failed',
+        metadata: expect.objectContaining({
+          skipped: true,
+        }),
+      })
+    );
+    expect(mockSpan.end).toHaveBeenCalled();
+  });
+
+  it('命中缓存时记录 Span 且标记 cached', async () => {
+    const execute = vi.fn(async () => okResult());
+    const registry = createToolRegistry([makeSpec('web_search', execute)]);
+    const mockSpan = { update: vi.fn(), end: vi.fn() };
+    const mockTrace: any = {
+      span: vi.fn(() => mockSpan),
+    };
+
+    const { pipeline } = makePipeline({
+      registry,
+      trace: mockTrace,
+    });
+
+    await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'web_search',
+      input: { query: 'q1' },
+    });
+    mockTrace.span.mockClear();
+
+    await pipeline.executeCall({
+      toolCallId: 'c2',
+      toolName: 'web_search',
+      input: { query: 'q1' },
+    });
+
+    expect(mockTrace.span).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'tool:web_search',
+        metadata: expect.objectContaining({
+          cached: true,
+        }),
+      })
+    );
+  });
+});
+
+describe('写操作审批（AGENT-HITL-ACTION / ADR-0041）', () => {
+  /** 构造声明了审批的假写工具；onPending 为暂停回调 spy */
+  function makeApprovalSpec(execute: AgentToolSpec['execute'], onPending = vi.fn(async () => {})) {
+    return {
+      spec: {
+        ...makeSpec('wh_notify', execute, z.object({ message: z.string() })),
+        approval: { toolId: 'tool-notify', host: 'hooks.example.com', onPending },
+      } satisfies AgentToolSpec,
+      onPending,
+    };
+  }
+
+  it('1. 声明需审批的工具：不执行，返回暂停标记与目标域名、校验后的参数 (TC02-1)', async () => {
+    const execute = vi.fn(async () => okResult());
+    const { spec, onPending } = makeApprovalSpec(execute);
+    const { pipeline } = makePipeline({ registry: createToolRegistry([spec]) });
+    pipeline.beginRound();
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'wh_notify',
+      input: { message: '你好' },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(onPending).toHaveBeenCalledTimes(1);
+    expect(outcome.pendingApproval).toEqual({
+      toolId: 'tool-notify',
+      host: 'hooks.example.com',
+      params: { message: '你好' },
+    });
+  });
+
+  it('2. 未声明审批的工具走原路径：execute 被调用 1 次，无暂停标记 (TC02-2)', async () => {
+    const execute = vi.fn(async () => okResult({ contentForModel: '正常结果' }));
+    const { pipeline } = makePipeline({
+      registry: createToolRegistry([makeSpec('wh_query', execute)]),
+    });
+    pipeline.beginRound();
+
+    const outcome = await pipeline.executeCall({
+      toolCallId: 'c1',
+      toolName: 'wh_query',
+      input: {},
+    });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(outcome.contentForModel).toBe('正常结果');
+    expect(outcome.pendingApproval).toBeUndefined();
   });
 });

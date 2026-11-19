@@ -6,7 +6,7 @@
  */
 
 import type { ProviderName } from '@repo/providers';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 
 /**
  * 聊天流结束结果（adapter → handler 的唯一结算输入）。
@@ -53,13 +53,23 @@ export interface ChatStreamFinish {
   }>;
   /** P1 工单 02：全生命周期执行总耗时（毫秒） */
   durationMs?: number;
+  /** 独立质检节点审计元数据 (ADR-0039 / AGENT-EVAL-CHECK) */
+  evaluator?: EvaluatorAuditMetadata;
+}
+
+/** 质检审计元数据 */
+export interface EvaluatorAuditMetadata {
+  executed: boolean;
+  passed: boolean;
+  remedied: boolean;
 }
 
 export interface ChatContext {
   userId: string;
   provider: ProviderName;
   model: string;
-  messages: ChatMessage[];
+  /** 窄化的线上消息（聊天请求传输契约，评审 C4）：adapter 只消费 role/content/附件载荷 */
+  messages: WireMessage[];
   /** 本次预留允许的输出 token 上限（adapter 据此限制生成） */
   outputLimit: number;
   signal: AbortSignal;

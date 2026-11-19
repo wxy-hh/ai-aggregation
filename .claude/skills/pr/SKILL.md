@@ -165,6 +165,8 @@ Execution-based evidence is A-tier. Test results, console output. Show the exact
 
 项目约定（上游升级时保留）：若存在 `.scratch/<feature>/qa-plan.md` 的「执行记录」，优先从 `.scratch/<feature>/screenshots/` 提取关键验收截图作为 Before/After 证据。
 
+项目约定（上游升级时保留）：走过 QA 工作流的 PR 在 Merge Danger 之后追加 `## 遗留事项`：原样引用 `node tooling/scripts/qa-check.mjs review` 的结果行（未运行写“待独立审查”及原因），列出分流表中的待人工裁决编号与未验证项，没有则写“无”。
+
 ### Merge Danger
 
 Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions are one-way doors.

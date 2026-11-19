@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ModelMessage } from 'ai';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 import {
   createChainedMessageSession,
   type ChainedMessageSession,
@@ -17,12 +17,11 @@ import {
 
 describe('ChainedMessageSession 链式会话状态机深模块', () => {
   it('首步无链状态：返回全量初始消息，previousResponseId 为 undefined，isChained 为 false', () => {
-    const initialChatMessages: ChatMessage[] = [
+    const initialChatMessages: WireMessage[] = [
       {
-        id: 'msg_1',
         role: 'user',
         content: '请帮我查询天气',
-      } as ChatMessage,
+      },
     ];
 
     const session: ChainedMessageSession = createChainedMessageSession({

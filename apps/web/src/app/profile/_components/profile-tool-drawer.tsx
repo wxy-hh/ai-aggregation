@@ -93,6 +93,9 @@ export function ProfileToolDrawer({
   const [clearAuthHeader, setClearAuthHeader] = useState(false);
   const [params, setParams] = useState<WebhookParamItem[]>([]);
   const [enabled, setEnabled] = useState(true);
+  // 调用前是否需要用户确认（AGENT-HITL-ACTION / ADR-0041）：默认随请求方法，用户手动拨动后不再被方法切换覆盖
+  const [requiresApproval, setRequiresApproval] = useState(true);
+  const [isManualApproval, setIsManualApproval] = useState(false);
 
   // 用户是否手动编辑过调用名（手动编辑后不再随工具名自动变更）
   const [isManualCallName, setIsManualCallName] = useState(false);
@@ -132,6 +135,8 @@ export function ProfileToolDrawer({
           : []
       );
       setEnabled(tool.enabled);
+      setRequiresApproval(tool.requiresApproval);
+      setIsManualApproval(true);
       setIsManualCallName(true);
     } else if (initialTemplate) {
       // 从模板创建：预填模板常量数据，URL 留待用户填写真实 Webhook 链接
@@ -154,6 +159,8 @@ export function ProfileToolDrawer({
           : []
       );
       setEnabled(true);
+      setRequiresApproval(initialTemplate.method === 'POST');
+      setIsManualApproval(false);
       // 模板已预置合法英文调用名，标记为已确认，避免中文工具名自动转换为随机 tool_xxxx
       setIsManualCallName(true);
     } else if (initialPrefill) {
@@ -177,6 +184,8 @@ export function ProfileToolDrawer({
           : []
       );
       setEnabled(true);
+      setRequiresApproval(initialPrefill.method === 'POST');
+      setIsManualApproval(false);
       setIsManualCallName(Boolean(initialPrefill.callName));
     } else {
       setName('');
@@ -189,12 +198,22 @@ export function ProfileToolDrawer({
       setClearAuthHeader(false);
       setParams([]);
       setEnabled(true);
+      setRequiresApproval(true);
+      setIsManualApproval(false);
       setIsManualCallName(false);
     }
     setErrors({});
     setTestingStatus('idle');
     setTestResult(null);
   }, [open, tool, initialTemplate, initialPrefill]);
+
+  // 切换请求方法：用户尚未手动调整确认开关时，开关随方法联动（POST 开 / GET 关）
+  const handleMethodChange = (next: 'GET' | 'POST') => {
+    setMethod(next);
+    if (!isManualApproval) {
+      setRequiresApproval(next === 'POST');
+    }
+  };
 
   // 工具名称修改时，自动生成调用名建议
   const handleNameChange = (val: string) => {
@@ -375,6 +394,7 @@ export function ProfileToolDrawer({
           authHeaderValue: valueToSend,
           params: sanitizedParams,
           enabled,
+          requiresApproval,
         });
 
         toast.success('工具更新成功');
@@ -392,6 +412,7 @@ export function ProfileToolDrawer({
           authHeaderValue: authHeaderValue.trim() || null,
           params: sanitizedParams,
           enabled,
+          requiresApproval,
         });
 
         toast.success('工具创建成功');
@@ -596,7 +617,7 @@ export function ProfileToolDrawer({
                   <div className="flex h-11 items-center rounded-xl border border-slate-200/90 bg-slate-100/70 p-1 dark:border-white/10 dark:bg-white/[0.04]">
                     <button
                       type="button"
-                      onClick={() => setMethod('POST')}
+                      onClick={() => handleMethodChange('POST')}
                       className={cn(
                         'flex-1 h-full rounded-lg text-xs font-bold transition-all',
                         method === 'POST'
@@ -608,7 +629,7 @@ export function ProfileToolDrawer({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMethod('GET')}
+                      onClick={() => handleMethodChange('GET')}
                       className={cn(
                         'flex-1 h-full rounded-lg text-xs font-bold transition-all',
                         method === 'GET'
@@ -894,6 +915,30 @@ export function ProfileToolDrawer({
               </div>
               <Switch checked={enabled} onCheckedChange={setEnabled} />
             </div>
+
+            {/* 调用前确认开关（AGENT-HITL-ACTION / ADR-0041） */}
+            <label
+              htmlFor="tool-requires-approval"
+              className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/60 p-3.5 dark:border-white/10 dark:bg-white/[0.02]"
+            >
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-foreground">
+                  调用前需要我确认
+                </span>
+                <p className="mt-0.5 text-[11px] text-day-muted dark:text-slate-400">
+                  开启后，智能体想调用此工具时会先在对话中请你确认，确认前不会向外发送请求。会修改外部数据的接口建议保持开启。
+                </p>
+              </div>
+              <Switch
+                id="tool-requires-approval"
+                checked={requiresApproval}
+                aria-label="调用前需要我确认"
+                onCheckedChange={(checked) => {
+                  setRequiresApproval(checked);
+                  setIsManualApproval(true);
+                }}
+              />
+            </label>
 
             {/* 编辑态内嵌的测试连接 */}
             {isEditing && tool?.id && (

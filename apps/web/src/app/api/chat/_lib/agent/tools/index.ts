@@ -8,6 +8,9 @@ import { createToolRegistry, type ToolRegistry } from '@/lib/agent/registry';
 import { createWebFetchTool } from './web-fetch';
 import { createWebSearchTool } from './web-search';
 import { createImageGenerateTool } from './image-generate';
+import { createKnowledgeSearchTool } from './knowledge-search';
+import { createKnowledgeOutlineTool } from './knowledge-outline';
+import { createMemorySearchTool } from './memory-search';
 
 let cached: ToolRegistry | null = null;
 
@@ -18,6 +21,9 @@ export function getDefaultToolRegistry(): ToolRegistry {
       createWebSearchTool(),
       createWebFetchTool(),
       createImageGenerateTool(),
+      createKnowledgeSearchTool(),
+      createKnowledgeOutlineTool(),
+      createMemorySearchTool(),
     ]);
   }
   return cached;

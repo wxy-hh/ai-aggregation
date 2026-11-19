@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { useShallow } from 'zustand/shallow';
@@ -40,17 +40,19 @@ export function useAuth() {
   };
 }
 
-/** 要求用户已登录，否则重定向到 /login */
+/** 要求用户已登录，否则重定向到 /login 并携带来源路径 */
 export function useRequireAuth() {
   const auth = useAuth();
   const { isAuthenticated, status } = auth;
   const router = useRouter();
 
   useEffect(() => {
-    // 只有引导已有结论（ready）且确实未登录时才跳转：
-    // 引导进行中（匿名认证可能在途）绝不能当成未登录，否则首次进站会被甩到登录页
     if (status === 'ready' && !isAuthenticated) {
-      router.push('/login');
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '';
+      const redirectUrl = currentPath && currentPath !== '/' && currentPath !== '/home'
+        ? `/login?redirect=${encodeURIComponent(currentPath)}`
+        : '/login';
+      router.push(redirectUrl);
     }
   }, [status, isAuthenticated, router]);
 
@@ -63,30 +65,62 @@ export function useAccessToken() {
 }
 
 /**
- * 「未登录专属页」（/login、/register 等）的真实用户重定向规则。
- *
- * 判定只依赖引导状态与身份，不读 zustand persist 的内部生命周期（hasHydrated / onFinishHydration）：
- * 已持久化的登录态在 rehydrate 时就会把 status 置为 'ready'，所以这里无需触发匿名引导，
- * 登录页也不会因此多创建一个匿名账号。
- *
- * 注意：判定要求 `status === 'ready'`，因此它只在「引导已得出过结论」的入口生效。
- * 目前在 /login 上，唯一会得出该结论的来源是 rehydrate 命中的已持久化登录态；
- * 若将来接入 OAuth 回跳 /login 之类的新路径，需要让该路径也触发一次引导（或让 store 显式迁移 status），
- * 否则这条客户端兜底不会生效（正式登录流程由登录表单自身的 router.push 负责跳转）。
+ * 登录页的真实用户重定向规则。
  *
  * @returns 是否正在跳转——调用方据此先渲染占位，避免表单闪一下又被跳走
  */
 export function useRedirectRealUserToHome() {
   const status = useAuthStore((s) => s.status);
-  // 匿名用户允许停留在登录页，以便输入账号密码切换为真实登录
-  const isRealUser = useAuthStore((s) => s.isAuthenticated && s.user?.isAnonymous !== true);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const initialize = useAuthStore((s) => s.initialize);
   const router = useRouter();
 
+  // 来源回跳或显式登出表示客户端应清理残留快照，不能仅凭快照再次跳回首页。
+  // 查询参数只能在水合完成后读取：服务端没有 window，首帧若直接按查询参数分支，
+  // 会出现服务端渲染占位、客户端渲染登录表单的 hydration mismatch。
+  const [isServerUnauthenticated, setIsServerUnauthenticated] = useState<boolean | null>(null);
+
   useEffect(() => {
-    if (status === 'ready' && isRealUser) {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      setIsServerUnauthenticated(searchParams.has('redirect') || searchParams.has('logout'));
+    } catch {
+      setIsServerUnauthenticated(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 查询参数判定完成前不执行跳转/清理，避免带 redirect 的残留认证态被误跳 /home
+    if (isServerUnauthenticated === null) return;
+
+    if (isServerUnauthenticated) {
+      if (isAuthenticated) {
+        // 显式回跳/登出入口强制同步重置客户端脏状态并清理存储
+        useAuthStore.setState({
+          user: null,
+          accessToken: null,
+          isAuthenticated: false,
+          status: 'ready',
+        });
+        try {
+          localStorage.removeItem('ai-app-auth');
+        } catch {
+          // 忽略存储清理异常
+        }
+      }
+      return;
+    }
+
+    void initialize();
+
+    if (status === 'ready' && isAuthenticated) {
       router.replace('/home');
     }
-  }, [status, isRealUser, router]);
+  }, [status, isAuthenticated, isServerUnauthenticated, initialize, router]);
 
-  return status === 'ready' && isRealUser;
+  if (isServerUnauthenticated === true) {
+    return false;
+  }
+
+  return status === 'bootstrapping' || (status === 'ready' && isAuthenticated);
 }

@@ -13,7 +13,6 @@ import { cn } from '@/lib/utils';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import type { ComparisonTurn, SelectedModel } from '@/types/comparison';
-import { toModelKey } from '@/types/comparison';
 import { ModelOverviewRail } from './model-overview-rail';
 import { FocusAnswerPane } from './focus-answer-pane';
 import { ComparisonInput } from './comparison-input';
@@ -128,26 +127,20 @@ const EmptyState = memo(function EmptyState({ models }: { models: SelectedModel[
       <div className="space-y-1.5">
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">并行对比，一题多问</h2>
         <p className="mx-auto max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
-          已选 {models.length} 个模型。输入同一个问题同时发送，先看全局状态，再聚焦比较两份完整答案，选中更好的继续追问。
+          已选 {models.length} 个模型。在下方输入同一个问题，点「同时发送」。
         </p>
       </div>
-      {models.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {models.map((m) => (
-            <span
-              key={toModelKey(m.provider, m.model)}
-              className="inline-flex items-center rounded-full border border-white/60 bg-white/60 px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300"
-            >
-              {m.label}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 });
 
-export const ComparisonView = memo(function ComparisonView() {
+export interface ComparisonViewProps {
+  headerHeight?: number;
+}
+
+export const ComparisonView = memo(function ComparisonView({
+  headerHeight,
+}: ComparisonViewProps = {}) {
   const isMobile = useIsMobile();
   const turns = useComparisonTurns();
   const selectedModels = useSelectedModels();
@@ -162,12 +155,22 @@ export const ComparisonView = memo(function ComparisonView() {
     // 故意只在挂载时执行一次：恢复逻辑不随 turns/activeComparisonId 变化重跑
   }, [activeComparisonId, turns.length, loadComparison]);
 
+  const topPadding = headerHeight ? `${headerHeight + 16}px` : undefined;
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {turns.length === 0 ? (
-        <EmptyState models={selectedModels} />
+        <div
+          style={{ paddingTop: topPadding }}
+          className="flex flex-1 flex-col justify-center pt-[116px] sm:pt-[124px]"
+        >
+          <EmptyState models={selectedModels} />
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2 custom-scrollbar">
+        <div
+          style={{ paddingTop: topPadding }}
+          className="min-h-0 flex-1 overflow-y-auto px-1 py-2 pt-[116px] sm:pt-[124px] custom-scrollbar"
+        >
           <div className="mx-auto flex max-w-6xl flex-col gap-6">
             {turns.map((turn) => (
               <TurnSection key={turn.id} turn={turn} isMobile={isMobile} />

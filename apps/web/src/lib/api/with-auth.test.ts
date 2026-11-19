@@ -27,7 +27,6 @@ describe('withAuth', () => {
       .mockResolvedValueOnce({
         id: 'user-1',
         role: 'user',
-        isAnonymous: false,
         status: 'active',
         tokens: 100,
       } as any);
@@ -62,7 +61,6 @@ describe('withAuth', () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
       id: 'disabled-user',
       role: 'user',
-      isAnonymous: false,
       status: 'disabled',
       tokens: 0,
     } as any);

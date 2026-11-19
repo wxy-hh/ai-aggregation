@@ -246,3 +246,136 @@ describe('createChatHandler 通用对话处理器合规拦截与审计', () => {
     });
   });
 });
+
+
+describe('聊天请求传输契约接入（评审 C4 / ADR-0050）', () => {
+  let mockAdapterStream: ReturnType<typeof vi.fn<(ctx: ChatContext) => Promise<ReadableStream<Uint8Array>>>>;
+  let mockAdapter: ChatProviderAdapter;
+  let getAdapterMock: ReturnType<typeof vi.fn<(provider: ProviderName) => ChatProviderAdapter>>;
+  let handler: ReturnType<typeof createChatHandler>;
+  let fakeSession: ReturnType<typeof createFakeQuotaSession>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    currentUserMock.mockResolvedValue({
+      id: 'test-user-id',
+      role: 'user',
+    });
+    rateLimiterMock.check.mockResolvedValue({
+      allowed: true,
+      remaining: 60,
+      reset: Date.now() + 60000,
+    });
+    fakeSession = createFakeQuotaSession({ outputLimit: 2048 });
+    quotaSessionReserveMock.mockResolvedValue(fakeSession);
+
+    mockAdapterStream = vi.fn(async (ctx: ChatContext) => {
+      return new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encodeSseEvent({ type: 'text-delta', text: '你好' }));
+          await ctx.onFinish({
+            outcome: 'success',
+            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false },
+            outputText: '你好',
+          });
+          controller.enqueue(encodeSseEvent({ type: 'done' }));
+          controller.close();
+        },
+      });
+    });
+    mockAdapter = { stream: (ctx: ChatContext) => mockAdapterStream(ctx) };
+    getAdapterMock = vi.fn((_provider: ProviderName) => mockAdapter);
+    handler = createChatHandler({ getAdapter: getAdapterMock });
+  });
+
+  function postJson(body: Record<string, unknown>) {
+    return new Request('http://localhost/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('TC08-1: 非法 role 请求 → 400 且响应体含 error/code/errorId/details', async () => {
+    const response = await handler(
+      postJson({
+        messages: [
+          { role: 'tool', content: '工具结果' },
+          { role: 'user', content: '你好' },
+        ],
+        provider: 'xunfei',
+      })
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as Record<string, unknown>;
+    expect(typeof data.error).toBe('string');
+    expect(/[\u4e00-\u9fa5]/.test(data.error as string)).toBe(true);
+    expect(typeof data.code).toBe('string');
+    expect(typeof data.errorId).toBe('string');
+    expect(Array.isArray(data.details)).toBe(true);
+    expect(mockAdapterStream).not.toHaveBeenCalled();
+  });
+
+  it('TC08-2: 旧客户端快照字段（isStreaming/stopped）被剥离，adapter 收到窄消息', async () => {
+    const response = await handler(
+      postJson({
+        messages: [
+          {
+            role: 'user',
+            content: '你好',
+            isStreaming: false,
+            stopped: false,
+            usage: { totalTokens: 15 },
+          },
+        ],
+        provider: 'xunfei',
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(mockAdapterStream).toHaveBeenCalledTimes(1);
+    const ctx = mockAdapterStream.mock.calls[0][0];
+    expect(ctx.messages[0]).toEqual({ role: 'user', content: '你好' });
+  });
+
+  it('TC08-3: agent=1 归一化为普通对话，getAdapter 以请求 provider 调用', async () => {
+    const response = await handler(
+      postJson({
+        messages: [{ role: 'user', content: '你好' }],
+        provider: 'xunfei',
+        model: 'lite',
+        agent: 1,
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(getAdapterMock).toHaveBeenCalledWith('xunfei');
+    const ctx = mockAdapterStream.mock.calls[0][0];
+    expect(ctx.model).toBe('lite');
+  });
+
+  it('TC08-4: provider="openai" → 400', async () => {
+    const response = await handler(
+      postJson({
+        messages: [{ role: 'user', content: '你好' }],
+        provider: 'openai',
+      })
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as Record<string, unknown>;
+    expect(data.code).toBe('INVALID_CHAT_REQUEST');
+  });
+
+  it('TC08-6: 末条消息附件缺载荷 → 400', async () => {
+    const response = await handler(
+      postJson({
+        messages: [
+          { role: 'user', content: '你好' },
+          { role: 'user', content: '看图', attachments: [{ type: 'image' }] },
+        ],
+        provider: 'xunfei',
+      })
+    );
+    expect(response.status).toBe(400);
+    expect(mockAdapterStream).not.toHaveBeenCalled();
+  });
+});

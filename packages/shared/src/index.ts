@@ -12,8 +12,12 @@ export * from './qimen-chart';
 export * from './ziwei-glossary';
 export * from './destiny-model-client';
 export * from './chat-stream-contract';
+export * from './chat-wire-contract';
 export * from './artifact-stream-extractor';
+export * from './artifact-version-engine';
+export * from './artifact-context';
 export * from './agent-tools';
+export * from './agent-plan';
 export * from './capability-pack';
 export * from './destiny-report';
 export * from './destiny-report-stream-maps';
@@ -22,6 +26,31 @@ export * from './usage-normalize';
 export * from './token-estimate';
 export * from './model-json';
 export * from './compatibility-contract';
+export * from './rag-config';
+// DocumentStorageLayout 纯契约；deriveParsedContentKey 与 C1 转出口为同一定义
+export {
+  buildArtifactStorageKey,
+  buildFileStorageKey,
+  buildUrlStorageKey,
+  deriveParsedContentKey,
+  deriveSourceFormat,
+  requiresDerivedContent,
+  SOURCE_FORMATS,
+  type DocumentSourceFormatFacts,
+  type FileStorageKeyFacts,
+  type SourceFormat,
+  type TimestampedStorageKeyFacts,
+} from './document-storage-layout';
+// 文档生命周期状态纯契约：四态、运行时清单与边界守卫
+export {
+  DOCUMENT_STATUSES,
+  isDocumentStatus,
+  type DocumentStatus,
+} from './document-status';
+export * from './rag-outline';
+export * from './rag-retrieval';
+export * from './rag-chunk-metadata';
+export * from './security/url-guard';
 
 // 城市经纬度数据 (用于八字测算真太阳时修正)
 export * from './data/china-cities';

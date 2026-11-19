@@ -4,3 +4,5 @@ export * from './message';
 export * from './relay';
 export * from './task';
 export * from './user';
+export * from './faq';
+

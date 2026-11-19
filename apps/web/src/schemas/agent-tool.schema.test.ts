@@ -152,3 +152,44 @@ describe('updateAgentToolSchema', () => {
     }
   });
 });
+
+describe('requiresApproval 审批字段（AGENT-HITL-ACTION / ADR-0041）', () => {
+  const base = {
+    name: '发送通知',
+    callName: 'send_notice',
+    description: '向外部系统发送通知',
+    url: 'https://api.example.com/webhooks/notice',
+    params: [],
+  };
+
+  it('1. POST 且未指定审批字段时默认为 true (TC09-1)', () => {
+    const parsed = createAgentToolSchema.parse({ ...base, method: 'POST' });
+    expect(parsed.requiresApproval).toBe(true);
+  });
+
+  it('2. GET 且未指定审批字段时默认为 false (TC09-2)', () => {
+    const parsed = createAgentToolSchema.parse({ ...base, method: 'GET' });
+    expect(parsed.requiresApproval).toBe(false);
+  });
+
+  it('3. POST 显式指定 false 时保留 false (TC09-3)', () => {
+    const parsed = createAgentToolSchema.parse({ ...base, method: 'POST', requiresApproval: false });
+    expect(parsed.requiresApproval).toBe(false);
+  });
+
+  it('4. GET 显式指定 true 时保留 true (TC09-4)', () => {
+    const parsed = createAgentToolSchema.parse({ ...base, method: 'GET', requiresApproval: true });
+    expect(parsed.requiresApproval).toBe(true);
+  });
+
+  it('5. 未传 method 时按 method 默认值 POST 推导为 true (TC09-1)', () => {
+    const parsed = createAgentToolSchema.parse(base);
+    expect(parsed.method).toBe('POST');
+    expect(parsed.requiresApproval).toBe(true);
+  });
+
+  it('6. 更新 Schema 接受审批字段，缺省时保持不变 (TC09-3)', () => {
+    expect(updateAgentToolSchema.parse({ requiresApproval: false }).requiresApproval).toBe(false);
+    expect(updateAgentToolSchema.parse({ name: '改名' }).requiresApproval).toBeUndefined();
+  });
+});

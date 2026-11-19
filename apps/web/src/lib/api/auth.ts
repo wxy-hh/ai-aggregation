@@ -8,7 +8,6 @@ interface User {
   avatar: string | null;
   role: string;
   tokens?: number;
-  isAnonymous?: boolean;
   emailVerified: string | null;
   createdAt?: string;
 }
@@ -24,23 +23,52 @@ interface AuthResponse {
   message?: string;
 }
 
+const AUTH_REQUEST_TIMEOUT_MS = 8_000;
+
 async function request<T = AuthResponse>(
   url: string,
   options?: RequestInit
 ): Promise<T> {
-  const res = await fetch(url, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  });
+  const controller = new AbortController();
+  const callerSignal = options?.signal;
+  const forwardAbort = () => controller.abort(callerSignal?.reason);
+  let timedOut = false;
 
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error((data as AuthResponse).error || `请求失败: ${res.status}`);
+  if (callerSignal?.aborted) {
+    forwardAbort();
+  } else {
+    callerSignal?.addEventListener('abort', forwardAbort, { once: true });
   }
 
-  return data;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, AUTH_REQUEST_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      signal: controller.signal,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error((data as AuthResponse).error || `请求失败: ${res.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    if (timedOut) {
+      throw new Error('网络连接超时，请稍后重试');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', forwardAbort);
+  }
 }
 
 /** 请求中自动附带 Access Token */
@@ -102,13 +130,6 @@ export const authApi = {
     return request('/api/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ account }),
-    });
-  },
-
-  async anonymous(deviceId: string) {
-    return request('/api/auth/anonymous', {
-      method: 'POST',
-      body: JSON.stringify({ deviceId }),
     });
   },
 

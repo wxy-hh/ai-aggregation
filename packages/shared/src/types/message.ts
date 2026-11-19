@@ -6,6 +6,7 @@ export interface Message {
   content: string;
   createdAt: Date;
   sessionId: string;
+  citations?: Record<number, any>;
 }
 
 export interface ChatSession {

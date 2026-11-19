@@ -107,26 +107,6 @@ export function buildUserPrompt(input: QimenAnalyzeRequest, chart?: QimenAnalysi
   return lines.join('\n');
 }
 
-export function buildBaseSystemPrompt() {
-  return `
-你是奇门遁甲排盘助手。必须严格输出 JSON 对象，禁止输出任何额外文字。
-禁止输出思考过程。
-
-你的任务是只生成首屏基础盘面，字段必须且仅能包含：
-- chartTitle
-- chartMeta: dun, ju, jiaziXunkong, horsePosition, valueSymbol, valueDoor
-- board: 9项，宫位顺序必须是 [巽四宫,离九宫,坤二宫,震三宫,中五宫,兑七宫,艮八宫,坎一宫,乾六宫]
-- score
-- disclaimer
-
-要求：
-1. board 字段必须完整，不能省略宫位
-2. 每个字段内容简洁，适合首屏直接展示
-3. 不要输出 overallAssessment、riskAlerts、actionSuggestions、timingWindows、chartSummary
-4. disclaimer 控制在一句话内
-`.trim();
-}
-
 const YONGSHEN_GUIDE: Record<string, string> = {
   career: '以开门（工作机会）、值符（领导/平台）为主要用神，兼看日干落宫与开门的关系',
   wealth: '以生门（财运）、戊（资本）为主要用神，兼看日干落宫与生门的关系',

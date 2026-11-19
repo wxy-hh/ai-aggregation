@@ -8,7 +8,7 @@
  */
 
 import type { ModelMessage } from 'ai';
-import type { Message as ChatMessage } from '@/stores/chat-store';
+import type { WireMessage } from '@repo/shared';
 
 /** 单步发送载荷契约 */
 export interface StepPayload {
@@ -22,8 +22,8 @@ export interface StepPayload {
 
 /** 会话初始化选项 */
 export interface ChainedMessageSessionOptions {
-  /** 初始历史消息（支持 UI ChatMessage 数组或 ModelMessage 数组） */
-  initialMessages: ChatMessage[] | ModelMessage[];
+  /** 初始历史消息（支持窄化线上消息 WireMessage 数组或 ModelMessage 数组） */
+  initialMessages: WireMessage[] | ModelMessage[];
   /** 是否启用服务端链式传输（仅火山引擎豆包 Ark Responses API 支持；DeepSeek 等标准 OpenAI 接口必须为 false） */
   supportsChaining?: boolean;
 }
@@ -68,9 +68,9 @@ export interface ChainedMessageSession {
   getPreviousResponseId(): string | null;
 }
 
-/** 把 ChatMessage 或 ModelMessage 投影为规范的模型消息 */
+/** 把线上消息或 ModelMessage 投影为规范的模型消息 */
 function normalizeInitialMessages(
-  messages: Array<ChatMessage | ModelMessage>
+  messages: Array<WireMessage | ModelMessage>
 ): ModelMessage[] {
   return messages.map((m) => ({
     role: m.role,
@@ -97,7 +97,7 @@ class DefaultChainedMessageSession implements ChainedMessageSession {
 
   constructor(options: ChainedMessageSessionOptions) {
     this.currentMessages = normalizeInitialMessages(options.initialMessages);
-    this.supportsChaining = Boolean(options.supportsChaining);
+    this.supportsChaining = options.supportsChaining ?? true;
   }
 
   getStepPayload(): StepPayload {

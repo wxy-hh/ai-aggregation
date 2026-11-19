@@ -6,7 +6,6 @@ import {
   generateRefreshToken,
   hashRefreshToken,
   setRefreshTokenCookie,
-  setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { loginSchema } from '@/schemas/auth.schema';
@@ -79,7 +78,6 @@ export async function POST(req: NextRequest) {
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);
-    await setAuthKindCookie('user', expiresAt);
 
     return createSuccessResponse({
       user: {
@@ -89,7 +87,6 @@ export async function POST(req: NextRequest) {
         avatar: user.avatar,
         role: user.role,
         tokens: user.tokens,
-        isAnonymous: false,
       },
       accessToken,
     });

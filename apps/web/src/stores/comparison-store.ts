@@ -26,6 +26,10 @@ import type {
 } from '@/types/comparison';
 import { toModelKey } from '@/types/comparison';
 import {
+  buildBatchReserveRequestBody,
+  buildChatRequestBody,
+} from '@/lib/chat/request-projection';
+import {
   CHAT_MODEL_CATALOG,
   DEFAULT_COMPARE_MODEL_KEYS,
   MIN_COMPARE_MODELS,
@@ -225,16 +229,19 @@ async function runModel(
         ?.branchMessages ?? [];
 
     // fetch → !ok 抛错 → SSE 消费已抽离（streamChatResponse，评审 C4），
-    // 本 store 只保留 RAF 节流与 stopped/failed 语义映射
+    // 本 store 只保留 RAF 节流与 stopped/failed 语义映射；请求体经唯一投影出口组装
     await streamChatResponse(
       {
-        body: {
-          messages: branch.map((m) => ({ role: m.role, content: m.content })),
+        body: buildChatRequestBody({
+          mode: 'compare',
+          messages: branch,
           provider: model.provider,
           model: model.model,
+          thinking: false,
+          agentMode: false,
           requestId: billingReservation?.requestId,
           reservationId: billingReservation?.reservationId,
-        },
+        }),
         signal: controller.signal,
       },
       {
@@ -291,12 +298,12 @@ async function runModel(
 }
 
 async function reserveComparisonModels(
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  prompt: string,
   models: SelectedModel[]
 ): Promise<Map<string, { requestId: string; reservationId: string }>> {
   const response = await authFetch('/api/chat/batch-reserve', {
     method: 'POST',
-    body: JSON.stringify({ messages, models }),
+    body: JSON.stringify(buildBatchReserveRequestBody(prompt, models)),
   });
   const data = (await response.json().catch(() => ({}))) as {
     reservations?: Array<{
@@ -354,10 +361,9 @@ export const useComparisonStore = create<ComparisonState>()(
       input: '',
       error: null,
 
-      setMode: (mode) => {
-        useConversationsStore.getState().switchMode(mode);
-        set({ mode });
-      },
+      // 仅更新对比运行时自身的模式镜像；跨 store 的模式流转由
+      // conversationOrchestrator.switchMode 统一编排，store 之间不互相调用
+      setMode: (mode) => set({ mode }),
 
       setInput: (value) => set({ input: value }),
 
@@ -398,10 +404,7 @@ export const useComparisonStore = create<ComparisonState>()(
 
         let billingReservations: Map<string, { requestId: string; reservationId: string }>;
         try {
-          billingReservations = await reserveComparisonModels(
-            [{ role: 'user', content: prompt }],
-            selectedModels
-          );
+          billingReservations = await reserveComparisonModels(prompt, selectedModels);
         } catch (error) {
           set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
           return 'skipped';
@@ -470,10 +473,9 @@ export const useComparisonStore = create<ComparisonState>()(
           return 'skipped';
         }
 
-        const reservationMessages = [{ role: 'user' as const, content: prompt }];
         let billingReservations: Map<string, { requestId: string; reservationId: string }>;
         try {
-          billingReservations = await reserveComparisonModels(reservationMessages, selectedModels);
+          billingReservations = await reserveComparisonModels(prompt, selectedModels);
         } catch (error) {
           set({ error: error instanceof Error ? error : new Error('额度预留失败，请稍后重试') });
           return 'skipped';

@@ -39,6 +39,9 @@ yarn-error.log*
 *.db
 *.db-journal
 
+# Uploads & local docs test storage
+apps/web/public/feedback-attachments/docs/
+
 # IDE（.vscode 仅保留本地，不提交）
 .vscode/
 .idea
@@ -68,6 +71,7 @@ apps/web/ark-response-debug.json
 dump.rdb*
 .dev-flow*
 .env*
+.eval-traces.json
 
 # 本地服务器信息（含密码）
 infra/docker/server-info.md

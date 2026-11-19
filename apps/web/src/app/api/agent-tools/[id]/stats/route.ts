@@ -64,19 +64,31 @@ export async function GET(req: NextRequest, context: RouteContext) {
       });
     }
 
-    const successCalls = calls.filter((call) => call.outcome === 'success').length;
-    const rawRate = (successCalls / totalCalls) * 100;
-    // 保留至多一位小数，若整除则为整数
-    const successRate = Math.round(rawRate * 10) / 10;
+    // pending_approval 是「等待用户确认」的中间态，不是调用结果（ADR-0041）：
+    // 不计入成功率/平均耗时的分母，也不作为最近失败原因；totalCalls 仍含它，
+    // 使「有 pending 无后续执行」可被推断为被拒绝或已过期
+    const settledCalls = calls.filter((call) => call.outcome !== 'pending_approval');
+    const settledCount = settledCalls.length;
 
-    const totalDuration = calls.reduce((acc, call) => acc + (call.durationMs || 0), 0);
-    const avgDurationMs = Math.round(totalDuration / totalCalls);
+    const successCalls = settledCalls.filter((call) => call.outcome === 'success').length;
+    const successRate =
+      settledCount === 0
+        ? null
+        : // 保留至多一位小数，若整除则为整数
+          Math.round((successCalls / settledCount) * 100 * 10) / 10;
+
+    const avgDurationMs =
+      settledCount === 0
+        ? null
+        : Math.round(
+            settledCalls.reduce((acc, call) => acc + (call.durationMs || 0), 0) / settledCount
+          );
 
     const lastCalledAt = calls[0].createdAt instanceof Date
       ? calls[0].createdAt.toISOString()
       : new Date(calls[0].createdAt).toISOString();
 
-    const latestFailed = calls.find((call) => call.outcome !== 'success');
+    const latestFailed = settledCalls.find((call) => call.outcome !== 'success');
     const lastErrorSummary = latestFailed
       ? formatToolCallErrorSummary(latestFailed)
       : null;

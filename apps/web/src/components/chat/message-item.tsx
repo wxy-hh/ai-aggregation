@@ -7,19 +7,25 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
+import { AgentPlanCard } from './plan/agent-plan-card';
+import { ApprovalCard } from './plan/approval-card';
 import { AttachmentPreview } from './attachment-preview';
 import { ArtifactCard } from './artifacts/artifact-card';
+import { DistillFaqDialog } from './distill-faq-dialog';
+import { CitationBadge, wrapCitationsInReactNode, injectCitationBadges } from './citation-badge';
+import { CitationReferenceCard } from './citation-reference-card';
+import { extractCitationIndices } from '@/lib/rag/citation';
 import type { Attachment, Message } from '@/stores/chat-store';
 import { useChatStore } from '@/stores/chat-store';
 import { RelayAction } from '@/components/relay/relay-action';
 import { RelayMenu } from '@/components/relay/relay-menu';
 import { useRelayLauncher } from '@/components/relay/use-relay-launcher';
 import { RELAY_COPY } from '@/lib/relay/copy';
-import type { RelayReferenceItem } from '@repo/shared';
+import type { RelayReferenceItem, CitationAnchor } from '@repo/shared';
 
 /** 格式化消息 token 消耗展示文案 */
 export function formatUsageText(usage: NonNullable<Message['usage']>): string {
@@ -34,6 +40,7 @@ export function formatUsageText(usage: NonNullable<Message['usage']>): string {
 interface MessageItemProps {
   message: Message;
   onRegenerate?: (messageId: string) => void;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
 }
 
 // 附件列表组件
@@ -53,11 +60,19 @@ const AttachmentList = memo(function AttachmentList({
   );
 });
 
-// 流式内容组件 - 不使用 Markdown 解析，只显示纯文本 + 光标
-const StreamingContent = memo(function StreamingContent({ content }: { content: string }) {
+// 流式内容组件 - 呈现纯文本与实时引用徽标 + 光标
+const StreamingContent = memo(function StreamingContent({
+  content,
+  anchorMap,
+  onOpenCitation,
+}: {
+  content: string;
+  anchorMap?: Map<number, CitationAnchor>;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
+}) {
   return (
     <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700 dark:text-slate-200">
-      {content}
+      {injectCitationBadges(content, anchorMap, onOpenCitation)}
       <span className="ml-1 inline-block h-5 w-2 rounded-sm bg-blue-500 align-[-3px] animate-pulse" />
     </div>
   );
@@ -74,11 +89,13 @@ const ACTION_BTN_CLASS =
 const ActionButtons = memo(function ActionButtons({
   onCopy,
   onRegenerate,
+  onDistillFaq,
   isUser,
   relay,
 }: {
   onCopy: () => void;
   onRegenerate?: () => void;
+  onDistillFaq?: () => void;
   isUser?: boolean;
   relay?: {
     disabled: boolean;
@@ -169,6 +186,19 @@ const ActionButtons = memo(function ActionButtons({
         </button>
       )}
 
+      {/* 提炼为 FAQ 按钮 (ADR-0034) - 仅对 AI 消息显示 */}
+      {!isUser && onDistillFaq && (
+        <button
+          data-testid="distill-faq-btn"
+          onClick={onDistillFaq}
+          className={ACTION_BTN_CLASS}
+          title="提炼并沉淀为 FAQ"
+          aria-label="提炼并沉淀为 FAQ"
+        >
+          <Sparkles className="w-4 h-4 text-purple-600 hover:text-purple-700 dark:text-purple-400" />
+        </button>
+      )}
+
       {/* 接力按钮 - 仅对 AI 消息显示 */}
       {!isUser && relay && (
         <RelayAction
@@ -185,7 +215,15 @@ const ActionButtons = memo(function ActionButtons({
 });
 
 // 静态 Markdown 内容组件 - 只在非流式时渲染
-const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+const MarkdownContent = memo(function MarkdownContent({
+  content,
+  anchorMap,
+  onOpenCitation,
+}: {
+  content: string;
+  anchorMap?: Map<number, CitationAnchor>;
+  onOpenCitation?: (anchor: CitationAnchor) => void;
+}) {
   // 提取子元素中的纯文本内容，过滤掉复杂对象
   const getTextContent = useCallback((child: any): string => {
     if (typeof child === 'string') return child;
@@ -229,10 +267,43 @@ const MarkdownContent = memo(function MarkdownContent({ content }: { content: st
           </code>
         );
       },
-      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div
-      p: SafeParagraph,
+      // 链接与脚注引用处理：若命中 GFM footnote 引用，转换为可点击交互的 CitationBadge (QA-004)
+      a({ href, children, ...props }: any) {
+        if (
+          props['data-footnote-ref'] ||
+          href?.startsWith('#user-content-fn-') ||
+          href?.startsWith('#fn-')
+        ) {
+          const num = parseInt(String(children), 10);
+          if (!isNaN(num)) {
+            const anchor = anchorMap?.get(num);
+            return (
+              <CitationBadge
+                index={num}
+                anchor={anchor}
+                onOpenCitation={onOpenCitation}
+              />
+            );
+          }
+        }
+        return (
+          <a href={href} {...props}>
+            {children}
+          </a>
+        );
+      },
+      // 代码围栏紧跟段落（无空行）时会被解析为段落内元素：SafeParagraph 统一处理为 div，并包装可点击 [^n] 引用
+      p({ children, ...props }: any) {
+        const wrapped = wrapCitationsInReactNode(children, anchorMap, onOpenCitation);
+        return <SafeParagraph {...props}>{wrapped}</SafeParagraph>;
+      },
+      // 列表项同样支持解析正文内 [^n] 引用
+      li({ children, ...props }: any) {
+        const wrapped = wrapCitationsInReactNode(children, anchorMap, onOpenCitation);
+        return <li {...props}>{wrapped}</li>;
+      },
     }),
-    []
+    [anchorMap, onOpenCitation, getTextContent]
   );
 
   return (
@@ -484,9 +555,43 @@ const ThinkingBlock = memo(function ThinkingBlock({
 });
 
 // 主消息组件
-export const MessageItem = memo(function MessageItem({ message, onRegenerate }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({
+  message,
+  onRegenerate,
+  onOpenCitation,
+}: MessageItemProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming ?? false;
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const [distillDialogOpen, setDistillDialogOpen] = useState(false);
+
+  // 获取上一条用户提问内容 (作为 FAQ 标准问上下文)
+  const previousUserQuery = useMemo(() => {
+    if (isUser) return '';
+    const allMessages = useChatStore.getState().messages;
+    const currentIndex = allMessages.findIndex((m) => m.id === message.id);
+    if (currentIndex > 0) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (allMessages[i].role === 'user') {
+          return allMessages[i].content;
+        }
+      }
+    }
+    return '';
+  }, [isUser, message.id]);
+
+  // 构造 1-based 物理切片锚点索引表 (ADR-0025)
+  const anchorMap = useMemo(() => {
+    if (!message.citations) return undefined;
+    const map = new Map<number, CitationAnchor>();
+    for (const [key, anchor] of Object.entries(message.citations)) {
+      const idx = Number(key);
+      if (!isNaN(idx) && anchor) {
+        map.set(idx, anchor);
+      }
+    }
+    return map;
+  }, [message.citations]);
   // 是否持有 agent 过程记录（工具调用或过程旁白；决定过程卡片是否渲染；非 agent 轮次自然为 0）
   const hasAgentTrace =
     !isUser && Boolean(message.toolCalls?.length || message.agentNotes?.length);
@@ -498,6 +603,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
   const hasReasoning = !isUser && !!message.reasoningContent;
   // 附件：用户消息为用户上传件，AI 消息为 agent 工具产出件（如生成的图片）
   const hasAttachments = message.attachments && message.attachments.length > 0;
+
+  // 是否包含检索类工具调用（QA-004：知识库检索来源元信息计数）
+  const retrievalToolCalls = useMemo(() => {
+    return (message.toolCalls ?? []).filter(
+      (tc) =>
+        (tc.name === 'knowledge_search' || tc.name === 'memory_search') &&
+        tc.status === 'success'
+    );
+  }, [message.toolCalls]);
+  const hasRetrievalSource = !isUser && retrievalToolCalls.length > 0;
+  const citationIndices = useMemo(() => {
+    return extractCitationIndices(message.content);
+  }, [message.content]);
 
   // 接力：仅非流式、非空的 AI 助手回答可发起（REQ-007）
   const currentModel = useChatStore((s) => s.model);
@@ -596,6 +714,22 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
               </>
             ) : (
               <div className="markdown-body prose max-w-none prose-p:leading-7 prose-p:text-slate-700 prose-headings:font-heading prose-headings:text-slate-900 prose-strong:text-slate-900 prose-pre:rounded-2xl prose-pre:border prose-pre:border-slate-200 prose-pre:p-0 dark:prose-invert dark:prose-p:text-slate-200 dark:prose-headings:text-white dark:prose-strong:text-white dark:prose-pre:border-slate-700">
+                {/* 智能体执行计划与阶段检查点 (AGENT-PLAN-DAG / ADR-0038) */}
+                {message.plan && (
+                  <AgentPlanCard
+                    messageId={message.id}
+                    plan={message.plan}
+                    isStreaming={isStreaming}
+                  />
+                )}
+                {/* 写操作审批卡片 (AGENT-HITL-ACTION / ADR-0041)：确认走恢复请求，拒绝为纯前端终止 */}
+                {message.approval && (
+                  <ApprovalCard
+                    approval={message.approval}
+                    onConfirm={() => useChatStore.getState().confirmApproval(message.id)}
+                    onReject={() => useChatStore.getState().rejectApproval(message.id)}
+                  />
+                )}
                 {/* 思考块位于气泡内、正文上方；无推理内容时整棵子树不渲染（讯飞模型/无推理轮次自然退化） */}
                 {hasReasoning && (
                   <ThinkingBlock
@@ -621,11 +755,19 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                 ) : isStreaming ? (
                   // 推理阶段（无正文）此处渲染为空，流式光标由思考块内部承担
                   message.content ? (
-                    <StreamingContent content={message.content} />
+                    <StreamingContent
+                      content={message.content}
+                      anchorMap={anchorMap}
+                      onOpenCitation={onOpenCitation}
+                    />
                   ) : null
                 ) : (
                   <>
-                    <MarkdownContent content={message.content} />
+                    <MarkdownContent
+                      content={message.content}
+                      anchorMap={anchorMap}
+                      onOpenCitation={onOpenCitation}
+                    />
                     {message.truncationWarning && (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
                         {message.truncationWarning}
@@ -650,6 +792,26 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
                         {formatUsageText(message.usage)}
                       </div>
                     )}
+                    {/* 知识库检索来源元信息行（QA-004） */}
+                    {hasRetrievalSource && (
+                      <div
+                        data-testid="retrieval-source-meta"
+                        className="mt-2 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 font-medium"
+                      >
+                        <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          已参考知识库来源
+                          {citationIndices.length > 0 ? ` · ${citationIndices.length} 处引用` : ''}
+                        </span>
+                      </div>
+                    )}
+                    {/* 知识库引用来源折叠卡片 (ADR-0025 / TC04) */}
+                    {!isUser && message.citations && Object.keys(message.citations).length > 0 && (
+                      <CitationReferenceCard
+                        citations={message.citations}
+                        onSelectCitation={onOpenCitation}
+                      />
+                    )}
                   </>
                 )}
                 {/* 关联产物卡片清单（ADR-0015） */}
@@ -669,6 +831,7 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
             <ActionButtons
               onCopy={handleCopy}
               onRegenerate={onRegenerate ? () => onRegenerate(message.id) : undefined}
+              onDistillFaq={!isUser && message.content.trim().length > 0 ? () => setDistillDialogOpen(true) : undefined}
               isUser={isUser}
               relay={
                 !isUser
@@ -684,6 +847,17 @@ export const MessageItem = memo(function MessageItem({ message, onRegenerate }: 
           )}
         </div>
       </div>
+
+      {/* 提炼为知识库 FAQ 弹窗 (ADR-0034) */}
+      {!isUser && (
+        <DistillFaqDialog
+          open={distillDialogOpen}
+          onOpenChange={setDistillDialogOpen}
+          userQuery={previousUserQuery || message.content}
+          aiResponse={message.content}
+          sessionId={activeConversationId}
+        />
+      )}
 
       {/* 接力菜单（显式按钮/右键/长按复用同一菜单） */}
       {!isUser && (

@@ -112,6 +112,7 @@ export function TimelineBar({ videoUrl }: TimelineBarProps) {
   };
 
   const hasVideo = !!videoUrl;
+  if (!hasVideo) return null;
 
   return (
     <div className="w-full overflow-x-auto hide-scrollbar pb-1">

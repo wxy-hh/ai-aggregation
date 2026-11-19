@@ -16,6 +16,8 @@
     "dev:worker": "pnpm --filter @repo/worker dev",
     "dev:rtasr": "pnpm --filter @repo/worker-rtasr dev",
     "qimen:check": "node tooling/scripts/qimen-check.mjs",
+    "qa:check": "node tooling/scripts/qa-check.mjs",
+    "review:package": "node tooling/scripts/review-package.mjs",
     "infra:up": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml up -d redis postgres minio'",
     "infra:down": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml down'",
     "infra:logs": "sh -c 'command -v docker >/dev/null 2>&1 || { echo \"未检测到 docker，请先安装 Docker Desktop\"; exit 1; }; docker compose -f infra/docker/docker-compose.yml logs -f redis postgres minio'",
@@ -24,17 +26,23 @@
     "format": "turbo format",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "test:eval": "pnpm --filter @repo/web test:eval",
     "test:e2e": "turbo test:e2e",
     "db:generate": "pnpm --filter @repo/db generate",
     "db:migrate": "pnpm --filter @repo/db migrate",
     "db:seed": "pnpm --filter @repo/db seed",
+    "rag:seed": "tsx --tsconfig apps/web/tsconfig.json tooling/scripts/seed-docs-corpus.mts",
+    "rag:eval": "tsx --tsconfig apps/web/tsconfig.json tooling/scripts/eval-rag.mts",
+    "artifact-patch:eval": "tsx --tsconfig apps/web/tsconfig.json tooling/scripts/eval-artifact-patch.mts",
     "clean": "turbo clean && rm -rf node_modules",
     "postinstall": "pnpm db:generate"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
     "eslint": "^9.17.0",
+    "playwright": "^1.61.1",
     "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
     "turbo": "^2.8.10",
     "typescript": "^5.6.3"
   }

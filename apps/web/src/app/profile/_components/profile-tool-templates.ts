@@ -8,7 +8,7 @@
  * 4. 默认调用名符合 CALL_NAME_REGEX 命名规范，并可接入既有 suggestCallName 链路。
  */
 
-import type { WebhookParamItem, CreateAgentToolInput } from '@/schemas/agent-tool.schema';
+import type { WebhookParamItem, CreateAgentToolFormInput } from '@/schemas/agent-tool.schema';
 
 /** 单个工具模板定义类型 */
 export interface ToolTemplate {
@@ -107,7 +107,7 @@ export function templateToPartialDto(template: ToolTemplate) {
  */
 export function templateToToolInput(
   template: ToolTemplate
-): Omit<CreateAgentToolInput, 'url'> & { url: string } {
+): Omit<CreateAgentToolFormInput, 'url'> & { url: string } {
   return {
     ...templateToPartialDto(template),
     url: '',

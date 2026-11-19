@@ -70,8 +70,8 @@ export function AstrologyWorkspace({ isActive }: AstrologyWorkspaceProps) {
   const [migrationOpen, setMigrationOpen] = useState(false);
   // 同一份临时记录只主动询问一次；用户关掉弹层不打断，会话结束记录自然消失
   const promptedRecordIdRef = useRef<string | null>(null);
-  // 匿名接口显式返回 isAnonymous=true；真实用户该字段可能缺省（注册/登录响应不携带），按「非 true」判定
-  const isLoggedIn = user !== null && user.isAnonymous !== true;
+  // 用户已登录判断
+  const isLoggedIn = user !== null;
 
   useEffect(() => {
     if (!isActive || !isLoggedIn || !tempRecord) return;

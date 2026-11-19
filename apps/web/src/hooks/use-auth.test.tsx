@@ -1,11 +1,8 @@
 import '@testing-library/jest-dom/vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-/**
- * 守卫决策点的回归锁：`useRequireAuth` 只能在「引导已有结论（status 为 ready）且确实未登录」时跳转。
- * 这一条就是首次进站被甩到登录页的现场——引导进行中（匿名认证在途）绝不能当成未登录。
- */
 
 const pushMock = vi.fn();
 const replaceMock = vi.fn();
@@ -14,14 +11,13 @@ vi.mock('next/navigation', () => ({
 }));
 
 const refreshMock = vi.fn();
-const anonymousMock = vi.fn();
 vi.mock('@/lib/api/auth', () => ({
   authApi: {
     refresh: (...args: unknown[]) => refreshMock(...args),
-    anonymous: (...args: unknown[]) => anonymousMock(...args),
     getMe: vi.fn(),
     login: vi.fn(),
     register: vi.fn(),
+    logout: vi.fn(),
     forgotPassword: vi.fn(),
     resetPassword: vi.fn(),
   },
@@ -30,14 +26,17 @@ vi.mock('@/lib/api/auth', () => ({
 import { useAuthStore } from '@/stores/auth-store';
 import { useRedirectRealUserToHome, useRequireAuth } from './use-auth';
 
+/** 水合一致性探针：只暴露 hook 的跳转判定结果，避免把登录页视觉结构耦合进测试 */
+function HydrationProbe() {
+  const isRedirecting = useRedirectRealUserToHome();
+  return <div data-testid="auth-redirect-probe">{isRedirecting ? 'spinner' : 'form'}</div>;
+}
+
 describe('useRequireAuth 的跳转时机', () => {
   beforeEach(() => {
     pushMock.mockReset();
     refreshMock.mockReset();
-    anonymousMock.mockReset();
-    // refresh 拿不到 token + 匿名认证永不返回：把引导钉死在「进行中」
-    refreshMock.mockResolvedValue({ accessToken: null });
-    anonymousMock.mockReturnValue(new Promise(() => {}));
+    refreshMock.mockReturnValue(new Promise(() => {}));
   });
 
   it('引导进行中不跳转，迁移到 ready 且未认证后才 push /login', async () => {
@@ -59,7 +58,7 @@ describe('useRequireAuth 的跳转时机', () => {
     useAuthStore.setState({
       status: 'ready',
       isAuthenticated: true,
-      user: { id: 'u1', username: 'anon', isAnonymous: true } as never,
+      user: { id: 'u1', username: 'test_user' } as never,
       accessToken: 'token',
     });
 
@@ -76,21 +75,21 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
     replaceMock.mockReset();
   });
 
-  it('引导未结束时不判定（既不跳转也不返回跳转中）', async () => {
+  it('引导未结束时显示跳转占位但不发起 replace', async () => {
     useAuthStore.setState({ status: 'bootstrapping', isAuthenticated: false, user: null });
 
     const { result } = renderHook(() => useRedirectRealUserToHome());
     await act(async () => {});
 
     expect(replaceMock).not.toHaveBeenCalled();
-    expect(result.current).toBe(false);
+    expect(result.current).toBe(true);
   });
 
-  it('已持久化真实用户：replace /home 且返回跳转中（登录页据此不渲染表单）', async () => {
+  it('已登录用户：replace /home 且返回跳转中（登录页据此不渲染表单）', async () => {
     useAuthStore.setState({
       status: 'ready',
       isAuthenticated: true,
-      user: { id: 'u2', username: 'real_user', isAnonymous: false } as never,
+      user: { id: 'u2', username: 'real_user' } as never,
       accessToken: 'token',
     });
 
@@ -101,12 +100,12 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
     expect(result.current).toBe(true);
   });
 
-  it('匿名用户允许停留在登录页：不跳转、直接渲染表单', async () => {
+  it('未登录用户允许停留在登录页：不跳转、直接渲染表单', async () => {
     useAuthStore.setState({
       status: 'ready',
-      isAuthenticated: true,
-      user: { id: 'u3', username: 'anon_user', isAnonymous: true } as never,
-      accessToken: 'token',
+      isAuthenticated: false,
+      user: null,
+      accessToken: null,
     });
 
     const { result } = renderHook(() => useRedirectRealUserToHome());
@@ -114,5 +113,97 @@ describe('useRedirectRealUserToHome（未登录专属页的真实用户重定向
 
     expect(replaceMock).not.toHaveBeenCalled();
     expect(result.current).toBe(false);
+  });
+
+  it('带有 redirect 参数时（服务端中间件拦截回登录页）：即使客户端存在残留认证态，也不跳转 /home 并自愈清理', async () => {
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = new URL('http://localhost:3030/login?redirect=%2Fhome') as unknown as string & Location;
+    localStorage.setItem('ai-app-auth', JSON.stringify({ state: { user: { id: 'u2' }, isAuthenticated: true } }));
+
+    useAuthStore.setState({
+      status: 'ready',
+      isAuthenticated: true,
+      user: { id: 'u2', username: 'stale_user' } as never,
+      accessToken: null,
+    });
+
+    const { result } = renderHook(() => useRedirectRealUserToHome());
+    await act(async () => {});
+
+    // 严禁发起 replace /home（杜绝死循环）
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(result.current).toBe(false);
+
+    // 验证自愈清理：客户端状态被重置，localStorage 残留被清除
+    await waitFor(() => {
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+      expect(useAuthStore.getState().user).toBeNull();
+      expect(localStorage.getItem('ai-app-auth')).toBeNull();
+    });
+  });
+
+  it('带有 logout 参数时：不跳转 /home 并自愈清理残留', async () => {
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = new URL('http://localhost:3030/login?logout=1') as unknown as string & Location;
+    localStorage.setItem('ai-app-auth', JSON.stringify({ state: { user: { id: 'u2' }, isAuthenticated: true } }));
+
+    useAuthStore.setState({
+      status: 'ready',
+      isAuthenticated: true,
+      user: { id: 'u2', username: 'stale_user' } as never,
+      accessToken: null,
+    });
+
+    const { result } = renderHook(() => useRedirectRealUserToHome());
+    await act(async () => {});
+
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(result.current).toBe(false);
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+      expect(localStorage.getItem('ai-app-auth')).toBeNull();
+    });
+  });
+
+  it('SSR 首帧与带 redirect 参数的客户端水合首帧一致，不产生 hydration 错误', async () => {
+    refreshMock.mockReturnValue(new Promise(() => {}));
+    useAuthStore.setState({
+      status: 'bootstrapping',
+      isAuthenticated: false,
+      user: null,
+      accessToken: null,
+    });
+
+    const originalWindow = globalThis.window;
+    vi.stubGlobal('window', undefined);
+    const serverHtml = renderToString(<HydrationProbe />);
+    vi.stubGlobal('window', originalWindow);
+
+    expect(serverHtml).toContain('spinner');
+
+    delete (window as unknown as { location?: unknown }).location;
+    window.location = new URL(
+      'http://localhost:3030/login?redirect=%2Fknowledge'
+    ) as unknown as string & Location;
+
+    const container = document.createElement('div');
+    container.innerHTML = serverHtml;
+    const hydrationErrors: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <HydrationProbe />, {
+        onRecoverableError: (error) => hydrationErrors.push(error),
+        onUncaughtError: (error) => hydrationErrors.push(error),
+      });
+    });
+
+    expect(
+      hydrationErrors.filter((error) =>
+        String(error).includes('Hydration failed because the server rendered')
+      )
+    ).toHaveLength(0);
+
+    act(() => root?.unmount());
   });
 });

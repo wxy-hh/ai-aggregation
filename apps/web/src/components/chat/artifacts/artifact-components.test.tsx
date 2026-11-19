@@ -171,3 +171,120 @@ describe('ArtifactWorkspace 组件 (ADR-0015)', () => {
     expect(useChatStore.getState().isWorkspaceOpen).toBe(false);
   });
 });
+
+describe('产物未完成态展示 (ADR-0037 / 工单 02)', () => {
+  beforeEach(() => {
+    useChatStore.getState().reset();
+  });
+
+  it('卡片：error 态产物展示「未完成」徽标且不展示「生成中」', () => {
+    const art: Artifact = {
+      id: 'art-err',
+      type: 'markdown',
+      title: '被中止的研报',
+      content: '写了一半',
+      status: 'error',
+    };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: null, isWorkspaceOpen: false });
+
+    render(<ArtifactCard artifactId="art-err" />);
+    expect(screen.getByText('未完成')).toBeInTheDocument();
+    expect(screen.queryByText('生成中')).not.toBeInTheDocument();
+  });
+
+  it('卡片：complete 态产物既不展示「未完成」也不展示「生成中」', () => {
+    const art: Artifact = { id: 'art-ok', type: 'markdown', title: '完整研报', content: '正文', status: 'complete' };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: null, isWorkspaceOpen: false });
+
+    render(<ArtifactCard artifactId="art-ok" />);
+    expect(screen.queryByText('未完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('生成中')).not.toBeInTheDocument();
+  });
+
+  it('工作台：error 态产物顶栏展示「未完成」，不展示「流式生成中」', () => {
+    const art: Artifact = { id: 'art-err', type: 'markdown', title: '被中止的研报', content: '写了一半', status: 'error' };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: 'art-err', isWorkspaceOpen: true });
+
+    render(<ArtifactWorkspace />);
+    expect(screen.getByTestId('artifact-incomplete-badge')).toHaveTextContent('未完成');
+    expect(screen.queryByText('流式生成中')).not.toBeInTheDocument();
+  });
+
+  it('工作台：草稿被丢弃时提示「本次修改未完成，已保留上一版」，正文保持上一版', () => {
+    const art: Artifact = {
+      id: 'art-kept',
+      type: 'markdown',
+      title: '研报',
+      content: '上一版正文',
+      status: 'complete',
+      notice: 'draft-discarded',
+    };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: 'art-kept', isWorkspaceOpen: true });
+
+    render(<ArtifactWorkspace />);
+    expect(screen.getByTestId('artifact-draft-discarded-notice')).toHaveTextContent(
+      '本次修改未完成，已保留上一版'
+    );
+    expect(screen.getByText('上一版正文')).toBeInTheDocument();
+    expect(screen.queryByTestId('artifact-incomplete-badge')).not.toBeInTheDocument();
+  });
+
+  it('工作台：无 notice 的完整产物不展示未完成提示', () => {
+    const art: Artifact = { id: 'art-ok', type: 'markdown', title: '研报', content: '正文', status: 'complete' };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: 'art-ok', isWorkspaceOpen: true });
+
+    render(<ArtifactWorkspace />);
+    expect(screen.queryByTestId('artifact-draft-discarded-notice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('artifact-incomplete-badge')).not.toBeInTheDocument();
+  });
+});
+
+describe('章节补丁失败展示 (ADR-0037 / 工单 03)', () => {
+  beforeEach(() => {
+    useChatStore.getState().reset();
+  });
+
+  it('工作台逐条展示未应用的章节标题与可区分的原因，已应用的补丁不列入失败', () => {
+    const art: Artifact = {
+      id: 'art-patch',
+      type: 'markdown',
+      title: '研报',
+      content: '# 研报\n\n## 第一章\n正文',
+      status: 'complete',
+      patchReport: [
+        { section: '## 第一章', status: 'applied' },
+        { section: '## 第九章 不存在', status: 'failed', reason: 'not-found' },
+        { section: '## 总结', status: 'failed', reason: 'duplicate' },
+        { section: '## 第二章', status: 'failed', reason: 'not-heading-start' },
+      ],
+    };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: 'art-patch', isWorkspaceOpen: true });
+
+    render(<ArtifactWorkspace />);
+    const failures = screen.getByTestId('artifact-patch-failures');
+    expect(failures).toHaveTextContent('3 处章节修改未应用');
+    expect(screen.getAllByTestId('artifact-patch-failure-item')).toHaveLength(3);
+    expect(failures).toHaveTextContent('## 第九章 不存在');
+    expect(failures).toHaveTextContent('未找到该标题');
+    expect(failures).toHaveTextContent('## 总结');
+    expect(failures).toHaveTextContent('标题重复，无法唯一定位');
+    expect(failures).toHaveTextContent('## 第二章');
+    expect(failures).toHaveTextContent('补丁内容未以该标题开头');
+    expect(failures).not.toHaveTextContent('## 第一章');
+  });
+
+  it('补丁全部成功或没有补丁结果时不展示失败区块', () => {
+    const art: Artifact = {
+      id: 'art-ok',
+      type: 'markdown',
+      title: '研报',
+      content: '# 研报',
+      status: 'complete',
+      patchReport: [{ section: '## 第一章', status: 'applied' }],
+    };
+    useChatStore.setState({ artifacts: [art], activeArtifactId: 'art-ok', isWorkspaceOpen: true });
+
+    render(<ArtifactWorkspace />);
+    expect(screen.queryByTestId('artifact-patch-failures')).not.toBeInTheDocument();
+  });
+});

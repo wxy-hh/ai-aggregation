@@ -20,10 +20,9 @@ import type { ModuleReading } from '@/lib/astrology/interpretation';
 // 通过 hoisted 引用控制每次测试的登录用户（admin 跳过额度预留，普通用户走预留→结算）
 const { mockUserRef, streamModelRef, quotaSessionMocks } = vi.hoisted(() => ({
   mockUserRef: {
-    current: { id: 'test-user', role: 'user', isAnonymous: true } as {
+    current: { id: 'test-user', role: 'user' } as {
       id: string;
       role: string;
-      isAnonymous: boolean;
     },
   },
   streamModelRef: {
@@ -197,7 +196,7 @@ function primeStream(payload: Record<string, unknown>) {
 
 describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
   beforeEach(() => {
-    mockUserRef.current = { id: 'test-user', role: 'user', isAnonymous: true };
+    mockUserRef.current = { id: 'test-user', role: 'user' };
     streamModelRef.calls = [];
     streamModelRef.error = null;
     streamModelRef.chunks = [];
@@ -310,18 +309,18 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
     );
   });
 
-  it('匿名用户可提问（不登录也能走同一条预留→结算链路）', async () => {
-    mockUserRef.current = { id: 'anon-1', role: 'user', isAnonymous: true };
+  it('普通用户提问走预留→结算链路', async () => {
+    mockUserRef.current = { id: 'user-1', role: 'user' };
     primeStream(answerPayload(ACCURATE_FACTS));
 
     const events = await readSseEvents(await postCopilot());
 
     expect(events[events.length - 1].type).toBe('answer');
-    expect(quotaSessionMocks.reserve.mock.calls[0][0]).toMatchObject({ userId: 'anon-1' });
+    expect(quotaSessionMocks.reserve.mock.calls[0][0]).toMatchObject({ userId: 'user-1' });
   });
 
   it('管理员提问同样完成预留与成功结算（免扣与归档由 QuotaSession 决策表承担）', async () => {
-    mockUserRef.current = { id: 'test-admin', role: 'admin', isAnonymous: false };
+    mockUserRef.current = { id: 'test-admin', role: 'admin' };
     primeStream(answerPayload(ACCURATE_FACTS));
 
     const events = await readSseEvents(await postCopilot());
@@ -543,7 +542,7 @@ describe('POST /api/destiny/astrology/copilot（星语问答）', () => {
  */
 describe('客户端接缝 → 问答路由（全链路）', () => {
   beforeEach(() => {
-    mockUserRef.current = { id: 'test-user', role: 'user', isAnonymous: true };
+    mockUserRef.current = { id: 'test-user', role: 'user' };
     streamModelRef.calls = [];
     streamModelRef.error = null;
     streamModelRef.chunks = [];

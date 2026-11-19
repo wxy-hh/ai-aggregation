@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { assertCanDeleteAccount } from '@/lib/auth/anonymous-policy';
 import { verifyPassword } from '@/lib/auth/password';
 import { clearRefreshTokenCookie } from '@/lib/auth/jwt';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
@@ -18,9 +17,6 @@ export async function DELETE(req: NextRequest) {
       if (user.role === 'admin') {
         return ApiError.forbidden('管理员账号不支持自助注销');
       }
-
-      // 匿名用户不支持自助注销
-      assertCanDeleteAccount(user);
 
       const dbUser = await prisma.user.findUnique({
         where: { id: user.id },

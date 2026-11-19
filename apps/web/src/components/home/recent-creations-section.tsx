@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
+  Bot,
   Clock,
   Compass,
   Image as ImageIcon,
   MessageSquare,
   Mic,
   Plus,
+  Search,
   Sparkles,
   Video as VideoIcon,
 } from 'lucide-react';
@@ -34,6 +36,10 @@ import {
   useHistoryLoading,
 } from '@/stores/history-store';
 import { useConversationsStore } from '@/stores/conversations-store';
+import {
+  filterHistoryItems,
+  mergeHistoryWithConversations,
+} from '@/lib/history/project-conversations';
 import type { HistoryItem, HistoryType, ImageHistoryItem } from '@/types/history';
 
 const TYPE_ICONS: Record<HistoryType, React.ComponentType<{ className?: string }>> = {
@@ -42,6 +48,7 @@ const TYPE_ICONS: Record<HistoryType, React.ComponentType<{ className?: string }
   image: ImageIcon,
   video: VideoIcon,
   destiny: Compass,
+  agent: Bot,
 };
 
 type RecentCreationsSectionProps = {
@@ -53,14 +60,25 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
   const items = useHistoryItems();
   const isInitialized = useHistoryInitialized();
   const isLoading = useHistoryLoading();
+  const conversations = useConversationsStore((state) => state.conversations);
+  const conversationsLoaded = useConversationsStore((state) => state.isLoaded);
   const createConversation = useConversationsStore((state) => state.createConversation);
 
   const [previewImage, setPreviewImage] = useState<ImageHistoryItem | null>(null);
+  const [query, setQuery] = useState('');
 
-  const recentItems = useMemo(
-    () => (isInitialized ? pickRecentHistoryItems(items, 3) : []),
-    [isInitialized, items]
+  const mergedItems = useMemo(
+    () => mergeHistoryWithConversations(items, conversations),
+    [items, conversations]
   );
+  const matchedItems = useMemo(
+    () => filterHistoryItems(mergedItems, { search: query }),
+    [mergedItems, query]
+  );
+  const recentItems = useMemo(() => {
+    if (!isInitialized || !conversationsLoaded) return [];
+    return query.trim() ? matchedItems.slice(0, 8) : pickRecentHistoryItems(matchedItems, 3);
+  }, [conversationsLoaded, isInitialized, matchedItems, query]);
 
   const handleOpenItem = useCallback(
     (item: HistoryItem) => {
@@ -79,7 +97,13 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
     router.push('/chat?new=true');
   }, [createConversation, router]);
 
-  const showSkeleton = !isInitialized || (isLoading && recentItems.length === 0);
+  const recordsReady = isInitialized && conversationsLoaded;
+  const showSkeleton = !recordsReady || (isLoading && recentItems.length === 0);
+
+  const submitSearch = useCallback(() => {
+    const keyword = query.trim();
+    router.push(keyword ? `/history?q=${encodeURIComponent(keyword)}` : '/history');
+  }, [query, router]);
 
   return (
     <section className={cn('space-y-4', className)}>
@@ -99,14 +123,34 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
           className="shrink-0 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
           asChild
         >
-          <Link href="/history" className="flex items-center gap-1">
+          <Link
+            href={query.trim() ? `/history?q=${encodeURIComponent(query.trim())}` : '/history'}
+            className="flex items-center gap-1"
+          >
             查看全部
             <ArrowRight className="w-4 h-4" />
           </Link>
         </Button>
       </div>
 
-      {/* 移动端双列网格自适应换行，sm 起逐步升列（原为横滑轮播，卡片 min-w 无上限会被长文撑爆） */}
+      <form
+        className="relative"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitSearch();
+        }}
+      >
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索对话、标题或内容"
+          aria-label="搜索最近创作"
+          className="h-11 w-full rounded-xl border border-slate-200/80 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 outline-none transition-[border-color,box-shadow] duration-fast placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700/60 dark:bg-slate-900/70 dark:text-slate-200"
+        />
+      </form>
+
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:gap-6 xl:grid-cols-4">
         {showSkeleton &&
           Array.from({ length: 3 }).map((_, index) => (
@@ -122,7 +166,7 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
             />
           ))}
 
-        {!showSkeleton && recentItems.length === 0 && <RecentCreationEmpty />}
+        {!showSkeleton && recentItems.length === 0 && <RecentCreationEmpty query={query.trim()} />}
 
         <button
           type="button"
@@ -139,7 +183,7 @@ export function RecentCreationsSection({ className }: RecentCreationsSectionProp
             'active:scale-[0.97]'
           )}
         >
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800 transition-transform duration-fast ease-out-expo group-hover:scale-110">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
             <Plus className="h-5 w-5" />
           </span>
           <span className="text-sm font-medium">新建对话</span>
@@ -258,7 +302,7 @@ function RecentCreationCard({
   );
 }
 
-function RecentCreationEmpty() {
+function RecentCreationEmpty({ query }: { query: string }) {
   return (
     <div
       className={cn(
@@ -270,11 +314,20 @@ function RecentCreationEmpty() {
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-950/40">
         <Sparkles className="h-5 w-5" />
       </div>
-      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">还没有创作记录</p>
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+        {query ? `没有和「${query}」有关的记录` : '还没有创作记录'}
+      </p>
       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-        完成一次对话、语音转写或图像生成后，会在这里自动出现
+        {query
+          ? '换个词，或回到对话继续上次的会话'
+          : '完成一次对话、语音转写或图像生成后，会在这里自动出现'}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
+        {query ? (
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`/history?q=${encodeURIComponent(query)}`}>在历史中查看</Link>
+          </Button>
+        ) : null}
         <Button size="sm" variant="outline" asChild>
           <Link href="/chat?new=true">去对话</Link>
         </Button>
@@ -301,17 +354,22 @@ function RecentCreationSkeleton() {
   );
 }
 
-/** 侧边栏最近文件列表（同样来自统一历史） */
-export function RecentFilesSidebarList() {
+/** 侧边栏最近文件列表（同样来自统一历史，支持搜索过滤） */
+export function RecentFilesSidebarList({ query = '' }: { query?: string }) {
   const items = useHistoryItems();
   const isInitialized = useHistoryInitialized();
-  const recentItems = useMemo(
-    () => (isInitialized ? pickRecentHistoryItems(items, 4) : []),
-    [isInitialized, items]
-  );
+  const conversations = useConversationsStore((state) => state.conversations);
+  const conversationsLoaded = useConversationsStore((state) => state.isLoaded);
+  const recentItems = useMemo(() => {
+    if (!isInitialized || !conversationsLoaded) return [];
+    return pickRecentHistoryItems(
+      filterHistoryItems(mergeHistoryWithConversations(items, conversations), { search: query }),
+      4
+    );
+  }, [conversations, conversationsLoaded, isInitialized, items, query]);
   const router = useRouter();
 
-  if (!isInitialized) {
+  if (!isInitialized || !conversationsLoaded) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -323,7 +381,9 @@ export function RecentFilesSidebarList() {
 
   if (recentItems.length === 0) {
     return (
-      <p className="px-2 py-1 text-xs text-slate-400">暂无最近文件，开始创作后会出现在这里</p>
+      <p className="px-2 py-1 text-xs text-slate-400">
+        {query.trim() ? '未找到匹配的最近文件' : '暂无最近文件，开始创作后会出现在这里'}
+      </p>
     );
   }
 

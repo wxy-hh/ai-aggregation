@@ -66,7 +66,7 @@ describe('POST /api/auth/refresh', () => {
       expiresAt: new Date(Date.now() + 60_000),
       user: { role: 'user' },
     });
-    mocks.userFindUnique.mockResolvedValue({ status: 'active', isAnonymous: false });
+    mocks.userFindUnique.mockResolvedValue({ status: 'active' });
     mocks.transaction.mockResolvedValue([]);
     mocks.refreshTokenCreate.mockResolvedValue({ id: 'token_2' });
     mocks.refreshTokenDelete.mockReturnValue({ 标记: 'refreshToken.delete' });
@@ -100,5 +100,23 @@ describe('POST /api/auth/refresh', () => {
 
     expect(response.status).toBe(401);
     expect(mocks.refreshTokenFindUnique).not.toHaveBeenCalled();
+  });
+
+  it('token 不存在时返回 401 并清除失效 Cookie', async () => {
+    mocks.refreshTokenFindUnique.mockResolvedValue(null);
+
+    const response = await POST(refreshRequest());
+
+    expect(response.status).toBe(401);
+    expect(mocks.cookieJar.get('refresh_token')).toBe('');
+  });
+
+  it('内部异常不得清除可能仍有效的 Cookie', async () => {
+    mocks.refreshTokenFindUnique.mockRejectedValue(new Error('database unavailable'));
+
+    const response = await POST(refreshRequest());
+
+    expect(response.status).toBe(500);
+    expect(mocks.cookieJar.get('refresh_token')).toBe('plain-refresh-token');
   });
 });

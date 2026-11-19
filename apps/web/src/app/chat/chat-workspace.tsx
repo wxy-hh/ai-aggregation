@@ -9,6 +9,7 @@ import { AuthGuard } from '@/components/auth/auth-guard'; // 应用的整体布�
 import { MessageItem } from '@/components/chat/message-item'; // 单条聊天消息的展示组件
 import { ChatInput } from '@/components/chat/chat-input'; // 聊天输入框组件（底部的输入区域）
 import { ArtifactWorkspace } from '@/components/chat/artifacts/artifact-workspace'; // P1 交付物独立工作台（ADR-0015）
+import { ArtifactWorkspaceDock } from '@/components/chat/artifacts/artifact-workspace-dock'; // 桌面端工作台容器（可拖拽调宽）
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -21,15 +22,20 @@ import { useRelayReceive } from '@/components/relay/use-relay-receive';
 import { RELAY_COPY } from '@/lib/relay/copy';
 import { isNearBottom } from '@/lib/utils/scroll';
 import { useSettingsStore } from '@/stores/settings-store';
-import { CAPABILITY_PACKS } from '@repo/shared';
+import { CAPABILITY_PACKS, type CitationAnchor } from '@repo/shared';
+import { DocumentPreviewDrawer } from '@/app/knowledge/_components/document-preview-drawer';
+import { collectDocumentAnchors } from '@/lib/chat/citation-anchors';
+import type { MatchedCitationAnchor } from '@/types/citation';
 
 // ============ 导入状态管理 Store ============
 // 直接路径导入，避免桶文件把无关状态库打进代码块
 import {
-  useConversationsStore, // 会话列表与编排中枢 Store
-  useConversationsActions, // 编排中枢统一操作方法
+  useConversationsStore, // 会话列表与当前指针 Store
+  useConversationsActions, // 会话 store 的原子操作方法
   type ChatMessage as ConvMessage, // 对话消息类型（别名为 ConvMessage）
 } from '@/stores/conversations-store';
+// 跨 store 的会话编排动作（切换、模式流转、新建、外部唤起、删除）统一由编排模块提供
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import {
   useChatStore, // 当前单聊消息管理 Store（管理当前单聊的消息、发送与流式状态）
   type ProviderName, // AI 服务提供商类型（如 'xunfei'、'doubao'）
@@ -64,6 +70,7 @@ import {
   GitCompareArrows, // 对比图标（并行对比会话标识）
   Sparkles,
   Wrench,
+  BookOpen,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -172,12 +179,51 @@ export default function ChatWorkspace() {
   // 用于过滤左侧的历史对话列表
   const [searchQuery, setSearchQuery] = useState('');
 
+  // 知识库文档全文预览抽屉状态 (ADR-0025 / KB-CHAT-CITE)
+  const [citationPreviewState, setCitationPreviewState] = useState<{
+    isOpen: boolean;
+    knowledgeBaseId: string | null;
+    documentId: string | null;
+    documentName?: string;
+    documentVersion?: number;
+    focusedAnchor?: {
+      chunkIndex: number;
+      headingPath?: string | null;
+      pageNumber?: number | null;
+    };
+    allMatchedAnchors: MatchedCitationAnchor[];
+    fallbackSnippet?: string;
+  }>({
+    isOpen: false,
+    knowledgeBaseId: null,
+    documentId: null,
+    allMatchedAnchors: [],
+  });
+
   // ============ Refs（引用） ============
 
   // 指向消息列表底部的 DOM 元素
   // 用于实现自动滚动到最新消息的功能
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 指向悬浮顶栏 Header 的 DOM 引用与实时高度，用于精准自适应消息滚动列表的顶部内边距（防遮挡）
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const updateHeight = () => {
+      if (el.offsetHeight > 0) {
+        setHeaderHeight(el.offsetHeight);
+      }
+    };
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // 跟踪滚动容器当前是否处于底部（吸底判断，使用 ref 避免触发组件重新渲染）
   const isAtBottomRef = useRef(true);
@@ -222,21 +268,20 @@ export default function ChatWorkspace() {
     setShowMobileModelDrawer(false);
   }, [agentModeEnabled]);
 
-  // 批量获取会话编排中枢操作方法（浅比较优化）
+  // 批量获取会话 store 的原子操作方法（浅比较优化）
   const {
-    createConversation,
-    switchConversation,
-    deleteConversation,
     findEmptyConversation,
     getGroupedConversations,
     getCurrentConversation,
-    updateConversationSettings,
+  } = useConversationsActions();
+
+  // 跨 store 编排动作从编排模块取用（模块常量，非 hook 返回值）
+  const {
+    switchConversation,
+    deleteConversation,
     switchMode,
     startNewSession,
-    openComparisonSession,
-    openHistorySession,
-    prepareRelaySession,
-  } = useConversationsActions();
+  } = conversationOrchestrator;
 
   // 模式切换别名，兼容分段控制器命名
   const setComparisonMode = switchMode;
@@ -250,14 +295,8 @@ export default function ChatWorkspace() {
     provider,
     model,
     activeConversationId,
-    sendMessage,
     reload,
-    loadConversation,
-    switchProvider,
     reset,
-    setAttachment,
-    attachment,
-    setCapabilityPackKey,
     artifacts,
     activeArtifactId,
     isWorkspaceOpen,
@@ -270,14 +309,8 @@ export default function ChatWorkspace() {
       provider: state.provider,
       model: state.model,
       activeConversationId: state.activeConversationId,
-      sendMessage: state.sendMessage,
       reload: state.reload,
-      loadConversation: state.loadConversation,
-      switchProvider: state.switchProvider,
       reset: state.reset,
-      setAttachment: state.setAttachment,
-      attachment: state.attachment,
-      setCapabilityPackKey: state.setCapabilityPackKey,
       artifacts: state.artifacts,
       activeArtifactId: state.activeArtifactId,
       isWorkspaceOpen: state.isWorkspaceOpen,
@@ -297,6 +330,10 @@ export default function ChatWorkspace() {
   const relay = useRelayReceive('chat');
   // 承载传给 ChatInput 的外部草稿（id 用于只消费一次）
   const [relayDraft, setRelayDraft] = useState<{ id: string; text: string } | null>(null);
+  // 产物工作台「让模型重试」：把文本预填进输入框（复用外部草稿通道，只预填不自动发送）
+  const prefillInputDraft = useCallback((text: string) => {
+    setRelayDraft({ id: `artifact-retry-${Date.now()}`, text });
+  }, []);
   // 承载传给 ChatInput 的外部图片附件（来自图像生成页接力，snapshotMediaUrl）
   const [relayAttachmentUrl, setRelayAttachmentUrl] = useState<string | null>(null);
   const [relayAttachmentSourceId, setRelayAttachmentSourceId] = useState<string | null>(null);
@@ -305,40 +342,28 @@ export default function ChatWorkspace() {
   // 接力到达且有文本快照时，若当前输入为空则直接预填，非空则由「填入输入框」显式触发
   const relayBundleText = relay.bundle?.items[0]?.snapshotText ?? '';
   const relayBundleMediaUrl = relay.bundle?.items[0]?.snapshotMediaUrl ?? '';
+  // 接力到达：草稿与附件属于页面 UI 状态；落点保证与图片判定由编排命令完成
   useEffect(() => {
     if (!relay.initialized || !relay.bundle) return;
+    if (!isLoaded) return;
+
     // 接力上下文进入输入框：文本作为用户引导句（可编辑），不自动发送
     if (relayBundleText && !relay.draft) {
       setRelayDraft({ id: relay.bundle.id, text: relayBundleText });
       relay.setDraft(relayBundleText);
     }
-    // 接力图片进入附件列表：图像生成页接力到对话时携带 snapshotMediaUrl
-    // 仅当来源为 image 且包含媒体地址时处理（其他来源如文本/转写无媒体）
-    if (
-      relayBundleMediaUrl &&
-      relay.bundle.items[0]?.sourceType === 'image' &&
-      relay.bundle.items[0]?.sourceModule === 'image'
-    ) {
+
+    // 落点保证（E-1 契约）、图片判定与自动切模型；命令幂等，重复执行不重复切换
+    const { switchedModel, isImageRelay } =
+      conversationOrchestrator.applyRelayArrival(relay.bundle);
+    if (isImageRelay) {
       setRelayAttachmentUrl(relayBundleMediaUrl);
       setRelayAttachmentSourceId(relay.bundle.id);
-      // 自动切换到豆包模型以支持图片附件
-      if (provider !== 'doubao') {
-        switchProvider('doubao', 'doubao-seed-evolving');
-        if (activeConversationId) {
-          updateConversationSettings(activeConversationId, 'doubao', 'doubao-seed-evolving');
-        }
-        toast.success('已自动切换到豆包模型以支持图片附件');
-      }
     }
-  }, [relay.initialized, relay.bundle?.id, provider, switchProvider, activeConversationId]);
-
-  // ============ 接力会话落点保证（E-1 契约）============
-  // 目标=对话的接力到达时，由中枢保证处于单聊模式且存在有效单聊会话承载
-  useEffect(() => {
-    if (!relay.initialized || !relay.bundle) return;
-    if (!isLoaded) return;
-    prepareRelaySession();
-  }, [relay.initialized, relay.bundle?.id, isLoaded, prepareRelaySession]);
+    if (switchedModel) {
+      toast.success('已自动切换到豆包模型以支持图片附件');
+    }
+  }, [relay.initialized, relay.bundle?.id, isLoaded]);
 
   // ============ 错误提示全局监听 ============
   // 当对话发生异常时（如网络故障、提供方错误、配额超限），统一向用户弹出友好提示
@@ -354,86 +379,24 @@ export default function ChatWorkspace() {
   // 获取当前激活的对话对象（包含完整信息）
   const currentConversation = getCurrentConversation();
 
-  // 当前会话是否为「并行对比」会话
-  // 单聊模式下若停留在比较会话上，发送消息需新建单聊会话，
-  // 否则会因比较会话消息存于 turns（而非 messages）导致消息丢失或写错会话
-  const isCurrentConversationCompare = currentConversation?.mode === 'compare';
-
   // 获取按时间分组的对话列表
   // 返回格式：[{ title: '今天', items: [...] }, { title: '昨天', items: [...] }, ...]
   const groupedConversations = getGroupedConversations();
 
   // ============ URL 参数处理（页面初始化逻辑） ============
-  // 这个 useEffect 在页面首次加载时执行，处理 URL 中的参数
-  // 例如：/chat?new=true（创建新对话）或 /chat?historyId=xxx（加载历史对话）
+  // 入口优先级、执行与 URL 清理统一由会话编排命令处理；
+  // 页面只消费需要呈现的草稿预填文本，并在本页面生命周期内只执行一次
   useEffect(() => {
-    // 如果数据还没加载完成，或者已经初始化过了，就不执行
     if (!isLoaded || hasInitialized.current) return;
-
-    // 标记为已初始化，防止重复执行
     hasInitialized.current = true;
 
-    // 解析 URL 中的查询参数
-    const urlParams = new URLSearchParams(window.location.search);
-
-    // 检查是否是创建新对话的请求（URL 中有 ?new=true）
-    const isNewConversation = urlParams.get('new') === 'true';
-    const goal = urlParams.get('goal');
-    const pack = urlParams.get('pack');
-    const enableAgent = urlParams.get('agent') === 'true';
-
-    // 检查是否是从历史记录页面跳转过来的（URL 中有 ?historyId=xxx）
-    const historyId = urlParams.get('historyId');
-
-    // 检查是否是从历史记录页重新打开比较会话（URL 中有 ?comparisonId=xxx）
-    const comparisonId = urlParams.get('comparisonId');
-
-    if (comparisonId) {
-      // 场景 0：外部唤起对比会话（E-1 契约）
-      openComparisonSession(comparisonId);
-      window.history.replaceState({}, '', '/chat');
-    } else if (historyId) {
-      // 场景 1：外部从历史记录唤起单聊会话（E-1 契约）
-      import('@/stores/history-store').then(({ useHistoryStore }) => {
-        const historyItem = useHistoryStore.getState().getItemById(historyId);
-        if (historyItem && historyItem.type === 'chat') {
-          openHistorySession(historyItem as import('@/types/history').ChatHistoryItem);
-        }
-      });
-      window.history.replaceState({}, '', '/chat');
-    } else if (isNewConversation) {
-      // 场景 2：统一新建会话（E-1 契约，支持重跑参数注入，ADR-0015）
-      startNewSession();
-      if (enableAgent) {
-        useSettingsStore.getState().setAgentMode(true);
-      }
-      if (pack) {
-        setCapabilityPackKey(pack);
-      }
-      if (goal) {
-        setRelayDraft({
-          id: `rerun-${Date.now()}`,
-          text: goal,
-        });
-      }
-      window.history.replaceState({}, '', '/chat');
-    } else if (!currentConversationId && comparisonMode === 'single') {
-      // 场景 3：单聊模式且无当前指针时，若存在单聊历史则默认加载首个单聊会话
-      const firstSingle = conversations.find(c => c.mode !== 'compare');
-      if (firstSingle) {
-        switchConversation(firstSingle.id);
-      }
+    const { draftText } = conversationOrchestrator.enterChatFromUrl(
+      window.location.search
+    );
+    if (draftText) {
+      setRelayDraft({ id: `goal-${Date.now()}`, text: draftText });
     }
-  }, [
-    isLoaded,
-    conversations,
-    currentConversationId,
-    startNewSession,
-    switchConversation,
-    openComparisonSession,
-    openHistorySession,
-    sendMessage,
-  ]);
+  }, [isLoaded]);
 
   // 点击外部关闭模型选择器
   useEffect(() => {
@@ -469,71 +432,29 @@ export default function ChatWorkspace() {
     });
   }, [messages, isLoading]);
 
-  // 生成失败的全局错误提示（error 此前被订阅但从未渲染，失败时用户无感知）
-  useEffect(() => {
-    if (error) toast.error(error.message || '生成失败，请重试');
-  }, [error]);
-
   // ============ 消息展示处理 ============
   const isEmptyChat = messages.length === 0;
 
   // ============ 发送消息处理函数 ============
-  // useCallback 用于缓存函数，避免每次渲染都创建新函数
-  // 只有当依赖项变化时，才会创建新的函数实例
-  const handleSend = useCallback(
-    async (content: string) => {
-      // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
-      isAtBottomRef.current = true;
-      const scrollEl = messagesScrollRef.current;
-      if (scrollEl) {
-        scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
-      }
+  // 会话创建、接力两段式与附件清理统一由编排命令处理；
+  // 页面只负责吸底滚动、接力图片的 UI 状态与输入框需要的布尔结果
+  const handleSend = useCallback(async (content: string) => {
+    // 发送消息即表达阅读到底的意图：强制将吸底标记置为 true 并立即滚动到底部
+    isAtBottomRef.current = true;
+    const scrollEl = messagesScrollRef.current;
+    if (scrollEl) {
+      scrollEl.scrollTo({ top: scrollEl.scrollHeight, behavior: 'auto' });
+    }
 
-      // 接力两段式（REQ-016 失败保留引用）：发送前只读派生元数据，成功后才清引用+草稿
-      const derivation = relay.prepareExecution();
-
-      // 检查是否有可用的单聊会话
-      // 若没有当前会话，或当前会话是「并行对比」会话（消息存于 turns 而非 messages），
-      // 则新建一个单聊会话，避免消息写入比较会话而丢失
-      if (!currentConversationId || isCurrentConversationCompare) {
-        // 需要先创建一个新对话
-        // 使用当前选中的 AI 提供商和模型
-        const newId = createConversation(provider, model);
-
-        // 立即加载这个新对话到 Chat Store
-        // 传入空消息列表 []，因为是新对话
-        loadConversation(newId, [], provider, model || 'lite'); // 确保 model 有默认值
-      }
-
-      // 发送消息（携带接力派生元数据，仅成功路径写入历史）
-      const result = await sendMessage(content, derivation);
-      // 成功才完成接力（清引用+草稿+图片附件）；失败/取消/早退保留引用允许原地重试
-      if (result === 'sent') {
-        relay.commitExecution();
-        // 同时清理对话输入框中的接力图片附件
-        setRelayAttachmentUrl(null);
-        setRelayAttachmentSourceId(null);
-        // 清理 ChatStore 中的附件（如果仍是接力图片）
-        if (attachment?.sourceId === relay.bundle?.id) {
-          setAttachment(null);
-        }
-        return true;
-      }
-      return false;
-    },
-    // 依赖项列表：这些值变化时，函数会重新创建
-    [
-      currentConversationId,
-      isCurrentConversationCompare,
-      createConversation,
-      provider,
-      model,
-      loadConversation,
-      sendMessage,
-      relay,
-      attachment?.sourceId,
-    ]
-  );
+    const result = await conversationOrchestrator.sendChatMessage(content);
+    // 成功才清理接力图片 UI 状态；失败/取消/早退保留引用允许原地重试
+    if (result === 'sent') {
+      setRelayAttachmentUrl(null);
+      setRelayAttachmentSourceId(null);
+      return true;
+    }
+    return false;
+  }, []);
 
   // ============ 新建会话处理函数 ============
   // 用户点击"新建对话"按钮时调用，由中枢根据全局模式权威统一执行新建契约
@@ -545,17 +466,35 @@ export default function ChatWorkspace() {
   // 用户在模型选择器中选择不同的模型时调用
   const handleSwitchProvider = useCallback(
     (newProvider: ProviderName, newModel: string) => {
-      // 1. 更新 Chat Store 中的提供商和模型
-      //    这会影响后续发送的消息使用哪个 AI 模型
-      switchProvider(newProvider, newModel);
-
-      // 2. 如果有当前对话，也要更新对话的设置
-      //    这样下次加载这个对话时，会使用正确的模型
-      if (currentConversationId) {
-        updateConversationSettings(currentConversationId, newProvider, newModel);
-      }
+      // 运行时 provider/model 与当前会话绑定由编排命令同时更新，
+      // 保证下次加载或刷新该会话时使用正确的模型
+      conversationOrchestrator.updateSessionModel(newProvider, newModel);
     },
-    [switchProvider, currentConversationId, updateConversationSettings]
+    []
+  );
+
+  // ============ 打开知识库切片全文预览抽屉 ============
+  const handleOpenCitation = useCallback(
+    (anchor: CitationAnchor) => {
+      // 同文档切片的聚合、去重、排序与空结果回退由纯函数处理
+      const anchors = collectDocumentAnchors(messages, anchor);
+
+      setCitationPreviewState({
+        isOpen: true,
+        knowledgeBaseId: anchor.knowledgeBaseId || null,
+        documentId: anchor.documentId,
+        documentName: anchor.documentName,
+        documentVersion: anchor.documentVersion,
+        focusedAnchor: {
+          chunkIndex: anchor.chunkIndex,
+          headingPath: anchor.headingPath,
+          pageNumber: anchor.pageNumber,
+        },
+        allMatchedAnchors: anchors,
+        fallbackSnippet: anchor.snippet,
+      });
+    },
+    [messages]
   );
 
   // ============ 搜索过滤逻辑 ============
@@ -788,6 +727,7 @@ export default function ChatWorkspace() {
               <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
               {/* 头部：悬浮毛玻璃顶栏，浮于滚动区之上（DESIGN.md §4.1 / §8.5） */}
               <header
+                ref={headerRef}
                 className={cn(
                   // 移动端收敛：内边距与行距压到最小档，图标块移入桌面端（2026-10-15 评审 H4，移动端外壳高度）
                   'absolute inset-x-0 top-0 z-20 flex-none px-4 py-2.5 sm:px-6 sm:py-3.5',
@@ -808,7 +748,7 @@ export default function ChatWorkspace() {
                       >
                         {currentTitle}
                       </h1>
-                      <div className="mt-1 hidden lg:flex lg:items-center lg:gap-2">
+                      <div className="mt-1 hidden items-center gap-2 lg:flex">
                         {isCompareMode ? (
                           // 对比模式：多模型选择器（含「已选 N 个模型」与成本提示）
                           <ModelSelector variant="header" />
@@ -890,6 +830,7 @@ export default function ChatWorkspace() {
                             )}
                           </div>
                         )}
+                        <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
                       </div>
                     </div>
                   </div>
@@ -918,8 +859,10 @@ export default function ChatWorkspace() {
                       </button>
                     )}
 
-                    {/* 对话模式分段控制器（单聊 / 并行对比），全断点可见 */}
-                    <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                    {/* 窄屏模式切换留在操作区；桌面端已跟在模型名后面 */}
+                    <div className="lg:hidden">
+                      <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                    </div>
                     <button
                       type="button"
                       aria-label="打开会话列表"
@@ -963,7 +906,7 @@ export default function ChatWorkspace() {
 
               {isCompareMode ? (
                 // 并行对比模式：多模型聚焦比较视图（自带概览轨道、双列聚焦与输入区）
-                <ComparisonView />
+                <ComparisonView headerHeight={headerHeight} />
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
@@ -972,13 +915,17 @@ export default function ChatWorkspace() {
                     {/* 消息列表：h-full 填满外壳，min-h-0 保证纵向正常滚动 */}
                     <div
                       ref={messagesScrollRef}
+                      data-testid="messages-scroll-container"
                       onScroll={handleMessagesScroll}
+                      style={{
+                        paddingTop: headerHeight > 0 ? `${headerHeight + 16}px` : undefined,
+                      }}
                       className={cn(
                         'h-full w-full overflow-y-auto overscroll-y-contain custom-scrollbar',
                         // 非空消息列表：背景取主壳渐变底部色，避免顶部透出渐变白色端形成色带
                         isEmptyChat
-                          ? 'bg-transparent px-4 pb-4 pt-[80px] sm:px-5 sm:pb-5'
-                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[84px] pb-[4.5rem] sm:px-5 sm:pt-[88px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
+                          ? 'bg-transparent px-4 pb-4 pt-[112px] sm:px-5 sm:pb-5 sm:pt-[124px]'
+                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[116px] pb-[4.5rem] sm:px-5 sm:pt-[124px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
                       )}
                     >
                     {isEmptyChat ? (
@@ -1001,17 +948,19 @@ export default function ChatWorkspace() {
                                 </p>
                               </div>
 
-                              <div className="grid gap-4 md:grid-cols-2" data-testid="capability-packs-grid">
+                              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" data-testid="capability-packs-grid">
                                 {CAPABILITY_PACKS.map((pack) => {
                                   const isResearch = pack.key === 'deep-research';
-                                  const PackIcon = isResearch ? Search : FileText;
+                                  const isKnowledgeQa = pack.key === 'knowledge-qa';
+                                  const PackIcon = isResearch ? Search : isKnowledgeQa ? BookOpen : FileText;
                                   return (
                                     <button
                                       key={pack.key}
                                       type="button"
                                       data-testid={`capability-pack-card-${pack.key}`}
                                       onClick={() => {
-                                        setCapabilityPackKey(pack.key);
+                                        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留
+                                        conversationOrchestrator.updateSessionCapabilityPack(pack.key);
                                         setRelayDraft({
                                           id: `pack-${pack.key}-${Date.now()}`,
                                           text: pack.promptTemplate,
@@ -1026,7 +975,9 @@ export default function ChatWorkspace() {
                                               'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-fast ease-out-expo group-hover:scale-105 shadow-sm',
                                               isResearch
                                                 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-                                                : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                                : isKnowledgeQa
+                                                  ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                                  : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300'
                                             )}
                                           >
                                             <PackIcon className="h-5 w-5" />
@@ -1137,6 +1088,7 @@ export default function ChatWorkspace() {
                                   ? () => void reload(prevUser.id)
                                   : undefined
                               }
+                              onOpenCitation={handleOpenCitation}
                             />
                           );
                         })}
@@ -1170,10 +1122,14 @@ export default function ChatWorkspace() {
                           bundle={relay.bundle}
                           onViewSource={() => setRelayPreviewOpen(true)}
                           onRemove={() => {
+                            const bundleId = relay.bundle?.id;
                             relay.remove();
                             // 同步清理对话输入框中的接力图片附件
                             setRelayAttachmentUrl(null);
                             setRelayAttachmentSourceId(null);
+                            if (bundleId && useChatStore.getState().attachment?.sourceId === bundleId) {
+                              useChatStore.getState().setAttachment(null);
+                            }
                           }}
                           showFill={Boolean(relayBundleText) && !relayDraft}
                           fillLabel={RELAY_COPY.referenceBar.fillInput}
@@ -1223,16 +1179,14 @@ export default function ChatWorkspace() {
 
           {/* 桌面端 Artifacts 工作台：单聊模式、展开且有产物时常驻双栏（ADR-0015） */}
           {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
-            <aside className="hidden lg:flex w-[480px] xl:w-[540px] 2xl:w-[600px] flex-shrink-0 flex-col p-4 pl-0 min-h-0 h-full">
-              <ArtifactWorkspace />
-            </aside>
+            <ArtifactWorkspaceDock onPrefillInput={prefillInputDraft} />
           )}
         </div>
 
         {/* 移动端全屏工作台覆盖层（Overlay，ADR-0015） */}
         {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
           <div className="lg:hidden">
-            <ArtifactWorkspace isMobile={true} />
+            <ArtifactWorkspace isMobile={true} onPrefillInput={prefillInputDraft} />
           </div>
         )}
 
@@ -1267,6 +1221,32 @@ export default function ChatWorkspace() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* 知识库文档全文预览与切片定位高亮抽屉 (ADR-0025 / KB-CHAT-CITE) */}
+        <DocumentPreviewDrawer
+          open={citationPreviewState.isOpen}
+          onOpenChange={(open) =>
+            setCitationPreviewState((prev) => ({ ...prev, isOpen: open }))
+          }
+          knowledgeBaseId={citationPreviewState.knowledgeBaseId || ''}
+          documentId={citationPreviewState.documentId || ''}
+          documentName={citationPreviewState.documentName}
+          documentVersion={citationPreviewState.documentVersion}
+          focusedAnchor={citationPreviewState.focusedAnchor}
+          allMatchedAnchors={citationPreviewState.allMatchedAnchors}
+          onSelectAnchor={(targetAnchor) => {
+            setCitationPreviewState((prev) => ({
+              ...prev,
+              focusedAnchor: {
+                chunkIndex: targetAnchor.chunkIndex,
+                headingPath: targetAnchor.headingPath,
+                pageNumber: targetAnchor.pageNumber,
+              },
+            }));
+          }}
+          modal={false}
+          fallbackSnippet={citationPreviewState.fallbackSnippet}
+        />
       </AppLayout>
     </AuthGuard>
   );

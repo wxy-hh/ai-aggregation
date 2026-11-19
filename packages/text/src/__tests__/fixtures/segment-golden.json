@@ -1,0 +1,86 @@
+[
+  {
+    "id": "zh-short",
+    "input": "南京市长江大桥",
+    "index": "南京市 长江大桥",
+    "query": "南京市 长江大桥"
+  },
+  {
+    "id": "zh-sentence",
+    "input": "连续三次工具调用失败会触发连败熔断机制",
+    "index": "连续 三次 工具 调用 失败 会 触发 连败 熔断 机制",
+    "query": "连续 三次 工具 调用 失败 会 触发 连败 熔断 机制"
+  },
+  {
+    "id": "zh-mixed",
+    "input": "在 ADR-0008 中定义了 ToolExecutionPipeline 的超时时间",
+    "index": "在 ADR - 0008 中 定义 了 ToolExecutionPipeline 的 超时 时间",
+    "query": "在 ADR - 0008 中 定义 了 ToolExecutionPipeline 的 超时 时间"
+  },
+  {
+    "id": "latin-identifier",
+    "input": "ADR-0008",
+    "index": "ADR - 0008",
+    "query": "ADR - 0008"
+  },
+  {
+    "id": "zh-punctuation",
+    "input": "报销政策（2026 版）：差旅标准、住宿上限！",
+    "index": "报销 政策 （ 2026 版 ） ： 差旅 标准 、 住宿 上限 ！",
+    "query": "报销 政策 （ 2026 版 ） ： 差旅 标准 、 住宿 上限 ！"
+  },
+  {
+    "id": "zh-emoji",
+    "input": "报销政策😀2026",
+    "index": "报销 政策 😀 2026",
+    "query": "报销 政策 😀 2026"
+  },
+  {
+    "id": "zh-inner-space",
+    "input": "报销  政策",
+    "index": "报销 政策",
+    "query": "报销 政策"
+  },
+  {
+    "id": "empty",
+    "input": "",
+    "index": "",
+    "query": ""
+  },
+  {
+    "id": "whitespace",
+    "input": "   ",
+    "index": "",
+    "query": ""
+  },
+  {
+    "id": "english",
+    "input": "The quick brown fox jumps over the lazy dog",
+    "index": "The quick brown fox jumps over the lazy dog",
+    "query": "The quick brown fox jumps over the lazy dog"
+  },
+  {
+    "id": "code-mixed",
+    "input": "max_chunks.per_user=20000 与 RAG_EMBEDDING_BATCH_SIZE",
+    "index": "max _ chunks . per _ user = 20000 与 RAG _ EMBEDDING _ BATCH _ SIZE",
+    "query": "max _ chunks . per _ user = 20000 与 RAG _ EMBEDDING _ BATCH _ SIZE"
+  },
+  {
+    "id": "zh-traditional",
+    "input": "臺灣繁體字測試",
+    "index": "臺 灣 繁 體 字 測 試",
+    "query": "臺 灣 繁 體 字 測 試"
+  },
+  {
+    "id": "multiline",
+    "input": "第一行：连败熔断\n第二行：工具调用",
+    "index": "第一行 ： 连败 熔断 第二行 ： 工具 调用",
+    "query": "第一行 ： 连败 熔断 第二行 ： 工具 调用"
+  },
+  {
+    "id": "cjk-extension",
+    "input": "𠀀𠀁𠀂",
+    "index": "𠀀 𠀁 𠀂",
+    "query": "𠀀 𠀁 𠀂"
+  }
+]

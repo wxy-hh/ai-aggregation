@@ -137,6 +137,9 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
           : {}),
         ...(parsed.data.params !== undefined ? { params: parsed.data.params } : {}),
         ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
+        ...(parsed.data.requiresApproval !== undefined
+          ? { requiresApproval: parsed.data.requiresApproval }
+          : {}),
       },
     });
 

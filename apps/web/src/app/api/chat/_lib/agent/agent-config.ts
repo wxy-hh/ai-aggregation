@@ -24,7 +24,7 @@ export const AGENT_STEP_OUTPUT_LIMIT = 2048;
 export const AGENT_SUMMARY_OUTPUT_LIMIT = 8192;
 
 /**
- * 最大模型调用步数：最多 4 轮「决策 + 工具」+ 1 次强制收尾步。
+ * 最大模型调用步数：最多 3 轮常规「决策 + 工具」+ 1 步质检自愈预留 + 1 次强制收尾步（ADR-0039）。
  * 收尾步不挂 tools，强制产出最终文本，终止由编排器保证。
  */
 export const AGENT_MAX_STEPS = 5;

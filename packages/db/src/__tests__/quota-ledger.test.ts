@@ -422,6 +422,7 @@ describe('quota-ledger', () => {
           id: 'r_pending_1',
           userId: 'u1',
           status: 'billing_pending',
+          executionState: 'completed',
           estimatedUnits: 150,
           updatedAt: staleTime,
         }),
@@ -430,24 +431,28 @@ describe('quota-ledger', () => {
 
       vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([r] as any);
       mockTx.quotaReservation.findUnique.mockResolvedValue(r);
+      mockTx.quotaAccount.updateMany.mockResolvedValue({ count: 1 });
       mockTx.quotaReservation.updateMany.mockResolvedValue({ count: 1 });
-      mockTx.quotaAccount.update.mockResolvedValue(makeAccount({ availableUnits: 1150, reservedUnits: 0 }));
+      mockTx.quotaAccount.findUniqueOrThrow.mockResolvedValue(makeAccount({ availableUnits: 1150, reservedUnits: 0 }));
       mockTx.quotaLedgerEntry.create.mockResolvedValue({ id: 'le_release' } as any);
       mockTx.user.update.mockResolvedValue({} as any);
 
       const count = await releaseStaleBillingPendingReservations(now);
 
       expect(count).toBe(1);
-      expect(mockTx.quotaReservation.updateMany).toHaveBeenCalledWith({
-        where: { id: 'r_pending_1', status: 'billing_pending' },
-        data: { status: 'released', executionState: 'completed' },
-      });
-      expect(mockTx.quotaAccount.update).toHaveBeenCalledWith({
-        where: { userId: 'u1' },
+      expect(mockTx.quotaAccount.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'u1',
+          reservedUnits: { gte: 150 },
+        },
         data: {
           reservedUnits: { decrement: 150 },
           availableUnits: { increment: 150 },
         },
+      });
+      expect(mockTx.quotaReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'r_pending_1', status: 'billing_pending', executionState: 'completed' },
+        data: { status: 'released', executionState: 'completed' },
       });
       expect(mockTx.quotaLedgerEntry.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -458,6 +463,67 @@ describe('quota-ledger', () => {
           reason: '待补账超时未获可审计用量，整额释放退还',
         }),
       });
+    });
+
+    it('当 pending 预留正处于 processing 处理中时，守卫拦截不释放', async () => {
+      const now = new Date('2026-09-28T12:00:00Z');
+      const staleTime = new Date('2026-09-27T11:00:00Z');
+      const r = {
+        ...makeReservation({
+          id: 'r_processing',
+          userId: 'u1',
+          status: 'billing_pending',
+          executionState: 'processing',
+          estimatedUnits: 150,
+          updatedAt: staleTime,
+        }),
+        aiUsageRecord: null,
+      };
+
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([r] as any);
+      mockTx.quotaReservation.findUnique.mockResolvedValue(r);
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(0);
+      expect(mockTx.quotaAccount.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.quotaReservation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('账户 reservedUnits 小于预留额度时原子守卫拦截，不释放预留也不记流水', async () => {
+      const now = new Date('2026-11-18T12:00:00Z');
+      const staleTime = new Date('2026-10-12T11:00:00Z');
+      const r = {
+        ...makeReservation({
+          id: 'r_insufficient',
+          userId: 'u1',
+          status: 'billing_pending',
+          executionState: 'completed',
+          estimatedUnits: 16519,
+          updatedAt: staleTime,
+        }),
+        aiUsageRecord: null,
+      };
+
+      vi.mocked(prisma.quotaReservation.findMany).mockResolvedValue([r] as any);
+      mockTx.quotaReservation.findUnique.mockResolvedValue(r);
+      mockTx.quotaAccount.updateMany.mockResolvedValue({ count: 0 });
+
+      const count = await releaseStaleBillingPendingReservations(now);
+
+      expect(count).toBe(0);
+      expect(mockTx.quotaAccount.updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'u1',
+          reservedUnits: { gte: 16519 },
+        },
+        data: {
+          reservedUnits: { decrement: 16519 },
+          availableUnits: { increment: 16519 },
+        },
+      });
+      expect(mockTx.quotaReservation.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.quotaLedgerEntry.create).not.toHaveBeenCalled();
     });
 
     it('未超时的 pending 预留不被释放', async () => {

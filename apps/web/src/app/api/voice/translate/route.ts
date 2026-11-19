@@ -48,7 +48,7 @@ ${text}`;
           maxOutputTokens: 4096,
           metadata: { textLength: text.length, sourceLanguage, targetLanguage },
         },
-        userRole: user.role,
+        userRole: user.role === 'admin' ? 'admin' : undefined, // ADR-0049：管道仅接受 'admin' 两态，普通用户缺省
         finalize: {
           requestId,
           action: 'voice-translate',

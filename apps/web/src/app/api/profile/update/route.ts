@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
 import { withAuth } from '@/lib/api/with-auth';
 import { AuthError } from '@/lib/auth/errors';
-import { assertCanUpdateUsername } from '@/lib/auth/anonymous-policy';
 import { updateProfileSchema } from '@/schemas/auth.schema';
 import { ApiError, createSuccessResponse, handleAuthError } from '@/lib/api/responses';
 
@@ -18,10 +17,7 @@ export async function PATCH(req: NextRequest) {
         });
       }
 
-      const { username, name, avatar } = parsed.data;
-
-      // 匿名用户业务规则校验
-      assertCanUpdateUsername(user, username);
+      const { username, name, avatar, memorySearchEnabled } = parsed.data;
 
       // 如果修改用户名，检查唯一性
       if (username) {
@@ -31,21 +27,41 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
-      const updatedUser = await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          ...(username !== undefined && { username }),
-          ...(name !== undefined && { name }),
-          ...(avatar !== undefined && { avatar }),
-        },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          name: true,
-          avatar: true,
-        },
-      });
+      const updateData = {
+        ...(username !== undefined && { username }),
+        ...(name !== undefined && { name }),
+        ...(avatar !== undefined && { avatar }),
+        ...(memorySearchEnabled !== undefined && { memorySearchEnabled }),
+      };
+      const userSelect = {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        avatar: true,
+        memorySearchEnabled: true,
+      } as const;
+
+      // 关闭会话记忆检索：同一事务内锁定用户行、更新开关并物理删除记忆会话与切片。
+      // 用户行锁与 Worker 插入切片前的事务复核互斥，避免「删除之后又被写入」（ADR-0058）。
+      const updatedUser =
+        memorySearchEnabled === false
+          ? await prisma.$transaction(async (tx) => {
+              await tx.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${user.id} FOR UPDATE`;
+              const updated = await tx.user.update({
+                where: { id: user.id },
+                data: updateData,
+                select: userSelect,
+              });
+              await tx.conversationMemoryChunk.deleteMany({ where: { userId: user.id } });
+              await tx.chatSession.deleteMany({ where: { userId: user.id } });
+              return updated;
+            })
+          : await prisma.user.update({
+              where: { id: user.id },
+              data: updateData,
+              select: userSelect,
+            });
 
       return createSuccessResponse({ user: updatedUser }, '个人资料已更新');
     } catch (error) {

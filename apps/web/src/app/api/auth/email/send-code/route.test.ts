@@ -124,7 +124,7 @@ describe('POST /api/auth/email/send-code', () => {
     mocks.userFindUnique.mockImplementation((args: { where?: { id?: string } }) =>
       Promise.resolve(
         args?.where?.id
-          ? { id: args.where.id, status: 'active', role: 'user', isAnonymous: false, tokens: 20000 }
+          ? { id: args.where.id, status: 'active', role: 'user', tokens: 20000 }
           : null
       )
     );
@@ -185,7 +185,7 @@ describe('POST /api/auth/email/send-code', () => {
     mocks.userFindUnique.mockImplementation((args: { where?: { id?: string } }) =>
       Promise.resolve(
         args?.where?.id
-          ? { id: args.where.id, status: 'active', role: 'user', isAnonymous: false, tokens: 20000 }
+          ? { id: args.where.id, status: 'active', role: 'user', tokens: 20000 }
           : null
       )
     );

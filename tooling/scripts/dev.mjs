@@ -30,6 +30,7 @@ function getRedisConfig() {
 async function main() {
   console.log('启动本地开发环境...');
   loadSharedEnv();
+  process.env.WRANGLER_SEND_METRICS = process.env.WRANGLER_SEND_METRICS || 'false';
   logEnvStatus();
   registerCleanupHandlers();
 

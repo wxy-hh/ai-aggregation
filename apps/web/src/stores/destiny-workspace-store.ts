@@ -33,6 +33,7 @@ import type {
   ModuleReading,
 } from '@/lib/astrology/interpretation';
 import type { DestinyModuleKey } from '@/app/destiny/_components/layout/left-nav';
+import { mergeLockedSectionsIntoReport } from '@/lib/destiny/bazi-report-merge';
 
 export type DestinyWorkspaceStep = 'form' | 'result';
 export type DestinyProvider = 'doubao' | 'deepseek';
@@ -41,6 +42,93 @@ export type BaziErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type QimenErrorKind = 'validation' | 'model' | 'timeout' | 'unknown';
 export type ZiweiPanelTab = 'overview' | 'timeline' | 'relations' | 'glossary';
+
+/** 八字受保护的数据与协议运行时字段（禁止通用 patch 写入） */
+export type BaziProtectedFieldKey =
+  | 'report'
+  | 'lockedSections'
+  | 'streaming'
+  | 'streamStatus'
+  | 'blockingLoading'
+  | 'activeReportHistoryId';
+
+/** 八字工作区通用 patch 允许写入的 UI 交互字段（compatActive 保留 UI 权限） */
+export type BaziUIPatchState = Omit<BaziWorkspaceCache, BaziProtectedFieldKey>;
+
+/** 奇门遁甲受保护的数据与协议运行时字段（禁止通用 patch 写入） */
+export type QimenProtectedFieldKey =
+  | 'analysisId'
+  | 'baseResult'
+  | 'baseStatus'
+  | 'baseError'
+  | 'sections'
+  | 'sectionStatuses'
+  | 'sectionErrors'
+  | 'blockingLoading';
+
+/** 奇门工作区通用 patch 允许写入的 UI 交互字段 */
+export type QimenUIPatchState = Omit<QimenWorkspaceCache, QimenProtectedFieldKey>;
+
+/** 紫微斗数受保护的数据与协议运行时字段（禁止通用 patch 写入） */
+export type ZiweiProtectedFieldKey =
+  | 'report'
+  | 'chartData'
+  | 'lockedSections'
+  | 'streaming'
+  | 'streamStatus'
+  | 'blockingLoading';
+
+/** 紫微工作区通用 patch 允许写入的 UI 交互字段 */
+export type ZiweiUIPatchState = Omit<ZiweiWorkspaceCache, ZiweiProtectedFieldKey>;
+
+/** 工作区通用 patch 支持的字段状态映射表（可按模块逐个渐进启用 Omit 保护） */
+export type DestinyWorkspaceUIPatchState = {
+  bazi: BaziUIPatchState;
+  ziwei: ZiweiUIPatchState;
+  qimen: QimenUIPatchState;
+  astrology: DestinyWorkspaceCacheState['astrology'];
+};
+
+export type DestinyWorkspacePatch<TModule extends DestinyModuleKey> = Partial<
+  DestinyWorkspaceUIPatchState[TModule]
+>;
+
+/** 奇门单分区推演结果联合 */
+export type QimenSectionOutcome<K extends QimenAsyncSectionKey = QimenAsyncSectionKey> =
+  | {
+      status: 'completed';
+      data: NonNullable<QimenAsyncSections[K]>;
+    }
+  | {
+      status: 'failed';
+      error: string;
+    };
+
+/** 八字工作区从历史回填载荷 */
+export type RestoreBaziWorkspacePayload = {
+  historyId: string;
+  report: DestinyReport | null;
+  lockedSections: BaziLockedSections;
+  formData: BaziFormData;
+};
+
+/** 奇门工作区从历史回填载荷 */
+export type RestoreQimenWorkspacePayload = {
+  analysisId: string | null;
+  baseResult: QimenAnalysisBaseResult | null;
+  sections: QimenAsyncSections;
+  /** 可选失败分区错误；旧历史缺省时保持原有 idle 兼容语义 */
+  sectionErrors?: Partial<Record<QimenAsyncSectionKey, string>>;
+  formData: QimenFormData;
+};
+
+/** 紫微工作区从历史回填载荷 */
+export type RestoreZiweiWorkspacePayload = {
+  report: DestinyReport | null;
+  chartData: ZiweiChartData | null;
+  lockedSections: ZiweiLockedSections;
+  formData: BaziFormData;
+};
 
 /** 星座寰宇解读分区增量补丁 */
 export type AstrologyInterpretationSectionPatch = {
@@ -72,6 +160,8 @@ export type BaziWorkspaceCache = BaseWorkspaceCache<
   report: DestinyReport | null;
   lockedSections: BaziLockedSections;
   streamStatus: DestinyStreamStatus | null;
+  /** 当前激活报告档案 id（S-J1：新测算 run 档案 / 历史恢复档案；合盘关联以此为准） */
+  activeReportHistoryId: string | null;
 };
 
 export type ZiweiWorkspaceCache = BaseWorkspaceCache<
@@ -168,13 +258,68 @@ type DestinyWorkspaceStore = DestinyWorkspaceCacheState & {
   setWorkspaceState: <TModule extends DestinyModuleKey>(
     module: TModule,
     patch:
-      | Partial<DestinyWorkspaceCacheState[TModule]>
-      | ((current: DestinyWorkspaceCacheState[TModule]) => Partial<DestinyWorkspaceCacheState[TModule]>)
+      | DestinyWorkspacePatch<TModule>
+      | ((current: DestinyWorkspaceCacheState[TModule]) => DestinyWorkspacePatch<TModule>)
   ) => void;
   resetWorkspace: (module: DestinyModuleKey) => void;
   restoreWorkspace: (module: DestinyModuleKey) => void;
   markResultReady: (module: DestinyModuleKey) => void;
   resetAllWorkspaces: () => void;
+  /** 八字：发起全新会话（全量重置并进入表单加载态）。historyId 必须为本次 run 的历史落盘档案 id（两者同源，TC03-1 守卫） */
+  beginBaziSession: (historyId: string) => void;
+  /** 八字：更新流状态 */
+  applyBaziStreamStatus: (status: DestinyStreamStatus) => void;
+  /** 八字：分区结果到达（迟到保护、首次出现可展示分区原子推进结果态） */
+  applyBaziSection: <K extends keyof BaziLockedSections>(
+    key: K,
+    payload: BaziLockedSections[K]
+  ) => void;
+  /** 八字：报告定稿完成（与锁定分区权威合并、释放流状态与阻塞加载，落盘报告） */
+  applyBaziComplete: (report: DestinyReport) => void;
+  /** 八字：会话失败（落盘错误并释放流状态与阻塞加载） */
+  failBaziSession: (message: string, kind: BaziErrorKind) => void;
+  /** 八字：安静取消（仅释放运行时标志，绝不写入 error） */
+  abortBaziSession: () => void;
+  /** 八字：从历史记录无损恢复工作区 */
+  restoreBaziWorkspace: (payload: RestoreBaziWorkspacePayload) => void;
+  /** 奇门：发起全新会话（全量重置并进入表单加载态） */
+  beginQimenSession: () => void;
+  /** 奇门：记录分析任务已创建 */
+  applyQimenTaskCreated: (analysisId: string) => void;
+  /** 奇门：基础盘面就绪，激活三分区加载 */
+  applyQimenBaseResult: (result: QimenAnalysisBaseResult) => void;
+  /** 奇门：分区结果到达（迟到保护 + 三分区全 settled 原子推进结果态） */
+  applyQimenSectionResult: <K extends QimenAsyncSectionKey>(
+    key: K,
+    outcome: QimenSectionOutcome<K>
+  ) => void;
+  /** 奇门：会话失败（记录错误并释放 loading，phase='base' 时落盘 baseStatus/baseError） */
+  failQimenSession: (
+    message: string,
+    kind: QimenErrorKind,
+    phase?: 'task' | 'base'
+  ) => void;
+  /** 奇门：安静取消（仅释放 blockingLoading，绝不写入 error） */
+  abortQimenSession: () => void;
+  /** 奇门：从历史记录无损恢复工作区（按 sections 实际 key 重建 sectionStatuses 并直达结果态） */
+  restoreQimenWorkspace: (payload: RestoreQimenWorkspacePayload) => void;
+  /** 紫微：发起全新会话（全量重置并进入表单加载态） */
+  beginZiweiSession: () => void;
+  /** 紫微：更新流状态 */
+  applyZiweiStreamStatus: (status: DestinyStreamStatus) => void;
+  /** 紫微：分区结果到达（迟到保护、首宫聚焦、解包 chartData、原子推进结果态） */
+  applyZiweiSection: <K extends keyof ZiweiLockedSections>(
+    key: K,
+    payload: ZiweiLockedSections[K]
+  ) => void;
+  /** 紫微：报告定稿完成（释放流状态与阻塞加载，落盘报告） */
+  applyZiweiComplete: (report: DestinyReport) => void;
+  /** 紫微：会话失败（落盘错误并释放流状态与阻塞加载） */
+  failZiweiSession: (message: string, kind: ZiweiErrorKind) => void;
+  /** 紫微：安静取消（仅释放运行时标志，绝不写入 error） */
+  abortZiweiSession: () => void;
+  /** 紫微：从历史记录无损恢复工作区 */
+  restoreZiweiWorkspace: (payload: RestoreZiweiWorkspacePayload) => void;
   /** 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪 */
   beginAstrologySession: () => void;
   /** 解读重试：重置解读为待就绪，保持星盘真值与布局不动 */
@@ -210,6 +355,7 @@ function createDefaultBaziWorkspaceCache(): BaziWorkspaceCache {
     lockedSections: {},
     streamStatus: null,
     compatActive: false,
+    activeReportHistoryId: null,
   };
 }
 
@@ -344,6 +490,458 @@ export const useDestinyWorkspaceStore = create<DestinyWorkspaceStore>()(
         set((state) => ({
           ...createDefaultDestinyWorkspaceState(),
           provider: state.provider,
+        })),
+
+      // 奇门：发起全新会话（全量重置并进入表单加载态）
+      beginQimenSession: () =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            step: 'form',
+            lastView: 'form',
+            hasResult: false,
+            blockingLoading: true,
+            error: null,
+            errorKind: null,
+            analysisId: null,
+            baseResult: null,
+            baseStatus: 'loading',
+            baseError: null,
+            sections: {},
+            sectionErrors: {},
+            sectionStatuses: {
+              strategyOverview: 'idle',
+              timingWindows: 'idle',
+              chartSummary: 'idle',
+            },
+          },
+        })),
+
+      // 奇门：记录分析任务已创建
+      applyQimenTaskCreated: (analysisId) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            analysisId,
+          },
+        })),
+
+      // 奇门：基础盘面就绪，激活三分区加载
+      applyQimenBaseResult: (result) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            baseResult: result,
+            baseStatus: 'completed',
+            baseError: null,
+            sectionStatuses: {
+              strategyOverview: 'loading',
+              timingWindows: 'loading',
+              chartSummary: 'loading',
+            },
+          },
+        })),
+
+      // 奇门：分区结果到达（迟到保护 + 三分区全 settled 原子推进结果态）
+      applyQimenSectionResult: (key, outcome) =>
+        set((state) => {
+          const current = state.qimen;
+          // 迟到保护：该分区当前如果已是 completed，则整体丢弃
+          if (current.sectionStatuses[key] === 'completed') {
+            return state;
+          }
+
+          const nextSections: QimenAsyncSections = { ...current.sections };
+          const nextStatuses: Record<QimenAsyncSectionKey, QimenSectionStatus> = {
+            ...current.sectionStatuses,
+          };
+          const nextErrors: Partial<Record<QimenAsyncSectionKey, string>> = {
+            ...current.sectionErrors,
+          };
+
+          if (outcome.status === 'completed') {
+            nextSections[key] = outcome.data as never;
+            nextStatuses[key] = 'completed';
+            delete nextErrors[key];
+          } else {
+            nextStatuses[key] = 'failed';
+            nextErrors[key] = outcome.error;
+          }
+
+          // 检查三分区是否全部 settled
+          const requiredKeys: QimenAsyncSectionKey[] = [
+            'strategyOverview',
+            'timingWindows',
+            'chartSummary',
+          ];
+          const allSettled = requiredKeys.every(
+            (k) => nextStatuses[k] === 'completed' || nextStatuses[k] === 'failed'
+          );
+
+          return {
+            ...state,
+            qimen: {
+              ...current,
+              sections: nextSections,
+              sectionStatuses: nextStatuses,
+              sectionErrors: nextErrors,
+              ...(allSettled
+                ? {
+                    blockingLoading: false,
+                    hasResult: true,
+                    step: 'result',
+                    lastView: 'result',
+                  }
+                : {}),
+            },
+          };
+        }),
+
+      // 奇门：会话失败（记录错误并释放 loading，phase='base' 时落盘 baseStatus/baseError）
+      failQimenSession: (message, kind, phase) =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            blockingLoading: false,
+            error: message,
+            errorKind: kind,
+            ...(phase === 'base'
+              ? {
+                  baseStatus: 'failed',
+                  baseError: message,
+                }
+              : {}),
+          },
+        })),
+
+      // 奇门：安静取消（仅释放 blockingLoading，绝不写入 error）
+      abortQimenSession: () =>
+        set((state) => ({
+          ...state,
+          qimen: {
+            ...state.qimen,
+            blockingLoading: false,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 奇门：从历史记录无损恢复工作区（按 sections 实际 key 重建 sectionStatuses 并直达结果态）
+      restoreQimenWorkspace: (payload) =>
+        set((state) => {
+          const sections = payload.sections || {};
+          const sectionErrors = payload.sectionErrors ?? {};
+          const hasSection = (key: QimenAsyncSectionKey) =>
+            Object.prototype.hasOwnProperty.call(sections, key) && sections[key] !== undefined;
+
+          return {
+            ...state,
+            qimen: {
+              ...state.qimen,
+              step: 'result',
+              lastView: 'result',
+              hasResult: true,
+              blockingLoading: false,
+              error: null,
+              errorKind: null,
+              analysisId: payload.analysisId,
+              baseResult: payload.baseResult,
+              baseStatus: 'completed',
+              baseError: null,
+              sections,
+              sectionErrors,
+              formData: payload.formData,
+              fieldErrors: {},
+              sectionStatuses: {
+                strategyOverview: hasSection('strategyOverview')
+                  ? 'completed'
+                  : sectionErrors.strategyOverview
+                    ? 'failed'
+                    : 'idle',
+                timingWindows: hasSection('timingWindows')
+                  ? 'completed'
+                  : sectionErrors.timingWindows
+                    ? 'failed'
+                    : 'idle',
+                chartSummary: hasSection('chartSummary')
+                  ? 'completed'
+                  : sectionErrors.chartSummary
+                    ? 'failed'
+                    : 'idle',
+              },
+            },
+          };
+        }),
+
+      // 八字：发起全新会话（全量重置并进入表单加载态）；historyId 与本次 run 的历史落盘档案 id 同源
+      beginBaziSession: (historyId) =>
+        set((state) => ({
+          ...state,
+          bazi: {
+            ...state.bazi,
+            step: 'form',
+            lastView: 'form',
+            hasResult: false,
+            blockingLoading: true,
+            streaming: true,
+            error: null,
+            errorKind: null,
+            report: null,
+            lockedSections: {},
+            streamStatus: 'queued',
+            activeReportHistoryId: historyId,
+          },
+        })),
+
+      // 八字：更新流状态
+      applyBaziStreamStatus: (status) =>
+        set((state) => ({
+          ...state,
+          bazi: {
+            ...state.bazi,
+            streamStatus: status,
+          },
+        })),
+
+      // 八字：分区结果到达（迟到保护、首次出现可展示分区原子推进结果态）
+      applyBaziSection: (key, payload) =>
+        set((state) => {
+          const current = state.bazi;
+          if (current.lockedSections[key]) {
+            return state;
+          }
+
+          const nextLockedSections: BaziLockedSections = {
+            ...current.lockedSections,
+            [key]: payload,
+          };
+
+          return {
+            ...state,
+            bazi: {
+              ...current,
+              lockedSections: nextLockedSections,
+              blockingLoading: false,
+              hasResult: true,
+              step: 'result',
+              lastView: 'result',
+            },
+          };
+        }),
+
+      // 八字：报告定稿完成（与锁定分区权威合并、释放流状态与阻塞加载，落盘报告）
+      applyBaziComplete: (report) =>
+        set((state) => {
+          const current = state.bazi;
+          const mergedReport = mergeLockedSectionsIntoReport(report, current.lockedSections);
+          return {
+            ...state,
+            bazi: {
+              ...current,
+              report: mergedReport,
+              streaming: false,
+              streamStatus: null,
+              blockingLoading: false,
+              hasResult: true,
+              step: 'result',
+              lastView: 'result',
+            },
+          };
+        }),
+
+      // 八字：会话失败（落盘错误并释放流状态与阻塞加载）
+      failBaziSession: (message, kind) =>
+        set((state) => ({
+          ...state,
+          bazi: {
+            ...state.bazi,
+            error: message,
+            errorKind: kind,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+          },
+        })),
+
+      // 八字：安静取消（仅释放运行时标志，绝不写入 error）
+      abortBaziSession: () =>
+        set((state) => ({
+          ...state,
+          bazi: {
+            ...state.bazi,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 八字：从历史记录无损恢复工作区
+      restoreBaziWorkspace: (payload) =>
+        set((state) => ({
+          ...state,
+          bazi: {
+            ...state.bazi,
+            step: 'result',
+            lastView: 'result',
+            hasResult: true,
+            blockingLoading: false,
+            streaming: false,
+            error: null,
+            errorKind: null,
+            streamStatus: null,
+            report: payload.report,
+            lockedSections: payload.lockedSections,
+            formData: payload.formData,
+            fieldErrors: {},
+            activeReportHistoryId: payload.historyId,
+          },
+        })),
+
+      // 紫微：发起全新会话（全量重置并进入表单加载态）
+      beginZiweiSession: () =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            step: 'form',
+            lastView: 'form',
+            hasResult: false,
+            blockingLoading: true,
+            streaming: true,
+            error: null,
+            errorKind: null,
+            report: null,
+            chartData: null,
+            lockedSections: {},
+            streamStatus: 'queued',
+            tab: 'overview',
+            activePalaceLabel: '命宫',
+          },
+        })),
+
+      // 紫微：更新流状态
+      applyZiweiStreamStatus: (status) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            streamStatus: status,
+          },
+        })),
+
+      // 紫微：分区结果到达（迟到保护、首宫聚焦、解包 chartData、原子推进结果态）
+      applyZiweiSection: (key, payload) =>
+        set((state) => {
+          const current = state.ziwei;
+          if (current.lockedSections[key]) {
+            return state;
+          }
+
+          const nextLockedSections: ZiweiLockedSections = {
+            ...current.lockedSections,
+            [key]: payload,
+          };
+
+          let nextChartData = current.chartData;
+          if (key === 'chartData') {
+            nextChartData = payload as ZiweiChartData;
+          }
+
+          let nextActivePalaceLabel = current.activePalaceLabel;
+          if (key === 'palaceAnalysis' && Array.isArray(payload) && payload.length > 0) {
+            const firstLabel = (payload[0] as { label?: string }).label;
+            if (firstLabel) {
+              nextActivePalaceLabel = firstLabel;
+            }
+          }
+
+          return {
+            ...state,
+            ziwei: {
+              ...current,
+              lockedSections: nextLockedSections,
+              chartData: nextChartData,
+              activePalaceLabel: nextActivePalaceLabel,
+              blockingLoading: false,
+              hasResult: true,
+              step: 'result',
+              lastView: 'result',
+            },
+          };
+        }),
+
+      // 紫微：报告定稿完成（释放流状态与阻塞加载，落盘报告）
+      applyZiweiComplete: (report) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            report,
+            streaming: false,
+            streamStatus: null,
+            blockingLoading: false,
+            hasResult: true,
+            step: 'result',
+            lastView: 'result',
+          },
+        })),
+
+      // 紫微：会话失败（落盘错误并释放流状态与阻塞加载）
+      failZiweiSession: (message, kind) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            error: message,
+            errorKind: kind,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+          },
+        })),
+
+      // 紫微：安静取消（仅释放运行时标志，绝不写入 error）
+      abortZiweiSession: () =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            blockingLoading: false,
+            streaming: false,
+            streamStatus: null,
+            error: null,
+            errorKind: null,
+          },
+        })),
+
+      // 紫微：从历史记录无损恢复工作区
+      restoreZiweiWorkspace: (payload) =>
+        set((state) => ({
+          ...state,
+          ziwei: {
+            ...state.ziwei,
+            step: 'result',
+            lastView: 'result',
+            hasResult: true,
+            blockingLoading: false,
+            streaming: false,
+            error: null,
+            errorKind: null,
+            report: payload.report,
+            chartData: payload.chartData,
+            lockedSections: payload.lockedSections,
+            streamStatus: null,
+            tab: 'overview',
+            activePalaceLabel: '命宫',
+            formData: payload.formData,
+            fieldErrors: {},
+          },
         })),
 
       // 发起全新测算或重试真值：进入加载仪式态并重置解读为待就绪

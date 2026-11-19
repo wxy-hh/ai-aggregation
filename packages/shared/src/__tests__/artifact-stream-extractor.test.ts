@@ -52,6 +52,74 @@ describe('chat-stream-contract artifact events', () => {
   });
 });
 
+describe('章节定位字段的契约校验（TC06）', () => {
+  it('artifact_start 携带合法 section 时编码解析后保持一致', () => {
+    const event: ChatStreamEvent = {
+      type: 'artifact_start',
+      artifact: { id: 'art-1', type: 'markdown', title: '报告', section: '## 第三章 方案' },
+    };
+    const parsed = parseChatStreamEvent(JSON.parse(encodeChatStreamEvent(event).replace(/^data: /, '').trim()));
+    expect(parsed).toEqual(event);
+  });
+
+  it('section 为空字符串或非字符串时整帧丢弃，缺省 section 的旧帧照常解析', () => {
+    const base = { id: 'art-1', type: 'markdown', title: '报告' };
+    expect(parseChatStreamEvent({ type: 'artifact_start', artifact: { ...base, section: '' } })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'artifact_start', artifact: { ...base, section: 3 } })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'artifact_start', artifact: { ...base, section: null } })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'artifact_start', artifact: base })).toEqual({
+      type: 'artifact_start',
+      artifact: base,
+    });
+  });
+});
+
+describe('createArtifactStreamExtractor 章节定位属性（TC06）', () => {
+  it('开标签含 section 属性时 artifact_start 携带与属性原文一致的章节定位，其余属性解析不变', () => {
+    const ex = createArtifactStreamExtractor();
+    const events = [
+      ...ex.push('<artifact identifier="rpt" type="markdown" title="研报" section="## 第三章 方案">## 第三章 方案\n新内容</artifact>'),
+      ...ex.flush(),
+    ];
+    const start = events.find((e) => e.type === 'artifact_start');
+    expect(start).toEqual({
+      type: 'artifact_start',
+      artifact: { id: 'rpt', type: 'markdown', title: '研报', section: '## 第三章 方案' },
+    });
+  });
+
+  it('开标签与闭标签被任意切片时章节定位与正文仍完整', () => {
+    const full = '前言<artifact identifier="rpt" title="研报" section="## 第三章 方案">## 第三章 方案\n新内容</artifact>后记';
+    for (const size of [1, 2, 3, 5, 7]) {
+      const ex = createArtifactStreamExtractor();
+      const events = [];
+      for (let i = 0; i < full.length; i += size) events.push(...ex.push(full.slice(i, i + size)));
+      events.push(...ex.flush());
+      const start = events.find((e) => e.type === 'artifact_start');
+      expect(start).toMatchObject({ artifact: { id: 'rpt', section: '## 第三章 方案' } });
+      const body = events
+        .filter((e): e is Extract<ChatStreamEvent, { type: 'artifact_delta' }> => e.type === 'artifact_delta')
+        .map((e) => e.delta)
+        .join('');
+      expect(body).toBe('## 第三章 方案\n新内容');
+      const endIndex = events.findIndex((e) => e.type === 'artifact_end');
+      const tail = events
+        .slice(endIndex + 1)
+        .filter((e): e is Extract<ChatStreamEvent, { type: 'text-delta' }> => e.type === 'text-delta')
+        .map((e) => e.text)
+        .join('');
+      expect(tail).toBe('后记');
+    }
+  });
+
+  it('开标签不含 section 时 artifact_start 不携带章节定位字段', () => {
+    const ex = createArtifactStreamExtractor();
+    const events = ex.push('<artifact identifier="rpt" title="研报">x</artifact>');
+    const start = events.find((e) => e.type === 'artifact_start');
+    expect(start && 'artifact' in start && 'section' in start.artifact).toBe(false);
+  });
+});
+
 describe('createArtifactStreamExtractor 流式标签抽取器', () => {
   it('纯文本流应原样直通为 text-delta', () => {
     const extractor = createArtifactStreamExtractor();
@@ -160,7 +228,7 @@ describe('createArtifactStreamExtractor 流式标签抽取器', () => {
     expect(events.some((e) => e.type.startsWith('artifact_'))).toBe(false);
   });
 
-  it('流异常结束时未闭合标签自愈（flush 时补齐 artifact_end）', () => {
+  it('流异常结束时未闭合标签收尾为 error（flush 时补齐 artifact_end: error，不再发 complete）', () => {
     const extractor = createArtifactStreamExtractor();
     const events = [
       ...extractor.push('<artifact identifier="broken-1" type="markdown" title="未完成研报">前半部分正文'),
@@ -173,6 +241,6 @@ describe('createArtifactStreamExtractor 流式标签抽取器', () => {
 
     expect(start).toBeDefined();
     expect(delta).toBeDefined();
-    expect(end).toEqual({ type: 'artifact_end', id: 'broken-1', status: 'complete' });
+    expect(end).toEqual({ type: 'artifact_end', id: 'broken-1', status: 'error' });
   });
 });

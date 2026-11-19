@@ -25,6 +25,7 @@ function makeUserTool(overrides: Partial<SanitizedAgentTool> = {}): SanitizedAge
     authHeaderName: null,
     params: [{ name: 'text', type: 'string', required: true, description: '通知正文' }],
     enabled: true,
+    requiresApproval: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,

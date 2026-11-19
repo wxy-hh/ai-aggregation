@@ -14,3 +14,6 @@ export const userSchema = z.object({
   email: z.string().email(),
   name: z.string().optional(),
 });
+
+export * from './knowledge-loop';
+

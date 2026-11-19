@@ -22,6 +22,7 @@ import {
   X,
   Plus,
   MessageSquare,
+  BookOpen,
 } from 'lucide-react';
 
 function AssetAppIcon({
@@ -103,6 +104,7 @@ export type AppId =
   | 'voice'
   | 'image'
   | 'destiny'
+  | 'knowledge'
   | 'ppt'
   | 'resume'
   | 'legal'
@@ -177,6 +179,16 @@ export const APP_CONFIGS: AppConfig[] = [
     iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
   },
   // 生产力工具
+  {
+    id: 'knowledge',
+    label: '知识库',
+    description: '文档切片管理与双路混合检索调试。',
+    icon: BookOpen,
+    category: 'productivity',
+    href: '/knowledge',
+    iconColor: 'text-sky-500',
+    iconBg: 'bg-sky-100 dark:bg-sky-900/30',
+  },
   {
     id: 'ppt',
     label: 'PPT 制作',

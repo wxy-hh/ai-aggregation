@@ -1,3 +1,10 @@
+import {
+  agentPlanSchema,
+  planStepStatusSchema,
+  type AgentPlan,
+  type PlanStepStatus,
+} from './agent-plan';
+
 // ============================================
 // 聊天流式 SSE 事件契约 — 前后端唯一权威定义
 // --------------------------------------------
@@ -5,7 +12,7 @@
 //   - /api/chat（generic / xunfei / doubao 三适配器）
 //   - /api/destiny/copilot（追问对话）
 //
-// 事件类型（共 8 种，联合类型即完整枚举）：
+// 事件类型（联合类型即完整枚举）：
 //   - text-delta       增量文本（可重复出现；text 一定为非空字符串）
 //   - reasoning-delta  推理增量文本（可重复出现；text 一定为非空字符串；
 //                      仅 supportsReasoning 模型可能产生，先于 text-delta 到达；
@@ -17,6 +24,11 @@
 //   - tool_result      工具执行结束（可重复出现；agent 模式专用；必然先于总结步的首个
 //                      text-delta。注意：决策步正文可先于 tool_call 到达——模型先说一句
 //                      「我查一下」再调工具时 text-delta 更早，消费端不得假设工具事件先于一切正文。
+//   - plan_created     智能体任务初始规划创建事件（可出现一次；agent 模式专用；下发完整阶段检查点列表）
+//   - plan_step_update 智能体检查点状态跃迁更新事件（可重复出现；agent 模式专用；实时同步单步状态与摘要）
+//   - tool_approval_request 写操作审批请求（可出现一次；agent 模式专用；ADR-0041）：
+//                      需审批的 Webhook 工具被调用时下发，此时请求尚未出站；
+//                      其后流以 done 正常结束，用户确认后由新请求携带凭证恢复
 //   - warning          警告信息（可重复出现；不终止流）
 //   - error            错误（终止事件；随后可选跟 done 帧，消费方在 error 处即终止）
 //   - done             正常终止（终止事件；流中最后一个事件）
@@ -83,6 +95,8 @@ export type ChatStreamToolResultEvent = {
   attachment?: ChatStreamToolAttachment;
   /** 工具执行真实耗时（毫秒；可选，缺省向后兼容） */
   durationMs?: number;
+  /** 结构化切片引用映射字典（可选；仅知识库检索等工具携带） */
+  citations?: Record<string | number, any>;
 };
 
 /** 产物类型枚举 */
@@ -94,13 +108,66 @@ export interface ArtifactMeta {
   type: ArtifactType;
   title: string;
   language?: string;
+  /**
+   * 章节定位（可选）：Markdown 章节补丁的标题行原样抄写，如 `## 第三章 方案`；
+   * 仅出现在 `artifact_start` 帧，表示本次输出只替换该章节（ADR-0037）。
+   */
+  section?: string;
 }
+
+/** 产物知识库沉淀元数据 (AGENT-KB-LOOP / ADR-0034) */
+export interface ArtifactKbDepositInfo {
+  deposited: boolean;
+  knowledgeBaseId?: string;
+  knowledgeBaseName?: string;
+  documentId?: string;
+  depositedAt?: string;
+  /** 入库于哪一版（形如 `v2`；老数据缺省按「入库于首版」处理，ADR-0037） */
+  versionId?: string;
+}
+
+/** 产物版本来源（ADR-0037）：模型整篇生成 / 章节补丁合并 / 追加式回滚自某版 */
+export type ArtifactVersionSource =
+  | { kind: 'generated' }
+  | { kind: 'patch' }
+  | { kind: 'rollback'; fromSeq: number };
+
+/** 产物正式版本（仅收到 `artifact_end: complete` 的内容才成为正式版本） */
+export interface ArtifactVersion {
+  /** 版本 id，形如 `v3`，与序号一一对应 */
+  id: string;
+  /** 单调递增的版本序号；淘汰后不复用 */
+  seq: number;
+  content: string;
+  createdAt: number;
+  source: ArtifactVersionSource;
+}
+
+/** 章节补丁未应用的原因：找不到标题 / 标题重复无法唯一定位 / 补丁正文未以该标题行开头 */
+export type SectionPatchFailureReason = 'not-found' | 'duplicate' | 'not-heading-start';
+
+/** 单个章节补丁的应用结果（失败时给出可区分的原因，ADR-0037） */
+export type ArtifactPatchResult =
+  | { section: string; status: 'applied' }
+  | { section: string; status: 'failed'; reason: SectionPatchFailureReason };
 
 /** 产物完整实体（包含正文与流式完成态） */
 export interface Artifact extends ArtifactMeta {
   content: string;
   status: 'streaming' | 'complete' | 'error';
   createdAt?: number;
+  /** 知识库沉淀状态 (AGENT-KB-LOOP / ADR-0034) */
+  kbDeposit?: ArtifactKbDepositInfo;
+  /** 正式版本链（最多 5 个，末尾为当前版；老数据缺省，ADR-0037） */
+  versions?: ArtifactVersion[];
+  /** 一次性提示标记：本次修改未完成，草稿已丢弃并保留上一版 */
+  notice?: 'draft-discarded';
+  /** 流式中的章节补丁草稿（瞬态；收尾时清除，不作为正式版本） */
+  patchDraft?: { section: string; content: string };
+  /** 本轮补丁会话标记（瞬态）：versionSeq 为本轮已合并出的新版本序号，null 表示尚未产生 */
+  patchTurn?: { versionSeq: number | null };
+  /** 最近一轮章节补丁的逐个应用结果，供工作台展示失败章节与原因 */
+  patchReport?: ArtifactPatchResult[];
 }
 
 /** 产物开始生成事件（首帧声明产物元数据） */
@@ -121,6 +188,47 @@ export type ChatStreamArtifactEndEvent = {
   type: 'artifact_end';
   id: string;
   status: 'complete' | 'error';
+};
+
+/**
+ * 写操作审批请求载荷 (AGENT-HITL-ACTION / ADR-0041)。
+ *
+ * params 为模型给出的原始参数（卡片展示用）；token 为服务端 HMAC 签名凭证，
+ * 绑定用户、会话、工具、参数哈希与过期时间，确认时随恢复请求回传。
+ */
+export interface ChatStreamToolApproval {
+  /** 被暂停的工具调用 id */
+  callId: string;
+  /** 工具名（模型侧名称，如 wh_notify） */
+  toolName: string;
+  /** 目标域名（仅 hostname，不含路径与凭证） */
+  host: string;
+  /** 模型给出的调用参数 */
+  params: Record<string, unknown>;
+  /** 审批凭证 */
+  token: string;
+  /** 凭证过期时间（毫秒时间戳） */
+  expiresAt: number;
+}
+
+/** 写操作审批请求事件（agent 模式专用；之后流正常结束） */
+export type ChatStreamToolApprovalRequestEvent = {
+  type: 'tool_approval_request';
+  approval: ChatStreamToolApproval;
+};
+
+/** 智能体计划生成事件 (AGENT-PLAN-DAG / ADR-0038) */
+export type ChatStreamPlanCreatedEvent = {
+  type: 'plan_created';
+  plan: AgentPlan;
+};
+
+/** 智能体计划步骤状态更新事件 (AGENT-PLAN-DAG / ADR-0038) */
+export type ChatStreamPlanStepUpdateEvent = {
+  type: 'plan_step_update';
+  stepId: string;
+  status: PlanStepStatus;
+  summary?: string;
 };
 
 /** 聊天流式用量统计（done 帧携带） */
@@ -146,9 +254,12 @@ export type ChatStreamEvent =
   | ChatStreamAgentNoteEvent
   | ChatStreamToolCallEvent
   | ChatStreamToolResultEvent
+  | ChatStreamToolApprovalRequestEvent
   | ChatStreamArtifactStartEvent
   | ChatStreamArtifactDeltaEvent
   | ChatStreamArtifactEndEvent
+  | ChatStreamPlanCreatedEvent
+  | ChatStreamPlanStepUpdateEvent
   | ChatStreamDoneEvent
   | ChatStreamWarningEvent
   | ChatStreamErrorEvent;
@@ -163,7 +274,7 @@ export type ChatStreamTerminalEvent = Extract<
  * 解析单个 SSE data: 帧的 JSON payload（已 JSON.parse 的结果）为契约事件。
  *
  * 返回值说明：
- * - 合法的 8 类事件 → 对应事件对象；
+ * - 合法的契约事件（见文件头部枚举）→ 对应事件对象；
  * - null → 非 JSON 对象、未知事件类型或字段不合法。消费端必须显式忽略并继续等待
  *   终止事件（未知类型不代表流结束；只有 done/error/[DONE] 才结束流）。
  */
@@ -220,6 +331,10 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         if (typeof att.url !== 'string' || !att.url) return null;
         attachment = { kind: 'image', url: att.url };
       }
+      let citations: Record<string | number, any> | undefined;
+      if (ev.citations !== undefined && typeof ev.citations === 'object' && ev.citations !== null) {
+        citations = ev.citations as Record<string | number, any>;
+      }
       return {
         type: 'tool_result',
         callId: ev.callId,
@@ -228,16 +343,44 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         summary: ev.summary,
         ...(attachment ? { attachment } : {}),
         ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
+        ...(citations ? { citations } : {}),
+      };
+    }
+    case 'tool_approval_request': {
+      // 所有字段都是执行审批所必需：任一缺失或类型不对即整帧作废，不降级成残缺卡片
+      const approval = ev.approval as Record<string, unknown> | null | undefined;
+      if (typeof approval !== 'object' || approval === null) return null;
+      const { callId, toolName, host, params, token, expiresAt } = approval;
+      if (typeof callId !== 'string' || !callId) return null;
+      if (typeof toolName !== 'string' || !toolName) return null;
+      if (typeof host !== 'string' || !host) return null;
+      if (typeof params !== 'object' || params === null || Array.isArray(params)) return null;
+      if (typeof token !== 'string' || !token) return null;
+      if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt <= 0) {
+        return null;
+      }
+      return {
+        type: 'tool_approval_request',
+        approval: {
+          callId,
+          toolName,
+          host,
+          params: params as Record<string, unknown>,
+          token,
+          expiresAt,
+        },
       };
     }
     case 'artifact_start': {
       const art = ev.artifact as Record<string, unknown> | null | undefined;
       if (typeof art !== 'object' || art === null) return null;
-      const { id, type, title, language } = art;
+      const { id, type, title, language, section } = art;
       if (typeof id !== 'string' || !id) return null;
       if (type !== 'markdown' && type !== 'table' && type !== 'code' && type !== 'image') return null;
       if (typeof title !== 'string' || !title) return null;
       if (language !== undefined && (typeof language !== 'string' || !language)) return null;
+      // section 为可选：给了就必须是非空字符串，非法则整帧作废（缺省的旧帧照常解析）
+      if (section !== undefined && (typeof section !== 'string' || !section)) return null;
       return {
         type: 'artifact_start',
         artifact: {
@@ -245,6 +388,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
           type,
           title,
           ...(language ? { language } : {}),
+          ...(section ? { section } : {}),
         },
       };
     }
@@ -264,6 +408,26 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         type: 'artifact_end',
         id: ev.id,
         status: ev.status,
+      };
+    }
+    case 'plan_created': {
+      const parsed = agentPlanSchema.safeParse(ev.plan);
+      if (!parsed.success) return null;
+      return {
+        type: 'plan_created',
+        plan: parsed.data,
+      };
+    }
+    case 'plan_step_update': {
+      if (typeof ev.stepId !== 'string' || !ev.stepId) return null;
+      const parsedStatus = planStepStatusSchema.safeParse(ev.status);
+      if (!parsedStatus.success) return null;
+      if (ev.summary !== undefined && typeof ev.summary !== 'string') return null;
+      return {
+        type: 'plan_step_update',
+        stepId: ev.stepId,
+        status: parsedStatus.data,
+        ...(ev.summary !== undefined ? { summary: ev.summary } : {}),
       };
     }
     case 'done': {

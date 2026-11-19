@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useChatStore } from './chat-store';
-import { on, StoreEvents } from './store-events';
+import { useChatStore, type Message } from './chat-store';
+import type { Artifact } from '@repo/shared';
+import { resetConversationPort, setConversationPort } from './conversation-port';
 import { authFetch } from '@/lib/api/client';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 
@@ -271,6 +272,8 @@ describe('useChatStore.reload（重新生成守卫与行为）', () => {
     await useChatStore.getState().reload('user-2');
 
     expect(mockedAuthFetch).toHaveBeenCalledTimes(1);
+    const reloadBody = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    expect(reloadBody.turnId).toBe('user-2');
     const { messages, isLoading, error } = useChatStore.getState();
     expect(messages).toHaveLength(4);
     expect(messages[0]).toMatchObject({ id: 'user-1', content: '第 1 轮提问' });
@@ -389,7 +392,7 @@ describe('useChatStore.loadConversation（toolCalls 恢复清洗，B-9）', () =
   });
 
   it('过程旁白（agentNotes）还原时被剥离，工具记录原样保留（spec D-二期-6：旁白属过程性内容）', () => {
-    // 流式期间的 CONVERSATION_UPDATED 落盘快照会带着旁白；刷新还原时剥离，
+    // 流式期间的会话落盘快照会带着旁白；刷新还原时剥离，
     // 但工具调用记录沿用一期 B-10 结构继续恢复
     useChatStore.getState().loadConversation(
       'conv-3',
@@ -442,13 +445,14 @@ describe('useChatStore.sendMessage（agent 过程旁白，二期）', () => {
       ])
     );
     useChatStore.setState({ activeConversationId: 'conv-agent-notes' });
-    // 监听历史保存事件，锁定「旁白不写入历史持久化」（工单 04 验收口径）
+    // 通过假端口观察历史保存，锁定「旁白不写入历史持久化」（工单 04 验收口径）
     const savedItems: Array<{ messages: Array<Record<string, unknown>> }> = [];
-    const off = on(
-      StoreEvents.CHAT_HISTORY_SAVED,
-      (payload: { item: { messages: Array<Record<string, unknown>> } }) =>
-        savedItems.push(payload.item)
-    );
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: (item) =>
+        savedItems.push(item as unknown as { messages: Array<Record<string, unknown>> }),
+    });
 
     try {
       const result = await useChatStore.getState().sendMessage();
@@ -475,7 +479,7 @@ describe('useChatStore.sendMessage（agent 过程旁白，二期）', () => {
       expect(savedAssistant).not.toHaveProperty('agentNotes');
       expect(savedAssistant.content).toBe('A 与 B 的对比结果');
     } finally {
-      off();
+      resetConversationPort();
     }
   });
 });
@@ -534,24 +538,78 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
     expect(useChatStore.getState().toolOverrides).toEqual({ image_generate: true });
   });
 
-  it('loadConversation 恢复绑定的 toolOverrides，reset 予以重置', () => {
+  it('setToolOverride 变更一次：工具覆盖经会话端口落盘恰好一次', () => {
+    // 通过假端口观察落盘调用，断言单次开关只产生一次持久化请求
+    const savedOverrides: Array<{ id: string; overrides?: Record<string, boolean> }> = [];
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: (id, overrides) => savedOverrides.push({ id, overrides }),
+      appendHistory: () => {},
+    });
+
+    try {
+      useChatStore.setState({ activeConversationId: 'conv-tools', toolOverrides: {} });
+      useChatStore.getState().setToolOverride('web_search', false);
+
+      expect(savedOverrides).toHaveLength(1);
+      expect(savedOverrides[0]).toEqual({
+        id: 'conv-tools',
+        overrides: { web_search: false },
+      });
+    } finally {
+      resetConversationPort();
+    }
+  });
+
+  it('loadConversation 正确恢复消息列表、产物池、能力包及工具覆盖字典', () => {
+    const mockMessages: Message[] = [
+      { id: 'u1', role: 'user', content: '分析这份代码' },
+      { id: 'a1', role: 'assistant', content: '这是分析结果' },
+    ];
+    const mockArtifacts: Artifact[] = [
+      { id: 'art-1', type: 'code', title: '分析脚本', content: 'console.log(1)', status: 'complete' },
+    ];
+
     useChatStore.getState().loadConversation(
       'conv-override-1',
-      [],
+      mockMessages,
       'doubao',
       'doubao-seed-evolving',
       'deep-research',
-      { web_fetch: false, weather: true }
+      { web_fetch: false, weather: true },
+      mockArtifacts
     );
 
-    expect(useChatStore.getState().activeConversationId).toBe('conv-override-1');
-    expect(useChatStore.getState().activeCapabilityPackKey).toBe('deep-research');
-    expect(useChatStore.getState().toolOverrides).toEqual({ web_fetch: false, weather: true });
+    const state = useChatStore.getState();
+    expect(state.activeConversationId).toBe('conv-override-1');
+    expect(state.messages).toEqual(mockMessages);
+    expect(state.artifacts).toEqual(mockArtifacts);
+    expect(state.activeArtifactId).toBe('art-1');
+    expect(state.activeCapabilityPackKey).toBe('deep-research');
+    expect(state.toolOverrides).toEqual({ web_fetch: false, weather: true });
 
     useChatStore.getState().reset();
     expect(useChatStore.getState().activeConversationId).toBeNull();
+    expect(useChatStore.getState().messages).toEqual([]);
+    expect(useChatStore.getState().artifacts).toEqual([]);
     expect(useChatStore.getState().activeCapabilityPackKey).toBeNull();
     expect(useChatStore.getState().toolOverrides).toEqual({});
+  });
+
+  it('sendMessage 请求体携带当前用户消息的 turnId', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"text-delta","text":"收到"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+    useChatStore.setState({ activeConversationId: 'conv-turn-send', input: '记住暗号' });
+
+    await useChatStore.getState().sendMessage();
+
+    const sentUserMessage = useChatStore.getState().messages[0];
+    const body = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    expect(body.turnId).toBe(sentUserMessage.id);
   });
 
   it('agent 模式下 sendMessage 计算并携带 disabledToolKeys（差异减项传参）', async () => {
@@ -608,5 +666,72 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
 
     expect(body.agent).toBe(true);
     expect(body.disabledToolKeys).toBeUndefined();
+  });
+  describe('产物上下文请求字段（ADR-0037 §4 / TC13）', () => {
+    const doneSse = () =>
+      sseResponse(['data: {"type":"text-delta","text":"好"}\n\n', 'data: {"type":"done"}\n\n']);
+    const artifact = (id: string, content: string) => ({
+      id,
+      type: 'markdown' as const,
+      title: `标题-${id}`,
+      content,
+      status: 'complete' as const,
+    });
+    const sendAndGetBody = async () => {
+      const { useSettingsStore } = await import('@/stores/settings-store');
+      useSettingsStore.setState({ agentModeEnabled: true });
+      expect(await useChatStore.getState().sendMessage()).toBe('sent');
+      return JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+    };
+
+    it('agent 模式 + 工作台展开 + 有聚焦产物 → 请求体携带聚焦产物全文与目录', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({
+        input: '把第二章改短',
+        artifacts: [artifact('a', '# A\n\n## 一\n甲'), artifact('b', '# B\n\n## 二\n乙')],
+        activeArtifactId: 'b',
+        isWorkspaceOpen: true,
+      });
+      const body = await sendAndGetBody();
+      expect(body.artifactContext.workspaceOpen).toBe(true);
+      expect(body.artifactContext.focus).toMatchObject({ id: 'b', content: '# B\n\n## 二\n乙' });
+      expect(body.artifactContext.directory.map((d: { id: string }) => d.id)).toEqual(['a', 'b']);
+    });
+
+    it('工作台关闭 → 只携带目录，不携带任何产物正文', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({
+        input: '继续',
+        artifacts: [artifact('a', '# A\n\n## 一\n绝密正文')],
+        activeArtifactId: 'a',
+        isWorkspaceOpen: false,
+      });
+      const body = await sendAndGetBody();
+      expect(body.artifactContext.workspaceOpen).toBe(false);
+      expect(body.artifactContext.focus).toBeUndefined();
+      expect(JSON.stringify(body)).not.toContain('绝密正文');
+    });
+
+    it('没有产物时请求体不带 artifactContext（与改造前一致）', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      useChatStore.setState({ input: '你好', artifacts: [] });
+      const body = await sendAndGetBody();
+      expect('artifactContext' in body).toBe(false);
+    });
+
+    it('未开启 agent 模式 → 即使有产物也不携带 artifactContext', async () => {
+      mockedAuthFetch.mockResolvedValue(doneSse());
+      const { useSettingsStore } = await import('@/stores/settings-store');
+      useSettingsStore.setState({ agentModeEnabled: false });
+      useChatStore.setState({
+        input: '你好',
+        artifacts: [artifact('a', '# A\n\n## 一\n甲')],
+        activeArtifactId: 'a',
+        isWorkspaceOpen: true,
+      });
+      expect(await useChatStore.getState().sendMessage()).toBe('sent');
+      const body = JSON.parse(mockedAuthFetch.mock.calls[0][1]?.body as string);
+      expect('artifactContext' in body).toBe(false);
+    });
   });
 });

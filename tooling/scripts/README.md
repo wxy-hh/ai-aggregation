@@ -50,6 +50,21 @@ pnpm dev
 pnpm qimen:check
 ```
 
+## seed-docs-corpus.mts (RAG 首发语料导入种子脚本)
+
+将本仓库 `docs/` 目录下的核心技术 Markdown 文档（roadmap、19 份 ADR、project-guide、qa-workflow 系列等）通过正常上传管道（同用户界面上传同一入口）批量入库为一个「工程文档」知识库并索引至全部就绪：
+- 严格遵循鉴权、格式校验与单库 50 篇限额
+- 支持幂等重跑与 `--reindex` 单调版本更新
+- 内置自动化抽查验证（ADR-0008、ADR-0014、连败熔断等词法全文检索命中校验）
+
+```bash
+# 默认模式：幂等复用已就绪文档
+pnpm rag:seed
+
+# 强制重传模式：递增版本 (version+1) 并原子替换切片
+pnpm rag:seed --reindex
+```
+
 ## 基础设施命令
 
 ```bash
@@ -59,6 +74,36 @@ pnpm infra:logs
 ```
 
 适合团队协作、联调和更贴近生产的本地环境。
+
+## QA 工作流脚本
+
+### qa-check.mjs
+
+通过 `node tooling/scripts/qa-check.mjs <plan|acceptance|review> .scratch/<feature>`（或项目已有 `pnpm qa:check -- ...` 快捷方式）显式检查计划、验收或审查；`gate-plan-*` 与 `gate-acceptance-*` 门禁日志必须经 `qa-run` 直接调用 `node .../qa-check.mjs` 生成，快捷方式生成的 argv 不会被门禁识别。只接受 Schema 4：核对断言标记、用例绑定、全状态对账、确定性过程脚本引用闭包、审查来源与交付验证事件时间；有 challenge 的新轮次校验 `.source.json` 并输出「来源核验」强度行（转录（强）／自述凭据（弱）／未核验（人工）），无 challenge 的旧轮次沿用全等比对；以分流表与默认驳回清单共同构成缺陷清单、分流表为唯一流程状态源，按轮次轨迹核对复审与修复时间，不从正文自动发现缺陷；其他 Schema 报 `UNSUPPORTED_SCHEMA`。
+
+### review-package.mjs
+
+改代码前用 `node tooling/scripts/review-package.mjs init .scratch/<feature> -- <路径...>` 建立基线并冻结计划，需要扩大范围时用 `add`，审查时用 `collect` 生成 diff、v2 manifest 与 `_qa/review-challenge.json`（nonce、轮次、treeDigest、打包时间；`--round r<n>` 可显式指定轮次）；manifest 的 `packagedAt` 在 tree 未变时沿用首次打包时间，供 qa-check 与转录中的事件时间关联，不以文件 mtime 判断审查原文或修复证据新鲜度。审查子代理写完原文后用 `seal` 校验 challenge 并生成同名 `.source.json` 凭据，拒绝覆盖已有凭据。`digest` 输出当前范围 tree；这些命令均不改变 Git index，机器状态写入特性目录的 `_qa/`，禁止手改。
+
+### qa-run.mjs
+
+使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 真实执行并记录 argv、HEAD、tree、时间和退出码。日志位于特性 `evidence/` 且不可覆盖，失败或旧证据需换新标签。日志里的 `tree` 是**行为证据树**：只忽略根 `GLOSSARY.md`、`CONTEXT.md`、各目录 `README.md`、`docs/adr/` 与 `docs/features/` 中的 Markdown；其他 Markdown 默认计入，尤其保留源码旁由业务、构建或测试运行时读取的内容。豁免路径不得作为运行时内容源，且仍进入审查包 diff。
+
+### dev-port.mjs 探活
+
+使用 `node tooling/scripts/dev-port.mjs --probe --wait 90` 按端口决议范围寻找标题为 AI 聚合平台的服务；标题匹配后再校验首页引用的首个 `/_next/static/` JS chunk 返回 200，拦截 HTML 200 但前端资源全 404 的半死 Next 服务。标题不匹配时不要关闭其他进程；未找到时按输出启动 `pnpm dev:web` 后重试。
+
+### qa-spec-review.mjs
+
+Schema 4 的 Spec 审查覆盖清单纯函数模块：`specReviewChecklistDocument()` 序列化与解析 `_qa/spec-review-checklist.json`，`parseSpecReviewCoverage()` 解析审查原文中的五列覆盖表；文件系统与 Git 核验留在 `qa-check.mjs`，由 `qa-check` 与 `review-package` 直接导入。
+
+### qa-browser-helper.mjs
+
+阶段 5 浏览器验收的仓库级薄辅助模块：`resolveRepoRoot()` 从模块位置解析仓库根（不依赖 `cwd`），`acquireQaPage()` 按 TaskSpace ownership 接管或新建页面，`createMarker()` 统一断言标记与非零退出，`captureTargetGeometry()` 用同一 target 完成 probe、几何硬断言与矩形裁剪截图，`captureMobileGeometry()` 在其上增加移动视口设置并在 `finally` 复位视口。只封装通用机制，不绑定业务选择器。
+
+### 工具测试
+
+运行 `node --test 'tooling/scripts/__tests__/*.test.mjs'` 执行全部 Node 原生工具测试，运行 `pnpm exec eslint tooling/scripts` 检查脚本规范。修改工具或安装模板后同时检查四个工具与 `qa-browser-helper.mjs` 对应模板的逐字一致性。
 
 ## 使用前
 

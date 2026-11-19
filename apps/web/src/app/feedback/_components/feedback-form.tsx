@@ -143,7 +143,7 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
 
       <div className={cn(
-        'relative w-full sm:w-[520px] max-h-[90vh] sm:max-h-[85vh] overflow-y-auto custom-scrollbar',
+        'relative flex w-full max-h-[90vh] flex-col overflow-hidden sm:w-[520px] sm:max-h-[85vh]',
         'bg-white dark:bg-[#1a1f3a]',
         'rounded-t-3xl sm:rounded-3xl',
         'border border-[#E8ECF5] dark:border-[#2d3454]',
@@ -160,7 +160,8 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-5">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 custom-scrollbar">
           {/* 反馈类型 */}
           <div>
             <label className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2 block">反馈类型</label>
@@ -301,7 +302,8 @@ export function FeedbackForm({ onClose, onSuccess }: FeedbackFormProps) {
             <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-2.5 rounded-2xl">{error}</div>
           )}
 
-          <div className="pb-4">
+          </div>
+          <div className="shrink-0 border-t border-slate-100 bg-white px-5 py-3 dark:border-slate-700/50 dark:bg-[#1a1f3a]">
             <button
               type="submit"
               disabled={submitting || !title.trim() || content.trim().length < 10}

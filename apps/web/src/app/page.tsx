@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation';
 
 /**
- * 首页直接重定向到工作台。
+ * 根路径兜底重定向。
  *
- * 未登录用户由 /home 页面的 AuthGuard 触发匿名设备认证；
- * 已登录用户由 middleware 识别 refresh_token cookie 后同样重定向到 /home。
+ * 实际访问由 middleware.ts 处理：未登录访客 302 拦截至 /login，已登录用户直通 /home。
  */
 export default function HomePage() {
   redirect('/home');

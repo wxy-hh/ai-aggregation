@@ -31,6 +31,7 @@ export function sanitizeAgentTool(tool: UserWebhookTool): SanitizedAgentTool {
     hasAuthHeaderValue: Boolean(tool.authHeaderValueEnc),
     params: (tool.params ?? []) as WebhookParamItem[],
     enabled: tool.enabled,
+    requiresApproval: tool.requiresApproval,
     createdAt: tool.createdAt,
     updatedAt: tool.updatedAt,
   };

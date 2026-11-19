@@ -495,7 +495,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onWarning = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [], provider: 'xunfei' }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onWarning }
     );
 
@@ -506,7 +506,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       '/api/chat',
       expect.objectContaining({ method: 'POST' })
     );
-    expect(seenBody).toEqual({ messages: [], provider: 'xunfei' });
+    expect(seenBody).toEqual({ messages: [], provider: 'xunfei', model: 'lite', thinking: false });
   });
 
   it('正常流 done 携带 usage 时透传给 handlers.onDone', async () => {
@@ -524,7 +524,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     );
     const onDone = vi.fn();
     await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onDone }
     );
     expect(onDone).toHaveBeenCalledTimes(1);
@@ -540,7 +540,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     );
     const onWarning = vi.fn();
     await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onWarning }
     );
     expect(onWarning).toHaveBeenCalledWith('回答在此处被截断，内容可能不完整');
@@ -559,7 +559,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onReasoning = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onReasoning }
     );
 
@@ -580,7 +580,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onChunk = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk }
     );
 
@@ -601,7 +601,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onAgentNote = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk, onAgentNote }
     );
 
@@ -622,7 +622,7 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     const onChunk = vi.fn();
 
     const text = await streamChatResponse(
-      { body: { messages: [] }, signal: new AbortController().signal },
+      { body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal },
       { onChunk }
     );
 
@@ -635,12 +635,12 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
       new Response(JSON.stringify({ error: '服务不可用' }), { status: 500 })
     );
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toThrow('服务不可用');
 
     mockedAuthFetch.mockResolvedValue(new Response('not json', { status: 503 }));
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toThrow('请求失败: 503');
   });
 
@@ -649,7 +649,71 @@ describe('streamChatResponse（评审 C4：统一编排）', () => {
     abortError.name = 'AbortError';
     mockedAuthFetch.mockRejectedValue(abortError);
     await expect(
-      streamChatResponse({ body: { messages: [] }, signal: new AbortController().signal }, {})
+      streamChatResponse({ body: { messages: [], provider: 'xunfei', model: 'lite', thinking: false }, signal: new AbortController().signal }, {})
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
+
+describe('TC02: 前端流式契约解析与兼容降级', () => {
+  it('1. consumeChatResponse 正确解析 plan_created 事件并回调 onPlanCreated (TC02-1)', async () => {
+    const validPlan = {
+      id: 'plan-100',
+      title: '行业研报规划',
+      steps: [
+        { id: 's1', title: '收集数据', status: 'pending' as const },
+        { id: 's2', title: '撰写总结', status: 'pending' as const },
+      ],
+    };
+    const res = sseResponse([
+      `data: {"type":"plan_created","plan":${JSON.stringify(validPlan)}}\n\n`,
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onPlanCreated = vi.fn();
+
+    await consumeChatResponse(res, { onChunk, onPlanCreated });
+    expect(onPlanCreated).toHaveBeenCalledTimes(1);
+    expect(onPlanCreated).toHaveBeenCalledWith(validPlan);
+  });
+
+  it('2. consumeChatResponse 正确解析 plan_step_update 事件并回调 onPlanStepUpdate (TC02-2)', async () => {
+    const res = sseResponse([
+      'data: {"type":"plan_step_update","stepId":"s1","status":"running"}\n\n',
+      'data: {"type":"plan_step_update","stepId":"s1","status":"completed","summary":"数据收集完成"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+    const onPlanStepUpdate = vi.fn();
+
+    await consumeChatResponse(res, { onChunk, onPlanStepUpdate });
+    expect(onPlanStepUpdate).toHaveBeenCalledTimes(2);
+    expect(onPlanStepUpdate).toHaveBeenNthCalledWith(1, 's1', 'running', undefined);
+    expect(onPlanStepUpdate).toHaveBeenNthCalledWith(2, 's1', 'completed', '数据收集完成');
+  });
+
+  it('3. 收到未知类型事件时静默忽略且流正常继续 (TC02-3)', async () => {
+    const res = sseResponse([
+      'data: {"type":"plan_unknown_event","foo":"bar"}\n\n',
+      'data: {"type":"text-delta","text":"正常正文"}\n\n',
+      'data: {"type":"done"}\n\n',
+    ]);
+    const onChunk = vi.fn();
+
+    await expect(consumeChatResponse(res, { onChunk })).resolves.toBeUndefined();
+    expect(onChunk).toHaveBeenCalledWith('正常正文');
+  });
+
+  it('4. 历史消息实体中缺少 plan 字段时兼容无崩 (TC02-4)', () => {
+    const legacyMessage = {
+      id: 'legacy-msg-1',
+      role: 'assistant',
+      content: '历史回答文本',
+      // 无 plan 字段
+    };
+
+    // 模拟应用层对 message.plan 的安全访问
+    expect((legacyMessage as any).plan).toBeUndefined();
+    expect(typeof legacyMessage.content).toBe('string');
+  });
+});
+

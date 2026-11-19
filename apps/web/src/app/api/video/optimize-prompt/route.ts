@@ -69,7 +69,7 @@ ${duration ? `视频时长：${duration} 秒` : ''}
           maxOutputTokens: 500,
           metadata: { promptLength: prompt.length, aspectRatio: aspectRatio || null, duration },
         },
-        userRole: user.role,
+        userRole: user.role === 'admin' ? 'admin' : undefined, // ADR-0049：管道仅接受 'admin' 两态，普通用户缺省
         finalize: {
           requestId,
           action: 'video-prompt-optimize',

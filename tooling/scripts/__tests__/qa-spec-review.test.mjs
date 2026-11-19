@@ -1,0 +1,296 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { checkFeature, formatReport } from '../qa-check.mjs';
+import {
+  parseSpecReviewChecklist,
+  parseSpecReviewCoverage,
+  specReviewChecklistDocument,
+} from '../qa-spec-review.mjs';
+
+const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
+const QA_CHECK = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
+const REVIEW_PACKAGE = fileURLToPath(new URL('../review-package.mjs', import.meta.url));
+const TEST_FILE = 'tests/a.test.mjs';
+const BINDING = `\`${TEST_FILE}\` › 第一条叶子用例`;
+
+function codes(report) {
+  return report.issues.map((item) => item.code);
+}
+
+function writeDeep(file, content) {
+  return mkdir(path.dirname(file), { recursive: true }).then(() => writeFile(file, content));
+}
+
+function git(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' });
+}
+
+function planText({ seam = 'unit', status = 'PASS', assertion = '第一条断言', changes = '- 无' } = {}) {
+  const browser = seam === 'browser';
+  const evidence = browser ? '`screenshots/target.png`、`evidence/run.log`' : '`evidence/run.log`';
+  const binding = browser ? '' : BINDING;
+  return [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    'QA Review Coverage: 1',
+    '',
+    '### TC01: 示例',
+    '- Priority: P0',
+    '- Covers: 1',
+    `- Seam: ${seam}`,
+    '',
+    '#### 验证断言',
+    `1. ${assertion}`,
+    '',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    `| TC01 | 1 | ${status} | ${status === 'PASS' ? evidence : '尚未执行'} | ${status === 'PASS' ? binding : ''} | |`,
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `node --version` | `evidence/delivery.log` |',
+    '',
+    '## 计划变更',
+    changes,
+  ].join('\n');
+}
+
+const SPEC = '## User Stories\n1. 第一条需求\n\n## 交付命令\n\n```bash\nnode --version\n```\n';
+
+function escapeCell(value) {
+  return String(value).replaceAll('|', '\\|').replace(/\r?\n/g, ' ');
+}
+
+function coverageMarkdown(checklist, overrides = {}) {
+  const rows = checklist.rows.map((row) => {
+    const source = row.seam === 'browser' ? 'scripts/browser.mjs:1' : `${TEST_FILE}:2`;
+    const value = {
+      ids: row.id,
+      actual: row.actual,
+      verdict: '已核实',
+      source: `\`${source}\` 已核对实际谓词`,
+      change: row.changed ? '变更成立' : '不适用',
+      ...overrides,
+    };
+    return `| ${value.ids} | ${escapeCell(value.actual)} | ${value.verdict} | ${value.source} | ${value.change} |`;
+  });
+  return [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 对账实测值或绑定 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+  ].join('\n');
+}
+
+async function newProtocolRepo(t, { seam = 'unit' } = {}) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-spec-review-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  git(dir, ['init', '--quiet']);
+  git(dir, ['config', 'user.email', 'qa@example.internal']);
+  git(dir, ['config', 'user.name', 'QA Test']);
+  await writeDeep(path.join(dir, 'tracked.txt'), '原始内容\n');
+  await writeDeep(path.join(dir, TEST_FILE), "import test from 'node:test';\ntest('第一条叶子用例', () => {});\n");
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '--quiet', '-m', '初始提交']);
+
+  const feature = path.join(dir, '.scratch', 'feature');
+  await mkdir(feature, { recursive: true });
+  await writeDeep(path.join(feature, 'scripts/browser.mjs'), "console.log('[TC01-1] PASS 实测：目标可见');\n");
+  await writeFile(path.join(feature, 'spec.md'), SPEC);
+  await writeFile(path.join(feature, 'qa-plan.md'), planText({ seam, status: 'BLOCKED' }));
+  let result = spawnSync(process.execPath, [QA_RUN, feature, 'gate-plan-initial', '--', process.execPath, QA_CHECK, 'plan', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  result = spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+
+  await writeFile(path.join(feature, 'qa-plan.md'), planText({ seam }));
+  if (seam === 'browser') await writeDeep(path.join(feature, 'screenshots', 'target.png'), '目标截图');
+  const runArgv = seam === 'browser' ? [process.execPath, '.scratch/feature/scripts/browser.mjs'] : [process.execPath, '--test', TEST_FILE];
+  result = spawnSync(process.execPath, [QA_RUN, feature, 'run', '--', ...runArgv], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  result = spawnSync(process.execPath, [QA_RUN, feature, 'delivery', '--', 'node', '--version'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  result = spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-initial', '--', process.execPath, QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  result = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+
+  const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
+  await writeDeep(path.join(feature, 'review-report.md'), '审查方式：宿主=Kimi Code；两轴独立子代理\n\n## 三档分流\n\n无发现\n');
+  await writeDeep(path.join(feature, 'review/r1-standards.md'), '无发现\n');
+  await writeDeep(path.join(feature, 'review/r1-spec-axis.md'), coverageMarkdown(checklist));
+  for (const [axis, file] of [['standards', 'review/r1-standards.md'], ['spec', 'review/r1-spec-axis.md']]) {
+    result = spawnSync(process.execPath, [
+      REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', axis, '--file', file,
+      '--reviewer-kind', 'subagent', '--host', 'Kimi Code',
+    ], { cwd: dir, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  return { dir, feature, checklist };
+}
+
+async function replaceSpecReview(feature, content) {
+  await writeFile(path.join(feature, 'review/r1-spec-axis.md'), content);
+}
+
+test('TC01 清单序列化保留完整字段、顺序与转义内容', () => {
+  const rows = [
+    { id: 'TC01-1', status: 'PASS', assertion: '第一条', actual: '左 | 右', seam: 'unit', sourceCandidates: ['a.test.mjs'], changed: false },
+    { id: 'TC01-2', status: 'BLOCKED', assertion: '第二条', actual: '环境不足', seam: 'browser', sourceCandidates: ['scripts/a.mjs'], changed: true },
+  ];
+  const parsed = parseSpecReviewChecklist(specReviewChecklistDocument(rows));
+  assert.equal(parsed.version, 1);
+  assert.deepEqual(parsed.rows, rows);
+  assert.throws(() => parseSpecReviewChecklist('{"version":2,"rows":[]}'), /无效/);
+  assert.throws(() => parseSpecReviewChecklist('{"version":1,"rows":{}}'), /无效/);
+});
+
+test('TC01 覆盖表解析支持合并 ID、管道符和空段，拒绝坏列', () => {
+  const parsed = parseSpecReviewCoverage([
+    '## 对账覆盖',
+    '| 审查项 | 对账实测值或绑定 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- | --- |',
+    '| TC01-1、TC01-2 | 左 \\| 右 | 已核实 | `a.test.mjs:2` 比较值 | 不适用 |',
+    '## 其他',
+  ].join('\n'));
+  assert.deepEqual(parsed.rows, [{
+    ids: ['TC01-1', 'TC01-2'], actual: '左 | 右', verdict: '已核实', source: '`a.test.mjs:2` 比较值', change: '不适用',
+  }]);
+  assert.deepEqual(parseSpecReviewCoverage('无发现\n').rows, []);
+  assert.throws(() => parseSpecReviewCoverage('## 对账覆盖\n| TC01-1 | 只有两列 |'), /五列/);
+});
+
+test('TC02 新协议有效 unit 与 browser 覆盖均不产生对账覆盖错误', async (t) => {
+  for (const seam of ['unit', 'browser']) {
+    const { feature } = await newProtocolRepo(t, { seam });
+    const report = await checkFeature(feature, 'review');
+    const unexpected = codes(report).filter((code) => code.startsWith('SPEC_REVIEW_') || code.startsWith('SPEC_PLAN_CHANGE_'));
+    assert.deepEqual(unexpected, [], `${seam}: ${formatReport(report, 'review')}`);
+  }
+});
+
+test('TC02 缺行、重复、未知、错绑定和未核实均被机械识别', async (t) => {
+  const missingRepo = await newProtocolRepo(t);
+  await replaceSpecReview(missingRepo.feature, '无发现\n\n## 对账覆盖\n');
+  const missing = await checkFeature(missingRepo.feature, 'review');
+  assert.ok(codes(missing).includes('SPEC_REVIEW_COVERAGE_MISSING'), formatReport(missing, 'review'));
+
+  const duplicateRepo = await newProtocolRepo(t);
+  const valid = coverageMarkdown(duplicateRepo.checklist);
+  const row = valid.split('\n').find((line) => line.startsWith('| TC01-1 |'));
+  await replaceSpecReview(duplicateRepo.feature, `${valid.trimEnd()}\n${row}\n| TC99-1 | ${BINDING} | 已核实 | \`${TEST_FILE}:2\` 错误编号 | 不适用 |\n`);
+  const duplicated = await checkFeature(duplicateRepo.feature, 'review');
+  assert.ok(codes(duplicated).includes('SPEC_REVIEW_COVERAGE_DUPLICATE'));
+  assert.ok(codes(duplicated).includes('SPEC_REVIEW_COVERAGE_UNKNOWN'));
+
+  const mismatchRepo = await newProtocolRepo(t);
+  await replaceSpecReview(mismatchRepo.feature, coverageMarkdown(mismatchRepo.checklist, { actual: '另一套绑定' }));
+  assert.ok(codes(await checkFeature(mismatchRepo.feature, 'review')).includes('SPEC_REVIEW_BINDING_MISMATCH'));
+
+  const incompleteRepo = await newProtocolRepo(t);
+  await replaceSpecReview(incompleteRepo.feature, coverageMarkdown(incompleteRepo.checklist, { verdict: '未核实' }));
+  assert.ok(codes(await checkFeature(incompleteRepo.feature, 'review')).includes('SPEC_REVIEW_INCOMPLETE'));
+});
+
+test('TC02 源码引用必须匹配绑定或过程脚本且行号存在', async (t) => {
+  const unit = await newProtocolRepo(t);
+  await replaceSpecReview(unit.feature, coverageMarkdown(unit.checklist, { source: '`tracked.txt:99` 错误位置' }));
+  assert.ok(codes(await checkFeature(unit.feature, 'review')).includes('SPEC_REVIEW_SOURCE_INVALID'));
+
+  const browser = await newProtocolRepo(t, { seam: 'browser' });
+  await replaceSpecReview(browser.feature, coverageMarkdown(browser.checklist, { source: `\`${TEST_FILE}:2\` 错误脚本` }));
+  assert.ok(codes(await checkFeature(browser.feature, 'review')).includes('SPEC_REVIEW_SOURCE_INVALID'));
+});
+
+test('TC02 计划变更必须独立判定且不成立时失败', async (t) => {
+  const { dir, feature } = await newProtocolRepo(t);
+  const changedPlan = planText({ assertion: '修改后的断言', changes: '- TC01：根据已核实契约校正断言' });
+  await writeFile(path.join(feature, 'qa-plan.md'), changedPlan);
+  const acceptance = spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-change', '--', process.execPath, QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(acceptance.status, 0, acceptance.stderr + acceptance.stdout);
+  const checklist = parseSpecReviewChecklist(await readFile(path.join(feature, '_qa/spec-review-checklist.json'), 'utf8'));
+  assert.equal(checklist.rows[0].changed, true);
+
+  await replaceSpecReview(feature, coverageMarkdown(checklist, { change: '不适用' }));
+  assert.ok(codes(await checkFeature(feature, 'review')).includes('SPEC_PLAN_CHANGE_REVIEW_MISSING'));
+  await replaceSpecReview(feature, coverageMarkdown(checklist, { change: '变更不成立' }));
+  assert.ok(codes(await checkFeature(feature, 'review')).includes('SPEC_PLAN_CHANGE_REJECTED'));
+
+  const unchanged = await newProtocolRepo(t);
+  await replaceSpecReview(unchanged.feature, coverageMarkdown(unchanged.checklist, { change: '变更成立' }));
+  assert.ok(codes(await checkFeature(unchanged.feature, 'review')).includes('SPEC_PLAN_CHANGE_REVIEW_MISSING'));
+});
+
+test('TC02 旧 manifest 保留人工 NOTE，不强制补覆盖表', async (t) => {
+  const { feature } = await newProtocolRepo(t);
+  const manifestPath = path.join(feature, '_qa/review-package.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  delete manifest.specReviewChecklist;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await replaceSpecReview(feature, '无发现\n');
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).some((code) => code.startsWith('SPEC_REVIEW_COVERAGE')), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('旧审查包') && note.includes('人工')));
+});
+
+test('TC07 最终交付不得早于当前双轴完成时间，重跑后消除', async (t) => {
+  const { dir, feature } = await newProtocolRepo(t);
+  const early = await checkFeature(feature, 'review');
+  assert.ok(codes(early).includes('VERIFICATION_BEFORE_REVIEW'), formatReport(early, 'review'));
+
+  const delivered = spawnSync(process.execPath, [QA_RUN, feature, 'delivery-after', '--', 'node', '--version'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(delivered.status, 0, delivered.stderr);
+  await writeFile(
+    path.join(feature, 'qa-plan.md'),
+    (await readFile(path.join(feature, 'qa-plan.md'), 'utf8')).replace('`evidence/delivery.log`', '`evidence/delivery-after.log`'),
+  );
+  const acceptance = spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-after', '--', process.execPath, QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' });
+  assert.equal(acceptance.status, 0, acceptance.stderr + acceptance.stdout);
+  const after = await checkFeature(feature, 'review');
+  assert.ok(!codes(after).includes('VERIFICATION_BEFORE_REVIEW'), formatReport(after, 'review'));
+});
+
+test('TC07 新协议要求成功 plan 与当前 tree acceptance 门禁日志', async (t) => {
+  const complete = await newProtocolRepo(t);
+  const completeReport = await checkFeature(complete.feature, 'review');
+  assert.ok(!codes(completeReport).includes('GATE_EVIDENCE_MISSING'), formatReport(completeReport, 'review'));
+
+  const missingPlan = await newProtocolRepo(t);
+  await rm(path.join(missingPlan.feature, 'evidence/gate-plan-initial.log'));
+  const planReport = await checkFeature(missingPlan.feature, 'review');
+  assert.ok(codes(planReport).includes('GATE_EVIDENCE_MISSING'), formatReport(planReport, 'review'));
+  assert.match(planReport.issues.find((item) => item.code === 'GATE_EVIDENCE_MISSING').message, /plan/);
+
+  const missingAcceptance = await newProtocolRepo(t);
+  await rm(path.join(missingAcceptance.feature, 'evidence/gate-acceptance-initial.log'));
+  const acceptanceReport = await checkFeature(missingAcceptance.feature, 'review');
+  assert.ok(codes(acceptanceReport).includes('GATE_EVIDENCE_MISSING'));
+  assert.match(acceptanceReport.issues.find((item) => item.code === 'GATE_EVIDENCE_MISSING').message, /acceptance/);
+});
+
+test('TC07 当前审查时间不可知时交人工而不伪造时序错误', async (t) => {
+  const { feature } = await newProtocolRepo(t);
+  await rm(path.join(feature, 'review/r1-standards.source.json'));
+  await rm(path.join(feature, 'review/r1-spec-axis.source.json'));
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('VERIFICATION_BEFORE_REVIEW'), formatReport(report, 'review'));
+  assert.ok(report.notes.some((note) => note.includes('交付时序') && note.includes('人工')));
+});
+
+test('TC08 qa-spec-review 安装模板与工具逐字一致', async () => {
+  const [script, template] = await Promise.all([
+    readFile(new URL('../qa-spec-review.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../../../.claude/skills/setup-qa-workflow/templates/qa-spec-review.mjs', import.meta.url), 'utf8'),
+  ]);
+  assert.equal(template, script);
+});

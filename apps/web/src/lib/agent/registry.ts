@@ -16,6 +16,7 @@
  */
 
 import type { z } from 'zod';
+import type { CitationAnchor } from '@repo/shared';
 export { ToolError } from './tool-error';
 
 /** 工具执行上下文（由编排层注入） */
@@ -37,6 +38,23 @@ export interface ToolExecutionResult {
   summaryForDisplay: string;
   /** 图像类工具的附件（进 Message.attachments，复用前端既有渲染通道） */
   attachment?: { kind: 'image'; url: string };
+  /** 结构化切片引用映射字典（进 Message.citations，供前端直达溯源抽屉） */
+  citations?: Record<number, CitationAnchor>;
+}
+
+/**
+ * 写操作审批声明（AGENT-HITL-ACTION / ADR-0041）。
+ *
+ * 带此声明的工具不会被管道直接执行：参数校验通过后，管道调用 onPending 并返回「暂停等待审批」，
+ * 由编排器下发审批请求事件并结束本次流。声明缺省 = 直接执行（现状）。
+ */
+export interface ToolApprovalPolicy {
+  /** 工具 ID，随审批凭证一起绑定 */
+  toolId: string;
+  /** 目标域名（仅 hostname），随审批请求展示给用户 */
+  host: string;
+  /** 暂停时的副作用回调（如写入 pending_approval 审计）；失败不应阻断暂停 */
+  onPending(ctx: ToolExecutionContext): Promise<void>;
 }
 
 /** 工具规格 */
@@ -52,6 +70,8 @@ export interface AgentToolSpec {
    * 供耗时量级明显高于其它工具者声明（如文生图实测 10.7–13.9s，远超通用 15s 的合理余量）。
    */
   timeoutMs?: number;
+  /** 写操作审批声明；缺省表示无需审批、直接执行 */
+  approval?: ToolApprovalPolicy;
   /** 执行工具；抛出的 ToolError 会被 policy 原样透传给用户文案 */
   execute(args: unknown, ctx: ToolExecutionContext): Promise<ToolExecutionResult>;
 }

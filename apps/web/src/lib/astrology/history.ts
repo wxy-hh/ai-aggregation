@@ -181,10 +181,10 @@ export function buildAstrologyHistoryItem(
   return item;
 }
 
-/** 当前是否为已登录（非匿名）用户：匿名接口显式返回 isAnonymous=true；真实用户该字段可能缺省，故按「非 true」判定 */
+/** 当前是否为已登录用户 */
 function isLoggedInUser(): boolean {
   const user = useAuthStore.getState().user;
-  return user !== null && user.isAnonymous !== true;
+  return user !== null;
 }
 
 /**

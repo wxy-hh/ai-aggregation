@@ -76,4 +76,10 @@ Any further notes about the feature.
 
 ---
 
-发布 spec 后告知用户下一步（项目定制，上游升级时保留本节）：若预估跨会话/跨人交接、或计划用 `/implement-spec` 并发派发，运行 `/to-tickets` 拆解工单；单会话冲刺则直接从 spec 起 `/implement`，跳过拆票；若特性涉及用户可见核心链路，同时运行 `/qa-test-planner` 规划浏览器验收用例（见 `docs/agents/qa-workflow.md` 阶段 3B）。
+US 粒度（项目定制，上游升级时保留本节）：上文“极其详尽”指覆盖全部外部可区分的行为，不为实现步骤或参数变体拆出多条 US；一个 TC 可覆盖多条 US。“不要询问用户”指不重新做需求访谈；第 2 步的接缝已在 `/grill-with-docs` 确认的直接引用，未确认或有变化时一次性向用户确认。
+
+spec 内容要求（项目定制，上游升级时保留本节）：Testing Decisions 与 Out of Scope 不得省略；在 Testing Decisions 之后增加 `## 交付命令`，用一个代码块逐行写出最终需要真实运行的完整命令，`qa-check plan` 会核对计划是否原样包含。推翻既有 ADR、评测结论或默认值时，在 Implementation Decisions 写明被推翻项、依据与各选项代价；宣称质量或性能收益时写明所需效果证据，否则写成机制描述。
+
+仅 `QA Kind: fix` 要求留存修复前红灯复现日志；`QA Kind: feature` 不得在 Testing Decisions 或后续 qa-plan 中把「修复前复现日志」写成验收或审查项，所有 QA Kind 的阶段 4 TDD 垂直切片红灯证据要求不变。`qa-plan.md` 只测产品外部可观察行为，不得把 `qa-check`、截图独立性、`review/` 或 `handoff.md` 合规性写成元用例。
+
+发布 spec 后按统一阶段收口报告（项目定制，上游升级时保留本节）：当前已完成阶段 2、车道（沿用当前车道，只写车道名）、本阶段产物（spec 路径）和建议下一步，只写一个命令：标准车道**建议下一步：`/qa-test-planner`**；慢车道**建议下一步：`/to-tickets`**；快车道**建议下一步：`/implement`**。

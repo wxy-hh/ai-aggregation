@@ -25,6 +25,8 @@ export interface CreateAgentToolDto {
   authHeaderValue?: string | null;
   params: WebhookParamItem[];
   enabled?: boolean;
+  /** 调用前需用户确认；省略时服务端按 method 推导（POST 开、GET 关） */
+  requiresApproval?: boolean;
 }
 
 export interface UpdateAgentToolDto {
@@ -37,6 +39,7 @@ export interface UpdateAgentToolDto {
   authHeaderValue?: string | null;
   params?: WebhookParamItem[];
   enabled?: boolean;
+  requiresApproval?: boolean;
 }
 
 export interface ProbeConnectionResult {

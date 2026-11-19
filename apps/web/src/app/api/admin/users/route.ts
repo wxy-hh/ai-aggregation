@@ -25,21 +25,15 @@ export async function GET(req: NextRequest) {
 
     const { search, page, limit } = parsed.data;
 
-    // 默认不显示匿名用户，避免污染真实用户列表
-    const includeAnonymous = url.searchParams.get('includeAnonymous') === 'true';
-
-    const where = {
-      ...(includeAnonymous ? {} : { isAnonymous: false }),
-      ...(search
-        ? {
-            OR: [
-              { username: { contains: search, mode: 'insensitive' as const } },
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { email: { contains: search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
-    };
+    const where = search
+      ? {
+          OR: [
+            { username: { contains: search, mode: 'insensitive' as const } },
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { email: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
 
     const [users, total, adminCount, disabledCount] = await Promise.all([
       prisma.user.findMany({
@@ -60,8 +54,8 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       prisma.user.count({ where }),
-      prisma.user.count({ where: { role: 'admin', isAnonymous: false } }),
-      prisma.user.count({ where: { status: 'disabled', isAnonymous: false } }),
+      prisma.user.count({ where: { role: 'admin' } }),
+      prisma.user.count({ where: { status: 'disabled' } }),
     ]);
 
     return createSuccessResponse({

@@ -106,10 +106,10 @@ export async function updateVoiceProcessingStatus(
   return updated;
 }
 
-/** 删除单条 voice 记录：audio 详情与统一历史摘要一起删除（isSyncDelete 防循环） */
+/** 删除单条 voice 记录：音频详情与统一历史摘要一起删除（删两侧） */
 export async function deleteVoiceHistoryRecord(service: AudioHistoryService, id: string): Promise<void> {
   await service.deleteItem(id);
-  useHistoryStore.getState().deleteItem(id, true);
+  useHistoryStore.getState().deleteItem(id);
 }
 
 /** 批量删除 voice 记录：两处持久化一起删除 */
@@ -119,7 +119,7 @@ export async function deleteVoiceHistoryRecords(
 ): Promise<void> {
   if (ids.length === 0) return;
   await service.deleteMultiple(ids);
-  useHistoryStore.getState().deleteItems(ids, true);
+  useHistoryStore.getState().deleteItems(ids);
 }
 
 /** 清空 voice 记录：清 audio 存储并删除对应统一历史记录 */
@@ -129,6 +129,6 @@ export async function clearVoiceHistory(
 ): Promise<void> {
   await service.clearAll();
   if (ids.length > 0) {
-    useHistoryStore.getState().deleteItems(ids, true);
+    useHistoryStore.getState().deleteItems(ids);
   }
 }

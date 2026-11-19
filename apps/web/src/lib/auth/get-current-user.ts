@@ -1,7 +1,7 @@
 /**
  * 获取当前请求用户上下文。
  *
- * 在 `requireAuth` 验证 JWT 之后，再查询一次用户表获取 role / isAnonymous / status，
+ * 在 `requireAuth` 验证 JWT 之后，再查询一次用户表获取 role / status，
  * 供需要业务权限判断的 API 路由复用，避免每个路由重复写同样的 `prisma.user.findUnique`。
  */
 
@@ -12,7 +12,6 @@ import { prisma } from '@repo/db';
 export interface UserContext {
   id: string;
   role: string;
-  isAnonymous: boolean;
   status: string;
   tokens?: number;
 }
@@ -20,7 +19,6 @@ export interface UserContext {
 const DEFAULT_SELECT = {
   id: true,
   role: true,
-  isAnonymous: true,
   status: true,
   tokens: true,
 } as const;

@@ -1,66 +1,69 @@
 'use client';
 
 import { create } from 'zustand';
-import { emit, StoreEvents } from './store-events';
+import type { Attachment, Message, ProviderName } from '@/types/chat-message';
+import { getConversationPort } from './conversation-port';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
+import { toArchivedMessages } from '@/lib/conversation/message-snapshots';
 import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
-import type { DerivationMetadata, ChatStreamUsage, ToolCallRecord, AgentNote, Artifact } from '@repo/shared';
-import { toolCallRecordSchema } from '@repo/shared';
+import { trackArtifactEvent } from '@/lib/events/artifact-events';
+import { trackPlanEvent, calculatePlanCompletionRate, recordAgentRunMetric } from '@/lib/events/plan-events';
+import {
+  buildArtifactContextRequest,
+  type ArtifactContextRequest,
+  type DerivationMetadata,
+  type ChatStreamUsage,
+  type ToolCallRecord,
+  type AgentNote,
+  type Artifact,
+  type AgentPlan,
+  type CitationAnchor,
+  toolCallRecordSchema,
+  beginArtifactTurn,
+  finalizeStreamingArtifacts,
+  getArtifactVersions,
+  rollbackArtifact,
+  finalizePlanExecution,
+} from '@repo/shared';
+import {
+  buildPlanCheckpointMessage,
+  resolveApprovalStatus,
+  type MessageApproval,
+} from '@/lib/agent/approval-display';
+import { buildChatRequestBody } from '@/lib/chat/request-projection';
+import {
+  projectReasoningStart,
+  projectCalculateReasoningDuration,
+  projectStreamFrame,
+  projectFinalizeStreamingMessage,
+  projectToolCall,
+  projectToolResult,
+  projectAgentNote,
+  projectArtifactStart,
+  projectAssociateArtifact,
+  projectArtifactDelta,
+  projectArtifactEnd,
+  projectFinalizeArtifacts,
+  projectPlanCreated,
+  projectPlanStepUpdate,
+  projectToolApprovalRequest,
+  projectExpireApprovals,
+  projectRejectApproval,
+  sanitizeToolCalls,
+  hasRetainableContent,
+} from './chat-projectors';
 
 // ==================== 类型定义 ====================
 
-// AI 提供商类型：讯飞星火、豆包或 DeepSeek
-export type ProviderName = 'xunfei' | 'doubao' | 'deepseek';
-
-// 附件上传状态：上传中 | 就绪 | 错误
-export type AttachmentStatus = 'uploading' | 'ready' | 'error';
-
-// 附件类型定义
-export interface Attachment {
-  id: string; // 附件唯一标识
-  type: 'image' | 'file'; // 附件类型：图片或文件
-  name: string; // 文件名
-  size?: number; // 文件大小（字节）
-  // 图片附件：存储 base64 编码的数据 URL
-  imageUrl?: string;
-  // 文件附件：存储上传后服务器返回的文件 ID
-  fileId?: string;
-  // 当前上传状态
-  status: AttachmentStatus;
-  // 错误信息（仅在 status 为 'error' 时有值）
-  error?: string;
-  // 来源标识（接力图片用：追踪接力来源，清空引用时清理）
-  sourceId?: string;
-}
-
-// 消息类型定义
-export interface Message {
-  id: string; // 消息唯一标识
-  role: 'user' | 'assistant' | 'system'; // 消息角色：用户 | AI助手 | 系统
-  content: string; // 消息文本内容
-  isStreaming?: boolean; // 是否正在流式传输（AI回复时为 true）
-  stopped?: boolean; // 是否被用户/隐式中止（保留部分内容时标记）
-  failed?: boolean; // 生成失败但保留了部分内容（流中途错误）
-  truncationWarning?: string; // 回答可能被截断时的提示
-  usage?: ChatStreamUsage; // 本次对话的 Token 消耗统计（done 帧携带）
-  reasoningContent?: string; // 模型真实推理内容（仅 supportsReasoning 模型可能产生，永不回传上游）
-  reasoningDurationMs?: number; // 思考时长：首个推理增量到达 → 分界点（首 text-delta / done / error / abort）冻结
-  // 附件列表（可选）
-  // 用户消息 = 用户上传的附件；AI 消息 = agent 工具产出的附件（如生成的图片）
-  attachments?: Attachment[];
-  // agent 模式下的工具调用记录（过程可见 + 刷新回看）。
-  // 未开启 agent 或本轮无工具调用时为 undefined —— 渲染与现状完全一致。
-  toolCalls?: ToolCallRecord[];
-  // agent 模式的过程旁白（二期多步循环）：中间轮决策文本。
-  // beforeCallIndex = 旁白到达时 toolCalls 的长度（即插入到第几个工具调用之前）。
-  // 进过程卡片、不进正文、不入历史持久化（历史拍平时被丢弃）。类型单源在 @repo/shared。
-  agentNotes?: AgentNote[];
-  // 本条消息关联生成的产物标识引用列表（ADR-0015）
-  artifactIds?: string[];
-}
-
+// 会话相关类型从单一事实源转发，保持既有导入路径兼容
+export type {
+  ProviderName,
+  AttachmentStatus,
+  Attachment,
+  Message,
+} from '@/types/chat-message';
 // 聊天状态管理接口
 export interface ChatState {
   // ========== 状态数据 ==========
@@ -78,6 +81,7 @@ export interface ChatState {
   artifacts: Artifact[]; // 当前会话的产物集合池
   activeArtifactId: string | null; // 当前工作台聚焦的产物 ID
   isWorkspaceOpen: boolean; // 桌面端工作台是否展开
+  viewingVersions: Record<string, number>; // 各产物当前查看的历史版本序号（缺省 = 查看当前版，瞬态不持久化，ADR-0037）
 
   // ========== 基础操作 ==========
   setInput: (value: string) => void; // 设置输入框内容
@@ -90,11 +94,18 @@ export interface ChatState {
   setActiveArtifactId: (id: string | null) => void; // 设置工作台聚焦产物
   setWorkspaceOpen: (open: boolean) => void; // 开关工作台分栏
   closeWorkspace: () => void; // 关闭工作台分栏
+  viewArtifactVersion: (artifactId: string, seq: number | null) => void; // 切换查看产物版本（null = 回到当前版，ADR-0037）
+  rollbackArtifactToVersion: (artifactId: string, seq: number) => void; // 追加式回滚到某历史版本（ADR-0037）
+  markArtifactDeposited: (artifactId: string, info: { knowledgeBaseId: string; knowledgeBaseName?: string; documentId: string; depositedAt: string }) => void; // 标记产物已入库 (ADR-0034)
+
 
   // ========== 核心交互功能 ==========
   sendMessage: (content?: string, derivation?: DerivationMetadata) => Promise<'sent' | 'aborted' | 'failed' | 'skipped'>; // 发送消息（支持流式响应）；derivation 为接力派生元数据（REQ-016）；返回发送结果供目标侧决定 commit/保留引用
   reload: (msgId?: string) => Promise<void>; // 重新生成AI回复
   stop: () => void; // 停止当前的AI生成
+  interruptAndResumeWithPlan: (messageId: string, modifiedPlan: AgentPlan) => Promise<void>; // 用户干预计划并中止续跑 (AGENT-PLAN-DAG / ADR-0038)
+  confirmApproval: (messageId: string) => Promise<ChatStreamOutcome | 'skipped'>; // 确认写操作审批：发起恢复请求 (AGENT-HITL-ACTION / ADR-0041)
+  rejectApproval: (messageId: string) => void; // 拒绝写操作审批：纯前端终止，不发请求 (AGENT-HITL-ACTION / ADR-0041)
 
   // ========== 生命周期管理 ==========
   loadConversation: (
@@ -216,16 +227,11 @@ function scheduleEntryFlush(
     deps.updateMessages((messages) =>
       messages.map((m) =>
         m.id === assistantId
-          ? {
-              ...m,
+          ? projectStreamFrame(m, {
               content: current.text,
-              ...(current.reasoning !== undefined
-                ? { reasoningContent: current.reasoning }
-                : {}),
-              ...(frozenDurationMs !== undefined
-                ? { reasoningDurationMs: frozenDurationMs }
-                : {}),
-            }
+              reasoningContent: current.reasoning,
+              reasoningDurationMs: frozenDurationMs,
+            })
           : m
       )
     );
@@ -237,17 +243,17 @@ function scheduleEntryFlush(
 
 /** 推理计时状态：assistantId -> 首个推理增量时间戳 / 分界点冻结后的时长（store 内部变量，不持久化） */
 interface ReasoningTimingEntry {
-  startedAt: number;
+  startedAt?: number;
   durationMs?: number;
 }
 
 const reasoningTimingState = new Map<string, ReasoningTimingEntry>();
 
-/** 首个推理增量到达时记录开始时间戳（重复调用幂等） */
+/** 首个推理增量到达时记录开始时间戳（使用纯投影器计算，重复调用幂等） */
 function recordReasoningStart(assistantId: string): void {
-  if (!reasoningTimingState.has(assistantId)) {
-    reasoningTimingState.set(assistantId, { startedAt: Date.now() });
-  }
+  const current = reasoningTimingState.get(assistantId);
+  const next = projectReasoningStart(current);
+  reasoningTimingState.set(assistantId, next);
 }
 
 /**
@@ -255,21 +261,12 @@ function recordReasoningStart(assistantId: string): void {
  * 未收到过推理增量返回 undefined；已冻结后重复调用返回原值。
  */
 function freezeReasoningDuration(assistantId: string): number | undefined {
-  const entry = reasoningTimingState.get(assistantId);
-  if (!entry) return undefined;
-  if (entry.durationMs === undefined) {
-    entry.durationMs = Date.now() - entry.startedAt;
+  const current = reasoningTimingState.get(assistantId);
+  const { timing, durationMs } = projectCalculateReasoningDuration(current);
+  if (timing) {
+    reasoningTimingState.set(assistantId, timing);
   }
-  return entry.durationMs;
-}
-
-/**
- * 消息是否含有可留存的产出（正文 / 推理 / 工具调用记录任一）。
- * agent 轮次中模型可能只调了工具、还没写正文就被中断——此时工具过程本身
- * 已是用户可见的产出（含工具生成的图片附件），不能按「空」丢弃。
- */
-function hasRetainableContent(m: Message): boolean {
-  return Boolean(m.content || m.reasoningContent || m.toolCalls?.length);
+  return durationMs;
 }
 
 /**
@@ -292,42 +289,32 @@ function finalizeAbortedMessages(
         m.id === target.id
           ? // 不再流式就必须没有 running 工具调用：中止时工具还没回 tool_result，
             // 不清洗的话过程卡片会永远停在「正在调用…」的转圈态（T07 实测发现）
-            sanitizeToolCalls({ ...m, isStreaming: false, stopped: true })
+            sanitizeToolCalls({
+              ...m,
+              ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+              isStreaming: false,
+              stopped: true,
+            })
           : m
       )
     : options?.keepEmptyStopped
       ? messages.map((m) =>
-          m.id === target.id ? sanitizeToolCalls({ ...m, isStreaming: false, stopped: true }) : m
+          m.id === target.id
+            ? sanitizeToolCalls({
+                ...m,
+                ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+                isStreaming: false,
+                stopped: true,
+              })
+            : m
         )
       : messages.filter((m) => m.id !== target.id);
   return { next, changed: true };
 }
 
 /**
- * 清洗持久化消息里 toolCalls 的残留：
- * 1. 先按共享 schema 过滤形状非法的记录（localStorage 可被手工篡改，B-9）；
- * 2. 再把 running 中间态归一为 failed —— 刷新/崩溃时来不及收到 tool_result，
- *    running 记录会成为永久「进行中」的假象。
- * 无变化时返回原消息对象（loadConversation 用引用比较检测变更，避免重复写回）。
- */
-function sanitizeToolCalls(m: Message): Message {
-  if (!m.toolCalls?.length) return m;
-  const valid = m.toolCalls.filter((c) => toolCallRecordSchema.safeParse(c).success);
-  const hasRunning = valid.some((c) => c.status === 'running');
-  if (valid.length === m.toolCalls.length && !hasRunning) return m;
-  return {
-    ...m,
-    toolCalls: valid.map((c) =>
-      c.status === 'running'
-        ? { ...c, status: 'failed' as const, resultSummary: c.resultSummary || '执行未完成' }
-        : c
-    ),
-  };
-}
-
-/**
  * 剥离过程旁白（二期）：旁白是过程性内容，只服务于本轮 live 展示，
- * 刷新还原时不恢复（spec D-二期-6「不入历史持久化」；流式期间 CONVERSATION_UPDATED
+ * 刷新还原时不恢复（spec D-二期-6「不入历史持久化」；流式期间的会话落盘事件
  * 落盘的会话列表快照里可能带着旁白，加载时在此剥离）。
  * 注意只挂在 loadConversation 还原路径：done/abort/failed 的 live 收尾共用
  * sanitizeToolCalls 但**不**剥离——收尾后用户仍应能在过程卡片里回看完整旁白。
@@ -356,7 +343,10 @@ export async function runChatStreamSession(
   options?: RunChatStreamSessionOptions
 ): Promise<ChatStreamOutcome> {
   const scheduleFlush = options?.scheduleFlush ?? defaultScheduleFlush;
+  // 落盘统一走会话端口：事件总线已删除，聊天 store 不感知具体会话/历史 store
+  const port = getConversationPort();
 
+  const streamStartTime = Date.now();
   // 流中节流落盘：每秒最多同步一次会话列表，缩小刷新/切后台时部分内容丢失的窗口
   let lastPersistAt = 0;
   let streamUsage: ChatStreamUsage | undefined;
@@ -367,13 +357,35 @@ export async function runChatStreamSession(
     const conversationId = deps.activeConversationId();
     if (conversationId) {
       const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
-      emit(StoreEvents.CONVERSATION_UPDATED, {
-        id: conversationId,
-        messages: next,
-        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
-      });
+      port.saveMessages(conversationId, next, currentArtifacts);
     }
   };
+  // 收尾残留的流式产物（正常结束缺 end帧、中止、失败共用）：
+  // 有上一版则丢弃草稿保留上一版，全新产物保留半成品并标记未完成。返回当前产物池与是否有变化
+  const finalizeArtifacts = (): { artifacts: Artifact[] | undefined; changed: boolean } => {
+    const before = deps.getArtifacts?.();
+    if (!before) return { artifacts: undefined, changed: false };
+    const res = projectFinalizeArtifacts(before);
+    if (res.changed) {
+      deps.updateArtifacts?.(() => res.artifacts);
+    }
+    return res;
+  };
+  // 新一轮开始：清除上一轮的章节补丁合并标记与结果，使本轮补丁产生新版本（ADR-0037）
+  deps.updateArtifacts?.((prev) => beginArtifactTurn(prev));
+  // 提炼不可变投影与持久化统一调度辅助函数（S-J4 / P-M1）
+  const projectAndPersist = (
+    projector: (messages: readonly Message[]) => { messages: Message[]; changed: boolean }
+  ) => {
+    let shouldPersist = false;
+    const next = deps.updateMessages((messages) => {
+      const res = projector(messages);
+      if (res.changed) shouldPersist = true;
+      return res.messages;
+    });
+    if (shouldPersist) persistConversation(next);
+  };
+
   try {
     await streamChatResponse(request, {
       onChunk: (text) => {
@@ -400,7 +412,7 @@ export async function runChatStreamSession(
             const persistedMessages = currentMessages.map((m) =>
               m.id === assistantId ? { ...m, content: text } : m
             );
-            emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: persistedMessages });
+            port.saveMessages(conversationId, persistedMessages);
           }
         }
       },
@@ -418,141 +430,63 @@ export async function runChatStreamSession(
         scheduleEntryFlush(assistantId, entry, deps, scheduleFlush);
       },
       onToolCall: (call) => {
-        // 工具调用开始：追加一条 running 记录（agent 模式）。
+        // 工具调用开始：经纯投影器追加一条 running 记录（agent 模式）。
         // 低频事件（一轮至多几次），直接落 state 与本地存储即可，不参与正文的合帧节流；
         // 立即落盘是为了让「图片生成中」这类长耗时工具在刷新后仍有踪迹（spec §8）。
-        const next = deps.updateMessages((messages) =>
-          messages.map((m) => {
-            if (m.id !== assistantId) return m;
-            const prev = m.toolCalls ?? [];
-            // 幂等：同一 callId 重复到达（重放/乱序）不追加第二条
-            if (prev.some((c) => c.id === call.id)) return m;
-            return {
-              ...m,
-              toolCalls: [
-                ...prev,
-                {
-                  id: call.id,
-                  name: call.name,
-                  argsSummary: call.argsSummary,
-                  status: 'running' as const,
-                  resultSummary: '',
-                },
-              ],
-            };
-          })
-        );
-        persistConversation(next);
+        projectAndPersist((msgs) => projectToolCall(msgs, assistantId, call));
       },
       onToolResult: (result) => {
-        // 工具执行结束：按 callId 落到终态；若 tool_call 未到达（事件丢失）则补一条完整记录，避免过程缺失。
-        // 工具产出附件（当前仅生成图片）并入消息附件列表，与用户附件共用同一渲染通道。
-        const next = deps.updateMessages((messages) =>
-          messages.map((m) => {
-            if (m.id !== assistantId) return m;
-            const prev = m.toolCalls ?? [];
-            const nextCalls = prev.some((c) => c.id === result.callId)
-              ? prev.map((c) =>
-                  c.id === result.callId
-                    ? {
-                        ...c,
-                        status: result.status,
-                        resultSummary: result.summary,
-                        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
-                      }
-                    : c
-                )
-              : [
-                  ...prev,
-                  {
-                    id: result.callId,
-                    name: result.name,
-                    argsSummary: '',
-                    status: result.status,
-                    resultSummary: result.summary,
-                    ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
-                  },
-                ];
-
-            const attachmentId = `tool-${result.callId}`;
-            const prevAttachments = m.attachments ?? [];
-            const nextAttachments =
-              result.attachment && !prevAttachments.some((a) => a.id === attachmentId)
-                ? [
-                    ...prevAttachments,
-                    {
-                      id: attachmentId,
-                      type: 'image' as const,
-                      name: '工具生成的图片',
-                      // 直接用上游产物地址：展示型 <img> 不需要 CORS，实测浏览器可正常加载。
-                      // 刻意**不走** /api/image/proxy —— 该代理是为「下载成 Blob / dataURL」设计的，
-                      // 多一跳只会多绑一份白名单约束；图像页下载仍走代理（见 media-proxy-policy）。
-                      imageUrl: result.attachment.url,
-                      status: 'ready' as const,
-                    },
-                  ]
-                : m.attachments;
-
-            return { ...m, toolCalls: nextCalls, attachments: nextAttachments };
-          })
-        );
-        persistConversation(next);
+        // 工具执行结束：经纯投影器更新终态，合并附件与引用字典
+        projectAndPersist((msgs) => projectToolResult(msgs, assistantId, result));
       },
       onAgentNote: (accumulatedNote) => {
-        // 过程旁白（agent 二期）：onAgentNote 与 onChunk 同形、回调的是累计值，
-        // 这里按已消费长度切出增量（服务端每个 agent_note 事件携带一整轮旁白，故增量即一整条）。
-        // 低频事件，与 tool_call 同级处理；不进正文、不随历史拍平持久化。
+        // 过程旁白（agent 二期）：切出增量后经纯投影器更新
         const delta = accumulatedNote.slice(agentNoteConsumedLength);
         agentNoteConsumedLength = accumulatedNote.length;
         if (!delta) return;
-        const next = deps.updateMessages((messages) =>
-          messages.map((m) => {
-            if (m.id !== assistantId) return m;
-            const entry = { beforeCallIndex: m.toolCalls?.length ?? 0, text: delta };
-            return { ...m, agentNotes: [...(m.agentNotes ?? []), entry] };
-          })
-        );
-        persistConversation(next);
+        projectAndPersist((msgs) => projectAgentNote(msgs, assistantId, delta));
       },
       onArtifactStart: (artifact) => {
-        deps.updateArtifacts?.((prev) => {
-          const existing = prev.find((a) => a.id === artifact.id);
-          if (existing) {
-            return prev.map((a) => (a.id === artifact.id ? { ...a, ...artifact } : a));
-          }
-          return [
-            ...prev,
-            {
-              ...artifact,
-              content: '',
-              status: 'streaming' as const,
-              createdAt: Date.now(),
-            },
-          ];
-        });
+        // 经版本引擎演进产物池：同 identifier 再生成从空草稿开始，不再拼接旧正文（ADR-0037）
+        deps.updateArtifacts?.((prev) => projectArtifactStart(prev, artifact, Date.now()));
         deps.setActiveArtifactId?.(artifact.id);
         deps.setWorkspaceOpen?.(true);
 
-        const next = deps.updateMessages((messages) =>
-          messages.map((m) => {
-            if (m.id !== assistantId) return m;
-            const prevIds = m.artifactIds ?? [];
-            if (prevIds.includes(artifact.id)) return m;
-            return { ...m, artifactIds: [...prevIds, artifact.id] };
-          })
-        );
-        persistConversation(next);
+        projectAndPersist((msgs) => projectAssociateArtifact(msgs, assistantId, artifact.id));
       },
       onArtifactDelta: (id, delta) => {
-        deps.updateArtifacts?.((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, content: a.content + delta } : a))
-        );
+        deps.updateArtifacts?.((prev) => projectArtifactDelta(prev, id, delta, Date.now()));
       },
       onArtifactEnd: (id, status) => {
-        deps.updateArtifacts?.((prev) =>
-          prev.map((a) => (a.id === id ? { ...a, status } : a))
-        );
+        const reportedBefore = deps.getArtifacts?.().find((a) => a.id === id)?.patchReport?.length ?? 0;
+        deps.updateArtifacts?.((prev) => projectArtifactEnd(prev, id, status, Date.now()));
+        // 章节补丁结果埋点：本次新增的每条结果各上报一次，失败事件不含章节标题（ADR-0037 §8）
+        const settled = deps.getArtifacts?.().find((a) => a.id === id);
+        if (settled?.patchReport) {
+          const versions = getArtifactVersions(settled);
+          const base = {
+            type: settled.type,
+            versionSeq: versions[versions.length - 1]?.seq ?? 1,
+            contentLength: settled.content.length,
+          };
+          for (const result of settled.patchReport.slice(reportedBefore)) {
+            trackArtifactEvent(
+              result.status === 'applied' ? 'artifact.patch_applied' : 'artifact.patch_failed',
+              base
+            );
+          }
+        }
         persistConversation(deps.getMessages());
+      },
+      onPlanCreated: (plan) => {
+        projectAndPersist((msgs) => projectPlanCreated(msgs, assistantId, plan));
+      },
+      onPlanStepUpdate: (stepId, status, summary) => {
+        projectAndPersist((msgs) => projectPlanStepUpdate(msgs, assistantId, stepId, status, summary));
+      },
+      onToolApprovalRequest: (approval) => {
+        // 审批请求作为消息一等字段落盘（凭证只存在 approval 内，不写入 content）
+        projectAndPersist((msgs) => projectToolApprovalRequest(msgs, assistantId, approval));
       },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
@@ -572,23 +506,31 @@ export async function runChatStreamSession(
     const finalMessages = deps.updateMessages((messages) =>
       messages.map((m) => {
         if (m.id !== assistantId) return m;
-        // 「不再流式 ⇒ 不存在 running 工具调用」是统一不变式：
-        // 正常结束也走一道清洗，兜住 tool_result 事件缺失时残留的进行中态。
-        return {
-          ...sanitizeToolCalls(mergeLatestStreamContent(m, latest, reasoningDurationMs)),
-          isStreaming: false,
-          ...(streamUsage ? { usage: streamUsage } : {}),
-        };
+        // 统一收敛至纯函数流式消息收尾投影器（S-J3）
+        return projectFinalizeStreamingMessage(m, {
+          latestText: latest?.text,
+          latestReasoning: latest?.reasoning,
+          reasoningDurationMs,
+          usage: streamUsage,
+          planStatus: 'completed',
+        });
       })
     );
+    const finishedAssistantMsg = finalMessages.find((m) => m.id === assistantId);
+    if (finishedAssistantMsg?.plan) {
+      // 记录全周期完成率指标 (TC05-2 / [P-M6])
+      const rate = calculatePlanCompletionRate(finishedAssistantMsg.plan.steps);
+      recordAgentRunMetric({
+        planId: finishedAssistantMsg.plan.id,
+        durationMs: Date.now() - streamStartTime,
+        stepCount: finishedAssistantMsg.plan.steps.length,
+        completionRate: rate,
+      });
+    }
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      const currentArtifacts = deps.getArtifacts ? deps.getArtifacts() : undefined;
-      emit(StoreEvents.CONVERSATION_UPDATED, {
-        id: conversationId,
-        messages: finalMessages,
-        ...(currentArtifacts ? { artifacts: currentArtifacts } : {}),
-      });
+      const currentArtifacts = finalizeArtifacts().artifacts;
+      port.saveMessages(conversationId, finalMessages, currentArtifacts);
     }
     onDone?.(finalMessages);
     return 'sent';
@@ -613,10 +555,15 @@ export async function runChatStreamSession(
         result = finalizeAbortedMessages(messages, (m) => m.id === assistantId);
         return result.next;
       });
-      if (result.changed) {
+      const abortedArtifacts = finalizeArtifacts();
+      if (result.changed || abortedArtifacts.changed) {
         const conversationId = deps.activeConversationId();
         if (conversationId) {
-          emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: result.next });
+          port.saveMessages(
+            conversationId,
+            result.changed ? result.next : deps.getMessages(),
+            abortedArtifacts.artifacts
+          );
         }
       }
       return 'aborted';
@@ -636,9 +583,10 @@ export async function runChatStreamSession(
       }
       return messages.filter((m) => m.id !== assistantId);
     });
+    const failedArtifacts = finalizeArtifacts().artifacts;
     const conversationId = deps.activeConversationId();
     if (conversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: conversationId, messages: filtered });
+      port.saveMessages(conversationId, filtered, failedArtifacts);
     }
     return 'failed';
   } finally {
@@ -654,6 +602,13 @@ export const useChatStore = create<ChatState>((set, get) => {
   // AbortController 实例：用于取消正在进行的网络请求
   // 不作为响应式状态，避免触发不必要的重新渲染
   let abortController: AbortController | null = null;
+
+  // 产物上下文请求字段（ADR-0037 §4）：无可编辑产物时返回空对象，请求体与改造前一致
+  const artifactContextField = (): { artifactContext?: ArtifactContextRequest } => {
+    const { artifacts, activeArtifactId, isWorkspaceOpen } = get();
+    const artifactContext = buildArtifactContextRequest({ artifacts, activeArtifactId, isWorkspaceOpen });
+    return artifactContext ? { artifactContext } : {};
+  };
 
   // 统一会话编排的依赖注入（评审 C6）：把消息/错误/当前会话 id 的读写交给 store
   const sessionDeps = (): ChatStreamSessionDeps => ({
@@ -706,7 +661,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     if (!changed) return;
     set({ messages: next });
     if (activeConversationId) {
-      emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: next });
+      getConversationPort().saveMessages(activeConversationId, next);
     }
   };
 
@@ -725,6 +680,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     artifacts: [], // 产物集合池（ADR-0015）
     activeArtifactId: null, // 当前工作台聚焦产物 ID
     isWorkspaceOpen: false, // 桌面端工作台是否展开
+    viewingVersions: {}, // 无历史版本查看态
 
     // ========== 基础操作方法 ==========
 
@@ -749,6 +705,67 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 关闭工作台分栏
     closeWorkspace: () => set({ isWorkspaceOpen: false }),
 
+    // 切换查看产物版本：选择当前版（末尾版本）等同于回到当前版，不留历史查看态
+    viewArtifactVersion: (artifactId, seq) => {
+      const { artifacts, viewingVersions } = get();
+      const artifact = artifacts.find((a) => a.id === artifactId);
+      const versions = artifact ? getArtifactVersions(artifact) : [];
+      const isHistorical =
+        seq !== null &&
+        versions.some((v) => v.seq === seq) &&
+        seq !== versions[versions.length - 1]?.seq;
+      if (isHistorical) {
+        set({ viewingVersions: { ...viewingVersions, [artifactId]: seq } });
+      } else if (artifactId in viewingVersions) {
+        const { [artifactId]: _removed, ...rest } = viewingVersions;
+        set({ viewingVersions: rest });
+      }
+    },
+
+    // 追加式回滚（ADR-0037）：把所选历史版本复制为新的末尾版本，工作台随即回到新当前版
+    rollbackArtifactToVersion: (artifactId, seq) => {
+      const { artifacts, viewingVersions, messages, activeConversationId } = get();
+      let changed = false;
+      const next = artifacts.map((art) => {
+        if (art.id !== artifactId) return art;
+        const rolled = rollbackArtifact(art, seq, Date.now());
+        if (rolled !== art) changed = true;
+        return rolled;
+      });
+      if (!changed) return;
+      const { [artifactId]: _removed, ...restViewing } = viewingVersions;
+      set({ artifacts: next, viewingVersions: restViewing });
+      // 回滚产生新版本，同步落盘会话产物池
+      if (activeConversationId) {
+        getConversationPort().saveMessages(activeConversationId, messages, next);
+      }
+    },
+
+    // 标记产物已入库 (ADR-0034)；入库状态绑定当时的当前版本（ADR-0037）
+    markArtifactDeposited: (artifactId, info) => {
+      const current = get().artifacts;
+      const next = current.map((art) => {
+        if (art.id === artifactId) {
+          const versions = getArtifactVersions(art);
+          const currentVersion = versions[versions.length - 1];
+          return {
+            ...art,
+            kbDeposit: {
+              deposited: true,
+              knowledgeBaseId: info.knowledgeBaseId,
+              knowledgeBaseName: info.knowledgeBaseName,
+              documentId: info.documentId,
+              depositedAt: info.depositedAt,
+              ...(currentVersion ? { versionId: currentVersion.id } : {}),
+            },
+          };
+        }
+        return art;
+      });
+      set({ artifacts: next });
+    },
+
+
     // 切换单个工具的临时启停状态
     setToolOverride: (toolKey, enabled) => {
       const current = get().toolOverrides;
@@ -756,10 +773,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ toolOverrides: next });
       const conversationId = get().activeConversationId;
       if (conversationId) {
-        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
-          id: conversationId,
-          toolOverrides: next,
-        });
+        getConversationPort().saveToolOverrides(conversationId, next);
       }
     },
 
@@ -769,10 +783,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ toolOverrides: next });
       const conversationId = get().activeConversationId;
       if (conversationId) {
-        emit(StoreEvents.CONVERSATION_TOOL_OVERRIDES_UPDATED, {
-          id: conversationId,
-          toolOverrides: next,
-        });
+        getConversationPort().saveToolOverrides(conversationId, next);
       }
     },
 
@@ -801,23 +812,37 @@ export const useChatStore = create<ChatState>((set, get) => {
       // 判空口径与「有留空删」一致：正文/推理/工具记录任一非空即算有内容
       // 另：toolCalls 里残留的 running 中间态一并归一为 failed（刷新时未收到 tool_result）；
       // 过程旁白（agentNotes）属过程性内容，还原时剥离不恢复（spec D-二期-6）
-      const sanitizedMessages = messages
+      const sanitizedMessages = projectExpireApprovals(
+        messages
         .filter((m) => !(m.isStreaming && !hasRetainableContent(m)))
         .map((m) =>
           stripAgentNotes(
-            sanitizeToolCalls(m.isStreaming ? { ...m, isStreaming: false, stopped: true } : m)
+            sanitizeToolCalls(
+              m.isStreaming
+                ? {
+                    ...m,
+                    ...(m.plan ? { plan: finalizePlanExecution(m.plan, 'aborted') } : {}),
+                    isStreaming: false,
+                    stopped: true,
+                  }
+                : m
+            )
           )
-        );
+        )
+      );
       // 清洗有实际变化时回写会话列表，避免持久化层残留脏数据、每次加载重复清洗
       const sanitizedChanged =
         sanitizedMessages.length !== messages.length ||
         sanitizedMessages.some((m, i) => m !== messages[i]);
-      if (sanitizedChanged) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id, messages: sanitizedMessages, ...(artifacts ? { artifacts } : {}) });
+      // 还原路径收尾残留的流式产物（刷新/崩溃时来不及收到 artifact_end），避免卡在假进度（ADR-0037）
+      const finalizedArtifacts = artifacts ? finalizeStreamingArtifacts(artifacts) : undefined;
+      const artifactsChanged = finalizedArtifacts !== artifacts;
+      if (sanitizedChanged || artifactsChanged) {
+        getConversationPort().saveMessages(id, sanitizedMessages, finalizedArtifacts);
       }
 
       // 过滤掉纯图片的冗余产物（图片已由消息流原生卡片直接承载，不污染工作台）
-      const initialArtifacts = (artifacts ? [...artifacts] : []).filter(
+      const initialArtifacts = (finalizedArtifacts ? [...finalizedArtifacts] : []).filter(
         (a) => a.type !== 'image'
       );
       const latestArtifactId = initialArtifacts.length > 0 ? initialArtifacts[initialArtifacts.length - 1].id : null;
@@ -832,6 +857,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         toolOverrides: toolOverrides ? { ...toolOverrides } : {}, // 恢复会话级工具覆盖字典
         artifacts: initialArtifacts, // 恢复会话级产物池（ADR-0015）
         activeArtifactId: latestArtifactId, // 聚焦最新产物
+        viewingVersions: {}, // 切换会话后不沿用上一会话的历史版本查看态
         isWorkspaceOpen: false, // 加载历史会话保持单栏沉浸阅读，不强行分屏打扰（可由用户点击顶部或卡片按需展开）
         input: '', // 清空输入框
         isLoading: false, // 重置加载状态
@@ -860,6 +886,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         toolOverrides: {}, // 清空工具覆盖字典
         artifacts: [], // 清空产物池
         activeArtifactId: null, // 清空活动产物
+        viewingVersions: {}, // 清空历史版本查看态
         isWorkspaceOpen: false, // 关闭工作台
         // 注意：provider 和 model 保持不变，保留用户的选择
       });
@@ -941,8 +968,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         isStreaming: true,
       };
 
-      // 3. 更新 UI 状态
-      const newMessages = [...currentMessages, userMessage, assistantMessage];
+      // 3. 更新 UI 状态（此前待确认的审批卡片因其后已有新消息而失效，ADR-0041）
+      const newMessages = projectExpireApprovals([...currentMessages, userMessage, assistantMessage]);
       set({
         messages: newMessages,
         input: '',
@@ -954,7 +981,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       // 同步到对话列表（通过事件总线，避免静态依赖）
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+        getConversationPort().saveMessages(activeConversationId, newMessages);
       }
 
       try {
@@ -964,23 +991,21 @@ export const useChatStore = create<ChatState>((set, get) => {
           sessionDeps(),
           assistantMessage.id,
           {
-            body: {
-              // 发送历史消息 + 新用户消息
-              messages: [...currentMessages, userMessage].map((m) => ({
-                role: m.role,
-                content: m.content,
-                attachments: m.attachments,
-              })),
+            // 请求体经唯一投影出口组装（评审 C4）：历史投影（审批剥离/拒绝转写/附件自愈）
+            // 与顶层 agent 门控字段都在 request-projection 内完成
+            body: buildChatRequestBody({
+              mode: 'send',
+              messages: [...currentMessages, userMessage],
               provider, // AI提供商
               model, // 模型名称
               thinking: thinkingMode, // 深度思考模式开关（ADR-0016 / 工单 03）
-              // agent 模式：服务端据此切到支持 function calling 的模型、走工具编排、按 chat-agent 计费（spec §5.2）
-              ...(agentMode ? { agent: true } : {}),
-              // 场景能力包（ADR-0014 / 工单 01）：带上所选能力包 key
-              ...(agentMode && activeCapabilityPackKey ? { capabilityPack: activeCapabilityPackKey } : {}),
-              // 会话级临时停用工具（ADR-0014 / 工单 02）：仅在有被关闭工具时携带差异项
-              ...(agentMode && disabledToolKeys.length > 0 ? { disabledToolKeys } : {}),
-            },
+              agentMode,
+              conversationId: activeConversationId,
+              turnId: userMessage.id,
+              capabilityPackKey: activeCapabilityPackKey,
+              disabledToolKeys,
+              artifactContext: agentMode ? artifactContextField().artifactContext : null,
+            }),
             signal: abortController.signal, // 支持取消请求
           },
           (finalMessages) => {
@@ -990,16 +1015,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               const historyItem = {
                 id: activeConversationId, // 使用对话ID作为历史记录ID
                 ...createChatHistoryItem(
-                  // 保留 agent 工具记录与工具产出附件（B-10：历史入口恢复后可回看过程与生成图）；
-                  // 用户上传附件是 base64 dataURL，刻意不入历史，避免撑爆 localStorage
-                  finalMessages.map((m) => ({
-                    role: m.role,
-                    content: m.content,
-                    ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
-                    ...(m.attachments?.some((a) => a.id.startsWith('tool-'))
-                      ? { attachments: m.attachments.filter((a) => a.id.startsWith('tool-')) }
-                      : {}),
-                  })),
+                  // 历史归档走唯一转换入口：保留工具记录、计划、审批与工具产出附件，
+                  // 丢弃用户上传附件原文、过程旁白、推理、用量、引用与产物关联
+                  toArchivedMessages(finalMessages),
                   provider,
                   model || 'unknown'
                 ),
@@ -1008,7 +1026,7 @@ export const useChatStore = create<ChatState>((set, get) => {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               };
-              emit(StoreEvents.CHAT_HISTORY_SAVED, { item: historyItem });
+              getConversationPort().appendHistory(historyItem);
             }
           }
         );
@@ -1025,11 +1043,15 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // 重新生成
     reload: async (msgId) => {
-      const { messages, isLoading, provider, model, activeConversationId } = get();
+      const { messages, isLoading, provider, model, activeConversationId, activeCapabilityPackKey, toolOverrides } = get();
       if (isLoading) return;
       // 重新生成沿用当前的 agent 开关与思考模式状态（与 sendMessage 同一来源）
       const agentMode = useSettingsStore.getState().agentModeEnabled;
       const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
+      // 会话级临时停用工具差异项（ADR-0014 / 工单 02；评审 C4 修复：reload 漏传漂移）
+      const disabledToolKeys = Object.entries(toolOverrides)
+        .filter(([_, enabled]) => enabled === false)
+        .map(([key]) => key);
 
       // 最后一轮 user 消息定位（无参 = 重新生成最后一次）
       let lastUserIndex = messages.length - 1;
@@ -1051,6 +1073,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       const history = messages.slice(0, index);
       const content = messages[index].content;
+      // 重新生成复用被重新生成那一轮的 user 消息 ID，保证服务端不会重复写 user 行
+      const turnId = messages[index].id;
 
       // 中断
       if (abortController) abortController.abort();
@@ -1078,7 +1102,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
 
       if (activeConversationId) {
-        emit(StoreEvents.CONVERSATION_UPDATED, { id: activeConversationId, messages: newMessages });
+        getConversationPort().saveMessages(activeConversationId, newMessages);
       }
 
       try {
@@ -1088,16 +1112,21 @@ export const useChatStore = create<ChatState>((set, get) => {
           sessionDeps(),
           assistantMessage.id,
           {
-            body: {
-              messages: [...history, userMessage].map((m) => ({
-                role: m.role,
-                content: m.content,
-              })),
+            // 请求体经唯一投影出口组装（评审 C4）；reload 维持不带附件的既有行为，
+            // 并修复漏传 capabilityPack / disabledToolKeys 的既有漂移（与 sendMessage 同出口）
+            body: buildChatRequestBody({
+              mode: 'reload',
+              messages: [...history, userMessage],
               provider,
               model,
               thinking: thinkingMode,
-              ...(agentMode ? { agent: true } : {}),
-            },
+              agentMode,
+              conversationId: activeConversationId,
+              turnId,
+              capabilityPackKey: activeCapabilityPackKey,
+              disabledToolKeys,
+              artifactContext: agentMode ? artifactContextField().artifactContext : null,
+            }),
             signal: abortController.signal,
           }
         );
@@ -1109,5 +1138,164 @@ export const useChatStore = create<ChatState>((set, get) => {
         abortController = null;
       }
     },
+
+    // 中止当前任务并按用户干预后的计划继续执行 (AGENT-PLAN-DAG / ADR-0038)
+    interruptAndResumeWithPlan: async (messageId: string, modifiedPlan: AgentPlan) => {
+      // 1. 如果正在流式生成，先中止旧流
+      const { isLoading, stop, activeConversationId } = get();
+      if (isLoading) {
+        stop();
+      }
+
+      // 2. 埋点上报用户干预
+      trackPlanEvent('plan.intervened', {
+        planId: modifiedPlan.id,
+        stepCount: modifiedPlan.steps.length,
+        action: 'modify_plan',
+      });
+
+      // 3. 更新对应消息的 plan
+      const updatedMessages = get().messages.map((m) =>
+        m.id === messageId ? { ...m, plan: modifiedPlan } : m
+      );
+      set({ messages: updatedMessages });
+      if (activeConversationId) {
+        getConversationPort().saveMessages(activeConversationId, updatedMessages);
+      }
+
+      // 4. 计算当前未完成/调整后的步骤，构造轻量提示并发起续跑
+      const pendingSteps = modifiedPlan.steps.filter(
+        (s) => s.status === 'pending' || s.status === 'running'
+      );
+      if (pendingSteps.length > 0) {
+        const nextStepDesc = pendingSteps.map((s, idx) => `${idx + 1}. ${s.title}`).join('\n');
+        const resumePrompt = `请根据已调整的计划继续执行后续步骤：\n${nextStepDesc}`;
+        await get().sendMessage(resumePrompt);
+      }
+    },
+
+    // 拒绝写操作审批（AGENT-HITL-ACTION / ADR-0041）：纯前端终止，不发请求、不调用模型、不耗额度
+    rejectApproval: (messageId: string) => {
+      const { messages, activeConversationId } = get();
+      const target = messages.find((m) => m.id === messageId);
+      if (!target?.approval || resolveApprovalStatus(target.approval) !== 'pending') return;
+
+      const next = projectRejectApproval(messages, messageId);
+      set({ messages: next });
+      if (activeConversationId) {
+        getConversationPort().saveMessages(activeConversationId, next);
+      }
+    },
+
+    // 确认写操作审批（AGENT-HITL-ACTION / ADR-0041）：发起恢复请求，服务端验签后只执行被批准的那一次调用
+    confirmApproval: async (messageId: string) => {
+      const { messages, isLoading, provider, model, activeConversationId, activeCapabilityPackKey, toolOverrides } = get();
+      if (isLoading) return 'skipped';
+      const index = messages.findIndex((m) => m.id === messageId);
+      const target = messages[index];
+      // 只有仍在有效期内、且为最后一条消息的待确认卡片可以确认（其余已失效）
+      if (!target?.approval || resolveApprovalStatus(target.approval) !== 'pending') return 'skipped';
+      if (index !== messages.length - 1) return 'skipped';
+
+      const thinkingMode = useSettingsStore.getState().thinkingModeEnabled;
+      const disabledToolKeys = Object.entries(toolOverrides)
+        .filter(([_, enabled]) => enabled === false)
+        .map(([key]) => key);
+      const { callId, toolName, params, token } = target.approval;
+
+      // 历史投影 + 计划已完成检查点（卡片与凭证不进历史）——组装统一走请求投影出口（评审 C4）
+      const checkpoint = buildPlanCheckpointMessage(target.plan);
+
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      };
+      const newMessages = [
+        ...messages.map((m) =>
+          m.id === messageId && m.approval
+            ? { ...m, approval: { ...m.approval, status: 'confirmed' as const } }
+            : m
+        ),
+        assistantMessage,
+      ];
+      set({ messages: newMessages, isLoading: true, error: null });
+      if (activeConversationId) {
+        getConversationPort().saveMessages(activeConversationId, newMessages);
+      }
+
+      try {
+        const outcome = await runChatStreamSession(sessionDeps(), assistantMessage.id, {
+          body: buildChatRequestBody({
+            mode: 'approval_resume',
+            messages,
+            planCheckpoint: checkpoint,
+            provider,
+            model,
+            thinking: thinkingMode,
+            // 恢复请求只在 agent 模式有意义，与暂停请求的作用域一致才能通过验签
+            agentMode: true,
+            conversationId: activeConversationId,
+            turnId: [...messages].reverse().find((m) => m.role === 'user')?.id,
+            capabilityPackKey: activeCapabilityPackKey,
+            disabledToolKeys,
+            artifactContext: artifactContextField().artifactContext,
+            approvalResume: { token, callId, toolName, params },
+          }),
+          signal: abortController.signal,
+        });
+        if (outcome === 'sent') {
+          void checkAndWarnLowBalance(activeConversationId);
+        }
+        if (outcome === 'failed') {
+          restoreApprovalIfNotAccepted(messageId, assistantMessage.id);
+        }
+        return outcome;
+      } finally {
+        set({ isLoading: false });
+        abortController = null;
+      }
+    },
   };
+
+  /**
+   * 确认失败后的卡片回退（ADR-0041 §4 失败关闭）：请求没有走到「消耗一次性凭证」这一步时，
+   * 卡片退回待确认让用户重试：
+   * - 503 审批服务不可用、429 限流、402 额度不足：服务端在标记凭证已用之前就拒绝了，凭证未消耗；
+   * - 无状态码且没有任何产出（网络中断）：没有收到服务端的任何响应内容，无法确认是否被受理，
+   *   此时重试是安全的，因为若已受理，重复点击只会被一次性凭证拒为 409，不会重复执行。
+   * 其余失败（凭证无效 / 已过期 / 已使用 / 工具不可用，或流中途失败）保持已确认：
+   * 前几类重试也不会成功，后者写操作可能已执行。
+   */
+  function restoreApprovalIfNotAccepted(messageId: string, assistantId: string) {
+    const failure = get().error as (Error & { status?: number }) | null;
+    const retryableStatuses = [402, 429, 503];
+    const notAccepted =
+      failure != null &&
+      (failure.status === undefined || retryableStatuses.includes(failure.status));
+    if (!notAccepted) return;
+    // 流中途失败时本次新建的助手消息已有产出（被保留并标记 failed），说明请求已被受理，不回退；
+    // 只看这一条，会话里更早的失败消息不能作为依据
+    if (get().messages.some((m) => m.id === assistantId)) return;
+    const { activeConversationId } = get();
+    const restored = get().messages.map((m) =>
+      m.id === messageId && m.approval?.status === 'confirmed'
+        ? { ...m, approval: { ...m.approval, status: 'pending' as const } }
+        : m
+    );
+    set({ messages: restored });
+    if (activeConversationId) {
+      getConversationPort().saveMessages(activeConversationId, restored);
+    }
+  }
 });
+
+// 仅在本地开发或 E2E 自动化测试环境向 window 暴露用于状态校验，生产环境严格禁用
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
+}
+

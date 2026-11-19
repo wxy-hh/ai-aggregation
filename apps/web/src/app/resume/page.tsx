@@ -29,7 +29,7 @@ export default function ResumeEntryPage() {
               开启您的职业新篇章
             </h1>
             <p className="text-sm sm:text-base lg:text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              利用前沿 AI 工智能技术，为您打造一份脱颖而出的专业简历。选择一种方式
+              利用前沿人工智能技术，为您打造一份脱颖而出的专业简历。选择一种方式
               <br />
               开始您的旅程。
             </p>
@@ -79,11 +79,16 @@ export default function ResumeEntryPage() {
                 </p>
 
                 {/* 提示信息 */}
-                <div className="mt-auto p-3.5 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-800 dark:text-blue-300 text-center">
-                    ✨ 快速创建专业简历
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleUseTemplate();
+                  }}
+                  className="mt-auto min-h-11 w-full rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-3 text-sm font-semibold text-blue-800 transition-[background-color,transform] duration-fast hover:bg-blue-100 active:scale-[0.98] dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40"
+                >
+                  从模板开始
+                </button>
               </div>
             </motion.div>
 

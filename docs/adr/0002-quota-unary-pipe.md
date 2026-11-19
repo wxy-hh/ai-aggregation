@@ -91,3 +91,9 @@ try {
 
 - **开发约束**：业务方在 `run` 中需明确返回 `value` 与上游 `usage`（若有）；
 - **应对措施**：管道提供强类型定义提示，并对缺失 `outputText` 实现了安全自动兜底，编写单元测试覆盖成功与失败路径即可轻松验证。
+
+---
+
+## 修订附录（2026-11-10，评审 C3 / ADR-0049）
+
+`withQuotaUnary` 的实现位置自 `apps/web/src/lib/billing/with-quota-unary.ts` 下沉至 `packages/db/src/billing/with-quota-unary.ts`，Web 端原路径保留 re-export shim（与 `quota-session.ts` 下沉时同模式），`apps/worker` 直接依赖 `@repo/db` 使用。动机与完整取舍见 ADR-0049。本修订只改位置条款，上文第 1～5 条结算语义不变。

@@ -7,7 +7,6 @@ import {
   generateRefreshToken,
   hashRefreshToken,
   setRefreshTokenCookie,
-  setAuthKindCookie,
   REFRESH_TOKEN_EXPIRES,
 } from '@/lib/auth/jwt';
 import { getQQAccessToken, getQQOpenId, getQQUserInfo } from '@/lib/auth/oauth';
@@ -181,7 +180,6 @@ export async function GET(req: NextRequest) {
     });
 
     await setRefreshTokenCookie(refreshToken, expiresAt);
-    await setAuthKindCookie('user', expiresAt);
 
     return renderAuthResultHtml({ req, success: true, redirectPath: CLIENT_REDIRECT });
   } catch (error) {

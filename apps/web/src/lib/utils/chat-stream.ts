@@ -7,8 +7,12 @@ import {
   type ChatStreamToolResultEvent,
   type ChatStreamUsage,
   type ArtifactMeta,
+  type AgentPlan,
+  type PlanStepStatus,
+  type ChatStreamToolApproval,
 } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
+import type { ChatTransportBody } from '@/lib/chat/request-projection';
 
 /**
  * 统一聊天流编排（评审 C4：单聊 sendMessage/reload 与对比 runModel 三处重复收敛）。
@@ -23,8 +27,8 @@ import { authFetch } from '@/lib/api/client';
  * - 流被截断（未收到 done/error）：consumeChatResponse 抛「回答流被中断」，原样透传。
  */
 export interface StreamChatRequest {
-  /** POST 请求体（不含 method/signal 等 fetch 选项） */
-  body: Record<string, unknown>;
+  /** POST 请求体（聊天请求传输契约的投影形状，评审 C4；不含 method/signal 等 fetch 选项） */
+  body: ChatTransportBody;
   signal: AbortSignal;
 }
 
@@ -65,6 +69,12 @@ export interface StreamChatResponseHandlers {
   onArtifactDelta?: (id: string, delta: string) => void;
   /** 产物生成结束时回调（可选） */
   onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
+  /** 收到计划创建事件时回调一次（agent 模式；可选，不传则忽略） */
+  onPlanCreated?: (plan: AgentPlan) => void;
+  /** 收到计划步骤状态更新时回调（agent 模式；可选，不传则忽略） */
+  onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
+  /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
+  onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -105,7 +115,10 @@ export async function streamChatResponse(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `请求失败: ${response.status}`);
+      // 携带 HTTP 状态码，供调用方区分「服务暂不可用，可重试」与「已被拒绝」（审批确认依赖此区分，ADR-0041）
+      throw Object.assign(new Error(errorData.error || `请求失败: ${response.status}`), {
+        status: response.status,
+      });
     }
 
     let accumulated = '';
@@ -141,6 +154,9 @@ export async function streamChatResponse(
         onArtifactStart: withPet(handlers.onArtifactStart),
         onArtifactDelta: withPet(handlers.onArtifactDelta),
         onArtifactEnd: withPet(handlers.onArtifactEnd),
+        onPlanCreated: withPet(handlers.onPlanCreated),
+        onPlanStepUpdate: withPet(handlers.onPlanStepUpdate),
+        onToolApprovalRequest: withPet(handlers.onToolApprovalRequest),
         onWarning: withPet(handlers.onWarning),
         onDone: withPet((usage?: ChatStreamUsage) => {
           handlers.onDone?.(usage);
@@ -180,6 +196,12 @@ export interface ConsumeChatResponseHandlers {
   onArtifactDelta?: (id: string, delta: string) => void;
   /** 产物生成结束时回调（可选） */
   onArtifactEnd?: (id: string, status: 'complete' | 'error') => void;
+  /** 收到计划创建事件时回调一次（agent 模式；可选） */
+  onPlanCreated?: (plan: AgentPlan) => void;
+  /** 收到计划步骤状态更新时回调（agent 模式；可选） */
+  onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
+  /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
+  onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
   onWarning?: (warning: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
@@ -266,6 +288,18 @@ export async function consumeChatResponse(
         case 'artifact_end':
           // 产物生成结束（ADR-0015）
           handlers.onArtifactEnd?.(event.id, event.status);
+          return;
+        case 'plan_created':
+          // 智能体计划生成（ADR-0038）
+          handlers.onPlanCreated?.(event.plan);
+          return;
+        case 'plan_step_update':
+          // 智能体计划单步更新（ADR-0038）
+          handlers.onPlanStepUpdate?.(event.stepId, event.status, event.summary);
+          return;
+        case 'tool_approval_request':
+          // 写操作审批请求（ADR-0041）：未传回调的调用方显式忽略
+          handlers.onToolApprovalRequest?.(event.approval);
           return;
         case 'warning':
           onWarning?.(event.warning);

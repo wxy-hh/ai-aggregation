@@ -104,31 +104,16 @@ export function PreviewCanvas({
             >
               <div className="pointer-events-none absolute top-1/2 h-[280px] w-[min(88vw,520px)] -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(93,124,250,0.12),transparent_72%)] blur-[80px]" />
 
-              {/* 播放按钮 */}
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative z-10 mb-8 flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border border-white/40 bg-gradient-to-br from-blue-600 via-indigo-500 to-cyan-500 text-white shadow-[0_16px_32px_rgba(93,124,250,0.28)] sm:mb-10 sm:h-28 sm:w-28"
-              >
-                <Play className="ml-1.5 h-9 w-9 fill-current sm:h-10 sm:w-10" />
-              </motion.div>
+              <div className="relative z-10 mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-indigo-500 shadow-sm dark:border-white/10 dark:bg-slate-800/80">
+                <ImageIcon className="h-7 w-7" />
+              </div>
 
               <h3 className="relative z-10 mb-3 text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">
-                准备开始创作吗？
+                还没有视频
               </h3>
-              <p className="relative z-10 mb-10 max-w-lg text-base leading-relaxed text-slate-500 dark:text-slate-400 sm:mb-12 sm:text-lg">
-                在左侧输入提示词，或上传参考图，开始生成你的第一段 AI 视频。
+              <p className="relative z-10 max-w-lg text-base leading-relaxed text-slate-500 dark:text-slate-400 sm:text-lg">
+                写好描述或放上一张参考图，再点「生成视频」。生成完成后才会出现播放条。
               </p>
-
-              <div className="relative z-10 flex gap-4">
-                <Button
-                  variant="outline"
-                  className="h-12 gap-3 rounded-2xl border-white/70 bg-white/60 px-6 font-bold text-slate-600 shadow-sm backdrop-blur-md select-none transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-expo hover:bg-white/80 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 sm:h-14 sm:px-8"
-                >
-                  <ImageIcon className="w-5 h-5" />
-                  上传参考图
-                </Button>
-              </div>
             </motion.div>
           )}
         </AnimatePresence>

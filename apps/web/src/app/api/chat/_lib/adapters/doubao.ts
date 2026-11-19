@@ -15,7 +15,7 @@ import { getDoubaoIncompleteWarning } from '../../doubao-warning';
 import { ProviderClientError, type ChatContext, type ChatProviderAdapter } from '../types';
 import { encodeSseEvent } from '../sse';
 import { resolveChatStreamUsage } from '../chat-usage';
-import type { Attachment, Message as ChatMessage } from '@/stores/chat-store';
+import type { WireAttachment, WireMessage } from '@repo/shared';
 
 // 豆包多模态内容类型
 type DoubaoContentPart =
@@ -25,7 +25,7 @@ type DoubaoContentPart =
 
 /** 将消息转换为豆包多模态格式 */
 function convertToDoubaoInput(
-  msgs: ChatMessage[]
+  msgs: WireMessage[]
 ): Array<{ role: string; content: string | DoubaoContentPart[] }> {
   return msgs.map((msg) => {
     if (msg.attachments && msg.attachments.length > 0) {
@@ -113,7 +113,7 @@ export class DoubaoAdapter implements ChatProviderAdapter {
     // 等待文件附件就绪
     const fileAttachments = ctx.messages
       .flatMap((m) => m.attachments || [])
-      .filter((a): a is Attachment & { fileId: string } => a.type === 'file' && !!a.fileId);
+      .filter((a): a is WireAttachment & { fileId: string } => a.type === 'file' && !!a.fileId);
 
     for (const attachment of fileAttachments) {
       const isReady = await waitForFileReady(attachment.fileId, this.arkApiKey, this.arkBaseUrl);

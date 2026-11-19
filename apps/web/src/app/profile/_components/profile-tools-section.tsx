@@ -59,7 +59,6 @@ export function ProfileToolsSection() {
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const authStatus = useAuthStore((s) => s.status);
-  const isAnonymousUser = user?.isAnonymous === true;
 
   const [tools, setTools] = useState<SanitizedAgentTool[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +82,7 @@ export function ProfileToolsSection() {
 
   // 加载工具列表
   const loadTools = useCallback(async () => {
-    if (!accessToken || isAnonymousUser || authStatus !== 'ready') {
+    if (!accessToken || authStatus !== 'ready') {
       setLoading(false);
       return;
     }
@@ -98,7 +97,7 @@ export function ProfileToolsSection() {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, isAnonymousUser, authStatus]);
+  }, [accessToken, authStatus]);
 
   useEffect(() => {
     void loadTools();
@@ -201,8 +200,8 @@ export function ProfileToolsSection() {
 
   const isLimitReached = tools.length >= MAX_TOOLS_LIMIT;
 
-  // 匿名或未登录用户展示提示卡片
-  if (isAnonymousUser || !accessToken) {
+  // 未登录用户展示提示卡片
+  if (!accessToken) {
     return (
       <div className={cn(GLASS_CARD, 'p-6 sm:p-8')}>
         <div className="flex items-center gap-3">
@@ -275,6 +274,10 @@ export function ProfileToolsSection() {
               </div>
               <p className="mt-0.5 text-[13px] text-[#94A3B8] dark:text-slate-400">
                 配置私有 Webhook 接口，供 AI 智能体在对话中自主调度
+              </p>
+              {/* ADR-0041 兼容提示：存量 POST 工具迁移后默认开启调用前确认 */}
+              <p className="mt-0.5 text-[13px] text-day-muted dark:text-slate-400">
+                POST 工具默认需要你确认后才会执行，已有的 POST 工具已自动开启，可在编辑工具时关闭。
               </p>
             </div>
           </div>

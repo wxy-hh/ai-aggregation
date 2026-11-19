@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { usePasswordValidation, PasswordToggleButton } from '@/hooks/use-password-toggle';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ const FIELD_INPUT =
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const register = useAuthStore((s) => s.register);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -127,7 +128,9 @@ export function RegisterForm() {
         ...(hasEmail ? { email: trimmedEmail, emailCode: emailCode.trim() } : {}),
       });
       toast.success('注册成功');
-      router.push('/home');
+      const redirect = searchParams.get('redirect');
+      const target = redirect && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/home';
+      router.push(target);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '注册失败，请重试');
     } finally {

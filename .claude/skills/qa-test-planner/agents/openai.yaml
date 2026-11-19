@@ -1,0 +1,3 @@
+interface:
+  display_name: "QA Test Planner"
+  short_description: "Plan Schema 4 QA cases from a spec"

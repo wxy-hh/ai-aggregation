@@ -860,23 +860,53 @@ export async function releaseStaleBillingPendingReservations(
       if (
         !reservation ||
         reservation.status !== 'billing_pending' ||
+        reservation.executionState !== 'completed' ||
         reservation.updatedAt >= staleBefore
       ) {
         return false;
       }
 
-      const updated = await tx.quotaReservation.updateMany({
-        where: { id: reservation.id, status: 'billing_pending' },
-        data: { status: 'released', executionState: 'completed' },
-      });
-      if (updated.count === 0) return false;
-
-      const account = await tx.quotaAccount.update({
-        where: { userId: reservation.userId },
+      // 原子守卫：账户 reservedUnits 必须足以扣除该预留的 estimatedUnits
+      // 防止并发冲突，以及防止挪用其他活跃预留的已扣余额
+      const updatedAccount = await tx.quotaAccount.updateMany({
+        where: {
+          userId: reservation.userId,
+          reservedUnits: { gte: reservation.estimatedUnits },
+        },
         data: {
           reservedUnits: { decrement: reservation.estimatedUnits },
           availableUnits: { increment: reservation.estimatedUnits },
         },
+      });
+
+      if (updatedAccount.count === 0) {
+        // 账户预留余额不足以释放整笔额度（说明存在历史账本不一致或并发扣减）
+        // 绝不盲目扣减出负数，也不挪用其他活跃预留；中止本笔释放，保留 billing_pending 待审计
+        console.warn(
+          '[Billing] releaseStaleBillingPendingReservations: 账户预留余额不足，跳过释放以防脏账',
+          {
+            reservationId: reservation.id,
+            userId: reservation.userId,
+            estimatedUnits: reservation.estimatedUnits,
+          }
+        );
+        return false;
+      }
+
+      const updated = await tx.quotaReservation.updateMany({
+        where: {
+          id: reservation.id,
+          status: 'billing_pending',
+          executionState: 'completed',
+        },
+        data: { status: 'released', executionState: 'completed' },
+      });
+      if (updated.count === 0) {
+        throw new Error('待释放预留状态已被并发修改');
+      }
+
+      const account = await tx.quotaAccount.findUniqueOrThrow({
+        where: { userId: reservation.userId },
       });
 
       await appendLedgerEntry(tx, {

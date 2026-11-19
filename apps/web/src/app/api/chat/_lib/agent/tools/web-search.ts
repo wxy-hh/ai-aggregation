@@ -1,12 +1,16 @@
 /**
- * web_search 通用内置联网检索工具（ADR-0017）
+ * web_search 通用内置联网检索工具（ADR-0059，取代 ADR-0017 双轨规约）
  *
  * 核心机制：
- * 1. 双轨自适应：若配置了 TAVILY_API_KEY 等商业检索凭据，优先调用高速高纯度检索；
- *    默认零配置环境下，自动走免密轻量检索提取流，开箱即用。
- * 2. 结构化规约：过滤无用广告与 HTML 噪声，仅向模型输出前 3~5 条格式化条目：
- *    包含清晰的标题 (Title)、准确的来源直链 (URL) 与精简的事实摘要 (Snippet)。
- * 3. 两步协同引导：搜索结果仅作为定位依据，引导模型根据 URL 按需使用 web_fetch 深读或直接推理。
+ * 1. 三级韧性分流：
+ *    - 首选：配置 DEEPSEEK_TOOLS_API_KEY 时优先调用 DeepSeek Search 官方原生检索 API；
+ *    - 次选：配置 TAVILY_API_KEY 时平滑降级至 Tavily 商业检索轨；
+ *    - 兜底：免密轻量检索流，开箱即用。
+ * 2. 结构化长摘要优先规约：
+ *    优先提取 DeepSeek 提供的深度长摘要 (summary)，若无则使用片段 (snippet)；
+ *    累计字符数超过 2,000 字符时平滑截断，并附带精读指引。
+ * 3. 错误边界与优雅降级：
+ *    400/401 配置与参数错误作为终态快速抛出；402/429/5xx/网络超时记录警告并顺次向下级平滑降级。
  */
 
 import { z } from 'zod';
@@ -16,11 +20,14 @@ import { detectChatSensitiveTopic } from '../../chat-safety';
 export interface SearchResultItem {
   title: string;
   url: string;
-  snippet: string;
+  snippet?: string;
+  summary?: string;
 }
 
 const SEARCH_TIMEOUT_MS = 6_000;
 const MAX_SEARCH_RESULTS = 5;
+const DEEPSEEK_SEARCH_DEFAULT_URL = 'https://api.deepseek.com/v1/tools/search';
+const MAX_SEARCH_CONTENT_CHARS = 2_000;
 
 /** 真实桌面浏览器请求头，避免免密检索源针对 Bot 的误伤拦截 */
 const BROWSER_HEADERS: Record<string, string> = {
@@ -58,6 +65,58 @@ function unwrapDuckDuckGoUrl(rawUrl: string): string {
   } catch {
     return rawUrl;
   }
+}
+
+/** DeepSeek 商业检索接口 */
+async function searchWithDeepSeek(
+  query: string,
+  apiKey: string,
+  searchUrl: string,
+  signal: AbortSignal
+): Promise<SearchResultItem[]> {
+  const res = await fetch(searchUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      count: MAX_SEARCH_RESULTS,
+    }),
+    signal,
+  });
+
+  // 仅服务可用性故障（欠费 402、限流 429、服务端错误 5xx）属于降级白名单，抛出普通 Error 供外层捕获并降级
+  if (res.status === 402 || res.status === 429 || (res.status >= 500 && res.status < 600)) {
+    throw new Error(`DeepSeek Search 服务故障 (HTTP ${res.status})`);
+  }
+
+  // 其余非 200 状态码（400 参数异常、401 鉴权失效、以及 405 等其他 4xx 非白名单错误）均为终态错误，直接阻断严禁降级
+  if (!res.ok) {
+    throw new ToolError(`DeepSeek Search 接口配置或请求异常 (HTTP ${res.status})`);
+  }
+
+  const data = (await res.json()) as {
+    results?: Array<{
+      title?: string;
+      url?: string;
+      snippet?: string;
+      summary?: string;
+    }>;
+  };
+
+  if (!data.results || !Array.isArray(data.results)) return [];
+
+  return data.results
+    .slice(0, MAX_SEARCH_RESULTS)
+    .map((item) => ({
+      title: item.title?.trim() || '无标题',
+      url: item.url || '',
+      snippet: item.snippet?.trim() || '',
+      summary: item.summary?.trim() || '',
+    }))
+    .filter((item) => item.url.startsWith('http'));
 }
 
 /** 商业接口检索：Tavily API */
@@ -144,22 +203,63 @@ async function searchWithFreeProvider(
 /** 综合调度检索 */
 export async function executeSearch(
   query: string,
-  signal: AbortSignal
+  signal?: AbortSignal
 ): Promise<SearchResultItem[]> {
-  const tavilyApiKey = process.env.TAVILY_API_KEY?.trim();
+  const dsApiKey = process.env.DEEPSEEK_TOOLS_API_KEY?.trim();
+  const dsSearchUrl = process.env.DEEPSEEK_SEARCH_URL?.trim() || DEEPSEEK_SEARCH_DEFAULT_URL;
 
-  // 优先商业检索轨
-  if (tavilyApiKey) {
+  // 1. 优先走 DeepSeek Search 原生检索
+  if (dsApiKey) {
+    const dsTimeoutController = new AbortController();
+    const dsTimeoutId = setTimeout(() => dsTimeoutController.abort(), SEARCH_TIMEOUT_MS);
+    const dsSignal = signal
+      ? AbortSignal.any([signal, dsTimeoutController.signal])
+      : dsTimeoutController.signal;
+
     try {
-      const tavilyResults = await searchWithTavily(query, tavilyApiKey, signal);
-      if (tavilyResults.length > 0) return tavilyResults;
+      const dsResults = await searchWithDeepSeek(query, dsApiKey, dsSearchUrl, dsSignal);
+      // 空数组为合法的终态“未找到”，直接返回空数组，不降级！
+      return dsResults;
     } catch (e) {
-      console.warn('[web_search] 商业检索接口失败，自动降级至免密检索流:', e);
+      if (e instanceof ToolError) {
+        // 400/401 终态报错，严禁降级
+        throw e;
+      }
+      if (signal?.aborted) {
+        // 上下文主动中止（用户中断），直接抛出
+        throw e;
+      }
+      console.warn('[web_search] DeepSeek 检索接口故障，自动降级至备用链路:', e);
+    } finally {
+      clearTimeout(dsTimeoutId);
     }
   }
 
-  // 兜底免密检索轨
-  return await searchWithFreeProvider(query, signal);
+  const tavilyApiKey = process.env.TAVILY_API_KEY?.trim();
+
+  // 2. 次选商业检索轨：Tavily API
+  if (tavilyApiKey) {
+    const tavilyTimeoutController = new AbortController();
+    const tavilyTimeoutId = setTimeout(() => tavilyTimeoutController.abort(), SEARCH_TIMEOUT_MS);
+    const tavilySignal = signal
+      ? AbortSignal.any([signal, tavilyTimeoutController.signal])
+      : tavilyTimeoutController.signal;
+
+    try {
+      const tavilyResults = await searchWithTavily(query, tavilyApiKey, tavilySignal);
+      if (tavilyResults.length > 0) return tavilyResults;
+    } catch (e) {
+      if (signal?.aborted) {
+        throw e;
+      }
+      console.warn('[web_search] 商业检索接口失败，自动降级至免密检索流:', e);
+    } finally {
+      clearTimeout(tavilyTimeoutId);
+    }
+  }
+
+  // 3. 兜底免密检索轨
+  return await searchWithFreeProvider(query, signal ?? new AbortController().signal);
 }
 
 /** 格式化输出给模型的提示内容 */
@@ -168,14 +268,22 @@ function formatSearchResultsForModel(query: string, results: SearchResultItem[])
     return `【联网搜索（关键词：${query}）】：未检索到直接相关的公开网页，建议更换更简洁的关键词重新尝试。`;
   }
 
-  const formattedItems = results
+  const itemsText = results
     .map((item, index) => {
-      const snippetPart = item.snippet ? `\n   摘要：${item.snippet}` : '';
+      const content = item.summary || item.snippet;
+      const snippetPart = content ? `\n   摘要：${content}` : '';
       return `${index + 1}. [${item.title}](${item.url})${snippetPart}`;
     })
     .join('\n\n');
 
-  return `【联网搜索结果（关键词：${query}，共找到 ${results.length} 条权威线索）】：\n\n${formattedItems}\n\n【精读指引】：以上为精选摘要。如需深入阅读具体某篇官方文档、详细定价表或长文，请直接使用 web_fetch 传入对应的目标 URL 进行单页精读；若线索已足够充实，可直接组织全面专业的最终回答。`;
+  let truncatedNote = '';
+  let finalItemsText = itemsText;
+  if (itemsText.length > MAX_SEARCH_CONTENT_CHARS) {
+    finalItemsText = itemsText.slice(0, MAX_SEARCH_CONTENT_CHARS);
+    truncatedNote = '\n\n（提示：长摘要累计内容过长已平滑截断，以上为前 2,000 字符精选摘要）';
+  }
+
+  return `【联网搜索结果（关键词：${query}，共找到 ${results.length} 条权威线索）】：\n\n${finalItemsText}${truncatedNote}\n\n【精读指引】：以上为精选摘要。如需深入阅读具体某篇官方文档、详细定价表或长文，请直接使用 web_fetch 传入对应的目标 URL 进行单页精读；若线索已足够充实，可直接组织全面专业的最终回答。`;
 }
 
 /** 创建 web_search Agent 工具实例 */
@@ -192,7 +300,7 @@ export function createWebSearchTool(): AgentToolSpec {
     }),
     async execute(args, ctx): Promise<ToolExecutionResult> {
       const { query } = args as { query: string };
-      const trimmedQuery = query.trim();
+      const trimmedQuery = typeof query === 'string' ? query.trim() : '';
 
       if (!trimmedQuery) {
         throw new ToolError('搜索关键词不能为空');
@@ -203,14 +311,8 @@ export function createWebSearchTool(): AgentToolSpec {
         throw new ToolError('搜索关键词包含敏感内容，无法执行');
       }
 
-      const timeoutController = new AbortController();
-      const timeoutId = setTimeout(() => timeoutController.abort(), SEARCH_TIMEOUT_MS);
-      const combinedSignal = ctx.signal
-        ? AbortSignal.any([ctx.signal, timeoutController.signal])
-        : timeoutController.signal;
-
       try {
-        const results = await executeSearch(trimmedQuery, combinedSignal);
+        const results = await executeSearch(trimmedQuery, ctx.signal);
 
         const shortQuery = trimmedQuery.length > 20 ? `${trimmedQuery.slice(0, 18)}…` : trimmedQuery;
 
@@ -220,13 +322,14 @@ export function createWebSearchTool(): AgentToolSpec {
           summaryForDisplay: `已搜索“${shortQuery}” · 获取 ${results.length} 条线索`,
         };
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (combinedSignal.aborted) {
-          throw new ToolError('联网搜索请求超时，请稍后重试');
+        if (error instanceof ToolError) {
+          throw error;
         }
+        if (ctx.signal?.aborted) {
+          throw error;
+        }
+        const msg = error instanceof Error ? error.message : String(error);
         throw new ToolError(`联网搜索失败: ${msg}`);
-      } finally {
-        clearTimeout(timeoutId);
       }
     },
   };

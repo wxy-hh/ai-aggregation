@@ -37,10 +37,10 @@ export interface AudioHistoryState {
   // 服务实例
   service: AudioHistoryService | null;
 
-  // Actions - 初始化
+  // 动作 - 初始化
   initializeService: () => Promise<void>;
 
-  // Actions - 数据操作
+  // 动作 - 数据操作
   loadItems: (filter?: AudioHistoryFilter) => Promise<void>;
   createItem: (
     file: File,
@@ -48,7 +48,10 @@ export interface AudioHistoryState {
     translationText?: string
   ) => Promise<AudioHistoryItem>;
   updateItem: (id: string, updates: Partial<AudioHistoryItem>) => Promise<void>;
-  deleteItem: (id: string, _isSyncDelete?: boolean) => Promise<void>;
+  /** 音频库入口：删除音频详情与统一历史摘要（删两侧） */
+  deleteItem: (id: string) => Promise<void>;
+  /** 历史页发起：只删音频侧，统一历史摘要已由编排模块删除 */
+  deleteAudioItemOnly: (id: string) => Promise<void>;
   deleteSelectedItems: () => Promise<void>;
   updateProcessingStatus: (
     id: string,
@@ -61,7 +64,7 @@ export interface AudioHistoryState {
     }
   ) => Promise<void>;
 
-  // Actions - UI 状态管理
+  // 动作 - UI 状态管理
   setCurrentItem: (item: AudioHistoryItem | null) => void;
   setFilter: (filter: AudioHistoryFilter) => void;
   setSelectedIds: (ids: string[]) => void;
@@ -69,14 +72,14 @@ export interface AudioHistoryState {
   clearSelection: () => void;
   selectAll: () => void;
 
-  // Actions - 统计和信息
+  // 动作 - 统计和信息
   loadStats: () => Promise<void>;
   getStorageInfo: () => Promise<{ used: number; available: number; total: number } | null>;
 
-  // Actions - 错误处理
+  // 动作 - 错误处理
   clearError: () => void;
 
-  // Actions - 清理
+  // 动作 - 清理
   clearAll: () => Promise<void>;
   cleanOldRecords: (options: {
     olderThanDays?: number;
@@ -124,7 +127,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         try {
           set({ isLoading: true, error: null });
 
-          // Check if IndexedDB is supported
+          // 检查是否支持 IndexedDB
           const { isIndexedDBSupported } = await import('../lib/storage');
           if (!isIndexedDBSupported()) {
             throw new Error(
@@ -291,8 +294,8 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         }
       },
 
-      // 删除历史记录
-      deleteItem: async (id: string, _isSyncDelete = false) => {
+      // 音频库入口删除：音频详情与统一历史摘要一起删除（删两侧）
+      deleteItem: async (id: string) => {
         const { service, isInitialized } = get();
 
         if (!isInitialized || !service) {
@@ -301,13 +304,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         }
 
         try {
-          // 统一历史发起删除（isSyncDelete=true）只删本侧 audio，避免循环；
-          // 录音库发起删除走统一写路径：audio 详情与统一历史摘要一起删除
-          if (_isSyncDelete) {
-            await service.deleteItem(id);
-          } else {
-            await deleteVoiceHistoryRecord(service, id);
-          }
+          await deleteVoiceHistoryRecord(service, id);
 
           set((state) => ({
             items: state.items.filter((item) => item.id !== id),
@@ -320,6 +317,34 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : '删除历史记录失败';
           console.error('[AudioHistoryStore] Delete item error:', error);
+          set({ error: errorMessage });
+          throw error;
+        }
+      },
+
+      // 历史页发起删除：只删音频侧，避免与已完成的统一历史删除重复
+      deleteAudioItemOnly: async (id: string) => {
+        const { service, isInitialized } = get();
+
+        if (!isInitialized || !service) {
+          console.warn('[AudioHistoryStore] Service not initialized');
+          return;
+        }
+
+        try {
+          await service.deleteItem(id);
+
+          set((state) => ({
+            items: state.items.filter((item) => item.id !== id),
+            currentItem: state.currentItem?.id === id ? null : state.currentItem,
+            selectedIds: state.selectedIds.filter((selectedId) => selectedId !== id),
+          }));
+
+          // 更新统计信息
+          get().loadStats();
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '删除历史记录失败';
+          console.error('[AudioHistoryStore] Delete audio item only error:', error);
           set({ error: errorMessage });
           throw error;
         }
@@ -495,7 +520,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
 
           const deletedCount = await service.cleanOldRecords(options);
 
-          // Reload items and stats after cleanup
+          // 清理后重新加载列表与统计
           await get().loadItems();
           await get().loadStats();
 
@@ -526,7 +551,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
 
           const result = await service.validateAndRepairData();
 
-          // Reload items and stats after validation
+          // 校验后重新加载列表与统计
           await get().loadItems();
           await get().loadStats();
 
@@ -557,7 +582,7 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
 
           const result = await service.migrateData();
 
-          // Reload items and stats after migration
+          // 迁移后重新加载列表与统计
           await get().loadItems();
           await get().loadStats();
 
@@ -598,48 +623,48 @@ export const useAudioHistoryStore = create<AudioHistoryState>()(
 // ==================== 选择器 Hooks ====================
 
 /**
- * Hook to get all history items
+ * 获取全部历史记录的 Hook
  */
 export const useHistoryItems = () => useAudioHistoryStore((state) => state.items);
 
 /**
- * Hook to get current item
+ * 获取当前记录的 Hook
  */
 export const useCurrentHistoryItem = () => useAudioHistoryStore((state) => state.currentItem);
 
 /**
- * Hook to get loading state
+ * 获取加载状态的 Hook
  */
 export const useHistoryLoading = () => useAudioHistoryStore((state) => state.isLoading);
 
 /**
- * Hook to get error state
+ * 获取错误状态的 Hook
  */
 export const useHistoryError = () => useAudioHistoryStore((state) => state.error);
 
 /**
- * Hook to get selected IDs
+ * 获取已选中 ID 列表的 Hook
  */
 export const useSelectedHistoryIds = () => useAudioHistoryStore((state) => state.selectedIds);
 
 /**
- * Hook to get statistics
+ * 获取统计信息的 Hook
  */
 export const useHistoryStats = () => useAudioHistoryStore((state) => state.stats);
 
 /**
- * Hook to get filter
+ * 获取筛选条件的 Hook
  */
 export const useHistoryFilter = () => useAudioHistoryStore((state) => state.filter);
 
 /**
- * Hook to get initialization state
+ * 获取初始化状态的 Hook
  */
 export const useHistoryInitialized = () => useAudioHistoryStore((state) => state.isInitialized);
 
 /**
- * Hook to get all actions
- * Returns a stable reference to prevent infinite loops
+ * 获取全部动作的 Hook
+ * 返回稳定引用以避免无限循环
  */
 export const useHistoryActions = () => {
   const initializeService = useAudioHistoryStore((state) => state.initializeService);
@@ -647,6 +672,7 @@ export const useHistoryActions = () => {
   const createItem = useAudioHistoryStore((state) => state.createItem);
   const updateItem = useAudioHistoryStore((state) => state.updateItem);
   const deleteItem = useAudioHistoryStore((state) => state.deleteItem);
+  const deleteAudioItemOnly = useAudioHistoryStore((state) => state.deleteAudioItemOnly);
   const deleteSelectedItems = useAudioHistoryStore((state) => state.deleteSelectedItems);
   const updateProcessingStatus = useAudioHistoryStore((state) => state.updateProcessingStatus);
   const setCurrentItem = useAudioHistoryStore((state) => state.setCurrentItem);
@@ -670,6 +696,7 @@ export const useHistoryActions = () => {
     createItem,
     updateItem,
     deleteItem,
+    deleteAudioItemOnly,
     deleteSelectedItems,
     updateProcessingStatus,
     setCurrentItem,

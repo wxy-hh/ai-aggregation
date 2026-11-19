@@ -92,7 +92,7 @@ export async function writeAuditRecord(data: {
   statusCode?: number | null;
   durationMs: number;
   responseBytes?: number;
-  outcome: 'success' | 'failed' | 'skipped' | 'blocked';
+  outcome: 'success' | 'failed' | 'skipped' | 'blocked' | 'pending_approval';
   errorKind?: string | null;
 }): Promise<void> {
   try {

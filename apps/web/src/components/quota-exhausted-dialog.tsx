@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useAuthStore } from '@/stores/auth-store';
 import { useSettingsStore } from '@/stores/settings-store';
 
 /**
@@ -18,7 +17,6 @@ import { useSettingsStore } from '@/stores/settings-store';
  *
  * 监听全局额度不足事件，触发后显示提示。
  * 用户关闭弹框后仍可继续浏览历史记录，但无法发起新的 AI 调用。
- * 匿名用户额外提供跳转到登录页的入口，便于通过账号密码继续使用。
  *
  * Agent 场景（ADR-0012 / 工单 04）：
  * 当触发时 agentModeEnabled 为 true，展示专用文案变体：
@@ -28,7 +26,6 @@ import { useSettingsStore } from '@/stores/settings-store';
 export function QuotaExhaustedDialog() {
   const [open, setOpen] = useState(false);
   const [isAgentQuota, setIsAgentQuota] = useState(false);
-  const isAnonymous = useAuthStore((s) => s.user?.isAnonymous === true);
 
   useEffect(() => {
     const handleQuotaExhausted = () => {
@@ -44,8 +41,7 @@ export function QuotaExhaustedDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {/* 遮罩对齐 DESIGN.md §8.4（bg-slate-950/50 + blur）：压暗并模糊底层内容，
-          阻断感不足时背景空态文字会与弹窗争焦点（2026-10-15 评审 M4） */}
+      {/* 遮罩对齐 DESIGN.md §8.4（bg-slate-950/50 + blur）：压暗并模糊底层内容 */}
       <DialogContent
         className="sm:max-w-md"
         overlayClassName="bg-slate-950/50 backdrop-blur-md"
@@ -55,20 +51,16 @@ export function QuotaExhaustedDialog() {
           <DialogDescription className="pt-2 leading-relaxed">
             {isAgentQuota
               ? '额度不足以开启联网查询，可充值后重试；或关闭 Agent 模式直接对话'
-              : `当前文本或语音额度不足。您可以继续查看历史记录，图片和视频任务统计不受此额度影响。${
-                  isAnonymous ? ' 如需继续使用，可通过账号密码登录以获得更多额度。' : ''
-                }`}
+              : '当前文本或语音额度不足。您可以继续查看历史记录，图片和视频任务统计不受此额度影响。'}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setOpen(false)}>
             我知道了
           </Button>
-          {isAnonymous ? (
-            <Button asChild onClick={() => setOpen(false)}>
-              <Link href="/login">使用账号密码登录</Link>
-            </Button>
-          ) : null}
+          <Button asChild onClick={() => setOpen(false)}>
+            <Link href="/profile">查看我的额度</Link>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

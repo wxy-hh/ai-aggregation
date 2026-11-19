@@ -19,6 +19,7 @@
  */
 
 import { DEFAULT_TOOL_POLICY, runToolWithPolicy } from './tool-policy';
+import type { ObservabilityTrace } from '@/lib/observability/langfuse-client';
 import {
   validateToolArgs,
   type ToolExecutionContext,
@@ -37,6 +38,13 @@ export interface ToolCallOutcome {
   attachment?: ToolExecutionResult['attachment'];
   /** 工具真实执行耗时（毫秒；成功/失败/超时均计时；skip 与缓存命中保持缺省） */
   durationMs?: number;
+  /** 结构化切片引用字典（仅知识库检索等工具携带） */
+  citations?: ToolExecutionResult['citations'];
+  /**
+   * 写操作待审批标记（ADR-0041）：存在即表示该调用**未执行**，编排器应下发审批请求并结束本次流。
+   * params 为经 schema 校验后的参数，凭证将绑定它。
+   */
+  pendingApproval?: { toolId: string; host: string; params: unknown };
 }
 
 /** 一次工具调用（由编排器从模型决策步投影而来） */
@@ -44,6 +52,11 @@ export interface ToolCall {
   toolCallId: string;
   toolName: string;
   input: unknown;
+  /**
+   * 已获用户批准（ADR-0041）：仅由编排器在审批凭证验签并标记已用后设置，
+   * 为真时跳过审批暂停、直接执行。其余治理（校验 / 上限 / 熔断 / 合规）照常生效。
+   */
+  preApproved?: boolean;
 }
 
 /** 治理限值（常量真源在 app 层 agent-config，由编排器传入） */
@@ -70,6 +83,8 @@ export interface ToolExecutionPipelineDeps {
   now?: () => number;
   /** 合规检查器（必传；实现留在 app 层，规避分层守卫） */
   guardContent: (content: string, toolName: string) => string;
+  /** 可选的可观测性 Root Trace 实例（工单 01 观测底座接入） */
+  trace?: ObservabilityTrace;
 }
 
 export interface ToolExecutionPipeline {
@@ -113,7 +128,7 @@ function stableSerialize(value: unknown): string {
 export function createToolExecutionPipeline(
   deps: ToolExecutionPipelineDeps
 ): ToolExecutionPipeline {
-  const { registry, ctx, guardContent, limits, runTimeBudgetMs, startedAt } = deps;
+  const { registry, ctx, guardContent, limits, runTimeBudgetMs, startedAt, trace } = deps;
   const now = deps.now ?? Date.now;
 
   /** 去重缓存：键 = 工具名 + 参数稳定序列化 */
@@ -129,7 +144,11 @@ export function createToolExecutionPipeline(
 
   const timeBudgetExhausted = () => now() - startedAt > runTimeBudgetMs;
 
-  /** 结算一次调用：维护连败计数（成功清零 / 失败递增，skip 计入失败），并计算执行耗时（若提供起点） */
+  /**
+   * 教学重点：连败熔断器（Circuit Breaker）计数器与结算
+   * 维护连续失败次数：任何工具成功，连败计数归零；连续失败则自增。
+   * 当连败次数达到 maxConsecutiveFailures（默认 3 次）时，shouldHalt 会立即跳闸切断循环。
+   */
   const settle = (
     outcome: Omit<ToolCallOutcome, 'durationMs'>,
     startTime?: number
@@ -200,25 +219,58 @@ export function createToolExecutionPipeline(
       // 上限拦截：被跳过的调用不执行、不过合规、不进缓存（skip 文案直接回注）
       const skip = resolveSkip(call.toolName);
       if (skip) {
+        const skipSummary = skip.imageCapExceeded
+          ? `未执行：本次对话的出图次数已用完（${limits.maxImageGenerates} 次）`
+          : `未执行：${skip.reason}`;
+        if (trace) {
+          const span = trace.span({
+            name: `tool:${call.toolName}`,
+            input: call.input,
+            output: skipSummary,
+            status: 'failed',
+            durationMs: 0,
+            metadata: {
+              skipped: true,
+              skipReason: skip.reason,
+            },
+          });
+          span.end();
+        }
         if (skip.imageCapExceeded) {
           return settle({
             ok: false,
             contentForModel: `本次对话的出图次数已用完（${limits.maxImageGenerates} 次），请基于已有内容作答`,
-            summaryForDisplay: `未执行：本次对话的出图次数已用完（${limits.maxImageGenerates} 次）`,
+            summaryForDisplay: skipSummary,
           });
         }
         return settle({
           ok: false,
           contentForModel: `工具「${call.toolName}」未执行：${skip.reason}。请在回答中如实告知用户这次调用未执行。`,
-          summaryForDisplay: `未执行：${skip.reason}`,
+          summaryForDisplay: skipSummary,
         });
       }
 
-      // 退化保护 1：重复调用去重（命中即复用首次过检内容；不重新执行、不重复过检、
-      // 不重发 attachment —— 首轮已并入消息，重复下发会让前端按新 callId 再渲染同一张图）
+      // 教学重点：退化保护 1 —— 入参哈希去重缓存（Deduplication Cache）
+      // 将「工具名 + 规范化序列化的入参」作为唯一 Key。
+      // 若大模型在多步中因幻觉或死循环重复调用同一入参，直接在内存中命中并短路（Short-circuit）返回历史结果，
+      // 避免重复发网络请求消耗配额，同时向模型注入引导提示语。
       const cacheKey = `${call.toolName}:${stableSerialize(call.input)}`;
       const cached = toolCache.get(cacheKey);
       if (cached) {
+        if (trace) {
+          const span = trace.span({
+            name: `tool:${call.toolName}`,
+            input: call.input,
+            output: cached.summaryForDisplay,
+            status: cached.ok ? 'success' : 'failed',
+            durationMs: 0,
+            metadata: {
+              cached: true,
+              skipped: false,
+            },
+          });
+          span.end();
+        }
         return settle({
           ok: cached.ok,
           contentForModel: `${cached.guardedContent}\n\n该调用已执行过，结果同前，请基于现有信息作答或调整参数。`,
@@ -238,6 +290,35 @@ export function createToolExecutionPipeline(
         };
       } else {
         const validation = validateToolArgs(spec, call.input);
+
+        // 写操作审批（ADR-0041）：参数合法才暂停，不合法仍走原有「参数不合法」回注让模型修正。
+        // 暂停不执行、不过合规、不进缓存（用户确认后才会真正执行），也不计入连败熔断。
+        if (validation.ok && spec.approval && !call.preApproved) {
+          try {
+            await spec.approval.onPending(ctx);
+          } catch (error) {
+            // 副作用回调失败（如审计写入）不得阻断暂停：安全方向是「不执行」
+            console.warn(`[agent] 工具「${call.toolName}」暂停回调失败:`, error);
+          }
+          if (trace) {
+            const span = trace.span({
+              name: `tool:${call.toolName}`,
+              input: call.input,
+              output: '等待用户确认',
+              status: 'success',
+              durationMs: 0,
+              metadata: { cached: false, skipped: false, pendingApproval: true },
+            });
+            span.end();
+          }
+          return {
+            ok: true,
+            contentForModel: '该操作需要用户确认，已向用户发起确认请求，尚未执行。',
+            summaryForDisplay: '等待用户确认',
+            pendingApproval: { toolId: spec.approval.toolId, host: spec.approval.host, params: validation.args },
+          };
+        }
+
         outcome = validation.ok
           ? await runToolWithPolicy(spec, validation.args, ctx, DEFAULT_TOOL_POLICY)
           : {
@@ -257,12 +338,32 @@ export function createToolExecutionPipeline(
         attachment: outcome.attachment,
       });
 
+      const callEnd = now();
+      const callDurationMs = Math.max(0, callEnd - callStart);
+      if (trace) {
+        const span = trace.span({
+          name: `tool:${call.toolName}`,
+          input: call.input,
+          output: outcome.summaryForDisplay,
+          status: outcome.ok ? 'success' : 'failed',
+          durationMs: callDurationMs,
+          startTime: new Date(callStart),
+          endTime: new Date(callEnd),
+          metadata: {
+            cached: false,
+            skipped: false,
+          },
+        });
+        span.end();
+      }
+
       return settle(
         {
           ok: outcome.ok,
           contentForModel: guarded,
           summaryForDisplay: outcome.summaryForDisplay,
           ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+          ...(outcome.citations ? { citations: outcome.citations } : {}),
         },
         callStart
       );

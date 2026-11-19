@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@repo/db';
-import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, hashRefreshToken, setRefreshTokenCookie, setAuthKindCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
+import { signAccessToken, generateRefreshToken, getRefreshTokenFromCookie, hashRefreshToken, setRefreshTokenCookie, clearRefreshTokenCookie, REFRESH_TOKEN_EXPIRES } from '@/lib/auth/jwt';
 import { ApiError } from '@/lib/api/responses';
 
 export async function POST(_req: NextRequest) {
@@ -21,28 +21,26 @@ export async function POST(_req: NextRequest) {
       if (record) {
         await prisma.refreshToken.delete({ where: { id: record.id } });
       }
+      await clearRefreshTokenCookie();
       return ApiError.unauthorized('刷新令牌已过期，请重新登录');
     }
 
-    // 检查用户是否被禁用；匿名用户不允许刷新，避免恢复登录认证后存在幽灵会话
+    // 检查用户是否被禁用
     const user = await prisma.user.findUnique({
       where: { id: record.userId },
-      select: { status: true, isAnonymous: true },
+      select: { status: true },
     });
 
     if (!user) {
       await prisma.refreshToken.delete({ where: { id: record.id } });
+      await clearRefreshTokenCookie();
       return ApiError.unauthorized('用户不存在');
     }
 
     if (user.status === 'disabled') {
       await prisma.refreshToken.delete({ where: { id: record.id } });
+      await clearRefreshTokenCookie();
       return ApiError.forbidden('账号已被停用，请联系管理员');
-    }
-
-    if (user.isAnonymous) {
-      await prisma.refreshToken.delete({ where: { id: record.id } });
-      return ApiError.unauthorized('匿名会话已过期，请登录');
     }
 
     // 轮换：删除旧 Token，生成新 Token
@@ -68,8 +66,6 @@ export async function POST(_req: NextRequest) {
 
     const accessToken = signAccessToken(record.userId, record.user.role);
     await setRefreshTokenCookie(newRefreshToken, expiresAt);
-    // 此分支只可能为真实用户（匿名用户已在上方被拦截），同步续期 auth_kind 保持与 refresh_token 一致的生命周期
-    await setAuthKindCookie('user', expiresAt);
 
     return Response.json({ accessToken });
   } catch (error) {

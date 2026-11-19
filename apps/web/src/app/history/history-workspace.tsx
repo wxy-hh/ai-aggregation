@@ -2,13 +2,15 @@
 
 import React from 'react';
 import { AppLayout } from '@/components/layout/app-layout';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ChatHistoryCard } from '@/components/history/chat-history-card';
 import { VoiceHistoryCard } from '@/components/history/voice-history-card';
 import { ImageHistoryCard } from '@/components/history/image-history-card';
 import { VideoHistoryCard } from '@/components/history/video-history-card';
 import { DestinyHistoryCard } from '@/components/history/destiny-history-card';
+import { AgentRunHistoryView } from '@/components/history/agent-run-history-view';
 import { HistoryMasonryGrid, HistoryMasonryItem } from '@/components/history/history-masonry-grid';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,13 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useHistoryStore } from '@/stores/history-store';
+import { useConversationsStore } from '@/stores/conversations-store';
+import {
+  countHistoryStats,
+  filterHistoryItems,
+  mergeHistoryWithConversations,
+} from '@/lib/history/project-conversations';
+import { conversationOrchestrator } from '@/stores/conversation-orchestrator';
 import { motion } from 'framer-motion';
 import { AuthGuard } from '@/components/auth/auth-guard';
 import type { HistoryType, ImageHistoryItem } from '@/types/history';
@@ -33,6 +42,7 @@ const tabs = [
   { id: 'image', label: '图片' },
   { id: 'video', label: '视频' },
   { id: 'destiny', label: '命理' },
+  { id: 'agent', label: '智能体' },
 ];
 
 export default function HistoryWorkspace() {
@@ -43,14 +53,17 @@ export default function HistoryWorkspace() {
 
   // 从 store 获取状态和操作
   const filter = useHistoryStore((state) => state.filter);
+  const items = useHistoryStore((state) => state.items);
   const isLoading = useHistoryStore((state) => state.isLoading);
   // 订阅水合完成态：Dexie 异步水合会更新 items 但不改 filter/isLoading，
   // 页面若不订阅则水合完成后不会重渲染，历史记录将一直显示为空
   const isHistoryInitialized = useHistoryStore((state) => state.isInitialized);
   const setFilter = useHistoryStore((state) => state.setFilter);
-  const getFilteredItems = useHistoryStore((state) => state.getFilteredItems);
-  const getStats = useHistoryStore((state) => state.getStats);
-  const deleteItem = useHistoryStore((state) => state.deleteItem);
+  const conversations = useConversationsStore((state) => state.conversations);
+  const conversationsLoaded = useConversationsStore((state) => state.isLoaded);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams.get('q') ?? '';
 
   const activeTab = filter.type || 'all';
   const searchQuery = filter.search || '';
@@ -61,16 +74,34 @@ export default function HistoryWorkspace() {
 
   const setSearchQuery = (search: string) => {
     setFilter({ search });
+    const params = new URLSearchParams(searchParams.toString());
+    if (search) params.set('q', search);
+    else params.delete('q');
+    const next = params.toString();
+    router.replace(next ? `/history?${next}` : '/history', { scroll: false });
   };
 
   useEffect(() => {
     setIsHydrated(true);
   }, []);
 
-  const historyReady = isHydrated && isHistoryInitialized;
-  const filteredHistory = historyReady ? getFilteredItems() : [];
+  useEffect(() => {
+    if ((filter.search ?? '') !== urlQuery) {
+      setFilter({ search: urlQuery });
+    }
+  }, [filter.search, setFilter, urlQuery]);
+
+  const mergedHistory = useMemo(
+    () => mergeHistoryWithConversations(items, conversations),
+    [conversations, items]
+  );
+
+  const historyReady = isHydrated && isHistoryInitialized && conversationsLoaded;
+  const filteredHistory = historyReady
+    ? filterHistoryItems(mergedHistory, { type: activeTab, search: searchQuery })
+    : [];
   const stats = historyReady
-    ? getStats()
+    ? countHistoryStats(mergedHistory)
     : {
         total: 0,
         chat: 0,
@@ -88,11 +119,12 @@ export default function HistoryWorkspace() {
 
   const confirmDelete = useCallback(() => {
     if (deleteId) {
-      deleteItem(deleteId);
+      // 删除传播（会话、音频侧、接力失效）由编排模块统一执行
+      void conversationOrchestrator.deleteHistoryItem(deleteId);
       setIsDeleteDialogOpen(false);
       setDeleteId(null);
     }
-  }, [deleteId, deleteItem]);
+  }, [deleteId]);
 
   // 处理图片下载
   const handleDownloadImage = useCallback(async (item: ImageHistoryItem) => {
@@ -210,7 +242,7 @@ export default function HistoryWorkspace() {
                   )}
                   <span className="relative z-10 flex items-center whitespace-nowrap">
                     {tab.label}
-                    {tab.id !== 'all' && (
+                    {tab.id !== 'all' && stats[tab.id as keyof typeof stats] !== undefined && (
                       <span className={cn('ml-1.5 text-xs', isActive ? 'opacity-90' : 'opacity-60')}>
                         ({stats[tab.id as keyof typeof stats]})
                       </span>
@@ -221,55 +253,59 @@ export default function HistoryWorkspace() {
             })}
           </div>
 
-          {/* 搜索与筛选 */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
-            <div className="relative flex-1 sm:w-80">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          {/* 搜索与筛选：仅非智能体 Tab（本地历史资产流）展示 */}
+          {activeTab !== 'agent' && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+              <div className="relative flex-1 sm:w-80">
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                <Input
+                  type="text"
+                  placeholder={activeTab === 'image' ? '搜索提示词...' : '搜索历史记录...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px] transition-[border-color,box-shadow] duration-200 ease-out"
                 />
-              </svg>
-              <Input
-                type="text"
-                placeholder={activeTab === 'image' ? '搜索提示词...' : '搜索历史记录...'}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-[42px] transition-[border-color,box-shadow] duration-200 ease-out"
-              />
+              </div>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
+              >
+                <svg
+                  className="w-4 h-4 text-slate-500"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                  />
+                </svg>
+                筛选
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors h-[42px]"
-            >
-              <svg
-                className="w-4 h-4 text-slate-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                />
-              </svg>
-              筛选
-            </Button>
-          </div>
+          )}
         </div>
 
-        {/* 内容网格 */}
+        {/* 内容展示区 */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6 custom-scrollbar">
-          {!historyReady || isLoading ? (
+          {activeTab === 'agent' ? (
+            <AgentRunHistoryView />
+          ) : !historyReady || isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
             </div>
@@ -302,7 +338,7 @@ export default function HistoryWorkspace() {
             </HistoryMasonryGrid>
           )}
 
-          {!isLoading && filteredHistory.length === 0 && (
+          {historyReady && !isLoading && activeTab !== 'agent' && filteredHistory.length === 0 && (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <svg
                 className="w-16 h-16 mb-4 opacity-20"
@@ -317,8 +353,10 @@ export default function HistoryWorkspace() {
                   d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
                 />
               </svg>
-              <p>没有找到相关历史记录</p>
-              <p className="text-sm mt-2">开始使用 AI 功能来创建您的第一条记录</p>
+              <p>{searchQuery ? `没有和「${searchQuery}」有关的记录` : '没有找到相关历史记录'}</p>
+              <p className="text-sm mt-2">
+                {searchQuery ? '搜索词会留在这里，可以改词或清空后再看全部' : '开始使用 AI 功能来创建您的第一条记录'}
+              </p>
             </div>
           )}
         </div>

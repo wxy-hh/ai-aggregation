@@ -272,6 +272,50 @@ describe('createAgentRuntimeContext 运行时装配', () => {
       expect(runtime.registry.list()).toHaveLength(0);
     });
   });
+
+  describe('知识库动态过滤 (工单 08 / QA-010)', () => {
+    function makeRagRegistry(): { registry: ToolRegistry } {
+      const searchTool: AgentToolSpec = {
+        name: 'knowledge_search',
+        description: '知识库检索',
+        parameters: z.object({ query: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '切片', summaryForDisplay: '完成' }),
+      };
+      const fetchTool: AgentToolSpec = {
+        name: 'web_fetch',
+        description: '抓取',
+        parameters: z.object({ url: z.string() }),
+        execute: async () => ({ ok: true, contentForModel: '内容', summaryForDisplay: '完成' }),
+      };
+      return { registry: createToolRegistry([searchTool, fetchTool]) };
+    }
+
+    it('无知识库用户自动剔除 knowledge_search 工具 (QA-010)', async () => {
+      const { registry: base } = makeRagRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'user-no-kb',
+        baseRegistry: base,
+        hasKnowledgeBases: async () => false, // 模拟无知识库
+        loadUserTools: async () => [],
+      });
+
+      expect(runtime.registry.has('knowledge_search')).toBe(false);
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+    });
+
+    it('有知识库用户正常挂载 knowledge_search 工具', async () => {
+      const { registry: base } = makeRagRegistry();
+      const runtime = await createAgentRuntimeContext({
+        userId: 'user-with-kb',
+        baseRegistry: base,
+        hasKnowledgeBases: async () => true, // 模拟有知识库
+        loadUserTools: async () => [],
+      });
+
+      expect(runtime.registry.has('knowledge_search')).toBe(true);
+      expect(runtime.registry.has('web_fetch')).toBe(true);
+    });
+  });
 });
 
 describe('finishMetadata 完成态观测元数据', () => {

@@ -34,6 +34,7 @@ const mockTool1: SanitizedAgentTool = {
     { name: 'days', type: 'number', required: false, description: '预报天数' },
   ],
   enabled: true,
+  requiresApproval: true,
   createdAt: '2026-10-01T12:00:00.000Z',
   updatedAt: '2026-10-01T12:00:00.000Z',
 };
@@ -50,6 +51,7 @@ const mockTool2: SanitizedAgentTool = {
   hasAuthHeaderValue: false,
   params: [],
   enabled: false,
+  requiresApproval: false,
   createdAt: '2026-10-01T13:00:00.000Z',
   updatedAt: '2026-10-01T13:00:00.000Z',
 };
@@ -69,7 +71,6 @@ describe('ProfileToolsSection 我的工具板块', () => {
         emailVerified: null,
         avatar: null,
         role: 'user',
-        isAnonymous: false,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -407,6 +408,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       hasAuthHeaderValue: false,
       params: [],
       enabled: true,
+      requiresApproval: true,
       createdAt: '2026-10-01T12:00:00.000Z',
       updatedAt: '2026-10-01T12:00:00.000Z',
     }));
@@ -428,19 +430,10 @@ describe('ProfileToolsSection 我的工具板块', () => {
     expect(addBtn).toBeDisabled();
   });
 
-  it('匿名用户：友好引导登录，不请求工具列表，不抛出异常', async () => {
+  it('未登录访客：友好引导登录，不请求工具列表，不抛出异常', async () => {
     useAuthStore.setState({
-      user: {
-        id: 'anon_1',
-        username: 'guest',
-        name: null,
-        email: null,
-        emailVerified: null,
-        avatar: null,
-        role: 'user',
-        isAnonymous: true,
-        createdAt: '2026-01-01T00:00:00.000Z',
-      },
+      user: null,
+      accessToken: null,
     });
 
     render(<ProfileToolsSection />);
@@ -509,6 +502,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       hasAuthHeaderValue: false,
       params: [{ name: 'text', type: 'string', required: true, description: '需要发送到飞书群的消息文本内容' }],
       enabled: true,
+      requiresApproval: true,
       createdAt: '2026-10-10T12:00:00.000Z',
       updatedAt: '2026-10-10T12:00:00.000Z',
     };
@@ -547,6 +541,8 @@ describe('ProfileToolsSection 我的工具板块', () => {
               },
             ],
             enabled: true,
+            // POST 工具默认需要用户确认（AGENT-HITL-ACTION / ADR-0041）
+            requiresApproval: true,
           }),
         })
       );
@@ -601,6 +597,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       hasAuthHeaderValue: false,
       params: [{ name: 'text', type: 'string', required: true, description: '需要发送到钉钉群的消息文本内容' }],
       enabled: true,
+      requiresApproval: true,
       createdAt: '2026-10-10T12:00:00.000Z',
       updatedAt: '2026-10-10T12:00:00.000Z',
     };
@@ -686,6 +683,7 @@ describe('ProfileToolsSection 我的工具板块', () => {
       hasAuthHeaderValue: true,
       params: [],
       enabled: true,
+      requiresApproval: false,
       createdAt: '2026-10-10T12:00:00.000Z',
       updatedAt: '2026-10-10T12:00:00.000Z',
     };

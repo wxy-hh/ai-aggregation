@@ -1,68 +1,63 @@
 ---
 name: setup-qa-workflow
-description: "在已配置 Matt Pocock 基础技能的项目上 scaffold qa-workflow 研发闭环定制层：流水线规范、CLAUDE.md 门禁指令、技能定制钩子与浏览器验收约定。跨项目推广时使用，每个新项目运行一次。"
+description: "为项目安装 QA 工作流、轻量检查器、技能定制和浏览器验收约定；幂等补齐缺失项，不覆盖本地定制。"
 disable-model-invocation: true
 ---
 
 # Setup QA Workflow
 
-Scaffold the **qa-workflow customization layer** (the 7-stage closed-loop pipeline: spec → tickets/qa-plan → TDD → real-browser acceptance → dual-axis review → PR evidence) onto a repo that already uses Matt Pocock's engineering skills.
+在已有 Matt Pocock 基础技能的项目上安装七阶段 QA 闭环：spec → tickets/qa-plan → TDD → 真实验收 → 双轴审查 → PR 证据。
 
-This skill is self-contained: to adopt the workflow in another project, copy this skill folder into that repo's `.claude/skills/` (or the agent runtime's equivalent skills directory) and run it there.
+本技能本身是提示词引导的安装流程，不添加 Hooks。`qa-check.mjs` 是独立、零依赖检查器，只在用户或 Agent 显式调用时运行，不自动重试。
 
-This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
+## 0. 前置条件（不满足则停止）
 
-## 0. Prerequisites (hard stop)
+- 已安装 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`tdd`、`code-review`、`pr`、`retro`、`handoff`、`grill-with-docs`、`diagnosing-bugs`、`improve-codebase-architecture`。
+- 已安装 `qa-test-planner`；浏览器技能按宿主能力选择，macOS 可优先 vendor `ego-browser`。
+- 已有 `docs/agents/issue-tracker.md`、`triage-labels.md`、`domain.md`；缺失时先运行 `/setup-matt-pocock-skills`。
 
-Check all of these before doing anything; report what's missing and stop:
+## 1. 探索
 
-- **Matt Pocock base skills installed** in this repo's skills directory: `to-spec`, `to-tickets`, `implement`, `implement-spec`, `tdd`, `code-review`, `pr`, `retro`, `handoff`, `grill-with-docs`, `diagnosing-bugs`, `improve-codebase-architecture`.
-- **Project skills installed**: `qa-test-planner`, `ego-browser` (if the source repo that shared this skill is available, these can be vendored from its `.claude/skills/`).
-- **Base tracker config exists**: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md` — the output of `/setup-matt-pocock-skills`. If absent, tell the user to run `/setup-matt-pocock-skills` first (local-markdown tracker recommended for repos without GitHub/GitLab).
+只读确认：
 
-**Idempotency guard**: if `docs/agents/qa-workflow.md` already exists, do NOT regenerate or overwrite anything. Report that the layer is already configured, and instead run the environment checklist from step 4 and exit.
+- 根 `package.json` 的 dev 命令、包管理器、首选端口与测试命令；
+- Playwright 配置、E2E 目录和运行命令；选择原生 Node 驱动时，只读检查宿主根 `package.json` 是否将 `playwright` 声明为根级直接开发依赖，仅安装在工作区子包中不算；
+- `CLAUDE.md` / `AGENTS.md` 及其符号链接关系；
+- `docs/agents/`、`docs/handoff/`、`.gitignore` 和 `.claude/skills/` 是否入库；
+- 用户可见核心链路，以及 `docs/agents/qa-workflow.md`、`tooling/scripts/` 核心工具是否已存在。
 
-## 1. Explore
+向用户汇总 `{DEV_COMMAND}`、`{WEB_PORT}`、`{E2E_COMMAND}`、`{E2E_DIR}`、`{CORE_LINKS}`、`{TEST_COMMAND}` 和技能入库选择，确认后再写入。不得读取或打印秘密值。探索不等于修改，安装过程不得修改宿主 package.json。
 
-Read whatever exists; don't assume:
+## 2. 分层幂等规则
 
-- `package.json` scripts: the **dev command** that starts the user-facing web app (e.g. `pnpm dev`, `pnpm dev:web`) and its **preferred port** (look at `-p` flags, port-resolution scripts, env files, docs).
-- E2E setup: is there a Playwright config and an e2e directory (e.g. `apps/web/e2e/`, `e2e/`)? What command runs it?
-- `CLAUDE.md` and `AGENTS.md` at the repo root: which exists? Is either a symlink? (Edit the real file, never the symlink target's copy.) Is there already a QA directive block?
-- `docs/agents/`: which files already exist?
-- `.gitignore`: is `.scratch/` ignored? Is `.claude/` tracked or ignored?
-- `docs/handoff/` exists?
+- 已有 `docs/agents/qa-workflow.md` 时**绝不重写任何既有文档**，但仍检查检查器是否缺失，并继续环境检查。
+- 已有 `tooling/scripts/qa-check.mjs` 时不覆盖；与模板不一致只报告差异，由用户决定是否升级。
+- 通用安装器不得修改宿主 package.json，不注入任何 scripts 别名；项目已有 scripts 保留原样。
+- 新安装项目执行完整模板写入；已配置项目只补齐缺失项，不借“更新”覆盖本地定制。
 
-## 2. Present findings and ask
+## 3. 写入
 
-Summarize the detected parameters and confirm them with the user before writing anything:
+所有模板占位符必须替换为确认值，不留 `{PLACEHOLDER}`：
 
-- `{DEV_COMMAND}` — command that starts the dev server
-- `{WEB_PORT}` — preferred local dev port
-- `{E2E_COMMAND}` / `{E2E_DIR}` — headless regression command and spec directory (if none exists yet, propose a sensible default for the stack and note it must be created on first use)
-- `{CORE_LINKS}` — the project's user-visible core journeys that can never skip real-browser acceptance. Offer examples from the domain (e.g. 认证、核心对话/提交流程、支付、历史记录); the user must confirm the final list.
+1. 从 `templates/qa-workflow.md` 生成 `docs/agents/qa-workflow.md`，适配核心链路、dev 命令、端口、E2E 参数及测试命令 `{TEST_COMMAND}`。
+2. 从 `templates/prompt-shortcuts.md` 复制思维快捷键；已有文件跳过。
+3. 向真实 `CLAUDE.md` 或 `AGENTS.md` 注入 `templates/claude-qa-directive.md`，不清空其他段落，不直接编辑符号链接。
+4. 按 `templates/skill-customizations.md` 幂等注入 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`code-review`、`handoff`、`tdd`、`pr` 和 issue tracker 的项目约定。
+5. 将 `templates/qa-check.mjs`、`templates/review-package.mjs`、`templates/qa-run.mjs` 与 `templates/qa-spec-review.mjs` 复制到 `tooling/scripts/`；`templates/qa-browser-helper.mjs` 也复制到同一目录，视觉目标原语按仓库薄辅助模块契约使用。不增加 npm 依赖，不得修改宿主 package.json，不添加任何 scripts；四个核心工具与辅助模块直接由 Node 调用，新增纯函数 module 与辅助模块也必须同步。
+6. 确保 `.scratch/` 被忽略；按用户选择设置 `.claude/skills/` 入库规则，仅忽略本地配置和临时 Worktree。
+7. 创建 `docs/handoff/.gitkeep`（目录不存在时）。不得新增 PreToolUse、Stop、SessionStart 或 Git Hook。
 
-Also ask one question: should `.claude/skills/` be **tracked in git** (recommended for team rollout, so customizations version with the repo) or kept local?
+## 4. 完成检查
 
-## 3. Write
+报告实际写入、跳过和冲突项，并检查：
 
-Use the templates in this skill folder. Replace every `{PLACEHOLDER}` with the confirmed values; never leave a placeholder in a written file.
+- Node 版本满足项目要求，依赖已安装；
+- `implement` / `implement-spec` 能在验收后实际调用 `code-review` 并取得独立上下文的真实独立审查返回；无独立上下文能力时只交付审查包并保持待独立审查，不运行最终 `qa-check review`。`结果: PASS` 只表示机器校验通过，不证明独立来源、不判断证据语义、不构成交付授权，不替代独立审查与人工终审；
+- `node tooling/scripts/qa-check.mjs --help` 能显示用法（该用法允许退出 1 表示缺少参数）；
+- 能用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成不可覆盖的证据日志，同名标签需换新；
+- dev 服务与端口锚点可用；
+- 浏览器工具符合宿主优先级，ego-browser 不可用时说明 Playwright 降级；
+- 必需环境变量仅报告 SET/UNSET，不显示值；
+- 异步链路所需 Worker/队列健康。
 
-1. **`docs/agents/qa-workflow.md`** — from [templates/qa-workflow.md](./templates/qa-workflow.md). Adaptation points: core-links list, environment self-healing block (dev command, port, drift-range source), e2e command/dir, the P0 frozen-case list (starts empty — cases are registered there as they get固化).
-2. **`docs/agents/prompt-shortcuts.md`** — copy [templates/prompt-shortcuts.md](./templates/prompt-shortcuts.md) verbatim. Skip if the file already exists.
-3. **CLAUDE.md / AGENTS.md** — inject the QA directive block from [templates/claude-qa-directive.md](./templates/claude-qa-directive.md). If a QA directive block already exists, update it in place; never clobber surrounding user sections. Edit whichever of `CLAUDE.md`/`AGENTS.md` already exists; if both exist via symlink, edit the real file.
-4. **Skill customization hooks** — apply the injections in [templates/skill-customizations.md](./templates/skill-customizations.md) to `to-spec`, `implement`, `implement-spec`, `handoff`, and `docs/agents/issue-tracker.md`. Each injection carries a `项目定制` marker: skip any whose marker is already present (idempotent re-runs). Do not modify any other skill files.
-5. **`.gitignore`** — ensure `.scratch/` is ignored (the working area must never be committed). If the user chose tracked skills, ensure `.claude/skills/` is NOT ignored (ignore only `.claude/settings.local.json`, `.claude/tmp-arch/`, `.claude/worktrees/`).
-6. **`docs/handoff/`** — create the directory (with a `.gitkeep`) if absent; it is the tracked cross-person handoff channel referenced by the workflow.
-
-## 4. Done
-
-Report what was written, then output the **environment checklist** for whoever runs the pipeline on this machine, probing each item and marking ready/missing:
-
-- Runtime version manager file (`.nvmrc` / `.node-version`) satisfied; dependencies installed
-- `{DEV_COMMAND}` boots and the probe port returns 200
-- Browser tooling: `ego-browser` CLI installed (macOS preferred), otherwise Playwright browsers installed (`playwright install`) as the degradation path
-- Environment variables / secrets file present per the project's own docs
-- Async chains (queues/workers) running, if the product has any
-
-Mention they can edit `docs/agents/qa-workflow.md` directly later; re-running this skill is safe (idempotent guard) and only reports status once configured.
+后续可直接编辑 `docs/agents/qa-workflow.md`。重复运行只允许补缺和报告，不得覆盖已有文件。

@@ -11,6 +11,11 @@
  * 7. GET 方法 query 拼接与参数校验。
  */
 
+import {
+  setupAiSdkMocks,
+  streamTextMock,
+  generateTextMock,
+} from './testing/mock-ai-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -20,6 +25,9 @@ import type { UserWebhookTool } from '@repo/db';
 import { encryptWebhookSecret } from '@/lib/crypto';
 import { createChatHandler } from './chat-handler';
 import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
+
+/** 审批凭证签名密钥（测试用） */
+const APPROVAL_TEST_SECRET = 'approval-test-secret-0123456789abcdef0123456789abcdef';
 
 /** 测试用 32 字节对称主密钥（64 字符十六进制） */
 const TEST_SECRET_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -97,19 +105,31 @@ const {
   currentUserMock,
   rateLimiterMock,
   quotaSessionReserveMock,
-  streamTextMock,
   getAvailableQuotaMock,
   prismaAuditCreateMock,
   httpsRequestMock,
   dnsLookupMock,
   networkState,
+  redisState,
 } = vi.hoisted(() => {
   const currentUserMock = vi.fn();
   const rateLimiterMock = { check: vi.fn() };
   const quotaSessionReserveMock = vi.fn();
-  const streamTextMock = vi.fn();
   const getAvailableQuotaMock = vi.fn();
   const prismaAuditCreateMock = vi.fn();
+
+  // 假 Redis（AGENT-HITL-ACTION）：SET NX 语义 + 可注入故障；used 记录已占用的 key
+  const redisState = {
+    used: new Set<string>(),
+    down: false,
+    setMock: vi.fn(),
+  };
+  redisState.setMock.mockImplementation(async (key: string) => {
+    if (redisState.down) throw new Error('redis down');
+    if (redisState.used.has(key)) return null;
+    redisState.used.add(key);
+    return 'OK';
+  });
 
   const networkState = {
     responseConfig: {
@@ -195,28 +215,27 @@ const {
     currentUserMock,
     rateLimiterMock,
     quotaSessionReserveMock,
-    streamTextMock,
     getAvailableQuotaMock,
     prismaAuditCreateMock,
     httpsRequestMock,
     dnsLookupMock,
     networkState,
+    redisState,
   };
 });
 
 // 模块级 Mock
 vi.mock('@/lib/auth/get-current-user', () => ({ getCurrentUser: currentUserMock }));
-vi.mock('@repo/redis', () => ({ getRateLimiter: () => rateLimiterMock }));
+vi.mock('@repo/redis', () => ({
+  getRateLimiter: () => rateLimiterMock,
+  getRedisClient: () => ({ set: redisState.setMock }),
+}));
 vi.mock('@/lib/billing/quota-session', () => ({
   QuotaSession: { reserve: quotaSessionReserveMock },
 }));
 vi.mock('@/lib/billing/quota-service', () => ({
   getAvailableQuota: getAvailableQuotaMock,
 }));
-vi.mock('ai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('ai')>();
-  return { ...actual, streamText: streamTextMock };
-});
 vi.mock('@repo/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@repo/db')>();
   return {
@@ -300,9 +319,13 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAiSdkMocks();
     vi.stubEnv('WEBHOOK_SECRET_KEY', TEST_SECRET_KEY);
     vi.stubEnv('ARK_API_KEY', 'test-ark-key');
     vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
+    vi.stubEnv('APPROVAL_TOKEN_SECRET', APPROVAL_TEST_SECRET);
+    redisState.used.clear();
+    redisState.down = false;
 
     currentUserMock.mockResolvedValue({ id: 'user-001', role: 'user' });
     rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
@@ -343,6 +366,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
         { name: 'orderId', type: 'string', required: true, description: '订单号' },
       ],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -461,6 +485,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [{ name: 'metric', type: 'string', required: true }],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -558,6 +583,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -574,6 +600,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [],
       enabled: false,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -615,6 +642,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [{ name: 'id', type: 'string', required: true }],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -716,6 +744,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
         { name: 'days', type: 'number', required: false },
       ],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -771,6 +800,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -834,6 +864,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       authHeaderValueEnc: null,
       params: [],
       enabled: true,
+      requiresApproval: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -876,5 +907,616 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
         }),
       })
     );
+  });
+
+  describe('写操作审批（AGENT-HITL-ACTION / ADR-0041）', () => {
+    /** 需审批的 POST 工具（默认） */
+    function makeNotifyTool(overrides: Partial<UserWebhookTool> = {}): UserWebhookTool {
+      return {
+        id: 'tool-hitl-notify',
+        userId: 'user-001',
+        name: '通知接口',
+        callName: 'notify',
+        description: '向外部系统发送通知',
+        url: 'https://hooks.merchant.com/notify',
+        method: 'POST',
+        authHeaderName: null,
+        authHeaderValueEnc: null,
+        params: [{ name: 'message', type: 'string', required: true, description: '通知内容' }],
+        enabled: true,
+        requiresApproval: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+      };
+    }
+
+    /** 只读 GET 工具（默认无需审批） */
+    function makeLookupTool(overrides: Partial<UserWebhookTool> = {}): UserWebhookTool {
+      return makeNotifyTool({
+        id: 'tool-hitl-lookup',
+        name: '查询接口',
+        callName: 'lookup',
+        description: '只读查询',
+        url: 'https://api.merchant.com/lookup',
+        method: 'GET',
+        params: [{ name: 'q', type: 'string', required: true, description: '查询词' }],
+        requiresApproval: false,
+        ...overrides,
+      });
+    }
+
+    /** 第 1 次 streamText 返回给定工具调用，之后返回收尾文本 */
+    function mockModelCalls(
+      toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>
+    ) {
+      let n = 0;
+      streamTextMock.mockImplementation(() => {
+        n++;
+        if (n === 1) return makeFakeResult({ toolCalls });
+        return makeFakeResult({ textParts: ['已处理完毕。'] });
+      });
+    }
+
+    function makeHandler(tools: UserWebhookTool[]) {
+      return createChatHandler({
+        getAdapter: () => {
+          throw new Error('不应调用 adapter');
+        },
+        getUserTools: async () => tools,
+      });
+    }
+
+    async function run(
+      tools: UserWebhookTool[],
+      toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>,
+      bodyOverrides: Record<string, unknown> = {}
+    ) {
+      mockModelCalls(toolCalls);
+      const response = await makeHandler(tools)(
+        makeAgentRequest({ approvalScope: 'conv-1', ...bodyOverrides })
+      );
+      return { response, events: await readSseEvents(response) };
+    }
+
+    const notifyCall = {
+      toolCallId: 'call_n1',
+      toolName: 'wh_notify',
+      input: { message: '你好' },
+    };
+
+    it('1. 需审批工具被调用时，流含 tool_approval_request，携带工具名、域名、参数与过期时间 (TC03-1)', async () => {
+      const { events } = await run([makeNotifyTool()], [notifyCall]);
+
+      const approval = events.find((e) => e.type === 'tool_approval_request') as
+        | { approval: Record<string, unknown> }
+        | undefined;
+      expect(approval).toBeDefined();
+      expect(approval?.approval).toMatchObject({
+        callId: 'call_n1',
+        toolName: 'wh_notify',
+        host: 'hooks.merchant.com',
+        params: { message: '你好' },
+      });
+      expect(approval?.approval.token).toEqual(expect.any(String));
+      expect(approval?.approval.expiresAt as number).toBeGreaterThan(Date.now());
+    });
+
+    it('2. 审批请求之后流以正常 done 事件结束，不出现 error (TC03-2)', async () => {
+      const { events } = await run([makeNotifyTool()], [notifyCall]);
+
+      const approvalIndex = events.findIndex((e) => e.type === 'tool_approval_request');
+      expect(approvalIndex).toBeGreaterThanOrEqual(0);
+      expect(events[events.length - 1].type).toBe('done');
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+      expect(events.findIndex((e) => e.type === 'done')).toBeGreaterThan(approvalIndex);
+    });
+
+    it('3. 暂停的调用不产生任何出站请求 (TC03-3)', async () => {
+      await run([makeNotifyTool()], [notifyCall]);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('4. 暂停时写入一条 pending_approval 审计记录 (TC03-4)', async () => {
+      await run([makeNotifyTool()], [notifyCall]);
+
+      const pending = prismaAuditCreateMock.mock.calls.filter(
+        (c) => (c[0] as { data: { outcome: string } }).data.outcome === 'pending_approval'
+      );
+      expect(pending).toHaveLength(1);
+      expect((pending[0][0] as { data: Record<string, unknown> }).data).toMatchObject({
+        userId: 'user-001',
+        toolId: 'tool-hitl-notify',
+        hostname: 'hooks.merchant.com',
+        method: 'POST',
+      });
+    });
+
+    it('5. 暂停后没有为该调用写入 success 或 failed 记录 (TC03-5)', async () => {
+      await run([makeNotifyTool()], [notifyCall]);
+
+      const outcomes = prismaAuditCreateMock.mock.calls.map(
+        (c) => (c[0] as { data: { outcome: string } }).data.outcome
+      );
+      expect(outcomes).toEqual(['pending_approval']);
+    });
+
+    it('6. 同轮「GET、需审批 POST、GET」：第一个只读调用已出站 1 次 (TC03-6)', async () => {
+      await run(
+        [makeLookupTool(), makeNotifyTool()],
+        [
+          { toolCallId: 'call_1', toolName: 'wh_lookup', input: { q: 'a' } },
+          notifyCall,
+          { toolCallId: 'call_3', toolName: 'wh_lookup', input: { q: 'b' } },
+        ]
+      );
+      expect(networkState.requestCount).toBe(1);
+    });
+
+    it('7. 同轮需审批 POST 之后的调用不出站，且流中没有它的 tool_call 事件 (TC03-7)', async () => {
+      const { events } = await run(
+        [makeLookupTool(), makeNotifyTool()],
+        [
+          { toolCallId: 'call_1', toolName: 'wh_lookup', input: { q: 'a' } },
+          notifyCall,
+          { toolCallId: 'call_3', toolName: 'wh_lookup', input: { q: 'b' } },
+        ]
+      );
+
+      expect(networkState.requestCount).toBe(1);
+      const callIds = events
+        .filter((e) => e.type === 'tool_call')
+        .map((e) => (e as unknown as { call: { id: string } }).call.id);
+      expect(callIds).toEqual(['call_1', 'call_n1']);
+    });
+
+    it('8. 审批字段关闭的 POST 工具直接出站 1 次，不出现审批事件 (TC03-8)', async () => {
+      const { events } = await run([makeNotifyTool({ requiresApproval: false })], [notifyCall]);
+
+      expect(networkState.requestCount).toBe(1);
+      expect(events.some((e) => e.type === 'tool_approval_request')).toBe(false);
+    });
+
+    it('9. 审批字段关闭的 GET 工具行为与现状一致：出站 1 次、成对事件、无审批事件 (TC03-9)', async () => {
+      const { events } = await run(
+        [makeLookupTool()],
+        [{ toolCallId: 'call_g1', toolName: 'wh_lookup', input: { q: 'a' } }]
+      );
+
+      expect(networkState.requestCount).toBe(1);
+      expect(events.some((e) => e.type === 'tool_approval_request')).toBe(false);
+      expect(events.filter((e) => e.type === 'tool_call')).toHaveLength(1);
+      expect(
+        events.filter((e) => e.type === 'tool_result' && (e as { status?: string }).status === 'success')
+      ).toHaveLength(1);
+    });
+
+    it('10. 被会话级停用的需审批工具不在模型工具集中，也不产生审批事件 (TC03-10)', async () => {
+      const { events } = await run([makeNotifyTool()], [notifyCall], {
+        disabledToolKeys: ['wh_notify'],
+      });
+
+      const toolsOfFirstCall = streamTextMock.mock.calls[0][0].tools as Record<string, unknown>;
+      expect(Object.keys(toolsOfFirstCall)).not.toContain('wh_notify');
+      expect(events.some((e) => e.type === 'tool_approval_request')).toBe(false);
+      expect(networkState.requestCount).toBe(0);
+    });
+  });
+
+  describe('写操作审批恢复（AGENT-HITL-ACTION / ADR-0041）', () => {
+    function makeNotifyTool(overrides: Partial<UserWebhookTool> = {}): UserWebhookTool {
+      return {
+        id: 'tool-hitl-notify',
+        userId: 'user-001',
+        name: '通知接口',
+        callName: 'notify',
+        description: '向外部系统发送通知',
+        url: 'https://hooks.merchant.com/notify',
+        method: 'POST',
+        authHeaderName: null,
+        authHeaderValueEnc: null,
+        params: [{ name: 'message', type: 'string', required: true, description: '通知内容' }],
+        enabled: true,
+        requiresApproval: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+      };
+    }
+
+    function makeHandler(tools: UserWebhookTool[] = [makeNotifyTool()]) {
+      return createChatHandler({
+        getAdapter: () => {
+          throw new Error('不应调用 adapter');
+        },
+        getUserTools: async () => tools,
+      });
+    }
+
+    /** 先走一遍暂停请求拿到真实凭证，再由用例构造恢复请求 */
+    async function obtainApproval(
+      scope = 'conv-1',
+      userId = 'user-001'
+    ): Promise<{ callId: string; toolName: string; params: Record<string, unknown>; token: string }> {
+      currentUserMock.mockResolvedValue({ id: userId, role: 'user' });
+      let n = 0;
+      streamTextMock.mockImplementation(() => {
+        n++;
+        return n === 1
+          ? makeFakeResult({
+              toolCalls: [
+                { toolCallId: 'call_n1', toolName: 'wh_notify', input: { message: '你好' } },
+              ],
+            })
+          : makeFakeResult({ textParts: ['不应出现'] });
+      });
+      const response = await makeHandler()(makeAgentRequest({ approvalScope: scope }));
+      const events = await readSseEvents(response);
+      const approval = (events.find((e) => e.type === 'tool_approval_request') as {
+        approval: { callId: string; toolName: string; params: Record<string, unknown>; token: string };
+      }).approval;
+      // 清理暂停阶段的副作用，让恢复阶段的断言只看恢复本身
+      networkState.requestCount = 0;
+      prismaAuditCreateMock.mockClear();
+      quotaSessionReserveMock.mockClear();
+      fakeSession.finalize.mockClear();
+      streamTextMock.mockReset();
+      currentUserMock.mockResolvedValue({ id: 'user-001', role: 'user' });
+      return approval;
+    }
+
+    /** 恢复请求：模型在恢复后只做收尾回答 */
+    function resumeRequest(
+      approval: { callId: string; toolName: string; params: unknown; token: string },
+      overrides: Record<string, unknown> = {}
+    ) {
+      return makeAgentRequest({
+        approvalScope: 'conv-1',
+        messages: [{ role: 'user', content: '帮我发个通知' }],
+        approvalResume: {
+          token: approval.token,
+          callId: approval.callId,
+          toolName: approval.toolName,
+          params: approval.params,
+        },
+        ...overrides,
+      });
+    }
+
+    function mockResumeModel(text = '通知已发送。') {
+      streamTextMock.mockImplementation(() => makeFakeResult({ textParts: [text] }));
+    }
+
+    async function errorText(response: Response): Promise<string> {
+      const body = await response.text();
+      return body;
+    }
+
+    // ---------- TC04 ----------
+    it('1. 带有效凭证的恢复请求使被批准的调用出站恰好 1 次 (TC04-1)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const response = await makeHandler()(resumeRequest(approval));
+      await readSseEvents(response);
+      expect(networkState.requestCount).toBe(1);
+    });
+
+    it('2. 出站参数与凭证绑定的参数一致，请求体里其他参数不被采用 (TC04-2)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const response = await makeHandler()(
+        resumeRequest({ ...approval, params: approval.params }, {
+          // 客户端试图夹带别的参数：服务端只认凭证绑定的那一份
+          approvalResume: {
+            token: approval.token,
+            callId: approval.callId,
+            toolName: approval.toolName,
+            params: approval.params,
+            extra: { message: '被替换' },
+          },
+        })
+      );
+      await readSseEvents(response);
+      expect(networkState.lastReq?.writtenData.join('')).toBe(JSON.stringify({ message: '你好' }));
+    });
+
+    it('3. 模型收到合成的「调用 + 结果」工具消息对并继续作答，以 done 结束 (TC04-3)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel('通知已发送。');
+      const response = await makeHandler()(resumeRequest(approval));
+      const events = await readSseEvents(response);
+
+      const sent = streamTextMock.mock.calls[0][0].messages as Array<{
+        role: string;
+        content: unknown;
+      }>;
+      const assistantCall = sent.find(
+        (m) =>
+          m.role === 'assistant' &&
+          Array.isArray(m.content) &&
+          (m.content as Array<{ type: string }>).some((c) => c.type === 'tool-call')
+      );
+      const toolResult = sent.find((m) => m.role === 'tool');
+      expect(assistantCall).toBeDefined();
+      expect(toolResult).toBeDefined();
+      expect(JSON.stringify(toolResult?.content)).toContain('call_n1');
+      expect(events.map((e) => e.type)).toContain('text-delta');
+      expect(events[events.length - 1].type).toBe('done');
+    });
+
+    it('4. 恢复请求不调用 Planner，流中没有 plan_created (TC04-4)', async () => {
+      const approval = await obtainApproval();
+      generateTextMock.mockClear();
+      mockResumeModel();
+      const response = await makeHandler()(resumeRequest(approval));
+      const events = await readSseEvents(response);
+      expect(events.some((e) => e.type === 'plan_created')).toBe(false);
+      // 规划与质检都走 generateText：恢复请求的规划不应发生
+      const plannerCalls = generateTextMock.mock.calls.filter((c) =>
+        JSON.stringify(c[0]).includes('任务规划专家')
+      );
+      expect(plannerCalls).toHaveLength(0);
+    });
+
+    it('5. 出站成功后写入 success 审计记录 (TC04-5)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      await readSseEvents(await makeHandler()(resumeRequest(approval)));
+      const outcomes = prismaAuditCreateMock.mock.calls.map(
+        (c) => (c[0] as { data: { outcome: string } }).data.outcome
+      );
+      expect(outcomes).toEqual(['success']);
+    });
+
+    it('6. 下游返回 500 时，工具结果含失败原因，并写入 failed 审计记录 (TC04-6)', async () => {
+      const approval = await obtainApproval();
+      networkState.responseConfig = {
+        statusCode: 500,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ error: '下游故障' }),
+      };
+      mockResumeModel('通知发送失败。');
+      await readSseEvents(await makeHandler()(resumeRequest(approval)));
+
+      const sent = streamTextMock.mock.calls[0][0].messages as Array<{ role: string; content: unknown }>;
+      const toolMsg = sent.find((m) => m.role === 'tool');
+      expect(JSON.stringify(toolMsg?.content)).toContain('HTTP 500');
+      const outcomes = prismaAuditCreateMock.mock.calls.map(
+        (c) => (c[0] as { data: { outcome: string } }).data.outcome
+      );
+      expect(outcomes).toEqual(['failed']);
+    });
+
+    it('7. 恢复执行计入新请求的 Webhook 派发次数：随后第 3 次调用被 skipped (TC04-7)', async () => {
+      const approval = await obtainApproval();
+      // 恢复后模型连发 3 次 wh_notify：恢复占 1 次，第 2、3 次出站，第 4 次（本请求第 3 次决策调用）被拦
+      let n = 0;
+      streamTextMock.mockImplementation(() => {
+        n++;
+        if (n === 1) {
+          return makeFakeResult({
+            toolCalls: [
+              { toolCallId: 'c2', toolName: 'wh_lookup', input: { q: '1' } },
+              { toolCallId: 'c3', toolName: 'wh_lookup', input: { q: '2' } },
+              { toolCallId: 'c4', toolName: 'wh_lookup', input: { q: '3' } },
+            ],
+          });
+        }
+        return makeFakeResult({ textParts: ['完毕'] });
+      });
+      const lookup = makeNotifyTool({
+        id: 'tool-lookup',
+        callName: 'lookup',
+        method: 'GET',
+        url: 'https://api.merchant.com/lookup',
+        params: [{ name: 'q', type: 'string', required: true }],
+        requiresApproval: false,
+      });
+      await readSseEvents(await makeHandler([makeNotifyTool(), lookup])(resumeRequest(approval)));
+
+      // 恢复 1 次 + lookup 2 次出站；第 3 次 lookup 被 skipped
+      expect(networkState.requestCount).toBe(3);
+      const outcomes = prismaAuditCreateMock.mock.calls.map(
+        (c) => (c[0] as { data: { outcome: string } }).data.outcome
+      );
+      expect(outcomes).toContain('skipped');
+    });
+
+    // ---------- TC05 ----------
+    it('1. 同一凭证第二次提交被拒绝，累计出站仍为 1，提示可读 (TC05-1)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      await readSseEvents(await makeHandler()(resumeRequest(approval)));
+      const second = await makeHandler()(resumeRequest(approval));
+      const text = await errorText(second);
+      expect(second.status).toBe(409);
+      expect(text).toContain('该审批已被使用');
+      expect(networkState.requestCount).toBe(1);
+    });
+
+    it('2. 同一凭证并发提交两次，累计出站为 1 (TC05-2)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const [a, b] = await Promise.all([
+        makeHandler()(resumeRequest(approval)),
+        makeHandler()(resumeRequest(approval)),
+      ]);
+      await Promise.all([a.text(), b.text()]);
+      expect(networkState.requestCount).toBe(1);
+      expect([a.status, b.status].sort()).toEqual([200, 409]);
+    });
+
+    it('3. 参数被篡改的恢复请求被拒绝，不出站 (TC05-3)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const res = await makeHandler()(resumeRequest({ ...approval, params: { message: '被篡改' } }));
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('4. 工具被篡改的恢复请求被拒绝，不出站 (TC05-4)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const other = makeNotifyTool({ id: 'tool-other', callName: 'other' });
+      const res = await makeHandler([makeNotifyTool(), other])(
+        resumeRequest({ ...approval, toolName: 'wh_other' })
+      );
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('5. 其他用户持有的凭证被拒绝，不出站 (TC05-5)', async () => {
+      const approval = await obtainApproval('conv-1', 'user-001');
+      mockResumeModel();
+      currentUserMock.mockResolvedValue({ id: 'user-002', role: 'user' });
+      const res = await createChatHandler({
+        getAdapter: () => {
+          throw new Error('不应调用 adapter');
+        },
+        getUserTools: async () => [makeNotifyTool({ userId: 'user-002' })],
+      })(resumeRequest(approval));
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('6. 其他会话持有的凭证被拒绝，不出站 (TC05-6)', async () => {
+      const approval = await obtainApproval('conv-1');
+      mockResumeModel();
+      const res = await makeHandler()(resumeRequest(approval, { approvalScope: 'conv-2' }));
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('7. 签名被改动的伪造凭证被拒绝，不出站 (TC05-7)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const [body, sig] = approval.token.split('.');
+      const forged = `${body}.${sig.slice(0, -2)}${sig.endsWith('AA') ? 'BB' : 'AA'}`;
+      const res = await makeHandler()(resumeRequest({ ...approval, token: forged }));
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('8. 签发后 9 分 59 秒提交的凭证被接受，出站 1 次 (TC05-8)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-10-30T10:00:00Z'));
+        const approval = await obtainApproval();
+        mockResumeModel();
+        vi.setSystemTime(new Date('2026-10-30T10:09:59Z'));
+        const res = await makeHandler()(resumeRequest(approval));
+        await res.text();
+        expect(res.status).toBe(200);
+        expect(networkState.requestCount).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('9. 签发后 10 分 1 秒提交的凭证被拒绝，不出站，提示重新提出需求 (TC05-9)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-10-30T10:00:00Z'));
+        const approval = await obtainApproval();
+        mockResumeModel();
+        vi.setSystemTime(new Date('2026-10-30T10:10:01Z'));
+        const res = await makeHandler()(resumeRequest(approval));
+        const text = await res.text();
+        expect(res.status).toBe(410);
+        expect(text).toContain('重新提出需求');
+        expect(networkState.requestCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('10. Redis 不可用时恢复请求失败关闭，不出站 (TC05-10)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      redisState.down = true;
+      const res = await makeHandler()(resumeRequest(approval));
+      await res.text();
+      expect(res.status).toBe(503);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('11. Redis 不可用时响应含稍后重试的中文提示 (TC05-11)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      redisState.down = true;
+      const res = await makeHandler()(resumeRequest(approval));
+      expect(await res.text()).toContain('请稍后重试');
+    });
+
+    it('12. 签发后工具被删除重建（同名新 ID），旧凭证被拒绝，不出站 (TC05-12)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const res = await makeHandler([makeNotifyTool({ id: 'tool-recreated' })])(resumeRequest(approval));
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('13. 签发后工具 URL 改到别的域名，旧凭证被拒绝，不出站 (TC05-13)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const res = await makeHandler([makeNotifyTool({ url: 'https://evil.example.org/notify' })])(
+        resumeRequest(approval)
+      );
+      await res.text();
+      expect(res.status).toBe(403);
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    it('14. 签发后工具被停用，恢复请求返回工具不可用提示，不出站 (TC05-14)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      const res = await makeHandler([makeNotifyTool({ enabled: false })])(resumeRequest(approval));
+      const text = await res.text();
+      expect(res.status).toBe(409);
+      expect(text).toContain('已被停用或删除');
+      expect(networkState.requestCount).toBe(0);
+    });
+
+    // ---------- TC06 ----------
+    it('1. 有效恢复请求按一次新请求预留 1 次、结算 1 次 (TC06-1)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      await readSseEvents(await makeHandler()(resumeRequest(approval)));
+      expect(quotaSessionReserveMock).toHaveBeenCalledTimes(1);
+      expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
+    });
+
+    it('2. 凭证过期被拒绝的恢复请求不预留额度 (TC06-2)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-10-30T10:00:00Z'));
+        const approval = await obtainApproval();
+        mockResumeModel();
+        vi.setSystemTime(new Date('2026-10-30T10:10:01Z'));
+        const res = await makeHandler()(resumeRequest(approval));
+        await res.text();
+        expect(quotaSessionReserveMock).not.toHaveBeenCalled();
+        expect(fakeSession.finalize).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('3. 额度不足时返回额度不足提示，被批准的调用不出站 (TC06-3)', async () => {
+      const approval = await obtainApproval();
+      mockResumeModel();
+      getAvailableQuotaMock.mockResolvedValue(0);
+      const res = await makeHandler()(resumeRequest(approval));
+      const text = await res.text();
+      expect(res.status).toBe(402);
+      expect(text).toContain('额度不足');
+      expect(networkState.requestCount).toBe(0);
+    });
   });
 });
