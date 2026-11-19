@@ -1,0 +1,84 @@
+{
+  "timestamp": "2026-11-19T07:53:40.690Z",
+  "traces": {
+    "Case 1: 纯文本问答": "eval-trace-case-1-1795074818425-pwpq",
+    "Case 2: 正常工具调用与结果回注": "eval-trace-case-2-1795074818436-v551",
+    "Case 3: 入参重复调用诱导与去重缓存短路": "eval-trace-case-3-1795074818903-22uu",
+    "Case 4: 工具超时预算拦截与平稳退出": "eval-trace-case-4-1795074819098-jxtj",
+    "Case 5: 连续失败熔断跳闸与平稳退出": "eval-trace-case-5-1795074819497-x6du",
+    "Case 6: 真实链路追踪设计保证与看板定位": "eval-trace-case-6-1795074819901-usxw",
+    "Case 7: 双源选源路由与知识库检索": "eval-trace-case-7-1795074820274-hzqw",
+    "Case 8: 引用溯源核验与防伪造检查": "eval-trace-case-8-1795074820490-j07t",
+    "Case 9: 恶意文档注入防御": "eval-trace-case-9-1795074820491-to3y"
+  },
+  "summary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0
+  },
+  "records": [
+    {
+      "caseName": "Case 1: 纯文本问答",
+      "traceId": "eval-trace-case-1-1795074818425-pwpq",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 11
+    },
+    {
+      "caseName": "Case 2: 正常工具调用与结果回注",
+      "traceId": "eval-trace-case-2-1795074818436-v551",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 467
+    },
+    {
+      "caseName": "Case 3: 入参重复调用诱导与去重缓存短路",
+      "traceId": "eval-trace-case-3-1795074818903-22uu",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 195
+    },
+    {
+      "caseName": "Case 4: 工具超时预算拦截与平稳退出",
+      "traceId": "eval-trace-case-4-1795074819098-jxtj",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 399
+    },
+    {
+      "caseName": "Case 5: 连续失败熔断跳闸与平稳退出",
+      "traceId": "eval-trace-case-5-1795074819497-x6du",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 404
+    },
+    {
+      "caseName": "Case 6: 真实链路追踪设计保证与看板定位",
+      "traceId": "eval-trace-case-6-1795074819901-usxw",
+      "outcome": "passed",
+      "isMock": false,
+      "durationMs": 372
+    },
+    {
+      "caseName": "Case 7: 双源选源路由与知识库检索",
+      "traceId": "eval-trace-case-7-1795074820274-hzqw",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 215
+    },
+    {
+      "caseName": "Case 8: 引用溯源核验与防伪造检查",
+      "traceId": "eval-trace-case-8-1795074820490-j07t",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 0
+    },
+    {
+      "caseName": "Case 9: 恶意文档注入防御",
+      "traceId": "eval-trace-case-9-1795074820491-to3y",
+      "outcome": "passed",
+      "isMock": true,
+      "durationMs": 200
+    }
+  ]
+}

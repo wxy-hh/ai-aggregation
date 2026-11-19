@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>界面修改前后</title>
+  <style>
+    body { margin: 0; font-family: "PingFang SC", "Noto Sans SC", sans-serif; background: #eef2f8; color: #1e293b; }
+    main { max-width: 1400px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    p { margin: 0 0 28px; color: #64748b; }
+    section { margin-bottom: 36px; }
+    h2 { font-size: 18px; margin: 0 0 12px; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    figure { margin: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06); }
+    figcaption { padding: 12px 14px; font-weight: 700; }
+    img { display: block; width: 100%; height: auto; background: #f8fafc; }
+    @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>界面修改前后</h1>
+    <p>左为修改前，右为修改后。上面三组是首页和历史；下面是对话空状态、图像、视频、知识库、反馈和简历。</p>
+    <section>
+      <h2>首页</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前</figcaption>
+          <img src="shots/01-home-desktop.png" alt="修改前的首页" />
+        </figure>
+        <figure>
+          <figcaption>修改后</figcaption>
+          <img src="shots/after-home.png" alt="修改后的首页" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>搜索</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：回车后到空白历史，搜索框是空的</figcaption>
+          <img src="shots/17b-home-search-enter.png" alt="修改前的搜索结果" />
+        </figure>
+        <figure>
+          <figcaption>修改后：首页先筛出匹配对话</figcaption>
+          <img src="shots/after-home-search.png" alt="修改后的首页搜索" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>历史</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前</figcaption>
+          <img src="shots/10-history.png" alt="修改前的历史页" />
+        </figure>
+        <figure>
+          <figcaption>修改后：保留关键词，并列出匹配对话</figcaption>
+          <img src="shots/after-history.png" alt="修改后的历史页" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>对话：并行对比空状态</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：模式开关离模型名很远</figcaption>
+          <img src="shots/05-chat-parallel.png" alt="修改前的并行对比" />
+        </figure>
+        <figure>
+          <figcaption>修改后：单聊 / 并行对比紧挨模型，空状态指向下方输入</figcaption>
+          <img src="shots/after-chat-parallel-empty.png" alt="修改后的并行对比空状态" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>图像</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：提示词已写好，仍提示去左侧输入</figcaption>
+          <img src="shots/07-image.png" alt="修改前的图像页" />
+        </figure>
+        <figure>
+          <figcaption>修改后：画布上直接显示提示词和「立即生成」</figcaption>
+          <img src="shots/after-image.png" alt="修改后的图像页" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>视频</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：没有视频时也有播放按钮和 00:00</figcaption>
+          <img src="shots/08-video.png" alt="修改前的视频页" />
+        </figure>
+        <figure>
+          <figcaption>修改后：只说明还没有视频，播放条等生成后再出现</figcaption>
+          <img src="shots/after-video.png" alt="修改后的视频页" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>知识库</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：首屏空白，默认停在调试</figcaption>
+          <img src="shots/12-knowledge.png" alt="修改前的知识库首屏" />
+        </figure>
+        <figure>
+          <figcaption>修改后：默认打开文档管理</figcaption>
+          <img src="shots/after-knowledge.png" alt="修改后的知识库" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>反馈</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：提交按钮在折叠线以下</figcaption>
+          <img src="shots/20-feedback-dialog.png" alt="修改前的反馈弹层" />
+        </figure>
+        <figure>
+          <figcaption>修改后：提交反馈固定在弹层底部</figcaption>
+          <img src="shots/after-feedback.png" alt="修改后的反馈弹层" />
+        </figure>
+      </div>
+    </section>
+    <section>
+      <h2>简历</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>修改前：「AI 工智能」，「从模板开始」不是按钮</figcaption>
+          <img src="shots/13-resume.png" alt="修改前的简历入口" />
+        </figure>
+        <figure>
+          <figcaption>修改后：文案已改，按钮会进入模板页</figcaption>
+          <img src="shots/after-resume-cards.png" alt="修改后的简历入口" />
+        </figure>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
