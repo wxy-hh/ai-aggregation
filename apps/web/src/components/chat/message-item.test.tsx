@@ -201,4 +201,25 @@ describe('MessageItem 引用角标与来源', () => {
     expect(await screen.findByText('引用来源 [^1]')).toBeInTheDocument();
     expect(screen.getByText('《珀金协议规范》')).toBeInTheDocument();
   });
+
+  it('用户消息正确渲染角色标识、完整人物轮廓头像与气泡内容', () => {
+    const message: Message = {
+      id: 'msg-user-1',
+      role: 'user',
+      content: '调研一下各个厂商的 token plan 的套餐用量',
+    };
+
+    const { container } = render(<MessageItem message={message} />);
+
+    // 1. 用户标识文本正常呈现
+    expect(screen.getByText('用户')).toBeInTheDocument();
+
+    // 2. 消息气泡正文正常呈现
+    expect(screen.getByText('调研一下各个厂商的 token plan 的套餐用量')).toBeInTheDocument();
+
+    // 3. 用户头像包含完整的 SVG 人物轮廓（ChatUserMark）
+    const userAvatar = container.querySelector('div.rounded-2xl svg[viewBox="0 0 24 24"]');
+    expect(userAvatar).toBeInTheDocument();
+    expect(userAvatar).toHaveClass('h-[22px]', 'w-[22px]');
+  });
 });

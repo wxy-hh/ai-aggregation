@@ -134,7 +134,13 @@ const EmptyState = memo(function EmptyState({ models }: { models: SelectedModel[
   );
 });
 
-export const ComparisonView = memo(function ComparisonView() {
+export interface ComparisonViewProps {
+  headerHeight?: number;
+}
+
+export const ComparisonView = memo(function ComparisonView({
+  headerHeight,
+}: ComparisonViewProps = {}) {
   const isMobile = useIsMobile();
   const turns = useComparisonTurns();
   const selectedModels = useSelectedModels();
@@ -149,12 +155,22 @@ export const ComparisonView = memo(function ComparisonView() {
     // 故意只在挂载时执行一次：恢复逻辑不随 turns/activeComparisonId 变化重跑
   }, [activeComparisonId, turns.length, loadComparison]);
 
+  const topPadding = headerHeight ? `${headerHeight + 16}px` : undefined;
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {turns.length === 0 ? (
-        <EmptyState models={selectedModels} />
+        <div
+          style={{ paddingTop: topPadding }}
+          className="flex flex-1 flex-col justify-center pt-[116px] sm:pt-[124px]"
+        >
+          <EmptyState models={selectedModels} />
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2 custom-scrollbar">
+        <div
+          style={{ paddingTop: topPadding }}
+          className="min-h-0 flex-1 overflow-y-auto px-1 py-2 pt-[116px] sm:pt-[124px] custom-scrollbar"
+        >
           <div className="mx-auto flex max-w-6xl flex-col gap-6">
             {turns.map((turn) => (
               <TurnSection key={turn.id} turn={turn} isMobile={isMobile} />

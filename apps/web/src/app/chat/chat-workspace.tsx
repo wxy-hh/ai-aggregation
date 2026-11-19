@@ -207,6 +207,24 @@ export default function ChatWorkspace() {
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 指向悬浮顶栏 Header 的 DOM 引用与实时高度，用于精准自适应消息滚动列表的顶部内边距（防遮挡）
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const updateHeight = () => {
+      if (el.offsetHeight > 0) {
+        setHeaderHeight(el.offsetHeight);
+      }
+    };
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // 跟踪滚动容器当前是否处于底部（吸底判断，使用 ref 避免触发组件重新渲染）
   const isAtBottomRef = useRef(true);
 
@@ -709,6 +727,7 @@ export default function ChatWorkspace() {
               <div className="pointer-events-none absolute inset-x-12 top-0 h-28 rounded-full bg-[radial-gradient(circle_at_top,rgba(125,145,255,0.18),transparent_72%)] dark:bg-[radial-gradient(circle_at_top,rgba(93,124,250,0.16),transparent_72%)]" />
               {/* 头部：悬浮毛玻璃顶栏，浮于滚动区之上（DESIGN.md §4.1 / §8.5） */}
               <header
+                ref={headerRef}
                 className={cn(
                   // 移动端收敛：内边距与行距压到最小档，图标块移入桌面端（2026-10-15 评审 H4，移动端外壳高度）
                   'absolute inset-x-0 top-0 z-20 flex-none px-4 py-2.5 sm:px-6 sm:py-3.5',
@@ -887,7 +906,7 @@ export default function ChatWorkspace() {
 
               {isCompareMode ? (
                 // 并行对比模式：多模型聚焦比较视图（自带概览轨道、双列聚焦与输入区）
-                <ComparisonView />
+                <ComparisonView headerHeight={headerHeight} />
               ) : (
                 // 单聊模式：现有单聊主体（保持不变）
                 <>
@@ -896,13 +915,17 @@ export default function ChatWorkspace() {
                     {/* 消息列表：h-full 填满外壳，min-h-0 保证纵向正常滚动 */}
                     <div
                       ref={messagesScrollRef}
+                      data-testid="messages-scroll-container"
                       onScroll={handleMessagesScroll}
+                      style={{
+                        paddingTop: headerHeight > 0 ? `${headerHeight + 16}px` : undefined,
+                      }}
                       className={cn(
                         'h-full w-full overflow-y-auto overscroll-y-contain custom-scrollbar',
                         // 非空消息列表：背景取主壳渐变底部色，避免顶部透出渐变白色端形成色带
                         isEmptyChat
-                          ? 'bg-transparent px-4 pb-4 pt-[80px] sm:px-5 sm:pb-5'
-                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[84px] pb-[4.5rem] sm:px-5 sm:pt-[88px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
+                          ? 'bg-transparent px-4 pb-4 pt-[112px] sm:px-5 sm:pb-5 sm:pt-[124px]'
+                          : 'bg-[rgba(248,250,252,0.76)] px-4 pt-[116px] pb-[4.5rem] sm:px-5 sm:pt-[124px] sm:pb-20 dark:bg-[rgba(15,23,42,0.82)]'
                       )}
                     >
                     {isEmptyChat ? (
