@@ -23,6 +23,10 @@ import { ToolError, type AgentToolSpec, type ToolExecutionResult } from '@/lib/a
 
 /** 连接（含 TLS）超时 */
 const CONNECT_TIMEOUT_MS = 5_000;
+/** 远端 DeepSeek Fetch 超时 */
+const FETCH_TIMEOUT_MS = 8_000;
+/** 默认 DeepSeek Fetch 端点 */
+const DEEPSEEK_FETCH_DEFAULT_URL = 'https://api.deepseek.com/v1/tools/fetch';
 /** 响应体体积上限：放宽至 2MB，覆盖技术文档与重型单页，达到上限平滑截断而非报错抛弃（ADR-0017） */
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 /** 注入模型的正文上限 */
@@ -201,6 +205,60 @@ async function fetchWithRedirects(startUrl: URL, signal: AbortSignal): Promise<{
   throw new ToolError('重定向次数过多，已放弃抓取');
 }
 
+interface DeepSeekFetchResult {
+  title?: string;
+  content: string;
+}
+
+/** 远端 DeepSeek Fetch API 调用 */
+async function fetchWithDeepSeek(
+  targetUrl: URL,
+  apiKey: string,
+  fetchUrl: string,
+  signal: AbortSignal
+): Promise<DeepSeekFetchResult> {
+  const res = await fetch(fetchUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      url: targetUrl.toString(),
+    }),
+    signal,
+  });
+
+  if (res.status === 403) {
+    throw new ToolError('目标网页返回 403，拒绝访问');
+  }
+
+  if (res.status === 404) {
+    throw new ToolError('目标网页未能获取可用内容');
+  }
+
+  // 仅服务可用性故障（欠费 402、限流 429、服务端错误 5xx）属于降级白名单，抛出普通 Error 供外层捕获并降级
+  if (res.status === 402 || res.status === 429 || (res.status >= 500 && res.status < 600)) {
+    throw new Error(`DeepSeek Fetch 服务故障 (HTTP ${res.status})`);
+  }
+
+  // 其余非 200 状态码（400 参数异常、401 鉴权失效、以及 405 等其他 4xx 非白名单错误）均为终态错误，直接阻断严禁降级
+  if (!res.ok) {
+    throw new ToolError(`DeepSeek Fetch 接口配置或请求异常 (HTTP ${res.status})`);
+  }
+
+  const data = (await res.json()) as { title?: string; content?: string };
+  const rawContent = data.content?.trim();
+  if (!rawContent) {
+    throw new ToolError('目标网页未能获取可用内容');
+  }
+
+  return {
+    title: data.title?.trim(),
+    content: rawContent,
+  };
+}
+
 /** 创建 web_fetch 工具 */
 export function createWebFetchTool(): AgentToolSpec {
   return {
@@ -213,11 +271,56 @@ export function createWebFetchTool(): AgentToolSpec {
     async execute(args, ctx): Promise<ToolExecutionResult> {
       const { url } = args as { url: string };
 
+      // 1. 出站 URL 安全预检（EgressUrlPreflight）
       const guard = validateUrlLiteral(url);
       if (!guard.ok) {
         throw new ToolError(guard.reason);
       }
 
+      const dsApiKey = process.env.DEEPSEEK_TOOLS_API_KEY?.trim();
+      const dsFetchUrl = process.env.DEEPSEEK_FETCH_URL?.trim() || DEEPSEEK_FETCH_DEFAULT_URL;
+
+      // 2. 若配置了 DeepSeek 工具凭据，优先调用远端 DeepSeek Fetch API
+      if (dsApiKey) {
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+        const combinedSignal = ctx.signal
+          ? AbortSignal.any([ctx.signal, timeoutController.signal])
+          : timeoutController.signal;
+
+        try {
+          const dsResult = await fetchWithDeepSeek(guard.url, dsApiKey, dsFetchUrl, combinedSignal);
+
+          const rawTitle = dsResult.title;
+          const title = rawTitle && !detectChatSensitiveTopic(rawTitle) ? rawTitle : null;
+
+          let content = dsResult.content;
+          let charTruncatedNote = '';
+          if (content.length > MAX_CONTENT_CHARS) {
+            content = content.slice(0, MAX_CONTENT_CHARS);
+            charTruncatedNote = '\n\n[正文已截断，仅保留前 8,000 字符]';
+          }
+
+          return {
+            ok: true,
+            contentForModel: `来源：${guard.url.toString()}\n${title ? `标题：${title}\n` : ''}\n正文：\n${content}${charTruncatedNote}`,
+            summaryForDisplay: `已抓取 ${guard.url.hostname}${title ? ` · ${title}` : ''}（正文 ${dsResult.content.length} 字）`,
+          };
+        } catch (error) {
+          if (error instanceof ToolError) {
+            // 400/401/403/404 终态报错，严禁降级！
+            throw error;
+          }
+          if (ctx.signal?.aborted) {
+            throw error;
+          }
+          console.warn('[web_fetch] DeepSeek 抓取服务故障，自动降级至本地高韧性抓取流水线:', error);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+
+      // 3. 兜底或未配置时走本地高韧性抓取流水线
       const { finalUrl, response } = await fetchWithRedirects(guard.url, ctx.signal);
 
       if (response.status < 200 || response.status >= 300) {

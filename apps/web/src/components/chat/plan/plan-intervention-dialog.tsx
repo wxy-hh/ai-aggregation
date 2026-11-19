@@ -80,17 +80,17 @@ export function PlanInterventionDialog({
       <DialogContent
         data-testid="plan-intervention-dialog"
         className={cn(
-          'w-full max-w-lg border-border bg-card p-6 shadow-xl',
+          'w-full max-w-lg sm:max-w-xl border-border bg-card p-0 shadow-xl flex flex-col gap-0 overflow-hidden',
           // 移动端全屏底抽屉适配（TC07）
-          'fixed inset-x-0 bottom-0 top-auto left-0 translate-x-0 translate-y-0 rounded-t-[24px] rounded-b-none',
-          'sm:bottom-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-2xl',
-          'max-h-[85vh] overflow-y-auto'
+          'fixed inset-x-0 bottom-0 top-auto left-0 translate-x-0 translate-y-0 rounded-t-[24px] rounded-b-none max-h-[88vh]',
+          // 桌面端居中弹窗自适应
+          'sm:bottom-auto sm:left-[50%] sm:top-[50%] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-2xl sm:max-h-[82vh]'
         )}
       >
         {/* 移动端顶部抓手（TC07） */}
-        <div className="mx-auto -mt-2 mb-3 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-600 sm:hidden" />
+        <div className="mx-auto mt-2.5 mb-1 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-600 sm:hidden shrink-0" />
 
-        <DialogHeader className="text-left space-y-1">
+        <DialogHeader className="px-6 pt-5 pb-3 shrink-0 text-left space-y-1 border-b border-border/40">
           <DialogTitle className="text-base font-semibold text-foreground">
             调整执行计划
           </DialogTitle>
@@ -99,7 +99,11 @@ export function PlanInterventionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 space-y-3">
+        {/* 独立可滚动步骤列表区域（保证操作按钮不被挤压遮挡） */}
+        <div
+          data-testid="plan-intervention-steps-container"
+          className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3 overscroll-contain"
+        >
           {steps.map((step, index) => {
             const isCompleted = step.status === 'completed';
             const isRunning = step.status === 'running';
@@ -178,13 +182,14 @@ export function PlanInterventionDialog({
           })}
         </div>
 
-        <DialogFooter className="mt-5 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        {/* 常驻底部操作栏（固定可见，移动端适配安全区） */}
+        <DialogFooter className="px-6 py-3.5 shrink-0 border-t border-border/40 bg-card/95 backdrop-blur-sm flex flex-row items-center justify-end gap-2.5 pb-safe sm:pb-3.5">
           <Button
             type="button"
             variant="outline"
             data-testid="plan-intervention-cancel-btn"
             onClick={() => onOpenChange(false)}
-            className="min-h-[44px] sm:min-h-[36px] w-full sm:w-auto text-xs"
+            className="min-h-[44px] sm:min-h-[36px] px-4 text-xs"
           >
             取消
           </Button>
@@ -192,7 +197,7 @@ export function PlanInterventionDialog({
             type="button"
             data-testid="plan-intervention-confirm-btn"
             onClick={handleConfirm}
-            className="min-h-[44px] sm:min-h-[36px] w-full sm:w-auto text-xs"
+            className="min-h-[44px] sm:min-h-[36px] px-4 text-xs bg-blue-600 hover:bg-blue-700 text-white"
           >
             应用并继续执行
           </Button>

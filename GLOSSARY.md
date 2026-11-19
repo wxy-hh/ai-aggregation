@@ -62,6 +62,22 @@ _Avoid_: 打断重启, 手动覆盖, 任务强杀
 计划生成后立即自动推进执行首个检查点，无需用户手动逐级审批确认，同时保持全程随时可打断干预的执行模式。
 _Avoid_: 强制审核, 自动驾驶, 阻塞等待
 
+**DeepSeekTools (DeepSeek 工具服务)**:
+平台内置接入的官方 DeepSeek Search 与 Fetch API 服务集，使用专用凭据（`DEEPSEEK_TOOLS_API_KEY`）与独立端点（`DEEPSEEK_SEARCH_URL`、`DEEPSEEK_FETCH_URL`），与模型推理网关及其中转代理彻底解耦。
+_Avoid_: 模型搜索, DeepSeek插件, 内置爬虫, 统一BaseURL
+
+**ToolContextBudget (工具上下文配额)**:
+防止工具输出过载挤占模型上下文窗口与触发高额 Token 消耗的安全边界。在 `web_search` 中优先注入信息密度更高的结构化长摘要（`summary`），并施加总字符硬上限（默认 2,000 字符），超出部分平滑截断，引导模型使用 `web_fetch` 定向下钻；在 `web_fetch` 中对远端抓取正文严格执行 8,000 字符上限，超出部分平滑截断并附带截断声明。
+_Avoid_: 上下文限制, Token裁剪, 输出长度控制
+
+**SplitFallbackPolicy (分流降级策略)**:
+网页抓取与搜索在遇到多层通道故障与状态码时采取的非对称容灾政策：入参错误（400）或凭据配置失效（401）直接阻断报错；上游安全策略拒绝（403）与目标不可达/无有效正文（404）视为终态并直接阻断，不降级至本地；仅服务可用性故障（欠费 402、限速 429、服务错误 5xx、网络超时）自动降级至本地高韧性抓取（`guardedLookup` + 2MB 优雅截断）。搜索空数组视为终态有效结果，不触发次级降级。
+_Avoid_: 全量降级, 盲目重试, 兜底重爬, 异常直出
+
+**EgressUrlPreflight (出站 URL 安全预检)**:
+调用外部抓取或第三方 Webhook 之前，在本地宿主环境中前置执行的字面量白名单与内网阻断校验（`validateUrlLiteral`）；私网 IP、本机地址与危险协议在最外层 fail-closed 拦截，严禁向外部第三方外发内网目标，且失败后绝对不允许通过本地兜底绕过。
+_Avoid_: URL检查, 内网过滤, 请求过滤
+
 ## 会话与持久化 (Conversation & Persistence)
 
 **Conversation (会话)**:

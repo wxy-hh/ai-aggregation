@@ -112,4 +112,46 @@ describe('AgentPlanCard 组件与交互测试', () => {
 
     expect(interruptSpy).not.toHaveBeenCalled();
   });
+
+  it('5. 真实案例复现：当部分步骤 completed、剩余步骤 skipped 且执行结束时，胶囊应呈现全流程完成态而非回退到步骤 1/5，且不显示调整按钮', () => {
+    const userPlanWithSkipped: AgentPlan = {
+      id: 'plan-real-case',
+      title: '主流厂商 Token/编码套餐对比',
+      steps: [
+        { id: 's1', title: '界定调研范围', status: 'completed', summary: '已搜索智谱 GLM Coding Plan' },
+        { id: 's2', title: '采集官方定价', status: 'completed', summary: '已抓取 bigmodel.cn' },
+        { id: 's3', title: '统一折算基准', status: 'completed', summary: '已抓取 docs.bigmodel.cn' },
+        { id: 's4', title: '场景化测算', status: 'completed', summary: '任务交付完成' },
+        { id: 's5', title: '输出对比结论', status: 'skipped', summary: '提前交付，步骤已略过' },
+      ],
+    };
+
+    render(<AgentPlanCard messageId="msg-1" plan={userPlanWithSkipped} isStreaming={false} />);
+
+    // 应该不再显示错误的 [◉ 步骤 1/5]
+    expect(screen.queryByText('[◉ 步骤 1/5]')).not.toBeInTheDocument();
+    // 应该显示最终总步骤 [◉ 步骤 5/5]
+    expect(screen.getByText('[◉ 步骤 5/5]')).toBeInTheDocument();
+    // 应该不再显示调整按钮
+    expect(screen.queryByTestId('plan-intervene-button')).not.toBeInTheDocument();
+  });
+
+  it('6. 当任务执行中遭遇失败并结束时，呈现终态步骤索引与失败告警样式，不显示调整按钮', () => {
+    const failedPlan: AgentPlan = {
+      id: 'plan-failed-case',
+      title: '失败中断任务',
+      steps: [
+        { id: 's1', title: '步骤1', status: 'completed' },
+        { id: 's2', title: '步骤2', status: 'failed', summary: '前序故障中止执行' },
+        { id: 's3', title: '步骤3', status: 'skipped', summary: '前序故障已跳过' },
+      ],
+    };
+
+    render(<AgentPlanCard messageId="msg-1" plan={failedPlan} isStreaming={false} />);
+
+    expect(screen.getByText('[◉ 步骤 3/3]')).toBeInTheDocument();
+    expect(screen.queryByTestId('plan-intervene-button')).not.toBeInTheDocument();
+    const capsule = screen.getByTestId('plan-capsule-text');
+    expect(capsule.className).toContain('text-rose-700');
+  });
 });

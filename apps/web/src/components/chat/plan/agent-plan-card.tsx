@@ -41,10 +41,25 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
   const interruptAndResumeWithPlan = useChatStore((s) => s.interruptAndResumeWithPlan);
 
   // 计算当前步骤索引与当前正在进行的步骤
-  const { currentIndex, currentStep, completedCount, totalCount } = useMemo(() => {
+  const {
+    currentIndex,
+    currentStep,
+    completedCount,
+    totalCount,
+    isFinished,
+    isAllCompleted,
+    hasFailure,
+  } = useMemo(() => {
     const total = plan.steps.length;
     const runningIdx = plan.steps.findIndex((s) => s.status === 'running');
     const completed = plan.steps.filter((s) => s.status === 'completed').length;
+    const hasUnfinished = plan.steps.some(
+      (s) => s.status === 'running' || s.status === 'pending'
+    );
+    const failure = plan.steps.some((s) => s.status === 'failed');
+    const finished = !hasUnfinished;
+    // 全部成功或跳过（无未完成项且无失败）
+    const allSuccessfulOrSkipped = finished && !failure;
 
     if (runningIdx !== -1) {
       return {
@@ -52,20 +67,31 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
         currentStep: plan.steps[runningIdx],
         completedCount: completed,
         totalCount: total,
+        isFinished: false,
+        isAllCompleted: false,
+        hasFailure: failure,
       };
     }
 
-    // 若全部完成
-    if (completed === total) {
+    // 若全部步骤已结束（无 running 且无 pending）
+    if (finished) {
+      // 取最后一个已执行完成或失败的步骤，若无则取最后一个步骤
+      const lastExecuted =
+        [...plan.steps].reverse().find(
+          (s) => s.status === 'completed' || s.status === 'failed'
+        ) || plan.steps[total - 1];
       return {
         currentIndex: total,
-        currentStep: plan.steps[total - 1],
+        currentStep: lastExecuted,
         completedCount: completed,
         totalCount: total,
+        isFinished: true,
+        isAllCompleted: allSuccessfulOrSkipped,
+        hasFailure: failure,
       };
     }
 
-    // 默认取首个未完成项
+    // 默认取首个未完成项 (pending)
     const pendingIdx = plan.steps.findIndex((s) => s.status === 'pending');
     const idx = pendingIdx !== -1 ? pendingIdx : 0;
     return {
@@ -73,6 +99,9 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
       currentStep: plan.steps[idx],
       completedCount: completed,
       totalCount: total,
+      isFinished: false,
+      isAllCompleted: false,
+      hasFailure: failure,
     };
   }, [plan.steps]);
 
@@ -107,8 +136,6 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
     await interruptAndResumeWithPlan(messageId, modifiedPlan);
   };
 
-  const isAllCompleted = completedCount === totalCount;
-
   return (
     <div
       data-testid="agent-plan-card"
@@ -142,11 +169,15 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
               'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 font-medium text-[11px]',
               isAllCompleted
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                : hasFailure
+                ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
                 : 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
             )}
           >
             {isAllCompleted ? (
               <CheckCircle2 className="h-3 w-3" />
+            ) : hasFailure ? (
+              <AlertCircle className="h-3 w-3" />
             ) : isStreaming ? (
               <Clock className="h-3 w-3 animate-spin" />
             ) : (
@@ -164,8 +195,8 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {/* 调整计划按钮（仅在有未完成步骤时可交互） */}
-          {!isAllCompleted && (
+          {/* 调整计划按钮（仅在任务未结束且仍有未执行的 pending 步骤时可交互） */}
+          {!isFinished && plan.steps.some((s) => s.status === 'pending') && (
             <Button
               type="button"
               variant="ghost"
