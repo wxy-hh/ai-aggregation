@@ -12,8 +12,8 @@ import { pptWorker } from './workers/ppt';
 import { imageWorker } from './workers/image';
 import { qimenBaseWorker } from './workers/qimen-base';
 import { qimenSectionWorker } from './workers/qimen-section';
-import { ragIndexWorker } from './workers/rag-index';
-import { memoryIndexWorker } from './workers/memory-index';
+import { ragIndexWorker } from './workers/rag-index.js';
+import { memoryIndexWorker } from './workers/memory-index.js';
 import { maintenanceWorker, registerMaintenanceSchedules } from './workers/maintenance';
 
 let isRunning = false;
