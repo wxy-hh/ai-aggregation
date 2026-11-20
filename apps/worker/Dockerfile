@@ -13,6 +13,7 @@ COPY packages/providers/package.json packages/providers/
 COPY packages/storage/package.json packages/storage/
 COPY packages/logger/package.json packages/logger/
 COPY packages/db/package.json packages/db/
+COPY packages/db/prisma packages/db/prisma/
 COPY packages/queue/package.json packages/queue/
 COPY packages/redis/package.json packages/redis/
 COPY packages/text/package.json packages/text/
