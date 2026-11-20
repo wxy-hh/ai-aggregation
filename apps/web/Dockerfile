@@ -7,13 +7,18 @@ WORKDIR /app
 
 # 先复制依赖描述文件，利用 Docker 层缓存
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY .npmr[c] ./
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
 COPY packages/providers/package.json packages/providers/
 COPY packages/storage/package.json packages/storage/
 COPY packages/logger/package.json packages/logger/
 COPY packages/db/package.json packages/db/
+COPY packages/queue/package.json packages/queue/
+COPY packages/redis/package.json packages/redis/
+COPY packages/text/package.json packages/text/
 COPY packages/config-typescript/package.json packages/config-typescript/
+COPY packages/config-eslint/package.json packages/config-eslint/
 
 RUN pnpm install --frozen-lockfile
 

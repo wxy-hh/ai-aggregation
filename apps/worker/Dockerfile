@@ -6,13 +6,18 @@ RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY .npmr[c] ./
 COPY apps/worker/package.json apps/worker/
 COPY packages/shared/package.json packages/shared/
 COPY packages/providers/package.json packages/providers/
 COPY packages/storage/package.json packages/storage/
 COPY packages/logger/package.json packages/logger/
 COPY packages/db/package.json packages/db/
+COPY packages/queue/package.json packages/queue/
+COPY packages/redis/package.json packages/redis/
+COPY packages/text/package.json packages/text/
 COPY packages/config-typescript/package.json packages/config-typescript/
+COPY packages/config-eslint/package.json packages/config-eslint/
 
 RUN pnpm install --frozen-lockfile
 
