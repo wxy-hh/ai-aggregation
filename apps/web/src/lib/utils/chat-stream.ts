@@ -130,6 +130,8 @@ export async function streamChatResponse(
       // 携带 HTTP 状态码，供调用方区分「服务暂不可用，可重试」与「已被拒绝」（审批确认依赖此区分，ADR-0041）
       throw Object.assign(new Error(errorData.error || `请求失败: ${response.status}`), {
         status: response.status,
+        code: errorData.code,
+        runId: errorData.runId,
       });
     }
 

@@ -92,6 +92,8 @@ export interface RunRegistry {
   getActiveByConversation(conversationId: string): { runId: string; userId: string } | null;
   /** 查询运行归属用户（不存在或已过期返回 null） */
   ownerOf(runId: string): string | null;
+  /** 是否仍有活跃运行容量（供配额预留前拒绝过载请求） */
+  hasCapacity(): boolean;
   /** 主动中止：只触发信号，终态由运行器收尾后写入 */
   abort(runId: string, userId: string): RunAbortResult;
   /** 检视运行态（不存在或已过期返回 null） */
@@ -292,6 +294,12 @@ export function createRunRegistry(deps: RunRegistryDeps = {}): RunRegistry {
     ownerOf(runId) {
       purge();
       return runs.get(runId)?.userId ?? null;
+    },
+
+    hasCapacity() {
+      purge();
+      const active = activeStats();
+      return active.count < limits.maxActiveRuns && active.bytes < limits.maxActiveBytes;
     },
 
     abort(runId, userId) {

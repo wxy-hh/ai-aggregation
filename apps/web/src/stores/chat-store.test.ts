@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useChatStore, type Message } from './chat-store';
 import type { Artifact } from '@repo/shared';
 import { resetConversationPort, setConversationPort } from './conversation-port';
@@ -834,5 +834,115 @@ describe('断点挂载与消息重建（ADR-0061 / 工单 03）', () => {
       expect(assistant?.runPending).toBe(false);
       expect(assistant?.content).toBe('半截内容');
     });
+  });
+});
+
+describe('停止真实生效（ADR-0061 / 工单 05）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('请求服务端中止，5s 未收到终态时本地提示已请求停止', async () => {
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
+    useChatStore.setState({
+      activeConversationId: 'conv-stop',
+      isLoading: true,
+      messages: [
+        { id: 'u1', role: 'user', content: '问题' },
+        { id: 'a1', role: 'assistant', content: '半截内容', isStreaming: true, runId: 'run-stop' },
+      ],
+    });
+    mockedAuthFetch.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, status: 'aborting' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    try {
+      useChatStore.getState().stop();
+      expect(mockedAuthFetch).toHaveBeenCalledWith(
+        '/api/chat/agent/abort',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ runId: 'run-stop' }),
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(5000);
+      const assistant = useChatStore.getState().messages.find((m) => m.id === 'a1');
+      expect(assistant?.stopped).toBe(true);
+      expect(assistant?.stopUnconfirmed).toBe(true);
+      expect(assistant?.isStreaming).toBe(false);
+      expect(assistant?.content).toBe('半截内容');
+    } finally {
+      resetConversationPort();
+    }
+  });
+});
+
+describe('并发保护（ADR-0061 / 工单 06）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+  });
+
+  it('409 时移除本轮占位、恢复草稿并挂载现有任务', async () => {
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
+    mockedAuthFetch
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: '当前任务仍在执行，请先停止或等待完成',
+            code: 'RUN_IN_PROGRESS',
+            runId: 'run-active',
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"type":"run_attached","runId":"run-active","resumed":true}\n\n',
+          'data: {"type":"text-delta","text":"已有任务继续"}\n\n',
+          'data: {"type":"done"}\n\n',
+        ])
+      );
+
+    useChatStore.setState({ input: '新问题', activeConversationId: 'conv-409' });
+
+    try {
+      const result = await useChatStore.getState().sendMessage();
+      expect(result).toBe('failed');
+      expect(useChatStore.getState().input).toBe('新问题');
+
+      await vi.waitFor(() => {
+        const messages = useChatStore.getState().messages;
+        expect(
+          messages.some(
+            (message) => message.runId === 'run-active' && message.content === '已有任务继续'
+          )
+        ).toBe(true);
+      });
+      expect(mockedAuthFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/api/chat/agent/resume?runId=run-active'),
+        expect.anything()
+      );
+    } finally {
+      resetConversationPort();
+    }
   });
 });

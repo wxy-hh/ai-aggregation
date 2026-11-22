@@ -137,6 +137,10 @@ export interface ChatStreamSessionDeps {
   /** 用 updater 改消息列表，返回新列表（供完成/失败后同步到会话列表） */
   updateMessages: (updater: (messages: Message[]) => Message[]) => Message[];
   setError: (error: Error | null) => void;
+  /** 恢复输入草稿（409 并发保护用） */
+  setInput?: (input: string) => void;
+  /** 同会话已有运行：移除本轮占位并挂载现有任务（409 并发保护用） */
+  onRunInProgress?: (runId: string, assistantId: string) => void;
   activeConversationId: () => string | null;
   /** 获取当前会话产物池快照（可选） */
   getArtifacts?: () => Artifact[];
@@ -595,6 +599,33 @@ export async function runChatStreamSession(
       return 'aborted';
     }
 
+    // 同会话已有任务（ADR-0061 / 工单 06）：不报错、不丢草稿，挂载现有运行
+    const conflictRunId = (err as { runId?: string }).runId;
+    const conflictStatus = (err as { status?: number }).status;
+    if (conflictStatus === 409 && typeof conflictRunId === 'string' && conflictRunId) {
+      const current = deps.getMessages();
+      const assistantIndex = current.findIndex((m) => m.id === assistantId);
+      const removedUser =
+        assistantIndex > 0 && current[assistantIndex - 1]?.role === 'user'
+          ? current[assistantIndex - 1]
+          : null;
+      const next = current.filter((message, index) => {
+        if (message.id === assistantId) return false;
+        if (removedUser && index === assistantIndex - 1) return false;
+        return true;
+      });
+      deps.updateMessages(() => next);
+      if (removedUser?.content) {
+        deps.setInput?.(removedUser.content);
+      }
+      const conversationId = deps.activeConversationId();
+      if (conversationId) {
+        port.saveMessages(conversationId, next, deps.getArtifacts?.());
+      }
+      deps.onRunInProgress?.(conflictRunId, assistantId);
+      return 'failed';
+    }
+
     deps.setError(err instanceof Error ? err : new Error('未知错误'));
     // 失败收尾（有留空删）：有部分内容（正文/推理/工具记录任一）保留并标记 failed（用户已读内容不丢），空内容移除
     const filtered = deps.updateMessages((messages) => {
@@ -645,6 +676,31 @@ export const useChatStore = create<ChatState>((set, get) => {
       return next;
     },
     setError: (error) => set({ error }),
+    setInput: (input) => set({ input }),
+    onRunInProgress: (runId, assistantId) => {
+      const existing = get().messages.find(
+        (message) => message.role === 'assistant' && message.runId === runId
+      );
+      if (existing) {
+        void get().attachAgentRun(runId, existing.id);
+        return;
+      }
+      const placeholder: Message = {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+        runId,
+        runPending: true,
+      };
+      const next = [...get().messages, placeholder];
+      set({ messages: next, isLoading: true });
+      const conversationId = get().activeConversationId;
+      if (conversationId) {
+        getConversationPort().saveMessages(conversationId, next, get().artifacts);
+      }
+      void get().attachAgentRun(runId, assistantId);
+    },
     activeConversationId: () => get().activeConversationId,
     getArtifacts: () => get().artifacts,
     updateArtifacts: (updater) => {

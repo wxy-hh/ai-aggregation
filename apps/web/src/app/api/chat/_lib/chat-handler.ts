@@ -293,6 +293,29 @@ export function createChatHandler(config: ChatHandlerConfig) {
         });
       }
 
+      // 并发与过载守卫（ADR-0061 / 工单 06）：必须在配额预留之前拒绝
+      const runRegistry = config.runRegistry ?? getDefaultRunRegistry();
+      if (agent && conversationId) {
+        const activeRun = runRegistry.getActiveByConversation(conversationId);
+        if (activeRun) {
+          return jsonResponse(
+            {
+              error: '当前任务仍在执行，请先停止或等待完成',
+              code: 'RUN_IN_PROGRESS',
+              errorId,
+              ...(activeRun.userId === user.id ? { runId: activeRun.runId } : {}),
+            },
+            409
+          );
+        }
+      }
+      if (agent && !runRegistry.hasCapacity()) {
+        return jsonResponse(
+          { error: '当前任务过多，请稍后再试', code: 'AGENT_RUN_OVERLOADED', errorId },
+          503
+        );
+      }
+
       const reservedSession = await QuotaSession.reserve({
         userId: user.id,
         requestId,
@@ -343,7 +366,6 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）
       let stream: ReadableStream<Uint8Array>;
       if (agentBudget && agentRuntime) {
-        const runRegistry = config.runRegistry ?? getDefaultRunRegistry();
         const run = runRegistry.start({
           userId: user.id,
           conversationId: conversationId ?? '',

@@ -281,3 +281,84 @@ describe('Agent 运行时连接韧性（HTTP 级）', () => {
     await secondReader.cancel();
   });
 });
+
+describe('并发与过载保护（ADR-0061 / 工单 06）', () => {
+  let handler: ReturnType<typeof createChatHandler>;
+  let fakeSession: ReturnType<typeof createFakeQuotaSession>;
+  let registry: RunRegistry;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupAiSdkMocks();
+    vi.stubEnv('ARK_API_KEY', 'test-ark-key');
+    vi.stubEnv('DEEPSEEK_MODEL', 'test-deepseek-key');
+    currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
+    rateLimiterMock.check.mockResolvedValue({
+      allowed: true,
+      remaining: 60,
+      reset: Date.now() + 60000,
+    });
+    getAvailableQuotaMock.mockResolvedValue(100_000);
+    agentRunCreateMock.mockResolvedValue({ id: 'agent-run-record' });
+    fakeSession = createFakeQuotaSession({ outputLimit: 4096 });
+    quotaSessionReserveMock.mockResolvedValue(fakeSession);
+    toolRegistryHolder.current = createToolRegistry([]);
+
+    registry = createRunRegistry({ createRunId: () => 'run-conflict' });
+    handler = createChatHandler({
+      getAdapter: () => ({
+        stream: async () =>
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+              controller.close();
+            },
+          }),
+      }),
+      runRegistry: registry,
+    });
+  });
+
+  it('同会话已有活跃任务时返回 409 并附带现有 runId，且不预留配额', async () => {
+    const existing = registry.start({
+      userId: 'test-user-id',
+      conversationId: 'conv-resilience',
+    })!;
+
+    const response = await handler(agentRequest());
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { code: string; runId: string };
+    expect(body.code).toBe('RUN_IN_PROGRESS');
+    expect(body.runId).toBe(existing.runId);
+    expect(quotaSessionReserveMock).not.toHaveBeenCalled();
+  });
+
+  it('活跃运行达到上限时返回 503 且不预留配额', async () => {
+    const limited = createRunRegistry({
+      createRunId: () => 'run-capacity',
+      limits: { maxActiveRuns: 1 },
+    });
+    limited.start({ userId: 'other-user', conversationId: 'conv-other' });
+    handler = createChatHandler({
+      getAdapter: () => ({
+        stream: async () => new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      }),
+      runRegistry: limited,
+    });
+
+    const response = await handler(agentRequest());
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { code: string; error: string };
+    expect(body.code).toBe('AGENT_RUN_OVERLOADED');
+    expect(body.error).toContain('当前任务过多');
+    expect(quotaSessionReserveMock).not.toHaveBeenCalled();
+  });
+
+  it('同会话有活跃 Agent 任务时，普通对话仍返回 200', async () => {
+    registry.start({ userId: 'test-user-id', conversationId: 'conv-resilience' });
+
+    const response = await handler(agentRequest({ agent: false }));
+    expect(response.status).toBe(200);
+    await response.body?.cancel();
+  });
+});
