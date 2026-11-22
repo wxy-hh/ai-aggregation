@@ -66,6 +66,13 @@ export interface RunInspection {
   bytes: number;
 }
 
+/** 主动中止结果 */
+export type RunAbortResult =
+  | { outcome: 'aborted' }
+  | { outcome: 'already_terminal'; status: LiveRunStatus }
+  | { outcome: 'forbidden' }
+  | { outcome: 'not_found' };
+
 /** 运行注册表公开接口 */
 export interface RunRegistry {
   /**
@@ -83,6 +90,10 @@ export interface RunRegistry {
   ): RunSubscription | null;
   /** 查询某会话当前的活跃 run */
   getActiveByConversation(conversationId: string): { runId: string; userId: string } | null;
+  /** 查询运行归属用户（不存在或已过期返回 null） */
+  ownerOf(runId: string): string | null;
+  /** 主动中止：只触发信号，终态由运行器收尾后写入 */
+  abort(runId: string, userId: string): RunAbortResult;
   /** 检视运行态（不存在或已过期返回 null） */
   inspect(runId: string): RunInspection | null;
   /** 当前注册表内的 run 数量（含终态保留期内的 run） */
@@ -276,6 +287,24 @@ export function createRunRegistry(deps: RunRegistryDeps = {}): RunRegistry {
         }
       }
       return null;
+    },
+
+    ownerOf(runId) {
+      purge();
+      return runs.get(runId)?.userId ?? null;
+    },
+
+    abort(runId, userId) {
+      purge();
+      const record = runs.get(runId);
+      if (!record) return { outcome: 'not_found' };
+      if (record.userId !== userId) return { outcome: 'forbidden' };
+      if (record.status !== 'running') {
+        return { outcome: 'already_terminal', status: record.status };
+      }
+      record.lastAccessAt = now();
+      record.controller.abort();
+      return { outcome: 'aborted' };
     },
 
     inspect(runId) {

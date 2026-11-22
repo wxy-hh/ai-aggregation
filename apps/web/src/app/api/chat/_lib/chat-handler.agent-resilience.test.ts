@@ -9,9 +9,11 @@
  */
 import { setupAiSdkMocks, streamTextMock } from './testing/mock-ai-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { createChatHandler } from './chat-handler';
 import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session';
 import { createRunRegistry, type RunRegistry } from './agent/run-registry';
+import { createToolRegistry } from '@/lib/agent/registry';
 import { parseChatStreamEvent } from '@repo/shared';
 
 const {
@@ -20,12 +22,14 @@ const {
   quotaSessionReserveMock,
   getAvailableQuotaMock,
   agentRunCreateMock,
+  toolRegistryHolder,
 } = vi.hoisted(() => ({
   currentUserMock: vi.fn(),
   rateLimiterMock: { check: vi.fn() },
   quotaSessionReserveMock: vi.fn(),
   getAvailableQuotaMock: vi.fn(),
   agentRunCreateMock: vi.fn(),
+  toolRegistryHolder: { current: null as unknown },
 }));
 
 vi.mock('@repo/db', async (importOriginal) => {
@@ -49,19 +53,22 @@ vi.mock('@/lib/billing/quota-service', () => ({
 vi.mock('./agent/planner', () => ({
   generateAgentPlan: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('./agent/tools', async () => {
-  const { createToolRegistry } = await import('@/lib/agent/registry');
-  return { getDefaultToolRegistry: () => createToolRegistry([]) };
-});
+vi.mock('./agent/tools', () => ({
+  getDefaultToolRegistry: () => toolRegistryHolder.current,
+}));
 
-function makeFakeResult(opts: { textParts?: string[]; usage?: unknown }) {
+function makeFakeResult(opts: {
+  textParts?: string[];
+  toolCalls?: Array<{ toolCallId: string; toolName: string; input: unknown }>;
+  usage?: unknown;
+}) {
   return {
     fullStream: (async function* () {
       for (const text of opts.textParts ?? []) {
         yield { type: 'text-delta', text };
       }
     })(),
-    toolCalls: Promise.resolve([]),
+    toolCalls: Promise.resolve(opts.toolCalls ?? []),
     usage: Promise.resolve(opts.usage ?? null),
     finishReason: Promise.resolve('stop'),
     response: Promise.resolve({ messages: [{ role: 'assistant', content: '决策步消息' }] }),
@@ -112,6 +119,7 @@ describe('Agent 运行时连接韧性（HTTP 级）', () => {
 
     fakeSession = createFakeQuotaSession({ outputLimit: 4096 });
     quotaSessionReserveMock.mockResolvedValue(fakeSession);
+    toolRegistryHolder.current = createToolRegistry([]);
 
     registry = createRunRegistry({ createRunId: () => 'run-resilience-1' });
     handler = createChatHandler({
@@ -185,6 +193,54 @@ describe('Agent 运行时连接韧性（HTTP 级）', () => {
     const reader = response.body!.getReader();
     const first = await reader.read();
     expect(firstSseEvent(first.value!)?.type).not.toBe('run_attached');
+    await reader.cancel();
+  });
+
+  it('主动中止在下一检查点停止，状态为 aborted 且只结算一次', async () => {
+    let toolStartedResolve: (() => void) | undefined;
+    const toolStarted = new Promise<void>((resolve) => {
+      toolStartedResolve = resolve;
+    });
+    const execute = vi.fn(async (_args: unknown, ctx: { signal: AbortSignal }) => {
+      toolStartedResolve?.();
+      await new Promise((_resolve, reject) => {
+        if (ctx.signal.aborted) {
+          reject(new Error('aborted'));
+          return;
+        }
+        ctx.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+      return { ok: true, contentForModel: '', summaryForDisplay: '' };
+    });
+    toolRegistryHolder.current = createToolRegistry([
+      {
+        name: 'web_fetch',
+        description: '抓取网页（测试替身）',
+        parameters: z.object({ url: z.string() }),
+        execute,
+      },
+    ]);
+    streamTextMock.mockReturnValueOnce(
+      makeFakeResult({
+        toolCalls: [
+          { toolCallId: 'call_abort', toolName: 'web_fetch', input: { url: 'https://example.com' } },
+        ],
+      })
+    );
+
+    const response = await handler(agentRequest());
+    const reader = response.body!.getReader();
+    await reader.read(); // run_attached
+    await toolStarted;
+
+    expect(registry.abort('run-resilience-1', 'test-user-id')).toEqual({ outcome: 'aborted' });
+    await vi.waitFor(
+      () => {
+        expect(registry.inspect('run-resilience-1')?.status).toBe('aborted');
+      },
+      { timeout: 3000 }
+    );
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
     await reader.cancel();
   });
 

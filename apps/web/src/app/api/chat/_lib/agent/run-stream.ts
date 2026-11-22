@@ -83,7 +83,14 @@ export function pumpRunStream(source: ReadableStream<Uint8Array>, run: LiveRunHa
       } catch {
         // 忽略释放锁异常
       }
-      run.finalize(terminal ?? (run.controller.signal.aborted ? 'aborted' : 'failed'));
+      // 正常完成优先；用户中止次之；其余按终止帧或失败收尾
+      const status =
+        terminal === 'completed'
+          ? 'completed'
+          : run.controller.signal.aborted
+            ? 'aborted'
+            : (terminal ?? 'failed');
+      run.finalize(status);
     }
   })();
 }
