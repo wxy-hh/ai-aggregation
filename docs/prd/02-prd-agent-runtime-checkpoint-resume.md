@@ -1,31 +1,53 @@
-# 02 · PRD：Agent 执行运行时持久化与断点续跑 (Runtime Checkpoint & Stream Resume)
+# 02 · PRD：Agent 运行时连接韧性与流式恢复 (Runtime Connection Resilience & Stream Resume)
 
-> **实现阶段**：Stage 2（核心架构突破：构建工业级状态机与连接韧性）  
-> **文档版本**：v1.0 | **创建日期**：2026-11-18 | **规划状态**：待实现 (Ready for Dev)  
-> **关联模块**：`apps/web/src/app/api/chat/_lib/agent/`、`packages/shared/src/chat-stream-contract.ts`、`packages/db/prisma/schema.prisma`、`apps/web/src/stores/chat-store.ts`
+> **实现阶段**：Stage 2（核心架构突破：执行与连接解耦）
+> **文档版本**：v1.1 | **更新日期**：2026-11-22 | **规划状态**：需求已对齐，待 `/to-spec`
+> **关联模块**：`apps/web/src/app/api/chat/_lib/`、`packages/shared/src/chat-stream-contract.ts`、`apps/web/src/stores/chat-store.ts`、`apps/web/src/lib/conversation/message-snapshots.ts`
+> **关联决策**：ADR-0061《Agent 执行与 HTTP 请求生命周期解耦：进程内运行注册表与事件重放》
 
 ---
 
-## 1. 业务痛点与底层思考
+## 0. 版本说明（v1.1 取代 v1.0）
+
+v1.0 的「Redis 事件流水 + DB 运行态表 + `seq` 增量重放 + 进程重启后继续执行」方案，在拷问中被以下事实否定：生产为单容器单 Node 进程；会话历史存浏览器侧；`AgentRun` 是结束时一次性写入的审计表；Redis 为 Upstash 外部托管。最终方案收敛为**进程内运行注册表 + 全量事件重放**，能力边界从「执行持久化」下调为「连接层韧性」。
+
+| v1.0 内容 | v1.1 处置 | 依据 |
+| :--- | :--- | :--- |
+| Redis 事件流 / checkpoint（TTL 24h） | 删除，改为进程内 `RunEventLog` | ADR-0061 §2 |
+| `AgentRun` 表改造 + `AgentRunStatus` | 删除，`AgentRun` 分析表零改动 | ADR-0061 §2 |
+| `seq` / `lastEventId` 增量补发 | 删除，改为全量重放 + 客户端重建 | ADR-0061 §2、备选方案 |
+| 进程重启后继续执行 | 删除，改为 `RunInterrupt` | ADR-0061 §1 |
+| `PAUSED_APPROVAL` 状态 | 删除，审批沿用 ADR-0041 现有机制 | ADR-0061 背景 §5 |
+| 「断点续跑」叙事 | 改为「流式恢复」，不承诺执行恢复 | ADR-0061 §8 |
+
+---
+
+## 1. 业务痛点与边界
 
 ### 1.1 现状与痛点
-- **易失性内存执行（Ephemeral Memory）**：当前 `agent-runner.ts` 直接将 Node.js 内存中的 `ReadableStream` 管道化到 HTTP 响应。执行周期与单次 HTTP 请求生命周期强绑定。
-- **用户体感脆弱**：一次完整的多步 Agent 规划、检索与工具调用通常需要 20s~90s。在此期间：
-  - 用户若在移动端锁屏、切换 App、在桌面端误刷新页面或网络跳变，HTTP 连接立刻中断；
-  - 内存执行流被系统截断或变成孤儿进程，中间状态丢失；
-  - 前端展示为错误中断或空白，已消耗的预留 Token 配额变成悬挂账，产物完全丢失。
-- **面试与工业级差距**：工业级 Agent 与玩具 Demo 的根本分水岭之一就在于**系统的韧性（Fault Tolerance）**——分布式环境默认“网络随时可能中断、进程随时可能重启”。
 
-### 1.2 设计原则（张一鸣思维操作系统）
-1. **假设一切都会失败**：网络不可靠、客户端不可靠、单次连接不可靠。执行状态必须独立于网络连接而持久化。
-2. **Context not Control**：服务端如实持久化状态变迁的 Context（事件流水与检查点），客户端只负责消费和按需订阅。
-3. **消除无效重跑**：已完成的 Step 决不能因为外部网络抖动而重新调用 LLM 和工具，保护 Token 成本与时间延迟。
+- **执行与连接强绑定**：`runAgent` 直接消费 `req.signal`（`chat-handler.ts:359`），输出流直接管道到 HTTP 响应。用户刷新、锁屏、切 App 或网络跳变时，连接中断即触发 abort，多步任务在第 2 步、第 3 步被截断。
+- **结果无处可取**：最终文本、产物与工具结果从未被任何客户端接收，服务端也不保存会话历史（`chat-store.ts:356` 存浏览器侧），断线即等于结果丢失。
+- **用户体感脆弱**：一次完整任务通常 20s~90s。期间任何连接波动都会显示为错误中断，已消耗的配额与已完成的步骤全部作废。
+
+### 1.2 能力边界（重要）
+
+本特性保证的是**连接层韧性**，不是**进程层持久化**：
+
+- **覆盖**：刷新页面、锁屏/切 App、Wi-Fi 与蜂窝切换、短暂断网。执行在服务端继续，客户端恢复后重新挂载并取得完整结果。
+- **不覆盖**：web 进程重启、容器重调度、多副本/Serverless 部署。此时进行中的任务标记为 `RunInterrupt`，客户端提示「任务已中断」，用户可重新执行。
+- 该边界适用于当前「长驻、单 Node 进程、单副本」部署（腾讯云 Docker 单容器）。不得对外表述为「任务永不丢失」。
+
+### 1.3 设计原则
+
+1. **执行独立于连接**：连接只决定谁在观看，不决定任务是否继续。
+2. **内存即真源**：运行态的唯一副本在进程内存；不引入跨进程存储，不为不存在的多副本场景预付复杂度。
+3. **恢复即重放**：恢复不依赖增量游标，而是重建消息后重放完整事件日志；实时与恢复共用同一套消费逻辑。
+4. **停止必须真实**：用户看到的「已停止」必须等于服务端已停止，且只结算一次。
 
 ---
 
-## 2. 核心功能与产品形态
-
-### 2.1 交互表现与用户旅程
+## 2. 核心功能与用户旅程
 
 ```mermaid
 sequenceDiagram
@@ -33,132 +55,175 @@ sequenceDiagram
     actor User as 用户 (Client)
     participant UI as 前端组件 (Chat UI)
     participant API as Agent Gateway (Web API)
-    participant Redis as Redis (State & Events)
-    participant Runner as Agent Runner (Background)
-    participant DB as PostgreSQL (AgentRun)
+    participant Reg as RunRegistry (进程内存)
+    participant Runner as Agent Runner (进程内执行)
 
-    User->>UI: 触发多步复杂 Agent 任务
-    UI->>API: POST /api/chat (开启 agentMode)
-    API->>DB: 创建 AgentRun (status: RUNNING)
-    API->>Runner: 启动有界多步任务
-    Runner->>Redis: 写入 Event 0, 1, 2... 并同步推入 SSE
-    Redis-->>UI: 实时渲染 Plan、Tool Call 进度卡片
-    
-    Note over User,UI: 用户误触刷新 / 网络切换 WiFi 到蜂窝
-    UI-xAPI: HTTP 连接断开 (Client Disconnect)
-    Note over Runner: Runner 检测断开但继续安全执行至 Checkpoint
-    
+    User->>UI: 触发多步 Agent 任务
+    UI->>API: POST /api/chat (agentMode)
+    API->>Reg: 创建 LiveRun (runId, 事件日志, AbortController)
+    API-->>UI: 首帧 run_attached { runId, resumed: false }
+    Runner->>Reg: 追加事件 (plan / tool_call / text-delta ...)
+    Reg-->>UI: 实时推送 SSE
+
+    Note over User,UI: 刷新 / 锁屏 / 切换网络
+    UI-xAPI: 连接断开
+    Note over Runner: 执行不中断，继续至终态
+
     User->>UI: 重新进入页面 / 网络恢复
-    UI->>API: GET /api/chat/agent/resume?runId=xxx&lastEventId=2
-    API->>Redis: 读取 lastEventId > 2 的未读事件
-    Redis-->>UI: 瞬时补发已完成步骤，恢复卡片状态
-    API-->>UI: 继续建立实时 SSE 推送剩余执行流
-    Runner->>DB: 任务结束，更新 AgentRun (status: COMPLETED)
+    UI->>API: GET /api/chat/agent/resume?runId=xxx
+    API->>Reg: 原子取得「日志快照 + 订阅位置」
+    API-->>UI: 首帧 run_attached { runId, resumed: true }
+    API-->>UI: 从事件 0 全量重放
+    API-->>UI: 无缝转为实时推送
+    Runner->>Reg: 任务结束，写入终态事件
+    Reg-->>UI: done / aborted / error
 ```
 
-1. **执行中实时卡片**：
-   - 任务启动时立即生成唯一 `runId`，在对话气泡中渲染带有活跃态指示器的「智能体协同工作台」。
-2. **断线与离开感知**：
-   - 用户离开页面或连接中断时，界面不报错、不高亮红色异常，仅显示轻量状态提示：`后台正在持续推进（Step 2/5）...`。
-3. **一键恢复与增量重放（Zero State Loss）**：
-   - 重新进入聊天页面时，系统自动检测当前会话是否存在未完成的 `AgentRun`。
-   - 存在未完成任务时，主动发起 Resume 请求，历史 step 毫秒级回放，工具调用树与思考过程无缝恢复。
-4. **中断确认态（HITL Approval Resume）**：
-   - 若 Agent 运行到危险操作（需 HMAC 确认的工具），即使断线，重新连入后卡片依然稳定呈现「等待授权审批」面板，支持继续操作或取消。
+### 2.1 功能清单
+
+1. **执行中实时卡片**：任务启动即下发 `run_attached`，对话气泡渲染带活跃态指示器的「智能体协同工作台」。
+2. **断线无感**：连接中断时界面不报错、不置红，显示轻量提示「连接中断，正在重连…」。
+3. **自动重连与全量重放**：刷新、锁屏返回、网络恢复时自动 `attach`；消息重建后从事件 0 重放，工具调用树、计划与产物无缝恢复。
+4. **完成后取回结果**（v1.1 新增）：任务在用户离开期间跑完时，返回会话即可取得完整文本、产物与工具结果；日志保留 30 分钟。
+5. **停止真实生效**：停止按钮经服务端中止接口触发，收到终态事件后正常收尾；5s 未收到则本地提示「已请求停止」。
+6. **并发保护**：同一会话已有活跃任务时，新请求返回 `409` 与现有 `runId`，客户端保留草稿并挂载现有任务。
+7. **中断提示**：进程重启或日志过期后，统一提示「任务已不可用，可重新执行」，不区分具体原因。
 
 ---
 
-## 3. 技术方案与实现细节
+## 3. 技术方案
 
-### 3.1 状态与事件模型设计
+### 3.1 运行注册表（进程内存）
 
-#### A. Prisma 数据模型改造（`packages/db/prisma/schema.prisma`）
-增强现有 `AgentRun` 表结构：
+新增模块（建议路径 `apps/web/src/app/api/chat/_lib/agent/run-registry.ts`），单例持有：
 
-```prisma
-enum AgentRunStatus {
-  PENDING
-  RUNNING
-  PAUSED_APPROVAL // 等待人工审批
-  COMPLETED
-  FAILED
-  ABORTED
-}
-
-model AgentRun {
-  id             String         @id @default(uuid())
-  conversationId String         @map("conversation_id")
-  userId         String         @map("user_id")
-  status         AgentRunStatus @default(PENDING)
-  currentStep    Int            @default(0) @map("current_step")
-  maxSteps       Int            @default(5) @map("max_steps")
-  checkpointData Json?          @map("checkpoint_data") // 包含当前累积的 messages、plans
-  totalTokens    Int            @default(0) @map("total_tokens")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-
-  @@index([conversationId, status])
-  @@index([userId, status])
-  @@map("agent_runs")
+```ts
+interface LiveRun {
+  runId: string;                 // crypto.randomUUID()，不可枚举
+  userId: string;
+  conversationId: string;
+  status: 'running' | 'completed' | 'aborted' | 'failed';
+  events: Uint8Array[];          // 完整 SSE 事件帧，含 text-delta
+  bytes: number;
+  controller: AbortController;   // 唯一中止来源
+  subscribers: Set<(frame: Uint8Array) => void>; // 每次 attach 一个独立订阅
+  startedAt: number;
+  settledAt?: number;
 }
 ```
 
-#### B. Redis 实时事件缓存与检查点（TTL 24小时）
-- **事件流键**：`agent:run:{runId}:events`（Redis Stream 或有序 Hash / List）
-  - 每条记录包含：`{ seq: number, event: string, data: string, timestamp: number }`
-- **检查点键**：`agent:run:{runId}:checkpoint`
-  - 存储当前 step 的上下文数据（用于故障恢复或继续下一个 step）：
-    ```json
-    {
-      "step": 2,
-      "plan": { "goal": "...", "steps": [...] },
-      "completedToolResults": [...],
-      "accumulatedTokens": 1420
-    }
-    ```
+**不变量（实现必须满足）**：
 
-### 3.2 核心接口定义
+1. **原子挂载**：每次 attach 调用 `subscribe(runId, onFrame)` 时，注册表在同一次同步调用内返回「历史帧快照 + 订阅内游标」并完成回调注册，不得出现「先读历史、再订阅」的间隙；游标只存在于该次订阅内部。
+2. **同日志**：初始 `POST /api/chat` 的响应流与 `/resume` 消费同一份 `events`。
+3. **幂等 attach**：每次 attach 创建独立订阅与独立游标；多标签页各自独立重放，不共享 reader，不互相覆盖。
+4. **保留**：终态后保留 30 分钟（`RUN_LOG_RETENTION_MS`），从 `settledAt` 起算。
+5. **淘汰**：全部 run（活跃 + 终态）上限 128 个 / 64MB（`RUN_LOG_MAX_RUNS` / `RUN_LOG_MAX_BYTES`）；超限先淘汰最久未访问的终态 run；活跃 run 不参与淘汰。
+6. **活跃上限与过载拒绝**：活跃 run 单独设上限 16 个 / 32MB（`RUN_ACTIVE_MAX_RUNS` / `RUN_ACTIVE_MAX_BYTES`）；超限时新 Agent 请求**在配额预留之前**返回 `503`「当前任务过多，请稍后再试」，不创建任务。内存保护不依赖 240s 预算。
+7. **单 run 上限**：日志软上限 8MB，超出记录告警，不截断（截断破坏重放正确性）。
+8. **不落库、不进 Redis**：注册表是运行态唯一副本；进程重启即全部消失。
 
-#### 1. 断点恢复请求 (Resume SSE)
-- **Path**: `GET /api/chat/agent/resume`
-- **Query Params**:
-  - `runId`: string (Agent 执行 ID)
-  - `lastEventId`: number (客户端收到的最后事件序号，默认为 0)
-- **Response**: `text/event-stream`
-  - 先吐出 `seq > lastEventId` 的已存事件；
-  - 随后监听活跃的 Redis PubSub 频道或直接挂载持续流。
+### 3.2 事件契约
 
-#### 2. 主动中止请求 (Abort Run)
-- **Path**: `POST /api/chat/agent/abort`
-- **Body**: `{ "runId": "string", "reason": "user_cancelled" }`
-- **Response**: `{ "success": true, "status": "ABORTED" }`
+在 `packages/shared/src/chat-stream-contract.ts` 新增一个事件，其余事件保持不变：
 
-### 3.3 客户端改造（`chat-store.ts` & `chat-stream.ts`）
-1. **自增 `event_id` 追踪**：
-   - 改造 `packages/shared/src/chat-stream-contract.ts`，为所有 SSE 事件统一注入 `seq: number` 和 `runId?: string`。
-2. **看门狗与自动重连**：
-   - 当检测到 SSE 超过 15 秒静默或连接非正常关闭（`onError` / `onAbort`），不置为 `isStreaming: false`，而是触发指数退避自动重连（最多 3 次，间隔 1s, 2s, 4s），调用 `/api/chat/agent/resume`。
-3. **页面加载初始化检查**：
-   - 切换对话或加载历史会话时，检查是否有处于 `RUNNING` 或 `PAUSED_APPROVAL` 的 Run，若有，自动激活重连工作流。
+```ts
+export type ChatStreamRunAttachedEvent = {
+  type: 'run_attached';
+  runId: string;
+  /** true = 重连挂载（客户端需重建消息）；false = 初始请求 */
+  resumed: boolean;
+};
+```
+
+- 所有流（初始与 resume）**首帧**均为 `run_attached`。
+- `run_attached` 是**每次连接的投递首帧**，不写入共享 `RunEventLog`；`resumed` 属于单次连接属性，重放时不会携带错误值。
+- 不新增 `seq`、不新增 `runId` 到每个事件。
+
+### 3.3 核心接口
+
+#### 1. 断点挂载（Resume SSE）
+
+- **Path**：`GET /api/chat/agent/resume?runId=xxx`
+- **鉴权**：`getCurrentUser`；注册表中 `userId` 必须匹配，否则 `403`。
+- **Response**：`text/event-stream`
+  - 首帧 `run_attached { runId, resumed: true }`；
+  - 随后从事件 0 全量重放；
+  - 同一次订阅内转为实时推送，不换连接。
+- **不可用**：`410 { code: 'RUN_UNAVAILABLE' }`。进程重启、日志过期、非法 runId 统一此响应与文案，不区分原因。
+- **心跳**：沿用 `withSseHeartbeat`（15s）。
+
+#### 2. 主动中止（Abort Run）
+
+- **Path**：`POST /api/chat/agent/abort`
+- **Body**：`{ "runId": "string" }`
+- **行为**：归属校验 → `controller.abort()` → 运行器在下一个检查点停止 → 写终态事件 → 统一结算一次。
+- **幂等**：重复调用返回当前状态；run 不存在返回 `410`。
+
+#### 3. 初始请求的并发约束
+
+- `POST /api/chat`（agent 模式）检测同 `conversationId` 已有活跃 `LiveRun` 时，返回 `409 { runId }`，不创建新任务。
+- 普通对话（`agentMode: false`）不进入注册表，不受此约束；多模型对比走 `agentMode: false`，同样不受影响。
+
+### 3.4 客户端改造
+
+1. **runId 持久化**：`run_attached` 到达时把 `runId` 写入消息快照（`message-snapshots.ts` 与消息类型同步扩展），随每秒节流落盘。
+2. **attach 触发**：
+   - 打开/切回包含该 runId 消息的会话；
+   - `window` 的 `online` 事件；
+   - `visibilitychange` 转前台（移动端锁屏返回时定时器被冻结，必须靠此事件立即补一次）。
+3. **重建**：`run_attached.resumed === true` 时，先把该 runId 对应的助手消息清空，再按事件序列重建；`resumed === false` 时只记录 runId。
+4. **看门狗**：**25s 未收到任何字节**（心跳 15s + 10s 余量）判定断线，不置 `isStreaming: false`、不报错。
+5. **重连**：退避 1s→2s→4s→8s→10s 封顶，持续重试；终止条件为「收到终态事件」「resume 返回 410」「累计重连超过 240s」。期间显示「正在重新连接（第 N 次）」。
+6. **放弃后**：显示「连接中断，任务可能仍在后台执行」，提供「重新连接」与「停止」按钮；runId 已持久化，后续打开会话仍可自动 attach。
+7. **停止按钮**：调用 abort 接口并等待终态事件；5s 未收到则本地收尾并提示「已请求停止」。
+8. **普通对话维持现状**：仍绑定请求信号，断开即中止；本特性不改变其行为，也不为其提供 attach。
 
 ---
 
 ## 4. 边界条件与异常处理
 
-1. **孤儿进程清理与硬超时**：
-   - 单个 AgentRun 设置全局最大执行时效（`AGENT_RUN_MAX_DURATION = 300s`）。若 300s 后仍未到达终态且无客户端心跳，后台定时任务将其标记为 `FAILED`（超时关闭），并退还未消耗的预留配额。
-2. **写操作并发防护**：
-   - 同一会话（`conversationId`）在同一时刻仅允许一个活跃的 `RUNNING` 实例。后续重复触发直接返回当前正在运行的 `runId`。
-3. **Redis 宕机降级**：
-   - 若 Redis 连接异常，系统平滑降级为现有的单次纯内存 SSE 流模式，并记录警告日志，绝不阻断用户正常对话。
+1. **运行中断（RunInterrupt）**：web 进程重启后注册表为空；客户端 attach 得到 `410`，提示「任务已不可用，可重新执行」。半截消息保留在本地，可一键重跑。
+2. **日志过期**：终态 30 分钟后淘汰；过期后的 attach 与中断同样处理，不区分原因。
+3. **结算恰好一次**：正常完成、主动中止、预算耗尽、审批暂停、异常五类收尾，先由运行器写入**唯一终态事件**并把 `LiveRun` 标记为终态（记 `settledAt`），随后由 `ChatCompletionLifecycle` 执行恰好一次结算；客户端断开、attach 失败、重复 abort 均不进入完成生命周期。审批暂停按 ADR-0041 视为有效终态。
+4. **配额**：沿用现有预留与对账机制（`/api/internal/billing/reconcile`）；中断任务由既有 `releaseExpiredQuotaReservations` 释放未执行预留。本特性不新增计费逻辑。
+5. **审批恢复**：沿用签名 token（10 分钟 TTL）与客户端本地快照；审批请求发出后本次流已正常结束，重新点批准是新的 `ApprovalResume` 请求，不属于本特性的 attach 语义。
+6. **多标签页**：各自独立 attach 与重放；同一 run 的订阅幂等。
+7. **部署边界**：仅在长驻单 Node 进程、单副本部署下成立；Vercel/Serverless、多副本不提供同等能力。
+8. **不做全局活跃任务提示**：非当前会话不打扰；任务最长 240s 自然结束。
+9. **过载保护**：活跃 run 上限 16 个 / 32MB；超限时新 Agent 请求在配额预留前返回 `503`，不创建任务。该上限独立于 240s 预算，内存保护不能依赖任务自然结束。
 
 ---
 
-## 5. 验收标准与交付物
+## 5. 验收标准
 
-| 检查项 | 验证方式 | 预期目标 |
+| 检查项 | 验证方式 | 预期结果 |
 | :--- | :--- | :--- |
-| **刷新不丢状态** | 运行一个 4 步 Agent 任务，在第 2 步工具调用时按 F5 刷新网页 | 页面重新进入后 500ms 内恢复执行状态卡片，无缝走完后续 3 步 |
-| **断线增量补推** | 模拟网络断开 5 秒后恢复 | 客户端按 `lastEventId` 顺序补齐丢失事件，不产生乱序或重复文本 |
-| **审批态持久保持** | 触发 Webhook 敏感操作进入 HMAC 审批态，关闭浏览器 5 分钟后再打开 | 审批弹窗依然有效展示，支持点击「批准」并继续向下执行 |
-| **配额准确性** | 发生中断并完成恢复后 | `AIUsageRecord` 账本扣除的 Token 精确等于实际累积调用的 Token，无多扣或死锁 |
+| **执行中刷新恢复** | 4 步 Agent 任务跑到第 2 步工具调用时按 F5 | 回到会话自动 attach；消息重建无重复、无缺字；后续步骤实时可见；`done` 正常落盘 |
+| **完成后返回取结果** | 运行中刷新，等任务在后台跑完（≥60s 后回来） | 打开会话即拿到完整文本、产物与工具结果，与未中断运行一致 |
+| **断线自动重连** | DevTools 切 Offline 5s 再恢复 | 显示「重连中」，恢复后内容无重复、无缺失，无需手动操作 |
+| **停止真实生效** | 运行中点击停止 | 服务端 1 个检查点内停止；UI 显示已停止；之后不再产生 token（日志核对） |
+| **并发防护** | 两个标签页同会话同时发送 | 第二个请求 `409`；客户端保留草稿并 attach 现有任务 |
+| **进程重启中断** | 运行中重启 web 容器 | 回来看到「任务已不可用」，半截消息保留，可重跑；无悬挂状态 |
+| **审批跨刷新** | 进入审批态后刷新 / 关浏览器 5 分钟 | 审批面板仍在，批准后继续执行（现状回归项，需真实验证） |
+| **配额准确性** | 中断 → 恢复 → 完成全流程 | 账本扣除 = 实际用量，预留全部释放（现状回归项，需真实验证） |
+| **日志回收** | 完成后 30 分钟再 attach | `410` +「任务已不可用」，可重跑 |
+
+---
+
+## 6. 明确不做（Out of Scope）
+
+- 进程重启后的执行恢复、独立执行宿主（BullMQ worker 承接 Agent 执行）。
+- Redis 事件流水、`checkpointData`、DB 运行态表、`AgentRunStatus` 枚举。
+- `seq` / `lastEventId` 增量重放。
+- `PAUSED_APPROVAL` 持久化状态（审批沿用 ADR-0041）。
+- 全局活跃任务提示、跨设备恢复（会话历史本身在浏览器侧）。
+- 普通对话的断线韧性；多模型对比模式。
+
+---
+
+## 7. 关联决策与术语
+
+- 架构决策：`docs/adr/0061-agent-runtime-connection-resilience.md`
+- 术语定义：`GLOSSARY.md`「运行时韧性与流式恢复」——`LiveRun`、`RunEventLog`、`Attach`、`StreamResume`、`RunInterrupt`、`Abort`。
+- `Checkpoint` 在本项目中专指「智能体计划中的阶段节点」，不再表示运行时检查点。

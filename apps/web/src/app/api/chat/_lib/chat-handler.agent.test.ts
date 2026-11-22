@@ -258,10 +258,11 @@ describe('agent 模式编排（HTTP 级）', () => {
       )
       .mockReturnValueOnce(
         makeFakeResult({
-          textParts: ['Agent 正常回答'],
+          textParts: ['已获取退款说明，正在整理回答。'],
           usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
         })
-      );
+      )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['Agent 正常回答'] }));
 
     const response = await handler(
       agentRequest({ messages: [{ role: 'user', content: '如何申请退款？' }] })
@@ -271,7 +272,7 @@ describe('agent 模式编排（HTTP 级）', () => {
 
     expect(faqShortCircuitMock).not.toHaveBeenCalled();
     expect(events).toContainEqual({ type: 'text-delta', text: 'Agent 正常回答' });
-    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
     expect(quotaSessionReserveMock).toHaveBeenCalledTimes(1);
     expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
     const runData = agentRunCreateMock.mock.calls[0]?.[0]?.data as {
@@ -294,15 +295,22 @@ describe('agent 模式编排（HTTP 级）', () => {
       )
       .mockReturnValueOnce(
         makeFakeResult({
-          textParts: ['根据网页内容，这篇文章讲了……'],
+          textParts: ['网页内容已获取，正在整理。'],
           usage: { inputTokens: 150, outputTokens: 30, totalTokens: 180 },
         })
-      );
+      )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['根据网页内容，这篇文章讲了……'] }));
 
     const response = await handler(agentRequest());
     const events = await readSseEvents(response);
 
-    expect(events.map((e) => e.type)).toEqual(['tool_call', 'tool_result', 'text-delta', 'done']);
+    expect(events.map((e) => e.type)).toEqual([
+      'tool_call',
+      'tool_result',
+      'agent_note',
+      'text-delta',
+      'done',
+    ]);
 
     const toolCall = events[0] as { call: { id: string; name: string; argsSummary: string } };
     expect(toolCall.call.name).toBe('web_fetch');
@@ -313,9 +321,9 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(toolResult.callId).toBe('call_1');
     expect(toolResult.status).toBe('success');
 
-    // 执行了工具，且两段式跑满两次模型调用
+    // 执行了工具：两轮决策 + 独立收尾步共三次模型调用
     expect(toolExecuteMock).toHaveBeenCalledTimes(1);
-    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
 
     // 结算用量 = 决策步 + 总结步
     const finalizeCtx = fakeSession.finalize.mock.calls[0][1] as { usage: Record<string, number> };
@@ -326,7 +334,7 @@ describe('agent 模式编排（HTTP 级）', () => {
     });
 
     // 事件序列契约：done 在最后且带 usage
-    const done = events[3] as { usage?: { totalTokens: number } };
+    const done = events[4] as { usage?: { totalTokens: number } };
     expect(done.usage?.totalTokens).toBe(300);
   });
 
@@ -418,11 +426,18 @@ describe('agent 模式编排（HTTP 级）', () => {
           ],
         })
       )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['网页抓取失败，我来向用户说明。'] }))
       .mockReturnValueOnce(makeFakeResult({ textParts: ['很抱歉，网页抓取失败了。'] }));
 
     const events = await readSseEvents(await handler(agentRequest()));
 
-    expect(events.map((e) => e.type)).toEqual(['tool_call', 'tool_result', 'text-delta', 'done']);
+    expect(events.map((e) => e.type)).toEqual([
+      'tool_call',
+      'tool_result',
+      'agent_note',
+      'text-delta',
+      'done',
+    ]);
     expect((events[1] as { status: string }).status).toBe('failed');
     expect((events[1] as { summary: string }).summary).toContain('超时');
     // 工具失败是业务结果而非系统失败：总结步有文本 → success
@@ -524,14 +539,23 @@ describe('agent 模式编排（HTTP 级）', () => {
           ],
         })
       )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['网页内容已拿到，我来整理。'] }))
       .mockReturnValueOnce(makeFakeResult({ textParts: ['好了，这个网页讲的是……'] }));
 
     const events = await readSseEvents(await handler(agentRequest()));
     const types = events.map((e) => e.type);
 
-    expect(types).toEqual(['agent_note', 'tool_call', 'tool_result', 'text-delta', 'done']);
+    expect(types).toEqual([
+      'agent_note',
+      'tool_call',
+      'tool_result',
+      'agent_note',
+      'text-delta',
+      'done',
+    ]);
     expect(events[0]).toEqual({ type: 'agent_note', text: '我先查一下这个网页。' });
-    expect(events[3]).toEqual({ type: 'text-delta', text: '好了，这个网页讲的是……' });
+    expect(events[3]).toEqual({ type: 'agent_note', text: '网页内容已拿到，我来整理。' });
+    expect(events[4]).toEqual({ type: 'text-delta', text: '好了，这个网页讲的是……' });
     // tool_call 必先于它自己的 tool_result
     expect(types.indexOf('tool_call')).toBeLessThan(types.indexOf('tool_result'));
     // 关键保证：tool_result 先于收尾步正文
@@ -640,6 +664,7 @@ describe('agent 模式编排（HTTP 级）', () => {
           ],
         })
       )
+      .mockReturnValueOnce(makeFakeResult({ textParts: [] }))
       .mockReturnValueOnce(makeFakeResult({ textParts: [] }));
 
     const events = await readSseEvents(await handler(agentRequest()));
@@ -750,7 +775,8 @@ describe('agent 模式编排（HTTP 级）', () => {
     }));
     streamTextMock
       .mockReturnValueOnce(makeFakeResult({ toolCalls: manyCalls }))
-      .mockReturnValueOnce(makeFakeResult({ textParts: ['前三个抓好了，其余本轮没跑。'] }));
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['前三个抓好了，其余本轮没跑。'] }))
+      .mockReturnValueOnce(makeFakeResult({ textParts: [] }));
 
     const events = await readSseEvents(await handler(agentRequest()));
     const types = events.map((e) => e.type);
@@ -788,6 +814,7 @@ describe('agent 模式编排（HTTP 级）', () => {
           ],
         })
       )
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['长文已抓取，正在整理要点。'] }))
       .mockReturnValueOnce(
         makeFakeResult({ textParts: ['这篇长文的要点是……'], finishReason: 'length' })
       );
@@ -795,7 +822,14 @@ describe('agent 模式编排（HTTP 级）', () => {
     const events = await readSseEvents(await handler(agentRequest()));
     const types = events.map((e) => e.type);
 
-    expect(types).toEqual(['tool_call', 'tool_result', 'text-delta', 'warning', 'done']);
+    expect(types).toEqual([
+      'tool_call',
+      'tool_result',
+      'agent_note',
+      'text-delta',
+      'warning',
+      'done',
+    ]);
     const warning = events.find((e) => e.type === 'warning') as { warning: string };
     expect(warning.warning).toContain('截断');
   });
@@ -834,9 +868,12 @@ describe('agent 模式编排（HTTP 级）', () => {
       )
       .mockReturnValueOnce(
         makeFakeResult({
-          textParts: ['基于上述两项信息，综合回答如下……'],
+          textParts: ['两项信息都拿到了，我来综合。'],
           usage: { inputTokens: 200, outputTokens: 40, totalTokens: 240 },
         })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({ textParts: ['基于上述两项信息，综合回答如下……'] })
       );
 
     const response = await handler(agentRequest());
@@ -849,6 +886,7 @@ describe('agent 模式编排（HTTP 级）', () => {
       'agent_note',
       'tool_call',
       'tool_result',
+      'agent_note',
       'text-delta',
       'done',
     ]);
@@ -856,14 +894,18 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(events[0]).toEqual({ type: 'agent_note', text: '我先查询第一个信息。' });
     expect(events[3]).toEqual({ type: 'agent_note', text: '接着查询第二个信息。' });
     expect(events[6]).toEqual({
+      type: 'agent_note',
+      text: '两项信息都拿到了，我来综合。',
+    });
+    expect(events[7]).toEqual({
       type: 'text-delta',
       text: '基于上述两项信息，综合回答如下……',
     });
 
     expect(toolExecuteMock).toHaveBeenCalledTimes(2);
-    expect(streamTextMock).toHaveBeenCalledTimes(3);
+    expect(streamTextMock).toHaveBeenCalledTimes(4);
 
-    const done = events[7] as { usage?: { totalTokens: number } };
+    const done = events[8] as { usage?: { totalTokens: number } };
     expect(done.usage?.totalTokens).toBe(120 + 180 + 240);
 
     const finalizeCtx = fakeSession.finalize.mock.calls[0][1] as { usage: Record<string, number> };
