@@ -110,9 +110,11 @@ S3_SECRET_KEY="minioadmin"
 S3_BUCKET="ai-aggregation"
 
 # ==================== AI Providers（暂时可以留空）====================
-DASHSCOPE_API_KEY=""
-ZHIPU_API_KEY=""
 DEEPSEEK_API_KEY=""
+ARK_API_KEY=""
+XUNFEI_API_KEY=""
+ZHIPU_API_KEY=""
+AGNES_API_KEY=""
 
 # ==================== 鉴权配置 ====================
 # 生成一个随机字符串（可以用下面的命令生成）
@@ -142,9 +144,11 @@ S3_SECRET_KEY="minioadmin"
 S3_BUCKET="ai-aggregation"
 
 # ==================== AI Providers（暂时可以留空）====================
-DASHSCOPE_API_KEY=""
-ZHIPU_API_KEY=""
 DEEPSEEK_API_KEY=""
+ARK_API_KEY=""
+XUNFEI_API_KEY=""
+ZHIPU_API_KEY=""
+AGNES_API_KEY=""
 ```
 
 ### 3. 生成 AUTH_SECRET
@@ -300,7 +304,8 @@ S3_SECRET_KEY="minioadmin"
 S3_BUCKET="ai-aggregation"
 
 # AI Providers（暂时留空）
-DASHSCOPE_API_KEY=""
+XUNFEI_API_KEY=""
+VOLCENGINE_API_KEY=""
 ZHIPU_API_KEY=""
 DEEPSEEK_API_KEY=""
 

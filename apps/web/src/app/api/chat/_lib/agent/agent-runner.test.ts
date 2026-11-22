@@ -154,8 +154,14 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       )
       .mockReturnValueOnce(
         makeFakeResult({
-          textParts: ['最终回答内容'],
+          textParts: ['阶段小结：数据已获取完毕'],
           response: { id: 'resp_2' },
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['最终收尾报告'],
+          response: { id: 'resp_3' },
         })
       );
 
@@ -173,7 +179,8 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
 
     await readSseEvents(stream);
 
-    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    // 经历工具调用后，决策步输出文本转为 agent_note 并进入收尾步（共 3 次调用）
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
 
     // 第 1 次调用：全量历史，无 previousResponseId，有 maxToolCalls=3
     const firstCall = streamTextMock.mock.calls[0][0];
@@ -441,6 +448,12 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
           textParts: ['这是为您生成的猫咪图片。'],
           response: { id: 'resp_step2' },
         })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['图片已生成完毕，请查阅。'],
+          response: { id: 'resp_step3' },
+        })
       );
 
     const stream = runAgent({
@@ -500,10 +513,15 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
       )
       .mockReturnValueOnce(
         makeFakeResult({
-          textParts: ['最终回答文本'],
+          textParts: ['阶段小结：测试工具执行完毕'],
           response: {
             messages: [{ role: 'assistant', content: '第 2 轮助手消息' }],
           },
+        })
+      )
+      .mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['最终收尾报告'],
         })
       );
 
@@ -521,7 +539,7 @@ describe('agent-runner 链式迁移测试（runner 级）', () => {
 
     await readSseEvents(stream);
 
-    expect(streamTextMock).toHaveBeenCalledTimes(2);
+    expect(streamTextMock).toHaveBeenCalledTimes(3);
 
     const secondCall = streamTextMock.mock.calls[1][0];
     // 验证第 2 次调用的 messages 为全量发送（长度 > 1，包含用户消息、助手消息与工具结果消息）
@@ -778,12 +796,20 @@ describe('web_search providerExecuted 映射', () => {
           response: { id: 'resp_1' },
         })
       )
-      // 第 2 次 streamText 调用返回纯文本收尾
+      // 第 2 次 streamText 调用返回阶段小结
+      .mockReturnValueOnce(
+        makeFakeStreamResult({
+          streamParts: [{ type: 'text-delta', text: '阶段小结：工具已完成' }],
+          toolCalls: [],
+          response: { id: 'resp_2' },
+        })
+      )
+      // 第 3 次 streamText 调用为独立收尾步
       .mockReturnValueOnce(
         makeFakeStreamResult({
           streamParts: [{ type: 'text-delta', text: '收尾回答' }],
           toolCalls: [],
-          response: { id: 'resp_2' },
+          response: { id: 'resp_3' },
         })
       );
 
@@ -1948,6 +1974,129 @@ describe('TC04: 可观测性 Langfuse Trace 与运行元数据审计', () => {
         }),
       })
     );
+  });
+
+  describe('自适应两阶段收敛与截断规避机制 (ADR-0009 / ADR-0039)', () => {
+    it('1. 零工具极简问答：首轮决策直接输出文本时，单步极速交付为最终回答，不触发收尾步且无 agent_note', async () => {
+      const registry = createToolRegistry([fakeToolSpec]);
+      const onFinishMock = vi.fn(async () => {});
+
+      streamTextMock.mockReturnValueOnce(
+        makeFakeResult({
+          textParts: ['你好！我是 AI 聚合平台的智能助手，很高兴为你提供帮助。'],
+          response: { id: 'resp_direct' },
+        })
+      );
+
+      const stream = runAgent({
+        userId: 'u1',
+        provider: 'doubao',
+        model: 'doubao-seed-evolving',
+        messages: [{ role: 'user', content: '你好' }],
+        stepOutputLimit: 2048,
+        signal: new AbortController().signal,
+        errorId: 'test-direct',
+        runtime: await testRuntime(registry),
+        onFinish: onFinishMock,
+      });
+
+      const events = await readSseEvents(stream);
+
+      // 仅调用 1 次模型，首字极速直出
+      expect(streamTextMock).toHaveBeenCalledTimes(1);
+
+      // 文本走 text-delta 作为最终正文
+      const textEvents = events.filter((e) => e.type === 'text-delta');
+      expect(textEvents.map((e) => (e as { text: string }).text).join('')).toBe(
+        '你好！我是 AI 聚合平台的智能助手，很高兴为你提供帮助。'
+      );
+
+      // 不混入 agent_note 干扰用户视线
+      expect(events.some((e) => e.type === 'agent_note')).toBe(false);
+
+      // 任务以 success 结束，且步数计为 1 步
+      expect(onFinishMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'success',
+          steps: 1,
+        })
+      );
+    });
+
+    it('2. 多轮工具调研：经历工具执行后，决策步停止调用工具时下发思考小结并自动转入 8192 Token 独立收尾步，彻底规避 2048 截断', async () => {
+      const registry = createToolRegistry([fakeToolSpec]);
+      const onFinishMock = vi.fn(async () => {});
+
+      // 第 1 步：模型调用检索工具
+      // 第 2 步：模型判定信息已充足，输出阶段小结（无工具调用）
+      // 第 3 步：独立收尾步以 8192 Token 完整输出结构化调研报告
+      streamTextMock
+        .mockReturnValueOnce(
+          makeFakeResult({
+            toolCalls: [{ toolCallId: 'c1', toolName: 'test_tool', input: { query: '新能源发展' } }],
+            response: { id: 'resp_step1' },
+          })
+        )
+        .mockReturnValueOnce(
+          makeFakeResult({
+            textParts: ['数据已交叉验证完毕，接下来为您组织结构化调研报告。'],
+            response: { id: 'resp_step2' },
+          })
+        )
+        .mockReturnValueOnce(
+          makeFakeResult({
+            textParts: ['# 新能源汽车深度调研报告\n\n## 一、背景与现状\n...完整万字研报...'],
+            response: { id: 'resp_summary' },
+          })
+        );
+
+      const stream = runAgent({
+        userId: 'u1',
+        provider: 'deepseek',
+        model: 'deepseek-flash',
+        messages: [{ role: 'user', content: '请对新能源汽车发展展开深度调研' }],
+        stepOutputLimit: 2048,
+        signal: new AbortController().signal,
+        errorId: 'test-converge',
+        runtime: await testRuntime(registry),
+        onFinish: onFinishMock,
+      });
+
+      const events = await readSseEvents(stream);
+
+      // 自动完成 3 步闭环（工具决策 -> 阶段小结 -> 独立收尾步）
+      expect(streamTextMock).toHaveBeenCalledTimes(3);
+
+      // 验证收尾步调用参数：未挂载工具，且 maxOutputTokens 获得充分预算（8192）
+      const summaryCall = streamTextMock.mock.calls[2][0];
+      expect(summaryCall.tools).toBeUndefined();
+      expect(summaryCall.maxOutputTokens).toBeGreaterThanOrEqual(8192);
+
+      // 验证第 2 步的过渡文本下发为 agent_note（思考小结），未混入主正文
+      const noteEvent = events.find((e) => e.type === 'agent_note');
+      expect(noteEvent).toBeDefined();
+      expect((noteEvent as { text: string }).text).toBe(
+        '数据已交叉验证完毕，接下来为您组织结构化调研报告。'
+      );
+
+      // 验证最终主回答完完全全来自第 3 步收尾步，没有被污染
+      const fullText = events
+        .filter((e) => e.type === 'text-delta')
+        .map((e) => (e as { text: string }).text)
+        .join('');
+      expect(fullText).toBe('# 新能源汽车深度调研报告\n\n## 一、背景与现状\n...完整万字研报...');
+
+      // 验证无任何 warning 截断警告
+      expect(events.some((e) => e.type === 'warning')).toBe(false);
+
+      // 验证任务成功交付
+      expect(onFinishMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'success',
+          steps: 3, // 2 轮决策步 + 1 轮独立收尾步
+        })
+      );
+    });
   });
 });
 

@@ -65,14 +65,16 @@ fi
 echo ""
 echo "🤖 检查 AI Provider 配置（可选）..."
 
-if [ -z "$DASHSCOPE_API_KEY" ] && [ -z "$ZHIPU_API_KEY" ] && [ -z "$DEEPSEEK_API_KEY" ]; then
+if [ -z "$DEEPSEEK_API_KEY" ] && [ -z "$ARK_API_KEY" ] && [ -z "$XUNFEI_API_KEY" ] && [ -z "$ZHIPU_API_KEY" ] && [ -z "$AGNES_API_KEY" ]; then
   echo "⚠️  未配置任何 AI Provider API Key"
   echo "   这不影响项目启动，但无法使用 AI 功能"
   echo "   可以稍后在 .env.local 中配置"
 else
-  [ ! -z "$DASHSCOPE_API_KEY" ] && echo "✅ DASHSCOPE_API_KEY 已配置"
-  [ ! -z "$ZHIPU_API_KEY" ] && echo "✅ ZHIPU_API_KEY 已配置"
   [ ! -z "$DEEPSEEK_API_KEY" ] && echo "✅ DEEPSEEK_API_KEY 已配置"
+  [ ! -z "$ARK_API_KEY" ] && echo "✅ ARK_API_KEY 已配置"
+  [ ! -z "$XUNFEI_API_KEY" ] && echo "✅ XUNFEI_API_KEY 已配置"
+  [ ! -z "$ZHIPU_API_KEY" ] && echo "✅ ZHIPU_API_KEY 已配置"
+  [ ! -z "$AGNES_API_KEY" ] && echo "✅ AGNES_API_KEY 已配置"
 fi
 
 echo ""

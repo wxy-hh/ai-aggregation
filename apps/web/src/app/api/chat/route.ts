@@ -8,6 +8,7 @@
 
 import type { ProviderName } from '@repo/providers';
 import { createChatHandler } from './_lib/chat-handler';
+import { checkAgentEnvironment } from './_lib/agent-probe';
 import { XunfeiAdapter } from './_lib/adapters/xunfei';
 import { DoubaoAdapter } from './_lib/adapters/doubao';
 import { GenericAdapter } from './_lib/adapters/generic';
@@ -34,4 +35,7 @@ function getAdapter(provider: ProviderName): ChatProviderAdapter {
   }
 }
 
-export const POST = createChatHandler({ getAdapter });
+export const POST = createChatHandler({
+  getAdapter,
+  checkAgentEnvironment,
+});

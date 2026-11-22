@@ -263,9 +263,8 @@ openssl rand -hex 24   # BILLING_RECONCILE_SECRET / RTASR_GATEWAY_SECRET
 
 | 变量                            | 用途                                           |
 | ------------------------------- | ---------------------------------------------- |
-| `DASHSCOPE_API_KEY`             | 通义对话/图像                                  |
-| `ZHIPU_API_KEY`                 | 智谱对话/视频                                  |
-| `DEEPSEEK_API_KEY`              | DeepSeek 对话                                  |
+| `ZHIPU_API_KEY`                 | 智谱 CogVideoX 视频                            |
+| `DEEPSEEK_API_KEY`              | DeepSeek 对话与 Agent                          |
 | `DEEPSEEK_MODEL`                | 命理等指定 DeepSeek 模型名（**不是** API Key） |
 | `ARK_API_KEY`                   | 豆包/火山方舟（对话/简历/命理）                |
 | `ARK_BASE_URL`                  | 如 `https://ark.cn-beijing.volces.com/api/v3`  |
@@ -310,7 +309,7 @@ KEY=value
 ### 5.6 当前生产已验证存在的关键项（2026-07-24）
 
 `DATABASE_URL`、`AUTH_SECRET`、`ANONYMOUS_DEVICE_SALT`、`NEXT_PUBLIC_APP_URL`、  
-`ARK_*`、`DEEPSEEK_*`、`DASHSCOPE_API_KEY`、`ZHIPU_API_KEY`、`AGNES_*`、  
+`ARK_*`、`DEEPSEEK_*`、`ZHIPU_API_KEY`、`AGNES_*`、  
 `SILICONFLOW_*`、`XUNFEI_*`、`REDIS_*` / Upstash 集成变量、  
 `BILLING_RECONCILE_SECRET`、`RTASR_GATEWAY_SECRET` 等。
 

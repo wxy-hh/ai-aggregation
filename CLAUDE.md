@@ -3,7 +3,7 @@
 > 本文件是 Agent 行为规则的**单一事实源**；`AGENTS.md` 是指向本文件的符号链接（Claude Code 读 CLAUDE.md，Kimi Code 读 AGENTS.md），修改只动本文件。
 > 参考资料（快速开始、常用命令、目录结构、技术栈、环境变量明细、FAQ、移动端细则、CodeGraph）见 `docs/project-guide.md`，按需阅读，不要凭记忆引用。
 
-基于 pnpm Workspace + Turborepo 的 Monorepo AI 聚合平台（通义千问、智谱 GLM、DeepSeek、Agnes），提供对话、图像、视频、语音转写功能。结构：`apps/web`（Next.js 15 主应用）+ `apps/worker`（BullMQ）+ `packages/*`（shared/providers/db/queue/storage/logger/config）。
+基于 pnpm Workspace + Turborepo 的 Monorepo AI 平台（讯飞星火、火山引擎豆包、DeepSeek 对话，Agnes 图像与智谱 CogVideoX 视频），聚焦面向交付物（Artifacts）与高安全治理的生产级轻量 AI Agent 全栈。结构：`apps/web`（Next.js 15 主应用）+ `apps/worker`（BullMQ）+ `packages/*`（shared/providers/db/queue/storage/logger/config）。
 
 ---
 

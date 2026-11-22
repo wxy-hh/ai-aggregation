@@ -13,7 +13,6 @@ import { ArtifactWorkspaceDock } from '@/components/chat/artifacts/artifact-work
 import { ComparisonView } from '@/components/chat/comparison/comparison-view'; // 并行对比视图（多模型）
 import { ModelSelector } from '@/components/chat/comparison/model-selector'; // 多模型选择器（对比模式）
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 // 跨模态接力：目标侧接收（引用条 + 预填 + 派生）
 import { ReferenceBar } from '@/components/relay/reference-bar';
@@ -71,6 +70,7 @@ import {
   Sparkles,
   Wrench,
   BookOpen,
+  ArrowLeft,
 } from 'lucide-react';
 
 // ============ 导入工具函数 ============
@@ -109,53 +109,67 @@ const MODELS: Record<ProviderName, { name: string; models: { id: string; label: 
 
 // ============ 对话模式分段控制器 ============
 // 在「单聊 / 并行对比」之间切换；遵循 DESIGN.md 玻璃拟态与科技蓝强调色
-function ModeSegmentedControl({
+// 采用物理常驻滑动胶囊与对称弹性布局，彻底杜绝 Framer Motion layoutId 在响应式 display:none 容器下的幽灵失真与白字白底空白 Bug
+export function ModeSegmentedControl({
   mode,
   onChange,
+  id,
 }: {
   mode: ComparisonMode;
   onChange: (mode: ComparisonMode) => void;
+  id?: string;
 }) {
-  const options: { value: ComparisonMode; label: string }[] = [
-    { value: 'single', label: '单聊' },
-    { value: 'compare', label: '并行对比' },
-  ];
+  const isCompare = mode === 'compare';
 
   return (
     <div
       role="tablist"
       aria-label="对话模式切换"
-      className="inline-flex flex-shrink-0 items-center rounded-full border border-white/70 bg-white/60 p-0.5 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-800/60"
+      id={id}
+      className="relative inline-flex flex-shrink-0 items-center rounded-full border border-white/70 bg-white/60 p-0.5 shadow-sm backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-800/60"
     >
-      {options.map((opt) => {
-        const active = mode === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'relative inline-flex min-h-[44px] items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-semibold select-none outline-none transition-colors duration-200 active:scale-[0.97]',
-              active
-                ? 'text-white'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-            )}
-          >
-            {active && (
-              <motion.div
-                layoutId="chatModeIndicator"
-                className="absolute inset-0 rounded-full bg-blue-600 shadow-[0_4px_12px_-2px_rgba(59,130,246,0.45)]"
-                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-              />
-            )}
-            <span className="relative z-10 flex items-center justify-center">
-              {opt.label}
-            </span>
-          </button>
-        );
-      })}
+      {/* 物理滑动高亮胶囊：常驻 DOM，CSS 硬件加速平移，彻底避免条件渲染丢帧/消失 */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          'absolute top-0.5 bottom-0.5 rounded-full bg-blue-600 shadow-[0_4px_12px_-2px_rgba(59,130,246,0.45)] transition-all duration-200 ease-out pointer-events-none',
+          isCompare
+            ? 'left-[calc(50%+1px)] w-[calc(50%-2px)]'
+            : 'left-0.5 w-[calc(50%-2px)]'
+        )}
+      />
+
+      {/* 单聊选项 */}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={!isCompare}
+        onClick={() => onChange('single')}
+        className={cn(
+          'relative z-10 inline-flex min-h-[44px] min-w-[54px] flex-1 items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-semibold select-none outline-none transition-colors duration-200 active:scale-[0.97]',
+          !isCompare
+            ? 'text-white'
+            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+        )}
+      >
+        单聊
+      </button>
+
+      {/* 并行对比选项 */}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={isCompare}
+        onClick={() => onChange('compare')}
+        className={cn(
+          'relative z-10 inline-flex min-h-[44px] min-w-[76px] flex-1 items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-semibold select-none outline-none transition-colors duration-200 active:scale-[0.97]',
+          isCompare
+            ? 'text-white'
+            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+        )}
+      >
+        并行对比
+      </button>
     </div>
   );
 }
@@ -324,6 +338,8 @@ export default function ChatWorkspace() {
     [artifacts]
   );
   const hasArtifacts = validArtifacts.length > 0;
+  // 移动端单视图双 Tab 模式（ADR-0060）
+  const [mobileActiveTab, setMobileActiveTab] = useState<'chat' | 'artifacts'>('chat');
 
   // ============ 跨模态接力：对话目标接收 ============
   // 携文本/转写/报告段落接力到对话：引用条在输入坞上方，草稿经 externalDraft 预填，不自动发送
@@ -830,14 +846,51 @@ export default function ChatWorkspace() {
                             )}
                           </div>
                         )}
-                        <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                        <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} id="desktop" />
                       </div>
                     </div>
                   </div>
 
                   {/* 头部操作区 */}
                   <div className="flex items-center gap-2 self-end sm:self-auto">
-                    {/* 产物工作台切换按钮（ADR-0015） */}
+                    {/* 移动端专属双 Tab 切换器（ADR-0060）：点击热区严格 >= 44x44px */}
+                    {!isCompareMode && hasArtifacts && (
+                      <div className="flex lg:hidden items-center p-0.5 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80">
+                        <button
+                          type="button"
+                          data-testid="mobile-tab-chat"
+                          onClick={() => setMobileActiveTab('chat')}
+                          className={cn(
+                            'min-h-[44px] min-w-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all select-none',
+                            mobileActiveTab === 'chat'
+                              ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          )}
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          <span>对话</span>
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="mobile-tab-artifacts"
+                          onClick={() => setMobileActiveTab('artifacts')}
+                          className={cn(
+                            'min-h-[44px] min-w-[44px] px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all select-none',
+                            mobileActiveTab === 'artifacts'
+                              ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          )}
+                        >
+                          <FileText className="w-4 h-4 text-blue-500" />
+                          <span>交付物</span>
+                          <span className="rounded-full bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-300">
+                            {validArtifacts.length}
+                          </span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 桌面端产物工作台切换按钮（ADR-0015） */}
                     {!isCompareMode && hasArtifacts && (
                       <button
                         type="button"
@@ -845,7 +898,7 @@ export default function ChatWorkspace() {
                         title={isWorkspaceOpen ? '收起产物工作台' : '打开产物工作台'}
                         onClick={() => setWorkspaceOpen(!isWorkspaceOpen)}
                         className={cn(
-                          'inline-flex h-11 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none lg:h-10',
+                          'hidden lg:inline-flex min-h-[44px] h-11 items-center gap-1.5 rounded-2xl border px-3 text-xs font-semibold shadow-sm transition-all select-none lg:h-10',
                           isWorkspaceOpen
                             ? 'border-blue-500/60 bg-blue-50 text-blue-600 dark:border-blue-500/50 dark:bg-blue-950/40 dark:text-blue-300'
                             : 'border-white/80 bg-white/80 text-slate-700 hover:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:bg-slate-700'
@@ -861,7 +914,7 @@ export default function ChatWorkspace() {
 
                     {/* 窄屏模式切换留在操作区；桌面端已跟在模型名后面 */}
                     <div className="lg:hidden">
-                      <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} />
+                      <ModeSegmentedControl mode={comparisonMode} onChange={setComparisonMode} id="mobile" />
                     </div>
                     <button
                       type="button"
@@ -959,7 +1012,7 @@ export default function ChatWorkspace() {
                                       type="button"
                                       data-testid={`capability-pack-card-${pack.key}`}
                                       onClick={() => {
-                                        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留
+                                        // 能力包同时写入运行时与当前会话绑定，刷新后仍保留；并预填专业模板到输入框
                                         conversationOrchestrator.updateSessionCapabilityPack(pack.key);
                                         setRelayDraft({
                                           id: `pack-${pack.key}-${Date.now()}`,
@@ -1148,6 +1201,26 @@ export default function ChatWorkspace() {
                     </div>
                   )}
 
+                  {/* 移动端底部轻量浮动横幅（ADR-0060）：点击切换到交付物视图 */}
+                  {!isCompareMode && hasArtifacts && mobileActiveTab === 'chat' && (
+                    <div className="relative z-10 flex-none px-4 pt-1 sm:px-5 lg:hidden">
+                      <button
+                        type="button"
+                        data-testid="mobile-artifact-floating-banner"
+                        onClick={() => setMobileActiveTab('artifacts')}
+                        className="w-full min-h-[44px] flex items-center justify-between px-4 py-2.5 rounded-2xl border border-blue-200/80 bg-blue-50/90 text-blue-700 dark:border-blue-800/40 dark:bg-blue-950/60 dark:text-blue-300 shadow-sm transition-transform active:scale-[0.98]"
+                      >
+                        <div className="flex items-center gap-2 text-xs font-medium">
+                          <FileText className="w-4 h-4 text-blue-500" />
+                          <span>已生成交付物，点击切换查看</span>
+                        </div>
+                        <span className="rounded-full bg-blue-200/80 dark:bg-blue-800/60 px-2 py-0.5 text-xs font-semibold">
+                          {validArtifacts.length}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* 输入坞：与主卡片同层背景；底部留白兼顾安全区与桌面拇指区 */}
                   <div className="relative z-10 flex-none px-4 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] sm:px-5 sm:pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)]">
                     <ChatInput
@@ -1183,10 +1256,33 @@ export default function ChatWorkspace() {
           )}
         </div>
 
-        {/* 移动端全屏工作台覆盖层（Overlay，ADR-0015） */}
-        {!isCompareMode && isWorkspaceOpen && hasArtifacts && (
-          <div className="lg:hidden">
-            <ArtifactWorkspace isMobile={true} onPrefillInput={prefillInputDraft} />
+        {/* 移动端单视图 Artifacts 交付物模式（ADR-0060） */}
+        {!isCompareMode && hasArtifacts && mobileActiveTab === 'artifacts' && (
+          <div className="fixed inset-0 z-40 flex flex-col bg-white dark:bg-slate-900 lg:hidden pt-[var(--app-mobile-chrome-top)] pb-[calc(var(--app-mobile-chrome-bottom)+env(safe-area-inset-bottom,0px))] overflow-y-auto overflow-x-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm sticky top-0 z-10">
+              <button
+                type="button"
+                data-testid="mobile-artifact-back-button"
+                onClick={() => setMobileActiveTab('chat')}
+                className="min-h-[44px] min-w-[44px] flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>返回对话</span>
+              </button>
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                交付物 ({validArtifacts.length})
+              </div>
+              <div className="min-w-[44px]" />
+            </div>
+            <div className="flex-1 p-3">
+              <ArtifactWorkspace
+                isMobile={true}
+                onPrefillInput={(draft) => {
+                  prefillInputDraft(draft);
+                  setMobileActiveTab('chat');
+                }}
+              />
+            </div>
           </div>
         )}
 

@@ -113,7 +113,7 @@ describe('AgentPlanCard 组件与交互测试', () => {
     expect(interruptSpy).not.toHaveBeenCalled();
   });
 
-  it('5. 真实案例复现：当部分步骤 completed、剩余步骤 skipped 且执行结束时，胶囊应呈现全流程完成态而非回退到步骤 1/5，且不显示调整按钮', () => {
+  it('5. 真实案例复现：当部分步骤 completed、剩余步骤 skipped 且执行结束时，胶囊应呈现最后实际执行步骤的精准位次而非虚标为总步数或回退到步骤 1/5，且不显示调整按钮', () => {
     const userPlanWithSkipped: AgentPlan = {
       id: 'plan-real-case',
       title: '主流厂商 Token/编码套餐对比',
@@ -130,13 +130,14 @@ describe('AgentPlanCard 组件与交互测试', () => {
 
     // 应该不再显示错误的 [◉ 步骤 1/5]
     expect(screen.queryByText('[◉ 步骤 1/5]')).not.toBeInTheDocument();
-    // 应该显示最终总步骤 [◉ 步骤 5/5]
-    expect(screen.getByText('[◉ 步骤 5/5]')).toBeInTheDocument();
+    // 应该显示最后实际执行步骤的精准位次 [◉ 步骤 4/5]
+    expect(screen.getByText('[◉ 步骤 4/5]')).toBeInTheDocument();
+    expect(screen.getByText('场景化测算')).toBeInTheDocument();
     // 应该不再显示调整按钮
     expect(screen.queryByTestId('plan-intervene-button')).not.toBeInTheDocument();
   });
 
-  it('6. 当任务执行中遭遇失败并结束时，呈现终态步骤索引与失败告警样式，不显示调整按钮', () => {
+  it('6. 当任务执行中遭遇失败并结束时，呈现发生故障的具体步骤索引与失败告警样式，不显示调整按钮', () => {
     const failedPlan: AgentPlan = {
       id: 'plan-failed-case',
       title: '失败中断任务',
@@ -149,9 +150,31 @@ describe('AgentPlanCard 组件与交互测试', () => {
 
     render(<AgentPlanCard messageId="msg-1" plan={failedPlan} isStreaming={false} />);
 
-    expect(screen.getByText('[◉ 步骤 3/3]')).toBeInTheDocument();
+    // 最后执行的是发生故障的第 2 步，应精准显示 [◉ 步骤 2/3]
+    expect(screen.getByText('[◉ 步骤 2/3]')).toBeInTheDocument();
+    expect(screen.getByText('步骤2')).toBeInTheDocument();
     expect(screen.queryByTestId('plan-intervene-button')).not.toBeInTheDocument();
     const capsule = screen.getByTestId('plan-capsule-text');
     expect(capsule.className).toContain('text-rose-700');
+  });
+
+  it('7. 用户实际调研场景：5步计划执行完第3步提前交付（后2步略过），胶囊精准显示 [◉ 步骤 3/5] 与第3步标题', () => {
+    const surveyPlan: AgentPlan = {
+      id: 'plan-ev-survey',
+      title: '新能源汽车深度调研',
+      steps: [
+        { id: 's1', title: '界定调研范围与报告框架', status: 'completed', summary: '已搜索 IEA' },
+        { id: 's2', title: '多轮网络检索', status: 'completed', summary: '已搜索 2026年新能源' },
+        { id: 's3', title: '精读核心网页，交叉验证销量', status: 'completed', summary: '任务交付完成' },
+        { id: 's4', title: '提炼核心论点', status: 'skipped', summary: '提前交付，步骤已略过' },
+        { id: 's5', title: '输出结构化调研报告', status: 'skipped', summary: '提前交付，步骤已略过' },
+      ],
+    };
+
+    render(<AgentPlanCard messageId="msg-1" plan={surveyPlan} isStreaming={false} />);
+
+    expect(screen.getByText('[◉ 步骤 3/5]')).toBeInTheDocument();
+    expect(screen.getByText('精读核心网页，交叉验证销量')).toBeInTheDocument();
+    expect(screen.queryByTestId('plan-intervene-button')).not.toBeInTheDocument();
   });
 });

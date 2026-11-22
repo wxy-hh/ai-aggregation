@@ -121,8 +121,13 @@ export function withSseHeartbeat(
   });
 }
 
-export function createSseResponse(stream: ReadableStream<Uint8Array>): Response {
-  return new Response(withSseHeartbeat(stream), { headers: SSE_HEADERS });
+export function createSseResponse(
+  stream: ReadableStream<Uint8Array>,
+  extraHeaders?: Record<string, string>
+): Response {
+  return new Response(withSseHeartbeat(stream), {
+    headers: extraHeaders ? { ...SSE_HEADERS, ...extraHeaders } : SSE_HEADERS,
+  });
 }
 
 /**

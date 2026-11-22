@@ -10,9 +10,9 @@ import {
   MessageSquare,
   Image as ImageIcon,
   ArrowRight,
-  Compass,
   Send,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import { RecentCreationsSection } from '@/components/home/recent-creations-section';
 
@@ -120,7 +120,7 @@ export function HomeContent() {
                   <Sparkles className="w-5 h-5 text-amber-500" />
                 </h1>
                 <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-                  通义千问 · 智谱 GLM · DeepSeek 多模型已就绪，随时开启创作
+                  DeepSeek · 火山豆包 · 讯飞星火 多模型已就绪，随时开启创作
                 </p>
               </div>
 
@@ -231,15 +231,15 @@ export function HomeContent() {
                 actionText="文生图创作"
               />
               <FeatureCard
-                href="/destiny"
-                title="AI 命理大师"
-                badge="夜幕星宫"
-                description="四柱八字、紫微斗数与奇门六壬深度演化"
-                icon={Compass}
-                accentColor="text-indigo-600"
-                iconBg="bg-indigo-50 dark:bg-indigo-950/50"
-                glowRgb="99 102 241"
-                actionText="进入排盘"
+                href="/knowledge"
+                title="知识资产中枢"
+                badge="RAG 检索"
+                description="多格式文档切片、向量与词法双路混合检索"
+                icon={BookOpen}
+                accentColor="text-sky-500"
+                iconBg="bg-sky-50 dark:bg-sky-950/50"
+                glowRgb="14 165 233"
+                actionText="探索知识库"
               />
             </div>
           </div>

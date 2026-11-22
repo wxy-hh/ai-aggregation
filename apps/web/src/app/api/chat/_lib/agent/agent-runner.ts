@@ -392,7 +392,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           roundLabel: string,
           stepIndex: number,
           isRemedy = false
-        ): Promise<{ answerDelivered: boolean; halted: boolean; paused?: boolean }> => {
+        ): Promise<{
+          answerDelivered: boolean;
+          halted: boolean;
+          paused?: boolean;
+          shouldSummarize?: boolean;
+        }> => {
           pipeline.beginRound();
           const decisionStart = Date.now();
           const stepPayload = session.getStepPayload();
@@ -491,7 +496,15 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
 
           // 决策动作规约派发：消除编排器特异分支与防御断言
           if (action.type === 'deliver_answer') {
-            // 决策步输出最终回答，降级路径，循环结束
+            if (recordedToolCalls.length > 0) {
+              // 自适应两阶段收敛：已执行过工具调研时，决策步停止调工具输出的文本作为阶段小结下发（agent_note），
+              // 不直接推入主回答正文，保持 finalAnswerDelivered = false，优雅退出决策循环并转入 8192 Token 独立收尾步，
+              // 彻底消除 2048 Token 截断导致的半成品报告与未闭合 Artifact。
+              controller.enqueue(encodeSseEvent({ type: 'agent_note', text: action.text }));
+              return { answerDelivered: false, halted: false, shouldSummarize: true };
+            }
+
+            // 零工具调研场景（如打招呼、简单常识问答）：单步极速交付，保留直接响应
             emitText(action.text);
             finalAnswerDelivered = true;
             return { answerDelivered: true, halted: false };
@@ -504,7 +517,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           }
 
           if (action.type === 'empty_finish') {
-            // 空决策（无工具、无文本、无服务端执行）：模型选择不说话，按既有语义收尾
+            // 空决策（无工具、无文本、无服务端执行）：模型选择不说话
+            if (recordedToolCalls.length > 0) {
+              return { answerDelivered: false, halted: false, shouldSummarize: true };
+            }
             finalAnswerDelivered = true;
             return { answerDelivered: true, halted: false };
           }
@@ -749,7 +765,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             roundIndex,
             false
           );
-          if (outcome.answerDelivered || outcome.halted || outcome.paused) {
+          if (
+            outcome.answerDelivered ||
+            outcome.halted ||
+            outcome.paused ||
+            outcome.shouldSummarize
+          ) {
             break;
           }
         }
@@ -819,7 +840,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               true
             );
 
-            if (remedyOutcome.answerDelivered) {
+            if (remedyOutcome.answerDelivered || remedyOutcome.shouldSummarize) {
               break;
             }
             if (remedyOutcome.halted) {

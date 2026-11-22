@@ -75,7 +75,6 @@ ARK_API_KEY=your-ark-api-key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL=doubao-seed-evolving
 
-DASHSCOPE_API_KEY=
 ZHIPU_API_KEY=
 DEEPSEEK_API_KEY=
 SILICONFLOW_API_KEY=

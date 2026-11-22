@@ -80,8 +80,9 @@ export function AgentPlanCard({ messageId, plan, isStreaming }: AgentPlanCardPro
         [...plan.steps].reverse().find(
           (s) => s.status === 'completed' || s.status === 'failed'
         ) || plan.steps[total - 1];
+      const lastExecutedIdx = plan.steps.findIndex((s) => s.id === lastExecuted.id);
       return {
-        currentIndex: total,
+        currentIndex: lastExecutedIdx !== -1 ? lastExecutedIdx + 1 : total,
         currentStep: lastExecuted,
         completedCount: completed,
         totalCount: total,

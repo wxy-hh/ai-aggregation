@@ -1,6 +1,5 @@
 'use client';
 
-import mingliIcon from '@/assets/image/mingli.svg';
 import React from 'react';
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -12,105 +11,24 @@ import {
   Bot,
   AudioWaveform,
   PenTool,
-  Presentation,
   FileText,
-  Scale,
-  Code,
   Video,
-  Box,
   Pin,
   X,
   Plus,
   MessageSquare,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react';
-
-function AssetAppIcon({
-  className,
-  src,
-}: {
-  className?: string;
-  src: { src: string };
-  strokeWidth?: number;
-}) {
-  const maskStyle = {
-    WebkitMaskImage: `url(${src.src})`,
-    maskImage: `url(${src.src})`,
-    WebkitMaskRepeat: 'no-repeat',
-    maskRepeat: 'no-repeat',
-    WebkitMaskPosition: 'center',
-    maskPosition: 'center',
-    WebkitMaskSize: 'contain',
-    maskSize: 'contain',
-  } satisfies CSSProperties;
-
-  return (
-    <span
-      aria-hidden="true"
-      className={cn('block shrink-0 bg-current', className)}
-      style={maskStyle}
-    />
-  );
-}
-
-function MingliIcon({ className }: { className?: string; strokeWidth?: number }) {
-  return <AssetAppIcon src={mingliIcon} className={className} />;
-}
-
-function BaguaIcon({ className, strokeWidth = 1.9, ...props }: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-      {...props}
-    >
-      <circle cx="12" cy="12" r="8.5" opacity="0.2" />
-      <circle cx="12" cy="12" r="6.1" opacity="0.3" />
-      <path d="M12 3.5v1.55" />
-      <path d="M12 18.95v1.55" />
-      <path d="M3.5 12h1.55" />
-      <path d="M18.95 12h1.55" />
-      <path d="M6.05 6.05l1.15 1.15" />
-      <path d="M16.8 16.8l1.15 1.15" />
-      <path d="M17.95 6.05l-1.15 1.15" />
-      <path d="M7.2 16.8l-1.15 1.15" />
-      <path d="M12 6.4v11.2" opacity="0.5" />
-      <path d="M6.4 12h11.2" opacity="0.5" />
-      <path d="M8.25 8.25h1.55" />
-      <path d="M14.2 8.25h1.55" />
-      <path d="M8.25 15.75h1.55" />
-      <path d="M14.2 15.75h1.55" />
-      <path d="M8.15 10.1h1.65" />
-      <path d="M14.2 10.1h1.65" />
-      <path d="M8.15 13.9h1.65" />
-      <path d="M14.2 13.9h1.65" />
-      <circle cx="12" cy="12" r="1.75" />
-      <path d="M12 8.9l1.55 1.55" />
-      <path d="M13.55 13.55L12 15.1" />
-      <path d="M10.45 13.55L8.9 12" />
-      <path d="M10.45 10.45L12 8.9" />
-    </svg>
-  );
-}
 
 export type AppId =
   | 'chat'
   | 'voice'
   | 'image'
-  | 'destiny'
+  | 'labs'
   | 'knowledge'
-  | 'ppt'
   | 'resume'
-  | 'legal'
-  | 'code'
   | 'video'
-  | '3d'
   | 'feedback';
 
 // 应用图标组件类型：lucide 图标与自定义图标组件都满足该签名
@@ -130,7 +48,7 @@ interface AppConfig {
   sidebarPinEnabled?: boolean;
 }
 
-export const DISABLED_APP_IDS: AppId[] = ['ppt', 'legal', 'code', '3d'];
+export const DISABLED_APP_IDS: AppId[] = [];
 
 export function isSidebarPinAllowed(appId: AppId) {
   return !DISABLED_APP_IDS.includes(appId);
@@ -168,16 +86,6 @@ export const APP_CONFIGS: AppConfig[] = [
     iconColor: 'text-fuchsia-500',
     iconBg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30',
   },
-  {
-    id: 'destiny',
-    label: 'AI 命理大师',
-    description: '可视化排盘 + 深度报告 + 专属 AI 顾问。',
-    icon: MingliIcon,
-    category: 'core',
-    href: '/destiny',
-    iconColor: 'text-indigo-600',
-    iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
-  },
   // 生产力工具
   {
     id: 'knowledge',
@@ -190,19 +98,6 @@ export const APP_CONFIGS: AppConfig[] = [
     iconBg: 'bg-sky-100 dark:bg-sky-900/30',
   },
   {
-    id: 'ppt',
-    label: 'PPT 制作',
-    description: '一键生成演示文稿。',
-    disabledDescription: '功能开发中，暂不支持访问。',
-    icon: Presentation,
-    category: 'productivity',
-    href: '/ppt',
-    iconColor: 'text-amber-500',
-    iconBg: 'bg-amber-100 dark:bg-amber-900/30',
-    disabled: true,
-    sidebarPinEnabled: false,
-  },
-  {
     id: 'resume',
     label: '简历制作',
     description: '智能排版与内容优化。',
@@ -211,32 +106,6 @@ export const APP_CONFIGS: AppConfig[] = [
     href: '/resume',
     iconColor: 'text-emerald-500',
     iconBg: 'bg-emerald-100 dark:bg-emerald-900/30',
-  },
-  {
-    id: 'legal',
-    label: '法律顾问',
-    description: '合同审查与法律咨询。',
-    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
-    icon: Scale,
-    category: 'productivity',
-    href: '/legal',
-    iconColor: 'text-slate-500',
-    iconBg: 'bg-slate-100 dark:bg-slate-700/60',
-    disabled: true,
-    sidebarPinEnabled: false,
-  },
-  {
-    id: 'code',
-    label: '代码助手',
-    description: '代码解释、生成与重构。',
-    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
-    icon: Code,
-    category: 'productivity',
-    href: '/code',
-    iconColor: 'text-blue-600',
-    iconBg: 'bg-blue-100 dark:bg-blue-900/30',
-    disabled: true,
-    sidebarPinEnabled: false,
   },
   // 创意工具
   {
@@ -250,17 +119,14 @@ export const APP_CONFIGS: AppConfig[] = [
     iconBg: 'bg-indigo-100 dark:bg-indigo-900/30',
   },
   {
-    id: '3d',
-    label: '3D 模型',
-    description: '快速生成 3D 资产。',
-    disabledDescription: '功能开发中，暂不支持添加到左侧导航。',
-    icon: Box,
+    id: 'labs',
+    label: '多模态实验室',
+    description: '前沿多模态生成模型试验田（Agnes 生图与 CogVideoX 视频生成）。',
+    icon: FlaskConical,
     category: 'creative',
-    href: '/3d',
-    iconColor: 'text-cyan-500',
-    iconBg: 'bg-cyan-100 dark:bg-cyan-900/30',
-    disabled: true,
-    sidebarPinEnabled: false,
+    href: '/labs',
+    iconColor: 'text-purple-500',
+    iconBg: 'bg-purple-100 dark:bg-purple-900/30',
   },
   // 用户反馈
   {

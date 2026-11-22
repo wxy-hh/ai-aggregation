@@ -7,14 +7,19 @@ import {
 } from '@repo/db';
 import { getRedisConnectionSummary } from '@repo/shared/server';
 import { WorkerHeartbeatStore, getRedisClient, shutdownRedisClient } from '@repo/redis';
-import { sttWorker } from './workers/stt';
-import { pptWorker } from './workers/ppt';
-import { imageWorker } from './workers/image';
 import { qimenBaseWorker } from './workers/qimen-base';
 import { qimenSectionWorker } from './workers/qimen-section';
 import { ragIndexWorker } from './workers/rag-index';
 import { memoryIndexWorker } from './workers/memory-index';
 import { maintenanceWorker, registerMaintenanceSchedules } from './workers/maintenance';
+
+export const activeWorkers = [
+  qimenBaseWorker,
+  qimenSectionWorker,
+  ragIndexWorker,
+  memoryIndexWorker,
+  maintenanceWorker,
+];
 
 let isRunning = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -75,16 +80,7 @@ async function main() {
   });
   isRunning = true;
   const heartbeatStore = new WorkerHeartbeatStore(getRedisClient());
-  const workers = [
-    sttWorker,
-    pptWorker,
-    imageWorker,
-    qimenBaseWorker,
-    qimenSectionWorker,
-    ragIndexWorker,
-    memoryIndexWorker,
-    maintenanceWorker,
-  ];
+  const workers = activeWorkers;
 
   const shutdown = async (exitCode = 0) => {
     if (isShuttingDown) {
@@ -169,8 +165,10 @@ async function main() {
   process.on('SIGINT', () => void shutdown(0));
 }
 
-main().catch((error) => {
-  logger.error('Worker 启动失败', error);
-  isRunning = false;
-  process.exit(1);
-});
+if (!process.env.VITEST && process.env.NODE_ENV !== 'test') {
+  main().catch((error) => {
+    logger.error('Worker 启动失败', error);
+    isRunning = false;
+    process.exit(1);
+  });
+}

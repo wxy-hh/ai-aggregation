@@ -33,6 +33,25 @@ const nextConfig: NextConfig = {
       '../../node_modules/.prisma/client/**/*',
     ],
   },
+  async redirects() {
+    return [
+      {
+        source: '/destiny/:path*',
+        destination: '/chat',
+        permanent: false,
+      },
+      {
+        source: '/destiny',
+        destination: '/chat',
+        permanent: false,
+      },
+      {
+        source: '/home',
+        destination: '/chat',
+        permanent: false,
+      },
+    ];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',

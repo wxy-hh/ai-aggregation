@@ -180,12 +180,12 @@ lib/
 
 **AI 服务**
 
-- 通义千问 DashScope（对话、图像）
-- 智谱 GLM（对话、视频生成 CogVideoX）
-- DeepSeek（对话）
-- Agnes（图像生成 Image 2.1 Flash、视频生成）
-- 硅基流动 SiliconFlow（语音转写）
-- 讯飞 / 阿里云 NLS（语音转写）
+- 讯飞星火 Spark（对话）
+- 火山引擎豆包 Doubao（对话、向量 Embedding）
+- DeepSeek（对话、Agent 智能体核心）
+- Agnes（图像生成 Image 2.1 Flash）
+- 智谱 CogVideoX（视频生成）
+- 硅基流动 SiliconFlow（向量 Embedding、Rerank）
 
 **工程化**
 
@@ -205,10 +205,13 @@ DATABASE_URL=              # Supabase / PostgreSQL 连接字符串
 REDIS_HOST=                # Redis（Upstash）地址
 REDIS_PORT=
 REDIS_PASSWORD=
-DASHSCOPE_API_KEY=         # 通义千问 API Key
-ZHIPU_API_KEY=             # 智谱 API Key
-DEEPSEEK_API_KEY=          # DeepSeek API Key
-SILICONFLOW_API_KEY=       # 硅基流动（语音转写）
+DEEPSEEK_API_KEY=          # DeepSeek API Key（对话与 Agent）
+ARK_API_KEY=               # 火山方舟豆包 API Key
+XUNFEI_API_KEY=            # 讯飞星火 API Key
+XUNFEI_API_SECRET=         # 讯飞星火 API Secret
+ZHIPU_API_KEY=             # 智谱 API Key（视频生成）
+AGNES_API_KEY=             # Agnes API Key（生图服务）
+SILICONFLOW_API_KEY=       # 硅基流动（Embedding / Rerank）
 MEDIA_PROXY_ALLOWED_DOMAINS=  # 媒体代理白名单（逗号分隔，追加在默认白名单后）
 AUTH_RATE_LIMIT_FAILURE_MODE= # 认证接口限流设施故障时的处置模式（默认 closed，open 为应急放行）
 ALIYUN_DM_ACCESS_KEY_ID=      # 阿里云邮件推送 AccessKey ID
@@ -224,7 +227,7 @@ APPROVAL_TOKEN_SECRET=        # 智能体写操作审批凭证 HMAC-SHA256 签�
 
 - **数据库**：`DATABASE_URL`
 - **队列/缓存（BullMQ）**：`REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`
-- **LLM/多模态**：`DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` / `DEEPSEEK_API_KEY` / `SILICONFLOW_API_KEY`
+- **LLM/多模态**：`DEEPSEEK_API_KEY` / `ARK_API_KEY` / `XUNFEI_API_KEY` / `ZHIPU_API_KEY` / `AGNES_API_KEY` / `SILICONFLOW_API_KEY`
 - **媒体代理安全**
   - `MEDIA_PROXY_ALLOWED_DOMAINS`：`/api/image/proxy`、`/api/video/proxy` 的额外域名白名单（逗号分隔，格式 `example.com` 或 `example.com:8443`）。默认白名单为 `storage.googleapis.com`（Agnes 生成结果）与 `sfile.chatglm.cn`（智谱 CogVideoX 视频结果）；代理仅允许 https，只有白名单内的本机地址（如 `localhost:9000`）才允许 http，用于本地 MinIO 开发
 - **认证加固**

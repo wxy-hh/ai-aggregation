@@ -14,9 +14,9 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. 根路径访问处理
+  // 2. 根路径访问处理：统一收敛至智能体工作台 /chat
   if (pathname === '/') {
-    return NextResponse.redirect(new URL(hasToken ? '/home' : '/login', origin));
+    return NextResponse.redirect(new URL(hasToken ? '/chat' : '/login', origin));
   }
 
   // 3. 认证页始终放行：Cookie 存在不等于会话有效，登录页由客户端真实引导结果决定去向

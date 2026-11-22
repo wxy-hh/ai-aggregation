@@ -10,19 +10,18 @@
 - **包管理**: pnpm 10.x
 - **构建编排**: Turborepo 2.x
 - **前端**: Next.js 15.x + React 19.x + TypeScript 5.6+
-- **后端**: Next.js Route Handlers / NestJS
+- **后端**: Next.js Route Handlers + BullMQ Worker
 - **任务队列**: BullMQ 5.x + Redis 7.x
 - **数据库**: PostgreSQL 16.x + Prisma 6.x
-- **AI 提供方**: 通义千问 / 智谱 GLM / DeepSeek
+- **AI 提供方**: 讯飞星火 Spark / 火山引擎豆包 Doubao / 深度求索 DeepSeek（对话）；Agnes（生图）；智谱 CogVideoX（视频）
 
 ## 项目结构
 
 ```
 .
 ├── apps/
-│   ├── web/          # Next.js 应用（UI、对话、任务中心）
-│   ├── api/          # 可选独立 API 服务
-│   └── worker/       # 异步任务执行器（STT/PPT/IMG）
+│   ├── web/          # Next.js 应用（UI、工作台、对话）
+│   └── worker/       # 异步任务执行器（BullMQ 索引与调度）
 ├── packages/
 │   ├── shared/       # 共享 types、错误码、schema
 │   ├── providers/    # 模型提供方适配层
@@ -117,9 +116,11 @@ pnpm dev
 
 - `DATABASE_URL`: Supabase 连接字符串
 - `REDIS_HOST/PORT/PASSWORD`: Upstash 连接信息
-- `DASHSCOPE_API_KEY`: 通义千问 API Key（可选）
-- `ZHIPU_API_KEY`: 智谱 API Key（可选）
-- `DEEPSEEK_API_KEY`: DeepSeek API Key（可选）
+- `DEEPSEEK_API_KEY`: DeepSeek API Key（对话与 Agent 模型）
+- `ARK_API_KEY`: 火山方舟豆包 API Key
+- `XUNFEI_API_KEY` / `XUNFEI_API_SECRET`: 讯飞星火 API 凭证
+- `ZHIPU_API_KEY`: 智谱 API Key（CogVideoX 视频生成）
+- `AGNES_API_KEY`: Agnes API Key（图像生成服务）
 
 ## 常用命令
 

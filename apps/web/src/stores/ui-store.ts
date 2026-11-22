@@ -13,7 +13,7 @@ export interface UIState {
   // 应用模态框状态
   showAppsModal: boolean;
 
-  // Actions
+  // 操作方法
   addPinnedApp: (appId: AppId) => void;
   removePinnedApp: (appId: AppId) => void;
   isPinned: (appId: AppId) => boolean;
@@ -32,10 +32,10 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       // 初始状态
-      pinnedApps: sanitizePinnedApps(['chat', 'voice', 'image', 'video', 'destiny']),
+      pinnedApps: sanitizePinnedApps(['chat', 'knowledge', 'image', 'video']),
       showAppsModal: false,
 
-      // Actions
+      // 操作方法
       addPinnedApp: (appId) => {
         if (!isSidebarPinAllowed(appId)) {
           return;
@@ -65,17 +65,23 @@ export const useUIStore = create<UIState>()(
     {
       name: 'ai-app-ui-storage', // 本地存储键名
       storage: createJSONStorage(() => localStorage),
-      version: 1,
-      // 迁移：简历制作从默认侧边栏菜单移除（仍可从应用弹窗手动添加）
+      version: 2,
+      // 迁移：v1 移除 resume，v2 移除命理及假占位并保证主线工作台常驻
       migrate: (persistedState, version) => {
         const prev = persistedState as Partial<UIState> | undefined;
+        let apps = prev?.pinnedApps ?? [];
         if (version < 1) {
-          return {
-            ...prev,
-            pinnedApps: (prev?.pinnedApps ?? []).filter((id) => id !== 'resume'),
-          } as UIState;
+          apps = apps.filter((id) => id !== 'resume');
         }
-        return (prev ?? {}) as UIState;
+        if (version < 2) {
+          apps = apps.filter((id) => (id as string) !== 'destiny' && (id as string) !== 'ppt' && (id as string) !== 'legal' && (id as string) !== 'code' && (id as string) !== '3d');
+          if (!apps.includes('chat')) apps.unshift('chat');
+          if (!apps.includes('knowledge')) apps.push('knowledge');
+        }
+        return {
+          ...prev,
+          pinnedApps: sanitizePinnedApps(apps),
+        } as UIState;
       },
       merge: (persistedState, currentState) => {
         const typedPersistedState = persistedState as Partial<UIState> | undefined;

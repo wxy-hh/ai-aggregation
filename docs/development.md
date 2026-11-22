@@ -34,9 +34,11 @@ cp apps/worker/.env.example apps/worker/.env
 关键配置项：
 - `DATABASE_URL`: PostgreSQL 连接字符串
 - `REDIS_HOST` / `REDIS_PORT`: Redis 配置
-- `DASHSCOPE_API_KEY`: 通义千问 API Key
-- `ZHIPU_API_KEY`: 智谱 API Key
-- `DEEPSEEK_API_KEY`: DeepSeek API Key
+- `DEEPSEEK_API_KEY`: DeepSeek API Key（对话与 Agent）
+- `ARK_API_KEY`: 火山方舟豆包 API Key
+- `XUNFEI_API_KEY`: 讯飞星火 API Key
+- `ZHIPU_API_KEY`: 智谱 API Key（视频生成）
+- `AGNES_API_KEY`: Agnes API Key（生图服务）
 
 ### 4. 启动开发服务
 

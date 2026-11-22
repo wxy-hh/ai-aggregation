@@ -12,6 +12,7 @@ import {
   type ChatStreamToolApproval,
 } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
+import { toast } from 'sonner';
 import type { ChatTransportBody } from '@/lib/chat/request-projection';
 
 /**
@@ -76,6 +77,8 @@ export interface StreamChatResponseHandlers {
   /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
   onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
   onWarning?: (warning: string) => void;
+  /** 智能体环境探针降级事件：自动切换为极速对话时回调 */
+  onAgentFallback?: (reason: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
 
@@ -119,6 +122,21 @@ export async function streamChatResponse(
       throw Object.assign(new Error(errorData.error || `请求失败: ${response.status}`), {
         status: response.status,
       });
+    }
+
+    // 智能体环境探针降级处理（ADR-0060）：检测响应头注入并弹出中文友好提示
+    const isFallback = response.headers.get('x-agent-fallback') === 'true';
+    if (isFallback) {
+      const rawReason = response.headers.get('x-agent-fallback-reason');
+      const fallbackReason = rawReason
+        ? decodeURIComponent(rawReason)
+        : '已自动平滑切换为极速对话';
+      handlers.onAgentFallback?.(fallbackReason);
+      try {
+        toast.info(fallbackReason);
+      } catch {
+        // 非浏览器或单测环境安全兜底
+      }
     }
 
     let accumulated = '';
@@ -203,6 +221,8 @@ export interface ConsumeChatResponseHandlers {
   /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
   onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
   onWarning?: (warning: string) => void;
+  /** 智能体环境探针降级事件：自动切换为极速对话时回调 */
+  onAgentFallback?: (reason: string) => void;
   onDone?: (usage?: ChatStreamUsage) => void;
 }
 

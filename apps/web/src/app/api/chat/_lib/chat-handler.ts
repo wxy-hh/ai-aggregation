@@ -43,6 +43,7 @@ import {
 } from '@/lib/agent/approval-token';
 import { createRootTrace, type ObservabilityTrace } from '@/lib/observability/langfuse-client';
 import { ChatCompletionLifecycle, type ChatCompletionContext } from './completion';
+import { checkAgentEnvironment } from './agent-probe';
 
 export interface ChatHandlerConfig {
   /** 根据 provider 返回对应适配器 */
@@ -58,6 +59,11 @@ export interface ChatHandlerConfig {
    * 默认从数据库查询（where: { userId, enabled: true }，spec §4.6）。
    */
   getUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
+  /**
+   * 智能体运行环境探针函数（ADR-0060）：
+   * 校验凭据与最低配额（4,096 tokens），不满足时平滑降级为极速对话。
+   */
+  checkAgentEnvironment?: typeof checkAgentEnvironment;
 }
 
 export function createChatHandler(config: ChatHandlerConfig) {
@@ -97,7 +103,7 @@ export function createChatHandler(config: ChatHandlerConfig) {
         provider,
         chatScene,
         reservationId,
-        agent,
+        agent: rawAgent,
         capabilityPack,
         disabledToolKeys,
         thinking,
@@ -107,6 +113,32 @@ export function createChatHandler(config: ChatHandlerConfig) {
         approvalResume,
         approvalScope,
       } = parsed.body;
+
+      // 智能体环境探针检测（ADR-0060）：若启用探针则前置校验凭据与可用配额
+      let agent = rawAgent;
+      let agentFallback = false;
+      let agentFallbackReason = '';
+
+      if (agent && config.checkAgentEnvironment) {
+        let availableQuota: number | undefined;
+        try {
+          availableQuota = await getAvailableQuota(user.id);
+        } catch (error) {
+          console.warn('[chat] 余额预检读取异常', { errorId, userId: user.id, error });
+        }
+
+        const probeResult = config.checkAgentEnvironment({ availableQuota });
+        if (probeResult.fallback) {
+          console.warn('[chat] 智能体环境探针触发自动优雅降级', {
+            errorId,
+            userId: user.id,
+            reason: probeResult.reason,
+          });
+          agent = false;
+          agentFallback = true;
+          agentFallbackReason = probeResult.reason || '已自动切换为极速对话';
+        }
+      }
 
       // 场景能力包（ADR-0014 / 工单 01）：契约已在 agent 门控内完成形状归一，此处只取解析结果
       const activeCapabilityPack = agent ? getCapabilityPack(capabilityPack) : undefined;
@@ -366,7 +398,15 @@ export function createChatHandler(config: ChatHandlerConfig) {
         duration: `${Date.now() - startTime}ms`,
       });
 
-      return createSseResponse(stream);
+      return createSseResponse(
+        stream,
+        agentFallback
+          ? {
+              'x-agent-fallback': 'true',
+              'x-agent-fallback-reason': encodeURIComponent(agentFallbackReason),
+            }
+          : undefined
+      );
 
     } catch (error) {
       // 流尚未开始（豆包文件未就绪、上游 401/429、适配器初始化失败等）：

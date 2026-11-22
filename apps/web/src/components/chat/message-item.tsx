@@ -439,7 +439,7 @@ const ThinkingIndicator = memo(function ThinkingIndicator() {
         : null;
 
   return (
-    <div className="w-full max-w-[400px] space-y-3 py-1">
+    <div data-testid="thought-skeleton" className="w-full max-w-[400px] space-y-3 py-1">
       {/* 标题动画 */}
       <div className="flex items-center gap-1 text-sm font-medium text-blue-600 dark:text-blue-400 mb-4 animate-pulse">
         <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -457,7 +457,7 @@ const ThinkingIndicator = memo(function ThinkingIndicator() {
             d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
           ></path>
         </svg>
-        <span>AI 正在思考</span>
+        <span>🧠 正在规划任务切片...</span>
         <span className="flex gap-0.5 ml-1">
           <span className="animate-bounce delay-0">.</span>
           <span className="animate-bounce delay-150">.</span>
