@@ -185,6 +185,18 @@ describe('Agent 运行时连接韧性（HTTP 级）', () => {
     expect(frames.some((frame) => frame.includes('run_attached'))).toBe(false);
     expect(frames.join('')).toContain('断开后仍要继续完成的任务。');
     expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
+
+    // 已完成运行被重新挂载时只重放，不再次结算
+    const resume = createAgentResumeHandler({
+      runRegistry: registry,
+      getUser: async () => ({ id: 'test-user-id' }),
+    });
+    const resumeResponse = await resume(
+      new Request('http://localhost/api/chat/agent/resume?runId=run-resilience-1')
+    );
+    expect(resumeResponse.status).toBe(200);
+    await resumeResponse.text();
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
   });
 
   it('普通对话首帧不是 run_attached', async () => {

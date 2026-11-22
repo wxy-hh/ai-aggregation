@@ -338,6 +338,7 @@ describe('agent 模式编排（HTTP 级）', () => {
     // 事件序列契约：done 在最后且带 usage
     const done = events[4] as { usage?: { totalTokens: number } };
     expect(done.usage?.totalTokens).toBe(300);
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
   });
 
   it('请求指定 xunfei/lite → 服务端静默覆盖为 deepseek/deepseek-flash 并在 finalize 留痕', async () => {
@@ -1085,6 +1086,7 @@ describe('agent 模式编排（HTTP 级）', () => {
       type: 'text-delta',
       text: '时间不够了，基于已有结果作答。',
     });
+    expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
   });
 
   it('相同参数第 2 次调用 → 不重新执行工具（spy 不递增），成对事件复用展示摘要，模型收到软提示', async () => {

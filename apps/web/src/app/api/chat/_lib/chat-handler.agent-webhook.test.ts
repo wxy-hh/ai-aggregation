@@ -1010,6 +1010,7 @@ describe('agent 模式 · 用户自定义 Webhook 工具（主接缝闭环）', 
       expect(events[events.length - 1].type).toBe('done');
       expect(events.some((e) => e.type === 'error')).toBe(false);
       expect(events.findIndex((e) => e.type === 'done')).toBeGreaterThan(approvalIndex);
+      expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
     });
 
     it('3. 暂停的调用不产生任何出站请求 (TC03-3)', async () => {

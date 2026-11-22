@@ -58,6 +58,16 @@ describe('断点挂载与主动中止', () => {
     const run = registry.start({ userId: 'u1', conversationId: 'c1' })!;
     run.append(frame('历史一'));
     run.append(frame('历史二'));
+    run.append(
+      new TextEncoder().encode(
+        'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"已抓取"}\n\n'
+      )
+    );
+    run.append(
+      new TextEncoder().encode(
+        'data: {"type":"artifact_start","artifact":{"id":"a1","type":"markdown","title":"交付物"}}\n\n'
+      )
+    );
     const { resume } = handlers(registry);
 
     const response = await resume(resumeRequest(run.runId));
@@ -76,6 +86,14 @@ describe('断点挂载与主动中止', () => {
     expect(eventFromChunk((await reader.read()).value!)).toMatchObject({
       type: 'text-delta',
       text: '历史二',
+    });
+    expect(eventFromChunk((await reader.read()).value!)).toMatchObject({
+      type: 'tool_result',
+      name: 'web_fetch',
+    });
+    expect(eventFromChunk((await reader.read()).value!)).toMatchObject({
+      type: 'artifact_start',
+      artifact: { id: 'a1', type: 'markdown', title: '交付物' },
     });
 
     run.append(frame('实时三'));
@@ -131,7 +149,10 @@ describe('断点挂载与主动中止', () => {
 
     const missing = await resume(resumeRequest('missing-run'));
     expect(missing.status).toBe(410);
-    expect(await missing.json()).toMatchObject({ code: 'RUN_UNAVAILABLE' });
+    expect(await missing.json()).toMatchObject({
+      code: 'RUN_UNAVAILABLE',
+      error: '任务已不可用，可重新执行',
+    });
 
     const run = registry.start({ userId: 'u1', conversationId: 'c1' })!;
     run.finalize('completed');
@@ -160,6 +181,32 @@ describe('断点挂载与主动中止', () => {
     expect(await third.json()).toEqual({ success: true, status: 'aborted' });
   });
 
+  it('resume 重放 tool_approval_request 时凭证原样返回', async () => {
+    const { registry } = setup();
+    const run = registry.start({ userId: 'u1', conversationId: 'c1' })!;
+    const approval = {
+      callId: 'c1',
+      toolName: 'wh_notify',
+      host: 'hooks.example.com',
+      params: { message: '你好' },
+      token: 'tok-123',
+      expiresAt: Date.now() + 60_000,
+    };
+    run.append(
+      new TextEncoder().encode(
+        `data: ${JSON.stringify({ type: 'tool_approval_request', approval })}\n\n`
+      )
+    );
+    run.append(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+    run.finalize('completed');
+
+    const { resume } = handlers(registry);
+    const response = await resume(resumeRequest(run.runId));
+    const text = await response.text();
+    expect(text).toContain('"token":"tok-123"');
+    expect(text).toContain('"toolName":"wh_notify"');
+  });
+
   it('abort 非归属返回 403，不存在返回 410', async () => {
     const { registry } = setup();
     const run = registry.start({ userId: 'u1', conversationId: 'c1' })!;
@@ -170,6 +217,9 @@ describe('断点挂载与主动中止', () => {
 
     const missing = await handlers(registry).abort(abortRequest('missing-run'));
     expect(missing.status).toBe(410);
-    expect(await missing.json()).toMatchObject({ code: 'RUN_UNAVAILABLE' });
+    expect(await missing.json()).toMatchObject({
+      code: 'RUN_UNAVAILABLE',
+      error: '任务已不可用，可重新执行',
+    });
   });
 });

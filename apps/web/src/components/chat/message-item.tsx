@@ -758,6 +758,13 @@ export const MessageItem = memo(function MessageItem({
                 )}
                 {/* 工具产出附件（当前仅生成图片）：按时间序位于过程卡片之后、正文之前 */}
                 {hasAttachments && <AttachmentList attachments={message.attachments} />}
+                {/* 重连提示必须在流式期间也可见（ADR-0061 / 工单 04） */}
+                {message.reconnectingAttempt ? (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>正在重新连接（第 {message.reconnectingAttempt} 次）…</span>
+                  </div>
+                ) : null}
                 {isAwaitingFirstByte ? (
                   <ThinkingIndicator />
                 ) : isStreaming ? (
@@ -781,12 +788,6 @@ export const MessageItem = memo(function MessageItem({
                         {message.truncationWarning}
                       </div>
                     )}
-                    {message.reconnectingAttempt ? (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        <span>正在重新连接（第 {message.reconnectingAttempt} 次）…</span>
-                      </div>
-                    ) : null}
                     {message.runReconnectFailed && message.runId && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
                         <AlertCircle className="h-3 w-3" />
@@ -802,12 +803,28 @@ export const MessageItem = memo(function MessageItem({
                         >
                           重新连接
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => useChatStore.getState().stop()}
+                          className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-2"
+                        >
+                          停止
+                        </button>
                       </div>
                     )}
                     {message.runUnavailable && (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
                         <AlertCircle className="h-3 w-3" />
                         <span>任务已不可用，可重新执行</span>
+                        {onRegenerate && (
+                          <button
+                            type="button"
+                            onClick={() => onRegenerate(message.id)}
+                            className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-2"
+                          >
+                            重新执行
+                          </button>
+                        )}
                       </div>
                     )}
                     {message.stopped && !message.runUnavailable && (

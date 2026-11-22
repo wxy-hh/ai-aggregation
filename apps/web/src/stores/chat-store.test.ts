@@ -954,8 +954,9 @@ describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）'
   });
 
   it('流被截断时保留待挂载并重连取回完整结果，不标记失败', async () => {
+    const saved: Message[][] = [];
     setConversationPort({
-      saveMessages: () => {},
+      saveMessages: (_id, messages) => saved.push(messages),
       saveToolOverrides: () => {},
       appendHistory: () => {},
     });
@@ -969,6 +970,8 @@ describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）'
       .mockResolvedValueOnce(
         sseResponse([
           'data: {"type":"run_attached","runId":"run-drop","resumed":true}\n\n',
+          'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"已抓取"}\n\n',
+          'data: {"type":"artifact_start","artifact":{"id":"a1","type":"markdown","title":"交付物"}}\n\n',
           'data: {"type":"text-delta","text":"完整回答"}\n\n',
           'data: {"type":"done"}\n\n',
         ])
@@ -983,7 +986,10 @@ describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）'
         expect(assistant?.content).toBe('完整回答');
         expect(assistant?.runPending).toBe(false);
         expect(assistant?.failed).not.toBe(true);
+        expect(assistant?.toolCalls).toHaveLength(1);
+        expect(assistant?.artifactIds).toContain('a1');
       });
+      expect(saved.at(-1)?.filter((message) => message.role === 'assistant')).toHaveLength(1);
       expect(mockedAuthFetch).toHaveBeenLastCalledWith(
         expect.stringContaining('/api/chat/agent/resume?runId=run-drop'),
         expect.anything()
@@ -1016,6 +1022,8 @@ describe('重连状态（ADR-0061 / 工单 04）', () => {
       .mockResolvedValueOnce(
         sseResponse([
           'data: {"type":"run_attached","runId":"run-reconnect","resumed":true}\n\n',
+          'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"已抓取"}\n\n',
+          'data: {"type":"artifact_start","artifact":{"id":"a1","type":"markdown","title":"交付物"}}\n\n',
           'data: {"type":"text-delta","text":"完整回答"}\n\n',
           'data: {"type":"done"}\n\n',
         ])

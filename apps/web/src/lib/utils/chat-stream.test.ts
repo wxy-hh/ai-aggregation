@@ -869,3 +869,41 @@ describe('主动中止（ADR-0061 / 工单 05）', () => {
     await expect(abortAgentRun('run-gone')).rejects.toMatchObject({ status: 410 });
   });
 });
+
+describe('心跳与重连计数（ADR-0061 / 工单 09）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+  });
+
+  it('心跳字节不会触发重连', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 10);
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 20);
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 30);
+        setTimeout(() => {
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        }, 40);
+      },
+    });
+    mockedAuthFetch.mockResolvedValue(
+      new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+    );
+
+    let attempts = 0;
+    const scheduled: number[] = [];
+    await attachAgentRunWithReconnect(
+      'run-heartbeat-loop',
+      async () => {
+        attempts += 1;
+        await resumeAgentRun('run-heartbeat-loop', {}, { livenessTimeoutMs: 25 });
+      },
+      { onReconnectScheduled: (next) => scheduled.push(next) }
+    );
+
+    expect(attempts).toBe(1);
+    expect(scheduled).toEqual([]);
+  });
+});
