@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  abortAgentRun,
   attachAgentRunWithReconnect,
   consumeChatResponse,
   resumeAgentRun,
@@ -830,5 +831,41 @@ describe('Agent 运行断线重连（ADR-0061 / 工单 04）', () => {
     await expect(
       resumeAgentRun('run-heartbeat', {}, { livenessTimeoutMs: 25 })
     ).resolves.toBe('');
+  });
+});
+
+describe('主动中止（ADR-0061 / 工单 05）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+  });
+
+  it('POST /api/chat/agent/abort 携带 runId', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      new Response(JSON.stringify({ success: true, status: 'aborting' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await abortAgentRun('run-stop');
+
+    expect(mockedAuthFetch).toHaveBeenCalledWith(
+      '/api/chat/agent/abort',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ runId: 'run-stop' }),
+      })
+    );
+  });
+
+  it('410 时抛出不可用错误', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      new Response(JSON.stringify({ error: '任务已不可用', code: 'RUN_UNAVAILABLE' }), {
+        status: 410,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(abortAgentRun('run-gone')).rejects.toMatchObject({ status: 410 });
   });
 });

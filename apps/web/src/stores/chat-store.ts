@@ -141,6 +141,8 @@ export interface ChatStreamSessionDeps {
   setInput?: (input: string) => void;
   /** 同会话已有运行：移除本轮占位并挂载现有任务（409 并发保护用） */
   onRunInProgress?: (runId: string, assistantId: string) => void;
+  /** 传输中断但运行可能仍在后台：交由挂载重连状态机继续（ADR-0061 / 工单 04） */
+  onRunDetached?: (runId: string, assistantId: string) => void;
   activeConversationId: () => string | null;
   /** 获取当前会话产物池快照（可选） */
   getArtifacts?: () => Artifact[];
@@ -186,6 +188,8 @@ const contentFlushState = new Map<string, ContentFlushEntry>();
 const attachingRunIds = new Set<string>();
 /** 当前挂载会话的中止信号：用户停止时终止重连与事件消费 */
 let attachAbortController: AbortController | null = null;
+/** 用户主动停止的 runId：传输错误不得把它误判为可重连 */
+const userStoppedRunIds = new Set<string>();
 
 /** 合帧兜底时暂存的最新流式产出（code-review Standards 轴：复用 ContentFlushEntry 同构类型，消灭匿名类型） */
 type LatestStreamContent = Pick<ContentFlushEntry, 'text' | 'reasoning'>;
@@ -599,6 +603,60 @@ export async function runChatStreamSession(
       return 'aborted';
     }
 
+    // 用户主动停止后的服务端终态：按「已停止」收尾，不显示为生成失败
+    const stoppedTarget = deps.getMessages().find((m) => m.id === assistantId);
+    const stoppedRunId = stoppedTarget?.runId;
+    if (stoppedRunId && userStoppedRunIds.has(stoppedRunId)) {
+      userStoppedRunIds.delete(stoppedRunId);
+      const stoppedMessages = deps.updateMessages((messages) =>
+        messages.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                isStreaming: false,
+                failed: false,
+                stopped: true,
+                stopUnconfirmed: false,
+                runPending: false,
+              }
+            : m
+        )
+      );
+      const conversationId = deps.activeConversationId();
+      if (conversationId) {
+        port.saveMessages(conversationId, stoppedMessages, deps.getArtifacts?.());
+      }
+      return 'aborted';
+    }
+
+    // 传输中断但运行可能仍在后台（刷新、锁屏、网络跳变）：保留待挂载标记，交给重连状态机
+    const detachedTarget = deps.getMessages().find((m) => m.id === assistantId);
+    const detachedRunId = detachedTarget?.runId;
+    const detachedStatus = (err as { status?: number }).status;
+    const detachedTerminal = (err as { terminal?: boolean }).terminal;
+    if (
+      detachedRunId &&
+      !userStoppedRunIds.has(detachedRunId) &&
+      !detachedTerminal &&
+      detachedStatus !== 401 &&
+      detachedStatus !== 403 &&
+      detachedStatus !== 410
+    ) {
+      const pending = deps.updateMessages((messages) =>
+        messages.map((m) =>
+          m.id === assistantId
+            ? { ...m, isStreaming: false, failed: false, stopped: false, runPending: true }
+            : m
+        )
+      );
+      const conversationId = deps.activeConversationId();
+      if (conversationId) {
+        port.saveMessages(conversationId, pending, deps.getArtifacts?.());
+      }
+      deps.onRunDetached?.(detachedRunId, assistantId);
+      return 'failed';
+    }
+
     // 同会话已有任务（ADR-0061 / 工单 06）：不报错、不丢草稿，挂载现有运行
     const conflictRunId = (err as { runId?: string }).runId;
     const conflictStatus = (err as { status?: number }).status;
@@ -677,6 +735,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
     setError: (error) => set({ error }),
     setInput: (input) => set({ input }),
+    onRunDetached: (runId, assistantId) => {
+      void get().attachAgentRun(runId, assistantId);
+    },
     onRunInProgress: (runId, assistantId) => {
       const existing = get().messages.find(
         (message) => message.role === 'assistant' && message.runId === runId
@@ -1141,6 +1202,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         }
       } finally {
         attachingRunIds.delete(runId);
+        userStoppedRunIds.delete(runId);
         if (attachAbortController === attachController) {
           attachAbortController = null;
         }
@@ -1203,6 +1265,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (activeRun?.runId) {
         const runId = activeRun.runId;
         const messageId = activeRun.id;
+        userStoppedRunIds.add(runId);
 
         void abortAgentRun(runId).catch((error) => {
           console.warn('[chat] 请求停止失败，将在 5 秒后本地收尾', error);
@@ -1237,6 +1300,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               : item
           );
           set({ messages: next, isLoading: false });
+          userStoppedRunIds.delete(runId);
           const conversationId = get().activeConversationId;
           if (conversationId) {
             getConversationPort().saveMessages(conversationId, next, get().artifacts);

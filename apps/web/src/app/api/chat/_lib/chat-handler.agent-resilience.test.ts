@@ -15,6 +15,7 @@ import { createFakeQuotaSession } from '@/lib/billing/testing/fake-quota-session
 import { createRunRegistry, type RunRegistry } from './agent/run-registry';
 import { createToolRegistry } from '@/lib/agent/registry';
 import { parseChatStreamEvent } from '@repo/shared';
+import { createAgentResumeHandler } from './agent-resume';
 
 const {
   currentUserMock,
@@ -359,6 +360,79 @@ describe('并发与过载保护（ADR-0061 / 工单 06）', () => {
 
     const response = await handler(agentRequest({ agent: false }));
     expect(response.status).toBe(200);
+    await response.body?.cancel();
+  });
+});
+
+describe('运行时韧性的边界回归（工单 07 / 11）', () => {
+  it('断点挂载已完成运行不会再次结算', async () => {
+    const registry = createRunRegistry({ createRunId: () => 'run-settled' });
+    const run = registry.start({ userId: 'test-user-id', conversationId: 'conv-settled' })!;
+    run.append(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+    run.finalize('completed');
+
+    const resume = createAgentResumeHandler({
+      runRegistry: registry,
+      getUser: async () => ({ id: 'test-user-id' }),
+    });
+    const response = await resume(
+      new Request(`http://localhost/api/chat/agent/resume?runId=${run.runId}`)
+    );
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(agentRunCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('对比模式请求不产生 run_attached 且不占用运行注册表', async () => {
+    const { createChatHandler } = await import('./chat-handler');
+    const registry = createRunRegistry({ createRunId: () => 'run-compare' });
+    const handler = createChatHandler({
+      getAdapter: () => ({
+        stream: async () =>
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+              controller.close();
+            },
+          }),
+      }),
+      runRegistry: registry,
+    });
+    currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
+    rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
+    getAvailableQuotaMock.mockResolvedValue(100_000);
+    quotaSessionReserveMock.mockResolvedValue(createFakeQuotaSession({ outputLimit: 4096 }));
+
+    const response = await handler(agentRequest({ agent: false, chatScene: 'compare' }));
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    expect(firstSseEvent(first.value!)?.type).not.toBe('run_attached');
+    await reader.cancel();
+    expect(registry.size()).toBe(0);
+  });
+
+  it('普通对话仍绑定请求信号：断开即中止', async () => {
+    const { createChatHandler } = await import('./chat-handler');
+    let captured: AbortSignal | undefined;
+    const handler = createChatHandler({
+      getAdapter: () => ({
+        stream: async (ctx) => {
+          captured = ctx.signal;
+          return new ReadableStream<Uint8Array>({ start: (controller) => controller.close() });
+        },
+      }),
+      runRegistry: createRunRegistry(),
+    });
+    currentUserMock.mockResolvedValue({ id: 'test-user-id', role: 'user' });
+    rateLimiterMock.check.mockResolvedValue({ allowed: true, remaining: 60, reset: Date.now() + 60000 });
+    getAvailableQuotaMock.mockResolvedValue(100_000);
+    quotaSessionReserveMock.mockResolvedValue(createFakeQuotaSession({ outputLimit: 4096 }));
+
+    const ac = new AbortController();
+    const response = await handler(agentRequest({ agent: false }, ac.signal));
+    ac.abort();
+    expect(captured?.aborted).toBe(true);
     await response.body?.cancel();
   });
 });

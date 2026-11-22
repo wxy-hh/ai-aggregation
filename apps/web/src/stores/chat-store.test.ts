@@ -946,3 +946,108 @@ describe('并发保护（ADR-0061 / 工单 06）', () => {
     }
   });
 });
+
+describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+  });
+
+  it('流被截断时保留待挂载并重连取回完整结果，不标记失败', async () => {
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
+    mockedAuthFetch
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"type":"run_attached","runId":"run-drop","resumed":false}\n\n',
+          'data: {"type":"text-delta","text":"半截内容"}\n\n',
+        ])
+      )
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"type":"run_attached","runId":"run-drop","resumed":true}\n\n',
+          'data: {"type":"text-delta","text":"完整回答"}\n\n',
+          'data: {"type":"done"}\n\n',
+        ])
+      );
+
+    useChatStore.setState({ input: '问题', activeConversationId: 'conv-drop' });
+
+    try {
+      await useChatStore.getState().sendMessage();
+      await vi.waitFor(() => {
+        const assistant = useChatStore.getState().messages.find((m) => m.role === 'assistant');
+        expect(assistant?.content).toBe('完整回答');
+        expect(assistant?.runPending).toBe(false);
+        expect(assistant?.failed).not.toBe(true);
+      });
+      expect(mockedAuthFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('/api/chat/agent/resume?runId=run-drop'),
+        expect.anything()
+      );
+    } finally {
+      resetConversationPort();
+    }
+  });
+});
+
+describe('重连状态（ADR-0061 / 工单 04）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('重连期间 isStreaming 保持 true 并记录尝试次数', async () => {
+    setConversationPort({
+      saveMessages: () => {},
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
+    mockedAuthFetch
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(
+        sseResponse([
+          'data: {"type":"run_attached","runId":"run-reconnect","resumed":true}\n\n',
+          'data: {"type":"text-delta","text":"完整回答"}\n\n',
+          'data: {"type":"done"}\n\n',
+        ])
+      );
+    useChatStore.setState({
+      activeConversationId: 'conv-reconnect',
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '半截',
+          isStreaming: false,
+          runPending: true,
+          runId: 'run-reconnect',
+        },
+      ],
+    });
+
+    try {
+      const attach = useChatStore.getState().attachAgentRun('run-reconnect', 'a1');
+      await vi.advanceTimersByTimeAsync(0);
+      const mid = useChatStore.getState().messages.find((m) => m.id === 'a1');
+      expect(mid?.isStreaming).toBe(true);
+      expect(mid?.reconnectingAttempt).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await attach;
+      const done = useChatStore.getState().messages.find((m) => m.id === 'a1');
+      expect(done?.content).toBe('完整回答');
+      expect(done?.runPending).toBe(false);
+    } finally {
+      resetConversationPort();
+    }
+  });
+});
