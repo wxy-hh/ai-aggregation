@@ -851,3 +851,56 @@ test('P0-TC06-4 security 与 git-workflow 规则清理失效智能体、未使�
   assert.doesNotMatch(gitWorkflow, /Agents\.md/);
   assert.match(gitWorkflow, /AGENTS\.md/);
 });
+
+test('P1-TC07-1 diagnosing-bugs 与 resolving-merge-conflicts 尾部补齐项目定制并同步 skill-customizations', async () => {
+  const [diag, merge, custom] = await Promise.all([
+    read('.claude/skills/diagnosing-bugs/SKILL.md'),
+    read('.claude/skills/resolving-merge-conflicts/SKILL.md'),
+    read(customizationsPath),
+  ]);
+  assert.match(diag, /上游升级时保留/);
+  assert.match(diag, /QA Kind:\s*fix/);
+  assert.match(diag, /修复前复现/);
+  assert.match(diag, /qa-run/);
+  assert.match(merge, /上游升级时保留/);
+  assert.match(merge, /用户确认/);
+  assert.match(merge, /git-workflow\.md/);
+  assert.match(custom, /diagnosing-bugs[\s\S]*?QA Kind:\s*fix[\s\S]*?修复前复现/);
+  assert.match(custom, /resolving-merge-conflicts[\s\S]*?用户确认/);
+});
+
+test('P1-TC07-2 deploy-prod 预检核对终审状态，to-tickets 与 code-review 补齐上游升级保留标记', async () => {
+  const [deploy, tickets, review] = await Promise.all([
+    read('.claude/skills/deploy-prod/SKILL.md'),
+    read(paths.toTickets),
+    read('.claude/skills/code-review/SKILL.md'),
+  ]);
+  assert.match(deploy, /qa-check review[\s\S]*?人工终审|人工终审[\s\S]*?qa-check review/);
+  assert.match(tickets, /上游升级时保留/);
+  assert.match(review, /上游升级时保留/);
+});
+
+test('P1-TC07-3 ask-matt 清理不存在的上游技能并收录本仓核心技能，teach GLOSSARY 修正为 GLOSSARY.md', async () => {
+  const [askMatt, teachGlossary] = await Promise.all([
+    read('.claude/skills/ask-matt/SKILL.md'),
+    read('docs/teach/qa-workflow/GLOSSARY.md'),
+  ]);
+  for (const obsolete of ['/to-questionnaire', '/wait-what', '/writing-for-agents']) {
+    assert.ok(!askMatt.includes(obsolete), `ask-matt 仍包含本仓不存在技能 ${obsolete}`);
+  }
+  for (const present of ['writing-great-skills', 'qa-test-planner', 'setup-qa-workflow', 'deploy-prod']) {
+    assert.ok(askMatt.includes(present), `ask-matt 缺少本仓核心技能 ${present}`);
+  }
+  assert.doesNotMatch(teachGlossary, /落盘至\s*CONTEXT\.md/);
+  assert.match(teachGlossary, /落盘至\s*GLOSSARY\.md/);
+});
+
+test('P1-TC07-4 qa-check、qa-spec-review 与 qa-browser-helper 三个脚本均与安装模板逐字一致', async () => {
+  for (const name of ['qa-check.mjs', 'qa-spec-review.mjs', 'qa-browser-helper.mjs']) {
+    const [tool, template] = await Promise.all([
+      read(`tooling/scripts/${name}`),
+      read(`.claude/skills/setup-qa-workflow/templates/${name}`),
+    ]);
+    assert.equal(tool, template, `${name} 与安装模板不一致`);
+  }
+});

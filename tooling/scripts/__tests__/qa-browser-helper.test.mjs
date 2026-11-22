@@ -228,3 +228,109 @@ test('TC09-3 几何断言必填且等待异步断言成功后才截图', async (
   }));
   assert.deepEqual(asyncAssertLog.map((item) => item[0]), ['cdp', 'evaluate', 'cdp']);
 });
+
+test('P1-TC01-1 captureMobileGeometry 兼容仅提供 setViewportSize 的 Playwright Page 并在成功与异常时复位视口', async () => {
+  const { captureMobileGeometry } = await import(HELPER.href);
+  const events = [];
+  let currentViewport = { width: 1280, height: 720 };
+  const playwrightPage = {
+    viewportSize: () => currentViewport,
+    setViewportSize: async (size) => {
+      events.push(['setViewportSize', size]);
+      currentViewport = size;
+    },
+    evaluate: async (probe, target) => {
+      events.push(['evaluate', target, currentViewport.width]);
+      return probe(target);
+    },
+    screenshot: async (options) => {
+      events.push(['screenshot', options]);
+    },
+  };
+
+  const result = await captureMobileGeometry(playwrightPage, {
+    target: '#mobile-card',
+    screenshotPath: 'mobile.png',
+    probe: (target) => ({ ...geometry(target), scrollWidth: currentViewport.width }),
+    assert: (value) => assert.equal(value.scrollWidth, 375),
+  });
+  assert.equal(result.target, '#mobile-card');
+  assert.deepEqual(events[0], ['setViewportSize', { width: 375, height: 667 }]);
+  assert.deepEqual(events[1], ['evaluate', '#mobile-card', 375]);
+  assert.equal(events[2][0], 'screenshot');
+  assert.deepEqual(events[3], ['setViewportSize', { width: 1280, height: 720 }]);
+  assert.deepEqual(currentViewport, { width: 1280, height: 720 });
+
+  // 断言失败时 finally 同样恢复原始视口且不截图
+  const failEvents = [];
+  let failViewport = { width: 1440, height: 900 };
+  const failingPlaywrightPage = {
+    viewportSize: () => failViewport,
+    setViewportSize: async (size) => {
+      failEvents.push(['setViewportSize', size]);
+      failViewport = size;
+    },
+    evaluate: async () => {
+      failEvents.push(['evaluate']);
+      return { ...geometry('#mobile-card'), scrollWidth: 500 };
+    },
+    screenshot: async () => failEvents.push(['screenshot']),
+  };
+  await assert.rejects(captureMobileGeometry(failingPlaywrightPage, {
+    target: '#mobile-card',
+    screenshotPath: 'mobile.png',
+    probe: (target) => geometry(target),
+    assert: (value) => assert.equal(value.scrollWidth, 375),
+  }));
+  assert.deepEqual(failEvents.map((item) => item[0]), ['setViewportSize', 'evaluate', 'setViewportSize']);
+  assert.deepEqual(failViewport, { width: 1440, height: 900 });
+
+  // 截图抛错时 finally 同样恢复原始视口
+  const shotFailEvents = [];
+  let shotViewport = { width: 1366, height: 768 };
+  const shotFailingPage = {
+    viewportSize: () => shotViewport,
+    setViewportSize: async (size) => {
+      shotFailEvents.push(['setViewportSize', size]);
+      shotViewport = size;
+    },
+    evaluate: async (probe, target) => {
+      shotFailEvents.push(['evaluate']);
+      return probe(target);
+    },
+    screenshot: async () => {
+      shotFailEvents.push(['screenshot']);
+      throw new Error('Playwright 截图失败');
+    },
+  };
+  await assert.rejects(captureMobileGeometry(shotFailingPage, {
+    target: '#mobile-card',
+    screenshotPath: 'mobile.png',
+    probe: (target) => geometry(target),
+    assert: () => {},
+  }), /Playwright 截图失败/);
+  assert.deepEqual(shotFailEvents.map((item) => item[0]), ['setViewportSize', 'evaluate', 'screenshot', 'setViewportSize']);
+  assert.deepEqual(shotViewport, { width: 1366, height: 768 });
+});
+
+test('P1-TC01-2 captureMobileGeometry 在缺少 cdp 与 setViewportSize 时抛 TypeError 且模板保持一致', async () => {
+  const { captureMobileGeometry } = await import(HELPER.href);
+  const unsupportedPage = {
+    evaluate: async (probe, target) => probe(target),
+    screenshot: async () => {},
+  };
+  await assert.rejects(
+    captureMobileGeometry(unsupportedPage, {
+      target: '#mobile-card',
+      screenshotPath: 'mobile.png',
+      probe: (target) => geometry(target),
+      assert: () => {},
+    }),
+    (err) => err instanceof TypeError && /page\.cdp/.test(err.message) && /setViewportSize/.test(err.message),
+  );
+  const [tool, template] = await Promise.all([
+    readFile(HELPER, 'utf8'),
+    readFile(new URL('../../../.claude/skills/setup-qa-workflow/templates/qa-browser-helper.mjs', import.meta.url), 'utf8'),
+  ]);
+  assert.equal(tool, template);
+});

@@ -14,7 +14,10 @@ import {
   SPEC_REVIEW_CHECKLIST_FILE,
   SPEC_REVIEW_CHECKLIST_VERSION,
   specReviewChecklistDocument,
+  splitMarkdownRow,
 } from './qa-spec-review.mjs';
+
+export { splitMarkdownRow };
 
 export const CURRENT_SCHEMA = 4;
 
@@ -94,7 +97,8 @@ const DISPOSITION_VALUES = new Set(['', '—', '已修', '未修', '修错', '�
 // QA 工作流依赖的流程技能；个人级同名且内容不同会让项目版失效
 const WORKFLOW_SKILLS = new Set([
   'to-spec', 'to-tickets', 'implement', 'implement-spec', 'tdd', 'code-review', 'pr', 'retro',
-  'handoff', 'grill-with-docs', 'diagnosing-bugs', 'improve-codebase-architecture', 'qa-test-planner',
+  'handoff', 'grill-with-docs', 'grill-me', 'domain-modeling', 'codebase-design',
+  'setup-qa-workflow', 'diagnosing-bugs', 'improve-codebase-architecture', 'qa-test-planner',
 ]);
 // 阶段 1–2 允许在建基线前写入的产物
 const STAGE_ARTIFACT_PATTERN = /^(?:GLOSSARY\.md|CONTEXT\.md|docs\/adr\/.+)$/;
@@ -158,11 +162,6 @@ function parseSpecCommands(markdown) {
     if (line.trim()) commands.push(line.trim());
   }
   return commands.length ? commands : null;
-}
-
-export function splitMarkdownRow(line) {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split('|').map((cell) => cell.trim());
 }
 
 export function deriveCaseStatus(rows) {
@@ -918,11 +917,22 @@ async function listScripts(featureDir, relative = SCRIPTS_DIR) {
   return nested.flat();
 }
 
-/** 取 import/require 所在行中的全部字符串字面量作为模块说明符 */
+/** 从去注释后的源码全文提取静态导入、副作用导入以及支持跨行与路径拼接的动态 import()/require() 模块说明符 */
 function importedSpecifiers(text) {
-  return text.split(/\r?\n/)
-    .filter((line) => /\b(?:import|require)\b|\bfrom\s*['"`]/.test(line))
-    .flatMap((line) => [...line.matchAll(/(['"`])([^'"`\n]+)\1/g)].map((match) => match[2]));
+  const found = new Set();
+  for (const pattern of [
+    /\b(?:import|export)\b[^;]*?\bfrom\s*(['"`])([^'"`\n]+)\1/g,
+    /\bimport\s*(['"`])([^'"`\n]+)\1/g,
+  ]) {
+    for (const match of text.matchAll(pattern)) found.add(match[2]);
+  }
+  const masked = maskStringLiterals(text);
+  for (const match of text.matchAll(/\b(?:import|require)\s*\(/g)) {
+    const start = match.index + match[0].length;
+    const args = text.slice(start, inPageSegmentEnd(masked, start));
+    for (const literal of args.matchAll(/(['"`])([^'"`\n]+)\1/g)) found.add(literal[2]);
+  }
+  return [...found];
 }
 
 function dataStoreModule(specifier) {
@@ -939,9 +949,9 @@ function dataStoreModule(specifier) {
 async function workspaceDataStorePackages(root) {
   const packages = [];
   const problems = [];
-  const { patterns, problem } = await workspacePatterns(root);
+  const { patterns, excludes, problem } = await workspacePatterns(root);
   if (problem) problems.push(problem);
-  for (const directory of await expandWorkspacePatterns(root, patterns)) {
+  for (const directory of await expandWorkspacePatterns(root, patterns, excludes)) {
     let manifest;
     try {
       manifest = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8'));
@@ -960,53 +970,123 @@ async function workspaceDataStorePackages(root) {
   return { packages, notes };
 }
 
+/** 拆离工作区通配项与 ! 排除项，统一规范为 POSIX 相对路径 */
+function splitWorkspaceRules(rawPatterns) {
+  const patterns = [];
+  const excludes = [];
+  for (const item of rawPatterns) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const isExclude = trimmed.startsWith('!');
+    const cleaned = (isExclude ? trimmed.slice(1) : trimmed).replace(/^\.\//, '').replace(/\/+$/, '');
+    if (!cleaned) continue;
+    (isExclude ? excludes : patterns).push(cleaned);
+  }
+  return { patterns, excludes };
+}
+
 /**
- * 工作区包目录的匹配模式：优先读 pnpm-workspace.yaml 的 packages 简单列表，
- * 没有时读根 package.json 的 workspaces（数组，或对象的 packages 字段）；以 ! 开头的排除项忽略
+ * 工作区包目录的匹配模式：优先读 pnpm-workspace.yaml 的 packages 列表（支持行尾 # 注释与 ! 排除项），
+ * 没有时读根 package.json 的 workspaces（数组，或对象的 packages 字段）
  */
 async function workspacePatterns(root) {
   const yaml = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8').catch(() => null);
   if (yaml !== null) {
-    const patterns = [];
+    const raw = [];
     let inPackages = false;
     for (const line of yaml.split(/\r?\n/)) {
-      if (/^packages\s*:\s*$/.test(line)) {
+      if (/^packages\s*:\s*(?:#.*)?$/.test(line)) {
         inPackages = true;
         continue;
       }
-      if (inPackages && /^\S/.test(line)) inPackages = false;
-      const item = inPackages && line.match(/^\s+-\s+(['"]?)([^'"#]+?)\1\s*$/);
-      if (item) patterns.push(item[2]);
+      if (inPackages && /^\S/.test(line) && !/^\s*#/.test(line)) inPackages = false;
+      if (!inPackages) continue;
+      const item = line.match(/^\s+-\s+(?:'([^']+)'|"([^"]+)"|([^\s#]+))\s*(?:#.*)?$/);
+      if (item) raw.push(item[1] ?? item[2] ?? item[3]);
     }
-    return { patterns: patterns.filter((pattern) => !pattern.startsWith('!')), problem: null };
+    return { ...splitWorkspaceRules(raw), problem: null };
   }
   const text = await readFile(path.join(root, 'package.json'), 'utf8').catch(() => null);
-  if (text === null) return { patterns: [], problem: null };
+  if (text === null) return { patterns: [], excludes: [], problem: null };
   let manifest;
   try {
     manifest = JSON.parse(text);
   } catch {
-    return { patterns: [], problem: 'package.json 无法解析' };
+    return { patterns: [], excludes: [], problem: 'package.json 无法解析' };
   }
   const workspaces = Array.isArray(manifest.workspaces) ? manifest.workspaces : manifest.workspaces?.packages;
-  const patterns = Array.isArray(workspaces) ? workspaces.filter((item) => typeof item === 'string') : [];
-  return { patterns: patterns.filter((pattern) => !pattern.startsWith('!')), problem: null };
+  const raw = Array.isArray(workspaces) ? workspaces.filter((item) => typeof item === 'string') : [];
+  return { ...splitWorkspaceRules(raw), problem: null };
 }
 
-/** 展开工作区模式：只支持精确目录与以 /* 结尾的一层目录，只保留含 package.json 的目录 */
-async function expandWorkspacePatterns(root, patterns) {
+const IGNORED_WORKSPACE_DIRS = new Set(['node_modules', '.git', '.next', '.scratch', '.turbo', 'dist', 'build', '.cache']);
+
+// 目录是否被排除规则命中（兼容 !dir 与 !dir/** 两种写法）
+function isExcludedWorkspace(relativePosix, excludes) {
+  return excludes.some((pattern) => {
+    const base = pattern.replace(/\/\*\*$/, '');
+    return relativePosix === base
+      || relativePosix.startsWith(`${base}/`)
+      || matchPosixGlob(relativePosix, pattern);
+  });
+}
+
+/** 并发递归收集工作区下含 package.json 的候选相对目录 */
+async function collectPackageDirs(root, startRel = '') {
+  const startAbs = startRel ? path.join(root, startRel) : root;
+  const entries = (await readdir(startAbs, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isDirectory() && !IGNORED_WORKSPACE_DIRS.has(entry.name));
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const relPosix = startRel ? `${startRel}/${entry.name}` : entry.name;
+    const absPath = path.join(startAbs, entry.name);
+    const [pkgStat, children] = await Promise.all([
+      stat(path.join(absPath, 'package.json')).catch(() => null),
+      collectPackageDirs(root, relPosix),
+    ]);
+    return pkgStat?.isFile() ? [{ relPosix, absPath }, ...children] : children;
+  }));
+  return nested.flat();
+}
+
+// 展开工作区模式：支持精确目录、单层通配与多级 glob（如 packages/**、apps/*/*），并过滤 ! 排除项
+async function expandWorkspacePatterns(root, patterns, excludes = []) {
+  const seen = new Set();
   const directories = [];
-  for (const pattern of patterns) {
-    const oneLevel = pattern.endsWith('/*');
-    const base = path.join(root, oneLevel ? pattern.slice(0, -2) : pattern);
-    const candidates = oneLevel
-      ? (await readdir(base, { withFileTypes: true }).catch(() => []))
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => path.join(base, entry.name))
-      : [base];
-    for (const candidate of candidates) {
-      if ((await stat(path.join(candidate, 'package.json')).catch(() => null))?.isFile()) directories.push(candidate);
+  const pushAllowed = (items) => {
+    for (const { relPosix, absPath, isPkg } of items) {
+      if (!isPkg || isExcludedWorkspace(relPosix, excludes) || seen.has(absPath)) continue;
+      seen.add(absPath);
+      directories.push(absPath);
     }
+  };
+
+  let allPackageDirs = null;
+  for (const pattern of patterns) {
+    if (!/[*?]/.test(pattern)) {
+      const absPath = path.join(root, pattern);
+      const isPkg = Boolean((await stat(path.join(absPath, 'package.json')).catch(() => null))?.isFile());
+      pushAllowed([{ relPosix: pattern, absPath, isPkg }]);
+      continue;
+    }
+    if (pattern.endsWith('/*') && !/[*?]/.test(pattern.slice(0, -2))) {
+      const prefix = pattern.slice(0, -2);
+      const base = path.join(root, prefix);
+      const entries = (await readdir(base, { withFileTypes: true }).catch(() => []))
+        .filter((entry) => entry.isDirectory() && !IGNORED_WORKSPACE_DIRS.has(entry.name));
+      const checked = await Promise.all(entries.map(async (entry) => {
+        const absPath = path.join(base, entry.name);
+        const isPkg = Boolean((await stat(path.join(absPath, 'package.json')).catch(() => null))?.isFile());
+        return { relPosix: `${prefix}/${entry.name}`, absPath, isPkg };
+      }));
+      pushAllowed(checked);
+      continue;
+    }
+    if (!allPackageDirs) allPackageDirs = await collectPackageDirs(root);
+    pushAllowed(
+      allPackageDirs
+        .filter((item) => matchPosixGlob(item.relPosix, pattern))
+        .map((item) => ({ ...item, isPkg: true })),
+    );
   }
   return directories;
 }
@@ -1051,9 +1131,23 @@ function fileURLToPathOrNull(url) {
   }
 }
 
-/** 跳过字符串字面量（含转义与模板字符串），返回结束下标 */
+/** 跳过 Python 三引号字面量（"""...""" 或 '''...'''），返回结束下标 */
+function consumeTripleQuoted(text, start) {
+  const quote = text.slice(start, start + 3);
+  for (let index = start + 3; index < text.length; index += 1) {
+    if (text[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (text.slice(index, index + 3) === quote) return index + 3;
+  }
+  return text.length;
+}
+
+/** 跳过单/双引号或模板字符串字面量（模板 ${...} 复用统一 JS 词法扫描器），返回结束下标 */
 function consumeQuoted(text, start) {
   const quote = text[start];
+  if (quote === '`') return scanTemplateLiteral(text, start).end;
   for (let index = start + 1; index < text.length; index += 1) {
     if (text[index] === '\\') {
       index += 1;
@@ -1091,13 +1185,38 @@ function isRegexStart(text, index) {
   return true;
 }
 
+/** 单次扫描模板字符串：保留正文并在遇到 ${...} 时委托 scanJsSegment 一次完成去注释与闭合定位 */
+function scanTemplateLiteral(text, start) {
+  let out = '`';
+  let index = start + 1;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '\\') {
+      out += text.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    if (char === '$' && text[index + 1] === '{') {
+      const inner = scanJsSegment(text, index + 2, true);
+      out += `\${${inner.out}${inner.closed ? '}' : ''}`;
+      index = inner.end;
+      continue;
+    }
+    out += char;
+    index += 1;
+    if (char === '`') break;
+  }
+  return { out, end: index };
+}
+
 /**
- * 零依赖剥离注释：跳过字符串与正则字面量内部，保留字符串内容（登录接口与包名扫描仍需要）。
- * 支持 `//`、`/* *\/` 与 Python `#` 行注释。
+ * 统一 JS/TS 词法扫描器：单次遍历剥离 `//`、`/* *\/` 与 shebang，保留字符串/正则字面量并递归处理模板字符串 `${...}`。
+ * 当 stopOnCloseBrace 为 true 时在匹配的 `}` 处停止，供模板表达式内嵌套复用。
  */
-function stripComments(text, { python = false } = {}) {
+function scanJsSegment(text, start, stopOnCloseBrace = false) {
   let out = '';
-  let index = 0;
+  let index = start;
+  let braceDepth = 0;
   while (index < text.length) {
     const char = text[index];
     const next = text[index + 1];
@@ -1114,11 +1233,17 @@ function stripComments(text, { python = false } = {}) {
       index += 2;
       continue;
     }
-    if (char === '#' && (python || (index === 0 && next === '!'))) {
+    if (index === 0 && char === '#' && next === '!') {
       while (index < text.length && text[index] !== '\n') index += 1;
       continue;
     }
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === '`') {
+      const template = scanTemplateLiteral(text, index);
+      out += template.out;
+      index = template.end;
+      continue;
+    }
+    if (char === "'" || char === '"') {
       const end = consumeQuoted(text, index);
       out += text.slice(index, end);
       index = end;
@@ -1126,6 +1251,46 @@ function stripComments(text, { python = false } = {}) {
     }
     if (char === '/' && isRegexStart(text, index)) {
       const end = consumeRegex(text, index);
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (stopOnCloseBrace) {
+      if (char === '{') {
+        braceDepth += 1;
+      } else if (char === '}') {
+        if (braceDepth === 0) return { out, end: index + 1, closed: true };
+        braceDepth -= 1;
+      }
+    }
+    out += char;
+    index += 1;
+  }
+  return { out, end: index, closed: false };
+}
+
+/**
+ * 零依赖剥离注释：跳过字符串与正则字面量内部，保留字符串内容（登录接口与包名扫描仍需要）。
+ * 支持 JS `//`、`/* *\/`、模板字符串 `${...}` 嵌套注释，以及 Python `#` 行注释与三引号字符串。
+ */
+function stripComments(text, { python = false } = {}) {
+  if (!python) return scanJsSegment(text, 0, false).out;
+  let out = '';
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '#') {
+      while (index < text.length && text[index] !== '\n') index += 1;
+      continue;
+    }
+    if ((char === '"' || char === "'") && text[index + 1] === char && text[index + 2] === char) {
+      const end = consumeTripleQuoted(text, index);
+      out += text.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const end = consumeQuoted(text, index);
       out += text.slice(index, end);
       index = end;
       continue;
@@ -1614,10 +1779,14 @@ async function reusableAxis(featureDir, rounds, latest, axis, requiredIds) {
  */
 async function reviewRawIssues(featureDir, triage) {
   const issues = [];
+  const notes = [];
   const rounds = await readReviewRounds(featureDir);
   const latest = rounds.size ? Math.max(...rounds.keys()) : null;
   const latestFiles = latest === null ? null : rounds.get(latest);
   const currentRound = latest ?? 1;
+  if (latest !== null && latest > 3) {
+    notes.push(`审查轮次已达 r${latest}，超出自动复审 2 轮上限（r2、r3）；应停止自动修复并交人工裁决。`);
+  }
   const rows = triage?.rows ?? [];
   // 待复核编号：本次修，或 S-H、P-M、P-W 被驳回/转专项，且该行按轮次轨迹指向的下一复审轮就是当前轮。
   // 只看「当前轮需要复核的编号」，避免已在前一轮复核完的旧编号在后续轮次反复要求 pendingIds。
@@ -1723,6 +1892,7 @@ async function reviewRawIssues(featureDir, triage) {
   }
   return {
     issues,
+    notes,
     latest: effectiveFiles,
     currentRound,
     requiredIds,
@@ -2714,6 +2884,7 @@ async function checkReview(featureDir, plan, context, earlier) {
   if (reportText) issues.push(...reviewReportIssues(reportText, triage));
   const raw = await reviewRawIssues(featureDir, triage);
   issues.push(...raw.issues);
+  notes.push(...(raw.notes ?? []));
   if (manifest?.specReviewChecklist) {
     try {
       if (manifest.specReviewChecklist.version !== SPEC_REVIEW_CHECKLIST_VERSION

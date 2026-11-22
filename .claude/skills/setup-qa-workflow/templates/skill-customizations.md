@@ -103,3 +103,19 @@ spec 的 Testing Decisions 与已冻结 qa-plan 的 Seam 视为已确认的 Seam
 - Epic 级特性需要共享看板时，在交接文档附工单清单与状态快照；
 - 同机会话续接仍直接读写 `.scratch/`。
 ```
+
+## 10. `diagnosing-bugs` —— 衔接修复轮红灯复现
+
+在技能末尾追加项目定制段（上游升级时保留本节）：
+
+```text
+在 QA 工作流内修复已交付特性（QA Kind: fix）时，将 Phase 1 构造出的最小红灯复现命令经 node tooling/scripts/qa-run.mjs .scratch/<feature>-fix-<n> red-<标签> -- <命令> 落盘，并绑定到 qa-plan.md 对应 TC 的 ## 修复前复现 行；修复后用完全相同的命令参数再跑绿灯验证，确保红绿日志 argv 全等、红日志更早且代码树不同。
+```
+
+## 11. `resolving-merge-conflicts` —— 遵守提交确认边界
+
+在技能末尾追加项目定制段（上游升级时保留本节）：
+
+```text
+遵守 .claude/rules/git-workflow.md 的提交与推送边界：完成冲突解决与自动化检查后，先向用户展示变更文件、检查结果与建议提交说明，须经用户确认后再执行 git add / git commit 或 git rebase --continue 提交；不得未经确认自动 commit 或 push。
+```

@@ -3,7 +3,7 @@ name: code-review
 description: "沿两个轴审查自固定点（commit、branch、tag 或 merge-base）以来的改动：Standards（代码是否遵守本仓库成文的编码规范）与 Spec（代码是否符合来源 issue 或 spec 的要求）。两轴在并行子代理中运行并分列汇报。用于审查分支、PR、进行中的改动，或用户要求“审查自某处以来的改动”时。"
 ---
 
-对 `HEAD` 与调用方给定固定点之间的 diff 做双轴审查（上游为 Matt Pocock Skills）：
+对 `HEAD` 与调用方给定固定点之间的 diff 做双轴审查（上游为 Matt Pocock Skills；文中标注「仅 QA 工作流调用时」的项目定制条款与编号/封存规则在**上游升级时保留**）：
 
 - **Standards**：代码是否符合本仓库成文的编码规范？
 - **Spec**：代码是否忠实实现了来源 issue 或 spec？

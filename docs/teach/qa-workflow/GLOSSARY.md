@@ -5,7 +5,7 @@
 ## 阶段与技能术语 (Phases & Skills)
 
 **`/grill-with-docs` (文档化盘问)**:
-在严苛盘问需求与设计边界的同时，强制挂载领域建模（domain-modeling）技能，将关键术语落盘至 CONTEXT.md 并将重大取舍沉淀为 ADR 的前置对齐过程。
+在严苛盘问需求与设计边界的同时，强制挂载领域建模（domain-modeling）技能，将关键术语落盘至 GLOSSARY.md 并将重大取舍沉淀为 ADR 的前置对齐过程。
 _Avoid_: 闲聊需求、随意沟通
 
 **`/grill-me` (轻量盘问)**:

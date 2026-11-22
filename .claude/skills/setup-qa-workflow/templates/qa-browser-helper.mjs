@@ -98,7 +98,7 @@ export async function captureTargetGeometry(page, {
 }
 
 /**
- * 移动视口几何截图：设置视口 → 显式目标几何断言与截图 → 复位视口。
+ * 移动视口几何截图：按能力探测兼容 ego-browser（CDP）与 Playwright（setViewportSize）→ 显式目标几何断言与截图 → 复位视口。
  * @param {object} page 浏览器页面
  * @param {{ target: string, screenshotPath: string, width?: number, height?: number, probe: Function, assert: Function }} options
  */
@@ -113,20 +113,34 @@ export async function captureMobileGeometry(page, {
   if (typeof target !== 'string' || !target.trim()) throw new TypeError('必须提供非空视觉目标');
   if (typeof probe !== 'function') throw new TypeError('必须提供视觉目标 probe');
   if (typeof verify !== 'function') throw new TypeError('必须提供几何硬断言');
-  await page.cdp('Emulation.setDeviceMetricsOverride', {
-    width,
-    height,
-    deviceScaleFactor: 2,
-    mobile: true,
-  });
-  try {
-    return await captureTargetGeometry(page, { target, screenshotPath, probe, assert: verify });
-  } finally {
+  if (typeof page?.cdp === 'function') {
     await page.cdp('Emulation.setDeviceMetricsOverride', {
-      width: 0,
-      height: 0,
-      deviceScaleFactor: 0,
-      mobile: false,
+      width,
+      height,
+      deviceScaleFactor: 2,
+      mobile: true,
     });
+    try {
+      return await captureTargetGeometry(page, { target, screenshotPath, probe, assert: verify });
+    } finally {
+      await page.cdp('Emulation.setDeviceMetricsOverride', {
+        width: 0,
+        height: 0,
+        deviceScaleFactor: 0,
+        mobile: false,
+      });
+    }
   }
+  if (typeof page?.setViewportSize === 'function') {
+    const previousViewport = typeof page.viewportSize === 'function' ? page.viewportSize() : null;
+    await page.setViewportSize({ width, height });
+    try {
+      return await captureTargetGeometry(page, { target, screenshotPath, probe, assert: verify });
+    } finally {
+      if (previousViewport && Number.isFinite(previousViewport.width) && Number.isFinite(previousViewport.height)) {
+        await page.setViewportSize(previousViewport);
+      }
+    }
+  }
+  throw new TypeError('页面对象既不支持 page.cdp 也不支持 page.setViewportSize，无法切换移动视口');
 }

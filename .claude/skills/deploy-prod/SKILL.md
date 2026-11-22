@@ -21,6 +21,7 @@ metadata:
 - 本次是否改了 `packages/db/prisma/schema.prisma`（→ 步骤 4 需迁移）
 - 本次是否改了 `package.json` / `pnpm-lock.yaml`（→ 步骤 4 需装依赖）
 - 本次代码是否新增/改名环境变量（对比 `.env.prod.example`；有 → 提醒用户先改服务器 `.env.prod`，**改前备份** `.env.prod.bak.$(date +%Y%m%d)`）
+- 若本次发布包含标准/慢车道特性，核对对应 `.scratch/<feature>/` 是否已完成 `qa-check review` 校验与人工终审（未完成或存在未裁决项时明确提醒用户确认是否仍继续发布）
 - 当前分支 ≠ `master` 时明确告知：服务器将切换检出到该分支
 
 完成标准：发布摘要（分支、提交数、schema/依赖/env 是否变更）已输出，用户确认继续。

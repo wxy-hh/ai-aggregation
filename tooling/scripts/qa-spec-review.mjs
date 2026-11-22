@@ -39,11 +39,10 @@ export function parseSpecReviewChecklist(text) {
   return value;
 }
 
-/** Markdown 表格只转义管道符，其他反斜杠原样保留 */
-function splitCoverageRow(line) {
+/** Markdown 表格行拆列：只转义管道符 \|，其他反斜杠原样保留，兼容可选首尾管道符 */
+export function splitMarkdownRow(line) {
   let input = line.trim();
-  if (!input.startsWith('|')) return null;
-  input = input.slice(1);
+  if (input.startsWith('|')) input = input.slice(1);
   const cells = [];
   let value = '';
   let escaped = false;
@@ -62,8 +61,16 @@ function splitCoverageRow(line) {
   }
   if (escaped) value += '\\';
   value = value.trim();
-  if (value || !input.endsWith('|')) cells.push(value);
+  // 行尾为未转义管道符时末尾空段是表格边界而非多余列；若行尾为 \| 则仍计入末列内容
+  const endsWithUnescapedPipe = /(?:^|[^\\])(?:\\\\)*\|$/.test(input);
+  if (value || !endsWithUnescapedPipe) cells.push(value);
   return cells;
+}
+
+/** 对账覆盖行拆分：要求必须以管道符开头 */
+function splitCoverageRow(line) {
+  if (!line.trim().startsWith('|')) return null;
+  return splitMarkdownRow(line);
 }
 
 function coverageSection(markdown) {

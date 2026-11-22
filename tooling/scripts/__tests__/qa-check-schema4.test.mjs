@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkFeature, CURRENT_SCHEMA, formatReport } from '../qa-check.mjs';
+import { checkFeature, CURRENT_SCHEMA, formatReport, splitMarkdownRow } from '../qa-check.mjs';
 
 const QA_CHECK = fileURLToPath(new URL('../qa-check.mjs', import.meta.url));
 const QA_RUN = fileURLToPath(new URL('../qa-run.mjs', import.meta.url));
@@ -3279,4 +3279,152 @@ test('P0-TC04-1 同一 binding 存在多条转录时不静默覆盖事件时间�
   const report = await checkFeature(feature, 'review');
   assert.ok(!codes(report).includes('FIX_UNVERIFIED'), formatReport(report));
   assert.equal(report.status, 'PASS', formatReport(report));
+});
+
+test('P1-TC02-1 splitMarkdownRow 支持单元格内转义管道符且不错误拆列', () => {
+  const cells = splitMarkdownRow('| TC01 | `a \\| b` | PASS | 含 `x \\| y` 说明 |');
+  assert.deepEqual(cells, ['TC01', '`a | b`', 'PASS', '含 `x | y` 说明']);
+});
+
+test('P1-TC03-1 跨行动态 import 与 require 导入数据存储模块时仍报 AUTH_BYPASS_IN_SCRIPT', async (t) => {
+  for (const script of [
+    "const db = await import(\n  '@prisma/client'\n);\n",
+    "const pg = require(\n  'pg'\n);\n",
+  ]) {
+    const report = await scanReport(t, script);
+    assert.ok(codes(report).includes('AUTH_BYPASS_IN_SCRIPT'), `${script}: ${formatReport(report)}`);
+  }
+});
+
+test('P1-TC04-1 pnpm-workspace.yaml 支持行尾注释、多级 glob 展开与排除项过滤', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-ws-glob-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  git(dir, ['init', '--quiet']);
+  await writeFile(path.join(dir, 'pnpm-workspace.yaml'), [
+    'packages: # 工作区配置',
+    '  - "packages/**" # 多级包',
+    '  - "!packages/ignored" # 精确目录前缀排除',
+    '  - "!packages/ignored-glob/**" # 通配目录排除',
+    '',
+  ].join('\n'));
+  await mkdir(path.join(dir, 'packages', 'nested', 'db'), { recursive: true });
+  await writeFile(path.join(dir, 'packages', 'nested', 'db', 'package.json'), JSON.stringify({
+    name: '@repo/nested-db',
+    dependencies: { '@prisma/client': '1.0.0' },
+  }));
+  await mkdir(path.join(dir, 'packages', 'ignored', 'db'), { recursive: true });
+  await writeFile(path.join(dir, 'packages', 'ignored', 'db', 'package.json'), JSON.stringify({
+    name: '@repo/ignored-db',
+    dependencies: { pg: '1.0.0' },
+  }));
+  await mkdir(path.join(dir, 'packages', 'ignored-glob', 'db'), { recursive: true });
+  await writeFile(path.join(dir, 'packages', 'ignored-glob', 'db', 'package.json'), JSON.stringify({
+    name: '@repo/ignored-glob-db',
+    dependencies: { pg: '1.0.0' },
+  }));
+
+  const makeFeature = async (name, script) => {
+    const feature = path.join(dir, '.scratch', name);
+    await mkdir(path.join(feature, 'scripts'), { recursive: true });
+    await writeFile(path.join(feature, 'spec.md'), SPEC);
+    await writeFile(path.join(feature, 'qa-plan.md'), singlePlan({ seam: 'api' }).replace(/\| PASS \|/g, '| BLOCKED |'));
+    await writeFile(path.join(feature, 'scripts', 'helper.mjs'), script);
+    return checkFeature(feature, 'acceptance');
+  };
+
+  const hitNested = await makeFeature('f-hit', "import { db } from '@repo/nested-db';\n");
+  assert.ok(codes(hitNested).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(hitNested));
+
+  const skipIgnored = await makeFeature('f-skip', "import { db } from '@repo/ignored-db';\n");
+  assert.ok(!codes(skipIgnored).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(skipIgnored));
+
+  const skipIgnoredGlob = await makeFeature('f-skip-glob', "import { db } from '@repo/ignored-glob-db';\n");
+  assert.ok(!codes(skipIgnoredGlob).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(skipIgnoredGlob));
+});
+
+test('P1-TC05-1 Python 三引号与 JS 模板字符串嵌套注释不破坏词法去注释状态机', async (t) => {
+  // Python 三引号内含单个双引号与 # 时，不得拆错三引号导致后续 # 注释被吞进字符串误报
+  const pyCommentedDir = await scriptedWorkspace(t, {
+    extraFiles: {
+      'scripts/helper.py': 'doc = """\n"inner\n# 非注释\n"""\n# import psycopg2\n',
+    },
+  });
+  const pyCommented = await checkFeature(pyCommentedDir, 'acceptance');
+  assert.ok(!codes(pyCommented).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(pyCommented));
+
+  const pyRealDir = await scriptedWorkspace(t, {
+    extraFiles: {
+      'scripts/helper.py': 'doc = """\n"inner\n# 非注释\n"""\nimport psycopg2\n',
+    },
+  });
+  const pyReal = await checkFeature(pyRealDir, 'acceptance');
+  assert.ok(codes(pyReal).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(pyReal));
+
+  // JS 模板字符串 ${...} 内含带反引号的块注释、行注释或字符串时，均不得词法失步
+  const jsBacktickCommentClean = await scanReport(
+    t,
+    'const label = `prefix ${/* ` */ value} suffix`;\n// await fetch("/api/login");\n',
+  );
+  assert.ok(!codes(jsBacktickCommentClean).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(jsBacktickCommentClean));
+
+  const jsBacktickCommentReal = await scanReport(
+    t,
+    'const label = `prefix ${/* ` */ value} suffix`;\nawait fetch("/api/login");\n',
+  );
+  assert.ok(codes(jsBacktickCommentReal).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(jsBacktickCommentReal));
+
+  const jsLineCommentBacktick = await scanReport(
+    t,
+    'const label = `prefix ${\n// `\nvalue} suffix`;\n// await fetch("/api/login");\n',
+  );
+  assert.ok(!codes(jsLineCommentBacktick).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(jsLineCommentBacktick));
+
+  const jsNestedQuote = await scanReport(
+    t,
+    'const label = `prefix ${"a`b"} suffix`;\n// await fetch("/api/login");\n',
+  );
+  assert.ok(!codes(jsNestedQuote).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(jsNestedQuote));
+
+  const jsNestedComment = await scanReport(
+    t,
+    'const label = `prefix ${/* /api/login */ "ok"} suffix`;\n',
+  );
+  assert.ok(!codes(jsNestedComment).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(jsNestedComment));
+});
+
+test('P1-TC06-1 审查轮次达 r4 时输出超自动复审上限强 NOTE 且不因轮次报错', async (t) => {
+  const { feature } = await reviewRepo(t);
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '[P-M1] 缺失\n' });
+  await writeRaw(feature, 4, { standards: '无发现\n', spec: '[P-M1] 已修\n' });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-M1 | 本次修 | 已修 | r1 发现 → r4 已修 | 静态：补齐 | |',
+  ]));
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(
+    report.notes.some((note) => note.includes('r4') && note.includes('上限') && note.includes('人工裁决')),
+    formatReport(report),
+  );
+});
+
+test('P1-TC06-2 个人级目录遮蔽 setup-qa-workflow 或 domain-modeling 时报 SHADOWED_WORKFLOW_SKILL', async (t) => {
+  const configDir = await useConfigDir(t);
+  for (const skillName of ['setup-qa-workflow', 'domain-modeling']) {
+    const dir = await mkdtemp(path.join(tmpdir(), `qa-shadow-${skillName}-`));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    git(dir, ['init', '--quiet']);
+    await mkdir(path.join(dir, '.claude', 'skills', skillName), { recursive: true });
+    await writeFile(path.join(dir, '.claude', 'skills', skillName, 'SKILL.md'), `---\nname: ${skillName}\n---\n项目版本\n`);
+    await mkdir(path.join(configDir, 'skills', skillName), { recursive: true });
+    await writeFile(path.join(configDir, 'skills', skillName, 'SKILL.md'), `---\nname: ${skillName}\n---\n个人遮蔽版本\n`);
+
+    const feature = path.join(dir, '.scratch', 'feature');
+    await mkdir(feature, { recursive: true });
+    await writeFile(path.join(feature, 'spec.md'), SPEC);
+    await writeFile(path.join(feature, 'qa-plan.md'), singlePlan().replace(/\| PASS \|/g, '| BLOCKED |'));
+
+    const report = await checkFeature(feature, 'plan');
+    assert.equal(report.status, 'BLOCKED', `${skillName}: ${formatReport(report)}`);
+    assert.ok(codes(report).includes('SHADOWED_WORKFLOW_SKILL'), `${skillName}: ${formatReport(report)}`);
+  }
 });

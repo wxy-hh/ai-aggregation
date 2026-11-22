@@ -136,3 +136,9 @@ Required before declaring done:
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
 - [ ] The hypothesis that turned out correct is stated in the commit / PR message, so the next debugger learns
+
+---
+
+## 项目定制（QA 工作流调用时，上游升级时保留本节）
+
+- 在 QA 工作流内修复已交付特性（`QA Kind: fix`）时，将 Phase 1 构造出的最小红灯复现命令经 `node tooling/scripts/qa-run.mjs .scratch/<feature>-fix-<n> red-<标签> -- <命令>` 落盘，并绑定到 `qa-plan.md` 对应 TC 的 `## 修复前复现` 行；修复后用完全相同的命令参数再跑绿灯验证，确保红绿日志 `argv` 全等、红日志更早且代码树不同。
