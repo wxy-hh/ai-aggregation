@@ -972,6 +972,7 @@ describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）'
           'data: {"type":"run_attached","runId":"run-drop","resumed":true}\n\n',
           'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"已抓取"}\n\n',
           'data: {"type":"artifact_start","artifact":{"id":"a1","type":"markdown","title":"交付物"}}\n\n',
+          'data: {"type":"tool_approval_request","approval":{"callId":"c2","toolName":"wh_notify","host":"hooks.example.com","params":{"message":"hi"},"token":"tok-123","expiresAt":9999999999999}}\n\n',
           'data: {"type":"text-delta","text":"完整回答"}\n\n',
           'data: {"type":"done"}\n\n',
         ])
@@ -988,6 +989,8 @@ describe('传输中断自动转入挂载重连（ADR-0061 / 工单 04 回归）'
         expect(assistant?.failed).not.toBe(true);
         expect(assistant?.toolCalls).toHaveLength(1);
         expect(assistant?.artifactIds).toContain('a1');
+        expect(assistant?.approval?.toolName).toBe('wh_notify');
+        expect(assistant?.approval?.token).toBe('tok-123');
       });
       expect(saved.at(-1)?.filter((message) => message.role === 'assistant')).toHaveLength(1);
       expect(mockedAuthFetch).toHaveBeenLastCalledWith(
@@ -1024,6 +1027,7 @@ describe('重连状态（ADR-0061 / 工单 04）', () => {
           'data: {"type":"run_attached","runId":"run-reconnect","resumed":true}\n\n',
           'data: {"type":"tool_result","callId":"c1","name":"web_fetch","status":"success","summary":"已抓取"}\n\n',
           'data: {"type":"artifact_start","artifact":{"id":"a1","type":"markdown","title":"交付物"}}\n\n',
+          'data: {"type":"tool_approval_request","approval":{"callId":"c2","toolName":"wh_notify","host":"hooks.example.com","params":{"message":"hi"},"token":"tok-123","expiresAt":9999999999999}}\n\n',
           'data: {"type":"text-delta","text":"完整回答"}\n\n',
           'data: {"type":"done"}\n\n',
         ])

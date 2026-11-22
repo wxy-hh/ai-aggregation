@@ -223,3 +223,43 @@ describe('MessageItem 引用角标与来源', () => {
     expect(userAvatar).toHaveClass('h-[22px]', 'w-[22px]');
   });
 });
+
+describe('运行时状态入口（ADR-0061 / 工单 03-04）', () => {
+  it('任务不可用提示旁提供重新执行入口', () => {
+    const message: Message = {
+      id: 'msg-unavailable',
+      role: 'assistant',
+      content: '半截内容',
+      isStreaming: false,
+      runUnavailable: true,
+    };
+    const onRegenerate = vi.fn();
+
+    render(<MessageItem message={message} onRegenerate={onRegenerate} />);
+
+    expect(screen.getByText('任务已不可用，可重新执行')).toBeInTheDocument();
+    const retry = screen.getByRole('button', { name: '重新执行' });
+    expect(retry).toBeInTheDocument();
+    fireEvent.click(retry);
+    expect(onRegenerate).toHaveBeenCalledWith('msg-unavailable');
+  });
+
+  it('重连放弃后提供重新连接与停止入口', () => {
+    const message: Message = {
+      id: 'msg-reconnect-failed',
+      role: 'assistant',
+      content: '半截内容',
+      isStreaming: false,
+      runId: 'run-reconnect',
+      runPending: true,
+      runReconnectFailed: true,
+      failed: true,
+    };
+
+    render(<MessageItem message={message} />);
+
+    expect(screen.getByText('连接中断，任务可能仍在后台执行')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument();
+  });
+});

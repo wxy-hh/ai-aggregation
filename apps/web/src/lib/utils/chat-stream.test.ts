@@ -907,3 +907,38 @@ describe('心跳与重连计数（ADR-0061 / 工单 09）', () => {
     expect(scheduled).toEqual([]);
   });
 });
+
+describe('看门狗触发重连（ADR-0061 / 工单 09-1）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+  });
+
+  it('无字节看门狗触发重连并在下一次尝试恢复', async () => {
+    let attempts = 0;
+    const scheduled: number[] = [];
+    const silent = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.close(), 300);
+      },
+    });
+    mockedAuthFetch
+      .mockResolvedValueOnce(
+        new Response(silent, { headers: { 'Content-Type': 'text/event-stream' } })
+      )
+      .mockResolvedValueOnce(
+        sseResponse(['data: {"type":"run_attached","runId":"run-watchdog","resumed":true}\n\n', 'data: {"type":"done"}\n\n'])
+      );
+
+    await attachAgentRunWithReconnect(
+      'run-watchdog',
+      async (signal) => {
+        attempts += 1;
+        await resumeAgentRun('run-watchdog', {}, { signal, livenessTimeoutMs: 20 });
+      },
+      { onReconnectScheduled: (next) => scheduled.push(next) }
+    );
+
+    expect(attempts).toBe(2);
+    expect(scheduled).toEqual([1]);
+  });
+});
