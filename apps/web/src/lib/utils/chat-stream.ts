@@ -199,6 +199,63 @@ export async function streamChatResponse(
   }
 }
 
+/**
+ * 断点挂载：凭 runId 重新订阅 Agent 运行事件日志（ADR-0061 / 工单 03）。
+ *
+ * 与 streamChatResponse 共用同一套 SSE 消费逻辑；区别是不发聊天请求、不产生新消息，
+ * 事件按累计口径回调给调用方重建既有助手消息。
+ */
+export async function resumeAgentRun(
+  runId: string,
+  handlers: StreamChatResponseHandlers,
+  options: { signal?: AbortSignal } = {}
+): Promise<string> {
+  const response = await authFetch(
+    `/api/chat/agent/resume?runId=${encodeURIComponent(runId)}`,
+    { signal: options.signal }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw Object.assign(
+      new Error(errorData.error || `重新连接失败: ${response.status}`),
+      { status: response.status, code: errorData.code }
+    );
+  }
+
+  let accumulated = '';
+  let accumulatedReasoning = '';
+  let accumulatedAgentNote = '';
+
+  await consumeChatResponse(response, {
+    onChunk: (chunk) => {
+      accumulated += chunk;
+      handlers.onChunk?.(accumulated);
+    },
+    onReasoning: (chunk) => {
+      accumulatedReasoning += chunk;
+      handlers.onReasoning?.(accumulatedReasoning);
+    },
+    onAgentNote: (chunk) => {
+      accumulatedAgentNote += chunk;
+      handlers.onAgentNote?.(accumulatedAgentNote);
+    },
+    onToolCall: handlers.onToolCall,
+    onToolResult: handlers.onToolResult,
+    onArtifactStart: handlers.onArtifactStart,
+    onArtifactDelta: handlers.onArtifactDelta,
+    onArtifactEnd: handlers.onArtifactEnd,
+    onPlanCreated: handlers.onPlanCreated,
+    onPlanStepUpdate: handlers.onPlanStepUpdate,
+    onToolApprovalRequest: handlers.onToolApprovalRequest,
+    onRunAttached: handlers.onRunAttached,
+    onWarning: handlers.onWarning,
+    onDone: handlers.onDone,
+  });
+
+  return accumulated;
+}
+
 /** consumeChatResponse 的回调集合（handlers 对象形式，onReasoning 可选） */
 export interface ConsumeChatResponseHandlers {
   /** 每次收到正文增量时回调一次，参数为本帧增量文本 */

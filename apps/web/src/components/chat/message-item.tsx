@@ -773,7 +773,13 @@ export const MessageItem = memo(function MessageItem({
                         {message.truncationWarning}
                       </div>
                     )}
-                    {message.stopped && (
+                    {message.runUnavailable && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="h-3 w-3" />
+                        <span>任务已不可用，可重新执行</span>
+                      </div>
+                    )}
+                    {message.stopped && !message.runUnavailable && (
                       // DESIGN.md §2.6：浅色次要文字用 day-muted（白底过 AA）；深色中性 slate 表面允许 slate-400
                       // 空内容停止（用户抢先停止且无产出）与部分停止的文案区分（2026-10-15 评审 H3）
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">

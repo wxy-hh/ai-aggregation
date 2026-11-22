@@ -5,7 +5,7 @@ import type { Attachment, Message, ProviderName } from '@/types/chat-message';
 import { getConversationPort } from './conversation-port';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { toArchivedMessages } from '@/lib/conversation/message-snapshots';
-import { streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
+import { resumeAgentRun, streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
 import { trackArtifactEvent } from '@/lib/events/artifact-events';
@@ -106,6 +106,7 @@ export interface ChatState {
   interruptAndResumeWithPlan: (messageId: string, modifiedPlan: AgentPlan) => Promise<void>; // 用户干预计划并中止续跑 (AGENT-PLAN-DAG / ADR-0038)
   confirmApproval: (messageId: string) => Promise<ChatStreamOutcome | 'skipped'>; // 确认写操作审批：发起恢复请求 (AGENT-HITL-ACTION / ADR-0041)
   rejectApproval: (messageId: string) => void; // 拒绝写操作审批：纯前端终止，不发请求 (AGENT-HITL-ACTION / ADR-0041)
+  attachAgentRun: (runId: string, assistantId: string) => Promise<void>; // 断点挂载并重建助手消息 (ADR-0061)
 
   // ========== 生命周期管理 ==========
   loadConversation: (
@@ -169,6 +170,9 @@ interface ContentFlushEntry {
 }
 
 const contentFlushState = new Map<string, ContentFlushEntry>();
+
+/** 正在挂载的 runId 集合：防止打开会话与网络恢复等触发源重复订阅同一运行 */
+const attachingRunIds = new Set<string>();
 
 /** 合帧兜底时暂存的最新流式产出（code-review Standards 轴：复用 ContentFlushEntry 同构类型，消灭匿名类型） */
 type LatestStreamContent = Pick<ContentFlushEntry, 'text' | 'reasoning'>;
@@ -814,6 +818,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 加载历史对话
     // 用于从对话列表切换到某个历史对话（支持还原绑定的能力包、工具覆盖与产物池，ADR-0014 / ADR-0015）
     loadConversation: (id, messages, provider, model, capabilityPack, toolOverrides, artifacts) => {
+      // 刷新恢复时保留的待挂载运行（ADR-0061）：必须在清洗流式消息前捕获 runId
+      const pendingRun = messages.find(
+        (m) => m.role === 'assistant' && m.runId && (m.runPending || m.isStreaming)
+      );
       // 停止之前的AI生成（如果有）
       finalizeStreamingMessage();
       if (abortController) {
@@ -876,6 +884,154 @@ export const useChatStore = create<ChatState>((set, get) => {
         isLoading: false, // 重置加载状态
         error: null, // 清空错误
       });
+
+      if (pendingRun?.runId) {
+        void get().attachAgentRun(pendingRun.runId, pendingRun.id);
+      }
+    },
+
+    // 断点挂载：重建既有助手消息并消费运行事件日志（ADR-0061 / 工单 03）
+    attachAgentRun: async (runId, assistantId) => {
+      if (attachingRunIds.has(runId)) return;
+      attachingRunIds.add(runId);
+
+      const deps = sessionDeps();
+      const port = getConversationPort();
+      const persist = (next: Message[]) => {
+        const conversationId = deps.activeConversationId();
+        if (conversationId) {
+          port.saveMessages(conversationId, next, deps.getArtifacts?.());
+        }
+      };
+      const updateAssistant = (updater: (message: Message) => Message) => {
+        const next = deps.updateMessages((messages) =>
+          messages.map((message) => (message.id === assistantId ? updater(message) : message))
+        );
+        persist(next);
+        return next;
+      };
+      /** 应用返回 { messages, changed } 的纯投影器，并立即落盘 */
+      const applyProjection = (
+        projector: (messages: readonly Message[]) => { messages: Message[]; changed: boolean }
+      ) => {
+        persist(deps.updateMessages((messages) => projector(messages).messages));
+      };
+
+      let terminal = false;
+      let content = '';
+      let noteConsumed = 0;
+      set({ isLoading: true, error: null });
+
+      const finalize = (patch: Partial<Message>) => {
+        terminal = true;
+        updateAssistant((message) => ({
+          ...message,
+          isStreaming: false,
+          runPending: false,
+          ...patch,
+        }));
+        set({ isLoading: false });
+      };
+
+      try {
+        await resumeAgentRun(runId, {
+          onRunAttached: (_id, resumed) => {
+            if (!resumed) return;
+            updateAssistant((message) => ({
+              ...message,
+              content: '',
+              reasoningContent: undefined,
+              reasoningDurationMs: undefined,
+              toolCalls: [],
+              agentNotes: [],
+              plan: undefined,
+              approval: undefined,
+              artifactIds: [],
+              citations: undefined,
+              usage: undefined,
+              truncationWarning: undefined,
+              isStreaming: true,
+              stopped: false,
+              failed: false,
+              runPending: true,
+              runUnavailable: false,
+            }));
+          },
+          onChunk: (text) => {
+            content = text;
+            updateAssistant((message) => ({ ...message, content: text }));
+          },
+          onReasoning: (text) => {
+            updateAssistant((message) => ({ ...message, reasoningContent: text }));
+          },
+          onAgentNote: (accumulated) => {
+            const delta = accumulated.slice(noteConsumed);
+            noteConsumed = accumulated.length;
+            if (!delta) return;
+            applyProjection((messages) => projectAgentNote(messages, assistantId, delta));
+          },
+          onToolCall: (call) => {
+            applyProjection((messages) => projectToolCall(messages, assistantId, call));
+          },
+          onToolResult: (result) => {
+            applyProjection((messages) => projectToolResult(messages, assistantId, result));
+          },
+          onPlanCreated: (plan) => {
+            applyProjection((messages) => projectPlanCreated(messages, assistantId, plan));
+          },
+          onPlanStepUpdate: (stepId, status, summary) => {
+            applyProjection((messages) =>
+              projectPlanStepUpdate(messages, assistantId, stepId, status, summary)
+            );
+          },
+          onToolApprovalRequest: (approval) => {
+            applyProjection((messages) =>
+              projectToolApprovalRequest(messages, assistantId, approval)
+            );
+          },
+          onArtifactStart: (artifact) => {
+            deps.updateArtifacts?.((previous) =>
+              projectArtifactStart(previous, artifact, Date.now())
+            );
+            deps.setActiveArtifactId?.(artifact.id);
+            deps.setWorkspaceOpen?.(true);
+            applyProjection((messages) =>
+              projectAssociateArtifact(messages, assistantId, artifact.id)
+            );
+          },
+          onArtifactDelta: (id, delta) => {
+            deps.updateArtifacts?.((previous) =>
+              projectArtifactDelta(previous, id, delta, Date.now())
+            );
+          },
+          onArtifactEnd: (id, status) => {
+            deps.updateArtifacts?.((previous) =>
+              projectArtifactEnd(previous, id, status, Date.now())
+            );
+            persist(deps.getMessages());
+          },
+          onWarning: (warning) => {
+            updateAssistant((message) => ({ ...message, truncationWarning: warning }));
+          },
+          onDone: (usage) => {
+            finalize({ content, ...(usage ? { usage } : {}) });
+          },
+        });
+
+        if (!terminal) {
+          finalize({ content, stopped: true });
+        }
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 410) {
+          // 进程重启或日志过期：保留半截内容，明确提示可重新执行
+          finalize({ stopped: true, runUnavailable: true });
+        } else {
+          finalize({ failed: true });
+        }
+      } finally {
+        attachingRunIds.delete(runId);
+      }
     },
 
     // 重置聊天状态

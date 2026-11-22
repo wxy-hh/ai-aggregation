@@ -228,7 +228,13 @@ const restoreHydratedMessages = (messages: Message[]): Message[] => {
     }
     // 零产出的流式/停止草稿不保留
     if (!hasRetainableContent(message)) continue;
-    restored.push({ ...message, isStreaming: false, stopped: true });
+    restored.push({
+      ...message,
+      isStreaming: false,
+      stopped: true,
+      // 有 runId 说明可能是仍在后台执行的 Agent 运行；保留待挂载标记，交给 loadConversation 自动 attach
+      ...(message.runId ? { runPending: true } : {}),
+    });
   }
   return restored;
 };

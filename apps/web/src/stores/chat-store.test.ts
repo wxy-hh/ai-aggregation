@@ -768,3 +768,71 @@ describe('run_attached 持久化（ADR-0061 / 工单 01）', () => {
     }
   });
 });
+
+describe('断点挂载与消息重建（ADR-0061 / 工单 03）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+  });
+
+  it('加载含 runId 的流式消息时自动挂载并清空重建', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"run_attached","runId":"run-r","resumed":true}\n\n',
+        'data: {"type":"text-delta","text":"完整回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    useChatStore.getState().loadConversation(
+      'conv-attach',
+      [
+        { id: 'u1', role: 'user', content: '问题' },
+        { id: 'a1', role: 'assistant', content: '半截内容', isStreaming: true, runId: 'run-r' },
+      ],
+      'xunfei',
+      'lite'
+    );
+
+    await vi.waitFor(() => {
+      expect(mockedAuthFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/chat/agent/resume?runId=run-r'),
+        expect.anything()
+      );
+    });
+
+    await vi.waitFor(() => {
+      const assistant = useChatStore.getState().messages.find((m) => m.id === 'a1');
+      expect(assistant?.content).toBe('完整回答');
+      expect(assistant?.isStreaming).toBe(false);
+      expect(assistant?.runPending).toBe(false);
+      expect(assistant?.runUnavailable).toBe(false);
+    });
+  });
+
+  it('挂载返回 410 时保留半截内容并标记任务不可用', async () => {
+    mockedAuthFetch.mockResolvedValue(
+      new Response(JSON.stringify({ error: '任务已不可用，可重新执行', code: 'RUN_UNAVAILABLE' }), {
+        status: 410,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    useChatStore.getState().loadConversation(
+      'conv-gone',
+      [
+        { id: 'u1', role: 'user', content: '问题' },
+        { id: 'a1', role: 'assistant', content: '半截内容', isStreaming: true, runId: 'run-gone' },
+      ],
+      'xunfei',
+      'lite'
+    );
+
+    await vi.waitFor(() => {
+      const assistant = useChatStore.getState().messages.find((m) => m.id === 'a1');
+      expect(assistant?.runUnavailable).toBe(true);
+      expect(assistant?.runPending).toBe(false);
+      expect(assistant?.content).toBe('半截内容');
+    });
+  });
+});

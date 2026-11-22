@@ -70,6 +70,10 @@ export interface Message {
   approval?: MessageApproval;
   // 本次回答所属的 Agent 运行标识 (ADR-0061)：随本地快照落盘，供断线重连时挂载
   runId?: string;
+  // 运行是否仍待挂载：刷新恢复时保留；挂载结束或确认不可用后置为 false
+  runPending?: boolean;
+  // 运行已不可用（进程重启或日志过期）：半截内容保留，界面提示可重新执行
+  runUnavailable?: boolean;
 }
 
 /**
