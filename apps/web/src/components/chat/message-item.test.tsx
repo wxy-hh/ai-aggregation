@@ -263,3 +263,31 @@ describe('运行时状态入口（ADR-0061 / 工单 03-04）', () => {
     expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument();
   });
 });
+
+
+describe('审批卡片与运行态入口（ADR-0041 / ADR-0061）', () => {
+  it('审批卡片显示且凭证随消息保留', () => {
+    const approval = {
+      callId: 'c1',
+      toolName: 'wh_notify',
+      host: 'hooks.example.com',
+      params: { message: '你好' },
+      token: 'tok-123',
+      expiresAt: Date.now() + 60_000,
+      status: 'pending' as const,
+    };
+    const message: Message = {
+      id: 'msg-approval',
+      role: 'assistant',
+      content: '',
+      isStreaming: false,
+      approval,
+    };
+
+    render(<MessageItem message={message} />);
+
+    expect(screen.getAllByTestId('approval-card')).toHaveLength(1);
+    expect(screen.getByText('wh_notify')).toBeInTheDocument();
+    expect(message.approval?.token).toHaveLength('tok-123'.length);
+  });
+});
