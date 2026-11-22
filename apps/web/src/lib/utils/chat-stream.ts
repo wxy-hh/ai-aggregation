@@ -76,6 +76,8 @@ export interface StreamChatResponseHandlers {
   onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
   /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
   onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
+  /** 收到运行挂载事件时回调（ADR-0061；可选，不传则忽略） */
+  onRunAttached?: (runId: string, resumed: boolean) => void;
   onWarning?: (warning: string) => void;
   /** 智能体环境探针降级事件：自动切换为极速对话时回调 */
   onAgentFallback?: (reason: string) => void;
@@ -175,6 +177,7 @@ export async function streamChatResponse(
         onPlanCreated: withPet(handlers.onPlanCreated),
         onPlanStepUpdate: withPet(handlers.onPlanStepUpdate),
         onToolApprovalRequest: withPet(handlers.onToolApprovalRequest),
+        onRunAttached: withPet(handlers.onRunAttached),
         onWarning: withPet(handlers.onWarning),
         onDone: withPet((usage?: ChatStreamUsage) => {
           handlers.onDone?.(usage);
@@ -220,6 +223,8 @@ export interface ConsumeChatResponseHandlers {
   onPlanStepUpdate?: (stepId: string, status: PlanStepStatus, summary?: string) => void;
   /** 收到写操作审批请求时回调一次（agent 模式；可选，ADR-0041） */
   onToolApprovalRequest?: (approval: ChatStreamToolApproval) => void;
+  /** 收到运行挂载事件时回调（ADR-0061；可选） */
+  onRunAttached?: (runId: string, resumed: boolean) => void;
   onWarning?: (warning: string) => void;
   /** 智能体环境探针降级事件：自动切换为极速对话时回调 */
   onAgentFallback?: (reason: string) => void;
@@ -230,8 +235,16 @@ export async function consumeChatResponse(
   response: Response,
   handlers: ConsumeChatResponseHandlers
 ): Promise<void> {
-  const { onChunk, onReasoning, onAgentNote, onToolCall, onToolResult, onWarning, onDone } =
-    handlers;
+  const {
+    onChunk,
+    onReasoning,
+    onAgentNote,
+    onToolCall,
+    onToolResult,
+    onRunAttached,
+    onWarning,
+    onDone,
+  } = handlers;
   const contentType = response.headers.get('Content-Type') || '';
 
   if (!contentType.includes('text/event-stream')) {
@@ -312,6 +325,9 @@ export async function consumeChatResponse(
         case 'plan_created':
           // 智能体计划生成（ADR-0038）
           handlers.onPlanCreated?.(event.plan);
+          return;
+        case 'run_attached':
+          onRunAttached?.(event.runId, event.resumed);
           return;
         case 'plan_step_update':
           // 智能体计划单步更新（ADR-0038）

@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { parseChatStreamEvent } from '../chat-stream-contract';
+import { encodeChatStreamEvent, parseChatStreamEvent } from '../chat-stream-contract';
 
 const validApproval = {
   callId: 'call-1',
@@ -45,5 +45,29 @@ describe('tool_approval_request 事件契约', () => {
   it('4. 未知事件类型解析为 null 且不抛错 (TC01-4)', () => {
     expect(() => parseChatStreamEvent({ type: 'some_future_event', foo: 1 })).not.toThrow();
     expect(parseChatStreamEvent({ type: 'some_future_event', foo: 1 })).toBeNull();
+  });
+});
+
+describe('run_attached 事件契约（ADR-0061）', () => {
+  it('合法帧解析为 run_attached 并保留字段', () => {
+    expect(
+      parseChatStreamEvent({ type: 'run_attached', runId: 'run-abc', resumed: false })
+    ).toEqual({ type: 'run_attached', runId: 'run-abc', resumed: false });
+  });
+
+  it('runId 为空串或缺失时解析为 null', () => {
+    expect(parseChatStreamEvent({ type: 'run_attached', runId: '', resumed: false })).toBeNull();
+    expect(parseChatStreamEvent({ type: 'run_attached', resumed: false })).toBeNull();
+  });
+
+  it('resumed 非布尔值时解析为 null', () => {
+    expect(parseChatStreamEvent({ type: 'run_attached', runId: 'run-abc', resumed: 'yes' })).toBeNull();
+  });
+
+  it('编码后可原样解析回同一事件', () => {
+    const event = { type: 'run_attached' as const, runId: 'run-abc', resumed: true };
+    const encoded = encodeChatStreamEvent(event);
+    expect(encoded.startsWith('data: ')).toBe(true);
+    expect(parseChatStreamEvent(JSON.parse(encoded.slice(6)))).toEqual(event);
   });
 });

@@ -36,6 +36,8 @@ import {
 import { checkFaqShortCircuit, createFaqShortCircuitStream } from './faq-short-circuit';
 import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
+import { getDefaultRunRegistry, type RunRegistry } from './agent/run-registry';
+import { createRunSubscriptionStream, pumpRunStream } from './agent/run-stream';
 import {
   ApprovalRejectedError,
   consumeApprovalToken,
@@ -64,6 +66,11 @@ export interface ChatHandlerConfig {
    * 校验凭据与最低配额（4,096 tokens），不满足时平滑降级为极速对话。
    */
   checkAgentEnvironment?: typeof checkAgentEnvironment;
+  /**
+   * 运行注册表注入点（ADR-0061）；缺省使用进程内单例。
+   * 测试注入独立实例，避免跨用例串状态。
+   */
+  runRegistry?: RunRegistry;
 }
 
 export function createChatHandler(config: ChatHandlerConfig) {
@@ -336,7 +343,29 @@ export function createChatHandler(config: ChatHandlerConfig) {
       // 6. 分流：agent 走多步自主循环编排，其余委派适配器（adapter 只产流）
       let stream: ReadableStream<Uint8Array>;
       if (agentBudget && agentRuntime) {
-        stream = runAgent({
+        const runRegistry = config.runRegistry ?? getDefaultRunRegistry();
+        const run = runRegistry.start({
+          userId: user.id,
+          conversationId: conversationId ?? '',
+        });
+        if (!run) {
+          // 工单 06 会把守卫前移到配额预留之前；此处先释放预留并明确拒绝
+          try {
+            await reservedSession.release({
+              reason: '活跃智能体任务过多',
+              meterType: 'tokens',
+            });
+            session = null;
+          } catch (error) {
+            console.warn('[chat] 活跃任务过载时释放预留失败', { errorId, error });
+          }
+          return jsonResponse(
+            { error: '当前任务过多，请稍后再试', code: 'AGENT_RUN_OVERLOADED', errorId },
+            503
+          );
+        }
+
+        const agentStream = runAgent({
           userId: user.id,
           provider: effectiveProvider,
           model: modelName,
@@ -356,7 +385,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
           ),
           maxSteps: agentBudget.steps,
           runTimeBudgetMs: config.agentRunTimeBudgetMs,
-          signal: req.signal,
+          // 执行信号来自 LiveRun：HTTP 请求断开不再等于任务结束（ADR-0061）
+          signal: run.controller.signal,
           errorId,
           runtime: agentRuntime,
           capabilityPack: activeCapabilityPack?.key,
@@ -377,6 +407,15 @@ export function createChatHandler(config: ChatHandlerConfig) {
               }
             : {}),
           onFinish,
+        });
+
+        // 泵与响应解耦：客户端断开后继续执行并写满事件日志
+        pumpRunStream(agentStream, run);
+        stream = createRunSubscriptionStream({
+          registry: runRegistry,
+          runId: run.runId,
+          userId: user.id,
+          resumed: false,
         });
       } else {
         const adapter = config.getAdapter(effectiveProvider);

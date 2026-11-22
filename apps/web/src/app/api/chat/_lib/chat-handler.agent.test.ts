@@ -133,7 +133,9 @@ async function readSseEvents(response: Response) {
     .split('\n\n')
     .map((chunk) => chunk.replace(/^data:\s*/, ''))
     .filter(Boolean)
-    .map((chunk) => JSON.parse(chunk) as Record<string, unknown>);
+    .map((chunk) => JSON.parse(chunk) as Record<string, unknown>)
+    // run_attached 是每次连接的投递首帧（ADR-0061），不属于 Agent 事件序列断言范围
+    .filter((event) => event.type !== 'run_attached');
 }
 
 /** 构造一个「流迭代中抛错」的假返回，用于模拟用户中断 / 上游异常 */
@@ -563,27 +565,30 @@ describe('agent 模式编排（HTTP 级）', () => {
     expect(types.at(-1)).toBe('done');
   });
 
-  // ==================== spec §9：用户中断（abort） ====================
+  // ==================== 请求断开不中止运行（ADR-0061） ====================
 
-  it('用户中断（abort）：工具被取消且全程无产出 → 整轮释放（failed）', async () => {
+  it('请求信号断开不中止 Agent 运行：工具继续执行并正常收尾', async () => {
     const ac = new AbortController();
-    let signalToolStarted: (() => void) | undefined;
+    let toolStartedResolve: (() => void) | undefined;
     const toolStarted = new Promise<void>((resolve) => {
-      signalToolStarted = resolve;
+      toolStartedResolve = resolve;
     });
+    let toolSignal: AbortSignal | undefined;
 
-    // 工具挂起不返回，直到请求信号被 abort —— 复刻 T07 #7「画图中途点停止」
+    // 工具执行拿到的是 LiveRun 信号，不是请求信号；请求 abort 后仍应继续
     toolExecuteMock.mockImplementation(
-      (_args: unknown, ctx: { signal: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          ctx.signal.addEventListener('abort', () =>
-            reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))
-          );
-          signalToolStarted?.();
-        })
+      async (_args: unknown, ctx: { signal: AbortSignal }) => {
+        toolSignal = ctx.signal;
+        toolStartedResolve?.();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          ok: true,
+          contentForModel: '网页正文内容：这是一篇文章的主要内容。',
+          summaryForDisplay: '已抓取 example.com（正文 20 字）',
+        };
+      }
     );
 
-    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
     streamTextMock
       .mockReturnValueOnce(
         makeFakeResult({
@@ -592,23 +597,24 @@ describe('agent 模式编排（HTTP 级）', () => {
           ],
         })
       )
-      // 同一 signal 也让总结步中断
-      .mockReturnValueOnce(makeThrowingResult(abortError));
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['网页已抓取，我来整理。'] }))
+      .mockReturnValueOnce(makeFakeResult({ textParts: ['这是最终回答。'] }));
 
     const response = await handler(agentRequest({}, ac.signal));
     const bodyPromise = readSseEvents(response);
 
     await toolStarted;
     ac.abort();
+    expect(toolSignal?.aborted).toBe(false);
+
     const events = await bodyPromise;
+    const toolResult = events.find((e) => e.type === 'tool_result') as { status: string };
+    expect(toolResult.status).toBe('success');
+    expect(events.at(-1)?.type).toBe('done');
 
-    const toolResult = events.find((e) => e.type === 'tool_result') as { status: string; summary: string };
-    expect(toolResult.status).toBe('failed');
-    expect(toolResult.summary).toContain('取消');
-
-    // 什么都没产出（工具没跑完、正文为空）→ 全额释放，不计费
+    // 执行完成并正常结算，不因请求断开而退款
     expect(fakeSession.finalize).toHaveBeenCalledTimes(1);
-    expect(fakeSession.finalize.mock.calls[0][0]).toBe('failed');
+    expect(fakeSession.finalize.mock.calls[0][0]).toBe('success');
   });
 
   it('用户中断（abort）：工具已交付产物、正文为空 → 按 partial 结算（不得整轮退款）', async () => {

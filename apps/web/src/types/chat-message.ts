@@ -68,6 +68,8 @@ export interface Message {
   plan?: AgentPlan;
   // 写操作审批请求卡片 (AGENT-HITL-ACTION / ADR-0041)：一等字段随消息落盘，不进正文
   approval?: MessageApproval;
+  // 本次回答所属的 Agent 运行标识 (ADR-0061)：随本地快照落盘，供断线重连时挂载
+  runId?: string;
 }
 
 /**

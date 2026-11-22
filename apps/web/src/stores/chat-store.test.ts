@@ -735,3 +735,36 @@ describe('useChatStore 会话级工具临时启停覆盖 (toolOverrides · ADR-0
     });
   });
 });
+
+describe('run_attached 持久化（ADR-0061 / 工单 01）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+    resetState();
+  });
+
+  it('收到 run_attached 后把 runId 写入助手消息并随快照落盘', async () => {
+    const saved: Message[][] = [];
+    setConversationPort({
+      saveMessages: (_id, messages) => saved.push(messages),
+      saveToolOverrides: () => {},
+      appendHistory: () => {},
+    });
+    useChatStore.setState({ activeConversationId: 'conv-run-attached' });
+    mockedAuthFetch.mockResolvedValue(
+      sseResponse([
+        'data: {"type":"run_attached","runId":"run-xyz","resumed":false}\n\n',
+        'data: {"type":"text-delta","text":"回答"}\n\n',
+        'data: {"type":"done"}\n\n',
+      ])
+    );
+
+    try {
+      expect(await useChatStore.getState().sendMessage()).toBe('sent');
+      const assistant = useChatStore.getState().messages[1];
+      expect(assistant.runId).toBe('run-xyz');
+      expect(saved.at(-1)?.[1]?.runId).toBe('run-xyz');
+    } finally {
+      resetConversationPort();
+    }
+  });
+});

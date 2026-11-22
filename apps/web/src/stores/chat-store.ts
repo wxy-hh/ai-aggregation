@@ -488,6 +488,19 @@ export async function runChatStreamSession(
         // 审批请求作为消息一等字段落盘（凭证只存在 approval 内，不写入 content）
         projectAndPersist((msgs) => projectToolApprovalRequest(msgs, assistantId, approval));
       },
+      onRunAttached: (runId, resumed) => {
+        // 工单 03 负责 resumed 重建；工单 01 只在初始请求时把 runId 写入本地快照
+        if (resumed) return;
+        projectAndPersist((msgs) => {
+          let changed = false;
+          const messages = msgs.map((m) => {
+            if (m.id !== assistantId || m.runId === runId) return m;
+            changed = true;
+            return { ...m, runId };
+          });
+          return { messages, changed };
+        });
+      },
       onWarning: (warning) => {
         deps.updateMessages((messages) =>
           messages.map((m) => (m.id === assistantId ? { ...m, truncationWarning: warning } : m))

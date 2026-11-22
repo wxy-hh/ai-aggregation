@@ -240,6 +240,19 @@ export interface ChatStreamUsage {
   estimated: boolean;
 }
 
+/**
+ * 运行挂载事件（ADR-0061）
+ *
+ * 每次连接（初始请求或断点重载）的首帧，告知客户端本次运行标识与是否为重建。
+ * 它属于投递帧，不写入运行事件日志。
+ */
+export type ChatStreamRunAttachedEvent = {
+  type: 'run_attached';
+  runId: string;
+  /** true = 重连挂载（客户端需重建消息）；false = 初始请求 */
+  resumed: boolean;
+};
+
 /** 正常终止事件 */
 export type ChatStreamDoneEvent = { type: 'done'; usage?: ChatStreamUsage };
 /** 警告事件（不终止流） */
@@ -260,6 +273,7 @@ export type ChatStreamEvent =
   | ChatStreamArtifactEndEvent
   | ChatStreamPlanCreatedEvent
   | ChatStreamPlanStepUpdateEvent
+  | ChatStreamRunAttachedEvent
   | ChatStreamDoneEvent
   | ChatStreamWarningEvent
   | ChatStreamErrorEvent;
@@ -429,6 +443,11 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         status: parsedStatus.data,
         ...(ev.summary !== undefined ? { summary: ev.summary } : {}),
       };
+    }
+    case 'run_attached': {
+      if (typeof ev.runId !== 'string' || ev.runId.length === 0) return null;
+      if (typeof ev.resumed !== 'boolean') return null;
+      return { type: 'run_attached', runId: ev.runId, resumed: ev.resumed };
     }
     case 'done': {
       if (typeof ev.usage === 'object' && ev.usage !== null) {
