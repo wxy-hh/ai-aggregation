@@ -5,7 +5,13 @@ import type { Attachment, Message, ProviderName } from '@/types/chat-message';
 import { getConversationPort } from './conversation-port';
 import { createChatHistoryItem } from '@/lib/utils/history-helpers';
 import { toArchivedMessages } from '@/lib/conversation/message-snapshots';
-import { resumeAgentRun, streamChatResponse, type StreamChatRequest } from '@/lib/utils/chat-stream';
+import {
+  abortAgentRun,
+  attachAgentRunWithReconnect,
+  resumeAgentRun,
+  streamChatResponse,
+  type StreamChatRequest,
+} from '@/lib/utils/chat-stream';
 import { checkAndWarnLowBalance } from '@/lib/billing/balance-warning';
 import { useSettingsStore } from '@/stores/settings-store';
 import { trackArtifactEvent } from '@/lib/events/artifact-events';
@@ -107,6 +113,7 @@ export interface ChatState {
   confirmApproval: (messageId: string) => Promise<ChatStreamOutcome | 'skipped'>; // 确认写操作审批：发起恢复请求 (AGENT-HITL-ACTION / ADR-0041)
   rejectApproval: (messageId: string) => void; // 拒绝写操作审批：纯前端终止，不发请求 (AGENT-HITL-ACTION / ADR-0041)
   attachAgentRun: (runId: string, assistantId: string) => Promise<void>; // 断点挂载并重建助手消息 (ADR-0061)
+  resumePendingRuns: () => void; // 网络恢复/回到前台时重试待挂载运行 (ADR-0061)
 
   // ========== 生命周期管理 ==========
   loadConversation: (
@@ -173,6 +180,8 @@ const contentFlushState = new Map<string, ContentFlushEntry>();
 
 /** 正在挂载的 runId 集合：防止打开会话与网络恢复等触发源重复订阅同一运行 */
 const attachingRunIds = new Set<string>();
+/** 当前挂载会话的中止信号：用户停止时终止重连与事件消费 */
+let attachAbortController: AbortController | null = null;
 
 /** 合帧兜底时暂存的最新流式产出（code-review Standards 轴：复用 ContentFlushEntry 同构类型，消灭匿名类型） */
 type LatestStreamContent = Pick<ContentFlushEntry, 'text' | 'reasoning'>;
@@ -894,6 +903,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     attachAgentRun: async (runId, assistantId) => {
       if (attachingRunIds.has(runId)) return;
       attachingRunIds.add(runId);
+      const attachController = new AbortController();
+      attachAbortController = attachController;
 
       const deps = sessionDeps();
       const port = getConversationPort();
@@ -928,109 +939,168 @@ export const useChatStore = create<ChatState>((set, get) => {
           ...message,
           isStreaming: false,
           runPending: false,
+          reconnectingAttempt: undefined,
+          runReconnectFailed: false,
           ...patch,
         }));
         set({ isLoading: false });
       };
 
       try {
-        await resumeAgentRun(runId, {
-          onRunAttached: (_id, resumed) => {
-            if (!resumed) return;
-            updateAssistant((message) => ({
-              ...message,
-              content: '',
-              reasoningContent: undefined,
-              reasoningDurationMs: undefined,
-              toolCalls: [],
-              agentNotes: [],
-              plan: undefined,
-              approval: undefined,
-              artifactIds: [],
-              citations: undefined,
-              usage: undefined,
-              truncationWarning: undefined,
-              isStreaming: true,
-              stopped: false,
-              failed: false,
-              runPending: true,
-              runUnavailable: false,
-            }));
-          },
-          onChunk: (text) => {
-            content = text;
-            updateAssistant((message) => ({ ...message, content: text }));
-          },
-          onReasoning: (text) => {
-            updateAssistant((message) => ({ ...message, reasoningContent: text }));
-          },
-          onAgentNote: (accumulated) => {
-            const delta = accumulated.slice(noteConsumed);
-            noteConsumed = accumulated.length;
-            if (!delta) return;
-            applyProjection((messages) => projectAgentNote(messages, assistantId, delta));
-          },
-          onToolCall: (call) => {
-            applyProjection((messages) => projectToolCall(messages, assistantId, call));
-          },
-          onToolResult: (result) => {
-            applyProjection((messages) => projectToolResult(messages, assistantId, result));
-          },
-          onPlanCreated: (plan) => {
-            applyProjection((messages) => projectPlanCreated(messages, assistantId, plan));
-          },
-          onPlanStepUpdate: (stepId, status, summary) => {
-            applyProjection((messages) =>
-              projectPlanStepUpdate(messages, assistantId, stepId, status, summary)
+        await attachAgentRunWithReconnect(
+          runId,
+          async (signal) => {
+            content = '';
+            noteConsumed = 0;
+            await resumeAgentRun(
+              runId,
+              {
+                onRunAttached: (_id, resumed) => {
+                  if (!resumed) return;
+                  updateAssistant((message) => ({
+                    ...message,
+                    content: '',
+                    reasoningContent: undefined,
+                    reasoningDurationMs: undefined,
+                    toolCalls: [],
+                    agentNotes: [],
+                    plan: undefined,
+                    approval: undefined,
+                    artifactIds: [],
+                    citations: undefined,
+                    usage: undefined,
+                    truncationWarning: undefined,
+                    isStreaming: true,
+                    stopped: false,
+                    failed: false,
+                    runPending: true,
+                    runUnavailable: false,
+                  }));
+                },
+                onChunk: (text) => {
+                  content = text;
+                  updateAssistant((message) => ({ ...message, content: text }));
+                },
+                onReasoning: (text) => {
+                  updateAssistant((message) => ({ ...message, reasoningContent: text }));
+                },
+                onAgentNote: (accumulated) => {
+                  const delta = accumulated.slice(noteConsumed);
+                  noteConsumed = accumulated.length;
+                  if (!delta) return;
+                  applyProjection((messages) => projectAgentNote(messages, assistantId, delta));
+                },
+                onToolCall: (call) => {
+                  applyProjection((messages) => projectToolCall(messages, assistantId, call));
+                },
+                onToolResult: (result) => {
+                  applyProjection((messages) => projectToolResult(messages, assistantId, result));
+                },
+                onPlanCreated: (plan) => {
+                  applyProjection((messages) => projectPlanCreated(messages, assistantId, plan));
+                },
+                onPlanStepUpdate: (stepId, status, summary) => {
+                  applyProjection((messages) =>
+                    projectPlanStepUpdate(messages, assistantId, stepId, status, summary)
+                  );
+                },
+                onToolApprovalRequest: (approval) => {
+                  applyProjection((messages) =>
+                    projectToolApprovalRequest(messages, assistantId, approval)
+                  );
+                },
+                onArtifactStart: (artifact) => {
+                  deps.updateArtifacts?.((previous) =>
+                    projectArtifactStart(previous, artifact, Date.now())
+                  );
+                  deps.setActiveArtifactId?.(artifact.id);
+                  deps.setWorkspaceOpen?.(true);
+                  applyProjection((messages) =>
+                    projectAssociateArtifact(messages, assistantId, artifact.id)
+                  );
+                },
+                onArtifactDelta: (id, delta) => {
+                  deps.updateArtifacts?.((previous) =>
+                    projectArtifactDelta(previous, id, delta, Date.now())
+                  );
+                },
+                onArtifactEnd: (id, status) => {
+                  deps.updateArtifacts?.((previous) =>
+                    projectArtifactEnd(previous, id, status, Date.now())
+                  );
+                  persist(deps.getMessages());
+                },
+                onWarning: (warning) => {
+                  updateAssistant((message) => ({ ...message, truncationWarning: warning }));
+                },
+                onDone: (usage) => {
+                  finalize({ content, ...(usage ? { usage } : {}) });
+                },
+              },
+              { signal }
             );
           },
-          onToolApprovalRequest: (approval) => {
-            applyProjection((messages) =>
-              projectToolApprovalRequest(messages, assistantId, approval)
-            );
-          },
-          onArtifactStart: (artifact) => {
-            deps.updateArtifacts?.((previous) =>
-              projectArtifactStart(previous, artifact, Date.now())
-            );
-            deps.setActiveArtifactId?.(artifact.id);
-            deps.setWorkspaceOpen?.(true);
-            applyProjection((messages) =>
-              projectAssociateArtifact(messages, assistantId, artifact.id)
-            );
-          },
-          onArtifactDelta: (id, delta) => {
-            deps.updateArtifacts?.((previous) =>
-              projectArtifactDelta(previous, id, delta, Date.now())
-            );
-          },
-          onArtifactEnd: (id, status) => {
-            deps.updateArtifacts?.((previous) =>
-              projectArtifactEnd(previous, id, status, Date.now())
-            );
-            persist(deps.getMessages());
-          },
-          onWarning: (warning) => {
-            updateAssistant((message) => ({ ...message, truncationWarning: warning }));
-          },
-          onDone: (usage) => {
-            finalize({ content, ...(usage ? { usage } : {}) });
-          },
-        });
+          {
+            signal: attachController.signal,
+            onReconnectScheduled: (attempt) => {
+              updateAssistant((message) => ({
+                ...message,
+                isStreaming: true,
+                reconnectingAttempt: attempt,
+                runReconnectFailed: false,
+                runUnavailable: false,
+                failed: false,
+                stopped: false,
+              }));
+            },
+          }
+        );
 
         if (!terminal) {
           finalize({ content, stopped: true });
         }
       } catch (error) {
         const status = (error as { status?: number }).status;
+        const aborted = (error as { aborted?: boolean }).aborted;
+        const isTerminal = (error as { terminal?: boolean }).terminal;
         if (status === 410) {
           // 进程重启或日志过期：保留半截内容，明确提示可重新执行
           finalize({ stopped: true, runUnavailable: true });
-        } else {
+        } else if (aborted) {
+          finalize({ stopped: true });
+        } else if (isTerminal) {
           finalize({ failed: true });
+        } else {
+          // 自动重连放弃：保留 runPending，等待网络恢复或用户手动重新连接
+          terminal = true;
+          updateAssistant((message) => ({
+            ...message,
+            isStreaming: false,
+            runPending: true,
+            runReconnectFailed: true,
+            reconnectingAttempt: undefined,
+            failed: true,
+          }));
+          set({ isLoading: false });
         }
       } finally {
         attachingRunIds.delete(runId);
+        if (attachAbortController === attachController) {
+          attachAbortController = null;
+        }
+      }
+    },
+
+    // 网络恢复或回到前台：重试仍待挂载的运行
+    resumePendingRuns: () => {
+      for (const message of get().messages) {
+        if (
+          message.role === 'assistant' &&
+          message.runId &&
+          (message.runPending || message.runReconnectFailed)
+        ) {
+          void get().attachAgentRun(message.runId, message.id);
+        }
       }
     },
 
@@ -1064,14 +1134,67 @@ export const useChatStore = create<ChatState>((set, get) => {
     // 停止AI生成
     // 用于用户主动中断AI回复
     stop: () => {
-      // 中止前同步收尾当前流式消息（keepEmptyStopped：用户主动停止，空产出也留「已停止」痕迹）
+      // Agent 运行：先请求服务端停止，等待终态事件；5s 未确认则本地收尾
+      const activeRun = [...get().messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === 'assistant' &&
+            message.runId &&
+            (message.isStreaming || message.runPending || message.reconnectingAttempt)
+        );
+
+      if (activeRun?.runId) {
+        const runId = activeRun.runId;
+        const messageId = activeRun.id;
+
+        void abortAgentRun(runId).catch((error) => {
+          console.warn('[chat] 请求停止失败，将在 5 秒后本地收尾', error);
+        });
+
+        setTimeout(() => {
+          const message = get().messages.find((item) => item.id === messageId);
+          if (
+            !message ||
+            (!message.isStreaming && !message.runPending && !message.reconnectingAttempt)
+          ) {
+            return;
+          }
+          // 服务端未在时限内回传终态：终止本地消费并诚实标记「已请求停止」
+          attachAbortController?.abort();
+          attachAbortController = null;
+          if (abortController) {
+            abortController.abort();
+            abortController = null;
+          }
+          const next = get().messages.map((item) =>
+            item.id === messageId
+              ? {
+                  ...item,
+                  isStreaming: false,
+                  runPending: false,
+                  stopped: true,
+                  stopUnconfirmed: true,
+                  reconnectingAttempt: undefined,
+                  runReconnectFailed: false,
+                }
+              : item
+          );
+          set({ messages: next, isLoading: false });
+          const conversationId = get().activeConversationId;
+          if (conversationId) {
+            getConversationPort().saveMessages(conversationId, next, get().artifacts);
+          }
+        }, 5000);
+        return;
+      }
+
+      // 普通对话维持现状：本地中断即停止
       finalizeStreamingMessage({ keepEmptyStopped: true });
-      // 取消网络请求
       if (abortController) {
         abortController.abort();
         abortController = null;
       }
-      // 更新加载状态
       set({ isLoading: false });
     },
 

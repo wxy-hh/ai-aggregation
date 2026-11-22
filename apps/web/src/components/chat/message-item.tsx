@@ -7,7 +7,15 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
 import { cn } from '@/lib/utils';
-import { Square, AlertCircle, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
+import {
+  Square,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
+  Sparkles,
+  Loader2,
+} from 'lucide-react';
 import { CodeBlock } from './code-block';
 import { SafeParagraph } from './markdown-utils';
 import { AgentTrace } from './agent-trace';
@@ -773,6 +781,29 @@ export const MessageItem = memo(function MessageItem({
                         {message.truncationWarning}
                       </div>
                     )}
+                    {message.reconnectingAttempt ? (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>正在重新连接（第 {message.reconnectingAttempt} 次）…</span>
+                      </div>
+                    ) : null}
+                    {message.runReconnectFailed && message.runId && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="h-3 w-3" />
+                        <span>连接中断，任务可能仍在后台执行</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void useChatStore
+                              .getState()
+                              .attachAgentRun(message.runId!, message.id)
+                          }
+                          className="inline-flex min-h-[44px] items-center px-1 underline underline-offset-2"
+                        >
+                          重新连接
+                        </button>
+                      </div>
+                    )}
                     {message.runUnavailable && (
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                         <AlertCircle className="h-3 w-3" />
@@ -784,10 +815,18 @@ export const MessageItem = memo(function MessageItem({
                       // 空内容停止（用户抢先停止且无产出）与部分停止的文案区分（2026-10-15 评审 H3）
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-day-muted dark:text-slate-400">
                         <Square className="h-3 w-3" />
-                        <span>{message.content ? '已停止 · 内容可能不完整' : '已停止 · 未生成内容'}</span>
+                        <span>
+                          {message.stopUnconfirmed
+                            ? message.content
+                              ? '已请求停止 · 内容可能不完整'
+                              : '已请求停止'
+                            : message.content
+                              ? '已停止 · 内容可能不完整'
+                              : '已停止 · 未生成内容'}
+                        </span>
                       </div>
                     )}
-                    {message.failed && (
+                    {message.failed && !message.runReconnectFailed && (
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                         <AlertCircle className="h-3 w-3" />
                         <span>生成中断 · 内容可能不完整</span>

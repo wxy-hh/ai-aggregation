@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { consumeChatResponse, streamChatResponse } from './chat-stream';
+import {
+  attachAgentRunWithReconnect,
+  consumeChatResponse,
+  resumeAgentRun,
+  streamChatResponse,
+} from './chat-stream';
 import { encodeChatStreamEvent, parseChatStreamEvent } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 
@@ -717,3 +722,113 @@ describe('TC02: 前端流式契约解析与兼容降级', () => {
   });
 });
 
+
+describe('Agent 运行断线重连（ADR-0061 / 工单 04）', () => {
+  beforeEach(() => {
+    mockedAuthFetch.mockReset();
+  });
+
+  it('按 1/2/4/8/10/10 退避并在成功后停止', async () => {
+    const delays: number[] = [];
+    let attempts = 0;
+
+    await attachAgentRunWithReconnect(
+      'run-retry',
+      async () => {
+        attempts += 1;
+        if (attempts < 7) throw new Error('network down');
+      },
+      {
+        now: () => 0,
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }
+    );
+
+    expect(attempts).toBe(7);
+    expect(delays).toEqual([1000, 2000, 4000, 8000, 10000, 10000]);
+  });
+
+  it('410 不重试', async () => {
+    let attempts = 0;
+    await expect(
+      attachAgentRunWithReconnect('run-gone', async () => {
+        attempts += 1;
+        throw Object.assign(new Error('任务已不可用'), { status: 410 });
+      })
+    ).rejects.toMatchObject({ status: 410 });
+    expect(attempts).toBe(1);
+  });
+
+  it('终态错误不重试', async () => {
+    let attempts = 0;
+    await expect(
+      attachAgentRunWithReconnect('run-terminal', async () => {
+        attempts += 1;
+        throw Object.assign(new Error('模型失败'), { terminal: true });
+      })
+    ).rejects.toMatchObject({ terminal: true });
+    expect(attempts).toBe(1);
+  });
+
+  it('累计重连达到 240s 后停止', async () => {
+    let current = 0;
+    let attempts = 0;
+    await expect(
+      attachAgentRunWithReconnect(
+        'run-timeout',
+        async () => {
+          attempts += 1;
+          throw new Error('still down');
+        },
+        {
+          now: () => current,
+          sleep: async (ms) => {
+            current += ms;
+          },
+        }
+      )
+    ).rejects.toThrow('still down');
+    // 1+2+4+8+10... 在 240s 前最多尝试 24 次左右
+    expect(attempts).toBeLessThan(30);
+    expect(current).toBeGreaterThanOrEqual(240_000);
+  });
+
+  it('25s 无字节时看门狗中止当前尝试并可重试', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start() {
+        // 保持打开且不发送任何字节，复刻移动端僵尸连接
+      },
+    });
+    mockedAuthFetch.mockResolvedValue(
+      new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+    );
+
+    await expect(
+      resumeAgentRun('run-silent', {}, { livenessTimeoutMs: 20 })
+    ).rejects.toMatchObject({ retryable: true });
+  });
+
+  it('心跳字节会重置看门狗，不误判断线', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 10);
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 20);
+        setTimeout(() => controller.enqueue(encoder.encode(': ping\n\n')), 30);
+        setTimeout(() => {
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        }, 40);
+      },
+    });
+    mockedAuthFetch.mockResolvedValue(
+      new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+    );
+
+    await expect(
+      resumeAgentRun('run-heartbeat', {}, { livenessTimeoutMs: 25 })
+    ).resolves.toBe('');
+  });
+});

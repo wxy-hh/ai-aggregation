@@ -74,6 +74,12 @@ export interface Message {
   runPending?: boolean;
   // 运行已不可用（进程重启或日志过期）：半截内容保留，界面提示可重新执行
   runUnavailable?: boolean;
+  // 当前重连尝试次数（运行态字段，不参与历史归档）
+  reconnectingAttempt?: number;
+  // 自动重连已放弃：保留待挂载标记，等待网络恢复或用户手动重新连接
+  runReconnectFailed?: boolean;
+  // 已发出停止请求但未在 5s 内收到服务端终态：界面诚实提示「已请求停止」
+  stopUnconfirmed?: boolean;
 }
 
 /**

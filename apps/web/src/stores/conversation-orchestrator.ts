@@ -62,6 +62,24 @@ async function purgeServerMemory(ids: string[]): Promise<void> {
 
 /** 刷新恢复是否已执行（应用生命周期内只恢复一次） */
 let hasInitialized = false;
+let resumeTriggersBound = false;
+
+/** 绑定网络恢复与回到前台时的待挂载运行重试（ADR-0061 / 工单 04） */
+const bindResumeTriggers = (): void => {
+  if (resumeTriggersBound || typeof window === 'undefined') return;
+  resumeTriggersBound = true;
+  const resume = () => {
+    try {
+      useChatStore.getState().resumePendingRuns();
+    } catch {
+      // 聊天 store 未初始化时忽略
+    }
+  };
+  window.addEventListener('online', resume);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resume();
+  });
+};
 
 /** 对话页面入口参数：执行后统一清理，避免刷新重复触发 */
 const CHAT_ENTRY_PARAMS = [
@@ -645,6 +663,7 @@ export const conversationOrchestrator = {
    * 由应用初始化入口在水合完成后调用。
    */
   initialize(): void {
+    bindResumeTriggers();
     const state = useConversationsStore.getState();
     const { mode, currentConversationId, conversations } = state;
     if (!currentConversationId) return;

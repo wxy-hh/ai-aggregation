@@ -42,6 +42,13 @@ export interface StreamChatRequest {
 export const STREAM_FIRST_BYTE_TIMEOUT_MS = 60_000;
 export const STREAM_SILENCE_TIMEOUT_MS = 150_000;
 
+/** 挂载流的字节级存活超时：25s 无任何字节（含心跳注释帧）判定传输丢失 */
+export const AGENT_RUN_LIVENESS_TIMEOUT_MS = 25_000;
+/** 断线重连退避序列，封顶 10s */
+export const AGENT_RUN_RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 10000] as const;
+/** 单次挂载的累计重连上限，与运行预算对齐 */
+export const AGENT_RUN_RECONNECT_MAX_ELAPSED_MS = 240_000;
+
 /** 与调用方 signal 联动的 AbortController：看门狗超时只中断联动控制器，不污染调用方信号 */
 function linkAbortController(signal: AbortSignal): AbortController {
   const controller = new AbortController();
@@ -208,52 +215,204 @@ export async function streamChatResponse(
 export async function resumeAgentRun(
   runId: string,
   handlers: StreamChatResponseHandlers,
-  options: { signal?: AbortSignal } = {}
+  options: { signal?: AbortSignal; livenessTimeoutMs?: number } = {}
 ): Promise<string> {
-  const response = await authFetch(
-    `/api/chat/agent/resume?runId=${encodeURIComponent(runId)}`,
-    { signal: options.signal }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw Object.assign(
-      new Error(errorData.error || `重新连接失败: ${response.status}`),
-      { status: response.status, code: errorData.code }
-    );
+  const externalSignal = options.signal;
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
   }
+
+  const livenessTimeoutMs = options.livenessTimeoutMs ?? AGENT_RUN_LIVENESS_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let rejectTimeout: (error: Error) => void = () => {};
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    rejectTimeout = reject;
+  });
+  let timedOut = false;
+  const timeoutError = () =>
+    Object.assign(new Error('连接中断，正在重新连接'), {
+      retryable: true,
+      code: 'RUN_STREAM_TIMEOUT',
+    });
+
+  const arm = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      rejectTimeout(timeoutError());
+    }, livenessTimeoutMs);
+  };
+  const cleanup = () => {
+    if (timer) clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
+  };
 
   let accumulated = '';
   let accumulatedReasoning = '';
   let accumulatedAgentNote = '';
 
-  await consumeChatResponse(response, {
-    onChunk: (chunk) => {
-      accumulated += chunk;
-      handlers.onChunk?.(accumulated);
-    },
-    onReasoning: (chunk) => {
-      accumulatedReasoning += chunk;
-      handlers.onReasoning?.(accumulatedReasoning);
-    },
-    onAgentNote: (chunk) => {
-      accumulatedAgentNote += chunk;
-      handlers.onAgentNote?.(accumulatedAgentNote);
-    },
-    onToolCall: handlers.onToolCall,
-    onToolResult: handlers.onToolResult,
-    onArtifactStart: handlers.onArtifactStart,
-    onArtifactDelta: handlers.onArtifactDelta,
-    onArtifactEnd: handlers.onArtifactEnd,
-    onPlanCreated: handlers.onPlanCreated,
-    onPlanStepUpdate: handlers.onPlanStepUpdate,
-    onToolApprovalRequest: handlers.onToolApprovalRequest,
-    onRunAttached: handlers.onRunAttached,
-    onWarning: handlers.onWarning,
-    onDone: handlers.onDone,
-  });
+  try {
+    arm();
+    const response = await authFetch(`/api/chat/agent/resume?runId=${encodeURIComponent(runId)}`, {
+      signal: controller.signal,
+    });
 
-  return accumulated;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw Object.assign(
+        new Error(errorData.error || `重新连接失败: ${response.status}`),
+        { status: response.status, code: errorData.code }
+      );
+    }
+
+    const tapped = tapResponseLiveness(response, arm);
+    await Promise.race([
+      consumeChatResponse(tapped, {
+        onChunk: (chunk) => {
+          accumulated += chunk;
+          handlers.onChunk?.(accumulated);
+        },
+        onReasoning: (chunk) => {
+          accumulatedReasoning += chunk;
+          handlers.onReasoning?.(accumulatedReasoning);
+        },
+        onAgentNote: (chunk) => {
+          accumulatedAgentNote += chunk;
+          handlers.onAgentNote?.(accumulatedAgentNote);
+        },
+        onToolCall: handlers.onToolCall,
+        onToolResult: handlers.onToolResult,
+        onArtifactStart: handlers.onArtifactStart,
+        onArtifactDelta: handlers.onArtifactDelta,
+        onArtifactEnd: handlers.onArtifactEnd,
+        onPlanCreated: handlers.onPlanCreated,
+        onPlanStepUpdate: handlers.onPlanStepUpdate,
+        onToolApprovalRequest: handlers.onToolApprovalRequest,
+        onRunAttached: handlers.onRunAttached,
+        onWarning: handlers.onWarning,
+        onDone: handlers.onDone,
+      }),
+      timeoutPromise,
+    ]);
+
+    return accumulated;
+  } catch (error) {
+    // 用户主动停止优先，交由中止链路收尾
+    if (externalSignal?.aborted) {
+      throw Object.assign(new Error('已请求停止'), { aborted: true, terminal: true });
+    }
+    if (timedOut) throw timeoutError();
+    throw error;
+  } finally {
+    cleanup();
+  }
+}
+
+/** 按字节观察响应体存活状态；心跳注释帧同样会重置看门狗 */
+function tapResponseLiveness(response: Response, onBytes: () => void): Response {
+  if (!response.body) return response;
+  const reader = response.body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        onBytes();
+        controller.enqueue(value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+/** 请求服务端主动中止一次 Agent 运行（ADR-0061 / 工单 05） */
+export async function abortAgentRun(runId: string): Promise<void> {
+  const response = await authFetch('/api/chat/agent/abort', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw Object.assign(
+      new Error(errorData.error || `停止失败: ${response.status}`),
+      { status: response.status, code: errorData.code }
+    );
+  }
+}
+
+/** 判断一次挂载失败是否值得重连：终态错误、鉴权与不可用不重试 */
+export function isRetryableAttachError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return true;
+  if ((error as { terminal?: boolean }).terminal) return false;
+  if ((error as { aborted?: boolean }).aborted) return false;
+  const status = (error as { status?: number }).status;
+  if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+  return true;
+}
+
+/**
+ * 持续重连直到有结论：终态事件、不可用（410）或累计达到 240s。
+ * 延迟序列 1/2/4/8/10s 封顶，可通过注入 now/sleep 做确定性测试。
+ */
+export async function attachAgentRunWithReconnect(
+  runId: string,
+  attempt: (signal: AbortSignal, attemptIndex: number) => Promise<void>,
+  options: {
+    onReconnectScheduled?: (nextAttempt: number, delayMs: number) => void;
+    now?: () => number;
+    sleep?: (ms: number) => Promise<void>;
+    maxElapsedMs?: number;
+    /** 外部停止信号：触发后不再重连，交由中止链路收尾 */
+    signal?: AbortSignal;
+  } = {}
+): Promise<void> {
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const maxElapsedMs = options.maxElapsedMs ?? AGENT_RUN_RECONNECT_MAX_ELAPSED_MS;
+  const startedAt = now();
+  let attemptIndex = 0;
+
+  for (;;) {
+    if (options.signal?.aborted) {
+      throw Object.assign(new Error('已请求停止'), { aborted: true, terminal: true });
+    }
+    const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', onExternalAbort, { once: true });
+    try {
+      await attempt(controller.signal, attemptIndex);
+      return;
+    } catch (error) {
+      if (!isRetryableAttachError(error)) throw error;
+      if (now() - startedAt >= maxElapsedMs) throw error;
+      const delay =
+        AGENT_RUN_RECONNECT_DELAYS_MS[
+          Math.min(attemptIndex, AGENT_RUN_RECONNECT_DELAYS_MS.length - 1)
+        ];
+      attemptIndex += 1;
+      options.onReconnectScheduled?.(attemptIndex, delay);
+      await sleep(delay);
+    } finally {
+      options.signal?.removeEventListener('abort', onExternalAbort);
+    }
+  }
 }
 
 /** consumeChatResponse 的回调集合（handlers 对象形式，onReasoning 可选） */
@@ -402,7 +561,8 @@ export async function consumeChatResponse(
           onDone?.(event.usage);
           return;
         case 'error':
-          throw new Error(event.error || '流式响应失败');
+          // 服务端明确失败是终态，重连不应掩盖它
+          throw Object.assign(new Error(event.error || '流式响应失败'), { terminal: true });
       }
     } catch (error) {
       // JSON.parse 的 SyntaxError：非 JSON 帧视为协议外数据，显式忽略
