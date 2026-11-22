@@ -35,12 +35,12 @@ const SOURCE_RECEIPT_SUFFIX = '.source.json';
 // 需要过程脚本与断言标记的接缝；需要用例绑定的接缝
 const SCRIPTED_SEAMS = new Set(['browser', 'api']);
 const BOUND_SEAMS = new Set(['unit', 'integration']);
-// 绕过真实登录的模式：注入 Cookie、写令牌类本地存储键、脚本内登录（检查器内置，不按宿主开关）
+// 绕过真实登录的模式：注入 Cookie、写认证或令牌类本地存储键、脚本内登录（检查器内置，不按宿主开关）
 const AUTH_BYPASS_PATTERNS = [
   { label: 'CDP 设置 Cookie', pattern: /\b(?:Network|Storage)\.setCookies?\b/ },
   { label: '浏览器上下文添加 Cookie', pattern: /\.addCookies\s*\(/ },
   { label: '写 document.cookie', pattern: /\bdocument\.cookie\s*=(?!=)/ },
-  { label: '本地存储写入令牌类键', pattern: /\b(?:localStorage|sessionStorage)\s*(?:\.setItem\s*\(\s*['"`][^'"`]*token|\[\s*['"`][^'"`]*token[^'"`]*['"`]\s*\]\s*=(?!=))/i },
+  { label: '本地存储写入认证或令牌类键', pattern: /\b(?:localStorage|sessionStorage)\s*(?:\.setItem\s*\(\s*['"`][^'"`]*(?:token|auth|session)|\[\s*['"`][^'"`]*(?:token|auth|session)[^'"`]*['"`]\s*\]\s*=(?!=))/i },
   // 登录只发生在脚本外：密码字面量、登录注册与签发令牌接口、生产代码后门上的登录方法
   { label: '密码字面量', pattern: /\b[\w$]*(?:password|passwd|pwd)[\w$]*['"]?\s*[:=]\s*(['"`])(?!\1)[^'"`\n]+\1/i },
   { label: '登录、注册或签发令牌接口', pattern: /\/api\/(?:[\w.-]+\/)*(?:log-?in|sign-?in|register|sign-?up|token)(?=[/?#'"`\s]|$)/im },
@@ -605,7 +605,7 @@ async function validateEvidence(featureDir, row) {
     if (extension !== '.log') continue;
     const log = parseRunLog(await readFile(location.absolute, 'utf8'));
     if (!completeRunLog(log)) {
-      issues.push(issue('INVALID_RUN_LOG', 'FAIL', `${row.caseId} / ${row.assertion} 的日志不是完整 qa-run 日志：${location.relative}；请通过 qa:run 真实执行生成`));
+      issues.push(issue('INVALID_RUN_LOG', 'FAIL', `${row.caseId} / ${row.assertion} 的日志不是完整 qa-run 日志：${location.relative}；请通过 node tooling/scripts/qa-run.mjs 真实执行生成`));
       continue;
     }
     entry.log = log;
@@ -704,7 +704,7 @@ async function reproductionLog(featureDir, reproduction) {
         'INVALID_EVIDENCE',
         'FAIL',
         `${reproduction.caseId} 的修复前复现必须引用一个 qa-run 日志路径`,
-        '请在特性目录内通过 qa:run 真实执行修复前命令，并用一个反引号路径引用生成的日志。',
+        '请在特性目录内通过 node tooling/scripts/qa-run.mjs 真实执行修复前命令，并用一个反引号路径引用生成的日志。',
       )],
     };
   }
@@ -801,14 +801,43 @@ async function packageDirectory(start, root) {
   }
 }
 
+// 零依赖 POSIX 路径通配匹配（支持单级通配、跨目录双星号与单字符通配），避免依赖 Node 22.5+ 专有 API
+function matchPosixGlob(filePath, pattern) {
+  let regex = '^';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '*') {
+      if (pattern[index + 1] === '*') {
+        index += 1;
+        if (pattern[index + 1] === '/') {
+          index += 1;
+          regex += '(?:.*/)?';
+        } else {
+          regex += '.*';
+        }
+      } else {
+        regex += '[^/]*';
+      }
+      continue;
+    }
+    if (char === '?') {
+      regex += '[^/]';
+      continue;
+    }
+    regex += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  regex += '$';
+  return new RegExp(regex).test(filePath);
+}
+
 /** 绑定文件（仓库相对路径）是否被 argv 中点名的测试文件或 glob 覆盖 */
 function bindingNamedBy(relative, named) {
   return named.some((candidate) => {
     const pattern = candidate.split(path.sep).join('/').replace(/^\.\//, '');
     return relative === pattern
       || relative.endsWith(`/${pattern}`)
-      || path.posix.matchesGlob(relative, pattern)
-      || path.posix.matchesGlob(relative, `**/${pattern}`);
+      || matchPosixGlob(relative, pattern)
+      || matchPosixGlob(relative, `**/${pattern}`);
   });
 }
 
@@ -2170,6 +2199,29 @@ async function auditTranscriptProvenance(root, latestFiles, featureDir, packageT
   return { issues, notes, findingTimes, verifiedAxes: verified };
 }
 
+/** 集中解析单轴在转录核验阶段的轮次、nonce、时间下限与复审输入校验开关 */
+function axisTranscriptTarget(axis, challenge, result, reusedItem) {
+  if (!reusedItem) {
+    return {
+      binding: `${challenge.feature}|${challenge.round}|${axis}`,
+      nonce: challenge.nonce,
+      minTime: Date.parse(challenge.packagedAt),
+      checkReinput: challenge.round !== 'r1',
+    };
+  }
+  if (result?.state !== 'ok' || !result.receipt?.round || !result.receipt?.nonce) {
+    return null;
+  }
+  const receiptPackagedAt = Date.parse(result.receipt.packagedAt ?? '');
+  return {
+    binding: `${challenge.feature}|${result.receipt.round}|${axis}`,
+    nonce: result.receipt.nonce,
+    // 复用轴已由同 treeDigest 与原文哈希约束；凭据含 packagedAt 时校验，否则不拿当轮刷新后的 collect 时间误杀旧轮转录
+    minTime: Number.isFinite(receiptPackagedAt) ? receiptPackagedAt : null,
+    checkReinput: false,
+  };
+}
+
 /**
  * 新协议（有 challenge）的来源核验：
  * 先校验两轴自述凭据，再用同 nonce 的 Claude Code 转录做更强的哈希行核对。
@@ -2286,15 +2338,16 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
     }
     for (const [axis, relative] of axes) {
       const result = results.get(axis);
-      const binding = `${challenge.feature}|${challenge.round}|${axis}`;
-      const candidates = scanned.transcripts.filter((item) => item.binding === binding && item.nonce === challenge.nonce);
+      const target = axisTranscriptTarget(axis, challenge, result, reusedByAxis.get(axis));
+      if (!target) continue;
+      const candidates = scanned.transcripts.filter((item) => item.binding === target.binding && item.nonce === target.nonce);
       if (!candidates.length) continue;
       if (candidates.length > 1) {
         notes.push(`来源核验：${relative} 找到多个同 nonce 的子代理转录，无法唯一定位；请人工核对审查来源。`);
         continue;
       }
       const candidate = candidates[0];
-      if (!candidate.receiptLine.hash || candidate.receiptLine.nonce !== challenge.nonce) {
+      if (!candidate.receiptLine.hash || candidate.receiptLine.nonce !== target.nonce) {
         notes.push(`来源核验：${relative} 的同 nonce 转录没有可用的凭据行；按自述凭据或人工核验。`);
         continue;
       }
@@ -2311,7 +2364,7 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
         notes.push(`来源核验：${relative} 的转录时间无法确认；请人工核对它是否对应当前 collect。`);
         continue;
       }
-      if (candidate.time < Date.parse(challenge.packagedAt)) {
+      if (target.minTime !== null && candidate.time < target.minTime) {
         issues.push(issue(
           'REVIEW_SOURCE_STALE',
           'BLOCKED',
@@ -2320,7 +2373,7 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
         ));
         continue;
       }
-      if (challenge.round !== 'r1') {
+      if (target.checkReinput) {
         missingInputs.push(...requiredIds.filter((id) => axisOf(id) === axis && !new RegExp(`\\[${id}\\]|\\b${id}\\b`).test(candidate.prompt)));
       }
       strong.add(axis);
@@ -2348,9 +2401,16 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
     }
   }
 
+  // 同 binding 命中多条转录时无法唯一定位，不静默覆盖事件时间，交由下方同名凭据回退核对
+  const bindingCounts = new Map();
+  for (const item of scanned.transcripts) {
+    if (item.binding) bindingCounts.set(item.binding, (bindingCounts.get(item.binding) ?? 0) + 1);
+  }
   const transcriptTimes = new Map();
   for (const item of scanned.transcripts) {
-    if (item.binding && Number.isFinite(item.time)) transcriptTimes.set(item.binding, item.time);
+    if (item.binding && bindingCounts.get(item.binding) === 1 && Number.isFinite(item.time)) {
+      transcriptTimes.set(item.binding, item.time);
+    }
   }
   for (const row of rows ?? []) {
     const round = Number(row.trajectory.match(/\br(\d+)\b/)?.[1]);
@@ -2520,7 +2580,7 @@ async function verificationIssues(featureDir, plan, context, { enforceOrder = fa
   for (const declaration of plan.delivery) {
     const references = evidenceReferences(declaration.evidence);
     if (!references.paths.length) {
-      issues.push(issue('MISSING_VERIFICATION', 'BLOCKED', `交付验证 ${declaration.command} 没有证据日志；请在最终代码上通过 qa:run 真实执行`));
+      issues.push(issue('MISSING_VERIFICATION', 'BLOCKED', `交付验证 ${declaration.command} 没有证据日志；请在最终代码上通过 node tooling/scripts/qa-run.mjs 真实执行`));
       continue;
     }
     const location = evidenceLocation(featureDir, references.paths[0]);

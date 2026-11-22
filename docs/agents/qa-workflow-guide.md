@@ -118,8 +118,10 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node too
 | --- | --- |
 | `/grill-with-docs`、`/grill-me` | 业务边界必须由人回答，防止模型自问自答 |
 | `/to-spec` | spec 是契约，生成要经人确认 |
+| `/to-tickets` | 慢车道拆票粒度与切片顺序要经人确认 |
 | `/implement`、`/implement-spec` | 开工产生代码变更，人是把关人 |
 | `/handoff` | 何时交接、下一步目标是人的决策 |
+| `/retro` | 复盘环境与流程改进要由人显式发起 |
 
 | 模型可自动调用、人也可手动调用 | 典型时机 |
 | --- | --- |
@@ -128,7 +130,7 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node too
 | `diagnosing-bugs` | 验收 FAIL 需要定位根因 |
 | `ego-browser` | 阶段 5 需复用已登录桌面会话或人工接管登录时的可见窗口验收 |
 | `code-review` | 阶段 6 双轴审查 |
-| `pr`、`retro` | 交付与复盘 |
+| `pr` | 阶段 7 交付呈现 |
 
 ---
 

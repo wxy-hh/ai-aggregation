@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 - 已安装 `to-spec`、`to-tickets`、`implement`、`implement-spec`、`tdd`、`code-review`、`pr`、`retro`、`handoff`、`grill-with-docs`、`diagnosing-bugs`、`improve-codebase-architecture`。
 - 已安装 `qa-test-planner`；浏览器技能按宿主能力选择，macOS 可优先 vendor `ego-browser`。
-- 已有 `docs/agents/issue-tracker.md`、`triage-labels.md`、`domain.md`；缺失时先运行 `/setup-matt-pocock-skills`。
+- 已有 `docs/agents/issue-tracker.md`、`domain.md`（`docs/agents/triage-labels.md` 仅安装 `triage` 技能时必选）；缺失时先运行 `/setup-matt-pocock-skills`。
 
 ## 1. 探索
 

@@ -3164,3 +3164,119 @@ test('TC01-1~3 行为证据树排除非契约文档而审查包保留文档且�
   assert.ok(codes(afterContract).includes('STALE_EVIDENCE'), formatReport(afterContract));
   assert.ok(codes(afterContract).includes('STALE_VERIFICATION'), formatReport(afterContract));
 });
+
+test('P0-TC02-1 本地存储写入 auth 或 session 认证键时报 AUTH_BYPASS_IN_SCRIPT，普通业务键不误报', async (t) => {
+  for (const script of [
+    "localStorage.setItem('ai-app-auth', JSON.stringify({ state: { accessToken: 'x' } }));\n",
+    "sessionStorage.setItem('user_session', 'sid');\n",
+    "localStorage['auth_state'] = '1';\n",
+    "sessionStorage['sessionId'] = 'abc';\n",
+  ]) {
+    const report = await scanReport(t, script);
+    assert.ok(codes(report).includes('AUTH_BYPASS_IN_SCRIPT'), `${script}: ${formatReport(report)}`);
+  }
+  const clean = await scanReport(t, "localStorage.setItem('theme', 'dark');\nsessionStorage['draft_id'] = '42';\n");
+  assert.ok(!codes(clean).includes('AUTH_BYPASS_IN_SCRIPT'), formatReport(clean));
+});
+
+test('P0-TC05-1 qa-check 不依赖 path.posix.matchesGlob 且绑定 glob 匹配精准覆盖精确路径与通配符', async (t) => {
+  const source = await readFile(path.join(process.cwd(), 'tooling/scripts/qa-check.mjs'), 'utf8');
+  assert.doesNotMatch(source, /matchesGlob/, 'qa-check.mjs 不得依赖 Node 22.5+ 专有的 path.posix.matchesGlob');
+
+  const cases = [
+    { file: 'tests/sub/a+1.test.mjs', argv: ['node', '--test', 'tests/sub/a+1.test.mjs'], hit: true },
+    { file: 'tests/sub/a.test.mjs', argv: ['node', '--test', 'tests/sub/*.test.mjs'], hit: true },
+    { file: 'tests/deep/nested/b.test.mjs', argv: ['node', '--test', 'tests/**/*.test.mjs'], hit: true },
+    { file: 'tests/a.test.mjs', argv: ['node', '--test', 'tests/**/*.test.mjs'], hit: true },
+    { file: 'tests/a1.test.mjs', argv: ['node', '--test', 'tests/a?.test.mjs'], hit: true },
+    { file: 'tests/sub/a.test.mjs', argv: ['node', '--test', 'tests/*.test.mjs'], hit: false },
+    { file: 'tests/a12.test.mjs', argv: ['node', '--test', 'tests/a?.test.mjs'], hit: false },
+  ];
+  for (const item of cases) {
+    const dir = await boundWorkspace(t, {
+      file: item.file,
+      binding: `\`${item.file}\` › 传入过滤条件时两路均收到`,
+      argv: item.argv,
+    });
+    const report = await checkFeature(dir, 'acceptance');
+    const outOfRange = codes(report).includes('TEST_BINDING_OUT_OF_RUN');
+    assert.equal(outOfRange, !item.hit, `${item.file} vs ${item.argv.join(' ')}: ${formatReport(report)}`);
+  }
+});
+
+test('P0-TC03-1 r2 单轴复用时按旧轴自身轮次与 nonce 核对转录，保持转录（强）', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge1, challenge2 } = await singleAxisRepo(t);
+  await writeMainSession(configDir, dir);
+
+  // standards 轴沿用 r1 原文与 r1 nonce，且 r1 转录时间早于当轮刷新后的 collect 时间；spec 轴使用 r2 原文与 r2 nonce
+  const r1StandardsHash = createHash('sha256')
+    .update(await readFile(path.join(feature, 'review', 'r1-standards.md')))
+    .digest('hex');
+  const olderR1Time = new Date(Date.parse(challenge2.packagedAt) - 10_000).toISOString();
+  await writeSubagent(configDir, dir, {
+    name: 'agent-r1-standards',
+    binding: '.scratch/feature|r1|standards',
+    timestamp: olderR1Time,
+    promptExtra: `QA_REVIEW_NONCE: ${challenge1.nonce}`,
+    contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: ${challenge1.nonce}|${r1StandardsHash}` }]],
+  });
+
+  const r2SpecHash = createHash('sha256')
+    .update(await readFile(path.join(feature, 'review', 'r2-spec-axis.md')))
+    .digest('hex');
+  await writeSubagent(configDir, dir, {
+    name: 'agent-r2-spec',
+    binding: '.scratch/feature|r2|spec',
+    promptExtra: `QA_REVIEW_NONCE: ${challenge2.nonce}\n待复核编号：P-W1`,
+    contents: [[{ type: 'text', text: `QA_REVIEW_RECEIPT: ${challenge2.nonce}|${r2SpecHash}` }]],
+  });
+
+  const report = await checkFeature(feature, 'review');
+  assert.equal(report.status, 'PASS', formatReport(report));
+  assert.ok(!codes(report).includes('REVIEW_SOURCE_STALE'), formatReport(report));
+  assert.ok(report.notes.includes('来源核验：转录（强）'), formatReport(report));
+});
+
+test('P0-TC04-1 同一 binding 存在多条转录时不静默覆盖事件时间，回退对应凭据时间', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge1 } = await singleAxisRepo(t);
+  await writeMainSession(configDir, dir);
+
+  const r1Time = new Date(Date.now() - 60_000).toISOString();
+  const fixStarted = new Date(Date.now() - 30_000).toISOString();
+  const futureConflictTime = new Date(Date.now() + 60_000).toISOString();
+
+  // r1-spec-axis 凭据时间为 r1Time；修复验证日志 started 在 r1Time 之后、但在冲突转录时间之前
+  await writeReceipt(feature, {
+    round: 'r1',
+    axis: 'spec',
+    nonce: challenge1.nonce,
+    completedAt: r1Time,
+  });
+  await writeFile(
+    path.join(feature, 'evidence', 'fix-verify.log'),
+    runLog({ argv: ['node', '--version'], started: fixStarted, finished: fixStarted, exit: 0 }),
+  );
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-W1 | 本次修 | 已修 | r1 发现 → r2 已修 | `evidence/fix-verify.log` | |',
+  ]));
+
+  // 同 binding（.scratch/feature|r1|spec）写入两条时间戳不同的转录，后者时间戳晚于 fixStarted
+  await writeSubagent(configDir, dir, {
+    name: 'agent-r1-spec-a',
+    binding: '.scratch/feature|r1|spec',
+    timestamp: r1Time,
+    contents: [[{ type: 'text', text: '[P-W1] 实现有误' }]],
+  });
+  await writeSubagent(configDir, dir, {
+    name: 'agent-r1-spec-b',
+    binding: '.scratch/feature|r1|spec',
+    timestamp: futureConflictTime,
+    contents: [[{ type: 'text', text: '[P-W1] 实现有误' }]],
+  });
+
+  const report = await checkFeature(feature, 'review');
+  assert.ok(!codes(report).includes('FIX_UNVERIFIED'), formatReport(report));
+  assert.equal(report.status, 'PASS', formatReport(report));
+});

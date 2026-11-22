@@ -811,3 +811,43 @@ test('ADR-0057 门禁日志、backlog 与发布验收状态同步', async () => 
   assert.match(report, /ADR-0057/);
   assert.match(report, /待发布验收/);
 });
+
+test('P0-TC06-1 setup-qa-workflow 将 triage-labels.md 标为仅安装 triage 时必选', async () => {
+  const setup = await read(paths.setup);
+  assert.match(setup, /docs\/agents\/issue-tracker\.md.*domain\.md/);
+  assert.match(setup, /仅.*安装.*`?triage`?.*必选[\s\S]*triage-labels\.md|triage-labels\.md.*仅.*安装.*`?triage`?.*必选/);
+});
+
+test('P0-TC06-2 qa-workflow-guide 人工独占表包含 to-tickets 与 retro，自动调用表不再含 retro', async () => {
+  const guide = await read(paths.guide);
+  const manualMatch = guide.match(/\| 只能人工敲的命令 \|[\s\S]*?\n\n/);
+  const autoMatch = guide.match(/\| 模型可自动调用、人也可手动调用 \|[\s\S]*?\n\n/);
+  assert.ok(manualMatch, '缺少「只能人工敲的命令」表');
+  assert.ok(autoMatch, '缺少「模型可自动调用、人也可手动调用」表');
+  assert.match(manualMatch[0], /\/to-tickets/);
+  assert.match(manualMatch[0], /\/retro/);
+  assert.doesNotMatch(autoMatch[0], /\bretro\b/);
+  assert.match(autoMatch[0], /qa-test-planner/);
+});
+
+test('P0-TC06-3 qa-check 与模板逐字一致且不再残留不存在的 qa:run 提示', async () => {
+  const [script, template] = await Promise.all([
+    read('tooling/scripts/qa-check.mjs'),
+    read('.claude/skills/setup-qa-workflow/templates/qa-check.mjs'),
+  ]);
+  assert.equal(script, template, 'qa-check.mjs 与安装模板须逐字一致');
+  assert.doesNotMatch(script, /\bqa:run\b/);
+});
+
+test('P0-TC06-4 security 与 git-workflow 规则清理失效智能体、未使用语言和错误大小写引用', async () => {
+  const [security, gitWorkflow] = await Promise.all([
+    read('.claude/rules/security.md'),
+    read('.claude/rules/git-workflow.md'),
+  ]);
+  assert.doesNotMatch(security, /security-reviewer/);
+  for (const unused of ['.vue', '.svelte', '.astro', '.py', '.go', '.java', '.kt', '.cs', '.php', '.rb', '.rs']) {
+    assert.ok(!security.includes(unused), `security.md 仍残留未使用扩展名 ${unused}`);
+  }
+  assert.doesNotMatch(gitWorkflow, /Agents\.md/);
+  assert.match(gitWorkflow, /AGENTS\.md/);
+});
