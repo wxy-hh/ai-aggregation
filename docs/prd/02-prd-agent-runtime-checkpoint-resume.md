@@ -1,7 +1,7 @@
 # 02 · PRD：Agent 运行时连接韧性与流式恢复 (Runtime Connection Resilience & Stream Resume)
 
 > **实现阶段**：Stage 2（核心架构突破：执行与连接解耦）
-> **文档版本**：v1.1 | **更新日期**：2026-11-22 | **规划状态**：需求已对齐，待 `/to-spec`
+> **文档版本**：v1.1 | **更新日期**：2026-11-23 | **规划状态**：已实现，r6 后机器门禁 PASS，待人工终审
 > **关联模块**：`apps/web/src/app/api/chat/_lib/`、`packages/shared/src/chat-stream-contract.ts`、`apps/web/src/stores/chat-store.ts`、`apps/web/src/lib/conversation/message-snapshots.ts`
 > **关联决策**：ADR-0061《Agent 执行与 HTTP 请求生命周期解耦：进程内运行注册表与事件重放》
 
@@ -227,3 +227,21 @@ export type ChatStreamRunAttachedEvent = {
 - 架构决策：`docs/adr/0061-agent-runtime-connection-resilience.md`
 - 术语定义：`GLOSSARY.md`「运行时韧性与流式恢复」——`LiveRun`、`RunEventLog`、`Attach`、`StreamResume`、`RunInterrupt`、`Abort`。
 - `Checkpoint` 在本项目中专指「智能体计划中的阶段节点」，不再表示运行时检查点。
+
+---
+
+## 8. 遗留问题与人工终审事项（2026-11-23 补充）
+
+截至 2026-11-23，r6 Spec-only 复审已修复 r5 残留的 6 行对账绑定；`final6-*` 交付验证、`gate-acceptance-12.log`、`gate-review-6.log` 均 PASS。机器门禁只校验审查材料结构、交付日志、tree 与范围完整性，不判断证据语义、独立来源与交付授权。以下事项仍需人工终审确认或补充处理：
+
+| 事项 | 当前事实 | 待确认/处理 |
+| :--- | :--- | :--- |
+| 九项真实浏览器验收与窄屏覆盖 | §5 列出九项验收；`qa-plan.md` 的 browser 只覆盖 TC01/02/03 三条链路，且只覆盖桌面视口；`screenshots/` 没有窄屏截图。完成后返回、并发、进程重启、审批跨刷新、配额准确性、日志回收主要只有 integration/unit 证据。 | 需确认是补充真实浏览器验收，还是把范围变更正式写入计划并接受现有 integration/unit 证据。 |
+| P-W01 重连文案回归 | 代码已把 `reconnectingAttempt` 文案移到流式分支上方（`message-item.tsx:762-765`）；但 TC02-1 已删除，`message-item.test.tsx:247-264` 只断言“重连放弃后”的「重新连接」/「停止」按钮，没有断言“正在重新连接（第 N 次）”文案；`review-report.md` 对 P-W01 引用的 `final6-message-item.log` 不能证明该文案。 | 需确认补充组件级文案断言，或接受仅源码审查、无回归断言。 |
+| `online` / `visibilitychange` 自动挂载 | 实现位于 `conversation-orchestrator.ts:68-79`；当前测试中未找到 `online`、`visibilitychange` 或 `resumePendingRuns` 对应用例。 | 需确认补充触发源测试，或由人工验证并接受该覆盖缺口。 |
+| TC03 停止截图口径 | `screenshots/tc03-stopped.png` 可见“已停止 · 未生成内容”，看不到 `tc03-browser-r12.log` 所称的 60 字正文；截图不能独立支撑 TC03-2 的数值。 | 需补充目标区域截图或可定位的 DOM 证据，或由人工接受日志口径。 |
+| TC01/TC02 非真实输入标注 | `gate-review-6.log` 仍对 `tc01-refresh-resume.mjs`、`tc02-offline-reconnect.mjs` 报 `SYNTHETIC_INPUT_IN_SCRIPT`；对账表把相关行标注为“非真实输入”。脚本本身通过真实 `fill`/`click`/`dblclick` 操作页面，`localStorage` 用于错误计数与重连观察。 | 需人工确认该标注是否满足真实输入要求。 |
+| r5 历史原文残留旧值 | r5 原文仍保留其审查时的 6 个旧实测值与旧源码行号；r6 是新的独立轮次并已按当前 checklist 复制 65 行，机器门禁以 r6 为准。r5 已封存，不能改写或删除 `.source.json` 重封。 | 保留 r5 为历史轮次，或由人工终审在交付说明中解释 r5 与 r6 的差异。 |
+| 交付汇报计数口径 | 当前 `qa-plan.md`、`reconciliation.md`、`spec-review-checklist.json`、`gate-acceptance-12.log` 均为 65 条断言；`git log 76a8b299..HEAD` 为 10 个提交。此前交付汇报曾写 64 条断言、9 个提交。 | 最终交付说明统一使用 65 条断言、10 个提交。 |
+
+以上事项不改变 §5 验收标准与 §6 Out of Scope；它们记录的是机器门禁无法自动判定的证据语义、覆盖范围与人工确认点。
