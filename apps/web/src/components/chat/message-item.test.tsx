@@ -262,6 +262,57 @@ describe('运行时状态入口（ADR-0061 / 工单 03-04）', () => {
     expect(screen.getByRole('button', { name: '重新连接' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument();
   });
+
+  it('流式重连期间显示正在重新连接文案', () => {
+    const message: Message = {
+      id: 'msg-reconnecting',
+      role: 'assistant',
+      content: '半截内容',
+      isStreaming: true,
+      runId: 'run-reconnecting',
+      runPending: true,
+      reconnectingAttempt: 2,
+    };
+
+    render(<MessageItem message={message} />);
+
+    // 文案必须在流式期间可见（P-W01：不得挪回非流式分支）
+    expect(screen.getByText('正在重新连接（第 2 次）…')).toBeInTheDocument();
+  });
+
+  it('重连文案不依赖重连放弃态', () => {
+    const message: Message = {
+      id: 'msg-reconnecting-active',
+      role: 'assistant',
+      content: '半截内容',
+      isStreaming: true,
+      runId: 'run-reconnecting-active',
+      runPending: true,
+      runReconnectFailed: false,
+      reconnectingAttempt: 3,
+    };
+
+    render(<MessageItem message={message} />);
+
+    // runReconnectFailed 为 false 时仍应显示，证明文案绑定 reconnectingAttempt 而非放弃态
+    expect(message.isStreaming).toBe(true);
+    expect(message.runReconnectFailed).toBe(false);
+    expect(screen.getByText('正在重新连接（第 3 次）…')).toBeInTheDocument();
+  });
+
+  it('无 reconnectingAttempt 时不显示重连文案', () => {
+    const message: Message = {
+      id: 'msg-streaming-normal',
+      role: 'assistant',
+      content: '正常流式内容',
+      isStreaming: true,
+      runId: 'run-streaming-normal',
+    };
+
+    render(<MessageItem message={message} />);
+
+    expect(screen.queryByText(/正在重新连接（第/)).not.toBeInTheDocument();
+  });
 });
 
 
