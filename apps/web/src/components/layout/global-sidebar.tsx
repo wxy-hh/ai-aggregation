@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Plus, Clock, Home, User, Shield } from 'lucide-react';
+import { Plus, Clock, Home, User, Shield, Activity } from 'lucide-react';
 import { ThemeToggle } from '../theme/theme-toggle';
 import { AppsModal, APP_CONFIGS, type AppId } from './apps-modal';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -200,16 +200,34 @@ export function GlobalSidebar() {
                   className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl backdrop-saturate-150 border border-white/50 dark:border-white/10 rounded-2xl shadow-xl shadow-indigo-500/10 flex flex-col items-center gap-3 py-3 px-2 mx-auto mb-3 overflow-hidden"
                 >
                   {user?.role === 'admin' && (
-                    <Link
-                      href="/admin/users"
-                      aria-label="打开系统用户管理"
-                      className={cn(
-                        bottomLinkBaseCls,
-                        pathname === '/admin/users' ? bottomLinkActiveCls : bottomLinkStateCls
-                      )}
-                    >
-                      <Shield className="w-5 h-5" />
-                    </Link>
+                    <>
+                      <Link
+                        href="/admin/eval"
+                        aria-label="打开评测中枢"
+                        title="评测中枢"
+                        className={cn(
+                          bottomLinkBaseCls,
+                          pathname.startsWith('/admin/eval')
+                            ? bottomLinkActiveCls
+                            : bottomLinkStateCls
+                        )}
+                      >
+                        <Activity className="w-5 h-5" />
+                      </Link>
+                      <Link
+                        href="/admin/users"
+                        aria-label="打开系统用户管理"
+                        title="系统用户管理"
+                        className={cn(
+                          bottomLinkBaseCls,
+                          pathname.startsWith('/admin/users')
+                            ? bottomLinkActiveCls
+                            : bottomLinkStateCls
+                        )}
+                      >
+                        <Shield className="w-5 h-5" />
+                      </Link>
+                    </>
                   )}
 
                   {/* 历史记录 */}

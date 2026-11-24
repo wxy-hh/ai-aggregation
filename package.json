@@ -28,6 +28,8 @@
     "test": "turbo test",
     "test:eval": "pnpm --filter @repo/web test:eval",
     "test:e2e": "turbo test:e2e",
+    "eval:agent": "tsx tooling/eval/cli.ts",
+    "eval:agent:ablation": "tsx tooling/eval/ablation.ts",
     "db:generate": "pnpm --filter @repo/db generate",
     "db:migrate": "pnpm --filter @repo/db migrate",
     "db:seed": "pnpm --filter @repo/db seed",

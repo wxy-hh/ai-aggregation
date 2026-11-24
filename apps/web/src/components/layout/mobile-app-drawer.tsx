@@ -12,6 +12,7 @@ import {
   History,
   Palette,
   ShieldCheck,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
@@ -25,6 +26,12 @@ interface MobileAppDrawerProps {
 const PRIMARY_APP_IDS = new Set(['chat', 'image', 'voice']);
 
 const QUICK_LINKS = [
+  {
+    href: '/admin/eval',
+    label: '评测中枢',
+    description: '查看 Agent 与 RAG 基准评测看板及消融实验',
+    icon: Activity,
+  },
   {
     href: '/admin/users',
     label: '系统用户管理',
@@ -59,6 +66,12 @@ const QUICK_LINK_ICON_STYLES: Record<
   (typeof QUICK_LINKS)[number]['href'],
   { iconBg: string; iconColor: string; iconRing: string }
 > = {
+  '/admin/eval': {
+    iconBg:
+      'bg-[linear-gradient(180deg,rgba(238,242,255,0.98),rgba(224,231,255,0.92))] dark:bg-[linear-gradient(180deg,rgba(30,41,80,0.92),rgba(24,33,65,0.88))]',
+    iconColor: 'text-[#4F46E5] dark:text-[#A5B4FC]',
+    iconRing: 'border-[#C7D2FE] dark:border-[#3730A3]',
+  },
   '/admin/users': {
     iconBg:
       'bg-[linear-gradient(180deg,rgba(239,244,255,0.98),rgba(225,235,255,0.92))] dark:bg-[linear-gradient(180deg,rgba(37,52,97,0.92),rgba(29,40,76,0.88))]',
@@ -134,7 +147,9 @@ export function MobileAppDrawer({ open, onOpenChange }: MobileAppDrawerProps) {
   const isAdmin = user?.role === 'admin';
 
   // 非管理员不显示管理入口
-  const filteredQuickLinks = QUICK_LINKS.filter((link) => link.href !== '/admin/users' || isAdmin);
+  const filteredQuickLinks = QUICK_LINKS.filter(
+    (link) => !link.href.startsWith('/admin') || isAdmin
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

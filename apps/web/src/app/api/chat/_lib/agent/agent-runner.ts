@@ -126,6 +126,8 @@ export interface AgentRunOptions {
   artifactContextPrompt?: string;
   /** 是否开启前置规划阶段（ADR-0038 / AGENT-PLAN-DAG，默认 true） */
   enablePlanning?: boolean;
+  /** 是否禁用质检反思节点（消融实验变量切缝，默认 false，即默认开启反思质检） */
+  disableEvaluator?: boolean;
   /** 审批凭证绑定的会话范围（AGENT-HITL-ACTION / ADR-0041），缺省为空串 */
   approvalScope?: string;
   /**
@@ -778,6 +780,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         // ==================== 收尾前独立质检节点与自愈 (AGENT-EVAL-CHECK / ADR-0039) ====================
         let evaluatorRetriesCount = 0;
         while (
+          !options.disableEvaluator &&
           !finalAnswerDelivered &&
           (recordedToolCalls.length > 0 || Boolean(currentPlan)) &&
           !signal.aborted &&

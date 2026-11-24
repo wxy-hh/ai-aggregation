@@ -689,5 +689,60 @@ model KnowledgeFaqQuestion {
   @@map("knowledge_faq_questions")
 }
 
+// ============================================
+// Agent 端到端评测基准与消融观测模型
+// ============================================
+
+model AgentEvalRun {
+  id               String                @id @default(uuid())
+  suiteId          String?               @map("suite_id")
+  runType          String                @default("standalone") @map("run_type") // "standalone" | "ablation" | "cross_model"
+  experimentLabel  String?               @map("experiment_label") // "基准全量组" | "混合检索无Rerank" | "无质检反思"
+  datasetVersion   String                @map("dataset_version")  // "agent-benchmark-v1"
+  modelProvider    String                @map("model_provider")   // "deepseek" | "doubao" | "xunfei"
+  modelId          String                @map("model_id")
+  commitHash       String?               @map("commit_hash")
+  isDirty          Boolean               @default(false) @map("is_dirty")
+  isBenchmark      Boolean               @default(true) @map("is_benchmark") // smoke 运行时为 false，不计入正式横评大盘
+  configSnapshot   Json                  @map("config_snapshot")  // 记录 Rerank、EvaluatorNode、MaxSteps 等开关
+  totalCases       Int                   @map("total_cases")
+  passedCases      Int                   @map("passed_cases")
+  passRate         Float                 @map("pass_rate")
+  avgLatencyMs     Float                 @map("avg_latency_ms")
+  totalTokens      Int                   @default(0) @map("total_tokens")
+  usageEstimated   Boolean               @default(false) @map("usage_estimated")
+  estimatedCostRmb Float                 @default(0) @map("estimated_cost_rmb")
+  judgeModel       String?               @map("judge_model")
+  avgJudgeScore    Float?                @map("avg_judge_score")
+  caseResults      AgentEvalCaseResult[]
+  createdAt        DateTime              @default(now()) @map("created_at")
+
+  @@index([suiteId])
+  @@index([modelProvider, modelId])
+  @@index([isBenchmark, createdAt])
+  @@map("agent_eval_runs")
+}
+
+model AgentEvalCaseResult {
+  id           String       @id @default(uuid())
+  evalRunId    String       @map("eval_run_id")
+  caseId       String       @map("case_id")
+  category     String       // "planning" | "tools" | "security" | "rag"
+  passed       Boolean
+  score        Float        @default(0) // 客观确定性得分：1.0 (通过) / 0.0 (未通过)
+  judgeScore   Float?       @map("judge_score") // 仅在启用裁判模型时记录 1.0~5.0 主观打分
+  latencyMs    Int          @map("latency_ms")
+  tokensUsed   Int          @map("tokens_used")
+  errorDetail  String?      @map("error_detail")
+  traceData    Json?        @map("trace_data") // 记录脱敏后的输入、AgentPlan、召回 chunk、工具调用与响应结果（上限 32KB）
+
+  evalRun      AgentEvalRun @relation(fields: [evalRunId], references: [id], onDelete: Cascade)
+
+  @@index([evalRunId, category])
+  @@index([caseId])
+  @@map("agent_eval_case_results")
+}
+
+
 
 

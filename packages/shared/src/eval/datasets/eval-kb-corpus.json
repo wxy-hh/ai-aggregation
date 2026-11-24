@@ -1,0 +1,37 @@
+{
+  "version": "eval-kb-corpus-v1",
+  "embeddingModel": "text-embedding-3-small",
+  "dimensions": 1024,
+  "chunks": [
+    {
+      "chunkId": "eval-kb-chunk-01",
+      "docTitle": "退款服务 SLA 规范",
+      "content": "普通会员退款申请在提交后，平台客服将于 2 个工作日内完成审核与工单受理。",
+      "fingerprint": "3fb204bdbb159a38321faf1b378f5f4e17058adff79bad3548cd6e32714145fd"
+    },
+    {
+      "chunkId": "eval-kb-chunk-02",
+      "docTitle": "充值算力包退订细则",
+      "content": "未消费的充值算力包支持在购买后 7 个自然日内申请原路全额退款，逾期转为平台积分。",
+      "fingerprint": "dc515a39e37f11af052c71c443c4e236c1fcd1c9b268fb7a492bc2993fb2a08c"
+    },
+    {
+      "chunkId": "eval-kb-chunk-03",
+      "docTitle": "版本能力与检索重排说明",
+      "content": "企业版支持高达 50 个并发 Agent 会话与 100GB 知识库容量；混合检索 Rerank 推荐截断得分阈值为 0.65。",
+      "fingerprint": "08719de8f4f27624219853576f964f5adfb221f2d7fdfb4228b4da56bdd0ca2d"
+    },
+    {
+      "chunkId": "eval-kb-chunk-04",
+      "docTitle": "API 签名与安全规范",
+      "content": "开放平台 API 请求头中的 x-signature 采用 HMAC-SHA256 签名，Webhook 回调采用 AES-256-GCM 加密推送。",
+      "fingerprint": "6badc51fc11ac93301ed9165ac764f022d824832c49a617ef61d2c23e47bda3f"
+    },
+    {
+      "chunkId": "eval-kb-chunk-05",
+      "docTitle": "密码合规与冲突裁决文档",
+      "content": "系统密码合规策略：文档 A 与文档 B 冲突时，密码最小长度统一以文档 B 的 12 位为准，必须包含大写字母与特殊字符。",
+      "fingerprint": "95a546ded263429b358a3beddb68eaf40cff2b0c826f8c5453e68e371e6faa3a"
+    }
+  ]
+}

@@ -76,6 +76,8 @@ export interface KnowledgeSearchDeps {
   ) => Promise<{ id: string; name: string } | null>;
   matchFaqFn?: (input: KnowledgeFaqMatchInput) => Promise<KnowledgeFaqMatchDecision>;
   rerankProvider?: RerankProvider;
+  /** 是否禁用二次语义精排（消融实验变量切缝，默认 false，即默认开启 Rerank） */
+  disableRerank?: boolean;
 }
 
 /** 默认查询用户可用知识库列表 */
@@ -233,6 +235,9 @@ export function createKnowledgeSearchTool(deps: KnowledgeSearchDeps = {}): Agent
 
         // 章节顺序通读模式：直接按切片顺序返回，无需 Cross-Encoder 打乱 (ADR-0036)
         if (isSequentialChapterMode) {
+          fusedChunks = uniqueCandidates.slice(0, effectiveTopK);
+        } else if (deps.disableRerank) {
+          // 消融实验：禁用二次精排，直接使用粗排分数截断
           fusedChunks = uniqueCandidates.slice(0, effectiveTopK);
         } else {
           // 执行跨库统一 Cross-Encoder Rerank 二次精排 (ADR-0030 / ARCH-CK-01)
