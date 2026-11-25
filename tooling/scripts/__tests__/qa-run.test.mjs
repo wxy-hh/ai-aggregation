@@ -300,3 +300,96 @@ test('TC04 emptyEvidenceReason 不误伤非空测试摘要', async () => {
   assert.equal(emptyEvidenceReason('| TC04-2 | PASS | 子进程输出 `No test files found` | 绑定 |'), null);
   assert.equal(emptyEvidenceReason('| TC04-3 | PASS | 子进程输出 `Test Files 0 passed (0)` | 绑定 |'), null);
 });
+
+test('支持原生 --script <path> 执行脚本并正确记录标准化 argv', async (t) => {
+  const dir = await repo(t);
+  const scriptPath = path.join(dir, '.scratch', 'feature', 'scripts', 'smoke.mjs');
+  await mkdir(path.dirname(scriptPath), { recursive: true });
+  await writeFile(
+    scriptPath,
+    [
+      'const diag = "await page.evaluate(() => { window.__consoleErrors = []; });";',
+      'console.log("脚本参数:" + process.argv.slice(2).join(","));',
+      'console.log("[TC01-1] PASS 实测：诊断长度=" + diag.length);',
+    ].join('\n'),
+  );
+  const result = spawnSync(
+    process.execPath,
+    [SCRIPT, '.scratch/feature', 'smoke-1', '--script', '.scratch/feature/scripts/smoke.mjs', '--', '--flag'],
+    { cwd: dir, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /脚本参数:--flag/);
+  const { parseRunLog } = await import(SCRIPT_URL.href);
+  const log = parseRunLog(await readFile(path.join(dir, '.scratch/feature/evidence/smoke-1.log'), 'utf8'));
+  assert.deepEqual(log.argv, [process.execPath, '.scratch/feature/scripts/smoke.mjs', '--flag']);
+
+  // 同条用例一并验证只读诊断采集不触发 SYNTHETIC_INPUT 与 hasNoFinding 中文否定变体
+  await writeFile(
+    scriptPath,
+    'const page = { evaluate: (fn) => fn() };\nconst window = {};\npage.evaluate(() => { window.__consoleErrors = []; });\nconsole.log("[TC01-1] PASS 实测：只读诊断正常");\n',
+  );
+  await mkdir(path.join(dir, '.scratch', 'feature', 'screenshots'), { recursive: true });
+  await writeFile(path.join(dir, '.scratch', 'feature', 'screenshots', 'TC01.png'), 'png');
+  await writeFile(path.join(dir, '.scratch', 'feature', 'spec.md'), '## User Stories\n1. 诊断采集\n\n## 交付命令\n```bash\nnode --version\n```\n');
+  await writeFile(
+    path.join(dir, '.scratch', 'feature', 'qa-plan.md'),
+    [
+      'QA Schema: 4',
+      'QA Mode: inline',
+      '### TC01: 诊断脚手架',
+      '- Priority: P0',
+      '- Covers: 1',
+      '- Seam: browser',
+      '#### 验证断言',
+      '1. 诊断正常',
+      '## 执行记录',
+      '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| TC01 | 1 | PASS | `screenshots/TC01.png`、`evidence/smoke-1.log` | | |',
+      '## 交付验证',
+      '| 命令 | 证据 |',
+      '| --- | --- |',
+      '| `node --version` | 待执行 |',
+    ].join('\n'),
+  );
+  const { checkFeature } = await import(new URL('../qa-check.mjs', import.meta.url).href);
+  const { hasNoFinding } = await import(new URL('../qa-spec-review.mjs', import.meta.url).href);
+  const acc = await checkFeature(path.join(dir, '.scratch', 'feature'), 'acceptance');
+  assert.equal(acc.status, 'PASS');
+  assert.ok(!acc.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')));
+  assert.equal(hasNoFinding('无新增审查发现'), true);
+  assert.equal(hasNoFinding('无新增编号'), true);
+});
+
+test('普通命令中自带 --script 参数时不被 qa-run 劫持', async (t) => {
+  const dir = await repo(t);
+  const result = spawnSync(
+    process.execPath,
+    [
+      SCRIPT,
+      '.scratch/feature',
+      'literal-script-flag',
+      '--',
+      process.execPath,
+      '-e',
+      'console.log(process.argv.slice(1).join("|"))',
+      '--',
+      '--script',
+      'literal.mjs',
+    ],
+    { cwd: dir, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /--script\|literal\.mjs/);
+  const { parseRunLog } = await import(SCRIPT_URL.href);
+  const log = parseRunLog(await readFile(path.join(dir, '.scratch/feature/evidence/literal-script-flag.log'), 'utf8'));
+  assert.deepEqual(log.argv, [
+    process.execPath,
+    '-e',
+    'console.log(process.argv.slice(1).join("|"))',
+    '--',
+    '--script',
+    'literal.mjs',
+  ]);
+});

@@ -190,7 +190,7 @@ test('安装流程模板不把未分发模块写死为唯一实现（TC08）', a
 
 test('工具索引列出全部可分发 QA 工具与视觉目标原语（TC08）', async () => {
   const readme = await read('tooling/scripts/README.md');
-  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-spec-review.mjs', 'qa-browser-helper.mjs', 'captureTargetGeometry', 'gate-plan-*']) {
+  for (const required of ['qa-check.mjs', 'review-package.mjs', 'qa-run.mjs', 'qa-spec-review.mjs', 'qa-preflight.mjs', 'qa-browser-helper.mjs', 'captureTargetGeometry', 'gate-plan-*']) {
     assert.match(readme, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
   assert.doesNotMatch(readme, /三个脚本的逐字一致性/);
@@ -895,12 +895,37 @@ test('P1-TC07-3 ask-matt 清理不存在的上游技能并收录本仓核心技�
   assert.match(teachGlossary, /落盘至\s*GLOSSARY\.md/);
 });
 
-test('P1-TC07-4 qa-check、qa-spec-review 与 qa-browser-helper 三个脚本均与安装模板逐字一致', async () => {
-  for (const name of ['qa-check.mjs', 'qa-spec-review.mjs', 'qa-browser-helper.mjs']) {
+test('P1-TC07-4 qa-check、qa-spec-review、qa-preflight 与 qa-browser-helper 脚本均与安装模板逐字一致', async () => {
+  for (const name of ['qa-check.mjs', 'qa-spec-review.mjs', 'qa-preflight.mjs', 'qa-browser-helper.mjs']) {
     const [tool, template] = await Promise.all([
       read(`tooling/scripts/${name}`),
       read(`.claude/skills/setup-qa-workflow/templates/${name}`),
     ]);
     assert.equal(tool, template, `${name} 与安装模板不一致`);
   }
+});
+
+test('ADR-0065 v2.1 正本、模板与技能同步对账 v2、双指纹免重跑、preflight 与 0 子代理硬拦截', async () => {
+  const adr = await read('docs/adr/0065-qa-workflow-v2-review-ergonomics.md');
+  assert.match(adr, /修订并局部取代 ADR-0057/);
+  for (const file of [paths.workflow, paths.workflowTemplate]) {
+    const content = await read(file);
+    for (const token of [
+      'QA Review Coverage: 2',
+      'spec-review-skeleton.md',
+      'qa-preflight',
+      'qaArtifactsDigest',
+      'STALE_QA_ARTIFACTS',
+      'REVIEW_PROVENANCE_UNVERIFIED',
+      'ADR-0065',
+    ]) {
+      assert.match(content, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), file);
+    }
+    assert.ok(content.trim().split('\n').length <= 180, `${file} 超过 180 行契约锁`);
+  }
+  const setup = await read(paths.setup);
+  assert.match(setup, /templates\/qa-preflight\.mjs/);
+  const reviewSkill = await read('.claude/skills/code-review/SKILL.md');
+  assert.match(reviewSkill, /抽检范围/);
+  assert.match(reviewSkill, /±5/);
 });

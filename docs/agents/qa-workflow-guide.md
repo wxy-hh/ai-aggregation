@@ -174,8 +174,8 @@ node tooling/scripts/qa-run.mjs .scratch/<feature> gate-review-final -- node too
 - unit/integration 行写绑定：反引号里是相对仓库根的测试文件，`›` 后是源码里的叶子标题（不用写 describe 路径；参数化测试照抄源码里的 `%s` 写法）。
 - 绑定写错只改这一列，重跑 `qa-check acceptance` 即可，不用重跑测试。
 - 修复已交付特性时，计划头写 `QA Kind: fix`，每个 TC 在 `## 修复前复现` 引用同 argv、更早且 tree 不同的红日志；不改写原特性的执行记录。
-- 新计划声明 `QA Review Coverage: 1`；acceptance 同步生成 SpecReviewChecklist，Spec 原文以 `## 对账覆盖` 逐项响应。计划删改断言、Seam、Covers 或交付命令必须写进 `## 计划变更`，变化断言由 Spec 轴判 `变更成立/变更不成立`。当前/base 均不存在的白名单新路径须列入 `## 计划新建路径`。
-- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；不再要求 `collect` 前预跑，最终交付命令在全部浏览器验收、当前独立审查和必要复审完成后执行，新协议过早日志报 `VERIFICATION_BEFORE_REVIEW`。阶段 7 修码必须回阶段 6，未改代码的环境重试不触发复审。
+- 新计划声明 `QA Review Coverage: 2`（兼容 `1`）：acceptance 同步生成带 `required` 分级的 SpecReviewChecklist 与 4 列骨架 `spec-review-skeleton.md`，Spec 原文以 4 列表响应必审项并补充 `## 抽检范围`，全版本须在目标行前后 ±5 行命中真实测试或断言谓词；`seal` 写凭据前会同步拦下格式/对账错漏。计划删改断言、Seam、Covers 或交付命令须写进 `## 计划变更`，变化断言由 Spec 轴判 `变更成立/变更不成立`。当前/base 均不存在的白名单新路径须列入 `## 计划新建路径`。
+- 交付验证原样复制 spec 的 `## 交付命令`，可追加不可删减；不再要求 `collect` 前预跑，阶段 4 收尾与 `collect` 前默认运行 1 秒 `qa-preflight` 清理伪断言、命令不一致、英文注释及色值/热区警告。新版审查包以 `evidenceTree` 与 `qaArtifactsDigest` 双指纹判断新鲜度：双指纹均未变时既有同 tree 绿日志免除 `VERIFICATION_BEFORE_REVIEW` 重跑，仅 QA 产物变化报 `STALE_QA_ARTIFACTS`；阶段 7 修码必须回阶段 6，未改代码的环境重试不触发复审。
 - 阶段 5 默认只规划 1–3 条核心真实浏览器主链路与关键视口；组件测试能覆盖的故障注入与分支矩阵不下放到浏览器。
 
 ### 2. 过程脚本的断言标记
@@ -223,7 +223,7 @@ console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
 await browser.close();
 ```
 
-遵循宿主工具优先级；轻量脚本由 Node 直接执行，不走 `playwright test`；原生 Node 驱动要求根级直接开发依赖 `playwright`。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何与截图不得替换成标题、状态卡或整页。`qa-browser-helper.mjs` 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，硬断言后按矩形裁剪；未提供 helper 时按同一契约自写，移动视口同样负责设置和 finally 复位。安装器会随四个核心工具分发该辅助模块模板。
+遵循宿主工具优先级；轻量脚本由 Node 直接执行，不走 `playwright test`；原生 Node 驱动要求根级直接开发依赖 `playwright`。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何与截图不得替换成标题、状态卡或整页。`qa-browser-helper.mjs` 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，硬断言后按矩形裁剪；未提供 helper 时按同一契约自写，移动视口同样负责设置和 finally 复位。安装器会随五个核心工具分发该辅助模块模板。
 
 截图不能证明数值，也不能单独证明可见：先让目标处于无遮挡位置，脚本硬断言目标与视口相交且代表点未被其他元素遮挡，再截取目标区域；断言未溢出时另断言边界与滚动尺寸。Spec 轴审查仍会按冻结断言原文复核截图。
 

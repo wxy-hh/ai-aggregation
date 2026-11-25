@@ -1,23 +1,23 @@
 # QA 工作流优化记录
 
 > 生成时间：2026-11-05
-> 最近更新：2026-11-22（补充双报告联合审计后的 Phase 1 P0 止血与 Phase 2 P1 双栈/解析器/技能闭环优化）
-> 范围：2026-10-08 ~ 2026-11-22 之间以 QA 工作流为主体的 32 次主仓提交；另记录通用仓同步提交 `d1fc362`
+> 最近更新：2026-11-25（补充真实业务试跑复盘驱动的 v2.1 Batch 1 审查降负、预检前置与防线闭环优化）
+> 范围：2026-10-08 ~ 2026-11-25 之间以 QA 工作流为主体的 32 次已提交主仓优化 + 1 次本次在途优化（v2.1 Batch 1，ADR-0065）；另记录通用仓同步提交 `d1fc362`
 > 数据来源：git 提交历史、提交说明、`docs/adr/` 决策记录、两仓测试与发布 lint；各次真实运行的复盘材料位于本机 `.scratch/`（不入库，见 `docs/agents/issue-tracker.md`）
-> 相关文件：正本 `docs/agents/qa-workflow.md`、参考书 `docs/agents/qa-workflow-guide.md`、检查器 `tooling/scripts/qa-check.mjs` / `qa-run.mjs` / `review-package.mjs`、浏览器辅助 `tooling/scripts/qa-browser-helper.mjs`、契约测试 `tooling/scripts/__tests__/qa-workflow-contract.test.mjs`
+> 相关文件：正本 `docs/agents/qa-workflow.md`、参考书 `docs/agents/qa-workflow-guide.md`、检查器 `tooling/scripts/qa-check.mjs` / `qa-run.mjs` / `review-package.mjs` / `qa-spec-review.mjs` / `qa-preflight.mjs`、浏览器辅助 `tooling/scripts/qa-browser-helper.mjs`、基线统计 `docs/reports/qa-wf-02-baseline-2026-11-25.md`、契约测试 `tooling/scripts/__tests__/qa-workflow-contract.test.mjs`
 > 本轮审计与收敛修复的详细记录：`docs/reports/2026-11-18-qa-workflow-audit-remediation.md`
 
 ## 概览
 
-截至 11-22，共 32 次主仓提交（含本次 Phase 1 P0 止血与 Phase 2 P1 双栈/解析器/技能闭环优化；不含通用仓同步提交）。三个核心产物的规模变化：
+截至 11-25，共 32 次已提交主仓优化 + 1 次本次在途优化（`ADR-0065` v2.1 Batch 1；不含通用仓同步提交）。三个核心产物的规模变化：
 
-| 产物 | 起点 | 现状（11-22） |
+| 产物 | 起点 | 现状（11-25） |
 | --- | --- | --- |
 | 正本 `qa-workflow.md` | 86 行（初版） | 179 行（契约测试上限 180 行） |
-| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 3112 行；工具测试 381 项全过 |
-| QA 相关 ADR | 0 | 14 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054、0057 |
+| 检查器 `qa-check.mjs` | 0（10-25 随安装模板引入） | 3071 行；工具测试 398 项全过 |
+| QA 相关 ADR | 0 | 15 份：0023、0024、0026、0031、0033、0035、0040、0042、0043、0044、0047、0048、0054、0057、0065 |
 
-每次大改动几乎都源自一次真实运行暴露的问题，而不是预先设计：agent-kb-loop 暴露了审查闭环漏洞（ADR-0033/0035），KB-CHAT-CITE 与知识库预览修复暴露了证据造假路径（ADR-0026），agent-hitl-action 暴露了流程成本倒挂（ADR-0042），一次外部评价暴露了车道与宿主缺口（ADR-0043/0044），四次真实需求复盘又暴露了审查来源、事件时间与正文编号语义边界（ADR-0047 及 ADR-0040 修订）。本记录按七个阶段逐次说明。
+每次大改动几乎都源自一次真实运行暴露的问题，而不是预先设计：agent-kb-loop 暴露了审查闭环漏洞（ADR-0033/0035），KB-CHAT-CITE 与知识库预览修复暴露了证据造假路径（ADR-0026），agent-hitl-action 暴露了流程成本倒挂（ADR-0042），一次外部评价暴露了车道与宿主缺口（ADR-0043/0044），四次真实需求复盘又暴露了审查来源、事件时间与正文编号语义边界（ADR-0047 及 ADR-0040 修订），而在真实业务多特性交付中积累的四份复盘证据又暴露了阶段 6 计算/认知错配、全量手抄表反噬、封存后格式返工、`.scratch/` 新鲜度盲区与防自签漏洞（ADR-0065）。本记录按十一个阶段逐次说明。
 
 ## 阶段一：奠基与门禁（10-08 ~ 10-16，7 次）
 
@@ -237,7 +237,7 @@
   3. **死锁解除与文档/规则对齐（OPT-06/07/08）**：`setup-qa-workflow/SKILL.md` 将 `triage-labels.md` 改为仅安装 `triage` 时必选；尊重既有契约测试保持 `qa-test-planner` 允许模型调用，修正 `qa-workflow-guide.md` 人工独占表补入 `/to-tickets` 与 `/retro`；清理 `.claude/rules/security.md` 与 `git-workflow.md` 模板残留。
 - **验证与审查**：先红后绿新增 8 条回归与契约测试（`369/369` 全绿，`delivery-01.log`）；Antigravity 宿主下完成 r1/r2 两轮独立子代理双轴审查（r1 捕获并闭环 `[S-J1]` 与 `[P-M1]`，r2 双轴零新发现）；`gate-review-01` 机器校验 `PASS`（来源核验：自述凭据（弱）），经人工终审确认后本地提交 `e4e9c0d`。
 
-### 32. Phase 2：浏览器双栈兼容、解析器词法加固与技能生态闭环（11-22）
+### 32. `9b51c32` Phase 2：浏览器双栈兼容、解析器词法加固与技能生态闭环（11-22）
 
 - **解决什么**：`qa-browser-helper.mjs` 的 `captureMobileGeometry` 直接调用 `ego-browser` 专有 `page.cdp`，Playwright 侧无法复用；`splitMarkdownRow` 未支持转义 `\|` 与 `qa-spec-review.mjs` 实现分裂；`importedSpecifiers` 逐行扫描可被跨行动态 `import()`/`require()` 绕过；`pnpm-workspace.yaml` 解析不支持行尾 `#` 注释、多级 glob 与 `!` 排除项；`stripComments` 缺少 Python 三引号与 JS 模板字符串 `${...}` 嵌套注释/引号处理；`r4+` 超上限无提醒且 `WORKFLOW_SKILLS` 遗漏闭环技能；部分技能存在衔接与红线张力（`diagnosing-bugs`、`resolving-merge-conflicts`、`deploy-prod`、`ask-matt`、`to-tickets`、`code-review`）及 `docs/teach/qa-workflow/GLOSSARY.md` 残留 `CONTEXT.md` 旧口径。
 - **主要改动**（17 个文件，+852/-132，特性目录 `.scratch/qa-workflow-p1-ergonomics/`）：
@@ -246,13 +246,29 @@
   3. **超上限提醒与技能闭环（OPT-12/13）**：`r4+` 轮次输出超自动复审上限强 `NOTE`（不新增硬阻断）；`WORKFLOW_SKILLS` 补全 `grill-me`、`domain-modeling`、`codebase-design`、`setup-qa-workflow`；`diagnosing-bugs` 与 `resolving-merge-conflicts` 尾部追加项目定制并同步 `templates/skill-customizations.md`；`deploy-prod` 预检增加终审状态核对；`ask-matt` 清理 3 个不存在上游技能并补列本仓核心技能；`to-tickets`/`code-review` 补齐上游升级保留标记；修正 `docs/teach/qa-workflow/GLOSSARY.md` 为 `GLOSSARY.md`；全部 5 个核心脚本与安装模板保持逐字节一致。
 - **验证与审查**：先红后绿新增 12 条回归与契约测试，全套交付单测 `381/381` 全绿（`delivery-02.log`）；Antigravity 宿主下完成 r1/r2/r3 三轮独立子代理双轴审查（r1 捕获并闭环 `[S-H1]`、`[S-J1]`、`[P-W1]`、`[P-W2]`；`delivery-01` 暴露 `TC08-1` 路径拼接回归后修复并经 r3 双轴零发现闭环）；`gate-review-01` 机器校验 `PASS`（来源核验：自述凭据（弱）），经人工终审确认后提交。本阶段仅优化工具与技能，不冒充 `QA-WF-01` 干净会话业务核心链路 dogfood，发布验收债仍由下一次真实业务需求关闭。
 
+## 阶段十一：真实业务复盘驱动的 v2.1 审查降负与防线闭环（11-25，ADR-0065，待发布验收）
+
+### 33. v2.1 Batch 1：静态预检前置、`seal` 同步阻断、v2 必审对账、双指纹与 0 子代理硬拦截（待发布验收）
+
+- **解决什么**：聚合四份真实业务试跑（`agent-eval-benchmark-dashboard`、`agent-runtime-resilience`、`agent-runtime-resilience-delivery-closure`、`mcp-integration-governance`）完成只读基线统计（`QA-WF-02`，见 `docs/reports/qa-wf-02-baseline-2026-11-25.md`：14 条唯一编号、40 处 `:1` 引用、1 处 `check(true)` 伪断言、170 条 `SPEC_REVIEW_SOURCE_INVALID`、113 条 `SPEC_PLAN_CHANGE_REVIEW_MISSING`、25 条 `VERIFICATION_BEFORE_REVIEW` 等），并经独立对抗审查与 5 轮 `/grill-me` 决策收敛（`docs/plans/2026-11-25-qa-workflow-v2-first-principles-redesign.md`、`docs/plans/2026-11-25-qa-workflow-v2-adversarial-review-and-ablation.md`），识别阶段 6 四类根因：① **计算与认知错配**：`mcp` 70 文件全量双轴 47.2m 仅抓出 3 处可 1 秒机检的样式与英文注释 S-H，且因漏改单行按钮 `h-10` 用尽 r3 上限；`closure` 出现 `check(true)` 伪断言；② **全量手抄表反噬与 `:1` 漏洞**：`mcp` r1 Spec 抄写 106 行五列表耗尽 70.0m / 282 次调用并在后半段幻觉；`eval` `r4-spec-axis.md` 40 行全填 `:1` 且 0 工作流子代理自签却 `PASS`；③ **先封存再检格式与四处机械误报**：「无新增审查发现」未命中 `hasNoFinding`、`.scratch/<feature>/` 前缀未剥离、只读诊断采集误报 `SYNTHETIC_INPUT`、`sh -c` 包装致命令不匹配；④ **`.scratch/` 盲区死锁**：`evidenceTree` 忽略 `.scratch/` 迫使审后无差别重跑全部交付命令，在 `resilience` 触发动态日志字符数漂移死锁。
+- **主要改动**（创建 `ADR-0065` 修订并局部取代 `ADR-0057`，特性目录 `.scratch/qa-workflow-v2-batch1/`）：
+  1. **1 秒本地静态预检（`tooling/scripts/qa-preflight.mjs`）**：在阶段 4 收尾与 `review-package collect` 默认执行（支持 `--skip-preflight` 应急与 `--strict`）：ERROR 级拦截 `scripts/` 字面永真伪断言（`check(true)`/`assert(true)`/`assert.ok(true)`/`expect(true).toBe(true)`/缺非零退出）及 `spec.md`/`qa-plan.md` 交付命令不一致或空操作占位；WARN 级提示 Diff 纯英文注释（剥离字符串字面量）、非 `DESIGN.md` 白名单十六进制色值（跳过单行注释）与同文件交互按钮 `<44px`（跨行 JSX 开标签追踪）全量行号。明确仅清场静态违规，不替代 Spec 语义与人工终审。
+  2. **封存前同步校验、误报修复与 0 子代理硬拦截**：共享校验逻辑全部收敛至 `tooling/scripts/qa-spec-review.mjs` 供 `review-package.mjs seal` 在生成 `.source.json` 前同步阻断，消灭纯格式废轮；修复 `hasNoFinding` 中文否定变体、路径前缀归一化、`SYNTHETIC_INPUT` 放行只读诊断采集（含挂点初始化、`push` 与只读属性读取）及 `qa-run --script <path>`（仅截获前导入口参数，不劫持普通命令自带的 `--script`）；在 Claude Code 主会话目录可读且存在本项目主会话转录时，若未复用轴自称 Claude `subagent` 却既无 `code-review` 调用又无未复用轴同 nonce 子代理转录，升级为 `BLOCKED`（`REVIEW_PROVENANCE_UNVERIFIED`），对外部宿主与 `external-session` 保持零误伤。
+  3. **`QA Review Coverage: 2` 分级对账与封堵 `:1`**：兼容 `v1` 五列表；`v2` 清单按 `changed=true`、`browser`/`api`、`status≠PASS` 或 `Priority=P0` 自动标注 `required` 必审行并由 `acceptance` 生成预填骨架 `_qa/spec-review-skeleton.md`，Spec 原文改为四列表仅核对必审项，存在常规通过项时要求真实填写 `## 抽检范围`（禁止空标题或保留骨架 `<请写出...>` 占位符）；全版本 `citationIsValid` 要求引用目标行前后 `±5` 行窗口（排除 `import` 与注释）命中真实测试或断言谓词及非零退出分支，彻底拦下 `:1` 敷衍。
+  4. **`qaArtifactsDigest` 双指纹新鲜度与免重跑**：`review-package.json` 新增 `qaArtifactsDigest`（哈希 `scripts/`、`screenshots/` 与剔除 `## 交付验证` 段的 `qa-plan.md`）；仅 QA 产物变化报 `STALE_QA_ARTIFACTS`（`BLOCKED`）；新版 `evidenceTree` 与 `qaArtifactsDigest` 双指纹均未变时，既有同 tree、`exit 0` 且不早于基线的交付日志免除 `VERIFICATION_BEFORE_REVIEW` 重跑（不绕过门禁日志与人工时序提示）。
+  5. **文档与模板同步**：更新正本（179 行 `<= 180`）、指南、`code-review` / `qa-test-planner` / `implement` / `setup-qa-workflow` 技能、`tooling/scripts/README.md`、`skill-customizations.md` 及安装模板 `qa-workflow.md`（180 行）与五个核心工具脚本，并保持与模板逐字节一致。
+- **否决与暂缓边界**：明确否决「主代理高危快审制度化」与「429 自动续传」；将单轴分级豁免（`Level A/B/C`）、`OPT-10` Playwright `storageState`、`qa-browser-helper.mjs` DPR/原生截图修复、大特性拆审与 `/handoff` 版本化留待 Batch 2 / 专项 ADR 推进。
+- **审查闭环与亲自复审补强**：
+  - 标准车道内经 TDD 先红后绿完成 r1–r3 独立双轴审查闭环（r1 捕获并修复 `[S-H1]`、`[S-J1~S-J3]`、`[P-W1]`、`[P-W2]`，`[S-J4]` 默认驳回；r2 复核 `TC03-2`；r3 双轴判已修且无新发现；`gate-review-2` 机器校验 `PASS`，来源核验：自述凭据（弱））。
+  - r3 后规划模型亲自对全部改动做拉网复审，进一步查出并补齐 7 项边界与索引漂移（`qa-run --script` 防误劫持、`qa-spec-review` 中文否定/`process.exitCode = 0` 正则回溯/`## 抽检范围` 防空标题绕过、`qa-check` 单轴复用防逃逸与诊断只读属性放行、`qa-preflight` 永真字面/注释色值/`extractOpeningTagWindow` 跨行按钮窗口，以及 `README.md`、`qa-workflow-guide.md`、`implement/SKILL.md` 与 `skill-customizations.md` 索引同步），补充对应回归测试至全量 **398/398 通过（fail 0）**、ESLint 通过、`qa-preflight` 0 ERROR / 0 WARN、模板与工具逐字节一致。本次亲自复审补强已同步刷新 `qa-plan`、`gate-acceptance` 与 `r4` 审查包，不冒充 r4 独立子代理凭据；真实业务干净会话 `/implement` dogfood 与最终人工终审仍保留「待发布验收」。
+
 ## 规律小结
 
-1. **改动由真实运行驱动**：32 次主仓提交中至少 12 次的直接来源是真实需求复盘或跨视角源码审计（本地 `.scratch/` 复盘、双报告核验与 ADR 背景一节都可查证）。
-2. **文档与检查器成对演进**：规则先写进正本，能机械判定的部分随后进 qa-check，由契约测试防止多处文档副本漂移；ADR-0048 把 Claude 专用声明推进为宿主无关的 challenge/receipt 产物，ADR-0054 又通过双树、单轴复用与真实脚本测试减少无效重跑，同时把真实性判断留给人工终审。
-3. **降噪与加规则交替进行**：0033/0035 加门禁，0040/0042 与 ADR-0047 做减法；ADR-0042 明确"同类问题两轮之后仍只能靠提示词约束的，转为人工检查项"，ADR-0047 把机器无法可靠完成的“从正文发现缺陷”交还人工终审，ADR-0054 则明确只有实质审查输入未变时才允许单轴复用。
-4. **通用性来自路径与依赖边界**：普通 `code-review` 与 QA 专用协议并存，原生 Playwright 由宿主根项目声明直接依赖，安装器只检测不修改清单；项目定制可保留，但不进入通用仓。
-5. **遗留事项**：发布验收 dogfood（`QA-WF-01`，正本阶段 7 要求）、审查发现分类统计（`QA-WF-02`）、QA-WF-06 人工终审、CLAUDE.md 精简（`QA-WF-07`）等在 `docs/plans/qa-workflow-backlog.md` 跟踪；本阶段按用户指令跳过 r3 双轴，本轮同样按用户指令未补 r2 Standards 独立审查，均不冒充发布验收。
+1. **改动由真实运行驱动**：截至 11-25 全部 33 次主仓演变中，绝大部分关键改造直接源自真实需求复盘、跨视角审计与定量基线统计（本地 `.scratch/` 复盘、`QA-WF-02` 基线报告与 ADR 背景一节均可查证）。
+2. **文档、预检与门禁按计算/认知成本分层**：规则先写进正本，由契约测试防止多处副本漂移；纯字面静态规则前移至 1 秒确定性 `qa-preflight` 与 `seal` 同步阻断；Spec 审查按 `required` 风险分级并核验 `±5` 行真实谓词；双指纹覆盖 `.scratch/` 后解除无改动冗余重跑；语义真伪判断继续交给独立子代理与人工终审。
+3. **降噪与加规则交替进行**：0033/0035 加门禁，0040/0042 与 ADR-0047 做减法，ADR-0054 减少无意义重跑，ADR-0065 在消融四特性真实成本后清理四处机械误报与手抄重负的同时补上 `:1` 敷衍与 Claude 0 子代理防逃逸硬门禁。
+4. **通用性来自路径与依赖边界**：普通 `code-review` 与 QA 专用协议并存，原生 Playwright 由宿主根项目声明直接依赖，五个工具脚本与安装模板始终逐字节同步；项目定制可保留，但不进入通用仓。
+5. **遗留事项**：干净会话真实 `/implement` dogfood 发布验收（`QA-WF-01`）、Batch 1 上线后按双轨指标对 `QA-WF-02` 的复测验证、QA-WF-06 人工终审及 CLAUDE.md 精简（`QA-WF-07`）等在 `docs/plans/qa-workflow-backlog.md` 跟踪。
 
 ## 附：提交速查表
 
@@ -288,6 +304,7 @@
 | 28 | 11-17 | `825d021` | 工作流减负、浏览器分流与通用性校准 | 0054（待发布验收） |
 | 29-30 | 11-18 | `5d05aaa` | ADR-0057 语义证据硬化与双模型审计收敛 | 0057（待独立审查） |
 | 31 | 11-22 | `e4e9c0d` | 双报告联合审计 Phase 1：含凭据脚本清理与 P0 门禁/规则止血 | — |
-| 32 | 11-22 | 本次提交 | 双报告联合审计 Phase 2：浏览器双栈、解析器加固与技能闭环 | — |
+| 32 | 11-22 | `9b51c32` | 双报告联合审计 Phase 2：浏览器双栈、解析器加固与技能闭环 | — |
+| 33 | 11-25 | 本次待提交 | v2.1 Batch 1：预检前置、`seal` 阻断、v2 必审对账、双指纹与 0 子代理硬拦截 | 0065（修订 0057，待发布验收） |
 
-通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 32 次序号）。
+通用仓同步提交：`d1fc362 fix(qa): 提升浏览器依赖与审查兼容性`（不计入主仓 32 次已提交序号）。

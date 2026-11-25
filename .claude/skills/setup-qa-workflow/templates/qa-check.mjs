@@ -6,15 +6,24 @@ import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { computeEvidenceTreeDigest, computeTreeDigest, inScope, QA_DIR, readScope, RECEIPT_LINE_PATTERN } from './review-package.mjs';
+import { computeEvidenceTreeDigest, computeQaArtifactsDigest, computeTreeDigest, inScope, QA_DIR, readScope, RECEIPT_LINE_PATTERN } from './review-package.mjs';
 import { emptyEvidenceReason, formatCommand, parseRunLog, splitShellWords } from './qa-run.mjs';
 import {
+  FINDING_ID_PATTERN,
+  HAS_FINDING_ID,
+  hasNoFinding,
+  NO_FINDING_AFTER_ID,
   parseSpecReviewChecklist,
-  parseSpecReviewCoverage,
+  rawHasFindingOrNoFinding,
   SPEC_REVIEW_CHECKLIST_FILE,
+  SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_CHECKLIST_VERSION,
+  SPEC_REVIEW_SKELETON_FILE,
   specReviewChecklistDocument,
+  specReviewCoverageIssues,
+  specReviewSkeletonDocument,
   splitMarkdownRow,
+  SUPPORTED_CHECKLIST_VERSIONS,
 } from './qa-spec-review.mjs';
 
 export { splitMarkdownRow };
@@ -77,17 +86,7 @@ const RESPONSE_INJECTION_PATTERNS = [
   { label: 'cy.intercept(', pattern: /\bcy\.intercept\s*\(/ },
   { label: 'MSW 处理器', pattern: /\b(?:http|rest)\.(?:get|post|put|patch|delete|all)\s*\(/ },
 ];
-// 审查编号：S-H 规范硬违规、S-J 规范判断、P-M 缺失或部分实现、P-W 实现有误、P-X 范围蔓延
-const FINDING_ID_PATTERN = /\[((?:S-[HJ]|P-[MWX])\d+)\]/g;
-// 只判断是否含编号时用非全局版本，避免全局正则 test() 的 lastIndex 状态
-const HAS_FINDING_ID = new RegExp(FINDING_ID_PATTERN.source);
 const DEFAULT_FIX_PREFIXES = ['S-H', 'P-M', 'P-W'];
-// 编号之后紧跟（可选 Markdown 包裹、冒号）「无发现」或「无新发现」只是占位
-const NO_FINDING_AFTER_ID = /^(?:\*\*|`)?\s*[:：]?\s*无(?:新)?发现/;
-
-function hasNoFinding(text) {
-  return text.includes('无发现') || text.includes('无新发现');
-}
 // 执行记录备注中的过期证据豁免：「不重跑：」后须有非空理由
 const NO_RERUN_PATTERN = /不重跑[:：]\s*(\S.*)$/;
 // HTML 实体反转义（转录核验比对前对双方使用）
@@ -271,8 +270,8 @@ function validatePlan(plan, specIds) {
   if (!['feature', 'fix'].includes(plan.kind)) {
     issues.push(issue('INVALID_QA_KIND', 'FAIL', `QA Kind 必须是 feature 或 fix，当前为 ${plan.kind}`));
   }
-  if (plan.reviewCoverage !== null && plan.reviewCoverage !== '1') {
-    issues.push(issue('INVALID_QA_REVIEW_COVERAGE', 'FAIL', 'QA Review Coverage 只能声明为 1；旧计划可省略该字段'));
+  if (plan.reviewCoverage !== null && !['1', '2'].includes(plan.reviewCoverage)) {
+    issues.push(issue('INVALID_QA_REVIEW_COVERAGE', 'FAIL', 'QA Review Coverage 只能声明为 1 或 2；旧计划可省略该字段'));
   }
   if (!plan.cases.length) issues.push(issue('NO_TEST_CASES', 'FAIL', '测试计划没有 TC 用例'));
   if (!plan.bindingColumn) {
@@ -1387,7 +1386,10 @@ async function scanProcessScripts(featureDir) {
         '脚本应从已登录状态开始；未登录时请提示用户在可见窗口登录，或使用用户提供的测试账号在真实登录页登录一次。脚本内不得出现密码、登录注册接口或登录后门，不得注入 Cookie、写令牌或直连数据库。该检查不可豁免，计划变更或备注不能消除。',
       ));
     }
-    const segments = inPageSegments(text).map((segment) => segment.replace(/\bwindow\.__originalFetch\s*=\s*[\w$.]+\s*;?/g, ''));
+    // 放行仅用于保存 fetch 引用或控制台诊断采集的只读挂点与只读属性读取，其余页面内合成操作仍标注非真实输入
+    const segments = inPageSegments(text).map((segment) => segment
+      .replace(/\bwindow\.__originalFetch\s*=\s*[\w$.]+\s*;?/g, '')
+      .replace(/\bwindow\.__(?:console|qa|diag|errors?|logs?)[A-Za-z0-9_$]*(?:\s*=\s*(?:\[\]|\{\}|null|undefined)|\.push\s*\([^)]*\)|(?:\?\.|\.)(?:length|slice|map|filter|join|forEach|at|some|every|includes|concat|values|keys|entries)\b|\s*(?=[,;)\]}\s]|$))/gi, ''));
     const labels = SYNTHETIC_INPUT_PATTERNS
       .filter((item) => segments.some((segment) => item.pattern.test(segment)))
       .map((item) => item.label);
@@ -1432,6 +1434,7 @@ function reconciliationTable(rows, frozenPlan, currentPlan, markerValues, caseSc
     return {
       id: `${row.caseId}-${row.assertion}`,
       status: row.status,
+      priority: testCase.priority ?? 'P1',
       assertion: frozenAssertion === currentAssertion ? currentAssertion : `冻结：${frozenAssertion}<br>当前：${currentAssertion}`,
       actual,
       flag: flags.join('、'),
@@ -1823,7 +1826,7 @@ async function reviewRawIssues(featureDir, triage) {
   if (latestFiles) {
     const unnumbered = [];
     for (const { relative, text } of await roundRaws(featureDir, latestFiles)) {
-      if (!HAS_FINDING_ID.test(text) && !hasNoFinding(text)) unnumbered.push(relative);
+      if (!rawHasFindingOrNoFinding(text)) unnumbered.push(relative);
     }
     if (unnumbered.length) {
       issues.push(issue(
@@ -2498,12 +2501,14 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
   const scanned = skipTranscriptScan ? { skipped: true, sessionFiles: [], transcripts: [] } : await scanClaudeTranscripts(root);
   const strong = new Set();
   const missingInputs = [];
+  let invokedCodeReview = true;
   if (skipTranscriptScan) {
     // 不做 Claude 转录核验；强度行由下方 bothReceipt 判定为自述凭据（弱）
   } else if (!scanned.readable) {
     notes.push('来源核验：无法读取 Claude Code 会话目录；按自述凭据或人工核验。');
   } else {
-    if (!await codeReviewInvoked(scanned.sessionFiles, Date.parse(challenge.packagedAt))) {
+    invokedCodeReview = await codeReviewInvoked(scanned.sessionFiles, Date.parse(challenge.packagedAt));
+    if (!invokedCodeReview) {
       notes.push('转录核验：collect 之后的主会话转录中没有 code-review 的 Skill 调用；请人工确认审查来源。');
     }
     for (const [axis, relative] of axes) {
@@ -2600,109 +2605,28 @@ async function auditReceiptSources(root, latestFiles, featureDir, challenge, req
   }
 
   const bothStrong = strong.has('standards') && strong.has('spec');
+  // 仅当未复用轴中存在任意强转录时才免除；防止 r2+ 复用一轴强转录时另一未复用轴自签 Claude subagent 逃逸
+  const hasUnreusedStrong = axes.some(([axis]) => !reusedByAxis.has(axis) && strong.has(axis));
+  // Claude Code 主会话目录可读且存在项目主会话转录、任一未复用轴自称为 Claude Code subagent，却既无 code-review 调用又无任何未复用轴同 nonce 子代理转录时硬拦截
+  if (!skipTranscriptScan && scanned.readable && scanned.sessionFiles.length > 0 && !invokedCodeReview && !hasUnreusedStrong) {
+    const claimedClaudeSubagent = axes.some(([axis]) => {
+      if (reusedByAxis.has(axis)) return false;
+      const receipt = results.get(axis)?.receipt;
+      return receipt?.reviewerKind === 'subagent' && (!receipt.host || /^claude code$/i.test(receipt.host));
+    });
+    if (claimedClaudeSubagent) {
+      issues.push(issue(
+        'REVIEW_PROVENANCE_UNVERIFIED',
+        'BLOCKED',
+        'Claude Code 主会话存在转录但未调用 code-review，且无任何同 nonce 子代理转录；禁止主代理自签 subagent 凭据。',
+        'collect 后通过 Skill 工具调用 code-review 完成独立双轴审查；无子代理能力时由独立外部会话审查并用 external-session 封存。',
+      ));
+    }
+  }
   if (bothStrong) notes.push('来源核验：转录（强）');
   else if (bothReceipt) notes.push('来源核验：自述凭据（弱）');
   else notes.push('来源核验：未核验（人工）');
   return { issues, notes, findingTimes };
-}
-
-function coverageCitations(source) {
-  return [...source.matchAll(/`([^`\n]+):(\d+)`/g)].map((match) => ({ path: match[1], line: Number(match[2]) }));
-}
-
-async function citationIsValid(root, featureDir, row, citation, cache) {
-  const hasCandidates = row.sourceCandidates.length > 0;
-  if (hasCandidates && !row.sourceCandidates.includes(citation.path)) return false;
-  const bases = hasCandidates
-    ? [['browser', 'api'].includes(row.seam) ? featureDir : root]
-    : [featureDir, root];
-  for (const base of bases) {
-    if (!base || !Number.isInteger(citation.line) || citation.line < 1) continue;
-    const absolute = path.resolve(base, citation.path);
-    const relative = path.relative(base, absolute);
-    if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
-    try {
-      if (!(await stat(absolute)).isFile()) continue;
-      if (!cache.has(absolute)) cache.set(absolute, (await readFile(absolute, 'utf8')).split(/\r?\n/).length);
-      if (citation.line <= cache.get(absolute)) return true;
-    } catch {
-      // 尝试下一个允许的来源根目录
-    }
-  }
-  return false;
-}
-
-/** 新协议只机械核对覆盖完整性、逐字绑定和真实源码位置，不判断谓词语义 */
-async function specReviewCoverageIssues(root, featureDir, checklist, markdown) {
-  const issues = [];
-  let coverage;
-  try {
-    coverage = parseSpecReviewCoverage(markdown);
-  } catch (error) {
-    return [issue('SPEC_REVIEW_COVERAGE_INVALID', 'FAIL', `对账覆盖表无法解析：${error.message}`)];
-  }
-  const expected = new Map(checklist.rows.map((row) => [row.id, row]));
-  const seen = new Set();
-  const cache = new Map();
-  for (const response of coverage.rows) {
-    if (!['已核实', '未核实'].includes(response.verdict)) {
-      issues.push(issue('SPEC_REVIEW_COVERAGE_INVALID', 'FAIL', `${response.ids.join('、')} 的结论只能是已核实或未核实`));
-    }
-    if (!['不适用', '变更成立', '变更不成立'].includes(response.change)) {
-      issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${response.ids.join('、')} 的计划变更复核值无效：${response.change || '空'}`));
-    }
-    const citations = coverageCitations(response.source);
-    for (const id of response.ids) {
-      const row = expected.get(id);
-      if (!row) {
-        issues.push(issue('SPEC_REVIEW_COVERAGE_UNKNOWN', 'FAIL', `对账覆盖表包含清单外 ID：${id}`));
-        continue;
-      }
-      if (seen.has(id)) {
-        issues.push(issue('SPEC_REVIEW_COVERAGE_DUPLICATE', 'FAIL', `对账覆盖表重复响应 ${id}`));
-        continue;
-      }
-      seen.add(id);
-      if (response.actual !== row.actual) {
-        issues.push(issue('SPEC_REVIEW_BINDING_MISMATCH', 'FAIL', `${id} 的实测值或绑定未逐字复制清单`));
-      }
-      if (response.verdict === '未核实') {
-        issues.push(issue('SPEC_REVIEW_INCOMPLETE', 'BLOCKED', `${id} 仍标记为未核实；须核实或按规则形成 P-M`));
-      }
-      if (row.changed) {
-        if (response.change === '变更不成立') {
-          issues.push(issue('SPEC_PLAN_CHANGE_REJECTED', 'FAIL', `${id} 的计划变更被审查者判为不成立；恢复原断言或重新验收`));
-        } else if (response.change !== '变更成立') {
-          issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${id} 的冻结断言已变化，必须判变更成立或变更不成立`));
-        }
-      } else if (response.change !== '不适用') {
-        issues.push(issue('SPEC_PLAN_CHANGE_REVIEW_MISSING', 'BLOCKED', `${id} 未发生计划变更，复核列必须写不适用`));
-      }
-      let sourceValid = response.source.replace(/`[^`\n]+:\d+`/g, '').trim().length > 0;
-      if (sourceValid) {
-        sourceValid = false;
-        for (const citation of citations) {
-          if (await citationIsValid(root, featureDir, row, citation, cache)) {
-            sourceValid = true;
-            break;
-          }
-        }
-      }
-      if (!sourceValid) {
-        issues.push(issue(
-          'SPEC_REVIEW_SOURCE_INVALID',
-          'FAIL',
-          `${id} 没有与接缝匹配且行号存在的源码引用`,
-          row.sourceCandidates.length ? `允许的来源：${row.sourceCandidates.join('、')}` : '引用特性证据或仓库源码的 path:line，并填写谓词摘要',
-        ));
-      }
-    }
-  }
-  const missing = checklist.rows.map((row) => row.id).filter((id) => !seen.has(id));
-  if (missing.length) {
-    issues.push(issue('SPEC_REVIEW_COVERAGE_MISSING', 'BLOCKED', `Spec 原文缺少对账覆盖：${missing.join('、')}`));
-  }
-  return issues;
 }
 
 async function currentReviewCompletedAt(featureDir, latestFiles) {
@@ -2854,6 +2778,7 @@ async function checkReview(featureDir, plan, context, earlier) {
   } catch {
     issues.push(issue('MISSING_REVIEW_PACKAGE', 'BLOCKED', `${QA_DIR}/review-package.json 缺失、无效或没有 treeDigest；请用新版 collect 重新生成`));
   }
+  let currentQaDigest = null;
   if (manifest) {
     if (Array.isArray(manifest.unreviewed) && manifest.unreviewed.length) {
       issues.push(issue('UNREVIEWED_FILES', 'FAIL', `存在未审查文件：${manifest.unreviewed.map((item) => item.path || item).join(', ')}；请补充审查或说明`));
@@ -2868,6 +2793,17 @@ async function checkReview(featureDir, plan, context, earlier) {
     }
     if (context.tree && manifest.treeDigest !== context.tree) {
       issues.push(issue('STALE_REVIEW_PACKAGE', 'BLOCKED', `${QA_DIR}/review-package.json 的 treeDigest 与当前代码不一致；请在最终代码上重新 collect 并增量复审`));
+    }
+    if (typeof manifest.qaArtifactsDigest === 'string') {
+      currentQaDigest = await computeQaArtifactsDigest(featureDir);
+      if (manifest.qaArtifactsDigest !== currentQaDigest) {
+        issues.push(issue(
+          'STALE_QA_ARTIFACTS',
+          'BLOCKED',
+          `${QA_DIR}/review-package.json 的 qaArtifactsDigest 与当前 QA 产物（scripts/screenshots/qa-plan）不一致。`,
+          '请先重跑 qa-check acceptance 并重新 collect 审查包，确保审查对象包含最新测试产物。',
+        ));
+      }
     }
     if (Array.isArray(manifest.preexisting) && manifest.preexisting.length) {
       notes.push(`开工时范围内已有改动，未进入审查包：${manifest.preexisting.join('、')}`);
@@ -2887,7 +2823,7 @@ async function checkReview(featureDir, plan, context, earlier) {
   notes.push(...(raw.notes ?? []));
   if (manifest?.specReviewChecklist) {
     try {
-      if (manifest.specReviewChecklist.version !== SPEC_REVIEW_CHECKLIST_VERSION
+      if (!SUPPORTED_CHECKLIST_VERSIONS.has(manifest.specReviewChecklist.version)
         || manifest.specReviewChecklist.path !== SPEC_REVIEW_CHECKLIST_FILE) {
         throw new Error('manifest 的清单版本或路径不受支持');
       }
@@ -2899,7 +2835,7 @@ async function checkReview(featureDir, plan, context, earlier) {
     } catch (error) {
       issues.push(issue('SPEC_REVIEW_CHECKLIST_STALE', 'BLOCKED', `Spec 审查清单不可用：${error.message}`));
     }
-  } else if (plan.reviewCoverage === '1') {
+  } else if (plan.reviewCoverage === '1' || plan.reviewCoverage === '2') {
     notes.push('Spec 对账覆盖：旧审查包没有清单声明，保持人工核对；重新 collect 生成新协议审查包。');
   }
   let findingTimes = new Map();
@@ -2929,9 +2865,17 @@ async function checkReview(featureDir, plan, context, earlier) {
   }
   issues.push(...await fixVerificationIssues(featureDir, raw.rows, triage?.evidenceColumn, findingTimes));
 
-  const enforceOrder = Boolean(manifest?.specReviewChecklist);
-  const reviewCompletedAt = enforceOrder ? await currentReviewCompletedAt(featureDir, raw.latest) : null;
-  if (enforceOrder) {
+  const hasChecklist = Boolean(manifest?.specReviewChecklist);
+  const dualDigestUnchanged = Boolean(
+    currentQaDigest !== null
+    && context.tree
+    && manifest.treeDigest === context.tree
+    && manifest.qaArtifactsDigest === currentQaDigest,
+  );
+  // 双指纹（treeDigest + qaArtifactsDigest）均未变时免除 VERIFICATION_BEFORE_REVIEW；gateEvidence 与人工时序提示在有清单时仍正常执行
+  const enforceOrder = hasChecklist && !dualDigestUnchanged;
+  const reviewCompletedAt = hasChecklist ? await currentReviewCompletedAt(featureDir, raw.latest) : null;
+  if (hasChecklist) {
     if (!Number.isFinite(reviewCompletedAt)) {
       notes.push('交付时序：当前有效双轴缺少可用 completedAt，最终命令与审查的先后交人工核对。');
     }
@@ -2987,7 +2931,11 @@ export async function checkFeature(featureDir, phase) {
   const acceptance = await checkAcceptance(featureDir, plan, context);
   const findings = mergeFindings(planFindings, acceptance, shadow);
   if (phase === 'acceptance') return { ...summarize(findings.issues, findings.notes), table: acceptance.table };
-  findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table, { checklistRequired: plan.reviewCoverage === '1' }));
+  const checklistVersion = plan.reviewCoverage === '2' ? SPEC_REVIEW_CHECKLIST_V2 : SPEC_REVIEW_CHECKLIST_VERSION;
+  findings.issues.push(...await reconciliationIssues(featureDir, acceptance.table, {
+    checklistRequired: plan.reviewCoverage === '1' || plan.reviewCoverage === '2',
+    checklistVersion,
+  }));
   return { ...await checkReview(featureDir, plan, context, findings), table: acceptance.table };
 }
 
@@ -3014,7 +2962,7 @@ function reconciliationDocument(table) {
 }
 
 /** review 阶段：落盘的对账表须与按当前执行记录计算的一致，审查者才看到最新对账表 */
-async function reconciliationIssues(featureDir, table, { checklistRequired = false } = {}) {
+async function reconciliationIssues(featureDir, table, { checklistRequired = false, checklistVersion = SPEC_REVIEW_CHECKLIST_VERSION } = {}) {
   const issues = [];
   const saved = await readFile(path.join(featureDir, RECONCILIATION_FILE), 'utf8').catch(() => null);
   if (saved !== reconciliationDocument(table)) {
@@ -3026,7 +2974,7 @@ async function reconciliationIssues(featureDir, table, { checklistRequired = fal
     ));
   }
   const savedChecklist = await readFile(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), 'utf8').catch(() => null);
-  const expectedChecklist = specReviewChecklistDocument(table);
+  const expectedChecklist = specReviewChecklistDocument(table, { version: checklistVersion });
   if ((checklistRequired && savedChecklist === null) || (savedChecklist !== null && savedChecklist !== expectedChecklist)) {
     issues.push(issue(
       'SPEC_REVIEW_CHECKLIST_STALE',
@@ -3091,14 +3039,25 @@ async function main() {
         await writeFile(target, reconciliationDocument(report.table));
         const planText = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8');
         const checklistTarget = path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE);
-        if (/^QA Review Coverage:\s*1\s*$/m.test(planText)) {
-          await writeFile(checklistTarget, specReviewChecklistDocument(report.table));
+        const skeletonTarget = path.join(featureDir, SPEC_REVIEW_SKELETON_FILE);
+        const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
+        if (coverageMatch) {
+          const checklistVersion = Number(coverageMatch[1]);
+          const checklistJson = specReviewChecklistDocument(report.table, { version: checklistVersion });
+          await writeFile(checklistTarget, checklistJson);
+          if (checklistVersion === SPEC_REVIEW_CHECKLIST_V2) {
+            await writeFile(skeletonTarget, specReviewSkeletonDocument(parseSpecReviewChecklist(checklistJson)));
+          } else {
+            await rm(skeletonTarget, { force: true });
+          }
         } else {
           await rm(checklistTarget, { force: true });
+          await rm(skeletonTarget, { force: true });
         }
       } else {
         await rm(target, { force: true });
         await rm(path.join(featureDir, SPEC_REVIEW_CHECKLIST_FILE), { force: true });
+        await rm(path.join(featureDir, SPEC_REVIEW_SKELETON_FILE), { force: true });
       }
     }
     console.log(formatReport(report, phase));

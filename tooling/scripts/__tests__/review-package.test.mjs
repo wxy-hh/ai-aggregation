@@ -594,3 +594,103 @@ test('TC06 base 已删除文件和普通无计划新文件保持兼容', async (
   const ordinaryResult = run(ordinary, 'init', ordinaryFeature, ['created.txt']);
   assert.equal(ordinaryResult.status, 0, ordinaryResult.stderr);
 });
+
+test('qaArtifactsDigest 覆盖 scripts/screenshots 与去除交付段的 qa-plan，且修改交付段不改变摘要', async (t) => {
+  const { computeQaArtifactsDigest } = await import(new URL('../review-package.mjs', import.meta.url).href);
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await mkdir(path.join(feature, 'scripts'), { recursive: true });
+  await mkdir(path.join(feature, 'screenshots'), { recursive: true });
+  await writeFile(path.join(feature, 'scripts', 'tc01.mjs'), 'console.log("ok");\n');
+  await writeFile(path.join(feature, 'screenshots', 'TC01.png'), 'png1');
+  await writeFile(path.join(feature, 'qa-plan.md'), [
+    'QA Schema: 4',
+    '## 执行记录',
+    '| TC01 | 1 | PASS | `evidence/run.log` | | |',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `pnpm test` | 待执行 |',
+    '## 计划变更',
+    '- 无',
+  ].join('\n'));
+
+  const d1 = await computeQaArtifactsDigest(feature);
+  // 回填 ## 交付验证 日志路径不得改变 qaArtifactsDigest
+  await writeFile(path.join(feature, 'qa-plan.md'), (await readFile(path.join(feature, 'qa-plan.md'), 'utf8')).replace('待执行', '`evidence/delivery.log`'));
+  const d2 = await computeQaArtifactsDigest(feature);
+  assert.equal(d2, d1);
+
+  // 修改 scripts/、screenshots/ 或 ## 执行记录 必须立刻改变 qaArtifactsDigest
+  await writeFile(path.join(feature, 'scripts', 'tc01.mjs'), 'console.log("changed");\n');
+  const d3 = await computeQaArtifactsDigest(feature);
+  assert.notEqual(d3, d1);
+});
+
+test('collect 接入 qa-preflight（ERROR 阻断，--skip-preflight 可跳过）并支持 v2 清单与骨架', async (t) => {
+  const dir = await repo(t);
+  const feature = path.join(dir, '.scratch', 'feature');
+  await writeFile(path.join(feature, 'spec.md'), '## User Stories\n1. 需求\n\n## 交付命令\n```bash\npnpm test\n```\n');
+  await writeFile(path.join(feature, 'qa-plan.md'), [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    'QA Review Coverage: 2',
+    '### TC01: 示例',
+    '- Priority: P0',
+    '- Covers: 1',
+    '- Seam: unit',
+    '#### 验证断言',
+    '1. 断言甲',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| TC01 | 1 | BLOCKED | 尚未执行 | | |',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    '| `pnpm test` | 待执行 |',
+  ].join('\n'));
+  assert.equal(run(dir, 'init', feature, ['tracked.txt']).status, 0);
+  await mkdir(path.join(feature, 'scripts'), { recursive: true });
+  await writeFile(path.join(feature, 'scripts', 'bad.mjs'), "check(true, '[TC01-1] PASS 实测：假断言');\n");
+
+  const blocked = runArgs(dir, ['collect', feature]);
+  assert.equal(blocked.status, 1, blocked.stdout);
+  assert.match(blocked.stdout + blocked.stderr, /PSEUDO_ASSERTION|check\(true\)/);
+
+  // 允许应急 --skip-preflight 跳过
+  await mkdir(path.join(feature, '_qa'), { recursive: true });
+  await writeFile(path.join(feature, '_qa', 'spec-review-checklist.json'), JSON.stringify({ version: 2, rows: [] }));
+  const skipped = runArgs(dir, ['collect', feature, '--skip-preflight']);
+  assert.equal(skipped.status, 0, skipped.stderr + skipped.stdout);
+  const manifest = JSON.parse(await readFile(path.join(feature, '_qa', 'review-package.json'), 'utf8'));
+  assert.ok(typeof manifest.qaArtifactsDigest === 'string' && manifest.qaArtifactsDigest.length === 64);
+  assert.equal(manifest.specReviewChecklist.version, 2);
+});
+
+test('seal 在写凭据前同步阻断无效原文（无编号、漏待复核、缺覆盖或 :1 敷衍），修复后可直接封存', async (t) => {
+  const { dir, feature } = await collected(t, { round: 'r2' });
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  const stdPath = path.join(feature, 'review', 'r2-standards.md');
+  await writeFile(stdPath, '缺少规范编号与结论说明\n');
+  const failUnnumbered = runArgs(dir, sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md' }));
+  assert.equal(failUnnumbered.status, 1);
+  assert.match(failUnnumbered.stderr, /REVIEW_RAW_UNNUMBERED/);
+  assert.equal(await readFile(path.join(feature, 'review', 'r2-standards.source.json'), 'utf8').catch(() => null), null);
+
+  await writeFile(stdPath, '无新增审查发现\n');
+  const failPending = runArgs(dir, [
+    ...sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md' }),
+    '--pending-ids', 'S-H1',
+  ]);
+  assert.equal(failPending.status, 1);
+  assert.match(failPending.stderr, /FINDING_NOT_REREVIEWED/);
+  assert.equal(await readFile(path.join(feature, 'review', 'r2-standards.source.json'), 'utf8').catch(() => null), null);
+
+  await writeFile(stdPath, '[S-H1] 已修\n');
+  const okSeal = runArgs(dir, [
+    ...sealArgs(feature, { round: 'r2', file: 'review/r2-standards.md' }),
+    '--pending-ids', 'S-H1',
+  ]);
+  assert.equal(okSeal.status, 0, okSeal.stderr);
+});

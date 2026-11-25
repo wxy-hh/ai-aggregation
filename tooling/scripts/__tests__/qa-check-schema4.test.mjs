@@ -3428,3 +3428,264 @@ test('P1-TC06-2 个人级目录遮蔽 setup-qa-workflow 或 domain-modeling 时�
     assert.ok(codes(report).includes('SHADOWED_WORKFLOW_SKILL'), `${skillName}: ${formatReport(report)}`);
   }
 });
+
+test('v2.1 Batch 1：hasNoFinding 中文变体、SYNTHETIC_INPUT 只读诊断采集放行、STALE_QA_ARTIFACTS 与 0 子代理硬拦截', async (t) => {
+  // 1. 只读控制台采集不误报 SYNTHETIC_INPUT_IN_SCRIPT（含 push 与只读属性读取）
+  const diagDir = await scriptedWorkspace(t, {
+    script: "await page.evaluate(() => { window.__consoleErrors = []; window.__qaLogs.push('ok'); return { count: window.__consoleErrors.length, list: window.__consoleErrors.slice(0) }; });\n",
+  });
+  const diagReport = await checkFeature(diagDir, 'acceptance');
+  assert.equal(diagReport.status, 'PASS', formatReport(diagReport));
+  assert.ok(!diagReport.notes.some((note) => note.startsWith('SYNTHETIC_INPUT_IN_SCRIPT')), formatReport(diagReport));
+
+  // 2. 中文否定变体不触发 REVIEW_RAW_UNNUMBERED
+  const { feature: rawFeature } = await reviewRepo(t);
+  await writeRaw(rawFeature, 1, { standards: '无新增审查发现\n', spec: '无新增编号\n' });
+  const rawReport = await checkFeature(rawFeature, 'review');
+  assert.ok(!codes(rawReport).includes('REVIEW_RAW_UNNUMBERED'), formatReport(rawReport));
+
+  // 3. Claude Code 目录可读且有主会话转录，但 reviewerKind=subagent 且无 code-review 调用与同 nonce 转录时硬拦截 BLOCKED
+  const configDir = await useConfigDir(t);
+  const { dir: claudeDir, feature: claudeFeature } = await receiptRepo(t);
+  await writeMainSession(configDir, claudeDir, { skill: null });
+  const blocked = await checkFeature(claudeFeature, 'review');
+  assert.equal(blocked.status, 'BLOCKED', formatReport(blocked));
+  assert.ok(codes(blocked).includes('REVIEW_PROVENANCE_UNVERIFIED'), formatReport(blocked));
+
+  // 4. external-session 同样配置不误杀
+  await writeReceipts(claudeFeature, { reviewerKind: 'external-session', host: 'Claude Code' });
+  const externalAllowed = await checkFeature(claudeFeature, 'review');
+  assert.ok(!codes(externalAllowed).includes('REVIEW_PROVENANCE_UNVERIFIED'), formatReport(externalAllowed));
+
+  // 5. 启用 QA Review Coverage: 2（hasChecklist=true）下：旧包无 qaArtifactsDigest 仍报 VERIFICATION_BEFORE_REVIEW，双指纹完整且未变时免除重跑；改 ## 交付验证 不触发，改 ## 执行记录 / screenshots / scripts 均触发 STALE_QA_ARTIFACTS
+  const v2Plan = singlePlan().replace('QA Kind: feature', 'QA Kind: feature\nQA Review Coverage: 2');
+  const { dir: digestDir, feature: digestFeature } = await receiptRepo(t, { plan: v2Plan });
+  await writeFile(
+    path.join(digestFeature, 'review', 'r1-spec-axis.md'),
+    [
+      '无发现',
+      '',
+      '## 对账覆盖',
+      '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+      '| --- | --- | --- | --- |',
+      '| TC01-1 | 已核实 | `tests/a.test.mjs:2` 验证测试定义与过滤谓词 | 不适用 |',
+    ].join('\n'),
+  );
+  assert.equal(spawnSync(process.execPath, [QA_RUN, digestFeature, 'gate-plan-1', '--', process.execPath, QA_CHECK, 'plan', digestFeature], { cwd: digestDir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [QA_RUN, digestFeature, 'gate-acceptance-1', '--', process.execPath, QA_CHECK, 'acceptance', digestFeature], { cwd: digestDir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', digestFeature], { cwd: digestDir, encoding: 'utf8' }).status, 0);
+  const digestChallenge = await readChallenge(digestFeature);
+  await writeReceipts(digestFeature, {
+    nonce: digestChallenge.nonce,
+    completedAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+
+  // 对照验证：移除 qaArtifactsDigest 后确认 hasChecklist=true 时确实命中 VERIFICATION_BEFORE_REVIEW
+  const digestManifestPath = path.join(digestFeature, '_qa', 'review-package.json');
+  const savedManifestRaw = await readFile(digestManifestPath, 'utf8');
+  const legacyManifest = JSON.parse(savedManifestRaw);
+  delete legacyManifest.qaArtifactsDigest;
+  await writeFile(digestManifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+  const beforeExemption = await checkFeature(digestFeature, 'review');
+  assert.ok(codes(beforeExemption).includes('VERIFICATION_BEFORE_REVIEW'), formatReport(beforeExemption));
+
+  // 恢复双指纹完整 manifest：早于审查（晚于基线）的同 tree 绿日志免除 VERIFICATION_BEFORE_REVIEW
+  await writeFile(digestManifestPath, savedManifestRaw);
+  const exemptReview = await checkFeature(digestFeature, 'review');
+  assert.equal(exemptReview.status, 'PASS', formatReport(exemptReview));
+  assert.ok(!codes(exemptReview).includes('VERIFICATION_BEFORE_REVIEW'), formatReport(exemptReview));
+
+  await writeFile(
+    path.join(digestFeature, 'evidence', 'delivery-2.log'),
+    await readFile(path.join(digestFeature, 'evidence', 'delivery.log'), 'utf8'),
+  );
+  const basePlanContent = await readFile(path.join(digestFeature, 'qa-plan.md'), 'utf8');
+  const deliveryUpdatedPlan = basePlanContent.replace('`evidence/delivery.log`', '`evidence/delivery-2.log`');
+  await writeFile(path.join(digestFeature, 'qa-plan.md'), deliveryUpdatedPlan);
+  const deliveryEdited = await checkFeature(digestFeature, 'review');
+  assert.equal(deliveryEdited.status, 'PASS', formatReport(deliveryEdited));
+  assert.ok(!codes(deliveryEdited).includes('STALE_QA_ARTIFACTS'), formatReport(deliveryEdited));
+
+  // 修改 ## 执行记录 立即触发 STALE_QA_ARTIFACTS（且撤回早于审查的免重跑豁免）
+  await writeFile(
+    path.join(digestFeature, 'qa-plan.md'),
+    deliveryUpdatedPlan.replace('| `tests/a.test.mjs` › 传入过滤条件时两路均收到 | |', '| `tests/a.test.mjs` › 传入过滤条件时两路均收到 | 更新记录 |'),
+  );
+  const staleExecution = await checkFeature(digestFeature, 'review');
+  assert.ok(['FAIL', 'BLOCKED'].includes(staleExecution.status), formatReport(staleExecution));
+  assert.ok(codes(staleExecution).includes('STALE_QA_ARTIFACTS'), formatReport(staleExecution));
+  await writeFile(path.join(digestFeature, 'qa-plan.md'), deliveryUpdatedPlan);
+
+  await mkdir(path.join(digestFeature, 'screenshots'), { recursive: true });
+  await writeFile(path.join(digestFeature, 'screenshots', 'new-shot.png'), 'png');
+  const staleShot = await checkFeature(digestFeature, 'review');
+  assert.ok(['FAIL', 'BLOCKED'].includes(staleShot.status), formatReport(staleShot));
+  assert.ok(codes(staleShot).includes('STALE_QA_ARTIFACTS'), formatReport(staleShot));
+  await rm(path.join(digestFeature, 'screenshots', 'new-shot.png'));
+
+  await mkdir(path.join(digestFeature, 'scripts'), { recursive: true });
+  await writeFile(path.join(digestFeature, 'scripts', 'changed.mjs'), 'console.log(1);\n');
+  const staleQa = await checkFeature(digestFeature, 'review');
+  assert.ok(['FAIL', 'BLOCKED'].includes(staleQa.status), formatReport(staleQa));
+  assert.ok(codes(staleQa).includes('STALE_QA_ARTIFACTS'), formatReport(staleQa));
+});
+
+test('端到端 QA Review Coverage: 2：acceptance 生成骨架、seal 拦截 :1 与漏抽检，补齐后 review PASS', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'qa-v2-e2e-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  git(dir, ['init', '--quiet']);
+  git(dir, ['config', 'user.email', 'qa@example.internal']);
+  git(dir, ['config', 'user.name', 'QA Test']);
+  await writeFile(path.join(dir, 'tracked.txt'), '初始内容\n');
+  await mkdir(path.join(dir, 'tests'), { recursive: true });
+  await writeFile(path.join(dir, 'tests', 'p0.test.mjs'), [
+    '// 顶部注释',
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    'const A = 1;',
+    'const B = 2;',
+    'const C = 3;',
+    'const D = 4;',
+    'const E = 5;',
+    'const F = 6;',
+    "test('P0 核心用例', () => {",
+    '  assert.equal(A + B, C);',
+    '});',
+    '',
+  ].join('\n'));
+  await writeFile(path.join(dir, 'tests', 'p1.test.mjs'), [
+    "import test from 'node:test';",
+    "test('P1 常规用例', () => {});",
+    '',
+  ].join('\n'));
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '--quiet', '-m', '初始提交']);
+
+  const feature = path.join(dir, '.scratch', 'feature');
+  await mkdir(feature, { recursive: true });
+  await writeFile(path.join(feature, 'spec.md'), '## User Stories\n1. 核心需求\n\n## 交付命令\n```bash\nnode --version\n```\n');
+  const buildPlan = (status) => [
+    'QA Schema: 4',
+    'QA Mode: inline',
+    'QA Kind: feature',
+    'QA Review Coverage: 2',
+    '',
+    '### TC01: P0 必审场景',
+    '- Priority: P0',
+    '- Covers: 1',
+    '- Seam: unit',
+    '',
+    '#### 验证断言',
+    '1. 核心断言',
+    '',
+    '### TC02: P1 常规场景',
+    '- Priority: P1',
+    '- Covers: 1',
+    '- Seam: unit',
+    '',
+    '#### 验证断言',
+    '1. 常规断言',
+    '',
+    '## 执行记录',
+    '| 用例 | 断言序号 | 状态 | 证据 | 绑定 | 备注 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    `| TC01 | 1 | ${status} | ${status === 'PASS' ? '`evidence/run.log`' : '尚未执行'} | ${status === 'PASS' ? '`tests/p0.test.mjs` › P0 核心用例' : ''} | |`,
+    `| TC02 | 1 | ${status} | ${status === 'PASS' ? '`evidence/run.log`' : '尚未执行'} | ${status === 'PASS' ? '`tests/p1.test.mjs` › P1 常规用例' : ''} | |`,
+    '',
+    '## 交付验证',
+    '| 命令 | 证据 |',
+    '| --- | --- |',
+    `| \`node --version\` | ${status === 'PASS' ? '`evidence/delivery.log`' : '待执行'} |`,
+    '',
+    '## 计划变更',
+    '- 无',
+  ].join('\n');
+
+  await writeFile(path.join(feature, 'qa-plan.md'), buildPlan('BLOCKED'));
+  assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'gate-plan-1', '--', process.execPath, QA_CHECK, 'plan', feature], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'init', feature, '--', 'tracked.txt'], { cwd: dir, encoding: 'utf8' }).status, 0);
+
+  await writeFile(path.join(feature, 'qa-plan.md'), buildPlan('PASS'));
+  assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'run', '--', process.execPath, '--test', 'tests/p0.test.mjs', 'tests/p1.test.mjs'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'delivery', '--', 'node', '--version'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.equal(spawnSync(process.execPath, [QA_RUN, feature, 'gate-acceptance-1', '--', process.execPath, QA_CHECK, 'acceptance', feature], { cwd: dir, encoding: 'utf8' }).status, 0);
+
+  const checklist = JSON.parse(await readFile(path.join(feature, '_qa', 'spec-review-checklist.json'), 'utf8'));
+  assert.equal(checklist.version, 2);
+  assert.equal(checklist.rows[0].required, true);
+  assert.equal(checklist.rows[1].required, false);
+  const skeleton = await readFile(path.join(feature, '_qa', 'spec-review-skeleton.md'), 'utf8');
+  assert.match(skeleton, /## 抽检范围/);
+
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature], { cwd: dir, encoding: 'utf8' }).status, 0);
+  await mkdir(path.join(feature, 'review'), { recursive: true });
+  await writeFile(path.join(feature, 'review', 'r1-standards.md'), '无新增审查发现\n');
+  assert.equal(spawnSync(process.execPath, [REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'standards', '--file', 'review/r1-standards.md', '--reviewer-kind', 'subagent', '--host', 'Kimi Code'], { cwd: dir, encoding: 'utf8' }).status, 0);
+
+  // :1 敷衍引用与漏写抽检范围必须在 seal 时同步阻断
+  const specFile = path.join(feature, 'review', 'r1-spec-axis.md');
+  await writeFile(specFile, [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/p0.test.mjs:1` 敷衍引用 | 不适用 |',
+  ].join('\n'));
+  const badSeal = spawnSync(process.execPath, [REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'spec', '--file', 'review/r1-spec-axis.md', '--reviewer-kind', 'subagent', '--host', 'Kimi Code'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(badSeal.status, 1);
+  assert.match(badSeal.stderr, /SPEC_REVIEW_SOURCE_INVALID/);
+  assert.match(badSeal.stderr, /SPEC_REVIEW_SAMPLING_MISSING/);
+
+  // 修正为真实第 11 行谓词并补充 ## 抽检范围（不覆盖 P1 项 TC02-1 到表中），seal 与 review 均应通过且无需重跑 delivery
+  await writeFile(specFile, [
+    '无发现',
+    '',
+    '## 对账覆盖',
+    '| 审查项 | 结论 | 源码位置与谓词摘要 | 计划变更复核 |',
+    '| --- | --- | --- | --- |',
+    '| TC01-1 | 已核实 | `tests/p0.test.mjs:11` 断言 A+B===C | 不适用 |',
+    '',
+    '## 抽检范围',
+    '- 抽检 `tests/p1.test.mjs`：已确认包含常规用例定义，无异常。',
+  ].join('\n'));
+  const okSeal = spawnSync(process.execPath, [REVIEW_PACKAGE, 'seal', feature, '--round', 'r1', '--axis', 'spec', '--file', 'review/r1-spec-axis.md', '--reviewer-kind', 'subagent', '--host', 'Kimi Code'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(okSeal.status, 0, okSeal.stderr);
+
+  await writeFile(path.join(feature, 'review-report.md'), '审查方式：宿主=Kimi Code；两轴独立子代理\n\n## 三档分流\n\n无发现\n');
+  const finalReport = await checkFeature(feature, 'review');
+  assert.equal(finalReport.status, 'PASS', formatReport(finalReport));
+});
+
+test('r2 单轴复用强转录时，另一未复用轴无转录自签 Claude subagent 仍触发 REVIEW_PROVENANCE_UNVERIFIED', async (t) => {
+  const configDir = await useConfigDir(t);
+  const { dir, feature, challenge: r1Challenge } = await receiptRepo(t);
+  await writeRaw(feature, 1, { standards: '无发现\n', spec: '[P-M1] 首轮缺失\n' });
+  await writeReceipts(feature, { round: 'r1', nonce: r1Challenge.nonce });
+  await strongTranscript(configDir, dir, feature, r1Challenge, { axis: 'standards', name: 'agent-r1-standards' });
+
+  // 推进到 r2，仅复审 Spec 轴并复用 r1 Standards 强转录；不写 r2 Spec 转录且不写 code-review Skill 调用
+  const r2Collected = spawnSync(process.execPath, [REVIEW_PACKAGE, 'collect', feature, '--round', 'r2'], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  assert.equal(r2Collected.status, 0, r2Collected.stderr);
+  const r2Challenge = await readChallenge(feature);
+  await writeRaw(feature, 2, { spec: '[P-M1] 已修\n' });
+  await writeReceipt(feature, {
+    round: 'r2',
+    axis: 'spec',
+    nonce: r2Challenge.nonce,
+    reviewerKind: 'subagent',
+    host: 'Claude Code',
+    pendingIds: ['P-M1'],
+  });
+  await writeFile(path.join(feature, 'review-report.md'), verifiedReport([
+    '| P-M1 | 本次修 | 已修 | r1 发现 → r2 已修 | 静态：补齐实现 | |',
+  ]));
+  await writeMainSession(configDir, dir, { skill: null });
+
+  const blocked = await checkFeature(feature, 'review');
+  assert.equal(blocked.status, 'BLOCKED', formatReport(blocked));
+  assert.ok(codes(blocked).includes('REVIEW_PROVENANCE_UNVERIFIED'), formatReport(blocked));
+});

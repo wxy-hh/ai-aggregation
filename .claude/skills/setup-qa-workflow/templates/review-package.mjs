@@ -16,7 +16,14 @@ import {
 import { devNull } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { SPEC_REVIEW_CHECKLIST_FILE, SPEC_REVIEW_CHECKLIST_VERSION } from './qa-spec-review.mjs';
+import {
+  SPEC_REVIEW_CHECKLIST_FILE,
+  SPEC_REVIEW_CHECKLIST_V2,
+  SPEC_REVIEW_SKELETON_FILE,
+  parseSpecReviewChecklist,
+  validateReviewReportForSeal,
+} from './qa-spec-review.mjs';
+import { formatPreflightReport, runPreflight } from './qa-preflight.mjs';
 
 const MAX_TEXT_SIZE = 512 * 1024;
 const BINARY_EXTENSIONS = new Set([
@@ -168,6 +175,35 @@ export function computeEvidenceTreeDigest(repo, scopes) {
   return computeTreeDigest(repo, scopes, { exclude: isNonContractDoc });
 }
 
+/** 从 qa-plan.md 中剔除 ## 交付验证 段落，避免阶段 7 回填日志路径自触发过期 */
+export function stripDeliverySection(markdown) {
+  const lines = String(markdown ?? '').split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## 交付验证\s*$/.test(line));
+  if (start < 0) return String(markdown ?? '');
+  const end = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
+  const kept = [...lines.slice(0, start), ...(end < 0 ? [] : lines.slice(end))];
+  return kept.join('\n');
+}
+
+/** 计算特性目录内受审 QA 产物摘要（scripts/、screenshots/ 及剔除交付验证段的 qa-plan.md） */
+export async function computeQaArtifactsDigest(featureDir) {
+  const entries = [];
+  const planText = await readFile(path.join(featureDir, 'qa-plan.md'), 'utf8').catch(() => '');
+  entries.push(`qa-plan.md\0${sha256(stripDeliverySection(planText))}`);
+  for (const subDir of ['scripts', 'screenshots']) {
+    const absDir = path.join(featureDir, subDir);
+    const files = await readdir(absDir, { recursive: true }).catch(() => []);
+    for (const entry of [...files].sort()) {
+      const fullPath = path.join(absDir, entry);
+      const info = await pathInfo(fullPath);
+      if (!info?.isFile()) continue;
+      const rel = path.posix.join(subDir, entry.split(path.sep).join('/'));
+      entries.push(`${rel}\0${sha256(await readFile(fullPath))}`);
+    }
+  }
+  return sha256(entries.join('\n'));
+}
+
 export async function readScope(feature) {
   return JSON.parse(await readFile(path.join(feature, QA_DIR, 'scope.json'), 'utf8'));
 }
@@ -295,6 +331,31 @@ async function sealReview(repo, argument, args) {
 
   const content = await readFile(report);
   const hash = sha256(content);
+  const pendingIds = flags['pending-ids'] ? normalizePendingIds(flags['pending-ids']) : [];
+  let checklist = null;
+  if (axis === 'spec' && manifest.specReviewChecklist) {
+    try {
+      const checklistRaw = await readFile(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE), 'utf8');
+      checklist = parseSpecReviewChecklist(checklistRaw);
+    } catch (error) {
+      throw new Error(`封存前无法读取 Spec 审查清单：${error.message}`);
+    }
+  }
+  const validation = await validateReviewReportForSeal({
+    root,
+    featureDir: feature,
+    axis,
+    markdown: content.toString('utf8'),
+    pendingIds,
+    checklist,
+  });
+  if (!validation.ok) {
+    const details = validation.issues
+      .map((item) => `[${item.code}] ${item.message}${item.hint ? `（建议：${item.hint}）` : ''}`)
+      .join('\n');
+    throw new Error(`封存前审查原文校验未通过，拒绝生成 ${receiptPath}（可直接修正 ${reportPath} 后重新 seal）：\n${details}`);
+  }
+
   const receipt = {
     schemaVersion: 1,
     feature: featureRelative(root, feature),
@@ -309,7 +370,6 @@ async function sealReview(repo, argument, args) {
     treeDigest: challenge.treeDigest,
     completedAt: new Date().toISOString(),
   };
-  const pendingIds = flags['pending-ids'] ? normalizePendingIds(flags['pending-ids']) : [];
   if (pendingIds.length) receipt.pendingIds = pendingIds;
   await writeFile(absoluteReceipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
   console.log(formatReceiptLine(challenge.nonce, hash));
@@ -571,11 +631,22 @@ async function collectOutOfScope(root, scope, expectedScopes) {
   return [...outOfScope.values()];
 }
 
-async function collectReviewPackage(repo, argument, scopesInput, roundInput) {
+async function collectReviewPackage(repo, argument, scopesInput, roundInput, { skipPreflight = false } = {}) {
   const { root, feature } = await resolveFeature(repo, argument);
   const round = roundInput ? normalizeRound(roundInput) : await nextReviewRound(feature);
   const scope = await readScope(feature);
   if (scope.version !== 2) throw new Error('collect 需要 version 2 基线，请用当前版本 init 重新建立');
+  if (skipPreflight) {
+    console.log('[qa-preflight] 已通过 --skip-preflight 跳过静态预检（应急模式，请人工确认）。');
+  } else {
+    const preflight = await runPreflight(root, feature);
+    if (preflight.warns.length || !preflight.ok) {
+      console.log(formatPreflightReport(preflight));
+    }
+    if (!preflight.ok) {
+      throw new Error('PREFLIGHT_FAILED：静态预检命中 ERROR，collect 已阻断；请先修复或按需传入 --skip-preflight 应急跳过。');
+    }
+  }
   const snapshotRoot = path.join(feature, QA_DIR, 'prechange', 'files');
   const beforeFiles = await snapshotFiles(snapshotRoot);
   const skipped = new Map((scope.skipped ?? []).map((item) => [item.path, item]));
@@ -638,10 +709,13 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput) {
   const fromBase = scope.fromBase ?? [];
   const preexisting = (scope.dirtyAtInit?.inScope ?? []).filter((relative) => !inScope(relative, fromBase));
   const treeDigest = await computeTreeDigest(root, expectedScopes);
+  const qaArtifactsDigest = await computeQaArtifactsDigest(feature);
   const manifestPath = path.join(feature, QA_DIR, 'review-package.json');
   const previous = await readFile(manifestPath, 'utf8').then(JSON.parse, () => null);
-  // 代码未变时沿用该 tree 首次打包的时间，重复 collect 不会让已落盘的审查原文显得过期
-  const packagedAt = previous?.treeDigest === treeDigest && typeof previous.packagedAt === 'string'
+  // 双指纹（代码 tree 与 QA 产物摘要）均未变时沿用首次打包时间，重复 collect 不会让已有原文过期
+  const packagedAt = previous?.treeDigest === treeDigest
+    && previous?.qaArtifactsDigest === qaArtifactsDigest
+    && typeof previous.packagedAt === 'string'
     ? previous.packagedAt
     : new Date().toISOString();
   // 白名单内被开工后的提交改过的文件，diff 里可能混有他人改动，在包头标注供审查者识别
@@ -663,17 +737,21 @@ async function collectReviewPackage(repo, argument, scopesInput, roundInput) {
     outOfScope,
     preexisting,
     treeDigest,
+    qaArtifactsDigest,
     packagedAt,
     package: `${QA_DIR}/review-package.diff`,
   };
   const planText = await readFile(path.join(feature, 'qa-plan.md'), 'utf8').catch(() => '');
-  if (/^QA Review Coverage:\s*1\s*$/m.test(planText)) {
+  const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
+  if (coverageMatch) {
+    const coverageVersion = Number(coverageMatch[1]);
     if (!await fileExists(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE))) {
-      throw new Error(`MISSING_SPEC_REVIEW_CHECKLIST：计划声明 QA Review Coverage: 1，但缺少 ${SPEC_REVIEW_CHECKLIST_FILE}；请先经 qa-check acceptance 生成`);
+      throw new Error(`MISSING_SPEC_REVIEW_CHECKLIST：计划声明 QA Review Coverage: ${coverageVersion}，但缺少 ${SPEC_REVIEW_CHECKLIST_FILE}；请先经 qa-check acceptance 生成`);
     }
     manifest.specReviewChecklist = {
-      version: SPEC_REVIEW_CHECKLIST_VERSION,
+      version: coverageVersion,
       path: SPEC_REVIEW_CHECKLIST_FILE,
+      ...(coverageVersion === SPEC_REVIEW_CHECKLIST_V2 ? { skeleton: SPEC_REVIEW_SKELETON_FILE } : {}),
     };
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -704,28 +782,31 @@ async function printDigest(repo, argument) {
   console.log(`tree: ${await computeTreeDigest(root, scope.scopes)}`);
 }
 
-/** collect 从参数中取出可选的 --round；其余参数仍交给范围解析 */
-function splitRoundFlag(args) {
+/** collect 从参数中取出可选的 --round 与 --skip-preflight；其余参数仍交给范围解析 */
+function splitCollectFlags(args) {
   const paths = [];
   let round;
+  let skipPreflight = false;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--round') {
       const value = args[index + 1];
       if (value === undefined || value.startsWith('--')) throw new Error('collect 的 --round 缺少值');
       round = value;
       index += 1;
+    } else if (args[index] === '--skip-preflight') {
+      skipPreflight = true;
     } else {
       paths.push(args[index]);
     }
   }
-  return { round, paths };
+  return { round, skipPreflight, paths };
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--') args.shift();
   const [command, feature, ...rest] = args;
-  const usage = '用法: review-package <init|add|collect|digest|seal> <feature-dir> [--round r<n>] [-- <path...>]';
+  const usage = '用法: review-package <init|add|collect|digest|seal> <feature-dir> [--round r<n>] [--skip-preflight] [-- <path...>]';
   if (command === '--help' || command === 'help' || !command) {
     console.log(usage);
     return;
@@ -741,8 +822,8 @@ async function main() {
     if (command === 'init') await initReviewBase(repo, feature, rest);
     else if (command === 'add') await addReviewScopes(repo, feature, rest);
     else if (command === 'collect') {
-      const { round, paths } = splitRoundFlag(rest);
-      await collectReviewPackage(repo, feature, paths, round);
+      const { round, skipPreflight, paths } = splitCollectFlags(rest);
+      await collectReviewPackage(repo, feature, paths, round, { skipPreflight });
     } else if (command === 'seal') await sealReview(repo, feature, rest);
     else await printDigest(repo, feature);
   } catch (error) {
