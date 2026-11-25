@@ -16,21 +16,34 @@
 import { prisma, type UserWebhookTool } from '@repo/db';
 import { getCapabilityPack } from '@repo/shared';
 import { createToolRegistry, type ToolRegistry } from '@/lib/agent/registry';
+import { createMcpClientManager } from '@/lib/agent/mcp/client';
 import { createUserWebhookToolsSnapshot } from './tools/user-webhook';
+import {
+  createUserMcpToolsSnapshot,
+  defaultLoadMcpServers,
+  type LoadedMcpServerBundle,
+  type McpAuditWriter,
+  type McpRunClient,
+  type McpRuntimeClientOptions,
+} from './tools/user-mcp';
 import { getDefaultToolRegistry } from './tools';
 
 /** 完成态观测元数据（仅观测，不影响计费口径） */
 export interface AgentRuntimeFinishMetadata {
   /** 本次请求用户 Webhook 工具实际派发次数（被每请求上限拦截的调用不计入） */
   webhookCalls: number;
+  /** 本次请求用户 MCP 工具实际派发次数（仅用于结算 metadata 留痕，不改变一口价） */
+  mcpCalls?: number;
 }
 
 /** Agent 运行时上下文：工具注册表与结算观测元数据的唯一来源 */
 export interface AgentRuntimeContext {
-  /** 合并后的工具注册表（内置工具 + 用户自定义 Webhook 工具），供编排器派发 */
+  /** 合并后的工具注册表（内置工具 + 用户自定义 Webhook 工具 + MCP 工具），供编排器派发 */
   readonly registry: ToolRegistry;
   /** 流完成时索取观测元数据（窄接口：读取运行时内部闭包计数） */
   finishMetadata(): AgentRuntimeFinishMetadata;
+  /** 幂等释放运行时持有的连接（如本次运行内的 MCP 会话）；异常只告警不抛出 */
+  dispose?(): Promise<void>;
 }
 
 export interface AgentRuntimeContextOptions {
@@ -40,6 +53,14 @@ export interface AgentRuntimeContextOptions {
   errorId?: string;
   /** 用户工具加载注入点（测试替身 / 自定义数据源），缺省走数据库查询 */
   loadUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
+  /** 用户 MCP 配置与快照加载注入点，缺省走数据库查询 */
+  loadMcpServers?: (userId: string) => Promise<LoadedMcpServerBundle[]>;
+  /** 运行内 MCP 客户端创建注入点，缺省为受控 McpClientManager */
+  createMcpClient?: () => McpRunClient;
+  /** MCP 客户端调用额外选项（仅受控测试服务注入，生产不传） */
+  mcpClientOptions?: McpRuntimeClientOptions;
+  /** MCP 调用审计写入注入点 */
+  mcpCallAudit?: McpAuditWriter;
   /** 基础注册表（缺省为内置工具注册表单例），供测试注入内存注册表 */
   baseRegistry?: ToolRegistry;
   /** 可选场景能力包 key（ADR-0014 / 工单 01） */
@@ -89,6 +110,10 @@ export async function createAgentRuntimeContext(
     userId,
     errorId,
     loadUserTools,
+    loadMcpServers,
+    createMcpClient,
+    mcpClientOptions,
+    mcpCallAudit,
     baseRegistry,
     capabilityPack,
     disabledToolKeys,
@@ -179,9 +204,65 @@ export async function createAgentRuntimeContext(
   // 3. 装配快照：合并已收敛的内置工具与用户 Webhook 扩展插槽 + 每请求调次闭包计数器
   const snapshot = createUserWebhookToolsSnapshot(effectiveUserTools, effectiveBaseRegistry);
 
-  // 4. 窄接口暴露：注册表给编排器，观测元数据给完成态结算
+  // 3.1 加载并合并用户 MCP 工具（受白名单、快照指纹、支持状态与会话级收窄约束；CapabilityPack 语义对齐 Webhook）
+  let mcpBundles: LoadedMcpServerBundle[] = [];
+  try {
+    mcpBundles = (await (loadMcpServers ?? defaultLoadMcpServers)(userId)) ?? [];
+  } catch (error) {
+    console.warn('[chat] 加载用户 MCP 工具失败，按无 MCP 工具继续', {
+      errorId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    mcpBundles = [];
+  }
+
+  let activeMcpClient: McpRunClient | null =
+    mcpBundles.length > 0 || Boolean(createMcpClient)
+      ? (createMcpClient ?? (() => createMcpClientManager()))()
+      : null;
+
+  const mcpSnapshot =
+    mcpBundles.length > 0 && activeMcpClient
+      ? createUserMcpToolsSnapshot(mcpBundles, snapshot.registry, {
+          disabledKeys: disabledSet,
+          mcpClient: activeMcpClient,
+          mcpClientOptions,
+          writeAudit: mcpCallAudit,
+        })
+      : {
+          registry: snapshot.registry,
+          getMcpCallsCount: () => 0,
+          hasMountedTools: false,
+        };
+
+  let disposePromise: Promise<void> | null = null;
+  const dispose = (): Promise<void> => {
+    if (disposePromise) return disposePromise;
+    const target = activeMcpClient;
+    activeMcpClient = null;
+    disposePromise = (async () => {
+      if (!target) return;
+      try {
+        await target.close();
+      } catch (error) {
+        console.warn('[runtime-context] 释放 MCP 客户端连接失败，已忽略:', {
+          errorId,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+    return disposePromise;
+  };
+
+  // 4. 窄接口暴露：注册表给编排器，观测元数据给完成态结算，dispose 给运行结束与提前退出路径
   return {
-    registry: snapshot.registry,
-    finishMetadata: () => ({ webhookCalls: snapshot.getWebhookCallsCount() }),
+    registry: mcpSnapshot.registry,
+    finishMetadata: () => ({
+      webhookCalls: snapshot.getWebhookCallsCount(),
+      mcpCalls: mcpSnapshot.getMcpCallsCount(),
+    }),
+    dispose,
   };
 }

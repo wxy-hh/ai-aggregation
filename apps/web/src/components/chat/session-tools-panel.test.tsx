@@ -5,12 +5,30 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SessionToolsPanel, getAvailableToolsList } from './session-tools-panel';
 import { useChatStore } from '@/stores/chat-store';
 import { fetchAgentTools, type SanitizedAgentTool } from '@/lib/api/agent-tools';
+import { fetchEnabledMcpTools, type EnabledMcpToolItem } from '@/lib/api/mcp-servers';
 
 vi.mock('@/lib/api/agent-tools', () => ({
   fetchAgentTools: vi.fn(),
 }));
 
+vi.mock('@/lib/api/mcp-servers', () => ({
+  fetchEnabledMcpTools: vi.fn(),
+}));
+
 const mockedFetchAgentTools = vi.mocked(fetchAgentTools);
+const mockedFetchEnabledMcpTools = vi.mocked(fetchEnabledMcpTools);
+
+function makeMcpTool(overrides: Partial<EnabledMcpToolItem> = {}): EnabledMcpToolItem {
+  return {
+    serverId: 'srv_1',
+    serverName: '受控测试服务',
+    toolName: 'read_value',
+    description: '读取一个受控值',
+    modelToolName: 'mcp_srv_1_read_value',
+    allowAutoExecute: true,
+    ...overrides,
+  };
+}
 
 function makeUserTool(overrides: Partial<SanitizedAgentTool> = {}): SanitizedAgentTool {
   return {
@@ -35,6 +53,8 @@ function makeUserTool(overrides: Partial<SanitizedAgentTool> = {}): SanitizedAge
 describe('SessionToolsPanel 可用工具面板与会话级启停 (ADR-0014 / 工单 02)', () => {
   beforeEach(() => {
     mockedFetchAgentTools.mockReset();
+    mockedFetchEnabledMcpTools.mockReset();
+    mockedFetchEnabledMcpTools.mockResolvedValue([]);
     useChatStore.setState({
       activeConversationId: 'test-conv-1',
       activeCapabilityPackKey: null,
@@ -111,6 +131,38 @@ describe('SessionToolsPanel 可用工具面板与会话级启停 (ADR-0014 / 工
       expect(userTools[1].enabled).toBe(false);
       // 内置 2 + 自定义 1 开启 = 3
       expect(enabledCount).toBe(3);
+    });
+
+    it('个人远程 MCP 工具保留在任意能力包中，支持仅收窄覆盖且不可启用未入白名单工具', () => {
+      const mcpRead = makeMcpTool({ toolName: 'read_value', modelToolName: 'mcp_srv_1_read_value' });
+      const mcpWrite = makeMcpTool({
+        toolName: 'write_value',
+        modelToolName: 'mcp_srv_1_write_value',
+        allowAutoExecute: false,
+      });
+
+      const result = (getAvailableToolsList as unknown as (opts: Record<string, unknown>) => {
+        builtinTools: Array<{ key: string; enabled: boolean }>;
+        mcpTools?: Array<{ key: string; serverName?: string; enabled: boolean }>;
+        enabledCount: number;
+      })({
+        capabilityPackKey: 'deep-research',
+        toolOverrides: {
+          mcp_srv_1_write_value: false,
+          mcp_srv_1_not_whitelisted: true,
+        },
+        userTools: [],
+        mcpTools: [mcpRead, mcpWrite],
+      });
+
+      expect(result.builtinTools).toHaveLength(2);
+      expect(result.mcpTools).toHaveLength(2);
+      expect(result.mcpTools?.map((t) => t.key)).not.toContain('mcp_srv_1_not_whitelisted');
+      expect(result.mcpTools?.[0].enabled).toBe(true);
+      expect(result.mcpTools?.[0].serverName).toBe('受控测试服务');
+      expect(result.mcpTools?.[1].enabled).toBe(false);
+      // 内置 2 + MCP 1 启用 = 3
+      expect(result.enabledCount).toBe(3);
     });
   });
 
@@ -201,6 +253,44 @@ describe('SessionToolsPanel 可用工具面板与会话级启停 (ADR-0014 / 工
 
       await waitFor(() => {
         expect(screen.queryByTestId('session-tools-drawer')).not.toBeInTheDocument();
+      });
+    });
+
+    it('面板展示「MCP 工具」分组、Server 名称、不可信提示，且支持单会话收窄与新会话恢复', async () => {
+      mockedFetchAgentTools.mockResolvedValueOnce([]);
+      mockedFetchEnabledMcpTools.mockResolvedValueOnce([
+        makeMcpTool({ toolName: 'read_value', modelToolName: 'mcp_srv_1_read_value' }),
+      ]);
+
+      render(<SessionToolsPanel isMobile={false} />);
+      fireEvent.click(screen.getByTestId('session-tools-trigger'));
+
+      await waitFor(() => {
+        expect(screen.getByText('MCP 工具')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('受控测试服务')).toBeInTheDocument();
+      expect(screen.getByText('read_value')).toBeInTheDocument();
+      expect(screen.queryByText('unlisted_dangerous_tool')).not.toBeInTheDocument();
+
+      const trustHint = screen.getByTestId('mcp-trust-hint');
+      expect(trustHint.textContent).toContain('不可信');
+      expect(trustHint.textContent).not.toMatch(/已免疫|完全消除/);
+
+      const trigger = screen.getByTestId('session-tools-trigger');
+      // 3 内置 + 1 MCP = 4
+      expect(trigger.textContent).toContain('4');
+
+      const mcpSwitch = screen.getByTestId('tool-switch-mcp_srv_1_read_value');
+      fireEvent.click(mcpSwitch);
+
+      expect(useChatStore.getState().toolOverrides).toEqual({ mcp_srv_1_read_value: false });
+      expect(trigger.textContent).toContain('3');
+
+      // 模拟新建会话清空 toolOverrides，计数恢复全局白名单数量
+      useChatStore.getState().setToolOverrides({});
+      await waitFor(() => {
+        expect(trigger.textContent).toContain('4');
       });
     });
   });

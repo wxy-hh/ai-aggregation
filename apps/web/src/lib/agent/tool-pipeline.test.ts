@@ -833,4 +833,46 @@ describe('写操作审批（AGENT-HITL-ACTION / ADR-0041）', () => {
     expect(outcome.contentForModel).toBe('正常结果');
     expect(outcome.pendingApproval).toBeUndefined();
   });
+
+  it('3. MCP 审批参数规范化序列化超过 8,000 字符时拒绝签发审批并给出中文超限提示（8,000 放行，8,001 拒绝）', async () => {
+    const execute = vi.fn(async () => okResult());
+    const onPending = vi.fn(async () => {});
+    const spec = {
+      ...makeSpec('mcp_srv_1_write_value', execute, z.object({ payload: z.string() })),
+      approval: {
+        toolId: 'srv_1:write_value',
+        host: 'mcp.example.com',
+        mcp: {
+          serverId: 'srv_1',
+          serverName: '受控测试服务',
+          snapshotVersion: 1,
+          configFingerprint: 'fp_1',
+        },
+        onPending,
+      },
+    } as unknown as AgentToolSpec;
+    const { pipeline } = makePipeline({ registry: createToolRegistry([spec]) });
+    pipeline.beginRound();
+
+    // {"payload":"..."} 占 14 个字符
+    const exactOk = await pipeline.executeCall({
+      toolCallId: 'c_8000',
+      toolName: 'mcp_srv_1_write_value',
+      input: { payload: 'x'.repeat(8000 - 14) },
+    });
+    expect(exactOk.pendingApproval).toBeDefined();
+    expect(onPending).toHaveBeenCalledTimes(1);
+
+    const overRejected = await pipeline.executeCall({
+      toolCallId: 'c_8001',
+      toolName: 'mcp_srv_1_write_value',
+      input: { payload: 'x'.repeat(8001 - 14) },
+    });
+    expect(overRejected.ok).toBe(false);
+    expect(overRejected.pendingApproval).toBeUndefined();
+    expect(overRejected.summaryForDisplay).toContain('8,000');
+    expect(overRejected.contentForModel).toContain('8,000');
+    expect(onPending).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+  });
 });

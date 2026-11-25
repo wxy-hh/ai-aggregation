@@ -163,5 +163,19 @@ describe('agent-trace-summary 纯函数模块', () => {
       ]);
       expect(res.text).toBe('调用了 1 个工具 · 耗时 0.2s');
     });
+
+    it('远程 MCP 工具携带 serverName 时输出 [MCP: Server] 标签并聚合摘要', () => {
+      expect(getToolLabel('mcp_srv_1_read_value', '受控服务')).toBe('[MCP: 受控服务]');
+      expect(getRunningActionText('mcp_srv_1_read_value', '受控服务')).toContain('MCP');
+      const res = getCompleteSummary([
+        call({
+          name: 'mcp_srv_1_read_value',
+          serverName: '受控服务',
+          status: 'success',
+          durationMs: 42,
+        }),
+      ]);
+      expect(res.text).toBe('调用 1 次 MCP 工具 · 耗时 0.0s');
+    });
   });
 });

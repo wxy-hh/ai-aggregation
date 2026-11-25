@@ -152,6 +152,7 @@ export class ChatCompletionLifecycle {
             ? {
                 agent: true,
                 webhookCalls: finish.webhookCalls ?? 0,
+                mcpCalls: finish.mcpCalls ?? 0,
                 searchCalls: finish.searchCalls ?? 0,
                 ...(context.agentContext?.activeCapabilityPack
                   ? { capabilityPack: context.agentContext.activeCapabilityPack.key }

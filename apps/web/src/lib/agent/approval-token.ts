@@ -10,6 +10,10 @@
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { getRedisClient } from '@repo/redis';
+import { MCP_MAX_APPROVAL_PARAM_CHARS } from './mcp/contracts';
+import { canonicalizeApprovalParams } from './approval-display';
+
+export { canonicalizeApprovalParams };
 
 /** 凭证有效期：10 分钟 */
 export const APPROVAL_TOKEN_TTL_MS = 10 * 60 * 1000;
@@ -21,7 +25,13 @@ const MIN_SECRET_LENGTH = 32;
 const USED_KEY_PREFIX = 'agent:approval-used:';
 
 /** 拒绝原因分类 */
-export type ApprovalRejectKind = 'unavailable' | 'invalid' | 'expired' | 'used' | 'tool_unavailable';
+export type ApprovalRejectKind =
+  | 'unavailable'
+  | 'invalid'
+  | 'expired'
+  | 'used'
+  | 'tool_unavailable'
+  | 'params_too_large';
 
 const REJECT_PRESETS: Record<ApprovalRejectKind, { status: number; message: string }> = {
   unavailable: {
@@ -44,6 +54,10 @@ const REJECT_PRESETS: Record<ApprovalRejectKind, { status: number; message: stri
     status: 409,
     message: '该工具已被停用或删除，操作未执行',
   },
+  params_too_large: {
+    status: 400,
+    message: `审批参数规范化序列化超过 ${MCP_MAX_APPROVAL_PARAM_CHARS.toLocaleString('en-US')} 字符上限，拒绝签发审批凭证`,
+  },
 };
 
 /** 审批被拒绝：携带可直接展示给用户的中文提示与 HTTP 状态 */
@@ -59,6 +73,13 @@ export class ApprovalRejectedError extends Error {
   }
 }
 
+/** 个人远程 MCP 扩展附加安全绑定（Server + 快照版本 + 配置指纹） */
+export interface McpApprovalBinding {
+  serverId: string;
+  snapshotVersion: number;
+  configFingerprint: string;
+}
+
 /** 凭证所绑定的调用特征 */
 export interface ApprovalBinding {
   userId: string;
@@ -70,6 +91,17 @@ export interface ApprovalBinding {
   /** 目标域名：与卡片向用户展示的域名一致，工具 URL 被改到别的域名后旧凭证不再适用 */
   host: string;
   params: unknown;
+  /** 可选 MCP 配置指纹绑定（仅个人远程 MCP 工具携带；Webhook 为空） */
+  mcp?: McpApprovalBinding | null;
+}
+
+interface ApprovalMcpPayload {
+  /** MCP 服务器 ID */
+  i: string;
+  /** 快照版本号 */
+  v: number;
+  /** 配置指纹 */
+  f: string;
 }
 
 interface ApprovalPayload {
@@ -90,6 +122,28 @@ interface ApprovalPayload {
   e: number;
   /** 一次性随机串，Redis 已用标记以它为 key */
   n: string;
+  /** MCP 扩展安全绑定（缺省与 Webhook 兼容） */
+  m?: ApprovalMcpPayload;
+}
+
+/** 规范化 MCP 绑定为统一结构（签发与验签共用，Webhook 与空值归一为 null） */
+function normalizeMcpBinding(mcp?: McpApprovalBinding | null): McpApprovalBinding | null {
+  if (!mcp) return null;
+  if (
+    typeof mcp.serverId !== 'string' ||
+    !mcp.serverId ||
+    typeof mcp.snapshotVersion !== 'number' ||
+    !Number.isFinite(mcp.snapshotVersion) ||
+    typeof mcp.configFingerprint !== 'string' ||
+    !mcp.configFingerprint
+  ) {
+    return null;
+  }
+  return {
+    serverId: mcp.serverId,
+    snapshotVersion: mcp.snapshotVersion,
+    configFingerprint: mcp.configFingerprint,
+  };
 }
 
 function resolveSecret(): string {
@@ -100,19 +154,8 @@ function resolveSecret(): string {
   return secret.trim();
 }
 
-/** 规范化序列化：对象键排序，保证同一参数无论键序都得到同一串 */
-function canonicalize(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((k) => `${JSON.stringify(k)}:${canonicalize(record[k])}`)
-    .join(',')}}`;
-}
-
-function hashParams(params: unknown): string {
-  return createHash('sha256').update(canonicalize(params)).digest('hex');
+function hashParamsCanonical(canonical: string): string {
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
 function sign(secret: string, body: string): string {
@@ -127,6 +170,12 @@ export function issueApprovalToken(
   now: number = Date.now()
 ): { token: string; expiresAt: number } {
   const secret = resolveSecret();
+  const normalizedMcp = normalizeMcpBinding(binding.mcp);
+  const canonicalParams = canonicalizeApprovalParams(binding.params);
+  if (normalizedMcp && canonicalParams.length > MCP_MAX_APPROVAL_PARAM_CHARS) {
+    throw new ApprovalRejectedError('params_too_large');
+  }
+
   const expiresAt = now + APPROVAL_TOKEN_TTL_MS;
   const payload: ApprovalPayload = {
     v: 1,
@@ -135,9 +184,18 @@ export function issueApprovalToken(
     t: binding.toolName,
     i: binding.toolId,
     d: binding.host,
-    h: hashParams(binding.params),
+    h: hashParamsCanonical(canonicalParams),
     e: expiresAt,
     n: randomUUID(),
+    ...(normalizedMcp
+      ? {
+          m: {
+            i: normalizedMcp.serverId,
+            v: normalizedMcp.snapshotVersion,
+            f: normalizedMcp.configFingerprint,
+          },
+        }
+      : {}),
   };
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return { token: `${body}.${sign(secret, body)}`, expiresAt };
@@ -181,15 +239,54 @@ export function verifyApprovalToken(
     throw new ApprovalRejectedError('invalid');
   }
 
+  const expectedParamsHash = hashParamsCanonical(canonicalizeApprovalParams(expected.params));
   if (
     payload.u !== expected.userId ||
     payload.s !== expected.scope ||
     payload.t !== expected.toolName ||
     payload.i !== expected.toolId ||
     payload.d !== expected.host ||
-    payload.h !== hashParams(expected.params)
+    payload.h !== expectedParamsHash
   ) {
     throw new ApprovalRejectedError('invalid');
+  }
+
+  // MCP 配置绑定对称归一化比对：Webhook 双方皆 null 通过；MCP 需三要素严格一致
+  const expectedMcp = normalizeMcpBinding(expected.mcp);
+  if (payload.m !== undefined) {
+    if (
+      typeof payload.m !== 'object' ||
+      payload.m === null ||
+      typeof payload.m.i !== 'string' ||
+      !payload.m.i ||
+      typeof payload.m.v !== 'number' ||
+      !Number.isFinite(payload.m.v) ||
+      typeof payload.m.f !== 'string' ||
+      !payload.m.f
+    ) {
+      throw new ApprovalRejectedError('invalid');
+    }
+  }
+  const tokenMcp: McpApprovalBinding | null = payload.m
+    ? {
+        serverId: payload.m.i,
+        snapshotVersion: payload.m.v,
+        configFingerprint: payload.m.f,
+      }
+    : null;
+
+  if (expectedMcp === null && tokenMcp !== null) {
+    throw new ApprovalRejectedError('invalid');
+  }
+  if (expectedMcp !== null) {
+    if (
+      tokenMcp === null ||
+      tokenMcp.serverId !== expectedMcp.serverId ||
+      tokenMcp.snapshotVersion !== expectedMcp.snapshotVersion ||
+      tokenMcp.configFingerprint !== expectedMcp.configFingerprint
+    ) {
+      throw new ApprovalRejectedError('invalid');
+    }
   }
 
   if (now > payload.e) {

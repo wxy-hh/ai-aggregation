@@ -10,10 +10,18 @@ export const TOOL_LABELS: Record<string, string> = {
   web_search: '联网搜索',
 };
 
+/** 判断是否为个人远程 MCP 工具调用 */
+export function isMcpToolCall(call: Pick<ToolCallRecord, 'name' | 'serverName'>): boolean {
+  return Boolean(call.serverName) || call.name.startsWith('mcp_');
+}
+
 /**
  * 获取工具中文展示名
  */
-export function getToolLabel(name: string): string {
+export function getToolLabel(name: string, serverName?: string): string {
+  if (serverName || name.startsWith('mcp_')) {
+    return `[MCP: ${serverName || '远程服务'}]`;
+  }
   if (name.startsWith('wh_')) {
     return '外部工具';
   }
@@ -25,13 +33,17 @@ export function getToolLabel(name: string): string {
  * - web_fetch: 正在抓取网页…
  * - web_search: 正在联网搜索…
  * - image_generate: 正在生成图像…
+ * - mcp_ 前缀 / 带 serverName: 正在调用外部 MCP 工具…
  * - wh_ 前缀（webhook）: 正在调用外部工具…
  * - 兜底: 正在调用工具…
  * - 无工具名/无工具运行: 正在思考下一步…
  */
-export function getRunningActionText(toolName?: string): string {
+export function getRunningActionText(toolName?: string, serverName?: string): string {
   if (!toolName) {
     return '正在思考下一步…';
+  }
+  if (serverName || toolName.startsWith('mcp_')) {
+    return serverName ? `正在调用 MCP 服务「${serverName}」…` : '正在调用外部 MCP 工具…';
   }
   if (toolName === 'web_fetch') {
     return '正在抓取网页…';
@@ -138,6 +150,7 @@ export function getCompleteSummary(toolCalls: ToolCallRecord[]): CompleteSummary
   ).length;
   const imageCount = successfulCalls.filter((c) => c.name === 'image_generate').length;
   const webhookCount = successfulCalls.filter((c) => c.name.startsWith('wh_')).length;
+  const mcpCount = successfulCalls.filter((c) => isMcpToolCall(c)).length;
 
   const candidatePhrases: string[] = [];
   if (sourceCount > 0) {
@@ -148,6 +161,9 @@ export function getCompleteSummary(toolCalls: ToolCallRecord[]): CompleteSummary
   }
   if (webhookCount > 0) {
     candidatePhrases.push(`调用 ${webhookCount} 个外部工具`);
+  }
+  if (mcpCount > 0) {
+    candidatePhrases.push(`调用 ${mcpCount} 次 MCP 工具`);
   }
 
   // 最多取前 2 段

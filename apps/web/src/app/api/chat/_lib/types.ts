@@ -34,6 +34,8 @@ export interface ChatStreamFinish {
    * 路由层不再持有快照闭包 getter。仅观测，不影响计费。
    */
   webhookCalls?: number;
+  /** agent 模式观测计数：本次请求用户 MCP 工具实际派发次数（仅作结算 metadata 留痕，不改变一口价） */
+  mcpCalls?: number;
   /** P1 工单 02：执行步数（ADR-0015） */
   steps?: number;
   /** P1 工单 02：工具调用流水（ADR-0015） */
@@ -41,6 +43,7 @@ export interface ChatStreamFinish {
     id: string;
     name: string;
     argsSummary: string;
+    serverName?: string;
     status: 'success' | 'failed';
     summary: string;
     durationMs?: number;

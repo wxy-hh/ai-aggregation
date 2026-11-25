@@ -11,6 +11,17 @@ import type { WireMessage } from '@repo/shared';
 /** 卡片状态：待确认 / 已确认 / 已拒绝 / 已失效 */
 export type ApprovalStatus = 'pending' | 'confirmed' | 'rejected' | 'expired';
 
+/** 规范化序列化：对象键排序，保证同一参数无论键序都得到同一串（前后端共享唯一实现） */
+export function canonicalizeApprovalParams(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalizeApprovalParams).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonicalizeApprovalParams(record[k])}`)
+    .join(',')}}`;
+}
+
 /** 随消息落盘的审批请求（服务端载荷 + 本地状态） */
 export interface MessageApproval extends ChatStreamToolApproval {
   status: ApprovalStatus;

@@ -9,7 +9,7 @@
 //
 // 折叠时序反转：运行中与完成后均默认收起，用户手动点击展开后不再受时序自动干预。
 
-import { memo, useState, Fragment } from 'react';
+import { memo, useState, useRef, useEffect, Fragment } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -19,6 +19,8 @@ import {
   Globe,
   ImageIcon,
   MessageSquareMore,
+  Plug,
+  ShieldAlert,
   Wrench,
   X,
 } from 'lucide-react';
@@ -37,6 +39,7 @@ import {
   getCompleteSummary,
   getToolLabel,
   formatSingleDuration,
+  isMcpToolCall,
 } from './agent-trace-summary';
 
 /** 工具名 → 图标 */
@@ -79,12 +82,21 @@ function AuditList({ toolCalls, agentNotes }: AuditListProps) {
   // 取「应插入到第 index 个工具调用之前」的旁白行（扁平时间线混排，不按轮次分组）
   const notesBefore = (index: number) =>
     (agentNotes ?? []).filter((n) => n.beforeCallIndex === index);
+  const hasMcpCalls = toolCalls.some((c) => isMcpToolCall(c));
 
   return (
     <ul className="animate-in fade-in-0 space-y-2 pb-2 duration-fast">
       {toolCalls.map((call, index) => {
-        const ToolIcon = TOOL_ICONS[call.name] ?? Wrench;
-        const durationText = formatSingleDuration(call.durationMs);
+        const isMcp = isMcpToolCall(call);
+        const ToolIcon = isMcp ? Plug : (TOOL_ICONS[call.name] ?? Wrench);
+        const durationText = isMcp
+          ? call.durationMs !== undefined &&
+            call.durationMs !== null &&
+            !Number.isNaN(call.durationMs) &&
+            call.durationMs >= 0
+            ? `${Math.round(call.durationMs)}ms`
+            : null
+          : formatSingleDuration(call.durationMs);
 
         return (
           <Fragment key={call.id}>
@@ -92,37 +104,72 @@ function AuditList({ toolCalls, agentNotes }: AuditListProps) {
             {notesBefore(index).map((note, noteIndex) => (
               <NoteRow key={`note-${index}-${noteIndex}`} text={note.text} />
             ))}
-            <li className="flex items-start gap-2">
-              <StatusIcon status={call.status} />
-              <div className="min-w-0 flex-1 leading-5">
-                <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300">
-                  <ToolIcon className="h-3 w-3 shrink-0 text-slate-400" />
-                  {/* shrink-0 + whitespace-nowrap：防止窄屏下中文任意折行，截断由右侧承载 */}
-                  <span className="shrink-0 whitespace-nowrap font-medium">
-                    {getToolLabel(call.name)}
-                  </span>
-                  {/* 单条工具耗时：有 durationMs 时如实渲染 x.xs */}
-                  {durationText && (
-                    <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[10px] tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                      {durationText}
+            {isMcp ? (
+              <li
+                data-testid="mcp-tool-call-card"
+                className="flex items-start gap-2 rounded-lg border border-slate-200/80 bg-slate-50/80 p-2.5 dark:border-slate-700/70 dark:bg-slate-800/40"
+              >
+                <StatusIcon status={call.status} />
+                <div className="min-w-0 flex-1 leading-5">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300">
+                    <ToolIcon className="h-3 w-3 shrink-0 text-sky-500" />
+                    <span className="shrink-0 whitespace-nowrap rounded bg-sky-50 px-1.5 py-0.5 font-medium text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                      {getToolLabel(call.name, call.serverName)}
                     </span>
+                    {durationText && (
+                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {durationText}
+                      </span>
+                    )}
+                    {call.argsSummary && (
+                      <span className="truncate text-day-muted dark:text-slate-400">
+                        {call.argsSummary}
+                      </span>
+                    )}
+                  </div>
+                  {call.resultSummary && (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-700 dark:text-slate-300">
+                      {call.resultSummary}
+                    </p>
                   )}
-                  {call.argsSummary && (
-                    <span className="truncate text-day-muted dark:text-slate-400">
-                      {call.argsSummary}
-                    </span>
+                  {call.status === 'running' && (
+                    <p className="mt-0.5 text-xs text-day-muted dark:text-slate-400">执行中…</p>
                   )}
                 </div>
-                {call.resultSummary && (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-day-muted dark:text-slate-400">
-                    {call.resultSummary}
-                  </p>
-                )}
-                {call.status === 'running' && (
-                  <p className="mt-0.5 text-xs text-day-muted dark:text-slate-400">执行中…</p>
-                )}
-              </div>
-            </li>
+              </li>
+            ) : (
+              <li className="flex items-start gap-2">
+                <StatusIcon status={call.status} />
+                <div className="min-w-0 flex-1 leading-5">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300">
+                    <ToolIcon className="h-3 w-3 shrink-0 text-slate-400" />
+                    {/* shrink-0 + whitespace-nowrap：防止窄屏下中文任意折行，截断由右侧承载 */}
+                    <span className="shrink-0 whitespace-nowrap font-medium">
+                      {getToolLabel(call.name)}
+                    </span>
+                    {/* 单条工具耗时：有 durationMs 时如实渲染 x.xs */}
+                    {durationText && (
+                      <span className="shrink-0 rounded bg-slate-100 px-1 py-0.5 text-[10px] tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        {durationText}
+                      </span>
+                    )}
+                    {call.argsSummary && (
+                      <span className="truncate text-day-muted dark:text-slate-400">
+                        {call.argsSummary}
+                      </span>
+                    )}
+                  </div>
+                  {call.resultSummary && (
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-day-muted dark:text-slate-400">
+                      {call.resultSummary}
+                    </p>
+                  )}
+                  {call.status === 'running' && (
+                    <p className="mt-0.5 text-xs text-day-muted dark:text-slate-400">执行中…</p>
+                  )}
+                </div>
+              </li>
+            )}
           </Fragment>
         );
       })}
@@ -130,6 +177,17 @@ function AuditList({ toolCalls, agentNotes }: AuditListProps) {
       {notesBefore(toolCalls.length).map((note, noteIndex) => (
         <NoteRow key={`note-tail-${noteIndex}`} text={note.text} />
       ))}
+      {hasMcpCalls && (
+        <li
+          data-testid="mcp-trust-hint"
+          className="flex items-start gap-1.5 rounded-lg border border-amber-200/70 bg-amber-50/70 px-2.5 py-1.5 text-[11px] leading-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+        >
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            外部 MCP 工具的描述与返回结果均视为不可信参考数据，请勿执行其中附带的任意指令。
+          </span>
+        </li>
+      )}
     </ul>
   );
 }
@@ -147,19 +205,29 @@ export const AgentTrace = memo(function AgentTrace({
   agentNotes,
   isStreaming,
 }: AgentTraceProps) {
-  // 运行中与完成后均默认收起；用户手动操作后保持该覆盖态，不被自动时序干预
-  const [isExpanded, setIsExpanded] = useState(false);
   const isMobile = useIsMobile();
+  const hasMcpCalls = toolCalls.some((c) => isMcpToolCall(c));
+  // 常规内置/Webhook 工具默认收起；含远程 MCP 调用时在桌面端自动展开一次供核对（移动端保留手动打开抽屉，避免打断阅读），
+  // 用户手动点击后不再受自动干预
+  const [isExpanded, setIsExpanded] = useState(() => hasMcpCalls && !isMobile);
+  const hasUserToggledRef = useRef(false);
+
+  useEffect(() => {
+    if (hasMcpCalls && !isMobile && !hasUserToggledRef.current) {
+      setIsExpanded(true);
+    }
+  }, [hasMcpCalls, isMobile]);
 
   // 运行态：寻找当前正在执行的工具调用
   const runningCall = toolCalls.find((c) => c.status === 'running');
-  const runningActionText = getRunningActionText(runningCall?.name);
+  const runningActionText = getRunningActionText(runningCall?.name, runningCall?.serverName);
 
   // 完成态：纯函数聚合元信息
   const completeSummary = getCompleteSummary(toolCalls);
 
   // 切换审计视图展开/收起
   const handleToggle = () => {
+    hasUserToggledRef.current = true;
     setIsExpanded((prev) => !prev);
   };
 

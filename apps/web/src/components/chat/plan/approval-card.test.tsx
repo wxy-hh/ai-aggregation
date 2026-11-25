@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { ApprovalCard } from './approval-card';
 import type { MessageApproval } from '@/lib/agent/approval-display';
 
@@ -136,5 +136,69 @@ describe('ApprovalCard 展示与交互 (TC07)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '确认执行' })).not.toBeDisabled());
     fireEvent.click(screen.getByRole('button', { name: '确认执行' }));
     expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ApprovalCard MCP 标识、倒计时与窄屏热区（工单 05 / TC03）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('携带 serverName 时展示 [MCP: Server] 徽标，渲染 10 分钟倒数计时并在到期后转已失效', () => {
+    vi.useFakeTimers();
+    const fixedNow = 1_700_000_000_000;
+    vi.setSystemTime(fixedNow);
+
+    const mcpApproval = {
+      ...baseApproval,
+      toolName: 'mcp_srv_1_write_value',
+      serverName: '受控测试服务',
+      host: 'mcp.example.com',
+      expiresAt: fixedNow + 10 * 60 * 1000,
+    } as MessageApproval & { serverName?: string };
+
+    render(<ApprovalCard approval={mcpApproval} onConfirm={vi.fn()} onReject={vi.fn()} />);
+
+    const card = screen.getByTestId('approval-card');
+    expect(card.textContent).toContain('[MCP: 受控测试服务]');
+    expect(screen.getByTestId('approval-countdown').textContent).toContain('10:00');
+
+    // 推进 1 秒：倒计时减少
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.getByTestId('approval-countdown').textContent).toContain('09:59');
+
+    // 确认/拒绝按钮保持至少 44x44 热区类
+    const rejectBtn = screen.getByTestId('approval-reject');
+    const confirmBtn = screen.getByTestId('approval-confirm');
+    expect(rejectBtn.className).toContain('min-h-[44px]');
+    expect(rejectBtn.className).toContain('min-w-[44px]');
+    expect(confirmBtn.className).toContain('min-h-[44px]');
+    expect(confirmBtn.className).toContain('min-w-[44px]');
+
+    // 推进超过 10 分钟：卡片转已失效
+    act(() => {
+      vi.advanceTimersByTime(10 * 60 * 1000 + 1000);
+    });
+    expect(card).toHaveAttribute('data-status', 'expired');
+    expect(screen.getByText('已失效')).toBeInTheDocument();
+  });
+
+  it('MCP 审批参数规范化序列化超过 8,000 字符时渲染中文超限提示且不渲染「确认执行」按钮（TC10-5）', () => {
+    const oversizedApproval = {
+      ...baseApproval,
+      toolName: 'mcp_srv_1_write_value',
+      serverName: '受控测试服务',
+      host: 'mcp.example.com',
+      // {"v":"..."} 为 8 字符，总数 8,001
+      params: { v: 'a'.repeat(8001 - 8) },
+    } as MessageApproval & { serverName?: string };
+
+    render(<ApprovalCard approval={oversizedApproval} onConfirm={vi.fn()} onReject={vi.fn()} />);
+
+    const hint = screen.getByTestId('approval-param-limit-error');
+    expect(hint.textContent).toContain('8,000');
+    expect(screen.queryByRole('button', { name: '确认执行' })).not.toBeInTheDocument();
   });
 });

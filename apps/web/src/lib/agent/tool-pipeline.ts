@@ -20,8 +20,11 @@
 
 import { DEFAULT_TOOL_POLICY, runToolWithPolicy } from './tool-policy';
 import type { ObservabilityTrace } from '@/lib/observability/langfuse-client';
+import { canonicalizeApprovalParams } from './approval-token';
+import { MCP_MAX_APPROVAL_PARAM_CHARS } from './mcp/contracts';
 import {
   validateToolArgs,
+  type ToolApprovalPolicy,
   type ToolExecutionContext,
   type ToolExecutionResult,
   type ToolRegistry,
@@ -44,7 +47,12 @@ export interface ToolCallOutcome {
    * 写操作待审批标记（ADR-0041）：存在即表示该调用**未执行**，编排器应下发审批请求并结束本次流。
    * params 为经 schema 校验后的参数，凭证将绑定它。
    */
-  pendingApproval?: { toolId: string; host: string; params: unknown };
+  pendingApproval?: {
+    toolId: string;
+    host: string;
+    params: unknown;
+    mcp?: ToolApprovalPolicy['mcp'];
+  };
 }
 
 /** 一次工具调用（由编排器从模型决策步投影而来） */
@@ -294,38 +302,54 @@ export function createToolExecutionPipeline(
         // 写操作审批（ADR-0041）：参数合法才暂停，不合法仍走原有「参数不合法」回注让模型修正。
         // 暂停不执行、不过合规、不进缓存（用户确认后才会真正执行），也不计入连败熔断。
         if (validation.ok && spec.approval && !call.preApproved) {
-          try {
-            await spec.approval.onPending(ctx);
-          } catch (error) {
-            // 副作用回调失败（如审计写入）不得阻断暂停：安全方向是「不执行」
-            console.warn(`[agent] 工具「${call.toolName}」暂停回调失败:`, error);
-          }
-          if (trace) {
-            const span = trace.span({
-              name: `tool:${call.toolName}`,
-              input: call.input,
-              output: '等待用户确认',
-              status: 'success',
-              durationMs: 0,
-              metadata: { cached: false, skipped: false, pendingApproval: true },
-            });
-            span.end();
-          }
-          return {
-            ok: true,
-            contentForModel: '该操作需要用户确认，已向用户发起确认请求，尚未执行。',
-            summaryForDisplay: '等待用户确认',
-            pendingApproval: { toolId: spec.approval.toolId, host: spec.approval.host, params: validation.args },
-          };
-        }
-
-        outcome = validation.ok
-          ? await runToolWithPolicy(spec, validation.args, ctx, DEFAULT_TOOL_POLICY)
-          : {
+          if (
+            spec.approval.mcp &&
+            canonicalizeApprovalParams(validation.args).length > MCP_MAX_APPROVAL_PARAM_CHARS
+          ) {
+            outcome = {
               ok: false,
-              contentForModel: `工具参数不合法：${validation.reason}。请修正参数后重试。`,
-              summaryForDisplay: `参数不合法：${validation.reason}`,
+              contentForModel: `外部 MCP 工具「${call.toolName}」参数规范化序列化超过 ${MCP_MAX_APPROVAL_PARAM_CHARS.toLocaleString('en-US')} 字符上限，拒绝签发审批凭证且未向外部发起请求。请精简参数后重试。`,
+              summaryForDisplay: `未执行：审批参数超过 ${MCP_MAX_APPROVAL_PARAM_CHARS.toLocaleString('en-US')} 字符上限`,
             };
+          } else {
+            try {
+              await spec.approval.onPending(ctx);
+            } catch (error) {
+              // 副作用回调失败（如审计写入）不得阻断暂停：安全方向是「不执行」
+              console.warn(`[agent] 工具「${call.toolName}」暂停回调失败:`, error);
+            }
+            if (trace) {
+              const span = trace.span({
+                name: `tool:${call.toolName}`,
+                input: call.input,
+                output: '等待用户确认',
+                status: 'success',
+                durationMs: 0,
+                metadata: { cached: false, skipped: false, pendingApproval: true },
+              });
+              span.end();
+            }
+            return {
+              ok: true,
+              contentForModel: '该操作需要用户确认，已向用户发起确认请求，尚未执行。',
+              summaryForDisplay: '等待用户确认',
+              pendingApproval: {
+                toolId: spec.approval.toolId,
+                host: spec.approval.host,
+                params: validation.args,
+                ...(spec.approval.mcp ? { mcp: spec.approval.mcp } : {}),
+              },
+            };
+          }
+        } else {
+          outcome = validation.ok
+            ? await runToolWithPolicy(spec, validation.args, ctx, DEFAULT_TOOL_POLICY)
+            : {
+                ok: false,
+                contentForModel: `工具参数不合法：${validation.reason}。请修正参数后重试。`,
+                summaryForDisplay: `参数不合法：${validation.reason}`,
+              };
+        }
       }
 
       // 合规二道检查：首次执行结果过检后存入缓存并回注（已知不对称 #2：

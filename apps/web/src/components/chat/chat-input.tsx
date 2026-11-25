@@ -16,6 +16,10 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { getCapabilityPack } from '@repo/shared';
 import { authFetch } from '@/lib/api/client';
 import { fetchAgentTools, type SanitizedAgentTool } from '@/lib/api/agent-tools';
+import {
+  fetchEnabledMcpTools,
+  type EnabledMcpToolItem,
+} from '@/lib/api/mcp-servers';
 import { detectAgentIntent, type AgentIntentDetectionResult } from '@/lib/agent/agent-intent';
 import { trackEvent } from '@/lib/events/tracker';
 // useChatStore: 聊天状态管理 Store
@@ -260,33 +264,38 @@ export function ChatInput({
     setIsDraftDismissed(true);
   };
 
-  // ============ Agent 自定义 Webhook 工具状态 ============
+  // ============ Agent 自定义 Webhook 与 MCP 工具状态 ============
   const [userTools, setUserTools] = useState<SanitizedAgentTool[]>([]);
+  const [mcpTools, setMcpTools] = useState<EnabledMcpToolItem[]>([]);
 
-  // 仅当 agent 开关从关→开时懒加载一次用户自定义工具
+  // 仅当 agent 开关从关→开时懒加载一次用户自定义工具与已启用 MCP 工具
   useEffect(() => {
     if (!agentModeEnabled) {
       setUserTools([]);
+      setMcpTools([]);
       return;
     }
 
     let cancelled = false;
 
-    async function loadTools() {
-      try {
-        const tools = await fetchAgentTools();
-        if (!cancelled) {
-          setUserTools(tools || []);
-        }
-      } catch {
-        // 请求失败（网络错误、401 未登录、限流等）静默降级为空数组，不打扰对话
-        if (!cancelled) {
-          setUserTools([]);
-        }
-      }
-    }
+    // 两条懒加载相互独立：Webhook 与 MCP 工具互不阻塞，也安全兼容测试替身
+    void Promise.resolve()
+      .then(() => fetchAgentTools())
+      .then((tools) => {
+        if (!cancelled) setUserTools(tools || []);
+      })
+      .catch(() => {
+        if (!cancelled) setUserTools([]);
+      });
 
-    loadTools();
+    void Promise.resolve()
+      .then(() => fetchEnabledMcpTools())
+      .then((tools) => {
+        if (!cancelled) setMcpTools(tools || []);
+      })
+      .catch(() => {
+        if (!cancelled) setMcpTools([]);
+      });
 
     return () => {
       cancelled = true;
@@ -1251,7 +1260,9 @@ export function ChatInput({
             {attachButton}
 
             {/* Agent 模式可用工具入口（ADR-0014 / 工单 02） */}
-            {agentModeEnabled && <SessionToolsPanel userTools={userTools} />}
+            {agentModeEnabled && (
+              <SessionToolsPanel userTools={userTools} mcpTools={mcpTools} />
+            )}
           </div>
 
           {/* 右侧：字数辅助与发送/停止主按钮 */}

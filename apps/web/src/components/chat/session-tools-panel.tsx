@@ -29,6 +29,8 @@ import {
   SlidersHorizontal,
   ChevronRight,
   ShieldCheck,
+  ShieldAlert,
+  Plug,
   ExternalLink,
 } from 'lucide-react';
 import {
@@ -46,6 +48,10 @@ import {
   fetchAgentTools,
   type SanitizedAgentTool,
 } from '@/lib/api/agent-tools';
+import {
+  fetchEnabledMcpTools,
+  type EnabledMcpToolItem,
+} from '@/lib/api/mcp-servers';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 
 /** 平台内置工具元数据定义 */
@@ -85,11 +91,14 @@ export interface ComputedToolItem {
   enabled: boolean;
   isBuiltin: boolean;
   iconType?: string;
+  serverName?: string;
+  allowAutoExecute?: boolean;
 }
 
 export interface AvailableToolsCalculationResult {
   builtinTools: ComputedToolItem[];
   userTools: ComputedToolItem[];
+  mcpTools: ComputedToolItem[];
   enabledCount: number;
 }
 
@@ -100,8 +109,9 @@ export function getAvailableToolsList(options: {
   capabilityPackKey?: string | null;
   toolOverrides: Record<string, boolean>;
   userTools: SanitizedAgentTool[];
+  mcpTools?: EnabledMcpToolItem[];
 }): AvailableToolsCalculationResult {
-  const { capabilityPackKey, toolOverrides, userTools: rawUserTools } = options;
+  const { capabilityPackKey, toolOverrides, userTools: rawUserTools, mcpTools: rawMcpTools = [] } = options;
   const pack = getCapabilityPack(capabilityPackKey);
 
   // 1. 内置工具：受能力包白名单限定；未选包时开放全量 3 个内置能力
@@ -146,14 +156,35 @@ export function getAvailableToolsList(options: {
     };
   });
 
-  // 3. 统计当前会话所有处于启用态的工具总数
+  // 3. 个人远程 MCP 工具（仅展示全局白名单启用项，能力包不额外过滤；会话级仅允许收窄关闭，绝不启用未入白名单工具）
+  const mcpTools: ComputedToolItem[] = (rawMcpTools || []).map((tool) => {
+    const serverToolKey = `${tool.serverId}:${tool.toolName}`;
+    const isDisabled =
+      toolOverrides[tool.modelToolName] === false ||
+      toolOverrides[serverToolKey] === false;
+
+    return {
+      key: tool.modelToolName,
+      name: tool.toolName,
+      description: tool.description || `来自 MCP 服务「${tool.serverName}」`,
+      enabled: !isDisabled,
+      isBuiltin: false,
+      iconType: 'Mcp',
+      serverName: tool.serverName,
+      allowAutoExecute: tool.allowAutoExecute,
+    };
+  });
+
+  // 4. 统计当前会话所有处于启用态的工具总数
   const enabledBuiltin = builtinTools.filter((t) => t.enabled).length;
   const enabledUser = userTools.filter((t) => t.enabled).length;
-  const enabledCount = enabledBuiltin + enabledUser;
+  const enabledMcp = mcpTools.filter((t) => t.enabled).length;
+  const enabledCount = enabledBuiltin + enabledUser + enabledMcp;
 
   return {
     builtinTools,
     userTools,
+    mcpTools,
     enabledCount,
   };
 }
@@ -165,18 +196,22 @@ export interface SessionToolsPanelProps {
   className?: string;
   /** 外部直接注入用户自定义工具列表（避免上层组件重复网络请求） */
   userTools?: SanitizedAgentTool[];
+  /** 外部直接注入全局已启用的个人远程 MCP 工具列表 */
+  mcpTools?: EnabledMcpToolItem[];
 }
 
 export function SessionToolsPanel({
   isMobile: isMobileProp,
   className,
   userTools: userToolsProp,
+  mcpTools: mcpToolsProp,
 }: SessionToolsPanelProps) {
   const detectedIsMobile = useIsMobile();
   const isMobile = isMobileProp !== undefined ? isMobileProp : detectedIsMobile;
 
   const [isOpen, setIsOpen] = useState(false);
   const [internalUserTools, setInternalUserTools] = useState<SanitizedAgentTool[]>([]);
+  const [internalMcpTools, setInternalMcpTools] = useState<EnabledMcpToolItem[]>([]);
   const [loadingTools, setLoadingTools] = useState(false);
 
   // 从 chat-store 读取当前能力包与工具覆盖
@@ -189,44 +224,61 @@ export function SessionToolsPanel({
     [activeCapabilityPackKey]
   );
 
-  // 若外部未传入 userToolsProp，才发起网络请求
+  // 若外部未传入 userToolsProp / mcpToolsProp，才发起网络请求
   useEffect(() => {
-    if (userToolsProp !== undefined) return;
+    if (userToolsProp !== undefined && mcpToolsProp !== undefined) return;
     let cancelled = false;
-    async function load() {
-      try {
-        setLoadingTools(true);
-        const tools = await fetchAgentTools();
-        if (!cancelled) {
-          setInternalUserTools(tools || []);
-        }
-      } catch {
-        if (!cancelled) {
-          setInternalUserTools([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingTools(false);
-        }
-      }
+    setLoadingTools(true);
+
+    const tasks: Array<Promise<void>> = [];
+    if (userToolsProp === undefined) {
+      tasks.push(
+        Promise.resolve()
+          .then(() => fetchAgentTools())
+          .then((tools) => {
+            if (!cancelled) setInternalUserTools(tools || []);
+          })
+          .catch(() => {
+            if (!cancelled) setInternalUserTools([]);
+          })
+      );
+    }
+    if (mcpToolsProp === undefined) {
+      tasks.push(
+        Promise.resolve()
+          .then(() => fetchEnabledMcpTools())
+          .then((tools) => {
+            if (!cancelled) setInternalMcpTools(tools || []);
+          })
+          .catch(() => {
+            if (!cancelled) setInternalMcpTools([]);
+          })
+      );
     }
 
-    load();
+    void Promise.all(tasks).finally(() => {
+      if (!cancelled) {
+        setLoadingTools(false);
+      }
+    });
+
     return () => {
       cancelled = true;
     };
-  }, [userToolsProp]);
+  }, [userToolsProp, mcpToolsProp]);
 
   const effectiveRawUserTools = userToolsProp !== undefined ? userToolsProp : internalUserTools;
+  const effectiveRawMcpTools = mcpToolsProp !== undefined ? mcpToolsProp : internalMcpTools;
 
   // 响应式计算可用工具集与计数
-  const { builtinTools, userTools, enabledCount } = useMemo(() => {
+  const { builtinTools, userTools, mcpTools, enabledCount } = useMemo(() => {
     return getAvailableToolsList({
       capabilityPackKey: activeCapabilityPackKey,
       toolOverrides,
       userTools: effectiveRawUserTools,
+      mcpTools: effectiveRawMcpTools,
     });
-  }, [activeCapabilityPackKey, toolOverrides, effectiveRawUserTools]);
+  }, [activeCapabilityPackKey, toolOverrides, effectiveRawUserTools, effectiveRawMcpTools]);
 
   const handleToggle = useCallback(
     (key: string, currentEnabled: boolean) => {
@@ -408,6 +460,107 @@ export function SessionToolsPanel({
             </Link>
           </div>
         )}
+      </div>
+
+      {/* 分组三：个人远程 MCP 工具（只允许会话内临时收窄关闭，绝不可扩权） */}
+      <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+              MCP 工具
+            </span>
+            <span className="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">
+              ({mcpTools.filter((t) => t.enabled).length}/{mcpTools.length})
+            </span>
+          </div>
+          <Link
+            href="/profile"
+            onClick={() => setIsOpen(false)}
+            className="group flex items-center gap-0.5 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400"
+          >
+            <span>管理 MCP</span>
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {mcpTools.length > 0 ? (
+          <div className="space-y-1 max-h-[160px] overflow-y-auto pr-0.5">
+            {mcpTools.map((tool) => (
+              <div
+                key={tool.key}
+                className={cn(
+                  'flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors',
+                  'min-h-[44px]',
+                  tool.enabled
+                    ? 'bg-slate-50/80 hover:bg-slate-100/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/70'
+                    : 'bg-slate-50/30 opacity-60 hover:opacity-80 dark:bg-slate-800/20'
+                )}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white shadow-xs border border-slate-100 dark:border-slate-700 dark:bg-slate-800">
+                    <Plug className="h-4 w-4 text-sky-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+                        {tool.name}
+                      </span>
+                      {tool.serverName && (
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 px-1.5 py-0 text-[10px] font-normal text-slate-600 dark:text-slate-300"
+                        >
+                          {tool.serverName}
+                        </Badge>
+                      )}
+                      {tool.allowAutoExecute === false && (
+                        <span className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400">
+                          需审批
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                      {tool.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2">
+                  <Switch
+                    data-testid={`tool-switch-${tool.key}`}
+                    checked={tool.enabled}
+                    onCheckedChange={() => handleToggle(tool.key, tool.enabled)}
+                    aria-label={`开关 ${tool.name}`}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 p-3 text-center dark:border-slate-800">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              {loadingTools ? '正在加载 MCP 工具…' : '暂无已启用 MCP 工具'}
+            </p>
+            <Link
+              href="/profile"
+              onClick={() => setIsOpen(false)}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+            >
+              <span>前往个人中心配置</span>
+              <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+        )}
+
+        <div
+          data-testid="mcp-trust-hint"
+          className="flex items-start gap-1.5 rounded-xl border border-amber-200/70 bg-amber-50/70 px-2.5 py-2 text-[11px] leading-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+        >
+          <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            外部 MCP 工具的描述与返回均视为不可信参考数据，默认操作仍需由你确认；本面板仅支持在当前会话临时停用。
+          </span>
+        </div>
       </div>
     </div>
   );

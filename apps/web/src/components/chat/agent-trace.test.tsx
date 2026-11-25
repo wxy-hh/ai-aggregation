@@ -366,4 +366,37 @@ describe('AgentTrace 三态呈现（工单 P0a-02）', () => {
       fireEvent.click(closeBtn);
     });
   });
+
+  describe('6. 个人远程 MCP 过程卡片与信任提示（工单 04）', () => {
+    it('包含 MCP 调用时默认展开渲染 [data-testid="mcp-tool-call-card"]，展示 [MCP: Server]、毫秒耗时、摘要与不可信提示', () => {
+      const calls: ToolCallRecord[] = [
+        call({
+          id: 'mcp_c1',
+          name: 'mcp_srv_1_read_value',
+          serverName: '受控测试服务',
+          argsSummary: '{"key":"alpha"}',
+          status: 'success',
+          resultSummary: '值:alpha',
+          durationMs: 42,
+        }),
+      ];
+
+      render(<AgentTrace toolCalls={calls} isStreaming={false} />);
+
+      const card = screen.getByTestId('mcp-tool-call-card');
+      expect(card).toBeInTheDocument();
+      expect(card.textContent).toContain('[MCP: 受控测试服务]');
+      expect(card.textContent).toContain('{"key":"alpha"}');
+      expect(card.textContent).toContain('42ms');
+      expect(card.textContent).toContain('值:alpha');
+
+      const trustHint = screen.getByTestId('mcp-trust-hint');
+      expect(trustHint.textContent).toContain('不可信');
+      expect(trustHint.textContent).not.toMatch(/已免疫|完全消除/);
+
+      // 仍可手动点击收起
+      fireEvent.click(screen.getByRole('button', { name: /收起/ }));
+      expect(screen.queryByTestId('mcp-tool-call-card')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -34,7 +34,7 @@ import {
   createBlockedStream,
 } from './chat-safety';
 import { checkFaqShortCircuit, createFaqShortCircuitStream } from './faq-short-circuit';
-import { createAgentRuntimeContext, type AgentRuntimeContext } from './agent/runtime-context';
+import { createAgentRuntimeContext, type AgentRuntimeContext, type AgentRuntimeContextOptions } from './agent/runtime-context';
 import { runAgent } from './agent/agent-runner';
 import { getDefaultRunRegistry, type RunRegistry } from './agent/run-registry';
 import { createRunSubscriptionStream, pumpRunStream } from './agent/run-stream';
@@ -61,6 +61,14 @@ export interface ChatHandlerConfig {
    * 默认从数据库查询（where: { userId, enabled: true }，spec §4.6）。
    */
   getUserTools?: (userId: string) => Promise<UserWebhookTool[]>;
+  /** 获取用户 MCP 配置与快照的可选注入点（测试替身 / 自定义数据源） */
+  getMcpServers?: AgentRuntimeContextOptions['loadMcpServers'];
+  /** 运行内 MCP 客户端创建注入点（测试观测 close / 替身） */
+  createMcpClient?: AgentRuntimeContextOptions['createMcpClient'];
+  /** MCP 客户端调用额外选项（仅受控测试服务注入，生产不传） */
+  mcpClientOptions?: AgentRuntimeContextOptions['mcpClientOptions'];
+  /** MCP 调用审计写入注入点 */
+  mcpCallAudit?: AgentRuntimeContextOptions['mcpCallAudit'];
   /**
    * 智能体运行环境探针函数（ADR-0060）：
    * 校验凭据与最低配额（4,096 tokens），不满足时平滑降级为极速对话。
@@ -77,8 +85,10 @@ export function createChatHandler(config: ChatHandlerConfig) {
   return async function POST(req: Request) {
     const errorId = createErrorId();
     const startTime = Date.now();
-    // 提升到 try 外：初始化/适配器启动失败时也需释放预留（评审 C2：release 闭环）
+    // 提升到 try 外：初始化/适配器启动失败时也需释放预留与运行时连接
     let session: QuotaSession | null = null;
+    let agentRuntime: AgentRuntimeContext | null = null;
+    let runtimeHandedOffToRunner = false;
 
     try {
       // 1. 鉴权
@@ -219,7 +229,6 @@ export function createChatHandler(config: ChatHandlerConfig) {
       let agentBudget: AgentStepBudget | null = null;
       // agent 运行时上下文：工具装配与调次统计全部内聚在运行时内部（Candidate 04 / ADR-0011），
       // 路由层只负责创建它并把 userId 交给它
-      let agentRuntime: AgentRuntimeContext | null = null;
       let agentTrace: ObservabilityTrace | null = null;
       let verifiedResume: { nonce: string } | null = null;
       if (agent) {
@@ -246,11 +255,15 @@ export function createChatHandler(config: ChatHandlerConfig) {
         }
         agentBudget = affordable ?? fullAgentStepBudget(activeCapabilityPack?.maxSteps);
 
-        // 创建运行时上下文：按需加载用户 Webhook 工具并依据能力包白名单严格收敛内置工具
+        // 创建运行时上下文：按需加载用户 Webhook / MCP 工具并依据能力包白名单严格收敛内置工具
         agentRuntime = await createAgentRuntimeContext({
           userId: user.id,
           errorId,
           loadUserTools: config.getUserTools,
+          loadMcpServers: config.getMcpServers,
+          createMcpClient: config.createMcpClient,
+          mcpClientOptions: config.mcpClientOptions,
+          mcpCallAudit: config.mcpCallAudit,
           capabilityPack: activeCapabilityPack?.key,
           disabledToolKeys,
         });
@@ -263,7 +276,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
           if (!resumeApproval) {
             throw new ApprovalRejectedError('tool_unavailable');
           }
-          // 工具 ID 与目标域名取自当前库中的工具，而不是请求体：工具被改 URL、删除重建后旧凭证一律失效
+          // 工具 ID、目标域名与 MCP 配置指纹全部取自当前服务端配置与快照，不接受请求体传入；
+          // 修改 URL / 鉴权 / 刷新 Schema / 停用 Server / 改策略后旧凭证一律失效
           verifiedResume = verifyApprovalToken(approvalResume.token, {
             userId: user.id,
             scope: approvalScope,
@@ -271,6 +285,15 @@ export function createChatHandler(config: ChatHandlerConfig) {
             toolId: resumeApproval.toolId,
             host: resumeApproval.host,
             params: approvalResume.params,
+            ...(resumeApproval.mcp
+              ? {
+                  mcp: {
+                    serverId: resumeApproval.mcp.serverId,
+                    snapshotVersion: resumeApproval.mcp.snapshotVersion,
+                    configFingerprint: resumeApproval.mcp.configFingerprint,
+                  },
+                }
+              : {}),
           });
         }
 
@@ -431,7 +454,8 @@ export function createChatHandler(config: ChatHandlerConfig) {
           onFinish,
         });
 
-        // 泵与响应解耦：客户端断开后继续执行并写满事件日志
+        // 泵与响应解耦：客户端断开后继续执行并写满事件日志（此后连接生命周期交由 runAgent 负责）
+        runtimeHandedOffToRunner = true;
         pumpRunStream(agentStream, run);
         stream = createRunSubscriptionStream({
           registry: runRegistry,
@@ -480,6 +504,14 @@ export function createChatHandler(config: ChatHandlerConfig) {
         });
       }
       return handleError(error, errorId, startTime);
+    } finally {
+      // 若运行时已创建但未进入 runAgent（验签拒绝、额度不足、活跃冲突、容量不足、预留失败或任何提前 return/catch），
+      // 必须在这里幂等释放连接，防止连接泄漏。
+      if (agentRuntime && !runtimeHandedOffToRunner) {
+        await agentRuntime.dispose?.().catch((disposeError) => {
+          console.warn('[chat] 提前退出释放运行时连接失败', { errorId, disposeError });
+        });
+      }
     }
   };
 }

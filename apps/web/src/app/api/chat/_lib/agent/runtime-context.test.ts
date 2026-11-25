@@ -105,7 +105,7 @@ describe('createAgentRuntimeContext 运行时装配', () => {
     });
 
     expect(runtime.registry).toBe(base);
-    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0 });
+    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0, mcpCalls: 0 });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('[chat] 加载用户自定义工具失败，按无用户工具继续'),
       expect.objectContaining({ error: 'Postgres 连接超时', userId: 'u1', errorId: 'err-load' })
@@ -122,7 +122,7 @@ describe('createAgentRuntimeContext 运行时装配', () => {
     });
 
     expect(runtime.registry).toBe(base);
-    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0 });
+    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0, mcpCalls: 0 });
   });
 
   it('loadUserTools 返回 undefined 时按空列表处理', async () => {
@@ -332,7 +332,7 @@ describe('finishMetadata 完成态观测元数据', () => {
       loadUserTools: async () => [makeUserTool()],
     });
 
-    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0 });
+    expect(runtime.finishMetadata()).toEqual({ webhookCalls: 0, mcpCalls: 0 });
 
     const spec = runtime.registry.get('wh_weather');
     expect(spec).toBeDefined();
@@ -353,5 +353,193 @@ describe('finishMetadata 完成态观测元数据', () => {
     expect(writeAuditRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'skipped' })
     );
+  });
+});
+
+describe('MCP 工具装配、策略边界与 dispose 生命周期（工单 04）', () => {
+  function makeMcpBundle(overrides?: {
+    isActive?: boolean;
+    allowAutoExecute?: boolean;
+    enabled?: boolean;
+    fingerprintMismatch?: boolean;
+    readOnlyHint?: boolean;
+  }) {
+    const fingerprint = 'fp-valid-1';
+    return {
+      server: {
+        id: 'srv_1',
+        name: '代码仓库',
+        url: 'https://mcp.example.com/mcp',
+        isActive: overrides?.isActive ?? true,
+        snapshotVersion: 1,
+        configFingerprint: fingerprint,
+        authHeaderName: null,
+        authHeaderValueEnc: null,
+      },
+      snapshot: {
+        serverId: 'srv_1',
+        version: 1,
+        configFingerprint: overrides?.fingerprintMismatch ? 'fp-stale' : fingerprint,
+        tools: [
+          {
+            toolName: 'read_value',
+            description: '读取受控值',
+            inputSchema: {
+              type: 'object',
+              properties: { key: { type: 'string' } },
+              required: ['key'],
+            },
+            annotations: overrides?.readOnlyHint ? { readOnlyHint: true } : null,
+            modelToolName: 'mcp_srv_1_read_value',
+          },
+          {
+            toolName: 'unlisted_tool',
+            description: '未加入白名单的工具',
+            inputSchema: { type: 'object', properties: {} },
+            annotations: null,
+            modelToolName: 'mcp_srv_1_unlisted_tool',
+          },
+        ],
+      },
+      policies: [
+        {
+          serverId: 'srv_1',
+          toolName: 'read_value',
+          enabled: overrides?.enabled ?? true,
+          allowAutoExecute: overrides?.allowAutoExecute ?? true,
+        },
+        {
+          serverId: 'srv_1',
+          toolName: 'unlisted_tool',
+          enabled: false,
+          allowAutoExecute: false,
+        },
+      ],
+    };
+  }
+
+  it('只挂载已加入白名单且快照指纹一致的 MCP 工具，未白名单工具绝不进入注册表', async () => {
+    const { registry: base } = makeBaseRegistry();
+    const runtime = await createAgentRuntimeContext({
+      userId: 'u1',
+      baseRegistry: base,
+      loadUserTools: async () => [],
+      loadMcpServers: async () => [makeMcpBundle()],
+    });
+
+    expect(runtime.registry.has('mcp_srv_1_read_value')).toBe(true);
+    expect(runtime.registry.has('mcp_srv_1_unlisted_tool')).toBe(false);
+    expect(runtime.registry.get('mcp_srv_1_read_value')?.serverName).toBe('代码仓库');
+  });
+
+  it('readOnlyHint=true 但策略为必须审批时仍挂载 approval；改回必须审批立即生效', async () => {
+    const { registry: base } = makeBaseRegistry();
+    const runtimeApproval = await createAgentRuntimeContext({
+      userId: 'u1',
+      baseRegistry: base,
+      loadUserTools: async () => [],
+      loadMcpServers: async () => [makeMcpBundle({ allowAutoExecute: false, readOnlyHint: true })],
+    });
+    const specWithApproval = runtimeApproval.registry.get('mcp_srv_1_read_value');
+    expect(specWithApproval?.approval).toBeDefined();
+
+    const runtimeAuto = await createAgentRuntimeContext({
+      userId: 'u1',
+      baseRegistry: base,
+      loadUserTools: async () => [],
+      loadMcpServers: async () => [makeMcpBundle({ allowAutoExecute: true })],
+    });
+    const specAuto = runtimeAuto.registry.get('mcp_srv_1_read_value');
+    expect(specAuto?.approval).toBeUndefined();
+  });
+
+  it('CapabilityPack 不额外过滤 MCP 工具，disabledToolKeys 可按会话收窄', async () => {
+    const { registry: base } = makeBaseRegistry();
+    const runtimeWithPack = await createAgentRuntimeContext({
+      userId: 'u1',
+      baseRegistry: base,
+      capabilityPack: 'deep-research',
+      loadUserTools: async () => [],
+      loadMcpServers: async () => [makeMcpBundle()],
+    });
+    expect(runtimeWithPack.registry.has('mcp_srv_1_read_value')).toBe(true);
+
+    const runtimeDisabled = await createAgentRuntimeContext({
+      userId: 'u1',
+      baseRegistry: base,
+      capabilityPack: 'deep-research',
+      disabledToolKeys: ['mcp_srv_1_read_value'],
+      loadUserTools: async () => [],
+      loadMcpServers: async () => [makeMcpBundle()],
+    });
+    expect(runtimeDisabled.registry.has('mcp_srv_1_read_value')).toBe(false);
+  });
+
+  it('执行 MCP 工具后递增 finishMetadata().mcpCalls，且审计写库失败不阻断调用', async () => {
+    const { registry: base } = makeBaseRegistry();
+    const closeMock = vi.fn(async () => {});
+    const callToolMock = vi.fn(async () => ({
+      ok: true as const,
+      content: { content: [{ type: 'text', text: '值:ok' }] },
+      statusCode: 200,
+      responseBytes: 32,
+    }));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        loadUserTools: async () => [],
+        loadMcpServers: async () => [makeMcpBundle()],
+        createMcpClient: () => ({ callTool: callToolMock, close: closeMock }),
+        mcpCallAudit: async () => {
+          throw new Error('audit db down');
+        },
+      });
+
+      const spec = runtime.registry.get('mcp_srv_1_read_value');
+      const outcome = await spec!.execute({ key: 'k1' }, CTX);
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.contentForModel).toContain('值:ok');
+      expect(runtime.finishMetadata().mcpCalls).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('审计'),
+        expect.anything()
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('dispose 幂等关闭（连续调用 3 次只 close 1 次），close 抛错不抛出', async () => {
+    const { registry: base } = makeBaseRegistry();
+    const closeMock = vi.fn(async () => {
+      throw new Error('close failed');
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const runtime = await createAgentRuntimeContext({
+        userId: 'u1',
+        baseRegistry: base,
+        loadUserTools: async () => [],
+        loadMcpServers: async () => [makeMcpBundle()],
+        createMcpClient: () => ({
+          callTool: vi.fn(),
+          close: closeMock,
+        }),
+      });
+
+      await runtime.dispose?.();
+      await runtime.dispose?.();
+      await runtime.dispose?.();
+
+      expect(closeMock).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

@@ -15,8 +15,9 @@
  * Vercel AI SDK 时经 zodSchema() 转为模型可见的 JSON Schema（避免双份定义漂移）。
  */
 
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { CitationAnchor } from '@repo/shared';
+import { validateMcpToolArguments } from './mcp/schema';
 export { ToolError } from './tool-error';
 
 /** 工具执行上下文（由编排层注入） */
@@ -53,8 +54,38 @@ export interface ToolApprovalPolicy {
   toolId: string;
   /** 目标域名（仅 hostname），随审批请求展示给用户 */
   host: string;
+  /** 个人远程 MCP 扩展附加安全绑定（Webhook 缺省） */
+  mcp?: {
+    serverId: string;
+    serverName: string;
+    snapshotVersion: number;
+    configFingerprint: string;
+  };
   /** 暂停时的副作用回调（如写入 pending_approval 审计）；失败不应阻断暂停 */
   onPending(ctx: ToolExecutionContext): Promise<void>;
+}
+
+/**
+ * 入参契约的两种形态：
+ * - `zod`：既有内置工具与 Webhook 工具的形态，校验走 Zod；
+ * - `jsonSchema`：MCP 工具的形态（MCP 现行协议使用 JSON Schema 2020-12，
+ *   允许 `oneOf`/`anyOf`/条件/`$defs`），转 Zod 会丢约束或误拒协议合法工具，
+ *   因此保留原契约并用标准校验器校验。
+ */
+export type ToolParameters = z.ZodType | Record<string, unknown>;
+
+/** 判定入参契约是否为 Zod 形态 */
+export function isZodParameters(
+  parameters: ToolParameters
+): parameters is z.ZodType {
+  return parameters instanceof z.ZodType;
+}
+
+/** 判定入参契约是否为 JSON Schema 形态（非 Zod 实例） */
+function isJsonSchemaParameters(
+  parameters: ToolParameters
+): parameters is Record<string, unknown> {
+  return !isZodParameters(parameters) && typeof parameters === 'object' && parameters !== null;
 }
 
 /** 工具规格 */
@@ -63,8 +94,8 @@ export interface AgentToolSpec {
   name: string;
   /** 给模型看的工具说明（中文） */
   description: string;
-  /** 入参 schema（zod） */
-  parameters: z.ZodType;
+  /** 入参 schema（Zod 或 JSON Schema 2020-12） */
+  parameters: ToolParameters;
   /**
    * 单次执行超时（毫秒）。缺省时回落到 `ToolPolicy.timeoutMs`。
    * 供耗时量级明显高于其它工具者声明（如文生图实测 10.7–13.9s，远超通用 15s 的合理余量）。
@@ -72,6 +103,8 @@ export interface AgentToolSpec {
   timeoutMs?: number;
   /** 写操作审批声明；缺省表示无需审批、直接执行 */
   approval?: ToolApprovalPolicy;
+  /** 可选来源服务名称（仅 MCP 工具携带，供 SSE 与过程卡片展示 `[MCP: <Server>]`） */
+  serverName?: string;
   /** 执行工具；抛出的 ToolError 会被 policy 原样透传给用户文案 */
   execute(args: unknown, ctx: ToolExecutionContext): Promise<ToolExecutionResult>;
 }
@@ -111,6 +144,12 @@ export type ToolArgsValidation =
  * 失败时给出可读原因（会作为工具失败文案回给模型，帮助其修正重试）。
  */
 export function validateToolArgs(spec: AgentToolSpec, rawArgs: unknown): ToolArgsValidation {
+  if (isJsonSchemaParameters(spec.parameters)) {
+    const result = validateMcpToolArguments(spec.parameters, rawArgs);
+    if (result.ok) return { ok: true, args: result.value };
+    return { ok: false, reason: result.reason };
+  }
+
   const parsed = spec.parameters.safeParse(rawArgs);
   if (parsed.success) {
     return { ok: true, args: parsed.data };

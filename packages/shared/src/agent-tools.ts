@@ -28,6 +28,8 @@ export const toolCallRecordSchema = z.object({
   status: z.enum(['running', 'success', 'failed']),
   /** 结果展示摘要（已截断；running 阶段为空串） */
   resultSummary: z.string(),
+  /** 可选来源服务名（仅 MCP 工具携带，供前端过程卡片展示 `[MCP: <Server>]`） */
+  serverName: z.string().min(1).optional(),
   /** 工具真实执行耗时（毫秒；可选，由 tool_result 事件回填） */
   durationMs: z.number().int().nonnegative().optional(),
   /** 结构化切片引用映射字典（可选；知识库检索等工具携带） */

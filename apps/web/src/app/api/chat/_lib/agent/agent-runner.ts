@@ -49,6 +49,7 @@ import {
   type StreamTextResult,
   type ToolSet,
 } from 'ai';
+import { jsonSchema } from 'ai';
 import { createProvider, type ProviderName } from '@repo/providers';
 import {
   getCapabilityPack,
@@ -87,7 +88,7 @@ import {
   AGENT_RUN_TIME_BUDGET_MS,
   AGENT_SUMMARY_OUTPUT_LIMIT,
 } from './agent-config';
-import type { ToolRegistry } from '@/lib/agent/registry';
+import { isZodParameters, type ToolRegistry } from '@/lib/agent/registry';
 import type { ObservabilityTrace } from '@/lib/observability/langfuse-client';
 import type { AgentRuntimeContext } from './runtime-context';
 
@@ -163,7 +164,11 @@ function buildToolSet(registry: ToolRegistry): ToolSet {
   for (const spec of registry.list()) {
     set[spec.name] = tool({
       description: spec.description,
-      inputSchema: zodSchema(spec.parameters),
+      // 入参契约有两种形态：Zod（既有工具）与 JSON Schema 2020-12（MCP 工具）。
+      // 两者都由服务端按同一契约校验，模型侧只关心可见的 JSON Schema。
+      inputSchema: isZodParameters(spec.parameters)
+        ? zodSchema(spec.parameters)
+        : jsonSchema(spec.parameters as Record<string, unknown>),
     });
   }
   return set;
@@ -318,23 +323,27 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         reason?: string;
         /** 异常中断路径：steps 只计实际尝试过的决策轮次，不预支未发生的收尾步 */
         abnormal?: boolean;
-      }): ChatStreamFinish => ({
-        outcome: payload.outcome,
-        usage: totals,
-        outputText: text,
-        searchCalls: searchCallsCount,
-        // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
-        webhookCalls: runtime.finishMetadata().webhookCalls,
-        steps: payload.abnormal
-          ? roundIndex
-          : roundIndex + (finalAnswerDelivered ? 0 : 1),
-        toolCalls: recordedToolCalls,
-        artifactRefs: recordedArtifactRefs,
-        // 计时取整后保底 1ms：0 会被误读为「未记录耗时」（与数据库默认值 0 的失效语义碰撞）
-        durationMs: Math.max(1, Math.round(performance.now() - startedAtPerf)),
-        ...(payload.reason ? { reason: payload.reason } : {}),
-        evaluator: evaluatorMeta,
-      });
+      }): ChatStreamFinish => {
+        const meta = runtime.finishMetadata();
+        return {
+          outcome: payload.outcome,
+          usage: totals,
+          outputText: text,
+          searchCalls: searchCallsCount,
+          // 观测元数据由运行时上下文统一产出（ADR-0011）：路由层不接触调次闭包
+          webhookCalls: meta.webhookCalls,
+          mcpCalls: meta.mcpCalls ?? 0,
+          steps: payload.abnormal
+            ? roundIndex
+            : roundIndex + (finalAnswerDelivered ? 0 : 1),
+          toolCalls: recordedToolCalls,
+          artifactRefs: recordedArtifactRefs,
+          // 计时取整后保底 1ms：0 会被误读为「未记录耗时」（与数据库默认值 0 的失效语义碰撞）
+          durationMs: Math.max(1, Math.round(performance.now() - startedAtPerf)),
+          ...(payload.reason ? { reason: payload.reason } : {}),
+          evaluator: evaluatorMeta,
+        };
+      };
 
       try {
         const aiProvider = createProvider(options.provider);
@@ -545,6 +554,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             for (const call of action.localCalls) {
               const callId = call.toolCallId;
               const name = call.toolName;
+              const serverName = registry.get(name)?.serverName;
 
               if (currentPlan) {
                 currentPlan = attachToolCallToRunningStep(currentPlan, callId);
@@ -554,7 +564,12 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               controller.enqueue(
                 encodeSseEvent({
                   type: 'tool_call',
-                  call: { id: callId, name, argsSummary: summarizeArgs(call.input) },
+                  call: {
+                    id: callId,
+                    name,
+                    argsSummary: summarizeArgs(call.input),
+                    ...(serverName ? { serverName } : {}),
+                  },
                 })
               );
 
@@ -568,6 +583,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               // 同轮其后的调用一律不执行；本轮此前已执行的只读结果不带入恢复请求。
               // 凭证签发失败（密钥缺失）直接抛出，由外层按失败关闭收尾。
               if (outcome.pendingApproval) {
+                const mcpApproval = outcome.pendingApproval.mcp;
                 const issued = issueApprovalToken({
                   userId: options.userId,
                   scope: options.approvalScope ?? '',
@@ -575,7 +591,17 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                   toolId: outcome.pendingApproval.toolId,
                   host: outcome.pendingApproval.host,
                   params: outcome.pendingApproval.params,
+                  ...(mcpApproval
+                    ? {
+                        mcp: {
+                          serverId: mcpApproval.serverId,
+                          snapshotVersion: mcpApproval.snapshotVersion,
+                          configFingerprint: mcpApproval.configFingerprint,
+                        },
+                      }
+                    : {}),
                 });
+                const approvalServerName = mcpApproval?.serverName ?? serverName;
                 controller.enqueue(
                   encodeSseEvent({
                     type: 'tool_result',
@@ -583,6 +609,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                     name,
                     status: 'success',
                     summary: outcome.summaryForDisplay,
+                    ...(approvalServerName ? { serverName: approvalServerName } : {}),
                     ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
                   })
                 );
@@ -590,6 +617,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                   id: callId,
                   name,
                   argsSummary: summarizeArgs(call.input),
+                  ...(approvalServerName ? { serverName: approvalServerName } : {}),
                   status: 'success',
                   summary: outcome.summaryForDisplay,
                 });
@@ -599,6 +627,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                     approval: {
                       callId,
                       toolName: name,
+                      ...(approvalServerName ? { serverName: approvalServerName } : {}),
                       host: outcome.pendingApproval.host,
                       params: outcome.pendingApproval.params as Record<string, unknown>,
                       token: issued.token,
@@ -626,6 +655,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                   name,
                   status: outcome.ok ? 'success' : 'failed',
                   summary: outcome.summaryForDisplay,
+                  ...(serverName ? { serverName } : {}),
                   ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
                   ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
                   ...(outcome.citations ? { citations: outcome.citations } : {}),
@@ -637,6 +667,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
                 id: callId,
                 name,
                 argsSummary: summarizeArgs(call.input),
+                ...(serverName ? { serverName } : {}),
                 status: outcome.ok ? 'success' : 'failed',
                 summary: outcome.summaryForDisplay,
                 ...(outcome.durationMs !== undefined ? { durationMs: outcome.durationMs } : {}),
@@ -699,11 +730,17 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         // 调用方已验签并标记凭证已用；这里不经过模型决策，参数即凭证所绑定的参数。
         if (options.resume && !signal.aborted) {
           const { callId, toolName, params } = options.resume;
+          const serverName = registry.get(toolName)?.serverName;
           pipeline.beginRound();
           controller.enqueue(
             encodeSseEvent({
               type: 'tool_call',
-              call: { id: callId, name: toolName, argsSummary: summarizeArgs(params) },
+              call: {
+                id: callId,
+                name: toolName,
+                argsSummary: summarizeArgs(params),
+                ...(serverName ? { serverName } : {}),
+              },
             })
           );
           const resumed = await pipeline.executeCall({
@@ -722,6 +759,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
               name: toolName,
               status: resumed.ok ? 'success' : 'failed',
               summary: resumed.summaryForDisplay,
+              ...(serverName ? { serverName } : {}),
               ...(resumed.durationMs !== undefined ? { durationMs: resumed.durationMs } : {}),
             })
           );
@@ -729,6 +767,7 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
             id: callId,
             name: toolName,
             argsSummary: summarizeArgs(params),
+            ...(serverName ? { serverName } : {}),
             status: resumed.ok ? 'success' : 'failed',
             summary: resumed.summaryForDisplay,
             ...(resumed.durationMs !== undefined ? { durationMs: resumed.durationMs } : {}),
@@ -1022,6 +1061,11 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           options.trace.end();
         }
 
+        // 先于终止帧释放运行内 MCP 连接（幂等，异常只告警），确保消费方收到 done 时连接已关闭
+        await runtime.dispose?.().catch((disposeError) => {
+          console.warn('[agent] 释放运行时连接失败', { errorId, disposeError });
+        });
+
         if (produced) {
           const normalized = totals ? normalizeUsage(totals) : null;
           controller.enqueue(
@@ -1069,6 +1113,9 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
           });
           options.trace.end();
         }
+        await runtime.dispose?.().catch((disposeError) => {
+          console.warn('[agent] 异常收尾释放运行时连接失败', { errorId, disposeError });
+        });
         try {
           controller.enqueue(encodeSseEvent({ type: 'error', error: reason || '生成失败，请重试' }));
         } catch {
@@ -1079,6 +1126,10 @@ export function runAgent(options: AgentRunOptions): ReadableStream<Uint8Array> {
         } catch {
           // 忽略关闭异常
         }
+      } finally {
+        await runtime.dispose?.().catch((disposeError) => {
+          console.warn('[agent] finally 释放运行时连接失败', { errorId, disposeError });
+        });
       }
     },
   });

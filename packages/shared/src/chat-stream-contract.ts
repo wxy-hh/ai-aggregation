@@ -61,10 +61,12 @@ export type ChatStreamAgentNoteEvent = { type: 'agent_note'; text: string };
 export interface ChatStreamToolCall {
   /** 工具调用 id（与对应 tool_result 的 callId 配对） */
   id: string;
-  /** 工具名（如 image_generate / web_fetch） */
+  /** 工具名（如 image_generate / web_fetch / mcp_<server>_<tool>） */
   name: string;
   /** 参数展示摘要（已截断；无参数工具允许为空串） */
   argsSummary: string;
+  /** 可选来源服务名（仅 MCP 工具携带，供前端展示 `[MCP: <Server>]`） */
+  serverName?: string;
 }
 
 /** 工具调用开始事件（agent 模式专用；与对应 tool_result 按 callId 成对且有序） */
@@ -91,6 +93,8 @@ export type ChatStreamToolResultEvent = {
   status: ChatStreamToolStatus;
   /** 结果展示摘要（已截断） */
   summary: string;
+  /** 可选来源服务名（仅 MCP 工具携带） */
+  serverName?: string;
   /** 产物附件（可选；仅 image_generate 等产出文件的工具携带） */
   attachment?: ChatStreamToolAttachment;
   /** 工具执行真实耗时（毫秒；可选，缺省向后兼容） */
@@ -201,6 +205,8 @@ export interface ChatStreamToolApproval {
   callId: string;
   /** 工具名（模型侧名称，如 wh_notify） */
   toolName: string;
+  /** 个人远程 MCP 所属服务名称（可选，Webhook 缺省） */
+  serverName?: string;
   /** 目标域名（仅 hostname，不含路径与凭证） */
   host: string;
   /** 模型给出的调用参数 */
@@ -315,11 +321,20 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       // id / name 是配对与展示的必要字段，必须非空；argsSummary 允许空串（无参数工具）
       const call = ev.call as Record<string, unknown> | null | undefined;
       if (typeof call !== 'object' || call === null) return null;
-      const { id, name, argsSummary } = call as Record<string, unknown>;
+      const { id, name, argsSummary, serverName } = call as Record<string, unknown>;
       if (typeof id !== 'string' || !id) return null;
       if (typeof name !== 'string' || !name) return null;
       if (typeof argsSummary !== 'string') return null;
-      return { type: 'tool_call', call: { id, name, argsSummary } };
+      if (serverName !== undefined && (typeof serverName !== 'string' || !serverName)) return null;
+      return {
+        type: 'tool_call',
+        call: {
+          id,
+          name,
+          argsSummary,
+          ...(typeof serverName === 'string' ? { serverName } : {}),
+        },
+      };
     }
     case 'tool_result': {
       // callId / name 非空；status 必须落在枚举内；summary 允许空串
@@ -327,6 +342,9 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       if (typeof ev.name !== 'string' || !ev.name) return null;
       if (ev.status !== 'success' && ev.status !== 'failed') return null;
       if (typeof ev.summary !== 'string') return null;
+      if (ev.serverName !== undefined && (typeof ev.serverName !== 'string' || !ev.serverName)) {
+        return null;
+      }
       // durationMs 为可选：若传必须为非负整数，否则视为非法帧废弃
       if (
         ev.durationMs !== undefined &&
@@ -355,6 +373,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         name: ev.name,
         status: ev.status,
         summary: ev.summary,
+        ...(typeof ev.serverName === 'string' ? { serverName: ev.serverName } : {}),
         ...(attachment ? { attachment } : {}),
         ...(typeof ev.durationMs === 'number' ? { durationMs: ev.durationMs } : {}),
         ...(citations ? { citations } : {}),
@@ -364,9 +383,10 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
       // 所有字段都是执行审批所必需：任一缺失或类型不对即整帧作废，不降级成残缺卡片
       const approval = ev.approval as Record<string, unknown> | null | undefined;
       if (typeof approval !== 'object' || approval === null) return null;
-      const { callId, toolName, host, params, token, expiresAt } = approval;
+      const { callId, toolName, serverName, host, params, token, expiresAt } = approval;
       if (typeof callId !== 'string' || !callId) return null;
       if (typeof toolName !== 'string' || !toolName) return null;
+      if (serverName !== undefined && (typeof serverName !== 'string' || !serverName)) return null;
       if (typeof host !== 'string' || !host) return null;
       if (typeof params !== 'object' || params === null || Array.isArray(params)) return null;
       if (typeof token !== 'string' || !token) return null;
@@ -378,6 +398,7 @@ export function parseChatStreamEvent(payload: unknown): ChatStreamEvent | null {
         approval: {
           callId,
           toolName,
+          ...(serverName ? { serverName } : {}),
           host,
           params: params as Record<string, unknown>,
           token,

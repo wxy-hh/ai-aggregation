@@ -198,6 +198,7 @@ export interface ToolCallInput {
   id: string;
   name: string;
   argsSummary?: string;
+  serverName?: string;
 }
 
 export interface ToolResultInput {
@@ -205,6 +206,7 @@ export interface ToolResultInput {
   name: string;
   status: ChatStreamToolStatus;
   summary: string;
+  serverName?: string;
   durationMs?: number;
   attachment?: ChatStreamToolAttachment;
   citations?: Message['citations'];
@@ -232,6 +234,7 @@ export function projectToolCall(
           id: call.id,
           name: call.name,
           argsSummary: call.argsSummary ?? '',
+          ...(call.serverName ? { serverName: call.serverName } : {}),
           status: 'running' as const,
           resultSummary: '',
         },
@@ -261,6 +264,7 @@ export function projectToolResult(
                 ...c,
                 status: result.status,
                 resultSummary: result.summary,
+                ...(result.serverName && !c.serverName ? { serverName: result.serverName } : {}),
                 ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
               }
             : c
@@ -271,6 +275,7 @@ export function projectToolResult(
             id: result.callId,
             name: result.name,
             argsSummary: '',
+            ...(result.serverName ? { serverName: result.serverName } : {}),
             status: result.status,
             resultSummary: result.summary,
             ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),

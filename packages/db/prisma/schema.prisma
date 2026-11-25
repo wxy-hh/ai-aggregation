@@ -40,6 +40,10 @@ model User {
   quotaLedgerEntries  QuotaLedgerEntry[]
   webhookTools        UserWebhookTool[]
   webhookToolCalls    WebhookToolCall[]
+  mcpServerConfigs    McpServerConfig[]
+  mcpToolSnapshots   McpToolSnapshot[]
+  mcpToolPolicies    McpToolPolicy[]
+  mcpAuditRecords    McpAuditRecord[]
   productEvents       ProductEvent[]
   agentRuns           AgentRun[]
   knowledgeBases      KnowledgeBase[]
@@ -479,6 +483,118 @@ model WebhookToolCall {
   @@index([toolId])
   @@index([createdAt])
   @@map("webhook_tool_calls")
+}
+
+// MCP 服务器配置（个人私有；ADR-0064）
+model McpServerConfig {
+  id                 String   @id @default(cuid())
+  userId             String
+  name               String
+  // Streamable HTTP 端点地址（HTTPS-only，登记时零 I/O 校验）
+  url                String   @db.Text
+  // 静态鉴权头名（可空表示无鉴权）
+  authHeaderName     String?
+  // 静态鉴权头取值密文（AES-256-GCM；复用 WEBHOOK_SECRET_KEY，永不回显）
+  authHeaderValueEnc String?  @db.Text
+  // 是否启用（停用即不向 Agent 提供工具）
+  isActive           Boolean  @default(true) @map("is_active")
+  // 最近一次发现状态：never / succeeded / failed
+  discoveryStatus    String   @default("never") @map("discovery_status")
+  // 最近一次发现失败的中文原因（不含密钥）
+  discoveryError     String?  @map("discovery_error") @db.Text
+  // 当前有效快照版本号（无快照为 null）
+  snapshotVersion    Int?     @map("snapshot_version")
+  // 安全配置指纹（服务端推导；配置变更即变化，令旧审批失效）
+  configFingerprint  String?  @map("config_fingerprint")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots McpToolSnapshot[]
+  policies  McpToolPolicy[]
+  audits    McpAuditRecord[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@map("mcp_server_configs")
+}
+
+// MCP 工具定义快照（用户手动刷新时原子写入；ADR-0064）
+model McpToolSnapshot {
+  id                String   @id @default(cuid())
+  serverId          String
+  userId            String
+  version           Int
+  // 快照总字节数（上限 256KB）
+  totalBytes        Int      @default(0) @map("total_bytes")
+  // 工具定义列表（JSON：工具名、描述、inputSchema、注解、模型侧名）
+  tools             Json     @default("[]")
+  // 该快照对应的安全配置指纹
+  configFingerprint String   @map("config_fingerprint")
+  createdAt         DateTime @default(now())
+
+  server McpServerConfig @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, version])
+  @@index([userId])
+  @@index([serverId, version])
+  @@map("mcp_tool_snapshots")
+}
+
+// MCP 工具策略（白名单与审批策略；ADR-0064）
+model McpToolPolicy {
+  id               String   @id @default(cuid())
+  serverId         String
+  userId           String
+  // 上游原始工具名
+  toolName         String   @map("tool_name")
+  // 是否加入白名单（进入 Agent 上下文）
+  enabled          Boolean  @default(false)
+  // 是否允许自动执行；false 表示必须经用户审批
+  allowAutoExecute Boolean  @default(false) @map("allow_auto_execute")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  server McpServerConfig @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId, toolName])
+  @@index([userId])
+  @@index([userId, enabled])
+  @@map("mcp_tool_policies")
+}
+
+// MCP 元数据审计（不落原始参数、返回正文、鉴权信息与 URL 查询串；ADR-0064）
+model McpAuditRecord {
+  id             String   @id @default(cuid())
+  userId         String
+  serverId       String?
+  // 来源服务器名称（冗余留痕，便于按名称检索）
+  serverName     String?  @map("server_name")
+  // 工具名；服务器级事件为空
+  toolName       String?  @map("tool_name")
+  // 目标域名（不含路径与查询串）
+  hostname       String
+  // 事件类型：discover / refresh / call / pending_approval / blocked
+  eventType      String   @map("event_type")
+  // 结果状态：success / failed / skipped / blocked / pending_approval
+  outcome        String
+  snapshotVersion Int?    @map("snapshot_version")
+  statusCode     Int?     @map("status_code")
+  durationMs     Int      @default(0) @map("duration_ms")
+  responseBytes  Int      @default(0) @map("response_bytes")
+  // 错误类别（不含原始错误细节与密钥）
+  errorKind       String?  @map("error_kind")
+  createdAt      DateTime @default(now())
+
+  server McpServerConfig? @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([serverId])
+  @@index([createdAt])
+  @@map("mcp_audit_records")
 }
 
 // 前端行为埋点事件记录（ADR-0013 / P0a 工单 03）

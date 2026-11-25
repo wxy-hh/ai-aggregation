@@ -30,6 +30,10 @@ vi.mock('@/lib/api/agent-tools', () => ({
   fetchAgentTools: vi.fn(),
 }));
 
+vi.mock('@/lib/api/mcp-servers', () => ({
+  fetchEnabledMcpTools: vi.fn(async () => []),
+}));
+
 vi.mock('@/lib/events/tracker', () => ({
   trackEvent: vi.fn(),
 }));

@@ -29,6 +29,8 @@ export const AUTH_RATE_LIMITS = {
   agentToolsCrud: { prefix: 'agent-tools:crud', window: 60, limit: 30 },
   // Webhook 工具握手级连通性测试限流（每用户约 10 次/分钟）
   agentToolsTest: { prefix: 'agent-tools:test', window: 60, limit: 10 },
+  // MCP 服务器配置 CRUD 限流（每用户约 30 次/分钟；ADR-0064）
+  mcpServersCrud: { prefix: 'mcp-servers:crud', window: 60, limit: 30 },
   // 前端产品埋点事件上报限流（每用户约 60 次/分钟，ADR-0013）
   productEvents: { prefix: 'events:track', window: 60, limit: 60 },
 } as const satisfies Record<string, AuthRateLimitConfig>;

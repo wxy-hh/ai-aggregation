@@ -46,6 +46,7 @@ import { authApi } from '@/lib/api/auth';
 import type { ProfileUsageItem } from '@repo/shared';
 import type { ProfileViewModel, ResourceUsageViewModel } from './profile-types';
 import { ProfileToolsSection } from './profile-tools-section';
+import { ProfileMcpServersSection } from './profile-mcp-servers-section';
 import { ConversationMemoryCard } from './conversation-memory-card';
 import { toast } from 'sonner';
 
@@ -1127,6 +1128,8 @@ export function ProfileShell() {
               </div>
 
               <ProfileToolsSection />
+
+              <ProfileMcpServersSection />
 
               <div className="grid gap-6 md:grid-cols-2">
                 <div className={cn(SOLID_CARD, 'flex h-full flex-col p-6')}>
