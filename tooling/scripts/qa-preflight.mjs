@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { splitMarkdownRow } from './qa-spec-review.mjs';
 
 // DESIGN.md §2.2、§2.3 与 §2.4 白名单固定十六进制色值（统一大写比对）
 const WHITELIST_HEX_COLORS = new Set([
@@ -328,10 +329,17 @@ async function gatherChangedAddedLines(root, featureDir) {
   return addedByFile;
 }
 
+async function sharedSurfaceConstantNames(root) {
+  const source = await readFile(path.join(root, 'apps/web/src/lib/constants/surface-styles.ts'), 'utf8').catch(() => null);
+  if (source === null) return null;
+  return new Set([...source.matchAll(/\bexport\s+const\s+([A-Z][A-Z0-9_]*)\b/g)].map((match) => match[1]));
+}
+
 /** 扫描 Diff 增量纯英文注释，以及 apps/web/src 下的色值与 44px 按钮热区缺口 */
 async function scanDiffStandards(root, featureDir) {
   const findings = [];
   const addedByFile = await gatherChangedAddedLines(root, featureDir);
+  const surfaceConstants = await sharedSurfaceConstantNames(root);
 
   for (const [relative, addedLines] of addedByFile.entries()) {
     const ext = path.posix.extname(relative).toLowerCase();
@@ -357,8 +365,44 @@ async function scanDiffStandards(root, featureDir) {
       }
     }
 
+    if (surfaceConstants === null && CODE_EXTENSIONS.has(ext) && relative.startsWith('apps/web/src/')) {
+      const declaration = addedLines.find(({ text }) => /\bconst\s+[A-Z][A-Z0-9_]*\b/.test(text));
+      if (declaration) {
+        findings.push(makeFinding(
+          'WARN',
+          'SURFACE_CONSTANTS_UNAVAILABLE',
+          `${relative}:${declaration.lineNumber} 新增大写常量，但共享常量源文件不存在，无法检查是否与 @/lib/constants/surface-styles 重名`,
+          '补齐共享常量源文件后重新预检；不得把跳过检查当作无重名冲突。',
+        ));
+      }
+    }
+
+    if (surfaceConstants?.size && CODE_EXTENSIONS.has(ext) && relative !== 'apps/web/src/lib/constants/surface-styles.ts') {
+      for (const { lineNumber, text } of addedLines) {
+        for (const match of text.matchAll(/\bconst\s+([A-Z][A-Z0-9_]*)\b/g)) {
+          if (!surfaceConstants.has(match[1])) continue;
+          findings.push(makeFinding(
+            'WARN',
+            'DUPLICATE_SURFACE_CONSTANT',
+            `${relative}:${lineNumber} 新增常量 ${match[1]} 与 @/lib/constants/surface-styles 重名`,
+            '复用共享表面样式常量或为局部常量选择不冲突的名称。',
+          ));
+        }
+      }
+    }
+
     const isTestFile = /\.(?:test|spec)\.[^.]+$/i.test(relative);
     if (relative.startsWith('apps/web/src/') && UI_EXTENSIONS.has(ext) && !isTestFile) {
+      for (const { lineNumber, text } of addedLines) {
+        if (!text.includes('font-[var(--font-')) continue;
+        findings.push(makeFinding(
+          'WARN',
+          'ARBITRARY_FONT_VAR',
+          `${relative}:${lineNumber} 新增 font-[var(--font- 任意值字体类`,
+          '使用 DESIGN.md 已登记的语义字体类，不新增任意值字体别名。',
+        ));
+      }
+
       const badColors = new Map();
       for (const { lineNumber, text } of addedLines) {
         const codeOnly = stripCommentsOutsideStringsOnLine(text);
@@ -406,6 +450,127 @@ async function scanDiffStandards(root, featureDir) {
   return findings;
 }
 
+const DESIGN_ROUTE_EXEMPTIONS = new Set([
+  'login', 'register', 'forgot-password', 'reset-password', 'profile', 'admin', 'feedback', 'debug-history',
+]);
+
+/** 新独立页面路由必须在 DESIGN.md §10 的功能面表中登记 */
+async function scanRouteRegistrations(root, featureDir) {
+  const findings = [];
+  const scopeRaw = await readFile(path.join(featureDir, '_qa', 'scope.json'), 'utf8').catch(() => null);
+  let base = 'HEAD';
+  let scopes = [];
+  if (scopeRaw) {
+    try {
+      const scope = JSON.parse(scopeRaw);
+      if (typeof scope.base === 'string' && scope.base) base = scope.base;
+      if (Array.isArray(scope.scopes)) scopes = scope.scopes;
+    } catch {
+      // 损坏的 scope 交由对应门禁报告，预检仍扫描当前新增文件
+    }
+  }
+  const scopeArgs = scopes.length ? ['--', ...scopes] : [];
+  const added = git(root, ['diff', '--name-only', '--diff-filter=A', '-z', base, ...scopeArgs], true);
+  const untracked = git(root, ['ls-files', '--others', '--exclude-standard', '-z', ...scopeArgs], true);
+  const candidates = [...new Set(`${added}\0${untracked}`.split('\0').filter(Boolean))]
+    .map((relative) => {
+      const match = relative.match(/^apps\/web\/src\/app\/(.+)\/page\.tsx$/);
+      return match ? { relative, route: match[1] } : null;
+    })
+    .filter((item) => item && !item.route.startsWith('api/') && !DESIGN_ROUTE_EXEMPTIONS.has(item.route.split('/')[0]));
+  if (!candidates.length) return findings;
+
+  const design = await readFile(path.join(root, 'DESIGN.md'), 'utf8').catch(() => '');
+  const lines = design.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^## 10\.\s*功能面设计简报\s*$/.test(line));
+  const end = lines.findIndex((line, index) => index > start && start >= 0 && /^##\s/.test(line));
+  const section = start >= 0 ? lines.slice(start + 1, end < 0 ? lines.length : end) : [];
+  const registered = new Set();
+  for (const line of section) {
+    if (!line.trim().startsWith('|')) continue;
+    const firstCell = line.split('|')[1] ?? '';
+    for (const token of firstCell.trim().split(/\s+/)) {
+      registered.add(token.replaceAll('`', '').replace(/^\//, ''));
+    }
+  }
+  for (const match of section.join('\n').matchAll(/`app\/([A-Za-z0-9_-]+)(?:\/[^`]*)?`/g)) {
+    registered.add(match[1]);
+  }
+  for (const { relative, route } of candidates) {
+    const surface = route.split('/')[0];
+    if (registered.has(surface) || registered.has(route)) continue;
+    findings.push(makeFinding(
+      'WARN',
+      'DESIGN_ROUTE_UNREGISTERED',
+      `${relative}:1 新独立路由 /${route} 未在 DESIGN.md §10 登记`,
+      `先在 DESIGN.md §10 功能面表登记 ${surface} 的模式与基调，再实现页面。`,
+    ));
+  }
+  return findings;
+}
+
+const TRIAGE_VALUES = new Set(['本次修', '转专项', '驳回']);
+const DISPOSITION_VALUES = new Set(['', '—', '已修', '未修', '修错', '改档成立', '改档不成立', '驳回', '转专项']);
+
+/** 在 collect 前校验三档分流的列结构与本地枚举，不判断审查语义 */
+async function scanReviewReportTriage(featureDir) {
+  const text = await readFile(path.join(featureDir, 'review-report.md'), 'utf8').catch(() => null);
+  if (text === null) return [];
+  const findings = [];
+  const lines = text.split(/\r?\n/);
+  const heading = lines.findIndex((line) => /^## 三档分流\s*$/.test(line));
+  if (heading < 0) {
+    return [makeFinding('ERROR', 'INVALID_TRIAGE_SCHEMA', 'review-report.md:1 缺少 ## 三档分流', '补充分流表或明确写出无发现。')];
+  }
+  const sectionEnd = lines.findIndex((line, index) => index > heading && /^##\s/.test(line));
+  const end = sectionEnd < 0 ? lines.length : sectionEnd;
+  const headerIndex = lines.findIndex((line, index) => index > heading && index < end && line.includes('|'));
+  if (headerIndex < 0) {
+    return lines.slice(heading + 1, end).join('\n').includes('无发现')
+      ? []
+      : [makeFinding('ERROR', 'INVALID_TRIAGE_SCHEMA', `review-report.md:${heading + 1} 缺少三档分流表`, '补齐表头与数据行，或明确写出无发现。')];
+  }
+  const headers = splitMarkdownRow(lines[headerIndex]);
+  const required = ['编号', '档位', '轮次轨迹', '理由'];
+  const missing = required.filter((name) => !headers.some((cell) => cell.includes(name)));
+  if (!headers.some((cell) => cell.includes('处置状态') || cell.includes('最终状态'))) missing.push('处置状态');
+  if (missing.length) {
+    findings.push(makeFinding(
+      'ERROR',
+      'INVALID_TRIAGE_SCHEMA',
+      `review-report.md:${headerIndex + 1} 三档分流缺少列：${missing.join('、')}`,
+      '按契约补齐编号、档位、处置状态、轮次轨迹、验证证据与理由列。',
+    ));
+  }
+  const column = (name) => headers.findIndex((cell) => cell.includes(name));
+  const tierIndex = column('档位');
+  const finalIndex = headers.findIndex((cell) => cell.includes('处置状态') || cell.includes('最终状态'));
+  const evidenceIndex = column('验证证据');
+  let rowCount = 0;
+  let hasFixed = false;
+  for (let index = headerIndex + 1; index < end && lines[index].includes('|'); index += 1) {
+    const cells = splitMarkdownRow(lines[index]);
+    if (cells.every((cell) => /^:?-{3,}:?$/.test(cell.replaceAll(' ', '')))) continue;
+    rowCount += 1;
+    const tier = tierIndex >= 0 ? cells[tierIndex]?.trim() ?? '' : '';
+    const final = finalIndex >= 0 ? cells[finalIndex]?.trim() ?? '' : '';
+    if (final === '已修') hasFixed = true;
+    if (!TRIAGE_VALUES.has(tier)) {
+      findings.push(makeFinding('ERROR', 'INVALID_TRIAGE', `review-report.md:${index + 1} 档位“${tier || '空'}”无效`, '档位只能是本次修、转专项或驳回。'));
+    }
+    if (!DISPOSITION_VALUES.has(final)) {
+      findings.push(makeFinding('ERROR', 'INVALID_DISPOSITION', `review-report.md:${index + 1} 处置状态“${final || '空'}”无效`, '使用契约允许的处置状态，部分修复写未修。'));
+    }
+  }
+  if (hasFixed && evidenceIndex < 0) {
+    findings.push(makeFinding('ERROR', 'INVALID_TRIAGE_SCHEMA', `review-report.md:${headerIndex + 1} 已修条目需要验证证据列`, '补充验证证据列并填写修复后证据或静态理由。'));
+  }
+  if (!rowCount && !lines.slice(headerIndex + 1, end).join('\n').includes('无发现')) {
+    findings.push(makeFinding('ERROR', 'INVALID_TRIAGE_SCHEMA', `review-report.md:${headerIndex + 1} 三档分流没有数据行`, '无发现时必须明确写出无发现。'));
+  }
+  return findings;
+}
+
 /** 运行 1 秒本地确定性预检：返回 { ok, errors, warns, findings } */
 export async function runPreflight(repo, featureArgument, { strict = false } = {}) {
   const featureDir = path.resolve(repo, featureArgument);
@@ -414,6 +579,8 @@ export async function runPreflight(repo, featureArgument, { strict = false } = {
     scanScriptsForPseudoAssertions(featureDir),
     checkDeliveryCommandsConsistency(featureDir),
     scanDiffStandards(root, featureDir),
+    scanRouteRegistrations(root, featureDir),
+    scanReviewReportTriage(featureDir),
   ])).flat();
   const errors = findings.filter((item) => item.level === 'ERROR');
   const warns = findings.filter((item) => item.level === 'WARN');

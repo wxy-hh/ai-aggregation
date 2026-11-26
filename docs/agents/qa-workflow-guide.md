@@ -190,7 +190,7 @@ if (width > 375) {
 console.log(`[TC01-1] PASS 实测：scrollWidth=${width}`);
 ```
 
-要点：先硬断言，失败非零退出；PASS 标记必须带实测值。只打印“通过”不算断言。脚本经 qa-run 以脚本路径运行：
+要点：先硬断言，失败非零退出；PASS 标记必须带实测值。只打印“通过”不算断言。编辑包含多全角标点的 Markdown、规格或审查文档时，优先使用局部切片编辑并给出唯一上下文，避免整段重写造成标点漂移。脚本经 qa-run 以脚本路径运行：
 
 ```bash
 node tooling/scripts/qa-run.mjs .scratch/<feature> tc01 -- node .scratch/<feature>/scripts/tc01-filter.mjs
@@ -223,7 +223,9 @@ console.log(`[TC05-1] PASS 实测：visible=${visible} covered=${covered}`);
 await browser.close();
 ```
 
-遵循宿主工具优先级；轻量脚本由 Node 直接执行，不走 `playwright test`；原生 Node 驱动要求根级直接开发依赖 `playwright`。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何与截图不得替换成标题、状态卡或整页。`qa-browser-helper.mjs` 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，硬断言后按矩形裁剪；未提供 helper 时按同一契约自写，移动视口同样负责设置和 finally 复位。安装器会随五个核心工具分发该辅助模块模板。
+遵循宿主工具优先级；轻量脚本由 Node 直接执行，不走 `playwright test`；原生 Node 驱动要求根级直接开发依赖 `playwright`。需要精确 `390px` 视口且含真实点击交互时，优先原生 Playwright 并调用 `page.setViewportSize({ width: 390, height: 844 })`；仅在需要复用桌面登录态或人工接管登录时使用 `ego-browser` 可见窗口。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何与截图不得替换成标题、状态卡或整页。`qa-browser-helper.mjs` 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，硬断言后优先调用该元素的 `locator.screenshot()`；元素截图失败才退化为完整视口 PNG 按实际 DPR 裁剪。未提供 helper 时按同一契约自写，移动视口同样负责设置和 finally 复位。`resolveBaseUrl()` 优先读取 `QA_WEB_URL`，否则调用 `dev-port.mjs --probe`，过程脚本不得硬编码漂移端口。安装器会随五个核心工具分发该辅助模块模板。
+
+每次导航或提交后调用 `createMarker()` 返回的 `assertNoRateLimit(page, { response })`，默认识别 HTTP 429 与「请求过于频繁」页面并失败。通过串行执行、减少整页重载与固定可清理本地 QA 夹具降低限流概率；夹具使用固定前缀并在用例后清理。绝不为验收关闭生产限流，绝不为验收注入假响应；命中限流时保留证据并停止，不靠 `sleep` 循环硬闯。
 
 截图不能证明数值，也不能单独证明可见：先让目标处于无遮挡位置，脚本硬断言目标与视口相交且代表点未被其他元素遮挡，再截取目标区域；断言未溢出时另断言边界与滚动尺寸。Spec 轴审查仍会按冻结断言原文复核截图。
 

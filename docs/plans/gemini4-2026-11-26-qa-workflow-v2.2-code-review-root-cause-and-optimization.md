@@ -1,7 +1,7 @@
 # `qa-workflow` v2.2 第一性原理诊断与 `code-review` 治本最终方案
 
 > **生成与定稿日期**：2026-11-26
-> **文档状态**：已拍板执行蓝图（已融合 Kimi 对抗审查并完成 8 项 `/grill-me` 决策锁定；Step 0 已完成 `/tools` 隔离，进入 Phase 1 实施；本文不表示 `v2.2` 已落地）
+> **文档状态**：已拍板执行蓝图（已融合 Kimi 对抗审查并完成 8 项 `/grill-me` 决策锁定；Phase 1 已落地 `07ef09d`，待发布验收；当前推进 Phase 2，Phase 2.5 与 Phase 3 尚未开始，本文不表示 `v2.2` 已完成发布验收）
 > **技术基线**：`v2.1 Batch 1`（提交 `1b31f11`，`ADR-0065`）、`docs/plans/2026-11-22-qa-workflow-optimization-plan.md`
 > **实证特性**：`.scratch/tools-workbench-ia-migration/`（`v2.1` 上线后首个真实业务标准车道 dogfood，未收口失败样本）
 > **对账参考**：`docs/plans/kimi-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md`

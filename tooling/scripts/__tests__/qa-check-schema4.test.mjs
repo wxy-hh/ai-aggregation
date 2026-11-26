@@ -965,6 +965,60 @@ test('unit 绑定有效时不报，绑定为空、文件不存在或找不到标
   }
 });
 
+test('[v2.2-P2-TC07-3] plan 预检交付命令中的零测试目录', async (t) => {
+  const command = 'node --test src/components/layout';
+  const spec = `## User Stories\n1. 第一条需求\n2. 第二条需求\n\n## 交付命令\n\n\`\`\`bash\n${command}\n\`\`\`\n`;
+  const emptyDir = await workspace(t, {
+    spec,
+    plan: singlePlan({ deliveryCommand: `\`${command}\`` }),
+    evidence: { 'src/components/layout/placeholder.ts': 'export {};\n' },
+  });
+  const emptyReport = await checkFeature(emptyDir, 'plan');
+  assert.equal(emptyReport.status, 'FAIL');
+  const problem = emptyReport.issues.find((item) => item.code === 'EMPTY_TEST_DIRECTORY');
+  assert.match(problem.message, /src\/components\/layout/);
+
+  for (const validCommand of ['node --test tests', 'node --test tests/a.test.mjs']) {
+    const validSpec = spec.replace(command, validCommand);
+    const validDir = await workspace(t, {
+      spec: validSpec,
+      plan: singlePlan({ deliveryCommand: `\`${validCommand}\`` }),
+    });
+    assert.equal((await checkFeature(validDir, 'plan')).status, 'PASS', validCommand);
+  }
+
+  const filteredCommand = 'pnpm --filter @repo/web test "src/components/layout"';
+  const filteredDir = await workspace(t, {
+    spec: spec.replace(command, filteredCommand),
+    plan: singlePlan({ deliveryCommand: `\`${filteredCommand}\`` }),
+    evidence: {
+      'package.json': '{"workspaces":["apps/*"]}\n',
+      'apps/web/package.json': '{"name":"@repo/web"}\n',
+      'apps/web/src/components/layout/placeholder.ts': 'export {};\n',
+    },
+  });
+  const filteredEmpty = await checkFeature(filteredDir, 'plan');
+  assert.ok(filteredEmpty.issues.some((item) => item.code === 'EMPTY_TEST_DIRECTORY'), formatReport(filteredEmpty));
+  await writeFile(path.join(filteredDir, 'apps/web/src/components/layout/layout.test.mjs'), 'import test from "node:test";\ntest("布局", () => {});\n');
+  assert.equal((await checkFeature(filteredDir, 'plan')).status, 'PASS');
+});
+
+test('[v2.2-P2-TC07-2] parseBinding 对整段反引号给出准确行号与单行修正', async (t) => {
+  const wrongBinding = `\`${TEST_FILE} › 传入过滤条件时两路均收到\``;
+  const dir = await boundWorkspace(t, { binding: wrongBinding, argv: ['node', '--test', TEST_FILE] });
+  const planPath = path.join(dir, 'qa-plan.md');
+  const expectedLine = (await readFile(planPath, 'utf8')).split('\n').findIndex((line) => line.includes(wrongBinding)) + 1;
+  assert.ok(expectedLine > 0);
+  const report = await checkFeature(dir, 'acceptance');
+  assert.equal(report.status, 'FAIL');
+  const problem = report.issues.find((item) => item.code === 'TEST_BINDING_MISSING');
+  assert.match(problem.message, new RegExp(`qa-plan\\.md:${expectedLine}`));
+  assert.equal(problem.hint, `将 qa-plan.md:${expectedLine} 单行修正为：\`${TEST_FILE}\` › 传入过滤条件时两路均收到`);
+
+  await writeFile(planPath, (await readFile(planPath, 'utf8')).replace(wrongBinding, BINDING));
+  assert.equal((await checkFeature(dir, 'acceptance')).status, 'PASS');
+});
+
 test('标题匹配容忍引号与空白差异、参数化字面写法与只写叶子标题（TC06-3）', async (t) => {
   const source = [
     "describe('过滤器', () => {",

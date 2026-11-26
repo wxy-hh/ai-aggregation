@@ -82,7 +82,7 @@ export function parseRunLog(text) {
       headerEnd = index;
       break;
     }
-    const match = lines[index].match(/^# ([a-z]+): (.*)$/);
+    const match = lines[index].match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
     if (match) fields[match[1]] = match[2];
   }
 
@@ -94,21 +94,27 @@ export function parseRunLog(text) {
     argv = null;
   }
 
-  let finished = null;
-  let exit = null;
-  let complete = false;
   let end = lines.length;
   while (end > 0 && lines[end - 1] === '') end -= 1;
-  const tailStart = end - 3;
-  if (tailStart > headerEnd && tailStart >= 1 && lines[tailStart] === '# ---') {
-    const finishedMatch = lines[tailStart + 1].match(/^# finished: (.*)$/);
-    const exitMatch = lines[tailStart + 2].match(/^# exit: (.*)$/);
-    if (finishedMatch && exitMatch) {
-      finished = finishedMatch[1];
-      exit = /^\d+$/.test(exitMatch[1]) ? Number(exitMatch[1]) : exitMatch[1];
-      complete = headerEnd > 0 && argv !== null;
+  let tailStart = -1;
+  for (let index = end - 1; index > headerEnd; index -= 1) {
+    if (lines[index] === '# ---') {
+      tailStart = index;
+      break;
     }
   }
+  const tail = {};
+  if (tailStart > headerEnd) {
+    for (const line of lines.slice(tailStart + 1, end)) {
+      const match = line.match(/^# ([A-Za-z][A-Za-z0-9]*): (.*)$/);
+      if (match) tail[match[1]] = match[2];
+    }
+  }
+  const finished = tail.finished ?? null;
+  const exit = tail.exit === undefined ? null : /^\d+$/.test(tail.exit) ? Number(tail.exit) : tail.exit;
+  const complete = headerEnd > 0 && argv !== null && finished !== null && exit !== null;
+  const durationMs = Number(tail.durationMs);
+  const repairAndWaitMs = Number(tail.repairAndWaitMs);
   return {
     label: fields.label ?? null,
     command: fields.command ?? null,
@@ -117,13 +123,23 @@ export function parseRunLog(text) {
     script: fields.script ?? null,
     cwd: fields.cwd ?? null,
     head: fields.head ?? null,
+    node: fields.node ?? null,
     tree: fields.tree ?? null,
+    nonce: fields.nonce ?? null,
+    round: fields.round ?? null,
+    axis: fields.axis ?? null,
+    snapshotHash: fields.snapshotHash ?? null,
     started: fields.started ?? null,
     finished,
+    dispatchedAt: null,
+    terminalState: tail.terminalState ?? null,
+    errorClass: tail.errorClass === 'none' ? null : tail.errorClass ?? null,
+    durationMs: Number.isInteger(durationMs) && durationMs >= 0 ? durationMs : null,
+    repairAndWaitMs: Number.isInteger(repairAndWaitMs) && repairAndWaitMs >= 0 ? repairAndWaitMs : null,
     exit,
     complete,
     // 命令输出正文（不含头尾），供断言标记核对
-    body: lines.slice(headerEnd > 0 ? headerEnd + 1 : lines.length, complete ? tailStart : end).join('\n'),
+    body: lines.slice(headerEnd > 0 ? headerEnd + 1 : lines.length, tailStart > headerEnd ? tailStart : end).join('\n'),
   };
 }
 
@@ -161,6 +177,8 @@ async function runEvidence(repo, featureArgument, label, argv, { executor = null
   const relativeScript = resolvedScript
     ? path.relative(root, resolvedScript).split(path.sep).join('/')
     : null;
+  const reviewContext = await readFile(path.join(feature, '_qa', 'review-challenge.json'), 'utf8')
+    .then((text) => JSON.parse(text), () => ({}));
 
   let handle;
   try {
@@ -184,7 +202,12 @@ async function runEvidence(repo, featureArgument, label, argv, { executor = null
     headerLines.push(
       `# cwd: ${cwd}`,
       `# head: ${head}`,
+      `# node: ${process.version}`,
       `# tree: ${tree}`,
+      `# nonce: ${reviewContext.nonce ?? 'none'}`,
+      `# round: ${reviewContext.round ?? 'none'}`,
+      `# axis: none`,
+      `# snapshotHash: ${reviewContext.snapshotHash ?? 'none'}`,
       `# started: ${started}`,
       '# ---',
       '',
@@ -233,7 +256,14 @@ async function runEvidence(repo, featureArgument, label, argv, { executor = null
       console.error(diagnostic.trimEnd());
     }
     const exitDescription = startupError ? '127' : emptyReason ? '1' : signal ? `signal ${signal}` : String(code ?? 1);
-    await handle.writeFile(`# ---\n# finished: ${new Date().toISOString()}\n# exit: ${exitDescription}\n`, 'utf8');
+    const finished = new Date().toISOString();
+    const terminalState = exitCode === 0 ? 'succeeded' : 'failed';
+    const errorClass = exitCode === 0 ? 'none' : startupError ? 'SPAWN_ERROR' : emptyReason ? 'EMPTY_EVIDENCE' : signal ? 'SIGNAL' : 'EXIT_NONZERO';
+    const durationMs = Math.max(0, Date.parse(finished) - Date.parse(started));
+    const repairAndWaitMs = Number.isInteger(reviewContext.repairAndWaitMs) && reviewContext.repairAndWaitMs >= 0
+      ? reviewContext.repairAndWaitMs
+      : 0;
+    await handle.writeFile(`# ---\n# finished: ${finished}\n# terminalState: ${terminalState}\n# errorClass: ${errorClass}\n# durationMs: ${durationMs}\n# repairAndWaitMs: ${repairAndWaitMs}\n# exit: ${exitDescription}\n`, 'utf8');
     await handle.close();
     handle = null;
     console.error(`[qa-run] 证据已写入 ${relativeLog}（exit ${exitCode}）`);
@@ -288,6 +318,11 @@ async function resolveExecutionSpec({ repo, scriptPath, executor, extraArgs }) {
 }
 
 async function main() {
+  if (Number(process.versions.node.split('.')[0]) < 22) {
+    console.error(`qa-run 需要 Node.js >=22，当前为 ${process.version}；目标命令尚未启动。`);
+    process.exitCode = 1;
+    return;
+  }
   const args = process.argv.slice(2);
   if (args[0] === '--') args.shift();
   const [feature, label, ...rest] = args;

@@ -194,10 +194,10 @@ export function parsePlan(markdown) {
   let inAssertions = false;
   let section = '';
 
-  for (const line of markdown.split(/\r?\n/)) {
+  for (const [lineIndex, line] of markdown.split(/\r?\n/).entries()) {
     const caseHeading = line.match(/^###\s+(TC\d+)\b/);
     if (caseHeading) {
-      currentCase = { id: caseHeading[1], priority: null, covers: [], seam: null, assertions: [] };
+      currentCase = { id: caseHeading[1], priority: null, covers: [], seam: null, target: null, assertions: [] };
       cases.push(currentCase);
       inAssertions = false;
       section = '';
@@ -219,6 +219,8 @@ export function parsePlan(markdown) {
       if (covers) currentCase.covers = covers[1].split(',').map((value) => Number(value.trim()));
       const seam = line.match(/^- Seam:\s*(\S+)\s*$/);
       if (seam) currentCase.seam = seam[1];
+      const target = line.match(/^- Target:\s*(.+)$/);
+      if (target) currentCase.target = target[1].trim();
       if (/^####\s+验证断言\s*$/.test(line)) {
         inAssertions = true;
         continue;
@@ -248,6 +250,7 @@ export function parsePlan(markdown) {
         evidence: cells[3],
         binding: cells[4] ?? '',
         detail: cells.slice(5).join('|').trim(),
+        line: lineIndex + 1,
       });
     } else if (section === '交付验证') {
       const command = cells[0]?.match(/^`([^`]+)`$/);
@@ -354,6 +357,73 @@ function specCommandIssues(plan, commands, phase) {
       '把该命令原样加入 ## 交付验证；确需缩减时，先修改 spec 的 ## 交付命令并写明理由，再更新计划。',
     ));
   return { issues, notes: [] };
+}
+
+async function directoryContainsTestFile(directory) {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name === '.git') continue;
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (await directoryContainsTestFile(absolute)) return true;
+    } else if (entry.isFile() && TEST_FILE_PATTERN.test(entry.name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** pnpm --filter 的测试路径相对被筛选包，而不是仓库根目录 */
+async function filteredTestRoot(root, words, markerIndex) {
+  const filterIndex = words.slice(0, markerIndex).findIndex((word) => word === '--filter');
+  const filter = filterIndex >= 0 ? words[filterIndex + 1] : null;
+  if (!filter) return root;
+  const { patterns, excludes } = await workspacePatterns(root);
+  for (const directory of await expandWorkspacePatterns(root, patterns, excludes)) {
+    const manifest = await readFile(path.join(directory, 'package.json'), 'utf8').then(JSON.parse, () => null);
+    if (manifest?.name === filter) return directory;
+  }
+  return root;
+}
+
+/** 规划期拦截测试运行器指向的零测试目录；非测试命令与 glob 不做目录展开 */
+async function deliveryTestDirectoryIssues(featureDir, commands) {
+  if (!commands?.length) return [];
+  const context = await featureContext(featureDir);
+  const root = context.root ?? featureDir;
+  const issues = [];
+  const checked = new Set();
+  for (const command of commands) {
+    let words;
+    try {
+      words = splitShellWords(command);
+    } catch {
+      continue;
+    }
+    const markers = words
+      .map((word, index) => ({ word, index }))
+      .filter(({ word }) => word === '--test' || word === 'test' || word === 'vitest');
+    if (!markers.length) continue;
+    const commandRoot = await filteredTestRoot(root, words, markers.at(-1).index);
+    for (const token of words.slice(markers.at(-1).index + 1)) {
+      if (!token || token.startsWith('-') || /[*?{}]/.test(token)) continue;
+      const absolute = path.resolve(commandRoot, token);
+      const relative = path.relative(commandRoot, absolute);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
+      const info = await stat(absolute).catch(() => null);
+      if (!info?.isDirectory() || checked.has(absolute)) continue;
+      checked.add(absolute);
+      if (await directoryContainsTestFile(absolute)) continue;
+      const display = relative.split(path.sep).join('/') || '.';
+      issues.push(issue(
+        'EMPTY_TEST_DIRECTORY',
+        'FAIL',
+        `交付命令中的测试目录不含测试文件：${display}（命令：${command}）。`,
+        '改为包含 .test.* / .spec.* 测试文件的真实目录或明确测试文件，不用空目录充当交付证据。',
+      ));
+    }
+  }
+  return issues;
 }
 
 async function gitRoot(directory) {
@@ -838,6 +908,15 @@ function parseBinding(text) {
   return match ? { file: match[1].trim(), title: match[2].trim() } : null;
 }
 
+/** 识别整段反引号误写并给出只改当前行的文本 */
+function wholeWrappedBindingCorrection(text) {
+  const match = text.trim().match(/^`([^`]+?)`\s*$/);
+  if (!match || !match[1].includes('›')) return null;
+  const [file, ...title] = match[1].split('›');
+  if (!file.trim() || !title.join('›').trim()) return null;
+  return `\`${file.trim()}\` › ${title.join('›').trim()}`;
+}
+
 const TEST_FILE_PATTERN = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|_test\.py|(?:^|\/)test_[^/]+\.py)$/;
 
 /** 向上查找含 package.json 的目录，找不到时返回仓库根 */
@@ -909,14 +988,22 @@ async function testBindingIssues(passRows, root, featureDir) {
     if (!BOUND_SEAMS.has(testCase.seam)) continue;
     const label = `${row.caseId} / ${row.assertion}`;
     const binding = parseBinding(row.binding);
-    const missing = (reason) => issues.push(issue(
+    const missing = (reason, hint = '在执行记录的「绑定」列写 `<测试文件>` › <用例标题>（文件相对仓库根，标题取源码中的叶子标题）；只改绑定列不需要重跑证据命令。') => issues.push(issue(
       'TEST_BINDING_MISSING',
       'FAIL',
       `${label} 的用例绑定无效：${reason}。`,
-      '在执行记录的「绑定」列写 `<测试文件>` › <用例标题>（文件相对仓库根，标题取源码中的叶子标题）；只改绑定列不需要重跑证据命令。',
+      hint,
     ));
     if (!binding) {
-      missing(row.binding ? `格式应为 \`<测试文件>\` › <用例标题>，当前为 ${row.binding}` : '绑定列为空');
+      const correction = wholeWrappedBindingCorrection(row.binding);
+      if (correction) {
+        missing(
+          `qa-plan.md:${row.line} 误将文件与标题整段包裹在反引号中，当前为 ${row.binding}`,
+          `将 qa-plan.md:${row.line} 单行修正为：${correction}`,
+        );
+      } else {
+        missing(row.binding ? `格式应为 \`<测试文件>\` › <用例标题>，当前为 ${row.binding}` : '绑定列为空');
+      }
       continue;
     }
     const absolute = path.resolve(base, binding.file);
@@ -1496,6 +1583,7 @@ function reconciliationTable(rows, frozenPlan, currentPlan, markerValues, caseSc
       actual,
       flag: flags.join('、'),
       seam: testCase.seam,
+      target: testCase.target ?? '',
       sourceCandidates: BOUND_SEAMS.has(testCase.seam)
         ? [row.binding.match(/^`([^`]+)`/)?.[1]].filter(Boolean)
         : scripts,
@@ -1641,7 +1729,7 @@ async function buildReviewUnits(featureDir, table, evidenceByRow, rowByKey, cont
       if (row.status !== 'PASS') evidenceHashes.push(`status:${row.status}`);
     }
     const assertionMaterial = bucket.rows
-      .map((r) => `${r.id}\0${r.status}\0${r.assertion}\0${r.changed}\0${r.seam}\0${r.priority}`)
+      .map((r) => `${r.id}\0${r.status}\0${r.assertion}\0${r.changed}\0${r.seam}\0${r.priority}\0${r.target ?? ''}`)
       .join('\n');
     const sourceHash = createHash('sha256').update(sourceHashes.join('\n')).digest('hex');
     const evidenceHash = createHash('sha256').update(evidenceHashes.sort().join('\n')).digest('hex');
@@ -3291,7 +3379,9 @@ export async function checkFeature(featureDir, phase) {
   const specText = await readFile(path.join(featureDir, 'spec.md'), 'utf8');
   const specIds = parseSpec(specText);
   const validated = validatePlan(plan, specIds);
-  const commandContract = specCommandIssues(plan, parseSpecCommands(specText), phase);
+  const specCommands = parseSpecCommands(specText);
+  const commandContract = specCommandIssues(plan, specCommands, phase);
+  if (phase === 'plan') commandContract.issues.push(...await deliveryTestDirectoryIssues(featureDir, specCommands));
   // 同名技能检测只在 plan 与 review 阶段运行，且不被其他规划问题提前返回遮住
   const shadow = phase === 'acceptance' ? { issues: [], notes: [] } : await skillShadowIssues(featureDir);
   // 计划结构的 NOTE（如 browser 用例超量）只在 plan 阶段且结构无问题时输出；交付命令契约的 NOTE 各阶段都输出

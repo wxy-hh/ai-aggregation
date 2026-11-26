@@ -65,7 +65,7 @@ test('TC05-2 acquireQaPage 按 ownership 接管或新建页面', async () => {
   assert.deepEqual(calls, [['takeOverTaskSpace', 2]]);
 });
 
-test('TC03 显式目标在硬断言后按同一矩形裁剪截图', async () => {
+test('TC03 显式目标在硬断言后按同一目标执行元素截图', async () => {
   const { captureTargetGeometry } = await import(HELPER.href);
   const calls = [];
   const page = {
@@ -73,7 +73,9 @@ test('TC03 显式目标在硬断言后按同一矩形裁剪截图', async () => 
       calls.push(['evaluate', target]);
       return probe(target);
     },
-    screenshot: async (options) => calls.push(['screenshot', options]),
+    locator: () => ({
+      screenshot: async (options) => calls.push(['screenshot', options]),
+    }),
   };
   const result = await captureTargetGeometry(page, {
     target: '#target',
@@ -84,7 +86,7 @@ test('TC03 显式目标在硬断言后按同一矩形裁剪截图', async () => 
   assert.equal(result.target, '#target');
   assert.deepEqual(calls, [
     ['evaluate', '#target'],
-    ['screenshot', { path: 'shot.png', clip: { x: 10, y: 20, width: 120, height: 80 } }],
+    ['screenshot', { path: 'shot.png' }],
   ]);
 });
 
@@ -135,7 +137,9 @@ test('TC05-3 移动视口复用显式目标截图并在失败后复位', async (
       log.push(['evaluate', target]);
       return { ...geometry(target), scrollWidth: 375 };
     },
-    screenshot: async (options) => log.push(['screenshot', options]),
+    locator: () => ({
+      screenshot: async (options) => log.push(['screenshot', options]),
+    }),
   };
 
   const result = await captureMobileGeometry(page, {
@@ -148,7 +152,7 @@ test('TC05-3 移动视口复用显式目标截图并在失败后复位', async (
   assert.deepEqual(log.map((item) => item[0]), ['cdp', 'evaluate', 'screenshot', 'cdp']);
   assert.equal(log[0][2], 375);
   assert.equal(log[1][1], '#target');
-  assert.deepEqual(log[2][1].clip, { x: 10, y: 20, width: 120, height: 80 });
+  assert.deepEqual(log[2][1], { path: 'shot.png' });
   assert.equal(log[3][2], 0);
 
   const failedLog = [];
@@ -243,9 +247,11 @@ test('P1-TC01-1 captureMobileGeometry 兼容仅提供 setViewportSize 的 Playwr
       events.push(['evaluate', target, currentViewport.width]);
       return probe(target);
     },
-    screenshot: async (options) => {
-      events.push(['screenshot', options]);
-    },
+    locator: () => ({
+      screenshot: async (options) => {
+        events.push(['screenshot', options]);
+      },
+    }),
   };
 
   const result = await captureMobileGeometry(playwrightPage, {

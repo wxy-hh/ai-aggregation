@@ -71,6 +71,7 @@ describe('关联状态同步命令', () => {
 
   it('发送前保证：当前单聊会话存在时不创建、不重复加载', () => {
     const id = useConversationsStore.getState().createConversation('xunfei', 'lite');
+    useChatStore.setState({ activeConversationId: id });
     const loadSpy = vi.spyOn(useChatStore.getState(), 'loadConversation');
 
     const ensuredId = conversationOrchestrator.ensureActiveConversation();

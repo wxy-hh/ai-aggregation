@@ -20,7 +20,7 @@ disable-model-invocation: true
 - 单文件测试使用 `pnpm --filter @repo/web test "<相对 apps/web 的路径>"`；含 `[id]` 的路径必须加引号，避免 shell 通配。
 - 显式指定单张工单时，完成该工单及其测试后停下汇报；无工单参数或用户要求连续冲刺时，按依赖顺序承接全部就绪工单，不逐票询问。
 - 修复已交付特性时使用独立修复目录和 `QA Kind: fix`；先用同一命令保存修复前红日志，再实现并保存绿日志，确保红日志更早且 tree 不同。
-- 命令证据统一经 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成（过程脚本支持 `--script <path> [-- <args...>]`，`ego-browser` 过程脚本优先使用 `--executor ego-browser --script <path>` 淘汰双包装），同名日志不得覆盖，失败或旧证据换新标签。阶段 4 收尾可用 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规。
+- 命令证据统一经 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>` 生成（过程脚本支持 `--script <path> [-- <args...>]`，`ego-browser` 过程脚本优先使用 `--executor ego-browser --script <path>` 淘汰双包装），同名日志不得覆盖，失败或旧证据换新标签。进入阶段 5 前必须完成一次 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 并清除 ERROR；WARN 按规范处置，不能用跳过预检替代语义复核。
 - unit/integration 的 PASS 行在执行记录「绑定」列写 `` `<测试文件>` › <用例标题> ``；绑定写错只改执行记录，不重跑证据。
 
 ## 3. 验收

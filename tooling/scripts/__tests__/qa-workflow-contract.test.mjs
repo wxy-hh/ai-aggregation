@@ -1043,3 +1043,90 @@ test('[v2.2-TC09-2] v2.2 四个核心工具脚本与安装模板逐字节一致�
     assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `README.md 缺少契约 ${token}`);
   }
 });
+
+test('[v2.2-P2-TC01-1] 规划期减法约束 P0 与 browser 成本边界', async () => {
+  const content = await read(paths.qaPlanner);
+  assert.match(content, /保持契约 \+ 既有回归测试集合/);
+  assert.match(content, /安全、权限、计费、核心主链路与不可恢复风险/);
+  assert.match(content, /不得[^\n]*存量[^\n]*(?:自动|泛化)[^\n]*P0/);
+  assert.match(content, /1–3 条核心主链路/);
+  assert.match(content, /15 分钟[^\n]*换接缝[^\n]*停损/);
+});
+
+test('[v2.2-P2-TC03-1] handoff 同路径交接保留唯一历史快照', async () => {
+  for (const file of ['.claude/skills/handoff/SKILL.md', '.claude/skills/setup-qa-workflow/templates/skill-customizations.md']) {
+    const content = await read(file);
+    assert.match(content, /写入前[^\n]*(?:已存在|同路径)/, file);
+    assert.match(content, /时间戳[^\n]*历史快照/, file);
+    assert.match(content, /不得覆写|禁止覆写/, file);
+    assert.match(content, /连续两次[^\n]*(?:保留|可读)[^\n]*(?:两份|早期|历史)/, file);
+  }
+});
+
+test('[v2.2-P2-TC03-2] handoff 强绑定 qa-check 与单测原始日志', async () => {
+  for (const file of ['.claude/skills/handoff/SKILL.md', '.claude/skills/setup-qa-workflow/templates/skill-customizations.md']) {
+    const content = await read(file);
+    assert.match(content, /最新[^\n]*qa-check[^\n]*单测/, file);
+    assert.match(content, /命令[^\n]*日志相对路径[^\n]*原始结果行/, file);
+    assert.match(content, /缺少任一项[^\n]*不得宣称[^\n]*完整/, file);
+  }
+});
+
+test('[v2.2-P2-TC07-1] implement 阶段 5 前强制预检并推荐局部切片编辑', async () => {
+  for (const file of [paths.implement, '.claude/skills/setup-qa-workflow/templates/skill-customizations.md']) {
+    const content = await read(file);
+    assert.match(content, /进入阶段 5 前[^\n]*qa-preflight/, file);
+  }
+  const guide = await read(paths.guide);
+  assert.match(guide, /多全角标点[^\n]*局部切片编辑/);
+});
+
+test('[v2.2-P2-TC10-1] 两份蓝图只记录 Phase 1 落地与 Phase 2 推进中', async () => {
+  for (const file of [
+    'docs/plans/gemini4-2026-11-26-qa-workflow-v2.2-code-review-root-cause-and-optimization.md',
+    'docs/plans/2026-11-22-qa-workflow-optimization-plan.md',
+  ]) {
+    const header = (await read(file)).split('\n').slice(0, 12).join('\n');
+    assert.match(header, /Phase 1[^\n]*07ef09d/, file);
+    assert.match(header, /待发布验收/, file);
+    assert.match(header, /当前推进 Phase 2/, file);
+    assert.doesNotMatch(header, /Phase 2 已完成|Phase 2\.5 已完成|Phase 3 已完成/, file);
+  }
+});
+
+test('[v2.2-P2-TC10-2] 核心脚本保持模板逐字一致、零外部依赖与 OBS 文档', async () => {
+  for (const name of ['qa-run.mjs', 'qa-check.mjs', 'qa-spec-review.mjs', 'review-package.mjs', 'qa-preflight.mjs', 'qa-browser-helper.mjs']) {
+    const tool = await read(`tooling/scripts/${name}`);
+    const template = await read(`.claude/skills/setup-qa-workflow/templates/${name}`);
+    assert.equal(template, tool, `${name} 与模板不一致`);
+    assert.doesNotMatch(template, /@repo\/web|AI 聚合平台|test_user/, `${name} 模板含本仓私货`);
+    for (const match of template.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      assert.ok(match[1].startsWith('node:') || match[1].startsWith('.'), `${name} 引入外部依赖 ${match[1]}`);
+    }
+  }
+  const check = await read('tooling/scripts/qa-check.mjs');
+  assert.match(check, /export async function checkFeature/);
+  assert.doesNotMatch(check, /from\s+['"]\.\/qa-check\//);
+  const readme = await read('tooling/scripts/README.md');
+  for (const token of ['snapshotHash', 'dispatchedAt', 'sealAttempts', 'diffBytes', 'repairAndWaitMs', 'assertNoRateLimit', 'cropPngViewport', 'DESIGN_ROUTE_UNREGISTERED']) {
+    assert.match(readme, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `README 缺少 ${token}`);
+  }
+});
+
+
+test('[v2.2-P2-TC10-4] 截图与预检的权威文档和模块注释保持同义', async () => {
+  const [workflow, guide, helper, readme] = await Promise.all([
+    read('docs/agents/qa-workflow.md'),
+    read('docs/agents/qa-workflow-guide.md'),
+    read('tooling/scripts/qa-browser-helper.mjs'),
+    read('tooling/scripts/README.md'),
+  ]);
+  for (const text of [workflow, guide, helper]) {
+    assert.match(text, /locator\.screenshot\(\)/);
+    assert.match(text, /退化/);
+  }
+  assert.match(workflow, /必须完成一次 `node tooling\/scripts\/qa-preflight\.mjs/);
+  assert.match(helper, /resolveBaseUrl\(\)/);
+  assert.match(helper, /assertNoRateLimit\(\)/);
+  assert.match(readme, /`durationMs`/);
+});

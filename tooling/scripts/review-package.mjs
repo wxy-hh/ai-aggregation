@@ -24,6 +24,7 @@ import {
   SPEC_REVIEW_CHECKLIST_V2,
   SPEC_REVIEW_SKELETON_FILE,
   parseSpecReviewChecklist,
+  parseSpecReviewCoverage,
   splitMarkdownRow,
   validateReviewReportForSeal,
 } from './qa-spec-review.mjs';
@@ -355,6 +356,49 @@ function typedError(type, message) {
   return new Error(`${type}：${message}`);
 }
 
+function observabilityErrorClass(error) {
+  return String(error?.message ?? error).match(/^([A-Z][A-Z0-9_]+)：/)?.[1] ?? 'SEAL_FAILED';
+}
+
+async function writeAxisMetrics(feature, challenge, manifest, axis, values, reviewUnits = null) {
+  const current = {
+    dispatchedAt: challenge.dispatchedAt ?? challenge.packagedAt,
+    sealAttempts: 0,
+    ...(challenge.axes?.[axis] ?? {}),
+    ...values,
+  };
+  challenge.axes = { ...(challenge.axes ?? {}), [axis]: current };
+  manifest.axes = { ...(manifest.axes ?? {}), [axis]: current };
+  if (reviewUnits) manifest.reviewUnits = reviewUnits;
+  await Promise.all([
+    writeFile(path.join(feature, QA_DIR, CHALLENGE_FILE), `${JSON.stringify(challenge, null, 2)}\n`),
+    writeFile(path.join(feature, QA_DIR, 'review-package.json'), `${JSON.stringify(manifest, null, 2)}\n`),
+  ]);
+  return current;
+}
+
+async function recordSealFailure(feature, args, error) {
+  let axis;
+  try {
+    axis = parseSealFlags(args).axis;
+  } catch {
+    return;
+  }
+  if (axis !== 'standards' && axis !== 'spec') return;
+  const [challenge, manifest] = await Promise.all([
+    readFile(path.join(feature, QA_DIR, CHALLENGE_FILE), 'utf8').then(JSON.parse, () => null),
+    readFile(path.join(feature, QA_DIR, 'review-package.json'), 'utf8').then(JSON.parse, () => null),
+  ]);
+  if (!challenge || !manifest) return;
+  const completedAt = new Date().toISOString();
+  await writeAxisMetrics(feature, challenge, manifest, axis, {
+    startedAt: challenge.axes?.[axis]?.startedAt ?? completedAt,
+    completedAt,
+    terminalState: 'failed',
+    errorClass: observabilityErrorClass(error),
+  });
+}
+
 /** 子代理自写原文后封存：校验 challenge 并把最小凭据写到同名 .source.json */
 async function sealReview(repo, argument, args) {
   const { root, feature } = await resolveFeature(repo, argument);
@@ -407,6 +451,14 @@ async function sealReview(repo, argument, args) {
   if (challenge.packagedAt !== manifest.packagedAt) {
     throw typedError('PACKAGE_INVALID', 'challenge 的 packagedAt 与当前审查包不一致；请重新 collect');
   }
+
+  const startedAt = new Date().toISOString();
+  const attempt = await writeAxisMetrics(feature, challenge, manifest, axis, {
+    startedAt: challenge.axes?.[axis]?.startedAt ?? startedAt,
+    terminalState: 'sealing',
+    errorClass: null,
+    sealAttempts: (challenge.axes?.[axis]?.sealAttempts ?? 0) + 1,
+  });
 
   const receiptPath = `${REVIEW_DIR}/${fileName.replace(/\.md$/, RECEIPT_SUFFIX)}`;
   const absoluteReceipt = path.join(feature, receiptPath);
@@ -483,6 +535,19 @@ async function sealReview(repo, argument, args) {
     );
   }
 
+  let reviewUnits = manifest.reviewUnits ?? { total: 0, inherited: 0, verified: 0 };
+  if (axis === 'spec' && checklist?.reviewUnits) {
+    const coverage = parseSpecReviewCoverage(markdownText, { version: SPEC_REVIEW_CHECKLIST_V2 });
+    const verifiedIds = new Set(
+      coverage.rows.filter((item) => item.verdict === '已核实' && item.change !== '变更不成立').flatMap((item) => item.ids),
+    );
+    const inherited = checklist.reviewUnits.filter((unit) => unit.verificationStatus === 'inherited').length;
+    const verified = checklist.reviewUnits.filter((unit) =>
+      unit.verificationStatus === 'inherited' || (unit.rowIds ?? []).every((id) => verifiedIds.has(id)),
+    ).length;
+    reviewUnits = { total: checklist.reviewUnits.length, inherited, verified };
+  }
+  const completedAt = new Date().toISOString();
   const receipt = {
     schemaVersion: 1,
     feature: featureRelative(root, feature),
@@ -495,10 +560,24 @@ async function sealReview(repo, argument, args) {
     sha256: hash,
     // 该轴审查时的审查包摘要；供 qa-check 判断另一轴能否沿用同一 tree 的旧轮次
     treeDigest: challenge.treeDigest,
-    completedAt: new Date().toISOString(),
+    snapshotHash: challenge.snapshotHash ?? manifest.snapshotHash,
+    dispatchedAt: attempt.dispatchedAt,
+    startedAt: attempt.startedAt,
+    completedAt,
+    terminalState: 'returned',
+    errorClass: null,
+    sealAttempts: attempt.sealAttempts,
+    diffBytes: manifest.diffBytes ?? 0,
+    reviewUnits,
+    repairAndWaitMs: manifest.repairAndWaitMs ?? 0,
   };
   if (pendingIds.length) receipt.pendingIds = pendingIds;
   await writeFile(absoluteReceipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
+  await writeAxisMetrics(feature, challenge, manifest, axis, {
+    completedAt,
+    terminalState: 'returned',
+    errorClass: null,
+  }, reviewUnits);
   console.log(formatReceiptLine(challenge.nonce, hash));
 }
 
@@ -1051,8 +1130,9 @@ async function createRoundSnapshot({ root, feature, round, expectedScopes, treeD
     featureFiles,
   };
   const manifestRel = path.posix.join(snapshotDirRel, 'manifest.json');
-  await writeFile(path.join(feature, manifestRel), `${JSON.stringify(manifestData, null, 2)}\n`);
-  return { snapshotDirRel, manifestRel, manifestData };
+  const serialized = `${JSON.stringify(manifestData, null, 2)}\n`;
+  await writeFile(path.join(feature, manifestRel), serialized);
+  return { snapshotDirRel, manifestRel, manifestData, snapshotHash: sha256(serialized) };
 }
 
 /** 构造控制在 3KB 内的结构化审查简报，指向权威产物而非内联冗余正文 */
@@ -1197,7 +1277,8 @@ async function collectReviewPackage(
     ? `# 以下文件含开工后的提交（来源见 git log ${scope.base.slice(0, 7)}..HEAD），其中的改动可能不属于本任务：${committedInScope.join('、')}\n`
     : '';
   await mkdir(path.join(feature, QA_DIR), { recursive: true });
-  await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), header + patches.join('\n'));
+  const diffText = header + patches.join('\n');
+  await writeFile(path.join(feature, QA_DIR, 'review-package.diff'), diffText);
 
   // 生成当轮不可变快照；若存在上一轮快照且轮次 >= 2，则再计算相邻快照 delta.diff
   const snapshot = await createRoundSnapshot({
@@ -1233,6 +1314,27 @@ async function collectReviewPackage(
   }
 
   const historical = await scanHistoricalFindingIds(feature, { upToRound: roundNum });
+  const checklistRaw = await readFile(path.join(feature, SPEC_REVIEW_CHECKLIST_FILE), 'utf8').catch(() => null);
+  let units = [];
+  if (checklistRaw) {
+    try {
+      units = parseSpecReviewChecklist(checklistRaw).reviewUnits ?? [];
+    } catch {
+      units = [];
+    }
+  }
+  const inheritedUnits = units.filter((unit) => unit.verificationStatus === 'inherited').length;
+  const reviewUnits = { total: units.length, inherited: inheritedUnits, verified: inheritedUnits };
+  const nonce = randomUUID();
+  const dispatchedAt = new Date().toISOString();
+  const previousCompleted = Object.values(previous?.axes ?? {})
+    .map((item) => Date.parse(item?.completedAt ?? ''))
+    .filter(Number.isFinite);
+  const repairAndWaitMs = previous?.round === round && Number.isInteger(previous.repairAndWaitMs)
+    ? previous.repairAndWaitMs
+    : previousCompleted.length
+      ? Math.max(0, Date.parse(packagedAt) - Math.max(...previousCompleted))
+      : 0;
   const manifest = {
     version: 2,
     base: scope.base,
@@ -1250,6 +1352,16 @@ async function collectReviewPackage(
     ...(deltaDiffRel ? { deltaPackage: deltaDiffRel } : {}),
     snapshotDir: snapshot.snapshotDirRel,
     snapshotManifest: snapshot.manifestRel,
+    nonce,
+    round,
+    snapshotHash: snapshot.snapshotHash,
+    dispatchedAt,
+    diffBytes: Buffer.byteLength(diffText),
+    reviewUnits,
+    repairAndWaitMs,
+    terminalState: 'collected',
+    errorClass: null,
+    axes: {},
   };
   const planText = await readFile(path.join(feature, 'qa-plan.md'), 'utf8').catch(() => '');
   const coverageMatch = planText.match(/^QA Review Coverage:\s*(1|2)\s*$/m);
@@ -1274,11 +1386,17 @@ async function collectReviewPackage(
     schemaVersion: 1,
     feature: featureRelative(root, feature),
     round,
-    nonce: randomUUID(),
+    nonce,
     treeDigest,
     qaArtifactsDigest,
     packagedAt,
     snapshotDir: snapshot.snapshotDirRel,
+    snapshotHash: snapshot.snapshotHash,
+    dispatchedAt,
+    diffBytes: manifest.diffBytes,
+    reviewUnits,
+    repairAndWaitMs,
+    axes: {},
     reservedIds: historical.allIds,
     nextIds: historical.nextIds,
   };
@@ -1411,6 +1529,7 @@ async function main() {
     else if (command === 'scaffold-report') await scaffoldReport(repo, feature, rest);
     else await printDigest(repo, feature);
   } catch (error) {
+    if (command === 'seal') await recordSealFailure(path.resolve(process.cwd(), feature), rest, error).catch(() => {});
     console.error(error.message);
     process.exitCode = 1;
   }

@@ -57,7 +57,9 @@ test('日志记录完整头尾、命令输出和子进程退出码（TC02）', a
   assert.ok(!Number.isNaN(Date.parse(log.started)));
   assert.ok(!Number.isNaN(Date.parse(log.finished)));
   assert.match(text, /标准输出[\s\S]*错误输出/);
-  assert.match(text, /# ---\n# finished: .+\n# exit: 7\n$/);
+  assert.match(text, /# ---\n# finished: .+\n# terminalState: failed\n# errorClass: EXIT_NONZERO\n# durationMs: \d+\n# repairAndWaitMs: \d+\n# exit: 7\n$/);
+  assert.ok(Number.isInteger(log.durationMs) && log.durationMs >= 0);
+  assert.equal(log.repairAndWaitMs, 0);
 });
 
 test('命令不存在时正文记录启动失败并以 127 退出（TC02）', async (t) => {

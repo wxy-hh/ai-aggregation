@@ -113,7 +113,7 @@ QA Review Coverage: 2
 
 - 已有 `_qa/scope.json` 时不再 init；没有时在改第一行代码前 init。需要扩大范围时运行 `node tooling/scripts/review-package.mjs add .scratch/<feature> -- <路径...>`。
 - 单文件测试使用项目既有测试命令；含 `[id]` 的路径必须加引号，避免被 shell 当作通配符。
-- 每个垂直切片遵循 TDD 红绿循环；命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`，ego-browser 脚本优先用 `--executor ego-browser --script <path>` 淘汰双文件包装），同名日志不得覆盖，失败换新标签。同 argv、同 tree、exit 0 的 qa-run 日志可同时被多个 TC 与交付验证引用；argv 或 tree 变化须换新标签重跑，失败日志保留。阶段 4 收尾可先跑 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 1 秒清除静态违规（不替代语义复核）。
+- 每个垂直切片遵循 TDD 红绿循环；命令证据统一使用 `node tooling/scripts/qa-run.mjs .scratch/<feature> <标签> -- <命令>`（过程脚本可用 `--script <path>`，ego-browser 脚本优先用 `--executor ego-browser --script <path>` 淘汰双文件包装），同名日志不得覆盖，失败换新标签。同 argv、同 tree、exit 0 的 qa-run 日志可同时被多个 TC 与交付验证引用；argv 或 tree 变化须换新标签重跑，失败日志保留。进入阶段 5 前必须完成一次 `node tooling/scripts/qa-preflight.mjs .scratch/<feature>` 并清除 ERROR；WARN 须逐项核对，不替代语义复核。
 - unit/integration 的 PASS 行在「绑定」列写 `` `<测试文件>` › <用例标题> ``（文件相对仓库根，标题取源码叶子标题，参数化按源码字面写法）；绑定写错只改执行记录，不重跑。
 
 ### 4. 真实验收（阶段 5）
@@ -125,7 +125,7 @@ QA Review Coverage: 2
 - **过程脚本**：放在 `scripts/` 并经 qa-run 以脚本路径运行。每条冻结断言先硬断言，再输出 `[TC01-1] PASS 实测：<观察值>`；失败输出 `[TC01-1] FAIL <原因>` 并非零退出。只打印成功文本不算断言。
 - **真实链路冒烟**：触及核心链路时至少一条 browser 用例走真实登录、真实输入与真实后端，只断言本次新产生的用户可见终态（如流式结束、无错误态、控制台无报错），不断言模型非确定性分支，后者由 integration 证明。响应注入（替换或拦截网络响应）只在本次改了对应渲染代码时补充构造前端前置或故障态，备注写明「响应注入」、断言只写端侧结果，不得替代真实链路冒烟。
 - **真实输入**：使用真实输入事件；页面内 `dispatchEvent`、`.click()`、`.focus()`、`.value` 赋值只用于读取状态或构造前置条件，并在备注写明。
-- **截图**：每个 TC 独立截图，数值在脚本内严格断言。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何硬断言与目标区域截图必须指向同一对象，不得换成标题、状态卡或整页；代表点未遮挡、边界与滚动尺寸按断言硬检查。helper 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，断言成功后按矩形裁剪；未提供时按同一契约自写，移动视口同样在 finally 复位。截图仍由 Spec 轴按冻结断言与 VisualTarget 复核。
+- **截图**：每个 TC 独立截图，数值在脚本内严格断言。视觉断言先冻结 **VisualTarget**（语义区域 + 稳定定位器），几何硬断言与目标区域截图必须指向同一对象，不得换成标题、状态卡或整页；代表点未遮挡、边界与滚动尺寸按断言硬检查。helper 提供 `captureTargetGeometry` 时，它要求 probe 返回同一 target 与有效矩形，断言成功后优先调用同一元素的 `locator.screenshot()`；元素截图失败才退化为完整视口 PNG 按实际 DPR 裁剪。未提供时按同一契约自写，移动视口同样在 finally 复位。截图仍由 Spec 轴按冻结断言与 VisualTarget 复核。
 - **环境不足**：DOM、真实交互或移动几何无法验证时记 BLOCKED，或经计划变更转人工；不得用低接缝证据替代 browser。
 - **异步与失败**：等待水合后的可操作元素，不用 `networkidle`；等待成功或明确失败终态并设上限，保留失败截图与 Console/网络证据，修复后重跑原断言。
 

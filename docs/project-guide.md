@@ -56,6 +56,12 @@ pnpm db:seed       # 填充初始数据
 pnpm clean         # 清理构建产物 + node_modules
 ```
 
+### QA 浏览器工具与本地夹具
+
+- 需要精确 `390px` 视口且含真实点击交互时，优先原生 Playwright（`setViewportSize({ width: 390, height: 844 })`）；仅需复用桌面登录态或人工接管登录时使用 `ego-browser` 可见窗口。
+- 过程脚本通过 `qa-browser-helper.mjs` 的 `resolveBaseUrl()` 读取 `QA_WEB_URL` 或 `dev-port.mjs --probe` 的实测地址，不硬编码端口。
+- 导航或提交后用 `createMarker().assertNoRateLimit()` 拦截 HTTP 429 与「请求过于频繁」页面；串行执行、减少整页重载并使用固定前缀的可清理本地 QA 夹具。绝不为验收关闭生产限流，绝不为验收注入假响应。
+
 ### `pnpm dev` 启动流程
 
 `pnpm dev` 实际执行 `tooling/scripts/dev.mjs`，自动完成：
